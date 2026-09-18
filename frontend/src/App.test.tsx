@@ -12,7 +12,6 @@ function fakeBackend() {
     product_url: "https://shop.example/products/mug",
     target_seconds: 15,
     status: "queued" as JobStatus,
-    brand_colours: [] as string[],
     created_at: "2026-09-17T10:00:00Z",
   };
   const activity: ActivityEntry[] = [];
@@ -185,7 +184,7 @@ async function startMugJob(backend: ReturnType<typeof fakeBackend>) {
   return user;
 }
 
-test("shows each planned scene's line and slot, and the brand colours, then stops asking", async () => {
+test("shows each planned scene's line and slot, then stops asking", async () => {
   const backend = fakeBackend();
   await startMugJob(backend);
 
@@ -193,7 +192,6 @@ test("shows each planned scene's line and slot, and the brand colours, then stop
     { number: 1, line: "Meet the Stoneware Mug.", slot_seconds: 4, status: "planned" },
     { number: 2, line: "Yours for $24.00.", slot_seconds: 3, status: "planned" },
   ];
-  backend.job.brand_colours = ["#1F3A5F", "#F4EDE4"];
   backend.record("Planned 2 scenes");
   backend.job.status = "planned";
   await act(() => vi.advanceTimersByTimeAsync(2000));
@@ -211,7 +209,6 @@ test("shows each planned scene's line and slot, and the brand colours, then stop
     ["1", "Meet the Stoneware Mug.", "4s", "Planned"],
     ["2", "Yours for $24.00.", "3s", "Planned"],
   ]);
-  expect(screen.getByText("Brand colours: #1F3A5F, #F4EDE4")).toBeTruthy();
   expect(screen.getByText("Ad planned")).toBeTruthy();
 
   const requestsWhenPlanned = backend.requests.length;

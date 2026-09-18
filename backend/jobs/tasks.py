@@ -267,8 +267,6 @@ def _plan_ad(job: Job) -> None:
             Scene(job=job, number=number, line=scene.line, slot_seconds=scene.slot_seconds)
             for number, scene in enumerate(plan.scenes, start=1)
         )
-        job.brand_colours = plan.brand_colours
-        job.save(update_fields=["brand_colours"])
         count = len(plan.scenes)
         record(
             job,

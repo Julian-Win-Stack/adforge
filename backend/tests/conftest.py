@@ -46,7 +46,7 @@ PRODUCT_PAGE = """<!doctype html>
 # What the page check answers for the mug's page.
 READABLE = {"decision": "readable", "reason": "The page names the mug, its price and its size."}
 
-# What the producer plans for the mug's page: three scenes and two brand colours.
+# What the producer plans for the mug's page: three scenes.
 PLAN: dict[str, Any] = {
     "decision": "plan",
     "reason": "Three scenes: what the mug is, what it's like to use, and its price.",
@@ -57,7 +57,6 @@ PLAN: dict[str, Any] = {
             {"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "slot_seconds": 5},
             {"line": "Yours for $24.00.", "slot_seconds": 3},
         ],
-        "brand_colours": ["#1F3A5F", "#F4EDE4"],
     },
 }
 

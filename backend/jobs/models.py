@@ -32,9 +32,6 @@ class Job(models.Model):
         blank=True,
         help_text="Key in the file store of the page's original HTML, exactly as served.",
     )
-    brand_colours = models.JSONField(
-        default=list, blank=True, help_text='The brand colours from the plan, as "#RRGGBB".'
-    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

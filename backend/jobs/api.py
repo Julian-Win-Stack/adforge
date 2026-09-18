@@ -52,8 +52,8 @@ class JobSerializer(serializers.ModelSerializer[Job]):
 
     class Meta:
         model = Job
-        fields = ["id", "product_url", "target_seconds", "status", "brand_colours", "created_at"]
-        read_only_fields = ["id", "status", "brand_colours", "created_at"]
+        fields = ["id", "product_url", "target_seconds", "status", "created_at"]
+        read_only_fields = ["id", "status", "created_at"]
 
 
 @api_view(["POST"])

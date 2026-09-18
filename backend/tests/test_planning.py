@@ -45,7 +45,6 @@ def test_the_plan_is_stored_with_the_job_and_its_scenes_show_on_the_page(
         },
         {"number": 3, "line": "Yours for $24.00.", "slot_seconds": 3, "status": "planned"},
     ]
-    assert job["brand_colours"] == ["#1F3A5F", "#F4EDE4"]
     assert [(entry["message"], entry["reason"]) for entry in job["activity"][-2:]] == [
         (
             "Planning the ad",
@@ -77,9 +76,6 @@ def _scene(**changes: Any) -> dict[str, Any]:
         pytest.param(_plan_with(scenes=[_scene(slot_seconds=4.5)]), id="a fractional slot"),
         pytest.param(_plan_with(scenes=[_scene(slot_seconds="4")]), id="a slot given as text"),
         pytest.param(_plan_with(scenes=[_scene(line="  ")]), id="a scene with nothing to say"),
-        pytest.param(_plan_with(brand_colours=["navy"]), id="a colour by name"),
-        pytest.param(_plan_with(brand_colours=["#1F3A5"]), id="a colour one digit short"),
-        pytest.param(_plan_with(brand_colours=["#1F3A5G"]), id="a colour digit that isn't hex"),
         pytest.param({**PLAN, "plan": None}, id="a plan decision with no plan"),
         pytest.param(
             {**PLAN, "decision": "ask", "question": "Which size?"}, id="a question and a plan"
@@ -108,7 +104,7 @@ def test_a_plan_that_breaks_the_rules_fails_the_job_and_nothing_of_it_is_kept(
         "The model's answer couldn't be used: gpt-5.6-sol gave an answer for plan_ad that "
         "could not be read:"
     )
-    assert (job["scenes"], job["brand_colours"]) == ([], [])
+    assert job["scenes"] == []
     assert not Scene.objects.filter(job_id=job_id).exists()
     # The bad plan is still paid for: 1,200 x $4.00/M in + 300 x $20.00/M out.
     plan_call = ModelCall.objects.get(job_id=job_id, purpose="plan_ad")

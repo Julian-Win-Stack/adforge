@@ -43,7 +43,6 @@ export type Job = {
   product_url: string;
   target_seconds: number | null;
   status: JobStatus;
-  brand_colours: string[];
   created_at: string;
 };
 

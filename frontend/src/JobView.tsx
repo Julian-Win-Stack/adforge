@@ -105,7 +105,6 @@ export function JobView({ jobId }: { jobId: string }) {
               ))}
             </tbody>
           </table>
-          {job.brand_colours.length > 0 && <p>Brand colours: {job.brand_colours.join(", ")}</p>}
         </>
       )}
 
