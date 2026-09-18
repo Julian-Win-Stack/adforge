@@ -1,9 +1,13 @@
+import base64
+import io
 from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
 
+import PIL.Image
 import pytest
 from pydantic import ValidationError
+from pytest_httpserver import HTTPServer
 
 from adforge import file_store
 from gateway.fake import FakeModel
@@ -12,7 +16,7 @@ from gateway.models import ModelCall
 from gateway.types import Image, UnusableReply
 from jobs.tasks import PageCheck, PageCheckHandoff
 
-from .conftest import openai_reply
+from .conftest import READABLE, openai_answer, openai_reply, picture
 
 pytestmark = pytest.mark.django_db
 
@@ -39,30 +43,72 @@ def test_a_bad_handoff_is_refused_before_the_model_is_called(fake_model: FakeMod
     assert not ModelCall.objects.exists()
 
 
-def test_an_image_in_a_format_models_cant_read_is_refused_before_the_model_is_called(
-    fake_model: FakeModel,
+def _check_page(images: list[Image]) -> None:
+    call_model(
+        job=None,
+        purpose="check_page",
+        instructions="Check the page.",
+        handoff=PageCheckHandoff(
+            product_url="https://shop.example/products/mug",
+            page_url="https://shop.example/products/mug",
+            page_text="Stoneware Mug",
+            photo_count=len(images),
+        ),
+        output=PageCheck,
+        images=images,
+    )
+
+
+@pytest.mark.parametrize(
+    ("key", "content", "why"),
+    [
+        pytest.param(
+            "photos/side.bmp",
+            picture(40, 30, (143, 170, 140), "BMP"),
+            "is image/bmp, which models can't read",
+            id="another format",
+        ),
+        pytest.param(
+            "photos/side.png",
+            b"\x89PNG cut off",
+            "can't be opened as a picture",
+            id="not a picture",
+        ),
+    ],
+)
+def test_an_image_models_cant_read_is_refused_before_the_model_is_called(
+    fake_model: FakeModel, key: str, content: bytes, why: str
 ) -> None:
-    key = file_store.save("photos/side.heic", b"ftypheic")
+    file_store.save(key, content)
 
     # The fake has nothing scripted, so reaching it would raise AssertionError instead.
     with pytest.raises(UnreadableImage) as refused:
-        call_model(
-            job=None,
-            purpose="check_page",
-            instructions="Check the page.",
-            handoff=PageCheckHandoff(
-                product_url="https://shop.example/products/mug",
-                page_url="https://shop.example/products/mug",
-                page_text="Stoneware Mug",
-                photo_count=1,
-            ),
-            output=PageCheck,
-            images=[Image(label="Photo 1", key=key)],
-        )
-    assert str(refused.value) == (
-        "Photo 1 (photos/side.heic) is image/heic, which models can't read"
-    )
+        _check_page([Image(label="Photo 1", key=key)])
+    assert str(refused.value) == f"Photo 1 ({key}) {why}"
     assert not ModelCall.objects.exists()
+
+
+def test_a_photo_a_phone_saved_sideways_is_shown_the_right_way_up(
+    httpserver: HTTPServer, openai_server: Callable[..., None]
+) -> None:
+    # Phones store a portrait photo as landscape pixels plus a note saying "turn it 90 degrees
+    # clockwise to view". The model is shown the photo as a person would see it: tall.
+    sideways = PIL.Image.new("RGB", (40, 20), (143, 170, 140))
+    note = PIL.Image.Exif()
+    note[0x0112] = 6  # Orientation: turn 90 degrees clockwise to view.
+    file = io.BytesIO()
+    sideways.save(file, format="JPEG", exif=note)
+    key = file_store.save("photos/portrait.jpg", file.getvalue())
+    openai_server(openai_answer(READABLE))
+
+    _check_page([Image(label="Photo 1", key=key)])
+
+    [request] = [request for request, _ in httpserver.log if request.path == "/v1/responses"]
+    [message] = request.get_json()["input"]
+    image_url = message["content"][2]["image_url"]
+    assert image_url.startswith("data:image/jpeg;base64,")
+    shown = PIL.Image.open(io.BytesIO(base64.b64decode(image_url.split(",", 1)[1])))
+    assert shown.size == (20, 40)
 
 
 @pytest.mark.parametrize(

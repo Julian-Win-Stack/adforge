@@ -1,9 +1,11 @@
+import io
 import json
 import socket
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
+import PIL.Image
 import pytest
 from pytest_django import DjangoCaptureOnCommitCallbacks, Settings
 from pytest_httpserver import HTTPServer
@@ -16,8 +18,17 @@ from gateway.openai_adapter import OpenAIProvider
 
 celery_app.conf.update(task_always_eager=True, task_eager_propagates=True)
 
-MUG_FRONT = b"\x89PNG front of the mug"
-MUG_SIDE = b"\x89PNG side of the mug"
+
+def picture(width: int, height: int, colour: tuple[int, int, int], format: str = "PNG") -> bytes:
+    """A real image file of one colour."""
+    file = io.BytesIO()
+    PIL.Image.new("RGB", (width, height), colour).save(file, format=format)
+    return file.getvalue()
+
+
+# The mug's photos, told apart by colour. The side one is as big as a phone takes them.
+MUG_FRONT = picture(400, 300, (143, 170, 140))  # sage green
+MUG_SIDE = picture(1600, 1200, (236, 229, 206))  # cream
 
 PRODUCT_PAGE = """<!doctype html>
 <html>

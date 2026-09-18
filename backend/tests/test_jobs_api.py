@@ -29,6 +29,7 @@ from .conftest import (
     FakeDns,
     openai_answer,
     openai_reply,
+    picture,
 )
 
 pytestmark = pytest.mark.django_db
@@ -622,6 +623,8 @@ def test_a_photo_that_cant_be_used_is_skipped_with_its_reason_and_the_rest_are_k
 ) -> None:
     bad_url = httpserver.url_for("/cdn/bad")
     good_url = httpserver.url_for("/cdn/mug-front.png")
+    # 69 bytes: small enough to be kept when the too-big case lowers the limit to 100.
+    good_photo = picture(1, 1, (143, 170, 140))
     httpserver.expect_request("/products/mug").respond_with_data(
         f'<html><head><meta property="og:image" content="{bad_url}">'
         f'<meta property="og:image" content="{good_url}"></head>'
@@ -629,7 +632,7 @@ def test_a_photo_that_cant_be_used_is_skipped_with_its_reason_and_the_rest_are_k
         content_type="text/html",
     )
     httpserver.expect_request("/cdn/mug-front.png").respond_with_data(
-        MUG_FRONT, content_type="image/png"
+        good_photo, content_type="image/png"
     )
     serve_bad_photo(httpserver, monkeypatch)
     fake_model.respond("check_page", READABLE)
@@ -645,7 +648,7 @@ def test_a_photo_that_cant_be_used_is_skipped_with_its_reason_and_the_rest_are_k
     assert messages[messages.index("Planning the ad") - 1] == "Saved 1 product photo"
     stored = ProductPhoto.objects.filter(job_id=job_id)
     assert [(photo.source_url, file_store.read(photo.file)) for photo in stored] == [
-        (good_url, MUG_FRONT)
+        (good_url, good_photo)
     ]
 
 

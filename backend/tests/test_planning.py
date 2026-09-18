@@ -1,19 +1,23 @@
+import base64
+import io
 import json
 from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
 
+import PIL.Image
 import pytest
 from pytest_django import DjangoCaptureOnCommitCallbacks
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
+from adforge import file_store
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
 from jobs.models import Job, ProductPhoto, Question, Scene
 from jobs.tasks import keep_photo, plan_ad, read_page
 
-from .conftest import PLAN, READABLE, openai_answer
+from .conftest import MUG_FRONT, MUG_SIDE, PLAN, READABLE, openai_answer, picture
 
 pytestmark = pytest.mark.django_db
 
@@ -70,25 +74,19 @@ def test_the_producer_is_shown_every_product_photo_by_its_number(
 
     job_id = start_job(product_page_url)
 
-    plan_request = [request for request, _ in httpserver.log if request.path == "/v1/responses"][1]
-    [message] = plan_request.get_json()["input"]
+    message = _plan_message(httpserver)
     assert message["role"] == "user"
     handoff, *photos = message["content"]
-    assert photos == [
+    labels, images = photos[0::2], photos[1::2]
+    assert labels == [
         {"type": "input_text", "text": "Photo 1"},
-        {
-            "type": "input_image",
-            # MUG_FRONT, the front photo's bytes exactly as the shop served them.
-            "image_url": "data:image/png;base64,iVBORyBmcm9udCBvZiB0aGUgbXVn",
-            "detail": "low",
-        },
         {"type": "input_text", "text": "Photo 2"},
-        {
-            "type": "input_image",
-            # MUG_SIDE.
-            "image_url": "data:image/png;base64,iVBORyBzaWRlIG9mIHRoZSBtdWc=",
-            "detail": "low",
-        },
+    ]
+    assert [(image["type"], image["detail"]) for image in images] == [("input_image", "low")] * 2
+    # The front photo is sage green and the side one cream, so each label is on its own photo.
+    assert [(media_type, shown.getpixel((0, 0))) for media_type, shown in map(_shown, images)] == [
+        ("image/png", (143, 170, 140)),
+        ("image/png", (236, 229, 206)),
     ]
     # The record says which photos were shown by their keys in the file store, not their bytes.
     call = ModelCall.objects.get(job_id=job_id, purpose="plan_ad")
@@ -98,6 +96,39 @@ def test_the_producer_is_shown_every_product_photo_by_its_number(
     ]
     assert handoff["type"] == "input_text"
     assert json.loads(handoff["text"]) == call.handoff
+
+
+def test_the_producer_is_shown_each_photo_shrunk_to_fit_512_pixels_and_the_kept_ones_are_unchanged(
+    httpserver: HTTPServer,
+    openai_server: Callable[..., None],
+    product_page_url: str,
+    start_job: Callable[..., str],
+) -> None:
+    openai_server(openai_answer(READABLE), openai_answer(PLAN))
+
+    job_id = start_job(product_page_url)
+
+    _, *photos = _plan_message(httpserver)["content"]
+    # The front photo, 400 x 300, already fits. The side one, 1600 x 1200, is shrunk to fit.
+    assert [_shown(image)[1].size for image in photos[1::2]] == [(400, 300), (512, 384)]
+    stored = ProductPhoto.objects.filter(job_id=job_id)
+    assert [file_store.read(photo.file) for photo in stored] == [MUG_FRONT, MUG_SIDE]
+
+
+def _plan_message(httpserver: HTTPServer) -> dict[str, Any]:
+    """The one message the planning request sent the model."""
+    plan_request = [request for request, _ in httpserver.log if request.path == "/v1/responses"][1]
+    [message] = plan_request.get_json()["input"]
+    return message  # type: ignore[no-any-return]
+
+
+def _shown(image: dict[str, Any]) -> tuple[str, PIL.Image.Image]:
+    """The media type and picture an input_image part carries."""
+    header, data = image["image_url"].split(",", 1)
+    assert header.startswith("data:") and header.endswith(";base64")
+    return header.removeprefix("data:").removesuffix(";base64"), PIL.Image.open(
+        io.BytesIO(base64.b64decode(data))
+    )
 
 
 def test_the_products_colour_and_the_photos_showing_it_are_stored_with_the_job(
@@ -184,12 +215,14 @@ def test_a_plan_that_breaks_the_rules_fails_the_job_and_nothing_of_it_is_kept(
 def test_a_photo_kept_before_only_readable_formats_were_kept_fails_the_plan_saying_why(
     api: APIClient, fake_model: FakeModel
 ) -> None:
-    # A job whose page was read before photos had to be PNG, JPEG, WebP or GIF: it kept an
-    # AVIF. Tasks never run inside this test's transaction, so planning starts by hand.
+    # A job whose page was read before photos had to be PNG, JPEG, WebP or GIF: it kept a
+    # BMP. Tasks never run inside this test's transaction, so planning starts by hand.
     started = api.post("/api/jobs/", {"product_url": "https://shop.example/mug"}, format="json")
     job_id = started.json()["id"]
     job = Job.objects.get(pk=job_id)
-    keep_photo(job, 1, b"\x00\x00\x00\x1cftypavif", "image/avif", source_url="https://x.test/1")
+    keep_photo(
+        job, 1, picture(40, 30, (143, 170, 140), "BMP"), "image/bmp", source_url="https://x.test/1"
+    )
     Job.objects.filter(pk=job_id).update(status=Job.Status.PAGE_READ)
 
     plan_ad.delay(job_id)
@@ -198,7 +231,7 @@ def test_a_photo_kept_before_only_readable_formats_were_kept_fails_the_plan_sayi
     assert job_view["status"] == "failed"
     assert (job_view["activity"][-1]["message"], job_view["activity"][-1]["reason"]) == (
         "Could not plan the ad",
-        f"Photo 1 (jobs/{job_id}/photos/1.avif) is image/avif, which models can't read. "
+        f"Photo 1 (jobs/{job_id}/photos/1.bmp) is image/bmp, which models can't read. "
         "Only PNG, JPEG, WebP or GIF photos can be shown to the model.",
     )
     # Refused before the model was asked, so nothing was paid for.

@@ -4,13 +4,15 @@ It checks the handoff before anything is spent, retries when the provider is dow
 records every attempt: what was called, what it cost, how long it took, whether it worked,
 and the one-sentence judgement."""
 
-import mimetypes
+import io
 import time
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from functools import cache
 from typing import TYPE_CHECKING
 
+import PIL.Image
+import PIL.ImageOps
 from pydantic import BaseModel
 
 from adforge import file_store
@@ -38,10 +40,13 @@ _override: ModelProvider | None = None
 IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
 # The same formats, as a person would name them.
 IMAGE_TYPE_NAMES = "PNG, JPEG, WebP or GIF"
+# The most of an image a model looks at in the "low" detail the adapter asks for. A bigger
+# image is shrunk to fit first: the model sees the same picture, and the request stays small.
+MAX_IMAGE_SIDE = 512
 
 
 class UnreadableImage(ValueError):
-    """An image in a format models can't read."""
+    """An image models can't read: in another format, or not a picture at all."""
 
 
 @cache
@@ -112,14 +117,29 @@ def call_model[Out: BaseModel](
 
 
 def _load(image: Image) -> LoadedImage:
-    media_type, _ = mimetypes.guess_type(image.key)
-    if media_type not in IMAGE_TYPES:
+    """Read an image, shrunk to fit what the model looks at. The stored file is unchanged."""
+    content = file_store.read(image.key)
+    try:
+        with PIL.Image.open(io.BytesIO(content)) as picture:
+            # Judged by what the file holds, not by its name.
+            file_format = picture.format or ""
+            media_type = PIL.Image.MIME.get(file_format, "")
+            if media_type not in IMAGE_TYPES:
+                raise UnreadableImage(
+                    f"{image.label} ({image.key}) is {media_type or 'an unknown format'}, "
+                    "which models can't read"
+                )
+            picture.thumbnail((MAX_IMAGE_SIDE, MAX_IMAGE_SIDE))
+            # The copy drops the note a phone leaves saying which way is up, so turn it first.
+            upright = PIL.ImageOps.exif_transpose(picture)
+            shrunk = io.BytesIO()
+            upright.save(shrunk, format=file_format)
+    except (OSError, PIL.Image.DecompressionBombError) as error:
         raise UnreadableImage(
-            f"{image.label} ({image.key}) is {media_type or 'not a known picture format'}, "
-            "which models can't read"
-        )
+            f"{image.label} ({image.key}) can't be opened as a picture"
+        ) from error
     return LoadedImage(
-        label=image.label, key=image.key, media_type=media_type, data=file_store.read(image.key)
+        label=image.label, key=image.key, media_type=media_type, data=shrunk.getvalue()
     )
 
 
