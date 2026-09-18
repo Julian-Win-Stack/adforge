@@ -2,7 +2,7 @@
 
 from typing import Literal, Self
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, StrictInt, field_validator, model_validator
 
 from gateway.types import Handoff, Judgement
 
@@ -11,12 +11,18 @@ You are the producer of a short vertical video ad for one product. A person spea
 camera, one line per scene, and each scene shows the product. You get the product page's \
 visible text, followed by any product data the page declares for search engines, the \
 target length in seconds (or null if the shop owner didn't set one), how many product \
-photos there are, and the shop owner's answers to anything you asked before.
-Every claim in the ad must come from the page or from the shop owner's answers. Never \
-infer, guess or make anything up: not a price, a size, a material, a benefit or a colour.
+photos there are, and the shop owner's answers to anything you asked before. After that \
+come the product photos themselves, each labelled with its number: "Photo 1", "Photo 2".
+Every claim in the ad must come from the page, the photos or the shop owner's answers. \
+Never infer, guess or make anything up: not a price, a size, a material, a benefit or a \
+colour.
 Decide "plan" when you can plan the whole ad from what you have. Give the scenes in the \
 order they play: each scene's line, exactly as the person will say it, and its slot, the \
-whole number of seconds the scene lasts. Set question to null.
+whole number of seconds the scene lasts. Name the product's colour as the photos show \
+it, in plain words such as "sage green", and give the numbers of the photos that show the \
+product in that colour. If the product comes in several colours, don't ask which: pick \
+one the photos show, and any line that names a colour names that one. Set question to \
+null.
 Decide "ask" when the page conflicts with itself (such as several different prices for \
 the same product) or is missing something the ad needs, so that planning would mean \
 guessing. Ask the shop owner one short, specific question, and set plan to null.
@@ -39,6 +45,19 @@ class PlannedScene(BaseModel):
 
 class Plan(BaseModel):
     scenes: list[PlannedScene] = Field(min_length=1)
+    product_colour: str = Field(
+        description='The product\'s colour as the photos show it, such as "sage green".'
+    )
+    colour_photos: list[StrictInt] = Field(
+        min_length=1, description="The numbers of the photos showing the product in that colour."
+    )
+
+    @field_validator("product_colour")
+    @classmethod
+    def _names_a_colour(cls, colour: str) -> str:
+        if not colour.strip():
+            raise ValueError("The product's colour can't be empty.")
+        return colour
 
 
 class ProducerDecision(Judgement):
@@ -53,6 +72,21 @@ class ProducerDecision(Judgement):
         if self.decision == "ask" and (not self.question or self.plan is not None):
             raise ValueError('An "ask" decision needs a question and no plan.')
         return self
+
+
+def producer_decision(photo_count: int) -> type[ProducerDecision]:
+    """The producer's decision for a job with `photo_count` photos. A plan naming a photo
+    the job doesn't have fails while the answer is read, like any other broken plan."""
+
+    class ProducerDecisionForJob(ProducerDecision):
+        @model_validator(mode="after")
+        def _real_photos(self) -> Self:
+            for number in self.plan.colour_photos if self.plan else []:
+                if not 1 <= number <= photo_count:
+                    raise ValueError(f"There's no photo {number}: the job has {photo_count}.")
+            return self
+
+    return ProducerDecisionForJob
 
 
 class Answer(Handoff):

@@ -544,6 +544,12 @@ def _serve_banner_page(httpserver: HTTPServer, _: pytest.MonkeyPatch) -> None:
     )
 
 
+def _serve_heic_photo(httpserver: HTTPServer, _: pytest.MonkeyPatch) -> None:
+    httpserver.expect_request("/cdn/bad").respond_with_data(
+        b"\x00\x00\x00\x18ftypheic", content_type="image/heic"
+    )
+
+
 def _serve_huge_photo(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("jobs.page.MAX_PHOTO_BYTES", 100)
     httpserver.expect_request("/cdn/bad").respond_with_data(
@@ -559,7 +565,14 @@ def _serve_down_photo_host(httpserver: HTTPServer, _: pytest.MonkeyPatch) -> Non
     ("serve_bad_photo", "why_skipped"),
     [
         pytest.param(
-            _serve_banner_page, "It came back as text/html, not an image.", id="not an image"
+            _serve_banner_page,
+            "It came back as text/html, not a PNG, JPEG, WebP or GIF image.",
+            id="not an image",
+        ),
+        pytest.param(
+            _serve_heic_photo,
+            "It came back as image/heic, not a PNG, JPEG, WebP or GIF image.",
+            id="an image models can't read",
         ),
         pytest.param(
             _serve_huge_photo,
@@ -643,7 +656,8 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_a_judgement(
     assert "Stoneware Mug" in json.loads(check["input"])["page_text"]
     assert check["text"]["format"]["type"] == "json_schema"
     assert plan["model"] == "gpt-5.6-sol"
-    assert "Stoneware Mug" in json.loads(plan["input"])["page_text"]
+    # The plan's handoff comes first in its message, ahead of the product photos.
+    assert "Stoneware Mug" in json.loads(plan["input"][0]["content"][0]["text"])["page_text"]
     assert plan["text"]["format"]["type"] == "json_schema"
     call = ModelCall.objects.get(job_id=job_id, purpose="check_page")
     assert (call.provider, call.outcome, call.input_tokens, call.output_tokens) == (

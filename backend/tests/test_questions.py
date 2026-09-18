@@ -183,6 +183,11 @@ def test_a_page_with_no_usable_photos_asks_for_uploads_and_keeps_them_like_the_p
             id="a file that isn't an image",
         ),
         pytest.param(
+            [SimpleUploadedFile("front.heic", b"ftypheic", content_type="image/heic")],
+            "multipart",
+            id="an image models can't read",
+        ),
+        pytest.param(
             [
                 SimpleUploadedFile("front.png", MUG_FRONT, content_type="image/png"),
                 SimpleUploadedFile(
@@ -210,3 +215,22 @@ def test_uploads_that_arent_usable_photos_are_refused_and_the_job_keeps_waiting(
     assert api.get(f"/api/jobs/{job_id}/").json() == before
     assert not ProductPhoto.objects.filter(job_id=job_id).exists()
     assert Question.objects.get(job_id=job_id).answered_at is None
+
+
+def test_an_upload_in_a_format_models_cant_read_is_refused_saying_which_formats_work(
+    api: APIClient,
+    page_without_photos: str,
+    start_job: Callable[..., str],
+) -> None:
+    job_id = start_job(page_without_photos)
+    photos = [
+        SimpleUploadedFile("front.png", MUG_FRONT, content_type="image/png"),
+        SimpleUploadedFile("side.heic", b"ftypheic", content_type="image/heic"),
+    ]
+
+    response = api.post(f"/api/jobs/{job_id}/answer/", {"photos": photos}, format="multipart")
+
+    assert (response.status_code, response.json()) == (
+        400,
+        {"photos": ["side.heic isn't a PNG, JPEG, WebP or GIF image."]},
+    )

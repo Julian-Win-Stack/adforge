@@ -4,24 +4,42 @@ It checks the handoff before anything is spent, retries when the provider is dow
 records every attempt: what was called, what it cost, how long it took, whether it worked,
 and the one-sentence judgement."""
 
+import mimetypes
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from functools import cache
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from adforge import file_store
 from adforge.retry import OutsideServiceDown, with_retries
 
 from . import catalog
 from .models import ModelCall
-from .types import Handoff, Judgement, ModelProvider, ModelReply, ModelRequest, UnusableReply
+from .types import (
+    Handoff,
+    Image,
+    Judgement,
+    LoadedImage,
+    ModelProvider,
+    ModelReply,
+    ModelRequest,
+    UnusableReply,
+)
 
 if TYPE_CHECKING:
     from jobs.models import Job
 
 _override: ModelProvider | None = None
+
+# The picture formats models can read. Anything else is refused before money is spent.
+IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
+
+
+class UnreadableImage(ValueError):
+    """An image in a format models can't read."""
 
 
 @cache
@@ -53,7 +71,11 @@ def call_model[Out: BaseModel](
     instructions: str,
     handoff: Handoff,
     output: type[Out],
+    images: Sequence[Image] = (),
 ) -> Out:
+    """Ask a model for `output`. `images` are pictures shown alongside the handoff, read
+    here from the file store so the record of which were shown can't disagree with what
+    was sent."""
     # Validate again here rather than trusting the caller built the handoff properly.
     handoff = type(handoff).model_validate(handoff.model_dump())
     request = ModelRequest(
@@ -62,7 +84,9 @@ def call_model[Out: BaseModel](
         instructions=instructions,
         handoff=handoff,
         output=output,
+        images=tuple(_load(image) for image in images),
     )
+    shown = [{"label": image.label, "key": image.key} for image in images]
     provider = _provider()
     attempts = 0
 
@@ -73,9 +97,9 @@ def call_model[Out: BaseModel](
         try:
             reply = provider.complete(request)
         except Exception as error:
-            _record_failure(job, request, provider, attempts, started, error)
+            _record_failure(job, request, shown, provider, attempts, started, error)
             raise
-        _record_success(job, request, provider, attempts, started, reply)
+        _record_success(job, request, shown, provider, attempts, started, reply)
         return reply.output
 
     try:
@@ -86,9 +110,20 @@ def call_model[Out: BaseModel](
         ) from error
 
 
+def _load(image: Image) -> LoadedImage:
+    media_type, _ = mimetypes.guess_type(image.key)
+    if media_type not in IMAGE_TYPES:
+        raise UnreadableImage(
+            f"{image.label} ({image.key}) is {media_type or 'not a known picture format'}, "
+            "which models can't read"
+        )
+    return LoadedImage(label=image.label, media_type=media_type, data=file_store.read(image.key))
+
+
 def _record_success[Out: BaseModel](
     job: Job | None,
     request: ModelRequest[Out],
+    images: list[dict[str, str]],
     provider: ModelProvider,
     attempt: int,
     started: float,
@@ -102,6 +137,7 @@ def _record_success[Out: BaseModel](
         model=request.model,
         attempt=attempt,
         handoff=request.handoff.model_dump(mode="json"),
+        images=images,
         output=reply.output.model_dump(mode="json"),
         outcome=ModelCall.Outcome.SUCCEEDED,
         input_tokens=reply.input_tokens,
@@ -116,6 +152,7 @@ def _record_success[Out: BaseModel](
 def _record_failure[Out: BaseModel](
     job: Job | None,
     request: ModelRequest[Out],
+    images: list[dict[str, str]],
     provider: ModelProvider,
     attempt: int,
     started: float,
@@ -130,6 +167,7 @@ def _record_failure[Out: BaseModel](
         model=request.model,
         attempt=attempt,
         handoff=request.handoff.model_dump(mode="json"),
+        images=images,
         outcome=ModelCall.Outcome.FAILED,
         error=f"{type(error).__name__}: {error}",
         input_tokens=billed.input_tokens if billed else None,

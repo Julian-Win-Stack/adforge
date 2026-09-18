@@ -15,8 +15,8 @@ class ActivityEntryInline(admin.TabularInline[ActivityEntry, Job]):
 
 class ProductPhotoInline(admin.TabularInline[ProductPhoto, Job]):
     model = ProductPhoto
-    fields = ["position", "source_url", "file"]
-    readonly_fields = ["position", "source_url", "file"]
+    fields = ["position", "source_url", "file", "shows_product_colour"]
+    readonly_fields = ["position", "source_url", "file", "shows_product_colour"]
     extra = 0
     can_delete = False
 

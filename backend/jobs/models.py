@@ -32,6 +32,12 @@ class Job(models.Model):
         blank=True,
         help_text="Key in the file store of the page's original HTML, exactly as served.",
     )
+    product_colour = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="The colour the ad shows the product in, picked by the producer from the "
+        "product photos.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -72,6 +78,10 @@ class ProductPhoto(models.Model):
         help_text="Where the page had it. Blank if the user uploaded it.",
     )
     file = models.CharField(max_length=500, help_text="Key in the file store.")
+    shows_product_colour = models.BooleanField(
+        default=False,
+        help_text="Shows the product in the job's product colour, so the ad can use it.",
+    )
 
     class Meta:
         ordering = ["job", "position"]

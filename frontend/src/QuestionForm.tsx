@@ -53,7 +53,7 @@ export function QuestionForm({
           Product photos
           <input
             type="file"
-            accept="image/*"
+            accept="image/png,image/jpeg,image/webp,image/gif"
             multiple
             onChange={(e) => setPhotos([...(e.target.files ?? [])])}
           />

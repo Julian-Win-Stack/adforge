@@ -1,3 +1,4 @@
+import json
 from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
@@ -9,7 +10,7 @@ from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
-from jobs.models import ProductPhoto, Question, Scene
+from jobs.models import Job, ProductPhoto, Question, Scene
 from jobs.tasks import plan_ad, read_page
 
 from .conftest import PLAN, READABLE, openai_answer
@@ -59,6 +60,64 @@ def test_the_plan_is_stored_with_the_job_and_its_scenes_show_on_the_page(
     assert (handoff["target_seconds"], handoff["photo_count"], handoff["answers"]) == (12, 2, [])
 
 
+def test_the_producer_is_shown_every_product_photo_by_its_number(
+    httpserver: HTTPServer,
+    openai_server: Callable[..., None],
+    product_page_url: str,
+    start_job: Callable[..., str],
+) -> None:
+    openai_server(openai_answer(READABLE), openai_answer(PLAN))
+
+    job_id = start_job(product_page_url)
+
+    plan_request = [request for request, _ in httpserver.log if request.path == "/v1/responses"][1]
+    [message] = plan_request.get_json()["input"]
+    assert message["role"] == "user"
+    handoff, *photos = message["content"]
+    assert photos == [
+        {"type": "input_text", "text": "Photo 1"},
+        {
+            "type": "input_image",
+            # MUG_FRONT, the front photo's bytes exactly as the shop served them.
+            "image_url": "data:image/png;base64,iVBORyBmcm9udCBvZiB0aGUgbXVn",
+            "detail": "low",
+        },
+        {"type": "input_text", "text": "Photo 2"},
+        {
+            "type": "input_image",
+            # MUG_SIDE.
+            "image_url": "data:image/png;base64,iVBORyBzaWRlIG9mIHRoZSBtdWc=",
+            "detail": "low",
+        },
+    ]
+    # The record says which photos were shown by their keys in the file store, not their bytes.
+    call = ModelCall.objects.get(job_id=job_id, purpose="plan_ad")
+    assert call.images == [
+        {"label": "Photo 1", "key": f"jobs/{job_id}/photos/1.png"},
+        {"label": "Photo 2", "key": f"jobs/{job_id}/photos/2.png"},
+    ]
+    assert handoff["type"] == "input_text"
+    assert json.loads(handoff["text"]) == call.handoff
+
+
+def test_the_products_colour_and_the_photos_showing_it_are_stored_with_the_job(
+    fake_model: FakeModel,
+    product_page_url: str,
+    start_job: Callable[..., str],
+) -> None:
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", PLAN)  # Sage green, shown in photo 1 only.
+
+    job_id = start_job(product_page_url)
+
+    assert Job.objects.get(pk=job_id).product_colour == "sage green"
+    photos = ProductPhoto.objects.filter(job_id=job_id)
+    assert [(photo.position, photo.shows_product_colour) for photo in photos] == [
+        (1, True),
+        (2, False),
+    ]
+
+
 def _plan_with(**changes: Any) -> dict[str, Any]:
     """PLAN with some of its plan's fields replaced."""
     return {**PLAN, "plan": {**PLAN["plan"], **changes}}
@@ -76,6 +135,11 @@ def _scene(**changes: Any) -> dict[str, Any]:
         pytest.param(_plan_with(scenes=[_scene(slot_seconds=4.5)]), id="a fractional slot"),
         pytest.param(_plan_with(scenes=[_scene(slot_seconds="4")]), id="a slot given as text"),
         pytest.param(_plan_with(scenes=[_scene(line="  ")]), id="a scene with nothing to say"),
+        pytest.param(_plan_with(product_colour=" "), id="no colour"),
+        pytest.param(_plan_with(colour_photos=[]), id="no photo showing the colour"),
+        pytest.param(_plan_with(colour_photos=[1, 3]), id="a photo after the last one"),
+        pytest.param(_plan_with(colour_photos=[0]), id="a photo before the first one"),
+        pytest.param(_plan_with(colour_photos=["1"]), id="a photo number given as text"),
         pytest.param({**PLAN, "plan": None}, id="a plan decision with no plan"),
         pytest.param(
             {**PLAN, "decision": "ask", "question": "Which size?"}, id="a question and a plan"
@@ -106,6 +170,8 @@ def test_a_plan_that_breaks_the_rules_fails_the_job_and_nothing_of_it_is_kept(
     )
     assert job["scenes"] == []
     assert not Scene.objects.filter(job_id=job_id).exists()
+    assert Job.objects.get(pk=job_id).product_colour == ""
+    assert not ProductPhoto.objects.filter(job_id=job_id, shows_product_colour=True).exists()
     # The bad plan is still paid for: 1,200 x $4.00/M in + 300 x $20.00/M out.
     plan_call = ModelCall.objects.get(job_id=job_id, purpose="plan_ad")
     assert (plan_call.outcome, plan_call.cost_usd) == ("failed", Decimal("0.0108"))

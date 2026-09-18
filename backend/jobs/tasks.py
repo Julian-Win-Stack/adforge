@@ -7,8 +7,8 @@ from django.db import transaction
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
-from gateway.gateway import call_model
-from gateway.types import Handoff, Judgement, UnusableReply
+from gateway.gateway import IMAGE_TYPES, call_model
+from gateway.types import Handoff, Image, Judgement, UnusableReply
 
 from . import page
 from .activity import record
@@ -17,7 +17,7 @@ from .planning import (
     PLAN_INSTRUCTIONS,
     Answer,
     PlanHandoff,
-    ProducerDecision,
+    producer_decision,
 )
 
 logger = logging.getLogger(__name__)
@@ -172,11 +172,13 @@ def _save_photos(job: Job, urls: list[str]) -> int:
         except (page.PageUnreadable, OutsideServiceDown) as error:
             record(job, f"Skipped the photo at {url}", reason=str(error).rstrip(".") + ".")
             continue
-        if not photo.content_type.startswith("image/"):
+        # Only formats the models can read, so every kept photo can be shown to them.
+        if photo.content_type not in IMAGE_TYPES:
             record(
                 job,
                 f"Skipped the photo at {url}",
-                reason=f"It came back as {photo.content_type or 'an unknown type'}, not an image.",
+                reason=f"It came back as {photo.content_type or 'an unknown type'}, "
+                "not a PNG, JPEG, WebP or GIF image.",
             )
             continue
         saved += 1
@@ -233,6 +235,7 @@ def _plan_ad(job: Job) -> None:
         reason="The plan sets the scenes, what the person says in each, and how long each lasts.",
         status=Job.Status.PLANNING,
     )
+    photos = list(job.photos.all())
     decision = call_model(
         job=job,
         purpose="plan_ad",
@@ -241,7 +244,7 @@ def _plan_ad(job: Job) -> None:
             product_url=job.product_url,
             page_text=page.for_model(job.page_text),
             target_seconds=job.target_seconds,
-            photo_count=job.photos.count(),
+            photo_count=len(photos),
             answers=[
                 Answer(question=asked.question, answer=asked.answer)
                 for asked in job.questions.filter(
@@ -249,7 +252,8 @@ def _plan_ad(job: Job) -> None:
                 )
             ],
         ),
-        output=ProducerDecision,
+        output=producer_decision(len(photos)),
+        images=[Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos],
     )
     if decision.question is not None:
         _ask(
@@ -267,6 +271,9 @@ def _plan_ad(job: Job) -> None:
             Scene(job=job, number=number, line=scene.line, slot_seconds=scene.slot_seconds)
             for number, scene in enumerate(plan.scenes, start=1)
         )
+        job.product_colour = plan.product_colour
+        job.save(update_fields=["product_colour"])
+        job.photos.filter(position__in=plan.colour_photos).update(shows_product_colour=True)
         count = len(plan.scenes)
         record(
             job,

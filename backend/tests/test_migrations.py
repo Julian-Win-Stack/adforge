@@ -18,6 +18,11 @@ def migrate(targets: list[tuple[str, str]]) -> Any:
     return executor.loader.project_state(targets).apps
 
 
+def migrate_to_latest() -> None:
+    executor = MigrationExecutor(connection)
+    migrate(executor.loader.graph.leaf_nodes())
+
+
 @pytest.mark.django_db(transaction=True)
 def test_a_job_already_waiting_gets_the_question_it_waits_on(api: APIClient) -> None:
     old = migrate(BEFORE)
@@ -34,6 +39,8 @@ def test_a_job_already_waiting_gets_the_question_it_waits_on(api: APIClient) -> 
     )
 
     migrate(AFTER)
+    # The API is today's code, so it reads today's tables.
+    migrate_to_latest()
 
     assert api.get(f"/api/jobs/{link_job.pk}/").json()["question"] == {
         "id": Question.objects.get(job_id=link_job.pk).pk,

@@ -57,6 +57,8 @@ PLAN: dict[str, Any] = {
             {"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "slot_seconds": 5},
             {"line": "Yours for $24.00.", "slot_seconds": 3},
         ],
+        "product_colour": "sage green",
+        "colour_photos": [1],
     },
 }
 

@@ -5,10 +5,11 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
+from adforge import file_store
 from gateway.fake import FakeModel
-from gateway.gateway import call_model
+from gateway.gateway import UnreadableImage, call_model
 from gateway.models import ModelCall
-from gateway.types import UnusableReply
+from gateway.types import Image, UnusableReply
 from jobs.tasks import PageCheck, PageCheckHandoff
 
 from .conftest import openai_reply
@@ -35,6 +36,32 @@ def test_a_bad_handoff_is_refused_before_the_model_is_called(fake_model: FakeMod
             handoff=bad,
             output=PageCheck,
         )
+    assert not ModelCall.objects.exists()
+
+
+def test_an_image_in_a_format_models_cant_read_is_refused_before_the_model_is_called(
+    fake_model: FakeModel,
+) -> None:
+    key = file_store.save("photos/side.heic", b"ftypheic")
+
+    # The fake has nothing scripted, so reaching it would raise AssertionError instead.
+    with pytest.raises(UnreadableImage) as refused:
+        call_model(
+            job=None,
+            purpose="check_page",
+            instructions="Check the page.",
+            handoff=PageCheckHandoff(
+                product_url="https://shop.example/products/mug",
+                page_url="https://shop.example/products/mug",
+                page_text="Stoneware Mug",
+                photo_count=1,
+            ),
+            output=PageCheck,
+            images=[Image(label="Photo 1", key=key)],
+        )
+    assert str(refused.value) == (
+        "Photo 1 (photos/side.heic) is image/heic, which models can't read"
+    )
     assert not ModelCall.objects.exists()
 
 

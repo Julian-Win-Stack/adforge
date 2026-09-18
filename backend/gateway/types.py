@@ -20,12 +20,31 @@ class Judgement(BaseModel):
 
 
 @dataclass(frozen=True)
+class Image:
+    """A picture to show the model: the label it knows the picture by, such as "Photo 1",
+    and the picture's key in the file store."""
+
+    label: str
+    key: str
+
+
+@dataclass(frozen=True)
+class LoadedImage:
+    """An Image read from the file store, ready to send."""
+
+    label: str
+    media_type: str
+    data: bytes
+
+
+@dataclass(frozen=True)
 class ModelRequest[Out: BaseModel]:
     purpose: str
     model: str
     instructions: str
     handoff: Handoff
     output: type[Out]
+    images: tuple[LoadedImage, ...] = ()
 
 
 @dataclass(frozen=True)

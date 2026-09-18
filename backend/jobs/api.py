@@ -8,6 +8,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from adforge import file_store
+from gateway.gateway import IMAGE_TYPES
 
 from .activity import record
 from .models import ActivityEntry, Job, ProductPhoto, Question, Scene
@@ -108,8 +109,10 @@ class PhotoUploadSerializer(serializers.Serializer[None]):
 
     def validate_photos(self, photos: list[UploadedFile[bytes]]) -> list[UploadedFile[bytes]]:
         for photo in photos:
-            if not (photo.content_type or "").startswith("image/"):
-                raise serializers.ValidationError(f"{photo.name} isn't an image.")
+            if photo.content_type not in IMAGE_TYPES:
+                raise serializers.ValidationError(
+                    f"{photo.name} isn't a PNG, JPEG, WebP or GIF image."
+                )
             if (photo.size or 0) > MAX_PHOTO_BYTES:
                 raise serializers.ValidationError(
                     f"{photo.name} is over {MAX_PHOTO_BYTES // 1_000_000} MB."

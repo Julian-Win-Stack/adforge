@@ -16,6 +16,11 @@ class ModelCall(models.Model):
     model = models.CharField(max_length=100)
     attempt = models.PositiveSmallIntegerField()
     handoff = models.JSONField()
+    images = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The pictures shown with the handoff: each one's label and file-store key.",
+    )
     output = models.JSONField(null=True, blank=True)
     outcome = models.CharField(max_length=10, choices=Outcome.choices)
     error = models.TextField(blank=True)
