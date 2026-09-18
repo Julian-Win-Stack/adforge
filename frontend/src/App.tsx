@@ -12,7 +12,7 @@ export function App() {
         <StartForm onStarted={setJobId} />
       ) : (
         <>
-          <JobView jobId={jobId} />
+          <JobView key={jobId} jobId={jobId} />
           <button onClick={() => setJobId(null)}>Start another</button>
         </>
       )}

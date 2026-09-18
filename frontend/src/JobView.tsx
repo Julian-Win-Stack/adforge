@@ -4,7 +4,8 @@ import { FINISHED, getJob, type ActivityEntry, type JobWithActivity } from "./ap
 const POLL_EVERY_MS = 2000;
 
 /** Shows a job's activity as it happens. Each poll asks only for entries after the
- * last one already on screen, so nothing is skipped or shown twice. */
+ * last one already on screen, so nothing is skipped or shown twice. Render it with
+ * `key={jobId}` so a different job starts from an empty list. */
 export function JobView({ jobId }: { jobId: string }) {
   const [job, setJob] = useState<JobWithActivity | null>(null);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
@@ -34,7 +35,6 @@ export function JobView({ jobId }: { jobId: string }) {
       timer = setTimeout(poll, POLL_EVERY_MS);
     }
 
-    setActivity([]);
     poll();
     return () => {
       stopped = true;
@@ -91,5 +91,9 @@ const STATUS_LABELS = {
 } as const;
 
 function StatusLabel({ status }: { status: JobWithActivity["status"] }) {
-  return <span style={{ color: status === "failed" ? "crimson" : undefined }}>{STATUS_LABELS[status]}</span>;
+  return (
+    <span style={{ color: status === "failed" ? "crimson" : undefined }}>
+      {STATUS_LABELS[status]}
+    </span>
+  );
 }

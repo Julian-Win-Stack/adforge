@@ -1,12 +1,14 @@
 # Runs before every commit. Uses the versions pinned in backend/uv.lock and
 # frontend/package-lock.json, so the checks match CI exactly.
 # pytest needs Postgres and Redis running: `docker compose up -d db redis`.
+# The formatters fix files in place; if they change anything the commit stops, so
+# look over the changes, `git add` them and commit again.
 repos:
   - repo: local
     hooks:
       - id: ruff-format
         name: ruff format
-        entry: uv run --directory backend ruff format --check .
+        entry: uv run --directory backend ruff format .
         language: system
         files: ^backend/
         pass_filenames: false
@@ -28,9 +30,27 @@ repos:
         language: system
         files: ^backend/
         pass_filenames: false
+      - id: prettier
+        name: prettier (frontend format)
+        entry: npm --prefix frontend run format
+        language: system
+        files: ^frontend/
+        pass_filenames: false
+      - id: eslint
+        name: eslint (frontend lint)
+        entry: npm --prefix frontend run lint
+        language: system
+        files: ^frontend/
+        pass_filenames: false
       - id: tsc
         name: tsc (frontend types)
         entry: npm --prefix frontend run typecheck
+        language: system
+        files: ^frontend/
+        pass_filenames: false
+      - id: vitest
+        name: vitest (frontend tests)
+        entry: npm --prefix frontend test
         language: system
         files: ^frontend/
         pass_filenames: false
