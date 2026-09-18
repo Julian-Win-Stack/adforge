@@ -13,9 +13,10 @@ visible text, followed by any product data the page declares for search engines,
 target length in seconds (or null if the shop owner didn't set one), how many product \
 photos there are, and the shop owner's answers to anything you asked before. After that \
 come the product photos themselves, each labelled with its number: "Photo 1", "Photo 2".
-Every claim in the ad must come from the page, the photos or the shop owner's answers. \
-Never infer, guess or make anything up: not a price, a size, a material, a benefit or a \
-colour.
+Every claim in the ad must come from the page or the shop owner's answers. The photos are \
+only for the product's colour: never take any other fact from them, such as text on a \
+label. Never infer, guess or make anything up: not a price, a size, a material, a benefit \
+or a colour.
 Decide "plan" when you can plan the whole ad from what you have. Give the scenes in the \
 order they play: each scene's line, exactly as the person will say it, and its slot, the \
 whole number of seconds the scene lasts. Name the product's colour as the photos show \
@@ -74,7 +75,7 @@ class ProducerDecision(Judgement):
         return self
 
 
-def producer_decision(photo_count: int) -> type[ProducerDecision]:
+def producer_decision_for(photo_count: int) -> type[ProducerDecision]:
     """The producer's decision for a job with `photo_count` photos. A plan naming a photo
     the job doesn't have fails while the answer is read, like any other broken plan."""
 

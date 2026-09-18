@@ -33,6 +33,7 @@ class LoadedImage:
     """An Image read from the file store, ready to send."""
 
     label: str
+    key: str
     media_type: str
     data: bytes
 

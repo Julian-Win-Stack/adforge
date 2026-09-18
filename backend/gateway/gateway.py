@@ -36,6 +36,8 @@ _override: ModelProvider | None = None
 
 # The picture formats models can read. Anything else is refused before money is spent.
 IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
+# The same formats, as a person would name them.
+IMAGE_TYPE_NAMES = "PNG, JPEG, WebP or GIF"
 
 
 class UnreadableImage(ValueError):
@@ -86,7 +88,6 @@ def call_model[Out: BaseModel](
         output=output,
         images=tuple(_load(image) for image in images),
     )
-    shown = [{"label": image.label, "key": image.key} for image in images]
     provider = _provider()
     attempts = 0
 
@@ -97,9 +98,9 @@ def call_model[Out: BaseModel](
         try:
             reply = provider.complete(request)
         except Exception as error:
-            _record_failure(job, request, shown, provider, attempts, started, error)
+            _record_failure(job, request, provider, attempts, started, error)
             raise
-        _record_success(job, request, shown, provider, attempts, started, reply)
+        _record_success(job, request, provider, attempts, started, reply)
         return reply.output
 
     try:
@@ -117,13 +118,19 @@ def _load(image: Image) -> LoadedImage:
             f"{image.label} ({image.key}) is {media_type or 'not a known picture format'}, "
             "which models can't read"
         )
-    return LoadedImage(label=image.label, media_type=media_type, data=file_store.read(image.key))
+    return LoadedImage(
+        label=image.label, key=image.key, media_type=media_type, data=file_store.read(image.key)
+    )
+
+
+def _shown[Out: BaseModel](request: ModelRequest[Out]) -> list[dict[str, str]]:
+    """Which images the call showed, by their keys: the bytes are already in the file store."""
+    return [{"label": image.label, "key": image.key} for image in request.images]
 
 
 def _record_success[Out: BaseModel](
     job: Job | None,
     request: ModelRequest[Out],
-    images: list[dict[str, str]],
     provider: ModelProvider,
     attempt: int,
     started: float,
@@ -137,7 +144,7 @@ def _record_success[Out: BaseModel](
         model=request.model,
         attempt=attempt,
         handoff=request.handoff.model_dump(mode="json"),
-        images=images,
+        images=_shown(request),
         output=reply.output.model_dump(mode="json"),
         outcome=ModelCall.Outcome.SUCCEEDED,
         input_tokens=reply.input_tokens,
@@ -152,7 +159,6 @@ def _record_success[Out: BaseModel](
 def _record_failure[Out: BaseModel](
     job: Job | None,
     request: ModelRequest[Out],
-    images: list[dict[str, str]],
     provider: ModelProvider,
     attempt: int,
     started: float,
@@ -167,7 +173,7 @@ def _record_failure[Out: BaseModel](
         model=request.model,
         attempt=attempt,
         handoff=request.handoff.model_dump(mode="json"),
-        images=images,
+        images=_shown(request),
         outcome=ModelCall.Outcome.FAILED,
         error=f"{type(error).__name__}: {error}",
         input_tokens=billed.input_tokens if billed else None,

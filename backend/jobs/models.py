@@ -85,6 +85,9 @@ class ProductPhoto(models.Model):
 
     class Meta:
         ordering = ["job", "position"]
+        constraints = [
+            models.UniqueConstraint(fields=["job", "position"], name="one_photo_per_position")
+        ]
 
     def __str__(self) -> str:
         return self.source_url

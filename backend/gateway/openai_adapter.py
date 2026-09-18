@@ -1,9 +1,13 @@
 import base64
 import json
-from typing import Any
 
 import openai
 from django.conf import settings
+from openai.types.responses import (
+    ResponseInputImageParam,
+    ResponseInputMessageContentListParam,
+    ResponseInputParam,
+)
 from pydantic import BaseModel
 
 from adforge.retry import OutsideServiceDown
@@ -58,17 +62,17 @@ class OpenAIProvider:
         return ModelReply(output=output, input_tokens=input_tokens, output_tokens=output_tokens)
 
 
-def _input[Out: BaseModel](request: ModelRequest[Out]) -> Any:
+def _input[Out: BaseModel](request: ModelRequest[Out]) -> str | ResponseInputParam:
     handoff = request.handoff.model_dump_json()
     if not request.images:
         return handoff
-    content: list[dict[str, str]] = [{"type": "input_text", "text": handoff}]
+    content: ResponseInputMessageContentListParam = [{"type": "input_text", "text": handoff}]
     for image in request.images:
         content += [{"type": "input_text", "text": image.label}, _image_part(image)]
     return [{"role": "user", "content": content}]
 
 
-def _image_part(image: LoadedImage) -> dict[str, str]:
+def _image_part(image: LoadedImage) -> ResponseInputImageParam:
     # "low" detail shows the model a 512 x 512 version: enough to judge colour, at a
     # fraction of the cost of full detail.
     data = base64.b64encode(image.data).decode("ascii")

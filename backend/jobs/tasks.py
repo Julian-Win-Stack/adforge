@@ -7,7 +7,7 @@ from django.db import transaction
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
-from gateway.gateway import IMAGE_TYPES, call_model
+from gateway.gateway import IMAGE_TYPE_NAMES, IMAGE_TYPES, call_model
 from gateway.types import Handoff, Image, Judgement, UnusableReply
 
 from . import page
@@ -17,7 +17,7 @@ from .planning import (
     PLAN_INSTRUCTIONS,
     Answer,
     PlanHandoff,
-    producer_decision,
+    producer_decision_for,
 )
 
 logger = logging.getLogger(__name__)
@@ -165,6 +165,8 @@ def _ask_for_working_link(job: Job, *, reason: str) -> None:
 
 def _save_photos(job: Job, urls: list[str]) -> int:
     """Download and keep each photo, saying in the activity view why any was skipped."""
+    # A read run again after a crash starts the photos afresh, so each is kept once.
+    job.photos.all().delete()
     saved = 0
     for url in urls:
         try:
@@ -178,7 +180,7 @@ def _save_photos(job: Job, urls: list[str]) -> int:
                 job,
                 f"Skipped the photo at {url}",
                 reason=f"It came back as {photo.content_type or 'an unknown type'}, "
-                "not a PNG, JPEG, WebP or GIF image.",
+                f"not a {IMAGE_TYPE_NAMES} image.",
             )
             continue
         saved += 1
@@ -252,7 +254,7 @@ def _plan_ad(job: Job) -> None:
                 )
             ],
         ),
-        output=producer_decision(len(photos)),
+        output=producer_decision_for(len(photos)),
         images=[Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos],
     )
     if decision.question is not None:

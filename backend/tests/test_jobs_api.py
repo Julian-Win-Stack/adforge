@@ -17,6 +17,7 @@ from adforge.retry import OutsideServiceDown
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
 from jobs.models import Job, ProductPhoto
+from jobs.tasks import keep_photo, read_page
 
 from .conftest import (
     MUG_FRONT,
@@ -161,6 +162,30 @@ def test_the_product_photos_the_page_declares_are_stored_with_the_job(
     ]
     stored = ProductPhoto.objects.filter(job_id=job_id).order_by("position")
     assert [file_store.read(photo.file) for photo in stored] == [MUG_FRONT, MUG_SIDE]
+
+
+def test_a_page_read_run_again_after_a_crash_keeps_each_photo_once(
+    api: APIClient, fake_model: FakeModel, product_page_url: str
+) -> None:
+    # A job whose first read stopped after saving the front photo: the worker died, and
+    # the queue hands the task out again. Tasks never run inside this test's transaction.
+    job_id = api.post("/api/jobs/", {"product_url": product_page_url}, format="json").json()["id"]
+    job = Job.objects.get(pk=job_id)
+    keep_photo(job, 1, MUG_FRONT, "image/png", source_url="https://shop.example/front.png")
+    Job.objects.filter(pk=job_id).update(status=Job.Status.READING_PAGE)
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", PLAN)
+
+    read_page.delay(job_id)
+
+    stored = ProductPhoto.objects.filter(job_id=job_id).order_by("position")
+    assert [(photo.position, file_store.read(photo.file)) for photo in stored] == [
+        (1, MUG_FRONT),
+        (2, MUG_SIDE),
+    ]
+    # The producer is shown each photo once, under the number it's stored at.
+    shown = ModelCall.objects.get(job_id=job_id, purpose="plan_ad").images
+    assert [image["label"] for image in shown] == ["Photo 1", "Photo 2"]
 
 
 def test_polling_after_an_entry_returns_only_the_entries_since_then(
@@ -657,7 +682,9 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_a_judgement(
     assert check["text"]["format"]["type"] == "json_schema"
     assert plan["model"] == "gpt-5.6-sol"
     # The plan's handoff comes first in its message, ahead of the product photos.
-    assert "Stoneware Mug" in json.loads(plan["input"][0]["content"][0]["text"])["page_text"]
+    [message] = plan["input"]
+    plan_handoff = json.loads(message["content"][0]["text"])
+    assert "Stoneware Mug" in plan_handoff["page_text"]
     assert plan["text"]["format"]["type"] == "json_schema"
     call = ModelCall.objects.get(job_id=job_id, purpose="check_page")
     assert (call.provider, call.outcome, call.input_tokens, call.output_tokens) == (
