@@ -77,7 +77,9 @@ def _scene(**changes: Any) -> dict[str, Any]:
         pytest.param(_plan_with(scenes=[_scene(slot_seconds=4.5)]), id="a fractional slot"),
         pytest.param(_plan_with(scenes=[_scene(slot_seconds="4")]), id="a slot given as text"),
         pytest.param(_plan_with(scenes=[_scene(line="  ")]), id="a scene with nothing to say"),
-        pytest.param(_plan_with(brand_colours=["navy"]), id="a colour that isn't #RRGGBB"),
+        pytest.param(_plan_with(brand_colours=["navy"]), id="a colour by name"),
+        pytest.param(_plan_with(brand_colours=["#1F3A5"]), id="a colour one digit short"),
+        pytest.param(_plan_with(brand_colours=["#1F3A5G"]), id="a colour digit that isn't hex"),
         pytest.param({**PLAN, "plan": None}, id="a plan decision with no plan"),
         pytest.param(
             {**PLAN, "decision": "ask", "question": "Which size?"}, id="a question and a plan"

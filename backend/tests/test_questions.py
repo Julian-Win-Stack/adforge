@@ -89,7 +89,16 @@ def test_a_job_that_couldnt_read_its_page_asks_for_a_working_link_and_reads_it(
     assert asked.answered_at is not None
 
 
-@pytest.mark.parametrize("link", ["", "not a link", "https://" + "a" * 2000 + ".example/"])
+@pytest.mark.parametrize(
+    "link",
+    [
+        pytest.param("", id="nothing"),
+        pytest.param("not a link", id="not a link"),
+        pytest.param(
+            "https://shop.example/products/" + "a" * 2000, id="a link over 2,000 characters"
+        ),
+    ],
+)
 def test_a_working_link_that_isnt_a_link_is_refused_and_the_job_keeps_waiting(
     api: APIClient,
     httpserver: HTTPServer,
@@ -100,6 +109,8 @@ def test_a_working_link_that_isnt_a_link_is_refused_and_the_job_keeps_waiting(
     httpserver.expect_request("/products/gone").respond_with_data("not found", status=404)
     job_id = start_job(httpserver.url_for("/products/gone"))
     before = api.get(f"/api/jobs/{job_id}/").json()
+    # A link too long to store would come back as a server error; let it show as one.
+    api.raise_request_exception = False
 
     assert answer(job_id, {"answer": link}) == 400
 
@@ -162,11 +173,13 @@ def test_a_page_with_no_usable_photos_asks_for_uploads_and_keeps_them_like_the_p
 
 
 @pytest.mark.parametrize(
-    "photos",
+    ("photos", "format"),
     [
-        pytest.param([], id="no photos"),
+        # Sent as JSON: a form with no files has no photos field at all.
+        pytest.param([], "json", id="no photos"),
         pytest.param(
             [SimpleUploadedFile("notes.txt", b"not a photo", content_type="text/plain")],
+            "multipart",
             id="a file that isn't an image",
         ),
         pytest.param(
@@ -176,6 +189,7 @@ def test_a_page_with_no_usable_photos_asks_for_uploads_and_keeps_them_like_the_p
                     "huge.png", b"\x89PNG" + bytes(15_000_001), content_type="image/png"
                 ),
             ],
+            "multipart",
             id="one photo over 15 MB",
         ),
     ],
@@ -186,11 +200,12 @@ def test_uploads_that_arent_usable_photos_are_refused_and_the_job_keeps_waiting(
     start_job: Callable[..., str],
     answer: Callable[..., int],
     photos: list[SimpleUploadedFile],
+    format: str,
 ) -> None:
     job_id = start_job(page_without_photos)
     before = api.get(f"/api/jobs/{job_id}/").json()
 
-    assert answer(job_id, {"photos": photos}, format="multipart") == 400
+    assert answer(job_id, {"photos": photos}, format=format) == 400
 
     assert api.get(f"/api/jobs/{job_id}/").json() == before
     assert not ProductPhoto.objects.filter(job_id=job_id).exists()

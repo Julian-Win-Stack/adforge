@@ -25,8 +25,9 @@ def test_a_job_already_waiting_gets_the_question_it_waits_on(api: APIClient) -> 
     link_job = Job.objects.create(
         product_url="https://shop.example/gone", status="needs_working_link"
     )
+    link_job.activity.create(seq=1, message="Reading the page", reason="The job has started.")
     link_job.activity.create(
-        seq=1, message="Waiting for a working link", reason="The page was a 404."
+        seq=2, message="Waiting for a working link", reason="The page was a 404."
     )
     photos_job = Job.objects.create(
         product_url="https://shop.example/mug", status="needs_product_photos"
