@@ -11,7 +11,7 @@ from rest_framework.test import APIClient
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
 from jobs.models import Job, ProductPhoto, Question, Scene
-from jobs.tasks import plan_ad, read_page
+from jobs.tasks import keep_photo, plan_ad, read_page
 
 from .conftest import PLAN, READABLE, openai_answer
 
@@ -179,6 +179,30 @@ def test_a_plan_that_breaks_the_rules_fails_the_job_and_nothing_of_it_is_kept(
     assert (plan_call.outcome, plan_call.cost_usd) == ("failed", Decimal("0.0108"))
     # Nothing is asked of a model after a plan that broke the rules.
     assert [request.path for request, _ in httpserver.log].count("/v1/responses") == 2
+
+
+def test_a_photo_kept_before_only_readable_formats_were_kept_fails_the_plan_saying_why(
+    api: APIClient, fake_model: FakeModel
+) -> None:
+    # A job whose page was read before photos had to be PNG, JPEG, WebP or GIF: it kept an
+    # AVIF. Tasks never run inside this test's transaction, so planning starts by hand.
+    started = api.post("/api/jobs/", {"product_url": "https://shop.example/mug"}, format="json")
+    job_id = started.json()["id"]
+    job = Job.objects.get(pk=job_id)
+    keep_photo(job, 1, b"\x00\x00\x00\x1cftypavif", "image/avif", source_url="https://x.test/1")
+    Job.objects.filter(pk=job_id).update(status=Job.Status.PAGE_READ)
+
+    plan_ad.delay(job_id)
+
+    job_view = api.get(f"/api/jobs/{job_id}/").json()
+    assert job_view["status"] == "failed"
+    assert (job_view["activity"][-1]["message"], job_view["activity"][-1]["reason"]) == (
+        "Could not plan the ad",
+        f"Photo 1 (jobs/{job_id}/photos/1.avif) is image/avif, which models can't read. "
+        "Only PNG, JPEG, WebP or GIF photos can be shown to the model.",
+    )
+    # Refused before the model was asked, so nothing was paid for.
+    assert not ModelCall.objects.filter(job_id=job_id).exists()
 
 
 ASK = {

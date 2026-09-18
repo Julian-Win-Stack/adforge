@@ -7,7 +7,7 @@ from django.db import transaction
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
-from gateway.gateway import IMAGE_TYPE_NAMES, IMAGE_TYPES, call_model
+from gateway.gateway import IMAGE_TYPE_NAMES, IMAGE_TYPES, UnreadableImage, call_model
 from gateway.types import Handoff, Image, Judgement, UnusableReply
 
 from . import page
@@ -214,6 +214,14 @@ def plan_ad(job_id: str) -> None:
             job,
             "Could not plan the ad",
             reason=f"An outside service stayed down after several tries: {error}.",
+            status=Job.Status.FAILED,
+        )
+    except UnreadableImage as error:
+        # Only a job whose photos were kept before they had to be in a readable format.
+        record(
+            job,
+            "Could not plan the ad",
+            reason=f"{error}. Only {IMAGE_TYPE_NAMES} photos can be shown to the model.",
             status=Job.Status.FAILED,
         )
     except Exception:
