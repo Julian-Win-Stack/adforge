@@ -1,6 +1,12 @@
 // The shapes Django's /api/jobs/ endpoints send back (backend/jobs/api.py).
 
-export type JobStatus = "queued" | "reading_page" | "page_read" | "failed";
+export type JobStatus =
+  | "queued"
+  | "reading_page"
+  | "page_read"
+  | "needs_working_link"
+  | "needs_product_photos"
+  | "failed";
 
 export type ActivityEntry = {
   seq: number;
@@ -28,7 +34,16 @@ export type JobWithActivity = Job & {
   activity: ActivityEntry[];
 };
 
-export const FINISHED: JobStatus[] = ["page_read", "failed"];
+/** Nothing changes on its own after these, so polling stops. The two "needs_" statuses
+ * wait for the user, which #4 handles. */
+export const SETTLED: JobStatus[] = [
+  "page_read",
+  "needs_working_link",
+  "needs_product_photos",
+  "failed",
+];
+
+const FORM_FIELDS = ["product_url", "target_seconds"];
 
 export class ApiError extends Error {
   constructor(
@@ -41,10 +56,24 @@ export class ApiError extends Error {
 
 async function readJson<T>(response: Response): Promise<T> {
   if (response.ok) return (await response.json()) as T;
-  if (response.status === 400) {
-    throw new ApiError("Please check the form.", await response.json());
+  const serverSaid = `The server answered ${response.status}.`;
+  if (response.status !== 400) throw new ApiError(serverSaid);
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    throw new ApiError(serverSaid);
   }
-  throw new ApiError(`The server answered ${response.status}.`);
+  if (typeof body !== "object" || body === null) throw new ApiError(serverSaid);
+  // Errors about one form field show under it; anything else shows below the form.
+  const fieldErrors: Record<string, string[]> = {};
+  const otherErrors: string[] = [];
+  for (const [key, value] of Object.entries(body)) {
+    const messages = (Array.isArray(value) ? value : [value]).map(String);
+    if (FORM_FIELDS.includes(key)) fieldErrors[key] = messages;
+    else otherErrors.push(...messages);
+  }
+  throw new ApiError(otherErrors.join(" "), fieldErrors);
 }
 
 export async function startJob(productUrl: string, targetSeconds: number | null): Promise<Job> {

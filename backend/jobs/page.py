@@ -1,19 +1,23 @@
 """Fetching a product page with a plain HTTP request and pulling out its text and photos.
 A headless browser is only added if plain fetches miss what real product pages show."""
 
+import ipaddress
 import json
+import socket
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
+from django.conf import settings
 
 from adforge.retry import OutsideServiceDown, with_retries
 
 MAX_PAGE_BYTES = 5_000_000
 MAX_PHOTO_BYTES = 15_000_000
 MAX_PHOTOS = 10
+MAX_REDIRECTS = 10
 # Some shops turn away requests that don't look like they come from a browser.
 HEADERS = {
     "User-Agent": (
@@ -25,7 +29,8 @@ HEADERS = {
 
 
 class PageUnreadable(Exception):
-    """The page can't be read, and trying again won't help."""
+    """The page can't be read, and trying again won't help. The message is one sentence
+    saying why, written for the user."""
 
 
 @dataclass(frozen=True)
@@ -42,54 +47,103 @@ class ProductPage:
     photo_urls: list[str]
 
 
-def download(url: str, *, max_bytes: int) -> Download:
-    """GET `url`, retrying while the site is down. Raises PageUnreadable for answers that
-    won't change, like 404, and OutsideServiceDown if the site stays down."""
+def download(url: str, *, max_bytes: int, what: str) -> Download:
+    """GET `url`, retrying while the site is down. `what` names the thing fetched, such as
+    "product page", for the reasons given. Raises PageUnreadable for answers that won't
+    change, like 404, and OutsideServiceDown if the site stays down."""
 
     def attempt() -> Download:
-        try:
-            with httpx.stream(
-                "GET", url, headers=HEADERS, follow_redirects=True, timeout=20
-            ) as response:
-                if response.status_code == 429 or response.status_code >= 500:
-                    raise OutsideServiceDown(f"{url} answered {response.status_code}")
-                if response.status_code >= 400:
-                    raise PageUnreadable(f"{url} answered {response.status_code}")
-                content = bytearray()
-                for chunk in response.iter_bytes():
-                    content.extend(chunk)
-                    if len(content) > max_bytes:
-                        raise PageUnreadable(f"{url} is larger than {max_bytes:,} bytes")
-                return Download(
-                    final_url=str(response.url),
-                    content=bytes(content),
-                    content_type=response.headers.get("content-type", "").split(";")[0].strip(),
-                    charset=response.charset_encoding,
-                )
-        except httpx.TransportError as error:
-            raise OutsideServiceDown(f"{url} could not be reached: {error}") from error
+        current = url
+        # Redirects are followed by hand so every hop gets the private-address check.
+        for _ in range(MAX_REDIRECTS + 1):
+            _refuse_private_address(current)
+            try:
+                with httpx.stream("GET", current, headers=HEADERS, timeout=20) as response:
+                    if response.is_redirect:
+                        current = urljoin(current, response.headers["location"])
+                        continue
+                    status = f"{response.status_code} {response.reason_phrase}".strip()
+                    if response.status_code == 429 or response.status_code >= 500:
+                        raise OutsideServiceDown(f"{current} answered {status}")
+                    if response.status_code >= 400:
+                        raise PageUnreadable(
+                            f"{current} answered {status}, so trying again won't help."
+                        )
+                    content = bytearray()
+                    for chunk in response.iter_bytes():
+                        content.extend(chunk)
+                        if len(content) > max_bytes:
+                            raise PageUnreadable(
+                                f"{current} is too big to be a {what}, at over {max_bytes:,} bytes."
+                            )
+                    return Download(
+                        final_url=current,
+                        content=bytes(content),
+                        content_type=response.headers.get("content-type", "").split(";")[0].strip(),
+                        charset=response.charset_encoding,
+                    )
+            except httpx.TransportError as error:
+                raise OutsideServiceDown(f"{current} could not be reached: {error}") from error
+        raise PageUnreadable(f"{url} redirected more than {MAX_REDIRECTS} times.")
 
     return with_retries(attempt)
 
 
+def _refuse_private_address(url: str) -> None:
+    """Refuse links to this machine or a private network (like localhost or a cloud's
+    settings address), so a pasted link can't make the server reach places only it can
+    see. Links are checked where they point when fetched; a host that changes its address
+    between this check and the fetch (DNS rebinding) could still get through."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise PageUnreadable(f"{url} is not a web link.")
+    if settings.FETCH_PRIVATE_ADDRESSES:
+        return
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        addresses = socket.getaddrinfo(parsed.hostname, port, proto=socket.IPPROTO_TCP)
+    except (socket.gaierror, ValueError) as error:
+        raise OutsideServiceDown(f"{url} could not be looked up: {error}") from error
+    for *_, sockaddr in addresses:
+        address = ipaddress.ip_address(str(sockaddr[0]).split("%")[0])
+        if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+            address = address.ipv4_mapped
+        if not address.is_global:
+            raise PageUnreadable(
+                f"{url} leads to a private network address, which is never fetched."
+            )
+
+
 def parse(page: Download) -> ProductPage:
+    """The page text is the words a visitor sees, then the product data the page declares
+    for search engines, where the price, brand and stock are sometimes the only copy."""
     soup = BeautifulSoup(page.content, "html.parser", from_encoding=page.charset)
-    photo_urls = _photo_urls(soup, page.final_url)
+    products = _declared_products(soup)
+    photo_urls = _photo_urls(soup, products, page.final_url)
     for hidden in soup(["script", "style", "noscript", "template", "svg"]):
         hidden.decompose()
-    return ProductPage(text=soup.get_text("\n", strip=True), photo_urls=photo_urls)
+    text = soup.get_text("\n", strip=True)
+    if products:
+        declared = "\n".join(json.dumps(product, ensure_ascii=False) for product in products)
+        text += f"\n\nProduct data the page declares for search engines:\n{declared}"
+    return ProductPage(text=text, photo_urls=photo_urls)
 
 
-def _photo_urls(soup: BeautifulSoup, page_url: str) -> list[str]:
-    """Product photos the shop itself declares: schema.org Product images, then og:image."""
-    found: list[str] = []
+def _declared_products(soup: BeautifulSoup) -> list[dict[str, Any]]:
+    """schema.org Product objects from the page's JSON-LD blocks."""
+    products: list[dict[str, Any]] = []
     for script in soup.find_all("script", type="application/ld+json"):
         try:
             data = json.loads(script.get_text())
         except json.JSONDecodeError:
             continue
-        for product in _products(data):
-            found.extend(_image_urls(product.get("image")))
+        products.extend(_products(data))
+    return products
+
+
+def _photo_urls(soup: BeautifulSoup, products: list[dict[str, Any]], page_url: str) -> list[str]:
+    """Product photos the shop itself declares: schema.org Product images, then og:image."""
+    found = [url for product in products for url in _image_urls(product.get("image"))]
     for meta in soup.find_all("meta", property="og:image"):
         content = meta.get("content")
         if isinstance(content, str):

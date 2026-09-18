@@ -23,7 +23,10 @@ PRODUCT_PAGE = """<!doctype html>
   <meta property="og:image" content="{side}">
   <script type="application/ld+json">
     {{"@context": "https://schema.org", "@type": "Product", "name": "Stoneware Mug",
-      "image": ["/cdn/mug-front.png", "{side}"]}}
+      "image": ["/cdn/mug-front.png", "{side}"],
+      "brand": {{"@type": "Brand", "name": "Kiln & Co"}},
+      "offers": {{"@type": "Offer", "price": "24.00", "priceCurrency": "USD",
+                  "availability": "https://schema.org/InStock"}}}}
   </script>
   <script>window.analytics = "tracking code, not page text";</script>
   <style>.price {{ color: red; }}</style>
@@ -41,6 +44,8 @@ PRODUCT_PAGE = """<!doctype html>
 def _isolated_outside_world(settings: Settings, tmp_path: Path) -> None:
     settings.MEDIA_ROOT = tmp_path / "media"
     settings.RETRY_DELAYS_SECONDS = [0, 0]
+    # The test shop runs on this machine, an address real jobs are never allowed to fetch.
+    settings.FETCH_PRIVATE_ADDRESSES = True
 
 
 @pytest.fixture

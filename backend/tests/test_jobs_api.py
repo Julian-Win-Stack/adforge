@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from pytest_django import Settings
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
@@ -12,7 +13,7 @@ from gateway.fake import FakeModel
 from gateway.models import ModelCall
 from jobs.models import Job, ProductPhoto
 
-from .conftest import MUG_FRONT, MUG_SIDE
+from .conftest import MUG_FRONT, MUG_SIDE, PRODUCT_PAGE
 
 pytestmark = pytest.mark.django_db
 
@@ -47,12 +48,40 @@ def test_reading_the_page_stores_its_text_and_explains_every_step(
     job = api.get(f"/api/jobs/{job_id}/").json()
     assert job["status"] == "page_read"
     assert all(entry["message"] and entry["reason"] for entry in job["activity"])
-    assert job["activity"][-1]["reason"] == READABLE["reason"]
+    assert READABLE["reason"] in [entry["reason"] for entry in job["activity"]]
     page_text = Job.objects.get(pk=job_id).page_text
     assert "Stoneware Mug" in page_text
     assert "$24.00" in page_text
     assert "Hand-thrown, holds 350 ml, dishwasher safe." in page_text
     assert "tracking code" not in page_text
+
+
+def test_the_page_text_includes_the_product_data_the_page_declares_for_search_engines(
+    fake_model: FakeModel,
+    product_page_url: str,
+    start_job: Callable[..., str],
+) -> None:
+    fake_model.respond("check_page", READABLE)
+
+    job_id = start_job(product_page_url)
+
+    # Stock is only in the page's structured data, never in the words a visitor sees.
+    assert "InStock" in Job.objects.get(pk=job_id).page_text
+    assert "InStock" in ModelCall.objects.get(job_id=job_id).handoff["page_text"]
+
+
+def test_the_pages_original_html_is_kept_as_a_file_exactly_as_served(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    product_page_url: str,
+    start_job: Callable[..., str],
+) -> None:
+    fake_model.respond("check_page", READABLE)
+
+    job_id = start_job(product_page_url)
+
+    served = PRODUCT_PAGE.format(side=httpserver.url_for("/cdn/mug-side.png")).encode()
+    assert file_store.read(Job.objects.get(pk=job_id).page_html_key) == served
 
 
 def test_the_product_photos_the_page_declares_are_stored_with_the_job(
@@ -158,7 +187,7 @@ def test_a_model_provider_that_stays_down_fails_the_job_and_says_why(
     assert ModelCall.objects.filter(job_id=job_id, outcome="failed").count() == 3
 
 
-def test_a_missing_product_page_fails_the_job_without_retrying(
+def test_a_missing_product_page_waits_for_a_working_link_without_retrying(
     api: APIClient,
     fake_model: FakeModel,
     httpserver: HTTPServer,
@@ -169,10 +198,46 @@ def test_a_missing_product_page_fails_the_job_without_retrying(
     job_id = start_job(httpserver.url_for("/products/gone"))
 
     job = api.get(f"/api/jobs/{job_id}/").json()
-    assert job["status"] == "failed"
+    assert job["status"] == "needs_working_link"
     assert "404" in job["activity"][-1]["reason"]
     assert len(httpserver.log) == 1
     assert not ModelCall.objects.filter(job_id=job_id).exists()
+
+
+def test_a_page_too_big_to_be_a_product_page_says_so_rather_than_blaming_the_shop(
+    api: APIClient,
+    fake_model: FakeModel,
+    product_page_url: str,
+    start_job: Callable[..., str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("jobs.page.MAX_PAGE_BYTES", 100)
+
+    job_id = start_job(product_page_url)
+
+    job = api.get(f"/api/jobs/{job_id}/").json()
+    assert job["status"] == "needs_working_link"
+    reason = job["activity"][-1]["reason"]
+    assert "too big" in reason
+    assert "refused" not in reason
+
+
+def test_a_link_to_a_private_network_address_is_never_fetched(
+    api: APIClient,
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    product_page_url: str,
+    start_job: Callable[..., str],
+    settings: Settings,
+) -> None:
+    settings.FETCH_PRIVATE_ADDRESSES = False
+
+    job_id = start_job(product_page_url)  # Served from this machine, like localhost.
+
+    job = api.get(f"/api/jobs/{job_id}/").json()
+    assert job["status"] == "needs_working_link"
+    assert "private network address" in job["activity"][-1]["reason"]
+    assert httpserver.log == []
 
 
 def test_a_link_that_redirects_says_which_page_was_actually_read(
@@ -195,7 +260,7 @@ def test_a_link_that_redirects_says_which_page_was_actually_read(
     assert ModelCall.objects.get(job_id=job_id).handoff["page_url"] == product_page_url
 
 
-def test_a_page_the_model_judges_unreadable_fails_the_job_with_its_reason(
+def test_a_page_the_model_judges_unreadable_waits_for_a_working_link_with_its_reason(
     api: APIClient,
     fake_model: FakeModel,
     product_page_url: str,
@@ -207,8 +272,34 @@ def test_a_page_the_model_judges_unreadable_fails_the_job_with_its_reason(
     job_id = start_job(product_page_url)
 
     job = api.get(f"/api/jobs/{job_id}/").json()
-    assert job["status"] == "failed"
+    assert job["status"] == "needs_working_link"
     assert job["activity"][-1]["reason"] == unreadable["reason"]
+    assert job["photos"] == []
+
+
+def test_a_page_with_no_usable_product_photos_waits_for_photos_and_says_what_was_skipped(
+    api: APIClient,
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    start_job: Callable[..., str],
+) -> None:
+    photo_url = httpserver.url_for("/cdn/removed.png")
+    httpserver.expect_request("/products/mug").respond_with_data(
+        f'<html><head><meta property="og:image" content="{photo_url}"></head>'
+        "<body><h1>Stoneware Mug</h1><p>$24.00</p></body></html>",
+        content_type="text/html",
+    )
+    httpserver.expect_request("/cdn/removed.png").respond_with_data("gone", status=404)
+    fake_model.respond("check_page", READABLE)
+
+    job_id = start_job(httpserver.url_for("/products/mug"))
+
+    job = api.get(f"/api/jobs/{job_id}/").json()
+    assert job["status"] == "needs_product_photos"
+    assert any(
+        photo_url in entry["message"] and "404" in entry["reason"] for entry in job["activity"]
+    )
+    assert "product photo" in job["activity"][-1]["reason"]
 
 
 @pytest.mark.parametrize(

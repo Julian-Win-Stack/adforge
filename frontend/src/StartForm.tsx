@@ -50,9 +50,7 @@ export function StartForm({ onStarted }: { onStarted: (jobId: string) => void })
       <button type="submit" disabled={sending}>
         {sending ? "Starting..." : "Start"}
       </button>
-      {error && Object.keys(error.fieldErrors).length === 0 && (
-        <p style={{ color: "crimson" }}>{error.message}</p>
-      )}
+      {error?.message && <p style={{ color: "crimson" }}>{error.message}</p>}
     </form>
   );
 }

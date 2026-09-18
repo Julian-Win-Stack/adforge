@@ -86,3 +86,25 @@ test("shows each activity entry once, in order, as the job runs, then stops aski
   await act(() => vi.advanceTimersByTimeAsync(60_000));
   expect(backend.requests).toHaveLength(requestsWhenFinished);
 });
+
+test.each([
+  {
+    answer: () => Response.json({ detail: "Too many jobs are running." }, { status: 400 }),
+    shown: "Too many jobs are running.",
+    case: "an error that isn't about one field",
+  },
+  {
+    answer: () => new Response("<h1>Bad Request</h1>", { status: 400 }),
+    shown: "The server answered 400.",
+    case: "an error that isn't JSON",
+  },
+])("says why the server refused the job for $case", async ({ answer, shown }) => {
+  vi.stubGlobal("fetch", async () => answer());
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+
+  await user.type(screen.getByLabelText(/product page link/i), "https://shop.example/p/mug");
+  await user.click(screen.getByRole("button", { name: "Start" }));
+
+  expect(await screen.findByText(shown)).toBeDefined();
+});

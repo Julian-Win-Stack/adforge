@@ -35,8 +35,19 @@ class ModelReply[Out: BaseModel]:
     output_tokens: int
 
 
+class UnusableReply(Exception):
+    """The provider answered, and billed for it, but the answer can't be used: a refusal,
+    or output cut off before it was complete."""
+
+    def __init__(self, message: str, *, input_tokens: int, output_tokens: int) -> None:
+        super().__init__(message)
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+
+
 class ModelProvider(Protocol):
-    """Talks to one model provider. Raises OutsideServiceDown for errors worth retrying."""
+    """Talks to one model provider. Raises OutsideServiceDown for errors worth retrying,
+    and UnusableReply for an answer that was billed but can't be used."""
 
     name: str
 

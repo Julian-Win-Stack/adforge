@@ -81,6 +81,12 @@ CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+# Empty means OpenAI's own servers. Tests point it at a local stand-in.
+OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "")
+# Links and photo links that lead to this machine or a private network are never fetched,
+# so a pasted link can't make the server reach places only it can see. Tests turn this on
+# to fetch from their local test shop.
+FETCH_PRIVATE_ADDRESSES = False
 
 # Seconds to wait before each retry when an outside service is down or errors.
 # Three tries in total: the first, then one after each delay.

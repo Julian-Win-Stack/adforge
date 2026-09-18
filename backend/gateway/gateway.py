@@ -16,7 +16,7 @@ from adforge.retry import OutsideServiceDown, with_retries
 
 from . import catalog
 from .models import ModelCall
-from .types import Handoff, Judgement, ModelProvider, ModelReply, ModelRequest
+from .types import Handoff, Judgement, ModelProvider, ModelReply, ModelRequest, UnusableReply
 
 if TYPE_CHECKING:
     from jobs.models import Job
@@ -121,6 +121,8 @@ def _record_failure[Out: BaseModel](
     started: float,
     error: Exception,
 ) -> None:
+    # An unusable answer was still billed, so its cost is recorded like any other.
+    billed = error if isinstance(error, UnusableReply) else None
     ModelCall.objects.create(
         job=job,
         purpose=request.purpose,
@@ -130,6 +132,13 @@ def _record_failure[Out: BaseModel](
         handoff=request.handoff.model_dump(mode="json"),
         outcome=ModelCall.Outcome.FAILED,
         error=f"{type(error).__name__}: {error}",
+        input_tokens=billed.input_tokens if billed else None,
+        output_tokens=billed.output_tokens if billed else None,
+        cost_usd=(
+            catalog.cost_usd(request.model, billed.input_tokens, billed.output_tokens)
+            if billed
+            else None
+        ),
         duration_ms=_elapsed_ms(started),
     )
 

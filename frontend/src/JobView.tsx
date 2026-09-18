@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FINISHED, getJob, type ActivityEntry, type JobWithActivity } from "./api";
+import { SETTLED, getJob, type ActivityEntry, type JobWithActivity } from "./api";
 
 const POLL_EVERY_MS = 2000;
 
@@ -26,8 +26,8 @@ export function JobView({ jobId }: { jobId: string }) {
         }
         setJob(latest);
         setPollError(null);
-        // A finished job's last entry is already in this response, so we can stop.
-        if (FINISHED.includes(latest.status)) return;
+        // A settled job's last entry is already in this response, so we can stop.
+        if (SETTLED.includes(latest.status)) return;
       } catch {
         if (stopped) return;
         setPollError("Lost contact with the server. Still trying...");
@@ -87,13 +87,17 @@ const STATUS_LABELS = {
   queued: "Waiting to start",
   reading_page: "Reading the page...",
   page_read: "Page read",
+  needs_working_link: "Waiting for a working link",
+  needs_product_photos: "Waiting for product photos",
   failed: "Failed",
 } as const;
 
+const STATUS_COLOURS: Partial<Record<JobWithActivity["status"], string>> = {
+  needs_working_link: "darkorange",
+  needs_product_photos: "darkorange",
+  failed: "crimson",
+};
+
 function StatusLabel({ status }: { status: JobWithActivity["status"] }) {
-  return (
-    <span style={{ color: status === "failed" ? "crimson" : undefined }}>
-      {STATUS_LABELS[status]}
-    </span>
-  );
+  return <span style={{ color: STATUS_COLOURS[status] }}>{STATUS_LABELS[status]}</span>;
 }

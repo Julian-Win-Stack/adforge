@@ -8,13 +8,26 @@ class Job(models.Model):
         QUEUED = "queued"
         READING_PAGE = "reading_page"
         PAGE_READ = "page_read"
+        # Waiting for the user: the link didn't lead to one product's readable page.
+        NEEDS_WORKING_LINK = "needs_working_link"
+        # Waiting for the user: the page gave no product photo we could use.
+        NEEDS_PRODUCT_PHOTOS = "needs_product_photos"
         FAILED = "failed"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     product_url = models.URLField(max_length=2000)
     target_seconds = models.PositiveSmallIntegerField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.QUEUED)
-    page_text = models.TextField(blank=True, help_text="The page's visible text, exactly as read.")
+    page_text = models.TextField(
+        blank=True,
+        help_text="The words a visitor sees, then the product data the page declares for "
+        "search engines. Model calls read this.",
+    )
+    page_html_key = models.CharField(
+        max_length=500,
+        blank=True,
+        help_text="Key in the file store of the page's original HTML, exactly as served.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
