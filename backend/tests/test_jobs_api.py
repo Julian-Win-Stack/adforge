@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -47,9 +48,24 @@ def test_reading_the_page_stores_its_text_and_explains_every_step(
 
     job = api.get(f"/api/jobs/{job_id}/").json()
     assert job["status"] == "page_read"
-    assert all(entry["message"] and entry["reason"] for entry in job["activity"])
-    assert READABLE["reason"] in [entry["reason"] for entry in job["activity"]]
     page_text = Job.objects.get(pk=job_id).page_text
+    # The count varies with the test server's port, which is part of the page's photo links.
+    assert [(entry["message"], entry["reason"]) for entry in job["activity"]] == [
+        (
+            "Reading the product page",
+            "Every fact and picture in the ad has to come from the page, never made up.",
+        ),
+        (
+            f"Stored {len(page_text)} characters of page text and the page's HTML",
+            "The script's claims will be checked against this text, and the HTML shows "
+            "exactly what the page said on the day it was read.",
+        ),
+        ("The page has what the ad needs", READABLE["reason"]),
+        (
+            "Saved 2 product photos",
+            "The ad has to show the real product, so its photos are kept with the job.",
+        ),
+    ]
     assert "Stoneware Mug" in page_text
     assert "$24.00" in page_text
     assert "Hand-thrown, holds 350 ml, dishwasher safe." in page_text
@@ -115,7 +131,8 @@ def test_polling_after_an_entry_returns_only_the_entries_since_then(
 
     since_second = api.get(f"/api/jobs/{job_id}/?after=2").json()["activity"]
 
-    assert [entry["seq"] for entry in everything] == list(range(1, len(everything) + 1))
+    assert [entry["seq"] for entry in everything] == [1, 2, 3, 4]
+    assert [entry["seq"] for entry in since_second] == [3, 4]
     assert since_second == everything[2:]
 
 
@@ -123,8 +140,12 @@ def test_every_model_call_is_recorded_with_its_cost_time_outcome_and_judgement(
     fake_model: FakeModel,
     product_page_url: str,
     start_job: Callable[..., str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_model.respond("check_page", READABLE)
+    # The gateway reads its clock when the call starts, then again when the answer arrives.
+    clock = iter([100.0, 100.25])
+    monkeypatch.setattr("gateway.gateway.time", SimpleNamespace(monotonic=lambda: next(clock)))
 
     job_id = start_job(product_page_url)
 
@@ -134,7 +155,7 @@ def test_every_model_call_is_recorded_with_its_cost_time_outcome_and_judgement(
     assert call.outcome == "succeeded"
     # 1,000 input tokens at $0.25 per million plus 100 output tokens at $2.00 per million.
     assert call.cost_usd == Decimal("0.000450")
-    assert call.duration_ms is not None
+    assert call.duration_ms == 250
     assert call.decision == "readable"
     assert call.reason == READABLE["reason"]
     assert "Stoneware Mug" in call.handoff["page_text"]
