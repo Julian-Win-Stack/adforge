@@ -1,0 +1,67 @@
+x-backend: &backend
+  build: ./backend
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    DATABASE_URL: postgres://adforge:adforge@db:5432/adforge
+    CELERY_BROKER_URL: redis://redis:6379/0
+    MEDIA_ROOT: /app/media
+  volumes:
+    - ./backend:/app
+    - /app/.venv
+    - media:/app/media
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_started
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: adforge
+      POSTGRES_PASSWORD: adforge
+      POSTGRES_DB: adforge
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U adforge"]
+      interval: 2s
+      retries: 30
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  backend:
+    <<: *backend
+    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    ports:
+      - "8000:8000"
+
+  worker:
+    <<: *backend
+    command: celery -A adforge worker --loglevel=info
+
+  frontend:
+    image: node:24
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    environment:
+      API_TARGET: http://backend:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  media:

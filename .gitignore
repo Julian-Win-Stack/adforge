@@ -1,0 +1,22 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Files the app saves locally (product photos etc.)
+backend/media/
+
+# Frontend
+node_modules/
+dist/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/

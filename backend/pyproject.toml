@@ -1,0 +1,61 @@
+[project]
+name = "adforge-backend"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "beautifulsoup4>=4.15.0",
+    "celery>=5.6.3",
+    "dj-database-url>=3.1.2",
+    "django>=6.1.1",
+    "django-stubs-ext>=6.1.1",
+    "djangorestframework>=3.18.1",
+    "httpx>=0.28.1",
+    "openai>=3.15.0",
+    "psycopg[binary]>=3.3.5",
+    "pydantic>=2.13.5",
+    "redis>=8.1.0",
+]
+
+[dependency-groups]
+dev = [
+    "celery-types>=0.26.0",
+    "django-stubs>=6.1.1",
+    "djangorestframework-stubs>=3.18.1",
+    "mypy>=2.3.1",
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
+    "pytest-django>=4.14.0",
+    "pytest-httpserver>=1.1.5",
+    "ruff>=0.16.8",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+extend-exclude = ["*/migrations/*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "DJ", "TID"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"openai".msg = "Only the model gateway talks to OpenAI. Use gateway.call_model instead."
+
+[tool.ruff.lint.per-file-ignores]
+"gateway/openai_adapter.py" = ["TID251"]
+
+[tool.mypy]
+strict = true
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main", "pydantic.mypy"]
+exclude = ["/migrations/"]
+
+[[tool.mypy.overrides]]
+module = ["dj_database_url.*", "pytest_httpserver.*"]
+ignore_missing_imports = true
+
+[tool.django-stubs]
+django_settings_module = "adforge.settings"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "adforge.settings"
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
