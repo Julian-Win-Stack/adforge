@@ -1,6 +1,8 @@
-# Creatify's problems and how we handle them
+# Problems I saw in Creatify's agent, and how we handle them
 
-Creatify has an agent that makes UGC video ads (public report: https://creatify.ai/research/agent). It was run 5 times against their live product. These are the ways it went wrong, taken from the problem statement in the spec (#1), and what this project does about each one.
+Creatify has an agent that makes UGC video ads (their public report: https://creatify.ai/research/agent). I ran it 5 times against their live product. This page lists the problems I saw in those runs, taken from the problem statement in the spec (#1), and what this project does about each one.
+
+> **These are my own observations, not verified findings.** They come from my 5 runs and their transcripts, not from Creatify's report, and Creatify has not confirmed any of them. Five runs is a small sample, and where I give a cause for a problem, it is my reading of what I saw. If you work at Creatify and something here is wrong, open an issue and I'll correct it.
 
 **Status** means:
 
@@ -25,11 +27,11 @@ Creatify has an agent that makes UGC video ads (public report: https://creatify.
 | 11 | Small label text is unreadable in clips (found in our tests) | **No fix yet** |
 | 12 | The vision check makes up text it can't read (found in our tests) | **No fix yet** |
 
-## Creatify's problems
+## Problems I saw in Creatify's runs
 
 ### 1. Clips and ads came out too long
 
-**What happened.** All 5 runs missed the requested 15 seconds, landing between about 16 and 32 seconds. Three things caused it:
+**What I saw.** All 5 runs missed the requested 15 seconds, landing between about 16 and 32 seconds. As far as I could tell, three things caused it:
 
 - The video model stretched each clip to fit the spoken line: 4 seconds requested came back as 5 to 10.
 - The pacing check assumed 3 words per second, but the real voice spoke 1.6 to 2.5.
@@ -45,19 +47,19 @@ Creatify has an agent that makes UGC video ads (public report: https://creatify.
 
 ### 2. Silent gaps between scenes
 
-**What happened.** Each clip was trimmed by a fixed amount instead of using the word timings, leaving dead air between scenes.
+**What I saw.** Each clip was trimmed by a fixed amount instead of using the word timings, leaving dead air between scenes.
 
 **How we handle it.** Every voice line is transcribed with the time each word starts and ends. Clips are cut exactly where the speech starts and ends. **Tested:** two scenes were stitched this way with ffmpeg with no gap. **Designed** for the app (#7).
 
 ### 3. Wrong facts in the script
 
-**What happened.** The wrong price appeared in 2 of the 3 ads that showed a price. The same prompt gave two different prices in two runs. Nothing compared the script with the product page.
+**What I saw.** The wrong price appeared in 2 of the 3 ads that showed a price. The same prompt gave two different prices in two runs. Nothing compared the script with the product page.
 
 **How we handle it.** The page text is stored with the job. Before anything is made, a fact check compares every price, number, product name and claim in the script with that text. A claim that doesn't match goes back to be rewritten. If the page itself is unclear, for example it shows two prices, the user is asked. **Designed** (#4, #5).
 
 ### 4. Captions hid voice mistakes
 
-**What happened.** Captions were forced to match the script. When the voice said a wrong or repeated word, the captions still showed the script, so the mistake shipped unnoticed.
+**What I saw.** Captions were forced to match the script. When the voice said a wrong or repeated word, the captions still showed the script, so the mistake shipped unnoticed.
 
 **How we handle it.**
 
@@ -66,41 +68,41 @@ Creatify has an agent that makes UGC video ads (public report: https://creatify.
 
 ### 5. A failed quality check was used anyway
 
-**What happened.** An image failed its check but was used anyway, because of a rule that said not to retry.
+**What I saw.** An image failed its check but was used anyway. It looked like a rule that said not to retry was the reason.
 
 **How we handle it.** A failed quality check never ships. There is no path where failed content reaches the user: the scene is retried, and if it still fails it is marked failed and the final video is not assembled. **Designed** (#1, #8). The quality checks themselves are built after the first run.
 
 ### 6. Nothing compared scenes with each other
 
-**What happened.** The same person looked different from scene to scene. Only a human watching noticed.
+**What I saw.** The same person looked different from scene to scene. Only a human watching noticed.
 
 **We don't have a fix for this yet.** A scene comparison check (same person, same clothes, same setting) is planned, but it is built after the first run, once we see how often this really happens. What we know so far: in our tests, the frame check correctly said the person in each clip matched the portrait. We have not yet compared two scenes with each other.
 
 ### 7. The same scene was produced twice
 
-**What happened.** A worker got stuck, and another worker took over the scene without stopping the first one. Both produced the scene.
+**What I saw.** Two workers produced the same scene. It looked like a worker got stuck, and another worker took over the scene without stopping the first one.
 
 **How we handle it.** A scene can only be worked on by one worker at a time. A stuck worker is stopped before another one takes the scene over. A test starts two workers on the same scene and checks that only one produces it. **Designed** (#8).
 
 ### 8. Bad handoffs between parts
 
-**What happened.** Data passed between parts of the agent arrived broken: the colour palette in the wrong format in all 3 runs for one brand, a scene length as a decimal, and voice IDs missing from a brief, only noticed after work had started.
+**What I saw.** Data passed between parts of the agent arrived broken: the colour palette in the wrong format in all 3 runs for one brand, a scene length as a decimal, and voice IDs missing from a brief, only noticed after work had started.
 
 **How we handle it.** Every handoff has a fixed shape (a Pydantic model), and it is checked in code before every model call, so a broken handoff stops before any money is spent. **Built** for the one model call that exists so far, the page check (#3). Every new model call goes through the same place.
 
 ### 9. Work lost on resume
 
-**What happened.** Runs paused mid-job and lost their files, so work that was already paid for had to be made again.
+**What I saw.** Runs paused mid-job and lost their files, so work that was already paid for had to be made again.
 
 **How we handle it.** Progress is saved to the database as it happens, and files are kept through one small piece of storage code. After a crash the system knows where every scene stopped, continues from there, and never makes or pays for anything twice. Cancelling never deletes anything. **Designed** (#8).
 
 ### 10. Hard to fix anything
 
-**What happened.** To fix a problem, the user had to describe in words what was wrong and in which scene.
+**What I saw.** To fix a problem, the user had to describe in words what was wrong and in which scene.
 
 **How we handle it.** The user pauses the finished video and comments at the moment that is wrong. The system knows where each scene starts and ends, so it knows which scene the comment is about, and redoes only the part that was wrong. **Designed** (#9).
 
-## Problems we found in our own tests
+## Problems found in our own tests
 
 ### 11. Small label text is unreadable in clips
 
