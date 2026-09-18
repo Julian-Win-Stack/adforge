@@ -2,7 +2,7 @@ import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App";
-import type { ActivityEntry, JobStatus } from "./api";
+import type { ActivityEntry, JobStatus, Question, Scene } from "./api";
 
 /** Stands in for Django's /api/jobs/ endpoints: holds one job and its activity log, and
  * answers each poll with only the entries numbered above `after`, like the real API. */
@@ -12,10 +12,13 @@ function fakeBackend() {
     product_url: "https://shop.example/products/mug",
     target_seconds: 15,
     status: "queued" as JobStatus,
+    brand_colours: [] as string[],
     created_at: "2026-09-17T10:00:00Z",
   };
   const activity: ActivityEntry[] = [];
   const requests: string[] = [];
+  const answers: (string | FormData)[] = [];
+  const state = { scenes: [] as Scene[], question: null as Question | null };
 
   vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
@@ -24,7 +27,17 @@ function fakeBackend() {
     const poll = url.match(/^\/api\/jobs\/job-1\/\?after=(\d+)$/);
     if (method === "GET" && poll) {
       const after = Number(poll[1]);
-      return Response.json({ ...job, photos: [], activity: activity.filter((e) => e.seq > after) });
+      return Response.json({
+        ...job,
+        photos: [],
+        scenes: state.scenes,
+        question: state.question,
+        activity: activity.filter((e) => e.seq > after),
+      });
+    }
+    if (method === "POST" && url === "/api/jobs/job-1/answer/") {
+      answers.push(init?.body instanceof FormData ? init.body : String(init?.body));
+      return new Response(null, { status: 202 });
     }
     throw new Error(`Unexpected request: ${method} ${url}`);
   });
@@ -32,6 +45,8 @@ function fakeBackend() {
   return {
     job,
     requests,
+    answers,
+    state,
     record(message: string) {
       activity.push({
         seq: activity.length + 1,
@@ -71,6 +86,13 @@ test("shows each activity entry once, in order, as the job runs, then stops aski
   backend.job.status = "page_read";
   await act(() => vi.advanceTimersByTimeAsync(2000));
   await screen.findByText("The page is readable");
+  expect(screen.getByText("Page read")).toBeTruthy();
+
+  backend.record("Planning the ad");
+  backend.record("Planned 3 scenes");
+  backend.job.status = "planned";
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await screen.findByText("Planned 3 scenes");
 
   const entries = within(screen.getByRole("list"))
     .getAllByRole("listitem")
@@ -79,8 +101,10 @@ test("shows each activity entry once, in order, as the job runs, then stops aski
     "Reading the product page",
     "Saved 2 product photos",
     "The page is readable",
+    "Planning the ad",
+    "Planned 3 scenes",
   ]);
-  expect(screen.getByText("Page read")).toBeTruthy();
+  expect(screen.getByText("Ad planned")).toBeTruthy();
 
   const requestsWhenFinished = backend.requests.length;
   await act(() => vi.advanceTimersByTimeAsync(60_000));
@@ -133,4 +157,161 @@ test.each([
   await user.click(screen.getByRole("button", { name: "Start" }));
 
   expect(await screen.findByText(shown)).toBeDefined();
+});
+
+/** Starts a job through the form and waits until its first activity entry shows. */
+async function startMugJob(backend: ReturnType<typeof fakeBackend>) {
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await user.type(screen.getByLabelText(/product page link/i), backend.job.product_url);
+  backend.job.status = "reading_page";
+  backend.record("Reading the product page");
+  await user.click(screen.getByRole("button", { name: "Start" }));
+  await screen.findByText("Reading the product page");
+  return user;
+}
+
+test("shows each planned scene's line and slot, and the brand colours, then stops asking", async () => {
+  const backend = fakeBackend();
+  await startMugJob(backend);
+
+  backend.state.scenes = [
+    { number: 1, line: "Meet the Stoneware Mug.", slot_seconds: 4, status: "planned" },
+    { number: 2, line: "Yours for $24.00.", slot_seconds: 3, status: "planned" },
+  ];
+  backend.job.brand_colours = ["#1F3A5F", "#F4EDE4"];
+  backend.record("Planned 2 scenes");
+  backend.job.status = "planned";
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await screen.findByText("Planned 2 scenes");
+
+  const scenes = within(screen.getByRole("table", { name: "Scenes" }))
+    .getAllByRole("row")
+    .slice(1) // the column headings
+    .map((row) =>
+      within(row)
+        .getAllByRole("cell")
+        .map((cell) => cell.textContent),
+    );
+  expect(scenes).toEqual([
+    ["1", "Meet the Stoneware Mug.", "4s", "Planned"],
+    ["2", "Yours for $24.00.", "3s", "Planned"],
+  ]);
+  expect(screen.getByText("Brand colours: #1F3A5F, #F4EDE4")).toBeTruthy();
+  expect(screen.getByText("Ad planned")).toBeTruthy();
+
+  const requestsWhenPlanned = backend.requests.length;
+  await act(() => vi.advanceTimersByTimeAsync(60_000));
+  expect(backend.requests).toHaveLength(requestsWhenPlanned);
+});
+
+test("shows the producer's question, sends the typed answer, and follows the job again", async () => {
+  const backend = fakeBackend();
+  const user = await startMugJob(backend);
+
+  backend.state.question = {
+    kind: "producer",
+    question: "The page shows $24.00 and $28.00. Which price should the ad say?",
+  };
+  backend.record("The producer has a question for you");
+  backend.job.status = "needs_answer";
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await screen.findByText("The page shows $24.00 and $28.00. Which price should the ad say?");
+  const requestsWhileWaiting = backend.requests.length;
+  await act(() => vi.advanceTimersByTimeAsync(60_000));
+  expect(backend.requests).toHaveLength(requestsWhileWaiting);
+
+  await user.type(screen.getByLabelText("Your answer"), "$24.00, the sale price");
+  backend.state.question = null;
+  backend.record("You answered: $24.00, the sale price");
+  backend.job.status = "planning";
+  await user.click(screen.getByRole("button", { name: "Send answer" }));
+
+  expect(backend.answers).toEqual([JSON.stringify({ answer: "$24.00, the sale price" })]);
+  await screen.findByText("You answered: $24.00, the sale price");
+  expect(screen.queryByLabelText("Your answer")).toBeNull();
+
+  backend.record("Planned 3 scenes");
+  backend.job.status = "planned";
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await screen.findByText("Planned 3 scenes");
+});
+
+test("asks for a working link and sends the one typed", async () => {
+  const backend = fakeBackend();
+  const user = await startMugJob(backend);
+
+  backend.state.question = {
+    kind: "working_link",
+    question: "That link didn't lead to one product's page. Can you send a link that does?",
+  };
+  backend.job.status = "needs_working_link";
+  backend.record("The page couldn't be read");
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await screen.findByText(
+    "That link didn't lead to one product's page. Can you send a link that does?",
+  );
+
+  await user.type(screen.getByLabelText("Working link"), "https://shop.example/products/mug-2");
+  backend.state.question = null;
+  backend.job.status = "reading_page";
+  backend.record("You sent a new link: https://shop.example/products/mug-2");
+  await user.click(screen.getByRole("button", { name: "Send answer" }));
+
+  expect(backend.answers).toEqual([
+    JSON.stringify({ answer: "https://shop.example/products/mug-2" }),
+  ]);
+  await screen.findByText("You sent a new link: https://shop.example/products/mug-2");
+});
+
+test("asks for product photos and uploads the ones picked", async () => {
+  const backend = fakeBackend();
+  const user = await startMugJob(backend);
+
+  backend.state.question = {
+    kind: "product_photos",
+    question: "The page has no photo of the product. Can you upload at least one?",
+  };
+  backend.job.status = "needs_product_photos";
+  backend.record("No usable product photos");
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await screen.findByText("The page has no photo of the product. Can you upload at least one?");
+
+  const front = new File(["front of the mug"], "mug-front.png", { type: "image/png" });
+  const side = new File(["side of the mug"], "mug-side.jpg", { type: "image/jpeg" });
+  await user.upload(screen.getByLabelText("Product photos"), [front, side]);
+  backend.state.question = null;
+  backend.job.status = "planning";
+  backend.record("You uploaded 2 product photos");
+  await user.click(screen.getByRole("button", { name: "Send answer" }));
+
+  expect(backend.answers).toHaveLength(1);
+  const sent = backend.answers[0] as FormData;
+  expect(sent.getAll("photos").map((photo) => (photo as File).name)).toEqual([
+    "mug-front.png",
+    "mug-side.jpg",
+  ]);
+  await screen.findByText("You uploaded 2 product photos");
+});
+
+test("says why an answer was refused and keeps the question open", async () => {
+  const backend = fakeBackend();
+  const user = await startMugJob(backend);
+  backend.state.question = { kind: "working_link", question: "Can you send a working link?" };
+  backend.job.status = "needs_working_link";
+  backend.record("The page couldn't be read");
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await screen.findByText("Can you send a working link?");
+
+  const answered = globalThis.fetch;
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) =>
+    url.endsWith("/answer/")
+      ? Response.json({ answer: ["Enter a valid URL."] }, { status: 400 })
+      : answered(url, init),
+  );
+  await user.type(screen.getByLabelText("Working link"), "https://shop.example/x");
+  await user.click(screen.getByRole("button", { name: "Send answer" }));
+
+  await screen.findByText("Enter a valid URL.");
+  expect(screen.getByLabelText("Working link")).toBeTruthy();
 });

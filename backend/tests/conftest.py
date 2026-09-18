@@ -42,6 +42,25 @@ PRODUCT_PAGE = """<!doctype html>
 """
 
 
+# What the page check answers for the mug's page.
+READABLE = {"decision": "readable", "reason": "The page names the mug, its price and its size."}
+
+# What the producer plans for the mug's page: three scenes and two brand colours.
+PLAN: dict[str, Any] = {
+    "decision": "plan",
+    "reason": "Three scenes: what the mug is, what it's like to use, and its price.",
+    "question": None,
+    "plan": {
+        "scenes": [
+            {"line": "Meet the Stoneware Mug from Kiln & Co.", "slot_seconds": 4},
+            {"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "slot_seconds": 5},
+            {"line": "Yours for $24.00.", "slot_seconds": 3},
+        ],
+        "brand_colours": ["#1F3A5F", "#F4EDE4"],
+    },
+}
+
+
 @pytest.fixture(autouse=True)
 def _isolated_outside_world(settings: Settings, tmp_path: Path) -> None:
     settings.MEDIA_ROOT = tmp_path / "media"
@@ -125,14 +144,17 @@ def openai_reply(content: dict[str, Any], status: str = "completed") -> dict[str
 
 
 @pytest.fixture
-def openai_server(httpserver: HTTPServer, settings: Settings) -> Iterator[Callable[[Any], None]]:
+def openai_server(httpserver: HTTPServer, settings: Settings) -> Iterator[Callable[..., None]]:
     """Our real OpenAI code, talking to a stand-in OpenAI server on this machine.
-    Call it with the reply the server should send."""
+    Call it with the replies the server should send, one per request, in order."""
     settings.OPENAI_API_KEY = "sk-test"
     settings.OPENAI_BASE_URL = httpserver.url_for("/v1")
 
-    def reply_with(reply: dict[str, Any]) -> None:
-        httpserver.expect_request("/v1/responses", method="POST").respond_with_json(reply)
+    def reply_with(*replies: dict[str, Any]) -> None:
+        for reply in replies:
+            httpserver.expect_oneshot_request("/v1/responses", method="POST").respond_with_json(
+                reply
+            )
 
     with use_model(OpenAIProvider()):
         yield reply_with

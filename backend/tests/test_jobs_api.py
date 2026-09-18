@@ -18,7 +18,16 @@ from gateway.fake import FakeModel
 from gateway.models import ModelCall
 from jobs.models import Job, ProductPhoto
 
-from .conftest import MUG_FRONT, MUG_SIDE, PRODUCT_PAGE, PUBLIC_ADDRESS, FakeDns, openai_reply
+from .conftest import (
+    MUG_FRONT,
+    MUG_SIDE,
+    PLAN,
+    PRODUCT_PAGE,
+    PUBLIC_ADDRESS,
+    READABLE,
+    FakeDns,
+    openai_reply,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -37,9 +46,6 @@ def test_a_started_job_can_be_fetched_with_its_link_and_target_length(api: APICl
     assert job["status"] == "queued"
 
 
-READABLE = {"decision": "readable", "reason": "The page names the mug, its price and its size."}
-
-
 def test_reading_the_page_stores_its_text_and_explains_every_step(
     api: APIClient,
     fake_model: FakeModel,
@@ -47,14 +53,16 @@ def test_reading_the_page_stores_its_text_and_explains_every_step(
     start_job: Callable[..., str],
 ) -> None:
     fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", PLAN)
 
     job_id = start_job(product_page_url)
 
     job = api.get(f"/api/jobs/{job_id}/").json()
-    assert job["status"] == "page_read"
+    assert job["status"] == "planned"
     page_text = Job.objects.get(pk=job_id).page_text
     # The count varies with the test server's port, which is part of the page's photo links.
-    assert [(entry["message"], entry["reason"]) for entry in job["activity"]] == [
+    # Planning follows these four; the planning tests cover its entries.
+    assert [(entry["message"], entry["reason"]) for entry in job["activity"][:4]] == [
         (
             "Reading the product page",
             "Every fact and picture in the ad has to come from the page, never made up.",
@@ -82,12 +90,14 @@ def test_the_page_text_includes_the_product_data_the_page_declares_for_search_en
     start_job: Callable[..., str],
 ) -> None:
     fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", PLAN)
 
     job_id = start_job(product_page_url)
 
     # Stock is only in the page's structured data, never in the words a visitor sees.
     assert "InStock" in Job.objects.get(pk=job_id).page_text
-    assert "InStock" in ModelCall.objects.get(job_id=job_id).handoff["page_text"]
+    check = ModelCall.objects.get(job_id=job_id, purpose="check_page")
+    assert "InStock" in check.handoff["page_text"]
 
 
 def test_the_pages_original_html_is_kept_as_a_file_exactly_as_served(
@@ -130,13 +140,14 @@ def test_polling_after_an_entry_returns_only_the_entries_since_then(
     start_job: Callable[..., str],
 ) -> None:
     fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", PLAN)
     job_id = start_job(product_page_url)
     everything = api.get(f"/api/jobs/{job_id}/").json()["activity"]
 
     since_second = api.get(f"/api/jobs/{job_id}/?after=2").json()["activity"]
 
-    assert [entry["seq"] for entry in everything] == [1, 2, 3, 4]
-    assert [entry["seq"] for entry in since_second] == [3, 4]
+    assert [entry["seq"] for entry in everything] == [1, 2, 3, 4, 5, 6]
+    assert [entry["seq"] for entry in since_second] == [3, 4, 5, 6]
     assert since_second == everything[2:]
 
 
@@ -147,13 +158,14 @@ def test_every_model_call_is_recorded_with_its_cost_time_outcome_and_judgement(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_model.respond("check_page", READABLE)
-    # The gateway reads its clock when the call starts, then again when the answer arrives.
-    clock = iter([100.0, 100.25])
+    fake_model.respond("plan_ad", PLAN)
+    # The gateway reads its clock when a call starts, then again when the answer arrives.
+    clock = iter([100.0, 100.25, 200.0, 203.5])
     monkeypatch.setattr("gateway.gateway.time", SimpleNamespace(monotonic=lambda: next(clock)))
 
     job_id = start_job(product_page_url)
 
-    [call] = ModelCall.objects.filter(job_id=job_id)
+    call, plan_call = ModelCall.objects.filter(job_id=job_id).order_by("created_at")
     assert call.purpose == "check_page"
     assert call.model == "gpt-5-mini"
     assert call.outcome == "succeeded"
@@ -163,6 +175,14 @@ def test_every_model_call_is_recorded_with_its_cost_time_outcome_and_judgement(
     assert call.decision == "readable"
     assert call.reason == READABLE["reason"]
     assert "Stoneware Mug" in call.handoff["page_text"]
+    assert (plan_call.purpose, plan_call.model, plan_call.duration_ms) == (
+        "plan_ad",
+        "gpt-5.6-sol",
+        3_500,
+    )
+    # 1,000 input tokens at $4.00 per million plus 100 output tokens at $20.00 per million.
+    assert plan_call.cost_usd == Decimal("0.006000")
+    assert (plan_call.decision, plan_call.reason) == ("plan", PLAN["reason"])
 
 
 def test_a_shop_that_is_briefly_down_is_tried_again(
@@ -174,10 +194,11 @@ def test_a_shop_that_is_briefly_down_is_tried_again(
 ) -> None:
     httpserver.expect_oneshot_request("/products/mug").respond_with_data("busy", status=503)
     fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", PLAN)
 
     job_id = start_job(product_page_url)
 
-    assert api.get(f"/api/jobs/{job_id}/").json()["status"] == "page_read"
+    assert api.get(f"/api/jobs/{job_id}/").json()["status"] == "planned"
 
 
 def test_a_model_provider_that_is_briefly_down_is_tried_again_and_each_try_is_recorded(
@@ -187,11 +208,12 @@ def test_a_model_provider_that_is_briefly_down_is_tried_again_and_each_try_is_re
     start_job: Callable[..., str],
 ) -> None:
     fake_model.respond("check_page", OutsideServiceDown("503 from the provider"), READABLE)
+    fake_model.respond("plan_ad", PLAN)
 
     job_id = start_job(product_page_url)
 
-    assert api.get(f"/api/jobs/{job_id}/").json()["status"] == "page_read"
-    calls = ModelCall.objects.filter(job_id=job_id).order_by("attempt")
+    assert api.get(f"/api/jobs/{job_id}/").json()["status"] == "planned"
+    calls = ModelCall.objects.filter(job_id=job_id, purpose="check_page").order_by("attempt")
     assert [(call.attempt, call.outcome) for call in calls] == [(1, "failed"), (2, "succeeded")]
     assert "503 from the provider" in calls[0].error
 
@@ -277,12 +299,14 @@ def test_a_link_that_redirects_says_which_page_was_actually_read(
         "", status=301, headers={"Location": "/products/mug"}
     )
     fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", PLAN)
 
     job_id = start_job(httpserver.url_for("/products/old-mug"))
 
     job = api.get(f"/api/jobs/{job_id}/").json()
     assert any(product_page_url in entry["message"] for entry in job["activity"])
-    assert ModelCall.objects.get(job_id=job_id).handoff["page_url"] == product_page_url
+    check = ModelCall.objects.get(job_id=job_id, purpose="check_page")
+    assert check.handoff["page_url"] == product_page_url
 
 
 def test_a_page_the_model_judges_unreadable_waits_for_a_working_link_with_its_reason(
@@ -541,14 +565,16 @@ def test_a_photo_that_cant_be_used_is_skipped_with_its_reason_and_the_rest_are_k
     )
     serve_bad_photo(httpserver, monkeypatch)
     fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", PLAN)
 
     job_id = start_job(httpserver.url_for("/products/mug"))
 
     job = api.get(f"/api/jobs/{job_id}/").json()
-    assert job["status"] == "page_read"
-    [skipped] = [e for e in job["activity"] if e["message"] == f"Skipped the photo at {bad_url}"]
+    assert job["status"] == "planned"
+    messages = [entry["message"] for entry in job["activity"]]
+    skipped = job["activity"][messages.index(f"Skipped the photo at {bad_url}")]
     assert skipped["reason"] == why_skipped.format(url=bad_url)
-    assert job["activity"][-1]["message"] == "Saved 1 product photo"
+    assert messages[messages.index("Planning the ad") - 1] == "Saved 1 product photo"
     stored = ProductPhoto.objects.filter(job_id=job_id)
     assert [(photo.source_url, file_store.read(photo.file)) for photo in stored] == [
         (good_url, MUG_FRONT)
@@ -558,28 +584,38 @@ def test_a_photo_that_cant_be_used_is_skipped_with_its_reason_and_the_rest_are_k
 def test_the_real_openai_code_sends_the_page_and_reads_back_a_judgement(
     api: APIClient,
     httpserver: HTTPServer,
-    openai_server: Callable[[Any], None],
+    openai_server: Callable[..., None],
     product_page_url: str,
     start_job: Callable[..., str],
 ) -> None:
     openai_server(
-        openai_reply({"type": "output_text", "text": json.dumps(READABLE), "annotations": []})
+        openai_reply({"type": "output_text", "text": json.dumps(READABLE), "annotations": []}),
+        openai_reply({"type": "output_text", "text": json.dumps(PLAN), "annotations": []}),
     )
 
     job_id = start_job(product_page_url)
 
     job = api.get(f"/api/jobs/{job_id}/").json()
-    assert job["status"] == "page_read"
+    assert job["status"] == "planned"
     assert ("The page has what the ad needs", READABLE["reason"]) in [
         (entry["message"], entry["reason"]) for entry in job["activity"]
     ]
-    [sent] = [request for request, _ in httpserver.log if request.path == "/v1/responses"]
-    body = sent.get_json()
-    assert body["model"] == "gpt-5-mini"
-    assert json.loads(body["input"])["page_url"] == product_page_url
-    assert "Stoneware Mug" in json.loads(body["input"])["page_text"]
-    assert body["text"]["format"]["type"] == "json_schema"
-    call = ModelCall.objects.get(job_id=job_id)
+    assert [scene["line"] for scene in job["scenes"]] == [
+        "Meet the Stoneware Mug from Kiln & Co.",
+        "Hand-thrown, holds 350 ml, and dishwasher safe.",
+        "Yours for $24.00.",
+    ]
+    check, plan = [
+        request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
+    ]
+    assert check["model"] == "gpt-5-mini"
+    assert json.loads(check["input"])["page_url"] == product_page_url
+    assert "Stoneware Mug" in json.loads(check["input"])["page_text"]
+    assert check["text"]["format"]["type"] == "json_schema"
+    assert plan["model"] == "gpt-5.6-sol"
+    assert "Stoneware Mug" in json.loads(plan["input"])["page_text"]
+    assert plan["text"]["format"]["type"] == "json_schema"
+    call = ModelCall.objects.get(job_id=job_id, purpose="check_page")
     assert (call.provider, call.outcome, call.input_tokens, call.output_tokens) == (
         "openai",
         "succeeded",

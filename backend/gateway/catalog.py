@@ -4,11 +4,13 @@ from decimal import Decimal
 
 MODEL_FOR_PURPOSE: dict[str, str] = {
     "check_page": "gpt-5-mini",
+    "plan_ad": "gpt-5.6-sol",
 }
 
 # US dollars per million tokens: (input, output). From OpenAI's pricing page.
 PRICE_PER_MILLION_TOKENS: dict[str, tuple[Decimal, Decimal]] = {
     "gpt-5-mini": (Decimal("0.25"), Decimal("2.00")),
+    "gpt-5.6-sol": (Decimal("4.00"), Decimal("20.00")),
 }
 
 
