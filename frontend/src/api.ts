@@ -33,6 +33,7 @@ export type Scene = {
 
 /** What the job is waiting for the user to answer. */
 export type Question = {
+  id: number;
   kind: "working_link" | "product_photos" | "producer";
   question: string;
 };

@@ -15,6 +15,8 @@ export function JobView({ jobId }: { jobId: string }) {
   const [round, setRound] = useState(0);
   // Kept across rounds, so a new round carries on from the last entry shown.
   const lastSeq = useRef(0);
+  // Hidden once answered, even while the last poll still shows it.
+  const [answeredId, setAnsweredId] = useState<number | null>(null);
 
   useEffect(() => {
     let stopped = false;
@@ -58,12 +60,15 @@ export function JobView({ jobId }: { jobId: string }) {
       </p>
       {pollError && <p style={{ color: "crimson" }}>{pollError}</p>}
 
-      {job.question && (
+      {job.question && job.question.id !== answeredId && (
         <QuestionForm
-          key={job.question.question}
+          key={job.question.id}
           jobId={jobId}
           question={job.question}
-          onSent={() => setRound((r) => r + 1)}
+          onSent={(answered) => {
+            setAnsweredId(answered.id);
+            setRound((r) => r + 1);
+          }}
         />
       )}
 

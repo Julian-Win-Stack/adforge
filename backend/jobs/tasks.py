@@ -14,7 +14,6 @@ from . import page
 from .activity import record
 from .models import Job, ProductPhoto, Question, Scene
 from .planning import (
-    PAGE_TEXT_FOR_PLAN,
     PLAN_INSTRUCTIONS,
     Answer,
     PlanHandoff,
@@ -22,9 +21,6 @@ from .planning import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Enough of the page for the check, without paying to send a whole bloated page.
-PAGE_TEXT_FOR_CHECK = 20_000
 
 CHECK_INSTRUCTIONS = """\
 You check whether a product page was read properly. It was fetched with a plain HTTP \
@@ -93,7 +89,8 @@ def read_page(job_id: str) -> None:
 
 def _read_page(job: Job) -> bool:
     """Read the page and keep what the ad needs. False when the job has to wait instead."""
-    if _waiting_for_answer(job):
+    # Run again after a restart, the task only carries on a read that hadn't finished.
+    if job.status not in (Job.Status.QUEUED, Job.Status.READING_PAGE):
         return False
     record(
         job,
@@ -126,7 +123,7 @@ def _read_page(job: Job) -> bool:
         handoff=PageCheckHandoff(
             product_url=job.product_url,
             page_url=download.final_url,
-            page_text=product_page.text[:PAGE_TEXT_FOR_CHECK],
+            page_text=page.for_model(product_page.text),
             photo_count=len(product_page.photo_urls),
         ),
         output=PageCheck,
@@ -138,14 +135,13 @@ def _read_page(job: Job) -> bool:
 
     saved = _save_photos(job, product_page.photo_urls)
     if saved == 0:
-        ask(
+        _ask(
             job,
             Question.Kind.PRODUCT_PHOTOS,
             PRODUCT_PHOTOS_QUESTION,
             message="Waiting for product photos",
             reason="The ad has to show the real product, and the page gave no product photo "
             "we could use.",
-            status=Job.Status.NEEDS_PRODUCT_PHOTOS,
         )
         return False
     record(
@@ -158,13 +154,12 @@ def _read_page(job: Job) -> bool:
 
 
 def _ask_for_working_link(job: Job, *, reason: str) -> None:
-    ask(
+    _ask(
         job,
         Question.Kind.WORKING_LINK,
         WORKING_LINK_QUESTION,
         message="Waiting for a working link to the product page",
         reason=reason,
-        status=Job.Status.NEEDS_WORKING_LINK,
     )
 
 
@@ -228,7 +223,9 @@ def plan_ad(job_id: str) -> None:
 
 
 def _plan_ad(job: Job) -> None:
-    if _waiting_for_answer(job):
+    # Run again after a restart, the task only carries on a plan that hadn't finished, so
+    # nothing is asked or paid for twice.
+    if job.status not in (Job.Status.PAGE_READ, Job.Status.PLANNING):
         return
     record(
         job,
@@ -242,7 +239,7 @@ def _plan_ad(job: Job) -> None:
         instructions=PLAN_INSTRUCTIONS,
         handoff=PlanHandoff(
             product_url=job.product_url,
-            page_text=job.page_text[:PAGE_TEXT_FOR_PLAN],
+            page_text=page.for_model(job.page_text),
             target_seconds=job.target_seconds,
             photo_count=job.photos.count(),
             answers=[
@@ -255,13 +252,12 @@ def _plan_ad(job: Job) -> None:
         output=ProducerDecision,
     )
     if decision.question is not None:
-        ask(
+        _ask(
             job,
             Question.Kind.PRODUCER,
             decision.question,
             message=f"Asked: {decision.question}",
             reason=decision.reason,
-            status=Job.Status.NEEDS_ANSWER,
         )
         return
     plan = decision.plan
@@ -282,21 +278,16 @@ def _plan_ad(job: Job) -> None:
         )
 
 
-def ask(
-    job: Job,
-    kind: Question.Kind,
-    question: str,
-    *,
-    message: str,
-    reason: str,
-    status: Job.Status,
-) -> None:
+# What the job waits in while each kind of question is open.
+WAITING_STATUS = {
+    Question.Kind.WORKING_LINK: Job.Status.NEEDS_WORKING_LINK,
+    Question.Kind.PRODUCT_PHOTOS: Job.Status.NEEDS_PRODUCT_PHOTOS,
+    Question.Kind.PRODUCER: Job.Status.NEEDS_ANSWER,
+}
+
+
+def _ask(job: Job, kind: Question.Kind, question: str, *, message: str, reason: str) -> None:
     """Put a question to the user and leave the job waiting for the answer."""
     with transaction.atomic():
         Question.objects.create(job=job, kind=kind, question=question, reason=reason)
-        record(job, message, reason=reason, status=status)
-
-
-def _waiting_for_answer(job: Job) -> bool:
-    """A task run again after a restart finds the question already asked, and keeps waiting."""
-    return job.questions.filter(answered_at__isnull=True).exists()
+        record(job, message, reason=reason, status=WAITING_STATUS[kind])

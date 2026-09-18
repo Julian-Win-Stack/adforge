@@ -41,7 +41,7 @@ class SceneSerializer(serializers.ModelSerializer[Scene]):
 class QuestionSerializer(serializers.ModelSerializer[Question]):
     class Meta:
         model = Question
-        fields = ["kind", "question"]
+        fields = ["id", "kind", "question"]
 
 
 class JobSerializer(serializers.ModelSerializer[Job]):
@@ -79,7 +79,7 @@ def get_job(request: Request, job_id: str) -> Response:
     # entry is already visible (see activity.record).
     job = get_object_or_404(Job, pk=job_id)
     activity = job.activity.filter(seq__gt=poll.validated_data["after"])
-    waiting_on = job.questions.filter(answered_at__isnull=True).first()
+    waiting_on = job.open_question()
     return Response(
         {
             **JobSerializer(job).data,
@@ -123,7 +123,7 @@ def answer_question(request: Request, job_id: str) -> Response:
     with transaction.atomic():
         # Locked, so two answers sent at once can't both be taken.
         job = get_object_or_404(Job.objects.select_for_update(), pk=job_id)
-        question = job.questions.filter(answered_at__isnull=True).first()
+        question = job.open_question()
         if question is None:
             return Response(
                 {"detail": "This job isn't waiting for an answer."},
@@ -138,7 +138,7 @@ def answer_question(request: Request, job_id: str) -> Response:
     return Response(status=status.HTTP_202_ACCEPTED)
 
 
-def _answered(question: Question, answer: str) -> None:
+def _store_answer(question: Question, answer: str) -> None:
     question.answer = answer
     question.answered_at = timezone.now()
     question.save(update_fields=["answer", "answered_at"])
@@ -148,14 +148,15 @@ def _take_working_link(job: Job, question: Question, data: object) -> None:
     serializer = WorkingLinkSerializer(data=data)
     serializer.is_valid(raise_exception=True)
     link: str = serializer.validated_data["answer"]
-    _answered(question, link)
+    _store_answer(question, link)
+    last_link = job.product_url
     job.product_url = link
     job.save(update_fields=["product_url"])
     record(
         job,
         f"You sent a new link: {link}",
-        reason="The last link didn't lead to one product's page, so the page is read again "
-        "from this one.",
+        reason=f"The last link, {last_link}, didn't lead to one product's page, so the page "
+        "is read again from this one.",
         status=Job.Status.QUEUED,
     )
     transaction.on_commit(lambda: read_page.delay(str(job.pk)))
@@ -167,7 +168,7 @@ def _take_product_photos(job: Job, question: Question, data: object) -> None:
     photos: list[UploadedFile[bytes]] = serializer.validated_data["photos"]
     for position, photo in enumerate(photos, start=1):
         keep_photo(job, position, photo.read(), photo.content_type or "")
-    _answered(question, "Uploaded " + ", ".join(photo.name or "a photo" for photo in photos))
+    _store_answer(question, "Uploaded " + ", ".join(photo.name or "a photo" for photo in photos))
     record(
         job,
         f"You uploaded {len(photos)} product photo{'s' if len(photos) != 1 else ''}",
@@ -180,7 +181,7 @@ def _take_product_photos(job: Job, question: Question, data: object) -> None:
 def _take_producer_answer(job: Job, question: Question, data: object) -> None:
     serializer = ProducerAnswerSerializer(data=data)
     serializer.is_valid(raise_exception=True)
-    _answered(question, serializer.validated_data["answer"])
+    _store_answer(question, serializer.validated_data["answer"])
     record(
         job,
         f"You answered: {question.answer}",

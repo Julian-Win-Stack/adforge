@@ -43,6 +43,10 @@ class Job(models.Model):
     def __str__(self) -> str:
         return f"{self.product_url} ({self.status})"
 
+    def open_question(self) -> Question | None:
+        """The question the job is waiting on the user to answer, if any."""
+        return self.questions.filter(answered_at__isnull=True).first()
+
 
 class ActivityEntry(models.Model):
     """One step shown in the live activity view: what happened, and one sentence on why."""

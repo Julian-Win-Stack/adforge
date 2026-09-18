@@ -1,3 +1,4 @@
+import json
 import socket
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -141,6 +142,11 @@ def openai_reply(content: dict[str, Any], status: str = "completed") -> dict[str
             "total_tokens": 1_500,
         },
     }
+
+
+def openai_answer(answer: dict[str, Any]) -> dict[str, Any]:
+    """A reply whose text is `answer` as JSON, the way structured output comes back."""
+    return openai_reply({"type": "output_text", "text": json.dumps(answer), "annotations": []})
 
 
 @pytest.fixture

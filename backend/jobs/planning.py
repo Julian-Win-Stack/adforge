@@ -6,9 +6,6 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from gateway.types import Handoff, Judgement
 
-# Enough of the page to plan from, without paying to send a whole bloated page.
-PAGE_TEXT_FOR_PLAN = 20_000
-
 PLAN_INSTRUCTIONS = """\
 You are the producer of a short vertical video ad for one product. A person speaks to \
 camera, one line per scene, and each scene shows the product. You get the product page's \

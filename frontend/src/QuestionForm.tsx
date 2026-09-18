@@ -10,7 +10,7 @@ export function QuestionForm({
 }: {
   jobId: string;
   question: Question;
-  onSent: () => void;
+  onSent: (answered: Question) => void;
 }) {
   const [text, setText] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
@@ -23,7 +23,7 @@ export function QuestionForm({
     setError(null);
     try {
       await answerQuestion(jobId, question.kind === "product_photos" ? photos : text);
-      onSent();
+      onSent(question);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
     } finally {

@@ -18,6 +18,10 @@ MAX_PAGE_BYTES = 5_000_000
 MAX_PHOTO_BYTES = 15_000_000
 MAX_PHOTOS = 10
 MAX_REDIRECTS = 10
+# How much page text a model is sent.
+PAGE_TEXT_FOR_MODEL = 20_000
+DECLARED_DATA_HEADING = "\n\nProduct data the page declares for search engines:\n"
+
 # Some shops turn away requests that don't look like they come from a browser.
 HEADERS = {
     "User-Agent": (
@@ -135,8 +139,18 @@ def parse(page: Download) -> ProductPage:
     text = soup.get_text("\n", strip=True)
     if products:
         declared = "\n".join(json.dumps(product, ensure_ascii=False) for product in products)
-        text += f"\n\nProduct data the page declares for search engines:\n{declared}"
+        text += f"{DECLARED_DATA_HEADING}{declared}"
     return ProductPage(text=text, photo_urls=photo_urls)
+
+
+def for_model(page_text: str) -> str:
+    """Enough of the page text to judge from, without paying to send a whole bloated page.
+    A long page loses the end of its words, never its declared product data."""
+    if len(page_text) <= PAGE_TEXT_FOR_MODEL:
+        return page_text
+    words, heading, declared = page_text.partition(DECLARED_DATA_HEADING)
+    declared_part = (heading + declared)[:PAGE_TEXT_FOR_MODEL]
+    return words[: PAGE_TEXT_FOR_MODEL - len(declared_part)] + declared_part
 
 
 def _declared_products(soup: BeautifulSoup) -> list[dict[str, Any]]:

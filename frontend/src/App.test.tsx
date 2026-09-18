@@ -19,6 +19,8 @@ function fakeBackend() {
   const requests: string[] = [];
   const answers: (string | FormData)[] = [];
   const state = { scenes: [] as Scene[], question: null as Question | null };
+  // While set, polls wait on it, as a poll still in flight would.
+  let heldPolls: Promise<void> | null = null;
 
   vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
@@ -26,6 +28,7 @@ function fakeBackend() {
     if (method === "POST" && url === "/api/jobs/") return Response.json(job, { status: 201 });
     const poll = url.match(/^\/api\/jobs\/job-1\/\?after=(\d+)$/);
     if (method === "GET" && poll) {
+      if (heldPolls) await heldPolls;
       const after = Number(poll[1]);
       return Response.json({
         ...job,
@@ -47,6 +50,17 @@ function fakeBackend() {
     requests,
     answers,
     state,
+    /** Hold every poll until the returned function is called. */
+    holdPolls() {
+      let release = () => {};
+      heldPolls = new Promise((resolve) => {
+        release = () => {
+          heldPolls = null;
+          resolve();
+        };
+      });
+      return release;
+    },
     record(message: string) {
       activity.push({
         seq: activity.length + 1,
@@ -210,6 +224,7 @@ test("shows the producer's question, sends the typed answer, and follows the job
   const user = await startMugJob(backend);
 
   backend.state.question = {
+    id: 1,
     kind: "producer",
     question: "The page shows $24.00 and $28.00. Which price should the ad say?",
   };
@@ -237,11 +252,33 @@ test("shows the producer's question, sends the typed answer, and follows the job
   await screen.findByText("Planned 3 scenes");
 });
 
+test("an answered question's form goes at once, and the same question asked again starts empty", async () => {
+  const backend = fakeBackend();
+  const user = await startMugJob(backend);
+  const question = "Which price should the ad say?";
+  backend.state.question = { id: 1, kind: "producer", question };
+  backend.job.status = "needs_answer";
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await user.type(await screen.findByLabelText("Your answer"), "$24.00");
+
+  // The producer asks the same thing again, and the page only hears of it when a poll lands.
+  backend.state.question = { id: 2, kind: "producer", question };
+  const release = backend.holdPolls();
+  await user.click(screen.getByRole("button", { name: "Send answer" }));
+  expect(backend.answers).toEqual([JSON.stringify({ answer: "$24.00" })]);
+  expect(screen.queryByLabelText("Your answer")).toBeNull();
+
+  release();
+  const asked = (await screen.findByLabelText("Your answer")) as HTMLTextAreaElement;
+  expect(asked.value).toBe("");
+});
+
 test("asks for a working link and sends the one typed", async () => {
   const backend = fakeBackend();
   const user = await startMugJob(backend);
 
   backend.state.question = {
+    id: 1,
     kind: "working_link",
     question: "That link didn't lead to one product's page. Can you send a link that does?",
   };
@@ -269,6 +306,7 @@ test("asks for product photos and uploads the ones picked", async () => {
   const user = await startMugJob(backend);
 
   backend.state.question = {
+    id: 1,
     kind: "product_photos",
     question: "The page has no photo of the product. Can you upload at least one?",
   };
@@ -297,7 +335,11 @@ test("asks for product photos and uploads the ones picked", async () => {
 test("says why an answer was refused and keeps the question open", async () => {
   const backend = fakeBackend();
   const user = await startMugJob(backend);
-  backend.state.question = { kind: "working_link", question: "Can you send a working link?" };
+  backend.state.question = {
+    id: 1,
+    kind: "working_link",
+    question: "Can you send a working link?",
+  };
   backend.job.status = "needs_working_link";
   backend.record("The page couldn't be read");
   await act(() => vi.advanceTimersByTimeAsync(2000));

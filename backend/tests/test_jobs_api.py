@@ -26,6 +26,7 @@ from .conftest import (
     PUBLIC_ADDRESS,
     READABLE,
     FakeDns,
+    openai_answer,
     openai_reply,
 )
 
@@ -98,6 +99,35 @@ def test_the_page_text_includes_the_product_data_the_page_declares_for_search_en
     assert "InStock" in Job.objects.get(pk=job_id).page_text
     check = ModelCall.objects.get(job_id=job_id, purpose="check_page")
     assert "InStock" in check.handoff["page_text"]
+
+
+def test_a_long_page_still_hands_the_models_its_product_data(
+    fake_model: FakeModel, httpserver: HTTPServer, start_job: Callable[..., str]
+) -> None:
+    # A page with 29,000 characters of reviews: more than the models are sent. The stock
+    # is only in the structured data, which the page text puts after all the words.
+    reviews = "<p>" + "Lovely mug, would buy again. " * 1_000 + "</p>"
+    httpserver.expect_request("/products/long-mug").respond_with_data(
+        PRODUCT_PAGE.format(side="/cdn/mug-side.png").replace("</body>", reviews + "</body>"),
+        content_type="text/html; charset=utf-8",
+    )
+    httpserver.expect_request("/cdn/mug-front.png").respond_with_data(
+        MUG_FRONT, content_type="image/png"
+    )
+    httpserver.expect_request("/cdn/mug-side.png").respond_with_data(
+        MUG_SIDE, content_type="image/png"
+    )
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", PLAN)
+
+    job_id = start_job(httpserver.url_for("/products/long-mug"))
+
+    assert len(Job.objects.get(pk=job_id).page_text) > 20_000
+    for purpose in ("check_page", "plan_ad"):
+        sent = ModelCall.objects.get(job_id=job_id, purpose=purpose).handoff["page_text"]
+        assert len(sent) <= 20_000
+        assert sent.startswith("Stoneware Mug | Kiln & Co\nStoneware Mug\n$24.00")
+        assert '"availability": "https://schema.org/InStock"' in sent
 
 
 def test_the_pages_original_html_is_kept_as_a_file_exactly_as_served(
@@ -589,8 +619,8 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_a_judgement(
     start_job: Callable[..., str],
 ) -> None:
     openai_server(
-        openai_reply({"type": "output_text", "text": json.dumps(READABLE), "annotations": []}),
-        openai_reply({"type": "output_text", "text": json.dumps(PLAN), "annotations": []}),
+        openai_answer(READABLE),
+        openai_answer(PLAN),
     )
 
     job_id = start_job(product_page_url)

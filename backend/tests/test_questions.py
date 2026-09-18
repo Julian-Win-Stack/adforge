@@ -60,6 +60,7 @@ def test_a_job_that_couldnt_read_its_page_asks_for_a_working_link_and_reads_it(
     waiting = api.get(f"/api/jobs/{job_id}/").json()
     assert waiting["status"] == "needs_working_link"
     assert waiting["question"] == {
+        "id": Question.objects.get(job_id=job_id).pk,
         "kind": "working_link",
         "question": "We couldn't read one product's page from that link. "
         "What's the link to the product's own page?",
@@ -76,6 +77,13 @@ def test_a_job_that_couldnt_read_its_page_asks_for_a_working_link_and_reads_it(
         httpserver.url_for("/cdn/mug-side.png"),
     ]
     assert "Hand-thrown, holds 350 ml" in Job.objects.get(pk=job_id).page_text
+    # The job now holds the new link, so the history keeps the one it replaced.
+    [sent] = [e for e in job["activity"] if e["message"].startswith("You sent a new link")]
+    assert (sent["message"], sent["reason"]) == (
+        f"You sent a new link: {product_page_url}",
+        f"The last link, {first_url}, didn't lead to one product's page, so the page is "
+        "read again from this one.",
+    )
     [asked] = Question.objects.filter(job_id=job_id)
     assert (asked.kind, asked.answer) == ("working_link", product_page_url)
     assert asked.answered_at is not None
@@ -123,6 +131,7 @@ def test_a_page_with_no_usable_photos_asks_for_uploads_and_keeps_them_like_the_p
     waiting = api.get(f"/api/jobs/{job_id}/").json()
     assert waiting["status"] == "needs_product_photos"
     assert waiting["question"] == {
+        "id": Question.objects.get(job_id=job_id).pk,
         "kind": "product_photos",
         "question": "The page had no product photo we could use. "
         "Can you upload at least one photo of the product?",
