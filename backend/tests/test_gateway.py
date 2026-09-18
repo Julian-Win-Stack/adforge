@@ -92,8 +92,11 @@ def test_a_photo_a_phone_saved_sideways_is_shown_the_right_way_up(
     httpserver: HTTPServer, openai_server: Callable[..., None]
 ) -> None:
     # Phones store a portrait photo as landscape pixels plus a note saying "turn it 90 degrees
-    # clockwise to view". The model is shown the photo as a person would see it: tall.
-    sideways = PIL.Image.new("RGB", (40, 20), (143, 170, 140))
+    # clockwise to view". The model is shown the photo as a person would see it: tall, with
+    # the stored left half, black here, on top. Turned the other way, black would be at the
+    # bottom and the photo upside down.
+    sideways = PIL.Image.new("RGB", (48, 24), "white")
+    sideways.paste("black", (0, 0, 24, 24))
     note = PIL.Image.Exif()
     note[0x0112] = 6  # Orientation: turn 90 degrees clockwise to view.
     file = io.BytesIO()
@@ -108,7 +111,14 @@ def test_a_photo_a_phone_saved_sideways_is_shown_the_right_way_up(
     image_url = message["content"][2]["image_url"]
     assert image_url.startswith("data:image/jpeg;base64,")
     shown = PIL.Image.open(io.BytesIO(base64.b64decode(image_url.split(",", 1)[1])))
-    assert shown.size == (20, 40)
+    # Sent as the JPEG it is: the bytes, not only the label.
+    assert shown.format == "JPEG"
+    assert shown.size == (24, 48)
+    # JPEG blurs colours a little, so each half is read as nearer black or nearer white.
+    greys = shown.convert("L")
+    top, bottom = (greys.getpixel((12, y)) for y in (6, 42))
+    assert isinstance(top, int) and isinstance(bottom, int)
+    assert ["black" if shade < 128 else "white" for shade in (top, bottom)] == ["black", "white"]
 
 
 @pytest.mark.parametrize(
