@@ -106,15 +106,17 @@ def test_the_products_colour_and_the_photos_showing_it_are_stored_with_the_job(
     start_job: Callable[..., str],
 ) -> None:
     fake_model.respond("check_page", READABLE)
-    fake_model.respond("plan_ad", PLAN)  # Sage green, shown in photo 1 only.
+    # Sage green, shown only in photo 2. Not photo 1, so marking the first photo by default
+    # can't pass.
+    fake_model.respond("plan_ad", _plan_with(colour_photos=[2]))
 
     job_id = start_job(product_page_url)
 
     assert Job.objects.get(pk=job_id).product_colour == "sage green"
     photos = ProductPhoto.objects.filter(job_id=job_id)
     assert [(photo.position, photo.shows_product_colour) for photo in photos] == [
-        (1, True),
-        (2, False),
+        (1, False),
+        (2, True),
     ]
 
 
