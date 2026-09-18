@@ -88,6 +88,32 @@ test("shows each activity entry once, in order, as the job runs, then stops aski
 });
 
 test.each([
+  { status: "needs_working_link", label: "Waiting for a working link" },
+  { status: "needs_product_photos", label: "Waiting for product photos" },
+  { status: "failed", label: "Failed" },
+] as const)("stops asking once the job is $label", async ({ status, label }) => {
+  const backend = fakeBackend();
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+
+  await user.type(screen.getByLabelText(/product page link/i), backend.job.product_url);
+  backend.job.status = "reading_page";
+  backend.record("Reading the product page");
+  await user.click(screen.getByRole("button", { name: "Start" }));
+  await screen.findByText("Reading the product page");
+
+  backend.record("The last step");
+  backend.job.status = status;
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await screen.findByText("The last step");
+  expect(screen.getByText(label)).toBeTruthy();
+
+  const requestsWhenSettled = backend.requests.length;
+  await act(() => vi.advanceTimersByTimeAsync(60_000));
+  expect(backend.requests).toHaveLength(requestsWhenSettled);
+});
+
+test.each([
   {
     answer: () => Response.json({ detail: "Too many jobs are running." }, { status: 400 }),
     shown: "Too many jobs are running.",

@@ -1,5 +1,9 @@
+import json
+import logging
+import socket
 from collections.abc import Callable
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -14,7 +18,7 @@ from gateway.fake import FakeModel
 from gateway.models import ModelCall
 from jobs.models import Job, ProductPhoto
 
-from .conftest import MUG_FRONT, MUG_SIDE, PRODUCT_PAGE
+from .conftest import MUG_FRONT, MUG_SIDE, PRODUCT_PAGE, PUBLIC_ADDRESS, FakeDns, openai_reply
 
 pytestmark = pytest.mark.django_db
 
@@ -321,6 +325,314 @@ def test_a_page_with_no_usable_product_photos_waits_for_photos_and_says_what_was
         photo_url in entry["message"] and "404" in entry["reason"] for entry in job["activity"]
     )
     assert "product photo" in job["activity"][-1]["reason"]
+
+
+def test_a_shop_that_stays_down_fails_the_job_after_three_tries_and_says_why(
+    api: APIClient,
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    start_job: Callable[..., str],
+) -> None:
+    httpserver.expect_request("/products/mug").respond_with_data("busy", status=503)
+
+    job_id = start_job(httpserver.url_for("/products/mug"))
+
+    job = api.get(f"/api/jobs/{job_id}/").json()
+    assert job["status"] == "failed"
+    assert (job["activity"][-1]["message"], job["activity"][-1]["reason"]) == (
+        "Could not read the product page",
+        "An outside service stayed down after several tries: "
+        f"{httpserver.url_for('/products/mug')} answered 503 SERVICE UNAVAILABLE.",
+    )
+    assert len(httpserver.log) == 3
+    assert not ModelCall.objects.filter(job_id=job_id).exists()
+
+
+def test_a_shop_whose_name_lookup_keeps_failing_is_tried_again_then_fails_the_job(
+    api: APIClient, fake_model: FakeModel, dns: FakeDns, start_job: Callable[..., str]
+) -> None:
+    # The name exists, but the lookup service is having a moment: that can pass.
+    dns.records["shop.example"] = socket.gaierror(
+        socket.EAI_AGAIN, "Temporary failure in name resolution"
+    )
+
+    job_id = start_job("https://shop.example/products/mug")
+
+    assert api.get(f"/api/jobs/{job_id}/").json()["status"] == "failed"
+    assert dns.lookups == ["shop.example"] * 3
+
+
+@pytest.mark.parametrize("private_addresses_blocked", [True, False])
+def test_a_link_to_a_website_that_doesnt_exist_waits_for_a_working_link_without_retrying(
+    api: APIClient,
+    fake_model: FakeModel,
+    dns: FakeDns,
+    start_job: Callable[..., str],
+    settings: Settings,
+    private_addresses_blocked: bool,
+) -> None:
+    settings.FETCH_PRIVATE_ADDRESSES = not private_addresses_blocked
+
+    job_id = start_job("https://shopp.example/products/mug")  # A typo: no such website.
+
+    job = api.get(f"/api/jobs/{job_id}/").json()
+    assert job["status"] == "needs_working_link"
+    assert "shopp.example doesn't exist" in job["activity"][-1]["reason"]
+    assert dns.lookups == ["shopp.example"]
+    assert not ModelCall.objects.filter(job_id=job_id).exists()
+
+
+def test_a_link_that_redirects_forever_waits_for_a_working_link(
+    api: APIClient,
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    start_job: Callable[..., str],
+) -> None:
+    httpserver.expect_request("/products/loop").respond_with_data(
+        "", status=302, headers={"Location": "/products/loop"}
+    )
+
+    job_id = start_job(httpserver.url_for("/products/loop"))
+
+    job = api.get(f"/api/jobs/{job_id}/").json()
+    assert job["status"] == "needs_working_link"
+    assert "redirected more than 10 times" in job["activity"][-1]["reason"]
+    assert len(httpserver.log) == 11  # The link itself, then 10 redirects followed.
+
+
+def test_a_link_that_redirects_to_a_private_network_address_is_not_followed(
+    api: APIClient,
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    dns: FakeDns,
+    start_job: Callable[..., str],
+    settings: Settings,
+) -> None:
+    settings.FETCH_PRIVATE_ADDRESSES = False
+    dns.records["localhost"] = PUBLIC_ADDRESS  # The shop passes the check...
+    dns.records["127.0.0.1"] = "127.0.0.1"  # ...and sends us to this machine's own admin.
+    admin_url = f"http://127.0.0.1:{httpserver.port}/internal/admin"
+    httpserver.expect_request("/old-mug").respond_with_data(
+        "", status=302, headers={"Location": admin_url}
+    )
+    httpserver.expect_request("/internal/admin").respond_with_data("the admin's secrets")
+
+    job_id = start_job(httpserver.url_for("/old-mug"))
+
+    job = api.get(f"/api/jobs/{job_id}/").json()
+    assert job["status"] == "needs_working_link"
+    assert job["activity"][-1]["reason"] == (
+        f"{admin_url} leads to a private network address, which is never fetched."
+    )
+    assert [request.path for request, _ in httpserver.log] == ["/old-mug"]
+
+
+def test_a_photo_link_to_a_private_network_address_is_never_fetched(
+    api: APIClient,
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    dns: FakeDns,
+    start_job: Callable[..., str],
+    settings: Settings,
+) -> None:
+    settings.FETCH_PRIVATE_ADDRESSES = False
+    dns.records["localhost"] = PUBLIC_ADDRESS
+    dns.records["127.0.0.1"] = "127.0.0.1"
+    photo_url = f"http://127.0.0.1:{httpserver.port}/cdn/secret.png"
+    httpserver.expect_request("/products/mug").respond_with_data(
+        f'<html><head><meta property="og:image" content="{photo_url}"></head>'
+        "<body><h1>Stoneware Mug</h1><p>$24.00</p></body></html>",
+        content_type="text/html",
+    )
+    httpserver.expect_request("/cdn/secret.png").respond_with_data(
+        MUG_FRONT, content_type="image/png"
+    )
+    fake_model.respond("check_page", READABLE)
+
+    job_id = start_job(httpserver.url_for("/products/mug"))
+
+    job = api.get(f"/api/jobs/{job_id}/").json()
+    assert job["status"] == "needs_product_photos"
+    assert (
+        f"Skipped the photo at {photo_url}",
+        (f"{photo_url} leads to a private network address, which is never fetched."),
+    ) in [(entry["message"], entry["reason"]) for entry in job["activity"]]
+    assert [request.path for request, _ in httpserver.log] == ["/products/mug"]
+    assert job["photos"] == []
+
+
+def test_a_page_that_lists_no_photos_waits_for_product_photos(
+    api: APIClient,
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    start_job: Callable[..., str],
+) -> None:
+    httpserver.expect_request("/products/mug").respond_with_data(
+        "<html><body><h1>Stoneware Mug</h1><p>$24.00</p></body></html>",
+        content_type="text/html",
+    )
+    fake_model.respond("check_page", READABLE)
+
+    job_id = start_job(httpserver.url_for("/products/mug"))
+
+    job = api.get(f"/api/jobs/{job_id}/").json()
+    assert job["status"] == "needs_product_photos"
+    assert [entry["message"] for entry in job["activity"]][-2:] == [
+        "The page has what the ad needs",
+        "Waiting for product photos",
+    ]
+    assert job["photos"] == []
+
+
+def _serve_banner_page(httpserver: HTTPServer, _: pytest.MonkeyPatch) -> None:
+    httpserver.expect_request("/cdn/bad").respond_with_data(
+        "<html>Summer sale!</html>", content_type="text/html"
+    )
+
+
+def _serve_huge_photo(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("jobs.page.MAX_PHOTO_BYTES", 100)
+    httpserver.expect_request("/cdn/bad").respond_with_data(
+        b"\x89PNG" + b"0" * 200, content_type="image/png"
+    )
+
+
+def _serve_down_photo_host(httpserver: HTTPServer, _: pytest.MonkeyPatch) -> None:
+    httpserver.expect_request("/cdn/bad").respond_with_data("busy", status=503)
+
+
+@pytest.mark.parametrize(
+    ("serve_bad_photo", "why_skipped"),
+    [
+        pytest.param(
+            _serve_banner_page, "It came back as text/html, not an image.", id="not an image"
+        ),
+        pytest.param(
+            _serve_huge_photo,
+            "{url} is too big to be a product photo, at over 100 bytes.",
+            id="too big",
+        ),
+        pytest.param(
+            _serve_down_photo_host,
+            "{url} answered 503 SERVICE UNAVAILABLE.",
+            id="its server stays down",
+        ),
+    ],
+)
+def test_a_photo_that_cant_be_used_is_skipped_with_its_reason_and_the_rest_are_kept(
+    api: APIClient,
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    start_job: Callable[..., str],
+    monkeypatch: pytest.MonkeyPatch,
+    serve_bad_photo: Callable[[HTTPServer, pytest.MonkeyPatch], None],
+    why_skipped: str,
+) -> None:
+    bad_url = httpserver.url_for("/cdn/bad")
+    good_url = httpserver.url_for("/cdn/mug-front.png")
+    httpserver.expect_request("/products/mug").respond_with_data(
+        f'<html><head><meta property="og:image" content="{bad_url}">'
+        f'<meta property="og:image" content="{good_url}"></head>'
+        "<body><h1>Stoneware Mug</h1><p>$24.00</p></body></html>",
+        content_type="text/html",
+    )
+    httpserver.expect_request("/cdn/mug-front.png").respond_with_data(
+        MUG_FRONT, content_type="image/png"
+    )
+    serve_bad_photo(httpserver, monkeypatch)
+    fake_model.respond("check_page", READABLE)
+
+    job_id = start_job(httpserver.url_for("/products/mug"))
+
+    job = api.get(f"/api/jobs/{job_id}/").json()
+    assert job["status"] == "page_read"
+    [skipped] = [e for e in job["activity"] if e["message"] == f"Skipped the photo at {bad_url}"]
+    assert skipped["reason"] == why_skipped.format(url=bad_url)
+    assert job["activity"][-1]["message"] == "Saved 1 product photo"
+    stored = ProductPhoto.objects.filter(job_id=job_id)
+    assert [(photo.source_url, file_store.read(photo.file)) for photo in stored] == [
+        (good_url, MUG_FRONT)
+    ]
+
+
+def test_the_real_openai_code_sends_the_page_and_reads_back_a_judgement(
+    api: APIClient,
+    httpserver: HTTPServer,
+    openai_server: Callable[[Any], None],
+    product_page_url: str,
+    start_job: Callable[..., str],
+) -> None:
+    openai_server(
+        openai_reply({"type": "output_text", "text": json.dumps(READABLE), "annotations": []})
+    )
+
+    job_id = start_job(product_page_url)
+
+    job = api.get(f"/api/jobs/{job_id}/").json()
+    assert job["status"] == "page_read"
+    assert ("The page has what the ad needs", READABLE["reason"]) in [
+        (entry["message"], entry["reason"]) for entry in job["activity"]
+    ]
+    [sent] = [request for request, _ in httpserver.log if request.path == "/v1/responses"]
+    body = sent.get_json()
+    assert body["model"] == "gpt-5-mini"
+    assert json.loads(body["input"])["page_url"] == product_page_url
+    assert "Stoneware Mug" in json.loads(body["input"])["page_text"]
+    assert body["text"]["format"]["type"] == "json_schema"
+    call = ModelCall.objects.get(job_id=job_id)
+    assert (call.provider, call.outcome, call.input_tokens, call.output_tokens) == (
+        "openai",
+        "succeeded",
+        1_200,
+        300,
+    )
+    assert call.cost_usd == Decimal("0.0009")  # 1,200 x $0.25/M + 300 x $2.00/M.
+
+
+def test_an_openai_reply_that_cant_be_used_fails_the_job_and_says_why(
+    api: APIClient,
+    openai_server: Callable[[Any], None],
+    product_page_url: str,
+    start_job: Callable[..., str],
+) -> None:
+    openai_server(openai_reply({"type": "refusal", "refusal": "I can't help with that."}))
+
+    job_id = start_job(product_page_url)
+
+    job = api.get(f"/api/jobs/{job_id}/").json()
+    assert job["status"] == "failed"
+    assert job["activity"][-1]["message"] == "Could not check the product page"
+    assert job["activity"][-1]["reason"] == (
+        "The model's answer couldn't be used: gpt-5-mini gave no usable answer for check_page."
+    )
+    assert job["photos"] == []
+
+
+def test_an_unexpected_error_fails_the_job_and_leaves_the_details_in_the_server_log(
+    api: APIClient,
+    fake_model: FakeModel,
+    product_page_url: str,
+    start_job: Callable[..., str],
+    settings: Settings,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Storage points at a file, not a folder, so saving the page's HTML blows up.
+    (tmp_path / "not-a-folder").write_text("")
+    settings.MEDIA_ROOT = tmp_path / "not-a-folder"
+
+    with caplog.at_level(logging.ERROR, logger="jobs.tasks"):
+        job_id = start_job(product_page_url)
+
+    job = api.get(f"/api/jobs/{job_id}/").json()
+    assert job["status"] == "failed"
+    assert (job["activity"][-1]["message"], job["activity"][-1]["reason"]) == (
+        "Something went wrong while reading the page",
+        "An unexpected error stopped the job; the details are in the server log.",
+    )
+    [logged] = caplog.records
+    assert logged.getMessage() == f"Reading the page failed for job {job_id}"
+    assert logged.exc_info is not None
 
 
 @pytest.mark.parametrize(

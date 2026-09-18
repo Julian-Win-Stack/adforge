@@ -54,9 +54,9 @@ def download(url: str, *, max_bytes: int, what: str) -> Download:
 
     def attempt() -> Download:
         current = url
-        # Redirects are followed by hand so every hop gets the private-address check.
+        # Redirects are followed by hand so every hop gets checked.
         for _ in range(MAX_REDIRECTS + 1):
-            _refuse_private_address(current)
+            _check_where_it_points(current)
             try:
                 with httpx.stream("GET", current, headers=HEADERS, timeout=20) as response:
                     if response.is_redirect:
@@ -89,21 +89,27 @@ def download(url: str, *, max_bytes: int, what: str) -> Download:
     return with_retries(attempt)
 
 
-def _refuse_private_address(url: str) -> None:
-    """Refuse links to this machine or a private network (like localhost or a cloud's
-    settings address), so a pasted link can't make the server reach places only it can
-    see. Links are checked where they point when fetched; a host that changes its address
-    between this check and the fetch (DNS rebinding) could still get through."""
+def _check_where_it_points(url: str) -> None:
+    """Look the link's host up, and refuse links to this machine or a private network (like
+    localhost or a cloud's settings address), so a pasted link can't make the server reach
+    places only it can see. A host that changes its address between this check and the
+    fetch (DNS rebinding) could still get through."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise PageUnreadable(f"{url} is not a web link.")
-    if settings.FETCH_PRIVATE_ADDRESSES:
-        return
     try:
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
         addresses = socket.getaddrinfo(parsed.hostname, port, proto=socket.IPPROTO_TCP)
-    except (socket.gaierror, ValueError) as error:
+    except ValueError as error:  # A port that isn't a number, or out of range.
+        raise PageUnreadable(f"{url} is not a web link.") from error
+    except socket.gaierror as error:
+        if error.errno in _NO_SUCH_HOST:
+            raise PageUnreadable(
+                f"{parsed.hostname} doesn't exist, so the link can't be opened. Check it for typos."
+            ) from error
         raise OutsideServiceDown(f"{url} could not be looked up: {error}") from error
+    if settings.FETCH_PRIVATE_ADDRESSES:
+        return
     for *_, sockaddr in addresses:
         address = ipaddress.ip_address(str(sockaddr[0]).split("%")[0])
         if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
@@ -112,6 +118,10 @@ def _refuse_private_address(url: str) -> None:
             raise PageUnreadable(
                 f"{url} leads to a private network address, which is never fetched."
             )
+
+
+# Lookup answers meaning the name has no address, as opposed to the lookup itself failing.
+_NO_SUCH_HOST = {socket.EAI_NONAME, getattr(socket, "EAI_NODATA", socket.EAI_NONAME)}
 
 
 def parse(page: Download) -> ProductPage:

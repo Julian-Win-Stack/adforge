@@ -1,3 +1,4 @@
+import socket
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ from rest_framework.test import APIClient
 from adforge import celery_app
 from gateway.fake import FakeModel
 from gateway.gateway import use_model
+from gateway.openai_adapter import OpenAIProvider
 
 celery_app.conf.update(task_always_eager=True, task_eager_propagates=True)
 
@@ -90,3 +92,84 @@ def start_job(
         return job_id
 
     return start
+
+
+def openai_reply(content: dict[str, Any], status: str = "completed") -> dict[str, Any]:
+    """A Responses API reply as OpenAI sends it, billed for 1,200 tokens in and 300 out."""
+    return {
+        "id": "resp_1",
+        "object": "response",
+        "created_at": 1_789_000_000,
+        "model": "gpt-5-mini",
+        "status": status,
+        "output": [
+            {
+                "type": "message",
+                "id": "msg_1",
+                "role": "assistant",
+                "status": status,
+                "content": [content],
+            }
+        ],
+        "parallel_tool_calls": True,
+        "tool_choice": "auto",
+        "tools": [],
+        "usage": {
+            "input_tokens": 1_200,
+            "input_tokens_details": {"cached_tokens": 0},
+            "output_tokens": 300,
+            "output_tokens_details": {"reasoning_tokens": 0},
+            "total_tokens": 1_500,
+        },
+    }
+
+
+@pytest.fixture
+def openai_server(httpserver: HTTPServer, settings: Settings) -> Iterator[Callable[[Any], None]]:
+    """Our real OpenAI code, talking to a stand-in OpenAI server on this machine.
+    Call it with the reply the server should send."""
+    settings.OPENAI_API_KEY = "sk-test"
+    settings.OPENAI_BASE_URL = httpserver.url_for("/v1")
+
+    def reply_with(reply: dict[str, Any]) -> None:
+        httpserver.expect_request("/v1/responses", method="POST").respond_with_json(reply)
+
+    with use_model(OpenAIProvider()):
+        yield reply_with
+
+
+class FakeDns:
+    """What host names look up to when a job checks where a link points. Only that check
+    sees these; the fetch itself still goes to the real host. A name not in `records`
+    doesn't exist, and a record can be an error to raise instead of an address."""
+
+    def __init__(self) -> None:
+        self.records: dict[str, str | socket.gaierror] = {}
+        self.lookups: list[str] = []
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(socket, name)
+
+    def getaddrinfo(self, host: str, port: int, **_: Any) -> list[Any]:
+        self.lookups.append(host)
+        record = self.records.get(host)
+        if record is None:
+            raise socket.gaierror(socket.EAI_NONAME, "nodename nor servname provided, or not known")
+        if isinstance(record, socket.gaierror):
+            raise record
+        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (record, port))]
+
+
+# example.com's address: anywhere on the public internet.
+PUBLIC_ADDRESS = "93.184.215.14"
+
+
+@pytest.fixture
+def dns(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> FakeDns:
+    """Name lookups as a real job sees them, with private addresses refused. The test shop
+    runs on this machine, so a test that needs it to pass the check points it at
+    PUBLIC_ADDRESS."""
+    settings.FETCH_PRIVATE_ADDRESSES = False
+    fake = FakeDns()
+    monkeypatch.setattr("jobs.page.socket", fake)
+    return fake
