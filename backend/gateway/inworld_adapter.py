@@ -1,8 +1,6 @@
 """Designs voices and speaks with them through Inworld's HTTP API."""
 
 import base64
-import io
-import wave
 from typing import Any
 
 import httpx
@@ -35,10 +33,11 @@ class InworldProvider:
                 "voiceDesignConfig": {"numberOfSamples": 1},
             },
         )
-        preview = (designed.get("previewVoices") or designed.get("voicePreviews") or [{}])[0]
-        preview_id = preview.get("voiceId") or preview.get("previewId")
-        if not preview_id:
+        # The reply's shape is recorded in docs/real-api-replies.md.
+        previews = designed.get("previewVoices") or []
+        if not previews:
             raise ValueError("Inworld designed no voice")
+        preview_id = previews[0]["voiceId"]
         # A designed voice can only speak once it is published.
         published = self._post(
             f"/voices/v1/voices/{preview_id}:publish",
@@ -57,7 +56,10 @@ class InworldProvider:
             },
         )
         audio = base64.b64decode(spoken["audioContent"])
-        return audio if audio.startswith(b"RIFF") else _as_wav(audio)
+        # LINEAR16 comes back as a whole WAV file; its length is measured from the header.
+        if not audio.startswith(b"RIFF"):
+            raise ValueError("Inworld sent back audio that isn't a WAV file")
+        return audio
 
     def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -69,14 +71,3 @@ class InworldProvider:
         response.raise_for_status()
         reply: dict[str, Any] = response.json()
         return reply
-
-
-def _as_wav(samples: bytes) -> bytes:
-    """Wrap bare 16-bit mono samples in a WAV header."""
-    audio = io.BytesIO()
-    with wave.open(audio, "wb") as file:
-        file.setnchannels(1)
-        file.setsampwidth(2)
-        file.setframerate(_SAMPLE_RATE)
-        file.writeframes(samples)
-    return audio.getvalue()
