@@ -74,6 +74,13 @@ def _check_page(images: list[Image]) -> None:
             "can't be opened as a picture",
             id="not a picture",
         ),
+        pytest.param(
+            # Named for what the shop said it was, not what it is.
+            "photos/side.png",
+            picture(40, 30, (143, 170, 140), "BMP"),
+            "is image/bmp, which models can't read",
+            id="another format under a PNG name",
+        ),
     ],
 )
 def test_an_image_models_cant_read_is_refused_before_the_model_is_called(
@@ -161,3 +168,19 @@ def test_a_reply_that_cant_be_used_still_records_what_it_cost(
     assert (call.input_tokens, call.output_tokens) == (1_200, 300)
     # gpt-5-mini: 1,200 x $0.25/M in + 300 x $2.00/M out = $0.0003 + $0.0006.
     assert call.cost_usd == Decimal("0.0009")
+
+
+def test_a_call_that_fails_still_records_which_photos_it_showed(
+    openai_server: Callable[[Any], None],
+) -> None:
+    key = file_store.save("photos/front.png", picture(40, 30, (143, 170, 140)))
+    openai_server(openai_reply({"type": "refusal", "refusal": "I can't help with that."}))
+
+    with pytest.raises(UnusableReply):
+        _check_page([Image(label="Photo 1", key=key)])
+
+    call = ModelCall.objects.get()
+    assert (call.outcome, call.images) == (
+        "failed",
+        [{"label": "Photo 1", "key": "photos/front.png"}],
+    )

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from django.db import IntegrityError
 from pytest_django import Settings
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
@@ -187,6 +188,16 @@ def test_a_page_read_run_again_after_a_crash_keeps_each_photo_once(
     # The producer is shown each photo once, under the number it's stored at.
     shown = ModelCall.objects.get(job_id=job_id, purpose="plan_ad").images
     assert [image["label"] for image in shown] == ["Photo 1", "Photo 2"]
+
+
+def test_a_job_cant_keep_two_photos_at_the_same_position() -> None:
+    # The backstop to a re-read starting its photos over: two photos stored under one number
+    # would show the producer "Photo 1" twice.
+    job = Job.objects.create(product_url="https://shop.example/products/mug")
+    keep_photo(job, 1, MUG_FRONT, "image/png", source_url="https://shop.example/front.png")
+
+    with pytest.raises(IntegrityError, match='unique constraint "one_photo_per_position"'):
+        keep_photo(job, 1, MUG_SIDE, "image/png", source_url="https://shop.example/side.png")
 
 
 def test_polling_after_an_entry_returns_only_the_entries_since_then(
