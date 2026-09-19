@@ -2,7 +2,7 @@ from django.contrib import admin
 
 from gateway.models import ModelCall
 
-from .models import ActivityEntry, Job, ProductPhoto, Question, Scene
+from .models import ActivityEntry, Job, ProducedItem, ProductPhoto, Question, Scene
 
 
 class ActivityEntryInline(admin.TabularInline[ActivityEntry, Job]):
@@ -23,8 +23,24 @@ class ProductPhotoInline(admin.TabularInline[ProductPhoto, Job]):
 
 class SceneInline(admin.TabularInline[Scene, Job]):
     model = Scene
-    fields = ["number", "line", "slot_seconds", "status"]
-    readonly_fields = ["number", "line", "slot_seconds", "status"]
+    fields = ["number", "line", "fact_checked", "fact_problems", "status"]
+    readonly_fields = ["number", "line", "fact_checked", "fact_problems", "status"]
+    extra = 0
+    can_delete = False
+
+
+class ProducedItemInline(admin.TabularInline[ProducedItem, Job]):
+    model = ProducedItem
+    fields = ["kind", "version", "scene", "file", "voice_id", "words_per_second", "created_at"]
+    readonly_fields = [
+        "kind",
+        "version",
+        "scene",
+        "file",
+        "voice_id",
+        "words_per_second",
+        "created_at",
+    ]
     extra = 0
     can_delete = False
 
@@ -64,6 +80,7 @@ class JobAdmin(admin.ModelAdmin[Job]):
         ActivityEntryInline,
         ProductPhotoInline,
         SceneInline,
+        ProducedItemInline,
         QuestionInline,
         ModelCallInline,
     ]
@@ -78,7 +95,7 @@ class ActivityEntryAdmin(admin.ModelAdmin[ActivityEntry]):
 
 @admin.register(Scene)
 class SceneAdmin(admin.ModelAdmin[Scene]):
-    list_display = ["job", "number", "line", "slot_seconds", "status"]
+    list_display = ["job", "number", "line", "fact_checked", "status"]
     list_select_related = ["job"]
     list_filter = ["status"]
     search_fields = ["line"]
@@ -90,3 +107,10 @@ class QuestionAdmin(admin.ModelAdmin[Question]):
     list_select_related = ["job"]
     list_filter = ["kind"]
     search_fields = ["question", "answer"]
+
+
+@admin.register(ProducedItem)
+class ProducedItemAdmin(admin.ModelAdmin[ProducedItem]):
+    list_display = ["job", "kind", "version", "scene", "words_per_second", "created_at"]
+    list_select_related = ["job", "scene"]
+    list_filter = ["kind"]

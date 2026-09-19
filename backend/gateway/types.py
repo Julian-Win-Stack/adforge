@@ -72,3 +72,35 @@ class ModelProvider(Protocol):
     name: str
 
     def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]: ...
+
+
+@dataclass(frozen=True)
+class Picture:
+    """A picture a model drew, and the tokens it was billed for."""
+
+    data: bytes
+    input_tokens: int
+    output_tokens: int
+
+
+class PictureProvider(Protocol):
+    """Draws pictures. Raises OutsideServiceDown for errors worth retrying."""
+
+    name: str
+
+    def draw(self, *, model: str, prompt: str) -> Picture: ...
+
+
+class VoiceProvider(Protocol):
+    """Designs voices and speaks with them. Raises OutsideServiceDown for errors worth
+    retrying."""
+
+    name: str
+
+    def design_voice(self, *, model: str, description: str, sample: str) -> str:
+        """Design a voice from a description, hearing it say `sample`. Returns its id."""
+        ...
+
+    def speak(self, *, model: str, voice_id: str, text: str) -> bytes:
+        """Say `text` in the voice. Returns the audio as a WAV file."""
+        ...

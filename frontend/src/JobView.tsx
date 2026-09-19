@@ -90,7 +90,6 @@ export function JobView({ jobId }: { jobId: string }) {
               <tr>
                 <th>Scene</th>
                 <th>Line</th>
-                <th>Slot</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -99,7 +98,6 @@ export function JobView({ jobId }: { jobId: string }) {
                 <tr key={scene.number}>
                   <td>{scene.number}</td>
                   <td>{scene.line}</td>
-                  <td>{scene.slot_seconds}s</td>
                   <td>{SCENE_STATUS_LABELS[scene.status]}</td>
                 </tr>
               ))}
@@ -133,6 +131,9 @@ const STATUS_LABELS = {
   page_read: "Page read",
   planning: "Planning the ad...",
   planned: "Ad planned",
+  making_person: "Making the person...",
+  checking_plan: "Checking the plan...",
+  ready_to_render: "Ready to render",
   needs_working_link: "Waiting for a working link",
   needs_product_photos: "Waiting for product photos",
   needs_answer: "Waiting for your answer",

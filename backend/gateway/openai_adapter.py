@@ -1,5 +1,6 @@
 import base64
 import json
+from typing import Any
 
 import openai
 from django.conf import settings
@@ -12,10 +13,12 @@ from pydantic import BaseModel
 
 from adforge.retry import OutsideServiceDown
 
-from .types import LoadedImage, ModelReply, ModelRequest, UnusableReply
+from .types import LoadedImage, ModelReply, ModelRequest, Picture, UnusableReply
 
 # Errors that may pass if we try again. Anything else (bad request, bad key) will not.
 _WORTH_RETRYING = (openai.APIConnectionError, openai.RateLimitError, openai.InternalServerError)
+# Upright, the shape of the clips the portrait becomes.
+_PORTRAIT_SIZE: Any = "720x1280"
 
 
 class OpenAIProvider:
@@ -60,6 +63,22 @@ class OpenAIProvider:
                 output_tokens=output_tokens,
             )
         return ModelReply(output=output, input_tokens=input_tokens, output_tokens=output_tokens)
+
+    def draw(self, *, model: str, prompt: str) -> Picture:
+        try:
+            reply = self._client.images.generate(
+                model=model, prompt=prompt, size=_PORTRAIT_SIZE, quality="high"
+            )
+        except _WORTH_RETRYING as error:
+            raise OutsideServiceDown(str(error)) from error
+        if not reply.data or not reply.data[0].b64_json:
+            raise ValueError(f"{model} sent back no picture")
+        usage = reply.usage
+        return Picture(
+            data=base64.b64decode(reply.data[0].b64_json),
+            input_tokens=usage.input_tokens if usage else 0,
+            output_tokens=usage.output_tokens if usage else 0,
+        )
 
 
 def _input[Out: BaseModel](request: ModelRequest[Out]) -> str | ResponseInputParam:

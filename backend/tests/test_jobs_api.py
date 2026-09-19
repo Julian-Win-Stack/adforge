@@ -21,6 +21,7 @@ from jobs.models import Job, ProductPhoto
 from jobs.tasks import keep_photo, read_page
 
 from .conftest import (
+    FACTS_OK,
     MUG_FRONT,
     MUG_SIDE,
     PLAN,
@@ -58,11 +59,12 @@ def test_reading_the_page_stores_its_text_and_explains_every_step(
 ) -> None:
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", PLAN)
+    fake_model.respond("fact_check", FACTS_OK)
 
     job_id = start_job(product_page_url)
 
     job = api.get(f"/api/jobs/{job_id}/").json()
-    assert job["status"] == "planned"
+    assert job["status"] == "ready_to_render"
     page_text = Job.objects.get(pk=job_id).page_text
     # The count varies with the test server's port, which is part of the page's photo links.
     # Planning follows these four; the planning tests cover its entries.
@@ -95,6 +97,7 @@ def test_the_page_text_includes_the_product_data_the_page_declares_for_search_en
 ) -> None:
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", PLAN)
+    fake_model.respond("fact_check", FACTS_OK)
 
     job_id = start_job(product_page_url)
 
@@ -122,6 +125,7 @@ def test_a_long_page_still_hands_the_models_its_product_data(
     )
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", PLAN)
+    fake_model.respond("fact_check", FACTS_OK)
 
     job_id = start_job(httpserver.url_for("/products/long-mug"))
 
@@ -177,6 +181,7 @@ def test_a_page_read_run_again_after_a_crash_keeps_each_photo_once(
     Job.objects.filter(pk=job_id).update(status=Job.Status.READING_PAGE)
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", PLAN)
+    fake_model.respond("fact_check", FACTS_OK)
 
     read_page.delay(job_id)
 
@@ -208,13 +213,15 @@ def test_polling_after_an_entry_returns_only_the_entries_since_then(
 ) -> None:
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", PLAN)
+    fake_model.respond("fact_check", FACTS_OK)
     job_id = start_job(product_page_url)
     everything = api.get(f"/api/jobs/{job_id}/").json()["activity"]
 
     since_second = api.get(f"/api/jobs/{job_id}/?after=2").json()["activity"]
 
-    assert [entry["seq"] for entry in everything] == [1, 2, 3, 4, 5, 6]
-    assert [entry["seq"] for entry in since_second] == [3, 4, 5, 6]
+    assert [entry["seq"] for entry in everything] == list(range(1, len(everything) + 1))
+    assert len(everything) > 2
+    assert [entry["seq"] for entry in since_second] == list(range(3, len(everything) + 1))
     assert since_second == everything[2:]
 
 
@@ -226,6 +233,7 @@ def test_every_model_call_is_recorded_with_its_cost_time_outcome_and_judgement(
 ) -> None:
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", PLAN)
+    fake_model.respond("fact_check", FACTS_OK)
     # The gateway reads its clock when a call starts, then again when the answer arrives.
     clock = iter([100.0, 100.25, 200.0, 203.5])
     monkeypatch.setattr("gateway.gateway.time", SimpleNamespace(monotonic=lambda: next(clock)))
@@ -262,10 +270,11 @@ def test_a_shop_that_is_briefly_down_is_tried_again(
     httpserver.expect_oneshot_request("/products/mug").respond_with_data("busy", status=503)
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", PLAN)
+    fake_model.respond("fact_check", FACTS_OK)
 
     job_id = start_job(product_page_url)
 
-    assert api.get(f"/api/jobs/{job_id}/").json()["status"] == "planned"
+    assert api.get(f"/api/jobs/{job_id}/").json()["status"] == "ready_to_render"
 
 
 def test_a_model_provider_that_is_briefly_down_is_tried_again_and_each_try_is_recorded(
@@ -276,10 +285,11 @@ def test_a_model_provider_that_is_briefly_down_is_tried_again_and_each_try_is_re
 ) -> None:
     fake_model.respond("check_page", OutsideServiceDown("503 from the provider"), READABLE)
     fake_model.respond("plan_ad", PLAN)
+    fake_model.respond("fact_check", FACTS_OK)
 
     job_id = start_job(product_page_url)
 
-    assert api.get(f"/api/jobs/{job_id}/").json()["status"] == "planned"
+    assert api.get(f"/api/jobs/{job_id}/").json()["status"] == "ready_to_render"
     calls = ModelCall.objects.filter(job_id=job_id, purpose="check_page").order_by("attempt")
     assert [(call.attempt, call.outcome) for call in calls] == [(1, "failed"), (2, "succeeded")]
     assert "503 from the provider" in calls[0].error
@@ -367,6 +377,7 @@ def test_a_link_that_redirects_says_which_page_was_actually_read(
     )
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", PLAN)
+    fake_model.respond("fact_check", FACTS_OK)
 
     job_id = start_job(httpserver.url_for("/products/old-mug"))
 
@@ -648,11 +659,12 @@ def test_a_photo_that_cant_be_used_is_skipped_with_its_reason_and_the_rest_are_k
     serve_bad_photo(httpserver, monkeypatch)
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", PLAN)
+    fake_model.respond("fact_check", FACTS_OK)
 
     job_id = start_job(httpserver.url_for("/products/mug"))
 
     job = api.get(f"/api/jobs/{job_id}/").json()
-    assert job["status"] == "planned"
+    assert job["status"] == "ready_to_render"
     messages = [entry["message"] for entry in job["activity"]]
     skipped = job["activity"][messages.index(f"Skipped the photo at {bad_url}")]
     assert skipped["reason"] == why_skipped.format(url=bad_url)
@@ -673,12 +685,13 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_a_judgement(
     openai_server(
         openai_answer(READABLE),
         openai_answer(PLAN),
+        openai_answer(FACTS_OK),
     )
 
     job_id = start_job(product_page_url)
 
     job = api.get(f"/api/jobs/{job_id}/").json()
-    assert job["status"] == "planned"
+    assert job["status"] == "ready_to_render"
     assert ("The page has what the ad needs", READABLE["reason"]) in [
         (entry["message"], entry["reason"]) for entry in job["activity"]
     ]
@@ -687,7 +700,7 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_a_judgement(
         "Hand-thrown, holds 350 ml, and dishwasher safe.",
         "Yours for $24.00.",
     ]
-    check, plan = [
+    check, plan, _facts = [
         request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
     ]
     assert check["model"] == "gpt-5-mini"

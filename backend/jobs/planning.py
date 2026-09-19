@@ -13,18 +13,21 @@ visible text, followed by any product data the page declares for search engines,
 target length in seconds (or null if the shop owner didn't set one), how many product \
 photos there are, and the shop owner's answers to anything you asked before. After that \
 come the product photos themselves, each labelled with its number: "Photo 1", "Photo 2".
-Every claim in the ad must come from the page or the shop owner's answers. The photos are \
-only for the product's colour: never take any other fact from them, such as text on a \
-label. Never infer, guess or make anything up: not a price, a size, a material, a benefit \
-or a colour.
+Every claim in the ad must come from the page or the shop owner's answers. The photos \
+are only for the product's colour: never take any other fact from them, such as text on \
+a label. Never infer, guess or make anything up: not a price, a size, a material, a \
+benefit or a colour.
 Decide "plan" when you can plan the whole ad from what you have. Give the scenes in the \
-order they play: each scene's line, exactly as the person will say it, and its slot, the \
-whole number of seconds the scene lasts. One line says the product's price: the price a \
-buyer pays today, so on a sale, the sale price. No line names the product's colour: the \
-ad shows the colour, never says it. Name the product's colour as the photos show it, in \
-plain words such as "sage green", and give the numbers of the photos that show the \
-product in that colour. If the product comes in several colours, don't ask which: pick \
-one the photos show. Set question to null.
+order they play, with each scene's line exactly as the person will say it. With a target \
+length, write only as many words as fit it when spoken at an easy pace. One line says \
+the product's price: the price a buyer pays today, so on a sale, the sale price. No line \
+names the product's colour: the ad shows the colour, never says it. Name the product's \
+colour as the photos show it, in plain words such as "sage green", and give the numbers \
+of the photos that show the product in that colour. If the product comes in several \
+colours, don't ask which: pick one the photos show. Describe the person who presents the \
+ad: how they look, for a portrait, and how their voice sounds, for a voice designed to \
+match. Choose someone who suits the product and its buyers, and never a real, famous \
+person. Set question to null.
 Decide "ask" when you don't know the one price to say, because neither the page nor the \
 shop owner's answers give a price, or they give different prices to choose between (such \
 as a single item, a pack and a subscription). Also decide "ask" when the page conflicts \
@@ -36,7 +39,6 @@ need to ask. Write it for the shop owner."""
 
 class PlannedScene(BaseModel):
     line: str = Field(description="Exactly what the person says in this scene.")
-    slot_seconds: int = Field(strict=True, ge=1, description="Whole seconds the scene lasts.")
 
     # A validator rather than min_length, which OpenAI's structured output doesn't accept.
     @field_validator("line")
@@ -55,13 +57,17 @@ class Plan(BaseModel):
     colour_photos: list[StrictInt] = Field(
         min_length=1, description="The numbers of the photos showing the product in that colour."
     )
+    person_looks: str = Field(
+        description="How the person presenting the ad looks: age, style, clothes, setting."
+    )
+    person_voice: str = Field(description="How the person's voice sounds: age, accent, tone, pace.")
 
-    @field_validator("product_colour")
+    @field_validator("product_colour", "person_looks", "person_voice")
     @classmethod
-    def _names_a_colour(cls, colour: str) -> str:
-        if not colour.strip():
-            raise ValueError("The product's colour can't be empty.")
-        return colour
+    def _not_empty(cls, text: str) -> str:
+        if not text.strip():
+            raise ValueError("This can't be empty.")
+        return text
 
 
 class ProducerDecision(Judgement):

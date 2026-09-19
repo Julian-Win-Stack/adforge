@@ -6,6 +6,9 @@ export type JobStatus =
   | "page_read"
   | "planning"
   | "planned"
+  | "making_person"
+  | "checking_plan"
+  | "ready_to_render"
   | "needs_working_link"
   | "needs_product_photos"
   | "needs_answer"
@@ -27,15 +30,22 @@ export type ProductPhoto = {
 export type Scene = {
   number: number;
   line: string;
-  slot_seconds: number;
   status: "planned";
 };
 
-/** What the job is waiting for the user to answer. */
+/** One answer the user can pick, and the words shown for it. */
+export type QuestionOption = {
+  value: string;
+  label: string;
+};
+
+/** What the job is waiting for the user to answer. A question with options is answered by
+ * picking one; the rest take typed text, a link or photos. */
 export type Question = {
   id: number;
-  kind: "working_link" | "product_photos" | "producer";
+  kind: "working_link" | "product_photos" | "producer" | "unclear_page" | "fact_check" | "length";
   question: string;
+  options: QuestionOption[];
 };
 
 export type Job = {
@@ -56,7 +66,7 @@ export type JobWithActivity = Job & {
 /** Nothing changes on its own after these, so polling stops. The "needs_" statuses wait
  * for the user's answer, and polling starts again once it is sent. */
 export const SETTLED: JobStatus[] = [
-  "planned",
+  "ready_to_render",
   "needs_working_link",
   "needs_product_photos",
   "needs_answer",
@@ -115,15 +125,20 @@ export async function getJob(jobId: string, after: number): Promise<JobWithActiv
   return readJson<JobWithActivity>(response);
 }
 
-/** Answers the question the job is waiting on: typed text or a link as `answer`, or
- * photos as an upload. The job carries on by itself once the server has it. */
-export async function answerQuestion(jobId: string, answer: string | File[]): Promise<void> {
+/** Answers the question the job is waiting on: typed text, a link or a picked option as
+ * `answer`, or photos as an upload. `line` is the user's own line, when they pick writing
+ * one. The job carries on by itself once the server has it. */
+export async function answerQuestion(
+  jobId: string,
+  answer: string | File[],
+  line?: string,
+): Promise<void> {
   let request: RequestInit;
   if (typeof answer === "string") {
     request = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ answer }),
+      body: JSON.stringify(line === undefined ? { answer } : { answer, line }),
     };
   } else {
     const form = new FormData();

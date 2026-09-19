@@ -6,10 +6,12 @@ and the one-sentence judgement."""
 
 import io
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
+from decimal import Decimal
 from functools import cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import PIL.Image
 import PIL.ImageOps
@@ -28,13 +30,18 @@ from .types import (
     ModelProvider,
     ModelReply,
     ModelRequest,
+    PictureProvider,
     UnusableReply,
+    VoiceProvider,
 )
 
 if TYPE_CHECKING:
     from jobs.models import Job
 
-_override: ModelProvider | None = None
+    from .inworld_adapter import InworldProvider
+    from .openai_adapter import OpenAIProvider
+
+_override: object | None = None
 
 # The picture formats models can read. Anything else is refused before money is spent.
 IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
@@ -50,19 +57,35 @@ class UnreadableImage(ValueError):
 
 
 @cache
-def _openai() -> ModelProvider:
+def _openai() -> OpenAIProvider:
     from .openai_adapter import OpenAIProvider
 
     return OpenAIProvider()
 
 
+@cache
+def _inworld() -> InworldProvider:
+    from .inworld_adapter import InworldProvider
+
+    return InworldProvider()
+
+
 def _provider() -> ModelProvider:
-    return _override or _openai()
+    return cast(ModelProvider, _override) if _override is not None else _openai()
+
+
+def _pictures() -> PictureProvider:
+    return cast(PictureProvider, _override) if _override is not None else _openai()
+
+
+def _voices() -> VoiceProvider:
+    return cast(VoiceProvider, _override) if _override is not None else _inworld()
 
 
 @contextmanager
-def use_model(provider: ModelProvider) -> Iterator[None]:
-    """Send every model call to `provider` inside this block. Tests use it to swap in a fake."""
+def use_model(provider: object) -> Iterator[None]:
+    """Send every model call to `provider` inside this block, whatever it is for, so a test
+    never reaches a real service. Tests use it to swap in a fake."""
     global _override
     previous, _override = _override, provider
     try:
@@ -114,6 +137,138 @@ def call_model[Out: BaseModel](
         raise OutsideServiceDown(
             f"The model provider was still down after {attempts} tries: {error}"
         ) from error
+
+
+def draw_picture(*, job: Job | None, purpose: str, prompt: str) -> str:
+    """Have a model draw a picture. Returns its key in the file store."""
+    model = catalog.MODEL_FOR_PURPOSE[purpose]
+    provider = _pictures()
+
+    def draw() -> tuple[str, dict[str, Any], _Bill]:
+        picture = provider.draw(model=model, prompt=prompt)
+        extension = _picture_extension(picture.data)
+        key = file_store.save(f"{purpose}.{extension}", picture.data)
+        return (
+            key,
+            {"file": key},
+            _Bill(
+                input_tokens=picture.input_tokens,
+                output_tokens=picture.output_tokens,
+                cost_usd=catalog.picture_cost_usd(
+                    model, picture.input_tokens, picture.output_tokens
+                ),
+            ),
+        )
+
+    return _made(job, purpose, model, provider.name, {"prompt": prompt}, draw)
+
+
+def design_voice(*, job: Job | None, purpose: str, description: str, sample: str) -> str:
+    """Have a voice designed from a description, heard saying `sample`. Returns its id."""
+    model = catalog.MODEL_FOR_PURPOSE[purpose]
+    provider = _voices()
+
+    def design() -> tuple[str, dict[str, Any], _Bill]:
+        voice_id = provider.design_voice(model=model, description=description, sample=sample)
+        return voice_id, {"voice_id": voice_id}, _speech_bill(model, sample)
+
+    handoff = {"description": description, "sample": sample}
+    return _made(job, purpose, model, provider.name, handoff, design)
+
+
+def speak(*, job: Job | None, purpose: str, voice_id: str, text: str) -> str:
+    """Have the voice say `text`. Returns the WAV file's key in the file store."""
+    model = catalog.MODEL_FOR_PURPOSE[purpose]
+    provider = _voices()
+
+    def say() -> tuple[str, dict[str, Any], _Bill]:
+        audio = provider.speak(model=model, voice_id=voice_id, text=text)
+        key = file_store.save(f"{purpose}.wav", audio)
+        return key, {"file": key}, _speech_bill(model, text)
+
+    handoff = {"voice_id": voice_id, "text": text}
+    return _made(job, purpose, model, provider.name, handoff, say)
+
+
+@dataclass(frozen=True)
+class _Bill:
+    """What one call was billed for."""
+
+    cost_usd: Decimal
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    characters: int | None = None
+
+
+def _speech_bill(model: str, text: str) -> _Bill:
+    return _Bill(characters=len(text), cost_usd=catalog.speech_cost_usd(model, len(text)))
+
+
+def _made[Result](
+    job: Job | None,
+    purpose: str,
+    model: str,
+    provider: str,
+    handoff: dict[str, Any],
+    make: Callable[[], tuple[Result, dict[str, Any], _Bill]],
+) -> Result:
+    """Run `make` with retries, recording every attempt like `call_model` does."""
+    attempts = 0
+
+    def attempt() -> Result:
+        nonlocal attempts
+        attempts += 1
+        started = time.monotonic()
+        try:
+            result, output, bill = make()
+        except Exception as error:
+            ModelCall.objects.create(
+                job=job,
+                purpose=purpose,
+                provider=provider,
+                model=model,
+                attempt=attempts,
+                handoff=handoff,
+                outcome=ModelCall.Outcome.FAILED,
+                error=f"{type(error).__name__}: {error}",
+                duration_ms=_elapsed_ms(started),
+            )
+            raise
+        ModelCall.objects.create(
+            job=job,
+            purpose=purpose,
+            provider=provider,
+            model=model,
+            attempt=attempts,
+            handoff=handoff,
+            output=output,
+            outcome=ModelCall.Outcome.SUCCEEDED,
+            input_tokens=bill.input_tokens,
+            output_tokens=bill.output_tokens,
+            characters=bill.characters,
+            cost_usd=bill.cost_usd,
+            duration_ms=_elapsed_ms(started),
+        )
+        return result
+
+    try:
+        return with_retries(attempt)
+    except OutsideServiceDown as error:
+        raise OutsideServiceDown(
+            f"The model provider was still down after {attempts} tries: {error}"
+        ) from error
+
+
+def _picture_extension(data: bytes) -> str:
+    """The file extension for a drawn picture, judged by what the bytes hold."""
+    try:
+        with PIL.Image.open(io.BytesIO(data)) as picture:
+            file_format = picture.format or ""
+    except (OSError, PIL.Image.DecompressionBombError) as error:
+        raise UnreadableImage("The drawn picture can't be opened as a picture") from error
+    if PIL.Image.MIME.get(file_format, "") not in IMAGE_TYPES:
+        raise UnreadableImage(f"The drawn picture is {file_format or 'an unknown format'}")
+    return file_format.lower()
 
 
 def _load(image: Image) -> LoadedImage:

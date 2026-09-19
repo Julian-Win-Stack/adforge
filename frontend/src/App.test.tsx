@@ -106,6 +106,19 @@ test("shows each activity entry once, in order, as the job runs, then stops aski
   backend.job.status = "planned";
   await act(() => vi.advanceTimersByTimeAsync(2000));
   await screen.findByText("Planned 3 scenes");
+  expect(screen.getByText("Ad planned")).toBeTruthy();
+
+  backend.record("Making the person");
+  backend.job.status = "making_person";
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await screen.findByText("Making the person");
+  expect(screen.getByText("Making the person...")).toBeTruthy();
+
+  backend.record("Made the person");
+  backend.record("Checked the plan");
+  backend.job.status = "ready_to_render";
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await screen.findByText("Checked the plan");
 
   const entries = within(screen.getByRole("list"))
     .getAllByRole("listitem")
@@ -116,8 +129,11 @@ test("shows each activity entry once, in order, as the job runs, then stops aski
     "The page is readable",
     "Planning the ad",
     "Planned 3 scenes",
+    "Making the person",
+    "Made the person",
+    "Checked the plan",
   ]);
-  expect(screen.getByText("Ad planned")).toBeTruthy();
+  expect(screen.getByText("Ready to render")).toBeTruthy();
 
   const requestsWhenFinished = backend.requests.length;
   await act(() => vi.advanceTimersByTimeAsync(60_000));
@@ -184,18 +200,24 @@ async function startMugJob(backend: ReturnType<typeof fakeBackend>) {
   return user;
 }
 
-test("shows each planned scene's line and slot, then stops asking", async () => {
+test("shows each planned scene's line, then stops asking once the plan is ready to render", async () => {
   const backend = fakeBackend();
   await startMugJob(backend);
 
   backend.state.scenes = [
-    { number: 1, line: "Meet the Stoneware Mug.", slot_seconds: 4, status: "planned" },
-    { number: 2, line: "Yours for $24.00.", slot_seconds: 3, status: "planned" },
+    { number: 1, line: "Meet the Stoneware Mug.", status: "planned" },
+    { number: 2, line: "Yours for $24.00.", status: "planned" },
   ];
   backend.record("Planned 2 scenes");
   backend.job.status = "planned";
   await act(() => vi.advanceTimersByTimeAsync(2000));
   await screen.findByText("Planned 2 scenes");
+  // The person is made and the plan checked next, with nothing asked of the user.
+  expect(screen.getByText("Ad planned")).toBeTruthy();
+  backend.record("Checked the plan");
+  backend.job.status = "ready_to_render";
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await screen.findByText("Checked the plan");
 
   const scenes = within(screen.getByRole("table", { name: "Scenes" }))
     .getAllByRole("row")
@@ -206,14 +228,14 @@ test("shows each planned scene's line and slot, then stops asking", async () => 
         .map((cell) => cell.textContent),
     );
   expect(scenes).toEqual([
-    ["1", "Meet the Stoneware Mug.", "4s", "Planned"],
-    ["2", "Yours for $24.00.", "3s", "Planned"],
+    ["1", "Meet the Stoneware Mug.", "Planned"],
+    ["2", "Yours for $24.00.", "Planned"],
   ]);
-  expect(screen.getByText("Ad planned")).toBeTruthy();
+  expect(screen.getByText("Ready to render")).toBeTruthy();
 
-  const requestsWhenPlanned = backend.requests.length;
+  const requestsWhenReady = backend.requests.length;
   await act(() => vi.advanceTimersByTimeAsync(60_000));
-  expect(backend.requests).toHaveLength(requestsWhenPlanned);
+  expect(backend.requests).toHaveLength(requestsWhenReady);
 });
 
 test("shows the producer's question, sends the typed answer, and follows the job again", async () => {
@@ -224,6 +246,7 @@ test("shows the producer's question, sends the typed answer, and follows the job
     id: 1,
     kind: "producer",
     question: "The page shows $24.00 and $28.00. Which price should the ad say?",
+    options: [],
   };
   backend.record("The producer has a question for you");
   backend.job.status = "needs_answer";
@@ -253,13 +276,13 @@ test("an answered question's form goes at once, and the same question asked agai
   const backend = fakeBackend();
   const user = await startMugJob(backend);
   const question = "Which price should the ad say?";
-  backend.state.question = { id: 1, kind: "producer", question };
+  backend.state.question = { id: 1, kind: "producer", question, options: [] };
   backend.job.status = "needs_answer";
   await act(() => vi.advanceTimersByTimeAsync(2000));
   await user.type(await screen.findByLabelText("Your answer"), "$24.00");
 
   // The producer asks the same thing again, and the page only hears of it when a poll lands.
-  backend.state.question = { id: 2, kind: "producer", question };
+  backend.state.question = { id: 2, kind: "producer", question, options: [] };
   const release = backend.holdPolls();
   await user.click(screen.getByRole("button", { name: "Send answer" }));
   expect(backend.answers).toEqual([JSON.stringify({ answer: "$24.00" })]);
@@ -278,6 +301,7 @@ test("asks for a working link and sends the one typed", async () => {
     id: 1,
     kind: "working_link",
     question: "That link didn't lead to one product's page. Can you send a link that does?",
+    options: [],
   };
   backend.job.status = "needs_working_link";
   backend.record("The page couldn't be read");
@@ -306,6 +330,7 @@ test("asks for product photos and uploads the ones picked", async () => {
     id: 1,
     kind: "product_photos",
     question: "The page has no photo of the product. Can you upload at least one?",
+    options: [],
   };
   backend.job.status = "needs_product_photos";
   backend.record("No usable product photos");
@@ -336,6 +361,7 @@ test("says why an answer was refused and keeps the question open", async () => {
     id: 1,
     kind: "working_link",
     question: "Can you send a working link?",
+    options: [],
   };
   backend.job.status = "needs_working_link";
   backend.record("The page couldn't be read");
@@ -353,4 +379,67 @@ test("says why an answer was refused and keeps the question open", async () => {
 
   await screen.findByText("Enter a valid URL.");
   expect(screen.getByLabelText("Working link")).toBeTruthy();
+});
+
+test("offers a line that failed the fact check to keep, or sends the user's own line", async () => {
+  const backend = fakeBackend();
+  const user = await startMugJob(backend);
+  backend.state.question = {
+    id: 1,
+    kind: "fact_check",
+    question: 'Scene 3 says "Yours for $19.99." but the page says $24.00. What should it say?',
+    options: [
+      { value: "keep", label: "Keep this line" },
+      { value: "own", label: "Use my own line" },
+    ],
+  };
+  backend.job.status = "needs_answer";
+  backend.record("A line still doesn't match the page");
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await screen.findByText(
+    'Scene 3 says "Yours for $19.99." but the page says $24.00. What should it say?',
+  );
+  // Only asked for once the user picks their own line.
+  expect(screen.queryByLabelText("Your line")).toBeNull();
+
+  await user.click(screen.getByLabelText("Use my own line"));
+  await user.type(screen.getByLabelText("Your line"), "Just $24.00.");
+  backend.state.question = null;
+  backend.job.status = "checking_plan";
+  backend.record("You wrote scene 3's line");
+  await user.click(screen.getByRole("button", { name: "Send answer" }));
+
+  expect(backend.answers).toEqual([JSON.stringify({ answer: "own", line: "Just $24.00." })]);
+  await screen.findByText("You wrote scene 3's line");
+});
+
+test("asks what to do about a script too long for the target, and sends the choice", async () => {
+  const backend = fakeBackend();
+  const user = await startMugJob(backend);
+  backend.state.question = {
+    id: 1,
+    kind: "length",
+    question:
+      "Your script runs about 21.0 seconds, 6.0 over your 15-second target. Shorten it to fit, or keep it longer?",
+    options: [
+      { value: "shorten", label: "Shorten it to fit" },
+      { value: "keep_longer", label: "Keep it longer" },
+    ],
+  };
+  backend.job.status = "needs_answer";
+  backend.record("The script is longer than your target");
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  const send = await screen.findByRole("button", { name: "Send answer" });
+  // Nothing is picked for the user.
+  expect((send as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByRole("textbox")).toBeNull();
+
+  await user.click(screen.getByLabelText("Keep it longer"));
+  backend.state.question = null;
+  backend.job.status = "ready_to_render";
+  backend.record("You chose to keep the ad longer");
+  await user.click(send);
+
+  expect(backend.answers).toEqual([JSON.stringify({ answer: "keep_longer" })]);
+  await screen.findByText("You chose to keep the ad longer");
 });

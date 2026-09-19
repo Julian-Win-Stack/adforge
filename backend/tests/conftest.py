@@ -7,6 +7,7 @@ from typing import Any
 
 import PIL.Image
 import pytest
+from pydantic import BaseModel
 from pytest_django import DjangoCaptureOnCommitCallbacks, Settings
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
@@ -15,6 +16,7 @@ from adforge import celery_app
 from gateway.fake import FakeModel
 from gateway.gateway import use_model
 from gateway.openai_adapter import OpenAIProvider
+from gateway.types import ModelReply, ModelRequest
 
 celery_app.conf.update(task_always_eager=True, task_eager_propagates=True)
 
@@ -64,14 +66,34 @@ PLAN: dict[str, Any] = {
     "question": None,
     "plan": {
         "scenes": [
-            {"line": "Meet the Stoneware Mug from Kiln & Co.", "slot_seconds": 4},
-            {"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "slot_seconds": 5},
-            {"line": "Yours for $24.00.", "slot_seconds": 3},
+            {"line": "Meet the Stoneware Mug from Kiln & Co."},
+            {"line": "Hand-thrown, holds 350 ml, and dishwasher safe."},
+            {"line": "Yours for $24.00."},
         ],
         "product_colour": "sage green",
         "colour_photos": [1],
+        "person_looks": "A potter in her thirties in a linen apron, in a sunny workshop.",
+        "person_voice": "A warm, relaxed woman in her thirties with a soft British accent.",
     },
 }
+# The plan's 18 words take the fake voice 9 seconds: it speaks 2 words a second.
+
+
+def facts_ok(*scenes: int) -> dict[str, Any]:
+    """What the fact check answers when every one of `scenes` matches the page."""
+    return {
+        "decision": "checked",
+        "reason": "Every claim is stated on the page.",
+        "question": None,
+        "lines": [
+            {"scene": scene, "verdict": "ok", "problem": None, "page_says": None}
+            for scene in scenes
+        ],
+    }
+
+
+# The mug plan's fact check, when all three lines match the page.
+FACTS_OK = facts_ok(1, 2, 3)
 
 
 @pytest.fixture(autouse=True)
@@ -126,6 +148,21 @@ def start_job(
     return start
 
 
+@pytest.fixture
+def answer(
+    api: APIClient, django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks
+) -> Callable[..., int]:
+    """Answer the job's question through the API, run what it starts, and give the status."""
+
+    def send(job_id: str, data: dict[str, object], format: str = "json") -> int:
+        with django_capture_on_commit_callbacks(execute=True):
+            response = api.post(f"/api/jobs/{job_id}/answer/", data, format=format)
+        status: int = response.status_code
+        return status
+
+    return send
+
+
 def openai_reply(content: dict[str, Any], status: str = "completed") -> dict[str, Any]:
     """A Responses API reply as OpenAI sends it, billed for 1,200 tokens in and 300 out."""
     return {
@@ -174,8 +211,22 @@ def openai_server(httpserver: HTTPServer, settings: Settings) -> Iterator[Callab
                 reply
             )
 
-    with use_model(OpenAIProvider()):
+    with use_model(OpenAIText()):
         yield reply_with
+
+
+class OpenAIText(FakeModel):
+    """Text calls go to our real OpenAI code; the portrait and voice are faked, so a test
+    of what the models are sent needs no stand-in picture or voice service."""
+
+    name = "openai"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._openai = OpenAIProvider()
+
+    def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]:
+        return self._openai.complete(request)
 
 
 class FakeDns:

@@ -13,7 +13,7 @@ from gateway.gateway import IMAGE_TYPE_NAMES, IMAGE_TYPES
 from .activity import record
 from .models import ActivityEntry, Job, ProductPhoto, Question, Scene
 from .page import MAX_PHOTO_BYTES, MAX_PHOTOS
-from .tasks import keep_photo, plan_ad, read_page
+from .tasks import check_plan, keep_photo, plan_ad, read_page
 
 
 class ActivityEntrySerializer(serializers.ModelSerializer[ActivityEntry]):
@@ -36,13 +36,13 @@ class ProductPhotoSerializer(serializers.ModelSerializer[ProductPhoto]):
 class SceneSerializer(serializers.ModelSerializer[Scene]):
     class Meta:
         model = Scene
-        fields = ["number", "line", "slot_seconds", "status"]
+        fields = ["number", "line", "status"]
 
 
 class QuestionSerializer(serializers.ModelSerializer[Question]):
     class Meta:
         model = Question
-        fields = ["id", "kind", "question"]
+        fields = ["id", "kind", "question", "options"]
 
 
 class JobSerializer(serializers.ModelSerializer[Job]):
@@ -96,6 +96,21 @@ class ProducerAnswerSerializer(serializers.Serializer[None]):
     answer = serializers.CharField(max_length=2000)
 
 
+class LineChoiceSerializer(serializers.Serializer[None]):
+    answer = serializers.ChoiceField(choices=["keep", "own"])
+    # The same limit as an answer. Only for "own": it is the line the scene then says.
+    line = serializers.CharField(max_length=2000, required=False)
+
+    def validate(self, data: dict[str, str]) -> dict[str, str]:
+        if data["answer"] == "own" and not data.get("line"):
+            raise serializers.ValidationError({"line": "Give the line the scene should say."})
+        return data
+
+
+class LengthChoiceSerializer(serializers.Serializer[None]):
+    answer = serializers.ChoiceField(choices=Job.LengthChoice.choices)
+
+
 class WorkingLinkSerializer(serializers.Serializer[None]):
     # The same limit as a job's link.
     answer = serializers.URLField(max_length=2000)
@@ -134,8 +149,14 @@ def answer_question(request: Request, job_id: str) -> Response:
             _take_working_link(job, question, request.data)
         elif question.kind == Question.Kind.PRODUCT_PHOTOS:
             _take_product_photos(job, question, request.data)
-        else:
+        elif question.kind == Question.Kind.PRODUCER:
             _take_producer_answer(job, question, request.data)
+        elif question.kind == Question.Kind.UNCLEAR_PAGE:
+            _take_page_answer(job, question, request.data)
+        elif question.kind == Question.Kind.FACT_CHECK:
+            _take_line_choice(job, question, request.data)
+        else:
+            _take_length_choice(job, question, request.data)
     return Response(status=status.HTTP_202_ACCEPTED)
 
 
@@ -190,3 +211,60 @@ def _take_producer_answer(job: Job, question: Question, data: object) -> None:
         status=Job.Status.PAGE_READ,
     )
     transaction.on_commit(lambda: plan_ad.delay(str(job.pk)))
+
+
+def _take_page_answer(job: Job, question: Question, data: object) -> None:
+    serializer = ProducerAnswerSerializer(data=data)
+    serializer.is_valid(raise_exception=True)
+    _store_answer(question, serializer.validated_data["answer"])
+    _check_again(
+        job,
+        f"You answered: {question.answer}",
+        reason="The lines are checked against the page again, with your answer.",
+    )
+
+
+def _take_line_choice(job: Job, question: Question, data: object) -> None:
+    serializer = LineChoiceSerializer(data=data)
+    serializer.is_valid(raise_exception=True)
+    scene = question.scene
+    assert scene is not None
+    if serializer.validated_data["answer"] == "keep":
+        _store_answer(question, "Keep this line")
+        message = f"You kept scene {scene.number}'s line"
+    else:
+        scene.line = serializer.validated_data["line"]
+        _store_answer(question, scene.line)
+        message = f"You gave scene {scene.number}'s line: {scene.line}"
+    # The user knows their product: the line they chose is used as it is, not checked again.
+    scene.fact_checked = True
+    scene.save(update_fields=["line", "fact_checked"])
+    _check_again(job, message, reason="The line is used as you chose, and the checks go on.")
+
+
+def _take_length_choice(job: Job, question: Question, data: object) -> None:
+    serializer = LengthChoiceSerializer(data=data)
+    serializer.is_valid(raise_exception=True)
+    choice = Job.LengthChoice(serializer.validated_data["answer"])
+    _store_answer(question, choice.label)
+    job.length_choice = choice
+    job.shorten_tries = 0
+    job.save(update_fields=["length_choice", "shorten_tries"])
+    if choice == Job.LengthChoice.SHORTEN:
+        _check_again(
+            job,
+            "You chose to shorten the script",
+            reason="The producer rewrites the script to fit, and the new lines are checked.",
+        )
+    else:
+        _check_again(
+            job,
+            "You chose to keep the script longer",
+            reason="The ad goes on at this length; the finished ad reports how far it is "
+            "from your target.",
+        )
+
+
+def _check_again(job: Job, message: str, *, reason: str) -> None:
+    record(job, message, reason=reason, status=Job.Status.CHECKING_PLAN)
+    transaction.on_commit(lambda: check_plan.delay(str(job.pk)))

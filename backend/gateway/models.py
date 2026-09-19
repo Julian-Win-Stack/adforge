@@ -26,6 +26,9 @@ class ModelCall(models.Model):
     error = models.TextField(blank=True)
     input_tokens = models.PositiveIntegerField(null=True, blank=True)
     output_tokens = models.PositiveIntegerField(null=True, blank=True)
+    characters = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Characters spoken, for voice models billed by them."
+    )
     cost_usd = models.DecimalField(max_digits=10, decimal_places=6, null=True, blank=True)
     duration_ms = models.PositiveIntegerField()
     decision = models.CharField(max_length=50, blank=True)

@@ -47,12 +47,14 @@ def test_a_job_already_waiting_gets_the_question_it_waits_on(api: APIClient) -> 
         "kind": "working_link",
         "question": "We couldn't read one product's page from that link. "
         "What's the link to the product's own page?",
+        "options": [],
     }
     assert api.get(f"/api/jobs/{photos_job.pk}/").json()["question"] == {
         "id": Question.objects.get(job_id=photos_job.pk).pk,
         "kind": "product_photos",
         "question": "The page had no product photo we could use. "
         "Can you upload at least one photo of the product?",
+        "options": [],
     }
     # Why the job asked comes from the last thing it recorded, where there is one.
     assert Question.objects.get(job_id=link_job.pk).reason == "The page was a 404."

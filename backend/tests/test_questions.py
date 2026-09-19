@@ -2,7 +2,6 @@ from collections.abc import Callable
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
-from pytest_django import DjangoCaptureOnCommitCallbacks
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
@@ -11,26 +10,11 @@ from gateway.fake import FakeModel
 from gateway.models import ModelCall
 from jobs.models import Job, ProductPhoto, Question
 
-from .conftest import MUG_FRONT, MUG_SIDE, PLAN, READABLE
+from .conftest import FACTS_OK, MUG_FRONT, MUG_SIDE, PLAN, READABLE
 
 pytestmark = pytest.mark.django_db
 
 UNREADABLE = {"decision": "unreadable", "reason": "The page lists 12 mugs, not one."}
-
-
-@pytest.fixture
-def answer(
-    api: APIClient, django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks
-) -> Callable[..., int]:
-    """Answer the job's question through the API, run what it starts, and give the status."""
-
-    def send(job_id: str, data: dict[str, object], format: str = "json") -> int:
-        with django_capture_on_commit_callbacks(execute=True):
-            response = api.post(f"/api/jobs/{job_id}/answer/", data, format=format)
-        status: int = response.status_code
-        return status
-
-    return send
 
 
 @pytest.mark.parametrize("cause", ["a broken link", "a page that isn't one product's"])
@@ -55,6 +39,7 @@ def test_a_job_that_couldnt_read_its_page_asks_for_a_working_link_and_reads_it(
         fake_model.respond("check_page", UNREADABLE)
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", PLAN)
+    fake_model.respond("fact_check", FACTS_OK)
     job_id = start_job(first_url)
 
     waiting = api.get(f"/api/jobs/{job_id}/").json()
@@ -64,13 +49,14 @@ def test_a_job_that_couldnt_read_its_page_asks_for_a_working_link_and_reads_it(
         "kind": "working_link",
         "question": "We couldn't read one product's page from that link. "
         "What's the link to the product's own page?",
+        "options": [],
     }
 
     assert answer(job_id, {"answer": product_page_url}) == 202
 
     job = api.get(f"/api/jobs/{job_id}/").json()
     assert job["product_url"] == product_page_url
-    assert job["status"] == "planned"
+    assert job["status"] == "ready_to_render"
     # The page read is the new one: its photos, its text.
     assert [photo["source_url"] for photo in job["photos"]] == [
         httpserver.url_for("/cdn/mug-front.png"),
@@ -137,6 +123,7 @@ def test_a_page_with_no_usable_photos_asks_for_uploads_and_keeps_them_like_the_p
     answer: Callable[..., int],
 ) -> None:
     fake_model.respond("plan_ad", PLAN)
+    fake_model.respond("fact_check", FACTS_OK)
     job_id = start_job(page_without_photos)
 
     waiting = api.get(f"/api/jobs/{job_id}/").json()
@@ -146,6 +133,7 @@ def test_a_page_with_no_usable_photos_asks_for_uploads_and_keeps_them_like_the_p
         "kind": "product_photos",
         "question": "The page had no product photo we could use. "
         "Can you upload at least one photo of the product?",
+        "options": [],
     }
 
     uploads = [
@@ -155,7 +143,7 @@ def test_a_page_with_no_usable_photos_asks_for_uploads_and_keeps_them_like_the_p
     assert answer(job_id, {"photos": uploads}, format="multipart") == 202
 
     job = api.get(f"/api/jobs/{job_id}/").json()
-    assert job["status"] == "planned"
+    assert job["status"] == "ready_to_render"
     stored = ProductPhoto.objects.filter(job_id=job_id)
     assert [(photo.position, photo.source_url, photo.file) for photo in stored] == [
         (1, "", f"jobs/{job_id}/photos/1.png"),

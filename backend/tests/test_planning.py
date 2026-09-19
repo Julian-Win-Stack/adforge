@@ -14,10 +14,10 @@ from rest_framework.test import APIClient
 from adforge import file_store
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
-from jobs.models import Job, ProductPhoto, Question, Scene
-from jobs.tasks import keep_photo, plan_ad, read_page
+from jobs.models import Job, ProducedItem, ProductPhoto, Question, Scene
+from jobs.tasks import check_plan, keep_photo, make_person, plan_ad, read_page
 
-from .conftest import MUG_FRONT, MUG_SIDE, PLAN, READABLE, openai_answer, picture
+from .conftest import FACTS_OK, MUG_FRONT, MUG_SIDE, PLAN, READABLE, openai_answer, picture
 
 pytestmark = pytest.mark.django_db
 
@@ -30,33 +30,34 @@ def test_the_plan_is_stored_with_the_job_and_its_scenes_show_on_the_page(
 ) -> None:
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", PLAN)
+    fake_model.respond("fact_check", FACTS_OK)
 
     job_id = start_job(product_page_url, target_seconds=12)
 
     job = api.get(f"/api/jobs/{job_id}/").json()
-    assert job["status"] == "planned"
+    assert job["status"] == "ready_to_render"
     assert job["scenes"] == [
-        {
-            "number": 1,
-            "line": "Meet the Stoneware Mug from Kiln & Co.",
-            "slot_seconds": 4,
-            "status": "planned",
-        },
+        {"number": 1, "line": "Meet the Stoneware Mug from Kiln & Co.", "status": "planned"},
         {
             "number": 2,
             "line": "Hand-thrown, holds 350 ml, and dishwasher safe.",
-            "slot_seconds": 5,
             "status": "planned",
         },
-        {"number": 3, "line": "Yours for $24.00.", "slot_seconds": 3, "status": "planned"},
+        {"number": 3, "line": "Yours for $24.00.", "status": "planned"},
     ]
-    assert [(entry["message"], entry["reason"]) for entry in job["activity"][-2:]] == [
+    entries = [(entry["message"], entry["reason"]) for entry in job["activity"]]
+    planning = entries.index(
         (
             "Planning the ad",
-            "The plan sets the scenes, what the person says in each, and how long each lasts.",
-        ),
-        ("Planned 3 scenes", PLAN["reason"]),
-    ]
+            "The plan sets the scenes, what the person says in each, and who says it.",
+        )
+    )
+    assert entries[planning + 1] == ("Planned 3 scenes", PLAN["reason"])
+    stored = Job.objects.get(pk=job_id)
+    assert (stored.person_looks, stored.person_voice) == (
+        "A potter in her thirties in a linen apron, in a sunny workshop.",
+        "A warm, relaxed woman in her thirties with a soft British accent.",
+    )
     # The producer plans from the page itself, the target length and the photos it has.
     handoff = ModelCall.objects.get(job_id=job_id, purpose="plan_ad").handoff
     assert "$24.00" in handoff["page_text"]
@@ -157,18 +158,17 @@ def _plan_with(**changes: Any) -> dict[str, Any]:
 
 
 def _scene(**changes: Any) -> dict[str, Any]:
-    return {"line": "Meet the Stoneware Mug.", "slot_seconds": 4, **changes}
+    return {"line": "Meet the Stoneware Mug.", **changes}
 
 
 @pytest.mark.parametrize(
     "reply",
     [
         pytest.param(_plan_with(scenes=[]), id="no scenes"),
-        pytest.param(_plan_with(scenes=[_scene(slot_seconds=0)]), id="a zero-second slot"),
-        pytest.param(_plan_with(scenes=[_scene(slot_seconds=4.5)]), id="a fractional slot"),
-        pytest.param(_plan_with(scenes=[_scene(slot_seconds="4")]), id="a slot given as text"),
         pytest.param(_plan_with(scenes=[_scene(line="  ")]), id="a scene with nothing to say"),
         pytest.param(_plan_with(product_colour=" "), id="no colour"),
+        pytest.param(_plan_with(person_looks=" "), id="no look for the person"),
+        pytest.param(_plan_with(person_voice=""), id="no voice for the person"),
         pytest.param(_plan_with(colour_photos=[]), id="no photo showing the colour"),
         pytest.param(_plan_with(colour_photos=[1, 3]), id="a photo after the last one"),
         pytest.param(_plan_with(colour_photos=[0]), id="a photo before the first one"),
@@ -255,13 +255,19 @@ def test_the_producers_question_waits_for_an_answer_and_the_plan_uses_it(
 ) -> None:
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", ASK, PLAN)
+    fake_model.respond("fact_check", FACTS_OK)
     job_id = start_job(product_page_url)
 
     waiting = api.get(f"/api/jobs/{job_id}/").json()
     assert waiting["status"] == "needs_answer"
     assert waiting["scenes"] == []
     [asked] = Question.objects.filter(job_id=job_id)
-    assert waiting["question"] == {"id": asked.pk, "kind": "producer", "question": ASK["question"]}
+    assert waiting["question"] == {
+        "id": asked.pk,
+        "kind": "producer",
+        "question": ASK["question"],
+        "options": [],
+    }
     assert (waiting["activity"][-1]["message"], waiting["activity"][-1]["reason"]) == (
         f"Asked: {ASK['question']}",
         ASK["reason"],
@@ -274,7 +280,7 @@ def test_the_producers_question_waits_for_an_answer_and_the_plan_uses_it(
 
     assert response.status_code == 202
     job = api.get(f"/api/jobs/{job_id}/").json()
-    assert job["status"] == "planned"
+    assert job["status"] == "ready_to_render"
     assert job["question"] is None
     assert len(job["scenes"]) == 3
     # The second plan is made knowing the answer.
@@ -302,6 +308,7 @@ def test_the_same_question_asked_again_is_a_new_question_with_its_own_id(
 ) -> None:
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", ASK, ASK, PLAN)
+    fake_model.respond("fact_check", FACTS_OK)
     job_id = start_job(product_page_url)
     first = api.get(f"/api/jobs/{job_id}/").json()["question"]
 
@@ -332,14 +339,23 @@ def test_a_restart_while_waiting_for_an_answer_keeps_waiting_without_asking_agai
     after = api.get(f"/api/jobs/{job_id}/").json()
     assert after["status"] == "needs_answer"
     [asked] = Question.objects.filter(job_id=job_id)
-    assert after["question"] == {"id": asked.pk, "kind": "producer", "question": ASK["question"]}
+    assert after["question"] == {
+        "id": asked.pk,
+        "kind": "producer",
+        "question": ASK["question"],
+        "options": [],
+    }
     assert after["activity"] == before["activity"]
     assert Question.objects.filter(job_id=job_id).count() == 1
     assert ModelCall.objects.filter(job_id=job_id, purpose="plan_ad").count() == 1
 
 
-@pytest.mark.parametrize("task", [read_page, plan_ad], ids=["read_page", "plan_ad"])
-def test_a_task_handed_out_again_after_the_job_is_planned_changes_and_pays_for_nothing(
+@pytest.mark.parametrize(
+    "task",
+    [read_page, plan_ad, make_person, check_plan],
+    ids=["read_page", "plan_ad", "make_person", "check_plan"],
+)
+def test_a_task_handed_out_again_after_the_job_is_checked_changes_and_pays_for_nothing(
     task: Any,
     api: APIClient,
     fake_model: FakeModel,
@@ -350,6 +366,7 @@ def test_a_task_handed_out_again_after_the_job_is_planned_changes_and_pays_for_n
     fake_model.respond("check_page", READABLE)
     # One reply each: a task that ran again would find no reply and fail the job.
     fake_model.respond("plan_ad", PLAN)
+    fake_model.respond("fact_check", FACTS_OK)
     job_id = start_job(product_page_url)
     before = api.get(f"/api/jobs/{job_id}/").json()
     requests_to_shop = len(httpserver.log)
@@ -360,8 +377,9 @@ def test_a_task_handed_out_again_after_the_job_is_planned_changes_and_pays_for_n
 
     after = api.get(f"/api/jobs/{job_id}/").json()
     assert after == before
-    assert after["status"] == "planned"
+    assert after["status"] == "ready_to_render"
     assert len(httpserver.log) == requests_to_shop
-    assert ModelCall.objects.filter(job_id=job_id).count() == 2
+    assert ModelCall.objects.filter(job_id=job_id).count() == 6
     assert ProductPhoto.objects.filter(job_id=job_id).count() == 2
     assert Scene.objects.filter(job_id=job_id).count() == 3
+    assert ProducedItem.objects.filter(job_id=job_id).count() == 2

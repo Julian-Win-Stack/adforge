@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { ApiError, answerQuestion, type Question } from "./api";
 
 /** The question a job is waiting on, and the form that answers it. Each kind of question
- * takes its own kind of answer: typed text, a link, or photos. */
+ * takes its own kind of answer: one of its options, typed text, a link, or photos. */
 export function QuestionForm({
   jobId,
   question,
@@ -14,15 +14,23 @@ export function QuestionForm({
 }) {
   const [text, setText] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
+  const [choice, setChoice] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Picking "use my own line" for a line that failed the fact check asks for the line.
+  const writesLine = question.kind === "fact_check" && choice === "own";
 
   async function send(event: FormEvent) {
     event.preventDefault();
     setSending(true);
     setError(null);
     try {
-      await answerQuestion(jobId, question.kind === "product_photos" ? photos : text);
+      if (question.options.length > 0) {
+        await answerQuestion(jobId, choice, writesLine ? text : undefined);
+      } else {
+        await answerQuestion(jobId, question.kind === "product_photos" ? photos : text);
+      }
       onSent(question);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
@@ -36,7 +44,30 @@ export function QuestionForm({
       <p>
         <strong>{question.question}</strong>
       </p>
-      {question.kind === "producer" && (
+      {question.options.length > 0 && (
+        <fieldset>
+          <legend>Your answer</legend>
+          {question.options.map((option) => (
+            <label key={option.value} style={{ display: "block" }}>
+              <input
+                type="radio"
+                name="choice"
+                value={option.value}
+                checked={choice === option.value}
+                onChange={() => setChoice(option.value)}
+              />
+              {option.label}
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {writesLine && (
+        <label>
+          Your line
+          <textarea required value={text} onChange={(e) => setText(e.target.value)} />
+        </label>
+      )}
+      {(question.kind === "producer" || question.kind === "unclear_page") && (
         <label>
           Your answer
           <textarea required value={text} onChange={(e) => setText(e.target.value)} />
@@ -61,7 +92,11 @@ export function QuestionForm({
       )}
       <button
         type="submit"
-        disabled={sending || (question.kind === "product_photos" && photos.length === 0)}
+        disabled={
+          sending ||
+          (question.kind === "product_photos" && photos.length === 0) ||
+          (question.options.length > 0 && choice === "")
+        }
       >
         Send answer
       </button>
