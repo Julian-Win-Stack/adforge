@@ -74,6 +74,20 @@ class ModelProvider(Protocol):
     def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]: ...
 
 
+class PortraitHandoff(Handoff):
+    prompt: str = Field(min_length=1)
+
+
+class VoiceDesignHandoff(Handoff):
+    description: str = Field(min_length=1)
+    sample: str = Field(min_length=1)
+
+
+class SpeechHandoff(Handoff):
+    voice_id: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+
+
 @dataclass(frozen=True)
 class Picture:
     """A picture a model drew, and the tokens it was billed for."""

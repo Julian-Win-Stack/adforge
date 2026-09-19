@@ -11,7 +11,7 @@ from pytest_httpserver import HTTPServer
 
 from adforge import file_store
 from gateway.fake import FakeModel
-from gateway.gateway import UnreadableImage, call_model
+from gateway.gateway import UnreadableImage, call_model, speak
 from gateway.models import ModelCall
 from gateway.types import Image, UnusableReply
 from jobs.tasks import PageCheck, PageCheckHandoff
@@ -40,6 +40,14 @@ def test_a_bad_handoff_is_refused_before_the_model_is_called(fake_model: FakeMod
             handoff=bad,
             output=PageCheck,
         )
+    assert not ModelCall.objects.exists()
+
+
+def test_a_voice_line_with_no_voice_is_refused_before_the_voice_service_is_called(
+    fake_model: FakeModel,
+) -> None:
+    with pytest.raises(ValidationError, match="voice_id"):
+        speak(job=None, purpose="measure_voice", voice_id="", text="Yours for $24.00.")
     assert not ModelCall.objects.exists()
 
 

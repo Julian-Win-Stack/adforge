@@ -88,9 +88,6 @@ INWORLD_API_KEY = os.environ.get("INWORLD_API_KEY", "")
 # Tests point it at a local stand-in.
 INWORLD_BASE_URL = os.environ.get("INWORLD_BASE_URL", "https://api.inworld.ai")
 
-# The quality checks look at what was made, such as each portrait and clip, and can all be
-# turned off with this one switch. The planning checks only read the script, and always run.
-QUALITY_CHECKS = os.environ.get("QUALITY_CHECKS", "on") != "off"
 # Links and photo links that lead to this machine or a private network are never fetched,
 # so a pasted link can't make the server reach places only it can see. Tests turn this on
 # to fetch from their local test shop.

@@ -97,12 +97,12 @@ class ProducerAnswerSerializer(serializers.Serializer[None]):
 
 
 class LineChoiceSerializer(serializers.Serializer[None]):
-    answer = serializers.ChoiceField(choices=["keep", "own"])
+    answer = serializers.ChoiceField(choices=Question.LineChoice.choices)
     # The same limit as an answer. Only for "own": it is the line the scene then says.
     line = serializers.CharField(max_length=2000, required=False)
 
     def validate(self, data: dict[str, str]) -> dict[str, str]:
-        if data["answer"] == "own" and not data.get("line"):
+        if data["answer"] == Question.LineChoice.OWN and not data.get("line"):
             raise serializers.ValidationError({"line": "Give the line the scene should say."})
         return data
 
@@ -145,18 +145,7 @@ def answer_question(request: Request, job_id: str) -> Response:
                 {"detail": "This job isn't waiting for an answer."},
                 status=status.HTTP_409_CONFLICT,
             )
-        if question.kind == Question.Kind.WORKING_LINK:
-            _take_working_link(job, question, request.data)
-        elif question.kind == Question.Kind.PRODUCT_PHOTOS:
-            _take_product_photos(job, question, request.data)
-        elif question.kind == Question.Kind.PRODUCER:
-            _take_producer_answer(job, question, request.data)
-        elif question.kind == Question.Kind.UNCLEAR_PAGE:
-            _take_page_answer(job, question, request.data)
-        elif question.kind == Question.Kind.FACT_CHECK:
-            _take_line_choice(job, question, request.data)
-        else:
-            _take_length_choice(job, question, request.data)
+        _TAKE_ANSWER[Question.Kind(question.kind)](job, question, request.data)
     return Response(status=status.HTTP_202_ACCEPTED)
 
 
@@ -229,8 +218,8 @@ def _take_line_choice(job: Job, question: Question, data: object) -> None:
     serializer.is_valid(raise_exception=True)
     scene = question.scene
     assert scene is not None
-    if serializer.validated_data["answer"] == "keep":
-        _store_answer(question, "Keep this line")
+    if serializer.validated_data["answer"] == Question.LineChoice.KEEP:
+        _store_answer(question, Question.LineChoice.KEEP.label)
         message = f"You kept scene {scene.number}'s line"
     else:
         scene.line = serializer.validated_data["line"]
@@ -268,3 +257,14 @@ def _take_length_choice(job: Job, question: Question, data: object) -> None:
 def _check_again(job: Job, message: str, *, reason: str) -> None:
     record(job, message, reason=reason, status=Job.Status.CHECKING_PLAN)
     transaction.on_commit(lambda: check_plan.delay(str(job.pk)))
+
+
+# How each kind of question's answer is taken. Every kind must be here.
+_TAKE_ANSWER = {
+    Question.Kind.WORKING_LINK: _take_working_link,
+    Question.Kind.PRODUCT_PHOTOS: _take_product_photos,
+    Question.Kind.PRODUCER: _take_producer_answer,
+    Question.Kind.UNCLEAR_PAGE: _take_page_answer,
+    Question.Kind.FACT_CHECK: _take_line_choice,
+    Question.Kind.LENGTH: _take_length_choice,
+}

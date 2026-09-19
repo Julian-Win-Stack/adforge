@@ -28,10 +28,12 @@ from .types import (
     Judgement,
     LoadedImage,
     ModelProvider,
-    ModelReply,
     ModelRequest,
     PictureProvider,
+    PortraitHandoff,
+    SpeechHandoff,
     UnusableReply,
+    VoiceDesignHandoff,
     VoiceProvider,
 )
 
@@ -117,77 +119,77 @@ def call_model[Out: BaseModel](
         images=tuple(_load(image) for image in images),
     )
     provider = _provider()
-    attempts = 0
 
-    def attempt() -> Out:
-        nonlocal attempts
-        attempts += 1
-        started = time.monotonic()
-        try:
-            reply = provider.complete(request)
-        except Exception as error:
-            _record_failure(job, request, provider, attempts, started, error)
-            raise
-        _record_success(job, request, provider, attempts, started, reply)
-        return reply.output
+    def complete() -> _Made[Out]:
+        reply = provider.complete(request)
+        judgement = reply.output if isinstance(reply.output, Judgement) else None
+        return _Made(
+            result=reply.output,
+            output=reply.output.model_dump(mode="json"),
+            bill=_Bill(
+                cost_usd=catalog.cost_usd(request.model, reply.input_tokens, reply.output_tokens),
+                input_tokens=reply.input_tokens,
+                output_tokens=reply.output_tokens,
+            ),
+            decision=judgement.decision if judgement else "",
+            reason=judgement.reason if judgement else "",
+        )
 
-    try:
-        return with_retries(attempt)
-    except OutsideServiceDown as error:
-        raise OutsideServiceDown(
-            f"The model provider was still down after {attempts} tries: {error}"
-        ) from error
+    return _recorded(job, purpose, request.model, provider.name, handoff, complete, _shown(request))
 
 
 def draw_picture(*, job: Job | None, purpose: str, prompt: str) -> str:
     """Have a model draw a picture. Returns its key in the file store."""
+    handoff = PortraitHandoff(prompt=prompt)
     model = catalog.MODEL_FOR_PURPOSE[purpose]
     provider = _pictures()
 
-    def draw() -> tuple[str, dict[str, Any], _Bill]:
-        picture = provider.draw(model=model, prompt=prompt)
-        extension = _picture_extension(picture.data)
-        key = file_store.save(f"{purpose}.{extension}", picture.data)
-        return (
-            key,
-            {"file": key},
-            _Bill(
-                input_tokens=picture.input_tokens,
-                output_tokens=picture.output_tokens,
+    def draw() -> _Made[str]:
+        picture = provider.draw(model=model, prompt=handoff.prompt)
+        key = file_store.save(f"{purpose}.{_picture_extension(picture.data)}", picture.data)
+        return _Made(
+            result=key,
+            output={"file": key},
+            bill=_Bill(
                 cost_usd=catalog.picture_cost_usd(
                     model, picture.input_tokens, picture.output_tokens
                 ),
+                input_tokens=picture.input_tokens,
+                output_tokens=picture.output_tokens,
             ),
         )
 
-    return _made(job, purpose, model, provider.name, {"prompt": prompt}, draw)
+    return _recorded(job, purpose, model, provider.name, handoff, draw)
 
 
 def design_voice(*, job: Job | None, purpose: str, description: str, sample: str) -> str:
     """Have a voice designed from a description, heard saying `sample`. Returns its id."""
+    handoff = VoiceDesignHandoff(description=description, sample=sample)
     model = catalog.MODEL_FOR_PURPOSE[purpose]
     provider = _voices()
 
-    def design() -> tuple[str, dict[str, Any], _Bill]:
-        voice_id = provider.design_voice(model=model, description=description, sample=sample)
-        return voice_id, {"voice_id": voice_id}, _speech_bill(model, sample)
+    def design() -> _Made[str]:
+        voice_id = provider.design_voice(
+            model=model, description=handoff.description, sample=handoff.sample
+        )
+        bill = _speech_bill(model, handoff.sample)
+        return _Made(result=voice_id, output={"voice_id": voice_id}, bill=bill)
 
-    handoff = {"description": description, "sample": sample}
-    return _made(job, purpose, model, provider.name, handoff, design)
+    return _recorded(job, purpose, model, provider.name, handoff, design)
 
 
 def speak(*, job: Job | None, purpose: str, voice_id: str, text: str) -> str:
     """Have the voice say `text`. Returns the WAV file's key in the file store."""
+    handoff = SpeechHandoff(voice_id=voice_id, text=text)
     model = catalog.MODEL_FOR_PURPOSE[purpose]
     provider = _voices()
 
-    def say() -> tuple[str, dict[str, Any], _Bill]:
-        audio = provider.speak(model=model, voice_id=voice_id, text=text)
+    def say() -> _Made[str]:
+        audio = provider.speak(model=model, voice_id=handoff.voice_id, text=handoff.text)
         key = file_store.save(f"{purpose}.wav", audio)
-        return key, {"file": key}, _speech_bill(model, text)
+        return _Made(result=key, output={"file": key}, bill=_speech_bill(model, handoff.text))
 
-    handoff = {"voice_id": voice_id, "text": text}
-    return _made(job, purpose, model, provider.name, handoff, say)
+    return _recorded(job, purpose, model, provider.name, handoff, say)
 
 
 @dataclass(frozen=True)
@@ -204,15 +206,36 @@ def _speech_bill(model: str, text: str) -> _Bill:
     return _Bill(characters=len(text), cost_usd=catalog.speech_cost_usd(model, len(text)))
 
 
-def _made[Result](
+@dataclass(frozen=True)
+class _Made[Result]:
+    """What one call made, what to record as its output, and what it was billed for."""
+
+    result: Result
+    output: dict[str, Any]
+    bill: _Bill
+    decision: str = ""
+    reason: str = ""
+
+
+def _recorded[Result](
     job: Job | None,
     purpose: str,
     model: str,
     provider: str,
-    handoff: dict[str, Any],
-    make: Callable[[], tuple[Result, dict[str, Any], _Bill]],
+    handoff: Handoff,
+    make: Callable[[], _Made[Result]],
+    images: list[dict[str, str]] | None = None,
 ) -> Result:
-    """Run `make` with retries, recording every attempt like `call_model` does."""
+    """Run `make` with retries, recording every attempt: what was called, what it cost, how
+    long it took, whether it worked, and any judgement."""
+    recorded: dict[str, Any] = {
+        "job": job,
+        "purpose": purpose,
+        "provider": provider,
+        "model": model,
+        "handoff": handoff.model_dump(mode="json"),
+        "images": images or [],
+    }
     attempts = 0
 
     def attempt() -> Result:
@@ -220,36 +243,39 @@ def _made[Result](
         attempts += 1
         started = time.monotonic()
         try:
-            result, output, bill = make()
+            made = make()
         except Exception as error:
+            # An unusable answer was still billed, so its cost is recorded like any other.
+            billed = error if isinstance(error, UnusableReply) else None
             ModelCall.objects.create(
-                job=job,
-                purpose=purpose,
-                provider=provider,
-                model=model,
+                **recorded,
                 attempt=attempts,
-                handoff=handoff,
                 outcome=ModelCall.Outcome.FAILED,
                 error=f"{type(error).__name__}: {error}",
+                input_tokens=billed.input_tokens if billed else None,
+                output_tokens=billed.output_tokens if billed else None,
+                cost_usd=(
+                    catalog.cost_usd(model, billed.input_tokens, billed.output_tokens)
+                    if billed
+                    else None
+                ),
                 duration_ms=_elapsed_ms(started),
             )
             raise
         ModelCall.objects.create(
-            job=job,
-            purpose=purpose,
-            provider=provider,
-            model=model,
+            **recorded,
             attempt=attempts,
-            handoff=handoff,
-            output=output,
+            output=made.output,
             outcome=ModelCall.Outcome.SUCCEEDED,
-            input_tokens=bill.input_tokens,
-            output_tokens=bill.output_tokens,
-            characters=bill.characters,
-            cost_usd=bill.cost_usd,
+            input_tokens=made.bill.input_tokens,
+            output_tokens=made.bill.output_tokens,
+            characters=made.bill.characters,
+            cost_usd=made.bill.cost_usd,
             duration_ms=_elapsed_ms(started),
+            decision=made.decision,
+            reason=made.reason,
         )
-        return result
+        return made.result
 
     try:
         return with_retries(attempt)
@@ -301,65 +327,6 @@ def _load(image: Image) -> LoadedImage:
 def _shown[Out: BaseModel](request: ModelRequest[Out]) -> list[dict[str, str]]:
     """Which images the call showed, by their keys: the bytes are already in the file store."""
     return [{"label": image.label, "key": image.key} for image in request.images]
-
-
-def _record_success[Out: BaseModel](
-    job: Job | None,
-    request: ModelRequest[Out],
-    provider: ModelProvider,
-    attempt: int,
-    started: float,
-    reply: ModelReply[Out],
-) -> None:
-    judgement = reply.output if isinstance(reply.output, Judgement) else None
-    ModelCall.objects.create(
-        job=job,
-        purpose=request.purpose,
-        provider=provider.name,
-        model=request.model,
-        attempt=attempt,
-        handoff=request.handoff.model_dump(mode="json"),
-        images=_shown(request),
-        output=reply.output.model_dump(mode="json"),
-        outcome=ModelCall.Outcome.SUCCEEDED,
-        input_tokens=reply.input_tokens,
-        output_tokens=reply.output_tokens,
-        cost_usd=catalog.cost_usd(request.model, reply.input_tokens, reply.output_tokens),
-        duration_ms=_elapsed_ms(started),
-        decision=judgement.decision if judgement else "",
-        reason=judgement.reason if judgement else "",
-    )
-
-
-def _record_failure[Out: BaseModel](
-    job: Job | None,
-    request: ModelRequest[Out],
-    provider: ModelProvider,
-    attempt: int,
-    started: float,
-    error: Exception,
-) -> None:
-    # An unusable answer was still billed, so its cost is recorded like any other.
-    billed = error if isinstance(error, UnusableReply) else None
-    ModelCall.objects.create(
-        job=job,
-        purpose=request.purpose,
-        provider=provider.name,
-        model=request.model,
-        attempt=attempt,
-        handoff=request.handoff.model_dump(mode="json"),
-        images=_shown(request),
-        outcome=ModelCall.Outcome.FAILED,
-        error=f"{type(error).__name__}: {error}",
-        input_tokens=billed.input_tokens if billed else None,
-        output_tokens=billed.output_tokens if billed else None,
-        cost_usd=(
-            catalog.cost_usd(request.model, billed.input_tokens, billed.output_tokens)
-            if billed
-            else None
-        ),
-        duration_ms=_elapsed_ms(started),
-    )
 
 
 def _elapsed_ms(started: float) -> int:

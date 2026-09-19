@@ -2,13 +2,12 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-from pytest_django import Settings
 from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
-from jobs.models import Job, ProducedItem
-from jobs.tasks import make_person
+from jobs.models import Job, ProducedItem, Question
+from jobs.tasks import check_plan, make_person
 
 from .conftest import FACTS_OK, PLAN, READABLE, facts_ok
 
@@ -118,9 +117,6 @@ def test_a_person_half_made_when_the_worker_stopped_is_finished_without_a_second
     product_page_url: str,
     start_job: Callable[..., str],
 ) -> None:
-    class WorkerStopped(BaseException):
-        """The worker process dying mid-task: nothing in the job catches it."""
-
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", PLAN)
     fake_model.respond("design_voice", WorkerStopped())
@@ -137,6 +133,94 @@ def test_a_person_half_made_when_the_worker_stopped_is_finished_without_a_second
     assert api.get(f"/api/jobs/{job.pk}/").json()["status"] == "ready_to_render"
     assert ModelCall.objects.filter(purpose="draw_person").count() == 1
     assert list(job.produced.values_list("kind", "version")) == [("portrait", 1), ("voice", 1)]
+
+
+class WorkerStopped(BaseException):
+    """The worker process dying mid-task: nothing in the job catches it."""
+
+
+@pytest.mark.parametrize(
+    ("kind", "purpose", "made", "stopped_at"),
+    [
+        ("portrait", "draw_person", "file", "design_voice"),
+        ("voice", "design_voice", "voice_id", "measure_voice"),
+    ],
+)
+def test_a_part_of_the_person_paid_for_but_not_kept_when_the_worker_stopped_is_reused(
+    api: APIClient,
+    fake_model: FakeModel,
+    product_page_url: str,
+    start_job: Callable[..., str],
+    kind: str,
+    purpose: str,
+    made: str,
+    stopped_at: str,
+) -> None:
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", PLAN)
+    fake_model.respond(stopped_at, WorkerStopped())
+    with pytest.raises(WorkerStopped):
+        start_job(product_page_url)
+    job = Job.objects.get()
+    # The worker stopped after the call was paid for and recorded, before what it made was kept.
+    job.produced.filter(kind=kind).delete()
+    (paid_for,) = ModelCall.objects.filter(purpose=purpose).values_list("output", flat=True)
+    assert paid_for is not None
+
+    fake_model.respond("fact_check", FACTS_OK)
+    make_person(str(job.pk))
+
+    assert api.get(f"/api/jobs/{job.pk}/").json()["status"] == "ready_to_render"
+    assert ModelCall.objects.filter(purpose=purpose).count() == 1
+    # What was paid for is kept, rather than made again.
+    (kept,) = job.produced.filter(kind=kind).values_list(made, flat=True)
+    assert kept == paid_for[made]
+
+
+def test_a_voice_being_measured_when_the_worker_stopped_is_measured_without_designing_another(
+    api: APIClient,
+    fake_model: FakeModel,
+    product_page_url: str,
+    start_job: Callable[..., str],
+) -> None:
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", PLAN)
+    fake_model.respond("measure_voice", WorkerStopped())
+    with pytest.raises(WorkerStopped):
+        start_job(product_page_url)
+    job = Job.objects.get()
+
+    fake_model.respond("fact_check", FACTS_OK)
+    make_person(str(job.pk))
+
+    assert api.get(f"/api/jobs/{job.pk}/").json()["status"] == "ready_to_render"
+    assert ModelCall.objects.filter(purpose="design_voice").count() == 1
+    voice = job.produced.get(kind="voice")
+    assert voice.voice_id == "fake-voice-1"
+    assert voice.words_per_second == pytest.approx(2.0)
+
+
+def test_a_step_handed_out_again_after_it_finished_starts_the_next_one(
+    api: APIClient,
+    fake_model: FakeModel,
+    product_page_url: str,
+    start_job: Callable[..., str],
+) -> None:
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", PLAN)
+    # The worker stopped once the person was made, before the checks got going.
+    fake_model.respond("fact_check", WorkerStopped())
+    with pytest.raises(WorkerStopped):
+        start_job(product_page_url)
+    job = Job.objects.get()
+    assert job.status == "checking_plan"
+
+    # The broker hands the finished step out again.
+    fake_model.respond("fact_check", FACTS_OK)
+    make_person(str(job.pk))
+
+    assert api.get(f"/api/jobs/{job.pk}/").json()["status"] == "ready_to_render"
+    assert ModelCall.objects.filter(purpose__in=["draw_person", "design_voice"]).count() == 2
 
 
 def test_a_person_that_couldnt_be_made_stops_the_job_with_the_reason(
@@ -203,6 +287,32 @@ def test_a_line_that_fails_the_fact_check_is_rewritten_and_checked_again(
     assert second["lines"] == [{"scene": 3, "line": rewritten}]
     (sent,) = handoffs(job_id, "rewrite_line")
     assert (sent["scene"], sent["problems"]) == (3, [{"problem": problem, "page_says": "$24.00"}])
+
+
+def test_a_line_being_rewritten_when_the_worker_stopped_is_rewritten_without_checking_it_again(
+    api: APIClient,
+    fake_model: FakeModel,
+    product_page_url: str,
+    start_job: Callable[..., str],
+) -> None:
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", plan_with("Meet the mug.", "Holds 350 ml.", "Yours for $19.99."))
+    fake_model.respond("fact_check", WRONG_PRICE)
+    fake_model.respond("rewrite_line", WorkerStopped())
+    with pytest.raises(WorkerStopped):
+        start_job(product_page_url)
+    job = Job.objects.get()
+
+    fake_model.respond("rewrite_line", rewrite("Yours for $24.00."))
+    fake_model.respond("fact_check", facts_ok(3))
+    check_plan(str(job.pk))
+
+    assert api.get(f"/api/jobs/{job.pk}/").json()["status"] == "ready_to_render"
+    assert scene_lines(api, str(job.pk))[2] == "Yours for $24.00."
+    # The old line isn't checked again, so its one failure is still counted once.
+    assert [len(sent["lines"]) for sent in handoffs(str(job.pk), "fact_check")] == [3, 1]
+    (sent,) = handoffs(str(job.pk), "rewrite_line")
+    assert sent["problems"] == [{"problem": "The line says $19.99.", "page_says": "$24.00"}]
 
 
 def test_a_line_still_wrong_after_two_rewrites_is_put_to_the_user(
@@ -552,21 +662,36 @@ def test_a_script_the_user_chooses_to_keep_longer_goes_on_unchanged(
     assert not ModelCall.objects.filter(purpose="shorten_script").exists()
 
 
-def test_the_planning_checks_run_with_quality_checks_turned_off(
+def test_a_line_asked_about_stays_on_record_when_shortening_drops_its_scene(
     api: APIClient,
     fake_model: FakeModel,
     product_page_url: str,
     start_job: Callable[..., str],
-    settings: Settings,
+    answer: Callable[..., int],
 ) -> None:
-    settings.QUALITY_CHECKS = False
     fake_model.respond("check_page", READABLE)
-    fake_model.respond("plan_ad", plan_with("Meet the mug.", "Holds 350 ml.", "Yours for $19.99."))
-    fake_model.respond("fact_check", WRONG_PRICE, facts_ok(3))
-    fake_model.respond("rewrite_line", rewrite("Yours for $24.00."))
-
+    fake_model.respond("plan_ad", plan_with("Meet the mug.", "Yours for $19.99."))
+    fails: dict[str, Any] = {
+        "decision": "checked",
+        "reason": "Scene 2's price isn't the page's.",
+        "question": None,
+        "lines": [
+            {"scene": 2, "verdict": "wrong", "problem": "Wrong price.", "page_says": "$24.00"}
+        ],
+    }
+    first = {**fails, "lines": [facts_ok(1)["lines"][0], *fails["lines"]]}
+    fake_model.respond("fact_check", first, fails, fails)
+    fake_model.respond("rewrite_line", rewrite("Only $19.99."), rewrite("Just $19.99."))
     job_id = start_job(product_page_url, target_seconds=2)
+    # 3 words and 9: 6 seconds, over the 2-second target.
+    own_line = "Yours for just $24.00 today, from Kiln & Co."
+    assert answer(job_id, {"answer": "own", "line": own_line}) == 202
+    assert api.get(f"/api/jobs/{job_id}/").json()["question"]["kind"] == "length"
+    fake_model.respond("shorten_script", {"lines": ["Meet the mug."]})
 
-    job = api.get(f"/api/jobs/{job_id}/").json()
-    assert scene_lines(api, job_id)[2] == "Yours for $24.00."
-    assert (job["status"], job["question"]["kind"]) == ("needs_answer", "length")
+    assert answer(job_id, {"answer": "shorten"}) == 202
+
+    assert api.get(f"/api/jobs/{job_id}/").json()["status"] == "ready_to_render"
+    assert scene_lines(api, job_id) == ["Meet the mug."]
+    asked = [(each.kind, each.scene_id) for each in Question.objects.filter(job_id=job_id)]
+    assert asked == [("fact_check", None), ("length", None)]

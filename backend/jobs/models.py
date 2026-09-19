@@ -156,6 +156,12 @@ class Question(models.Model):
         FACT_CHECK = "fact_check"
         LENGTH = "length"
 
+    class LineChoice(models.TextChoices):
+        """The answers to a fact-check question about a line."""
+
+        KEEP = "keep", "Keep this line"
+        OWN = "own", "Use my own line"
+
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="questions")
     kind = models.CharField(max_length=20, choices=Kind.choices)
     question = models.TextField()
@@ -163,9 +169,10 @@ class Question(models.Model):
     options = models.JSONField(
         default=list, blank=True, help_text="The choices offered. Empty means a typed answer."
     )
+    # Kept when shortening the script drops the scene: every exchange with the user is.
     scene = models.ForeignKey(
         Scene,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="+",
@@ -212,7 +219,9 @@ class ProducedItem(models.Model):
     version = models.PositiveSmallIntegerField(default=1)
     file = models.CharField(
         max_length=500,
-        help_text="Key in the file store: the portrait, or the voice's measuring sample.",
+        blank=True,
+        help_text="Key in the file store: the portrait, or the voice's measuring sample. "
+        "Blank for a voice not measured yet.",
     )
     voice_id = models.CharField(max_length=200, blank=True)
     words_per_second = models.FloatField(
