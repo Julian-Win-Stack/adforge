@@ -399,7 +399,12 @@ test("offers a line that failed the fact check to keep, or sends the user's own 
   await screen.findByText(
     'Scene 3 says "Yours for $19.99." but the page says $24.00. What should it say?',
   );
-  // Only asked for once the user picks their own line.
+  expect(screen.getAllByRole("radio").map((radio) => radio.closest("label")?.textContent)).toEqual([
+    "Keep this line",
+    "Use my own line",
+  ]);
+  // Keeping the line needs nothing more; a line is only asked for once the user picks their own.
+  await user.click(screen.getByLabelText("Keep this line"));
   expect(screen.queryByLabelText("Your line")).toBeNull();
 
   await user.click(screen.getByLabelText("Use my own line"));
