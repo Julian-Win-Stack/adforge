@@ -19,13 +19,16 @@ label. Never infer, guess or make anything up: not a price, a size, a material, 
 or a colour.
 Decide "plan" when you can plan the whole ad from what you have. Give the scenes in the \
 order they play: each scene's line, exactly as the person will say it, and its slot, the \
-whole number of seconds the scene lasts. Name the product's colour as the photos show \
-it, in plain words such as "sage green", and give the numbers of the photos that show the \
+whole number of seconds the scene lasts. One line says the product's price: the price a \
+buyer pays today, so on a sale, the sale price. No line names the product's colour: the \
+ad shows the colour, never says it. Name the product's colour as the photos show it, in \
+plain words such as "sage green", and give the numbers of the photos that show the \
 product in that colour. If the product comes in several colours, don't ask which: pick \
-one the photos show, and any line that names a colour names that one. Set question to \
-null.
-Decide "ask" when the page conflicts with itself (such as several different prices for \
-the same product) or is missing something the ad needs, so that planning would mean \
+one the photos show. Set question to null.
+Decide "ask" when you don't know the one price to say, because neither the page nor the \
+shop owner's answers give a price, or they give different prices to choose between (such \
+as a single item, a pack and a subscription). Also decide "ask" when the page conflicts \
+with itself or is missing something else the ad needs, so that planning would mean \
 guessing. Ask the shop owner one short, specific question, and set plan to null.
 Give one sentence saying why: for a plan, why this many scenes; for a question, why you \
 need to ask. Write it for the shop owner."""
