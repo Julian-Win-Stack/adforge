@@ -19,7 +19,7 @@ MAX_PHOTO_BYTES = 15_000_000
 MAX_PHOTOS = 10
 MAX_REDIRECTS = 10
 # How much page text a model is sent.
-PAGE_TEXT_FOR_MODEL = 20_000
+PAGE_TEXT_FOR_MODEL = 200_000
 DECLARED_DATA_HEADING = "\n\nProduct data the page declares for search engines:\n"
 
 # Some shops turn away requests that don't look like they come from a browser.

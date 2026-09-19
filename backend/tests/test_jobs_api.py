@@ -107,9 +107,9 @@ def test_the_page_text_includes_the_product_data_the_page_declares_for_search_en
 def test_a_long_page_still_hands_the_models_its_product_data(
     fake_model: FakeModel, httpserver: HTTPServer, start_job: Callable[..., str]
 ) -> None:
-    # A page with 29,000 characters of reviews: more than the models are sent. The stock
+    # A page with 203,000 characters of reviews: more than the models are sent. The stock
     # is only in the structured data, which the page text puts after all the words.
-    reviews = "<p>" + "Lovely mug, would buy again. " * 1_000 + "</p>"
+    reviews = "<p>" + "Lovely mug, would buy again. " * 7_000 + "</p>"
     httpserver.expect_request("/products/long-mug").respond_with_data(
         PRODUCT_PAGE.format(side="/cdn/mug-side.png").replace("</body>", reviews + "</body>"),
         content_type="text/html; charset=utf-8",
@@ -125,10 +125,10 @@ def test_a_long_page_still_hands_the_models_its_product_data(
 
     job_id = start_job(httpserver.url_for("/products/long-mug"))
 
-    assert len(Job.objects.get(pk=job_id).page_text) > 20_000
+    assert len(Job.objects.get(pk=job_id).page_text) > 200_000
     for purpose in ("check_page", "plan_ad"):
         sent = ModelCall.objects.get(job_id=job_id, purpose=purpose).handoff["page_text"]
-        assert len(sent) <= 20_000
+        assert len(sent) <= 200_000
         assert sent.startswith("Stoneware Mug | Kiln & Co\nStoneware Mug\n$24.00")
         assert '"availability": "https://schema.org/InStock"' in sent
 
