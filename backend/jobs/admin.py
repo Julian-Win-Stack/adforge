@@ -72,8 +72,16 @@ class ModelCallInline(admin.TabularInline[ModelCall, Job]):
 
 @admin.register(Job)
 class JobAdmin(admin.ModelAdmin[Job]):
-    list_display = ["product_url", "status", "target_seconds", "created_at"]
+    list_display = [
+        "product_url",
+        "session",
+        "variant_of",
+        "status",
+        "target_seconds",
+        "created_at",
+    ]
     list_filter = ["status"]
+    list_select_related = ["session", "variant_of"]
     search_fields = ["product_url"]
     readonly_fields = ["id", "created_at"]
     inlines = [

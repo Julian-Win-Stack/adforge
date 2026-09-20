@@ -27,6 +27,24 @@ class Job(models.Model):
         KEEP_LONGER = "keep_longer"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    session = models.ForeignKey(
+        "chat.Session",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="jobs",
+        help_text="The session this job was asked for in. Blank only for jobs started "
+        "before sessions existed; #15 has the agent make every job inside a session.",
+    )
+    variant_of = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="variants",
+        help_text="The job in the same session this one varies, so the two can be compared. "
+        "Variants are siblings, not versions.",
+    )
     product_url = models.URLField(max_length=2000)
     target_seconds = models.PositiveSmallIntegerField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.QUEUED)

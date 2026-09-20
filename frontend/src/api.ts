@@ -1,88 +1,34 @@
-// The shapes Django's /api/jobs/ endpoints send back (backend/jobs/api.py).
+// The shapes Django's /api/sessions/ endpoints send back (backend/chat/api.py).
 
-export type JobStatus =
-  | "queued"
-  | "reading_page"
-  | "page_read"
-  | "planning"
-  | "planned"
-  | "making_person"
-  | "checking_plan"
-  | "ready_to_render"
-  | "needs_working_link"
-  | "needs_product_photos"
-  | "needs_answer"
-  | "failed";
-
-export type ActivityEntry = {
-  seq: number;
-  message: string;
-  reason: string;
-  created_at: string;
-};
-
-export type ProductPhoto = {
+/** A file a message carries: a photo the user attached, or something the agent made. */
+export type Attachment = {
   position: number;
+  kind: "picture" | "sound" | "video";
   url: string;
-  source_url: string;
 };
 
-export type Scene = {
-  number: number;
-  line: string;
-  status: "planned";
+/** One turn in a session, from the user or the agent. */
+export type Message = {
+  seq: number;
+  role: "user" | "agent";
+  text: string;
+  created_at: string;
+  attachments: Attachment[];
 };
 
-/** One answer the user can pick, and the words shown for it. */
-export type QuestionOption = {
-  value: string;
-  label: string;
-};
-
-/** What the job is waiting for the user to answer. A question with options is answered by
- * picking one; the rest take typed text, a link or photos. */
-export type Question = {
-  id: number;
-  kind: "working_link" | "product_photos" | "producer" | "unclear_page" | "fact_check" | "length";
-  question: string;
-  options: QuestionOption[];
-};
-
-export type Job = {
+/** One session, as the sidebar lists it. The name is blank until the first message names it. */
+export type Session = {
   id: string;
-  product_url: string;
-  target_seconds: number | null;
-  status: JobStatus;
+  name: string;
   created_at: string;
 };
 
-export type JobWithActivity = Job & {
-  photos: ProductPhoto[];
-  scenes: Scene[];
-  question: Question | null;
-  activity: ActivityEntry[];
-};
+/** What the server answers when a message is sent: the message, and the session it landed
+ * in, whose name the first message may just have set. */
+export type Sent = { session: Session; message: Message };
 
-/** Nothing changes on its own after these, so polling stops. The "needs_" statuses wait
- * for the user's answer, and polling starts again once it is sent. */
-export const SETTLED: JobStatus[] = [
-  "ready_to_render",
-  "needs_working_link",
-  "needs_product_photos",
-  "needs_answer",
-  "failed",
-];
-
-const FORM_FIELDS = ["product_url", "target_seconds"];
-
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    readonly fieldErrors: Record<string, string[]> = {},
-  ) {
-    super(message);
-  }
-}
+/** A request the server refused. The message is the server's reason, ready to show. */
+export class ApiError extends Error {}
 
 async function readJson<T>(response: Response): Promise<T> {
   if (response.ok) return (await response.json()) as T;
@@ -99,52 +45,49 @@ async function refused(response: Response): Promise<never> {
     throw new ApiError(serverSaid);
   }
   if (typeof body !== "object" || body === null) throw new ApiError(serverSaid);
-  // Errors about one form field show under it; anything else shows below the form.
-  const fieldErrors: Record<string, string[]> = {};
-  const otherErrors: string[] = [];
-  for (const [key, value] of Object.entries(body)) {
-    const messages = (Array.isArray(value) ? value : [value]).map(String);
-    if (FORM_FIELDS.includes(key)) fieldErrors[key] = messages;
-    else otherErrors.push(...messages);
-  }
-  throw new ApiError(otherErrors.join(" "), fieldErrors);
+  // Every reason the server gave, whichever field it was about: the text, the photos or
+  // a session's name.
+  const reasons = Object.values(body)
+    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .map(String);
+  throw new ApiError(reasons.join(" ") || serverSaid);
 }
 
-export async function startJob(productUrl: string, targetSeconds: number | null): Promise<Job> {
-  const response = await fetch("/api/jobs/", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ product_url: productUrl, target_seconds: targetSeconds }),
-  });
-  return readJson<Job>(response);
+function jsonRequest(method: "POST" | "PATCH", body: unknown): RequestInit {
+  return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
 
-/** The job, plus only the activity entries numbered above `after`. */
-export async function getJob(jobId: string, after: number): Promise<JobWithActivity> {
-  const response = await fetch(`/api/jobs/${jobId}/?after=${after}`);
-  return readJson<JobWithActivity>(response);
+/** Every session, newest first. */
+export async function listSessions(): Promise<Session[]> {
+  return readJson<Session[]>(await fetch("/api/sessions/"));
 }
 
-/** Answers the question the job is waiting on: typed text, a link or a picked option as
- * `answer`, or photos as an upload. `line` is the user's own line, when they pick writing
- * one. The job carries on by itself once the server has it. */
-export async function answerQuestion(
-  jobId: string,
-  answer: string | File[],
-  line?: string,
-): Promise<void> {
+export async function startSession(): Promise<Session> {
+  return readJson<Session>(await fetch("/api/sessions/", jsonRequest("POST", {})));
+}
+
+export async function renameSession(sessionId: string, name: string): Promise<Session> {
+  return readJson<Session>(
+    await fetch(`/api/sessions/${sessionId}/`, jsonRequest("PATCH", { name })),
+  );
+}
+
+/** Only the messages numbered above `after`, so a poll never repeats or skips one. */
+export async function getMessagesSince(sessionId: string, after: number): Promise<Message[]> {
+  return readJson<Message[]>(await fetch(`/api/sessions/${sessionId}/messages/?after=${after}`));
+}
+
+/** Say something in a session, with photos when there are any. The server takes it
+ * straight away, even while the agent is working. */
+export async function sendMessage(sessionId: string, text: string, photos: File[]): Promise<Sent> {
   let request: RequestInit;
-  if (typeof answer === "string") {
-    request = {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(line === undefined ? { answer } : { answer, line }),
-    };
-  } else {
+  if (photos.length > 0) {
     const form = new FormData();
-    for (const photo of answer) form.append("photos", photo);
+    form.append("text", text);
+    for (const photo of photos) form.append("photos", photo);
     request = { method: "POST", body: form };
+  } else {
+    request = jsonRequest("POST", { text });
   }
-  const response = await fetch(`/api/jobs/${jobId}/answer/`, request);
-  if (!response.ok) await refused(response);
+  return readJson<Sent>(await fetch(`/api/sessions/${sessionId}/messages/`, request));
 }

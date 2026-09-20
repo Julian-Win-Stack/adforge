@@ -14,6 +14,10 @@ _Avoid_: Chat, thread, conversation, project
 One turn in a session, from the user or the agent. The only way the user and the agent communicate.
 _Avoid_: Comment, note, activity entry
 
+**Attachment**:
+A file a message carries: a photo the user attached, or a picture, sound or video the agent made. Kept through the file store and shown in the chat.
+_Avoid_: Media, upload, asset
+
 **Brief**:
 What the user asks for in their own words: the link, the length, a promo code, anything else. Not a form and not a stored record of its own.
 _Avoid_: Request, prompt, order

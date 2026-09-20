@@ -1,55 +1,116 @@
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App";
-import type { ActivityEntry, JobStatus, Question, Scene } from "./api";
+import type { Attachment, Message, Session } from "./api";
 
-/** Stands in for Django's /api/jobs/ endpoints: holds one job and its activity log, and
- * answers each poll with only the entries numbered above `after`, like the real API. */
+const NOW = "2026-09-20T10:00:00Z";
+
+type StoredSession = Session & { messages: Message[] };
+
+/** Stands in for Django's /api/sessions/ endpoints, keeping sessions and their messages
+ * the way the server does: numbered in order, named from the first thing the user says. */
 function fakeBackend() {
-  const job = {
-    id: "job-1",
-    product_url: "https://shop.example/products/mug",
-    target_seconds: 15,
-    status: "queued" as JobStatus,
-    created_at: "2026-09-17T10:00:00Z",
-  };
-  const activity: ActivityEntry[] = [];
+  const sessions: StoredSession[] = [];
   const requests: string[] = [];
-  const answers: (string | FormData)[] = [];
-  const state = { scenes: [] as Scene[], question: null as Question | null };
-  // While set, polls wait on it, as a poll still in flight would.
+  const sent: { text: string; photos: string[] }[] = [];
   let heldPolls: Promise<void> | null = null;
+  let refusal: Record<string, string[]> | null = null;
+
+  const summary = ({ id, name, created_at }: StoredSession): Session => ({ id, name, created_at });
+
+  function find(id: string) {
+    const session = sessions.find((one) => one.id === id);
+    if (session === undefined) throw new Error(`No session ${id}`);
+    return session;
+  }
+
+  function add(
+    session: StoredSession,
+    role: Message["role"],
+    text: string,
+    attachments: Attachment[] = [],
+  ) {
+    const message = { seq: session.messages.length + 1, role, text, created_at: NOW, attachments };
+    session.messages.push(message);
+    if (message.seq === 1 && session.name === "" && text) session.name = text.slice(0, 80);
+    return message;
+  }
+
+  function start(name = "") {
+    const session = { id: `session-${sessions.length + 1}`, name, created_at: NOW, messages: [] };
+    sessions.unshift(session);
+    return session;
+  }
 
   vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
     requests.push(`${method} ${url}`);
-    if (method === "POST" && url === "/api/jobs/") return Response.json(job, { status: 201 });
-    const poll = url.match(/^\/api\/jobs\/job-1\/\?after=(\d+)$/);
-    if (method === "GET" && poll) {
+
+    if (url === "/api/sessions/") {
+      if (method === "POST") return Response.json(summary(start()), { status: 201 });
+      return Response.json(sessions.map(summary));
+    }
+
+    const messages = url.match(/^\/api\/sessions\/([\w-]+)\/messages\/(?:\?after=(\d+))?$/);
+    if (messages) {
+      const session = find(messages[1]);
+      if (method === "POST") {
+        if (refusal !== null) {
+          const reasons = refusal;
+          refusal = null;
+          return Response.json(reasons, { status: 400 });
+        }
+        let text: string;
+        const photos: string[] = [];
+        if (init?.body instanceof FormData) {
+          text = String(init.body.get("text"));
+          for (const photo of init.body.getAll("photos")) photos.push((photo as File).name);
+        } else {
+          text = JSON.parse(String(init?.body)).text;
+        }
+        sent.push({ text, photos });
+        const carried = photos.map((name, i) => ({
+          position: i + 1,
+          kind: "picture" as const,
+          url: `/media/${name}`,
+        }));
+        const message = add(session, "user", text, carried);
+        return Response.json({ session: summary(session), message }, { status: 201 });
+      }
       if (heldPolls) await heldPolls;
-      const after = Number(poll[1]);
-      return Response.json({
-        ...job,
-        photos: [],
-        scenes: state.scenes,
-        question: state.question,
-        activity: activity.filter((e) => e.seq > after),
-      });
+      const after = Number(messages[2] ?? 0);
+      return Response.json(session.messages.filter((message) => message.seq > after));
     }
-    if (method === "POST" && url === "/api/jobs/job-1/answer/") {
-      answers.push(init?.body instanceof FormData ? init.body : String(init?.body));
-      return new Response(null, { status: 202 });
+
+    const renamed = url.match(/^\/api\/sessions\/([\w-]+)\/$/);
+    if (renamed && method === "PATCH") {
+      const session = find(renamed[1]);
+      session.name = JSON.parse(String(init?.body)).name;
+      return Response.json(summary(session));
     }
+
     throw new Error(`Unexpected request: ${method} ${url}`);
   });
 
   return {
-    job,
     requests,
-    answers,
-    state,
-    /** Hold every poll until the returned function is called. */
+    sent,
+    /** A session that already exists when the page loads. */
+    existing(name: string, said: [Message["role"], string][]) {
+      const session = start(name);
+      for (const [role, text] of said) add(session, role, text);
+      return session.id;
+    },
+    /** The agent says something in the newest session, as it would while the page polls. */
+    agentSays(text: string, attachments: Attachment[] = []) {
+      add(sessions[0], "agent", text, attachments);
+    },
+    /** The next message sent is refused with these reasons, as Django answers a 400. */
+    refuseNextSend(reasons: Record<string, string[]>) {
+      refusal = reasons;
+    },
+    /** Keeps every poll waiting, as if the server were busy, until the returned function runs. */
     holdPolls() {
       let release = () => {};
       heldPolls = new Promise((resolve) => {
@@ -59,14 +120,6 @@ function fakeBackend() {
         };
       });
       return release;
-    },
-    record(message: string) {
-      activity.push({
-        seq: activity.length + 1,
-        message,
-        reason: `Because of ${message}.`,
-        created_at: "2026-09-17T10:00:00Z",
-      });
     },
   };
 }
@@ -82,369 +135,215 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("shows each activity entry once, in order, as the job runs, then stops asking", async () => {
-  const backend = fakeBackend();
-  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-  render(<App />);
-
-  await user.type(screen.getByLabelText(/product page link/i), backend.job.product_url);
-  await user.type(screen.getByLabelText(/target length/i), "15");
-  backend.job.status = "reading_page";
-  backend.record("Reading the product page");
-  await user.click(screen.getByRole("button", { name: "Start" }));
-  await screen.findByText("Reading the product page");
-
-  backend.record("Saved 2 product photos");
-  backend.record("The page is readable");
-  backend.job.status = "page_read";
-  await act(() => vi.advanceTimersByTimeAsync(2000));
-  await screen.findByText("The page is readable");
-  expect(screen.getByText("Page read")).toBeTruthy();
-
-  backend.record("Planning the ad");
-  backend.record("Planned 3 scenes");
-  backend.job.status = "planned";
-  await act(() => vi.advanceTimersByTimeAsync(2000));
-  await screen.findByText("Planned 3 scenes");
-  expect(screen.getByText("Ad planned")).toBeTruthy();
-
-  backend.record("Making the person");
-  backend.job.status = "making_person";
-  await act(() => vi.advanceTimersByTimeAsync(2000));
-  await screen.findByText("Making the person");
-  expect(screen.getByText("Making the person...")).toBeTruthy();
-
-  backend.record("Made the person");
-  backend.record("Checked the plan");
-  backend.job.status = "ready_to_render";
-  await act(() => vi.advanceTimersByTimeAsync(2000));
-  await screen.findByText("Checked the plan");
-
-  const entries = within(screen.getByRole("list"))
-    .getAllByRole("listitem")
-    .map((item) => item.firstChild?.textContent);
-  expect(entries).toEqual([
-    "Reading the product page",
-    "Saved 2 product photos",
-    "The page is readable",
-    "Planning the ad",
-    "Planned 3 scenes",
-    "Making the person",
-    "Made the person",
-    "Checked the plan",
-  ]);
-  expect(screen.getByText("Ready to render")).toBeTruthy();
-
-  const requestsWhenFinished = backend.requests.length;
-  await act(() => vi.advanceTimersByTimeAsync(60_000));
-  expect(backend.requests).toHaveLength(requestsWhenFinished);
-});
-
-test.each([
-  { status: "needs_working_link", label: "Waiting for a working link" },
-  { status: "needs_product_photos", label: "Waiting for product photos" },
-  { status: "failed", label: "Failed" },
-] as const)("stops asking once the job is $label", async ({ status, label }) => {
-  const backend = fakeBackend();
-  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-  render(<App />);
-
-  await user.type(screen.getByLabelText(/product page link/i), backend.job.product_url);
-  backend.job.status = "reading_page";
-  backend.record("Reading the product page");
-  await user.click(screen.getByRole("button", { name: "Start" }));
-  await screen.findByText("Reading the product page");
-
-  backend.record("The last step");
-  backend.job.status = status;
-  await act(() => vi.advanceTimersByTimeAsync(2000));
-  await screen.findByText("The last step");
-  expect(screen.getByText(label)).toBeTruthy();
-
-  const requestsWhenSettled = backend.requests.length;
-  await act(() => vi.advanceTimersByTimeAsync(60_000));
-  expect(backend.requests).toHaveLength(requestsWhenSettled);
-});
-
-test.each([
-  {
-    answer: () => Response.json({ detail: "Too many jobs are running." }, { status: 400 }),
-    shown: "Too many jobs are running.",
-    case: "an error that isn't about one field",
-  },
-  {
-    answer: () => new Response("<h1>Bad Request</h1>", { status: 400 }),
-    shown: "The server answered 400.",
-    case: "an error that isn't JSON",
-  },
-])("says why the server refused the job for $case", async ({ answer, shown }) => {
-  vi.stubGlobal("fetch", async () => answer());
-  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-  render(<App />);
-
-  await user.type(screen.getByLabelText(/product page link/i), "https://shop.example/p/mug");
-  await user.click(screen.getByRole("button", { name: "Start" }));
-
-  expect(await screen.findByText(shown)).toBeDefined();
-});
-
-/** Starts a job through the form and waits until its first activity entry shows. */
-async function startMugJob(backend: ReturnType<typeof fakeBackend>) {
-  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-  render(<App />);
-  await user.type(screen.getByLabelText(/product page link/i), backend.job.product_url);
-  backend.job.status = "reading_page";
-  backend.record("Reading the product page");
-  await user.click(screen.getByRole("button", { name: "Start" }));
-  await screen.findByText("Reading the product page");
-  return user;
+function conversation() {
+  return within(screen.getByRole("list", { name: "Conversation" }))
+    .queryAllByRole("listitem")
+    .map((item) => item.textContent);
 }
 
-test("shows each planned scene's line, then stops asking once the plan is ready to render", async () => {
+/** Waits until the conversation shows `text`. The list is looked up afresh each try,
+ * since a new session's first message swaps the chat for the saved session's. */
+function findSaid(text: string) {
+  return waitFor(() => within(screen.getByRole("list", { name: "Conversation" })).getByText(text));
+}
+
+function sessionNames() {
+  return within(screen.getByRole("navigation", { name: "Sessions" }))
+    .getAllByRole("listitem")
+    .map((item) => item.querySelector("button")?.textContent);
+}
+
+test("the first message starts a session, names it, and the agent's replies arrive as it polls", async () => {
   const backend = fakeBackend();
-  await startMugJob(backend);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
 
-  backend.state.scenes = [
-    { number: 1, line: "Meet the Stoneware Mug.", status: "planned" },
-    { number: 2, line: "Yours for $24.00.", status: "planned" },
-  ];
-  backend.record("Planned 2 scenes");
-  backend.job.status = "planned";
-  await act(() => vi.advanceTimersByTimeAsync(2000));
-  await screen.findByText("Planned 2 scenes");
-  // The person is made and the plan checked next, with nothing asked of the user.
-  expect(screen.getByText("Ad planned")).toBeTruthy();
-  backend.record("Checked the plan");
-  backend.job.status = "ready_to_render";
-  await act(() => vi.advanceTimersByTimeAsync(2000));
-  await screen.findByText("Checked the plan");
+  await user.type(screen.getByLabelText("Message"), "Make me an ad for https://shop.example/p/mug");
+  await user.click(screen.getByRole("button", { name: "Send" }));
 
-  const scenes = within(screen.getByRole("table", { name: "Scenes" }))
-    .getAllByRole("row")
-    .slice(1) // the column headings
-    .map((row) =>
-      within(row)
-        .getAllByRole("cell")
-        .map((cell) => cell.textContent),
-    );
-  expect(scenes).toEqual([
-    ["1", "Meet the Stoneware Mug.", "Planned"],
-    ["2", "Yours for $24.00.", "Planned"],
+  await findSaid("Make me an ad for https://shop.example/p/mug");
+  expect(sessionNames()).toEqual(["Make me an ad for https://shop.example/p/mug"]);
+  expect(screen.getByLabelText("Message")).toHaveProperty("value", "");
+
+  backend.agentSays("Reading the product page");
+  backend.agentSays("How long should the ad be?");
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await findSaid("How long should the ad be?");
+
+  expect(conversation()).toEqual([
+    "YouMake me an ad for https://shop.example/p/mug",
+    "AgentReading the product page",
+    "AgentHow long should the ad be?",
   ]);
-  expect(screen.getByText("Ready to render")).toBeTruthy();
+  const polls = backend.requests.filter((request) => request.includes("?after="));
+  expect(polls.slice(0, 2)).toEqual([
+    "GET /api/sessions/session-1/messages/?after=0",
+    "GET /api/sessions/session-1/messages/?after=1",
+  ]);
 
-  const requestsWhenReady = backend.requests.length;
-  await act(() => vi.advanceTimersByTimeAsync(60_000));
-  expect(backend.requests).toHaveLength(requestsWhenReady);
+  // Nothing new since: another poll shows nothing twice.
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  expect(conversation()).toHaveLength(3);
+  expect(backend.requests.at(-1)).toBe("GET /api/sessions/session-1/messages/?after=3");
 });
 
-test("shows the producer's question, sends the typed answer, and follows the job again", async () => {
+test("shows a picture, plays a sound and plays a video the agent made", async () => {
   const backend = fakeBackend();
-  const user = await startMugJob(backend);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await user.type(screen.getByLabelText("Message"), "Make me an ad for my mug");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  await findSaid("Make me an ad for my mug");
 
-  backend.state.question = {
-    id: 1,
-    kind: "producer",
-    question: "The page shows $24.00 and $28.00. Which price should the ad say?",
-    options: [],
-  };
-  backend.record("The producer has a question for you");
-  backend.job.status = "needs_answer";
+  backend.agentSays("Here's who will present it, and how they sound.", [
+    { position: 1, kind: "picture", url: "/media/jobs/1/person.png" },
+    { position: 2, kind: "sound", url: "/media/jobs/1/voice.mp3" },
+  ]);
+  backend.agentSays("Here's the ad.", [
+    { position: 1, kind: "video", url: "/media/jobs/1/ad.mp4" },
+  ]);
   await act(() => vi.advanceTimersByTimeAsync(2000));
-  await screen.findByText("The page shows $24.00 and $28.00. Which price should the ad say?");
-  const requestsWhileWaiting = backend.requests.length;
-  await act(() => vi.advanceTimersByTimeAsync(60_000));
-  expect(backend.requests).toHaveLength(requestsWhileWaiting);
+  await findSaid("Here's the ad.");
 
-  await user.type(screen.getByLabelText("Your answer"), "$24.00, the sale price");
-  backend.state.question = null;
-  backend.record("You answered: $24.00, the sale price");
-  backend.job.status = "planning";
-  await user.click(screen.getByRole("button", { name: "Send answer" }));
-
-  expect(backend.answers).toEqual([JSON.stringify({ answer: "$24.00, the sale price" })]);
-  await screen.findByText("You answered: $24.00, the sale price");
-  expect(screen.queryByLabelText("Your answer")).toBeNull();
-
-  backend.record("Planned 3 scenes");
-  backend.job.status = "planned";
-  await act(() => vi.advanceTimersByTimeAsync(2000));
-  await screen.findByText("Planned 3 scenes");
+  expect(screen.getByAltText("Picture the agent made (1)").getAttribute("src")).toBe(
+    "/media/jobs/1/person.png",
+  );
+  const sound = screen.getByLabelText("Sound the agent made");
+  expect(sound.tagName).toBe("AUDIO");
+  expect(sound.hasAttribute("controls")).toBe(true);
+  expect(sound.getAttribute("src")).toBe("/media/jobs/1/voice.mp3");
+  const video = screen.getByLabelText("Video the agent made");
+  expect(video.tagName).toBe("VIDEO");
+  expect(video.hasAttribute("controls")).toBe(true);
+  expect(video.getAttribute("src")).toBe("/media/jobs/1/ad.mp4");
 });
 
-test("an answered question's form goes at once, and the same question asked again starts empty", async () => {
+test("attaches photos to a message", async () => {
   const backend = fakeBackend();
-  const user = await startMugJob(backend);
-  const question = "Which price should the ad say?";
-  backend.state.question = { id: 1, kind: "producer", question, options: [] };
-  backend.job.status = "needs_answer";
-  await act(() => vi.advanceTimersByTimeAsync(2000));
-  await user.type(await screen.findByLabelText("Your answer"), "$24.00");
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
 
-  // The producer asks the same thing again, and the page only hears of it when a poll lands.
-  backend.state.question = { id: 2, kind: "producer", question, options: [] };
+  await user.type(screen.getByLabelText("Message"), "This is my mug");
+  await user.upload(screen.getByLabelText("Photos"), [
+    new File(["front"], "front.png", { type: "image/png" }),
+    new File(["side"], "side.png", { type: "image/png" }),
+  ]);
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await screen.findByAltText("Photo you attached (2)");
+  expect(backend.sent).toEqual([{ text: "This is my mug", photos: ["front.png", "side.png"] }]);
+  expect(screen.getByAltText("Photo you attached (1)").getAttribute("src")).toBe(
+    "/media/front.png",
+  );
+});
+
+test("renames a session", async () => {
+  const backend = fakeBackend();
+  backend.existing("Make me an ad for my mug", [["user", "Make me an ad for my mug"]]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+
+  await user.click(await screen.findByRole("button", { name: "Make me an ad for my mug" }));
+  await user.click(screen.getByRole("button", { name: "Rename" }));
+  await user.clear(screen.getByLabelText("Session name"));
+  await user.type(screen.getByLabelText("Session name"), "Kiln & Co mug");
+  await user.click(screen.getByRole("button", { name: "Save" }));
+
+  await screen.findByRole("button", { name: "Kiln & Co mug" });
+  expect(backend.requests).toContain("PATCH /api/sessions/session-1/");
+  expect(sessionNames()).toEqual(["Kiln & Co mug"]);
+});
+
+test("lists sessions newest first and reopens one with its whole history", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [
+    ["user", "Make me an ad for my mug"],
+    ["agent", "How long should it be?"],
+    ["user", "15 seconds"],
+  ]);
+  backend.existing("Kettle ad", [["user", "Make me an ad for my kettle"]]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+
+  await screen.findByRole("button", { name: "Kettle ad" });
+  expect(sessionNames()).toEqual(["Kettle ad", "Mug ad"]);
+  expect(conversation()).toEqual([]);
+
+  await user.click(screen.getByRole("button", { name: "Mug ad" }));
+  await findSaid("15 seconds");
+  expect(conversation()).toEqual([
+    "YouMake me an ad for my mug",
+    "AgentHow long should it be?",
+    "You15 seconds",
+  ]);
+
+  await user.click(screen.getByRole("button", { name: "Kettle ad" }));
+  await findSaid("Make me an ad for my kettle");
+  expect(conversation()).toEqual(["YouMake me an ad for my kettle"]);
+});
+
+test("takes a message while the agent is still working", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [
+    ["user", "Make me an ad for my mug"],
+    ["agent", "Planning the ad"],
+  ]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: "Mug ad" }));
+  await findSaid("Planning the ad");
+
+  // The agent is busy and the next poll hasn't come back, but the box stays open.
   const release = backend.holdPolls();
-  await user.click(screen.getByRole("button", { name: "Send answer" }));
-  expect(backend.answers).toEqual([JSON.stringify({ answer: "$24.00" })]);
-  expect(screen.queryByLabelText("Your answer")).toBeNull();
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await user.type(screen.getByLabelText("Message"), "Make it 10 seconds instead");
+  await user.click(screen.getByRole("button", { name: "Send" }));
 
+  await findSaid("Make it 10 seconds instead");
+  expect(backend.sent).toEqual([{ text: "Make it 10 seconds instead", photos: [] }]);
+
+  backend.agentSays("Changing it to 10 seconds");
   release();
-  const asked = (await screen.findByLabelText("Your answer")) as HTMLTextAreaElement;
-  expect(asked.value).toBe("");
-});
-
-test("asks for a working link and sends the one typed", async () => {
-  const backend = fakeBackend();
-  const user = await startMugJob(backend);
-
-  backend.state.question = {
-    id: 1,
-    kind: "working_link",
-    question: "That link didn't lead to one product's page. Can you send a link that does?",
-    options: [],
-  };
-  backend.job.status = "needs_working_link";
-  backend.record("The page couldn't be read");
-  await act(() => vi.advanceTimersByTimeAsync(2000));
-  await screen.findByText(
-    "That link didn't lead to one product's page. Can you send a link that does?",
-  );
-
-  await user.type(screen.getByLabelText("Working link"), "https://shop.example/products/mug-2");
-  backend.state.question = null;
-  backend.job.status = "reading_page";
-  backend.record("You sent a new link: https://shop.example/products/mug-2");
-  await user.click(screen.getByRole("button", { name: "Send answer" }));
-
-  expect(backend.answers).toEqual([
-    JSON.stringify({ answer: "https://shop.example/products/mug-2" }),
+  await findSaid("Changing it to 10 seconds");
+  expect(conversation()).toEqual([
+    "YouMake me an ad for my mug",
+    "AgentPlanning the ad",
+    "YouMake it 10 seconds instead",
+    "AgentChanging it to 10 seconds",
   ]);
-  await screen.findByText("You sent a new link: https://shop.example/products/mug-2");
 });
 
-test("asks for product photos and uploads the ones picked", async () => {
-  const backend = fakeBackend();
-  const user = await startMugJob(backend);
+test.each([
+  {
+    field: "text",
+    reason: "Ensure this field has no more than 10000 characters.",
+    photo: null,
+  },
+  {
+    field: "photos",
+    reason: "mug.png is over 15 MB.",
+    photo: new File(["a very big mug"], "mug.png", { type: "image/png" }),
+  },
+])(
+  "says why the server refused a message about its $field, and trying again stays in one session",
+  async ({ field, reason, photo }) => {
+    const backend = fakeBackend();
+    backend.refuseNextSend({ [field]: [reason] });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<App />);
 
-  backend.state.question = {
-    id: 1,
-    kind: "product_photos",
-    question: "The page has no photo of the product. Can you upload at least one?",
-    options: [],
-  };
-  backend.job.status = "needs_product_photos";
-  backend.record("No usable product photos");
-  await act(() => vi.advanceTimersByTimeAsync(2000));
-  await screen.findByText("The page has no photo of the product. Can you upload at least one?");
+    await user.type(screen.getByLabelText("Message"), "This is my mug");
+    if (photo) await user.upload(screen.getByLabelText("Photos"), photo);
+    await user.click(screen.getByRole("button", { name: "Send" }));
 
-  const front = new File(["front of the mug"], "mug-front.png", { type: "image/png" });
-  const side = new File(["side of the mug"], "mug-side.jpg", { type: "image/jpeg" });
-  await user.upload(screen.getByLabelText("Product photos"), [front, side]);
-  backend.state.question = null;
-  backend.job.status = "planning";
-  backend.record("You uploaded 2 product photos");
-  await user.click(screen.getByRole("button", { name: "Send answer" }));
+    expect(await screen.findByText(reason)).toBeDefined();
+    expect(backend.sent).toEqual([]);
 
-  expect(backend.answers).toHaveLength(1);
-  const sent = backend.answers[0] as FormData;
-  expect(sent.getAll("photos").map((photo) => (photo as File).name)).toEqual([
-    "mug-front.png",
-    "mug-side.jpg",
-  ]);
-  await screen.findByText("You uploaded 2 product photos");
-});
-
-test("says why an answer was refused and keeps the question open", async () => {
-  const backend = fakeBackend();
-  const user = await startMugJob(backend);
-  backend.state.question = {
-    id: 1,
-    kind: "working_link",
-    question: "Can you send a working link?",
-    options: [],
-  };
-  backend.job.status = "needs_working_link";
-  backend.record("The page couldn't be read");
-  await act(() => vi.advanceTimersByTimeAsync(2000));
-  await screen.findByText("Can you send a working link?");
-
-  const answered = globalThis.fetch;
-  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) =>
-    url.endsWith("/answer/")
-      ? Response.json({ answer: ["Enter a valid URL."] }, { status: 400 })
-      : answered(url, init),
-  );
-  await user.type(screen.getByLabelText("Working link"), "https://shop.example/x");
-  await user.click(screen.getByRole("button", { name: "Send answer" }));
-
-  await screen.findByText("Enter a valid URL.");
-  expect(screen.getByLabelText("Working link")).toBeTruthy();
-});
-
-test("offers a line that failed the fact check to keep, or sends the user's own line", async () => {
-  const backend = fakeBackend();
-  const user = await startMugJob(backend);
-  backend.state.question = {
-    id: 1,
-    kind: "fact_check",
-    question: 'Scene 3 says "Yours for $19.99." but the page says $24.00. What should it say?',
-    options: [
-      { value: "keep", label: "Keep this line" },
-      { value: "own", label: "Use my own line" },
-    ],
-  };
-  backend.job.status = "needs_answer";
-  backend.record("A line still doesn't match the page");
-  await act(() => vi.advanceTimersByTimeAsync(2000));
-  await screen.findByText(
-    'Scene 3 says "Yours for $19.99." but the page says $24.00. What should it say?',
-  );
-  expect(screen.getAllByRole("radio").map((radio) => radio.closest("label")?.textContent)).toEqual([
-    "Keep this line",
-    "Use my own line",
-  ]);
-  // Keeping the line needs nothing more; a line is only asked for once the user picks their own.
-  await user.click(screen.getByLabelText("Keep this line"));
-  expect(screen.queryByLabelText("Your line")).toBeNull();
-
-  await user.click(screen.getByLabelText("Use my own line"));
-  await user.type(screen.getByLabelText("Your line"), "Just $24.00.");
-  backend.state.question = null;
-  backend.job.status = "checking_plan";
-  backend.record("You wrote scene 3's line");
-  await user.click(screen.getByRole("button", { name: "Send answer" }));
-
-  expect(backend.answers).toEqual([JSON.stringify({ answer: "own", line: "Just $24.00." })]);
-  await screen.findByText("You wrote scene 3's line");
-});
-
-test("asks what to do about a script too long for the target, and sends the choice", async () => {
-  const backend = fakeBackend();
-  const user = await startMugJob(backend);
-  backend.state.question = {
-    id: 1,
-    kind: "length",
-    question:
-      "Your script runs about 21.0 seconds, 6.0 over your 15-second target. Shorten it to fit, or keep it longer?",
-    options: [
-      { value: "shorten", label: "Shorten it to fit" },
-      { value: "keep_longer", label: "Keep it longer" },
-    ],
-  };
-  backend.job.status = "needs_answer";
-  backend.record("The script is longer than your target");
-  await act(() => vi.advanceTimersByTimeAsync(2000));
-  const send = await screen.findByRole("button", { name: "Send answer" });
-  // Nothing is picked for the user.
-  expect((send as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.queryByRole("textbox")).toBeNull();
-
-  await user.click(screen.getByLabelText("Keep it longer"));
-  backend.state.question = null;
-  backend.job.status = "ready_to_render";
-  backend.record("You chose to keep the ad longer");
-  await user.click(send);
-
-  expect(backend.answers).toEqual([JSON.stringify({ answer: "keep_longer" })]);
-  await screen.findByText("You chose to keep the ad longer");
-});
+    // What was typed and picked is still there, so sending again is one click.
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await findSaid("This is my mug");
+    expect(backend.sent).toEqual([{ text: "This is my mug", photos: photo ? ["mug.png"] : [] }]);
+    expect(backend.requests.filter((request) => request === "POST /api/sessions/")).toHaveLength(1);
+    expect(sessionNames()).toEqual(["This is my mug"]);
+  },
+);
