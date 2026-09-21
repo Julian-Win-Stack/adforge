@@ -1,6 +1,6 @@
 # AdForge
 
-A chat agent that turns a product page link into a finished short UGC video ad. The user talks to it in one box; the agent reads the page, plans the ad, creates a presenter, renders the scenes and assembles the video, asking questions when something is missing rather than guessing.
+A chat app that turns a product page link into a finished short UGC video ad. The user talks to the producer in one box; it reads the page, plans the ad, creates a presenter, sends a director to make each scene and assembles the video, asking questions when something is missing rather than guessing.
 
 ## Language
 
@@ -11,11 +11,11 @@ One chat thread, named and returned to. Holds the whole conversation and every a
 _Avoid_: Chat, thread, conversation, project
 
 **Message**:
-One turn in a session, from the user or the agent. The only way the user and the agent communicate.
+One turn in a session, from the user or the producer. The only way the user and AdForge communicate.
 _Avoid_: Comment, note, activity entry
 
 **Attachment**:
-A file a message carries: a photo the user attached, or a picture, sound or video the agent made. Kept through the file store and shown in the chat.
+A file a message carries: a photo the user attached, or a picture, sound or video the producer or a director made. Kept through the file store and shown in the chat.
 _Avoid_: Media, upload, asset
 
 **Brief**:
@@ -23,8 +23,22 @@ What the user asks for in their own words: the link, the length, a promo code, a
 _Avoid_: Request, prompt, order
 
 **Interrupt**:
-A message that arrives while the agent is working. The agent decides what it means for work already in flight.
+A message that arrives while the producer or its directors are working. The producer decides what it means for work already in flight.
 _Avoid_: Cancel, abort, pause
+
+### The agents
+
+**Agent**:
+A model in a loop that chooses which tool to call next. AdForge has two kinds: the producer and directors.
+_Avoid_: Bot, assistant
+
+**Producer**:
+The agent the user talks to. Reads the page, asks, plans, creates the person and the music, sends a director for each scene and assembles the ad. The only agent that speaks in the chat.
+_Avoid_: Orchestrator, main agent, "the agent"
+
+**Director**:
+An agent that makes one scene. The producer sends one per scene, and several work at the same time. Reports to the producer and never talks to the user.
+_Avoid_: Sub-agent, worker, renderer
 
 ### The work
 
@@ -55,7 +69,7 @@ _Avoid_: Override, manual input
 ### Machinery
 
 **Tool**:
-One thing the agent can do, such as reading the page or rendering a scene. The agent chooses which to call and in what order; the tool itself enforces the rules that matter.
+One thing an agent can do, such as reading the page or making a scene's clip. The agent chooses which to call and in what order; the tool itself enforces the rules that matter.
 _Avoid_: Step, action, function, capability
 
 **Checkpoint**:
@@ -103,6 +117,10 @@ _Avoid_: Caption, graphic, text layer
 **Promo code**:
 A discount code the user supplies. Always a user-supplied fact, never taken from the page.
 _Avoid_: Coupon, discount, offer
+
+**Critic**:
+The agent that runs the quality checks and returns a verdict. A director calls it for its own scene; the producer calls it for the checks that look across scenes.
+_Avoid_: Judge, reviewer, QA agent
 
 **End card**:
 A closing scene carrying the call to action, such as "Shop now".
