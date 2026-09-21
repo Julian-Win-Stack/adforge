@@ -20,3 +20,5 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+docs/system-tour.md
+docs/learning/
