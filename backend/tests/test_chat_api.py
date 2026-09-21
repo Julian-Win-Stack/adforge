@@ -2,11 +2,13 @@
 photo, poll for what is new, rename, and come back to the whole conversation."""
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError
+from pytest_django import Settings
 from rest_framework.test import APIClient
 
 from adforge import file_store
@@ -16,7 +18,9 @@ from jobs.models import Job
 
 from .conftest import MUG_FRONT, MUG_SIDE, picture
 
-pytestmark = pytest.mark.django_db
+# Each request commits on its own, as on the real server. The default wraps the whole test
+# in one transaction, which would hide code that only works inside one.
+pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @pytest.fixture
@@ -49,6 +53,12 @@ def send(api: APIClient) -> Callable[..., Any]:
         return api.post(f"/api/sessions/{session_id}/messages/", {"text": text}, format="json")
 
     return sending
+
+
+def served(link: str, settings: Settings) -> bytes:
+    """What the browser gets from a link: the web server hands out MEDIA_ROOT at /media/."""
+    assert link.startswith("/media/"), f"{link} isn't a link the web server hands out"
+    return (Path(settings.MEDIA_ROOT) / link.removeprefix("/media/")).read_bytes()
 
 
 def test_a_new_session_is_named_from_the_users_first_message(
@@ -165,7 +175,7 @@ def test_a_reopened_session_gives_back_its_whole_conversation(
 
 
 def test_a_photo_attached_to_a_message_is_kept_through_the_file_store(
-    api: APIClient, start_session: Callable[..., str], send: Callable[..., Any]
+    start_session: Callable[..., str], send: Callable[..., Any], settings: Settings
 ) -> None:
     session_id = start_session()
 
@@ -180,7 +190,7 @@ def test_a_photo_attached_to_a_message_is_kept_through_the_file_store(
     kept = Attachment.objects.order_by("position")
     assert [file_store.read(one.file) for one in kept] == [MUG_FRONT, MUG_SIDE]
     # The browser is given a link to each one, and the file is really there.
-    assert [one["url"] for one in attachments] == [file_store.url(one.file) for one in kept]
+    assert [served(one["url"], settings) for one in attachments] == [MUG_FRONT, MUG_SIDE]
 
 
 def test_a_message_has_to_say_or_carry_something(
@@ -276,9 +286,9 @@ def test_an_agent_message_can_carry_a_picture_a_sound_and_a_video(
 
     assert polled[0]["role"] == "agent"
     assert polled[0]["attachments"] == [
-        {"position": 1, "kind": "picture", "url": file_store.url(portrait)},
-        {"position": 2, "kind": "sound", "url": file_store.url(voice)},
-        {"position": 3, "kind": "video", "url": file_store.url(advert)},
+        {"position": 1, "kind": "picture", "url": "/media/portrait.png"},
+        {"position": 2, "kind": "sound", "url": "/media/voice.mp3"},
+        {"position": 3, "kind": "video", "url": "/media/ad.mp4"},
     ]
 
 

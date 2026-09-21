@@ -280,6 +280,14 @@ test("lists sessions newest first and reopens one with its whole history", async
   await user.click(screen.getByRole("button", { name: "Kettle ad" }));
   await findSaid("Make me an ad for my kettle");
   expect(conversation()).toEqual(["YouMake me an ad for my kettle"]);
+
+  // A session started now is the newest of all, so it goes to the top of the list.
+  await user.click(screen.getByRole("button", { name: "New session" }));
+  await user.type(screen.getByLabelText("Message"), "Make me an ad for my teapot");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await findSaid("Make me an ad for my teapot");
+  expect(sessionNames()).toEqual(["Make me an ad for my teapot", "Kettle ad", "Mug ad"]);
 });
 
 test("takes a message while the agent is still working", async () => {
