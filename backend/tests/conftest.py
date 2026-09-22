@@ -7,6 +7,7 @@ from typing import Any
 
 import PIL.Image
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from pydantic import BaseModel
 from pytest_django import DjangoCaptureOnCommitCallbacks, Settings
 from pytest_httpserver import HTTPServer
@@ -15,6 +16,7 @@ from rest_framework.test import APIClient
 from adforge import celery_app
 from gateway.fake import FakeModel
 from gateway.gateway import use_model
+from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import ModelReply, ModelRequest, TurnReply, TurnRequest
 
@@ -130,6 +132,50 @@ def product_page_url(httpserver: HTTPServer) -> str:
         MUG_SIDE, content_type="image/png"
     )
     return httpserver.url_for("/products/mug")
+
+
+@pytest.fixture
+def session_id(api: APIClient) -> str:
+    response = api.post("/api/sessions/", {}, format="json")
+    assert response.status_code == 201, response.json()
+    started: str = response.json()["id"]
+    return started
+
+
+@pytest.fixture
+def say(api: APIClient, session_id: str) -> Callable[..., None]:
+    """Send the user's message through the chat, with any photos attached as (name,
+    content). The producer runs before the request returns, so script its turns first."""
+
+    def sending(text: str, *photos: tuple[str, bytes]) -> None:
+        if photos:
+            attached = [
+                SimpleUploadedFile(name, content, content_type="image/png")
+                for name, content in photos
+            ]
+            sent = api.post(
+                f"/api/sessions/{session_id}/messages/",
+                {"text": text, "photos": attached},
+                format="multipart",
+            )
+        else:
+            sent = api.post(f"/api/sessions/{session_id}/messages/", {"text": text}, format="json")
+        assert sent.status_code == 201, sent.json()
+
+    return sending
+
+
+def chat(api: APIClient, session_id: str) -> list[tuple[str, str]]:
+    """The conversation as the browser shows it: who said what."""
+    messages = api.get(f"/api/sessions/{session_id}/messages/").json()
+    return [(message["role"], message["text"]) for message in messages]
+
+
+def given_to_the_producer(turn: int) -> list[dict[str, Any]]:
+    """What the producer's model was given on its `turn`th turn (from 1), as recorded."""
+    calls = ModelCall.objects.filter(purpose="produce").order_by("created_at", "id")
+    conversation: list[dict[str, Any]] = calls[turn - 1].handoff["conversation"]
+    return conversation
 
 
 @pytest.fixture

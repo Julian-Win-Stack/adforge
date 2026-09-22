@@ -98,3 +98,7 @@ FETCH_PRIVATE_ADDRESSES = False
 # Seconds to wait before each retry when an outside service is down or errors.
 # Three tries in total: the first, then one after each delay.
 RETRY_DELAYS_SECONDS = [2.0, 8.0]
+
+# How many tools the agents together may call for one message from the user, so an agent
+# that loops can't run up a bill. The one past it is refused, and the user is told.
+MAX_TOOL_CALLS_PER_MESSAGE = 100

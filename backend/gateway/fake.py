@@ -1,5 +1,6 @@
 """A scripted stand-in for a model provider, for tests. Each call pops the next scripted
-outcome for its purpose: output data to return, a turn an agent takes, or an error to raise.
+outcome for its purpose: output data to return, a turn an agent takes, an error to raise,
+or a turn during which something else happens (see `meanwhile`).
 
 Pictures and voices need no script: the fake draws a plain portrait, designs a numbered
 voice, and speaks at `words_per_second`. Script an error for their purpose to make one fail."""
@@ -8,7 +9,7 @@ import io
 import itertools
 import wave
 from collections import defaultdict, deque
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import PIL.Image
@@ -40,6 +41,20 @@ def turn(says: str = "", *, calls: Sequence[tuple[str, dict[str, Any]]] = ()) ->
     )
 
 
+def meanwhile(happens: Callable[[], object], then: Turn) -> Callable[[], Turn]:
+    """A turn the model takes long enough over for `happens` to happen while it works, such
+    as the user sending another message."""
+
+    def taking() -> Turn:
+        happens()
+        return then
+
+    return taking
+
+
+type Outcome = dict[str, Any] | Turn | BaseException | Callable[[], Turn]
+
+
 class FakeModel:
     name = "fake"
     INPUT_TOKENS = 1_000
@@ -47,13 +62,11 @@ class FakeModel:
     SAMPLE_RATE = 8_000
 
     def __init__(self) -> None:
-        self._scripts: defaultdict[str, deque[dict[str, Any] | Turn | BaseException]] = defaultdict(
-            deque
-        )
+        self._scripts: defaultdict[str, deque[Outcome]] = defaultdict(deque)
         self.words_per_second = 2.0
         self.voices = 0
 
-    def respond(self, purpose: str, *outcomes: dict[str, Any] | Turn | BaseException) -> None:
+    def respond(self, purpose: str, *outcomes: Outcome) -> None:
         self._scripts[purpose].extend(outcomes)
 
     def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]:
@@ -79,6 +92,8 @@ class FakeModel:
         outcome = script.popleft()
         if isinstance(outcome, BaseException):
             raise outcome
+        if callable(outcome):
+            return outcome()
         return outcome
 
     def draw(self, *, model: str, prompt: str) -> Picture:

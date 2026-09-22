@@ -1,25 +1,30 @@
 """The producer: the agent the user talks to. What it is told to do, and its tools."""
 
+from decimal import Decimal
 from typing import Literal
 
-from django.db.models import Max
-from pydantic import BaseModel, ConfigDict, Field
+from django.core.exceptions import ValidationError
+from django.core.validators import URLValidator
+from django.db.models import Max, Sum
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from chat import messages
-from chat.models import Attachment, Message
+from chat.models import Attachment, Message, Session
+from gateway.models import ModelCall
 from jobs import page
-from jobs.models import Job, ProductPhoto
+from jobs.models import Job, ProducedItem, ProductPhoto
 from jobs.tasks import (
     check_page,
     create_person,
     keep_page,
+    latest,
     plan,
     run_checks,
     save_photos,
     why_the_checks_passed,
 )
 
-from .loop import Agent, Tool
+from .loop import Agent, Refused, Tool
 from .models import ToolCall
 
 INSTRUCTIONS = """\
@@ -54,12 +59,52 @@ class ReadPage(Tool):
         "didn't say."
     )
 
+    # Validators rather than max_length or ge, which OpenAI's strict schema doesn't accept.
+    @field_validator("link")
+    @classmethod
+    def _a_link_to_a_page(cls, link: str) -> str:
+        if len(link) > 2000:
+            raise ValueError("it is over 2,000 characters, too long to be stored")
+        try:
+            URLValidator(schemes=["http", "https"])(link)
+        except ValidationError:
+            raise ValueError(f'"{link}" isn\'t a link to a web page') from None
+        return link
+
+    @field_validator("target_seconds")
+    @classmethod
+    def _a_length_that_can_be_stored(cls, seconds: int | None) -> int | None:
+        if seconds is not None and not 1 <= seconds <= 32_767:
+            raise ValueError("the length has to be from 1 to 32,767 seconds")
+        return seconds
+
     def run(self, call: ToolCall) -> str:
-        job = Job.objects.create(
-            session=call.session, product_url=self.link, target_seconds=self.target_seconds
-        )
-        call.job = job
-        call.save(update_fields=["job"])
+        job = _the_job(call)
+        if job is None:
+            job = Job.objects.create(
+                session=call.session, product_url=self.link, target_seconds=self.target_seconds
+            )
+            call.job = job
+            call.save(update_fields=["job"])
+        elif _page_read(job):
+            if self.link != job.product_url:
+                raise Refused(
+                    f"this chat's ad is for {job.product_url}, whose page has already been "
+                    f"read, and {self.link} is a different link. Ads for other products come "
+                    "later: tell the shop owner to start a new chat for this one for now."
+                )
+            return (
+                f"{self.link} was already read for this ad, so nothing was read or paid for "
+                f"again. Reading it cost {_dollars(_spent(job, self.name))}. The ad has "
+                f"{_photos(job.photos.count())}."
+            )
+        else:
+            # The page before wasn't read successfully, so nothing has been made from it: the
+            # ad is the same one, from this link, and has no page until this one is read.
+            job.product_url = self.link
+            job.target_seconds = self.target_seconds
+            job.status = Job.Status.READING_PAGE
+            job.save(update_fields=["product_url", "target_seconds", "status"])
         try:
             download = page.download(self.link, max_bytes=page.MAX_PAGE_BYTES, what="product page")
         except page.PageUnreadable as error:
@@ -74,12 +119,14 @@ class ReadPage(Tool):
                 f"The page was read but can't be used: {check.reason} Ask the shop owner for "
                 "a link to the product's own page."
             )
+        job.status = Job.Status.PAGE_READ
+        job.save(update_fields=["status"])
         skipped = save_photos(job, product_page.photo_urls)
         kept = job.photos.count()
         told = [f"Started job {job.pk} and read {download.final_url}. {check.reason}"]
         if download.final_url != self.link:
             told.append(f"The link led to {download.final_url}, so that is the page read.")
-        told.append(f"Kept {kept} product photo{'s' if kept != 1 else ''}.")
+        told.append(f"Kept {_photos(kept)}.")
         if skipped:
             told.append(f"Skipped {len(skipped)} photo{'s' if len(skipped) != 1 else ''}:")
             told += [f"- {photo.url}: {photo.reason}" for photo in skipped]
@@ -88,9 +135,6 @@ class ReadPage(Tool):
                 "Every scene is made from a product photo, so ask the shop owner to attach "
                 "at least one."
             )
-        else:
-            job.status = Job.Status.PAGE_READ
-            job.save(update_fields=["status"])
         return "\n".join(told)
 
 
@@ -102,8 +146,12 @@ class UsePhotos(Tool):
     name = "use_photos"
 
     def run(self, call: ToolCall) -> str:
-        job = _the_job(call)
-        assert job is not None
+        job = _with_its_page(call, "the photos belong to its ad")
+        if job.scenes.exists():
+            raise Refused(
+                "the ad is already planned, so its photos can't change now. Changing a planned "
+                "ad's photos comes later."
+            )
         kept = set(job.photos.values_list("file", flat=True))
         position = job.photos.aggregate(last=Max("position"))["last"] or 0
         added = 0
@@ -118,10 +166,7 @@ class UsePhotos(Tool):
             added += 1
             ProductPhoto.objects.create(job=job, position=position, file=attached.file)
         count = job.photos.count()
-        return (
-            f"Added {added} of the shop owner's photos. The job now has {count} product "
-            f"photo{'s' if count != 1 else ''}."
-        )
+        return f"Added {added} of the shop owner's photos. The job now has {_photos(count)}."
 
 
 class PlanAd(Tool):
@@ -133,26 +178,29 @@ class PlanAd(Tool):
     name = "plan_ad"
 
     def run(self, call: ToolCall) -> str:
-        job = _the_job(call)
-        assert job is not None
+        job = _with_its_page(call, "the ad is planned from it")
+        if job.scenes.exists():
+            planned = job.model_calls.filter(
+                purpose="plan_ad", outcome=ModelCall.Outcome.SUCCEEDED, decision="plan"
+            ).last()
+            assert planned is not None
+            return (
+                "The ad was already planned, so nothing was planned or paid for again. "
+                f"Planning it cost {_dollars(_spent(job, self.name))}.\n"
+                f"{_the_plan(job, planned.reason)}"
+            )
+        if not job.photos.exists():
+            raise Refused(
+                "the ad has no product photos yet, and every scene is made from one. Ask the "
+                "shop owner to attach at least one, then add it with use_photos."
+            )
         decision = plan(job)
         if decision.question is not None:
             return (
                 f"The ad can't be planned until the shop owner answers: {decision.question} "
                 f"Why: {decision.reason} Ask them, and plan again once they have answered."
             )
-        colour_photos = job.photos.filter(shows_product_colour=True).values_list(
-            "position", flat=True
-        )
-        return "\n".join(
-            [
-                f"Planned {job.scenes.count()} scenes. {decision.reason}",
-                _script(job),
-                f"The product's colour: {job.product_colour}, shown in photos "
-                f"{', '.join(str(number) for number in colour_photos)}.",
-                f"The person: {job.person_looks} Their voice: {job.person_voice}",
-            ]
-        )
+        return _the_plan(job, decision.reason)
 
 
 class CreatePerson(Tool):
@@ -164,7 +212,15 @@ class CreatePerson(Tool):
 
     def run(self, call: ToolCall) -> str:
         job = _the_job(call)
-        assert job is not None
+        if job is None or not job.scenes.exists():
+            raise Refused("the ad hasn't been planned yet, and the person is made from the plan.")
+        voice = _measured_voice(job)
+        if voice is not None and latest(job, ProducedItem.Kind.PORTRAIT) is not None:
+            return (
+                "The person was already made and shown to the shop owner, so nothing was made "
+                f"or paid for again. Making them cost {_dollars(_spent(job, self.name))}. "
+                f"{_speed(voice)}"
+            )
         portrait, voice = create_person(job)
         # A run again after a restart doesn't show the person twice.
         if not Attachment.objects.filter(
@@ -178,11 +234,9 @@ class CreatePerson(Tool):
                     messages.AttachedFile(Attachment.Kind.SOUND, voice.file),
                 ],
             )
-        assert voice.words_per_second is not None
         return (
             "Made the person, and showed the shop owner their portrait and their voice "
-            "reading the script in the chat. The voice speaks "
-            f"{voice.words_per_second:.1f} words a second, measured on the script."
+            f"reading the script in the chat. {_speed(voice)}"
         )
 
 
@@ -221,12 +275,40 @@ class RunPlanningChecks(Tool):
 
     def run(self, call: ToolCall) -> str:
         job = _the_job(call)
-        assert job is not None
+        if job is None or not job.scenes.exists():
+            raise Refused("the ad hasn't been planned yet, and the checks are run on its script.")
+        if job.target_seconds is not None and _measured_voice(job) is None:
+            raise Refused(
+                "the person hasn't been made yet, and the length check needs their voice's "
+                "measured speed."
+            )
+        # Only the shop owner makes these choices, so each one is refused until the checks
+        # have asked them and they have answered. Nothing is changed unless all are allowed.
+        for line_choice in self.line_choices:
+            about = f"scene {line_choice.scene}'s line"
+            asked = self._asked(job, f"scene {line_choice.scene}")
+            if asked is None:
+                raise Refused(
+                    f"the checks didn't ask the shop owner about {about}. Only a line they "
+                    "asked about can be kept or replaced; changing other lines comes later."
+                )
+            _answered(call.session, since=asked, about=about)
+            if line_choice.choice == "own" and not _wrote(call.session, line_choice.own_line):
+                raise Refused(
+                    f'the shop owner never wrote "{line_choice.own_line}" in their messages. A '
+                    "line they give is used exactly as they wrote it, so pass it word for word, "
+                    "or ask them."
+                )
+        if self.length_choice is not None:
+            asked = self._asked(job, "length")
+            if asked is None:
+                raise Refused("the checks haven't asked the shop owner about the script's length.")
+            _answered(call.session, since=asked, about="the script's length")
         for line_choice in self.line_choices:
             scene = job.scenes.get(number=line_choice.scene)
             if line_choice.choice == "own":
                 assert line_choice.own_line is not None
-                scene.line = line_choice.own_line
+                scene.line = " ".join(line_choice.own_line.split())
             # The shop owner knows their product: the line they chose isn't checked again.
             scene.fact_checked = True
             scene.save(update_fields=["line", "fact_checked"])
@@ -246,7 +328,40 @@ class RunPlanningChecks(Tool):
             "line": "Ask the shop owner whether to keep this line or give their own.",
             "length": "Ask the shop owner whether to shorten it to fit, or keep it longer.",
         }[asking.about]
+        call.asked_about = {
+            "unclear_page": "the page",
+            "line": f"scene {asking.scene.number if asking.scene else ''}",
+            "length": "length",
+        }[asking.about]
         return "\n".join([f"{asking.question} Why: {asking.reason} {ask}", _script(job)])
+
+    def _asked(self, job: Job, about: str) -> ToolCall | None:
+        """When the checks last had the shop owner asked about `about`, if they ever did."""
+        return job.tool_calls.filter(tool=self.name, asked_about=about).last()
+
+
+def _answered(session: Session, *, since: ToolCall, about: str) -> None:
+    """Refuse a choice the shop owner hasn't made: they haven't answered since the checks
+    asked them."""
+    if not session.messages.filter(
+        role=Message.Role.USER, created_at__gt=since.finished_at
+    ).exists():
+        raise Refused(
+            f"the shop owner hasn't answered since the checks asked about {about}. Ask them, "
+            "and wait for their answer."
+        )
+
+
+def _wrote(session: Session, line: str | None) -> bool:
+    """Whether the shop owner wrote `line` in one of their messages, word for word. Only
+    spacing and line breaks may differ."""
+    if line is None:
+        return False
+    written = " ".join(line.split())
+    return any(
+        written in " ".join(text.split())
+        for text in session.messages.filter(role=Message.Role.USER).values_list("text", flat=True)
+    )
 
 
 def _the_job(call: ToolCall) -> Job | None:
@@ -257,6 +372,70 @@ def _the_job(call: ToolCall) -> Job | None:
         call.job = job
         call.save(update_fields=["job"])
     return job
+
+
+def _page_checked(job: Job) -> bool:
+    """Whether the job's page has been read and found to show its product."""
+    return job.status not in (Job.Status.QUEUED, Job.Status.READING_PAGE)
+
+
+def _page_read(job: Job) -> bool:
+    """Whether the job's page has been read successfully: it was found to show its product,
+    and the job has a product photo, from the page or from the shop owner."""
+    return _page_checked(job) and job.photos.exists()
+
+
+def _with_its_page(call: ToolCall, needs_it: str) -> Job:
+    """The session's job, once its page has been found to show its product. `needs_it` says
+    why the tool can't work without it."""
+    job = _the_job(call)
+    if job is None or not _page_checked(job):
+        raise Refused(f"the product page hasn't been read yet, and {needs_it}.")
+    return job
+
+
+def _measured_voice(job: Job) -> ProducedItem | None:
+    """The person's voice, once its speaking speed has been measured."""
+    voice = latest(job, ProducedItem.Kind.VOICE)
+    return voice if voice is not None and voice.words_per_second is not None else None
+
+
+def _speed(voice: ProducedItem) -> str:
+    return f"The voice speaks {voice.words_per_second:.1f} words a second, measured on the script."
+
+
+def _the_plan(job: Job, reason: str) -> str:
+    """The plan as the producer is told it: the scenes and why, and what shows the product
+    and presents it."""
+    colour_photos = job.photos.filter(shows_product_colour=True).values_list("position", flat=True)
+    return "\n".join(
+        [
+            f"Planned {job.scenes.count()} scenes. {reason}",
+            _script(job),
+            f"The product's colour: {job.product_colour}, shown in photos "
+            f"{', '.join(str(number) for number in colour_photos)}.",
+            f"The person: {job.person_looks} Their voice: {job.person_voice}",
+        ]
+    )
+
+
+def _spent(job: Job, tool: str) -> Decimal:
+    """What every call of `tool` for the job has cost."""
+    spent: Decimal | None = ModelCall.objects.filter(
+        tool_call__job=job, tool_call__tool=tool
+    ).aggregate(cost=Sum("cost_usd"))["cost"]
+    return spent or Decimal(0)
+
+
+def _dollars(amount: Decimal) -> str:
+    """An amount in dollars, to the cent, or to its last digit when that is smaller."""
+    exact = f"{amount.normalize():f}"
+    cents = f"{amount:.2f}"
+    return f"${exact if len(exact) > len(cents) else cents}"
+
+
+def _photos(count: int) -> str:
+    return f"{count} product photo{'s' if count != 1 else ''}"
 
 
 def _script(job: Job) -> str:

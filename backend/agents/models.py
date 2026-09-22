@@ -27,8 +27,14 @@ class ToolCall(models.Model):
     result = models.TextField(
         blank=True, help_text="What the tool handed back to the agent. Blank until it finishes."
     )
-    finished = models.BooleanField(default=False)
+    asked_about = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text='What its result has the agent ask the shop owner, such as "length" or '
+        '"scene 2", so a tool can tell whether they have answered since. Blank for nothing.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["created_at", "id"]
@@ -38,6 +44,10 @@ class ToolCall(models.Model):
 
     def __str__(self) -> str:
         return f"{self.agent} called {self.tool}"
+
+    @property
+    def finished(self) -> bool:
+        return self.finished_at is not None
 
     def cost_usd(self) -> Decimal:
         """What the tool's work cost: the sum of the model calls made for it."""
