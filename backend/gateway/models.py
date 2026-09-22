@@ -8,6 +8,15 @@ class ModelCall(models.Model):
         SUCCEEDED = "succeeded"
         FAILED = "failed"
 
+    session = models.ForeignKey(
+        "chat.Session",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="model_calls",
+        help_text="The session it was for, so a session's whole cost adds up. Blank only for "
+        "calls made before sessions existed.",
+    )
     job = models.ForeignKey(
         "jobs.Job", null=True, blank=True, on_delete=models.PROTECT, related_name="model_calls"
     )

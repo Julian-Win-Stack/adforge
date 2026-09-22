@@ -52,6 +52,19 @@ def add(
     return message
 
 
+def as_read(message: Message) -> str:
+    """The message as an agent reads it: its words, then a note of the files it carries,
+    since a model given the conversation can't see them. A message may carry only files."""
+    counts: dict[str, int] = {}
+    for attachment in message.attachments.all():
+        counts[attachment.kind] = counts.get(attachment.kind, 0) + 1
+    if not counts:
+        return message.text
+    carried = [f"{count} {kind}{'s' if count != 1 else ''}" for kind, count in counts.items()]
+    note = f"[Attached {' and '.join(carried)}]"
+    return f"{message.text}\n\n{note}" if message.text else note
+
+
 def name_from(text: str) -> str:
     """A session's name, taken from the first thing the user said."""
     return Truncator(" ".join(text.split())).chars(NAME_LENGTH)

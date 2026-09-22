@@ -14,8 +14,9 @@ class ModelCallAdmin(admin.ModelAdmin[ModelCall]):
         "cost_usd",
         "duration_ms",
         "decision",
+        "session",
         "job",
     ]
     list_filter = ["outcome", "purpose", "model", "provider"]
-    list_select_related = ["job"]
+    list_select_related = ["session", "job"]
     search_fields = ["reason", "error"]

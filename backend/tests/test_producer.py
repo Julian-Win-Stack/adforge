@@ -8,15 +8,26 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
+from adforge import file_store
 from agents.models import ToolCall
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs.models import Job
 
-from .conftest import MUG_FRONT, READABLE, openai_answer, openai_turn
+from .conftest import (
+    FACTS_OK,
+    MUG_FRONT,
+    MUG_SIDE,
+    PLAN,
+    READABLE,
+    openai_answer,
+    openai_turn,
+    picture,
+)
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -31,11 +42,23 @@ def session_id(api: APIClient) -> str:
 
 
 @pytest.fixture
-def say(api: APIClient, session_id: str) -> Callable[[str], None]:
-    """Send the user's message. The producer runs before the request returns."""
+def say(api: APIClient, session_id: str) -> Callable[..., None]:
+    """Send the user's message, with any photos attached as (name, content). The producer
+    runs before the request returns."""
 
-    def sending(text: str) -> None:
-        sent = api.post(f"/api/sessions/{session_id}/messages/", {"text": text}, format="json")
+    def sending(text: str, *photos: tuple[str, bytes]) -> None:
+        if photos:
+            attached = [
+                SimpleUploadedFile(name, content, content_type="image/png")
+                for name, content in photos
+            ]
+            sent = api.post(
+                f"/api/sessions/{session_id}/messages/",
+                {"text": text, "photos": attached},
+                format="multipart",
+            )
+        else:
+            sent = api.post(f"/api/sessions/{session_id}/messages/", {"text": text}, format="json")
         assert sent.status_code == 201, sent.json()
 
     return sending
@@ -59,7 +82,7 @@ def test_the_producer_reads_the_page_its_given_and_tells_the_user_what_it_found(
     fake_model: FakeModel,
     product_page_url: str,
     session_id: str,
-    say: Callable[[str], None],
+    say: Callable[..., None],
 ) -> None:
     fake_model.respond(
         "produce",
@@ -107,7 +130,7 @@ def test_the_producer_is_told_every_photo_the_page_had_that_was_skipped_and_why(
     fake_model: FakeModel,
     httpserver: HTTPServer,
     session_id: str,
-    say: Callable[[str], None],
+    say: Callable[..., None],
 ) -> None:
     gone_url = httpserver.url_for("/cdn/removed.png")
     heic_url = httpserver.url_for("/cdn/mug.heic")
@@ -195,7 +218,7 @@ def _serve_page_without_photos(httpserver: HTTPServer, fake_model: FakeModel) ->
 def test_a_page_the_ad_cant_be_made_from_is_reported_to_the_producer_with_the_reason(
     fake_model: FakeModel,
     httpserver: HTTPServer,
-    say: Callable[[str], None],
+    say: Callable[..., None],
     serve_page: Callable[[HTTPServer, FakeModel], None],
     told: str,
 ) -> None:
@@ -218,7 +241,7 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
     openai_server: Callable[..., None],
     product_page_url: str,
     session_id: str,
-    say: Callable[[str], None],
+    say: Callable[..., None],
 ) -> None:
     arguments = {"link": product_page_url, "target_seconds": 15}
     openai_server(
@@ -240,14 +263,26 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
     assert first["input"] == [
         {"role": "user", "content": f"Make me a 15 second ad for {product_page_url}"}
     ]
-    [read_page] = first["tools"]
-    assert (read_page["type"], read_page["name"], read_page["strict"]) == (
-        "function",
+    tools = {tool["name"]: tool for tool in first["tools"]}
+    assert list(tools) == [
         "read_page",
-        True,
-    )
+        "use_photos",
+        "plan_ad",
+        "create_person",
+        "run_planning_checks",
+    ]
+    assert {(tool["type"], tool["strict"]) for tool in tools.values()} == {("function", True)}
+    read_page = tools["read_page"]
     assert read_page["description"].startswith("Start a job for an ad")
     assert read_page["parameters"]["required"] == ["link", "target_seconds"]
+    # A strict tool's arguments, nested ones too, list every field and allow no others.
+    checks = tools["run_planning_checks"]["parameters"]
+    assert checks["required"] == ["line_choices", "length_choice"]
+    line_choice = checks["$defs"]["LineChoice"]
+    assert (line_choice["required"], line_choice["additionalProperties"]) == (
+        ["scene", "choice", "own_line"],
+        False,
+    )
     # Its second turn is given its first: what it said, the tool it called, and the result.
     checkpoint = ToolCall.objects.get()
     assert (checkpoint.call_id, checkpoint.arguments) == ("call_a1", arguments)
@@ -268,3 +303,159 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
     ]
     # gpt-5.6-sol: 1,200 x $4.00/M in + 300 x $20.00/M out = $0.0048 + $0.006.
     assert [turn.cost_usd for turn in turns] == [Decimal("0.0108"), Decimal("0.0108")]
+
+
+def attachments(api: APIClient, session_id: str) -> list[tuple[str, str, list[str]]]:
+    """The conversation as the browser shows it, with the kind of each file a message carries."""
+    messages = api.get(f"/api/sessions/{session_id}/messages/").json()
+    return [
+        (message["role"], message["text"], [each["kind"] for each in message["attachments"]])
+        for message in messages
+    ]
+
+
+def test_the_producer_takes_a_brief_to_a_checked_plan_that_is_ready_to_render(
+    api: APIClient,
+    fake_model: FakeModel,
+    product_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(
+            says="I'll read your product page first.",
+            calls=[("read_page", {"link": product_page_url, "target_seconds": 15})],
+        ),
+        turn(says="Now I'll plan the ad.", calls=[("plan_ad", {})]),
+        turn(says="Next, the person who presents it.", calls=[("create_person", {})]),
+        turn(calls=[("run_planning_checks", {"line_choices": [], "length_choice": None})]),
+        turn(says="Meet your presenter! The script is checked and ready to make."),
+    )
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", PLAN)
+    fake_model.respond("fact_check", FACTS_OK)
+
+    say(f"Make me a 15 second ad for {product_page_url}")
+
+    job = Job.objects.get(session_id=session_id)
+    assert job.status == "ready_to_render"
+    assert list(job.scenes.values_list("line", flat=True)) == [
+        scene["line"] for scene in PLAN["plan"]["scenes"]
+    ]
+    # The person is shown in the chat as soon as it is made: a message with no words that
+    # carries the portrait and the voice reading the script.
+    assert attachments(api, session_id) == [
+        ("user", f"Make me a 15 second ad for {product_page_url}", []),
+        ("agent", "I'll read your product page first.", []),
+        ("agent", "Now I'll plan the ad.", []),
+        ("agent", "Next, the person who presents it.", []),
+        ("agent", "", ["picture", "sound"]),
+        ("agent", "Meet your presenter! The script is checked and ready to make.", []),
+    ]
+    person = api.get(f"/api/sessions/{session_id}/messages/").json()[4]["attachments"]
+    portrait, voice = job.produced.get(kind="portrait"), job.produced.get(kind="voice")
+    assert [each["url"] for each in person] == [
+        file_store.url(portrait.file),
+        file_store.url(voice.file),
+    ]
+    # The producer is told what that message carries, so it can talk about it.
+    assert given_to_the_producer(4)[-1] == {
+        "kind": "said",
+        "by": "agent",
+        "text": "[Attached 1 picture and 1 sound]",
+    }
+    # Each tool's model calls are recorded against its checkpoint.
+    checkpoints = ToolCall.objects.all()
+    assert [
+        (each.tool, each.job_id, list(each.model_calls.values_list("purpose", flat=True)))
+        for each in checkpoints
+    ] == [
+        ("read_page", job.pk, ["check_page"]),
+        ("plan_ad", job.pk, ["plan_ad"]),
+        ("create_person", job.pk, ["draw_person", "design_voice", "measure_voice"]),
+        ("run_planning_checks", job.pk, ["fact_check"]),
+    ]
+    assert "ready to render" in checkpoints[3].result
+    # Every model call knows the session it was for, the producer's own turns included, so
+    # the session's whole cost adds up from them.
+    assert {str(call.session_id) for call in ModelCall.objects.all()} == {session_id}
+    assert ModelCall.objects.filter(session_id=session_id, purpose="produce").count() == 5
+
+
+def test_the_plan_reads_the_whole_conversation_so_an_answer_is_read_next_to_its_question(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    question = "The page shows $24.00 and a sale price of $19.00. Which should the ad say?"
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": product_page_url, "target_seconds": None})]),
+        turn(calls=[("plan_ad", {})]),
+        turn(says=question),
+    )
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond(
+        "plan_ad",
+        {
+            "decision": "ask",
+            "reason": "The page gives two prices, and the ad must say the one a buyer pays.",
+            "question": question,
+            "plan": None,
+        },
+    )
+    say(f"Make an ad for {product_page_url}")
+
+    # The planner's question is the tool's result, for the producer to put to the user.
+    assert question in given_to_the_producer(3)[-1]["result"]
+    assert not Job.objects.get().scenes.exists()
+
+    fake_model.respond(
+        "produce", turn(calls=[("plan_ad", {})]), turn(says="Planned with the sale price.")
+    )
+    fake_model.respond("plan_ad", PLAN)
+    say("The sale one")
+
+    first, second = ModelCall.objects.filter(purpose="plan_ad")
+    assert first.handoff["conversation"] == [
+        {"by": "user", "text": f"Make an ad for {product_page_url}"}
+    ]
+    assert second.handoff["conversation"] == [
+        {"by": "user", "text": f"Make an ad for {product_page_url}"},
+        {"by": "producer", "text": question},
+        {"by": "user", "text": "The sale one"},
+    ]
+    assert Job.objects.get().scenes.count() == 3
+
+
+def test_the_users_photos_are_added_to_the_job_after_the_pages(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": product_page_url, "target_seconds": None})]),
+        turn(says="I kept 2 photos of your mug."),
+    )
+    fake_model.respond("check_page", READABLE)
+    say(f"Make an ad for {product_page_url}")
+    own = picture(300, 400, (60, 90, 70))
+    fake_model.respond(
+        "produce",
+        turn(calls=[("use_photos", {})]),
+        turn(says="I've added your photo to the page's two."),
+    )
+
+    say("Use my photo too", ("mine.png", own))
+
+    job = Job.objects.get()
+    photos = list(job.photos.all())
+    assert [(photo.position, photo.source_url) for photo in photos] == [
+        (1, product_page_url.replace("/products/mug", "/cdn/mug-front.png")),
+        (2, product_page_url.replace("/products/mug", "/cdn/mug-side.png")),
+        (3, ""),
+    ]
+    assert [file_store.read(photo.file) for photo in photos] == [MUG_FRONT, MUG_SIDE, own]
+    assert "3 product photos" in ToolCall.objects.get(tool="use_photos").result
