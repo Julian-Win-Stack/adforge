@@ -2,6 +2,7 @@ import mimetypes
 import uuid
 
 from django.core.files.uploadedfile import UploadedFile
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers, status
 from rest_framework.decorators import api_view
@@ -9,6 +10,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from adforge import file_store
+from agents.tasks import run_producer
 from gateway.gateway import IMAGE_TYPE_NAMES, IMAGE_TYPES
 from jobs.page import MAX_PHOTO_BYTES, MAX_PHOTOS
 
@@ -123,8 +125,9 @@ def session_messages(request: Request, session_id: str) -> Response:
 
 
 def _send(session: Session, request: Request) -> Response:
-    """Take the user's message. It is always accepted: a message sent while the agent is
-    working is stored and acknowledged straight away rather than refused."""
+    """Take the user's message, and start the producer on it. It is always accepted: a
+    message sent while the agent is working is stored and acknowledged straight away rather
+    than refused."""
     sending = SendSerializer(data=request.data)
     sending.is_valid(raise_exception=True)
     photos: list[UploadedFile[bytes]] = sending.validated_data["photos"]
@@ -138,6 +141,7 @@ def _send(session: Session, request: Request) -> Response:
     message = messages.add(
         session, role=Message.Role.USER, text=sending.validated_data["text"], carrying=kept
     )
+    transaction.on_commit(lambda: run_producer.delay(str(session.pk)))
     # The first message may just have named the session.
     session.refresh_from_db(fields=["name"])
     return Response(

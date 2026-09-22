@@ -11,6 +11,14 @@ class ModelCall(models.Model):
     job = models.ForeignKey(
         "jobs.Job", null=True, blank=True, on_delete=models.PROTECT, related_name="model_calls"
     )
+    tool_call = models.ForeignKey(
+        "agents.ToolCall",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="model_calls",
+        help_text="The tool call this was made for. Blank for an agent's own turns.",
+    )
     purpose = models.CharField(max_length=50)
     provider = models.CharField(max_length=30)
     model = models.CharField(max_length=100)
