@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, StrictInt, field_validator, model_validat
 
 from gateway.types import Handoff, Judgement
 
-from .planning import Answer
+from .planning import ChatMessage
 
 # A script fits its target when it runs no more than this much over it. Shorter always fits.
 LENGTH_ALLOWANCE_SECONDS = 1
@@ -20,14 +20,16 @@ MOST_REWRITES = 2
 FACT_CHECK_INSTRUCTIONS = """\
 You check the script of a short video ad against the product page it was written from. \
 You get the page's visible text, followed by any product data the page declares for \
-search engines, the shop owner's answers to earlier questions, the colour the ad shows \
-the product in, and the lines to check, each with its scene number.
+search engines, the conversation with the shop owner so far, the colour the ad shows the \
+product in, and the lines to check, each with its scene number. Each message in the \
+conversation is labelled "user" for the shop owner or "producer" for the producer.
 Check every price, number, product name and claim in each line. A line is "ok" only if \
-the page or the shop owner's answers state everything it claims. A claim they don't \
-state is wrong, even if it is probably true: nothing may be guessed. A price must be \
-the price a buyer pays today. A line that names the product's colour, or any other \
-colour of the product, is wrong too: the ad shows the colour, never says it. Words \
-that mean the same, such as "ml" and "millilitres", are not a problem.
+the page or the shop owner's own words state everything it claims. The producer's \
+messages are there only to show what was asked: never take a fact from them. A claim \
+nobody states is wrong, even if it is probably true: nothing may be guessed. A price \
+must be the price a buyer pays today. A line that names the product's colour, or any \
+other colour of the product, is wrong too: the ad shows the colour, never says it. \
+Words that mean the same, such as "ml" and "millilitres", are not a problem.
 For each wrong line, say what is wrong in one sentence, and quote what the page says \
 about it, or say that the page doesn't mention it.
 Decide "checked" when you checked every line. Decide "unclear" only when the page \
@@ -38,23 +40,26 @@ Give one sentence saying why, written for the shop owner."""
 
 REWRITE_INSTRUCTIONS = """\
 You are the producer of a short vertical video ad. A person speaks to camera, one line \
-per scene. The fact check failed one of your lines. You get the page's text, the shop \
-owner's answers, the colour the ad shows the product in, the whole script, the scene \
-whose line failed, and each reason it failed, oldest first.
-Rewrite that one line so every claim in it is stated by the page or the answers. Keep \
+per scene. The fact check failed one of your lines. You get the page's text, the \
+conversation with the shop owner so far, labelled "user" for them and "producer" for \
+you, the colour the ad shows the product in, the whole script, the scene whose line \
+failed, and each reason it failed, oldest first.
+Rewrite that one line so every claim in it is stated by the page or by the shop owner's \
+own words. Your own messages only show what was asked: never take a fact from them. Keep \
 what the line is for in the ad and about the same length. If it says the price, it \
 must still say the price. Never name the product's colour. Never infer or guess."""
 
 SHORTEN_INSTRUCTIONS = """\
 You are the producer of a short vertical video ad. A person speaks to camera, one line \
 per scene. The script is too long for the shop owner's target length. You get the \
-page's text, the shop owner's answers, the colour the ad shows the product in, the \
-target length, the most words that fit it at the speed the chosen voice speaks, and \
-the script.
+page's text, the conversation with the shop owner so far, labelled "user" for them and \
+"producer" for you, the colour the ad shows the product in, the target length, the most \
+words that fit it at the speed the chosen voice speaks, and the script.
 Rewrite the script to fit: trim lines, or drop a scene. Stay within the most words. \
 Keep lines you don't need to change exactly as they are. One line must still say the \
-price. Every claim must be stated by the page or the answers. Never name the product's \
-colour. Never infer or guess. Give the lines in the order they play."""
+price. Every claim must be stated by the page or by the shop owner's own words: your own \
+messages only show what was asked. Never name the product's colour. Never infer or \
+guess. Give the lines in the order they play."""
 
 
 def count_words(text: str) -> int:
@@ -82,7 +87,7 @@ class LineToCheck(BaseModel):
 
 class FactCheckHandoff(Handoff):
     page_text: str
-    answers: list[Answer]
+    conversation: list[ChatMessage]
     product_colour: str
     lines: list[LineToCheck]
 
@@ -134,7 +139,7 @@ class Problem(BaseModel):
 
 class RewriteHandoff(Handoff):
     page_text: str
-    answers: list[Answer]
+    conversation: list[ChatMessage]
     product_colour: str
     script: list[LineToCheck]
     scene: int
@@ -154,7 +159,7 @@ class RewrittenLine(BaseModel):
 
 class ShortenHandoff(Handoff):
     page_text: str
-    answers: list[Answer]
+    conversation: list[ChatMessage]
     product_colour: str
     target_seconds: int
     most_words: int

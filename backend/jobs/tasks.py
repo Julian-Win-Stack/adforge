@@ -4,13 +4,17 @@ import mimetypes
 import wave
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal
 
 from celery import shared_task
 from django.db import transaction
+from django.db.models import Max
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
+from chat import messages
+from chat.models import Message
 from gateway.gateway import (
     IMAGE_TYPE_NAMES,
     IMAGE_TYPES,
@@ -46,8 +50,9 @@ from .checks import (
 from .models import Job, ProducedItem, ProductPhoto, Question, Scene
 from .planning import (
     PLAN_INSTRUCTIONS,
-    Answer,
+    ChatMessage,
     PlanHandoff,
+    ProducerDecision,
     producer_decision_for,
 )
 
@@ -219,10 +224,12 @@ class SkippedPhoto:
 
 
 def save_photos(job: Job, urls: list[str]) -> list[SkippedPhoto]:
-    """Download and keep each photo. Gives back each one that was skipped, with why."""
-    # A read run again after a crash starts the photos afresh, so each is kept once.
-    job.photos.all().delete()
-    saved = 0
+    """Download and keep each photo, after any the job already has. Gives back each one
+    that was skipped, with why."""
+    # A read run again after a crash starts the page's photos afresh, so each is kept once.
+    # Photos the user attached are theirs, and stay.
+    job.photos.exclude(source_url="").delete()
+    saved = job.photos.aggregate(last=Max("position"))["last"] or 0
     skipped = []
     for url in urls:
         try:
@@ -313,6 +320,24 @@ def _plan_ad(job: Job) -> bool:
         reason="The plan sets the scenes, what the person says in each, and who says it.",
         status=Job.Status.PLANNING,
     )
+    decision = plan(job)
+    if decision.question is not None:
+        _ask(
+            job,
+            Question.Kind.PRODUCER,
+            decision.question,
+            message=f"Asked: {decision.question}",
+            reason=decision.reason,
+        )
+        return False
+    count = job.scenes.count()
+    record(job, f"Planned {count} scene{'s' if count != 1 else ''}", reason=decision.reason)
+    return True
+
+
+def plan(job: Job) -> ProducerDecision:
+    """Have the planner plan the ad from the page, the product photos and the conversation,
+    and keep the plan. A decision to ask the user keeps nothing."""
     photos = list(job.photos.all())
     decision = call_model(
         job=job,
@@ -323,40 +348,26 @@ def _plan_ad(job: Job) -> bool:
             page_text=page.for_model(job.page_text),
             target_seconds=job.target_seconds,
             photo_count=len(photos),
-            answers=_answers(job),
+            conversation=_conversation(job),
         ),
         output=producer_decision_for(len(photos)),
         images=[Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos],
     )
-    if decision.question is not None:
-        _ask(
-            job,
-            Question.Kind.PRODUCER,
-            decision.question,
-            message=f"Asked: {decision.question}",
-            reason=decision.reason,
-        )
-        return False
-    plan = decision.plan
-    assert plan is not None
+    planned = decision.plan
+    if planned is None:
+        return decision
     with transaction.atomic():
         Scene.objects.bulk_create(
             Scene(job=job, number=number, line=scene.line)
-            for number, scene in enumerate(plan.scenes, start=1)
+            for number, scene in enumerate(planned.scenes, start=1)
         )
-        job.product_colour = plan.product_colour
-        job.person_looks = plan.person_looks
-        job.person_voice = plan.person_voice
-        job.save(update_fields=["product_colour", "person_looks", "person_voice"])
-        job.photos.filter(position__in=plan.colour_photos).update(shows_product_colour=True)
-        count = len(plan.scenes)
-        record(
-            job,
-            f"Planned {count} scene{'s' if count != 1 else ''}",
-            reason=decision.reason,
-            status=Job.Status.PLANNED,
-        )
-    return True
+        job.product_colour = planned.product_colour
+        job.person_looks = planned.person_looks
+        job.person_voice = planned.person_voice
+        job.status = Job.Status.PLANNED
+        job.save(update_fields=["product_colour", "person_looks", "person_voice", "status"])
+        job.photos.filter(position__in=planned.colour_photos).update(shows_product_colour=True)
+    return decision
 
 
 PORTRAIT_PROMPT = """\
@@ -380,18 +391,40 @@ def _make_person(job: Job) -> bool:
         reason="The person who presents the ad gets a portrait, and a voice made to match.",
         status=Job.Status.MAKING_PERSON,
     )
-    if not job.produced.filter(kind=ProducedItem.Kind.PORTRAIT).exists():
+    _, voice = create_person(job)
+    record(
+        job,
+        "Made the person",
+        reason=(
+            f"The voice speaks {voice.words_per_second:.1f} words a second, measured on the "
+            "script itself, so the script's length is known before anything is rendered."
+        ),
+    )
+    return True
+
+
+def create_person(job: Job) -> tuple[ProducedItem, ProducedItem]:
+    """Make the person who presents the ad: a portrait, and a voice made to match whose
+    speaking speed is measured on the script. Gives back the portrait and the voice.
+
+    Only what the job doesn't have yet is made, so run again it pays for nothing new, and
+    what was paid for before a worker stopped is kept rather than paid for again."""
+    portrait = _latest(job, ProducedItem.Kind.PORTRAIT)
+    if portrait is None:
         paid_for = _paid_for_before(job, "draw_person")
-        portrait = (
-            paid_for["file"]
-            if paid_for
-            else draw_picture(
-                job=job,
-                purpose="draw_person",
-                prompt=PORTRAIT_PROMPT.format(looks=job.person_looks),
-            )
+        portrait = ProducedItem.objects.create(
+            job=job,
+            kind=ProducedItem.Kind.PORTRAIT,
+            file=(
+                paid_for["file"]
+                if paid_for
+                else draw_picture(
+                    job=job,
+                    purpose="draw_person",
+                    prompt=PORTRAIT_PROMPT.format(looks=job.person_looks),
+                )
+            ),
         )
-        ProducedItem.objects.create(job=job, kind=ProducedItem.Kind.PORTRAIT, file=portrait)
     voice = _latest(job, ProducedItem.Kind.VOICE)
     if voice is None:
         paid_for = _paid_for_before(job, "design_voice")
@@ -410,16 +443,9 @@ def _make_person(job: Job) -> bool:
         )
     if voice.words_per_second is None:
         _measure_voice(job, voice)
-    record(
-        job,
-        "Made the person",
-        reason=(
-            f"The voice speaks {voice.words_per_second:.1f} words a second, measured on the "
-            "script itself, so the script's length is known before anything is rendered."
-        ),
-        status=Job.Status.CHECKING_PLAN,
-    )
-    return True
+    job.status = Job.Status.CHECKING_PLAN
+    job.save(update_fields=["status"])
+    return portrait, voice
 
 
 def _paid_for_before(job: Job, purpose: str) -> dict[str, Any] | None:
@@ -445,38 +471,99 @@ def _seconds(wav: bytes) -> float:
 
 
 def _check_plan(job: Job) -> bool:
-    """Check the script before anything is rendered: every line against the page, then the
-    whole script against the target length. Each problem is fixed, or asked about."""
     # Run again after a restart, or after an answer, the checks carry on from where they
     # stopped: lines already checked stay checked.
-    while job.status == Job.Status.CHECKING_PLAN:
-        if job.scenes.filter(fact_checked=False).exists():
-            _fact_check(job)
-        elif _length_fits(job):
-            record(
-                job,
-                "Checked the plan",
-                reason=_checked_reason(job),
-                status=Job.Status.READY_TO_RENDER,
-            )
+    if job.status != Job.Status.CHECKING_PLAN:
+        return False
+    asking = run_checks(job)
+    if asking is None:
+        record(job, "Checked the plan", reason=why_the_checks_passed(job))
+    elif asking.about == "unclear_page":
+        _ask(
+            job,
+            Question.Kind.UNCLEAR_PAGE,
+            asking.question,
+            message=f"Asked: {asking.question}",
+            reason=asking.reason,
+        )
+    elif asking.about == "line":
+        assert asking.scene is not None
+        _ask(
+            job,
+            Question.Kind.FACT_CHECK,
+            f"{asking.question} Keep this line, or give your own?",
+            message=f"Asked about scene {asking.scene.number}'s line",
+            reason=asking.reason,
+            scene=asking.scene,
+            options=[
+                {"value": choice.value, "label": choice.label} for choice in Question.LineChoice
+            ],
+        )
+    else:
+        _ask(
+            job,
+            Question.Kind.LENGTH,
+            f"{asking.question} Shorten it to fit, or keep it longer?",
+            message="Asked whether to shorten the script",
+            reason=asking.reason,
+            options=[
+                {"value": Job.LengthChoice.SHORTEN, "label": "Shorten it to fit"},
+                {"value": Job.LengthChoice.KEEP_LONGER, "label": "Keep it longer"},
+            ],
+        )
     return False
 
 
-def _fact_check(job: Job) -> None:
+@dataclass(frozen=True)
+class Asking:
+    """Something the planning checks can't settle without the user: what it is about, the
+    question with the facts they need to answer it, and one sentence on why it is asked."""
+
+    about: Literal["unclear_page", "line", "length"]
+    question: str
+    reason: str
+    # The scene whose line is asked about, for a line.
+    scene: Scene | None = None
+
+
+def run_checks(job: Job) -> Asking | None:
+    """Check the script before anything is rendered: every line against the page, then the
+    whole script against the target length. Each problem is fixed, or asked about. None
+    once every check has passed.
+
+    Run again after a restart, or after the user answers, the checks carry on from where
+    they stopped: lines already checked stay checked."""
+    while True:
+        if job.scenes.filter(fact_checked=False).exists():
+            asking = _fact_check(job)
+        else:
+            fit = _fit_length(job)
+            if fit is True:
+                job.status = Job.Status.READY_TO_RENDER
+                job.save(update_fields=["status"])
+                return None
+            asking = fit if isinstance(fit, Asking) else None
+        if asking is not None:
+            return asking
+
+
+def _fact_check(job: Job) -> Asking | None:
     unchecked = list(job.scenes.filter(fact_checked=False))
-    answers = _answers(job)
+    conversation = _conversation(job)
     # A line whose failure was stored before a restart is fixed from that failure, rather
     # than checked, and paid for, again.
     scenes = [scene for scene in unchecked if not _needs_fixing(scene)]
-    if scenes and not _checked(job, scenes, answers):
-        return
+    if scenes:
+        unclear = _checked(job, scenes, conversation)
+        if unclear is not None:
+            return unclear
     for scene in unchecked:
         if not _needs_fixing(scene):
             continue
         if len(scene.fact_problems) > MOST_REWRITES:
-            _ask_about_line(job, scene)
-            return
-        _rewrite_line(job, scene, answers)
+            return _about_line(scene)
+        _rewrite_line(job, scene, conversation)
+    return None
 
 
 def _needs_fixing(scene: Scene) -> bool:
@@ -484,16 +571,16 @@ def _needs_fixing(scene: Scene) -> bool:
     return bool(scene.fact_problems) and not scene.fact_problems[-1]["rewritten"]
 
 
-def _checked(job: Job, scenes: list[Scene], answers: list[Answer]) -> bool:
-    """Fact-check the scenes' lines, storing why each that failed did. False when the page
-    itself was unclear, so the user was asked."""
+def _checked(job: Job, scenes: list[Scene], conversation: list[ChatMessage]) -> Asking | None:
+    """Fact-check the scenes' lines, storing why each that failed did. When the page itself
+    is unclear, gives back what to ask the user instead."""
     check = call_model(
         job=job,
         purpose="fact_check",
         instructions=FACT_CHECK_INSTRUCTIONS,
         handoff=FactCheckHandoff(
             page_text=page.for_model(job.page_text),
-            answers=answers,
+            conversation=conversation,
             product_colour=job.product_colour,
             lines=[LineToCheck(scene=scene.number, line=scene.line) for scene in scenes],
         ),
@@ -501,14 +588,7 @@ def _checked(job: Job, scenes: list[Scene], answers: list[Answer]) -> bool:
     )
     if check.decision == "unclear":
         assert check.question is not None
-        _ask(
-            job,
-            Question.Kind.UNCLEAR_PAGE,
-            check.question,
-            message=f"Asked: {check.question}",
-            reason=check.reason,
-        )
-        return False
+        return Asking(about="unclear_page", question=check.question, reason=check.reason)
     verdicts = {verdict.scene: verdict for verdict in check.lines}
     for scene in scenes:
         verdict = verdicts[scene.number]
@@ -521,17 +601,17 @@ def _checked(job: Job, scenes: list[Scene], answers: list[Answer]) -> bool:
             {"problem": verdict.problem, "page_says": verdict.page_says, "rewritten": False}
         )
         scene.save(update_fields=["fact_problems"])
-    return True
+    return None
 
 
-def _rewrite_line(job: Job, scene: Scene, answers: list[Answer]) -> None:
+def _rewrite_line(job: Job, scene: Scene, conversation: list[ChatMessage]) -> None:
     rewrite = call_model(
         job=job,
         purpose="rewrite_line",
         instructions=REWRITE_INSTRUCTIONS,
         handoff=RewriteHandoff(
             page_text=page.for_model(job.page_text),
-            answers=answers,
+            conversation=conversation,
             product_colour=job.product_colour,
             script=[LineToCheck(scene=each.number, line=each.line) for each in job.scenes.all()],
             scene=scene.number,
@@ -554,30 +634,26 @@ def _rewrite_line(job: Job, scene: Scene, answers: list[Answer]) -> None:
         )
 
 
-def _ask_about_line(job: Job, scene: Scene) -> None:
+def _about_line(scene: Scene) -> Asking:
     last = scene.fact_problems[-1]
-    question = (
-        f"Scene {scene.number}'s line still fails the fact check after "
-        f'{MOST_REWRITES} rewrites: "{scene.line}" {last["problem"]} The page says: '
-        f"{last['page_says']} Keep this line, or give your own?"
-    )
-    _ask(
-        job,
-        Question.Kind.FACT_CHECK,
-        question,
-        message=f"Asked about scene {scene.number}'s line",
+    return Asking(
+        about="line",
+        question=(
+            f"Scene {scene.number}'s line still fails the fact check after "
+            f'{MOST_REWRITES} rewrites: "{scene.line}" {last["problem"]} The page says: '
+            f"{last['page_says']}"
+        ),
         reason=(
             f"The line was rewritten {MOST_REWRITES} times and still failed the fact check, "
             "so you decide: the check itself may be wrong."
         ),
         scene=scene,
-        options=[{"value": choice.value, "label": choice.label} for choice in Question.LineChoice],
     )
 
 
-def _length_fits(job: Job) -> bool:
+def _fit_length(job: Job) -> bool | Asking:
     """Whether the script can go on to be rendered at its length. If it can't, it is
-    shortened or the user is asked, and the checks go round again."""
+    shortened, giving False so the checks go round again, or the user is asked."""
     target = job.target_seconds
     if target is None or job.length_choice == Job.LengthChoice.KEEP_LONGER:
         return True
@@ -588,28 +664,47 @@ def _length_fits(job: Job) -> bool:
     seconds = script_seconds(lines, words_per_second)
     if fits_target(seconds, target):
         return True
-    if job.length_choice == Job.LengthChoice.SHORTEN and job.shorten_tries < MOST_REWRITES:
+    if (
+        job.length_choice == Job.LengthChoice.SHORTEN
+        and _shortened_since_the_user_spoke(job) < MOST_REWRITES
+    ):
         _shorten(job, lines, seconds, words_per_second)
         return False
-    with transaction.atomic():
-        job.length_choice = ""
-        job.save(update_fields=["length_choice"])
-        _ask(
-            job,
-            Question.Kind.LENGTH,
+    # Shortening again takes the user choosing it again.
+    job.length_choice = ""
+    job.save(update_fields=["length_choice"])
+    return Asking(
+        about="length",
+        question=(
             f"Your script runs about {seconds:.1f} seconds, {seconds - target:.1f} over your "
-            f"{target}-second target. Shorten it to fit, or keep it longer?",
-            message="Asked whether to shorten the script",
-            reason=(
-                f"At the voice's measured speed the script runs {seconds:.1f} seconds, more "
-                f"than 1 second over the {target} seconds you asked for."
-            ),
-            options=[
-                {"value": Job.LengthChoice.SHORTEN, "label": "Shorten it to fit"},
-                {"value": Job.LengthChoice.KEEP_LONGER, "label": "Keep it longer"},
-            ],
-        )
-    return False
+            f"{target}-second target."
+        ),
+        reason=(
+            f"At the voice's measured speed the script runs {seconds:.1f} seconds, more "
+            f"than 1 second over the {target} seconds you asked for."
+        ),
+    )
+
+
+def _shortened_since_the_user_spoke(job: Job) -> int:
+    """Times the script was shortened since the user last said anything. Each time they
+    choose to shorten it, it gets MOST_REWRITES more tries before they are asked again."""
+    shortened = job.model_calls.filter(
+        purpose="shorten_script", outcome=ModelCall.Outcome.SUCCEEDED
+    )
+    spoke = _last_heard_from_the_user(job)
+    return (shortened.filter(created_at__gt=spoke) if spoke else shortened).count()
+
+
+def _last_heard_from_the_user(job: Job) -> datetime | None:
+    if job.session is None:
+        # A job started without a session hears from the user only through its questions.
+        answered: datetime | None = job.questions.aggregate(last=Max("answered_at"))["last"]
+        return answered
+    spoke: datetime | None = job.session.messages.filter(role=Message.Role.USER).aggregate(
+        last=Max("created_at")
+    )["last"]
+    return spoke
 
 
 def _shorten(job: Job, lines: list[str], seconds: float, words_per_second: float) -> None:
@@ -620,7 +715,7 @@ def _shorten(job: Job, lines: list[str], seconds: float, words_per_second: float
         instructions=SHORTEN_INSTRUCTIONS,
         handoff=ShortenHandoff(
             page_text=page.for_model(job.page_text),
-            answers=_answers(job),
+            conversation=_conversation(job),
             product_colour=job.product_colour,
             target_seconds=job.target_seconds,
             most_words=most_words(job.target_seconds, words_per_second),
@@ -645,8 +740,6 @@ def _shorten(job: Job, lines: list[str], seconds: float, words_per_second: float
             for number, line in enumerate(shortened.lines, start=1)
             if number > len(scenes)
         )
-        job.shorten_tries += 1
-        job.save(update_fields=["shorten_tries"])
         count = len(shortened.lines)
         record(
             job,
@@ -657,7 +750,8 @@ def _shorten(job: Job, lines: list[str], seconds: float, words_per_second: float
         )
 
 
-def _checked_reason(job: Job) -> str:
+def why_the_checks_passed(job: Job) -> str:
+    """One sentence on why the script can go on to be rendered."""
     if job.target_seconds is None:
         return "Every line matches the product page."
     if job.length_choice == Job.LengthChoice.KEEP_LONGER:
@@ -676,14 +770,27 @@ def _latest(job: Job, kind: ProducedItem.Kind) -> ProducedItem | None:
     return job.produced.filter(kind=kind).order_by("version").last()
 
 
-def _answers(job: Job) -> list[Answer]:
-    """The user's answers the models plan and check with."""
-    return [
-        Answer(question=asked.question, answer=asked.answer)
+def _conversation(job: Job) -> list[ChatMessage]:
+    """What the user and the producer have said, for the models that plan and check the ad.
+    Facts may come from the user's words; the producer's show what the user was answering."""
+    if job.session is None:
+        # A job started without a session talks to the user only through its questions.
+        said = []
         for asked in job.questions.filter(
             kind__in=[Question.Kind.PRODUCER, Question.Kind.UNCLEAR_PAGE],
             answered_at__isnull=False,
+        ):
+            said += [
+                ChatMessage(by="producer", text=asked.question),
+                ChatMessage(by="user", text=asked.answer),
+            ]
+        return said
+    return [
+        ChatMessage(
+            by="user" if message.role == Message.Role.USER else "producer",
+            text=messages.as_read(message),
         )
+        for message in job.session.messages.prefetch_related("attachments")
     ]
 
 

@@ -62,7 +62,11 @@ def test_the_plan_is_stored_with_the_job_and_its_scenes_show_on_the_page(
     handoff = ModelCall.objects.get(job_id=job_id, purpose="plan_ad").handoff
     assert "$24.00" in handoff["page_text"]
     assert "InStock" in handoff["page_text"]
-    assert (handoff["target_seconds"], handoff["photo_count"], handoff["answers"]) == (12, 2, [])
+    assert (handoff["target_seconds"], handoff["photo_count"], handoff["conversation"]) == (
+        12,
+        2,
+        [],
+    )
 
 
 def test_the_producer_is_shown_every_product_photo_by_its_number(
@@ -285,9 +289,10 @@ def test_the_producers_question_waits_for_an_answer_and_the_plan_uses_it(
     assert len(job["scenes"]) == 3
     # The second plan is made knowing the answer.
     first, second = ModelCall.objects.filter(job_id=job_id, purpose="plan_ad")
-    assert first.handoff["answers"] == []
-    assert second.handoff["answers"] == [
-        {"question": ASK["question"], "answer": "$19.00, the sale price."}
+    assert first.handoff["conversation"] == []
+    assert second.handoff["conversation"] == [
+        {"by": "producer", "text": ASK["question"]},
+        {"by": "user", "text": "$19.00, the sale price."},
     ]
     [asked] = Question.objects.filter(job_id=job_id)
     assert (asked.kind, asked.question, asked.reason, asked.answer) == (

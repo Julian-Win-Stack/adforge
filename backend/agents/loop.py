@@ -60,6 +60,7 @@ def run(agent: Agent, session: Session) -> None:
         _finish(agent, call)
     while True:
         turn = take_turn(
+            session=session,
             purpose=agent.purpose,
             instructions=agent.instructions,
             conversation=_conversation(agent, session),
@@ -99,7 +100,7 @@ def _conversation(agent: Agent, session: Session) -> list[Said | ToolUse]:
     """Everything said in the session, and every tool the agent called, in the order they
     happened."""
     happened: list[Message | ToolCall] = [
-        *session.messages.all(),
+        *session.messages.prefetch_related("attachments"),
         *session.tool_calls.filter(agent=agent.name),
     ]
     return [_as_given(each) for each in sorted(happened, key=lambda each: each.created_at)]
@@ -113,4 +114,7 @@ def _as_given(happened: Message | ToolCall) -> Said | ToolUse:
             arguments=happened.arguments,
             result=happened.result,
         )
-    return Said(by="user" if happened.role == Message.Role.USER else "agent", text=happened.text)
+    return Said(
+        by="user" if happened.role == Message.Role.USER else "agent",
+        text=messages.as_read(happened),
+    )

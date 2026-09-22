@@ -47,6 +47,7 @@ from .types import (
 
 if TYPE_CHECKING:
     from agents.models import ToolCall
+    from chat.models import Session
     from jobs.models import Job
 
     from .inworld_adapter import InworldProvider
@@ -125,6 +126,7 @@ def charged_to(tool_call: ToolCall) -> Iterator[None]:
 
 def take_turn(
     *,
+    session: Session,
     purpose: str,
     instructions: str,
     conversation: Sequence[Said | ToolUse],
@@ -162,7 +164,7 @@ def take_turn(
             ),
         )
 
-    return _recorded(None, purpose, request.model, provider.name, handoff, take)
+    return _recorded(None, purpose, request.model, provider.name, handoff, take, session=session)
 
 
 def call_model[Out: BaseModel](
@@ -294,12 +296,18 @@ def _recorded[Result](
     handoff: Handoff,
     make: Callable[[], _Made[Result]],
     images: list[dict[str, str]] | None = None,
+    session: Session | None = None,
 ) -> Result:
     """Run `make` with retries, recording every attempt: what was called, what it cost, how
-    long it took, whether it worked, and any judgement."""
+    long it took, whether it worked, and any judgement. Each is recorded against the session
+    it was for: the one given, or else the tool call's or the job's."""
+    tool_call = _running_tool.get()
+    if session is None and tool_call is not None:
+        session = tool_call.session
     recorded: dict[str, Any] = {
+        "session_id": session.pk if session else job.session_id if job else None,
         "job": job,
-        "tool_call": _running_tool.get(),
+        "tool_call": tool_call,
         "purpose": purpose,
         "provider": provider,
         "model": model,

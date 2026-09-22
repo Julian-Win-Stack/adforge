@@ -1,10 +1,23 @@
 """The producer: the agent the user talks to. What it is told to do, and its tools."""
 
-from pydantic import Field
+from typing import Literal
 
+from django.db.models import Max
+from pydantic import BaseModel, ConfigDict, Field
+
+from chat import messages
+from chat.models import Attachment, Message
 from jobs import page
-from jobs.models import Job
-from jobs.tasks import check_page, keep_page, save_photos
+from jobs.models import Job, ProductPhoto
+from jobs.tasks import (
+    check_page,
+    create_person,
+    keep_page,
+    plan,
+    run_checks,
+    save_photos,
+    why_the_checks_passed,
+)
 
 from .loop import Agent, Tool
 from .models import ToolCall
@@ -16,6 +29,9 @@ one line per scene.
 You work by calling tools. Call one when you need it, read what it hands back, and decide \
 what to do next. Before a tool that takes a while, say in one short sentence what you're \
 about to do. When there is nothing left to do, or you need the shop owner, reply to them.
+The usual order is: read the page, plan the ad, create the person, then run the planning \
+checks. When a tool hands back something to ask the shop owner, ask it in your reply and \
+wait for their answer before passing their choice to a tool.
 Every fact about the product comes from its page or from the shop owner. You have no tool \
 that searches the web, so never look anything up, infer or guess. When something you need \
 is missing or unclear, ask one short, specific question. When you can't do something, say \
@@ -78,4 +94,180 @@ class ReadPage(Tool):
         return "\n".join(told)
 
 
-PRODUCER = Agent(name="producer", purpose="produce", instructions=INSTRUCTIONS, tools=[ReadPage])
+class UsePhotos(Tool):
+    """Add the product photos the shop owner attached to their messages in this chat to the
+    job, after the page's own. Every photo they sent is added, so to leave one out, ask them
+    which to send. Use it when the page had no usable photos or they want their own used."""
+
+    name = "use_photos"
+
+    def run(self, call: ToolCall) -> str:
+        job = _the_job(call)
+        assert job is not None
+        kept = set(job.photos.values_list("file", flat=True))
+        position = job.photos.aggregate(last=Max("position"))["last"] or 0
+        added = 0
+        for attached in Attachment.objects.filter(
+            message__session=call.session,
+            message__role=Message.Role.USER,
+            kind=Attachment.Kind.PICTURE,
+        ).order_by("message__seq", "position"):
+            if attached.file in kept:
+                continue
+            position += 1
+            added += 1
+            ProductPhoto.objects.create(job=job, position=position, file=attached.file)
+        count = job.photos.count()
+        return (
+            f"Added {added} of the shop owner's photos. The job now has {count} product "
+            f"photo{'s' if count != 1 else ''}."
+        )
+
+
+class PlanAd(Tool):
+    """Plan the ad from the product page, its photos and everything said in this chat: the
+    scenes and each one's line, the product's colour and the photos that show it, and the
+    person who presents it. If the planner needs the shop owner to settle something first,
+    says what to ask them."""
+
+    name = "plan_ad"
+
+    def run(self, call: ToolCall) -> str:
+        job = _the_job(call)
+        assert job is not None
+        decision = plan(job)
+        if decision.question is not None:
+            return (
+                f"The ad can't be planned until the shop owner answers: {decision.question} "
+                f"Why: {decision.reason} Ask them, and plan again once they have answered."
+            )
+        colour_photos = job.photos.filter(shows_product_colour=True).values_list(
+            "position", flat=True
+        )
+        return "\n".join(
+            [
+                f"Planned {job.scenes.count()} scenes. {decision.reason}",
+                _script(job),
+                f"The product's colour: {job.product_colour}, shown in photos "
+                f"{', '.join(str(number) for number in colour_photos)}.",
+                f"The person: {job.person_looks} Their voice: {job.person_voice}",
+            ]
+        )
+
+
+class CreatePerson(Tool):
+    """Create the person who presents the ad: a portrait, and a voice made to match whose
+    speaking speed is measured by having it read the script. Both are shown to the shop
+    owner in the chat as soon as they exist."""
+
+    name = "create_person"
+
+    def run(self, call: ToolCall) -> str:
+        job = _the_job(call)
+        assert job is not None
+        portrait, voice = create_person(job)
+        # A run again after a restart doesn't show the person twice.
+        if not Attachment.objects.filter(
+            message__session=call.session, file=portrait.file
+        ).exists():
+            messages.add(
+                call.session,
+                role=Message.Role.AGENT,
+                carrying=[
+                    messages.AttachedFile(Attachment.Kind.PICTURE, portrait.file),
+                    messages.AttachedFile(Attachment.Kind.SOUND, voice.file),
+                ],
+            )
+        assert voice.words_per_second is not None
+        return (
+            "Made the person, and showed the shop owner their portrait and their voice "
+            "reading the script in the chat. The voice speaks "
+            f"{voice.words_per_second:.1f} words a second, measured on the script."
+        )
+
+
+class LineChoice(BaseModel):
+    """What the shop owner decided about a line the checks asked them about."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    scene: int = Field(description="The number of the scene whose line it is.")
+    choice: Literal["keep", "own"] = Field(
+        description='"keep" to use the line as it is, or "own" to use a line the shop owner wrote.'
+    )
+    own_line: str | None = Field(
+        description='The shop owner\'s line, word for word as they wrote it, for "own". Null '
+        'for "keep".'
+    )
+
+
+class RunPlanningChecks(Tool):
+    """Check the script before anything is made from it: every line against the product
+    page, then the whole script against the target length. A line that fails is rewritten
+    and checked again. Hands back what to ask the shop owner when a line still fails after
+    2 rewrites, when the page itself is unclear, or when the script runs over the target.
+    Once they have answered, run the checks again with their choices."""
+
+    name = "run_planning_checks"
+
+    line_choices: list[LineChoice] = Field(
+        description="What the shop owner chose for each line the checks asked them about. "
+        "Empty when there is none."
+    )
+    length_choice: Literal["shorten", "keep_longer"] | None = Field(
+        description="What the shop owner chose when the script ran over the target length: "
+        "shorten it to fit, or keep it longer. Null when they haven't been asked."
+    )
+
+    def run(self, call: ToolCall) -> str:
+        job = _the_job(call)
+        assert job is not None
+        for line_choice in self.line_choices:
+            scene = job.scenes.get(number=line_choice.scene)
+            if line_choice.choice == "own":
+                assert line_choice.own_line is not None
+                scene.line = line_choice.own_line
+            # The shop owner knows their product: the line they chose isn't checked again.
+            scene.fact_checked = True
+            scene.save(update_fields=["line", "fact_checked"])
+        if self.length_choice is not None:
+            job.length_choice = Job.LengthChoice(self.length_choice)
+            job.save(update_fields=["length_choice"])
+        asking = run_checks(job)
+        if asking is None:
+            return "\n".join(
+                [
+                    f"The checks passed. {why_the_checks_passed(job)} The ad is ready to render.",
+                    _script(job),
+                ]
+            )
+        ask = {
+            "unclear_page": "Ask the shop owner, then run the checks again.",
+            "line": "Ask the shop owner whether to keep this line or give their own.",
+            "length": "Ask the shop owner whether to shorten it to fit, or keep it longer.",
+        }[asking.about]
+        return "\n".join([f"{asking.question} Why: {asking.reason} {ask}", _script(job)])
+
+
+def _the_job(call: ToolCall) -> Job | None:
+    """The session's job, recorded on the checkpoint. For now a session makes one ad, so
+    no tool is told which job to work on (#9 lifts this)."""
+    job = call.session.jobs.first()
+    if job is not None and call.job_id != job.pk:
+        call.job = job
+        call.save(update_fields=["job"])
+    return job
+
+
+def _script(job: Job) -> str:
+    return "The script:\n" + "\n".join(
+        f"{scene.number}. {scene.line}" for scene in job.scenes.all()
+    )
+
+
+PRODUCER = Agent(
+    name="producer",
+    purpose="produce",
+    instructions=INSTRUCTIONS,
+    tools=[ReadPage, UsePhotos, PlanAd, CreatePerson, RunPlanningChecks],
+)

@@ -482,8 +482,9 @@ def test_an_unclear_page_is_asked_about_straight_away_and_checked_again_with_the
     assert answer(job_id, {"answer": "It's $24.00."}) == 202
 
     assert api.get(f"/api/jobs/{job_id}/").json()["status"] == "ready_to_render"
-    assert handoffs(job_id, "fact_check")[1]["answers"] == [
-        {"question": "Is the mug $24.00 or $28.00?", "answer": "It's $24.00."}
+    assert handoffs(job_id, "fact_check")[1]["conversation"] == [
+        {"by": "producer", "text": "Is the mug $24.00 or $28.00?"},
+        {"by": "user", "text": "It's $24.00."},
     ]
     # Answering the check doesn't plan the ad again.
     assert ModelCall.objects.filter(job_id=job_id, purpose="plan_ad").count() == 1

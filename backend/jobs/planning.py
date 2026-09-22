@@ -11,9 +11,11 @@ You are the producer of a short vertical video ad for one product. A person spea
 camera, one line per scene, and each scene shows the product. You get the product page's \
 visible text, followed by any product data the page declares for search engines, the \
 target length in seconds (or null if the shop owner didn't set one), how many product \
-photos there are, and the shop owner's answers to anything you asked before. After that \
-come the product photos themselves, each labelled with its number: "Photo 1", "Photo 2".
-Every claim in the ad must come from the page or the shop owner's answers. The photos \
+photos there are, and the conversation with the shop owner so far, each message labelled \
+"user" for the shop owner or "producer" for you. After that come the product photos \
+themselves, each labelled with its number: "Photo 1", "Photo 2".
+Every claim in the ad must come from the page or the shop owner's own words. Your own \
+messages are there only to show what was asked: never take a fact from them. The photos \
 are only for the product's colour: never take any other fact from them, such as text on \
 a label. Never infer, guess or make anything up: not a price, a size, a material, a \
 benefit or a colour.
@@ -29,10 +31,10 @@ ad: how they look, for a portrait, and how their voice sounds, for a voice desig
 match. Choose someone who suits the product and its buyers, and never a real, famous \
 person. Set question to null.
 Decide "ask" when you don't know the one price to say, because neither the page nor the \
-shop owner's answers give a price, or they give different prices to choose between (such \
-as a single item, a pack and a subscription). Also decide "ask" when the page conflicts \
-with itself or is missing something else the ad needs, so that planning would mean \
-guessing. Ask the shop owner one short, specific question, and set plan to null.
+shop owner gives a price, or they give different prices to choose between (such as a \
+single item, a pack and a subscription). Also decide "ask" when the page conflicts with \
+itself or is missing something else the ad needs, so that planning would mean guessing. \
+Ask the shop owner one short, specific question, and set plan to null.
 Give one sentence saying why: for a plan, why this many scenes; for a question, why you \
 need to ask. Write it for the shop owner."""
 
@@ -99,9 +101,12 @@ def producer_decision_for(photo_count: int) -> type[ProducerDecision]:
     return ProducerDecisionForJob
 
 
-class Answer(Handoff):
-    question: str
-    answer: str
+class ChatMessage(Handoff):
+    """One message in the conversation with the shop owner: theirs ("user"), or the
+    producer's."""
+
+    by: Literal["user", "producer"]
+    text: str
 
 
 class PlanHandoff(Handoff):
@@ -109,4 +114,4 @@ class PlanHandoff(Handoff):
     page_text: str
     target_seconds: int | None
     photo_count: int
-    answers: list[Answer]
+    conversation: list[ChatMessage]
