@@ -5,10 +5,8 @@ tools and checks what the chat shows and what was stored."""
 import json
 from collections.abc import Callable
 from decimal import Decimal
-from typing import Any
 
 import pytest
-from django.core.files.uploadedfile import SimpleUploadedFile
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
@@ -24,6 +22,8 @@ from .conftest import (
     MUG_SIDE,
     PLAN,
     READABLE,
+    chat,
+    given_to_the_producer,
     openai_answer,
     openai_turn,
     picture,
@@ -31,50 +31,6 @@ from .conftest import (
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
-
-
-@pytest.fixture
-def session_id(api: APIClient) -> str:
-    response = api.post("/api/sessions/", {}, format="json")
-    assert response.status_code == 201, response.json()
-    started: str = response.json()["id"]
-    return started
-
-
-@pytest.fixture
-def say(api: APIClient, session_id: str) -> Callable[..., None]:
-    """Send the user's message, with any photos attached as (name, content). The producer
-    runs before the request returns."""
-
-    def sending(text: str, *photos: tuple[str, bytes]) -> None:
-        if photos:
-            attached = [
-                SimpleUploadedFile(name, content, content_type="image/png")
-                for name, content in photos
-            ]
-            sent = api.post(
-                f"/api/sessions/{session_id}/messages/",
-                {"text": text, "photos": attached},
-                format="multipart",
-            )
-        else:
-            sent = api.post(f"/api/sessions/{session_id}/messages/", {"text": text}, format="json")
-        assert sent.status_code == 201, sent.json()
-
-    return sending
-
-
-def chat(api: APIClient, session_id: str) -> list[tuple[str, str]]:
-    """The conversation as the browser shows it: who said what."""
-    messages = api.get(f"/api/sessions/{session_id}/messages/").json()
-    return [(message["role"], message["text"]) for message in messages]
-
-
-def given_to_the_producer(turn: int) -> list[dict[str, Any]]:
-    """What the producer's model was given on its `turn`th turn (from 1), as recorded."""
-    calls = ModelCall.objects.filter(purpose="produce").order_by("created_at", "id")
-    conversation: list[dict[str, Any]] = calls[turn - 1].handoff["conversation"]
-    return conversation
 
 
 def test_the_producer_reads_the_page_its_given_and_tells_the_user_what_it_found(

@@ -409,7 +409,7 @@ def create_person(job: Job) -> tuple[ProducedItem, ProducedItem]:
 
     Only what the job doesn't have yet is made, so run again it pays for nothing new, and
     what was paid for before a worker stopped is kept rather than paid for again."""
-    portrait = _latest(job, ProducedItem.Kind.PORTRAIT)
+    portrait = latest(job, ProducedItem.Kind.PORTRAIT)
     if portrait is None:
         paid_for = _paid_for_before(job, "draw_person")
         portrait = ProducedItem.objects.create(
@@ -425,7 +425,7 @@ def create_person(job: Job) -> tuple[ProducedItem, ProducedItem]:
                 )
             ),
         )
-    voice = _latest(job, ProducedItem.Kind.VOICE)
+    voice = latest(job, ProducedItem.Kind.VOICE)
     if voice is None:
         paid_for = _paid_for_before(job, "design_voice")
         voice_id = (
@@ -657,7 +657,7 @@ def _fit_length(job: Job) -> bool | Asking:
     target = job.target_seconds
     if target is None or job.length_choice == Job.LengthChoice.KEEP_LONGER:
         return True
-    voice = _latest(job, ProducedItem.Kind.VOICE)
+    voice = latest(job, ProducedItem.Kind.VOICE)
     assert voice is not None and voice.words_per_second is not None
     words_per_second = voice.words_per_second
     lines = list(job.scenes.values_list("line", flat=True))
@@ -765,7 +765,7 @@ def why_the_checks_passed(job: Job) -> str:
     )
 
 
-def _latest(job: Job, kind: ProducedItem.Kind) -> ProducedItem | None:
+def latest(job: Job, kind: ProducedItem.Kind) -> ProducedItem | None:
     """The job's latest version of `kind`, if it has one."""
     return job.produced.filter(kind=kind).order_by("version").last()
 

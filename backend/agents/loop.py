@@ -7,19 +7,30 @@ was said and the checkpoint of every tool called, so a worker that stops halfway
 replaced by one that runs the loop again and carries on where the checkpoints say."""
 
 import inspect
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import ClassVar
 
+from django.conf import settings
 from django.db import transaction
-from pydantic import BaseModel, ConfigDict
+from django.utils import timezone
+from pydantic import BaseModel, ConfigDict, ValidationError
 
+from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Message, Session
 from gateway.gateway import charged_to, take_turn
-from gateway.types import Said, ToolSpec, ToolUse
+from gateway.types import Said, ToolSpec, ToolUse, UnusableReply
 
 from .models import ToolCall
+
+logger = logging.getLogger(__name__)
+
+
+class Refused(Exception):
+    """A tool won't do what it was asked, and has done nothing: it would break one of the
+    rules, or what it works on doesn't exist yet. Says why, for the agent."""
 
 
 class Tool(BaseModel):
@@ -56,8 +67,8 @@ def run(agent: Agent, session: Session) -> None:
     """Let `agent` work in `session` until it replies."""
     # A tool that was running when the last worker stopped runs again first: the agent
     # can't take another turn until every tool it asked for has handed back a result.
-    for call in session.tool_calls.filter(agent=agent.name, finished=False):
-        _finish(agent, call)
+    for call in session.tool_calls.filter(agent=agent.name, finished_at__isnull=True):
+        _settle(agent, call)
     while True:
         turn = take_turn(
             session=session,
@@ -66,11 +77,22 @@ def run(agent: Agent, session: Session) -> None:
             conversation=_conversation(agent, session),
             tools=[tool.spec() for tool in agent.tools],
         )
+        # A tool past the limit is refused, and the agent gets one turn to tell the user.
+        # Asking for another tool instead, it is stopped.
+        stopped = turn.calls and _calls_since_the_user_spoke(session) > _limit()
         # What the agent said and the tools it asked for are written down together, before
         # any tool runs, so a restart finds both or neither.
         with transaction.atomic():
             if turn.says:
                 messages.add(session, role=Message.Role.AGENT, text=turn.says)
+            if stopped:
+                messages.add(
+                    session,
+                    role=Message.Role.AGENT,
+                    text=f"I hit my limit of {_limit()} steps for one message. Send a message "
+                    "and I'll carry on.",
+                )
+                return
             calls = [
                 ToolCall.objects.create(
                     session=session,
@@ -84,16 +106,79 @@ def run(agent: Agent, session: Session) -> None:
         if not calls:
             return
         for call in calls:
-            _finish(agent, call)
+            _settle(agent, call)
 
 
-def _finish(agent: Agent, call: ToolCall) -> None:
-    """Run the tool a checkpoint asked for, and keep what it produced."""
-    tool = {tool.name: tool for tool in agent.tools}[call.tool]
-    with charged_to(call):
-        call.result = tool.model_validate(call.arguments).run(call)
-    call.finished = True
-    call.save(update_fields=["result", "finished"])
+def _settle(agent: Agent, call: ToolCall) -> None:
+    """Run the tool a checkpoint asked for, unless it is past the limit, and keep what it
+    handed back."""
+    number = _calls_since_the_user_spoke(call.session, up_to=call)
+    if number > _limit():
+        call.result = (
+            f"Refused: this would be tool call {number} since the shop owner's last message, "
+            f"and the limit is {_limit()}. Nothing was done. Tell the shop owner plainly that "
+            "you hit the limit of work for one message, what is done so far, and that sending "
+            "a message lets you carry on."
+        )
+    else:
+        call.result = _run(agent, call)
+    call.finished_at = timezone.now()
+    call.save(update_fields=["result", "asked_about", "finished_at"])
+
+
+def _run(agent: Agent, call: ToolCall) -> str:
+    """What the tool hands back: what it did, or why it refused or failed. A tool that fails
+    hands the reason back, so the agent can tell the user, or try something else."""
+    try:
+        tool = {tool.name: tool for tool in agent.tools}[call.tool]
+        try:
+            given = tool.model_validate(call.arguments)
+        except ValidationError as invalid:
+            raise Refused(
+                f"it was called with arguments it can't use ({_what_is_wrong(invalid)})."
+            ) from invalid
+        with charged_to(call):
+            return given.run(call)
+    except Refused as refused:
+        return f"Refused: {refused} Nothing was done."
+    except UnusableReply as error:
+        return f"Failed: a model's answer couldn't be used ({error})."
+    except OutsideServiceDown as error:
+        return f"Failed: an outside service stayed down after several tries ({error})."
+    except Exception:
+        logger.exception("The %s tool failed for checkpoint %s", call.tool, call.pk)
+        return "Failed: an unexpected error stopped the tool. The details are in the server log."
+
+
+def _what_is_wrong(invalid: ValidationError) -> str:
+    """Each argument that can't be used, and why, in one line."""
+    wrong = []
+    for error in invalid.errors():
+        # A tool's own check says why in its own words, without pydantic's "Value error, ".
+        why = str(error["ctx"]["error"]) if error["type"] == "value_error" else error["msg"]
+        wrong.append(f"{'.'.join(str(part) for part in error['loc'])}: {why}")
+    return "; ".join(wrong)
+
+
+def _limit() -> int:
+    """How many tools every agent together may call for one message from the user."""
+    limit: int = settings.MAX_TOOL_CALLS_PER_MESSAGE
+    return limit
+
+
+def _calls_since_the_user_spoke(session: Session, *, up_to: ToolCall | None = None) -> int:
+    """How many tools every agent has called since the user's last message: all of them, or
+    those up to and including `up_to`."""
+    calls = session.tool_calls.all()
+    if up_to is not None:
+        calls = calls.filter(id__lte=up_to.pk)
+    spoke = session.messages.filter(role=Message.Role.USER)
+    if up_to is not None:
+        spoke = spoke.filter(created_at__lt=up_to.created_at)
+    last = spoke.order_by("created_at").last()
+    if last is not None:
+        calls = calls.filter(created_at__gt=last.created_at)
+    return calls.count()
 
 
 def _conversation(agent: Agent, session: Session) -> list[Said | ToolUse]:
