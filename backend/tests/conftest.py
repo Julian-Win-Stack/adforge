@@ -16,7 +16,7 @@ from adforge import celery_app
 from gateway.fake import FakeModel
 from gateway.gateway import use_model
 from gateway.openai_adapter import OpenAIProvider
-from gateway.types import ModelReply, ModelRequest
+from gateway.types import ModelReply, ModelRequest, TurnReply, TurnRequest
 
 celery_app.conf.update(task_always_eager=True, task_eager_propagates=True)
 
@@ -198,6 +198,26 @@ def openai_answer(answer: dict[str, Any]) -> dict[str, Any]:
     return openai_reply({"type": "output_text", "text": json.dumps(answer), "annotations": []})
 
 
+def openai_turn(says: str = "", *calls: tuple[str, str, dict[str, Any]]) -> dict[str, Any]:
+    """An agent's turn as OpenAI sends it: what it says, then each tool it calls, given as
+    (call id, tool, arguments)."""
+    reply = openai_reply({"type": "output_text", "text": says, "annotations": []})
+    if not says:
+        reply["output"] = []
+    reply["output"] += [
+        {
+            "type": "function_call",
+            "id": f"fc_{call_id}",
+            "call_id": call_id,
+            "name": tool,
+            "arguments": json.dumps(arguments),
+            "status": "completed",
+        }
+        for call_id, tool, arguments in calls
+    ]
+    return reply
+
+
 @pytest.fixture
 def openai_server(httpserver: HTTPServer, settings: Settings) -> Iterator[Callable[..., None]]:
     """Our real OpenAI code, talking to a stand-in OpenAI server on this machine.
@@ -216,8 +236,8 @@ def openai_server(httpserver: HTTPServer, settings: Settings) -> Iterator[Callab
 
 
 class OpenAIText(FakeModel):
-    """Text calls go to our real OpenAI code; the portrait and voice are faked, so a test
-    of what the models are sent needs no stand-in picture or voice service."""
+    """Text calls and agents' turns go to our real OpenAI code; the portrait and voice are
+    faked, so a test of what the models are sent needs no stand-in picture or voice service."""
 
     name = "openai"
 
@@ -227,6 +247,9 @@ class OpenAIText(FakeModel):
 
     def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]:
         return self._openai.complete(request)
+
+    def take_turn(self, request: TurnRequest) -> TurnReply:
+        return self._openai.take_turn(request)
 
 
 class FakeDns:

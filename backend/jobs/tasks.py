@@ -3,6 +3,7 @@ import logging
 import mimetypes
 import wave
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from celery import shared_task
@@ -138,10 +139,7 @@ def _read_page(job: Job) -> bool:
             f"The link led to {download.final_url}",
             reason="The shop sent us to a different page, so that page is the one being read.",
         )
-    product_page = page.parse(download)
-    job.page_text = product_page.text
-    job.page_html_key = file_store.save(f"jobs/{job.pk}/page.html", download.content)
-    job.save(update_fields=["page_text", "page_html_key"])
+    product_page = keep_page(job, download)
     record(
         job,
         f"Stored {len(product_page.text):,} characters of page text and the page's HTML",
@@ -149,24 +147,15 @@ def _read_page(job: Job) -> bool:
         "exactly what the page said on the day it was read.",
     )
 
-    check = call_model(
-        job=job,
-        purpose="check_page",
-        instructions=CHECK_INSTRUCTIONS,
-        handoff=PageCheckHandoff(
-            product_url=job.product_url,
-            page_url=download.final_url,
-            page_text=page.for_model(product_page.text),
-            photo_count=len(product_page.photo_urls),
-        ),
-        output=PageCheck,
-    )
+    check = check_page(job, download, product_page)
     if check.decision == "unreadable":
         _ask_for_working_link(job, reason=check.reason)
         return False
     record(job, "The page has what the ad needs", reason=check.reason)
 
-    saved = _save_photos(job, product_page.photo_urls)
+    for skipped in save_photos(job, product_page.photo_urls):
+        record(job, f"Skipped the photo at {skipped.url}", reason=skipped.reason)
+    saved = job.photos.count()
     if saved == 0:
         _ask(
             job,
@@ -186,6 +175,31 @@ def _read_page(job: Job) -> bool:
     return True
 
 
+def keep_page(job: Job, download: page.Download) -> page.ProductPage:
+    """Store the page's text and its original HTML with the job."""
+    product_page = page.parse(download)
+    job.page_text = product_page.text
+    job.page_html_key = file_store.save(f"jobs/{job.pk}/page.html", download.content)
+    job.save(update_fields=["page_text", "page_html_key"])
+    return product_page
+
+
+def check_page(job: Job, download: page.Download, product_page: page.ProductPage) -> PageCheck:
+    """Have a model judge whether the page shows one product, enough to make an ad from."""
+    return call_model(
+        job=job,
+        purpose="check_page",
+        instructions=CHECK_INSTRUCTIONS,
+        handoff=PageCheckHandoff(
+            product_url=job.product_url,
+            page_url=download.final_url,
+            page_text=page.for_model(product_page.text),
+            photo_count=len(product_page.photo_urls),
+        ),
+        output=PageCheck,
+    )
+
+
 def _ask_for_working_link(job: Job, *, reason: str) -> None:
     _ask(
         job,
@@ -196,29 +210,39 @@ def _ask_for_working_link(job: Job, *, reason: str) -> None:
     )
 
 
-def _save_photos(job: Job, urls: list[str]) -> int:
-    """Download and keep each photo, saying in the activity view why any was skipped."""
+@dataclass(frozen=True)
+class SkippedPhoto:
+    """A photo on the page that wasn't kept, and one sentence saying why."""
+
+    url: str
+    reason: str
+
+
+def save_photos(job: Job, urls: list[str]) -> list[SkippedPhoto]:
+    """Download and keep each photo. Gives back each one that was skipped, with why."""
     # A read run again after a crash starts the photos afresh, so each is kept once.
     job.photos.all().delete()
     saved = 0
+    skipped = []
     for url in urls:
         try:
             photo = page.download(url, max_bytes=page.MAX_PHOTO_BYTES, what="product photo")
         except (page.PageUnreadable, OutsideServiceDown) as error:
-            record(job, f"Skipped the photo at {url}", reason=str(error).rstrip(".") + ".")
+            skipped.append(SkippedPhoto(url, str(error).rstrip(".") + "."))
             continue
         # Only formats the models can read, so every kept photo can be shown to them.
         if photo.content_type not in IMAGE_TYPES:
-            record(
-                job,
-                f"Skipped the photo at {url}",
-                reason=f"It came back as {photo.content_type or 'an unknown type'}, "
-                f"not a {IMAGE_TYPE_NAMES} image.",
+            skipped.append(
+                SkippedPhoto(
+                    url,
+                    f"It came back as {photo.content_type or 'an unknown type'}, "
+                    f"not a {IMAGE_TYPE_NAMES} image.",
+                )
             )
             continue
         saved += 1
         keep_photo(job, saved, photo.content, photo.content_type, source_url=url)
-    return saved
+    return skipped
 
 
 def keep_photo(

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -72,6 +72,85 @@ class ModelProvider(Protocol):
     name: str
 
     def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]: ...
+
+
+class Said(Handoff):
+    """Something said in an agent's conversation: by the user, or by the agent itself."""
+
+    kind: Literal["said"] = "said"
+    by: Literal["user", "agent"]
+    text: str
+
+
+class ToolUse(Handoff):
+    """A tool the agent called earlier in its conversation, and what the tool handed back."""
+
+    kind: Literal["tool_use"] = "tool_use"
+    call_id: str
+    tool: str
+    arguments: dict[str, Any]
+    result: str
+
+
+class TurnHandoff(Handoff):
+    """What an agent is given for one turn: its conversation so far, and the names of the
+    tools it may call."""
+
+    conversation: list[Said | ToolUse]
+    tools: list[str]
+
+
+@dataclass(frozen=True)
+class ToolSpec:
+    """A tool offered to an agent: its name, what it does in words the model reads, and the
+    shape of the arguments the model fills in."""
+
+    name: str
+    description: str
+    arguments: type[BaseModel]
+
+
+@dataclass(frozen=True)
+class TurnRequest:
+    purpose: str
+    model: str
+    instructions: str
+    handoff: TurnHandoff
+    tools: tuple[ToolSpec, ...]
+
+
+@dataclass(frozen=True)
+class ToolRequest:
+    """A tool the agent asked for in its turn. `call_id` pairs the result with the request."""
+
+    call_id: str
+    tool: str
+    arguments: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class Turn:
+    """What an agent did with one turn: what it said, and the tools it asked for. A turn
+    that asks for no tool is its reply."""
+
+    says: str
+    calls: tuple[ToolRequest, ...]
+
+
+@dataclass(frozen=True)
+class TurnReply:
+    turn: Turn
+    input_tokens: int
+    output_tokens: int
+
+
+class AgentProvider(Protocol):
+    """Runs agents' turns. Raises OutsideServiceDown for errors worth retrying, and
+    UnusableReply for an answer that was billed but can't be used."""
+
+    name: str
+
+    def take_turn(self, request: TurnRequest) -> TurnReply: ...
 
 
 class PortraitHandoff(Handoff):

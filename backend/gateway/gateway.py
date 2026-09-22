@@ -8,6 +8,7 @@ import io
 import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from decimal import Decimal
 from functools import cache
@@ -23,6 +24,7 @@ from adforge.retry import OutsideServiceDown, with_retries
 from . import catalog
 from .models import ModelCall
 from .types import (
+    AgentProvider,
     Handoff,
     Image,
     Judgement,
@@ -31,19 +33,30 @@ from .types import (
     ModelRequest,
     PictureProvider,
     PortraitHandoff,
+    Said,
     SpeechHandoff,
+    ToolSpec,
+    ToolUse,
+    Turn,
+    TurnHandoff,
+    TurnRequest,
     UnusableReply,
     VoiceDesignHandoff,
     VoiceProvider,
 )
 
 if TYPE_CHECKING:
+    from agents.models import ToolCall
     from jobs.models import Job
 
     from .inworld_adapter import InworldProvider
     from .openai_adapter import OpenAIProvider
 
 _override: object | None = None
+
+# The tool call whose work is running now. Every model call made meanwhile is recorded
+# against it, so a tool call's cost is the sum of its model calls.
+_running_tool: ContextVar[ToolCall | None] = ContextVar("running_tool", default=None)
 
 # The picture formats models can read. Anything else is refused before money is spent.
 IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
@@ -84,6 +97,10 @@ def _voices() -> VoiceProvider:
     return cast(VoiceProvider, _override) if _override is not None else _inworld()
 
 
+def _agents() -> AgentProvider:
+    return cast(AgentProvider, _override) if _override is not None else _openai()
+
+
 @contextmanager
 def use_model(provider: object) -> Iterator[None]:
     """Send every model call to `provider` inside this block, whatever it is for, so a test
@@ -94,6 +111,58 @@ def use_model(provider: object) -> Iterator[None]:
         yield
     finally:
         _override = previous
+
+
+@contextmanager
+def charged_to(tool_call: ToolCall) -> Iterator[None]:
+    """Record every model call made inside this block against `tool_call`."""
+    token = _running_tool.set(tool_call)
+    try:
+        yield
+    finally:
+        _running_tool.reset(token)
+
+
+def take_turn(
+    *,
+    purpose: str,
+    instructions: str,
+    conversation: Sequence[Said | ToolUse],
+    tools: Sequence[ToolSpec],
+) -> Turn:
+    """Give an agent its conversation and the tools it may call, and have it take one turn:
+    say something, ask for tools, or both."""
+    handoff = TurnHandoff(conversation=list(conversation), tools=[tool.name for tool in tools])
+    # Validate again here rather than trusting the caller built the handoff properly.
+    handoff = TurnHandoff.model_validate(handoff.model_dump())
+    request = TurnRequest(
+        purpose=purpose,
+        model=catalog.MODEL_FOR_PURPOSE[purpose],
+        instructions=instructions,
+        handoff=handoff,
+        tools=tuple(tools),
+    )
+    provider = _agents()
+
+    def take() -> _Made[Turn]:
+        reply = provider.take_turn(request)
+        return _Made(
+            result=reply.turn,
+            output={
+                "says": reply.turn.says,
+                "calls": [
+                    {"call_id": call.call_id, "tool": call.tool, "arguments": call.arguments}
+                    for call in reply.turn.calls
+                ],
+            },
+            bill=_Bill(
+                cost_usd=catalog.cost_usd(request.model, reply.input_tokens, reply.output_tokens),
+                input_tokens=reply.input_tokens,
+                output_tokens=reply.output_tokens,
+            ),
+        )
+
+    return _recorded(None, purpose, request.model, provider.name, handoff, take)
 
 
 def call_model[Out: BaseModel](
@@ -230,6 +299,7 @@ def _recorded[Result](
     long it took, whether it worked, and any judgement."""
     recorded: dict[str, Any] = {
         "job": job,
+        "tool_call": _running_tool.get(),
         "purpose": purpose,
         "provider": provider,
         "model": model,

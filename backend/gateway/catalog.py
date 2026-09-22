@@ -3,6 +3,7 @@
 from decimal import Decimal
 
 MODEL_FOR_PURPOSE: dict[str, str] = {
+    "produce": "gpt-5.6-sol",
     "check_page": "gpt-5-mini",
     "plan_ad": "gpt-5.6-sol",
     "fact_check": "gpt-5.6-terra",

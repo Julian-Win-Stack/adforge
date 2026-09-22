@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     "chat",
     "jobs",
     "gateway",
+    "agents",
 ]
 
 MIDDLEWARE = [

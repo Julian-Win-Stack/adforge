@@ -4,7 +4,9 @@ from typing import Any
 
 import openai
 from django.conf import settings
+from openai.lib._pydantic import to_strict_json_schema
 from openai.types.responses import (
+    FunctionToolParam,
     ResponseInputImageParam,
     ResponseInputMessageContentListParam,
     ResponseInputParam,
@@ -13,7 +15,19 @@ from pydantic import BaseModel
 
 from adforge.retry import OutsideServiceDown
 
-from .types import LoadedImage, ModelReply, ModelRequest, Picture, UnusableReply
+from .types import (
+    LoadedImage,
+    ModelReply,
+    ModelRequest,
+    Picture,
+    Said,
+    ToolRequest,
+    ToolSpec,
+    Turn,
+    TurnReply,
+    TurnRequest,
+    UnusableReply,
+)
 
 # Errors that may pass if we try again. Anything else (bad request, bad key) will not.
 _WORTH_RETRYING = (openai.APIConnectionError, openai.RateLimitError, openai.InternalServerError)
@@ -64,6 +78,54 @@ class OpenAIProvider:
             )
         return ModelReply(output=output, input_tokens=input_tokens, output_tokens=output_tokens)
 
+    def take_turn(self, request: TurnRequest) -> TurnReply:
+        try:
+            raw = self._client.responses.with_raw_response.create(
+                model=request.model,
+                instructions=request.instructions,
+                input=_conversation(request),
+                tools=[_tool(spec) for spec in request.tools],
+            )
+        except _WORTH_RETRYING as error:
+            raise OutsideServiceDown(str(error)) from error
+        # Read what we were billed before reading the answer, which can fail after billing.
+        usage = json.loads(raw.text).get("usage") or {}
+        input_tokens = int(usage.get("input_tokens") or 0)
+        output_tokens = int(usage.get("output_tokens") or 0)
+
+        def unusable(why: str) -> UnusableReply:
+            return UnusableReply(
+                f"{request.model}'s turn for {request.purpose} can't be used: {why}",
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
+
+        response = raw.parse()
+        if response.status != "completed":
+            details = response.incomplete_details
+            raise unusable(f"it stopped before the end ({details.reason if details else '?'})")
+        says = []
+        calls = []
+        for item in response.output:
+            if item.type == "message":
+                for part in item.content:
+                    if part.type == "refusal":
+                        raise unusable(f"it refused: {part.refusal}")
+                    says.append(part.text)
+            elif item.type == "function_call":
+                try:
+                    arguments = json.loads(item.arguments)
+                except ValueError as error:
+                    raise unusable(f"its arguments for {item.name} aren't JSON") from error
+                if not isinstance(arguments, dict):
+                    raise unusable(f"its arguments for {item.name} aren't a JSON object")
+                calls.append(ToolRequest(call_id=item.call_id, tool=item.name, arguments=arguments))
+        return TurnReply(
+            turn=Turn(says="\n\n".join(says), calls=tuple(calls)),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+
     def draw(self, *, model: str, prompt: str) -> Picture:
         try:
             reply = self._client.images.generate(
@@ -99,4 +161,39 @@ def _image_part(image: LoadedImage) -> ResponseInputImageParam:
         "type": "input_image",
         "image_url": f"data:{image.media_type};base64,{data}",
         "detail": "low",
+    }
+
+
+def _conversation(request: TurnRequest) -> ResponseInputParam:
+    """The agent's conversation as OpenAI takes it: each tool it called is the call, then
+    what the tool handed back, paired by the call's id."""
+    items: ResponseInputParam = []
+    for each in request.handoff.conversation:
+        if isinstance(each, Said):
+            items.append(
+                {"role": "user" if each.by == "user" else "assistant", "content": each.text}
+            )
+            continue
+        items.append(
+            {
+                "type": "function_call",
+                "call_id": each.call_id,
+                "name": each.tool,
+                "arguments": json.dumps(each.arguments),
+            }
+        )
+        items.append(
+            {"type": "function_call_output", "call_id": each.call_id, "output": each.result}
+        )
+    return items
+
+
+def _tool(spec: ToolSpec) -> FunctionToolParam:
+    # Strict, so the arguments the model sends always have the tool's shape.
+    return {
+        "type": "function",
+        "name": spec.name,
+        "description": spec.description,
+        "parameters": to_strict_json_schema(spec.arguments),
+        "strict": True,
     }
