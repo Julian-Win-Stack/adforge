@@ -6,6 +6,7 @@ from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
+from jobs import tasks
 from jobs.models import Job, ProducedItem, Question
 from jobs.tasks import check_plan, make_person
 
@@ -47,6 +48,10 @@ def rewrite(line: str) -> dict[str, Any]:
 
 def plan_with(*lines: str) -> dict[str, Any]:
     return {**PLAN, "plan": {**PLAN["plan"], "scenes": [{"line": line} for line in lines]}}
+
+
+# The whole mug script, as the voice is given it to read when its speed is measured.
+SCRIPT = " ".join(scene["line"] for scene in PLAN["plan"]["scenes"])
 
 
 def handoffs(job_id: str, purpose: str) -> list[dict[str, Any]]:
@@ -197,6 +202,45 @@ def test_a_voice_being_measured_when_the_worker_stopped_is_measured_without_desi
     assert ModelCall.objects.filter(purpose="design_voice").count() == 1
     voice = job.produced.get(kind="voice")
     assert voice.voice_id == "fake-voice-1"
+    assert voice.words_per_second == pytest.approx(2.0)
+
+
+def test_speech_paid_for_when_the_worker_stopped_is_measured_without_speaking_again(
+    api: APIClient,
+    fake_model: FakeModel,
+    monkeypatch: pytest.MonkeyPatch,
+    product_page_url: str,
+    start_job: Callable[..., str],
+) -> None:
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", PLAN)
+
+    def the_worker_stops(wav: bytes) -> float:
+        raise WorkerStopped
+
+    # The worker stopped between the speech being made and paid for, and the voice being kept.
+    monkeypatch.setattr(tasks, "_seconds", the_worker_stops)
+    with pytest.raises(WorkerStopped):
+        start_job(product_page_url)
+    job = Job.objects.get()
+    assert fake_model.spoken == [SCRIPT]
+    # The file store never overwrites, so speaking a second time would save a second file
+    # under a suffixed key, and the voice would end up keeping that one instead.
+    (paid_for,) = ModelCall.objects.filter(purpose="measure_voice").values_list("output", flat=True)
+    assert paid_for == {"file": "measure_voice.wav"}
+    assert job.produced.get(kind="voice").words_per_second is None
+
+    # The broker hands the task out again.
+    monkeypatch.undo()
+    fake_model.respond("fact_check", FACTS_OK)
+    make_person(str(job.pk))
+
+    assert api.get(f"/api/jobs/{job.pk}/").json()["status"] == "ready_to_render"
+    # The script was spoken, and paid for, once: the second run read back what it already had.
+    assert fake_model.spoken == [SCRIPT]
+    assert ModelCall.objects.filter(purpose="measure_voice").count() == 1
+    voice = job.produced.get(kind="voice")
+    assert voice.file == "measure_voice.wav"
     assert voice.words_per_second == pytest.approx(2.0)
 
 

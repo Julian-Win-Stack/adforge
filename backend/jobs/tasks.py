@@ -457,9 +457,18 @@ def _paid_for_before(job: Job, purpose: str) -> dict[str, Any] | None:
 
 def _measure_voice(job: Job, voice: ProducedItem) -> None:
     """Measure how fast the voice really speaks by having it read the whole script: no
-    speaking speed is assumed."""
+    speaking speed is assumed.
+
+    Speech paid for before a worker stopped is read back rather than spoken again. It was
+    spoken from this same script: making the person is what runs again first after a
+    restart, so nothing gets a turn in between to rewrite a line."""
     script = " ".join(job.scenes.values_list("line", flat=True))
-    voice.file = speak(job=job, purpose="measure_voice", voice_id=voice.voice_id, text=script)
+    paid_for = _paid_for_before(job, "measure_voice")
+    voice.file = (
+        paid_for["file"]
+        if paid_for
+        else speak(job=job, purpose="measure_voice", voice_id=voice.voice_id, text=script)
+    )
     voice.words_per_second = count_words(script) / _seconds(file_store.read(voice.file))
     voice.save(update_fields=["file", "words_per_second"])
 
