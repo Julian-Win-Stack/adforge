@@ -12,7 +12,11 @@ from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
 from adforge.retry import OutsideServiceDown
+from agents import loop
 from agents.models import ToolCall
+from agents.producer import PRODUCER
+from chat import messages
+from chat.models import Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
 from gateway.models import ModelCall
 from gateway.types import UnusableReply
@@ -743,12 +747,51 @@ def test_a_line_the_user_gives_is_used_only_if_they_wrote_it_word_for_word(
 
     _, refused, used = results_of("run_planning_checks")
     assert refused == (
-        'Refused: the shop owner never wrote "Yours for just $24.00 today." in their messages. '
-        "A line they give is used exactly as they wrote it, so pass it word for word, or ask "
-        "them. Nothing was done."
+        'Refused: the shop owner never wrote "Yours for just $24.00 today." in their reply to '
+        "the question. A line they give is used exactly as they wrote it, so pass it word for "
+        "word, or ask them. Nothing was done."
     )
     assert used.startswith("The checks passed.")
     assert lines() == ["Meet the mug.", "Yours for just $24.00, today."]
+
+
+def test_a_blank_line_is_refused_as_one_the_user_never_wrote(
+    fake_model: FakeModel, asked_about_scene_2: None, say: Callable[..., None]
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("run_planning_checks", choosing(own(2, "  ")))]),
+        turn(says="Which line would you like?"),
+    )
+
+    say("Use my own line: Yours for $24.00.")
+
+    assert results_of("run_planning_checks")[1] == (
+        'Refused: the shop owner never wrote "  " in their reply to the question. A line they '
+        "give is used exactly as they wrote it, so pass it word for word, or ask them. Nothing "
+        "was done."
+    )
+    assert lines() == ["Meet the mug.", "Just $19.99."]
+
+
+def test_a_line_the_user_wrote_before_the_question_is_refused(
+    fake_model: FakeModel, asked_about_scene_2: None, say: Callable[..., None]
+) -> None:
+    fake_model.respond(
+        "produce",
+        # The user's message before the checks asked, not their reply.
+        turn(calls=[("run_planning_checks", choosing(own(2, "Plan it and check it")))]),
+        turn(says="Sorry, I'll keep it."),
+    )
+
+    say("Keep the line as it is.")
+
+    assert results_of("run_planning_checks")[1] == (
+        'Refused: the shop owner never wrote "Plan it and check it" in their reply to the '
+        "question. A line they give is used exactly as they wrote it, so pass it word for "
+        "word, or ask them. Nothing was done."
+    )
+    assert lines() == ["Meet the mug.", "Just $19.99."]
 
 
 def test_the_user_can_give_their_own_line_only_for_a_line_the_checks_asked_about(
@@ -855,3 +898,68 @@ def test_a_length_choice_the_checks_never_asked_about_is_refused(
         "was done."
     ]
     assert "fact_check" not in paid_for()
+
+
+# --- A worker that stopped part-way through a tool -----------------------------------------
+
+
+@pytest.fixture
+def stopped_mid_tool(session_id: str, product_page_url: str) -> ToolCall:
+    """What a worker that stopped while a tool ran leaves behind: what was said, and the
+    checkpoint written before the tool ran, with no result and no finishing time."""
+    session = Session.objects.get(pk=session_id)
+    messages.add(
+        session, role=Message.Role.USER, text=f"Make me a 15 second ad for {product_page_url}"
+    )
+    messages.add(session, role=Message.Role.AGENT, text="I'll read your product page first.")
+    return ToolCall.objects.create(
+        session=session,
+        agent="producer",
+        tool="read_page",
+        call_id="call_the_worker_stopped_on",
+        arguments={"link": product_page_url, "target_seconds": 15},
+    )
+
+
+def test_a_tool_a_stopped_worker_left_unfinished_is_run_when_the_loop_starts_again(
+    fake_model: FakeModel, stopped_mid_tool: ToolCall, product_page_url: str, session_id: str
+) -> None:
+    fake_model.respond("produce", turn(says="Your mug's page has what the ad needs."))
+    fake_model.respond("check_page", READABLE)
+
+    loop.run(PRODUCER, Session.objects.get(pk=session_id))
+
+    stopped_mid_tool.refresh_from_db()
+    assert stopped_mid_tool.result.endswith(
+        "The page names the mug, its price and its size.\nKept 2 product photos."
+    )
+    assert stopped_mid_tool.finished
+    assert (
+        Job.objects.filter(
+            session_id=session_id, product_url=product_page_url, target_seconds=15
+        ).count()
+        == 1
+    )
+    assert Job.objects.get(session_id=session_id).photos.count() == 2
+
+
+def test_the_producer_is_given_the_result_of_the_tool_the_stopped_worker_left(
+    fake_model: FakeModel, stopped_mid_tool: ToolCall, product_page_url: str, session_id: str
+) -> None:
+    fake_model.respond("produce", turn(says="Your mug's page has what the ad needs."))
+    fake_model.respond("check_page", READABLE)
+
+    loop.run(PRODUCER, Session.objects.get(pk=session_id))
+
+    # The producer's first turn after the restart, which it can only take once the tool it
+    # was waiting on has handed a result back.
+    given = given_to_the_producer(1)[-1]
+    assert (given["kind"], given["call_id"], given["tool"]) == (
+        "tool_use",
+        "call_the_worker_stopped_on",
+        "read_page",
+    )
+    assert given["arguments"] == {"link": product_page_url, "target_seconds": 15}
+    assert given["result"].endswith(
+        "The page names the mug, its price and its size.\nKept 2 product photos."
+    )

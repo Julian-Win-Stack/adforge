@@ -293,11 +293,13 @@ class RunPlanningChecks(Tool):
                     "asked about can be kept or replaced; changing other lines comes later."
                 )
             _answered(call.session, since=asked, about=about)
-            if line_choice.choice == "own" and not _wrote(call.session, line_choice.own_line):
+            if line_choice.choice == "own" and not _wrote(
+                call.session, line_choice.own_line, since=asked
+            ):
                 raise Refused(
-                    f'the shop owner never wrote "{line_choice.own_line}" in their messages. A '
-                    "line they give is used exactly as they wrote it, so pass it word for word, "
-                    "or ask them."
+                    f'the shop owner never wrote "{line_choice.own_line}" in their reply to '
+                    "the question. A line they give is used exactly as they wrote it, so pass "
+                    "it word for word, or ask them."
                 )
         if self.length_choice is not None:
             asked = self._asked(job, "length")
@@ -352,16 +354,15 @@ def _answered(session: Session, *, since: ToolCall, about: str) -> None:
         )
 
 
-def _wrote(session: Session, line: str | None) -> bool:
-    """Whether the shop owner wrote `line` in one of their messages, word for word. Only
-    spacing and line breaks may differ."""
-    if line is None:
+def _wrote(session: Session, line: str | None, *, since: ToolCall) -> bool:
+    """Whether the shop owner wrote `line` word for word in their reply: a message sent
+    since the checks asked them. Only spacing and line breaks may differ. A blank line was
+    never written."""
+    written = " ".join((line or "").split())
+    if not written:
         return False
-    written = " ".join(line.split())
-    return any(
-        written in " ".join(text.split())
-        for text in session.messages.filter(role=Message.Role.USER).values_list("text", flat=True)
-    )
+    replies = session.messages.filter(role=Message.Role.USER, created_at__gt=since.finished_at)
+    return any(written in " ".join(text.split()) for text in replies.values_list("text", flat=True))
 
 
 def _the_job(call: ToolCall) -> Job | None:

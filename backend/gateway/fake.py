@@ -65,6 +65,9 @@ class FakeModel:
         self._scripts: defaultdict[str, deque[Outcome]] = defaultdict(deque)
         self.words_per_second = 2.0
         self.voices = 0
+        # Every script the fake has been asked to speak, so a test can show that work paid
+        # for once was not paid for again.
+        self.spoken: list[str] = []
 
     def respond(self, purpose: str, *outcomes: Outcome) -> None:
         self._scripts[purpose].extend(outcomes)
@@ -113,6 +116,7 @@ class FakeModel:
 
     def speak(self, *, model: str, voice_id: str, text: str) -> bytes:
         self._fail_if_scripted("measure_voice")
+        self.spoken.append(text)
         seconds = len(text.split()) / self.words_per_second
         audio = io.BytesIO()
         with wave.open(audio, "wb") as file:
