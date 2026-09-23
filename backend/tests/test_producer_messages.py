@@ -1,12 +1,13 @@
-"""Messages the user sends while the producer works, driven through the chat the way the
-browser uses it. Only one producer works in a session at a time: a message sent while it
-works is stored straight away, and the producer reads it when its model call returns."""
+"""Interrupts: messages the user sends while the producer works, driven through the chat
+the way the browser uses it. Only one producer works in a session at a time: an interrupt
+is stored straight away, and the producer reads it when its model call returns."""
 
 import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
 
 import pytest
+from django.conf import settings
 from django.utils import timezone
 from pytest_django import Settings
 from rest_framework.test import APIClient
@@ -28,18 +29,21 @@ def producer_turns() -> int:
     return ModelCall.objects.filter(purpose="produce").count()
 
 
-def a_producer_was_last_seen(session_id: str, *, seconds_ago: float) -> None:
-    """As if a producer is working in the session, and last beat `seconds_ago`."""
+def a_producer_last_beat(session_id: str, *, seconds_before_it_counts_as_dead: float) -> None:
+    """As if a producer is working in the session, and its last beat was this long before
+    it counts as dead. Less than nothing means it already does."""
+    ago = settings.PRODUCER_DEAD_AFTER_SECONDS - seconds_before_it_counts_as_dead
     Session.objects.filter(pk=session_id).update(
-        producer_running=True, producer_seen_at=timezone.now() - timedelta(seconds=seconds_ago)
+        producer_running=True, producer_seen_at=timezone.now() - timedelta(seconds=ago)
     )
 
 
 def what_the_user_said(given: list[dict[str, object]]) -> list[object]:
+    """What the user said in a turn's conversation, in order."""
     return [each["text"] for each in given if each["kind"] == "said" and each["by"] == "user"]
 
 
-def test_a_message_sent_while_the_producer_works_is_taken_and_read_by_the_same_producer(
+def test_an_interrupt_is_taken_and_read_by_the_producer_already_working(
     api: APIClient,
     fake_model: FakeModel,
     product_page_url: str,
@@ -76,6 +80,7 @@ def test_once_the_producer_has_replied_the_next_message_starts_it_again(
 ) -> None:
     fake_model.respond("produce", turn(says="What would you like an ad for?"))
     say("Hi")
+    assert not Session.objects.get(pk=session_id).producer_running
     fake_model.respond("produce", turn(says="A mug: send me its page."))
 
     say("A mug")
@@ -84,7 +89,7 @@ def test_once_the_producer_has_replied_the_next_message_starts_it_again(
     assert chat(api, session_id)[-1] == ("agent", "A mug: send me its page.")
 
 
-def test_a_message_sent_while_the_producer_writes_its_reply_is_answered_before_it_stops(
+def test_an_interrupt_sent_while_the_producer_writes_its_reply_is_answered_before_it_stops(
     api: APIClient, fake_model: FakeModel, session_id: str, say: Callable[..., None]
 ) -> None:
     fake_model.respond(
@@ -103,7 +108,7 @@ def test_a_message_sent_while_the_producer_writes_its_reply_is_answered_before_i
     ]
 
 
-def test_two_messages_sent_during_one_turn_are_both_given_to_the_next_in_order(
+def test_two_interrupts_sent_during_one_turn_are_both_given_to_the_next_in_order(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
     def the_user_sends_two_messages() -> None:
@@ -136,6 +141,7 @@ def test_when_the_producer_has_to_stop_the_next_message_tries_again(
     fake_model.respond("produce", RuntimeError("the model fell over"))
     say("Hi")
     assert chat(api, session_id)[-1][1].startswith("I had to stop: ")
+    assert not Session.objects.get(pk=session_id).producer_running
     fake_model.respond("produce", turn(says="What would you like an ad for?"))
 
     say("Hello again")
@@ -143,13 +149,13 @@ def test_when_the_producer_has_to_stop_the_next_message_tries_again(
     assert chat(api, session_id)[-1] == ("agent", "What would you like an ad for?")
 
 
-def test_a_producer_that_stopped_beating_is_started_again_with_what_was_sent_meanwhile(
+def test_a_dead_producer_is_started_again_with_what_was_sent_meanwhile(
     api: APIClient, fake_model: FakeModel, session_id: str, say: Callable[..., None]
 ) -> None:
-    a_producer_was_last_seen(session_id, seconds_ago=10)
+    a_producer_last_beat(session_id, seconds_before_it_counts_as_dead=60)
     say("Make me an ad for my mug")
     assert producer_turns() == 0  # The producer working in the session will read it.
-    a_producer_was_last_seen(session_id, seconds_ago=121)
+    a_producer_last_beat(session_id, seconds_before_it_counts_as_dead=-1)
     fake_model.respond("produce", turn(says="Happy to: what's the link to your mug?"))
 
     restart_dead_producers()
@@ -159,17 +165,17 @@ def test_a_producer_that_stopped_beating_is_started_again_with_what_was_sent_mea
 
 
 def test_a_producer_that_beat_recently_is_left_to_work(session_id: str) -> None:
-    a_producer_was_last_seen(session_id, seconds_ago=110)
+    a_producer_last_beat(session_id, seconds_before_it_counts_as_dead=10)
 
     restart_dead_producers()
 
     assert producer_turns() == 0
 
 
-def test_a_message_sent_to_a_producer_that_stopped_beating_starts_it_again(
+def test_a_message_sent_to_a_dead_producer_starts_it_again(
     api: APIClient, fake_model: FakeModel, session_id: str, say: Callable[..., None]
 ) -> None:
-    a_producer_was_last_seen(session_id, seconds_ago=121)
+    a_producer_last_beat(session_id, seconds_before_it_counts_as_dead=-1)
     fake_model.respond("produce", turn(says="Happy to: what's the link to your mug?"))
 
     say("Make me an ad for my mug")
