@@ -82,6 +82,17 @@ CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 
+# How often a working producer says it is still alive, and how long it can go unseen before
+# it is taken for dead and started again.
+PRODUCER_HEARTBEAT_SECONDS = 30.0
+PRODUCER_DEAD_AFTER_SECONDS = 120.0
+CELERY_BEAT_SCHEDULE = {
+    "restart-dead-producers": {
+        "task": "agents.tasks.restart_dead_producers",
+        "schedule": 60.0,
+    },
+}
+
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 # Empty means OpenAI's own servers. Tests point it at a local stand-in.
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "")
