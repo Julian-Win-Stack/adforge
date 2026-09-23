@@ -63,8 +63,9 @@ class Agent:
     tools: Sequence[type[Tool]]
 
 
-def run(agent: Agent, session: Session) -> None:
-    """Let `agent` work in `session` until it replies."""
+def run(agent: Agent, session: Session) -> int:
+    """Let `agent` work in `session` until it replies. Gives the number of the last message
+    its last turn was given, so the caller can tell whether anything was said since."""
     # A tool that was running when the last worker stopped runs again first: the agent
     # can't take another turn until every tool it asked for has handed back a result.
     for call in session.tool_calls.filter(agent=agent.name, finished_at__isnull=True):
@@ -93,40 +94,21 @@ def run(agent: Agent, session: Session) -> None:
                     text=f"I hit my limit of {_limit()} steps for one message. Send a message "
                     "and I'll carry on.",
                 )
-            calls = (
-                []
-                if stopped
-                else [
-                    ToolCall.objects.create(
-                        session=session,
-                        agent=agent.name,
-                        tool=asked.tool,
-                        call_id=asked.call_id,
-                        arguments=asked.arguments,
-                    )
-                    for asked in turn.calls
-                ]
-            )
+                return read_up_to
+            calls = [
+                ToolCall.objects.create(
+                    session=session,
+                    agent=agent.name,
+                    tool=asked.tool,
+                    call_id=asked.call_id,
+                    arguments=asked.arguments,
+                )
+                for asked in turn.calls
+            ]
         if not calls:
-            if _stops(session, read_up_to):
-                return
-            continue
+            return read_up_to
         for call in calls:
             _settle(agent, call)
-
-
-def _stops(session: Session, read_up_to: int) -> bool:
-    """Whether the agent can stop: the user has said nothing since the messages up to
-    `read_up_to` it was last given. If so, the session no longer has a producer running.
-    Both happen under the session's lock, which a message sent takes before it looks for
-    a producer, so a message is either found here or starts a new producer itself."""
-    with transaction.atomic():
-        locked = Session.objects.select_for_update().get(pk=session.pk)
-        if locked.messages.filter(role=Message.Role.USER, seq__gt=read_up_to).exists():
-            return False
-        locked.producer_running = False
-        locked.save(update_fields=["producer_running"])
-        return True
 
 
 def _settle(agent: Agent, call: ToolCall) -> None:

@@ -29,7 +29,10 @@ def run_producer(session_id: str) -> None:
     heartbeat = threading.Thread(target=_beat, args=(session_id, stop_beating), daemon=True)
     heartbeat.start()
     try:
-        loop.run(PRODUCER, session)
+        # The producer only stops once it has read everything the user sent: a message
+        # that arrives as it replies is an interrupt, and it works on that too.
+        while not _stop_unless_the_user_spoke(session_id, loop.run(PRODUCER, session)):
+            pass
     except UnusableReply as error:
         why = f"my AI model's answer couldn't be used ({error})"
     except OutsideServiceDown as error:
@@ -52,12 +55,32 @@ def run_producer(session_id: str) -> None:
         Session.objects.filter(pk=session_id).update(producer_running=False)
 
 
+def _stop_unless_the_user_spoke(session_id: str, read_up_to: int) -> bool:
+    """Mark the producer stopped, unless the user said something after the messages up to
+    `read_up_to` it was last given. Both happen under the session's lock, which a message
+    sent takes before it looks for a producer, so a message is either found here or starts
+    a new producer itself."""
+    with transaction.atomic():
+        session = Session.objects.select_for_update().get(pk=session_id)
+        if session.messages.filter(role=Message.Role.USER, seq__gt=read_up_to).exists():
+            return False
+        session.producer_running = False
+        session.save(update_fields=["producer_running"])
+        return True
+
+
 def _beat(session_id: str, stop: threading.Event) -> None:
     """Say the producer is still alive every PRODUCER_HEARTBEAT_SECONDS, until `stop`.
     Runs on its own thread, so on its own database connection, which it closes."""
     try:
         while not stop.wait(settings.PRODUCER_HEARTBEAT_SECONDS):
-            Session.objects.filter(pk=session_id).update(producer_seen_at=timezone.now())
+            # One beat that fails mustn't stop the rest: a producer that stops beating is
+            # taken for dead, and a second one started while it still works.
+            try:
+                Session.objects.filter(pk=session_id).update(producer_seen_at=timezone.now())
+            except Exception:
+                logger.exception("The producer's heartbeat failed in session %s", session_id)
+                connection.close()
     finally:
         connection.close()
 

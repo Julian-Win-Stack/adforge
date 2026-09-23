@@ -125,8 +125,8 @@ def session_messages(request: Request, session_id: str) -> Response:
 
 def _send(session: Session, request: Request) -> Response:
     """Take the user's message, and start the producer on it unless it is already working.
-    It is always accepted: a message sent while the agent is working is stored and
-    acknowledged straight away rather than refused, and the producer reads it next."""
+    It is always accepted: an interrupt is stored and acknowledged straight away rather
+    than refused, and the working producer reads it next."""
     sending = SendSerializer(data=request.data)
     sending.is_valid(raise_exception=True)
     photos: list[UploadedFile[bytes]] = sending.validated_data["photos"]
