@@ -48,6 +48,11 @@ services:
     <<: *backend
     command: celery -A adforge worker --loglevel=info
 
+  # Runs the tasks that repeat on a schedule, such as starting dead producers again.
+  beat:
+    <<: *backend
+    command: celery -A adforge beat --loglevel=info --schedule /tmp/celerybeat-schedule
+
   frontend:
     image: node:24
     working_dir: /app

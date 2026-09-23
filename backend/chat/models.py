@@ -15,6 +15,16 @@ class Session(models.Model):
         "they have said something.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    # Both are only changed while holding the session row's lock, as messages are added.
+    producer_running = models.BooleanField(
+        default=False, help_text="A producer should be working in this session."
+    )
+    producer_seen_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="The producer's heartbeat. A producer that is running but hasn't been seen "
+        "for PRODUCER_DEAD_AFTER_SECONDS has died.",
+    )
 
     class Meta:
         ordering = ["-created_at"]
