@@ -332,6 +332,82 @@ def test_every_agents_tool_calls_count_towards_the_limit(
     assert paid_for() == ["check_page"]
 
 
+# --- What the producer is given each turn ---------------------------------------------------
+
+
+def what_happened(given: list[dict[str, Any]]) -> list[tuple[str, str, str]]:
+    """A turn's conversation in short: who said what, and which tool was called."""
+    return [
+        ("said", each["by"], each["text"])
+        if each["kind"] == "said"
+        else ("tool_use", each["tool"], each["call_id"])
+        for each in given
+    ]
+
+
+def test_a_message_sent_while_the_producer_works_is_read_on_its_next_turn(
+    fake_model: FakeModel, product_page_url: str, session_id: str, say: Callable[..., None]
+) -> None:
+    def the_user_sends_another_message() -> None:
+        # What the chat does with a message the moment it arrives: stores it.
+        messages.add(
+            Session.objects.get(pk=session_id),
+            role=Message.Role.USER,
+            text="Make it 10 seconds, please.",
+        )
+
+    fake_model.respond(
+        "produce",
+        meanwhile(
+            the_user_sends_another_message,
+            turn(calls=[("read_page", {"link": product_page_url, "target_seconds": None})]),
+        ),
+        turn(says="Got it: a 10 second ad."),
+    )
+    fake_model.respond("check_page", READABLE)
+
+    say(f"Make an ad for {product_page_url}")
+
+    read_page = ToolCall.objects.get(tool="read_page")
+    assert what_happened(given_to_the_producer(2)) == [
+        ("said", "user", f"Make an ad for {product_page_url}"),
+        ("said", "user", "Make it 10 seconds, please."),
+        ("tool_use", "read_page", read_page.call_id),
+    ]
+
+
+def test_the_producer_is_never_given_a_directors_tool_calls(
+    fake_model: FakeModel, product_page_url: str, session_id: str, say: Callable[..., None]
+) -> None:
+    def a_director_draws_a_scene() -> None:
+        ToolCall.objects.create(
+            session_id=session_id,
+            agent="director",
+            tool="draw_scene",
+            call_id="call_director_1",
+            arguments={"scene": 1},
+            result="Drew scene 1.",
+        )
+
+    fake_model.respond(
+        "produce",
+        meanwhile(
+            a_director_draws_a_scene,
+            turn(calls=[("read_page", {"link": product_page_url, "target_seconds": None})]),
+        ),
+        turn(says="I read your mug's page."),
+    )
+    fake_model.respond("check_page", READABLE)
+
+    say(f"Make an ad for {product_page_url}")
+
+    read_page = ToolCall.objects.get(tool="read_page")
+    assert what_happened(given_to_the_producer(2)) == [
+        ("said", "user", f"Make an ad for {product_page_url}"),
+        ("tool_use", "read_page", read_page.call_id),
+    ]
+
+
 # --- Reading the page --------------------------------------------------------------------
 
 
@@ -451,9 +527,10 @@ def test_a_new_link_that_cant_be_used_leaves_the_ad_without_a_page(
             id="not a link",
         ),
         pytest.param(
-            {"link": "https://shop.example/products/" + "a" * 2000, "target_seconds": None},
+            # 30 characters of address and 1,971 of name: one over the limit.
+            {"link": "https://shop.example/products/" + "a" * 1971, "target_seconds": None},
             "link: it is over 2,000 characters, too long to be stored",
-            id="a link over 2,000 characters",
+            id="a link of 2,001 characters",
         ),
         pytest.param(
             {"link": "https://shop.example/products/mug", "target_seconds": 0},
@@ -461,9 +538,9 @@ def test_a_new_link_that_cant_be_used_leaves_the_ad_without_a_page(
             id="no seconds",
         ),
         pytest.param(
-            {"link": "https://shop.example/products/mug", "target_seconds": 100_000},
+            {"link": "https://shop.example/products/mug", "target_seconds": 32_768},
             "target_seconds: the length has to be from 1 to 32,767 seconds",
-            id="too many seconds",
+            id="one second too many",
         ),
         pytest.param(
             {"link": "https://shop.example/products/mug", "target_seconds": 12.5},
@@ -573,6 +650,13 @@ def test_reading_the_same_page_again_hands_back_what_was_read_and_pays_nothing(
             "planned ad's photos comes later.",
             id="photos after the plan",
         ),
+        pytest.param(
+            "page_read",
+            "run_planning_checks",
+            NO_CHOICES,
+            "Refused: the ad hasn't been planned yet, and the checks are run on its script.",
+            id="checks before the plan",
+        ),
     ],
 )
 def test_a_tool_whose_inputs_dont_exist_yet_refuses_and_does_nothing(
@@ -647,11 +731,22 @@ def test_planning_again_hands_back_the_plan_and_pays_nothing(
 
     say("Plan it again")
 
-    first, again = results_of("plan_ad")
-    assert again == (
-        "The ad was already planned, so nothing was planned or paid for again. Planning it "
-        f"cost $0.006.\n{first}"
+    plan = (
+        "Planned 3 scenes. Three scenes: what the mug is, what it's like to use, and its "
+        "price.\n"
+        "The script:\n"
+        "1. Meet the Stoneware Mug from Kiln & Co.\n"
+        "2. Hand-thrown, holds 350 ml, and dishwasher safe.\n"
+        "3. Yours for $24.00.\n"
+        "The product's colour: sage green, shown in photos 1.\n"
+        "The person: A potter in her thirties in a linen apron, in a sunny workshop. Their "
+        "voice: A warm, relaxed woman in her thirties with a soft British accent."
     )
+    assert results_of("plan_ad") == [
+        plan,
+        "The ad was already planned, so nothing was planned or paid for again. Planning it "
+        f"cost $0.006.\n{plan}",
+    ]
     assert paid_for() == ["check_page", "plan_ad"]
     assert Job.objects.get().scenes.count() == 3
 
@@ -669,10 +764,14 @@ def test_making_the_person_again_hands_back_the_person_and_pays_nothing(
 
     say("Make the person again")
 
+    # The portrait: 1,000 x $5.00/M in + 100 x $30.00/M out = $0.008. The voice, at $25.00/M
+    # characters: designed saying the 38-character first line ($0.00095), then measured
+    # reading the 104-character script ($0.0026). The script's 18 words take the fake 9 s.
     again = results_of("create_person")[1]
-    assert again.startswith(
+    assert again == (
         "The person was already made and shown to the shop owner, so nothing was made or "
-        "paid for again. Making them cost $"
+        "paid for again. Making them cost $0.01155. The voice speaks 2.0 words a second, "
+        "measured on the script."
     )
     assert paid_for() == ["check_page", "plan_ad", "draw_person", "design_voice", "measure_voice"]
     messages = api.get(f"/api/sessions/{session_id}/messages/").json()
@@ -755,6 +854,62 @@ def test_a_line_the_user_gives_is_used_only_if_they_wrote_it_word_for_word(
     assert lines() == ["Meet the mug.", "Yours for just $24.00, today."]
 
 
+@pytest.mark.parametrize(
+    ("wrote", "passed"),
+    [
+        pytest.param(
+            "yours for just $24.00, today.", "Yours for just $24.00, today.", id="capitals"
+        ),
+        pytest.param('Yours for "just" $24.00.', "Yours for “just” $24.00.", id="quote marks"),
+    ],
+)
+def test_a_line_that_differs_from_the_users_by_more_than_spacing_is_refused(
+    fake_model: FakeModel,
+    asked_about_scene_2: None,
+    say: Callable[..., None],
+    wrote: str,
+    passed: str,
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("run_planning_checks", choosing(own(2, passed)))]),
+        turn(says="Could you send your line again?"),
+    )
+
+    say(f"Use this: {wrote}")
+
+    assert results_of("run_planning_checks")[1] == (
+        f'Refused: the shop owner never wrote "{passed}" in their reply to the question. A '
+        "line they give is used exactly as they wrote it, so pass it word for word, or ask "
+        "them. Nothing was done."
+    )
+    assert lines() == ["Meet the mug.", "Just $19.99."]
+
+
+def test_a_line_only_the_producer_wrote_is_refused(
+    fake_model: FakeModel, asked_about_scene_2: None, say: Callable[..., None]
+) -> None:
+    suggested = "Yours for $24.00, made by hand."
+    fake_model.respond(
+        "produce",
+        # The producer writes a line itself, after the question, then passes it as the user's.
+        turn(
+            says=f"How about: {suggested}",
+            calls=[("run_planning_checks", choosing(own(2, suggested)))],
+        ),
+        turn(says="Would you like that line?"),
+    )
+
+    say("Write me a better one")
+
+    assert results_of("run_planning_checks")[1] == (
+        f'Refused: the shop owner never wrote "{suggested}" in their reply to the question. A '
+        "line they give is used exactly as they wrote it, so pass it word for word, or ask "
+        "them. Nothing was done."
+    )
+    assert lines() == ["Meet the mug.", "Just $19.99."]
+
+
 def test_a_blank_line_is_refused_as_one_the_user_never_wrote(
     fake_model: FakeModel, asked_about_scene_2: None, say: Callable[..., None]
 ) -> None:
@@ -831,7 +986,7 @@ def test_a_line_choice_is_refused_until_the_user_has_answered(
         "Refused: the shop owner hasn't answered since the checks asked about scene 2's line. "
         "Ask them, and wait for their answer. Nothing was done."
     )
-    assert Job.objects.get().status != "ready_to_render"
+    assert Job.objects.get().status == "checking_plan"
 
     # Once they have answered, the same choice is used.
     fake_model.respond(
