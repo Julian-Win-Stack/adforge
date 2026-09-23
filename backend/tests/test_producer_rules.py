@@ -1242,6 +1242,7 @@ def test_a_person_a_stopped_worker_made_but_didnt_show_is_shown_without_paying_a
     session_id: str,
 ) -> None:
     session = Session.objects.get(pk=session_id)
+    messages.add(session, role=Message.Role.USER, text="Make the person")
     fake_model.respond("produce", turn(calls=[("create_person", {})]))
     create_person = job_tasks.create_person
 
