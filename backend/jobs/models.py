@@ -76,9 +76,6 @@ class Job(models.Model):
         blank=True,
         help_text="What the user chose when the script didn't fit the target length.",
     )
-    shorten_tries = models.PositiveSmallIntegerField(
-        default=0, help_text="Times the producer has shortened the script since the user chose to."
-    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

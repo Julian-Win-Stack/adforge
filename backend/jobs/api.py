@@ -237,8 +237,7 @@ def _take_length_choice(job: Job, question: Question, data: object) -> None:
     choice = Job.LengthChoice(serializer.validated_data["answer"])
     _store_answer(question, choice.label)
     job.length_choice = choice
-    job.shorten_tries = 0
-    job.save(update_fields=["length_choice", "shorten_tries"])
+    job.save(update_fields=["length_choice"])
     if choice == Job.LengthChoice.SHORTEN:
         _check_again(
             job,

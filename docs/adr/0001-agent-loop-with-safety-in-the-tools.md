@@ -9,8 +9,8 @@ the conversation and chooses which tool to call next, and no fixed order exists 
 The cost is that the model can skip a step, repeat one, or loop. The answer is not longer instructions.
 Every rule that matters is enforced by the tool that would break it: the render tool refuses a line
 whose fact check has not passed, a tool asked to redo finished work hands back what exists instead of
-paying again, and a session has a cap on tool calls and a scene a cap on renders. An instruction is a
-suggestion; a tool that refuses is a rule. This is the same reasoning as the existing lint rule that
+paying again, and a session has a cap on tool calls for each message from the user and a scene a cap
+on renders. An instruction is a suggestion; a tool that refuses is a rule. This is the same reasoning as the existing lint rule that
 bans importing the model client outside the gateway.
 
 ## Considered Options

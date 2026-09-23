@@ -148,6 +148,13 @@ def take_turn(
 
     def take() -> _Made[Turn]:
         reply = provider.take_turn(request)
+        if not reply.turn.says and not reply.turn.calls:
+            # A turn with neither is no reply at all: the user would wait for one forever.
+            raise UnusableReply(
+                "it said nothing and asked for no tool",
+                input_tokens=reply.input_tokens,
+                output_tokens=reply.output_tokens,
+            )
         return _Made(
             result=reply.turn,
             output={

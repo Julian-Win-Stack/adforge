@@ -1,5 +1,6 @@
 """The producer: the agent the user talks to. What it is told to do, and its tools."""
 
+import re
 from decimal import Decimal
 from typing import Literal
 
@@ -119,9 +120,11 @@ class ReadPage(Tool):
                 f"The page was read but can't be used: {check.reason} Ask the shop owner for "
                 "a link to the product's own page."
             )
+        skipped = save_photos(job, product_page.photo_urls)
+        # Only once every photo is kept: a worker that stops part-way through leaves a page
+        # that is read again, not one that looks read with half its photos.
         job.status = Job.Status.PAGE_READ
         job.save(update_fields=["status"])
-        skipped = save_photos(job, product_page.photo_urls)
         kept = job.photos.count()
         told = [f"Started job {job.pk} and read {download.final_url}. {check.reason}"]
         if download.final_url != self.link:
@@ -214,26 +217,31 @@ class CreatePerson(Tool):
         job = _the_job(call)
         if job is None or not job.scenes.exists():
             raise Refused("the ad hasn't been planned yet, and the person is made from the plan.")
+        portrait = latest(job, ProducedItem.Kind.PORTRAIT)
         voice = _measured_voice(job)
-        if voice is not None and latest(job, ProducedItem.Kind.PORTRAIT) is not None:
+        if (
+            portrait is not None
+            and voice is not None
+            and Attachment.objects.filter(
+                message__session=call.session, file=portrait.file
+            ).exists()
+        ):
             return (
                 "The person was already made and shown to the shop owner, so nothing was made "
                 f"or paid for again. Making them cost {_dollars(_spent(job, self.name))}. "
                 f"{_speed(voice)}"
             )
+        # Only what the job doesn't have yet is made, so a person a stopped worker made but
+        # never showed is shown now, without being paid for again.
         portrait, voice = create_person(job)
-        # A run again after a restart doesn't show the person twice.
-        if not Attachment.objects.filter(
-            message__session=call.session, file=portrait.file
-        ).exists():
-            messages.add(
-                call.session,
-                role=Message.Role.AGENT,
-                carrying=[
-                    messages.AttachedFile(Attachment.Kind.PICTURE, portrait.file),
-                    messages.AttachedFile(Attachment.Kind.SOUND, voice.file),
-                ],
-            )
+        messages.add(
+            call.session,
+            role=Message.Role.AGENT,
+            carrying=[
+                messages.AttachedFile(Attachment.Kind.PICTURE, portrait.file),
+                messages.AttachedFile(Attachment.Kind.SOUND, voice.file),
+            ],
+        )
         return (
             "Made the person, and showed the shop owner their portrait and their voice "
             f"reading the script in the chat. {_speed(voice)}"
@@ -319,12 +327,16 @@ class RunPlanningChecks(Tool):
             job.save(update_fields=["length_choice"])
         asking = run_checks(job)
         if asking is None:
-            return "\n".join(
-                [
-                    f"The checks passed. {why_the_checks_passed(job)} The ad is ready to render.",
-                    _script(job),
-                ]
-            )
+            passed = f"{why_the_checks_passed(job)} The ad is ready to render."
+            # With no choice to apply and nothing checked anew, they had passed already.
+            if not (self.line_choices or self.length_choice or call.model_calls.exists()):
+                passed = (
+                    "The checks had already passed, so nothing was checked or paid for again. "
+                    f"Checking cost {_dollars(_spent(job, self.name))}. {passed}"
+                )
+            else:
+                passed = f"The checks passed. {passed}"
+            return "\n".join([passed, _script(job)])
         ask = {
             "unclear_page": "Ask the shop owner, then run the checks again.",
             "line": "Ask the shop owner whether to keep this line or give their own.",
@@ -357,12 +369,16 @@ def _answered(session: Session, *, since: ToolCall, about: str) -> None:
 def _wrote(session: Session, line: str | None, *, since: ToolCall) -> bool:
     """Whether the shop owner wrote `line` word for word in their reply: a message sent
     since the checks asked them. Only spacing and line breaks may differ. A blank line was
-    never written."""
+    never written, and nor was one cut out of the middle of a word or number, like "Only
+    $19" out of "Only $199"."""
     written = " ".join((line or "").split())
     if not written:
         return False
+    whole = re.compile(rf"(?<!\w){re.escape(written)}(?!\w)")
     replies = session.messages.filter(role=Message.Role.USER, created_at__gt=since.finished_at)
-    return any(written in " ".join(text.split()) for text in replies.values_list("text", flat=True))
+    return any(
+        whole.search(" ".join(text.split())) for text in replies.values_list("text", flat=True)
+    )
 
 
 def _the_job(call: ToolCall) -> Job | None:

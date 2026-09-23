@@ -12,7 +12,7 @@ from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
 from adforge.retry import OutsideServiceDown
-from agents import loop
+from agents import loop, producer
 from agents.models import ToolCall
 from agents.producer import PRODUCER
 from chat import messages
@@ -20,6 +20,7 @@ from chat.models import Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
 from gateway.models import ModelCall
 from gateway.types import UnusableReply
+from jobs import tasks as job_tasks
 from jobs.models import Job
 
 from .conftest import FACTS_OK, PLAN, READABLE, chat, facts_ok, given_to_the_producer, picture
@@ -220,6 +221,23 @@ def test_an_unexpected_error_in_the_producer_is_logged(
         say("Make me an ad")
 
     assert "hunter2" in caplog.text
+
+
+def test_a_producer_turn_that_says_nothing_and_calls_no_tool_tells_the_chat_it_stopped(
+    api: APIClient, fake_model: FakeModel, session_id: str, say: Callable[..., None]
+) -> None:
+    fake_model.respond("produce", turn())
+
+    say("Make me an ad")
+
+    assert chat(api, session_id) == [
+        ("user", "Make me an ad"),
+        (
+            "agent",
+            "I had to stop: my AI model's answer couldn't be used (it said nothing and asked "
+            "for no tool). Send a message to try again.",
+        ),
+    ]
 
 
 # --- The limit on tool calls for each message -----------------------------------------------
@@ -778,6 +796,36 @@ def test_making_the_person_again_hands_back_the_person_and_pays_nothing(
     assert len([message for message in messages if message["attachments"]]) == 1
 
 
+def test_running_checks_that_passed_again_hands_back_what_they_found_and_pays_nothing(
+    fake_model: FakeModel, planned: None, say: Callable[..., None]
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(says="Every line checks out."),
+    )
+    fake_model.respond("fact_check", FACTS_OK)
+
+    say("Check the script")
+
+    script = (
+        "The script:\n"
+        "1. Meet the Stoneware Mug from Kiln & Co.\n"
+        "2. Hand-thrown, holds 350 ml, and dishwasher safe.\n"
+        "3. Yours for $24.00."
+    )
+    assert results_of("run_planning_checks") == [
+        "The checks passed. Every line matches the product page. The ad is ready to render.\n"
+        f"{script}",
+        # One fact check: 1,000 x $2.00/M in + 100 x $12.00/M out = $0.0032.
+        "The checks had already passed, so nothing was checked or paid for again. Checking "
+        "cost $0.0032. Every line matches the product page. The ad is ready to render.\n"
+        f"{script}",
+    ]
+    assert paid_for() == ["check_page", "plan_ad", "fact_check"]
+
+
 # --- Choices only the shop owner can make ------------------------------------------------
 
 
@@ -864,6 +912,37 @@ def test_a_line_the_user_gives_is_used_only_if_they_wrote_it_word_for_word(
     ],
 )
 def test_a_line_that_differs_from_the_users_by_more_than_spacing_is_refused(
+    fake_model: FakeModel,
+    asked_about_scene_2: None,
+    say: Callable[..., None],
+    wrote: str,
+    passed: str,
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("run_planning_checks", choosing(own(2, passed)))]),
+        turn(says="Could you send your line again?"),
+    )
+
+    say(f"Use this: {wrote}")
+
+    assert results_of("run_planning_checks")[1] == (
+        f'Refused: the shop owner never wrote "{passed}" in their reply to the question. A '
+        "line they give is used exactly as they wrote it, so pass it word for word, or ask "
+        "them. Nothing was done."
+    )
+    assert lines() == ["Meet the mug.", "Just $19.99."]
+
+
+@pytest.mark.parametrize(
+    ("wrote", "passed"),
+    [
+        pytest.param("Only $199 today.", "Only $19", id="cut off mid-word at the end"),
+        pytest.param("Yours for $24.00.", "Yours for $24.", id="cut off mid-number"),
+        pytest.param("Only $199 today.", "nly $199 today.", id="cut off mid-word at the start"),
+    ],
+)
+def test_a_line_cut_out_of_the_middle_of_the_users_words_is_refused(
     fake_model: FakeModel,
     asked_about_scene_2: None,
     say: Callable[..., None],
@@ -1058,6 +1137,10 @@ def test_a_length_choice_the_checks_never_asked_about_is_refused(
 # --- A worker that stopped part-way through a tool -----------------------------------------
 
 
+class WorkerStopped(BaseException):
+    """A worker stopping part-way through: not an error, so no tool or loop catches it."""
+
+
 @pytest.fixture
 def stopped_mid_tool(session_id: str, product_page_url: str) -> ToolCall:
     """What a worker that stopped while a tool ran leaves behind: what was said, and the
@@ -1118,3 +1201,70 @@ def test_the_producer_is_given_the_result_of_the_tool_the_stopped_worker_left(
     assert given["result"].endswith(
         "The page names the mug, its price and its size.\nKept 2 product photos."
     )
+
+
+def test_a_page_whose_photos_a_stopped_worker_didnt_finish_keeping_is_read_again(
+    fake_model: FakeModel,
+    monkeypatch: pytest.MonkeyPatch,
+    product_page_url: str,
+    session_id: str,
+) -> None:
+    session = Session.objects.get(pk=session_id)
+    messages.add(session, role=Message.Role.USER, text=f"Make an ad for {product_page_url}")
+    fake_model.respond(
+        "produce", turn(calls=[("read_page", {"link": product_page_url, "target_seconds": None})])
+    )
+    fake_model.respond("check_page", READABLE, READABLE)
+    keep_photo = job_tasks.keep_photo
+
+    def stopping_after_the_first(*args: Any, **kwargs: Any) -> None:
+        keep_photo(*args, **kwargs)
+        raise WorkerStopped
+
+    with monkeypatch.context() as patched, pytest.raises(WorkerStopped):
+        patched.setattr(job_tasks, "keep_photo", stopping_after_the_first)
+        loop.run(PRODUCER, session)
+    assert Job.objects.get().photos.count() == 1
+    fake_model.respond("produce", turn(says="Your mug's page has what the ad needs."))
+
+    loop.run(PRODUCER, session)
+
+    (result,) = results_of("read_page")
+    assert result.endswith("Kept 2 product photos.")
+    assert Job.objects.get().photos.count() == 2
+
+
+def test_a_person_a_stopped_worker_made_but_didnt_show_is_shown_without_paying_again(
+    api: APIClient,
+    fake_model: FakeModel,
+    monkeypatch: pytest.MonkeyPatch,
+    planned: None,
+    session_id: str,
+) -> None:
+    session = Session.objects.get(pk=session_id)
+    fake_model.respond("produce", turn(calls=[("create_person", {})]))
+    create_person = job_tasks.create_person
+
+    def stopping_once_made(job: Job) -> None:
+        create_person(job)
+        raise WorkerStopped
+
+    with monkeypatch.context() as patched, pytest.raises(WorkerStopped):
+        patched.setattr(producer, "create_person", stopping_once_made)
+        loop.run(PRODUCER, session)
+    fake_model.respond("produce", turn(says="Meet your presenter!"))
+
+    loop.run(PRODUCER, session)
+
+    (result,) = results_of("create_person")
+    assert result.startswith(
+        "Made the person, and showed the shop owner their portrait and their voice reading "
+        "the script in the chat."
+    )
+    shown = [
+        [attached["kind"] for attached in message["attachments"]]
+        for message in api.get(f"/api/sessions/{session_id}/messages/").json()
+        if message["attachments"]
+    ]
+    assert shown == [["picture", "sound"]]
+    assert paid_for() == ["check_page", "plan_ad", "draw_person", "design_voice", "measure_voice"]

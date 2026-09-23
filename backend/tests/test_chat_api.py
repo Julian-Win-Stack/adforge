@@ -12,9 +12,9 @@ from pytest_django import Settings
 from rest_framework.test import APIClient
 
 from adforge import file_store
+from agents import loop
 from chat import messages
 from chat.models import Attachment, Message, Session
-from gateway.fake import FakeModel, turn
 from jobs.models import Job
 
 from .conftest import MUG_FRONT, MUG_SIDE, picture
@@ -38,12 +38,12 @@ def start_session(api: APIClient) -> Callable[..., str]:
 
 
 @pytest.fixture
-def send(api: APIClient, fake_model: FakeModel) -> Callable[..., Any]:
+def send(api: APIClient, monkeypatch: pytest.MonkeyPatch) -> Callable[..., Any]:
     """Send a user's message, with photos when there are any, as the browser does. These
-    tests are about the chat itself, so the producer it starts says nothing back."""
+    tests are about the chat itself, so the producer it starts does nothing."""
+    monkeypatch.setattr(loop, "run", lambda agent, session: None)
 
     def sending(session_id: str, text: str = "", *photos: tuple[str, bytes]) -> Any:
-        fake_model.respond("produce", turn())
         if photos:
             data: dict[str, object] = {
                 "text": text,
