@@ -164,12 +164,17 @@ def test_a_dead_producer_is_started_again_with_what_was_sent_meanwhile(
     assert chat(api, session_id)[-1] == ("agent", "Happy to: what's the link to your mug?")
 
 
-def test_a_producer_that_beat_recently_is_left_to_work(session_id: str) -> None:
+def test_a_producer_that_beat_recently_is_left_to_work(
+    api: APIClient, fake_model: FakeModel, session_id: str
+) -> None:
     a_producer_last_beat(session_id, seconds_before_it_counts_as_dead=10)
+    # What a second producer would say, were one wrongly started.
+    fake_model.respond("produce", turn(says="What would you like an ad for?"))
 
     restart_dead_producers()
 
     assert producer_turns() == 0
+    assert chat(api, session_id) == []
 
 
 def test_a_message_sent_to_a_dead_producer_starts_it_again(
