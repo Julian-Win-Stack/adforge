@@ -119,9 +119,11 @@ class ReadPage(Tool):
                 f"The page was read but can't be used: {check.reason} Ask the shop owner for "
                 "a link to the product's own page."
             )
+        skipped = save_photos(job, product_page.photo_urls)
+        # Only once every photo is kept: a worker that stops part-way through them leaves the
+        # page unread, so the read run again keeps them all rather than the few already kept.
         job.status = Job.Status.PAGE_READ
         job.save(update_fields=["status"])
-        skipped = save_photos(job, product_page.photo_urls)
         kept = job.photos.count()
         told = [f"Started job {job.pk} and read {download.final_url}. {check.reason}"]
         if download.final_url != self.link:

@@ -10,9 +10,10 @@ from typing import Any
 import pytest
 from django.db import connection
 from django.db.models import Model
-from django.db.models.signals import ModelSignal, post_save, pre_save
+from django.db.models.signals import ModelSignal, post_save
 from rest_framework.test import APIClient
 
+from adforge import file_store
 from agents.models import ToolCall
 from agents.tasks import restart_dead_producers
 from chat.models import Session
@@ -20,7 +21,15 @@ from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs.models import Job, ProductPhoto
 
-from .conftest import READABLE, a_producer_last_beat, chat, given_to_the_producer, producer_turns
+from .conftest import (
+    MUG_FRONT,
+    MUG_SIDE,
+    READABLE,
+    a_producer_last_beat,
+    chat,
+    given_to_the_producer,
+    producer_turns,
+)
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -211,15 +220,21 @@ def test_a_page_the_worker_stopped_keeping_the_photos_of_is_read_again_without_p
     )
     # A second check, were the page wrongly paid for again.
     fake_model.respond("check_page", READABLE, READABLE)
-    first_photo_kept = the_worker_stops(pre_save, ProductPhoto, when=lambda photo: True)
+    first_photo_kept = the_worker_stops(post_save, ProductPhoto, when=lambda photo: True)
     with first_photo_kept, pytest.raises(WorkerStopped):
         say(f"Make an ad for {product_page_url}")
+    assert Job.objects.get().photos.count() == 1
     the_producer_died(session_id)
     fake_model.respond("produce", turn(says="I read your mug's page."))
 
     restart_dead_producers()
 
     assert times_paid_for("check_page") == 1
-    assert Job.objects.get().photos.count() == 2
+    # The photo kept before the worker stopped isn't kept a second time.
+    photos = Job.objects.get().photos.all()
+    assert [(photo.position, file_store.read(photo.file)) for photo in photos] == [
+        (1, MUG_FRONT),
+        (2, MUG_SIDE),
+    ]
     assert ToolCall.objects.get(tool="read_page").result.endswith("Kept 2 product photos.")
     assert chat(api, session_id)[-1] == ("agent", "I read your mug's page.")

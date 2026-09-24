@@ -17,6 +17,7 @@ from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
 from adforge import celery_app
+from agents.models import ToolCall
 from chat.models import Session
 from gateway.fake import FakeModel, turn
 from gateway.gateway import use_model
@@ -185,6 +186,21 @@ def given_to_the_producer(number: int) -> list[dict[str, Any]]:
 def producer_turns() -> int:
     """How many turns the producer's model has taken, over every producer that ran."""
     return ModelCall.objects.filter(purpose="produce").count()
+
+
+def results_of(tool: str) -> list[str]:
+    """What each call of `tool` handed back to the producer, oldest first."""
+    return list(ToolCall.objects.filter(tool=tool).values_list("result", flat=True))
+
+
+def paid_for() -> list[str]:
+    """The purpose of every model call the tools made, oldest first: the producer's own
+    turns aside."""
+    return list(
+        ModelCall.objects.exclude(purpose="produce")
+        .order_by("created_at", "id")
+        .values_list("purpose", flat=True)
+    )
 
 
 def a_producer_last_beat(session_id: str, *, seconds_before_it_counts_as_dead: float) -> None:

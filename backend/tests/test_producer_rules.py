@@ -18,30 +18,24 @@ from agents.producer import PRODUCER
 from chat import messages
 from chat.models import Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
-from gateway.models import ModelCall
 from gateway.types import UnusableReply
 from jobs.models import Job
 
-from .conftest import FACTS_OK, PLAN, READABLE, chat, facts_ok, given_to_the_producer, picture
+from .conftest import (
+    FACTS_OK,
+    PLAN,
+    READABLE,
+    chat,
+    facts_ok,
+    given_to_the_producer,
+    paid_for,
+    picture,
+    results_of,
+)
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 NO_CHOICES: dict[str, Any] = {"line_choices": [], "length_choice": None}
-
-
-def results_of(tool: str) -> list[str]:
-    """What each call of `tool` handed back to the producer, oldest first."""
-    return list(ToolCall.objects.filter(tool=tool).values_list("result", flat=True))
-
-
-def paid_for() -> list[str]:
-    """The purpose of every model call the tools made, oldest first: the producer's own
-    turns aside."""
-    return list(
-        ModelCall.objects.exclude(purpose="produce")
-        .order_by("created_at", "id")
-        .values_list("purpose", flat=True)
-    )
 
 
 def plan_with(*lines: str) -> dict[str, Any]:
@@ -390,20 +384,43 @@ def test_the_producer_is_never_given_a_directors_tool_calls(
 # --- Reading the page --------------------------------------------------------------------
 
 
+def _serve_broken_link(httpserver: HTTPServer, fake_model: FakeModel) -> str:
+    httpserver.expect_request("/products/old-mug").respond_with_data("not found", status=404)
+    return httpserver.url_for("/products/old-mug")
+
+
+def _serve_collection_page(httpserver: HTTPServer, fake_model: FakeModel) -> str:
+    httpserver.expect_request("/collections/mugs").respond_with_data(
+        "<html><body><h1>All mugs</h1><p>12 products</p></body></html>",
+        content_type="text/html",
+    )
+    fake_model.respond(
+        "check_page", {"decision": "unreadable", "reason": "The page lists 12 mugs, not one."}
+    )
+    return httpserver.url_for("/collections/mugs")
+
+
+@pytest.mark.parametrize(
+    "serve_first_link",
+    [
+        pytest.param(_serve_broken_link, id="a broken link"),
+        pytest.param(_serve_collection_page, id="a page that isn't one product's"),
+    ],
+)
 def test_until_a_page_has_been_read_a_new_link_is_read_for_the_same_ad(
     fake_model: FakeModel,
     httpserver: HTTPServer,
     product_page_url: str,
     say: Callable[..., None],
+    serve_first_link: Callable[[HTTPServer, FakeModel], str],
 ) -> None:
-    broken = httpserver.url_for("/products/old-mug")
-    httpserver.expect_request("/products/old-mug").respond_with_data("not found", status=404)
+    first_link = serve_first_link(httpserver, fake_model)
     fake_model.respond(
         "produce",
-        turn(calls=[("read_page", {"link": broken, "target_seconds": 15})]),
+        turn(calls=[("read_page", {"link": first_link, "target_seconds": 15})]),
         turn(says="That link didn't work. What's the link to your mug's own page?"),
     )
-    say(f"Make a 15 second ad for {broken}")
+    say(f"Make a 15 second ad for {first_link}")
     fake_model.respond(
         "produce",
         turn(calls=[("read_page", {"link": product_page_url, "target_seconds": 15})]),
@@ -415,7 +432,9 @@ def test_until_a_page_has_been_read_a_new_link_is_read_for_the_same_ad(
 
     job = Job.objects.get()
     assert (job.product_url, job.target_seconds) == (product_page_url, 15)
+    # What the ad is made from is the new page's, not the first one's.
     assert "Stoneware Mug" in job.page_text
+    assert "12 products" not in job.page_text
     assert job.photos.count() == 2
     assert [call.job_id for call in ToolCall.objects.all()] == [job.pk, job.pk]
 
