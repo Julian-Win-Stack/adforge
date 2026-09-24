@@ -9,10 +9,14 @@ from django.utils import timezone
 
 from adforge.retry import OutsideServiceDown
 from chat import messages
-from chat.models import Message, Session
+from chat.models import Attachment, Message, Session
+from gateway.gateway import charged_to
 from gateway.types import UnusableReply
+from jobs.models import SceneStep
+from jobs.work import make_starting_picture
 
 from . import loop
+from .loop import EXPECTED_FAILURES, why_it_failed
 from .producer import PRODUCER
 
 logger = logging.getLogger(__name__)
@@ -29,9 +33,10 @@ def run_producer(session_id: str) -> None:
     heartbeat = threading.Thread(target=_beat, args=(session_id, stop_beating), daemon=True)
     heartbeat.start()
     try:
-        # The producer only stops once it has read everything the user sent: a message
-        # that arrives as it replies is an interrupt, and it works on that too.
-        while not _stop_unless_the_user_spoke(session_id, loop.run(PRODUCER, session)):
+        # The producer only stops once it has read everything the user sent and every
+        # scene step's result: a message that arrives as it replies is an interrupt, and it
+        # works on that too.
+        while not _stop_unless_theres_more_to_read(session_id, loop.run(PRODUCER, session)):
             pass
     except UnusableReply as error:
         why = f"my AI model's answer couldn't be used ({error})"
@@ -55,14 +60,18 @@ def run_producer(session_id: str) -> None:
         Session.objects.filter(pk=session_id).update(producer_running=False)
 
 
-def _stop_unless_the_user_spoke(session_id: str, read_up_to: int) -> bool:
+def _stop_unless_theres_more_to_read(session_id: str, read_up_to: int) -> bool:
     """Mark the producer stopped, unless the user said something after the messages up to
-    `read_up_to` it was last given. Both happen under the session's lock, which a message
-    sent takes before it looks for a producer, so a message is either found here or starts
-    a new producer itself."""
+    `read_up_to` it was last given, or a scene step finished that it hasn't been given. Both
+    happen under the session's lock, which a message sent and a step finished take before
+    they look for a producer, so each is either found here or starts a new producer itself."""
     with transaction.atomic():
         session = Session.objects.select_for_update().get(pk=session_id)
         if session.messages.filter(role=Message.Role.USER, seq__gt=read_up_to).exists():
+            return False
+        if SceneStep.objects.filter(
+            scene__job__session=session, finished_at__isnull=False, producer_read_at__isnull=True
+        ).exists():
             return False
         session.producer_running = False
         session.save(update_fields=["producer_running"])
@@ -99,6 +108,50 @@ def wake_producer(session_id: str) -> None:
         session.producer_seen_at = timezone.now()
         session.save(update_fields=["producer_running", "producer_seen_at"])
         transaction.on_commit(lambda: run_producer.delay(session_id))
+
+
+@shared_task
+def run_scene_step(step_id: int) -> None:
+    """Do a scene step's work in the background, then have the producer told: it reads the
+    result on its next turn, and is started if it isn't working."""
+    step = SceneStep.objects.select_related("scene__job", "tool_call__session").get(pk=step_id)
+    scene = step.scene
+    session = step.tool_call.session
+    try:
+        with charged_to(step.tool_call):
+            picture = make_starting_picture(step)
+    except Exception as error:
+        if not isinstance(error, EXPECTED_FAILURES):
+            logger.exception("Scene step %s failed", step_id)
+        step.status = SceneStep.Status.FAILED
+        step.reason = why_it_failed(error, "the step")
+        step.result = (
+            f"Background step failed: scene {scene.number}'s starting picture couldn't be "
+            f"made: {step.reason} Tell the shop owner what went wrong."
+        )
+        step.finished_at = timezone.now()
+        step.save(update_fields=["status", "reason", "result", "finished_at"])
+    else:
+        assert step.photo is not None, "a starting picture is made from a photo"
+        # Shown and finished together, so a step run again never shows the picture twice.
+        with transaction.atomic():
+            messages.add(
+                session,
+                role=Message.Role.AGENT,
+                carrying=[messages.AttachedFile(Attachment.Kind.PICTURE, picture.file)],
+            )
+            step.status = SceneStep.Status.FINISHED
+            step.result = (
+                f"Background step finished: scene {scene.number}'s starting picture is ready "
+                f"(version {picture.version}), and is shown to the shop owner in the chat. "
+                f"Photo {step.photo.position} was used: "
+                f"{step.photo_reason} Tell the shop owner."
+            )
+            step.finished_at = timezone.now()
+            step.save(update_fields=["status", "result", "finished_at"])
+    # Only once the result is stored: a producer that is stopping either finds it, or has
+    # stopped by the time this looks, and is started again.
+    wake_producer(str(session.pk))
 
 
 @shared_task

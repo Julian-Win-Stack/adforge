@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
@@ -92,11 +93,23 @@ class ToolUse(Handoff):
     result: str
 
 
+class StepFinished(Handoff):
+    """Work a tool started in the background finished or failed: what the agent is told,
+    by the system rather than the user."""
+
+    kind: Literal["step_finished"] = "step_finished"
+    text: str
+
+
+# One thing in an agent's conversation.
+type Happened = Said | ToolUse | StepFinished
+
+
 class TurnHandoff(Handoff):
     """What an agent is given for one turn: its conversation so far, and the names of the
     tools it may call."""
 
-    conversation: list[Said | ToolUse]
+    conversation: list[Happened]
     tools: list[str]
 
 
@@ -157,6 +170,14 @@ class PortraitHandoff(Handoff):
     prompt: str = Field(min_length=1)
 
 
+class PictureEditHandoff(Handoff):
+    """A picture to make from other pictures: what to make, and each picture's key in the
+    file store, in the order the prompt refers to them."""
+
+    prompt: str = Field(min_length=1)
+    pictures: list[str] = Field(min_length=1)
+
+
 class VoiceDesignHandoff(Handoff):
     description: str = Field(min_length=1)
     sample: str = Field(min_length=1)
@@ -169,11 +190,13 @@ class SpeechHandoff(Handoff):
 
 @dataclass(frozen=True)
 class Picture:
-    """A picture a model drew, and the tokens it was billed for."""
+    """A picture a model drew, and the tokens it was billed for. Of the input tokens,
+    `picture_input_tokens` were pictures it was given, which cost more than words."""
 
     data: bytes
     input_tokens: int
     output_tokens: int
+    picture_input_tokens: int = 0
 
 
 class PictureProvider(Protocol):
@@ -182,6 +205,10 @@ class PictureProvider(Protocol):
     name: str
 
     def draw(self, *, model: str, prompt: str) -> Picture: ...
+
+    def edit(self, *, model: str, prompt: str, pictures: Sequence[bytes]) -> Picture:
+        """Make a picture from `pictures`, as `prompt` says."""
+        ...
 
 
 class VoiceProvider(Protocol):

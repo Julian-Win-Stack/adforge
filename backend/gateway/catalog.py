@@ -10,6 +10,8 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "rewrite_line": "gpt-5.6-sol",
     "shorten_script": "gpt-5.6-sol",
     "draw_person": "gpt-image-2.5-sunburst",
+    "choose_starting_picture": "gpt-5.6-sol",
+    "make_starting_picture": "gpt-image-2.5-sunburst",
     "design_voice": "inworld-tts-2",
     "measure_voice": "inworld-tts-2",
 }
@@ -21,10 +23,11 @@ PRICE_PER_MILLION_TOKENS: dict[str, tuple[Decimal, Decimal]] = {
     "gpt-5.6-terra": (Decimal("2.00"), Decimal("12.00")),
 }
 
-# US dollars per million tokens for picture models: (text input, picture output). From
-# OpenAI's pricing page. Only text goes in: the person is drawn from a description.
-PRICE_PER_MILLION_PICTURE_TOKENS: dict[str, tuple[Decimal, Decimal]] = {
-    "gpt-image-2.5-sunburst": (Decimal("5.00"), Decimal("30.00")),
+# US dollars per million tokens for picture models: (text input, picture input, picture
+# output). From OpenAI's pricing page. Pictures go in when one is made from others, such as
+# a scene's starting picture from the portrait and a product photo.
+PRICE_PER_MILLION_PICTURE_TOKENS: dict[str, tuple[Decimal, Decimal, Decimal]] = {
+    "gpt-image-2.5-sunburst": (Decimal("5.00"), Decimal("8.00"), Decimal("30.00")),
 }
 
 # US dollars per million characters spoken. From Inworld's pay-as-you-go pricing. Designing a
@@ -39,9 +42,18 @@ def cost_usd(model: str, input_tokens: int, output_tokens: int) -> Decimal:
     return (input_tokens * input_price + output_tokens * output_price) / 1_000_000
 
 
-def picture_cost_usd(model: str, input_tokens: int, output_tokens: int) -> Decimal:
-    input_price, output_price = PRICE_PER_MILLION_PICTURE_TOKENS[model]
-    return (input_tokens * input_price + output_tokens * output_price) / 1_000_000
+def picture_cost_usd(
+    model: str, input_tokens: int, output_tokens: int, picture_input_tokens: int = 0
+) -> Decimal:
+    """What a picture cost. `picture_input_tokens` are the part of `input_tokens` that were
+    pictures."""
+    text_price, picture_in_price, output_price = PRICE_PER_MILLION_PICTURE_TOKENS[model]
+    text_tokens = input_tokens - picture_input_tokens
+    return (
+        text_tokens * text_price
+        + picture_input_tokens * picture_in_price
+        + output_tokens * output_price
+    ) / 1_000_000
 
 
 def speech_cost_usd(model: str, characters: int) -> Decimal:

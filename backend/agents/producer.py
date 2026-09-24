@@ -5,6 +5,7 @@ from typing import Literal
 
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
+from django.db import IntegrityError, transaction
 from django.db.models import Max, Sum
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -12,7 +13,7 @@ from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.models import ModelCall
 from jobs import page
-from jobs.models import Job, ProducedItem, ProductPhoto
+from jobs.models import Job, ProducedItem, ProductPhoto, Scene, SceneStep
 from jobs.work import (
     check_page,
     create_person,
@@ -34,9 +35,15 @@ one line per scene.
 You work by calling tools. Call one when you need it, read what it hands back, and decide \
 what to do next. Before a tool that takes a while, say in one short sentence what you're \
 about to do. When there is nothing left to do, or you need the shop owner, reply to them.
-The usual order is: read the page, plan the ad, create the person, then run the planning \
-checks. When a tool hands back something to ask the shop owner, ask it in your reply and \
-wait for their answer before passing their choice to a tool.
+The usual order is: read the page, plan the ad, create the person, run the planning \
+checks, then make each scene's starting picture. When a tool hands back something to ask \
+the shop owner, ask it in your reply and wait for their answer before passing their choice \
+to a tool.
+Scene tools start their work in the background and hand back at once, before anything is \
+made. Tell the shop owner the work has started, then carry on or reply: don't call the tool \
+again to see whether it has finished. When a step finishes or fails, you are told in a \
+message from the system, not from the shop owner. Then tell the shop owner what was made, \
+or what went wrong.
 Every fact about the product comes from its page or from the shop owner. You have no tool \
 that searches the web, so never look anything up, infer or guess. When something you need \
 is missing or unclear, ask one short, specific question. When you can't do something, say \
@@ -361,6 +368,86 @@ class RunPlanningChecks(Tool):
         return job.tool_calls.filter(tool=self.name, asked_about=about).last()
 
 
+class MakeStartingPicture(Tool):
+    """Start making a scene's starting picture: the person holding the product, made from
+    the portrait and the product photo that suits the scene's line best. Works in the
+    background and hands back at once; you are told when the picture is ready. Only for a
+    line that has passed the fact check."""
+
+    name = "make_starting_picture"
+
+    scene: int = Field(description="The number of the scene.")
+    note: str | None = Field(
+        description="What the picture should show or change, such as what the shop owner "
+        "asked for this scene, as a short instruction. Null for nothing."
+    )
+
+    def run(self, call: ToolCall) -> str:
+        scene = _a_checked_scene(call, self.scene)
+        if latest(scene.job, ProducedItem.Kind.PORTRAIT) is None:
+            raise Refused(
+                "the person hasn't been made yet, and the picture shows them. Create the "
+                "person first."
+            )
+        note = " ".join((self.note or "").split())
+        steps = scene.steps.filter(kind=SceneStep.Kind.STARTING_PICTURE)
+        made = (
+            steps.filter(status=SceneStep.Status.FINISHED, note=note, line=scene.line)
+            .exclude(produced=None)
+            .last()
+        )
+        if made is not None:
+            picture = made.produced.get()
+            assert made.photo is not None, "a finished starting picture was made from a photo"
+            return (
+                f"Scene {scene.number}'s starting picture was already made for this line "
+                f"{'with this note' if note else 'with no note'} (version {picture.version}), "
+                "and the shop owner has seen it, so nothing was made or paid for again. Making "
+                f"it cost {_dollars(made.tool_call.cost_usd())}. Photo {made.photo.position} "
+                f"was used: {made.photo_reason}"
+            )
+        running = f"scene {scene.number}'s starting picture is already being made"
+        if steps.filter(status=SceneStep.Status.RUNNING).exists():
+            raise Refused(f"{running}. You'll be told when it's ready.")
+        try:
+            with transaction.atomic():
+                step = SceneStep.objects.create(
+                    scene=scene,
+                    kind=SceneStep.Kind.STARTING_PICTURE,
+                    tool_call=call,
+                    line=scene.line,
+                    note=note,
+                )
+        except IntegrityError:
+            # Another started it since the look above.
+            raise Refused(f"{running}. You'll be told when it's ready.") from None
+        # tasks.py runs the producer, so it imports this module rather than the other way.
+        from .tasks import run_scene_step
+
+        transaction.on_commit(lambda: run_scene_step.delay(step.pk))
+        return (
+            f"Started scene {scene.number}'s starting picture. It isn't made yet: you'll be "
+            "told when it's ready."
+        )
+
+
+def _a_checked_scene(call: ToolCall, number: int) -> Scene:
+    """The scene a scene tool was asked to work on, once its line has passed the fact check.
+    Every scene tool starts here, so none makes anything for a line that hasn't."""
+    job = _the_job(call)
+    if job is None or not job.scenes.exists():
+        raise Refused("the ad hasn't been planned yet, and its scenes come from the plan.")
+    scene = job.scenes.filter(number=number).first()
+    if scene is None:
+        raise Refused(f"the ad has no scene {number}: its scenes are 1 to {job.scenes.count()}.")
+    if not scene.fact_checked:
+        raise Refused(
+            f"scene {number}'s line hasn't passed the fact check, and nothing is made for a "
+            "line until it has. Run the planning checks first."
+        )
+    return scene
+
+
 def _answered(session: Session, *, since: ToolCall, about: str) -> None:
     """Refuse a choice the shop owner hasn't made: they haven't answered since the checks
     asked them."""
@@ -469,5 +556,5 @@ PRODUCER = Agent(
     name="producer",
     purpose="produce",
     instructions=INSTRUCTIONS,
-    tools=[ReadPage, UsePhotos, PlanAd, CreatePerson, RunPlanningChecks],
+    tools=[ReadPage, UsePhotos, PlanAd, CreatePerson, RunPlanningChecks, MakeStartingPicture],
 )

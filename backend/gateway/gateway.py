@@ -26,18 +26,19 @@ from .models import ModelCall
 from .types import (
     AgentProvider,
     Handoff,
+    Happened,
     Image,
     Judgement,
     LoadedImage,
     ModelProvider,
     ModelRequest,
+    Picture,
+    PictureEditHandoff,
     PictureProvider,
     PortraitHandoff,
-    Said,
     SpeechHandoff,
     ToolRequest,
     ToolSpec,
-    ToolUse,
     Turn,
     TurnHandoff,
     TurnRequest,
@@ -130,7 +131,7 @@ def take_turn(
     session: Session,
     purpose: str,
     instructions: str,
-    conversation: Sequence[Said | ToolUse],
+    conversation: Sequence[Happened],
     tools: Sequence[ToolSpec],
 ) -> Turn:
     """Give an agent its conversation and the tools it may call, and have it take one turn:
@@ -166,7 +167,7 @@ def take_turn(
     return _recorded(None, purpose, request.model, provider.name, handoff, take, session=session)
 
 
-def last_turn_given(session: Session, purpose: str) -> list[Said | ToolUse] | None:
+def last_turn_given(session: Session, purpose: str) -> list[Happened] | None:
     """The conversation an agent was given for its last turn paid for in the session, or
     None if it hasn't taken one."""
     last = ModelCall.objects.filter(
@@ -246,21 +247,42 @@ def draw_picture(*, job: Job | None, purpose: str, prompt: str) -> str:
     provider = _pictures()
 
     def draw() -> _Made[str]:
-        picture = provider.draw(model=model, prompt=handoff.prompt)
-        key = file_store.save(f"{purpose}.{_picture_extension(picture.data)}", picture.data)
-        return _Made(
-            result=key,
-            output={"file": key},
-            bill=_Bill(
-                cost_usd=catalog.picture_cost_usd(
-                    model, picture.input_tokens, picture.output_tokens
-                ),
-                input_tokens=picture.input_tokens,
-                output_tokens=picture.output_tokens,
-            ),
-        )
+        return _kept(purpose, model, provider.draw(model=model, prompt=handoff.prompt))
 
     return _recorded(job, purpose, model, provider.name, handoff, draw)
+
+
+def edit_picture(*, job: Job | None, purpose: str, prompt: str, pictures: Sequence[str]) -> str:
+    """Have a model make a picture from `pictures`, given by their keys in the file store,
+    as `prompt` says. Each is sent whole, not shrunk: they are what the new picture is made
+    of. Returns the new picture's key in the file store."""
+    handoff = PictureEditHandoff(prompt=prompt, pictures=list(pictures))
+    model = catalog.MODEL_FOR_PURPOSE[purpose]
+    provider = _pictures()
+
+    def edit() -> _Made[str]:
+        given = [file_store.read(key) for key in handoff.pictures]
+        return _kept(
+            purpose, model, provider.edit(model=model, prompt=handoff.prompt, pictures=given)
+        )
+
+    return _recorded(job, purpose, model, provider.name, handoff, edit)
+
+
+def _kept(purpose: str, model: str, picture: Picture) -> _Made[str]:
+    """A picture a model made, kept in the file store, with what it was billed for."""
+    key = file_store.save(f"{purpose}.{_picture_extension(picture.data)}", picture.data)
+    return _Made(
+        result=key,
+        output={"file": key},
+        bill=_Bill(
+            cost_usd=catalog.picture_cost_usd(
+                model, picture.input_tokens, picture.output_tokens, picture.picture_input_tokens
+            ),
+            input_tokens=picture.input_tokens,
+            output_tokens=picture.output_tokens,
+        ),
+    )
 
 
 def design_voice(*, job: Job | None, purpose: str, description: str, sample: str) -> str:

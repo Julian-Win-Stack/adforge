@@ -2,8 +2,9 @@
 outcome for its purpose: output data to return, a turn an agent takes, an error to raise,
 or a turn during which something else happens (see `meanwhile`).
 
-Pictures and voices need no script: the fake draws a plain portrait, designs a numbered
-voice, and speaks at `words_per_second`. Script an error for their purpose to make one fail."""
+Pictures and voices need no script: the fake draws a plain portrait, makes a plain picture
+of its own from other pictures, designs a numbered voice, and speaks at `words_per_second`.
+Script an error for their purpose to make one fail."""
 
 import io
 import itertools
@@ -13,7 +14,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 import PIL.Image
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from .types import (
     ModelReply,
@@ -23,6 +24,7 @@ from .types import (
     Turn,
     TurnReply,
     TurnRequest,
+    UnusableReply,
 )
 
 # Numbers the scripted tool calls, so each has its own id as a real model's would.
@@ -65,6 +67,7 @@ class FakeModel:
         self._scripts: defaultdict[str, deque[Outcome]] = defaultdict(deque)
         self.words_per_second = 2.0
         self.voices = 0
+        self.edits = 0
         # Every script the fake has been asked to speak, so a test can show that work paid
         # for once was not paid for again.
         self.spoken: list[str] = []
@@ -75,10 +78,18 @@ class FakeModel:
     def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]:
         outcome = self._next(request.purpose)
         assert isinstance(outcome, dict), f"{request.purpose!r} was scripted a turn, not output"
+        try:
+            output = request.output.model_validate(outcome)
+        except ValidationError as error:
+            # As the real adapter does with an answer that breaks the output's rules.
+            raise UnusableReply(
+                f"{request.model} gave an answer for {request.purpose} that could not be "
+                f"read: {error}",
+                input_tokens=self.INPUT_TOKENS,
+                output_tokens=self.OUTPUT_TOKENS,
+            ) from error
         return ModelReply(
-            output=request.output.model_validate(outcome),
-            input_tokens=self.INPUT_TOKENS,
-            output_tokens=self.OUTPUT_TOKENS,
+            output=output, input_tokens=self.INPUT_TOKENS, output_tokens=self.OUTPUT_TOKENS
         )
 
     def take_turn(self, request: TurnRequest) -> TurnReply:
@@ -107,6 +118,19 @@ class FakeModel:
             data=portrait.getvalue(),
             input_tokens=self.INPUT_TOKENS,
             output_tokens=self.OUTPUT_TOKENS,
+        )
+
+    def edit(self, *, model: str, prompt: str, pictures: Sequence[bytes]) -> Picture:
+        self._fail_if_scripted("make_starting_picture")
+        self.edits += 1
+        made = io.BytesIO()
+        # Each picture made is its own, as a real model's would be.
+        PIL.Image.new("RGB", (72, 128), (self.edits, 120, 90)).save(made, format="PNG")
+        return Picture(
+            data=made.getvalue(),
+            input_tokens=self.INPUT_TOKENS,
+            output_tokens=self.OUTPUT_TOKENS,
+            picture_input_tokens=self.INPUT_TOKENS // 2,
         )
 
     def design_voice(self, *, model: str, description: str, sample: str) -> str:

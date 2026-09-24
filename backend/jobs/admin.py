@@ -2,7 +2,7 @@ from django.contrib import admin
 
 from gateway.models import ModelCall
 
-from .models import Job, ProducedItem, ProductPhoto, Scene
+from .models import Job, ProducedItem, ProductPhoto, Scene, SceneStep
 
 
 class ProductPhotoInline(admin.TabularInline[ProductPhoto, Job]):
@@ -23,11 +23,21 @@ class SceneInline(admin.TabularInline[Scene, Job]):
 
 class ProducedItemInline(admin.TabularInline[ProducedItem, Job]):
     model = ProducedItem
-    fields = ["kind", "version", "scene", "file", "voice_id", "words_per_second", "created_at"]
+    fields = [
+        "kind",
+        "version",
+        "scene",
+        "step",
+        "file",
+        "voice_id",
+        "words_per_second",
+        "created_at",
+    ]
     readonly_fields = [
         "kind",
         "version",
         "scene",
+        "step",
         "file",
         "voice_id",
         "words_per_second",
@@ -76,12 +86,30 @@ class JobAdmin(admin.ModelAdmin[Job]):
     ]
 
 
+class SceneStepInline(admin.TabularInline[SceneStep, Scene]):
+    model = SceneStep
+    fields = ["kind", "status", "reason", "photo", "prompt", "started_at", "finished_at"]
+    readonly_fields = ["kind", "status", "reason", "photo", "prompt", "started_at", "finished_at"]
+    extra = 0
+    can_delete = False
+    show_change_link = True
+
+
 @admin.register(Scene)
 class SceneAdmin(admin.ModelAdmin[Scene]):
     list_display = ["job", "number", "line", "fact_checked", "status"]
     list_select_related = ["job"]
     list_filter = ["status"]
     search_fields = ["line"]
+    inlines = [SceneStepInline]
+
+
+@admin.register(SceneStep)
+class SceneStepAdmin(admin.ModelAdmin[SceneStep]):
+    list_display = ["scene", "kind", "status", "started_at", "finished_at", "producer_read_at"]
+    list_select_related = ["scene__job"]
+    list_filter = ["kind", "status"]
+    readonly_fields = ["started_at"]
 
 
 @admin.register(ProducedItem)

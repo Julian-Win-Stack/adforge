@@ -3,15 +3,17 @@ the way the real ones did on 2026-09-19 (docs/real-api-replies.md)."""
 
 import base64
 import io
+import json
 import wave
 from decimal import Decimal
 
 import pytest
 from pytest_django import Settings
 from pytest_httpserver import HTTPServer
+from werkzeug import Request, Response
 
 from adforge import file_store
-from gateway.gateway import design_voice, draw_picture, speak, use_model
+from gateway.gateway import design_voice, draw_picture, edit_picture, speak, use_model
 from gateway.inworld_adapter import InworldProvider
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
@@ -134,6 +136,73 @@ def test_speech_that_isnt_a_wav_file_is_refused(
     with use_model(inworld), pytest.raises(ValueError, match="isn't a WAV file"):
         speak(job=None, purpose="measure_voice", voice_id=VOICE_ID, text="Yours for $24.00.")
     assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
+
+
+def test_a_picture_is_made_from_other_pictures_through_openai(
+    httpserver: HTTPServer, settings: Settings
+) -> None:
+    settings.OPENAI_API_KEY = "sk-test"
+    settings.OPENAI_BASE_URL = httpserver.url_for("/v1")
+    portrait = file_store.save("portrait.png", picture(720, 1280, (180, 150, 120)))
+    # As big as a phone takes them: the picture model is sent the whole photo, not a copy
+    # shrunk for looking at.
+    photo_content = picture(1600, 1200, (143, 170, 140))
+    photo = file_store.save("photo.png", photo_content)
+    made = picture(1152, 2048, (200, 180, 160))
+    sent: list[Request] = []
+
+    def reply(request: Request) -> Response:
+        sent.append(request)
+        return Response(
+            json.dumps(
+                {
+                    "created": 1_789_849_905,
+                    "data": [{"b64_json": base64.b64encode(made).decode()}],
+                    "usage": {
+                        "input_tokens": 1_060,
+                        "input_tokens_details": {"image_tokens": 1_000, "text_tokens": 60},
+                        "output_tokens": 2_000,
+                        "output_tokens_details": {"image_tokens": 2_000, "text_tokens": 0},
+                        "total_tokens": 3_060,
+                    },
+                }
+            ),
+            content_type="application/json",
+        )
+
+    httpserver.expect_oneshot_request("/v1/images/edits", method="POST").respond_with_handler(reply)
+
+    with use_model(OpenAIProvider()):
+        key = edit_picture(
+            job=None,
+            purpose="make_starting_picture",
+            prompt="She holds the mug up beside her face.",
+            pictures=[portrait, photo],
+        )
+
+    (request,) = sent
+    assert request.form.to_dict() == {
+        "model": "gpt-image-2.5-sunburst",
+        "prompt": "She holds the mug up beside her face.",
+        "size": "1152x2048",
+        "quality": "high",
+    }
+    assert [file.read() for file in request.files.getlist("image[]")] == [
+        file_store.read(portrait),
+        photo_content,
+    ]
+    assert file_store.read(key) == made
+    edited = ModelCall.objects.get()
+    assert edited.handoff == {
+        "prompt": "She holds the mug up beside her face.",
+        "pictures": [portrait, photo],
+    }
+    # 60 text tokens at $5 a million, 1,000 picture tokens in at $8 and 2,000 out at $30.
+    assert (edited.input_tokens, edited.output_tokens, edited.cost_usd) == (
+        1_060,
+        2_000,
+        Decimal("0.068300"),
+    )
 
 
 def test_a_portrait_is_drawn_through_openai(httpserver: HTTPServer, settings: Settings) -> None:
