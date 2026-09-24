@@ -1,13 +1,13 @@
+"""The work the producer's tools do on a job: reading its page, planning it, making its
+person and running the planning checks."""
+
 import io
-import logging
 import mimetypes
 import wave
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 
-from celery import shared_task
 from django.db import transaction
 from django.db.models import Max
 
@@ -18,17 +18,15 @@ from chat.models import Message
 from gateway.gateway import (
     IMAGE_TYPE_NAMES,
     IMAGE_TYPES,
-    UnreadableImage,
     call_model,
     design_voice,
     draw_picture,
     speak,
 )
 from gateway.models import ModelCall
-from gateway.types import Handoff, Image, Judgement, UnusableReply
+from gateway.types import Handoff, Image, Judgement
 
 from . import page
-from .activity import record
 from .checks import (
     FACT_CHECK_INSTRUCTIONS,
     MOST_REWRITES,
@@ -47,7 +45,7 @@ from .checks import (
     most_words,
     script_seconds,
 )
-from .models import Job, ProducedItem, ProductPhoto, Question, Scene
+from .models import Job, ProducedItem, ProductPhoto, Scene
 from .planning import (
     PLAN_INSTRUCTIONS,
     ChatMessage,
@@ -55,8 +53,6 @@ from .planning import (
     ProducerDecision,
     producer_decision_for,
 )
-
-logger = logging.getLogger(__name__)
 
 CHECK_INSTRUCTIONS = """\
 You check whether a product page was read properly. It was fetched with a plain HTTP \
@@ -70,14 +66,6 @@ is the page actually read.
 Give one sentence saying why, written for the shop owner."""
 
 
-WORKING_LINK_QUESTION = (
-    "We couldn't read one product's page from that link. What's the link to the product's own page?"
-)
-PRODUCT_PHOTOS_QUESTION = (
-    "The page had no product photo we could use. Can you upload at least one photo of the product?"
-)
-
-
 class PageCheckHandoff(Handoff):
     product_url: str
     page_url: str
@@ -89,104 +77,13 @@ class PageCheck(Judgement):
     decision: Literal["readable", "unreadable"]
 
 
-@shared_task
-def read_page(job_id: str) -> None:
-    job = Job.objects.get(pk=job_id)
-    try:
-        ready = _read_page(job)
-    except page.PageUnreadable as error:
-        _ask_for_working_link(job, reason=str(error))
-    except UnusableReply as error:
-        record(
-            job,
-            "Could not check the product page",
-            reason=f"The model's answer couldn't be used: {error}.",
-            status=Job.Status.FAILED,
-        )
-    except OutsideServiceDown as error:
-        record(
-            job,
-            "Could not read the product page",
-            reason=f"An outside service stayed down after several tries: {error}.",
-            status=Job.Status.FAILED,
-        )
-    except Exception:
-        logger.exception("Reading the page failed for job %s", job_id)
-        record(
-            job,
-            "Something went wrong while reading the page",
-            reason="An unexpected error stopped the job; the details are in the server log.",
-            status=Job.Status.FAILED,
-        )
-    else:
-        if ready:
-            plan_ad.delay(job_id)
-
-
-def _read_page(job: Job) -> bool:
-    """Read the page and keep what the ad needs. False when the job has to wait instead."""
-    # Run again after a restart, the task only carries on a read that hadn't finished. A page
-    # already read goes on to planning, in case the restart came before it was queued.
-    if job.status == Job.Status.PAGE_READ:
-        return True
-    if job.status not in (Job.Status.QUEUED, Job.Status.READING_PAGE):
-        return False
-    record(
-        job,
-        "Reading the product page",
-        reason="Every fact and picture in the ad has to come from the page, never made up.",
-        status=Job.Status.READING_PAGE,
-    )
-    download = page.download(job.product_url, max_bytes=page.MAX_PAGE_BYTES, what="product page")
-    if download.final_url != job.product_url:
-        record(
-            job,
-            f"The link led to {download.final_url}",
-            reason="The shop sent us to a different page, so that page is the one being read.",
-        )
-    product_page = keep_page(job, download)
-    record(
-        job,
-        f"Stored {len(product_page.text):,} characters of page text and the page's HTML",
-        reason="The script's claims will be checked against this text, and the HTML shows "
-        "exactly what the page said on the day it was read.",
-    )
-
-    check = check_page(job, download, product_page)
-    if check.decision == "unreadable":
-        _ask_for_working_link(job, reason=check.reason)
-        return False
-    record(job, "The page has what the ad needs", reason=check.reason)
-
-    for skipped in save_photos(job, product_page.photo_urls):
-        record(job, f"Skipped the photo at {skipped.url}", reason=skipped.reason)
-    saved = job.photos.count()
-    if saved == 0:
-        _ask(
-            job,
-            Question.Kind.PRODUCT_PHOTOS,
-            PRODUCT_PHOTOS_QUESTION,
-            message="Waiting for product photos",
-            reason="The ad has to show the real product, and the page gave no product photo "
-            "we could use.",
-        )
-        return False
-    record(
-        job,
-        f"Saved {saved} product photo{'s' if saved != 1 else ''}",
-        reason="The ad has to show the real product, so its photos are kept with the job.",
-        status=Job.Status.PAGE_READ,
-    )
-    return True
-
-
-def keep_page(job: Job, download: page.Download) -> page.ProductPage:
-    """Store the page's text and its original HTML with the job."""
-    product_page = page.parse(download)
+def keep_page(job: Job, download: page.Download, product_page: page.ProductPage) -> None:
+    """Store the page's text and its original HTML with the job. Only for a page found to
+    show its product, whose photos are kept: the job counts as having its page from then."""
     job.page_text = product_page.text
     job.page_html_key = file_store.save(f"jobs/{job.pk}/page.html", download.content)
-    job.save(update_fields=["page_text", "page_html_key"])
-    return product_page
+    job.status = Job.Status.PAGE_READ
+    job.save(update_fields=["page_text", "page_html_key", "status"])
 
 
 def check_page(job: Job, download: page.Download, product_page: page.ProductPage) -> PageCheck:
@@ -204,16 +101,6 @@ def check_page(job: Job, download: page.Download, product_page: page.ProductPage
         output=PageCheck,
         # A page read again, as after a worker stopped, isn't checked and paid for twice.
         pay_once=True,
-    )
-
-
-def _ask_for_working_link(job: Job, *, reason: str) -> None:
-    _ask(
-        job,
-        Question.Kind.WORKING_LINK,
-        WORKING_LINK_QUESTION,
-        message="Waiting for a working link to the product page",
-        reason=reason,
     )
 
 
@@ -263,80 +150,6 @@ def keep_photo(
     ProductPhoto.objects.create(job=job, position=position, source_url=source_url, file=key)
 
 
-@shared_task
-def plan_ad(job_id: str) -> None:
-    job = Job.objects.get(pk=job_id)
-    if _run_step(job, _plan_ad, "plan the ad", "planning the ad"):
-        make_person.delay(job_id)
-
-
-@shared_task
-def make_person(job_id: str) -> None:
-    job = Job.objects.get(pk=job_id)
-    if _run_step(job, _make_person, "make the person", "making the person"):
-        check_plan.delay(job_id)
-
-
-@shared_task
-def check_plan(job_id: str) -> None:
-    job = Job.objects.get(pk=job_id)
-    _run_step(job, _check_plan, "check the plan", "checking the plan")
-
-
-def _run_step(job: Job, step: Callable[[Job], bool], could_not: str, while_doing: str) -> bool:
-    """Run one step of the job, stopping the job with the reason if it fails. True when the
-    job goes on to its next step."""
-    try:
-        return step(job)
-    except UnusableReply as error:
-        reason = f"The model's answer couldn't be used: {error}."
-    except OutsideServiceDown as error:
-        reason = f"An outside service stayed down after several tries: {error}."
-    except UnreadableImage as error:
-        # Only a job whose photos were kept before they had to be in a readable format.
-        reason = f"{error}. Only {IMAGE_TYPE_NAMES} photos can be shown to the model."
-    except Exception:
-        logger.exception("%s failed for job %s", while_doing.capitalize(), job.pk)
-        record(
-            job,
-            f"Something went wrong while {while_doing}",
-            reason="An unexpected error stopped the job; the details are in the server log.",
-            status=Job.Status.FAILED,
-        )
-        return False
-    record(job, f"Could not {could_not}", reason=reason, status=Job.Status.FAILED)
-    return False
-
-
-def _plan_ad(job: Job) -> bool:
-    # Run again after a restart, the task only carries on a plan that hadn't finished, so
-    # nothing is asked or paid for twice. A plan already made goes on to the next step, in
-    # case the restart came before that step was queued.
-    if job.status == Job.Status.PLANNED:
-        return True
-    if job.status not in (Job.Status.PAGE_READ, Job.Status.PLANNING):
-        return False
-    record(
-        job,
-        "Planning the ad",
-        reason="The plan sets the scenes, what the person says in each, and who says it.",
-        status=Job.Status.PLANNING,
-    )
-    decision = plan(job)
-    if decision.question is not None:
-        _ask(
-            job,
-            Question.Kind.PRODUCER,
-            decision.question,
-            message=f"Asked: {decision.question}",
-            reason=decision.reason,
-        )
-        return False
-    count = job.scenes.count()
-    record(job, f"Planned {count} scene{'s' if count != 1 else ''}", reason=decision.reason)
-    return True
-
-
 def plan(job: Job) -> ProducerDecision:
     """Have the planner plan the ad from the page, the product photos and the conversation,
     and keep the plan. A decision to ask the user keeps nothing."""
@@ -379,32 +192,6 @@ naturally. Not a real, famous person. No text, logos or products in the picture.
 person: {looks}"""
 
 
-def _make_person(job: Job) -> bool:
-    # Run again after a restart, the task only makes what it hadn't made yet, so the
-    # portrait and the voice are never paid for twice. A person already made goes on to the
-    # checks, in case the restart came before they were queued.
-    if job.status == Job.Status.CHECKING_PLAN:
-        return True
-    if job.status not in (Job.Status.PLANNED, Job.Status.MAKING_PERSON):
-        return False
-    record(
-        job,
-        "Making the person",
-        reason="The person who presents the ad gets a portrait, and a voice made to match.",
-        status=Job.Status.MAKING_PERSON,
-    )
-    _, voice = create_person(job)
-    record(
-        job,
-        "Made the person",
-        reason=(
-            f"The voice speaks {voice.words_per_second:.1f} words a second, measured on the "
-            "script itself, so the script's length is known before anything is rendered."
-        ),
-    )
-    return True
-
-
 def create_person(job: Job) -> tuple[ProducedItem, ProducedItem]:
     """Make the person who presents the ad: a portrait, and a voice made to match whose
     speaking speed is measured on the script. Gives back the portrait and the voice.
@@ -445,8 +232,6 @@ def create_person(job: Job) -> tuple[ProducedItem, ProducedItem]:
         )
     if voice.words_per_second is None:
         _measure_voice(job, voice)
-    job.status = Job.Status.CHECKING_PLAN
-    job.save(update_fields=["status"])
     return portrait, voice
 
 
@@ -479,50 +264,6 @@ def _seconds(wav: bytes) -> float:
     """How long a WAV recording lasts."""
     with wave.open(io.BytesIO(wav)) as audio:
         return float(audio.getnframes() / audio.getframerate())
-
-
-def _check_plan(job: Job) -> bool:
-    # Run again after a restart, or after an answer, the checks carry on from where they
-    # stopped: lines already checked stay checked.
-    if job.status != Job.Status.CHECKING_PLAN:
-        return False
-    asking = run_checks(job)
-    if asking is None:
-        record(job, "Checked the plan", reason=why_the_checks_passed(job))
-    elif asking.about == "unclear_page":
-        _ask(
-            job,
-            Question.Kind.UNCLEAR_PAGE,
-            asking.question,
-            message=f"Asked: {asking.question}",
-            reason=asking.reason,
-        )
-    elif asking.about == "line":
-        assert asking.scene is not None
-        _ask(
-            job,
-            Question.Kind.FACT_CHECK,
-            f"{asking.question} Keep this line, or give your own?",
-            message=f"Asked about scene {asking.scene.number}'s line",
-            reason=asking.reason,
-            scene=asking.scene,
-            options=[
-                {"value": choice.value, "label": choice.label} for choice in Question.LineChoice
-            ],
-        )
-    else:
-        _ask(
-            job,
-            Question.Kind.LENGTH,
-            f"{asking.question} Shorten it to fit, or keep it longer?",
-            message="Asked whether to shorten the script",
-            reason=asking.reason,
-            options=[
-                {"value": Job.LengthChoice.SHORTEN, "label": "Shorten it to fit"},
-                {"value": Job.LengthChoice.KEEP_LONGER, "label": "Keep it longer"},
-            ],
-        )
-    return False
 
 
 @dataclass(frozen=True)
@@ -633,16 +374,9 @@ def _rewrite_line(job: Job, scene: Scene, conversation: list[ChatMessage]) -> No
         ),
         output=RewrittenLine,
     )
-    last = scene.fact_problems[-1]
-    last["rewritten"] = True
-    with transaction.atomic():
-        scene.line = rewrite.line
-        scene.save(update_fields=["line", "fact_problems"])
-        record(
-            job,
-            f"Rewrote scene {scene.number}'s line: {rewrite.line}",
-            reason=f"The fact check failed it: {last['problem']}",
-        )
+    scene.fact_problems[-1]["rewritten"] = True
+    scene.line = rewrite.line
+    scene.save(update_fields=["line", "fact_problems"])
 
 
 def _about_line(scene: Scene) -> Asking:
@@ -679,7 +413,7 @@ def _fit_length(job: Job) -> bool | Asking:
         job.length_choice == Job.LengthChoice.SHORTEN
         and _shortened_since_the_user_spoke(job) < MOST_REWRITES
     ):
-        _shorten(job, lines, seconds, words_per_second)
+        _shorten(job, lines, words_per_second)
         return False
     # Shortening again takes the user choosing it again.
     job.length_choice = ""
@@ -709,16 +443,15 @@ def _shortened_since_the_user_spoke(job: Job) -> int:
 
 def _last_heard_from_the_user(job: Job) -> datetime | None:
     if job.session is None:
-        # A job started without a session hears from the user only through its questions.
-        answered: datetime | None = job.questions.aggregate(last=Max("answered_at"))["last"]
-        return answered
+        # A job started before sessions existed has no conversation.
+        return None
     spoke: datetime | None = job.session.messages.filter(role=Message.Role.USER).aggregate(
         last=Max("created_at")
     )["last"]
     return spoke
 
 
-def _shorten(job: Job, lines: list[str], seconds: float, words_per_second: float) -> None:
+def _shorten(job: Job, lines: list[str], words_per_second: float) -> None:
     assert job.target_seconds is not None
     shortened = call_model(
         job=job,
@@ -751,14 +484,6 @@ def _shorten(job: Job, lines: list[str], seconds: float, words_per_second: float
             for number, line in enumerate(shortened.lines, start=1)
             if number > len(scenes)
         )
-        count = len(shortened.lines)
-        record(
-            job,
-            f"Shortened the script to {count} scene{'s' if count != 1 else ''}",
-            reason=(
-                f"It ran about {seconds:.1f} seconds, over your {job.target_seconds}-second target."
-            ),
-        )
 
 
 def why_the_checks_passed(job: Job) -> str:
@@ -785,17 +510,8 @@ def _conversation(job: Job) -> list[ChatMessage]:
     """What the user and the producer have said, for the models that plan and check the ad.
     Facts may come from the user's words; the producer's show what the user was answering."""
     if job.session is None:
-        # A job started without a session talks to the user only through its questions.
-        said = []
-        for asked in job.questions.filter(
-            kind__in=[Question.Kind.PRODUCER, Question.Kind.UNCLEAR_PAGE],
-            answered_at__isnull=False,
-        ):
-            said += [
-                ChatMessage(by="producer", text=asked.question),
-                ChatMessage(by="user", text=asked.answer),
-            ]
-        return said
+        # A job started before sessions existed has no conversation.
+        return []
     return [
         ChatMessage(
             by="user" if message.role == Message.Role.USER else "producer",
@@ -803,38 +519,3 @@ def _conversation(job: Job) -> list[ChatMessage]:
         )
         for message in job.session.messages.prefetch_related("attachments")
     ]
-
-
-# What the job waits in while each kind of question is open.
-WAITING_STATUS = {
-    Question.Kind.WORKING_LINK: Job.Status.NEEDS_WORKING_LINK,
-    Question.Kind.PRODUCT_PHOTOS: Job.Status.NEEDS_PRODUCT_PHOTOS,
-    Question.Kind.PRODUCER: Job.Status.NEEDS_ANSWER,
-    Question.Kind.UNCLEAR_PAGE: Job.Status.NEEDS_ANSWER,
-    Question.Kind.FACT_CHECK: Job.Status.NEEDS_ANSWER,
-    Question.Kind.LENGTH: Job.Status.NEEDS_ANSWER,
-}
-
-
-def _ask(
-    job: Job,
-    kind: Question.Kind,
-    question: str,
-    *,
-    message: str,
-    reason: str,
-    scene: Scene | None = None,
-    options: list[dict[str, Any]] | None = None,
-) -> None:
-    """Put a question to the user and leave the job waiting for the answer. With `options`
-    the user picks one instead of typing an answer."""
-    with transaction.atomic():
-        Question.objects.create(
-            job=job,
-            kind=kind,
-            question=question,
-            reason=reason,
-            scene=scene,
-            options=options or [],
-        )
-        record(job, message, reason=reason, status=WAITING_STATUS[kind])

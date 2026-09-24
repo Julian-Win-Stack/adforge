@@ -8,19 +8,9 @@ class Job(models.Model):
         QUEUED = "queued"
         READING_PAGE = "reading_page"
         PAGE_READ = "page_read"
-        PLANNING = "planning"
         PLANNED = "planned"
-        MAKING_PERSON = "making_person"
-        CHECKING_PLAN = "checking_plan"
         # The plan passed its checks, so nothing will need rewriting once rendering starts.
         READY_TO_RENDER = "ready_to_render"
-        # Waiting for the user: the link didn't lead to one product's readable page.
-        NEEDS_WORKING_LINK = "needs_working_link"
-        # Waiting for the user: the page gave no product photo we could use.
-        NEEDS_PRODUCT_PHOTOS = "needs_product_photos"
-        # Waiting for the user to answer a question from the producer or a planning check.
-        NEEDS_ANSWER = "needs_answer"
-        FAILED = "failed"
 
     class LengthChoice(models.TextChoices):
         SHORTEN = "shorten"
@@ -47,7 +37,13 @@ class Job(models.Model):
     )
     product_url = models.URLField(max_length=2000)
     target_seconds = models.PositiveSmallIntegerField(null=True, blank=True)
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.QUEUED)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.QUEUED,
+        help_text="A label for how far the job has got. Nothing reads it to decide what "
+        "happens next: each tool decides that from what the job has.",
+    )
     page_text = models.TextField(
         blank=True,
         help_text="The words a visitor sees, then the product data the page declares for "
@@ -56,7 +52,8 @@ class Job(models.Model):
     page_html_key = models.CharField(
         max_length=500,
         blank=True,
-        help_text="Key in the file store of the page's original HTML, exactly as served.",
+        help_text="Key in the file store of the page's original HTML, exactly as served. "
+        "Blank until the page has been found to show its product and its photos are kept.",
     )
     product_colour = models.CharField(
         max_length=100,
@@ -76,9 +73,6 @@ class Job(models.Model):
         blank=True,
         help_text="What the user chose when the script didn't fit the target length.",
     )
-    shorten_tries = models.PositiveSmallIntegerField(
-        default=0, help_text="Times the producer has shortened the script since the user chose to."
-    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -86,28 +80,6 @@ class Job(models.Model):
 
     def __str__(self) -> str:
         return f"{self.product_url} ({self.status})"
-
-    def open_question(self) -> Question | None:
-        """The question the job is waiting on the user to answer, if any."""
-        return self.questions.filter(answered_at__isnull=True).first()
-
-
-class ActivityEntry(models.Model):
-    """One step shown in the live activity view: what happened, and one sentence on why."""
-
-    job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="activity")
-    seq = models.PositiveIntegerField(help_text="1, 2, 3... within the job, in the order written.")
-    message = models.TextField()
-    reason = models.TextField()
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["job", "seq"]
-        constraints = [models.UniqueConstraint(fields=["job", "seq"], name="one_entry_per_seq")]
-        verbose_name_plural = "activity entries"
-
-    def __str__(self) -> str:
-        return f"#{self.seq} {self.message}"
 
 
 class ProductPhoto(models.Model):
@@ -160,60 +132,6 @@ class Scene(models.Model):
 
     def __str__(self) -> str:
         return f"Scene {self.number}: {self.line}"
-
-
-class Question(models.Model):
-    """Something the job asked the user, and their answer. A job waits on at most one."""
-
-    class Kind(models.TextChoices):
-        WORKING_LINK = "working_link"
-        PRODUCT_PHOTOS = "product_photos"
-        PRODUCER = "producer"
-        # Planning checks. Answering these goes back to the checks, not to planning.
-        UNCLEAR_PAGE = "unclear_page"
-        FACT_CHECK = "fact_check"
-        LENGTH = "length"
-
-    class LineChoice(models.TextChoices):
-        """The answers to a fact-check question about a line."""
-
-        KEEP = "keep", "Keep this line"
-        OWN = "own", "Use my own line"
-
-    job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="questions")
-    kind = models.CharField(max_length=20, choices=Kind.choices)
-    question = models.TextField()
-    reason = models.TextField(help_text="One sentence on why the job had to ask.")
-    options = models.JSONField(
-        default=list, blank=True, help_text="The choices offered. Empty means a typed answer."
-    )
-    # Kept when shortening the script drops the scene: every exchange with the user is.
-    scene = models.ForeignKey(
-        Scene,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="+",
-        help_text="The scene whose line the question is about, if any.",
-    )
-    answer = models.TextField(
-        blank=True, help_text="The user's words, the new link, or the photos they uploaded."
-    )
-    asked_at = models.DateTimeField(auto_now_add=True)
-    answered_at = models.DateTimeField(null=True, blank=True)
-
-    class Meta:
-        ordering = ["job", "id"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["job"],
-                condition=models.Q(answered_at__isnull=True),
-                name="one_open_question_per_job",
-            )
-        ]
-
-    def __str__(self) -> str:
-        return self.question
 
 
 class ProducedItem(models.Model):

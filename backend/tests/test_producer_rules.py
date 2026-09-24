@@ -18,34 +18,25 @@ from agents.producer import PRODUCER
 from chat import messages
 from chat.models import Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
-from gateway.models import ModelCall
 from gateway.types import UnusableReply
 from jobs.models import Job
 
-from .conftest import FACTS_OK, PLAN, READABLE, chat, facts_ok, given_to_the_producer, picture
+from .conftest import (
+    FACTS_OK,
+    NO_CHOICES,
+    PLAN,
+    READABLE,
+    chat,
+    facts_ok,
+    given_to_the_producer,
+    lines,
+    paid_for,
+    picture,
+    plan_with,
+    results_of,
+)
 
 pytestmark = pytest.mark.django_db(transaction=True)
-
-NO_CHOICES: dict[str, Any] = {"line_choices": [], "length_choice": None}
-
-
-def results_of(tool: str) -> list[str]:
-    """What each call of `tool` handed back to the producer, oldest first."""
-    return list(ToolCall.objects.filter(tool=tool).values_list("result", flat=True))
-
-
-def paid_for() -> list[str]:
-    """The purpose of every model call the tools made, oldest first: the producer's own
-    turns aside."""
-    return list(
-        ModelCall.objects.exclude(purpose="produce")
-        .order_by("created_at", "id")
-        .values_list("purpose", flat=True)
-    )
-
-
-def plan_with(*lines: str) -> dict[str, Any]:
-    return {**PLAN, "plan": {**PLAN["plan"], "scenes": [{"line": line} for line in lines]}}
 
 
 @pytest.fixture
@@ -390,20 +381,43 @@ def test_the_producer_is_never_given_a_directors_tool_calls(
 # --- Reading the page --------------------------------------------------------------------
 
 
+def _serve_broken_link(httpserver: HTTPServer, fake_model: FakeModel) -> str:
+    httpserver.expect_request("/products/old-mug").respond_with_data("not found", status=404)
+    return httpserver.url_for("/products/old-mug")
+
+
+def _serve_collection_page(httpserver: HTTPServer, fake_model: FakeModel) -> str:
+    httpserver.expect_request("/collections/mugs").respond_with_data(
+        "<html><body><h1>All mugs</h1><p>12 products</p></body></html>",
+        content_type="text/html",
+    )
+    fake_model.respond(
+        "check_page", {"decision": "unreadable", "reason": "The page lists 12 mugs, not one."}
+    )
+    return httpserver.url_for("/collections/mugs")
+
+
+@pytest.mark.parametrize(
+    "serve_first_link",
+    [
+        pytest.param(_serve_broken_link, id="a broken link"),
+        pytest.param(_serve_collection_page, id="a page that isn't one product's"),
+    ],
+)
 def test_until_a_page_has_been_read_a_new_link_is_read_for_the_same_ad(
     fake_model: FakeModel,
     httpserver: HTTPServer,
     product_page_url: str,
     say: Callable[..., None],
+    serve_first_link: Callable[[HTTPServer, FakeModel], str],
 ) -> None:
-    broken = httpserver.url_for("/products/old-mug")
-    httpserver.expect_request("/products/old-mug").respond_with_data("not found", status=404)
+    first_link = serve_first_link(httpserver, fake_model)
     fake_model.respond(
         "produce",
-        turn(calls=[("read_page", {"link": broken, "target_seconds": 15})]),
+        turn(calls=[("read_page", {"link": first_link, "target_seconds": 15})]),
         turn(says="That link didn't work. What's the link to your mug's own page?"),
     )
-    say(f"Make a 15 second ad for {broken}")
+    say(f"Make a 15 second ad for {first_link}")
     fake_model.respond(
         "produce",
         turn(calls=[("read_page", {"link": product_page_url, "target_seconds": 15})]),
@@ -415,7 +429,9 @@ def test_until_a_page_has_been_read_a_new_link_is_read_for_the_same_ad(
 
     job = Job.objects.get()
     assert (job.product_url, job.target_seconds) == (product_page_url, 15)
+    # What the ad is made from is the new page's, not the first one's.
     assert "Stoneware Mug" in job.page_text
+    assert "12 products" not in job.page_text
     assert job.photos.count() == 2
     assert [call.job_id for call in ToolCall.objects.all()] == [job.pk, job.pk]
 
@@ -735,6 +751,44 @@ def test_with_no_target_length_the_script_is_checked_before_the_person_is_made(
     assert Job.objects.get().status == Job.Status.READY_TO_RENDER
 
 
+def test_making_the_person_after_the_checks_passed_leaves_the_ad_ready_to_render(
+    fake_model: FakeModel, planned: None, say: Callable[..., None]
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(calls=[("create_person", {})]),
+        turn(says="Every line checks out. Meet your presenter!"),
+    )
+    fake_model.respond("fact_check", FACTS_OK)
+
+    say("Check the script, then make the person")
+
+    assert results_of("create_person")[0].startswith("Made the person")
+    assert Job.objects.get().status == Job.Status.READY_TO_RENDER
+
+
+def test_a_jobs_status_is_only_a_label_and_doesnt_decide_what_a_tool_may_do(
+    fake_model: FakeModel, page_read: str, say: Callable[..., None]
+) -> None:
+    # A label saying the page hasn't been read, though it has.
+    Job.objects.update(status=Job.Status.QUEUED)
+    fake_model.respond(
+        "produce",
+        turn(calls=[("use_photos", {})]),
+        turn(calls=[("plan_ad", {})]),
+        turn(says="Here's the plan."),
+    )
+    fake_model.respond("plan_ad", PLAN)
+
+    say("Use my photo too, and plan it", ("mine.png", picture(300, 400, (60, 90, 70))))
+
+    assert results_of("use_photos") == [
+        "Added 1 of the shop owner's photos. The job now has 3 product photos."
+    ]
+    assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
+
+
 def test_an_ad_isnt_planned_without_a_product_photo(
     fake_model: FakeModel, httpserver: HTTPServer, say: Callable[..., None]
 ) -> None:
@@ -820,7 +874,7 @@ def test_making_the_person_again_hands_back_the_person_and_pays_nothing(
 # --- Choices only the shop owner can make ------------------------------------------------
 
 
-def own(scene: int, line: str) -> dict[str, Any]:
+def own(scene: int, line: str | None) -> dict[str, Any]:
     return {"scene": scene, "choice": "own", "own_line": line}
 
 
@@ -865,10 +919,6 @@ def asked_about_scene_2(fake_model: FakeModel, page_read: str, say: Callable[...
     )
 
 
-def lines() -> list[str]:
-    return list(Job.objects.get().scenes.values_list("line", flat=True))
-
-
 def test_a_line_the_user_gives_is_used_only_if_they_wrote_it_word_for_word(
     fake_model: FakeModel, asked_about_scene_2: None, say: Callable[..., None]
 ) -> None:
@@ -891,6 +941,62 @@ def test_a_line_the_user_gives_is_used_only_if_they_wrote_it_word_for_word(
     )
     assert used.startswith("The checks passed.")
     assert lines() == ["Meet the mug.", "Yours for just $24.00, today."]
+    # The user's line isn't checked again: all 3 fact checks came before the question.
+    assert paid_for().count("fact_check") == 3
+
+
+def test_a_line_the_user_keeps_is_used_as_it_is_without_checking_it_again(
+    fake_model: FakeModel, asked_about_scene_2: None, say: Callable[..., None]
+) -> None:
+    keep = {"scene": 2, "choice": "keep", "own_line": None}
+    fake_model.respond(
+        "produce",
+        turn(calls=[("run_planning_checks", choosing(keep))]),
+        turn(says="Kept as it is."),
+    )
+
+    say("Keep it")
+
+    assert results_of("run_planning_checks")[1].startswith("The checks passed.")
+    assert lines() == ["Meet the mug.", "Just $19.99."]
+    assert paid_for().count("fact_check") == 3
+
+
+@pytest.mark.parametrize(
+    ("line_choice", "told"),
+    [
+        pytest.param(
+            own(2, None),
+            'line_choices.0: an "own" choice needs the shop owner\'s line',
+            id="their own line, without it",
+        ),
+        pytest.param(
+            {"scene": 2, "choice": "drop", "own_line": None},
+            "line_choices.0.choice: Input should be 'keep' or 'own'",
+            id="a choice there isn't",
+        ),
+    ],
+)
+def test_a_line_choice_that_cant_be_used_is_refused(
+    fake_model: FakeModel,
+    asked_about_scene_2: None,
+    say: Callable[..., None],
+    line_choice: dict[str, Any],
+    told: str,
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("run_planning_checks", choosing(line_choice))]),
+        turn(says="Which would you like?"),
+    )
+
+    say("Use my own line")
+
+    assert results_of("run_planning_checks")[1] == (
+        f"Refused: it was called with arguments it can't use ({told}). Nothing was done."
+    )
+    assert lines() == ["Meet the mug.", "Just $19.99."]
+    assert paid_for().count("fact_check") == 3
 
 
 @pytest.mark.parametrize(
@@ -1025,7 +1131,7 @@ def test_a_line_choice_is_refused_until_the_user_has_answered(
         "Refused: the shop owner hasn't answered since the checks asked about scene 2's line. "
         "Ask them, and wait for their answer. Nothing was done."
     )
-    assert Job.objects.get().status == "checking_plan"
+    assert Job.objects.get().status != "ready_to_render"
 
     # Once they have answered, the same choice is used.
     fake_model.respond(

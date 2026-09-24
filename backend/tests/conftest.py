@@ -12,17 +12,19 @@ from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 from pydantic import BaseModel
-from pytest_django import DjangoCaptureOnCommitCallbacks, Settings
+from pytest_django import Settings
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
 from adforge import celery_app
+from agents.models import ToolCall
 from chat.models import Session
 from gateway.fake import FakeModel, turn
 from gateway.gateway import use_model
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import ModelReply, ModelRequest, TurnReply, TurnRequest
+from jobs.models import Job
 
 celery_app.conf.update(task_always_eager=True, task_eager_propagates=True)
 
@@ -100,6 +102,15 @@ def facts_ok(*scenes: int) -> dict[str, Any]:
 
 # The mug plan's fact check, when all three lines match the page.
 FACTS_OK = facts_ok(1, 2, 3)
+
+
+def plan_with(*lines: str) -> dict[str, Any]:
+    """PLAN with these lines for its scenes."""
+    return {**PLAN, "plan": {**PLAN["plan"], "scenes": [{"line": line} for line in lines]}}
+
+
+# The planning checks' arguments when the shop owner has made no choice.
+NO_CHOICES: dict[str, Any] = {"line_choices": [], "length_choice": None}
 
 
 @pytest.fixture(autouse=True)
@@ -187,6 +198,41 @@ def producer_turns() -> int:
     return ModelCall.objects.filter(purpose="produce").count()
 
 
+def results_of(tool: str) -> list[str]:
+    """What each call of `tool` handed back to the producer, oldest first."""
+    return list(ToolCall.objects.filter(tool=tool).values_list("result", flat=True))
+
+
+def paid_for() -> list[str]:
+    """The purpose of every model call the tools made, oldest first: the producer's own
+    turns aside."""
+    return list(
+        ModelCall.objects.exclude(purpose="produce")
+        .order_by("created_at", "id")
+        .values_list("purpose", flat=True)
+    )
+
+
+def handoffs(purpose: str) -> list[dict[str, Any]]:
+    """What each model call for `purpose` was handed, oldest first."""
+    return list(
+        ModelCall.objects.filter(purpose=purpose)
+        .order_by("created_at", "id")
+        .values_list("handoff", flat=True)
+    )
+
+
+def served(link: str, settings: Settings) -> bytes:
+    """What the browser gets from a link: the web server hands out MEDIA_ROOT at /media/."""
+    assert link.startswith("/media/"), f"{link} isn't a link the web server hands out"
+    return (Path(settings.MEDIA_ROOT) / link.removeprefix("/media/")).read_bytes()
+
+
+def lines() -> list[str]:
+    """The line of each of the ad's scenes, in order."""
+    return list(Job.objects.get().scenes.values_list("line", flat=True))
+
+
 def a_producer_last_beat(session_id: str, *, seconds_before_it_counts_as_dead: float) -> None:
     """As if a producer is working in the session, and its last beat was this long before
     it counts as dead. Less than nothing means it already does."""
@@ -215,37 +261,6 @@ def planned(fake_model: FakeModel, page_read: str, say: Callable[..., None]) -> 
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
     fake_model.respond("plan_ad", PLAN)
     say("Plan it")
-
-
-@pytest.fixture
-def start_job(
-    api: APIClient, django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks
-) -> Callable[..., str]:
-    """Start a job through the API and run its background work to the end."""
-
-    def start(product_url: str, **extra: Any) -> str:
-        with django_capture_on_commit_callbacks(execute=True):
-            response = api.post("/api/jobs/", {"product_url": product_url, **extra}, format="json")
-        assert response.status_code == 201, response.json()
-        job_id: str = response.json()["id"]
-        return job_id
-
-    return start
-
-
-@pytest.fixture
-def answer(
-    api: APIClient, django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks
-) -> Callable[..., int]:
-    """Answer the job's question through the API, run what it starts, and give the status."""
-
-    def send(job_id: str, data: dict[str, object], format: str = "json") -> int:
-        with django_capture_on_commit_callbacks(execute=True):
-            response = api.post(f"/api/jobs/{job_id}/answer/", data, format=format)
-        status: int = response.status_code
-        return status
-
-    return send
 
 
 def openai_reply(content: dict[str, Any], status: str = "completed") -> dict[str, Any]:
