@@ -49,27 +49,6 @@ def plan_with(*lines: str) -> dict[str, Any]:
 
 
 @pytest.fixture
-def page_read(fake_model: FakeModel, product_page_url: str, say: Callable[..., None]) -> str:
-    """A chat whose ad has its product page read, with the page's 2 photos. Gives the link."""
-    fake_model.respond(
-        "produce",
-        turn(calls=[("read_page", {"link": product_page_url, "target_seconds": None})]),
-        turn(says="I read your mug's page."),
-    )
-    fake_model.respond("check_page", READABLE)
-    say(f"Make an ad for {product_page_url}")
-    return product_page_url
-
-
-@pytest.fixture
-def planned(fake_model: FakeModel, page_read: str, say: Callable[..., None]) -> None:
-    """A chat whose ad is planned: three scenes."""
-    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
-    fake_model.respond("plan_ad", PLAN)
-    say("Plan it")
-
-
-@pytest.fixture
 def person_made(fake_model: FakeModel, planned: None, say: Callable[..., None]) -> None:
     """A chat whose ad is planned and has its person."""
     fake_model.respond(
@@ -471,6 +450,36 @@ def test_a_page_without_a_usable_photo_isnt_read_yet_so_a_new_link_is_read_for_t
     assert job.product_url == product_page_url
     assert job.photos.count() == 2
     assert paid_for() == ["check_page", "check_page"]
+
+
+def test_the_same_link_sent_again_after_a_read_that_kept_no_photo_isnt_checked_again(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    say: Callable[..., None],
+) -> None:
+    bare = httpserver.url_for("/products/mug-bare")
+    httpserver.expect_request("/products/mug-bare").respond_with_data(
+        "<html><body><h1>Stoneware Mug</h1><p>$24.00</p></body></html>",
+        content_type="text/html",
+    )
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": bare, "target_seconds": None})]),
+        turn(says="That page has no photo of your mug I can use. Is there another link?"),
+        turn(calls=[("read_page", {"link": bare, "target_seconds": None})]),
+        turn(says="It still has no photo I can use."),
+    )
+    # A second check, were the page wrongly paid for again.
+    fake_model.respond("check_page", READABLE, READABLE)
+    say(f"Make an ad for {bare}")
+
+    say("I've added photos to the page, try it again")
+
+    assert paid_for() == ["check_page"]
+    assert results_of("read_page")[1].startswith(
+        f"Started job {Job.objects.get().pk} and read {bare}. "
+        "The page names the mug, its price and its size."
+    )
 
 
 def test_a_new_link_that_cant_be_used_leaves_the_ad_without_a_page(
