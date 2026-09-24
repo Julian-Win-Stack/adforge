@@ -15,6 +15,7 @@ from typing import ClassVar
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import QuerySet
 from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -232,20 +233,35 @@ def _calls_since_the_user_spoke(session: Session, *, up_to: ToolCall | None = No
 def _conversation(agent: Agent, session: Session) -> tuple[list[Happened], int, list[SceneStep]]:
     """Everything said in the session, every tool the agent called, and every scene step
     its tools started that has finished, in the order they happened. With it, the number of
-    the last message in it, and the scene steps in it."""
+    the last message in it, and the scene steps in it.
+
+    A step comes where the agent was first given it, not when it finished, and one not
+    given yet comes last. A step that finished while a turn was being taken is given on the
+    next, so it never lands behind a reply that hadn't seen it."""
     said = list(session.messages.prefetch_related("attachments"))
-    steps = list(
-        SceneStep.objects.filter(
-            tool_call__session=session, tool_call__agent=agent.name, finished_at__isnull=False
-        )
-    )
+    finished = _finished_steps(agent, session).order_by("finished_at", "id")
+    read = list(finished.filter(producer_read_at__isnull=False))
+    unread = list(finished.filter(producer_read_at__isnull=True))
     happened: list[tuple[datetime, Message | ToolCall | SceneStep]] = [
         *((message.created_at, message) for message in said),
         *((call.created_at, call) for call in session.tool_calls.filter(agent=agent.name)),
-        *((step.finished_at, step) for step in steps if step.finished_at),
+        *((step.producer_read_at, step) for step in read if step.producer_read_at),
     ]
-    conversation = [_as_given(each) for _, each in sorted(happened, key=lambda each: each[0])]
-    return conversation, max((message.seq for message in said), default=0), steps
+    in_order = [each for _, each in sorted(happened, key=lambda each: each[0])] + unread
+    conversation = [_as_given(each) for each in in_order]
+    return conversation, max((message.seq for message in said), default=0), read + unread
+
+
+def unread_steps(agent: Agent, session: Session) -> QuerySet[SceneStep]:
+    """The scene steps `agent` started in the session that have finished, and that it
+    hasn't been given yet."""
+    return _finished_steps(agent, session).filter(producer_read_at__isnull=True)
+
+
+def _finished_steps(agent: Agent, session: Session) -> QuerySet[SceneStep]:
+    return SceneStep.objects.filter(
+        tool_call__session=session, tool_call__agent=agent.name, finished_at__isnull=False
+    )
 
 
 def _read(steps: list[SceneStep]) -> None:

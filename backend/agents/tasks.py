@@ -69,9 +69,7 @@ def _stop_unless_theres_more_to_read(session_id: str, read_up_to: int) -> bool:
         session = Session.objects.select_for_update().get(pk=session_id)
         if session.messages.filter(role=Message.Role.USER, seq__gt=read_up_to).exists():
             return False
-        if SceneStep.objects.filter(
-            scene__job__session=session, finished_at__isnull=False, producer_read_at__isnull=True
-        ).exists():
+        if loop.unread_steps(PRODUCER, session).exists():
             return False
         session.producer_running = False
         session.save(update_fields=["producer_running"])
@@ -120,18 +118,6 @@ def run_scene_step(step_id: int) -> None:
     try:
         with charged_to(step.tool_call):
             picture = make_starting_picture(step)
-    except Exception as error:
-        if not isinstance(error, EXPECTED_FAILURES):
-            logger.exception("Scene step %s failed", step_id)
-        step.status = SceneStep.Status.FAILED
-        step.reason = why_it_failed(error, "the step")
-        step.result = (
-            f"Background step failed: scene {scene.number}'s starting picture couldn't be "
-            f"made: {step.reason} Tell the shop owner what went wrong."
-        )
-        step.finished_at = timezone.now()
-        step.save(update_fields=["status", "reason", "result", "finished_at"])
-    else:
         assert step.photo is not None, "a starting picture is made from a photo"
         # Shown and finished together, so a step run again never shows the picture twice.
         with transaction.atomic():
@@ -149,6 +135,18 @@ def run_scene_step(step_id: int) -> None:
             )
             step.finished_at = timezone.now()
             step.save(update_fields=["status", "result", "finished_at"])
+    # Whatever stops the step, it isn't left running: the producer is told why.
+    except Exception as error:
+        if not isinstance(error, EXPECTED_FAILURES):
+            logger.exception("Scene step %s failed", step_id)
+        step.status = SceneStep.Status.FAILED
+        step.reason = why_it_failed(error, "the step")
+        step.result = (
+            f"Background step failed: scene {scene.number}'s starting picture couldn't be "
+            f"made: {step.reason} Tell the shop owner what went wrong."
+        )
+        step.finished_at = timezone.now()
+        step.save(update_fields=["status", "reason", "result", "finished_at"])
     # Only once the result is stored: a producer that is stopping either finds it, or has
     # stopped by the time this looks, and is started again.
     wake_producer(str(session.pk))

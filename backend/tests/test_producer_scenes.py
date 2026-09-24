@@ -12,6 +12,8 @@ from rest_framework.test import APIClient
 from adforge.file_store import read
 from adforge.retry import OutsideServiceDown
 from agents import tasks
+from chat import messages
+from chat.models import Message
 from gateway.fake import FakeModel, meanwhile, turn
 from gateway.models import ModelCall
 from jobs.models import Job, SceneStep
@@ -243,6 +245,43 @@ def test_a_starting_picture_that_cant_be_made_fails_its_step_and_the_producer_is
         f"{step.reason} Tell the shop owner what went wrong.",
     }
     assert chat(api, session_id)[-1] == ("agent", "Sorry, the picture service is down.")
+
+
+def test_a_step_that_breaks_while_showing_its_picture_isnt_left_running(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    making(fake_model, (1, None))
+    say("Make scene 1's starting picture")
+    fake_model.respond("choose_starting_picture", CHOICE)
+    fake_model.respond("produce", turn(says="Sorry, something went wrong."))
+    adding = messages.add
+    broken: list[bool] = []
+
+    def breaks_once(*args: Any, **kwargs: Any) -> Message:
+        if not broken:
+            broken.append(True)
+            raise RuntimeError("the database went away")
+        return adding(*args, **kwargs)
+
+    monkeypatch.setattr(messages, "add", breaks_once)
+
+    steps.run_held()
+
+    step = SceneStep.objects.get()
+    assert (step.status, step.reason) == (
+        "failed",
+        "an unexpected error stopped the step. The details are in the server log.",
+    )
+    assert given_to_the_producer(producer_turns())[-1]["text"].startswith(
+        "Background step failed: scene 1's starting picture couldn't be made"
+    )
+    assert chat(api, session_id)[-1] == ("agent", "Sorry, something went wrong.")
 
 
 def test_a_photo_not_in_the_ads_colour_is_never_used(
@@ -514,6 +553,10 @@ def test_scenes_are_made_at_the_same_time_and_a_result_arriving_mid_turn_isnt_lo
     assert steps_told(before + 2) == ["scene 1", "scene 2"]
     assert steps_told(before + 3) == ["scene 1", "scene 2", "scene 3"]
     assert producer_turns() == before + 3
+    # Scene 2's result comes after the reply that hadn't seen it, not where it finished.
+    second = given_to_the_producer(before + 2)
+    assert second[-2] == {"kind": "said", "by": "agent", "text": "Scene 1's picture is ready!"}
+    assert second[-1]["text"].startswith("Background step finished: scene 2's")
     assert not SceneStep.objects.filter(producer_read_at=None).exists()
     said = [text for role, text in chat(api, session_id) if role == "agent" and text]
     assert said[-3:] == [
