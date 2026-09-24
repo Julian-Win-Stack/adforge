@@ -46,6 +46,9 @@ class ModelCall(models.Model):
     characters = models.PositiveIntegerField(
         null=True, blank=True, help_text="Characters spoken, for voice models billed by them."
     )
+    audio_seconds = models.FloatField(
+        null=True, blank=True, help_text="Seconds of audio heard, for models billed by them."
+    )
     cost_usd = models.DecimalField(max_digits=10, decimal_places=6, null=True, blank=True)
     duration_ms = models.PositiveIntegerField()
     decision = models.CharField(max_length=50, blank=True)

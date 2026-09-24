@@ -39,12 +39,16 @@ from .types import (
     SpeechHandoff,
     ToolRequest,
     ToolSpec,
+    Transcription,
+    TranscriptionHandoff,
+    TranscriptionProvider,
     Turn,
     TurnHandoff,
     TurnRequest,
     UnusableReply,
     VoiceDesignHandoff,
     VoiceProvider,
+    Word,
 )
 
 if TYPE_CHECKING:
@@ -52,6 +56,7 @@ if TYPE_CHECKING:
     from chat.models import Session
     from jobs.models import Job
 
+    from .elevenlabs_adapter import ElevenLabsProvider
     from .inworld_adapter import InworldProvider
     from .openai_adapter import OpenAIProvider
 
@@ -88,6 +93,13 @@ def _inworld() -> InworldProvider:
     return InworldProvider()
 
 
+@cache
+def _elevenlabs() -> ElevenLabsProvider:
+    from .elevenlabs_adapter import ElevenLabsProvider
+
+    return ElevenLabsProvider()
+
+
 def _provider() -> ModelProvider:
     return cast(ModelProvider, _override) if _override is not None else _openai()
 
@@ -98,6 +110,10 @@ def _pictures() -> PictureProvider:
 
 def _voices() -> VoiceProvider:
     return cast(VoiceProvider, _override) if _override is not None else _inworld()
+
+
+def _transcribers() -> TranscriptionProvider:
+    return cast(TranscriptionProvider, _override) if _override is not None else _elevenlabs()
 
 
 def _agents() -> AgentProvider:
@@ -315,6 +331,45 @@ def speak(*, job: Job | None, purpose: str, voice_id: str, text: str) -> str:
     return _recorded(job, purpose, model, provider.name, handoff, say)
 
 
+def transcribe(*, job: Job | None, purpose: str, audio_key: str) -> Transcription:
+    """Have the audio, given by its key in the file store, written down word by word,
+    exactly as it was said."""
+    handoff = TranscriptionHandoff(audio=audio_key)
+    model = catalog.MODEL_FOR_PURPOSE[purpose]
+    provider = _transcribers()
+
+    def hear() -> _Made[Transcription]:
+        heard = provider.transcribe(model=model, audio=file_store.read(handoff.audio))
+        return _Made(
+            result=heard,
+            output=transcription_output(heard),
+            bill=_Bill(
+                audio_seconds=heard.audio_seconds,
+                cost_usd=catalog.transcription_cost_usd(model, heard.audio_seconds),
+            ),
+        )
+
+    return _recorded(job, purpose, model, provider.name, handoff, hear)
+
+
+def transcription_output(heard: Transcription) -> dict[str, Any]:
+    """A transcription as its model call records it."""
+    return {
+        "text": heard.text,
+        "words": [{"text": w.text, "start": w.start, "end": w.end} for w in heard.words],
+        "audio_seconds": heard.audio_seconds,
+    }
+
+
+def transcription_from(output: dict[str, Any]) -> Transcription:
+    """The transcription a model call recorded, so one paid for isn't paid for again."""
+    return Transcription(
+        text=output["text"],
+        words=tuple(Word(**word) for word in output["words"]),
+        audio_seconds=output["audio_seconds"],
+    )
+
+
 @dataclass(frozen=True)
 class _Bill:
     """What one call was billed for."""
@@ -323,6 +378,7 @@ class _Bill:
     input_tokens: int | None = None
     output_tokens: int | None = None
     characters: int | None = None
+    audio_seconds: float | None = None
 
 
 def _speech_bill(model: str, text: str) -> _Bill:
@@ -400,6 +456,7 @@ def _recorded[Result](
             input_tokens=made.bill.input_tokens,
             output_tokens=made.bill.output_tokens,
             characters=made.bill.characters,
+            audio_seconds=made.bill.audio_seconds,
             cost_usd=made.bill.cost_usd,
             duration_ms=_elapsed_ms(started),
             decision=made.decision,

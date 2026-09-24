@@ -36,9 +36,10 @@ You work by calling tools. Call one when you need it, read what it hands back, a
 what to do next. Before a tool that takes a while, say in one short sentence what you're \
 about to do. When there is nothing left to do, or you need the shop owner, reply to them.
 The usual order is: read the page, plan the ad, create the person, run the planning \
-checks, then make each scene's starting picture. When a tool hands back something to ask \
-the shop owner, ask it in your reply and wait for their answer before passing their choice \
-to a tool.
+checks, then, for each scene, make its starting picture and its line's audio, which can \
+run at the same time, and transcribe the audio once it's ready. When a tool hands back \
+something to ask the shop owner, ask it in your reply and wait for their answer before \
+passing their choice to a tool.
 Scene tools start their work in the background and hand back at once, before anything is \
 made. Tell the shop owner the work has started, then carry on or reply: don't call the tool \
 again to see whether it has finished. When a step finishes or fails, you are told in a \
@@ -406,29 +407,164 @@ class MakeStartingPicture(Tool):
                 f"it cost {_dollars(made.tool_call.cost_usd())}. Photo {made.photo.position} "
                 f"was used: {made.photo_reason}"
             )
-        running = f"scene {scene.number}'s starting picture is already being made"
-        if steps.filter(status=SceneStep.Status.RUNNING).exists():
-            raise Refused(f"{running}. You'll be told when it's ready.")
-        try:
-            with transaction.atomic():
-                step = SceneStep.objects.create(
-                    scene=scene,
-                    kind=SceneStep.Kind.STARTING_PICTURE,
-                    tool_call=call,
-                    line=scene.line,
-                    note=note,
-                )
-        except IntegrityError:
-            # Another started it since the look above.
-            raise Refused(f"{running}. You'll be told when it's ready.") from None
-        # tasks.py runs the producer, so it imports this module rather than the other way.
-        from .tasks import run_scene_step
-
-        transaction.on_commit(lambda: run_scene_step.delay(step.pk))
+        _start_step(
+            call,
+            scene,
+            SceneStep.Kind.STARTING_PICTURE,
+            busy=f"scene {scene.number}'s starting picture is already being made. You'll be "
+            "told when it's ready.",
+            note=note,
+        )
         return (
             f"Started scene {scene.number}'s starting picture. It isn't made yet: you'll be "
             "told when it's ready."
         )
+
+
+class MakeLineAudio(Tool):
+    """Start making a scene's audio: the person saying the scene's line, as it stands, in
+    their voice. Works in the background and hands back at once; you are told when the
+    audio is ready. Only for a line that has passed the fact check."""
+
+    name = "make_line_audio"
+
+    scene: int = Field(description="The number of the scene.")
+
+    def run(self, call: ToolCall) -> str:
+        scene = _a_checked_scene(call, self.scene)
+        voice = latest(scene.job, ProducedItem.Kind.VOICE)
+        if voice is None or not voice.voice_id:
+            raise Refused(
+                "the person hasn't been made yet, and the audio is in their voice. Create the "
+                "person first."
+            )
+        made = (
+            scene.produced.filter(
+                kind=ProducedItem.Kind.LINE_AUDIO,
+                step__status=SceneStep.Status.FINISHED,
+                step__line=scene.line,
+                made_from=voice,
+            )
+            .order_by("version")
+            .last()
+        )
+        if made is not None:
+            assert made.step is not None, "a line's audio is made by a scene step"
+            return (
+                f"Scene {scene.number}'s audio was already made for this line in this voice "
+                f"(version {made.version}), so nothing was made or paid for again. Making it "
+                f"cost {_dollars(made.step.tool_call.cost_usd())}."
+            )
+        _start_step(
+            call,
+            scene,
+            SceneStep.Kind.LINE_AUDIO,
+            busy=f"scene {scene.number}'s audio is already being made. You'll be told when "
+            "it's ready.",
+            made_from=voice,
+        )
+        return (
+            f"Started scene {scene.number}'s audio. It isn't made yet: you'll be told when "
+            "it's ready."
+        )
+
+
+class TranscribeLineAudio(Tool):
+    """Start transcribing a scene's audio: every word heard, exactly as it was said, with
+    when each was said. Works in the background and hands back at once; you are told what
+    was heard. Only for audio of the scene's line as it stands, once that audio is ready."""
+
+    name = "transcribe_line_audio"
+
+    scene: int = Field(description="The number of the scene.")
+
+    def run(self, call: ToolCall) -> str:
+        scene = _a_checked_scene(call, self.scene)
+        if scene.steps.filter(
+            kind=SceneStep.Kind.LINE_AUDIO, status=SceneStep.Status.RUNNING
+        ).exists():
+            raise Refused(
+                f"scene {scene.number}'s audio is still being made. You'll be told when it's "
+                "ready; transcribe it then."
+            )
+        audios = scene.produced.filter(
+            kind=ProducedItem.Kind.LINE_AUDIO, step__status=SceneStep.Status.FINISHED
+        ).order_by("version")
+        if not audios.exists():
+            raise Refused(f"scene {scene.number} has no audio yet. Make the line's audio first.")
+        for_the_line = audios.filter(step__line=scene.line)
+        if not for_the_line.exists():
+            raise Refused(
+                f"scene {scene.number}'s audio was made for an earlier line, and the line has "
+                "changed since. Make the line's audio again first."
+            )
+        audio = for_the_line.filter(made_from=latest(scene.job, ProducedItem.Kind.VOICE)).last()
+        if audio is None:
+            raise Refused(
+                f"scene {scene.number}'s audio was made in an earlier voice, and the person has "
+                "changed since. Make the line's audio again first."
+            )
+        heard = (
+            scene.produced.filter(
+                kind=ProducedItem.Kind.TRANSCRIPT,
+                step__status=SceneStep.Status.FINISHED,
+                made_from=audio,
+            )
+            .order_by("version")
+            .last()
+        )
+        if heard is not None:
+            assert heard.step is not None, "a transcript is made by a scene step"
+            return (
+                f"Scene {scene.number}'s audio (version {audio.version}) was already "
+                f"transcribed (version {heard.version}), so nothing was made or paid for "
+                f"again. Transcribing it cost {_dollars(heard.step.tool_call.cost_usd())}. It "
+                f'was heard as: "{heard.text}"'
+            )
+        _start_step(
+            call,
+            scene,
+            SceneStep.Kind.TRANSCRIPT,
+            busy=f"scene {scene.number}'s audio is already being transcribed. You'll be told "
+            "what was heard.",
+            made_from=audio,
+        )
+        return (
+            f"Started transcribing scene {scene.number}'s audio. It isn't done yet: you'll be "
+            "told when it is."
+        )
+
+
+def _start_step(
+    call: ToolCall,
+    scene: Scene,
+    kind: SceneStep.Kind,
+    *,
+    busy: str,
+    note: str = "",
+    made_from: ProducedItem | None = None,
+) -> None:
+    """Start a scene step in the background, from the scene's line as it stands, unless one
+    of its kind is already running for the scene: then refuse, saying `busy`."""
+    if scene.steps.filter(kind=kind, status=SceneStep.Status.RUNNING).exists():
+        raise Refused(busy)
+    try:
+        with transaction.atomic():
+            step = SceneStep.objects.create(
+                scene=scene,
+                kind=kind,
+                tool_call=call,
+                line=scene.line,
+                note=note,
+                made_from=made_from,
+            )
+    except IntegrityError:
+        # Another started it since the look above.
+        raise Refused(busy) from None
+    # tasks.py runs the producer, so it imports this module rather than the other way.
+    from .tasks import run_scene_step
+
+    transaction.on_commit(lambda: run_scene_step.delay(step.pk))
 
 
 def _a_checked_scene(call: ToolCall, number: int) -> Scene:
@@ -556,5 +692,14 @@ PRODUCER = Agent(
     name="producer",
     purpose="produce",
     instructions=INSTRUCTIONS,
-    tools=[ReadPage, UsePhotos, PlanAd, CreatePerson, RunPlanningChecks, MakeStartingPicture],
+    tools=[
+        ReadPage,
+        UsePhotos,
+        PlanAd,
+        CreatePerson,
+        RunPlanningChecks,
+        MakeStartingPicture,
+        MakeLineAudio,
+        TranscribeLineAudio,
+    ],
 )

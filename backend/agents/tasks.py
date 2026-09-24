@@ -1,5 +1,7 @@
 import logging
 import threading
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import timedelta
 
 from celery import shared_task
@@ -12,8 +14,8 @@ from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.gateway import charged_to
 from gateway.types import UnusableReply
-from jobs.models import SceneStep
-from jobs.work import make_starting_picture
+from jobs.models import ProducedItem, SceneStep
+from jobs.work import make_line_audio, make_starting_picture, transcribe_line_audio
 
 from . import loop
 from .loop import EXPECTED_FAILURES, why_it_failed
@@ -108,6 +110,67 @@ def wake_producer(session_id: str) -> None:
         transaction.on_commit(lambda: run_producer.delay(session_id))
 
 
+def _picture_finished(step: SceneStep, picture: ProducedItem) -> str:
+    assert step.photo is not None, "a starting picture is made from a photo"
+    return (
+        f"Background step finished: scene {step.scene.number}'s starting picture is ready "
+        f"(version {picture.version}), and is shown to the shop owner in the chat. "
+        f"Photo {step.photo.position} was used: "
+        f"{step.photo_reason} Tell the shop owner."
+    )
+
+
+def _audio_finished(step: SceneStep, audio: ProducedItem) -> str:
+    return (
+        f"Background step finished: scene {step.scene.number}'s line's audio is ready "
+        f"(version {audio.version}, {audio.seconds:g} seconds). It isn't shown to the shop "
+        "owner. Transcribe it next. Tell the shop owner."
+    )
+
+
+def _transcript_finished(step: SceneStep, transcript: ProducedItem) -> str:
+    assert transcript.made_from is not None, "a transcript is made from audio"
+    return (
+        f"Background step finished: scene {step.scene.number}'s audio (version "
+        f"{transcript.made_from.version}) was transcribed (version {transcript.version}). It "
+        f'was heard as: "{transcript.text}" Tell the shop owner.'
+    )
+
+
+@dataclass(frozen=True)
+class StepWork:
+    """What one kind of scene step does: its name in what the producer is told, the work
+    itself, what the producer is told when it finishes, and what the chat shows then."""
+
+    name: str
+    make: Callable[[SceneStep], ProducedItem]
+    finished: Callable[[SceneStep, ProducedItem], str]
+    shown: Callable[[ProducedItem], list[messages.AttachedFile]]
+
+
+STEP_WORK = {
+    SceneStep.Kind.STARTING_PICTURE: StepWork(
+        name="starting picture",
+        make=make_starting_picture,
+        finished=_picture_finished,
+        shown=lambda picture: [messages.AttachedFile(Attachment.Kind.PICTURE, picture.file)],
+    ),
+    # The line's audio and its transcript are the producer's to judge, not the shop owner's.
+    SceneStep.Kind.LINE_AUDIO: StepWork(
+        name="line's audio",
+        make=make_line_audio,
+        finished=_audio_finished,
+        shown=lambda _: [],
+    ),
+    SceneStep.Kind.TRANSCRIPT: StepWork(
+        name="transcript",
+        make=transcribe_line_audio,
+        finished=_transcript_finished,
+        shown=lambda _: [],
+    ),
+}
+
+
 @shared_task
 def run_scene_step(step_id: int) -> None:
     """Do a scene step's work in the background, then have the producer told: it reads the
@@ -115,24 +178,17 @@ def run_scene_step(step_id: int) -> None:
     step = SceneStep.objects.select_related("scene__job", "tool_call__session").get(pk=step_id)
     scene = step.scene
     session = step.tool_call.session
+    work = STEP_WORK[SceneStep.Kind(step.kind)]
     try:
         with charged_to(step.tool_call):
-            picture = make_starting_picture(step)
-        assert step.photo is not None, "a starting picture is made from a photo"
-        # Shown and finished together, so a step run again never shows the picture twice.
+            made = work.make(step)
+        # Shown and finished together, so a step run again never shows anything twice.
         with transaction.atomic():
-            messages.add(
-                session,
-                role=Message.Role.AGENT,
-                carrying=[messages.AttachedFile(Attachment.Kind.PICTURE, picture.file)],
-            )
+            shown = work.shown(made)
+            if shown:
+                messages.add(session, role=Message.Role.AGENT, carrying=shown)
             step.status = SceneStep.Status.FINISHED
-            step.result = (
-                f"Background step finished: scene {scene.number}'s starting picture is ready "
-                f"(version {picture.version}), and is shown to the shop owner in the chat. "
-                f"Photo {step.photo.position} was used: "
-                f"{step.photo_reason} Tell the shop owner."
-            )
+            step.result = work.finished(step, made)
             step.finished_at = timezone.now()
             step.save(update_fields=["status", "result", "finished_at"])
     # Whatever stops the step, it isn't left running: the producer is told why.
@@ -142,7 +198,7 @@ def run_scene_step(step_id: int) -> None:
         step.status = SceneStep.Status.FAILED
         step.reason = why_it_failed(error, "the step")
         step.result = (
-            f"Background step failed: scene {scene.number}'s starting picture couldn't be "
+            f"Background step failed: scene {scene.number}'s {work.name} couldn't be "
             f"made: {step.reason} Tell the shop owner what went wrong."
         )
         step.finished_at = timezone.now()

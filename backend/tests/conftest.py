@@ -17,6 +17,7 @@ from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
 from adforge import celery_app
+from agents import tasks
 from agents.models import ToolCall
 from chat.models import Session
 from gateway.fake import FakeModel, turn
@@ -387,3 +388,47 @@ def dns(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> FakeDns:
     fake = FakeDns()
     monkeypatch.setattr("jobs.page.socket", fake)
     return fake
+
+
+# --- Scene steps ------------------------------------------------------------------------------
+
+
+class HeldSteps:
+    """Scene steps started in the background, held until the test runs them."""
+
+    def __init__(self) -> None:
+        self.held: list[int] = []
+
+    def run_held(self) -> None:
+        """Run every step held so far, oldest first, as a worker would."""
+        while self.held:
+            self.run_next()
+
+    def run_next(self) -> None:
+        """Run the oldest step held."""
+        tasks.run_scene_step(self.held.pop(0))
+
+
+class WorkerStopped(BaseException):
+    """The worker running a step stopped mid-way, as when its machine is shut down."""
+
+
+@pytest.fixture
+def steps(monkeypatch: pytest.MonkeyPatch) -> Iterator[HeldSteps]:
+    held = HeldSteps()
+    monkeypatch.setattr(tasks.run_scene_step, "delay", held.held.append)
+    yield held
+
+
+@pytest.fixture
+def checked(fake_model: FakeModel, planned: None, say: Callable[..., None]) -> None:
+    """A chat whose ad is planned, has its person, and whose three lines passed the fact
+    check."""
+    fake_model.respond(
+        "produce",
+        turn(calls=[("create_person", {})]),
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(says="The script is checked."),
+    )
+    fake_model.respond("fact_check", FACTS_OK)
+    say("Make the person and check the script")

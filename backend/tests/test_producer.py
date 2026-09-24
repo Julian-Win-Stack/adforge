@@ -230,6 +230,8 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
         "create_person",
         "run_planning_checks",
         "make_starting_picture",
+        "make_line_audio",
+        "transcribe_line_audio",
     ]
     assert {(tool["type"], tool["strict"]) for tool in tools.values()} == {("function", True)}
     read_page = tools["read_page"]

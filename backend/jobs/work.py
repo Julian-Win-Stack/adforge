@@ -23,6 +23,9 @@ from gateway.gateway import (
     draw_picture,
     edit_picture,
     speak,
+    transcribe,
+    transcription_from,
+    transcription_output,
 )
 from gateway.models import ModelCall
 from gateway.types import Handoff, Image, Judgement
@@ -570,17 +573,82 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
             pictures=[portrait.file, step.photo.file],
         )
     )
-    last = scene.produced.filter(kind=ProducedItem.Kind.STARTING_PICTURE).aggregate(
-        last=Max("version")
-    )["last"]
     return ProducedItem.objects.create(
         job=job,
         scene=scene,
         step=step,
         kind=ProducedItem.Kind.STARTING_PICTURE,
-        version=(last or 0) + 1,
+        version=_next_version(scene, ProducedItem.Kind.STARTING_PICTURE),
         file=file,
     )
+
+
+def make_line_audio(step: SceneStep) -> ProducedItem:
+    """Have the person's voice say the scene's line: the voice and the line as they were when
+    the step started. Gives back the audio, kept as the scene's next version.
+
+    Run again, as after a worker stopped, it pays for nothing already paid for: audio made
+    but not kept is kept rather than spoken again."""
+    made = step.produced.first()
+    if made is not None:
+        return made
+    scene = step.scene
+    job = scene.job
+    voice = step.made_from
+    assert voice is not None, "a line's audio step is started with its voice"
+    paid_for = _paid_for_before(job, "speak_line", charged_to=step.tool_call)
+    file = (
+        paid_for["file"]
+        if paid_for
+        else speak(job=job, purpose="speak_line", voice_id=voice.voice_id, text=step.line)
+    )
+    return ProducedItem.objects.create(
+        job=job,
+        scene=scene,
+        step=step,
+        kind=ProducedItem.Kind.LINE_AUDIO,
+        version=_next_version(scene, ProducedItem.Kind.LINE_AUDIO),
+        file=file,
+        seconds=_seconds(file_store.read(file)),
+        made_from=voice,
+    )
+
+
+def transcribe_line_audio(step: SceneStep) -> ProducedItem:
+    """Write down what was heard in the audio the step was started for, word by word with
+    when each was said, exactly as heard: nothing is tidied or matched to the line. Gives
+    back the transcript, kept as the scene's next version.
+
+    Run again, as after a worker stopped, it pays for nothing already paid for: a transcript
+    made but not kept is kept rather than made again."""
+    made = step.produced.first()
+    if made is not None:
+        return made
+    scene = step.scene
+    job = scene.job
+    audio = step.made_from
+    assert audio is not None, "a transcript step is started for its audio"
+    paid_for = _paid_for_before(job, "transcribe_line", charged_to=step.tool_call)
+    heard = (
+        transcription_from(paid_for)
+        if paid_for
+        else transcribe(job=job, purpose="transcribe_line", audio_key=audio.file)
+    )
+    return ProducedItem.objects.create(
+        job=job,
+        scene=scene,
+        step=step,
+        kind=ProducedItem.Kind.TRANSCRIPT,
+        version=_next_version(scene, ProducedItem.Kind.TRANSCRIPT),
+        text=heard.text,
+        words=transcription_output(heard)["words"],
+        made_from=audio,
+    )
+
+
+def _next_version(scene: Scene, kind: ProducedItem.Kind) -> int:
+    last = scene.produced.filter(kind=kind).aggregate(last=Max("version"))["last"]
+    return (last or 0) + 1
 
 
 def latest(job: Job, kind: ProducedItem.Kind) -> ProducedItem | None:

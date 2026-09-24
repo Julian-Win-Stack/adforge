@@ -141,6 +141,8 @@ class SceneStep(models.Model):
 
     class Kind(models.TextChoices):
         STARTING_PICTURE = "starting_picture"
+        LINE_AUDIO = "line_audio"
+        TRANSCRIPT = "transcript"
 
     class Status(models.TextChoices):
         RUNNING = "running"
@@ -173,6 +175,15 @@ class SceneStep(models.Model):
     photo_reason = models.TextField(blank=True, help_text="Why that photo suits the line.")
     prompt = models.TextField(blank=True, help_text="What the picture model was asked to make.")
     prompt_reason = models.TextField(blank=True, help_text="Why the prompt asks for that.")
+    made_from = models.ForeignKey(
+        "ProducedItem",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="What the step makes its item from, fixed when it starts: the voice that "
+        "speaks a line's audio, or the audio a transcript is heard in.",
+    )
     result = models.TextField(
         blank=True,
         help_text="What the producer is told when the step finishes or fails. Blank while it runs.",
@@ -210,6 +221,8 @@ class ProducedItem(models.Model):
         PORTRAIT = "portrait"
         VOICE = "voice"
         STARTING_PICTURE = "starting_picture"
+        LINE_AUDIO = "line_audio"
+        TRANSCRIPT = "transcript"
 
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="produced")
     scene = models.ForeignKey(
@@ -233,12 +246,29 @@ class ProducedItem(models.Model):
     file = models.CharField(
         max_length=500,
         blank=True,
-        help_text="Key in the file store: the picture, or the voice's measuring sample. "
-        "Blank for a voice not measured yet.",
+        help_text="Key in the file store: the picture, the line's audio, or the voice's "
+        "measuring sample. Blank for a voice not measured yet, and for a transcript.",
     )
     voice_id = models.CharField(max_length=200, blank=True)
     words_per_second = models.FloatField(
         null=True, blank=True, help_text="The voice's measured speaking speed."
+    )
+    made_from = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="What it was made from: for a line's audio, the voice that spoke it; for a "
+        "transcript, the audio it was heard in.",
+    )
+    seconds = models.FloatField(null=True, blank=True, help_text="How long the audio lasts.")
+    text = models.TextField(blank=True, help_text="The transcript, exactly as it was heard.")
+    words = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Each word heard, with when it starts and ends in seconds: "
+        '[{"text", "start", "end"}, ...].',
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

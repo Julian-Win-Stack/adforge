@@ -101,6 +101,10 @@ INWORLD_API_KEY = os.environ.get("INWORLD_API_KEY", "")
 # Tests point it at a local stand-in.
 INWORLD_BASE_URL = os.environ.get("INWORLD_BASE_URL", "https://api.inworld.ai")
 
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
+# Tests point it at a local stand-in.
+ELEVENLABS_BASE_URL = os.environ.get("ELEVENLABS_BASE_URL", "https://api.elevenlabs.io")
+
 # Links and photo links that lead to this machine or a private network are never fetched,
 # so a pasted link can't make the server reach places only it can see. Tests turn this on
 # to fetch from their local test shop.

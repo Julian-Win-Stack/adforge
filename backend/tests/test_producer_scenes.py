@@ -3,7 +3,7 @@ call the scene tools on an ad whose script has passed its checks. Scene tools st
 work in the background: here it is held until a test runs it, so a test can see what the
 tool handed back before the work is done, and what the producer was told once it was."""
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -21,6 +21,8 @@ from jobs.models import Job, SceneStep
 from .conftest import (
     FACTS_OK,
     NO_CHOICES,
+    HeldSteps,
+    WorkerStopped,
     chat,
     given_to_the_producer,
     handoffs,
@@ -42,47 +44,6 @@ CHOICE: dict[str, Any] = {
 }
 
 STARTED = "Started scene 1's starting picture. It isn't made yet: you'll be told when it's ready."
-
-
-class HeldSteps:
-    """Scene steps started in the background, held until the test runs them."""
-
-    def __init__(self) -> None:
-        self.held: list[int] = []
-
-    def run_held(self) -> None:
-        """Run every step held so far, oldest first, as a worker would."""
-        while self.held:
-            self.run_next()
-
-    def run_next(self) -> None:
-        """Run the oldest step held."""
-        tasks.run_scene_step(self.held.pop(0))
-
-
-class WorkerStopped(BaseException):
-    """The worker running a step stopped mid-way, as when its machine is shut down."""
-
-
-@pytest.fixture
-def steps(monkeypatch: pytest.MonkeyPatch) -> Iterator[HeldSteps]:
-    held = HeldSteps()
-    monkeypatch.setattr(tasks.run_scene_step, "delay", held.held.append)
-    yield held
-
-
-@pytest.fixture
-def checked(fake_model: FakeModel, planned: None, say: Callable[..., None]) -> None:
-    """A chat whose ad is planned, has its person, and whose three lines passed the fact
-    check."""
-    fake_model.respond(
-        "produce",
-        turn(calls=[("create_person", {})]),
-        turn(calls=[("run_planning_checks", NO_CHOICES)]),
-        turn(says="The script is checked."),
-    )
-    fake_model.respond("fact_check", FACTS_OK)
-    say("Make the person and check the script")
 
 
 def starting_pictures() -> list[tuple[int, int]]:

@@ -188,6 +188,12 @@ class SpeechHandoff(Handoff):
     text: str = Field(min_length=1)
 
 
+class TranscriptionHandoff(Handoff):
+    """Audio to transcribe, by its key in the file store."""
+
+    audio: str = Field(min_length=1)
+
+
 @dataclass(frozen=True)
 class Picture:
     """A picture a model drew, and the tokens it was billed for. Of the input tokens,
@@ -223,4 +229,34 @@ class VoiceProvider(Protocol):
 
     def speak(self, *, model: str, voice_id: str, text: str) -> bytes:
         """Say `text` in the voice. Returns the audio as a WAV file."""
+        ...
+
+
+@dataclass(frozen=True)
+class Word:
+    """One word heard, and when it was said, in seconds from the start of the audio."""
+
+    text: str
+    start: float
+    end: float
+
+
+@dataclass(frozen=True)
+class Transcription:
+    """What was heard in some audio, word by word, exactly as it was said. `audio_seconds`
+    is how long the audio was, which is what transcription is billed by."""
+
+    text: str
+    words: tuple[Word, ...]
+    audio_seconds: float
+
+
+class TranscriptionProvider(Protocol):
+    """Hears audio and writes down what was said. Raises OutsideServiceDown for errors worth
+    retrying."""
+
+    name: str
+
+    def transcribe(self, *, model: str, audio: bytes) -> Transcription:
+        """Write down every word said in `audio`, a WAV file, with when it was said."""
         ...

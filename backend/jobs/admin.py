@@ -31,6 +31,10 @@ class ProducedItemInline(admin.TabularInline[ProducedItem, Job]):
         "file",
         "voice_id",
         "words_per_second",
+        "made_from",
+        "seconds",
+        "text",
+        "words",
         "created_at",
     ]
     readonly_fields = [
@@ -41,6 +45,10 @@ class ProducedItemInline(admin.TabularInline[ProducedItem, Job]):
         "file",
         "voice_id",
         "words_per_second",
+        "made_from",
+        "seconds",
+        "text",
+        "words",
         "created_at",
     ]
     extra = 0
@@ -88,8 +96,26 @@ class JobAdmin(admin.ModelAdmin[Job]):
 
 class SceneStepInline(admin.TabularInline[SceneStep, Scene]):
     model = SceneStep
-    fields = ["kind", "status", "reason", "photo", "prompt", "started_at", "finished_at"]
-    readonly_fields = ["kind", "status", "reason", "photo", "prompt", "started_at", "finished_at"]
+    fields = [
+        "kind",
+        "status",
+        "reason",
+        "photo",
+        "prompt",
+        "made_from",
+        "started_at",
+        "finished_at",
+    ]
+    readonly_fields = [
+        "kind",
+        "status",
+        "reason",
+        "photo",
+        "prompt",
+        "made_from",
+        "started_at",
+        "finished_at",
+    ]
     extra = 0
     can_delete = False
     show_change_link = True
@@ -110,10 +136,20 @@ class SceneStepAdmin(admin.ModelAdmin[SceneStep]):
     list_select_related = ["scene__job"]
     list_filter = ["kind", "status"]
     readonly_fields = ["started_at"]
+    raw_id_fields = ["made_from"]
 
 
 @admin.register(ProducedItem)
 class ProducedItemAdmin(admin.ModelAdmin[ProducedItem]):
-    list_display = ["job", "kind", "version", "scene", "words_per_second", "created_at"]
+    list_display = [
+        "job",
+        "kind",
+        "version",
+        "scene",
+        "made_from",
+        "seconds",
+        "words_per_second",
+        "created_at",
+    ]
     list_select_related = ["job", "scene"]
     list_filter = ["kind"]

@@ -14,6 +14,8 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "make_starting_picture": "gpt-image-2.5-sunburst",
     "design_voice": "inworld-tts-2",
     "measure_voice": "inworld-tts-2",
+    "speak_line": "inworld-tts-2",
+    "transcribe_line": "scribe_v2",
 }
 
 # US dollars per million tokens: (input, output). From OpenAI's pricing page.
@@ -34,6 +36,11 @@ PRICE_PER_MILLION_PICTURE_TOKENS: dict[str, tuple[Decimal, Decimal, Decimal]] = 
 # voice is charged at the same rate for the sample it speaks.
 PRICE_PER_MILLION_CHARACTERS: dict[str, Decimal] = {
     "inworld-tts-2": Decimal("25.00"),
+}
+
+# US dollars per hour of audio heard. From ElevenLabs' API pricing page (Scribe, not realtime).
+PRICE_PER_HOUR_OF_AUDIO: dict[str, Decimal] = {
+    "scribe_v2": Decimal("0.22"),
 }
 
 
@@ -58,3 +65,7 @@ def picture_cost_usd(
 
 def speech_cost_usd(model: str, characters: int) -> Decimal:
     return characters * PRICE_PER_MILLION_CHARACTERS[model] / 1_000_000
+
+
+def transcription_cost_usd(model: str, seconds: float) -> Decimal:
+    return Decimal(str(seconds)) * PRICE_PER_HOUR_OF_AUDIO[model] / 3_600
