@@ -1,3 +1,6 @@
+"""The work the producer's tools do on a job: reading its page, planning it, making its
+person and running the planning checks."""
+
 import io
 import mimetypes
 import wave

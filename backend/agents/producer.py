@@ -13,7 +13,7 @@ from chat.models import Attachment, Message, Session
 from gateway.models import ModelCall
 from jobs import page
 from jobs.models import Job, ProducedItem, ProductPhoto
-from jobs.tasks import (
+from jobs.work import (
     check_page,
     create_person,
     keep_page,

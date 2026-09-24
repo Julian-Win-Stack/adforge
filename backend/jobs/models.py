@@ -8,10 +8,7 @@ class Job(models.Model):
         QUEUED = "queued"
         READING_PAGE = "reading_page"
         PAGE_READ = "page_read"
-        PLANNING = "planning"
         PLANNED = "planned"
-        MAKING_PERSON = "making_person"
-        CHECKING_PLAN = "checking_plan"
         # The plan passed its checks, so nothing will need rewriting once rendering starts.
         READY_TO_RENDER = "ready_to_render"
 
@@ -75,9 +72,6 @@ class Job(models.Model):
         choices=LengthChoice.choices,
         blank=True,
         help_text="What the user chose when the script didn't fit the target length.",
-    )
-    shorten_tries = models.PositiveSmallIntegerField(
-        default=0, help_text="Times the producer has shortened the script since the user chose to."
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -325,7 +325,7 @@ def test_a_message_sent_while_the_work_is_in_flight_is_taken_straight_away(
     send(session_id, "Make me an ad for my mug")
     session = Session.objects.get(pk=session_id)
     Job.objects.create(
-        session=session, product_url="https://shop.example/products/mug", status=Job.Status.PLANNING
+        session=session, product_url="https://shop.example/products/mug", status=Job.Status.PLANNED
     )
 
     interrupting = send(session_id, "Actually, make it 20 seconds")

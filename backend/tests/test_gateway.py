@@ -14,7 +14,7 @@ from gateway.fake import FakeModel
 from gateway.gateway import UnreadableImage, call_model, speak
 from gateway.models import ModelCall
 from gateway.types import Image, UnusableReply
-from jobs.tasks import PageCheck, PageCheckHandoff
+from jobs.work import PageCheck, PageCheckHandoff
 
 from .conftest import READABLE, openai_answer, openai_reply, picture
 

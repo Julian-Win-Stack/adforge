@@ -22,7 +22,7 @@ from chat.models import Attachment
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs.models import Job
-from jobs.tasks import keep_photo
+from jobs.work import keep_photo
 
 from .conftest import (
     MUG_FRONT,
