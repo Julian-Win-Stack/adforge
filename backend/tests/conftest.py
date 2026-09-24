@@ -2,19 +2,23 @@ import io
 import json
 import socket
 from collections.abc import Callable, Iterator
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 import PIL.Image
 import pytest
+from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
 from pydantic import BaseModel
 from pytest_django import DjangoCaptureOnCommitCallbacks, Settings
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
 from adforge import celery_app
-from gateway.fake import FakeModel
+from chat.models import Session
+from gateway.fake import FakeModel, turn
 from gateway.gateway import use_model
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
@@ -171,11 +175,46 @@ def chat(api: APIClient, session_id: str) -> list[tuple[str, str]]:
     return [(message["role"], message["text"]) for message in messages]
 
 
-def given_to_the_producer(turn: int) -> list[dict[str, Any]]:
-    """What the producer's model was given on its `turn`th turn (from 1), as recorded."""
+def given_to_the_producer(number: int) -> list[dict[str, Any]]:
+    """What the producer's model was given on its `number`th turn (from 1), as recorded."""
     calls = ModelCall.objects.filter(purpose="produce").order_by("created_at", "id")
-    conversation: list[dict[str, Any]] = calls[turn - 1].handoff["conversation"]
+    conversation: list[dict[str, Any]] = calls[number - 1].handoff["conversation"]
     return conversation
+
+
+def producer_turns() -> int:
+    """How many turns the producer's model has taken, over every producer that ran."""
+    return ModelCall.objects.filter(purpose="produce").count()
+
+
+def a_producer_last_beat(session_id: str, *, seconds_before_it_counts_as_dead: float) -> None:
+    """As if a producer is working in the session, and its last beat was this long before
+    it counts as dead. Less than nothing means it already does."""
+    ago = settings.PRODUCER_DEAD_AFTER_SECONDS - seconds_before_it_counts_as_dead
+    Session.objects.filter(pk=session_id).update(
+        producer_running=True, producer_seen_at=timezone.now() - timedelta(seconds=ago)
+    )
+
+
+@pytest.fixture
+def page_read(fake_model: FakeModel, product_page_url: str, say: Callable[..., None]) -> str:
+    """A chat whose ad has its product page read, with the page's 2 photos. Gives the link."""
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": product_page_url, "target_seconds": None})]),
+        turn(says="I read your mug's page."),
+    )
+    fake_model.respond("check_page", READABLE)
+    say(f"Make an ad for {product_page_url}")
+    return product_page_url
+
+
+@pytest.fixture
+def planned(fake_model: FakeModel, page_read: str, say: Callable[..., None]) -> None:
+    """A chat whose ad is planned: three scenes."""
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
+    fake_model.respond("plan_ad", PLAN)
+    say("Plan it")
 
 
 @pytest.fixture

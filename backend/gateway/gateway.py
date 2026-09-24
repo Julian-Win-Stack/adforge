@@ -35,6 +35,7 @@ from .types import (
     PortraitHandoff,
     Said,
     SpeechHandoff,
+    ToolRequest,
     ToolSpec,
     ToolUse,
     Turn,
@@ -144,19 +145,17 @@ def take_turn(
         handoff=handoff,
         tools=tuple(tools),
     )
+    # A turn paid for before the worker stopped, but not yet kept, is taken again for free.
+    answered = _answered_before(handoff, purpose=purpose, session=session)
+    if answered is not None:
+        return _turn_from(answered)
     provider = _agents()
 
     def take() -> _Made[Turn]:
         reply = provider.take_turn(request)
         return _Made(
             result=reply.turn,
-            output={
-                "says": reply.turn.says,
-                "calls": [
-                    {"call_id": call.call_id, "tool": call.tool, "arguments": call.arguments}
-                    for call in reply.turn.calls
-                ],
-            },
+            output=_turn_output(reply.turn),
             bill=_Bill(
                 cost_usd=catalog.cost_usd(request.model, reply.input_tokens, reply.output_tokens),
                 input_tokens=reply.input_tokens,
@@ -167,6 +166,31 @@ def take_turn(
     return _recorded(None, purpose, request.model, provider.name, handoff, take, session=session)
 
 
+def last_turn_given(session: Session, purpose: str) -> list[Said | ToolUse] | None:
+    """The conversation an agent was given for its last turn paid for in the session, or
+    None if it hasn't taken one."""
+    last = ModelCall.objects.filter(
+        session=session, purpose=purpose, outcome=ModelCall.Outcome.SUCCEEDED
+    ).last()
+    return TurnHandoff.model_validate(last.handoff).conversation if last else None
+
+
+def _turn_output(turn: Turn) -> dict[str, Any]:
+    """A turn as its model call records it."""
+    return {
+        "says": turn.says,
+        "calls": [
+            {"call_id": call.call_id, "tool": call.tool, "arguments": call.arguments}
+            for call in turn.calls
+        ],
+    }
+
+
+def _turn_from(output: dict[str, Any]) -> Turn:
+    """The turn a model call recorded."""
+    return Turn(says=output["says"], calls=tuple(ToolRequest(**call) for call in output["calls"]))
+
+
 def call_model[Out: BaseModel](
     *,
     job: Job | None,
@@ -175,10 +199,12 @@ def call_model[Out: BaseModel](
     handoff: Handoff,
     output: type[Out],
     images: Sequence[Image] = (),
+    pay_once: bool = False,
 ) -> Out:
     """Ask a model for `output`. `images` are pictures shown alongside the handoff, read
     here from the file store so the record of which were shown can't disagree with what
-    was sent."""
+    was sent. With `pay_once`, what the job's model already answered for this same handoff
+    and images is handed back, and nothing is paid."""
     # Validate again here rather than trusting the caller built the handoff properly.
     handoff = type(handoff).model_validate(handoff.model_dump())
     request = ModelRequest(
@@ -189,6 +215,10 @@ def call_model[Out: BaseModel](
         output=output,
         images=tuple(_load(image) for image in images),
     )
+    if pay_once and job is not None:
+        answered = _answered_before(handoff, purpose=purpose, job=job, images=_shown(request))
+        if answered is not None:
+            return output.model_validate(answered)
     provider = _provider()
 
     def complete() -> _Made[Out]:
@@ -361,6 +391,31 @@ def _recorded[Result](
         raise OutsideServiceDown(
             f"The model provider was still down after {attempts} tries: {error}"
         ) from error
+
+
+def _answered_before(
+    handoff: Handoff,
+    *,
+    purpose: str,
+    session: Session | None = None,
+    job: Job | None = None,
+    images: list[dict[str, str]] | None = None,
+) -> dict[str, Any] | None:
+    """What a call for `purpose` answered when handed exactly `handoff` and shown exactly
+    `images`, if one was paid for. Every call is recorded as soon as it succeeds, so an
+    answer a worker stopped before it could keep is handed back rather than paid for again."""
+    calls = ModelCall.objects.filter(
+        purpose=purpose,
+        outcome=ModelCall.Outcome.SUCCEEDED,
+        handoff=handoff.model_dump(mode="json"),
+        images=images or [],
+    )
+    if session is not None:
+        calls = calls.filter(session=session)
+    if job is not None:
+        calls = calls.filter(job=job)
+    answered = calls.last()
+    return answered.output if answered else None
 
 
 def _picture_extension(data: bytes) -> str:

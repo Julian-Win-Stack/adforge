@@ -14,3 +14,8 @@ exists rather than producing it again, so resuming does not depend on the model 
 This extends machinery that already exists: `_paid_for_before` in `jobs/tasks.py` already looks up a
 succeeded `ModelCall` to avoid paying twice for the portrait or the voice. A checkpoint is that idea
 applied to every tool.
+
+A checkpoint is written only once its tool has run, and an agent's turn only once its model call
+has returned, so a worker can stop after paying and before writing. The gateway covers that gap:
+an agent's turn, and a page check, handed exactly what a succeeded `ModelCall` was handed, is
+answered from that record rather than paid for again.

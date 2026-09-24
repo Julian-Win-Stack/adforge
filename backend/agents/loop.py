@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Message, Session
-from gateway.gateway import charged_to, take_turn
+from gateway.gateway import charged_to, last_turn_given, take_turn
 from gateway.types import Said, ToolSpec, ToolUse, UnusableReply
 
 from .models import ToolCall
@@ -72,6 +72,8 @@ def run(agent: Agent, session: Session) -> int:
         _settle(agent, call)
     while True:
         conversation, read_up_to = _conversation(agent, session)
+        if _nothing_to_answer_since_its_last_turn(agent, session, conversation):
+            return read_up_to
         turn = take_turn(
             session=session,
             purpose=agent.purpose,
@@ -160,6 +162,23 @@ def _what_is_wrong(invalid: ValidationError) -> str:
         why = str(error["ctx"]["error"]) if error["type"] == "value_error" else error["msg"]
         wrong.append(f"{'.'.join(str(part) for part in error['loc'])}: {why}")
     return "; ".join(wrong)
+
+
+def _nothing_to_answer_since_its_last_turn(
+    agent: Agent, session: Session, conversation: list[Said | ToolUse]
+) -> bool:
+    """Whether all the conversation gained since the agent's last turn is what it said: it
+    replied, and nothing has come since for it to answer. An agent started again after its
+    worker stopped past its reply has nothing to do."""
+    given = last_turn_given(session, agent.purpose)
+    if given is None:
+        return False
+    gained = conversation[len(given) :]
+    return (
+        conversation[: len(given)] == given
+        and bool(gained)
+        and all(isinstance(each, Said) and each.by == "agent" for each in gained)
+    )
 
 
 def _limit() -> int:

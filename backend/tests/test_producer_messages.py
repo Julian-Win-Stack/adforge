@@ -4,11 +4,9 @@ is stored straight away, and the producer reads it when its model call returns."
 
 import time
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pytest
-from django.conf import settings
-from django.utils import timezone
 from pytest_django import Settings
 from rest_framework.test import APIClient
 
@@ -16,26 +14,17 @@ from agents.models import ToolCall
 from agents.tasks import restart_dead_producers
 from chat.models import Session
 from gateway.fake import FakeModel, meanwhile, turn
-from gateway.models import ModelCall
 
-from .conftest import READABLE, chat, given_to_the_producer
+from .conftest import (
+    READABLE,
+    a_producer_last_beat,
+    chat,
+    given_to_the_producer,
+    producer_turns,
+)
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
-
-
-def producer_turns() -> int:
-    """How many turns the producer's model has taken, over every producer that ran."""
-    return ModelCall.objects.filter(purpose="produce").count()
-
-
-def a_producer_last_beat(session_id: str, *, seconds_before_it_counts_as_dead: float) -> None:
-    """As if a producer is working in the session, and its last beat was this long before
-    it counts as dead. Less than nothing means it already does."""
-    ago = settings.PRODUCER_DEAD_AFTER_SECONDS - seconds_before_it_counts_as_dead
-    Session.objects.filter(pk=session_id).update(
-        producer_running=True, producer_seen_at=timezone.now() - timedelta(seconds=ago)
-    )
 
 
 def what_the_user_said(given: list[dict[str, object]]) -> list[object]:
