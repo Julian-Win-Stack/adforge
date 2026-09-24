@@ -1,5 +1,7 @@
 # A producer and a director per scene, instead of one agent
 
+Replaced by 0005: one agent first, and directors only if measured.
+
 One agent with a render tool could make the ad: scenes already rendered in parallel as fixed
 background steps. We split it anyway. The producer holds the conversation and the whole script and
 sends a director per scene; a director sees only its own scene and reports back. The reason is
