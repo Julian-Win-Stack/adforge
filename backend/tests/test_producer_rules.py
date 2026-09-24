@@ -23,23 +23,20 @@ from jobs.models import Job
 
 from .conftest import (
     FACTS_OK,
+    NO_CHOICES,
     PLAN,
     READABLE,
     chat,
     facts_ok,
     given_to_the_producer,
+    lines,
     paid_for,
     picture,
+    plan_with,
     results_of,
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
-
-NO_CHOICES: dict[str, Any] = {"line_choices": [], "length_choice": None}
-
-
-def plan_with(*lines: str) -> dict[str, Any]:
-    return {**PLAN, "plan": {**PLAN["plan"], "scenes": [{"line": line} for line in lines]}}
 
 
 @pytest.fixture
@@ -839,7 +836,7 @@ def test_making_the_person_again_hands_back_the_person_and_pays_nothing(
 # --- Choices only the shop owner can make ------------------------------------------------
 
 
-def own(scene: int, line: str) -> dict[str, Any]:
+def own(scene: int, line: str | None) -> dict[str, Any]:
     return {"scene": scene, "choice": "own", "own_line": line}
 
 
@@ -884,10 +881,6 @@ def asked_about_scene_2(fake_model: FakeModel, page_read: str, say: Callable[...
     )
 
 
-def lines() -> list[str]:
-    return list(Job.objects.get().scenes.values_list("line", flat=True))
-
-
 def test_a_line_the_user_gives_is_used_only_if_they_wrote_it_word_for_word(
     fake_model: FakeModel, asked_about_scene_2: None, say: Callable[..., None]
 ) -> None:
@@ -910,6 +903,62 @@ def test_a_line_the_user_gives_is_used_only_if_they_wrote_it_word_for_word(
     )
     assert used.startswith("The checks passed.")
     assert lines() == ["Meet the mug.", "Yours for just $24.00, today."]
+    # The user's line isn't checked again: all 3 fact checks came before the question.
+    assert paid_for().count("fact_check") == 3
+
+
+def test_a_line_the_user_keeps_is_used_as_it_is_without_checking_it_again(
+    fake_model: FakeModel, asked_about_scene_2: None, say: Callable[..., None]
+) -> None:
+    keep = {"scene": 2, "choice": "keep", "own_line": None}
+    fake_model.respond(
+        "produce",
+        turn(calls=[("run_planning_checks", choosing(keep))]),
+        turn(says="Kept as it is."),
+    )
+
+    say("Keep it")
+
+    assert results_of("run_planning_checks")[1].startswith("The checks passed.")
+    assert lines() == ["Meet the mug.", "Just $19.99."]
+    assert paid_for().count("fact_check") == 3
+
+
+@pytest.mark.parametrize(
+    ("line_choice", "told"),
+    [
+        pytest.param(
+            own(2, None),
+            'line_choices.0: an "own" choice needs the shop owner\'s line',
+            id="their own line, without it",
+        ),
+        pytest.param(
+            {"scene": 2, "choice": "drop", "own_line": None},
+            "line_choices.0.choice: Input should be 'keep' or 'own'",
+            id="a choice there isn't",
+        ),
+    ],
+)
+def test_a_line_choice_that_cant_be_used_is_refused(
+    fake_model: FakeModel,
+    asked_about_scene_2: None,
+    say: Callable[..., None],
+    line_choice: dict[str, Any],
+    told: str,
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("run_planning_checks", choosing(line_choice))]),
+        turn(says="Which would you like?"),
+    )
+
+    say("Use my own line")
+
+    assert results_of("run_planning_checks")[1] == (
+        f"Refused: it was called with arguments it can't use ({told}). Nothing was done."
+    )
+    assert lines() == ["Meet the mug.", "Just $19.99."]
+    assert paid_for().count("fact_check") == 3
 
 
 @pytest.mark.parametrize(

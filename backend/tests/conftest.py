@@ -24,6 +24,7 @@ from gateway.gateway import use_model
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import ModelReply, ModelRequest, TurnReply, TurnRequest
+from jobs.models import Job
 
 celery_app.conf.update(task_always_eager=True, task_eager_propagates=True)
 
@@ -101,6 +102,15 @@ def facts_ok(*scenes: int) -> dict[str, Any]:
 
 # The mug plan's fact check, when all three lines match the page.
 FACTS_OK = facts_ok(1, 2, 3)
+
+
+def plan_with(*lines: str) -> dict[str, Any]:
+    """PLAN with these lines for its scenes."""
+    return {**PLAN, "plan": {**PLAN["plan"], "scenes": [{"line": line} for line in lines]}}
+
+
+# The planning checks' arguments when the shop owner has made no choice.
+NO_CHOICES: dict[str, Any] = {"line_choices": [], "length_choice": None}
 
 
 @pytest.fixture(autouse=True)
@@ -201,6 +211,20 @@ def paid_for() -> list[str]:
         .order_by("created_at", "id")
         .values_list("purpose", flat=True)
     )
+
+
+def handoffs(purpose: str) -> list[dict[str, Any]]:
+    """What each model call for `purpose` was handed, oldest first."""
+    return list(
+        ModelCall.objects.filter(purpose=purpose)
+        .order_by("created_at", "id")
+        .values_list("handoff", flat=True)
+    )
+
+
+def lines() -> list[str]:
+    """The line of each of the ad's scenes, in order."""
+    return list(Job.objects.get().scenes.values_list("line", flat=True))
 
 
 def a_producer_last_beat(session_id: str, *, seconds_before_it_counts_as_dead: float) -> None:

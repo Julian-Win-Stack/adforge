@@ -6,7 +6,7 @@ from typing import Literal
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.db.models import Max, Sum
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from chat import messages
 from chat.models import Attachment, Message, Session
@@ -255,6 +255,14 @@ class LineChoice(BaseModel):
         description='The shop owner\'s line, word for word as they wrote it, for "own". Null '
         'for "keep".'
     )
+
+    # An "own" choice without the line is refused as unusable, rather than as a line the
+    # shop owner never wrote.
+    @model_validator(mode="after")
+    def _own_comes_with_the_line(self) -> LineChoice:
+        if self.choice == "own" and self.own_line is None:
+            raise ValueError('an "own" choice needs the shop owner\'s line')
+        return self
 
 
 class RunPlanningChecks(Tool):
