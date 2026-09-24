@@ -20,7 +20,13 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Message, Session
-from gateway.gateway import charged_to, last_turn_given, take_turn
+from gateway.gateway import (
+    IMAGE_TYPE_NAMES,
+    UnreadableImage,
+    charged_to,
+    last_turn_given,
+    take_turn,
+)
 from gateway.types import Said, ToolSpec, ToolUse, UnusableReply
 
 from .models import ToolCall
@@ -149,6 +155,8 @@ def _run(agent: Agent, call: ToolCall) -> str:
         return f"Failed: a model's answer couldn't be used ({error})."
     except OutsideServiceDown as error:
         return f"Failed: an outside service stayed down after several tries ({error})."
+    except UnreadableImage as error:
+        return f"Failed: {error}. Only {IMAGE_TYPE_NAMES} pictures can be shown to a model."
     except Exception:
         logger.exception("The %s tool failed for checkpoint %s", call.tool, call.pk)
         return "Failed: an unexpected error stopped the tool. The details are in the server log."
