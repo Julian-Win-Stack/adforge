@@ -1,62 +1,58 @@
-from collections.abc import Callable
-from typing import Any
-
 import pytest
+from pytest_django import Settings
+from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
-from gateway.fake import FakeModel
 from jobs.models import Job
 
-from .conftest import FACTS_OK, PLAN, READABLE
+from .conftest import MUG_FRONT, MUG_SIDE, served
 
-pytestmark = pytest.mark.django_db
-
-
-def test_a_started_job_can_be_fetched_with_its_link_and_target_length(api: APIClient) -> None:
-    started = api.post(
-        "/api/jobs/",
-        {"product_url": "https://shop.example/products/mug", "target_seconds": 15},
-        format="json",
-    )
-
-    assert started.status_code == 201
-    job = api.get(f"/api/jobs/{started.json()['id']}/").json()
-    assert job["product_url"] == "https://shop.example/products/mug"
-    assert job["target_seconds"] == 15
-    assert job["status"] == "queued"
+# Each request commits on its own, as on the real server, and so does the producer's work.
+pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def test_polling_after_an_entry_returns_only_the_entries_since_then(
+def test_a_job_made_in_the_chat_can_be_fetched_with_its_photos_and_scenes(
     api: APIClient,
-    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    planned: None,
     product_page_url: str,
-    start_job: Callable[..., str],
+    settings: Settings,
 ) -> None:
-    fake_model.respond("check_page", READABLE)
-    fake_model.respond("plan_ad", PLAN)
-    fake_model.respond("fact_check", FACTS_OK)
-    job_id = start_job(product_page_url)
-    everything = api.get(f"/api/jobs/{job_id}/").json()["activity"]
+    job = Job.objects.get()
 
-    since_second = api.get(f"/api/jobs/{job_id}/?after=2").json()["activity"]
+    fetched = api.get(f"/api/jobs/{job.pk}/").json()
 
-    assert [entry["seq"] for entry in everything] == list(range(1, len(everything) + 1))
-    assert len(everything) > 2
-    assert [entry["seq"] for entry in since_second] == list(range(3, len(everything) + 1))
-    assert since_second == everything[2:]
-
-
-@pytest.mark.parametrize(
-    "body",
-    [
-        {"product_url": "not a link"},
-        {"product_url": "https://shop.example/products/mug", "target_seconds": 0},
-        {"product_url": "https://shop.example/products/mug", "target_seconds": 12.5},
-        {"product_url": "https://shop.example/products/mug", "target_seconds": 100_000},
-    ],
-)
-def test_a_job_with_a_bad_link_or_length_is_refused(api: APIClient, body: dict[str, Any]) -> None:
-    response = api.post("/api/jobs/", body, format="json")
-
-    assert response.status_code == 400
-    assert not Job.objects.exists()
+    # Progress and questions are told in the chat, so the job has neither.
+    assert sorted(fetched) == [
+        "created_at",
+        "id",
+        "photos",
+        "product_url",
+        "scenes",
+        "status",
+        "target_seconds",
+    ]
+    assert (
+        fetched["id"],
+        fetched["product_url"],
+        fetched["target_seconds"],
+        fetched["status"],
+    ) == (
+        str(job.pk),
+        product_page_url,
+        None,
+        "planned",
+    )
+    # Each photo is the page's, and its link hands the browser the photo itself.
+    assert [
+        (photo["position"], photo["source_url"], served(photo["url"], settings))
+        for photo in fetched["photos"]
+    ] == [
+        (1, httpserver.url_for("/cdn/mug-front.png"), MUG_FRONT),
+        (2, httpserver.url_for("/cdn/mug-side.png"), MUG_SIDE),
+    ]
+    assert [(scene["number"], scene["line"]) for scene in fetched["scenes"]] == [
+        (1, "Meet the Stoneware Mug from Kiln & Co."),
+        (2, "Hand-thrown, holds 350 ml, and dishwasher safe."),
+        (3, "Yours for $24.00."),
+    ]

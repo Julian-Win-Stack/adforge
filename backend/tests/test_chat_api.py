@@ -2,7 +2,6 @@
 photo, poll for what is new, rename, and come back to the whole conversation."""
 
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -17,7 +16,7 @@ from chat.models import Attachment, Message, Session
 from gateway.fake import FakeModel, turn
 from jobs.models import Job
 
-from .conftest import MUG_FRONT, MUG_SIDE, picture
+from .conftest import MUG_FRONT, MUG_SIDE, picture, served
 
 # Each request commits on its own, as on the real server. The default wraps the whole test
 # in one transaction, which would hide code that only works inside one.
@@ -56,12 +55,6 @@ def send(api: APIClient, fake_model: FakeModel) -> Callable[..., Any]:
         return api.post(f"/api/sessions/{session_id}/messages/", {"text": text}, format="json")
 
     return sending
-
-
-def served(link: str, settings: Settings) -> bytes:
-    """What the browser gets from a link: the web server hands out MEDIA_ROOT at /media/."""
-    assert link.startswith("/media/"), f"{link} isn't a link the web server hands out"
-    return (Path(settings.MEDIA_ROOT) / link.removeprefix("/media/")).read_bytes()
 
 
 def test_a_new_session_is_named_from_the_users_first_message(
@@ -208,27 +201,57 @@ def test_a_message_has_to_say_or_carry_something(
     assert Message.objects.count() == 0
 
 
-def test_a_file_that_isnt_a_picture_the_models_can_read_is_refused(
-    api: APIClient, start_session: Callable[..., str]
+@pytest.mark.parametrize(
+    ("unusable", "refused"),
+    [
+        pytest.param(
+            SimpleUploadedFile("notes.txt", b"not a photo", content_type="text/plain"),
+            "notes.txt isn't a PNG, JPEG, WebP or GIF image.",
+            id="a file that isn't an image",
+        ),
+        pytest.param(
+            SimpleUploadedFile(
+                "side.tiff", picture(10, 10, (0, 0, 0), "TIFF"), content_type="image/tiff"
+            ),
+            "side.tiff isn't a PNG, JPEG, WebP or GIF image.",
+            id="a TIFF",
+        ),
+        pytest.param(
+            SimpleUploadedFile("side.heic", b"ftypheic", content_type="image/heic"),
+            "side.heic isn't a PNG, JPEG, WebP or GIF image.",
+            id="a HEIC",
+        ),
+        pytest.param(
+            SimpleUploadedFile(
+                "huge.png", b"\x89PNG" + bytes(15_000_001), content_type="image/png"
+            ),
+            "huge.png is over 15 MB.",
+            id="a photo over 15 MB",
+        ),
+    ],
+)
+def test_a_file_that_cant_be_kept_as_a_photo_is_refused_by_name(
+    api: APIClient, start_session: Callable[..., str], unusable: SimpleUploadedFile, refused: str
 ) -> None:
     session_id = start_session()
 
     sent = api.post(
         f"/api/sessions/{session_id}/messages/",
         {
-            "text": "Here it is",
+            "text": "Here they are",
             "photos": [
-                SimpleUploadedFile(
-                    "mug.tiff", picture(10, 10, (0, 0, 0), "TIFF"), content_type="image/tiff"
-                )
+                SimpleUploadedFile("front.png", MUG_FRONT, content_type="image/png"),
+                unusable,
             ],
         },
         format="multipart",
     )
 
     assert sent.status_code == 400
-    assert sent.json() == {"photos": ["mug.tiff isn't a PNG, JPEG, WebP or GIF image."]}
+    assert sent.json() == {"photos": [refused]}
+    # Not even the photo that could be used is kept.
     assert Message.objects.count() == 0
+    assert Attachment.objects.count() == 0
 
 
 def test_each_poll_asks_only_for_what_has_happened_since_the_last_one(

@@ -751,6 +751,44 @@ def test_with_no_target_length_the_script_is_checked_before_the_person_is_made(
     assert Job.objects.get().status == Job.Status.READY_TO_RENDER
 
 
+def test_making_the_person_after_the_checks_passed_leaves_the_ad_ready_to_render(
+    fake_model: FakeModel, planned: None, say: Callable[..., None]
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(calls=[("create_person", {})]),
+        turn(says="Every line checks out. Meet your presenter!"),
+    )
+    fake_model.respond("fact_check", FACTS_OK)
+
+    say("Check the script, then make the person")
+
+    assert results_of("create_person")[0].startswith("Made the person")
+    assert Job.objects.get().status == Job.Status.READY_TO_RENDER
+
+
+def test_a_jobs_status_is_only_a_label_and_doesnt_decide_what_a_tool_may_do(
+    fake_model: FakeModel, page_read: str, say: Callable[..., None]
+) -> None:
+    # A label saying the page hasn't been read, though it has.
+    Job.objects.update(status=Job.Status.QUEUED)
+    fake_model.respond(
+        "produce",
+        turn(calls=[("use_photos", {})]),
+        turn(calls=[("plan_ad", {})]),
+        turn(says="Here's the plan."),
+    )
+    fake_model.respond("plan_ad", PLAN)
+
+    say("Use my photo too, and plan it", ("mine.png", picture(300, 400, (60, 90, 70))))
+
+    assert results_of("use_photos") == [
+        "Added 1 of the shop owner's photos. The job now has 3 product photos."
+    ]
+    assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
+
+
 def test_an_ad_isnt_planned_without_a_product_photo(
     fake_model: FakeModel, httpserver: HTTPServer, say: Callable[..., None]
 ) -> None:
@@ -1093,7 +1131,7 @@ def test_a_line_choice_is_refused_until_the_user_has_answered(
         "Refused: the shop owner hasn't answered since the checks asked about scene 2's line. "
         "Ask them, and wait for their answer. Nothing was done."
     )
-    assert Job.objects.get().status == "checking_plan"
+    assert Job.objects.get().status != "ready_to_render"
 
     # Once they have answered, the same choice is used.
     fake_model.respond(

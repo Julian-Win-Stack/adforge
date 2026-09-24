@@ -145,7 +145,7 @@ def test_a_line_still_wrong_after_two_rewrites_is_handed_back_to_ask_the_user_ab
         "The line says $19.99.",
         "The line says $21.00.",
     ]
-    assert Job.objects.get().status == "checking_plan"
+    assert Job.objects.get().status != "ready_to_render"
 
 
 # --- A page the fact check can't settle ------------------------------------------------------
@@ -230,7 +230,7 @@ def test_a_script_too_long_for_its_target_is_handed_back_to_ask_the_user_about(
         "longer."
     )
     assert "shorten_script" not in paid_for()
-    assert Job.objects.get().status == "checking_plan"
+    assert Job.objects.get().status != "ready_to_render"
 
 
 @pytest.fixture

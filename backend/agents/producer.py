@@ -103,8 +103,18 @@ class ReadPage(Tool):
             # ad is the same one, from this link, and has no page until this one is read.
             job.product_url = self.link
             job.target_seconds = self.target_seconds
+            job.page_text = ""
+            job.page_html_key = ""
             job.status = Job.Status.READING_PAGE
-            job.save(update_fields=["product_url", "target_seconds", "status"])
+            job.save(
+                update_fields=[
+                    "product_url",
+                    "target_seconds",
+                    "page_text",
+                    "page_html_key",
+                    "status",
+                ]
+            )
         try:
             download = page.download(self.link, max_bytes=page.MAX_PAGE_BYTES, what="product page")
         except page.PageUnreadable as error:
@@ -112,7 +122,7 @@ class ReadPage(Tool):
                 f"The page couldn't be read: {error} Ask the shop owner for a working link to "
                 "the product's own page."
             )
-        product_page = keep_page(job, download)
+        product_page = page.parse(download)
         check = check_page(job, download, product_page)
         if check.decision == "unreadable":
             return (
@@ -122,8 +132,7 @@ class ReadPage(Tool):
         skipped = save_photos(job, product_page.photo_urls)
         # Only once every photo is kept: a worker that stops part-way through them leaves the
         # page unread, so the read run again keeps them all rather than the few already kept.
-        job.status = Job.Status.PAGE_READ
-        job.save(update_fields=["status"])
+        keep_page(job, download, product_page)
         kept = job.photos.count()
         told = [f"Started job {job.pk} and read {download.final_url}. {check.reason}"]
         if download.final_url != self.link:
@@ -386,8 +395,9 @@ def _the_job(call: ToolCall) -> Job | None:
 
 
 def _page_checked(job: Job) -> bool:
-    """Whether the job's page has been read and found to show its product."""
-    return job.status not in (Job.Status.QUEUED, Job.Status.READING_PAGE)
+    """Whether the job's page has been read and found to show its product. Only such a page
+    is stored with the job."""
+    return bool(job.page_html_key)
 
 
 def _page_read(job: Job) -> bool:
