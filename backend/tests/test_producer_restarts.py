@@ -223,3 +223,31 @@ def test_a_page_the_worker_stopped_keeping_the_photos_of_is_read_again_without_p
     assert Job.objects.get().photos.count() == 2
     assert ToolCall.objects.get(tool="read_page").result.endswith("Kept 2 product photos.")
     assert chat(api, session_id)[-1] == ("agent", "I read your mug's page.")
+
+
+def test_a_page_the_worker_stopped_after_keeping_one_photo_of_is_read_again_without_paying_twice(
+    api: APIClient,
+    fake_model: FakeModel,
+    product_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond(
+        "produce", turn(calls=[("read_page", {"link": product_page_url, "target_seconds": None})])
+    )
+    # A second check, were the page wrongly paid for again.
+    fake_model.respond("check_page", READABLE, READABLE)
+    # The first of the page's two photos is kept, then the worker stops.
+    first_photo_kept = the_worker_stops(post_save, ProductPhoto, when=lambda photo: True)
+    with first_photo_kept, pytest.raises(WorkerStopped):
+        say(f"Make an ad for {product_page_url}")
+    assert Job.objects.get().photos.count() == 1
+    the_producer_died(session_id)
+    fake_model.respond("produce", turn(says="I read your mug's page."))
+
+    restart_dead_producers()
+
+    assert times_paid_for("check_page") == 1
+    assert Job.objects.get().photos.count() == 2
+    assert ToolCall.objects.get(tool="read_page").result.endswith("Kept 2 product photos.")
+    assert chat(api, session_id)[-1] == ("agent", "I read your mug's page.")
