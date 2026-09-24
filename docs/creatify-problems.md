@@ -17,7 +17,7 @@ Creatify has an agent that makes UGC video ads (their public report: https://cre
 | 1 | Clips and ads came out too long | Tested (clip length), Designed (planning) |
 | 2 | Silent gaps between scenes | Tested |
 | 3 | Wrong facts in the script | Designed |
-| 4 | Captions hid voice mistakes | Tested (transcript), Designed (check) |
+| 4 | Captions hid voice mistakes | Tested (transcript), Designed (order), no ticket yet (check) |
 | 5 | A failed quality check was used anyway | Designed |
 | 6 | Nothing compared scenes with each other | **No fix yet** |
 | 7 | The same scene was produced twice | Designed |
@@ -61,10 +61,30 @@ Creatify has an agent that makes UGC video ads (their public report: https://cre
 
 **What I saw.** Captions were forced to match the script. When the voice said a wrong or repeated word, the captions still showed the script, so the mistake shipped unnoticed.
 
+One Graza run shows how, as far as I could tell from its transcript:
+
+- The voice came out of the video model together with the clip. The director split the audio out of the finished clip, transcribed it, and scored the transcript against the script.
+- Scene 2's line said "Graza Frizzle". The transcript heard "Graza's Frizzo", and the scene scored 0.833 against the script. The director put it down to the voice plus the sizzle sound in the clip.
+- The clip was already paid for, so catching the mistake could no longer save money. The director passed the scene and told the producer a voice redo was optional.
+- The captions were corrected to match the script. The producer called all three scenes clean "on the first pass", assembled the ad without redoing the voice, and quoted the line from the script, not what was said, in its final summary.
+
+So the voice was checked, but the check changed nothing: it ran after the money was spent, a failing score only produced a note, and the captions covered the mistake.
+
 **How we handle it.**
 
 - Captions come from a transcript of what the voice actually said, not from the script. **Tested:** ElevenLabs Scribe wrote down the voice line word for word, with times. **Designed** for the app (#7).
-- The transcript is made from the voice audio **before** the clip is paid for, because every video model we tested keeps our audio unchanged. Comparing the transcript with the script then catches a voice mistake while it costs a fraction of a cent to redo, instead of a whole clip. **Designed** (#6). The comparison itself is a quality check, built after the first run.
+- The transcript is made from the voice audio **before** the clip is paid for, because every video model we tested keeps our audio unchanged. Comparing the transcript with the script then catches a voice mistake while it costs a fraction of a cent to redo, instead of a whole clip. **Designed** (#19).
+- The transcriber hears only the voice, with no sizzle or music behind it, so a mismatch is more likely to be a real voice mistake than a mishearing. Not tested.
+- The comparison itself is a quality check, built after the first run. It has no ticket yet.
+
+**Why this might be better, and why we're not sure yet.**
+
+- **Nothing is built yet.** Until the comparison runs on real lines, this is a plan, not a result.
+- **It depends on the video model.** It works only while the video model keeps our audio unchanged. HeyGen did in our tests. A model that makes its own voice, as in the Graza run, loses the advantage.
+- **Comparing words is harder than it looks.** The script says "600°F" and the transcript says "six hundred degrees". A brand name can be written down wrong even when it was said right. A plain word-for-word comparison would fail good audio, so numbers have to be written the same way on both sides and small spelling differences allowed.
+- **The transcriber can mishear too.** A mismatch can mean the voice was wrong or the transcript was wrong, and the check can't always tell which. What happens when a redo still doesn't match is not settled.
+
+**Not the same as Creatify's "audio scoring".** Their report has a section called "Audio scoring", but it means music made to fit the cuts, the way a film is scored: "a music track is generated to the cut cadence". It doesn't describe checking the voice against the script. Music timed to the cuts is on the spec's list for after v1 (#1).
 
 ### 5. A failed quality check was used anyway
 
