@@ -175,10 +175,10 @@ def chat(api: APIClient, session_id: str) -> list[tuple[str, str]]:
     return [(message["role"], message["text"]) for message in messages]
 
 
-def given_to_the_producer(turn: int) -> list[dict[str, Any]]:
-    """What the producer's model was given on its `turn`th turn (from 1), as recorded."""
+def given_to_the_producer(number: int) -> list[dict[str, Any]]:
+    """What the producer's model was given on its `number`th turn (from 1), as recorded."""
     calls = ModelCall.objects.filter(purpose="produce").order_by("created_at", "id")
-    conversation: list[dict[str, Any]] = calls[turn - 1].handoff["conversation"]
+    conversation: list[dict[str, Any]] = calls[number - 1].handoff["conversation"]
     return conversation
 
 

@@ -77,7 +77,7 @@ The record of a finished tool call: which tool, its arguments, what it produced,
 _Avoid_: State, snapshot, progress marker
 
 **Gateway**:
-The single place every model call passes through. Validates the handoff, retries a service that is down, and records the call with its cost.
+The single place every model call passes through. Validates the handoff, retries a service that is down, and records the call with its cost. A call already paid for with the same handoff, whose answer a stopped worker never kept, is answered from its record instead of paid for again.
 _Avoid_: Client, wrapper, adapter, provider
 
 **Handoff**:

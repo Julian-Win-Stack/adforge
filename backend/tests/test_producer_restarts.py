@@ -1,7 +1,7 @@
 """A producer whose worker stopped, started again. A worker can stop at any moment, and
 the producer started again carries on from what was written down, without anything being
-produced or paid for twice. Each test stops the worker at one moment with WorkerStopped,
-which nothing catches, as nothing runs after a killed worker."""
+produced or paid for twice. A test stops the worker at one moment with WorkerStopped, which
+nothing catches, as nothing runs after a killed worker."""
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -53,7 +53,7 @@ def the_producer_died(session_id: str) -> None:
     a_producer_last_beat(session_id, seconds_before_it_counts_as_dead=-1)
 
 
-def paid_for(purpose: str) -> int:
+def times_paid_for(purpose: str) -> int:
     """How many calls for `purpose` were paid for, over every producer that ran."""
     return ModelCall.objects.filter(purpose=purpose, outcome=ModelCall.Outcome.SUCCEEDED).count()
 
@@ -130,7 +130,7 @@ def test_a_producer_that_died_after_its_tools_finished_takes_the_turn_it_had_lef
     restart_dead_producers()
 
     assert producer_turns() == 2
-    assert paid_for("check_page") == 1
+    assert times_paid_for("check_page") == 1
     assert chat(api, session_id)[-1] == ("agent", "I read your mug's page.")
     assert not Session.objects.get(pk=session_id).producer_running
 
@@ -143,7 +143,7 @@ def test_a_turn_paid_for_when_the_worker_stopped_is_taken_again_without_paying(
     say: Callable[..., None],
 ) -> None:
     read_page = ("read_page", {"link": product_page_url, "target_seconds": None})
-    fake_model.respond("produce", turn(calls=[read_page]))
+    fake_model.respond("produce", turn(says="I'll read your mug's page.", calls=[read_page]))
     producer_turn_recorded = the_worker_stops(
         post_save, ModelCall, when=lambda call: call.purpose == "produce"
     )
@@ -158,11 +158,15 @@ def test_a_turn_paid_for_when_the_worker_stopped_is_taken_again_without_paying(
 
     # The turn paid for before the worker stopped, and the one after it: paid for as usual.
     assert producer_turns() == 2
-    assert paid_for("check_page") == 1
+    assert times_paid_for("check_page") == 1
     given = given_to_the_producer(2)[-1]
     assert (given["kind"], given["tool"]) == ("tool_use", "read_page")
     assert ToolCall.objects.get().tool == "read_page"
-    assert chat(api, session_id)[-1] == ("agent", "I read your mug's page.")
+    assert chat(api, session_id) == [
+        ("user", f"Make an ad for {product_page_url}"),
+        ("agent", "I'll read your mug's page."),
+        ("agent", "I read your mug's page."),
+    ]
 
 
 def test_a_tool_the_worker_stopped_halfway_through_is_finished_without_paying_twice(
@@ -182,7 +186,7 @@ def test_a_tool_the_worker_stopped_halfway_through_is_finished_without_paying_tw
 
     restart_dead_producers()
 
-    assert [paid_for(each) for each in ("draw_person", "design_voice", "measure_voice")] == [
+    assert [times_paid_for(each) for each in ("draw_person", "design_voice", "measure_voice")] == [
         1,
         1,
         1,
@@ -215,7 +219,7 @@ def test_a_page_the_worker_stopped_keeping_the_photos_of_is_read_again_without_p
 
     restart_dead_producers()
 
-    assert paid_for("check_page") == 1
+    assert times_paid_for("check_page") == 1
     assert Job.objects.get().photos.count() == 2
     assert ToolCall.objects.get(tool="read_page").result.endswith("Kept 2 product photos.")
     assert chat(api, session_id)[-1] == ("agent", "I read your mug's page.")

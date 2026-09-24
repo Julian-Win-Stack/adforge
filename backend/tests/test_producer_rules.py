@@ -482,6 +482,36 @@ def test_the_same_link_sent_again_after_a_read_that_kept_no_photo_isnt_checked_a
     )
 
 
+def test_another_link_to_the_same_page_after_a_read_that_kept_no_photo_is_checked_again(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    say: Callable[..., None],
+) -> None:
+    bare = "<html><body><h1>Stoneware Mug</h1><p>$24.00</p></body></html>"
+    first = httpserver.url_for("/products/mug-bare")
+    httpserver.expect_request("/products/mug-bare").respond_with_data(
+        bare, content_type="text/html"
+    )
+    second = httpserver.url_for("/collections/mugs/mug-bare")
+    httpserver.expect_request("/collections/mugs/mug-bare").respond_with_data(
+        bare, content_type="text/html"
+    )
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": first, "target_seconds": None})]),
+        turn(says="That page has no photo of your mug I can use. Is there another link?"),
+        turn(calls=[("read_page", {"link": second, "target_seconds": None})]),
+        turn(says="That page has no photo I can use either."),
+    )
+    fake_model.respond("check_page", READABLE, READABLE)
+    say(f"Make an ad for {first}")
+
+    say(f"Try {second}")
+
+    assert paid_for() == ["check_page", "check_page"]
+    assert Job.objects.get().product_url == second
+
+
 def test_a_new_link_that_cant_be_used_leaves_the_ad_without_a_page(
     fake_model: FakeModel,
     httpserver: HTTPServer,

@@ -202,7 +202,7 @@ def check_page(job: Job, download: page.Download, product_page: page.ProductPage
             photo_count=len(product_page.photo_urls),
         ),
         output=PageCheck,
-        # Read again, as a page is after a worker stopped, the same page isn't paid for twice.
+        # A page read again, as after a worker stopped, isn't checked and paid for twice.
         pay_once=True,
     )
 
