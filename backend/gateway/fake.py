@@ -5,7 +5,11 @@ or a turn during which something else happens (see `meanwhile`).
 Pictures, voices and transcripts need no script: the fake draws a plain portrait, makes a
 plain picture of its own from other pictures, designs a numbered voice, speaks at
 `words_per_second`, and hears exactly the words it spoke. Script an error for their purpose
-to make one fail, or script a transcript for "transcribe_line" to have something else heard."""
+to make one fail, or script a transcript for "transcribe_line" to have something else heard.
+
+Clips need no script either: each one asked for is made at once. Script {"state": "working"}
+for "collect_clip" to have it still being made when asked, {"state": "failed", "error": ...}
+to have it fail, or an error for "make_clip" or "collect_clip"."""
 
 import io
 import itertools
@@ -18,6 +22,7 @@ import PIL.Image
 from pydantic import BaseModel, ValidationError
 
 from .types import (
+    ClipStatus,
     ModelReply,
     ModelRequest,
     Picture,
@@ -78,6 +83,9 @@ class FakeModel:
         self.heard: dict[bytes, str] = {}
         # Every audio the fake was asked to transcribe.
         self.transcribed: list[bytes] = []
+        # The id of every clip the fake was asked to make, and of every one it handed over.
+        self.clips_submitted: list[str] = []
+        self.clips_downloaded: list[str] = []
 
     def respond(self, purpose: str, *outcomes: Outcome) -> None:
         self._scripts[purpose].extend(outcomes)
@@ -178,6 +186,24 @@ class FakeModel:
         with wave.open(io.BytesIO(audio)) as file:
             seconds = file.getnframes() / file.getframerate()
         return Transcription(text=text, words=words, audio_seconds=seconds)
+
+    def submit(self, *, picture: bytes, audio: bytes, motion_prompt: str) -> str:
+        self._fail_if_scripted("make_clip")
+        self.clips_submitted.append(f"video-{len(self.clips_submitted) + 1}")
+        return self.clips_submitted[-1]
+
+    def status(self, *, video_id: str) -> ClipStatus:
+        scripted = self._next("collect_clip") if self._scripts["collect_clip"] else None
+        assert not isinstance(scripted, Turn), "'collect_clip' was scripted a turn"
+        if scripted is None:
+            return ClipStatus(state="completed", video_url=f"https://fake.heygen/{video_id}.mp4")
+        return ClipStatus(state=scripted["state"], error=scripted.get("error"))
+
+    def download(self, *, url: str) -> bytes:
+        video_id = url.removeprefix("https://fake.heygen/").removesuffix(".mp4")
+        self.clips_downloaded.append(video_id)
+        # Each clip made is its own, as a real one would be.
+        return f"fake clip {video_id}".encode()
 
     def _fail_if_scripted(self, purpose: str) -> None:
         script = self._scripts[purpose]

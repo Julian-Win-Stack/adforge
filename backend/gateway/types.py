@@ -260,3 +260,52 @@ class TranscriptionProvider(Protocol):
     def transcribe(self, *, model: str, audio: bytes) -> Transcription:
         """Write down every word said in `audio`, a WAV file, with when it was said."""
         ...
+
+
+class ClipHandoff(Handoff):
+    """A clip to make: the starting picture and the audio it is spoken to, by their keys in
+    the file store, and how the person in it should move."""
+
+    picture: str = Field(min_length=1)
+    audio: str = Field(min_length=1)
+    motion_prompt: str = Field(min_length=1)
+
+
+class ClipCollectHandoff(Handoff):
+    """A clip asked for earlier, to wait for and fetch, by the id the video service gave it."""
+
+    video_id: str = Field(min_length=1)
+
+
+@dataclass(frozen=True)
+class ClipStatus:
+    """How a clip asked for is getting on. `video_url` is where a made clip can be fetched
+    from, for a short while; `error` is why one couldn't be made."""
+
+    state: Literal["working", "completed", "failed"]
+    video_url: str | None = None
+    error: str | None = None
+
+
+class ClipFailed(Exception):
+    """The video service couldn't make a clip. Asking again would pay for it again."""
+
+
+class ClipTimedOut(ClipFailed):
+    """A clip wasn't made in time: CLIP_MAX_WAIT_SECONDS."""
+
+
+class ClipProvider(Protocol):
+    """Makes talking clips from a picture and audio. Making one takes a while, so it is
+    asked for, then waited for, then fetched. Raises OutsideServiceDown for errors worth
+    retrying."""
+
+    name: str
+
+    def submit(self, *, picture: bytes, audio: bytes, motion_prompt: str) -> str:
+        """Ask for a clip of the picture speaking `audio`, a WAV file. Returns its id."""
+        ...
+
+    def status(self, *, video_id: str) -> ClipStatus: ...
+
+    def download(self, *, url: str) -> bytes: ...

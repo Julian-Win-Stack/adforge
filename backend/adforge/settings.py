@@ -105,6 +105,14 @@ ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
 # Tests point it at a local stand-in.
 ELEVENLABS_BASE_URL = os.environ.get("ELEVENLABS_BASE_URL", "https://api.elevenlabs.io")
 
+HEYGEN_API_KEY = os.environ.get("HEYGEN_API_KEY", "")
+# Tests point it at a local stand-in.
+HEYGEN_BASE_URL = os.environ.get("HEYGEN_BASE_URL", "https://api.heygen.com")
+# How often to ask whether a clip is made yet, and how long to wait before giving up. One
+# usually takes about a minute.
+CLIP_POLL_SECONDS = 10.0
+CLIP_MAX_WAIT_SECONDS = 600.0
+
 # ffmpeg must be a build that can draw text and subtitles (drawtext, subtitles). Homebrew's
 # plain ffmpeg can't, so on a Mac its ffmpeg-full is used where it's installed.
 _FFMPEG_FULL = Path("/opt/homebrew/opt/ffmpeg-full/bin")

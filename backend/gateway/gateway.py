@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import PIL.Image
 import PIL.ImageOps
+from django.conf import settings
 from pydantic import BaseModel
 
 from adforge import file_store
@@ -25,6 +26,11 @@ from . import catalog
 from .models import ModelCall
 from .types import (
     AgentProvider,
+    ClipCollectHandoff,
+    ClipFailed,
+    ClipHandoff,
+    ClipProvider,
+    ClipTimedOut,
     Handoff,
     Happened,
     Image,
@@ -57,6 +63,7 @@ if TYPE_CHECKING:
     from jobs.models import Job
 
     from .elevenlabs_adapter import ElevenLabsProvider
+    from .heygen_adapter import HeyGenProvider
     from .inworld_adapter import InworldProvider
     from .openai_adapter import OpenAIProvider
 
@@ -100,6 +107,13 @@ def _elevenlabs() -> ElevenLabsProvider:
     return ElevenLabsProvider()
 
 
+@cache
+def _heygen() -> HeyGenProvider:
+    from .heygen_adapter import HeyGenProvider
+
+    return HeyGenProvider()
+
+
 def _provider() -> ModelProvider:
     return cast(ModelProvider, _override) if _override is not None else _openai()
 
@@ -114,6 +128,10 @@ def _voices() -> VoiceProvider:
 
 def _transcribers() -> TranscriptionProvider:
     return cast(TranscriptionProvider, _override) if _override is not None else _elevenlabs()
+
+
+def _clips() -> ClipProvider:
+    return cast(ClipProvider, _override) if _override is not None else _heygen()
 
 
 def _agents() -> AgentProvider:
@@ -370,6 +388,66 @@ def transcription_from(output: dict[str, Any]) -> Transcription:
     )
 
 
+def submit_clip(
+    *,
+    job: Job | None,
+    purpose: str,
+    picture_key: str,
+    audio_key: str,
+    audio_seconds: float,
+    motion_prompt: str,
+) -> str:
+    """Ask for a clip of the picture speaking the audio, both given by their keys in the file
+    store. This is what is paid for: a clip as long as the audio. Returns the clip's id, to
+    collect it with once it's made."""
+    handoff = ClipHandoff(picture=picture_key, audio=audio_key, motion_prompt=motion_prompt)
+    model = catalog.MODEL_FOR_PURPOSE[purpose]
+    provider = _clips()
+
+    def submit() -> _Made[str]:
+        video_id = provider.submit(
+            picture=file_store.read(handoff.picture),
+            audio=file_store.read(handoff.audio),
+            motion_prompt=handoff.motion_prompt,
+        )
+        return _Made(
+            result=video_id,
+            output={"video_id": video_id},
+            bill=_Bill(
+                video_seconds=audio_seconds,
+                cost_usd=catalog.video_cost_usd(model, audio_seconds),
+            ),
+        )
+
+    return _recorded(job, purpose, model, provider.name, handoff, submit)
+
+
+def collect_clip(*, job: Job | None, purpose: str, video_id: str) -> str:
+    """Wait for the clip asked for as `video_id` to be made, then keep it. Costs nothing: the
+    clip was paid for when it was asked for. Raises ClipFailed if it can't be made, and
+    ClipTimedOut if it isn't made within CLIP_MAX_WAIT_SECONDS. Neither is asked again,
+    which would pay for the clip twice. Returns the clip's key in the file store."""
+    handoff = ClipCollectHandoff(video_id=video_id)
+    model = catalog.MODEL_FOR_PURPOSE[purpose]
+    provider = _clips()
+
+    def collect() -> _Made[str]:
+        waited_since = time.monotonic()
+        while (made := provider.status(video_id=handoff.video_id)).state == "working":
+            if time.monotonic() - waited_since >= settings.CLIP_MAX_WAIT_SECONDS:
+                raise ClipTimedOut(
+                    f"the clip wasn't made within {settings.CLIP_MAX_WAIT_SECONDS:g} seconds"
+                )
+            time.sleep(settings.CLIP_POLL_SECONDS)
+        if made.state == "failed" or made.video_url is None:
+            raise ClipFailed(made.error or "the video service gave no reason")
+        # Fetched and kept at once: the link to it only works for a while.
+        key = file_store.save("clip.mp4", provider.download(url=made.video_url))
+        return _Made(result=key, output={"file": key}, bill=_Bill(cost_usd=Decimal(0)))
+
+    return _recorded(job, purpose, model, provider.name, handoff, collect)
+
+
 @dataclass(frozen=True)
 class _Bill:
     """What one call was billed for."""
@@ -379,6 +457,7 @@ class _Bill:
     output_tokens: int | None = None
     characters: int | None = None
     audio_seconds: float | None = None
+    video_seconds: float | None = None
 
 
 def _speech_bill(model: str, text: str) -> _Bill:
@@ -457,6 +536,7 @@ def _recorded[Result](
             output_tokens=made.bill.output_tokens,
             characters=made.bill.characters,
             audio_seconds=made.bill.audio_seconds,
+            video_seconds=made.bill.video_seconds,
             cost_usd=made.bill.cost_usd,
             duration_ms=_elapsed_ms(started),
             decision=made.decision,
