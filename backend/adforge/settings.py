@@ -105,6 +105,13 @@ ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
 # Tests point it at a local stand-in.
 ELEVENLABS_BASE_URL = os.environ.get("ELEVENLABS_BASE_URL", "https://api.elevenlabs.io")
 
+# ffmpeg must be a build that can draw text and subtitles (drawtext, subtitles). Homebrew's
+# plain ffmpeg can't, so on a Mac its ffmpeg-full is used where it's installed.
+_FFMPEG_FULL = Path("/opt/homebrew/opt/ffmpeg-full/bin")
+_FFMPEG_DIR = f"{_FFMPEG_FULL}/" if _FFMPEG_FULL.is_dir() else ""
+FFMPEG = os.environ.get("FFMPEG", f"{_FFMPEG_DIR}ffmpeg")
+FFPROBE = os.environ.get("FFPROBE", f"{_FFMPEG_DIR}ffprobe")
+
 # Links and photo links that lead to this machine or a private network are never fetched,
 # so a pasted link can't make the server reach places only it can see. Tests turn this on
 # to fetch from their local test shop.
