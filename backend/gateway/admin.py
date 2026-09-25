@@ -12,6 +12,7 @@ class ModelCallAdmin(admin.ModelAdmin[ModelCall]):
         "attempt",
         "outcome",
         "cost_usd",
+        "audio_seconds",
         "duration_ms",
         "decision",
         "session",

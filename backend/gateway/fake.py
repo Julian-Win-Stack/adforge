@@ -2,8 +2,10 @@
 outcome for its purpose: output data to return, a turn an agent takes, an error to raise,
 or a turn during which something else happens (see `meanwhile`).
 
-Pictures and voices need no script: the fake draws a plain portrait, designs a numbered
-voice, and speaks at `words_per_second`. Script an error for their purpose to make one fail."""
+Pictures, voices and transcripts need no script: the fake draws a plain portrait, makes a
+plain picture of its own from other pictures, designs a numbered voice, speaks at
+`words_per_second`, and hears exactly the words it spoke. Script an error for their purpose
+to make one fail, or script a transcript for "transcribe_line" to have something else heard."""
 
 import io
 import itertools
@@ -13,16 +15,19 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 import PIL.Image
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from .types import (
     ModelReply,
     ModelRequest,
     Picture,
     ToolRequest,
+    Transcription,
     Turn,
     TurnReply,
     TurnRequest,
+    UnusableReply,
+    Word,
 )
 
 # Numbers the scripted tool calls, so each has its own id as a real model's would.
@@ -65,9 +70,14 @@ class FakeModel:
         self._scripts: defaultdict[str, deque[Outcome]] = defaultdict(deque)
         self.words_per_second = 2.0
         self.voices = 0
+        self.edits = 0
         # Every script the fake has been asked to speak, so a test can show that work paid
         # for once was not paid for again.
         self.spoken: list[str] = []
+        # What each audio the fake spoke says, so hearing it gives back those words.
+        self.heard: dict[bytes, str] = {}
+        # Every audio the fake was asked to transcribe.
+        self.transcribed: list[bytes] = []
 
     def respond(self, purpose: str, *outcomes: Outcome) -> None:
         self._scripts[purpose].extend(outcomes)
@@ -75,10 +85,18 @@ class FakeModel:
     def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]:
         outcome = self._next(request.purpose)
         assert isinstance(outcome, dict), f"{request.purpose!r} was scripted a turn, not output"
+        try:
+            output = request.output.model_validate(outcome)
+        except ValidationError as error:
+            # As the real adapter does with an answer that breaks the output's rules.
+            raise UnusableReply(
+                f"{request.model} gave an answer for {request.purpose} that could not be "
+                f"read: {error}",
+                input_tokens=self.INPUT_TOKENS,
+                output_tokens=self.OUTPUT_TOKENS,
+            ) from error
         return ModelReply(
-            output=request.output.model_validate(outcome),
-            input_tokens=self.INPUT_TOKENS,
-            output_tokens=self.OUTPUT_TOKENS,
+            output=output, input_tokens=self.INPUT_TOKENS, output_tokens=self.OUTPUT_TOKENS
         )
 
     def take_turn(self, request: TurnRequest) -> TurnReply:
@@ -109,13 +127,29 @@ class FakeModel:
             output_tokens=self.OUTPUT_TOKENS,
         )
 
+    def edit(self, *, model: str, prompt: str, pictures: Sequence[bytes]) -> Picture:
+        self._fail_if_scripted("make_starting_picture")
+        self.edits += 1
+        made = io.BytesIO()
+        # Each picture made is its own, as a real model's would be.
+        PIL.Image.new("RGB", (72, 128), (self.edits, 120, 90)).save(made, format="PNG")
+        return Picture(
+            data=made.getvalue(),
+            input_tokens=self.INPUT_TOKENS,
+            output_tokens=self.OUTPUT_TOKENS,
+            picture_input_tokens=self.INPUT_TOKENS // 2,
+        )
+
     def design_voice(self, *, model: str, description: str, sample: str) -> str:
         self._fail_if_scripted("design_voice")
         self.voices += 1
         return f"fake-voice-{self.voices}"
 
     def speak(self, *, model: str, voice_id: str, text: str) -> bytes:
+        # The fake can't tell which purpose it speaks for, so an error scripted for either
+        # fails the next speech.
         self._fail_if_scripted("measure_voice")
+        self._fail_if_scripted("speak_line")
         self.spoken.append(text)
         seconds = len(text.split()) / self.words_per_second
         audio = io.BytesIO()
@@ -123,8 +157,27 @@ class FakeModel:
             file.setnchannels(1)
             file.setsampwidth(2)
             file.setframerate(self.SAMPLE_RATE)
-            file.writeframes(b"\0\0" * round(seconds * self.SAMPLE_RATE))
+            # Each audio spoken is its own, as a real voice's would be.
+            first = len(self.spoken).to_bytes(2, "little")
+            file.writeframes(first + b"\0\0" * (round(seconds * self.SAMPLE_RATE) - 1))
+        self.heard[audio.getvalue()] = text
         return audio.getvalue()
+
+    def transcribe(self, *, model: str, audio: bytes) -> Transcription:
+        script = self._scripts["transcribe_line"]
+        scripted = self._next("transcribe_line") if script else None
+        assert not isinstance(scripted, Turn), "'transcribe_line' was scripted a turn"
+        self.transcribed.append(audio)
+        text = scripted["text"] if scripted else self.heard[audio]
+        # Heard evenly spaced, at the pace the fake speaks.
+        pace = 1 / self.words_per_second
+        words = tuple(
+            Word(text=word, start=round(i * pace, 3), end=round((i + 1) * pace, 3))
+            for i, word in enumerate(text.split())
+        )
+        with wave.open(io.BytesIO(audio)) as file:
+            seconds = file.getnframes() / file.getframerate()
+        return Transcription(text=text, words=words, audio_seconds=seconds)
 
     def _fail_if_scripted(self, purpose: str) -> None:
         script = self._scripts[purpose]

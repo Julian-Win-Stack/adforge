@@ -1,12 +1,12 @@
 """The work the producer's tools do on a job: reading its page, planning it, making its
-person and running the planning checks."""
+person, running the planning checks and making each scene."""
 
 import io
 import mimetypes
 import wave
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from django.db import transaction
 from django.db.models import Max
@@ -21,7 +21,11 @@ from gateway.gateway import (
     call_model,
     design_voice,
     draw_picture,
+    edit_picture,
     speak,
+    transcribe,
+    transcription_from,
+    transcription_output,
 )
 from gateway.models import ModelCall
 from gateway.types import Handoff, Image, Judgement
@@ -45,7 +49,7 @@ from .checks import (
     most_words,
     script_seconds,
 )
-from .models import Job, ProducedItem, ProductPhoto, Scene
+from .models import Job, ProducedItem, ProductPhoto, Scene, SceneStep
 from .planning import (
     PLAN_INSTRUCTIONS,
     ChatMessage,
@@ -53,6 +57,14 @@ from .planning import (
     ProducerDecision,
     producer_decision_for,
 )
+from .scenes import (
+    STARTING_PICTURE_INSTRUCTIONS,
+    StartingPictureHandoff,
+    starting_picture_choice_for,
+)
+
+if TYPE_CHECKING:
+    from agents.models import ToolCall
 
 CHECK_INSTRUCTIONS = """\
 You check whether a product page was read properly. It was fetched with a plain HTTP \
@@ -235,10 +247,16 @@ def create_person(job: Job) -> tuple[ProducedItem, ProducedItem]:
     return portrait, voice
 
 
-def _paid_for_before(job: Job, purpose: str) -> dict[str, Any] | None:
+def _paid_for_before(
+    job: Job, purpose: str, *, charged_to: ToolCall | None = None
+) -> dict[str, Any] | None:
     """What a call for `purpose` made before the worker stopped, if it was paid for but not
-    kept. Every call is recorded as soon as it succeeds, so a restart reuses what it made."""
-    call = job.model_calls.filter(purpose=purpose, outcome=ModelCall.Outcome.SUCCEEDED).last()
+    kept: for the job, or for the tool call it was `charged_to`. Every call is recorded as
+    soon as it succeeds, so a restart reuses what it made."""
+    calls = job.model_calls.filter(purpose=purpose, outcome=ModelCall.Outcome.SUCCEEDED)
+    if charged_to is not None:
+        calls = calls.filter(tool_call=charged_to)
+    call = calls.last()
     return call.output if call else None
 
 
@@ -501,21 +519,157 @@ def why_the_checks_passed(job: Job) -> str:
     )
 
 
+def make_starting_picture(step: SceneStep) -> ProducedItem:
+    """Make the scene's starting picture: a model picks the product photo that suits the
+    line best and writes the prompt, then the picture is made from the portrait and that
+    photo. Gives back the picture, kept as the scene's next version.
+
+    Run again, as after a worker stopped, it pays for nothing already paid for: the choice
+    is made from the conversation as it was when the step started, so it is answered from
+    its record, and a picture made but not kept is kept rather than made again."""
+    made = step.produced.first()
+    if made is not None:
+        return made
+    scene = step.scene
+    job = scene.job
+    portrait = latest(job, ProducedItem.Kind.PORTRAIT)
+    assert portrait is not None, "the tool refuses a scene whose person isn't made"
+    photos = list(job.photos.filter(shows_product_colour=True))
+    numbers = [photo.position for photo in photos]
+    choice = call_model(
+        job=job,
+        purpose="choose_starting_picture",
+        instructions=STARTING_PICTURE_INSTRUCTIONS,
+        handoff=StartingPictureHandoff(
+            scene=scene.number,
+            line=step.line,
+            script=list(job.scenes.values_list("line", flat=True)),
+            product_colour=job.product_colour,
+            colour_photos=numbers,
+            person_looks=job.person_looks,
+            note=step.note or None,
+            conversation=_conversation(job, until=step.started_at),
+        ),
+        output=starting_picture_choice_for(numbers),
+        images=[
+            Image(label="The portrait", key=portrait.file),
+            *(Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos),
+        ],
+        pay_once=True,
+    )
+    step.photo = job.photos.get(position=choice.photo)
+    step.photo_reason = choice.photo_reason
+    step.prompt = choice.prompt
+    step.prompt_reason = choice.prompt_reason
+    step.save(update_fields=["photo", "photo_reason", "prompt", "prompt_reason"])
+    paid_for = _paid_for_before(job, "make_starting_picture", charged_to=step.tool_call)
+    file = (
+        paid_for["file"]
+        if paid_for
+        else edit_picture(
+            job=job,
+            purpose="make_starting_picture",
+            prompt=choice.prompt,
+            pictures=[portrait.file, step.photo.file],
+        )
+    )
+    return ProducedItem.objects.create(
+        job=job,
+        scene=scene,
+        step=step,
+        kind=ProducedItem.Kind.STARTING_PICTURE,
+        version=_next_version(scene, ProducedItem.Kind.STARTING_PICTURE),
+        file=file,
+    )
+
+
+def make_line_audio(step: SceneStep) -> ProducedItem:
+    """Have the person's voice say the scene's line: the voice and the line as they were when
+    the step started. Gives back the audio, kept as the scene's next version.
+
+    Run again, as after a worker stopped, it pays for nothing already paid for: audio made
+    but not kept is kept rather than spoken again."""
+    made = step.produced.first()
+    if made is not None:
+        return made
+    scene = step.scene
+    job = scene.job
+    voice = step.made_from
+    assert voice is not None, "a line's audio step is started with its voice"
+    paid_for = _paid_for_before(job, "speak_line", charged_to=step.tool_call)
+    file = (
+        paid_for["file"]
+        if paid_for
+        else speak(job=job, purpose="speak_line", voice_id=voice.voice_id, text=step.line)
+    )
+    return ProducedItem.objects.create(
+        job=job,
+        scene=scene,
+        step=step,
+        kind=ProducedItem.Kind.LINE_AUDIO,
+        version=_next_version(scene, ProducedItem.Kind.LINE_AUDIO),
+        file=file,
+        seconds=_seconds(file_store.read(file)),
+        made_from=voice,
+    )
+
+
+def transcribe_line_audio(step: SceneStep) -> ProducedItem:
+    """Write down what was heard in the audio the step was started for, word by word with
+    when each was said, exactly as heard: nothing is tidied or matched to the line. Gives
+    back the transcript, kept as the scene's next version.
+
+    Run again, as after a worker stopped, it pays for nothing already paid for: a transcript
+    made but not kept is kept rather than made again."""
+    made = step.produced.first()
+    if made is not None:
+        return made
+    scene = step.scene
+    job = scene.job
+    audio = step.made_from
+    assert audio is not None, "a transcript step is started for its audio"
+    paid_for = _paid_for_before(job, "transcribe_line", charged_to=step.tool_call)
+    heard = (
+        transcription_from(paid_for)
+        if paid_for
+        else transcribe(job=job, purpose="transcribe_line", audio_key=audio.file)
+    )
+    return ProducedItem.objects.create(
+        job=job,
+        scene=scene,
+        step=step,
+        kind=ProducedItem.Kind.TRANSCRIPT,
+        version=_next_version(scene, ProducedItem.Kind.TRANSCRIPT),
+        text=heard.text,
+        words=transcription_output(heard)["words"],
+        made_from=audio,
+    )
+
+
+def _next_version(scene: Scene, kind: ProducedItem.Kind) -> int:
+    last = scene.produced.filter(kind=kind).aggregate(last=Max("version"))["last"]
+    return (last or 0) + 1
+
+
 def latest(job: Job, kind: ProducedItem.Kind) -> ProducedItem | None:
     """The job's latest version of `kind`, if it has one."""
     return job.produced.filter(kind=kind).order_by("version").last()
 
 
-def _conversation(job: Job) -> list[ChatMessage]:
-    """What the user and the producer have said, for the models that plan and check the ad.
-    Facts may come from the user's words; the producer's show what the user was answering."""
+def _conversation(job: Job, *, until: datetime | None = None) -> list[ChatMessage]:
+    """What the user and the producer have said, for the models that plan and check the ad
+    and plan its scenes: all of it, or what was said by `until`. Facts may come from the
+    user's words; the producer's show what the user was answering."""
     if job.session is None:
         # A job started before sessions existed has no conversation.
         return []
+    said = job.session.messages.prefetch_related("attachments")
+    if until is not None:
+        said = said.filter(created_at__lte=until)
     return [
         ChatMessage(
             by="user" if message.role == Message.Role.USER else "producer",
             text=messages.as_read(message),
         )
-        for message in job.session.messages.prefetch_related("attachments")
+        for message in said
     ]

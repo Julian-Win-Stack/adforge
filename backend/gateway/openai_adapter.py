@@ -1,10 +1,14 @@
 import base64
+import io
 import json
+from collections.abc import Sequence
 from typing import Any
 
 import openai
+import PIL.Image
 from django.conf import settings
 from openai.lib._pydantic import to_strict_json_schema
+from openai.types import ImagesResponse
 from openai.types.responses import (
     FunctionToolParam,
     ResponseInputImageParam,
@@ -21,6 +25,7 @@ from .types import (
     ModelRequest,
     Picture,
     Said,
+    StepFinished,
     ToolRequest,
     ToolSpec,
     Turn,
@@ -33,6 +38,9 @@ from .types import (
 _WORTH_RETRYING = (openai.APIConnectionError, openai.RateLimitError, openai.InternalServerError)
 # Upright, the shape of the clips the portrait becomes.
 _PORTRAIT_SIZE: Any = "720x1280"
+# Upright too, and bigger: the starting picture is what the clip is made from, and small
+# label print on the product only stays readable at this size.
+_STARTING_PICTURE_SIZE: Any = "1152x2048"
 
 
 class OpenAIProvider:
@@ -133,14 +141,42 @@ class OpenAIProvider:
             )
         except _WORTH_RETRYING as error:
             raise OutsideServiceDown(str(error)) from error
-        if not reply.data or not reply.data[0].b64_json:
-            raise ValueError(f"{model} sent back no picture")
-        usage = reply.usage
-        return Picture(
-            data=base64.b64decode(reply.data[0].b64_json),
-            input_tokens=usage.input_tokens if usage else 0,
-            output_tokens=usage.output_tokens if usage else 0,
-        )
+        return _picture(model, reply)
+
+    def edit(self, *, model: str, prompt: str, pictures: Sequence[bytes]) -> Picture:
+        try:
+            reply = self._client.images.edit(
+                model=model,
+                image=[
+                    (f"picture-{number}", data, _picture_type(data))
+                    for number, data in enumerate(pictures, 1)
+                ],
+                prompt=prompt,
+                size=_STARTING_PICTURE_SIZE,
+                quality="high",
+            )
+        except _WORTH_RETRYING as error:
+            raise OutsideServiceDown(str(error)) from error
+        return _picture(model, reply)
+
+
+def _picture_type(data: bytes) -> str:
+    """The media type of a picture, judged by what the bytes hold. OpenAI refuses a picture
+    sent without one."""
+    with PIL.Image.open(io.BytesIO(data)) as picture:
+        return PIL.Image.MIME.get(picture.format or "", "application/octet-stream")
+
+
+def _picture(model: str, reply: ImagesResponse) -> Picture:
+    if not reply.data or not reply.data[0].b64_json:
+        raise ValueError(f"{model} sent back no picture")
+    usage = reply.usage
+    return Picture(
+        data=base64.b64decode(reply.data[0].b64_json),
+        input_tokens=usage.input_tokens if usage else 0,
+        output_tokens=usage.output_tokens if usage else 0,
+        picture_input_tokens=usage.input_tokens_details.image_tokens if usage else 0,
+    )
 
 
 def _input[Out: BaseModel](request: ModelRequest[Out]) -> str | ResponseInputParam:
@@ -166,13 +202,17 @@ def _image_part(image: LoadedImage) -> ResponseInputImageParam:
 
 def _conversation(request: TurnRequest) -> ResponseInputParam:
     """The agent's conversation as OpenAI takes it: each tool it called is the call, then
-    what the tool handed back, paired by the call's id."""
+    what the tool handed back, paired by the call's id. What the system tells it, such as
+    that background work finished, comes from the developer, above the user."""
     items: ResponseInputParam = []
     for each in request.handoff.conversation:
         if isinstance(each, Said):
             items.append(
                 {"role": "user" if each.by == "user" else "assistant", "content": each.text}
             )
+            continue
+        if isinstance(each, StepFinished):
+            items.append({"role": "developer", "content": each.text})
             continue
         items.append(
             {

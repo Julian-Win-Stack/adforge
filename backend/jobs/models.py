@@ -134,6 +134,85 @@ class Scene(models.Model):
         return f"Scene {self.number}: {self.line}"
 
 
+class SceneStep(models.Model):
+    """One piece of a scene's work, run in the background: its starting picture, and later
+    its audio, transcript and clip. A scene tool starts it and returns at once; when it
+    finishes or fails, the producer is told on its next turn."""
+
+    class Kind(models.TextChoices):
+        STARTING_PICTURE = "starting_picture"
+        LINE_AUDIO = "line_audio"
+        TRANSCRIPT = "transcript"
+
+    class Status(models.TextChoices):
+        RUNNING = "running"
+        FINISHED = "finished"
+        STOPPED = "stopped"
+        FAILED = "failed"
+
+    scene = models.ForeignKey(Scene, on_delete=models.CASCADE, related_name="steps")
+    kind = models.CharField(max_length=30, choices=Kind.choices)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.RUNNING)
+    reason = models.TextField(blank=True, help_text="Why it failed or was stopped.")
+    tool_call = models.ForeignKey(
+        "agents.ToolCall",
+        on_delete=models.CASCADE,
+        related_name="scene_steps",
+        help_text="The tool call that started it, which its model calls are charged to.",
+    )
+    line = models.TextField(help_text="The scene's line when the step started.")
+    note = models.TextField(
+        blank=True, help_text="What the producer asked for, beyond the line. Blank for nothing."
+    )
+    photo = models.ForeignKey(
+        ProductPhoto,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The product photo the starting picture was made from.",
+    )
+    photo_reason = models.TextField(blank=True, help_text="Why that photo suits the line.")
+    prompt = models.TextField(blank=True, help_text="What the picture model was asked to make.")
+    prompt_reason = models.TextField(blank=True, help_text="Why the prompt asks for that.")
+    made_from = models.ForeignKey(
+        "ProducedItem",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="What the step makes its item from, fixed when it starts: the voice that "
+        "speaks a line's audio, or the audio a transcript is heard in.",
+    )
+    result = models.TextField(
+        blank=True,
+        help_text="What the producer is told when the step finishes or fails. Blank while it runs.",
+    )
+    started_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(
+        null=True, blank=True, help_text="When it finished or failed. Blank while it runs."
+    )
+    producer_read_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the producer was first given the result. Until then the producer "
+        "doesn't stop, so no result is lost.",
+    )
+
+    class Meta:
+        ordering = ["started_at", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["scene", "kind"],
+                condition=models.Q(status="running"),
+                name="one_running_step_per_scene_and_kind",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"Scene {self.scene.number} {self.kind} ({self.status})"
+
+
 class ProducedItem(models.Model):
     """Something a model made for a job, such as the portrait or the voice. Each belongs to
     the job or to one scene, and a remake is a new version: nothing is overwritten."""
@@ -141,6 +220,9 @@ class ProducedItem(models.Model):
     class Kind(models.TextChoices):
         PORTRAIT = "portrait"
         VOICE = "voice"
+        STARTING_PICTURE = "starting_picture"
+        LINE_AUDIO = "line_audio"
+        TRANSCRIPT = "transcript"
 
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="produced")
     scene = models.ForeignKey(
@@ -151,17 +233,42 @@ class ProducedItem(models.Model):
         related_name="produced",
         help_text="Blank when it belongs to the whole job.",
     )
+    step = models.ForeignKey(
+        SceneStep,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="produced",
+        help_text="The scene step that made it. Blank for what belongs to the whole job.",
+    )
     kind = models.CharField(max_length=20, choices=Kind.choices)
     version = models.PositiveSmallIntegerField(default=1)
     file = models.CharField(
         max_length=500,
         blank=True,
-        help_text="Key in the file store: the portrait, or the voice's measuring sample. "
-        "Blank for a voice not measured yet.",
+        help_text="Key in the file store: the picture, the line's audio, or the voice's "
+        "measuring sample. Blank for a voice not measured yet, and for a transcript.",
     )
     voice_id = models.CharField(max_length=200, blank=True)
     words_per_second = models.FloatField(
         null=True, blank=True, help_text="The voice's measured speaking speed."
+    )
+    made_from = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="What it was made from: for a line's audio, the voice that spoke it; for a "
+        "transcript, the audio it was heard in.",
+    )
+    seconds = models.FloatField(null=True, blank=True, help_text="How long the audio lasts.")
+    text = models.TextField(blank=True, help_text="The transcript, exactly as it was heard.")
+    words = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Each word heard, with when it starts and ends in seconds: "
+        '[{"text", "start", "end"}, ...].',
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

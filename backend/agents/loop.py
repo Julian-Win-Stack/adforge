@@ -10,10 +10,12 @@ import inspect
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import ClassVar
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import QuerySet
 from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -27,11 +29,17 @@ from gateway.gateway import (
     last_turn_given,
     take_turn,
 )
-from gateway.types import Said, ToolSpec, ToolUse, UnusableReply
+from gateway.types import Happened, Said, StepFinished, ToolSpec, ToolUse, UnusableReply
+from jobs.models import SceneStep
 
 from .models import ToolCall
 
 logger = logging.getLogger(__name__)
+
+
+# What outside work is known to fail with, and says why well enough for the agent. Anything
+# else is a bug, whose details go to the server log.
+EXPECTED_FAILURES = (UnusableReply, OutsideServiceDown, UnreadableImage)
 
 
 class Refused(Exception):
@@ -77,8 +85,10 @@ def run(agent: Agent, session: Session) -> int:
     for call in session.tool_calls.filter(agent=agent.name, finished_at__isnull=True):
         _settle(agent, call)
     while True:
-        conversation, read_up_to = _conversation(agent, session)
+        conversation, read_up_to, steps = _conversation(agent, session)
         if _nothing_to_answer_since_its_last_turn(agent, session, conversation):
+            # Its last turn was given all of them, before a worker stopped past its reply.
+            _read(steps)
             return read_up_to
         turn = take_turn(
             session=session,
@@ -93,6 +103,9 @@ def run(agent: Agent, session: Session) -> int:
         # What the agent said and the tools it asked for are written down together, before
         # any tool runs, so a restart finds both or neither.
         with transaction.atomic():
+            # Only the steps the turn was given: one that finished while the model worked
+            # is given on the next turn.
+            _read(steps)
             if turn.says:
                 messages.add(session, role=Message.Role.AGENT, text=turn.says)
             if stopped:
@@ -151,15 +164,22 @@ def _run(agent: Agent, call: ToolCall) -> str:
             return given.run(call)
     except Refused as refused:
         return f"Refused: {refused} Nothing was done."
-    except UnusableReply as error:
-        return f"Failed: a model's answer couldn't be used ({error})."
-    except OutsideServiceDown as error:
-        return f"Failed: an outside service stayed down after several tries ({error})."
-    except UnreadableImage as error:
-        return f"Failed: {error}. Only {IMAGE_TYPE_NAMES} pictures can be shown to a model."
-    except Exception:
-        logger.exception("The %s tool failed for checkpoint %s", call.tool, call.pk)
-        return "Failed: an unexpected error stopped the tool. The details are in the server log."
+    except Exception as error:
+        if not isinstance(error, EXPECTED_FAILURES):
+            logger.exception("The %s tool failed for checkpoint %s", call.tool, call.pk)
+        return f"Failed: {why_it_failed(error, 'the tool')}"
+
+
+def why_it_failed(error: Exception, stopped: str) -> str:
+    """Why work failed, for the agent, from what it raised. `stopped` names the work, such
+    as "the tool", for an error nobody expected, whose details are only in the server log."""
+    if isinstance(error, UnusableReply):
+        return f"a model's answer couldn't be used ({error})."
+    if isinstance(error, OutsideServiceDown):
+        return f"an outside service stayed down after several tries ({error})."
+    if isinstance(error, UnreadableImage):
+        return f"{error}. Only {IMAGE_TYPE_NAMES} pictures can be shown to a model."
+    return f"an unexpected error stopped {stopped}. The details are in the server log."
 
 
 def _what_is_wrong(invalid: ValidationError) -> str:
@@ -173,7 +193,7 @@ def _what_is_wrong(invalid: ValidationError) -> str:
 
 
 def _nothing_to_answer_since_its_last_turn(
-    agent: Agent, session: Session, conversation: list[Said | ToolUse]
+    agent: Agent, session: Session, conversation: list[Happened]
 ) -> bool:
     """Whether all the conversation gained since the agent's last turn is what it said: it
     replied, and nothing has come since for it to answer. An agent started again after its
@@ -210,16 +230,50 @@ def _calls_since_the_user_spoke(session: Session, *, up_to: ToolCall | None = No
     return calls.count()
 
 
-def _conversation(agent: Agent, session: Session) -> tuple[list[Said | ToolUse], int]:
-    """Everything said in the session, and every tool the agent called, in the order they
-    happened. With it, the number of the last message in it."""
+def _conversation(agent: Agent, session: Session) -> tuple[list[Happened], int, list[SceneStep]]:
+    """Everything said in the session, every tool the agent called, and every scene step
+    its tools started that has finished, in the order they happened. With it, the number of
+    the last message in it, and the scene steps in it.
+
+    A step comes where the agent was first given it, not when it finished, and one not
+    given yet comes last. A step that finished while a turn was being taken is given on the
+    next, so it never lands behind a reply that hadn't seen it."""
     said = list(session.messages.prefetch_related("attachments"))
-    happened: list[Message | ToolCall] = [*said, *session.tool_calls.filter(agent=agent.name)]
-    conversation = [_as_given(each) for each in sorted(happened, key=lambda each: each.created_at)]
-    return conversation, max((message.seq for message in said), default=0)
+    finished = _finished_steps(agent, session).order_by("finished_at", "id")
+    read = list(finished.filter(producer_read_at__isnull=False))
+    unread = list(finished.filter(producer_read_at__isnull=True))
+    happened: list[tuple[datetime, Message | ToolCall | SceneStep]] = [
+        *((message.created_at, message) for message in said),
+        *((call.created_at, call) for call in session.tool_calls.filter(agent=agent.name)),
+        *((step.producer_read_at, step) for step in read if step.producer_read_at),
+    ]
+    in_order = [each for _, each in sorted(happened, key=lambda each: each[0])] + unread
+    conversation = [_as_given(each) for each in in_order]
+    return conversation, max((message.seq for message in said), default=0), read + unread
 
 
-def _as_given(happened: Message | ToolCall) -> Said | ToolUse:
+def unread_steps(agent: Agent, session: Session) -> QuerySet[SceneStep]:
+    """The scene steps `agent` started in the session that have finished, and that it
+    hasn't been given yet."""
+    return _finished_steps(agent, session).filter(producer_read_at__isnull=True)
+
+
+def _finished_steps(agent: Agent, session: Session) -> QuerySet[SceneStep]:
+    return SceneStep.objects.filter(
+        tool_call__session=session, tool_call__agent=agent.name, finished_at__isnull=False
+    )
+
+
+def _read(steps: list[SceneStep]) -> None:
+    """Mark these scene steps' results as given to the agent that started them."""
+    SceneStep.objects.filter(
+        pk__in=[step.pk for step in steps], producer_read_at__isnull=True
+    ).update(producer_read_at=timezone.now())
+
+
+def _as_given(happened: Message | ToolCall | SceneStep) -> Happened:
+    if isinstance(happened, SceneStep):
+        return StepFinished(text=happened.result)
     if isinstance(happened, ToolCall):
         return ToolUse(
             call_id=happened.call_id,

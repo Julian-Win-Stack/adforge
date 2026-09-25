@@ -26,24 +26,29 @@ from .models import ModelCall
 from .types import (
     AgentProvider,
     Handoff,
+    Happened,
     Image,
     Judgement,
     LoadedImage,
     ModelProvider,
     ModelRequest,
+    Picture,
+    PictureEditHandoff,
     PictureProvider,
     PortraitHandoff,
-    Said,
     SpeechHandoff,
     ToolRequest,
     ToolSpec,
-    ToolUse,
+    Transcription,
+    TranscriptionHandoff,
+    TranscriptionProvider,
     Turn,
     TurnHandoff,
     TurnRequest,
     UnusableReply,
     VoiceDesignHandoff,
     VoiceProvider,
+    Word,
 )
 
 if TYPE_CHECKING:
@@ -51,6 +56,7 @@ if TYPE_CHECKING:
     from chat.models import Session
     from jobs.models import Job
 
+    from .elevenlabs_adapter import ElevenLabsProvider
     from .inworld_adapter import InworldProvider
     from .openai_adapter import OpenAIProvider
 
@@ -87,6 +93,13 @@ def _inworld() -> InworldProvider:
     return InworldProvider()
 
 
+@cache
+def _elevenlabs() -> ElevenLabsProvider:
+    from .elevenlabs_adapter import ElevenLabsProvider
+
+    return ElevenLabsProvider()
+
+
 def _provider() -> ModelProvider:
     return cast(ModelProvider, _override) if _override is not None else _openai()
 
@@ -97,6 +110,10 @@ def _pictures() -> PictureProvider:
 
 def _voices() -> VoiceProvider:
     return cast(VoiceProvider, _override) if _override is not None else _inworld()
+
+
+def _transcribers() -> TranscriptionProvider:
+    return cast(TranscriptionProvider, _override) if _override is not None else _elevenlabs()
 
 
 def _agents() -> AgentProvider:
@@ -130,7 +147,7 @@ def take_turn(
     session: Session,
     purpose: str,
     instructions: str,
-    conversation: Sequence[Said | ToolUse],
+    conversation: Sequence[Happened],
     tools: Sequence[ToolSpec],
 ) -> Turn:
     """Give an agent its conversation and the tools it may call, and have it take one turn:
@@ -166,7 +183,7 @@ def take_turn(
     return _recorded(None, purpose, request.model, provider.name, handoff, take, session=session)
 
 
-def last_turn_given(session: Session, purpose: str) -> list[Said | ToolUse] | None:
+def last_turn_given(session: Session, purpose: str) -> list[Happened] | None:
     """The conversation an agent was given for its last turn paid for in the session, or
     None if it hasn't taken one."""
     last = ModelCall.objects.filter(
@@ -246,21 +263,42 @@ def draw_picture(*, job: Job | None, purpose: str, prompt: str) -> str:
     provider = _pictures()
 
     def draw() -> _Made[str]:
-        picture = provider.draw(model=model, prompt=handoff.prompt)
-        key = file_store.save(f"{purpose}.{_picture_extension(picture.data)}", picture.data)
-        return _Made(
-            result=key,
-            output={"file": key},
-            bill=_Bill(
-                cost_usd=catalog.picture_cost_usd(
-                    model, picture.input_tokens, picture.output_tokens
-                ),
-                input_tokens=picture.input_tokens,
-                output_tokens=picture.output_tokens,
-            ),
-        )
+        return _kept(purpose, model, provider.draw(model=model, prompt=handoff.prompt))
 
     return _recorded(job, purpose, model, provider.name, handoff, draw)
+
+
+def edit_picture(*, job: Job | None, purpose: str, prompt: str, pictures: Sequence[str]) -> str:
+    """Have a model make a picture from `pictures`, given by their keys in the file store,
+    as `prompt` says. Each is sent whole, not shrunk: they are what the new picture is made
+    of. Returns the new picture's key in the file store."""
+    handoff = PictureEditHandoff(prompt=prompt, pictures=list(pictures))
+    model = catalog.MODEL_FOR_PURPOSE[purpose]
+    provider = _pictures()
+
+    def edit() -> _Made[str]:
+        given = [file_store.read(key) for key in handoff.pictures]
+        return _kept(
+            purpose, model, provider.edit(model=model, prompt=handoff.prompt, pictures=given)
+        )
+
+    return _recorded(job, purpose, model, provider.name, handoff, edit)
+
+
+def _kept(purpose: str, model: str, picture: Picture) -> _Made[str]:
+    """A picture a model made, kept in the file store, with what it was billed for."""
+    key = file_store.save(f"{purpose}.{_picture_extension(picture.data)}", picture.data)
+    return _Made(
+        result=key,
+        output={"file": key},
+        bill=_Bill(
+            cost_usd=catalog.picture_cost_usd(
+                model, picture.input_tokens, picture.output_tokens, picture.picture_input_tokens
+            ),
+            input_tokens=picture.input_tokens,
+            output_tokens=picture.output_tokens,
+        ),
+    )
 
 
 def design_voice(*, job: Job | None, purpose: str, description: str, sample: str) -> str:
@@ -293,6 +331,45 @@ def speak(*, job: Job | None, purpose: str, voice_id: str, text: str) -> str:
     return _recorded(job, purpose, model, provider.name, handoff, say)
 
 
+def transcribe(*, job: Job | None, purpose: str, audio_key: str) -> Transcription:
+    """Have the audio, given by its key in the file store, written down word by word,
+    exactly as it was said."""
+    handoff = TranscriptionHandoff(audio=audio_key)
+    model = catalog.MODEL_FOR_PURPOSE[purpose]
+    provider = _transcribers()
+
+    def hear() -> _Made[Transcription]:
+        heard = provider.transcribe(model=model, audio=file_store.read(handoff.audio))
+        return _Made(
+            result=heard,
+            output=transcription_output(heard),
+            bill=_Bill(
+                audio_seconds=heard.audio_seconds,
+                cost_usd=catalog.transcription_cost_usd(model, heard.audio_seconds),
+            ),
+        )
+
+    return _recorded(job, purpose, model, provider.name, handoff, hear)
+
+
+def transcription_output(heard: Transcription) -> dict[str, Any]:
+    """A transcription as its model call records it."""
+    return {
+        "text": heard.text,
+        "words": [{"text": w.text, "start": w.start, "end": w.end} for w in heard.words],
+        "audio_seconds": heard.audio_seconds,
+    }
+
+
+def transcription_from(output: dict[str, Any]) -> Transcription:
+    """The transcription a model call recorded, so one paid for isn't paid for again."""
+    return Transcription(
+        text=output["text"],
+        words=tuple(Word(**word) for word in output["words"]),
+        audio_seconds=output["audio_seconds"],
+    )
+
+
 @dataclass(frozen=True)
 class _Bill:
     """What one call was billed for."""
@@ -301,6 +378,7 @@ class _Bill:
     input_tokens: int | None = None
     output_tokens: int | None = None
     characters: int | None = None
+    audio_seconds: float | None = None
 
 
 def _speech_bill(model: str, text: str) -> _Bill:
@@ -378,6 +456,7 @@ def _recorded[Result](
             input_tokens=made.bill.input_tokens,
             output_tokens=made.bill.output_tokens,
             characters=made.bill.characters,
+            audio_seconds=made.bill.audio_seconds,
             cost_usd=made.bill.cost_usd,
             duration_ms=_elapsed_ms(started),
             decision=made.decision,

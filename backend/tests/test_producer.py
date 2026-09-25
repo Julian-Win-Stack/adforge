@@ -7,6 +7,7 @@ from collections.abc import Callable
 from decimal import Decimal
 
 import pytest
+from pytest_django import Settings
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
@@ -14,6 +15,8 @@ from adforge import file_store
 from agents.models import ToolCall
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
+from gateway.openai_adapter import OpenAIProvider
+from gateway.types import Said, StepFinished, TurnHandoff, TurnRequest
 from jobs.models import Job
 
 from .conftest import (
@@ -226,6 +229,9 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
         "plan_ad",
         "create_person",
         "run_planning_checks",
+        "make_starting_picture",
+        "make_line_audio",
+        "transcribe_line_audio",
     ]
     assert {(tool["type"], tool["strict"]) for tool in tools.values()} == {("function", True)}
     read_page = tools["read_page"]
@@ -259,6 +265,37 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
     ]
     # gpt-5.6-sol: 1,200 x $4.00/M in + 300 x $20.00/M out = $0.0048 + $0.006.
     assert [turn.cost_usd for turn in turns] == [Decimal("0.0108"), Decimal("0.0108")]
+
+
+def test_the_real_openai_code_tells_the_producer_a_step_finished_as_the_system_not_the_user(
+    httpserver: HTTPServer, settings: Settings
+) -> None:
+    settings.OPENAI_API_KEY = "sk-test"
+    settings.OPENAI_BASE_URL = httpserver.url_for("/v1")
+    httpserver.expect_oneshot_request("/v1/responses", method="POST").respond_with_json(
+        openai_turn("Scene 1's picture is ready!")
+    )
+    finished = "Background step finished: scene 1's starting picture is ready (version 1)."
+
+    reply = OpenAIProvider().take_turn(
+        TurnRequest(
+            purpose="produce",
+            model="gpt-5.6-sol",
+            instructions="You are the producer.",
+            handoff=TurnHandoff(
+                conversation=[Said(by="user", text="Make it"), StepFinished(text=finished)],
+                tools=[],
+            ),
+            tools=(),
+        )
+    )
+
+    assert reply.turn.says == "Scene 1's picture is ready!"
+    (request, _) = httpserver.log[0]
+    assert request.get_json()["input"] == [
+        {"role": "user", "content": "Make it"},
+        {"role": "developer", "content": finished},
+    ]
 
 
 def attachments(api: APIClient, session_id: str) -> list[tuple[str, str, list[str]]]:
