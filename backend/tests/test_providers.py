@@ -156,8 +156,8 @@ def test_a_picture_is_made_from_other_pictures_through_openai(
     portrait = file_store.save("portrait.png", picture(720, 1280, (180, 150, 120)))
     # As big as a phone takes them: the picture model is sent the whole photo, not a copy
     # shrunk for looking at.
-    photo_content = picture(1600, 1200, (143, 170, 140))
-    photo = file_store.save("photo.png", photo_content)
+    photo_content = picture(1600, 1200, (143, 170, 140), format="JPEG")
+    photo = file_store.save("photo.jpg", photo_content)
     made = picture(1152, 2048, (200, 180, 160))
     sent: list[Request] = []
 
@@ -200,6 +200,11 @@ def test_a_picture_is_made_from_other_pictures_through_openai(
     assert [file.read() for file in request.files.getlist("image[]")] == [
         file_store.read(portrait),
         photo_content,
+    ]
+    # OpenAI refuses a picture sent without its type.
+    assert [file.content_type for file in request.files.getlist("image[]")] == [
+        "image/png",
+        "image/jpeg",
     ]
     assert file_store.read(key) == made
     edited = ModelCall.objects.get()
@@ -372,13 +377,24 @@ def test_elevenlabs_is_tried_again_when_it_is_down_and_every_try_is_recorded(
     assert second.duration_ms is not None
 
 
+@pytest.mark.parametrize(
+    "reply",
+    [
+        {"language_code": "eng", "text": "", "audio_duration_secs": 1.0},
+        # Only a sound was heard: there is text, but not one word.
+        {
+            "language_code": "eng",
+            "text": "(laughs)",
+            "words": [{"text": "(laughs)", "type": "audio_event", "start": 0.1, "end": 0.9}],
+            "audio_duration_secs": 1.0,
+        },
+    ],
+)
 def test_a_transcript_with_no_words_is_refused(
-    httpserver: HTTPServer, elevenlabs: ElevenLabsProvider
+    httpserver: HTTPServer, elevenlabs: ElevenLabsProvider, reply: dict[str, Any]
 ) -> None:
     key = file_store.save("speak_line.wav", wav(1))
-    httpserver.expect_oneshot_request("/v1/speech-to-text", method="POST").respond_with_json(
-        {"language_code": "eng", "text": "", "audio_duration_secs": 1.0}
-    )
+    httpserver.expect_oneshot_request("/v1/speech-to-text", method="POST").respond_with_json(reply)
 
     with use_model(elevenlabs), pytest.raises(ValueError, match="no words"):
         transcribe(job=None, purpose="transcribe_line", audio_key=key)

@@ -551,7 +551,18 @@ def test_work_paid_for_before_the_worker_stopped_is_kept_rather_than_paid_for_ag
 
     assert paid_for().count(purpose) == paid + 1
     assert SceneStep.objects.get(pk=step_id).status == "finished"
-    assert len(ProducedItem.objects.filter(kind=kind, step_id=step_id)) == 1
+    (kept,) = ProducedItem.objects.filter(kind=kind, step_id=step_id)
+    # What was kept is what was paid for.
+    if kind == "line_audio":
+        assert fake_model.heard[read(kept.file)] == "Say hello to the Stoneware Mug."
+        assert kept.seconds == 3.0
+    else:
+        assert kept.text == LINE
+        assert kept.words[:2] == [
+            {"text": "Meet", "start": 0.0, "end": 0.5},
+            {"text": "the", "start": 0.5, "end": 1.0},
+        ]
+        assert len(kept.words) == 8
 
 
 def test_audio_in_an_earlier_voice_isnt_transcribed(

@@ -1,9 +1,11 @@
 import base64
+import io
 import json
 from collections.abc import Sequence
 from typing import Any
 
 import openai
+import PIL.Image
 from django.conf import settings
 from openai.lib._pydantic import to_strict_json_schema
 from openai.types import ImagesResponse
@@ -145,7 +147,10 @@ class OpenAIProvider:
         try:
             reply = self._client.images.edit(
                 model=model,
-                image=[(f"picture-{number}", data) for number, data in enumerate(pictures, 1)],
+                image=[
+                    (f"picture-{number}", data, _picture_type(data))
+                    for number, data in enumerate(pictures, 1)
+                ],
                 prompt=prompt,
                 size=_STARTING_PICTURE_SIZE,
                 quality="high",
@@ -153,6 +158,13 @@ class OpenAIProvider:
         except _WORTH_RETRYING as error:
             raise OutsideServiceDown(str(error)) from error
         return _picture(model, reply)
+
+
+def _picture_type(data: bytes) -> str:
+    """The media type of a picture, judged by what the bytes hold. OpenAI refuses a picture
+    sent without one."""
+    with PIL.Image.open(io.BytesIO(data)) as picture:
+        return PIL.Image.MIME.get(picture.format or "", "application/octet-stream")
 
 
 def _picture(model: str, reply: ImagesResponse) -> Picture:
