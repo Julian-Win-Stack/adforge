@@ -15,7 +15,7 @@ from chat.models import Attachment, Message, Session
 from gateway.gateway import charged_to
 from gateway.types import UnusableReply
 from jobs.models import ProducedItem, SceneStep
-from jobs.work import make_line_audio, make_starting_picture, transcribe_line_audio
+from jobs.work import make_clip, make_line_audio, make_starting_picture, transcribe_line_audio
 
 from . import loop
 from .loop import EXPECTED_FAILURES, why_it_failed
@@ -137,6 +137,17 @@ def _transcript_finished(step: SceneStep, transcript: ProducedItem) -> str:
     )
 
 
+def _clip_finished(step: SceneStep, clip: ProducedItem) -> str:
+    assert clip.picture is not None and clip.made_from is not None, "a clip is made from both"
+    number = step.scene.number
+    return (
+        f"Background step finished: scene {number}'s clip is ready (version {clip.version}, "
+        f"{clip.seconds:g} seconds), made from starting picture version {clip.picture.version} "
+        f"and audio version {clip.made_from.version}. Scene {number} is finished. Tell the "
+        "shop owner."
+    )
+
+
 @dataclass(frozen=True)
 class StepWork:
     """What one kind of scene step does: its name in what the producer is told, the work
@@ -166,6 +177,13 @@ STEP_WORK = {
         name="transcript",
         make=transcribe_line_audio,
         finished=_transcript_finished,
+        shown=lambda _: [],
+    ),
+    # Clips are shown once the whole ad is put together from them.
+    SceneStep.Kind.CLIP: StepWork(
+        name="clip",
+        make=make_clip,
+        finished=_clip_finished,
         shown=lambda _: [],
     ),
 }

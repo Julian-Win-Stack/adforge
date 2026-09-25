@@ -37,7 +37,8 @@ what to do next. Before a tool that takes a while, say in one short sentence wha
 about to do. When there is nothing left to do, or you need the shop owner, reply to them.
 The usual order is: read the page, plan the ad, create the person, run the planning \
 checks, then, for each scene, make its starting picture and its line's audio, which can \
-run at the same time, and transcribe the audio once it's ready. When a tool hands back \
+run at the same time, transcribe the audio once it's ready, and once the picture is made and \
+the audio heard, make the scene's clip, which finishes the scene. When a tool hands back \
 something to ask the shop owner, ask it in your reply and wait for their answer before \
 passing their choice to a tool.
 Scene tools start their work in the background and hand back at once, before anything is \
@@ -487,23 +488,7 @@ class TranscribeLineAudio(Tool):
                 f"scene {scene.number}'s audio is still being made. You'll be told when it's "
                 "ready; transcribe it then."
             )
-        audios = scene.produced.filter(
-            kind=ProducedItem.Kind.LINE_AUDIO, step__status=SceneStep.Status.FINISHED
-        ).order_by("version")
-        if not audios.exists():
-            raise Refused(f"scene {scene.number} has no audio yet. Make the line's audio first.")
-        for_the_line = audios.filter(step__line=scene.line)
-        if not for_the_line.exists():
-            raise Refused(
-                f"scene {scene.number}'s audio was made for an earlier line, and the line has "
-                "changed since. Make the line's audio again first."
-            )
-        audio = for_the_line.filter(made_from=latest(scene.job, ProducedItem.Kind.VOICE)).last()
-        if audio is None:
-            raise Refused(
-                f"scene {scene.number}'s audio was made in an earlier voice, and the person has "
-                "changed since. Make the line's audio again first."
-            )
+        audio = _current_audio(scene)
         heard = (
             scene.produced.filter(
                 kind=ProducedItem.Kind.TRANSCRIPT,
@@ -535,6 +520,109 @@ class TranscribeLineAudio(Tool):
         )
 
 
+class MakeClip(Tool):
+    """Start making a scene's clip: its starting picture animated to speak its line's audio,
+    the same audio that was transcribed. A scene whose clip is made is finished. Works in the
+    background and hands back at once; you are told when the clip is ready. Only once the
+    scene's starting picture is made and its audio transcribed, for the line as it stands."""
+
+    name = "make_clip"
+
+    scene: int = Field(description="The number of the scene.")
+
+    def run(self, call: ToolCall) -> str:
+        scene = _a_checked_scene(call, self.scene)
+        for kind, what in [
+            (SceneStep.Kind.STARTING_PICTURE, "starting picture"),
+            (SceneStep.Kind.LINE_AUDIO, "audio"),
+            (SceneStep.Kind.TRANSCRIPT, "transcript"),
+        ]:
+            if scene.steps.filter(kind=kind, status=SceneStep.Status.RUNNING).exists():
+                raise Refused(
+                    f"scene {scene.number}'s {what} is still being made. You'll be told when "
+                    "it's ready; make the clip then."
+                )
+        pictures = scene.produced.filter(
+            kind=ProducedItem.Kind.STARTING_PICTURE, step__status=SceneStep.Status.FINISHED
+        ).order_by("version")
+        if not pictures.exists():
+            raise Refused(
+                f"scene {scene.number} has no starting picture yet. Make its starting picture "
+                "first."
+            )
+        picture = pictures.filter(step__line=scene.line).last()
+        if picture is None:
+            raise Refused(
+                f"scene {scene.number}'s starting picture was made for an earlier line, and the "
+                "line has changed since. Make its starting picture again first."
+            )
+        audio = _current_audio(scene)
+        if not scene.produced.filter(
+            kind=ProducedItem.Kind.TRANSCRIPT,
+            step__status=SceneStep.Status.FINISHED,
+            made_from=audio,
+        ).exists():
+            raise Refused(
+                f"scene {scene.number}'s audio (version {audio.version}) hasn't been "
+                "transcribed yet, and a clip is only made from audio that was heard saying the "
+                "line. Transcribe it first."
+            )
+        made = (
+            scene.produced.filter(
+                kind=ProducedItem.Kind.CLIP,
+                step__status=SceneStep.Status.FINISHED,
+                picture=picture,
+                made_from=audio,
+            )
+            .order_by("version")
+            .last()
+        )
+        if made is not None:
+            assert made.step is not None, "a clip is made by a scene step"
+            return (
+                f"Scene {scene.number}'s clip was already made from this starting picture and "
+                f"audio (version {made.version}), so nothing was made or paid for again. Making "
+                f"it cost {_dollars(made.step.tool_call.cost_usd())}. Scene {scene.number} is "
+                "finished."
+            )
+        _start_step(
+            call,
+            scene,
+            SceneStep.Kind.CLIP,
+            busy=f"scene {scene.number}'s clip is already being made. You'll be told when it's "
+            "ready.",
+            made_from=audio,
+            picture=picture,
+        )
+        return (
+            f"Started scene {scene.number}'s clip. It isn't made yet: you'll be told when it's "
+            "ready."
+        )
+
+
+def _current_audio(scene: Scene) -> ProducedItem:
+    """The scene's audio of its line as it stands, in the person's voice as it stands: the
+    only audio a transcript or a clip is made from. Refuses, saying why, if it has none."""
+    audios = scene.produced.filter(
+        kind=ProducedItem.Kind.LINE_AUDIO, step__status=SceneStep.Status.FINISHED
+    ).order_by("version")
+    if not audios.exists():
+        raise Refused(f"scene {scene.number} has no audio yet. Make the line's audio first.")
+    for_the_line = audios.filter(step__line=scene.line)
+    if not for_the_line.exists():
+        raise Refused(
+            f"scene {scene.number}'s audio was made for an earlier line, and the line has "
+            "changed since. Make the line's audio again first."
+        )
+    audio = for_the_line.filter(made_from=latest(scene.job, ProducedItem.Kind.VOICE)).last()
+    if audio is None:
+        raise Refused(
+            f"scene {scene.number}'s audio was made in an earlier voice, and the person has "
+            "changed since. Make the line's audio again first."
+        )
+    return audio
+
+
 def _start_step(
     call: ToolCall,
     scene: Scene,
@@ -543,6 +631,7 @@ def _start_step(
     busy: str,
     note: str = "",
     made_from: ProducedItem | None = None,
+    picture: ProducedItem | None = None,
 ) -> None:
     """Start a scene step in the background, from the scene's line as it stands, unless one
     of its kind is already running for the scene: then refuse, saying `busy`."""
@@ -557,6 +646,7 @@ def _start_step(
                 line=scene.line,
                 note=note,
                 made_from=made_from,
+                picture=picture,
             )
     except IntegrityError:
         # Another started it since the look above.
@@ -701,5 +791,6 @@ PRODUCER = Agent(
         MakeStartingPicture,
         MakeLineAudio,
         TranscribeLineAudio,
+        MakeClip,
     ],
 )

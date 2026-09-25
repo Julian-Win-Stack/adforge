@@ -51,7 +51,7 @@ One spoken line in a job, and everything produced for it. A scene has no planned
 _Avoid_: Shot, beat, clip, segment
 
 **Scene step**:
-One piece of a scene's work, run in the background: its starting picture, its line's audio, the audio's transcript, and later its clip. A scene tool starts it and returns at once; when it finishes or fails, the producer is told on its next turn and tells the user.
+One piece of a scene's work, run in the background: its starting picture, its line's audio, the audio's transcript, and its clip. A scene tool starts it and returns at once; when it finishes or fails, the producer is told on its next turn and tells the user.
 _Avoid_: Task, job, render
 
 **Starting picture**:
@@ -65,6 +65,10 @@ _Avoid_: Voiceover, recording, clip
 **Transcript**:
 What was heard in a line's audio, word by word with when each was said, exactly as spoken: nothing tidied or matched to the line. Kept with the audio it was heard in.
 _Avoid_: Captions, subtitles
+
+**Clip**:
+A scene's starting picture animated to speak its line's audio: the same audio its transcript was heard in, so the clip lasts exactly as long. Made only once the picture is made and the audio heard, for the line as it stands. A scene whose clip is made is finished. Not shown to the user on its own.
+_Avoid_: Video, render, shot
 
 **Person**:
 The presenter in an ad: one portrait and one matching voice. Every scene in a job shows the same person.

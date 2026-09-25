@@ -10,6 +10,7 @@ from .models import Job, ProducedItem, ProductPhoto, Scene, SceneStep
 
 _PICTURE_ENDINGS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 _AUDIO_ENDINGS = {".wav", ".mp3"}
+_VIDEO_ENDINGS = {".mp4"}
 
 
 class ShowsFile:
@@ -25,6 +26,10 @@ class ShowsFile:
             shown = format_html('<img src="{}" style="max-height: 160px">', url)
         elif ending in _AUDIO_ENDINGS:
             shown = format_html('<audio controls preload="none" src="{}"></audio>', url)
+        elif ending in _VIDEO_ENDINGS:
+            shown = format_html(
+                '<video controls preload="none" src="{}" style="max-height: 240px"></video>', url
+            )
         else:
             shown = format_html("")
         return format_html('{}<br><a href="{}" target="_blank">{}</a>', shown, url, item.file)
@@ -57,6 +62,7 @@ class ProducedItemInline(ShowsFile, admin.TabularInline[ProducedItem, Job]):
         "voice_id",
         "words_per_second",
         "made_from",
+        "picture",
         "seconds",
         "text",
         "words",
@@ -71,6 +77,7 @@ class ProducedItemInline(ShowsFile, admin.TabularInline[ProducedItem, Job]):
         "voice_id",
         "words_per_second",
         "made_from",
+        "picture",
         "seconds",
         "text",
         "words",
@@ -128,6 +135,7 @@ class SceneStepInline(admin.TabularInline[SceneStep, Scene]):
         "photo",
         "prompt",
         "made_from",
+        "picture",
         "started_at",
         "finished_at",
     ]
@@ -138,6 +146,7 @@ class SceneStepInline(admin.TabularInline[SceneStep, Scene]):
         "photo",
         "prompt",
         "made_from",
+        "picture",
         "started_at",
         "finished_at",
     ]
@@ -161,7 +170,7 @@ class SceneStepAdmin(admin.ModelAdmin[SceneStep]):
     list_select_related = ["scene__job"]
     list_filter = ["kind", "status"]
     readonly_fields = ["started_at"]
-    raw_id_fields = ["made_from"]
+    raw_id_fields = ["made_from", "picture"]
 
 
 @admin.register(ProducedItem)
@@ -172,6 +181,7 @@ class ProducedItemAdmin(ShowsFile, admin.ModelAdmin[ProducedItem]):
         "version",
         "scene",
         "made_from",
+        "picture",
         "file_preview",
         "seconds",
         "words_per_second",

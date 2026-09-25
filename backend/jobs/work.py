@@ -19,10 +19,12 @@ from gateway.gateway import (
     IMAGE_TYPE_NAMES,
     IMAGE_TYPES,
     call_model,
+    collect_clip,
     design_voice,
     draw_picture,
     edit_picture,
     speak,
+    submit_clip,
     transcribe,
     transcription_from,
     transcription_output,
@@ -58,6 +60,7 @@ from .planning import (
     producer_decision_for,
 )
 from .scenes import (
+    CLIP_MOTION_PROMPT,
     STARTING_PICTURE_INSTRUCTIONS,
     StartingPictureHandoff,
     starting_picture_choice_for,
@@ -644,6 +647,58 @@ def transcribe_line_audio(step: SceneStep) -> ProducedItem:
         words=transcription_output(heard)["words"],
         made_from=audio,
     )
+
+
+def make_clip(step: SceneStep) -> ProducedItem:
+    """Have the video model animate the starting picture to speak the audio the step was
+    started for. Gives back the clip, kept as the scene's next version, and marks the scene
+    finished.
+
+    Run again, as after a worker stopped, it pays for nothing already paid for: a clip
+    asked for is waited for rather than asked for again, and one fetched is kept rather
+    than fetched again."""
+    made = step.produced.first()
+    if made is not None:
+        return made
+    scene = step.scene
+    job = scene.job
+    picture, audio = step.picture, step.made_from
+    assert picture is not None and audio is not None, "a clip step starts with both"
+    assert audio.seconds is not None, "a line's audio is measured when it's made"
+    asked_for = _paid_for_before(job, "make_clip", charged_to=step.tool_call)
+    video_id = (
+        asked_for["video_id"]
+        if asked_for
+        else submit_clip(
+            job=job,
+            purpose="make_clip",
+            picture_key=picture.file,
+            audio_key=audio.file,
+            audio_seconds=audio.seconds,
+            motion_prompt=CLIP_MOTION_PROMPT,
+        )
+    )
+    fetched = _paid_for_before(job, "collect_clip", charged_to=step.tool_call)
+    file = (
+        fetched["file"]
+        if fetched
+        else collect_clip(job=job, purpose="collect_clip", video_id=video_id)
+    )
+    with transaction.atomic():
+        clip = ProducedItem.objects.create(
+            job=job,
+            scene=scene,
+            step=step,
+            kind=ProducedItem.Kind.CLIP,
+            version=_next_version(scene, ProducedItem.Kind.CLIP),
+            file=file,
+            # The video model makes a clip as long as the audio it speaks.
+            seconds=audio.seconds,
+            made_from=audio,
+            picture=picture,
+        )
+        Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
+    return clip
 
 
 def _next_version(scene: Scene, kind: ProducedItem.Kind) -> int:
