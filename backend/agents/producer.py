@@ -17,12 +17,16 @@ from jobs.models import Job, ProducedItem, ProductPhoto, Scene, SceneStep
 from jobs.work import (
     assemble_ad,
     check_page,
+    create_music,
     create_person,
     keep_page,
     latest,
+    music_prompt,
+    music_seconds,
     plan,
     run_checks,
     save_photos,
+    why_the_checks_havent_passed,
     why_the_checks_passed,
 )
 
@@ -37,12 +41,12 @@ You work by calling tools. Call one when you need it, read what it hands back, a
 what to do next. Before a tool that takes a while, say in one short sentence what you're \
 about to do. When there is nothing left to do, or you need the shop owner, reply to them.
 The usual order is: read the page, plan the ad, create the person, run the planning \
-checks, then, for each scene, make its starting picture and its line's audio, which can \
-run at the same time, transcribe the audio once it's ready, and once the picture is made and \
-the audio heard, make the scene's clip, which finishes the scene. Once every scene is \
-finished, assemble the ad, which shows it to the shop owner. When a tool hands back \
-something to ask the shop owner, ask it in your reply and wait for their answer before \
-passing their choice to a tool.
+checks, create the music, then, for each scene, make its starting picture and its line's \
+audio, which can run at the same time, transcribe the audio once it's ready, and once the \
+picture is made and the audio heard, make the scene's clip, which finishes the scene. \
+Once every scene is finished, assemble the ad, which shows it to the shop owner. When a \
+tool hands back something to ask the shop owner, ask it in your reply and wait for their \
+answer before passing their choice to a tool.
 Scene tools start their work in the background and hand back at once, before anything is \
 made. Tell the shop owner the work has started, then carry on or reply: don't call the tool \
 again to see whether it has finished. When a step finishes or fails, you are told in a \
@@ -370,6 +374,50 @@ class RunPlanningChecks(Tool):
     def _asked(self, job: Job, about: str) -> ToolCall | None:
         """When the checks last had the shop owner asked about `about`, if they ever did."""
         return job.tool_calls.filter(tool=self.name, asked_about=about).last()
+
+
+class CreateMusic(Tool):
+    """Create the ad's background music, in the mood you give, as long as the person's voice
+    takes to say the script with a few seconds to spare. It is always instrumental. It isn't
+    shown to the shop owner: they hear it in the finished ad. Only once the planning checks
+    have passed."""
+
+    name = "create_music"
+
+    mood: str = Field(
+        min_length=1,
+        description='What the music should feel like, in a few words, such as "light upbeat '
+        'lo-fi". Only the mood: it is always instrumental.',
+    )
+
+    def run(self, call: ToolCall) -> str:
+        job = _the_job(call)
+        if job is None or not job.scenes.exists():
+            raise Refused("the ad hasn't been planned yet, and the music is as long as its script.")
+        not_passed = why_the_checks_havent_passed(job)
+        if not_passed is not None:
+            raise Refused(not_passed)
+        voice = _measured_voice(job)
+        if voice is None:
+            raise Refused(
+                "the person hasn't been made yet, and the music lasts as long as their voice "
+                "takes to say the script. Create the person first."
+            )
+        prompt, seconds = music_prompt(self.mood), music_seconds(job, voice)
+        made = job.produced.filter(kind=ProducedItem.Kind.MUSIC, text=prompt, seconds=seconds)
+        music = made.order_by("version").last()
+        if music is not None:
+            return (
+                "The music was already made in this mood for this script (version "
+                f"{music.version}, {seconds} seconds), so nothing was made or paid for again. "
+                f"Making it cost {_dollars(_spent_on(job, prompt, seconds))}."
+            )
+        music = create_music(job, prompt, seconds)
+        mood = prompt.split(". ", 1)[0]
+        return (
+            f"Made the music (version {music.version}, {seconds} seconds): {mood}, "
+            "instrumental. It isn't shown to the shop owner: they hear it in the finished ad."
+        )
 
 
 class MakeStartingPicture(Tool):
@@ -872,6 +920,14 @@ def _spent(job: Job, tool: str) -> Decimal:
     return spent or Decimal(0)
 
 
+def _spent_on(job: Job, prompt: str, seconds: int) -> Decimal:
+    """What making the job's music as `prompt` asks, `seconds` long, cost."""
+    spent: Decimal | None = job.model_calls.filter(
+        purpose="make_music", handoff={"prompt": prompt, "seconds": seconds}
+    ).aggregate(cost=Sum("cost_usd"))["cost"]
+    return spent or Decimal(0)
+
+
 def _dollars(amount: Decimal) -> str:
     """An amount in dollars, to the cent, or to its last digit when that is smaller."""
     exact = f"{amount.normalize():f}"
@@ -899,6 +955,7 @@ PRODUCER = Agent(
         PlanAd,
         CreatePerson,
         RunPlanningChecks,
+        CreateMusic,
         MakeStartingPicture,
         MakeLineAudio,
         TranscribeLineAudio,

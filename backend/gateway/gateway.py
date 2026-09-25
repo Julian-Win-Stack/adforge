@@ -37,6 +37,8 @@ from .types import (
     LoadedImage,
     ModelProvider,
     ModelRequest,
+    MusicHandoff,
+    MusicProvider,
     Picture,
     PictureEditHandoff,
     PictureProvider,
@@ -62,6 +64,7 @@ if TYPE_CHECKING:
     from jobs.models import Job
 
     from .elevenlabs_adapter import ElevenLabsProvider
+    from .fal_adapter import FalProvider
     from .heygen_adapter import HeyGenProvider
     from .inworld_adapter import InworldProvider
     from .openai_adapter import OpenAIProvider
@@ -113,6 +116,13 @@ def _heygen() -> HeyGenProvider:
     return HeyGenProvider()
 
 
+@cache
+def _fal() -> FalProvider:
+    from .fal_adapter import FalProvider
+
+    return FalProvider()
+
+
 def _provider() -> ModelProvider:
     return cast(ModelProvider, _override) if _override is not None else _openai()
 
@@ -131,6 +141,10 @@ def _transcribers() -> TranscriptionProvider:
 
 def _clips() -> ClipProvider:
     return cast(ClipProvider, _override) if _override is not None else _heygen()
+
+
+def _music() -> MusicProvider:
+    return cast(MusicProvider, _override) if _override is not None else _fal()
 
 
 def _agents() -> AgentProvider:
@@ -458,6 +472,29 @@ def collect_clip(
         return _Made(result=key, output={"file": key}, bill=_Bill(cost_usd=Decimal(0)))
 
     return _recorded(job, purpose, model, provider.name, handoff, collect)
+
+
+def make_music(*, job: Job | None, purpose: str, prompt: str, seconds: int) -> str:
+    """Have `seconds` of background music made as `prompt` describes. Returns the audio
+    file's key in the file store."""
+    handoff = MusicHandoff(prompt=prompt, seconds=seconds)
+    model = catalog.MODEL_FOR_PURPOSE[purpose]
+    provider = _music()
+
+    def compose() -> _Made[str]:
+        music = provider.compose(model=model, prompt=handoff.prompt, seconds=handoff.seconds)
+        # Sonilo always sends AAC in an MP4 file.
+        key = file_store.save(f"{purpose}.m4a", music)
+        return _Made(
+            result=key,
+            output={"file": key},
+            bill=_Bill(
+                audio_seconds=handoff.seconds,
+                cost_usd=catalog.music_cost_usd(model, handoff.seconds),
+            ),
+        )
+
+    return _recorded(job, purpose, model, provider.name, handoff, compose)
 
 
 @dataclass(frozen=True)

@@ -105,6 +105,12 @@ ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
 # Tests point it at a local stand-in.
 ELEVENLABS_BASE_URL = os.environ.get("ELEVENLABS_BASE_URL", "https://api.elevenlabs.io")
 
+FAL_KEY = os.environ.get("FAL_KEY", "")
+# Tests point it at a local stand-in.
+FAL_BASE_URL = os.environ.get("FAL_BASE_URL", "https://fal.run")
+# fal answers once the music is made, which takes longer the longer the music.
+FAL_TIMEOUT_SECONDS = 300.0
+
 HEYGEN_API_KEY = os.environ.get("HEYGEN_API_KEY", "")
 # Tests point it at a local stand-in.
 HEYGEN_BASE_URL = os.environ.get("HEYGEN_BASE_URL", "https://api.heygen.com")

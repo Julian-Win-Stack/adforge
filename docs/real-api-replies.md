@@ -84,3 +84,10 @@ Run for real through `backend/gateway/heygen_adapter.py` on 2026-09-24: one 5.70
 - **Ask for a clip**: `POST /v3/videos` with `type: "image"`, the picture's and audio's asset IDs, a `motion_prompt`, `aspect_ratio: "9:16"` and `resolution: "1080p"`. The clip's ID is `data.video_id`.
 - **Ask how it's getting on**: `GET /v3/videos/{video_id}`. `data.status` is `completed` or `failed` once done, and something else until then (`processing` was seen). A made clip's reply also gives `data.duration` in seconds. A made clip is fetched from `data.video_url`, which only works for a while. Which field says why a clip `failed` hasn't been seen: the adapter reads `data.failure_message`, then `data.error`.
 - **A clip HeyGen doesn't know of** (asked on 2026-09-25 with made-up IDs): `404` with `error.code` `video_not_found` and `error.message` `Video <id> not found`. The adapter counts it as a clip that couldn't be made. Any other `404` isn't taken to be about the clip.
+
+## fal (Sonilo v1.1)
+
+Run for real through `backend/gateway/fal_adapter.py` on 2026-09-25: 5 seconds of music asked for, in the prompt `music_prompt("light upbeat lo-fi")` builds. fal answered in 11 seconds. The file was 190 KB, AAC-LC, 44.1 kHz stereo, in an MP4 file (`ftypiso5`), lasting 5.06 seconds.
+
+- **Make music**: `POST https://fal.run/sonilo/v1.1/text-to-music` with `Authorization: Key <FAL_KEY>` and `{"prompt", "duration", "num_samples": 1}`. `duration` is whole seconds, at most 600. It answers once the music is made. The music is fetched from `audio.url`, without the key. The shape is from fal's model page; only `audio.url` is read.
+- **Billed** at $0.0025 a second of music, as fal's model page said on 2026-09-17. The adapter bills the seconds asked for, not the few hundredths more that come back. Whether fal bills its own retries is still unknown.

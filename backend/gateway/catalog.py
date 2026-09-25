@@ -19,6 +19,7 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # A clip is asked for, then waited for and fetched: two calls, only the first paid.
     "make_clip": "heygen-avatar-iv",
     "collect_clip": "heygen-avatar-iv",
+    "make_music": "sonilo/v1.1/text-to-music",
 }
 
 # US dollars per million tokens: (input, output). From OpenAI's pricing page.
@@ -53,6 +54,13 @@ PRICE_PER_SECOND_OF_VIDEO: dict[str, Decimal] = {
 }
 
 
+# US dollars per second of music made. From fal's model page on 2026-09-17
+# (docs/video-model-tests.md).
+PRICE_PER_SECOND_OF_MUSIC: dict[str, Decimal] = {
+    "sonilo/v1.1/text-to-music": Decimal("0.0025"),
+}
+
+
 def cost_usd(model: str, input_tokens: int, output_tokens: int) -> Decimal:
     input_price, output_price = PRICE_PER_MILLION_TOKENS[model]
     return (input_tokens * input_price + output_tokens * output_price) / 1_000_000
@@ -82,3 +90,7 @@ def transcription_cost_usd(model: str, seconds: float) -> Decimal:
 
 def video_cost_usd(model: str, seconds: float) -> Decimal:
     return Decimal(str(seconds)) * PRICE_PER_SECOND_OF_VIDEO[model]
+
+
+def music_cost_usd(model: str, seconds: int) -> Decimal:
+    return seconds * PRICE_PER_SECOND_OF_MUSIC[model]
