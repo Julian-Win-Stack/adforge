@@ -9,6 +9,7 @@ import wave
 from decimal import Decimal
 from typing import Any
 
+import httpx
 import pytest
 from pytest_django import Settings
 from pytest_httpserver import HTTPServer
@@ -543,6 +544,42 @@ def test_a_clip_heygen_couldnt_make_is_not_asked_for_again(
     with use_model(heygen), pytest.raises(ClipFailed, match="No face was found."):
         collect_clip(job=None, purpose="collect_clip", video_id="vid-1")
     assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
+
+
+def test_a_clip_heygen_no_longer_knows_of_counts_as_one_it_couldnt_make(
+    httpserver: HTTPServer, heygen: HeyGenProvider
+) -> None:
+    # What HeyGen answered on 2026-09-25 when asked about a video it didn't know.
+    httpserver.expect_oneshot_request("/v3/videos/vid-1", method="GET").respond_with_json(
+        {
+            "error": {
+                "code": "video_not_found",
+                "doc_url": "https://developers.heygen.com/docs/error-codes#video-not-found",
+                "message": "Video vid-1 not found",
+            }
+        },
+        status=404,
+    )
+
+    with use_model(heygen), pytest.raises(ClipFailed) as raised:
+        collect_clip(job=None, purpose="collect_clip", video_id="vid-1")
+
+    # Waited for, it would never be made.
+    assert str(raised.value) == "HeyGen no longer knows of this clip: Video vid-1 not found"
+    assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
+
+
+def test_a_not_found_from_heygen_that_isnt_about_the_clip_doesnt_count_as_the_clip_failing(
+    httpserver: HTTPServer, heygen: HeyGenProvider
+) -> None:
+    # Such as its address having moved: the clip it was asked about may still be made, and
+    # counting it as failed would pay for it again.
+    httpserver.expect_oneshot_request("/v3/videos/vid-1", method="GET").respond_with_data(
+        "Not Found", status=404
+    )
+
+    with use_model(heygen), pytest.raises(httpx.HTTPStatusError, match="404 NOT FOUND"):
+        collect_clip(job=None, purpose="collect_clip", video_id="vid-1")
 
 
 def test_a_clip_heygen_is_too_busy_for_is_asked_for_again(

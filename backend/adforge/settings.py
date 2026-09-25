@@ -110,10 +110,11 @@ HEYGEN_API_KEY = os.environ.get("HEYGEN_API_KEY", "")
 HEYGEN_BASE_URL = os.environ.get("HEYGEN_BASE_URL", "https://api.heygen.com")
 # How long to wait for HeyGen to answer one request.
 HEYGEN_TIMEOUT_SECONDS = 120.0
-# How often to ask whether a clip is made yet, and how long to wait before giving up. One
-# usually takes about a minute.
+# How often to ask whether a clip is made yet. One usually takes under a minute, but it is
+# paid for, so it is waited for however long it takes: past this, the shop owner is told
+# it's still being made.
 CLIP_POLL_SECONDS = 10.0
-CLIP_MAX_WAIT_SECONDS = 600.0
+CLIP_SLOW_AFTER_SECONDS = 600.0
 
 # ffmpeg must be a build that can draw text and subtitles (drawtext, subtitles). Homebrew's
 # plain ffmpeg can't, so on a Mac its ffmpeg-full is used where it's installed.

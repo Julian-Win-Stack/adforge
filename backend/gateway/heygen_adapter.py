@@ -44,8 +44,15 @@ class HeyGenProvider:
         return str(created["data"]["video_id"])
 
     def status(self, *, video_id: str) -> ClipStatus:
+        try:
+            made = self._send("GET", f"/v3/videos/{video_id}")["data"]
+        except httpx.HTTPStatusError as error:
+            # Only HeyGen saying so: a 404 for any other reason says nothing about the clip.
+            if _error(error.response).get("code") != "video_not_found":
+                raise
+            why = _error(error.response).get("message")
+            return ClipStatus(state="failed", error=f"HeyGen no longer knows of this clip: {why}")
         # Waiting, pending or processing all mean it isn't made yet.
-        made = self._send("GET", f"/v3/videos/{video_id}")["data"]
         if made["status"] == "completed":
             return ClipStatus(state="completed", video_url=made["video_url"])
         if made["status"] == "failed":
@@ -95,6 +102,16 @@ class HeyGenProvider:
 
 # Failures before the request left this machine: HeyGen never had it.
 _NEVER_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
+
+
+def _error(response: httpx.Response) -> dict[str, Any]:
+    """What HeyGen's reply says went wrong, or nothing if it isn't HeyGen's own reply."""
+    try:
+        said = response.json()
+    except ValueError:
+        return {}
+    error = said.get("error") if isinstance(said, dict) else None
+    return error if isinstance(error, dict) else {}
 
 
 def _extension(picture: bytes) -> str:

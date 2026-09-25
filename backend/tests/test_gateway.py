@@ -16,7 +16,7 @@ from adforge.retry import OutsideServiceDown
 from gateway.fake import FakeModel
 from gateway.gateway import UnreadableImage, call_model, collect_clip, speak, submit_clip
 from gateway.models import ModelCall
-from gateway.types import ClipTimedOut, Image, UnusableReply
+from gateway.types import Image, UnusableReply
 from jobs.work import PageCheck, PageCheckHandoff
 
 from .conftest import READABLE, openai_answer, openai_reply, picture
@@ -242,17 +242,6 @@ def test_a_clip_being_made_is_waited_for_then_kept(fake_model: FakeModel) -> Non
     assert (collected.outcome, collected.output) == (ModelCall.Outcome.SUCCEEDED, {"file": key})
 
 
-def test_a_clip_that_takes_too_long_is_given_up_on(
-    fake_model: FakeModel, settings: Settings
-) -> None:
-    settings.CLIP_MAX_WAIT_SECONDS = 0
-    fake_model.respond("collect_clip", {"state": "working"})
-
-    with pytest.raises(ClipTimedOut):
-        collect_clip(job=None, purpose="collect_clip", video_id="video-1")
-    assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
-
-
 class FakeClock:
     """Time that passes only when slept through, so waiting takes no real time."""
 
@@ -266,26 +255,52 @@ class FakeClock:
         self.now += seconds
 
 
-def test_a_clip_is_given_up_on_after_the_whole_wait_even_if_the_service_went_down_meanwhile(
-    fake_model: FakeModel, settings: Settings, monkeypatch: pytest.MonkeyPatch
-) -> None:
+@pytest.fixture
+def clock(monkeypatch: pytest.MonkeyPatch) -> FakeClock:
     clock = FakeClock()
     monkeypatch.setattr(time, "monotonic", clock.monotonic)
     monkeypatch.setattr(time, "sleep", clock.sleep)
+    return clock
+
+
+def test_a_slow_clip_is_waited_for_until_it_is_made(
+    fake_model: FakeModel, settings: Settings, clock: FakeClock
+) -> None:
+    settings.CLIP_POLL_SECONDS = 60
+    # Still being made after an hour of looking once a minute: it's paid for, so it's
+    # never given up on.
+    fake_model.respond("collect_clip", *[{"state": "working"}] * 60)
+
+    key = collect_clip(job=None, purpose="collect_clip", video_id="video-1")
+
+    assert clock.now == 3600
+    assert file_store.read(key) == b"fake clip video-1"
+    assert ModelCall.objects.get().outcome == ModelCall.Outcome.SUCCEEDED
+
+
+def test_a_slow_clip_is_told_of_once_counted_from_the_first_look_even_if_the_service_went_down(
+    fake_model: FakeModel, settings: Settings, clock: FakeClock
+) -> None:
     settings.CLIP_POLL_SECONDS = 10
-    settings.CLIP_MAX_WAIT_SECONDS = 25
+    settings.CLIP_SLOW_AFTER_SECONDS = 30
     working = {"state": "working"}
-    # Asked at 0 and 10 seconds, down at 20, asked again at once.
-    fake_model.respond(
-        "collect_clip", working, working, OutsideServiceDown("HeyGen answered 503"), *[working] * 5
+    down = OutsideServiceDown("HeyGen answered 503")
+    # Looked at 0, down at 10 and looked again at once, then at 20 and 30, down at 40 and
+    # looked again at once, then made by 50.
+    fake_model.respond("collect_clip", working, down, working, working, working, down, working)
+    told_slow_at: list[float] = []
+
+    collect_clip(
+        job=None,
+        purpose="collect_clip",
+        video_id="video-1",
+        when_slow=lambda: told_slow_at.append(clock.now),
     )
 
-    with pytest.raises(ClipTimedOut, match="within 25 seconds"):
-        collect_clip(job=None, purpose="collect_clip", video_id="video-1")
-
-    # Given up on at the first look past 25 seconds of waiting, counted from the start.
-    assert clock.now == 30
+    # The first look once 30 seconds have been waited, counted from the start, and only that one.
+    assert told_slow_at == [30]
     assert [(c.attempt, c.outcome) for c in ModelCall.objects.all()] == [
         (1, ModelCall.Outcome.FAILED),
         (2, ModelCall.Outcome.FAILED),
+        (3, ModelCall.Outcome.SUCCEEDED),
     ]

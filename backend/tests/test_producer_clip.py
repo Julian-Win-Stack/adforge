@@ -14,7 +14,7 @@ from adforge.file_store import read
 from adforge.retry import OutsideServiceDown
 from agents import tasks
 from agents.producer import MakeClip
-from gateway.fake import FakeModel, Outcome, turn
+from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import work
 from jobs.models import Job, ProducedItem, Scene, SceneStep
@@ -24,6 +24,7 @@ from .conftest import (
     NO_CHOICES,
     HeldSteps,
     WorkerStopped,
+    chat,
     facts_ok,
     given_to_the_producer,
     paid_for,
@@ -499,51 +500,44 @@ def test_a_clip_the_video_model_couldnt_make_isnt_asked_for_again(
     assert ModelCall.objects.filter(purpose="collect_clip").count() == 1
 
 
-def test_a_clip_that_takes_too_long_fails_its_step(
+def test_a_slow_clip_is_waited_for_and_the_shop_owner_told_it_is_still_being_made(
     fake_model: FakeModel,
     ready: None,
     steps: HeldSteps,
     say: Callable[..., None],
     settings: Settings,
+    api: APIClient,
+    session_id: str,
 ) -> None:
-    settings.CLIP_MAX_WAIT_SECONDS = 0
+    # Every look counts as slow, so it's told of at the first, and only then.
+    settings.CLIP_SLOW_AFTER_SECONDS = 0
     calling(fake_model, "make_clip")
     say("Make scene 1's clip")
-    fake_model.respond("collect_clip", {"state": "working"})
+    fake_model.respond("collect_clip", {"state": "working"}, {"state": "working"})
 
     run(fake_model, steps)
 
-    step = clip_step_failed()
-    assert step.reason == (
-        "the video model couldn't make the clip (the clip wasn't made within 0 seconds. "
-        "It's paid for and may still be made: making the clip again waits for it rather "
-        "than paying for it again)."
-    )
+    assert chat(api, session_id)[-3:] == [
+        ("agent", "On it."),
+        (
+            "agent",
+            "Scene 1's clip is taking longer than usual. It's still being made, and I'll "
+            "tell you when it's ready.",
+        ),
+        ("agent", "Done."),
+    ]
+    assert told() == CLIP_READY
     assert fake_model.clips_submitted == ["video-1"]
 
 
-@pytest.mark.parametrize(
-    "waiting",
-    [
-        pytest.param([{"state": "working"}], id="took too long"),
-        pytest.param([OutsideServiceDown("HeyGen answered 503")] * 3, id="went down meanwhile"),
-    ],
-)
-def test_a_clip_given_up_on_is_waited_for_again_rather_than_paid_for_again(
-    fake_model: FakeModel,
-    ready: None,
-    steps: HeldSteps,
-    say: Callable[..., None],
-    settings: Settings,
-    waiting: list[Outcome],
+def test_a_clip_given_up_on_while_heygen_was_down_is_waited_for_again_rather_than_paid_again(
+    fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    settings.CLIP_MAX_WAIT_SECONDS = 0
     calling(fake_model, "make_clip")
     say("Make scene 1's clip")
-    fake_model.respond("collect_clip", *waiting)
+    fake_model.respond("collect_clip", *[OutsideServiceDown("HeyGen answered 503")] * 3)
     run(fake_model, steps)
     clip_step_failed()
-    settings.CLIP_MAX_WAIT_SECONDS = 600
     calling(fake_model, "make_clip")
 
     say("Make scene 1's clip again")
@@ -558,18 +552,12 @@ def test_a_clip_given_up_on_is_waited_for_again_rather_than_paid_for_again(
 
 
 def test_a_clip_given_up_on_isnt_waited_for_once_its_picture_is_made_again(
-    fake_model: FakeModel,
-    ready: None,
-    steps: HeldSteps,
-    say: Callable[..., None],
-    settings: Settings,
+    fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    settings.CLIP_MAX_WAIT_SECONDS = 0
     calling(fake_model, "make_clip")
     say("Make scene 1's clip")
-    fake_model.respond("collect_clip", {"state": "working"})
+    fake_model.respond("collect_clip", *[OutsideServiceDown("HeyGen answered 503")] * 3)
     run(fake_model, steps)
-    settings.CLIP_MAX_WAIT_SECONDS = 600
     calling(fake_model, "make_starting_picture", {"scene": 1, "note": "Smiling more."})
     say("Make scene 1's picture again, smiling more")
     fake_model.respond("choose_starting_picture", CHOICE)
