@@ -14,15 +14,17 @@ from adforge.file_store import read
 from adforge.retry import OutsideServiceDown
 from agents import tasks
 from agents.producer import MakeClip
-from gateway.fake import FakeModel, turn
+from gateway.fake import FakeModel, Outcome, turn
 from gateway.models import ModelCall
 from jobs import work
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 from jobs.scenes import CLIP_MOTION_PROMPT
 
 from .conftest import (
+    NO_CHOICES,
     HeldSteps,
     WorkerStopped,
+    facts_ok,
     given_to_the_producer,
     paid_for,
     producer_turns,
@@ -513,6 +515,122 @@ def test_a_clip_that_takes_too_long_fails_its_step(
 
     step = clip_step_failed()
     assert step.reason == (
-        "the video model couldn't make the clip (the clip wasn't made within 0 seconds)."
+        "the video model couldn't make the clip (the clip wasn't made within 0 seconds. "
+        "It's paid for and may still be made: making the clip again waits for it rather "
+        "than paying for it again)."
     )
     assert fake_model.clips_submitted == ["video-1"]
+
+
+@pytest.mark.parametrize(
+    "waiting",
+    [
+        pytest.param([{"state": "working"}], id="took too long"),
+        pytest.param([OutsideServiceDown("HeyGen answered 503")] * 3, id="went down meanwhile"),
+    ],
+)
+def test_a_clip_given_up_on_is_waited_for_again_rather_than_paid_for_again(
+    fake_model: FakeModel,
+    ready: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    settings: Settings,
+    waiting: list[Outcome],
+) -> None:
+    settings.CLIP_MAX_WAIT_SECONDS = 0
+    calling(fake_model, "make_clip")
+    say("Make scene 1's clip")
+    fake_model.respond("collect_clip", *waiting)
+    run(fake_model, steps)
+    clip_step_failed()
+    settings.CLIP_MAX_WAIT_SECONDS = 600
+    calling(fake_model, "make_clip")
+
+    say("Make scene 1's clip again")
+    run(fake_model, steps)
+
+    # The clip first asked for, and paid for, is the one kept.
+    assert fake_model.clips_submitted == ["video-1"]
+    assert paid_for().count("make_clip") == 1
+    assert made("clip") == [(1, 1)]
+    assert read(ProducedItem.objects.get(kind="clip").file) == b"fake clip video-1"
+    assert Scene.objects.get(number=1).status == "finished"
+
+
+def test_a_clip_given_up_on_isnt_waited_for_once_its_picture_is_made_again(
+    fake_model: FakeModel,
+    ready: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    settings: Settings,
+) -> None:
+    settings.CLIP_MAX_WAIT_SECONDS = 0
+    calling(fake_model, "make_clip")
+    say("Make scene 1's clip")
+    fake_model.respond("collect_clip", {"state": "working"})
+    run(fake_model, steps)
+    settings.CLIP_MAX_WAIT_SECONDS = 600
+    calling(fake_model, "make_starting_picture", {"scene": 1, "note": "Smiling more."})
+    say("Make scene 1's picture again, smiling more")
+    fake_model.respond("choose_starting_picture", CHOICE)
+    run(fake_model, steps)
+    calling(fake_model, "make_clip")
+
+    say("Make scene 1's clip")
+    run(fake_model, steps)
+
+    # The clip given up on shows the old picture, so the new one is asked for.
+    assert fake_model.clips_submitted == ["video-1", "video-2"]
+    clip = ProducedItem.objects.get(kind="clip")
+    assert (clip.picture.version if clip.picture else None, read(clip.file)) == (
+        2,
+        b"fake clip video-2",
+    )
+
+
+def test_a_clip_the_video_model_couldnt_make_is_asked_for_afresh_when_made_again(
+    fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    calling(fake_model, "make_clip")
+    say("Make scene 1's clip")
+    fake_model.respond("collect_clip", {"state": "failed", "error": "No face was found."})
+    run(fake_model, steps)
+    clip_step_failed()
+    calling(fake_model, "make_clip")
+
+    say("Make scene 1's clip again")
+    run(fake_model, steps)
+
+    # Waiting on the one that failed would only fail again.
+    assert fake_model.clips_submitted == ["video-1", "video-2"]
+    assert read(ProducedItem.objects.get(kind="clip").file) == b"fake clip video-2"
+
+
+# --- A line that changes once its clip is made ---------------------------------------------
+
+
+def test_a_finished_scene_whose_line_is_shortened_is_planned_again(
+    fake_model: FakeModel, clipped: None, say: Callable[..., None]
+) -> None:
+    # The owner has since asked for a 5-second ad: the 9-second script runs over.
+    Job.objects.update(target_seconds=5)
+    fake_model.respond(
+        "produce", turn(calls=[("run_planning_checks", NO_CHOICES)]), turn(says="Shorten it?")
+    )
+    say("Make it 5 seconds")
+    fake_model.respond(
+        "produce",
+        turn(calls=[("run_planning_checks", {**NO_CHOICES, "length_choice": "shorten"})]),
+        turn(says="Shortened."),
+    )
+    fake_model.respond(
+        "shorten_script", {"lines": ["Meet this Stoneware Mug.", "Yours for $24.00, today."]}
+    )
+    fake_model.respond("fact_check", facts_ok(1, 2))
+
+    say("Shorten it")
+
+    # Its clip says the old line, so the scene needs a new one.
+    scene = Scene.objects.get(number=1)
+    assert (scene.line, scene.status) == ("Meet this Stoneware Mug.", "planned")
+    assert made("clip") == [(1, 1)]

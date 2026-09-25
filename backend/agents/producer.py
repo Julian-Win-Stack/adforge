@@ -338,10 +338,10 @@ class RunPlanningChecks(Tool):
             scene = job.scenes.get(number=line_choice.scene)
             if line_choice.choice == "own":
                 assert line_choice.own_line is not None
-                scene.line = " ".join(line_choice.own_line.split())
+                scene.change_line(" ".join(line_choice.own_line.split()))
             # The shop owner knows their product: the line they chose isn't checked again.
             scene.fact_checked = True
-            scene.save(update_fields=["line", "fact_checked"])
+            scene.save(update_fields=["line", "status", "fact_checked"])
         if self.length_choice is not None:
             job.length_choice = Job.LengthChoice(self.length_choice)
             job.save(update_fields=["length_choice"])

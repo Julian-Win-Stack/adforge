@@ -30,7 +30,7 @@ from gateway.gateway import (
     transcription_output,
 )
 from gateway.models import ModelCall
-from gateway.types import Handoff, Image, Judgement
+from gateway.types import ClipFailed, Handoff, Image, Judgement
 
 from . import page
 from .checks import (
@@ -396,8 +396,8 @@ def _rewrite_line(job: Job, scene: Scene, conversation: list[ChatMessage]) -> No
         output=RewrittenLine,
     )
     scene.fact_problems[-1]["rewritten"] = True
-    scene.line = rewrite.line
-    scene.save(update_fields=["line", "fact_problems"])
+    scene.change_line(rewrite.line)
+    scene.save(update_fields=["line", "status", "fact_problems"])
 
 
 def _about_line(scene: Scene) -> Asking:
@@ -494,10 +494,10 @@ def _shorten(job: Job, lines: list[str], words_per_second: float) -> None:
         checked = {scene.line for scene in scenes if scene.fact_checked}
         for scene, line in zip(scenes, shortened.lines, strict=False):
             if scene.line != line:
-                scene.line = line
+                scene.change_line(line)
                 scene.fact_checked = line in checked
                 scene.fact_problems = []
-                scene.save(update_fields=["line", "fact_checked", "fact_problems"])
+                scene.save(update_fields=["line", "status", "fact_checked", "fact_problems"])
         for scene in scenes[len(shortened.lines) :]:
             scene.delete()
         Scene.objects.bulk_create(
@@ -665,11 +665,8 @@ def make_clip(step: SceneStep) -> ProducedItem:
     picture, audio = step.picture, step.made_from
     assert picture is not None and audio is not None, "a clip step starts with both"
     assert audio.seconds is not None, "a line's audio is measured when it's made"
-    asked_for = _paid_for_before(job, "make_clip", charged_to=step.tool_call)
-    video_id = (
-        asked_for["video_id"]
-        if asked_for
-        else submit_clip(
+    video_id = _clip_asked_for(step, picture, audio) or (
+        submit_clip(
             job=job,
             purpose="make_clip",
             picture_key=picture.file,
@@ -699,6 +696,32 @@ def make_clip(step: SceneStep) -> ProducedItem:
         )
         Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
     return clip
+
+
+def _clip_asked_for(step: SceneStep, picture: ProducedItem, audio: ProducedItem) -> str | None:
+    """The id of a clip already paid for from this picture and audio that may still be made,
+    so it is waited for rather than paid for again: asked for by this step before the worker
+    stopped, or by an earlier one that gave up waiting for it or stopped. None if there is
+    none, or the video model said it couldn't make it."""
+    job = step.scene.job
+    asked_by_this_step = _paid_for_before(job, "make_clip", charged_to=step.tool_call)
+    if asked_by_this_step:
+        return str(asked_by_this_step["video_id"])
+    handoff = {"picture": picture.file, "audio": audio.file, "motion_prompt": CLIP_MOTION_PROMPT}
+    asked = job.model_calls.filter(
+        purpose="make_clip", outcome=ModelCall.Outcome.SUCCEEDED, handoff=handoff
+    ).last()
+    if asked is None or asked.output is None:
+        return None
+    video_id = str(asked.output["video_id"])
+    # Given up on for taking too long (ClipTimedOut) or the service being down, it may
+    # still be made. Failed (ClipFailed), it never will be.
+    failed = job.model_calls.filter(
+        purpose="collect_clip",
+        handoff={"video_id": video_id},
+        error__startswith=f"{ClipFailed.__name__}:",
+    ).exists()
+    return None if failed else video_id
 
 
 def _next_version(scene: Scene, kind: ProducedItem.Kind) -> int:
