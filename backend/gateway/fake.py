@@ -271,7 +271,8 @@ def _clip(video_id: str, audio: bytes | None) -> bytes:
             ],
             check=True,
             capture_output=True,
-            timeout=60,
+            # No timeout: waiting with one sleeps in a loop, and a test's fake clock would
+            # count those sleeps as time passing while the clip is collected.
         )
         with open(made, "rb") as file:
             return file.read()
