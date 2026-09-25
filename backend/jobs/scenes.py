@@ -30,6 +30,14 @@ about the product come only from what you are shown.
 Give a one-sentence reason for the photo and one for the prompt, written for the shop owner."""
 
 
+# How the video model moves the person in every clip. The same for every scene: the line's
+# audio says what they say, and the starting picture how they look.
+CLIP_MOTION_PROMPT = (
+    "The person talks to the camera naturally, like a casual phone video, holding the "
+    "product still beside their face with any label facing the camera. Minimal hand movement."
+)
+
+
 class StartingPictureHandoff(Handoff):
     scene: int
     line: str

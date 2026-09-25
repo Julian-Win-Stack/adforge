@@ -75,3 +75,11 @@ What the real portrait and voice services sent back to our requests, on 2026-09-
   }
 }
 ```
+
+## HeyGen (Avatar IV)
+
+Not yet run through `backend/gateway/heygen_adapter.py`. These are the fields the spike (`../adforge-spike/step3b_heygen.py`) read from real replies in September 2026, and all the adapter relies on. `backend/tests/test_providers.py` replays them.
+
+- **Upload** a picture or audio: `POST /v3/assets`, multipart `file`. The asset's ID is `data.asset_id`. The spike uploaded an MP3; the adapter uploads the line's WAV.
+- **Ask for a clip**: `POST /v3/videos` with `type: "image"`, the picture's and audio's asset IDs, a `motion_prompt`, `aspect_ratio: "9:16"` and `resolution: "1080p"`. The clip's ID is `data.video_id`.
+- **Ask how it's getting on**: `GET /v3/videos/{video_id}`. `data.status` is `completed` or `failed` once done, and something else until then. A made clip is fetched from `data.video_url`, which only works for a while. Which field says why a clip `failed` hasn't been seen: the adapter reads `data.failure_message`, then `data.error`.

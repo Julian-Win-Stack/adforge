@@ -109,6 +109,8 @@ class ProductPhoto(models.Model):
 class Scene(models.Model):
     class Status(models.TextChoices):
         PLANNED = "planned"
+        # Its clip is made.
+        FINISHED = "finished"
 
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="scenes")
     number = models.PositiveSmallIntegerField(help_text="1, 2, 3... in the order they play.")
@@ -143,6 +145,7 @@ class SceneStep(models.Model):
         STARTING_PICTURE = "starting_picture"
         LINE_AUDIO = "line_audio"
         TRANSCRIPT = "transcript"
+        CLIP = "clip"
 
     class Status(models.TextChoices):
         RUNNING = "running"
@@ -182,7 +185,15 @@ class SceneStep(models.Model):
         blank=True,
         related_name="+",
         help_text="What the step makes its item from, fixed when it starts: the voice that "
-        "speaks a line's audio, or the audio a transcript is heard in.",
+        "speaks a line's audio, or the audio a transcript is heard in or a clip speaks.",
+    )
+    picture = models.ForeignKey(
+        "ProducedItem",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The starting picture a clip animates, fixed when it starts.",
     )
     result = models.TextField(
         blank=True,
@@ -223,6 +234,7 @@ class ProducedItem(models.Model):
         STARTING_PICTURE = "starting_picture"
         LINE_AUDIO = "line_audio"
         TRANSCRIPT = "transcript"
+        CLIP = "clip"
 
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="produced")
     scene = models.ForeignKey(
@@ -246,8 +258,8 @@ class ProducedItem(models.Model):
     file = models.CharField(
         max_length=500,
         blank=True,
-        help_text="Key in the file store: the picture, the line's audio, or the voice's "
-        "measuring sample. Blank for a voice not measured yet, and for a transcript.",
+        help_text="Key in the file store: the picture, the line's audio, the clip, or the "
+        "voice's measuring sample. Blank for a voice not measured yet, and for a transcript.",
     )
     voice_id = models.CharField(max_length=200, blank=True)
     words_per_second = models.FloatField(
@@ -260,9 +272,19 @@ class ProducedItem(models.Model):
         blank=True,
         related_name="+",
         help_text="What it was made from: for a line's audio, the voice that spoke it; for a "
-        "transcript, the audio it was heard in.",
+        "transcript, the audio it was heard in; for a clip, the audio it speaks.",
     )
-    seconds = models.FloatField(null=True, blank=True, help_text="How long the audio lasts.")
+    picture = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The starting picture a clip animates.",
+    )
+    seconds = models.FloatField(
+        null=True, blank=True, help_text="How long the audio or the clip lasts."
+    )
     text = models.TextField(blank=True, help_text="The transcript, exactly as it was heard.")
     words = models.JSONField(
         default=list,

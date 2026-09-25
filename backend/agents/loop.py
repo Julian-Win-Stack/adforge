@@ -29,7 +29,15 @@ from gateway.gateway import (
     last_turn_given,
     take_turn,
 )
-from gateway.types import Happened, Said, StepFinished, ToolSpec, ToolUse, UnusableReply
+from gateway.types import (
+    ClipFailed,
+    Happened,
+    Said,
+    StepFinished,
+    ToolSpec,
+    ToolUse,
+    UnusableReply,
+)
 from jobs.models import SceneStep
 
 from .models import ToolCall
@@ -39,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 # What outside work is known to fail with, and says why well enough for the agent. Anything
 # else is a bug, whose details go to the server log.
-EXPECTED_FAILURES = (UnusableReply, OutsideServiceDown, UnreadableImage)
+EXPECTED_FAILURES = (UnusableReply, OutsideServiceDown, UnreadableImage, ClipFailed)
 
 
 class Refused(Exception):
@@ -179,6 +187,8 @@ def why_it_failed(error: Exception, stopped: str) -> str:
         return f"an outside service stayed down after several tries ({error})."
     if isinstance(error, UnreadableImage):
         return f"{error}. Only {IMAGE_TYPE_NAMES} pictures can be shown to a model."
+    if isinstance(error, ClipFailed):
+        return f"the video model couldn't make the clip ({error})."
     return f"an unexpected error stopped {stopped}. The details are in the server log."
 
 
