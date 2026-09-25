@@ -7,13 +7,15 @@ from typing import Any
 import PIL.Image
 import pytest
 from pydantic import ValidationError
+from pytest_django import Settings
 from pytest_httpserver import HTTPServer
 
 from adforge import file_store
+from adforge.retry import OutsideServiceDown
 from gateway.fake import FakeModel
-from gateway.gateway import UnreadableImage, call_model, speak
+from gateway.gateway import UnreadableImage, call_model, collect_clip, speak, submit_clip
 from gateway.models import ModelCall
-from gateway.types import Image, UnusableReply
+from gateway.types import ClipTimedOut, Image, UnusableReply
 from jobs.work import PageCheck, PageCheckHandoff
 
 from .conftest import READABLE, openai_answer, openai_reply, picture
@@ -192,3 +194,59 @@ def test_a_call_that_fails_still_records_which_photos_it_showed(
         "failed",
         [{"label": "Photo 1", "key": "photos/front.png"}],
     )
+
+
+def _submit(picture_key: str = "picture.png", audio_key: str = "line.wav") -> str:
+    return submit_clip(
+        job=None,
+        purpose="make_clip",
+        picture_key=picture_key,
+        audio_key=audio_key,
+        audio_seconds=4.0,
+        motion_prompt="She talks to the camera.",
+    )
+
+
+def test_a_clip_with_no_picture_is_refused_before_the_video_service_is_called(
+    fake_model: FakeModel,
+) -> None:
+    with pytest.raises(ValidationError, match="picture"):
+        _submit(picture_key="")
+    assert fake_model.clips_submitted == []
+    assert not ModelCall.objects.exists()
+
+
+def test_a_clip_is_asked_for_again_while_the_video_service_is_down(
+    fake_model: FakeModel,
+) -> None:
+    fake_model.respond("make_clip", OutsideServiceDown("HeyGen answered 503"))
+    picture_key = file_store.save("picture.png", picture(72, 128, (1, 2, 3)))
+    audio_key = file_store.save("line.wav", b"RIFF a line")
+
+    assert _submit(picture_key, audio_key) == "video-1"
+
+    failed, submitted = ModelCall.objects.all()
+    assert (failed.attempt, failed.outcome) == (1, ModelCall.Outcome.FAILED)
+    assert (submitted.attempt, submitted.outcome) == (2, ModelCall.Outcome.SUCCEEDED)
+    assert fake_model.clips_submitted == ["video-1"]
+
+
+def test_a_clip_being_made_is_waited_for_then_kept(fake_model: FakeModel) -> None:
+    fake_model.respond("collect_clip", {"state": "working"}, {"state": "working"})
+
+    key = collect_clip(job=None, purpose="collect_clip", video_id="video-1")
+
+    assert file_store.read(key) == b"fake clip video-1"
+    collected = ModelCall.objects.get()
+    assert (collected.outcome, collected.output) == (ModelCall.Outcome.SUCCEEDED, {"file": key})
+
+
+def test_a_clip_that_takes_too_long_is_given_up_on(
+    fake_model: FakeModel, settings: Settings
+) -> None:
+    settings.CLIP_MAX_WAIT_SECONDS = 0
+    fake_model.respond("collect_clip", {"state": "working"})
+
+    with pytest.raises(ClipTimedOut):
+        collect_clip(job=None, purpose="collect_clip", video_id="video-1")
+    assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED

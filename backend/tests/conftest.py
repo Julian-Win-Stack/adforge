@@ -118,6 +118,7 @@ NO_CHOICES: dict[str, Any] = {"line_choices": [], "length_choice": None}
 def _isolated_outside_world(settings: Settings, tmp_path: Path) -> None:
     settings.MEDIA_ROOT = tmp_path / "media"
     settings.RETRY_DELAYS_SECONDS = [0, 0]
+    settings.CLIP_POLL_SECONDS = 0
     # The test shop runs on this machine, an address real jobs are never allowed to fetch.
     settings.FETCH_PRIVATE_ADDRESSES = True
 

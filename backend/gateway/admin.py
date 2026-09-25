@@ -13,6 +13,7 @@ class ModelCallAdmin(admin.ModelAdmin[ModelCall]):
         "outcome",
         "cost_usd",
         "audio_seconds",
+        "video_seconds",
         "duration_ms",
         "decision",
         "session",

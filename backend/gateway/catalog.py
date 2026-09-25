@@ -16,6 +16,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "measure_voice": "inworld-tts-2",
     "speak_line": "inworld-tts-2",
     "transcribe_line": "scribe_v2",
+    # A clip is asked for, then waited for and fetched: two calls, only the first paid.
+    "make_clip": "heygen-avatar-iv",
+    "collect_clip": "heygen-avatar-iv",
 }
 
 # US dollars per million tokens: (input, output). From OpenAI's pricing page.
@@ -41,6 +44,12 @@ PRICE_PER_MILLION_CHARACTERS: dict[str, Decimal] = {
 # US dollars per hour of audio heard. From ElevenLabs' API pricing page (Scribe, not realtime).
 PRICE_PER_HOUR_OF_AUDIO: dict[str, Decimal] = {
     "scribe_v2": Decimal("0.22"),
+}
+
+# US dollars per second of video made. HeyGen doesn't publish one: measured from its wallet,
+# which a 5.72-second clip took $0.20 from (docs/video-model-tests.md).
+PRICE_PER_SECOND_OF_VIDEO: dict[str, Decimal] = {
+    "heygen-avatar-iv": Decimal("0.035"),
 }
 
 
@@ -69,3 +78,7 @@ def speech_cost_usd(model: str, characters: int) -> Decimal:
 
 def transcription_cost_usd(model: str, seconds: float) -> Decimal:
     return Decimal(str(seconds)) * PRICE_PER_HOUR_OF_AUDIO[model] / 3_600
+
+
+def video_cost_usd(model: str, seconds: float) -> Decimal:
+    return Decimal(str(seconds)) * PRICE_PER_SECOND_OF_VIDEO[model]

@@ -16,17 +16,20 @@ from werkzeug import Request, Response
 from adforge import file_store
 from gateway.elevenlabs_adapter import ElevenLabsProvider
 from gateway.gateway import (
+    collect_clip,
     design_voice,
     draw_picture,
     edit_picture,
     speak,
+    submit_clip,
     transcribe,
     use_model,
 )
+from gateway.heygen_adapter import HeyGenProvider
 from gateway.inworld_adapter import InworldProvider
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
-from gateway.types import Word
+from gateway.types import ClipFailed, Word
 
 from .conftest import picture
 
@@ -415,3 +418,112 @@ def test_audio_whose_length_elevenlabs_doesnt_say_is_measured(
     # Paid for, so kept: billed by the audio's own length.
     assert transcription.audio_seconds == 2.5
     assert ModelCall.objects.get().outcome == ModelCall.Outcome.SUCCEEDED
+
+
+# --- HeyGen -----------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def heygen(httpserver: HTTPServer, settings: Settings) -> HeyGenProvider:
+    settings.HEYGEN_API_KEY = "heygen-test-key"
+    settings.HEYGEN_BASE_URL = httpserver.url_for("")
+    return HeyGenProvider()
+
+
+def test_a_clip_is_made_from_a_picture_and_audio_through_heygen(
+    httpserver: HTTPServer, heygen: HeyGenProvider
+) -> None:
+    authorised = {"x-api-key": "heygen-test-key"}
+    starting_picture = picture(1152, 2048, (200, 180, 160))
+    line = wav(5.4)
+    uploaded: list[tuple[str, bytes, str]] = []
+
+    def upload(request: Request) -> Response:
+        file = request.files["file"]
+        uploaded.append((file.filename or "", file.read(), file.content_type or ""))
+        asset_id = f"asset-{len(uploaded)}"
+        return Response(
+            json.dumps({"data": {"asset_id": asset_id}}), content_type="application/json"
+        )
+
+    httpserver.expect_request("/v3/assets", method="POST", headers=authorised).respond_with_handler(
+        upload
+    )
+    httpserver.expect_oneshot_request(
+        "/v3/videos",
+        method="POST",
+        headers=authorised,
+        json={
+            "type": "image",
+            "image": {"type": "asset_id", "asset_id": "asset-1"},
+            "audio_asset_id": "asset-2",
+            "motion_prompt": "She talks to the camera.",
+            "expressiveness": "low",
+            "aspect_ratio": "9:16",
+            "resolution": "1080p",
+            "title": "AdForge clip",
+        },
+    ).respond_with_json({"data": {"video_id": "vid-1"}})
+    # Still being made when first asked, then made.
+    httpserver.expect_oneshot_request(
+        "/v3/videos/vid-1", method="GET", headers=authorised
+    ).respond_with_json({"data": {"id": "vid-1", "status": "processing"}})
+    httpserver.expect_oneshot_request(
+        "/v3/videos/vid-1", method="GET", headers=authorised
+    ).respond_with_json(
+        {
+            "data": {
+                "id": "vid-1",
+                "status": "completed",
+                "video_url": httpserver.url_for("/files/vid-1.mp4"),
+            }
+        }
+    )
+    made = b"\0\0\0\x18ftypmp42 a whole clip"
+    httpserver.expect_oneshot_request("/files/vid-1.mp4").respond_with_data(made)
+    picture_key = file_store.save("starting_picture.png", starting_picture)
+    audio_key = file_store.save("speak_line.wav", line)
+
+    with use_model(heygen):
+        video_id = submit_clip(
+            job=None,
+            purpose="make_clip",
+            picture_key=picture_key,
+            audio_key=audio_key,
+            audio_seconds=5.4,
+            motion_prompt="She talks to the camera.",
+        )
+        key = collect_clip(job=None, purpose="collect_clip", video_id=video_id)
+
+    assert video_id == "vid-1"
+    assert uploaded == [
+        ("starting_picture.png", starting_picture, "image/png"),
+        ("line.wav", line, "audio/wav"),
+    ]
+    assert file_store.read(key) == made
+    submitted, collected = ModelCall.objects.all()
+    # HeyGen bills the 5.4 seconds of video it makes, at $0.035 a second.
+    assert (submitted.provider, submitted.video_seconds, submitted.cost_usd) == (
+        "heygen",
+        5.4,
+        Decimal("0.189000"),
+    )
+    assert submitted.output == {"video_id": "vid-1"}
+    # Waiting for the clip and fetching it costs nothing more.
+    assert (collected.handoff, collected.output, collected.cost_usd) == (
+        {"video_id": "vid-1"},
+        {"file": key},
+        Decimal(0),
+    )
+
+
+def test_a_clip_heygen_couldnt_make_is_not_asked_for_again(
+    httpserver: HTTPServer, heygen: HeyGenProvider
+) -> None:
+    httpserver.expect_oneshot_request("/v3/videos/vid-1", method="GET").respond_with_json(
+        {"data": {"id": "vid-1", "status": "failed", "failure_message": "No face was found."}}
+    )
+
+    with use_model(heygen), pytest.raises(ClipFailed, match="No face was found."):
+        collect_clip(job=None, purpose="collect_clip", video_id="vid-1")
+    assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
