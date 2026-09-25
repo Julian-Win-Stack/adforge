@@ -373,10 +373,12 @@ def test_a_new_starting_picture_gets_a_new_clip_and_the_old_clip_is_kept(
     fake_model: FakeModel, clipped: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     first = ProducedItem.objects.get(kind="clip")
-    calling(fake_model, "make_starting_picture", {"scene": 1, "note": "Smiling more."})
-    say("Make scene 1's picture again, smiling more")
-    fake_model.respond("choose_starting_picture", CHOICE)
-    run(fake_model, steps)
+    # Made twice more, so the picture, the clip and the audio each have their own version.
+    for note in ["Smiling more.", "Smiling even more."]:
+        calling(fake_model, "make_starting_picture", {"scene": 1, "note": note})
+        say(f"Make scene 1's picture again: {note}")
+        fake_model.respond("choose_starting_picture", CHOICE)
+        run(fake_model, steps)
     calling(fake_model, "make_clip")
 
     say("Make scene 1's clip again")
@@ -384,10 +386,15 @@ def test_a_new_starting_picture_gets_a_new_clip_and_the_old_clip_is_kept(
 
     assert made("clip") == [(1, 1), (1, 2)]
     second = ProducedItem.objects.get(kind="clip", version=2)
-    assert second.picture == ProducedItem.objects.get(kind="starting_picture", version=2)
+    assert second.picture == ProducedItem.objects.get(kind="starting_picture", version=3)
     assert second.made_from == first.made_from
     assert (read(first.file), read(second.file)) == (b"fake clip video-1", b"fake clip video-2")
     assert paid_for().count("make_clip") == 2
+    assert told() == (
+        "Background step finished: scene 1's clip is ready (version 2, 4 seconds), made from "
+        "starting picture version 3 and audio version 1. Scene 1 is finished. Tell the shop "
+        "owner."
+    )
 
 
 def the_worker_stops(*_: object, **__: object) -> None:
