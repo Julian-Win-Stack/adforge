@@ -18,11 +18,13 @@ from werkzeug import Request, Response
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
 from gateway.elevenlabs_adapter import ElevenLabsProvider
+from gateway.fal_adapter import FalProvider
 from gateway.gateway import (
     collect_clip,
     design_voice,
     draw_picture,
     edit_picture,
+    make_music,
     speak,
     submit_clip,
     transcribe,
@@ -421,6 +423,96 @@ def test_audio_whose_length_elevenlabs_doesnt_say_is_measured(
     # Paid for, so kept: billed by the audio's own length.
     assert transcription.audio_seconds == 2.5
     assert ModelCall.objects.get().outcome == ModelCall.Outcome.SUCCEEDED
+
+
+# --- fal -----------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fal(httpserver: HTTPServer, settings: Settings) -> FalProvider:
+    settings.FAL_KEY = "fal-test-key"
+    settings.FAL_BASE_URL = httpserver.url_for("")
+    return FalProvider()
+
+
+# As fal's Sonilo sends it: AAC in an MP4 file, which only needs to be kept, not read.
+MUSIC = b"\0\0\0\x1cftypM4A music"
+
+
+def test_music_is_made_through_fal_and_fetched_from_where_fal_keeps_it(
+    httpserver: HTTPServer, fal: FalProvider
+) -> None:
+    httpserver.expect_oneshot_request(
+        "/sonilo/v1.1/text-to-music",
+        method="POST",
+        headers={"Authorization": "Key fal-test-key"},
+        json={"prompt": "Calm. Instrumental only.", "duration": 14, "num_samples": 1},
+    ).respond_with_json(
+        # The reply's shape, from fal's model page for Sonilo v1.1.
+        {
+            "audio": {
+                "url": httpserver.url_for("/files/music.m4a"),
+                "content_type": "audio/mp4",
+                "file_name": "music.m4a",
+                "file_size": len(MUSIC),
+            },
+            "audios": [],
+        }
+    )
+    # Fetched without the API key: the link is somewhere other than fal's API.
+    httpserver.expect_oneshot_request("/files/music.m4a", method="GET").respond_with_data(
+        MUSIC, content_type="audio/mp4"
+    )
+
+    with use_model(fal):
+        key = make_music(
+            job=None, purpose="make_music", prompt="Calm. Instrumental only.", seconds=14
+        )
+
+    assert file_store.read(key) == MUSIC
+    assert key.endswith(".m4a")
+    (made,) = ModelCall.objects.all()
+    assert (made.provider, made.model, made.audio_seconds) == (
+        "fal",
+        "sonilo/v1.1/text-to-music",
+        14,
+    )
+    # $0.0025 a second of music.
+    assert made.cost_usd == Decimal("0.035")
+    httpserver.check_assertions()
+
+
+def test_fal_is_tried_again_when_it_is_down_and_every_try_is_recorded(
+    httpserver: HTTPServer, fal: FalProvider
+) -> None:
+    httpserver.expect_ordered_request("/sonilo/v1.1/text-to-music").respond_with_data(
+        "busy", status=503
+    )
+    httpserver.expect_ordered_request("/sonilo/v1.1/text-to-music").respond_with_json(
+        {"audio": {"url": httpserver.url_for("/files/music.m4a")}}
+    )
+    httpserver.expect_ordered_request("/files/music.m4a").respond_with_data(MUSIC)
+
+    with use_model(fal):
+        make_music(job=None, purpose="make_music", prompt="Calm.", seconds=5)
+
+    first, second = ModelCall.objects.all()
+    assert (first.attempt, first.outcome, first.cost_usd) == (1, "failed", None)
+    assert "503" in first.error
+    assert (second.attempt, second.outcome) == (2, "succeeded")
+
+
+def test_music_fal_cant_make_is_not_asked_for_again(
+    httpserver: HTTPServer, fal: FalProvider
+) -> None:
+    httpserver.expect_oneshot_request("/sonilo/v1.1/text-to-music").respond_with_json(
+        {"detail": "prompt is not allowed"}, status=422
+    )
+
+    with use_model(fal), pytest.raises(httpx.HTTPStatusError):
+        make_music(job=None, purpose="make_music", prompt="Calm.", seconds=5)
+
+    assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
 
 
 # --- HeyGen -----------------------------------------------------------------------------------

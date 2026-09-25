@@ -8,6 +8,10 @@ plain picture of its own from other pictures, designs a numbered voice, speaks a
 words it spoke. Script an error for their purpose
 to make one fail, or script a transcript for "transcribe_line" to have something else heard.
 
+Music needs no script either: each piece asked for is silence as long as was asked, with
+its number written into it so each is its own. Script an error for "make_music" to make one
+fail.
+
 Clips need no script either: each one asked for is made at once, a real tiny clip that
 speaks the audio it was asked for, so ffmpeg can cut and join it. Script {"state": "working"}
 for "collect_clip" to have it still being made when asked, {"state": "failed", "error": ...}
@@ -97,6 +101,8 @@ class FakeModel:
         # The audio each clip asked for speaks, and each clip made, by its id.
         self._clip_audio: dict[str, bytes] = {}
         self.clips: dict[str, bytes] = {}
+        # Every piece of music made, in turn.
+        self.music: list[bytes] = []
 
     def respond(self, purpose: str, *outcomes: Outcome) -> None:
         self._scripts[purpose].extend(outcomes)
@@ -226,6 +232,13 @@ class FakeModel:
         if video_id not in self.clips:
             self.clips[video_id] = _clip(video_id, self._clip_audio.get(video_id))
         return self.clips[video_id]
+
+    def compose(self, *, model: str, prompt: str, seconds: int) -> bytes:
+        self._fail_if_scripted("make_music")
+        music = _silence(seconds=seconds)
+        # Each piece made is its own, as real music would be.
+        self.music.append(len(self.music).to_bytes(2, "little") + music[2:])
+        return self.music[-1]
 
     def _fail_if_scripted(self, purpose: str) -> None:
         script = self._scripts[purpose]

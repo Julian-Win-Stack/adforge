@@ -1,7 +1,9 @@
 """The work the producer's tools do on a job: reading its page, planning it, making its
-person, running the planning checks, making each scene and assembling the finished ad."""
+person, running the planning checks, making the music, making each scene and assembling the
+finished ad."""
 
 import io
+import math
 import mimetypes
 import tempfile
 import wave
@@ -25,6 +27,7 @@ from gateway.gateway import (
     design_voice,
     draw_picture,
     edit_picture,
+    make_music,
     speak,
     submit_clip,
     transcribe,
@@ -521,6 +524,90 @@ def why_the_checks_passed(job: Job) -> str:
     return (
         "Every line matches the product page, and the script fits your "
         f"{job.target_seconds}-second target."
+    )
+
+
+def why_the_checks_havent_passed(job: Job) -> str | None:
+    """Why the script can't go on to be rendered yet, or None once the planning checks have
+    passed: every line has passed the fact check, and the script fits its target length or
+    the user chose to keep it longer."""
+    unchecked = job.scenes.filter(fact_checked=False).first()
+    if unchecked is not None:
+        return (
+            f"scene {unchecked.number}'s line hasn't passed the fact check, and nothing is made "
+            "until every line has. Run the planning checks first."
+        )
+    target = job.target_seconds
+    if target is None or job.length_choice == Job.LengthChoice.KEEP_LONGER:
+        return None
+    voice = latest(job, ProducedItem.Kind.VOICE)
+    if voice is None or voice.words_per_second is None:
+        return "the script's length hasn't been checked yet. Run the planning checks first."
+    seconds = script_seconds(
+        list(job.scenes.values_list("line", flat=True)), voice.words_per_second
+    )
+    if not fits_target(seconds, target):
+        return (
+            f"the script runs about {seconds:.1f} seconds, over the {target}-second target, and "
+            "the shop owner hasn't chosen to keep it longer. Run the planning checks first."
+        )
+    return None
+
+
+# The music is made before the clips, so how long the ad will be is only known roughly: this
+# much more is made than the voice takes to say the script, so the music doesn't run out.
+MUSIC_SPARE_SECONDS = 5
+
+# The producer gives only the mood: the music always leaves room for the voice.
+MUSIC_PROMPT = (
+    "{mood}. Background music for a short video ad, played under a person speaking. "
+    "Instrumental only, no vocals, no singing."
+)
+
+
+def music_prompt(mood: str) -> str:
+    """What the music model is asked for, in `mood`. Moods that differ only in spacing, a
+    capital first letter or a closing full stop ask for the same music."""
+    mood = " ".join(mood.split()).rstrip(".")
+    return MUSIC_PROMPT.format(mood=mood[:1].upper() + mood[1:])
+
+
+def music_seconds(job: Job, voice: ProducedItem) -> int:
+    """How much music the ad needs: as long as the voice takes to say the script, measured,
+    and MUSIC_SPARE_SECONDS more."""
+    assert voice.words_per_second is not None, "the voice is measured when it is made"
+    lines = list(job.scenes.values_list("line", flat=True))
+    return math.ceil(script_seconds(lines, voice.words_per_second)) + MUSIC_SPARE_SECONDS
+
+
+def create_music(job: Job, prompt: str, seconds: int) -> ProducedItem:
+    """Make `seconds` of music as `prompt` asks, kept as the job's next version of its music.
+
+    Music paid for before a worker stopped, but not kept, is kept rather than paid for
+    again."""
+    kept = set(job.produced.values_list("file", flat=True))
+    paid_for = [
+        output["file"]
+        for output in job.model_calls.filter(
+            purpose="make_music",
+            outcome=ModelCall.Outcome.SUCCEEDED,
+            handoff={"prompt": prompt, "seconds": seconds},
+        ).values_list("output", flat=True)
+        if output is not None and output["file"] not in kept
+    ]
+    file = (
+        paid_for[-1]
+        if paid_for
+        else make_music(job=job, purpose="make_music", prompt=prompt, seconds=seconds)
+    )
+    last = job.produced.filter(kind=ProducedItem.Kind.MUSIC).aggregate(last=Max("version"))
+    return ProducedItem.objects.create(
+        job=job,
+        kind=ProducedItem.Kind.MUSIC,
+        version=(last["last"] or 0) + 1,
+        file=file,
+        seconds=seconds,
+        text=prompt,
     )
 
 

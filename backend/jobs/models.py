@@ -243,6 +243,7 @@ class ProducedItem(models.Model):
         TRANSCRIPT = "transcript"
         CLIP = "clip"
         FINISHED_AD = "finished_ad"
+        MUSIC = "music"
 
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="produced")
     scene = models.ForeignKey(
@@ -267,8 +268,8 @@ class ProducedItem(models.Model):
         max_length=500,
         blank=True,
         help_text="Key in the file store: the picture, the line's audio, the clip, the "
-        "finished ad, or the voice's measuring sample. Blank for a voice not measured yet, and "
-        "for a transcript.",
+        "finished ad, the music, or the voice's measuring sample. Blank for a voice not "
+        "measured yet, and for a transcript.",
     )
     voice_id = models.CharField(max_length=200, blank=True)
     words_per_second = models.FloatField(
@@ -292,9 +293,15 @@ class ProducedItem(models.Model):
         help_text="The starting picture a clip animates.",
     )
     seconds = models.FloatField(
-        null=True, blank=True, help_text="How long the audio, the clip or the finished ad lasts."
+        null=True,
+        blank=True,
+        help_text="How long the audio, the clip, the finished ad or the music lasts.",
     )
-    text = models.TextField(blank=True, help_text="The transcript, exactly as it was heard.")
+    text = models.TextField(
+        blank=True,
+        help_text="The transcript, exactly as it was heard, or what the music was asked to "
+        "sound like.",
+    )
     words = models.JSONField(
         default=list,
         blank=True,

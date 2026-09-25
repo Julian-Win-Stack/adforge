@@ -305,3 +305,21 @@ class ClipProvider(Protocol):
     def status(self, *, video_id: str) -> ClipStatus: ...
 
     def download(self, *, url: str) -> bytes: ...
+
+
+class MusicHandoff(Handoff):
+    """Background music to make: what it should sound like, and how many seconds of it."""
+
+    prompt: str = Field(min_length=1)
+    seconds: int = Field(ge=1, le=600)
+
+
+class MusicProvider(Protocol):
+    """Makes background music from a description. Raises OutsideServiceDown for errors worth
+    retrying."""
+
+    name: str
+
+    def compose(self, *, model: str, prompt: str, seconds: int) -> bytes:
+        """Make `seconds` of music as `prompt` describes. Returns the audio file."""
+        ...

@@ -47,7 +47,9 @@ class ModelCall(models.Model):
         null=True, blank=True, help_text="Characters spoken, for voice models billed by them."
     )
     audio_seconds = models.FloatField(
-        null=True, blank=True, help_text="Seconds of audio heard, for models billed by them."
+        null=True,
+        blank=True,
+        help_text="Seconds of audio heard or made, for models billed by them.",
     )
     video_seconds = models.FloatField(
         null=True, blank=True, help_text="Seconds of video made, for models billed by them."
