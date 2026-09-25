@@ -35,7 +35,7 @@ from gateway.gateway import (
     transcription_output,
 )
 from gateway.models import ModelCall
-from gateway.types import ClipFailed, Handoff, Image, Judgement
+from gateway.types import ClipFailed, Handoff, Image, Judgement, MusicHandoff
 
 from . import assembly, page
 from .checks import (
@@ -542,7 +542,10 @@ def why_the_checks_havent_passed(job: Job) -> str | None:
         return None
     voice = latest(job, ProducedItem.Kind.VOICE)
     if voice is None or voice.words_per_second is None:
-        return "the script's length hasn't been checked yet. Run the planning checks first."
+        return (
+            "the person hasn't been made yet, and the script's length is checked with their "
+            "voice. Create the person, then run the planning checks."
+        )
     seconds = script_seconds(
         list(job.scenes.values_list("line", flat=True)), voice.words_per_second
     )
@@ -565,11 +568,16 @@ MUSIC_PROMPT = (
 )
 
 
-def music_prompt(mood: str) -> str:
-    """What the music model is asked for, in `mood`. Moods that differ only in spacing, a
-    capital first letter or a closing full stop ask for the same music."""
+def music_mood(mood: str) -> str:
+    """The mood the producer gave, tidied, so moods that differ only in spacing, a capital
+    first letter or a closing full stop ask for the same music."""
     mood = " ".join(mood.split()).rstrip(".")
-    return MUSIC_PROMPT.format(mood=mood[:1].upper() + mood[1:])
+    return mood[:1].upper() + mood[1:]
+
+
+def music_prompt(mood: str) -> str:
+    """What the music model is asked for, in a mood tidied by `music_mood`."""
+    return MUSIC_PROMPT.format(mood=mood)
 
 
 def music_seconds(job: Job, voice: ProducedItem) -> int:
@@ -591,7 +599,7 @@ def create_music(job: Job, prompt: str, seconds: int) -> ProducedItem:
         for output in job.model_calls.filter(
             purpose="make_music",
             outcome=ModelCall.Outcome.SUCCEEDED,
-            handoff={"prompt": prompt, "seconds": seconds},
+            handoff=MusicHandoff(prompt=prompt, seconds=seconds).model_dump(),
         ).values_list("output", flat=True)
         if output is not None and output["file"] not in kept
     ]
@@ -600,6 +608,17 @@ def create_music(job: Job, prompt: str, seconds: int) -> ProducedItem:
         if paid_for
         else make_music(job=job, purpose="make_music", prompt=prompt, seconds=seconds)
     )
+    return _keep_music(job, file, prompt, seconds)
+
+
+def use_music_again(job: Job, music: ProducedItem) -> ProducedItem:
+    """Make music made before the ad's music again, as its next version, without paying for
+    it again: the ad's music is always its latest version."""
+    assert music.seconds is not None, "music is made as long as it was asked to be"
+    return _keep_music(job, music.file, music.text, round(music.seconds))
+
+
+def _keep_music(job: Job, file: str, prompt: str, seconds: int) -> ProducedItem:
     last = job.produced.filter(kind=ProducedItem.Kind.MUSIC).aggregate(last=Max("version"))
     return ProducedItem.objects.create(
         job=job,

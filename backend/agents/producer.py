@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.models import ModelCall
+from gateway.types import MusicHandoff
 from jobs import page
 from jobs.models import Job, ProducedItem, ProductPhoto, Scene, SceneStep
 from jobs.work import (
@@ -21,11 +22,13 @@ from jobs.work import (
     create_person,
     keep_page,
     latest,
+    music_mood,
     music_prompt,
     music_seconds,
     plan,
     run_checks,
     save_photos,
+    use_music_again,
     why_the_checks_havent_passed,
     why_the_checks_passed,
 )
@@ -403,17 +406,25 @@ class CreateMusic(Tool):
                 "the person hasn't been made yet, and the music lasts as long as their voice "
                 "takes to say the script. Create the person first."
             )
-        prompt, seconds = music_prompt(self.mood), music_seconds(job, voice)
+        mood = music_mood(self.mood)
+        prompt, seconds = music_prompt(mood), music_seconds(job, voice)
         made = job.produced.filter(kind=ProducedItem.Kind.MUSIC, text=prompt, seconds=seconds)
         music = made.order_by("version").last()
-        if music is not None:
+        cost = _dollars(_spent_on_music(job, prompt, seconds))
+        if music is not None and music == latest(job, ProducedItem.Kind.MUSIC):
             return (
                 "The music was already made in this mood for this script (version "
                 f"{music.version}, {seconds} seconds), so nothing was made or paid for again. "
-                f"Making it cost {_dollars(_spent_on(job, prompt, seconds))}."
+                f"Making it cost {cost}."
+            )
+        if music is not None:
+            again = use_music_again(job, music)
+            return (
+                "The music was already made in this mood for this script (version "
+                f"{music.version}), so it is the ad's music again as version {again.version}, "
+                f"and nothing was made or paid for again. Making it cost {cost}."
             )
         music = create_music(job, prompt, seconds)
-        mood = prompt.split(". ", 1)[0]
         return (
             f"Made the music (version {music.version}, {seconds} seconds): {mood}, "
             "instrumental. It isn't shown to the shop owner: they hear it in the finished ad."
@@ -920,10 +931,10 @@ def _spent(job: Job, tool: str) -> Decimal:
     return spent or Decimal(0)
 
 
-def _spent_on(job: Job, prompt: str, seconds: int) -> Decimal:
+def _spent_on_music(job: Job, prompt: str, seconds: int) -> Decimal:
     """What making the job's music as `prompt` asks, `seconds` long, cost."""
     spent: Decimal | None = job.model_calls.filter(
-        purpose="make_music", handoff={"prompt": prompt, "seconds": seconds}
+        purpose="make_music", handoff=MusicHandoff(prompt=prompt, seconds=seconds).model_dump()
     ).aggregate(cost=Sum("cost_usd"))["cost"]
     return spent or Decimal(0)
 

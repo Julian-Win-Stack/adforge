@@ -235,9 +235,16 @@ class FakeModel:
 
     def compose(self, *, model: str, prompt: str, seconds: int) -> bytes:
         self._fail_if_scripted("make_music")
-        music = _silence(seconds=seconds)
-        # Each piece made is its own, as real music would be.
-        self.music.append(len(self.music).to_bytes(2, "little") + music[2:])
+        # Silence, but for its first sound, which numbers it: each piece made is its own, as
+        # real music would be.
+        music = io.BytesIO()
+        with wave.open(music, "wb") as file:
+            file.setnchannels(1)
+            file.setsampwidth(2)
+            file.setframerate(self.SAMPLE_RATE)
+            frames = _silence_frames(seconds, self.SAMPLE_RATE)
+            file.writeframes((len(self.music) + 1).to_bytes(2, "little") + frames[2:])
+        self.music.append(music.getvalue())
         return self.music[-1]
 
     def _fail_if_scripted(self, purpose: str) -> None:

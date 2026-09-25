@@ -2,6 +2,8 @@
 faked at the gateway to call create_music, and each test checks what the tool handed back,
 what was stored and what was paid for."""
 
+import io
+import wave
 from collections.abc import Callable
 from decimal import Decimal
 
@@ -57,6 +59,9 @@ def test_the_music_is_made_as_long_as_the_script_takes_to_say_with_some_to_spare
         MUSIC_PROMPT,
     )
     assert file_store.read(music.file) == fake_model.music[0]
+    # A real audio file, so ffmpeg can mix it into the ad.
+    with wave.open(io.BytesIO(fake_model.music[0])) as audio:
+        assert audio.getnframes() / audio.getframerate() == MUSIC_SECONDS
     (paid,) = ModelCall.objects.filter(purpose="make_music")
     # Sonilo is billed by the second of music made, at $0.0025 a second.
     assert (paid.audio_seconds, paid.cost_usd) == (MUSIC_SECONDS, Decimal("0.035"))
@@ -100,6 +105,36 @@ def test_music_in_another_mood_is_a_new_version_and_the_old_one_is_kept(
     assert first.text == MUSIC_PROMPT
     assert second.text.startswith("Calm acoustic guitar. ")
     assert first.file != second.file
+
+
+def test_music_in_a_mood_made_before_is_the_ads_music_again_without_paying_again(
+    fake_model: FakeModel, checked: None, say: Callable[..., None]
+) -> None:
+    make_music(fake_model, say, "light upbeat lo-fi")
+    make_music(fake_model, say, "calm acoustic guitar")
+
+    make_music(fake_model, say, "light upbeat lo-fi")
+
+    assert paid_for().count("make_music") == 2
+    # The newest version is the ad's music, and it is the first piece again.
+    first, second, third = Job.objects.get().produced.filter(kind="music").order_by("version")
+    assert (third.version, third.file, third.text) == (3, first.file, MUSIC_PROMPT)
+    assert second.file != first.file
+    assert results_of("create_music")[2] == (
+        "The music was already made in this mood for this script (version 1), so it is the "
+        "ad's music again as version 3, and nothing was made or paid for again. Making it "
+        "cost $0.035."
+    )
+
+
+def test_the_mood_is_told_back_whole_even_with_a_full_stop_inside_it(
+    fake_model: FakeModel, checked: None, say: Callable[..., None]
+) -> None:
+    make_music(fake_model, say, "calm. slow piano.")
+
+    assert results_of("create_music")[0].startswith(
+        "Made the music (version 1, 14 seconds): Calm. slow piano, instrumental."
+    )
 
 
 @pytest.mark.parametrize(
@@ -149,6 +184,20 @@ def test_music_is_refused_until_the_person_is_made_since_it_lasts_as_long_as_the
         "takes to say the script. Create the person first. Nothing was done."
     ]
     assert "make_music" not in paid_for()
+
+
+def test_music_for_a_script_with_a_target_length_waits_for_the_person_who_says_it(
+    fake_model: FakeModel, planned: None, say: Callable[..., None]
+) -> None:
+    Job.objects.update(target_seconds=15)
+    Job.objects.get().scenes.update(fact_checked=True)
+
+    make_music(fake_model, say, "light upbeat lo-fi")
+
+    assert results_of("create_music") == [
+        "Refused: the person hasn't been made yet, and the script's length is checked with "
+        "their voice. Create the person, then run the planning checks. Nothing was done."
+    ]
 
 
 def test_music_that_couldnt_be_made_is_handed_back_as_a_failure_and_nothing_is_kept(
