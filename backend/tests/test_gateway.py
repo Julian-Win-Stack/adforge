@@ -1,5 +1,6 @@
 import base64
 import io
+import time
 from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
@@ -250,3 +251,41 @@ def test_a_clip_that_takes_too_long_is_given_up_on(
     with pytest.raises(ClipTimedOut):
         collect_clip(job=None, purpose="collect_clip", video_id="video-1")
     assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
+
+
+class FakeClock:
+    """Time that passes only when slept through, so waiting takes no real time."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.now += seconds
+
+
+def test_a_clip_is_given_up_on_after_the_whole_wait_even_if_the_service_went_down_meanwhile(
+    fake_model: FakeModel, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = FakeClock()
+    monkeypatch.setattr(time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(time, "sleep", clock.sleep)
+    settings.CLIP_POLL_SECONDS = 10
+    settings.CLIP_MAX_WAIT_SECONDS = 25
+    working = {"state": "working"}
+    # Asked at 0 and 10 seconds, down at 20, asked again at once.
+    fake_model.respond(
+        "collect_clip", working, working, OutsideServiceDown("HeyGen answered 503"), *[working] * 5
+    )
+
+    with pytest.raises(ClipTimedOut, match="within 25 seconds"):
+        collect_clip(job=None, purpose="collect_clip", video_id="video-1")
+
+    # Given up on at the first look past 25 seconds of waiting, counted from the start.
+    assert clock.now == 30
+    assert [(c.attempt, c.outcome) for c in ModelCall.objects.all()] == [
+        (1, ModelCall.Outcome.FAILED),
+        (2, ModelCall.Outcome.FAILED),
+    ]

@@ -135,6 +135,13 @@ class Scene(models.Model):
     def __str__(self) -> str:
         return f"Scene {self.number}: {self.line}"
 
+    def change_line(self, line: str) -> None:
+        """Give the scene a new line, unsaved. A clip says the line it was made for, so a
+        finished scene is planned again: it needs a new clip."""
+        if line != self.line:
+            self.line = line
+            self.status = self.Status.PLANNED
+
 
 class SceneStep(models.Model):
     """One piece of a scene's work, run in the background: its starting picture, and later

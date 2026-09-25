@@ -425,18 +425,22 @@ def submit_clip(
 def collect_clip(*, job: Job | None, purpose: str, video_id: str) -> str:
     """Wait for the clip asked for as `video_id` to be made, then keep it. Costs nothing: the
     clip was paid for when it was asked for. Raises ClipFailed if it can't be made, and
-    ClipTimedOut if it isn't made within CLIP_MAX_WAIT_SECONDS. Neither is asked again,
-    which would pay for the clip twice. Returns the clip's key in the file store."""
+    ClipTimedOut if it isn't made within CLIP_MAX_WAIT_SECONDS. Neither asks for the clip
+    again, which would pay for it twice. Returns the clip's key in the file store."""
     handoff = ClipCollectHandoff(video_id=video_id)
     model = catalog.MODEL_FOR_PURPOSE[purpose]
     provider = _clips()
 
+    # Counted from the first look, not from each retry, so the wait never runs past it.
+    waited_since = time.monotonic()
+
     def collect() -> _Made[str]:
-        waited_since = time.monotonic()
         while (made := provider.status(video_id=handoff.video_id)).state == "working":
             if time.monotonic() - waited_since >= settings.CLIP_MAX_WAIT_SECONDS:
                 raise ClipTimedOut(
-                    f"the clip wasn't made within {settings.CLIP_MAX_WAIT_SECONDS:g} seconds"
+                    f"the clip wasn't made within {settings.CLIP_MAX_WAIT_SECONDS:g} seconds. "
+                    "It's paid for and may still be made: making the clip again waits for it "
+                    "rather than paying for it again"
                 )
             time.sleep(settings.CLIP_POLL_SECONDS)
         if made.state == "failed" or made.video_url is None:

@@ -9,7 +9,7 @@ from django.conf import settings
 
 from adforge.retry import OutsideServiceDown
 
-from .types import ClipStatus
+from .types import ClipFailed, ClipStatus
 
 
 class HeyGenProvider:
@@ -20,7 +20,7 @@ class HeyGenProvider:
         self._client = httpx.Client(
             base_url=settings.HEYGEN_BASE_URL,
             headers={"x-api-key": settings.HEYGEN_API_KEY},
-            timeout=120,
+            timeout=settings.HEYGEN_TIMEOUT_SECONDS,
         )
 
     def submit(self, *, picture: bytes, audio: bytes, motion_prompt: str) -> str:
@@ -29,6 +29,7 @@ class HeyGenProvider:
         created = self._send(
             "POST",
             "/v3/videos",
+            paid=True,
             json={
                 "type": "image",
                 "image": {"type": "asset_id", "asset_id": image_id},
@@ -68,16 +69,32 @@ class HeyGenProvider:
         uploaded = self._send("POST", "/v3/assets", files={"file": (name, data, content_type)})
         return str(uploaded["data"]["asset_id"])
 
-    def _send(self, method: str, path: str, **sending: Any) -> dict[str, Any]:
+    def _send(
+        self, method: str, path: str, *, paid: bool = False, **sending: Any
+    ) -> dict[str, Any]:
+        """Send a request to HeyGen. A `paid` one is charged for once HeyGen has it, so it
+        is only asked again when it surely never got there."""
         try:
             response = self._client.request(method, path, **sending)
-        except httpx.TransportError as error:
+        except _NEVER_SENT as error:
             raise OutsideServiceDown(f"HeyGen could not be reached: {error}") from error
+        except httpx.TransportError as error:
+            if paid:
+                raise ClipFailed(
+                    f"HeyGen's reply was lost after the clip was asked for ({error}), so it may "
+                    "still be made and charged for. It isn't asked for again, which could pay "
+                    "twice"
+                ) from error
+            raise OutsideServiceDown(f"HeyGen's reply was lost: {error}") from error
         if response.status_code == 429 or response.status_code >= 500:
             raise OutsideServiceDown(f"HeyGen answered {response.status_code}")
         response.raise_for_status()
         reply: dict[str, Any] = response.json()
         return reply
+
+
+# Failures before the request left this machine: HeyGen never had it.
+_NEVER_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
 
 
 def _extension(picture: bytes) -> str:

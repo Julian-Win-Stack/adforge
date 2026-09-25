@@ -108,6 +108,8 @@ ELEVENLABS_BASE_URL = os.environ.get("ELEVENLABS_BASE_URL", "https://api.elevenl
 HEYGEN_API_KEY = os.environ.get("HEYGEN_API_KEY", "")
 # Tests point it at a local stand-in.
 HEYGEN_BASE_URL = os.environ.get("HEYGEN_BASE_URL", "https://api.heygen.com")
+# How long to wait for HeyGen to answer one request.
+HEYGEN_TIMEOUT_SECONDS = 120.0
 # How often to ask whether a clip is made yet, and how long to wait before giving up. One
 # usually takes about a minute.
 CLIP_POLL_SECONDS = 10.0
