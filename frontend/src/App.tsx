@@ -7,6 +7,7 @@ export function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(() => !isNarrow());
 
   useEffect(() => {
     listSessions()
@@ -23,27 +24,46 @@ export function App() {
     );
   }
 
+  const open = sessions.find((one) => one.id === openId) ?? null;
+
+  /** On a phone the sidebar covers the chat, so picking a session puts it away. */
+  function go(sessionId: string | null) {
+    setOpenId(sessionId);
+    if (isNarrow()) setSidebarOpen(false);
+  }
+
   return (
-    <main style={{ maxWidth: 960, margin: "2rem auto", fontFamily: "system-ui, sans-serif" }}>
-      <h1>AdForge</h1>
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
-      <div style={{ display: "flex", gap: "2rem", alignItems: "flex-start" }}>
-        <SessionList
-          sessions={sessions}
-          openId={openId}
-          onOpen={setOpenId}
-          onNew={() => setOpenId(null)}
-          onRenamed={remember}
-        />
-        <Chat
-          key={openId ?? "new"}
-          sessionId={openId}
-          onSent={(sent) => {
-            remember(sent.session);
-            setOpenId(sent.session.id);
-          }}
-        />
-      </div>
-    </main>
+    <div className={`app ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
+      {error && (
+        <p role="alert" className="notice error app-error">
+          {error}
+        </p>
+      )}
+      <SessionList
+        sessions={sessions}
+        openId={openId}
+        onOpen={go}
+        onNew={() => go(null)}
+        onRenamed={remember}
+        onHide={() => setSidebarOpen(false)}
+      />
+      {sidebarOpen && <div className="backdrop" onClick={() => setSidebarOpen(false)} />}
+      <Chat
+        key={openId ?? "new"}
+        sessionId={openId}
+        title={open?.name ?? null}
+        sidebarOpen={sidebarOpen}
+        onShowSidebar={() => setSidebarOpen(true)}
+        onSent={(sent) => {
+          remember(sent.session);
+          setOpenId(sent.session.id);
+        }}
+      />
+    </div>
   );
+}
+
+/** A phone-sized window, where the sidebar can't sit beside the chat. */
+function isNarrow() {
+  return window.innerWidth <= 720;
 }
