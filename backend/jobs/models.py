@@ -242,6 +242,7 @@ class ProducedItem(models.Model):
         LINE_AUDIO = "line_audio"
         TRANSCRIPT = "transcript"
         CLIP = "clip"
+        FINISHED_AD = "finished_ad"
 
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="produced")
     scene = models.ForeignKey(
@@ -265,8 +266,9 @@ class ProducedItem(models.Model):
     file = models.CharField(
         max_length=500,
         blank=True,
-        help_text="Key in the file store: the picture, the line's audio, the clip, or the "
-        "voice's measuring sample. Blank for a voice not measured yet, and for a transcript.",
+        help_text="Key in the file store: the picture, the line's audio, the clip, the "
+        "finished ad, or the voice's measuring sample. Blank for a voice not measured yet, and "
+        "for a transcript.",
     )
     voice_id = models.CharField(max_length=200, blank=True)
     words_per_second = models.FloatField(
@@ -290,7 +292,7 @@ class ProducedItem(models.Model):
         help_text="The starting picture a clip animates.",
     )
     seconds = models.FloatField(
-        null=True, blank=True, help_text="How long the audio or the clip lasts."
+        null=True, blank=True, help_text="How long the audio, the clip or the finished ad lasts."
     )
     text = models.TextField(blank=True, help_text="The transcript, exactly as it was heard.")
     words = models.JSONField(
@@ -298,6 +300,13 @@ class ProducedItem(models.Model):
         blank=True,
         help_text="Each word heard, with when it starts and ends in seconds: "
         '[{"text", "start", "end"}, ...].',
+    )
+    cuts = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="For a finished ad, each scene in the order it plays: its clip, the part of "
+        "the clip kept, and where that part plays in the ad, in seconds: "
+        '[{"scene", "clip", "clip_start", "clip_end", "start", "end"}, ...].',
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

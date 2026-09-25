@@ -4,21 +4,26 @@ or a turn during which something else happens (see `meanwhile`).
 
 Pictures, voices and transcripts need no script: the fake draws a plain portrait, makes a
 plain picture of its own from other pictures, designs a numbered voice, speaks at
-`words_per_second`, and hears exactly the words it spoke. Script an error for their purpose
+`words_per_second` with `pause_seconds` of silence before and after, and hears exactly the
+words it spoke. Script an error for their purpose
 to make one fail, or script a transcript for "transcribe_line" to have something else heard.
 
-Clips need no script either: each one asked for is made at once. Script {"state": "working"}
+Clips need no script either: each one asked for is made at once, a real tiny clip that
+speaks the audio it was asked for, so ffmpeg can cut and join it. Script {"state": "working"}
 for "collect_clip" to have it still being made when asked, {"state": "failed", "error": ...}
 to have it fail, or an error for "make_clip" or "collect_clip"."""
 
 import io
 import itertools
+import subprocess
+import tempfile
 import wave
 from collections import defaultdict, deque
 from collections.abc import Callable, Sequence
 from typing import Any
 
 import PIL.Image
+from django.conf import settings
 from pydantic import BaseModel, ValidationError
 
 from .types import (
@@ -74,6 +79,8 @@ class FakeModel:
     def __init__(self) -> None:
         self._scripts: defaultdict[str, deque[Outcome]] = defaultdict(deque)
         self.words_per_second = 2.0
+        # Silence before and after the words in every audio spoken, as a real voice leaves.
+        self.pause_seconds = 0.0
         self.voices = 0
         self.edits = 0
         # Every script the fake has been asked to speak, so a test can show that work paid
@@ -86,6 +93,9 @@ class FakeModel:
         # The id of every clip the fake was asked to make, and of every one it handed over.
         self.clips_submitted: list[str] = []
         self.clips_downloaded: list[str] = []
+        # The audio each clip asked for speaks, and each clip made, by its id.
+        self._clip_audio: dict[str, bytes] = {}
+        self.clips: dict[str, bytes] = {}
 
     def respond(self, purpose: str, *outcomes: Outcome) -> None:
         self._scripts[purpose].extend(outcomes)
@@ -159,7 +169,7 @@ class FakeModel:
         self._fail_if_scripted("measure_voice")
         self._fail_if_scripted("speak_line")
         self.spoken.append(text)
-        seconds = len(text.split()) / self.words_per_second
+        seconds = len(text.split()) / self.words_per_second + 2 * self.pause_seconds
         audio = io.BytesIO()
         with wave.open(audio, "wb") as file:
             file.setnchannels(1)
@@ -179,8 +189,13 @@ class FakeModel:
         text = scripted["text"] if scripted else self.heard[audio]
         # Heard evenly spaced, at the pace the fake speaks.
         pace = 1 / self.words_per_second
+        start = self.pause_seconds
         words = tuple(
-            Word(text=word, start=round(i * pace, 3), end=round((i + 1) * pace, 3))
+            Word(
+                text=word,
+                start=round(start + i * pace, 3),
+                end=round(start + (i + 1) * pace, 3),
+            )
             for i, word in enumerate(text.split())
         )
         with wave.open(io.BytesIO(audio)) as file:
@@ -190,6 +205,7 @@ class FakeModel:
     def submit(self, *, picture: bytes, audio: bytes, motion_prompt: str) -> str:
         self._fail_if_scripted("make_clip")
         self.clips_submitted.append(f"video-{len(self.clips_submitted) + 1}")
+        self._clip_audio[self.clips_submitted[-1]] = audio
         return self.clips_submitted[-1]
 
     def status(self, *, video_id: str) -> ClipStatus:
@@ -202,8 +218,9 @@ class FakeModel:
     def download(self, *, url: str) -> bytes:
         video_id = url.removeprefix("https://fake.heygen/").removesuffix(".mp4")
         self.clips_downloaded.append(video_id)
-        # Each clip made is its own, as a real one would be.
-        return f"fake clip {video_id}".encode()
+        if video_id not in self.clips:
+            self.clips[video_id] = _clip(video_id, self._clip_audio.get(video_id))
+        return self.clips[video_id]
 
     def _fail_if_scripted(self, purpose: str) -> None:
         script = self._scripts[purpose]
@@ -211,3 +228,49 @@ class FakeModel:
             outcome = script.popleft()
             if isinstance(outcome, BaseException):
                 raise outcome
+
+
+def _clip(video_id: str, audio: bytes | None) -> bytes:
+    """A tiny real clip that speaks `audio` for as long as it lasts, over a plain picture:
+    a second of silence for a clip not asked for through the fake. Each clip made is its
+    own, as a real one would be: its id is written into it."""
+    with tempfile.TemporaryDirectory() as folder:
+        speaks = f"{folder}/audio.wav"
+        made = f"{folder}/clip.mp4"
+        with open(speaks, "wb") as file:
+            file.write(audio or _silence(seconds=1))
+        subprocess.run(
+            [
+                settings.FFMPEG,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=tan:s=72x128:r=25",
+                "-i",
+                speaks,
+                "-shortest",
+                "-pix_fmt",
+                "yuv420p",
+                "-metadata",
+                f"title={video_id}",
+                made,
+            ],
+            check=True,
+            capture_output=True,
+            timeout=60,
+        )
+        with open(made, "rb") as file:
+            return file.read()
+
+
+def _silence(*, seconds: float) -> bytes:
+    audio = io.BytesIO()
+    with wave.open(audio, "wb") as file:
+        file.setnchannels(1)
+        file.setsampwidth(2)
+        file.setframerate(FakeModel.SAMPLE_RATE)
+        file.writeframes(b"\0\0" * round(seconds * FakeModel.SAMPLE_RATE))
+    return audio.getvalue()

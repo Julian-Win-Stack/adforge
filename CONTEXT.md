@@ -70,6 +70,10 @@ _Avoid_: Captions, subtitles
 A scene's starting picture animated to speak its line's audio: the same audio its transcript was heard in, so the clip lasts exactly as long. Made only once the picture is made and the audio heard, for the line as it stands. A scene whose clip is made is finished. Not shown to the user on its own.
 _Avoid_: Video, render, shot
 
+**Finished ad**:
+Every scene's clip put together in order, each cut to where its words are said so there is no silence between scenes. Shown to the user in the chat. Made again as a new version when a scene's clip changes; the old one is kept.
+_Avoid_: Final video, render, output
+
 **Person**:
 The presenter in an ad: one portrait and one matching voice. Every scene in a job shows the same person.
 _Avoid_: Avatar, actor, character, persona
