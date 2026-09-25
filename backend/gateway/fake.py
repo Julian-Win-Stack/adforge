@@ -15,6 +15,7 @@ to have it fail, or an error for "make_clip" or "collect_clip"."""
 
 import io
 import itertools
+import math
 import subprocess
 import tempfile
 import wave
@@ -175,9 +176,13 @@ class FakeModel:
             file.setnchannels(1)
             file.setsampwidth(2)
             file.setframerate(self.SAMPLE_RATE)
-            # Each audio spoken is its own, as a real voice's would be.
+            # Silent for the pauses and a steady tone while the words are said, so a test can
+            # hear where they are. Each audio spoken is its own, as a real voice's would be.
+            pause = _silence_frames(self.pause_seconds, self.SAMPLE_RATE)
+            words = _tone_frames(seconds - 2 * self.pause_seconds, self.SAMPLE_RATE)
+            frames = pause + words + pause
             first = len(self.spoken).to_bytes(2, "little")
-            file.writeframes(first + b"\0\0" * (round(seconds * self.SAMPLE_RATE) - 1))
+            file.writeframes(first + frames[2:])
         self.heard[audio.getvalue()] = text
         return audio.getvalue()
 
@@ -230,10 +235,16 @@ class FakeModel:
                 raise outcome
 
 
+# The colour of each clip made, in turn, so a test can see which clip plays where.
+COLOURS = ("red", "lime", "blue", "yellow")
+
+
 def _clip(video_id: str, audio: bytes | None) -> bytes:
     """A tiny real clip that speaks `audio` for as long as it lasts, over a plain picture:
     a second of silence for a clip not asked for through the fake. Each clip made is its
-    own, as a real one would be: its id is written into it."""
+    own, as a real one would be: its id is written into it, and video-1 is red, video-2
+    lime, and so on through COLOURS."""
+    colour = COLOURS[(int(video_id.rsplit("-", 1)[-1]) - 1) % len(COLOURS)]
     with tempfile.TemporaryDirectory() as folder:
         speaks = f"{folder}/audio.wav"
         made = f"{folder}/clip.mp4"
@@ -248,7 +259,7 @@ def _clip(video_id: str, audio: bytes | None) -> bytes:
                 "-f",
                 "lavfi",
                 "-i",
-                "color=c=tan:s=72x128:r=25",
+                f"color=c={colour}:s=72x128:r=25",
                 "-i",
                 speaks,
                 "-shortest",
@@ -272,5 +283,17 @@ def _silence(*, seconds: float) -> bytes:
         file.setnchannels(1)
         file.setsampwidth(2)
         file.setframerate(FakeModel.SAMPLE_RATE)
-        file.writeframes(b"\0\0" * round(seconds * FakeModel.SAMPLE_RATE))
+        file.writeframes(_silence_frames(seconds, FakeModel.SAMPLE_RATE))
     return audio.getvalue()
+
+
+def _silence_frames(seconds: float, rate: int) -> bytes:
+    return b"\0\0" * round(seconds * rate)
+
+
+def _tone_frames(seconds: float, rate: int) -> bytes:
+    """A 440 Hz tone, loud enough to be heard over silence."""
+    return b"".join(
+        round(8000 * math.sin(2 * math.pi * 440 * i / rate)).to_bytes(2, "little", signed=True)
+        for i in range(round(seconds * rate))
+    )

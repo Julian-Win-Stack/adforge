@@ -1,5 +1,6 @@
 import io
 import json
+import re
 import socket
 import subprocess
 import tempfile
@@ -248,6 +249,52 @@ def video(data: bytes) -> tuple[int, int, float]:
     found = json.loads(probed.stdout)
     (picture,) = [stream for stream in found["streams"] if stream["codec_type"] == "video"]
     return picture["width"], picture["height"], float(found["format"]["duration"])
+
+
+def colour_at(data: bytes, seconds: float) -> str:
+    """Which of the fake's clip colours a video shows `seconds` in, read from its middle."""
+    with tempfile.NamedTemporaryFile(suffix=".mp4") as file:
+        file.write(data)
+        file.flush()
+        frame = subprocess.run(
+            [settings.FFMPEG, "-v", "error", "-ss", str(seconds), "-i", file.name]
+            + ["-frames:v", "1", "-f", "image2pipe", "-c:v", "png", "-"],
+            capture_output=True,
+            timeout=60,
+            check=True,
+        ).stdout
+    shown = PIL.Image.open(io.BytesIO(frame)).convert("RGB")
+    red, green, blue = shown.getpixel((shown.width // 2, shown.height // 2))  # type: ignore[misc]
+    colours = {
+        "red": (255, 0, 0),
+        "lime": (0, 255, 0),
+        "blue": (0, 0, 255),
+        "yellow": (255, 255, 0),
+    }
+    return min(
+        colours,
+        key=lambda name: sum(
+            (a - b) ** 2 for a, b in zip(colours[name], (red, green, blue), strict=True)
+        ),
+    )
+
+
+def silences(data: bytes) -> list[tuple[float, float]]:
+    """Where a video's sound is silent for more than a quarter of a second, in seconds."""
+    with tempfile.NamedTemporaryFile(suffix=".mp4") as file:
+        file.write(data)
+        file.flush()
+        heard = subprocess.run(
+            [settings.FFMPEG, "-i", file.name, "-af", "silencedetect=noise=-40dB:d=0.25"]
+            + ["-f", "null", "-"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=True,
+        ).stderr
+    starts = re.findall(r"silence_start: ([\d.]+)", heard)
+    ends = re.findall(r"silence_end: ([\d.]+)", heard)
+    return [(round(float(s), 1), round(float(e), 1)) for s, e in zip(starts, ends, strict=True)]
 
 
 def lines() -> list[str]:
