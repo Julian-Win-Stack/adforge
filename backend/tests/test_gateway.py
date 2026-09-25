@@ -237,7 +237,7 @@ def test_a_clip_being_made_is_waited_for_then_kept(fake_model: FakeModel) -> Non
 
     key = collect_clip(job=None, purpose="collect_clip", video_id="video-1")
 
-    assert file_store.read(key) == b"fake clip video-1"
+    assert file_store.read(key) == fake_model.clips["video-1"]
     collected = ModelCall.objects.get()
     assert (collected.outcome, collected.output) == (ModelCall.Outcome.SUCCEEDED, {"file": key})
 
@@ -274,7 +274,7 @@ def test_a_slow_clip_is_waited_for_until_it_is_made(
     key = collect_clip(job=None, purpose="collect_clip", video_id="video-1")
 
     assert clock.now == 3600
-    assert file_store.read(key) == b"fake clip video-1"
+    assert file_store.read(key) == fake_model.clips["video-1"]
     assert ModelCall.objects.get().outcome == ModelCall.Outcome.SUCCEEDED
 
 

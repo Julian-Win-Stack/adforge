@@ -1,11 +1,13 @@
 """The work the producer's tools do on a job: reading its page, planning it, making its
-person, running the planning checks and making each scene."""
+person, running the planning checks, making each scene and assembling the finished ad."""
 
 import io
 import mimetypes
+import tempfile
 import wave
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from django.db import transaction
@@ -32,7 +34,7 @@ from gateway.gateway import (
 from gateway.models import ModelCall
 from gateway.types import ClipFailed, Handoff, Image, Judgement
 
-from . import page
+from . import assembly, page
 from .checks import (
     FACT_CHECK_INSTRUCTIONS,
     MOST_REWRITES,
@@ -735,6 +737,37 @@ def _clip_asked_for(step: SceneStep, picture: ProducedItem, audio: ProducedItem)
         error__startswith=f"{ClipFailed.__name__}:",
     ).exists()
     return None if failed else video_id
+
+
+def assemble_ad(job: Job, scenes: list[tuple[ProducedItem, ProducedItem]]) -> ProducedItem:
+    """Put the finished ad together from each scene's clip and the transcript of the audio
+    it speaks, in the order the scenes play: each clip cut to where its words are said, then
+    joined. Gives back the ad, kept as the job's next version. Costs nothing: no model is
+    called."""
+    measured = []
+    for clip, transcript in scenes:
+        assert clip.scene is not None and clip.seconds is not None, "a clip is a scene's, measured"
+        measured.append((clip.scene.number, clip.pk, clip.seconds, transcript.words))
+    planned = assembly.cuts(measured)
+    # ffmpeg reads and writes files on this machine, and the clips are in the file store.
+    with tempfile.TemporaryDirectory() as folder:
+        parts = []
+        for (clip, _), cut in zip(scenes, planned, strict=True):
+            path = Path(folder) / f"scene-{cut.scene}.mp4"
+            path.write_bytes(file_store.read(clip.file))
+            parts.append((path, cut))
+        ad = Path(folder) / "ad.mp4"
+        assembly.join(parts, ad)
+        file = file_store.save("ad.mp4", ad.read_bytes())
+    last = job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).aggregate(last=Max("version"))
+    return ProducedItem.objects.create(
+        job=job,
+        kind=ProducedItem.Kind.FINISHED_AD,
+        version=(last["last"] or 0) + 1,
+        file=file,
+        seconds=planned[-1].end,
+        cuts=[asdict(cut) for cut in planned],
+    )
 
 
 def _next_version(scene: Scene, kind: ProducedItem.Kind) -> int:

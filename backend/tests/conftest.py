@@ -1,6 +1,8 @@
 import io
 import json
 import socket
+import subprocess
+import tempfile
 from collections.abc import Callable, Iterator
 from datetime import timedelta
 from pathlib import Path
@@ -228,6 +230,24 @@ def served(link: str, settings: Settings) -> bytes:
     """What the browser gets from a link: the web server hands out MEDIA_ROOT at /media/."""
     assert link.startswith("/media/"), f"{link} isn't a link the web server hands out"
     return (Path(settings.MEDIA_ROOT) / link.removeprefix("/media/")).read_bytes()
+
+
+def video(data: bytes) -> tuple[int, int, float]:
+    """A video's width, height and length in seconds, as ffprobe reads it."""
+    with tempfile.NamedTemporaryFile(suffix=".mp4") as file:
+        file.write(data)
+        file.flush()
+        probed = subprocess.run(
+            [settings.FFPROBE, "-v", "error", "-show_streams", "-show_format", "-of", "json"]
+            + [file.name],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=True,
+        )
+    found = json.loads(probed.stdout)
+    (picture,) = [stream for stream in found["streams"] if stream["codec_type"] == "video"]
+    return picture["width"], picture["height"], float(found["format"]["duration"])
 
 
 def lines() -> list[str]:

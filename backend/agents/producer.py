@@ -15,6 +15,7 @@ from gateway.models import ModelCall
 from jobs import page
 from jobs.models import Job, ProducedItem, ProductPhoto, Scene, SceneStep
 from jobs.work import (
+    assemble_ad,
     check_page,
     create_person,
     keep_page,
@@ -38,7 +39,8 @@ about to do. When there is nothing left to do, or you need the shop owner, reply
 The usual order is: read the page, plan the ad, create the person, run the planning \
 checks, then, for each scene, make its starting picture and its line's audio, which can \
 run at the same time, transcribe the audio once it's ready, and once the picture is made and \
-the audio heard, make the scene's clip, which finishes the scene. When a tool hands back \
+the audio heard, make the scene's clip, which finishes the scene. Once every scene is \
+finished, assemble the ad, which shows it to the shop owner. When a tool hands back \
 something to ask the shop owner, ask it in your reply and wait for their answer before \
 passing their choice to a tool.
 Scene tools start their work in the background and hand back at once, before anything is \
@@ -600,6 +602,115 @@ class MakeClip(Tool):
         )
 
 
+class AssembleAd(Tool):
+    """Assemble the finished ad from every scene's clip, in order, each cut to where its
+    words are said so there is no silence between scenes, and show it to the shop owner in
+    the chat. Only once every scene is finished. Costs nothing."""
+
+    name = "assemble_ad"
+
+    def run(self, call: ToolCall) -> str:
+        job = _the_job(call)
+        if job is None or not job.scenes.exists():
+            raise Refused("the ad hasn't been planned yet, and it is assembled from its scenes.")
+        scenes = list(job.scenes.all())
+        being_made = [
+            scene.number
+            for scene in scenes
+            if scene.steps.filter(
+                kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING
+            ).exists()
+        ]
+        if being_made:
+            is_, it = ("clip is", "it's") if len(being_made) == 1 else ("clips are", "they're")
+            raise Refused(
+                f"{_scenes(being_made)}'s {is_} still being made. You'll be told when {it} "
+                "ready; assemble the ad then."
+            )
+        unfinished = [scene.number for scene in scenes if scene.status != Scene.Status.FINISHED]
+        if unfinished:
+            isnt, them = ("isn't", "it") if len(unfinished) == 1 else ("aren't", "them")
+            raise Refused(
+                f"{_scenes(unfinished)} {isnt} finished: a scene is finished once its clip is "
+                f"made. Finish {them}, then assemble the ad."
+            )
+        scene_clips = [_clip_and_transcript(scene) for scene in scenes]
+        clips = [clip.pk for clip, _ in scene_clips]
+        for ad in job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).order_by("-version"):
+            if [cut["clip"] for cut in ad.cuts] == clips:
+                _show(call.session, ad)
+                return (
+                    f"The ad was already assembled from these clips (version {ad.version}, "
+                    f"{ad.seconds:g} seconds) and shown to the shop owner, so nothing was made "
+                    "again. Assembling costs nothing."
+                )
+        ad = assemble_ad(job, scene_clips)
+        _show(call.session, ad)
+        first, *rest = ad.cuts
+        plays = [
+            f"Scene {first['scene']} plays from {first['start']:g} to {first['end']:g} seconds"
+        ]
+        plays += [f"scene {cut['scene']} from {cut['start']:g} to {cut['end']:g}" for cut in rest]
+        return (
+            f"Assembled the ad (version {ad.version}, {ad.seconds:g} seconds) from each scene's "
+            "clip, cut to where its words are said, and showed it to the shop owner in the "
+            f"chat. {_listed(plays)}. Tell the shop owner."
+        )
+
+
+def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem]:
+    """A finished scene's clip of its line as it stands, and the transcript of the audio the
+    clip speaks, whose words say where to cut it. Refuses, saying why, if no word was heard."""
+    clip = (
+        scene.produced.filter(
+            kind=ProducedItem.Kind.CLIP,
+            step__status=SceneStep.Status.FINISHED,
+            step__line=scene.line,
+        )
+        .order_by("version")
+        .last()
+    )
+    assert clip is not None, "a finished scene has a clip of its line"
+    transcript = (
+        scene.produced.filter(
+            kind=ProducedItem.Kind.TRANSCRIPT,
+            step__status=SceneStep.Status.FINISHED,
+            made_from=clip.made_from,
+        )
+        .order_by("version")
+        .last()
+    )
+    assert transcript is not None, "a clip is only made from audio that was transcribed"
+    if not transcript.words:
+        raise Refused(
+            f"no words were heard in scene {scene.number}'s audio, so there is nothing to cut "
+            "its clip to. Make the line's audio again, then its clip."
+        )
+    return clip, transcript
+
+
+def _show(session: Session, ad: ProducedItem) -> None:
+    """Show the finished ad in the chat, unless it already is, as after a restart."""
+    if not Attachment.objects.filter(message__session=session, file=ad.file).exists():
+        messages.add(
+            session,
+            role=Message.Role.AGENT,
+            carrying=[messages.AttachedFile(Attachment.Kind.VIDEO, ad.file)],
+        )
+
+
+def _scenes(numbers: list[int]) -> str:
+    """ "scene 2", or "scenes 2 and 3"."""
+    if len(numbers) == 1:
+        return f"scene {numbers[0]}"
+    return f"scenes {_listed([str(number) for number in numbers])}"
+
+
+def _listed(items: list[str]) -> str:
+    """ "a", "a and b", or "a, b and c"."""
+    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
+
+
 def _current_audio(scene: Scene) -> ProducedItem:
     """The scene's audio of its line as it stands, in the person's voice as it stands: the
     only audio a transcript or a clip is made from. Refuses, saying why, if it has none."""
@@ -792,5 +903,6 @@ PRODUCER = Agent(
         MakeLineAudio,
         TranscribeLineAudio,
         MakeClip,
+        AssembleAd,
     ],
 )

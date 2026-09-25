@@ -199,7 +199,7 @@ def test_the_clip_is_made_in_the_background_from_the_picture_and_the_audio_heard
     transcript = ProducedItem.objects.get(kind="transcript")
     # The same audio that was heard, and the clip lasts as long as it.
     assert (clip.picture, clip.made_from, clip.seconds) == (picture, transcript.made_from, 4.0)
-    assert read(clip.file) == b"fake clip video-1"
+    assert read(clip.file) == fake_model.clips["video-1"]
     assert Scene.objects.get(number=1).status == "finished"
     assert told() == CLIP_READY
     # The clip isn't shown: the shop owner sees only the producer's replies.
@@ -391,7 +391,10 @@ def test_a_new_starting_picture_gets_a_new_clip_and_the_old_clip_is_kept(
     second = ProducedItem.objects.get(kind="clip", version=2)
     assert second.picture == ProducedItem.objects.get(kind="starting_picture", version=3)
     assert second.made_from == first.made_from
-    assert (read(first.file), read(second.file)) == (b"fake clip video-1", b"fake clip video-2")
+    assert (read(first.file), read(second.file)) == (
+        fake_model.clips["video-1"],
+        fake_model.clips["video-2"],
+    )
     assert paid_for().count("make_clip") == 2
     assert told() == (
         "Background step finished: scene 1's clip is ready (version 2, 4 seconds), made from "
@@ -426,7 +429,7 @@ def test_a_clip_asked_for_before_the_worker_stopped_isnt_asked_for_again(
     assert fake_model.clips_submitted == ["video-1"]
     assert paid_for().count("make_clip") == 1
     assert SceneStep.objects.get(pk=step_id).status == "finished"
-    assert read(ProducedItem.objects.get(kind="clip").file) == b"fake clip video-1"
+    assert read(ProducedItem.objects.get(kind="clip").file) == fake_model.clips["video-1"]
 
 
 def test_a_clip_fetched_before_the_worker_stopped_isnt_fetched_again(
@@ -547,7 +550,7 @@ def test_a_clip_given_up_on_while_heygen_was_down_is_waited_for_again_rather_tha
     assert fake_model.clips_submitted == ["video-1"]
     assert paid_for().count("make_clip") == 1
     assert made("clip") == [(1, 1)]
-    assert read(ProducedItem.objects.get(kind="clip").file) == b"fake clip video-1"
+    assert read(ProducedItem.objects.get(kind="clip").file) == fake_model.clips["video-1"]
     assert Scene.objects.get(number=1).status == "finished"
 
 
@@ -572,7 +575,7 @@ def test_a_clip_given_up_on_isnt_waited_for_once_its_picture_is_made_again(
     clip = ProducedItem.objects.get(kind="clip")
     assert (clip.picture.version if clip.picture else None, read(clip.file)) == (
         2,
-        b"fake clip video-2",
+        fake_model.clips["video-2"],
     )
 
 
@@ -591,7 +594,7 @@ def test_a_clip_the_video_model_couldnt_make_is_asked_for_afresh_when_made_again
 
     # Waiting on the one that failed would only fail again.
     assert fake_model.clips_submitted == ["video-1", "video-2"]
-    assert read(ProducedItem.objects.get(kind="clip").file) == b"fake clip video-2"
+    assert read(ProducedItem.objects.get(kind="clip").file) == fake_model.clips["video-2"]
 
 
 # --- A line that changes once its clip is made ---------------------------------------------
