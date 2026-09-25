@@ -291,10 +291,6 @@ class ClipFailed(Exception):
     """The video service couldn't make a clip. Asking again would pay for it again."""
 
 
-class ClipTimedOut(ClipFailed):
-    """A clip wasn't made in time: CLIP_MAX_WAIT_SECONDS."""
-
-
 class ClipProvider(Protocol):
     """Makes talking clips from a picture and audio. Making one takes a while, so it is
     asked for, then waited for, then fetched. Raises OutsideServiceDown for errors worth

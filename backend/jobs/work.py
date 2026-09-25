@@ -675,11 +675,24 @@ def make_clip(step: SceneStep) -> ProducedItem:
             motion_prompt=CLIP_MOTION_PROMPT,
         )
     )
+
+    def tell_its_slow() -> None:
+        messages.add(
+            step.tool_call.session,
+            role=Message.Role.AGENT,
+            text=(
+                f"Scene {scene.number}'s clip is taking longer than usual. It's still being "
+                "made, and I'll tell you when it's ready."
+            ),
+        )
+
     fetched = _paid_for_before(job, "collect_clip", charged_to=step.tool_call)
     file = (
         fetched["file"]
         if fetched
-        else collect_clip(job=job, purpose="collect_clip", video_id=video_id)
+        else collect_clip(
+            job=job, purpose="collect_clip", video_id=video_id, when_slow=tell_its_slow
+        )
     )
     with transaction.atomic():
         clip = ProducedItem.objects.create(
@@ -701,8 +714,8 @@ def make_clip(step: SceneStep) -> ProducedItem:
 def _clip_asked_for(step: SceneStep, picture: ProducedItem, audio: ProducedItem) -> str | None:
     """The id of a clip already paid for from this picture and audio that may still be made,
     so it is waited for rather than paid for again: asked for by this step before the worker
-    stopped, or by an earlier one that gave up waiting for it or stopped. None if there is
-    none, or the video model said it couldn't make it."""
+    stopped, or by an earlier one that stopped or gave up while the video service was down.
+    None if there is none, or the video model said it couldn't make it."""
     job = step.scene.job
     asked_by_this_step = _paid_for_before(job, "make_clip", charged_to=step.tool_call)
     if asked_by_this_step:
@@ -714,8 +727,8 @@ def _clip_asked_for(step: SceneStep, picture: ProducedItem, audio: ProducedItem)
     if asked is None or asked.output is None:
         return None
     video_id = str(asked.output["video_id"])
-    # Given up on for taking too long (ClipTimedOut) or the service being down, it may
-    # still be made. Failed (ClipFailed), it never will be.
+    # Given up on while the service was down, it may still be made. Failed (ClipFailed),
+    # it never will be.
     failed = job.model_calls.filter(
         purpose="collect_clip",
         handoff={"video_id": video_id},

@@ -30,7 +30,6 @@ from .types import (
     ClipFailed,
     ClipHandoff,
     ClipProvider,
-    ClipTimedOut,
     Handoff,
     Happened,
     Image,
@@ -422,26 +421,35 @@ def submit_clip(
     return _recorded(job, purpose, model, provider.name, handoff, submit)
 
 
-def collect_clip(*, job: Job | None, purpose: str, video_id: str) -> str:
+def collect_clip(
+    *,
+    job: Job | None,
+    purpose: str,
+    video_id: str,
+    when_slow: Callable[[], None] = lambda: None,
+) -> str:
     """Wait for the clip asked for as `video_id` to be made, then keep it. Costs nothing: the
-    clip was paid for when it was asked for. Raises ClipFailed if it can't be made, and
-    ClipTimedOut if it isn't made within CLIP_MAX_WAIT_SECONDS. Neither asks for the clip
-    again, which would pay for it twice. Returns the clip's key in the file store."""
+    clip was paid for when it was asked for, so it is waited for however long it takes, and
+    `when_slow` is called once it has taken CLIP_SLOW_AFTER_SECONDS. Raises ClipFailed if it
+    can't be made, and never asks for it again, which would pay for it twice. Returns the
+    clip's key in the file store."""
     handoff = ClipCollectHandoff(video_id=video_id)
     model = catalog.MODEL_FOR_PURPOSE[purpose]
     provider = _clips()
 
-    # Counted from the first look, not from each retry, so the wait never runs past it.
+    # Counted from the first look, not from each retry, and told of once across retries.
     waited_since = time.monotonic()
+    told_slow = False
 
     def collect() -> _Made[str]:
+        nonlocal told_slow
         while (made := provider.status(video_id=handoff.video_id)).state == "working":
-            if time.monotonic() - waited_since >= settings.CLIP_MAX_WAIT_SECONDS:
-                raise ClipTimedOut(
-                    f"the clip wasn't made within {settings.CLIP_MAX_WAIT_SECONDS:g} seconds. "
-                    "It's paid for and may still be made: making the clip again waits for it "
-                    "rather than paying for it again"
-                )
+            if (
+                not told_slow
+                and time.monotonic() - waited_since >= settings.CLIP_SLOW_AFTER_SECONDS
+            ):
+                when_slow()
+                told_slow = True
             time.sleep(settings.CLIP_POLL_SECONDS)
         if made.state == "failed" or made.video_url is None:
             raise ClipFailed(made.error or "the video service gave no reason")
