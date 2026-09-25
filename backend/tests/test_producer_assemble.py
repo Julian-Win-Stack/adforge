@@ -13,7 +13,7 @@ from adforge.file_store import read
 from gateway.fake import FakeModel, turn
 from jobs.models import Job, ProducedItem
 
-from .conftest import HeldSteps, paid_for, results_of, served, video
+from .conftest import HeldSteps, colour_at, paid_for, results_of, served, silences, video
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -121,6 +121,10 @@ def test_the_scenes_are_assembled_into_one_ad_that_plays_in_the_chat(
     width, height, seconds = video(read(ad.file))
     assert (width, height) == (72, 128)
     assert seconds == pytest.approx(9.0, abs=0.1)
+    # Each scene's own clip, in order: the fake's clips are red, lime and blue, and each
+    # is looked at halfway through its scene.
+    shows = [colour_at(read(ad.file), middle) for middle in (2.0, 5.75, 8.25)]
+    assert shows == ["red", "lime", "blue"]
     # Shown by the producer, with no words of its own: its next message talks about it.
     (shown,) = videos_shown(api, session_id)
     assert (shown["role"], shown["text"]) == ("agent", "")
@@ -147,6 +151,11 @@ def test_the_dead_air_between_scenes_is_cut_on_the_word_timings(
     # side so no sound is clipped: 9 seconds of words and 0.6 of margin.
     assert ad.seconds == 9.6
     assert video(read(ad.file))[2] == pytest.approx(9.6, abs=0.1)
+    # The words are heard all the way through: only the margins are quiet, a fifth of a
+    # second between scenes, too short to be dead air.
+    assert silences(read(ad.file)) == []
+    shows = [colour_at(read(ad.file), middle) for middle in (2.1, 6.05, 8.75)]
+    assert shows == ["red", "lime", "blue"]
     assert ad.cuts == [
         {
             "scene": 1,
