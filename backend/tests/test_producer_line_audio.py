@@ -19,8 +19,6 @@ from gateway.models import ModelCall
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 
 from .conftest import (
-    FACTS_OK,
-    NO_CHOICES,
     HeldSteps,
     WorkerStopped,
     chat,
@@ -367,15 +365,15 @@ def test_a_line_that_hasnt_passed_the_fact_check_gets_no_audio_or_transcript(
 def test_a_line_gets_no_audio_before_the_person_is_made(
     fake_model: FakeModel, planned: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
+    # Checked before the checks needed the person's voice, as a job from before #66 was.
+    Scene.objects.update(fact_checked=True)
     fake_model.respond(
         "produce",
-        turn(calls=[("run_planning_checks", NO_CHOICES)]),
         turn(calls=[("make_line_audio", {"scene": 1})]),
         turn(says="I need to make the person first."),
     )
-    fake_model.respond("fact_check", FACTS_OK)
 
-    say("Check the script and make scene 1's audio")
+    say("Make scene 1's audio")
 
     assert results_of("make_line_audio") == [
         "Refused: the person hasn't been made yet, and the audio is in their voice. Create the "

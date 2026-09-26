@@ -16,11 +16,9 @@ from chat import messages
 from chat.models import Message
 from gateway.fake import FakeModel, meanwhile, turn
 from gateway.models import ModelCall
-from jobs.models import Job, SceneStep
+from jobs.models import Job, Scene, SceneStep
 
 from .conftest import (
-    FACTS_OK,
-    NO_CHOICES,
     HeldSteps,
     WorkerStopped,
     chat,
@@ -147,15 +145,15 @@ def test_a_starting_picture_already_being_made_isnt_started_again(
 def test_a_scene_gets_no_starting_picture_before_the_person_is_made(
     fake_model: FakeModel, planned: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
+    # Checked before the checks needed the person's voice, as a job from before #66 was.
+    Scene.objects.update(fact_checked=True)
     fake_model.respond(
         "produce",
-        turn(calls=[("run_planning_checks", NO_CHOICES)]),
         turn(calls=[("make_starting_picture", {"scene": 1, "note": None})]),
         turn(says="I need to make the person first."),
     )
-    fake_model.respond("fact_check", FACTS_OK)
 
-    say("Check the script and make scene 1's starting picture")
+    say("Make scene 1's starting picture")
 
     assert results_of("make_starting_picture") == [
         "Refused: the person hasn't been made yet, and the picture shows them. Create the "

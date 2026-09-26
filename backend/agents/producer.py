@@ -14,6 +14,7 @@ from chat.models import Attachment, Message, Session
 from gateway.models import ModelCall
 from gateway.types import MusicHandoff
 from jobs import page
+from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
 from jobs.models import Job, ProducedItem, ProductPhoto, Scene, SceneStep
 from jobs.work import (
     assemble_ad,
@@ -280,8 +281,10 @@ class LineChoice(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     scene: int = Field(description="The number of the scene whose line it is.")
-    choice: Literal["keep", "own"] = Field(
-        description='"keep" to use the line as it is, or "own" to use a line the shop owner wrote.'
+    choice: Literal["keep", "own", "say_it"] = Field(
+        description='"keep" to use the line as it is, "own" to use a line the shop owner '
+        'wrote, or "say_it" to keep the line but have the person say it to camera rather than '
+        "show what the scene shows. Only a scene that shows something can be said instead."
     )
     own_line: str | None = Field(
         description='The shop owner\'s line, word for word as they wrote it, for "own". Null '
@@ -298,11 +301,13 @@ class LineChoice(BaseModel):
 
 
 class RunPlanningChecks(Tool):
-    """Check the script before anything is made from it: every line against the product
-    page, then the whole script against the target length. A line that fails is rewritten
-    and checked again. Hands back what to ask the shop owner when a line still fails after
-    2 rewrites, when the page itself is unclear, or when the script runs over the target.
-    Once they have answered, run the checks again with their choices."""
+    """Check the script before anything is made from it: every line, and what each scene
+    shows, against the product page, then each line against the longest a scene can last,
+    and the whole script against the target length. A line that fails is rewritten, or
+    shortened, and checked again. Hands back what to ask the shop owner when a line still
+    fails after 2 rewrites or is still too long after 2 shortenings, when the page itself
+    is unclear, or when the script runs over the target. Once they have answered, run the
+    checks again with their choices."""
 
     name = "run_planning_checks"
 
@@ -319,11 +324,13 @@ class RunPlanningChecks(Tool):
         job = _the_job(call)
         if job is None or not job.scenes.exists():
             raise Refused("the ad hasn't been planned yet, and the checks are run on its script.")
-        if job.target_seconds is not None and _measured_voice(job) is None:
+        voice = _measured_voice(job)
+        if voice is None:
             raise Refused(
-                "the person hasn't been made yet, and the length check needs their voice's "
+                "the person hasn't been made yet, and the length checks need their voice's "
                 "measured speed."
             )
+        assert voice.words_per_second is not None, "a measured voice has its speed"
         # Only the shop owner makes these choices, so each one is refused until the checks
         # have asked them and they have answered. Nothing is changed unless all are allowed.
         for line_choice in self.line_choices:
@@ -343,6 +350,20 @@ class RunPlanningChecks(Tool):
                     "the question. A line they give is used exactly as they wrote it, so pass "
                     "it word for word, or ask them."
                 )
+            scene = job.scenes.get(number=line_choice.scene)
+            if line_choice.choice == "say_it" and not scene.shows:
+                raise Refused(
+                    f"the person already says {about} to camera. Keep it, or use the shop "
+                    "owner's own line."
+                )
+            chosen = line_choice.own_line if line_choice.choice == "own" else scene.line
+            assert chosen is not None
+            if line_seconds(chosen, voice.words_per_second) > LONGEST_LINE_SECONDS:
+                raise Refused(
+                    f"the line chosen for {about} takes longer to say than a scene can last "
+                    f"({LONGEST_LINE_SECONDS} seconds at the voice's speed), so it can't be "
+                    "used. Ask the shop owner for a shorter line."
+                )
         if self.length_choice is not None:
             asked = self._asked(job, "length")
             if asked is None:
@@ -355,9 +376,11 @@ class RunPlanningChecks(Tool):
             if line_choice.choice == "own":
                 assert line_choice.own_line is not None
                 scene.change_line(" ".join(line_choice.own_line.split()))
+            if line_choice.choice == "say_it":
+                scene.change_line(scene.line, "")
             # The shop owner knows their product: the line they chose isn't checked again.
             scene.fact_checked = True
-            scene.save(update_fields=["line", "status", "fact_checked"])
+            scene.save(update_fields=["line", "shows", "status", "fact_checked"])
         if self.length_choice is not None:
             job.length_choice = Job.LengthChoice(self.length_choice)
             job.save(update_fields=["length_choice"])
@@ -369,14 +392,23 @@ class RunPlanningChecks(Tool):
                     _script(job),
                 ]
             )
+        shows = asking.scene is not None and bool(asking.scene.shows)
         ask = {
             "unclear_page": "Ask the shop owner, then run the checks again.",
-            "line": "Ask the shop owner whether to keep this line or give their own.",
+            "line": (
+                "Ask the shop owner whether to keep this line and what the ad shows while "
+                "it's said, give their own line, or have the person say it to camera instead."
+                if shows
+                else "Ask the shop owner whether to keep this line or give their own."
+            ),
+            "line_length": "Ask the shop owner for a shorter line of their own.",
             "length": "Ask the shop owner whether to shorten it to fit, or keep it longer.",
         }[asking.about]
+        scene_asked = f"scene {asking.scene.number if asking.scene else ''}"
         call.asked_about = {
             "unclear_page": "the page",
-            "line": f"scene {asking.scene.number if asking.scene else ''}",
+            "line": scene_asked,
+            "line_length": scene_asked,
             "length": "length",
         }[asking.about]
         return "\n".join([f"{asking.question} Why: {asking.reason} {ask}", _script(job)])
@@ -408,11 +440,7 @@ class CreateMusic(Tool):
         if not_passed is not None:
             raise Refused(not_passed)
         voice = _measured_voice(job)
-        if voice is None:
-            raise Refused(
-                "the person hasn't been made yet, and the music lasts as long as their voice "
-                "takes to say the script. Create the person first."
-            )
+        assert voice is not None, "the planning checks pass only with the voice measured"
         mood = music_mood(self.mood)
         prompt, seconds = music_prompt(mood), music_seconds(job, voice)
         made = job.produced.filter(kind=ProducedItem.Kind.MUSIC, text=prompt, seconds=seconds)

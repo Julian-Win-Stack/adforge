@@ -694,9 +694,18 @@ def test_reading_the_same_page_again_hands_back_what_was_read_and_pays_nothing(
             "planned_for_15_seconds",
             "run_planning_checks",
             NO_CHOICES,
-            "Refused: the person hasn't been made yet, and the length check needs their "
+            "Refused: the person hasn't been made yet, and the length checks need their "
             "voice's measured speed.",
             id="checks of a length before the person",
+        ),
+        # Every line is checked against the longest a scene can last, target or not.
+        pytest.param(
+            "planned",
+            "run_planning_checks",
+            NO_CHOICES,
+            "Refused: the person hasn't been made yet, and the length checks need their "
+            "voice's measured speed.",
+            id="checks before the person, with no target length",
         ),
         pytest.param(
             "planned",
@@ -732,41 +741,6 @@ def test_a_tool_whose_inputs_dont_exist_yet_refuses_and_does_nothing(
 
     assert results_of(tool)[-1] == f"{refused} Nothing was done."
     assert paid_for() == already_paid_for
-
-
-def test_with_no_target_length_the_script_is_checked_before_the_person_is_made(
-    fake_model: FakeModel, planned: None, say: Callable[..., None]
-) -> None:
-    fake_model.respond(
-        "produce",
-        turn(calls=[("run_planning_checks", NO_CHOICES)]),
-        turn(says="Every line checks out."),
-    )
-    fake_model.respond("fact_check", FACTS_OK)
-
-    say("Check the script")
-
-    assert results_of("run_planning_checks")[0].startswith(
-        "The checks passed. Every line matches the product page."
-    )
-    assert Job.objects.get().status == Job.Status.READY_TO_RENDER
-
-
-def test_making_the_person_after_the_checks_passed_leaves_the_ad_ready_to_render(
-    fake_model: FakeModel, planned: None, say: Callable[..., None]
-) -> None:
-    fake_model.respond(
-        "produce",
-        turn(calls=[("run_planning_checks", NO_CHOICES)]),
-        turn(calls=[("create_person", {})]),
-        turn(says="Every line checks out. Meet your presenter!"),
-    )
-    fake_model.respond("fact_check", FACTS_OK)
-
-    say("Check the script, then make the person")
-
-    assert results_of("create_person")[0].startswith("Made the person")
-    assert Job.objects.get().status == Job.Status.READY_TO_RENDER
 
 
 def test_a_jobs_status_is_only_a_label_and_doesnt_decide_what_a_tool_may_do(
@@ -894,12 +868,22 @@ def script_scene_2_failing(fake_model: FakeModel) -> None:
         "reason": "Scene 2's price isn't the page's.",
         "question": None,
         "lines": [
-            {"scene": 2, "verdict": "wrong", "problem": "Wrong price.", "page_says": "$24.00"}
+            {
+                "scene": 2,
+                "verdict": "wrong",
+                "wrong": "line",
+                "problem": "Wrong price.",
+                "page_says": "$24.00",
+            }
         ],
     }
     first = {**fails, "lines": [facts_ok(1)["lines"][0], *fails["lines"]]}
     fake_model.respond("fact_check", first, fails, fails)
-    fake_model.respond("rewrite_line", {"line": "Only $19.99."}, {"line": "Just $19.99."})
+    fake_model.respond(
+        "rewrite_line",
+        {"line": "Only $19.99.", "shows": None},
+        {"line": "Just $19.99.", "shows": None},
+    )
 
 
 PLAN_AND_CHECK = [
@@ -948,6 +932,25 @@ def test_a_line_the_user_gives_is_used_only_if_they_wrote_it_word_for_word(
     assert paid_for().count("fact_check") == 3
 
 
+def test_a_line_the_person_already_says_cant_be_had_said_instead(
+    fake_model: FakeModel, asked_about_scene_2: None, say: Callable[..., None]
+) -> None:
+    say_it = {"scene": 2, "choice": "say_it", "own_line": None}
+    fake_model.respond(
+        "produce",
+        turn(calls=[("run_planning_checks", choosing(say_it))]),
+        turn(says="Keep it, or give your own?"),
+    )
+
+    say("Have her say it")
+
+    assert results_of("run_planning_checks")[1] == (
+        "Refused: the person already says scene 2's line to camera. Keep it, or use the shop "
+        "owner's own line. Nothing was done."
+    )
+    assert Job.objects.get().scenes.get(number=2).fact_checked is False
+
+
 def test_a_line_the_user_keeps_is_used_as_it_is_without_checking_it_again(
     fake_model: FakeModel, asked_about_scene_2: None, say: Callable[..., None]
 ) -> None:
@@ -975,7 +978,7 @@ def test_a_line_the_user_keeps_is_used_as_it_is_without_checking_it_again(
         ),
         pytest.param(
             {"scene": 2, "choice": "drop", "own_line": None},
-            "line_choices.0.choice: Input should be 'keep' or 'own'",
+            "line_choices.0.choice: Input should be 'keep', 'own' or 'say_it'",
             id="a choice there isn't",
         ),
     ],

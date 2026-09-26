@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from django.db import transaction
-from django.db.models import Max
+from django.db.models import Max, QuerySet
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
@@ -40,9 +40,11 @@ from gateway.types import ClipFailed, ClipHandoff, Handoff, Image, Judgement, Mu
 from . import assembly, page
 from .checks import (
     FACT_CHECK_INSTRUCTIONS,
+    LONGEST_LINE_SECONDS,
     MOST_REWRITES,
     REWRITE_INSTRUCTIONS,
     SHORTEN_INSTRUCTIONS,
+    SHORTEN_LINE_INSTRUCTIONS,
     FactCheckHandoff,
     LineToCheck,
     Problem,
@@ -50,10 +52,14 @@ from .checks import (
     RewrittenLine,
     ShortenedScript,
     ShortenHandoff,
+    ShortenLineHandoff,
     count_words,
     fact_check_for,
     fits_target,
+    line_seconds,
     most_words,
+    most_words_in_a_line,
+    rewritten_scene_for,
     script_seconds,
 )
 from .models import Job, ProducedItem, ProductPhoto, Scene, SceneStep
@@ -312,17 +318,18 @@ class Asking:
     """Something the planning checks can't settle without the user: what it is about, the
     question with the facts they need to answer it, and one sentence on why it is asked."""
 
-    about: Literal["unclear_page", "line", "length"]
+    about: Literal["unclear_page", "line", "line_length", "length"]
     question: str
     reason: str
-    # The scene whose line is asked about, for a line.
+    # The scene whose line is asked about, for a line or a line's length.
     scene: Scene | None = None
 
 
 def run_checks(job: Job) -> Asking | None:
-    """Check the script before anything is rendered: every line against the page, then the
-    whole script against the target length. Each problem is fixed, or asked about. None
-    once every check has passed.
+    """Check the script before anything is rendered: every line, and what each scene shows,
+    against the page; then each line against the longest a clip can last, and the whole
+    script against the target length. Each problem is fixed, or asked about. None once
+    every check has passed.
 
     Run again after a restart, or after the user answers, the checks carry on from where
     they stopped: lines already checked stay checked."""
@@ -365,8 +372,12 @@ def _needs_fixing(scene: Scene) -> bool:
 
 
 def _checked(job: Job, scenes: list[Scene], conversation: list[ChatMessage]) -> Asking | None:
-    """Fact-check the scenes' lines, storing why each that failed did. When the page itself
-    is unclear, gives back what to ask the user instead."""
+    """Fact-check the scenes' lines and what they show, storing why each that failed did.
+    When the page itself is unclear, gives back what to ask the user instead."""
+    showing = [scene.number for scene in scenes if scene.shows]
+    # What a scene shows may be supported by how the product looks in its photos. A script
+    # where the person talks throughout is checked on text alone.
+    photos = job.photos.filter(shows_product_colour=True) if showing else []
     check = call_model(
         job=job,
         purpose="fact_check",
@@ -375,9 +386,10 @@ def _checked(job: Job, scenes: list[Scene], conversation: list[ChatMessage]) -> 
             page_text=page.for_model(job.page_text),
             conversation=conversation,
             product_colour=job.product_colour,
-            lines=[LineToCheck(scene=scene.number, line=scene.line) for scene in scenes],
+            lines=[_to_check(scene) for scene in scenes],
         ),
-        output=fact_check_for([scene.number for scene in scenes]),
+        output=fact_check_for([scene.number for scene in scenes], showing=showing),
+        images=[Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos],
     )
     if check.decision == "unclear":
         assert check.question is not None
@@ -389,12 +401,22 @@ def _checked(job: Job, scenes: list[Scene], conversation: list[ChatMessage]) -> 
             scene.fact_checked = True
             scene.save(update_fields=["fact_checked"])
             continue
+        assert verdict.wrong is not None
         assert verdict.problem is not None and verdict.page_says is not None
         scene.fact_problems.append(
-            {"problem": verdict.problem, "page_says": verdict.page_says, "rewritten": False}
+            {
+                "wrong": verdict.wrong,
+                "problem": verdict.problem,
+                "page_says": verdict.page_says,
+                "rewritten": False,
+            }
         )
         scene.save(update_fields=["fact_problems"])
     return None
+
+
+def _to_check(scene: Scene) -> LineToCheck:
+    return LineToCheck(scene=scene.number, line=scene.line, shows=scene.shows or None)
 
 
 def _rewrite_line(job: Job, scene: Scene, conversation: list[ChatMessage]) -> None:
@@ -406,18 +428,23 @@ def _rewrite_line(job: Job, scene: Scene, conversation: list[ChatMessage]) -> No
             page_text=page.for_model(job.page_text),
             conversation=conversation,
             product_colour=job.product_colour,
-            script=[LineToCheck(scene=each.number, line=each.line) for each in job.scenes.all()],
+            script=[_to_check(each) for each in job.scenes.all()],
             scene=scene.number,
             problems=[
-                Problem(problem=problem["problem"], page_says=problem["page_says"])
+                Problem(
+                    # Failures stored before scenes could show something were of the line.
+                    wrong=problem.get("wrong", "line"),
+                    problem=problem["problem"],
+                    page_says=problem["page_says"],
+                )
                 for problem in scene.fact_problems
             ],
         ),
-        output=RewrittenLine,
+        output=rewritten_scene_for(shows_something=bool(scene.shows)),
     )
     scene.fact_problems[-1]["rewritten"] = True
-    scene.change_line(rewrite.line)
-    scene.save(update_fields=["line", "status", "fact_problems"])
+    scene.change_line(rewrite.line, rewrite.shows or "")
+    scene.save(update_fields=["line", "shows", "status", "fact_problems"])
 
 
 def _about_line(scene: Scene) -> Asking:
@@ -426,8 +453,8 @@ def _about_line(scene: Scene) -> Asking:
         about="line",
         question=(
             f"Scene {scene.number}'s line still fails the fact check after "
-            f'{MOST_REWRITES} rewrites: "{scene.line}" {last["problem"]} The page says: '
-            f"{last['page_says']}"
+            f'{MOST_REWRITES} rewrites: "{scene.line}"{_while_its_said(scene)} '
+            f"{last['problem']} The page says: {last['page_says']}"
         ),
         reason=(
             f"The line was rewritten {MOST_REWRITES} times and still failed the fact check, "
@@ -437,15 +464,25 @@ def _about_line(scene: Scene) -> Asking:
     )
 
 
+def _while_its_said(scene: Scene) -> str:
+    """What a scene shows while its line is said, as the user is told it, or nothing when
+    the person says it to camera. The user is never told the kinds of scene apart."""
+    return f" While it's said, the ad shows: {scene.shows.rstrip('.')}." if scene.shows else ""
+
+
 def _fit_length(job: Job) -> bool | Asking:
-    """Whether the script can go on to be rendered at its length. If it can't, it is
-    shortened, giving False so the checks go round again, or the user is asked."""
-    target = job.target_seconds
-    if target is None or job.length_choice == Job.LengthChoice.KEEP_LONGER:
-        return True
+    """Whether the script can go on to be rendered at its length: every line short enough
+    for its clip, and the whole script within its target. If it can't, a line or the script
+    is shortened, giving False so the checks go round again, or the user is asked."""
     voice = latest(job, ProducedItem.Kind.VOICE)
     assert voice is not None and voice.words_per_second is not None
     words_per_second = voice.words_per_second
+    too_long = _a_line_too_long(job, words_per_second)
+    if too_long is not None:
+        return _fit_line(job, too_long, words_per_second)
+    target = job.target_seconds
+    if target is None or job.length_choice == Job.LengthChoice.KEEP_LONGER:
+        return True
     lines = list(job.scenes.values_list("line", flat=True))
     seconds = script_seconds(lines, words_per_second)
     if fits_target(seconds, target):
@@ -472,14 +509,78 @@ def _fit_length(job: Job) -> bool | Asking:
     )
 
 
+def _a_line_too_long(job: Job, words_per_second: float) -> Scene | None:
+    """The first scene whose line takes the voice longer to say than a clip can last."""
+    return next(
+        (
+            scene
+            for scene in job.scenes.all()
+            if line_seconds(scene.line, words_per_second) > LONGEST_LINE_SECONDS
+        ),
+        None,
+    )
+
+
+def _fit_line(job: Job, scene: Scene, words_per_second: float) -> Literal[False] | Asking:
+    """Shorten a line too long for its clip, giving False so the checks go round again and
+    fact-check it, or ask the user for a shorter one once it was shortened MOST_REWRITES
+    times since they last spoke."""
+    shortened = job.model_calls.filter(
+        purpose="shorten_line", outcome=ModelCall.Outcome.SUCCEEDED, handoff__scene=scene.number
+    )
+    if _since_the_user_spoke(job, shortened) < MOST_REWRITES:
+        _shorten_line(job, scene, words_per_second)
+        return False
+    seconds = line_seconds(scene.line, words_per_second)
+    return Asking(
+        about="line_length",
+        question=(
+            f"Scene {scene.number}'s line still takes about {seconds:.1f} seconds to say after "
+            f"{MOST_REWRITES} shortenings, and a scene can last at most {LONGEST_LINE_SECONDS} "
+            f'seconds: "{scene.line}"{_while_its_said(scene)}'
+        ),
+        reason=(
+            f"The line was shortened {MOST_REWRITES} times and is still too long for one "
+            "scene, so you choose a shorter line."
+        ),
+        scene=scene,
+    )
+
+
+def _shorten_line(job: Job, scene: Scene, words_per_second: float) -> None:
+    shortened = call_model(
+        job=job,
+        purpose="shorten_line",
+        instructions=SHORTEN_LINE_INSTRUCTIONS,
+        handoff=ShortenLineHandoff(
+            page_text=page.for_model(job.page_text),
+            conversation=_conversation(job),
+            product_colour=job.product_colour,
+            script=[_to_check(each) for each in job.scenes.all()],
+            scene=scene.number,
+            most_words=most_words_in_a_line(words_per_second),
+        ),
+        output=RewrittenLine,
+    )
+    # A new line is fact checked again.
+    scene.change_line(" ".join(shortened.line.split()))
+    scene.fact_checked = False
+    scene.fact_problems = []
+    scene.save(update_fields=["line", "status", "fact_checked", "fact_problems"])
+
+
 def _shortened_since_the_user_spoke(job: Job) -> int:
     """Times the script was shortened since the user last said anything. Each time they
     choose to shorten it, it gets MOST_REWRITES more tries before they are asked again."""
-    shortened = job.model_calls.filter(
-        purpose="shorten_script", outcome=ModelCall.Outcome.SUCCEEDED
+    return _since_the_user_spoke(
+        job, job.model_calls.filter(purpose="shorten_script", outcome=ModelCall.Outcome.SUCCEEDED)
     )
+
+
+def _since_the_user_spoke(job: Job, calls: QuerySet[ModelCall]) -> int:
+    """How many of `calls` were made since the user last said anything."""
     spoke = _last_heard_from_the_user(job)
-    return (shortened.filter(created_at__gt=spoke) if spoke else shortened).count()
+    return (calls.filter(created_at__gt=spoke) if spoke else calls).count()
 
 
 def _last_heard_from_the_user(job: Job) -> datetime | None:
@@ -544,23 +645,29 @@ def why_the_checks_passed(job: Job) -> str:
 
 def why_the_checks_havent_passed(job: Job) -> str | None:
     """Why the script can't go on to be rendered yet, or None once the planning checks have
-    passed: every line has passed the fact check, and the script fits its target length or
-    the user chose to keep it longer."""
+    passed: every line has passed the fact check, every line fits in a scene, and the script
+    fits its target length or the user chose to keep it longer."""
     unchecked = job.scenes.filter(fact_checked=False).first()
     if unchecked is not None:
         return (
             f"scene {unchecked.number}'s line hasn't passed the fact check, and nothing is made "
             "until every line has. Run the planning checks first."
         )
-    target = job.target_seconds
-    if target is None or job.length_choice == Job.LengthChoice.KEEP_LONGER:
-        return None
     voice = latest(job, ProducedItem.Kind.VOICE)
     if voice is None or voice.words_per_second is None:
         return (
-            "the person hasn't been made yet, and the script's length is checked with their "
+            "the person hasn't been made yet, and every line's length is checked with their "
             "voice. Create the person, then run the planning checks."
         )
+    too_long = _a_line_too_long(job, voice.words_per_second)
+    if too_long is not None:
+        return (
+            f"scene {too_long.number}'s line takes longer to say than a scene can last. Run "
+            "the planning checks first."
+        )
+    target = job.target_seconds
+    if target is None or job.length_choice == Job.LengthChoice.KEEP_LONGER:
+        return None
     seconds = script_seconds(
         list(job.scenes.values_list("line", flat=True)), voice.words_per_second
     )

@@ -99,7 +99,7 @@ def facts_ok(*scenes: int) -> dict[str, Any]:
         "reason": "Every claim is stated on the page.",
         "question": None,
         "lines": [
-            {"scene": scene, "verdict": "ok", "problem": None, "page_says": None}
+            {"scene": scene, "verdict": "ok", "wrong": None, "problem": None, "page_says": None}
             for scene in scenes
         ],
     }

@@ -17,9 +17,9 @@ from agents.models import ToolCall
 from agents.tasks import restart_dead_producers
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from jobs.models import Job, ProducedItem
+from jobs.models import Job, ProducedItem, Scene
 
-from .conftest import FACTS_OK, NO_CHOICES, handoffs, paid_for, results_of
+from .conftest import handoffs, paid_for, results_of
 from .test_producer_restarts import WorkerStopped, the_producer_died, the_worker_stops
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -165,39 +165,22 @@ def test_music_is_refused_until_the_planning_checks_have_passed(
     assert "make_music" not in paid_for()
 
 
-def test_music_is_refused_until_the_person_is_made_since_it_lasts_as_long_as_they_speak(
-    fake_model: FakeModel, planned: None, say: Callable[..., None]
+# Every line's length is checked with the voice, so a script checked without it, as a job
+# from before #66 was, waits for the person, target length or not.
+@pytest.mark.parametrize("target_seconds", [None, 15])
+def test_music_waits_for_the_person_whose_voice_checks_the_script(
+    fake_model: FakeModel, planned: None, say: Callable[..., None], target_seconds: int | None
 ) -> None:
-    # With no target length, the checks pass without the person's voice.
-    fake_model.respond(
-        "produce",
-        turn(calls=[("run_planning_checks", NO_CHOICES)]),
-        turn(says="The script is checked."),
-    )
-    fake_model.respond("fact_check", FACTS_OK)
-    say("Check the script")
+    Job.objects.update(target_seconds=target_seconds)
+    Scene.objects.update(fact_checked=True)
 
     make_music(fake_model, say, "light upbeat lo-fi")
 
     assert results_of("create_music") == [
-        "Refused: the person hasn't been made yet, and the music lasts as long as their voice "
-        "takes to say the script. Create the person first. Nothing was done."
-    ]
-    assert "make_music" not in paid_for()
-
-
-def test_music_for_a_script_with_a_target_length_waits_for_the_person_who_says_it(
-    fake_model: FakeModel, planned: None, say: Callable[..., None]
-) -> None:
-    Job.objects.update(target_seconds=15)
-    Job.objects.get().scenes.update(fact_checked=True)
-
-    make_music(fake_model, say, "light upbeat lo-fi")
-
-    assert results_of("create_music") == [
-        "Refused: the person hasn't been made yet, and the script's length is checked with "
+        "Refused: the person hasn't been made yet, and every line's length is checked with "
         "their voice. Create the person, then run the planning checks. Nothing was done."
     ]
+    assert "make_music" not in paid_for()
 
 
 def test_music_that_couldnt_be_made_is_handed_back_as_a_failure_and_nothing_is_kept(

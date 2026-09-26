@@ -341,6 +341,7 @@ def test_a_line_being_rewritten_when_the_worker_stopped_is_rewritten_without_che
     fake_model.respond(
         "produce",
         turn(calls=[("plan_ad", {})]),
+        turn(calls=[("create_person", {})]),
         turn(calls=[("run_planning_checks", NO_CHOICES)]),
     )
     fake_model.respond("plan_ad", plan_with("Meet the mug.", "$19.99."))
@@ -355,6 +356,7 @@ def test_a_line_being_rewritten_when_the_worker_stopped_is_rewritten_without_che
                 {
                     "scene": 2,
                     "verdict": "wrong",
+                    "wrong": "line",
                     "problem": "The line says $19.99.",
                     "page_says": "$24.00",
                 },
@@ -365,7 +367,7 @@ def test_a_line_being_rewritten_when_the_worker_stopped_is_rewritten_without_che
     with pytest.raises(WorkerStopped):
         say("Plan it and check it")
     the_producer_died(session_id)
-    fake_model.respond("rewrite_line", {"line": "Yours for $24.00."})
+    fake_model.respond("rewrite_line", {"line": "Yours for $24.00.", "shows": None})
     fake_model.respond("fact_check", facts_ok(2))
     fake_model.respond("produce", turn(says="Every line checks out."))
 
@@ -375,10 +377,15 @@ def test_a_line_being_rewritten_when_the_worker_stopped_is_rewritten_without_che
     assert lines() == ["Meet the mug.", "Yours for $24.00."]
     # The old line isn't checked again: after the restart only its rewrite is.
     assert [handed["lines"] for handed in handoffs("fact_check")] == [
-        [{"scene": 1, "line": "Meet the mug."}, {"scene": 2, "line": "$19.99."}],
-        [{"scene": 2, "line": "Yours for $24.00."}],
+        [
+            {"scene": 1, "line": "Meet the mug.", "shows": None},
+            {"scene": 2, "line": "$19.99.", "shows": None},
+        ],
+        [{"scene": 2, "line": "Yours for $24.00.", "shows": None}],
     ]
     (sent,) = ModelCall.objects.filter(
         purpose="rewrite_line", outcome=ModelCall.Outcome.SUCCEEDED
     ).values_list("handoff", flat=True)
-    assert sent["problems"] == [{"problem": "The line says $19.99.", "page_says": "$24.00"}]
+    assert sent["problems"] == [
+        {"wrong": "line", "problem": "The line says $19.99.", "page_says": "$24.00"}
+    ]
