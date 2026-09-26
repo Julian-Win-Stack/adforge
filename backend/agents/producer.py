@@ -223,8 +223,13 @@ class PlanAd(Tool):
                 "the ad has no product photos yet, and every scene is made from one. Ask the "
                 "shop owner to attach at least one, then add it with use_photos."
             )
+        # Planning again before the shop owner has answered would pay for the same question.
+        asked = job.tool_calls.filter(tool=self.name, asked_about="the plan").last()
+        if asked is not None:
+            _answered(call.session, since=asked, who_asked="the planner asked them a question")
         decision = plan(job)
         if decision.question is not None:
+            call.asked_about = "the plan"
             return (
                 f"The ad can't be planned until the shop owner answers: {decision.question} "
                 f"Why: {decision.reason} Ask them, and plan again once they have answered."
@@ -329,7 +334,7 @@ class RunPlanningChecks(Tool):
                     f"the checks didn't ask the shop owner about {about}. Only a line they "
                     "asked about can be kept or replaced; changing other lines comes later."
                 )
-            _answered(call.session, since=asked, about=about)
+            _answered(call.session, since=asked, who_asked=f"the checks asked about {about}")
             if line_choice.choice == "own" and not _wrote(
                 call.session, line_choice.own_line, since=asked
             ):
@@ -342,7 +347,9 @@ class RunPlanningChecks(Tool):
             asked = self._asked(job, "length")
             if asked is None:
                 raise Refused("the checks haven't asked the shop owner about the script's length.")
-            _answered(call.session, since=asked, about="the script's length")
+            _answered(
+                call.session, since=asked, who_asked="the checks asked about the script's length"
+            )
         for line_choice in self.line_choices:
             scene = job.scenes.get(number=line_choice.scene)
             if line_choice.choice == "own":
@@ -844,15 +851,15 @@ def _a_checked_scene(call: ToolCall, number: int) -> Scene:
     return scene
 
 
-def _answered(session: Session, *, since: ToolCall, about: str) -> None:
-    """Refuse a choice the shop owner hasn't made: they haven't answered since the checks
-    asked them."""
+def _answered(session: Session, *, since: ToolCall, who_asked: str) -> None:
+    """Refuse what needs the shop owner's answer when they haven't answered since `since`
+    asked them. `who_asked` says who asked them, and about what."""
     if not session.messages.filter(
         role=Message.Role.USER, created_at__gt=since.finished_at
     ).exists():
         raise Refused(
-            f"the shop owner hasn't answered since the checks asked about {about}. Ask them, "
-            "and wait for their answer."
+            f"the shop owner hasn't answered since {who_asked}. Ask them, and wait for their "
+            "answer."
         )
 
 
