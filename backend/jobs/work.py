@@ -58,7 +58,6 @@ from .checks import (
     Problem,
     RewriteHandoff,
     RewrittenLine,
-    ShortenedScript,
     ShortenHandoff,
     ShortenLineHandoff,
     count_words,
@@ -69,6 +68,7 @@ from .checks import (
     most_words_in_a_line,
     rewritten_scene_for,
     script_seconds,
+    shortened_script_for,
 )
 from .models import Job, ProducedItem, ProductPhoto, Scene, SceneStep
 from .planning import (
@@ -504,7 +504,7 @@ def _fit_length(job: Job) -> bool | Asking:
         job.length_choice == Job.LengthChoice.SHORTEN
         and _shortened_since_the_user_spoke(job) < MOST_REWRITES
     ):
-        _shorten(job, lines, words_per_second)
+        _shorten(job, words_per_second)
         return False
     # Shortening again takes the user choosing it again.
     job.length_choice = ""
@@ -606,8 +606,12 @@ def _last_heard_from_the_user(job: Job) -> datetime | None:
     return spoke
 
 
-def _shorten(job: Job, lines: list[str], words_per_second: float) -> None:
+def _shorten(job: Job, words_per_second: float) -> None:
+    """Have the script rewritten to fit its target. Each line comes back with the scene it
+    comes from, and takes that scene's "shows" and overlay with it, so a dropped scene
+    takes them away and a line never moves under another scene's picture."""
     assert job.target_seconds is not None
+    script = [_to_check(scene) for scene in job.scenes.all()]
     shortened = call_model(
         job=job,
         purpose="shorten_script",
@@ -618,27 +622,35 @@ def _shorten(job: Job, lines: list[str], words_per_second: float) -> None:
             product_colour=job.product_colour,
             target_seconds=job.target_seconds,
             most_words=most_words(job.target_seconds, words_per_second),
-            script=lines,
+            script=script,
         ),
-        output=ShortenedScript,
+        output=shortened_script_for(script),
     )
     with transaction.atomic():
         scenes = list(job.scenes.all())
-        # A line that passed the fact check word for word still has; anything else is new.
-        checked = {scene.line for scene in scenes if scene.fact_checked}
-        for scene, line in zip(scenes, shortened.lines, strict=False):
-            if scene.line != line:
-                scene.change_line(line)
-                scene.fact_checked = line in checked
+        was = {scene.number: (scene.shows, scene.overlay) for scene in scenes}
+        # A line that passed the fact check word for word, showing the same, still has;
+        # anything else is new.
+        checked = {(scene.line, scene.shows) for scene in scenes if scene.fact_checked}
+        for scene, kept in zip(scenes, shortened.lines, strict=False):
+            shows, overlay = was[kept.scene]
+            if (scene.line, scene.shows, scene.overlay) != (kept.line, shows, overlay):
+                scene.change_line(kept.line, shows=shows)
+                scene.overlay = overlay
+                scene.fact_checked = (kept.line, shows) in checked
                 scene.fact_problems = []
-                scene.save(update_fields=["line", "status", "fact_checked", "fact_problems"])
+                scene.save(
+                    update_fields=[
+                        "line",
+                        "shows",
+                        "overlay",
+                        "status",
+                        "fact_checked",
+                        "fact_problems",
+                    ]
+                )
         for scene in scenes[len(shortened.lines) :]:
             scene.delete()
-        Scene.objects.bulk_create(
-            Scene(job=job, number=number, line=line)
-            for number, line in enumerate(shortened.lines, start=1)
-            if number > len(scenes)
-        )
 
 
 def why_the_checks_passed(job: Job) -> str:

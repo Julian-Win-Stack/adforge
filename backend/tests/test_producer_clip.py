@@ -617,7 +617,13 @@ def test_a_finished_scene_whose_line_is_shortened_is_planned_again(
         turn(says="Shortened."),
     )
     fake_model.respond(
-        "shorten_script", {"lines": ["Meet this Stoneware Mug.", "Yours for $24.00, today."]}
+        "shorten_script",
+        {
+            "lines": [
+                {"scene": 1, "line": "Meet this Stoneware Mug."},
+                {"scene": 3, "line": "Yours for $24.00, today."},
+            ]
+        },
     )
     fake_model.respond("fact_check", facts_ok(1, 2))
 

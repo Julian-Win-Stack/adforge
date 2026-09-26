@@ -86,10 +86,14 @@ You are the producer of a short vertical video ad. A person speaks to camera, on
 per scene. The script is too long for the shop owner's target length. You get the \
 page's text, the conversation with the shop owner so far, labelled "user" for them and \
 "producer" for you, the colour the ad shows the product in, the target length, the most \
-words that fit it at the speed the chosen voice speaks, and the script.
+words that fit it at the speed the chosen voice speaks, and the script: each scene's \
+number, its line, and what the scene shows while the line is said if it doesn't show the \
+person talking.
 Rewrite the script to fit: trim lines, or drop a scene. Stay within the most words. \
-Keep lines you don't need to change exactly as they are. One line must still say the \
-price. Every claim must be stated by the page or by the shop owner's own words: your own \
+Give each line with the number of the scene it comes from: a scene keeps what it shows, \
+so a shortened line must still match it. Keep lines you don't need to change exactly as \
+they are. The first line must be one the person says to camera. One line must still say \
+the price. Every claim must be stated by the page or by the shop owner's own words: your own \
 messages only show what was asked. Never name the product's colour. Never infer or \
 guess. Give the lines in the order they play."""
 
@@ -258,15 +262,42 @@ class ShortenHandoff(Handoff):
     product_colour: str
     target_seconds: int
     most_words: int
-    script: list[str]
+    script: list[LineToCheck]
+
+
+class ShortenedLine(BaseModel):
+    scene: int = Field(description="The number of the scene the line comes from.")
+    line: str
+
+    @field_validator("line")
+    @classmethod
+    def _says_something(cls, line: str) -> str:
+        if not line.strip():
+            raise ValueError("A scene's line can't be empty.")
+        return line
 
 
 class ShortenedScript(BaseModel):
-    lines: list[str] = Field(min_length=1)
+    lines: list[ShortenedLine] = Field(min_length=1)
 
-    @field_validator("lines")
-    @classmethod
-    def _each_says_something(cls, lines: list[str]) -> list[str]:
-        if any(not line.strip() for line in lines):
-            raise ValueError("A scene's line can't be empty.")
-        return lines
+
+def shortened_script_for(script: list[LineToCheck]) -> type[ShortenedScript]:
+    """A shortening of `script`: each line from one of its scenes, in the order they play,
+    opening on one the person says to camera. Anything else fails while the answer is
+    read, like any other broken answer."""
+    shows = {scene.scene: scene.shows for scene in script}
+
+    class ShortenedScriptForJob(ShortenedScript):
+        @model_validator(mode="after")
+        def _scenes_kept_in_order(self) -> Self:
+            kept = [line.scene for line in self.lines]
+            for scene in kept:
+                if scene not in shows:
+                    raise ValueError(f"There's no scene {scene}: the script has {len(shows)}.")
+            if kept != sorted(set(kept)):
+                raise ValueError("Give the lines in the order they play, each scene once.")
+            if shows[kept[0]] is not None:
+                raise ValueError("The first scene is the person talking to camera.")
+            return self
+
+    return ShortenedScriptForJob

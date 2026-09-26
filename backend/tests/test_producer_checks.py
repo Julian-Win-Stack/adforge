@@ -272,7 +272,12 @@ def test_a_script_the_user_chooses_to_shorten_is_rewritten_and_its_new_lines_che
     # 12 words: 6 seconds, within a second of the target.
     fake_model.respond(
         "shorten_script",
-        {"lines": ["Meet the Stoneware Mug from Kiln & Co.", "Yours for $24.00, today."]},
+        {
+            "lines": [
+                {"scene": 1, "line": "Meet the Stoneware Mug from Kiln & Co."},
+                {"scene": 3, "line": "Yours for $24.00, today."},
+            ]
+        },
     )
     fake_model.respond("fact_check", facts_ok(2))
 
@@ -303,11 +308,16 @@ def test_a_script_still_too_long_after_two_shortenings_is_asked_about_again(
         "shorten_script",
         {
             "lines": [
-                "Meet the Stoneware Mug from Kiln & Co.",
-                "Hand-thrown, holds 350 ml, and dishwasher safe, $24.00.",
+                {"scene": 1, "line": "Meet the Stoneware Mug from Kiln & Co."},
+                {"scene": 2, "line": "Hand-thrown, holds 350 ml, and dishwasher safe, $24.00."},
             ]
         },
-        {"lines": ["Meet the Stoneware Mug from Kiln & Co.", "Holds 350 ml for $24.00."]},
+        {
+            "lines": [
+                {"scene": 1, "line": "Meet the Stoneware Mug from Kiln & Co."},
+                {"scene": 2, "line": "Holds 350 ml for $24.00."},
+            ]
+        },
     )
     fake_model.respond("fact_check", facts_ok(2), facts_ok(2))
 
@@ -321,7 +331,13 @@ def test_a_script_still_too_long_after_two_shortenings_is_asked_about_again(
     # Choosing to shorten again gives the producer two more tries.
     choosing_length(fake_model, "shorten")
     fake_model.respond(
-        "shorten_script", {"lines": ["Meet the Stoneware Mug.", "Yours for $24.00."]}
+        "shorten_script",
+        {
+            "lines": [
+                {"scene": 1, "line": "Meet the Stoneware Mug."},
+                {"scene": 2, "line": "Yours for $24.00."},
+            ]
+        },
     )
     fake_model.respond("fact_check", facts_ok(1, 2))
     say("Shorten it again")
@@ -655,3 +671,128 @@ def test_a_line_too_long_for_one_scene_cant_be_kept_or_given(
     assert lines()[1] == "Holds 350 ml."
     # The user's line is used as they wrote it: never shortened.
     assert paid_for().count("shorten_line") == 2
+
+
+# --- Shortening a script with scenes that show something -------------------------------------
+
+POUR = "tea poured from a teapot into the mug"
+
+
+@pytest.fixture
+def asked_about_length_with_a_pour(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    """A chat whose 15-word, 7.5-second script, with scene 2 showing the tea poured and
+    scene 3 its price along the top, ran over its 5-second target, and whose producer has
+    asked the user whether to shorten it."""
+    plan = showing(POUR)
+    scenes = plan["plan"]["scenes"]
+    plan["plan"]["scenes"] = [*scenes[:2], {**scenes[2], "overlay": "$24.00"}]
+    checking(fake_model, product_page_url, plan, target_seconds=5)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3))
+    say(f"Make a 5 second ad for {product_page_url}")
+    assert "over your 5-second target" in results_of("run_planning_checks")[0]
+
+
+def scenes_now() -> list[tuple[str, str, str]]:
+    """Each scene's line, what it shows and its overlay, in order."""
+    return list(Job.objects.get().scenes.values_list("line", "shows", "overlay"))
+
+
+def test_a_script_is_shortened_seeing_what_each_scene_shows_and_keeps_it_with_its_line(
+    fake_model: FakeModel, asked_about_length_with_a_pour: None, say: Callable[..., None]
+) -> None:
+    choosing_length(fake_model, "shorten")
+    # 10 words: 5 seconds.
+    fake_model.respond(
+        "shorten_script",
+        {
+            "lines": [
+                {"scene": 1, "line": "Meet the Stoneware Mug."},
+                {"scene": 2, "line": "Holds 350 ml."},
+                {"scene": 3, "line": "Yours for $24.00."},
+            ]
+        },
+    )
+    fake_model.respond("fact_check", facts_ok(1, 2))
+
+    say("Shorten it")
+
+    (sent,) = handoffs("shorten_script")
+    assert sent["script"] == [
+        {"scene": 1, "line": "Meet the Stoneware Mug from Kiln & Co.", "shows": None},
+        {"scene": 2, "line": "Hand-thrown, holds 350 ml.", "shows": POUR},
+        {"scene": 3, "line": "Yours for $24.00.", "shows": None},
+    ]
+    assert scenes_now() == [
+        ("Meet the Stoneware Mug.", "", ""),
+        ("Holds 350 ml.", POUR, ""),
+        ("Yours for $24.00.", "", "$24.00"),
+    ]
+    # The shortened line is checked with what its scene shows.
+    assert handoffs("fact_check")[1]["lines"] == [
+        {"scene": 1, "line": "Meet the Stoneware Mug.", "shows": None},
+        {"scene": 2, "line": "Holds 350 ml.", "shows": POUR},
+    ]
+    assert results_of("run_planning_checks")[1].startswith("The checks passed.")
+
+
+def test_a_scene_dropped_in_shortening_takes_what_it_shows_with_it(
+    fake_model: FakeModel, asked_about_length_with_a_pour: None, say: Callable[..., None]
+) -> None:
+    choosing_length(fake_model, "shorten")
+    # Scene 2, showing the pour, is dropped: 11 words, 5.5 seconds.
+    fake_model.respond(
+        "shorten_script",
+        {
+            "lines": [
+                {"scene": 1, "line": "Meet the Stoneware Mug from Kiln & Co."},
+                {"scene": 3, "line": "Yours for $24.00."},
+            ]
+        },
+    )
+
+    say("Shorten it")
+
+    # The price is said by the person, with its overlay, not over the pour.
+    assert scenes_now() == [
+        ("Meet the Stoneware Mug from Kiln & Co.", "", ""),
+        ("Yours for $24.00.", "", "$24.00"),
+    ]
+    # Both lines passed the fact check as they are, so nothing is checked again.
+    assert paid_for().count("fact_check") == 1
+    assert results_of("run_planning_checks")[1].startswith("The checks passed.")
+
+
+@pytest.mark.parametrize(
+    ("kept", "broken_rule"),
+    [
+        pytest.param(
+            [2, 3],
+            "The first scene is the person talking to camera",
+            id="opening on a scene that shows the product",
+        ),
+        pytest.param([1, 3, 2], "Give the lines in the order they play", id="out of order"),
+        pytest.param([1, 1], "Give the lines in the order they play", id="a scene twice"),
+        pytest.param([1, 4], "There's no scene 4: the script has 3.", id="a scene not sent"),
+    ],
+)
+def test_a_shortened_script_that_breaks_the_rules_changes_nothing(
+    fake_model: FakeModel,
+    asked_about_length_with_a_pour: None,
+    say: Callable[..., None],
+    kept: list[int],
+    broken_rule: str,
+) -> None:
+    before = scenes_now()
+    choosing_length(fake_model, "shorten")
+    fake_model.respond(
+        "shorten_script", {"lines": [{"scene": scene, "line": "Short."} for scene in kept]}
+    )
+
+    say("Shorten it")
+
+    result = results_of("run_planning_checks")[1]
+    assert result.startswith("Failed: a model's answer couldn't be used")
+    assert broken_rule in result
+    assert scenes_now() == before
