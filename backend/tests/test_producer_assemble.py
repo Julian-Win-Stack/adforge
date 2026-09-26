@@ -39,9 +39,9 @@ CHOICE: dict[str, Any] = {
 # 3.5 and 1.5 seconds to say: 9 seconds in all.
 ASSEMBLED = (
     "Assembled the ad (version 1, 9 seconds) from each scene's clip, cut to where its words "
-    "are said, with the music under the voice, and showed it to the shop owner in the chat. "
-    "Scene 1 plays from 0 to 4 seconds, scene 2 from 4 to 7.5 and scene 3 from 7.5 to 9. "
-    "Tell the shop owner."
+    "are said, with captions of the words as spoken, the music under the voice and each "
+    "scene's overlay, and showed it to the shop owner in the chat. Scene 1 plays from 0 to 4 "
+    "seconds, scene 2 from 4 to 7.5 and scene 3 from 7.5 to 9. Tell the shop owner."
 )
 
 
@@ -183,6 +183,7 @@ def test_the_dead_air_between_scenes_is_cut_on_the_word_timings(
             "clip_end": 5.1,
             "start": 0.0,
             "end": 4.2,
+            "overlay": "Kiln & Co",
         },
         {
             "scene": 2,
@@ -191,6 +192,7 @@ def test_the_dead_air_between_scenes_is_cut_on_the_word_timings(
             "clip_end": 4.6,
             "start": 4.2,
             "end": 7.9,
+            "overlay": "",
         },
         {
             "scene": 3,
@@ -199,6 +201,7 @@ def test_the_dead_air_between_scenes_is_cut_on_the_word_timings(
             "clip_end": 2.6,
             "start": 7.9,
             "end": 9.6,
+            "overlay": "$24.00",
         },
     ]
 
@@ -277,8 +280,9 @@ def test_an_ad_already_assembled_is_handed_back_and_charges_nothing(
     assert [ad.version for ad in ads()] == [1]
     assert len(videos_shown(api, session_id)) == 1
     assert results_of("assemble_ad")[-1] == (
-        "The ad was already assembled from these clips and this music (version 1, 9 seconds) "
-        "and shown to the shop owner, so nothing was made again. Assembling costs nothing."
+        "The ad was already assembled from these clips, overlays and this music (version 1, "
+        "9 seconds) and shown to the shop owner, so nothing was made again. Assembling costs "
+        "nothing."
     )
 
 
@@ -395,6 +399,36 @@ def test_the_captions_show_the_words_as_spoken_in_time_with_the_voice(
         {"text": "dishwasher safe.", "start": 6.5, "end": 7.5},
         {"text": "Yours for $24.00.", "start": 7.5, "end": 9.0},
     ]
-    # Drawn along the bottom of the picture while the words are said, and nowhere else.
+    # Drawn along the bottom of the picture while the words are said: scene 2, which has
+    # nothing else on screen, shows only them.
+    assert drawn_in(read(ad.file), 5.75) == {"bottom"}
+
+
+def test_each_scenes_overlay_shows_along_the_top_while_that_scene_plays(
+    fake_model: FakeModel, finished: None, say: Callable[..., None]
+) -> None:
+    assemble(fake_model, say)
+
+    (ad,) = ads()
+    assert [cut["overlay"] for cut in ad.cuts] == ["Kiln & Co", "", "$24.00"]
     heard = read(ad.file)
-    assert [drawn_in(heard, middle) for middle in (2.0, 5.75, 8.25)] == [{"bottom"}] * 3
+    # Scenes 1 and 3 have text along the top, scene 2 has none; the captions run along the
+    # bottom throughout, and the middle of the picture is left alone.
+    shows = [drawn_in(heard, middle) for middle in (2.0, 5.75, 8.25)]
+    assert shows == [{"top", "bottom"}, {"bottom"}, {"top", "bottom"}]
+    assert [colour_at(heard, middle) for middle in (2.0, 5.75, 8.25)] == ["red", "lime", "blue"]
+
+
+def test_a_changed_overlay_gets_a_new_version_of_the_ad(
+    fake_model: FakeModel, finished: None, say: Callable[..., None]
+) -> None:
+    assemble(fake_model, say)
+    # No tool changes an overlay yet, so it is changed underneath the producer.
+    Job.objects.get().scenes.filter(number=2).update(overlay="Dishwasher safe")
+
+    assemble(fake_model, say)
+
+    first, second = ads()
+    assert [cut["overlay"] for cut in first.cuts] == ["Kiln & Co", "", "$24.00"]
+    assert [cut["overlay"] for cut in second.cuts] == ["Kiln & Co", "Dishwasher safe", "$24.00"]
+    assert drawn_in(read(second.file), 5.75) == {"top", "bottom"}

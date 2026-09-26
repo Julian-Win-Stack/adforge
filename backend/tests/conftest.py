@@ -78,9 +78,9 @@ PLAN: dict[str, Any] = {
     "question": None,
     "plan": {
         "scenes": [
-            {"line": "Meet the Stoneware Mug from Kiln & Co."},
-            {"line": "Hand-thrown, holds 350 ml, and dishwasher safe."},
-            {"line": "Yours for $24.00."},
+            {"line": "Meet the Stoneware Mug from Kiln & Co.", "overlay": "Kiln & Co"},
+            {"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "overlay": None},
+            {"line": "Yours for $24.00.", "overlay": "$24.00"},
         ],
         "product_colour": "sage green",
         "colour_photos": [1],

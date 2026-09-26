@@ -1,6 +1,7 @@
 """Putting the finished ad together: each scene's clip is cut to where its words are said,
 so there is no silence between scenes, and the parts are joined with ffmpeg, with the music
-under the voice and captions of the words as they were spoken along the bottom."""
+under the voice, captions of the words as they were spoken along the bottom, and each
+scene's overlay along the top while it plays."""
 
 import json
 import math
@@ -25,7 +26,9 @@ MUSIC_FADE_SECONDS = 2
 # How many words a caption shows at once, at most: few enough to read at a glance.
 CAPTION_WORDS = 3
 
-# The captions are laid out for a frame this size, and ffmpeg scales them to the clips'.
+# The captions and overlays are laid out for a frame this size, and ffmpeg scales them to
+# the clips'. They keep to bands along the top and bottom: the face and the product are in
+# the middle, and the starting picture is asked for with room above the head.
 FRAME_WIDTH, FRAME_HEIGHT = 1080, 1920
 
 # Assembly re-encodes the whole ad, which takes a while for a long one at full size.
@@ -34,7 +37,8 @@ TIMEOUT_SECONDS = 600
 
 @dataclass(frozen=True)
 class Cut:
-    """The part of a scene's clip the ad keeps, and where it plays in the ad, in seconds."""
+    """The part of a scene's clip the ad keeps, where it plays in the ad, in seconds, and
+    the scene's overlay, drawn while it plays: blank for none."""
 
     scene: int
     clip: int
@@ -42,6 +46,7 @@ class Cut:
     clip_end: float
     start: float
     end: float
+    overlay: str
 
 
 @dataclass(frozen=True)
@@ -57,17 +62,18 @@ class AssemblyFailed(Exception):
     """ffmpeg couldn't put the ad together. Says what ffmpeg said."""
 
 
-def cuts(scenes: Sequence[tuple[int, int, float, list[dict[str, Any]]]]) -> list[Cut]:
+def cuts(scenes: Sequence[tuple[int, int, float, list[dict[str, Any]], str]]) -> list[Cut]:
     """Where to cut each scene's clip, and where each part plays once they are joined, from
-    each scene's number, its clip's id, how long the clip lasts, and the words heard in it.
-    Each clip is kept from its first word to its last, with MARGIN_SECONDS either side."""
+    each scene's number, its clip's id, how long the clip lasts, the words heard in it, and
+    its overlay. Each clip is kept from its first word to its last, with MARGIN_SECONDS
+    either side."""
     planned: list[Cut] = []
-    for scene, clip, seconds, words in scenes:
+    for scene, clip, seconds, words, overlay in scenes:
         clip_start = round(max(0.0, words[0]["start"] - MARGIN_SECONDS), 3)
         clip_end = round(min(seconds, words[-1]["end"] + MARGIN_SECONDS), 3)
         start = planned[-1].end if planned else 0.0
         end = round(start + clip_end - clip_start, 3)
-        planned.append(Cut(scene, clip, clip_start, clip_end, start, end))
+        planned.append(Cut(scene, clip, clip_start, clip_end, start, end, overlay))
     return planned
 
 
@@ -96,10 +102,12 @@ def captions(cuts: Sequence[Cut], words: Sequence[list[dict[str, Any]]]) -> list
     return drawn
 
 
-# The captions' style, in the subtitle format ffmpeg draws with libass: white, bold and
-# outlined so they read over any picture, centred along the bottom (alignment 2) above a
-# margin. Sizes are for a FRAME_WIDTH by FRAME_HEIGHT frame.
-SUBTITLE_STYLE = f"""\
+# How the text on the ad is drawn, in the subtitle format ffmpeg draws with libass. Both
+# styles are white and bold so they read over any picture. A caption is outlined (border
+# style 1) and centred along the bottom (alignment 2) above a margin; an overlay sits in a
+# half-dark box (border style 3, whose box takes the outline colour) centred along the top
+# (alignment 8) below one. Sizes are for a FRAME_WIDTH by FRAME_HEIGHT frame.
+SUBTITLE_STYLES = f"""\
 [Script Info]
 ScriptType: v4.00+
 PlayResX: {FRAME_WIDTH}
@@ -112,23 +120,27 @@ BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, 
 BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Caption,DejaVu Sans,84,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,\
 100,100,0,0,1,5,0,2,60,60,120,1
+Style: Overlay,DejaVu Sans,72,&H00FFFFFF,&H00FFFFFF,&H80000000,&H80000000,-1,0,0,0,\
+100,100,0,0,3,18,0,8,60,60,100,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
 
-def subtitles(drawn: Sequence[Caption], into: Path) -> None:
-    """Write the captions as a subtitle file for ffmpeg to draw, at `into`."""
-    lines = [SUBTITLE_STYLE]
-    for caption in drawn:
-        # Braces and backslashes would be read as styling, not shown.
-        text = caption.text.replace("\\", "").replace("{", "(").replace("}", ")")
-        lines.append(
-            f"Dialogue: 0,{_timestamp(caption.start)},{_timestamp(caption.end)},Caption,,0,0,0,,"
-            f"{text}\n"
-        )
+def subtitles(drawn: Sequence[Caption], cuts: Sequence[Cut], into: Path) -> None:
+    """Write the text on the ad as a subtitle file for ffmpeg to draw, at `into`: the
+    captions, and each cut's overlay for as long as the cut plays."""
+    lines = [SUBTITLE_STYLES]
+    lines += [_dialogue("Caption", caption.text, caption.start, caption.end) for caption in drawn]
+    lines += [_dialogue("Overlay", cut.overlay, cut.start, cut.end) for cut in cuts if cut.overlay]
     into.write_text("".join(lines), encoding="utf-8")
+
+
+def _dialogue(style: str, text: str, start: float, end: float) -> str:
+    # Braces and backslashes would be read as styling, not shown.
+    shown = text.replace("\\", "").replace("{", "(").replace("}", ")")
+    return f"Dialogue: 0,{_timestamp(start)},{_timestamp(end)},{style},,0,0,0,,{shown}\n"
 
 
 def _timestamp(seconds: float) -> str:
@@ -169,7 +181,8 @@ def join(
     parts: Sequence[tuple[Path, Cut]], into: Path, *, music: Path, captions: Sequence[Caption]
 ) -> None:
     """Cut each clip file to its part and join the parts, in order, with the music under
-    the voice and the captions drawn along the bottom, into the finished ad at `into`."""
+    the voice, the captions drawn along the bottom and each part's overlay along the top,
+    into the finished ad at `into`."""
     inputs: list[str] = []
     filters: list[str] = []
     joined = ""
@@ -181,9 +194,10 @@ def join(
         filters.append(f"[{number}:a]atrim={keep},asetpts=PTS-STARTPTS[a{number}]")
         joined += f"[v{number}][a{number}]"
     filters.append(f"{joined}concat=n={len(parts)}:v=1:a=1[joined][voice]")
-    # ffmpeg reads the captions from a file beside the ad, whose path has nothing to escape.
-    drawn = into.parent / "captions.ass"
-    subtitles(captions, drawn)
+    # ffmpeg reads the text to draw from a file beside the ad, whose path has nothing to
+    # escape.
+    drawn = into.parent / "text.ass"
+    subtitles(captions, [cut for _, cut in parts], drawn)
     filters.append(f"[joined]subtitles={drawn}[v]")
     inputs += ["-i", str(music)]
     ad_seconds = parts[-1][1].end

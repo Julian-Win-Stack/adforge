@@ -20,9 +20,10 @@ a photo that shows that detail. Then write the picture model's prompt: use the p
 the first picture, with the same face, hair and clothes, and the product from the second, \
 exactly as it looks, with any label or print unchanged and facing the camera. Say how they \
 hold the product, their pose and expression (looking into the camera, mouth relaxed as if \
-mid-sentence), the framing (head and shoulders, with space above the head, upright 9:16), \
-and the setting, which should match the portrait's. Ask for a natural, casual phone-video \
-look, and no added text, captions or logos.
+mid-sentence), the framing (head and shoulders, with space above the head, upright 9:16, \
+the product held at chest height so the top and bottom of the frame stay clear: text is \
+drawn there in the finished ad), and the setting, which should match the portrait's. Ask \
+for a natural, casual phone-video look, and no added text, captions or logos.
 The producer may add a note, such as what the shop owner asked for this scene. Follow it \
 unless it asks for something you can't do with these pictures, and then say so in a reason.
 Use the conversation with the shop owner for their wishes about how the ad looks. Facts \

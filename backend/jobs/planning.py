@@ -23,7 +23,11 @@ Decide "plan" when you can plan the whole ad from what you have. Give the scenes
 order they play, with each scene's line exactly as the person will say it. With a target \
 length, write only as many words as fit it when spoken at an easy pace. One line says \
 the product's price: the price a buyer pays today, so on a sale, the sale price. No line \
-names the product's colour: the ad shows the colour, never says it. Name the product's \
+names the product's colour: the ad shows the colour, never says it. Give a scene an \
+overlay, a few words drawn along the top of the picture while it plays, when there is \
+something worth showing as well as saying, such as the price or the product's name; \
+otherwise set it to null. An overlay states only what the page or the shop owner states, \
+like a line. Name the product's \
 colour as the photos show it, in plain words such as "sage green", and give the numbers \
 of the photos that show the product in that colour. If the product comes in several \
 colours, don't ask which: pick one the photos show. Describe the person who presents the \
@@ -41,6 +45,11 @@ need to ask. Write it for the shop owner."""
 
 class PlannedScene(BaseModel):
     line: str = Field(description="Exactly what the person says in this scene.")
+    overlay: str | None = Field(
+        default=None,
+        description="A few words drawn along the top of the picture while this scene plays, "
+        "such as the price, or null for none.",
+    )
 
     # A validator rather than min_length, which OpenAI's structured output doesn't accept.
     @field_validator("line")

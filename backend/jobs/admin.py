@@ -161,7 +161,7 @@ class SceneStepInline(admin.TabularInline[SceneStep, Scene]):
 
 @admin.register(Scene)
 class SceneAdmin(admin.ModelAdmin[Scene]):
-    list_display = ["job", "number", "line", "fact_checked", "status"]
+    list_display = ["job", "number", "line", "overlay", "fact_checked", "status"]
     list_select_related = ["job"]
     list_filter = ["status"]
     search_fields = ["line"]

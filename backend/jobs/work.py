@@ -193,7 +193,12 @@ def plan(job: Job) -> ProducerDecision:
         return decision
     with transaction.atomic():
         Scene.objects.bulk_create(
-            Scene(job=job, number=number, line=scene.line)
+            Scene(
+                job=job,
+                number=number,
+                line=scene.line,
+                overlay=" ".join((scene.overlay or "").split()),
+            )
             for number, scene in enumerate(planned.scenes, start=1)
         )
         job.product_colour = planned.product_colour
@@ -850,13 +855,15 @@ def assemble_ad(
 ) -> ProducedItem:
     """Put the finished ad together from each scene's clip and the transcript of the audio
     it speaks, in the order the scenes play, and the music: each clip cut to where its words
-    are said, then joined, with the music under the voice and captions of the words as they
-    were heard. Gives back the ad, kept as the job's next version. Costs nothing: no model
-    is called."""
+    are said, then joined, with the music under the voice, captions of the words as they
+    were heard, and each scene's overlay while it plays. Gives back the ad, kept as the
+    job's next version. Costs nothing: no model is called."""
     measured = []
     for clip, transcript in scenes:
         assert clip.scene is not None and clip.seconds is not None, "a clip is a scene's, measured"
-        measured.append((clip.scene.number, clip.pk, clip.seconds, transcript.words))
+        measured.append(
+            (clip.scene.number, clip.pk, clip.seconds, transcript.words, clip.scene.overlay)
+        )
     planned = assembly.cuts(measured)
     drawn = assembly.captions(planned, [transcript.words for _, transcript in scenes])
     # ffmpeg reads and writes files on this machine, and the clips are in the file store.

@@ -49,7 +49,9 @@ def music(folder: Path, *, seconds: float) -> Path:
 
 def one_scene(seconds: float) -> assembly.Cut:
     """An ad of one scene whose clip is kept whole."""
-    return assembly.Cut(scene=1, clip=1, clip_start=0.0, clip_end=seconds, start=0.0, end=seconds)
+    return assembly.Cut(
+        scene=1, clip=1, clip_start=0.0, clip_end=seconds, start=0.0, end=seconds, overlay=""
+    )
 
 
 def test_music_that_runs_out_before_the_ad_ends_fades_out_rather_than_stopping_dead(
@@ -79,8 +81,8 @@ def test_captions_are_timed_from_where_each_scene_plays_in_the_ad() -> None:
     # Scene 2's clip has a second of silence before its words, and is kept from 0.9 seconds
     # in; that part plays from 4.2 seconds into the ad.
     cuts = [
-        assembly.Cut(scene=1, clip=1, clip_start=0.0, clip_end=4.2, start=0.0, end=4.2),
-        assembly.Cut(scene=2, clip=2, clip_start=0.9, clip_end=3.1, start=4.2, end=6.4),
+        assembly.Cut(scene=1, clip=1, clip_start=0.0, clip_end=4.2, start=0.0, end=4.2, overlay=""),
+        assembly.Cut(scene=2, clip=2, clip_start=0.9, clip_end=3.1, start=4.2, end=6.4, overlay=""),
     ]
     words = [
         [

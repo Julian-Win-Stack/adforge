@@ -66,12 +66,20 @@ _Avoid_: Voiceover, recording, clip
 What was heard in a line's audio, word by word with when each was said, exactly as spoken: nothing tidied or matched to the line. Kept with the audio it was heard in.
 _Avoid_: Captions, subtitles
 
+**Caption**:
+A few of a transcript's words drawn along the bottom of the finished ad while they are said: what was spoken, never the line. Timed from where the scene plays in the ad.
+_Avoid_: Subtitle, lower third
+
+**Overlay**:
+The on-screen text for one scene, such as the price, written by the producer when it plans the ad; a scene may have none. Drawn in a fixed band along the top while the scene plays, clear of the face and the product. Not fact checked yet.
+_Avoid_: Caption, graphic, text layer, on-screen text
+
 **Clip**:
 A scene's starting picture animated to speak its line's audio: the same audio its transcript was heard in, so the clip lasts exactly as long. Made only once the picture is made and the audio heard, for the line as it stands. A scene whose clip is made is finished. Not shown to the user on its own.
 _Avoid_: Video, render, shot
 
 **Finished ad**:
-Every scene's clip put together in order, each cut to where its words are said so there is no silence between scenes. Shown to the user in the chat. Made again as a new version when a scene's clip changes; the old one is kept.
+Every scene's clip put together in order, each cut to where its words are said so there is no silence between scenes, with the captions, each scene's overlay and the music under the voice. Shown to the user in the chat. Made again as a new version when a clip, an overlay or the music changes; the old one is kept.
 _Avoid_: Final video, render, output
 
 **Person**:
@@ -129,10 +137,6 @@ _Avoid_: QA, review, gate
 ### Not yet built
 
 Named so the words mean one thing when these are built. Nothing implements them today.
-
-**Overlay**:
-Text drawn over a scene, such as the price.
-_Avoid_: Caption, graphic, text layer
 
 **Promo code**:
 A discount code the user supplies. Always a user-supplied fact, never taken from the page.

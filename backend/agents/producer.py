@@ -670,9 +670,10 @@ class MakeClip(Tool):
 
 class AssembleAd(Tool):
     """Assemble the finished ad from every scene's clip, in order, each cut to where its
-    words are said so there is no silence between scenes, with the music under the voice,
-    and show it to the shop owner in the chat. Only once every scene is finished and the
-    music is made. Costs nothing."""
+    words are said so there is no silence between scenes, with captions of the words as
+    spoken, the music under the voice and each scene's overlay, and show it to the shop
+    owner in the chat. Only once every scene is finished and the music is made. Costs
+    nothing."""
 
     name = "assemble_ad"
 
@@ -708,15 +709,18 @@ class AssembleAd(Tool):
                 "music, then assemble the ad."
             )
         scene_clips = [_clip_and_transcript(scene) for scene in scenes]
-        clips = [clip.pk for clip, _ in scene_clips]
-        # An ad made from the same clips and the same music would be this one again.
+        # An ad made from the same clips, overlays and music would be this one again.
+        made_from = [
+            (clip.pk, scene.overlay) for scene, (clip, _) in zip(scenes, scene_clips, strict=True)
+        ]
         for ad in job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).order_by("-version"):
-            if [cut["clip"] for cut in ad.cuts] == clips and ad.made_from_id == music.pk:
+            was_made_from = [(cut["clip"], cut.get("overlay")) for cut in ad.cuts]
+            if was_made_from == made_from and ad.made_from_id == music.pk:
                 _show(call.session, ad)
                 return (
-                    f"The ad was already assembled from these clips and this music (version "
-                    f"{ad.version}, {ad.seconds:g} seconds) and shown to the shop owner, so "
-                    "nothing was made again. Assembling costs nothing."
+                    f"The ad was already assembled from these clips, overlays and this music "
+                    f"(version {ad.version}, {ad.seconds:g} seconds) and shown to the shop "
+                    "owner, so nothing was made again. Assembling costs nothing."
                 )
         ad = assemble_ad(job, scene_clips, music)
         _show(call.session, ad)
@@ -727,8 +731,9 @@ class AssembleAd(Tool):
         plays += [f"scene {cut['scene']} from {cut['start']:g} to {cut['end']:g}" for cut in rest]
         return (
             f"Assembled the ad (version {ad.version}, {ad.seconds:g} seconds) from each scene's "
-            "clip, cut to where its words are said, with the music under the voice, and showed "
-            f"it to the shop owner in the chat. {_listed(plays)}. Tell the shop owner."
+            "clip, cut to where its words are said, with captions of the words as spoken, the "
+            "music under the voice and each scene's overlay, and showed it to the shop owner "
+            f"in the chat. {_listed(plays)}. Tell the shop owner."
         )
 
 
@@ -931,6 +936,7 @@ def _the_plan(job: Job, reason: str) -> str:
         [
             f"Planned {job.scenes.count()} scenes. {reason}",
             _script(job),
+            _on_screen(job),
             f"The product's colour: {job.product_colour}, shown in photos "
             f"{', '.join(str(number) for number in colour_photos)}.",
             f"The person: {job.person_looks} Their voice: {job.person_voice}",
@@ -969,6 +975,14 @@ def _script(job: Job) -> str:
     return "The script:\n" + "\n".join(
         f"{scene.number}. {scene.line}" for scene in job.scenes.all()
     )
+
+
+def _on_screen(job: Job) -> str:
+    """Each scene's overlay, for the scenes that have one."""
+    overlays = [
+        f'scene {scene.number} "{scene.overlay}"' for scene in job.scenes.all() if scene.overlay
+    ]
+    return f"On screen: {', '.join(overlays)}." if overlays else "On screen: nothing."
 
 
 PRODUCER = Agent(

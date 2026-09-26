@@ -115,6 +115,11 @@ class Scene(models.Model):
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="scenes")
     number = models.PositiveSmallIntegerField(help_text="1, 2, 3... in the order they play.")
     line = models.TextField(help_text="What the person says in this scene.")
+    overlay = models.TextField(
+        blank=True,
+        help_text="A few words drawn along the top of the picture while the scene plays, "
+        "such as the price. Blank for none. Not fact checked yet.",
+    )
     fact_checked = models.BooleanField(
         default=False, help_text="The line passed the fact check, or the user kept it."
     )
