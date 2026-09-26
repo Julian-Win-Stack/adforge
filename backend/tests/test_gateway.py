@@ -219,25 +219,54 @@ def test_a_clip_with_no_picture_is_refused_before_the_video_service_is_called(
     assert not ModelCall.objects.exists()
 
 
-def test_a_clip_longer_than_the_video_model_makes_is_refused_before_it_is_called(
-    fake_model: FakeModel,
-) -> None:
-    with pytest.raises(ValidationError, match="seconds"):
-        _submit(seconds=20.5)
-    assert fake_model.clips_submitted == []
-    assert not ModelCall.objects.exists()
-
-
-def test_a_clip_with_no_audio_is_asked_for_silent_and_billed_for_the_seconds_asked(
-    fake_model: FakeModel,
+# Boreal makes clips of 1 to 20 seconds.
+@pytest.mark.parametrize("seconds", [0.5, 20.5])
+def test_a_clip_of_a_length_the_video_model_cant_make_is_refused_before_it_is_called(
+    fake_model: FakeModel, seconds: float
 ) -> None:
     picture_key = file_store.save("picture.png", picture(72, 128, (1, 2, 3)))
+    audio_key = file_store.save("line.wav", b"RIFF a line")
 
+    with pytest.raises(ValidationError, match="seconds"):
+        _submit(picture_key, audio_key, seconds=seconds)
+    assert fake_model.clips_submitted == []
+    assert ModelCall.objects.count() == 0
+
+
+@pytest.mark.parametrize("seconds", [1, 20])
+def test_a_clip_at_either_end_of_the_lengths_the_video_model_makes_is_asked_for(
+    fake_model: FakeModel, seconds: float
+) -> None:
+    picture_key = file_store.save("picture.png", picture(72, 128, (1, 2, 3)))
+    audio_key = file_store.save("line.wav", b"RIFF a line")
+
+    _submit(picture_key, audio_key, seconds=seconds)
+
+    assert fake_model.clips_asked == [(seconds, True, "She talks to the camera.")]
+
+
+@pytest.fixture
+def silent_clip_asked(fake_model: FakeModel) -> str:
+    """A 5-second clip with no audio, asked for through the gateway. Gives its picture's key."""
+    picture_key = file_store.save("picture.png", picture(72, 128, (1, 2, 3)))
     _submit(picture_key, audio_key=None, seconds=5)
+    return picture_key
 
+
+def test_a_clip_with_no_audio_is_asked_for_silent(
+    fake_model: FakeModel, silent_clip_asked: str
+) -> None:
     assert fake_model.clips_asked == [(5, False, "She talks to the camera.")]
+    assert ModelCall.objects.get().handoff == {
+        "picture": silent_clip_asked,
+        "audio": None,
+        "seconds": 5,
+        "motion_prompt": "She talks to the camera.",
+    }
+
+
+def test_a_clip_with_no_audio_is_billed_for_the_seconds_asked(silent_clip_asked: str) -> None:
     submitted = ModelCall.objects.get()
-    assert submitted.handoff["audio"] is None
     # $0.01 a second at 720p.
     assert (submitted.video_seconds, submitted.cost_usd) == (5, Decimal("0.05"))
 

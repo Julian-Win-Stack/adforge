@@ -95,30 +95,68 @@ def test_the_plan_and_its_scenes_are_stored_with_the_job(
     )
 
 
-def test_a_scene_that_shows_the_product_is_stored_with_what_it_shows(
+def what_each_scene_shows() -> list[tuple[int, str]]:
+    """Each stored scene's number and what it shows, in order."""
+    return list(Job.objects.get().scenes.values_list("number", "shows"))
+
+
+@pytest.fixture
+def planned_with_tea_poured(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
+    """A chat whose ad is planned with scene 2 showing hot tea poured into the mug, given
+    with spaces around it."""
     scenes = [
         {"line": "Meet the Stoneware Mug from Kiln & Co.", "shows": None},
         {"line": "Hand-thrown, holds 350 ml.", "shows": "  hot tea poured into the mug  "},
-        # Blank is a scene where the person talks, as none is.
-        {"line": "Yours for $24.00.", "shows": " "},
+        {"line": "Yours for $24.00.", "shows": None},
+    ]
+    planning(fake_model, product_page_url, a_plan_with(scenes=scenes))
+    say(f"Make an ad for {product_page_url}")
+
+
+def test_a_scene_that_shows_the_product_is_stored_with_what_it_shows(
+    planned_with_tea_poured: None,
+) -> None:
+    assert what_each_scene_shows() == [(1, ""), (2, "hot tea poured into the mug"), (3, "")]
+
+
+def test_the_producer_is_told_what_each_scene_shows(planned_with_tea_poured: None) -> None:
+    assert plan_ad_result().splitlines()[1:5] == [
+        "The script:",
+        "1. Meet the Stoneware Mug from Kiln & Co.",
+        "2. Hand-thrown, holds 350 ml. (Shows, while the voice says it: hot tea poured into "
+        "the mug)",
+        "3. Yours for $24.00.",
+    ]
+
+
+def test_a_first_scene_given_a_blank_shows_is_the_person_talking(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    scenes = [
+        {"line": "Meet the Stoneware Mug from Kiln & Co.", "shows": " "},
+        {"line": "Hand-thrown, holds 350 ml.", "shows": "hot tea poured into the mug"},
     ]
     planning(fake_model, product_page_url, a_plan_with(scenes=scenes))
 
     say(f"Make an ad for {product_page_url}")
 
-    job = Job.objects.get()
-    assert [(scene.number, scene.shows) for scene in job.scenes.all()] == [
-        (1, ""),
-        (2, "hot tea poured into the mug"),
-        (3, ""),
+    assert what_each_scene_shows() == [(1, ""), (2, "hot tea poured into the mug")]
+
+
+def test_the_products_name_is_found_in_a_talking_line_whatever_its_capitals(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    scenes = [{"line": "Meet the stoneware MUG."}, {"line": "Yours for $24.00."}]
+    planning(fake_model, product_page_url, a_plan_with(scenes=scenes))
+
+    say(f"Make an ad for {product_page_url}")
+
+    assert list(Job.objects.get().scenes.values_list("line", flat=True)) == [
+        "Meet the stoneware MUG.",
+        "Yours for $24.00.",
     ]
-    # The producer is told what the scene shows, to describe the ad by.
-    assert (
-        "2. Hand-thrown, holds 350 ml. (Shows, while the voice says it: hot tea poured into "
-        "the mug)" in plan_ad_result()
-    )
 
 
 def test_the_products_colour_and_the_photos_showing_it_are_stored(

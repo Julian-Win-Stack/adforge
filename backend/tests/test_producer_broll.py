@@ -3,7 +3,7 @@ person saying it to camera: its starting picture, its clip and the finished ad, 
 through the chat. The producer's model and the scene models are faked at the gateway, but
 the clips are real tiny videos and ffmpeg runs for real."""
 
-import math
+from collections import defaultdict
 from collections.abc import Callable
 from typing import Any
 
@@ -13,8 +13,8 @@ from adforge.file_store import read
 from agents import tasks
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
+from gateway.types import ModelReply, ModelRequest
 from jobs.models import Job, ProducedItem, Scene, SceneStep
-from jobs.scenes import CLIP_MOTION_PROMPT, NOTHING_MADE_UP
 
 from .conftest import (
     FACTS_OK,
@@ -24,12 +24,11 @@ from .conftest import (
     WorkerStopped,
     colour_at,
     drawn_in,
-    given_to_the_producer,
     handoffs,
     loudness,
     paid_for,
-    producer_turns,
     results_of,
+    silences,
     video,
 )
 
@@ -68,8 +67,8 @@ BROLL_CHOICE: dict[str, Any] = {
     "motion_prompt_reason": "The pour and the steam are what moves in the scene.",
 }
 
-# Scene 2's 7 words take the fake voice, at 2 a second, 3.5 seconds to say.
-SCENE_2_SECONDS = 3.5
+# Scene 2's line: its 7 words take the fake voice, at 2 a second, 3.5 seconds to say.
+LINE_2 = "Hand-thrown, holds 350 ml, and dishwasher safe."
 
 
 @pytest.fixture
@@ -90,6 +89,20 @@ def checked(fake_model: FakeModel, page_read: str, say: Callable[..., None]) -> 
     assert Scene.objects.get(number=2).shows == SHOWS
 
 
+@pytest.fixture
+def instructed(fake_model: FakeModel, monkeypatch: pytest.MonkeyPatch) -> dict[str, list[str]]:
+    """What each model the fake stands in for was told to do, by its purpose, in turn."""
+    told: defaultdict[str, list[str]] = defaultdict(list)
+    answer = fake_model.complete
+
+    def complete(request: ModelRequest[Any]) -> ModelReply[Any]:
+        told[request.purpose].append(request.instructions)
+        return answer(request)
+
+    monkeypatch.setattr(fake_model, "complete", complete)
+    return told
+
+
 def run(fake_model: FakeModel, steps: HeldSteps) -> None:
     """Run the held steps, the producer replying once to each."""
     fake_model.respond("produce", *[turn(says="Done.") for _ in steps.held])
@@ -102,6 +115,18 @@ def calling(
     """Have the producer make these calls, then reply."""
     fake_model.respond("produce", turn(calls=list(calls)), turn(says="On it."))
     say("Go on")
+
+
+def picture_of(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], scene: int
+) -> None:
+    """Make `scene`'s starting picture: scene 2 shows the mug, the others the person."""
+    calling(fake_model, say, ("make_starting_picture", {"scene": scene, "note": None}))
+    if scene == 2:
+        fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    else:
+        fake_model.respond("choose_starting_picture", TALKING_CHOICE)
+    run(fake_model, steps)
 
 
 def made_ready(
@@ -135,72 +160,166 @@ def clip_of_scene_2(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., 
     run(fake_model, steps)
 
 
-def told() -> str:
-    """The last step result the producer was given, as of its last turn."""
-    results: list[str] = [
-        each["text"]
-        for each in given_to_the_producer(producer_turns())
-        if each["kind"] == "step_finished"
-    ]
-    return results[-1]
+def clips_asked(field: str) -> list[Any]:
+    """`field` of what the video model was asked for, for each clip, oldest first."""
+    return [handoff[field] for handoff in handoffs("make_clip")]
+
+
+def kept_clips() -> list[bytes]:
+    """Each clip kept, oldest first."""
+    return [read(clip.file) for clip in ProducedItem.objects.filter(kind="clip").order_by("id")]
 
 
 # --- The whole ad ------------------------------------------------------------------------------
 
 
-def test_an_ad_with_a_scene_that_shows_the_product_is_made_and_assembled(
+@pytest.fixture
+def assembled(
     fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
-) -> None:
+) -> ProducedItem:
+    """The finished ad, made through the chat, with scene 2 showing the mug."""
     calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
     made_ready(fake_model, steps, say, (1, 2, 3))
     calling(fake_model, say, *[("make_clip", {"scene": scene}) for scene in (1, 2, 3)])
     run(fake_model, steps)
-
     calling(fake_model, say, ("assemble_ad", {}))
+    return Job.objects.get().produced.get(kind="finished_ad")
 
-    # Scene 2's clip is asked for with no sound, for its line's whole length in seconds;
-    # the others speak their audio.
-    assert fake_model.clips_asked == [
-        (4.0, True, CLIP_MOTION_PROMPT),
-        (math.ceil(SCENE_2_SECONDS), False, f"{MOTION} {NOTHING_MADE_UP}"),
-        (1.5, True, CLIP_MOTION_PROMPT),
-    ]
-    ad = Job.objects.get().produced.get(kind="finished_ad")
-    # Scene 2 plays in turn, as long as its line, and its words are captioned and heard.
-    assert [(cut["scene"], cut["start"], cut["end"]) for cut in ad.cuts] == [
+
+def test_a_scene_that_shows_the_product_plays_in_its_turn(assembled: ProducedItem) -> None:
+    assert [(cut["scene"], cut["start"], cut["end"]) for cut in assembled.cuts] == [
         (1, 0.0, 4.0),
         (2, 4.0, 7.5),
         (3, 7.5, 9.0),
     ]
-    assert [c["text"] for c in ad.captions if 4.0 <= c["start"] < 7.5] == [
+    # Scene 2's clip, the second the video model made, is lime.
+    assert colour_at(read(assembled.file), 5.75) == "lime"
+
+
+def test_a_scene_that_shows_the_product_has_its_words_captioned(assembled: ProducedItem) -> None:
+    assert [c["text"] for c in assembled.captions if 4.0 <= c["start"] < 7.5] == [
         "Hand-thrown, holds 350",
         "ml, and",
         "dishwasher safe.",
     ]
-    made = read(ad.file)
-    assert colour_at(made, 5.75) == "lime"
-    assert drawn_in(made, 5.75) == {"bottom"}
-    assert loudness(made, "voice", between=(4.5, 7.0)) > -40
+    assert drawn_in(read(assembled.file), 5.75) == {"bottom"}
+
+
+def test_a_scene_that_shows_the_product_has_its_voice_heard(assembled: ProducedItem) -> None:
+    assert loudness(read(assembled.file), "voice", between=(4.5, 7.0)) > -40
 
 
 # --- The starting picture ----------------------------------------------------------------------
 
 
-def test_the_picture_is_planned_from_what_the_scene_shows_and_asked_for_with_nothing_made_up(
-    fake_model: FakeModel, ready: None
-) -> None:
+def test_the_picture_is_planned_from_what_the_scene_shows(ready: None) -> None:
     (planned,) = handoffs("choose_broll_picture")
     assert (planned["scene"], planned["line"], planned["shows"]) == (
         2,
         "Hand-thrown, holds 350 ml, and dishwasher safe.",
-        SHOWS,
+        "Hot tea poured into the mug on a workbench.",
     )
-    assert "choose_starting_picture" not in paid_for()
-    # Whatever the model wrote, the picture model is told to make nothing up.
+
+
+@pytest.mark.parametrize(
+    ("scene", "planner", "what_it_shows"),
+    [
+        pytest.param(
+            1,
+            "choose_starting_picture",
+            "You plan the starting picture for one scene of a short vertical video ad. In the "
+            "scene, the person in the portrait holds the product and says the scene's line to "
+            "camera. The picture is made by a picture model from two pictures: the portrait "
+            "first, then one product photo. A video model then animates it to say the line, so "
+            "it is the scene's first frame.",
+            id="the person talking",
+        ),
+        pytest.param(
+            2,
+            "choose_broll_picture",
+            "You plan the starting picture for one scene of a short vertical video ad. The scene "
+            "doesn't show the person talking to camera: it shows what the scene's \"shows\" "
+            "describes, while the person's voice says the scene's line over it. The picture is "
+            "made by a picture model from two pictures: the portrait first, then one product "
+            "photo. A video model then animates it, with no sound, so it is the scene's first "
+            "frame.",
+            id="the product",
+        ),
+    ],
+)
+def test_the_model_planning_a_picture_is_told_what_the_scene_shows(
+    fake_model: FakeModel,
+    instructed: dict[str, list[str]],
+    checked: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    scene: int,
+    planner: str,
+    what_it_shows: str,
+) -> None:
+    picture_of(fake_model, steps, say, scene)
+
+    (told,) = instructed[planner]
+    assert told.splitlines()[0] == what_it_shows
+
+
+def test_the_model_planning_the_picture_is_told_to_make_nothing_up(
+    fake_model: FakeModel,
+    instructed: dict[str, list[str]],
+    checked: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    picture_of(fake_model, steps, say, 2)
+
+    (told,) = instructed["choose_broll_picture"]
+    assert [rule for rule in told.splitlines() if rule.startswith("Make nothing up")] == [
+        'Make nothing up, in either prompt. Show only what "shows" describes: no result, use, '
+        "feature, texture, colour or amount it doesn't state, nothing that makes the product "
+        "look bigger, better or more effective than described, and no part of the product the "
+        "photos don't show."
+    ]
+
+
+def test_the_model_planning_the_picture_is_shown_the_portrait_and_the_photos_in_the_ads_colour(
+    ready: None,
+) -> None:
+    job = Job.objects.get()
+    # Photo 2 shows the mug in cream, and the ad's colour is sage green.
+    assert ModelCall.objects.get(purpose="choose_broll_picture").images == [
+        {"label": "The portrait", "key": job.produced.get(kind="portrait").file},
+        {"label": "Photo 1", "key": job.photos.get(position=1).file},
+    ]
+
+
+def test_the_picture_is_asked_for_with_nothing_made_up(ready: None) -> None:
     (asked,) = handoffs("make_starting_picture")
-    assert asked["prompt"] == f"{BROLL_CHOICE['prompt']} {NOTHING_MADE_UP}"
-    step = SceneStep.objects.get(kind="starting_picture")
-    assert (step.shows, step.motion_prompt) == (SHOWS, MOTION)
+    # Whatever the model wrote, the tool adds that nothing is to be made up.
+    assert asked["prompt"] == (
+        "The mug on a workbench in a sunny workshop, tea being poured into it. Show only what "
+        "is described; add or change nothing about the product."
+    )
+
+
+def test_a_picture_planned_before_the_worker_stopped_isnt_paid_for_again(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": None}))
+    (step_id,) = steps.held
+    # A second plan, were the first wrongly paid for again.
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE, BROLL_CHOICE)
+    # The worker stops once the plan is paid for, as the picture is made.
+    fake_model.respond("make_starting_picture", WorkerStopped())
+    with pytest.raises(WorkerStopped):
+        steps.run_next()
+    fake_model.respond("produce", turn(says="Ready!"))
+
+    tasks.run_scene_step(step_id)
+
+    assert [p for p in paid_for() if p in ("choose_broll_picture", "make_starting_picture")] == [
+        "choose_broll_picture",
+        "make_starting_picture",
+    ]
 
 
 def test_a_picture_made_before_the_scene_changed_what_it_shows_gets_no_clip(
@@ -227,88 +346,144 @@ def test_a_scene_that_no_longer_shows_the_product_gets_a_picture_of_the_person_t
     scene = Scene.objects.get(number=2)
     scene.change_line(scene.line, shows="")
     scene.save()
+
     calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": None}))
     fake_model.respond("choose_starting_picture", TALKING_CHOICE)
     run(fake_model, steps)
 
-    # Made again as the person saying it, from the talking scene's instructions.
-    assert paid_for().count("choose_starting_picture") == 1
-    assert [step.shows for step in SceneStep.objects.filter(kind="starting_picture")] == [
-        SHOWS,
-        "",
-    ]
+    # Planned again as the person saying it: the talking prompt, with nothing added.
+    assert handoffs("make_starting_picture")[-1]["prompt"] == (
+        "She holds the mug up beside her face, handle out, in her sunny workshop."
+    )
 
 
 # --- The clip ----------------------------------------------------------------------------------
 
 
-def test_the_clip_is_asked_for_with_no_sound_then_kept_with_the_voice_over_it(
+def test_the_clip_is_asked_for_with_no_sound(
     fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     clip_of_scene_2(fake_model, steps, say)
 
-    picture = ProducedItem.objects.get(kind="starting_picture")
-    audio = ProducedItem.objects.get(kind="line_audio")
-    assert ModelCall.objects.get(purpose="make_clip").handoff == {
-        "picture": picture.file,
-        "audio": None,
-        "seconds": math.ceil(SCENE_2_SECONDS),
-        "motion_prompt": f"{MOTION} {NOTHING_MADE_UP}",
-    }
-    clip = ProducedItem.objects.get(kind="clip")
-    kept = read(clip.file)
-    # The silent clip the video model made, with the line's audio laid over it and cut to
-    # its length.
-    assert (clip.seconds, clip.made_from, clip.picture) == (SCENE_2_SECONDS, audio, picture)
-    assert video(kept)[2] == pytest.approx(SCENE_2_SECONDS, abs=0.1)
-    assert loudness(fake_model.clips["video-1"], "voice") < -80
-    assert loudness(kept, "voice") > -40
-    assert colour_at(kept, 1.0) == "red"
-    assert Scene.objects.get(number=2).status == "finished"
+    assert clips_asked("audio") == [None]
 
 
-def test_a_clip_shorter_than_the_line_fails_its_step_and_is_asked_for_afresh(
+@pytest.mark.parametrize(
+    ("line", "asked_for"),
+    [
+        pytest.param(LINE_2, 4, id="said in 3.5 seconds"),
+        # 4 words, and 5, at the fake voice's 2 a second.
+        pytest.param("Tea fills the mug.", 2, id="said in 2 seconds"),
+        pytest.param("Hot tea fills the mug.", 3, id="said in 2.5 seconds"),
+    ],
+)
+def test_the_clip_is_asked_for_as_long_as_its_line_rounded_up_to_a_whole_second(
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    line: str,
+    asked_for: int,
+) -> None:
+    Scene.objects.filter(number=2).update(line=line)
+    made_ready(fake_model, steps, say, (2,))
+
+    clip_of_scene_2(fake_model, steps, say)
+
+    assert clips_asked("seconds") == [asked_for]
+
+
+def test_the_clip_is_asked_to_move_as_planned_with_nothing_made_up(
+    fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    clip_of_scene_2(fake_model, steps, say)
+
+    assert clips_asked("motion_prompt") == [
+        "Steam rises as the tea fills the mug; the camera holds still. Show only what is "
+        "described; add or change nothing about the product."
+    ]
+
+
+def test_the_kept_clip_carries_its_lines_voice(
+    fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    clip_of_scene_2(fake_model, steps, say)
+
+    # The video model's clip is silent; the voice is heard all the way through the one kept.
+    assert [silences(clip) for clip in kept_clips()] == [[]]
+
+
+@pytest.mark.parametrize(
+    ("line", "said_in"),
+    [
+        pytest.param(LINE_2, 3.5, id="cut from a longer clip"),
+        # 4 words at the fake voice's 2 a second: the clip comes back just as long.
+        pytest.param("Tea fills the mug.", 2.0, id="as long as the clip"),
+    ],
+)
+def test_the_kept_clip_lasts_as_long_as_its_line(
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    line: str,
+    said_in: float,
+) -> None:
+    Scene.objects.filter(number=2).update(line=line)
+    made_ready(fake_model, steps, say, (2,))
+
+    clip_of_scene_2(fake_model, steps, say)
+
+    kept = ProducedItem.objects.filter(kind="clip")
+    assert [(clip.seconds, round(video(read(clip.file))[2], 1)) for clip in kept] == [
+        (said_in, said_in)
+    ]
+
+
+def test_a_clip_shorter_than_its_line_fails_its_step(
+    fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    fake_model.clips_short_by = 1.0
+
+    clip_of_scene_2(fake_model, steps, say)
+
+    step = SceneStep.objects.get(kind="clip")
+    assert (step.status, step.reason) == (
+        "failed",
+        "the video model couldn't make the clip (it came back 3 seconds long, shorter than "
+        "the line's 3.5 seconds of audio).",
+    )
+
+
+def test_a_clip_that_came_back_shorter_than_its_line_is_asked_for_afresh(
     fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     fake_model.clips_short_by = 1.0
     clip_of_scene_2(fake_model, steps, say)
-
-    step = SceneStep.objects.get(kind="clip")
-    assert step.status == "failed"
-    assert step.reason == (
-        "the video model couldn't make the clip (it came back 3 seconds long, shorter than "
-        "the line's 3.5 seconds of audio)."
-    )
-    assert told() == (
-        "Background step failed: scene 2's clip couldn't be made: "
-        f"{step.reason} Tell the shop owner what went wrong."
-    )
-    assert not ProducedItem.objects.filter(kind="clip").exists()
-    assert Scene.objects.get(number=2).status == "planned"
-
     fake_model.clips_short_by = 0
+
     clip_of_scene_2(fake_model, steps, say)
 
-    # Waiting on the short one would only fail again.
-    assert fake_model.clips_submitted == ["video-1", "video-2"]
-    assert Scene.objects.get(number=2).status == "finished"
+    # Waiting on the short one, red, would only fail again: the one kept is the next, lime.
+    assert [colour_at(clip, 1.0) for clip in kept_clips()] == ["lime"]
 
 
 def the_worker_stops(*_: object, **__: object) -> None:
     raise WorkerStopped
 
 
-def test_a_clip_fetched_before_the_worker_stopped_is_kept_without_paying_again(
+@pytest.fixture
+def restarted(
     fake_model: FakeModel,
     ready: None,
     steps: HeldSteps,
     say: Callable[..., None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Scene 2's clip step, run again after its worker stopped once the clip was fetched and
+    the voice laid over it, as it was being kept."""
     calling(fake_model, say, ("make_clip", {"scene": 2}))
     (step_id,) = steps.held
-
-    # The worker stops once the clip is fetched and the voice laid over it, as it is kept.
     with monkeypatch.context() as stopping:
         stopping.setattr(ProducedItem.objects, "create", the_worker_stops)
         with pytest.raises(WorkerStopped):
@@ -316,8 +491,13 @@ def test_a_clip_fetched_before_the_worker_stopped_is_kept_without_paying_again(
     fake_model.respond("produce", turn(says="Ready!"))
     tasks.run_scene_step(step_id)
 
-    assert fake_model.clips_submitted == fake_model.clips_downloaded == ["video-1"]
-    assert (paid_for().count("make_clip"), paid_for().count("collect_clip")) == (1, 1)
-    clip = ProducedItem.objects.get(kind="clip")
-    assert loudness(read(clip.file), "voice") > -40
-    assert Scene.objects.get(number=2).status == "finished"
+
+def test_a_clip_fetched_before_the_worker_stopped_isnt_paid_for_again(restarted: None) -> None:
+    assert [purpose for purpose in paid_for() if purpose.endswith("_clip")] == [
+        "make_clip",
+        "collect_clip",
+    ]
+
+
+def test_a_clip_fetched_before_the_worker_stopped_still_gets_its_voice(restarted: None) -> None:
+    assert [silences(clip) for clip in kept_clips()] == [[]]

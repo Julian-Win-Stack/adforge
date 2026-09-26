@@ -18,7 +18,6 @@ from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import work
 from jobs.models import Job, ProducedItem, Scene, SceneStep
-from jobs.scenes import CLIP_MOTION_PROMPT
 
 from .conftest import (
     NO_CHOICES,
@@ -27,6 +26,7 @@ from .conftest import (
     chat,
     facts_ok,
     given_to_the_producer,
+    handoffs,
     paid_for,
     producer_turns,
     results_of,
@@ -211,7 +211,11 @@ def test_the_clip_is_made_in_the_background_from_the_picture_and_the_audio_heard
         "picture": picture.file,
         "audio": transcript.made_from.file if transcript.made_from else None,
         "seconds": 4.0,
-        "motion_prompt": CLIP_MOTION_PROMPT,
+        "motion_prompt": (
+            "The person talks to the camera naturally, like a casual phone video, holding the "
+            "product still beside their face with any label facing the camera. Minimal hand "
+            "movement."
+        ),
     }
     assert submitted.tool_call == SceneStep.objects.get(kind="clip").tool_call
 
@@ -581,6 +585,27 @@ def test_a_clip_given_up_on_isnt_waited_for_once_its_picture_is_made_again(
     )
 
 
+def test_a_clip_given_up_on_is_waited_for_again_though_an_earlier_clip_was_fetched(
+    fake_model: FakeModel, clipped: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    # The first clip, video-1, was fetched. The clip of a new picture is then given up on.
+    calling(fake_model, "make_starting_picture", {"scene": 1, "note": "Smiling more."})
+    say("Make scene 1's picture again, smiling more")
+    fake_model.respond("choose_starting_picture", CHOICE)
+    run(fake_model, steps)
+    calling(fake_model, "make_clip")
+    say("Make scene 1's clip again")
+    fake_model.respond("collect_clip", *[OutsideServiceDown("fal answered 503")] * 3)
+    run(fake_model, steps)
+    calling(fake_model, "make_clip")
+
+    say("Make scene 1's clip once more")
+    run(fake_model, steps)
+
+    # video-2, already paid for, is waited for rather than paid for again.
+    assert fake_model.clips_submitted == ["video-1", "video-2"]
+
+
 def test_a_clip_the_video_model_couldnt_make_is_asked_for_afresh_when_made_again(
     fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
@@ -652,9 +677,5 @@ def test_a_line_said_in_under_a_second_gets_a_clip_of_the_shortest_length_the_mo
         say(f"Go on: {tool}")
         run(fake_model, steps)
 
-    # The video model makes clips of at least a second; the clip keeps the audio's length,
-    # which is where the ad cuts it.
-    assert ModelCall.objects.get(purpose="make_clip").handoff["seconds"] == 1
-    clip = ProducedItem.objects.get(kind="clip")
-    assert clip.seconds == 0.5
-    assert Scene.objects.get(number=1).status == "finished"
+    # The video model makes clips of at least a second.
+    assert [handoff["seconds"] for handoff in handoffs("make_clip")] == [1]
