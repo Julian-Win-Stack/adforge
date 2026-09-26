@@ -17,8 +17,8 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "speak_line": "inworld-tts-2",
     "transcribe_line": "scribe_v2",
     # A clip is asked for, then waited for and fetched: two calls, only the first paid.
-    "make_clip": "heygen-avatar-iv",
-    "collect_clip": "heygen-avatar-iv",
+    "make_clip": "creatify/boreal",
+    "collect_clip": "creatify/boreal",
     "make_music": "sonilo/v1.1/text-to-music",
 }
 
@@ -47,10 +47,10 @@ PRICE_PER_HOUR_OF_AUDIO: dict[str, Decimal] = {
     "scribe_v2": Decimal("0.22"),
 }
 
-# US dollars per second of video made. HeyGen doesn't publish one: measured from its wallet,
-# which a 5.72-second clip took $0.20 from (docs/video-model-tests.md).
+# US dollars per second of video made. From fal's model page for Boreal on 2026-09-26, at
+# the 720p the adapter asks for.
 PRICE_PER_SECOND_OF_VIDEO: dict[str, Decimal] = {
-    "heygen-avatar-iv": Decimal("0.035"),
+    "creatify/boreal": Decimal("0.01"),
 }
 
 

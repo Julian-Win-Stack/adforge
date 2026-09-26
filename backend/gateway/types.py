@@ -262,12 +262,18 @@ class TranscriptionProvider(Protocol):
         ...
 
 
+# The longest clip the video model makes.
+MOST_CLIP_SECONDS = 20
+
+
 class ClipHandoff(Handoff):
-    """A clip to make: the starting picture and the audio it is spoken to, by their keys in
-    the file store, and how the person in it should move."""
+    """A clip to make: the starting picture, by its key in the file store, how it should
+    move, and how long it is. A talking clip says `audio`, also by its key, and is as long
+    as it; a B-roll clip has no audio, and no sound."""
 
     picture: str = Field(min_length=1)
-    audio: str = Field(min_length=1)
+    audio: str | None = Field(default=None, min_length=1)
+    seconds: float = Field(ge=1, le=MOST_CLIP_SECONDS)
     motion_prompt: str = Field(min_length=1)
 
 
@@ -292,14 +298,17 @@ class ClipFailed(Exception):
 
 
 class ClipProvider(Protocol):
-    """Makes talking clips from a picture and audio. Making one takes a while, so it is
-    asked for, then waited for, then fetched. Raises OutsideServiceDown for errors worth
-    retrying."""
+    """Makes clips from a picture: talking ones that say given audio, and B-roll ones with
+    no sound. Making one takes a while, so it is asked for, then waited for, then fetched.
+    Raises OutsideServiceDown for errors worth retrying."""
 
     name: str
 
-    def submit(self, *, picture: bytes, audio: bytes, motion_prompt: str) -> str:
-        """Ask for a clip of the picture speaking `audio`, a WAV file. Returns its id."""
+    def submit(
+        self, *, picture: bytes, audio: bytes | None, seconds: float, motion_prompt: str
+    ) -> str:
+        """Ask for a `seconds`-long clip of the picture moving as `motion_prompt` says,
+        speaking `audio`, a WAV file, or silent when there is none. Returns its id."""
         ...
 
     def status(self, *, video_id: str) -> ClipStatus: ...

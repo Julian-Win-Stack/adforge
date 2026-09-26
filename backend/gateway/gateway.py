@@ -63,9 +63,9 @@ if TYPE_CHECKING:
     from chat.models import Session
     from jobs.models import Job
 
+    from .boreal_adapter import BorealProvider
     from .elevenlabs_adapter import ElevenLabsProvider
     from .fal_adapter import FalProvider
-    from .heygen_adapter import HeyGenProvider
     from .inworld_adapter import InworldProvider
     from .openai_adapter import OpenAIProvider
 
@@ -110,10 +110,10 @@ def _elevenlabs() -> ElevenLabsProvider:
 
 
 @cache
-def _heygen() -> HeyGenProvider:
-    from .heygen_adapter import HeyGenProvider
+def _boreal() -> BorealProvider:
+    from .boreal_adapter import BorealProvider
 
-    return HeyGenProvider()
+    return BorealProvider()
 
 
 @cache
@@ -140,7 +140,7 @@ def _transcribers() -> TranscriptionProvider:
 
 
 def _clips() -> ClipProvider:
-    return cast(ClipProvider, _override) if _override is not None else _heygen()
+    return cast(ClipProvider, _override) if _override is not None else _boreal()
 
 
 def _music() -> MusicProvider:
@@ -406,29 +406,33 @@ def submit_clip(
     job: Job | None,
     purpose: str,
     picture_key: str,
-    audio_key: str,
-    audio_seconds: float,
+    audio_key: str | None,
+    seconds: float,
     motion_prompt: str,
 ) -> str:
-    """Ask for a clip of the picture speaking the audio, both given by their keys in the file
-    store. This is what is paid for: a clip as long as the audio. Returns the clip's id, to
-    collect it with once it's made."""
-    handoff = ClipHandoff(picture=picture_key, audio=audio_key, motion_prompt=motion_prompt)
+    """Ask for a `seconds`-long clip of the picture, given by its key in the file store,
+    speaking the audio, also by its key, or with no sound when there is none. This is what
+    is paid for: every second of it. Returns the clip's id, to collect it with once it's
+    made."""
+    handoff = ClipHandoff(
+        picture=picture_key, audio=audio_key, seconds=seconds, motion_prompt=motion_prompt
+    )
     model = catalog.MODEL_FOR_PURPOSE[purpose]
     provider = _clips()
 
     def submit() -> _Made[str]:
         video_id = provider.submit(
             picture=file_store.read(handoff.picture),
-            audio=file_store.read(handoff.audio),
+            audio=None if handoff.audio is None else file_store.read(handoff.audio),
+            seconds=handoff.seconds,
             motion_prompt=handoff.motion_prompt,
         )
         return _Made(
             result=video_id,
             output={"video_id": video_id},
             bill=_Bill(
-                video_seconds=audio_seconds,
-                cost_usd=catalog.video_cost_usd(model, audio_seconds),
+                video_seconds=handoff.seconds,
+                cost_usd=catalog.video_cost_usd(model, handoff.seconds),
             ),
         )
 

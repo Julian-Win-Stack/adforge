@@ -35,7 +35,7 @@ from gateway.gateway import (
     transcription_output,
 )
 from gateway.models import ModelCall
-from gateway.types import ClipFailed, Handoff, Image, Judgement, MusicHandoff
+from gateway.types import ClipFailed, ClipHandoff, Handoff, Image, Judgement, MusicHandoff
 
 from . import assembly, page
 from .checks import (
@@ -784,7 +784,7 @@ def make_clip(step: SceneStep) -> ProducedItem:
             purpose="make_clip",
             picture_key=picture.file,
             audio_key=audio.file,
-            audio_seconds=audio.seconds,
+            seconds=audio.seconds,
             motion_prompt=CLIP_MOTION_PROMPT,
         )
     )
@@ -833,7 +833,13 @@ def _clip_asked_for(step: SceneStep, picture: ProducedItem, audio: ProducedItem)
     asked_by_this_step = _paid_for_before(job, "make_clip", charged_to=step.tool_call)
     if asked_by_this_step:
         return str(asked_by_this_step["video_id"])
-    handoff = {"picture": picture.file, "audio": audio.file, "motion_prompt": CLIP_MOTION_PROMPT}
+    assert audio.seconds is not None, "a line's audio is measured when it's made"
+    handoff = ClipHandoff(
+        picture=picture.file,
+        audio=audio.file,
+        seconds=audio.seconds,
+        motion_prompt=CLIP_MOTION_PROMPT,
+    ).model_dump()
     asked = job.model_calls.filter(
         purpose="make_clip", outcome=ModelCall.Outcome.SUCCEEDED, handoff=handoff
     ).last()

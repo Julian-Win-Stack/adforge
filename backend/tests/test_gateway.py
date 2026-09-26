@@ -197,13 +197,15 @@ def test_a_call_that_fails_still_records_which_photos_it_showed(
     )
 
 
-def _submit(picture_key: str = "picture.png", audio_key: str = "line.wav") -> str:
+def _submit(
+    picture_key: str = "picture.png", audio_key: str | None = "line.wav", seconds: float = 4.0
+) -> str:
     return submit_clip(
         job=None,
         purpose="make_clip",
         picture_key=picture_key,
         audio_key=audio_key,
-        audio_seconds=4.0,
+        seconds=seconds,
         motion_prompt="She talks to the camera.",
     )
 
@@ -217,10 +219,33 @@ def test_a_clip_with_no_picture_is_refused_before_the_video_service_is_called(
     assert not ModelCall.objects.exists()
 
 
+def test_a_clip_longer_than_the_video_model_makes_is_refused_before_it_is_called(
+    fake_model: FakeModel,
+) -> None:
+    with pytest.raises(ValidationError, match="seconds"):
+        _submit(seconds=20.5)
+    assert fake_model.clips_submitted == []
+    assert not ModelCall.objects.exists()
+
+
+def test_a_clip_with_no_audio_is_asked_for_silent_and_billed_for_the_seconds_asked(
+    fake_model: FakeModel,
+) -> None:
+    picture_key = file_store.save("picture.png", picture(72, 128, (1, 2, 3)))
+
+    _submit(picture_key, audio_key=None, seconds=5)
+
+    assert fake_model.clips_asked == [(5, False, "She talks to the camera.")]
+    submitted = ModelCall.objects.get()
+    assert submitted.handoff["audio"] is None
+    # $0.01 a second at 720p.
+    assert (submitted.video_seconds, submitted.cost_usd) == (5, Decimal("0.05"))
+
+
 def test_a_clip_is_asked_for_again_while_the_video_service_is_down(
     fake_model: FakeModel,
 ) -> None:
-    fake_model.respond("make_clip", OutsideServiceDown("HeyGen answered 503"))
+    fake_model.respond("make_clip", OutsideServiceDown("fal answered 503"))
     picture_key = file_store.save("picture.png", picture(72, 128, (1, 2, 3)))
     audio_key = file_store.save("line.wav", b"RIFF a line")
 
@@ -284,7 +309,7 @@ def test_a_slow_clip_is_told_of_once_counted_from_the_first_look_even_if_the_ser
     settings.CLIP_POLL_SECONDS = 10
     settings.CLIP_SLOW_AFTER_SECONDS = 30
     working = {"state": "working"}
-    down = OutsideServiceDown("HeyGen answered 503")
+    down = OutsideServiceDown("fal answered 503")
     # Looked at 0, down at 10 and looked again at once, then at 20 and 30, down at 40 and
     # looked again at once, then made by 50.
     fake_model.respond("collect_clip", working, down, working, working, working, down, working)

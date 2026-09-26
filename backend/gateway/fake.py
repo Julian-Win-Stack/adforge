@@ -13,7 +13,8 @@ its number written into it so each is its own. Script an error for "make_music" 
 fail.
 
 Clips need no script either: each one asked for is made at once, a real tiny clip that
-speaks the audio it was asked for, so ffmpeg can cut and join it. Script {"state": "working"}
+speaks the audio it was asked for, or is silent for as many seconds as were asked for when
+it has none, so ffmpeg can cut and join it. Script {"state": "working"}
 for "collect_clip" to have it still being made when asked, {"state": "failed", "error": ...}
 to have it fail, or an error for "make_clip" or "collect_clip"."""
 
@@ -102,6 +103,9 @@ class FakeModel:
         # The id of every clip the fake was asked to make, and of every one it handed over.
         self.clips_submitted: list[str] = []
         self.clips_downloaded: list[str] = []
+        # What each clip was asked for with, in turn: its seconds, whether it speaks audio,
+        # and its motion prompt.
+        self.clips_asked: list[tuple[float, bool, str]] = []
         # The audio each clip asked for speaks, and each clip made, by its id.
         self._clip_audio: dict[str, bytes] = {}
         self.clips: dict[str, bytes] = {}
@@ -219,21 +223,24 @@ class FakeModel:
             seconds = file.getnframes() / file.getframerate()
         return Transcription(text=text, words=words, audio_seconds=seconds)
 
-    def submit(self, *, picture: bytes, audio: bytes, motion_prompt: str) -> str:
+    def submit(
+        self, *, picture: bytes, audio: bytes | None, seconds: float, motion_prompt: str
+    ) -> str:
         self._fail_if_scripted("make_clip")
         self.clips_submitted.append(f"video-{len(self.clips_submitted) + 1}")
-        self._clip_audio[self.clips_submitted[-1]] = audio
+        self.clips_asked.append((seconds, audio is not None, motion_prompt))
+        self._clip_audio[self.clips_submitted[-1]] = audio or _silence(seconds=seconds)
         return self.clips_submitted[-1]
 
     def status(self, *, video_id: str) -> ClipStatus:
         scripted = self._next("collect_clip") if self._scripts["collect_clip"] else None
         assert not isinstance(scripted, Turn), "'collect_clip' was scripted a turn"
         if scripted is None:
-            return ClipStatus(state="completed", video_url=f"https://fake.heygen/{video_id}.mp4")
+            return ClipStatus(state="completed", video_url=f"https://fake.fal/{video_id}.mp4")
         return ClipStatus(state=scripted["state"], error=scripted.get("error"))
 
     def download(self, *, url: str) -> bytes:
-        video_id = url.removeprefix("https://fake.heygen/").removesuffix(".mp4")
+        video_id = url.removeprefix("https://fake.fal/").removesuffix(".mp4")
         self.clips_downloaded.append(video_id)
         if video_id not in self.clips:
             self.clips[video_id] = _clip(video_id, self._clip_audio.get(video_id))

@@ -108,14 +108,11 @@ ELEVENLABS_BASE_URL = os.environ.get("ELEVENLABS_BASE_URL", "https://api.elevenl
 FAL_KEY = os.environ.get("FAL_KEY", "")
 # Tests point it at a local stand-in.
 FAL_BASE_URL = os.environ.get("FAL_BASE_URL", "https://fal.run")
+# fal's queue, for clips: asked for, then waited for. Tests point it at a local stand-in.
+FAL_QUEUE_URL = os.environ.get("FAL_QUEUE_URL", "https://queue.fal.run")
 # fal answers once the music is made, which takes longer the longer the music.
 FAL_TIMEOUT_SECONDS = 300.0
 
-HEYGEN_API_KEY = os.environ.get("HEYGEN_API_KEY", "")
-# Tests point it at a local stand-in.
-HEYGEN_BASE_URL = os.environ.get("HEYGEN_BASE_URL", "https://api.heygen.com")
-# How long to wait for HeyGen to answer one request.
-HEYGEN_TIMEOUT_SECONDS = 120.0
 # How often to ask whether a clip is made yet. One usually takes under a minute, but it is
 # paid for, so it is waited for however long it takes: past this, the shop owner is told
 # it's still being made.

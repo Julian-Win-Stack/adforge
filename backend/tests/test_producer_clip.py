@@ -210,6 +210,7 @@ def test_the_clip_is_made_in_the_background_from_the_picture_and_the_audio_heard
     assert submitted.handoff == {
         "picture": picture.file,
         "audio": transcript.made_from.file if transcript.made_from else None,
+        "seconds": 4.0,
         "motion_prompt": CLIP_MOTION_PROMPT,
     }
     assert submitted.tool_call == SceneStep.objects.get(kind="clip").tool_call
@@ -365,10 +366,10 @@ def test_a_clip_already_made_is_handed_back_and_charges_nothing(
 
     assert paid_for() == paid
     assert steps.held == []
-    # 4 seconds of video at $0.035 a second.
+    # 4 seconds of video at $0.01 a second.
     assert results_of("make_clip")[-1] == (
         "Scene 1's clip was already made from this starting picture and audio (version 1), "
-        "so nothing was made or paid for again. Making it cost $0.14. Scene 1 is finished."
+        "so nothing was made or paid for again. Making it cost $0.04. Scene 1 is finished."
     )
 
 
@@ -477,7 +478,7 @@ def test_a_clip_the_video_service_is_down_for_fails_its_step_and_the_producer_is
 ) -> None:
     calling(fake_model, "make_clip")
     say("Make scene 1's clip")
-    fake_model.respond("make_clip", *[OutsideServiceDown("HeyGen answered 503")] * 3)
+    fake_model.respond("make_clip", *[OutsideServiceDown("fal answered 503")] * 3)
 
     run(fake_model, steps)
 
@@ -538,7 +539,7 @@ def test_a_clip_given_up_on_while_heygen_was_down_is_waited_for_again_rather_tha
 ) -> None:
     calling(fake_model, "make_clip")
     say("Make scene 1's clip")
-    fake_model.respond("collect_clip", *[OutsideServiceDown("HeyGen answered 503")] * 3)
+    fake_model.respond("collect_clip", *[OutsideServiceDown("fal answered 503")] * 3)
     run(fake_model, steps)
     clip_step_failed()
     calling(fake_model, "make_clip")
@@ -559,7 +560,7 @@ def test_a_clip_given_up_on_isnt_waited_for_once_its_picture_is_made_again(
 ) -> None:
     calling(fake_model, "make_clip")
     say("Make scene 1's clip")
-    fake_model.respond("collect_clip", *[OutsideServiceDown("HeyGen answered 503")] * 3)
+    fake_model.respond("collect_clip", *[OutsideServiceDown("fal answered 503")] * 3)
     run(fake_model, steps)
     calling(fake_model, "make_starting_picture", {"scene": 1, "note": "Smiling more."})
     say("Make scene 1's picture again, smiling more")
