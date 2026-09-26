@@ -88,9 +88,9 @@ the photos nor the shop owner shows or says, such as what a serum looks like out
 bottle or the gadget working: say what's missing and offer that they attach a photo of \
 it, describe it in words, or choose something else. Never choose for them. \
 Ask the shop owner one short, specific question, and set plan to null.
-Give one sentence saying why: for a plan, why this many scenes and why some show the \
-product rather than the person talking; for a question, why you need to ask. Write it \
-for the shop owner, without the word "B-roll"."""
+Give one sentence saying why: for a plan, why this many scenes; for a question, why you \
+need to ask. Write it for the shop owner. Never tell them which scenes show the product \
+rather than the person talking, or that there are two kinds of scene."""
 
 
 # An overlay longer than this would wrap into a second line, down towards the face.
