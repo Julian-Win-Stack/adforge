@@ -845,11 +845,13 @@ def _clip_asked_for(step: SceneStep, picture: ProducedItem, audio: ProducedItem)
     return None if failed else video_id
 
 
-def assemble_ad(job: Job, scenes: list[tuple[ProducedItem, ProducedItem]]) -> ProducedItem:
+def assemble_ad(
+    job: Job, scenes: list[tuple[ProducedItem, ProducedItem]], music: ProducedItem
+) -> ProducedItem:
     """Put the finished ad together from each scene's clip and the transcript of the audio
-    it speaks, in the order the scenes play: each clip cut to where its words are said, then
-    joined. Gives back the ad, kept as the job's next version. Costs nothing: no model is
-    called."""
+    it speaks, in the order the scenes play, and the music: each clip cut to where its words
+    are said, then joined, with the music under the voice. Gives back the ad, kept as the
+    job's next version. Costs nothing: no model is called."""
     measured = []
     for clip, transcript in scenes:
         assert clip.scene is not None and clip.seconds is not None, "a clip is a scene's, measured"
@@ -862,8 +864,10 @@ def assemble_ad(job: Job, scenes: list[tuple[ProducedItem, ProducedItem]]) -> Pr
             path = Path(folder) / f"scene-{cut.scene}.mp4"
             path.write_bytes(file_store.read(clip.file))
             parts.append((path, cut))
+        under = Path(folder) / "music"
+        under.write_bytes(file_store.read(music.file))
         ad = Path(folder) / "ad.mp4"
-        assembly.join(parts, ad)
+        assembly.join(parts, under, ad)
         file = file_store.save("ad.mp4", ad.read_bytes())
     last = job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).aggregate(last=Max("version"))
     return ProducedItem.objects.create(
@@ -871,6 +875,7 @@ def assemble_ad(job: Job, scenes: list[tuple[ProducedItem, ProducedItem]]) -> Pr
         kind=ProducedItem.Kind.FINISHED_AD,
         version=(last["last"] or 0) + 1,
         file=file,
+        made_from=music,
         seconds=planned[-1].end,
         cuts=[asdict(cut) for cut in planned],
     )

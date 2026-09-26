@@ -13,7 +13,16 @@ from adforge.file_store import read
 from gateway.fake import FakeModel, turn
 from jobs.models import Job, ProducedItem
 
-from .conftest import HeldSteps, colour_at, paid_for, results_of, served, silences, video
+from .conftest import (
+    HeldSteps,
+    colour_at,
+    loudness,
+    paid_for,
+    results_of,
+    served,
+    silences,
+    video,
+)
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -29,8 +38,9 @@ CHOICE: dict[str, Any] = {
 # 3.5 and 1.5 seconds to say: 9 seconds in all.
 ASSEMBLED = (
     "Assembled the ad (version 1, 9 seconds) from each scene's clip, cut to where its words "
-    "are said, and showed it to the shop owner in the chat. Scene 1 plays from 0 to 4 "
-    "seconds, scene 2 from 4 to 7.5 and scene 3 from 7.5 to 9. Tell the shop owner."
+    "are said, with the music under the voice, and showed it to the shop owner in the chat. "
+    "Scene 1 plays from 0 to 4 seconds, scene 2 from 4 to 7.5 and scene 3 from 7.5 to 9. "
+    "Tell the shop owner."
 )
 
 
@@ -50,9 +60,17 @@ def finish(
     say: Callable[..., None],
     *,
     clipped: tuple[int, ...] = (1, 2, 3),
+    music: bool = True,
 ) -> None:
-    """Make every scene's starting picture, audio and transcript, and the clips of
-    `clipped`, which finishes those scenes."""
+    """Make the music, then every scene's starting picture, audio and transcript, and the
+    clips of `clipped`, which finishes those scenes."""
+    if music:
+        fake_model.respond(
+            "produce",
+            turn(calls=[("create_music", {"mood": "light upbeat lo-fi"})]),
+            turn(says="Music's ready."),
+        )
+        say("Make the music")
     scenes = (1, 2, 3)
     fake_model.respond(
         "produce",
@@ -258,8 +276,8 @@ def test_an_ad_already_assembled_is_handed_back_and_charges_nothing(
     assert [ad.version for ad in ads()] == [1]
     assert len(videos_shown(api, session_id)) == 1
     assert results_of("assemble_ad")[-1] == (
-        "The ad was already assembled from these clips (version 1, 9 seconds) and shown to the "
-        "shop owner, so nothing was made again. Assembling costs nothing."
+        "The ad was already assembled from these clips and this music (version 1, 9 seconds) "
+        "and shown to the shop owner, so nothing was made again. Assembling costs nothing."
     )
 
 
@@ -296,3 +314,61 @@ def test_a_scene_made_again_gets_a_new_version_of_the_ad_and_the_old_one_is_kept
     new_clip = ProducedItem.objects.filter(kind="clip", scene__number=1).latest("version")
     assert second.cuts[0]["clip"] == new_clip.pk != first_clip.pk
     assert len(videos_shown(api, session_id)) == 2
+
+
+def test_the_music_plays_under_the_voice_and_is_cut_to_the_ads_length(
+    fake_model: FakeModel, finished: None, say: Callable[..., None]
+) -> None:
+    assemble(fake_model, say)
+
+    (ad,) = ads()
+    # The ad is made from the ad's music: 14 seconds of it, for 9 seconds of ad.
+    music = Job.objects.get().produced.get(kind="music")
+    assert (ad.made_from, music.seconds) == (music, 14)
+    heard = read(ad.file)
+    assert video(heard)[2] == pytest.approx(9.0, abs=0.1)
+    # The music is heard all the way through, and the voice is clearly louder than it.
+    assert loudness(heard, "music", between=(0, 4.5)) > -40
+    assert loudness(heard, "music", between=(4.5, 9)) > -40
+    assert loudness(heard, "voice") - loudness(heard, "music") >= 10
+
+
+def test_the_ad_isnt_assembled_before_the_music_is_made(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    finish(fake_model, steps, say, music=False)
+
+    assemble(fake_model, say)
+
+    assert results_of("assemble_ad") == [
+        "Refused: the music hasn't been made yet, and it plays under the ad's voice. Create "
+        "the music, then assemble the ad. Nothing was done."
+    ]
+    assert ads() == []
+
+
+def test_new_music_gets_a_new_version_of_the_ad_and_the_old_one_is_kept(
+    api: APIClient,
+    fake_model: FakeModel,
+    finished: None,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    assemble(fake_model, say)
+    fake_model.respond(
+        "produce",
+        turn(calls=[("create_music", {"mood": "calm piano"})]),
+        turn(says="Calmer music's ready."),
+    )
+    say("Make the music calmer")
+
+    assemble(fake_model, say)
+
+    first, second = ads()
+    upbeat, calm = Job.objects.get().produced.filter(kind="music").order_by("version")
+    assert (first.made_from, second.made_from) == (upbeat, calm)
+    # The same clips, cut the same way: only the music changed.
+    assert second.cuts == first.cuts
+    assert first.file != second.file
+    assert len(videos_shown(api, session_id)) == 2
+    assert results_of("assemble_ad")[-1].startswith("Assembled the ad (version 2, 9 seconds)")

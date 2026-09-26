@@ -8,7 +8,7 @@ plain picture of its own from other pictures, designs a numbered voice, speaks a
 words it spoke. Script an error for their purpose
 to make one fail, or script a transcript for "transcribe_line" to have something else heard.
 
-Music needs no script either: each piece asked for is silence as long as was asked, with
+Music needs no script either: each piece asked for is a low hum as long as was asked, with
 its number written into it so each is its own. Script an error for "make_music" to make one
 fail.
 
@@ -80,6 +80,10 @@ class FakeModel:
     INPUT_TOKENS = 1_000
     OUTPUT_TOKENS = 100
     SAMPLE_RATE = 8_000
+    # The voice speaks in a steady tone at this pitch, and the music hums at this one, far
+    # enough apart for a test to measure each on its own.
+    VOICE_HERTZ = 440
+    MUSIC_HERTZ = 110
 
     def __init__(self) -> None:
         self._scripts: defaultdict[str, deque[Outcome]] = defaultdict(deque)
@@ -185,7 +189,9 @@ class FakeModel:
             # Silent for the pauses and a steady tone while the words are said, so a test can
             # hear where they are. Each audio spoken is its own, as a real voice's would be.
             pause = _silence_frames(self.pause_seconds, self.SAMPLE_RATE)
-            words = _tone_frames(seconds - 2 * self.pause_seconds, self.SAMPLE_RATE)
+            words = _tone_frames(
+                seconds - 2 * self.pause_seconds, self.SAMPLE_RATE, hertz=self.VOICE_HERTZ
+            )
             frames = pause + words + pause
             first = len(self.spoken).to_bytes(2, "little")
             file.writeframes(first + frames[2:])
@@ -235,14 +241,14 @@ class FakeModel:
 
     def compose(self, *, model: str, prompt: str, seconds: int) -> bytes:
         self._fail_if_scripted("make_music")
-        # Silence, but for its first sound, which numbers it: each piece made is its own, as
-        # real music would be.
+        # A low hum, so a test can hear it under the voice's higher tone, but for its first
+        # sound, which numbers it: each piece made is its own, as real music would be.
         music = io.BytesIO()
         with wave.open(music, "wb") as file:
             file.setnchannels(1)
             file.setsampwidth(2)
             file.setframerate(self.SAMPLE_RATE)
-            frames = _silence_frames(seconds, self.SAMPLE_RATE)
+            frames = _tone_frames(seconds, self.SAMPLE_RATE, hertz=self.MUSIC_HERTZ)
             file.writeframes((len(self.music) + 1).to_bytes(2, "little") + frames[2:])
         self.music.append(music.getvalue())
         return self.music[-1]
@@ -312,9 +318,9 @@ def _silence_frames(seconds: float, rate: int) -> bytes:
     return b"\0\0" * round(seconds * rate)
 
 
-def _tone_frames(seconds: float, rate: int) -> bytes:
-    """A 440 Hz tone, loud enough to be heard over silence."""
+def _tone_frames(seconds: float, rate: int, *, hertz: int) -> bytes:
+    """A steady tone at `hertz`, loud enough to be heard over silence."""
     return b"".join(
-        round(8000 * math.sin(2 * math.pi * 440 * i / rate)).to_bytes(2, "little", signed=True)
+        round(8000 * math.sin(2 * math.pi * hertz * i / rate)).to_bytes(2, "little", signed=True)
         for i in range(round(seconds * rate))
     )

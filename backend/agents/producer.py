@@ -670,8 +670,9 @@ class MakeClip(Tool):
 
 class AssembleAd(Tool):
     """Assemble the finished ad from every scene's clip, in order, each cut to where its
-    words are said so there is no silence between scenes, and show it to the shop owner in
-    the chat. Only once every scene is finished. Costs nothing."""
+    words are said so there is no silence between scenes, with the music under the voice,
+    and show it to the shop owner in the chat. Only once every scene is finished and the
+    music is made. Costs nothing."""
 
     name = "assemble_ad"
 
@@ -700,17 +701,24 @@ class AssembleAd(Tool):
                 f"{_scenes(unfinished)} {isnt} finished: a scene is finished once its clip is "
                 f"made. Finish {them}, then assemble the ad."
             )
+        music = latest(job, ProducedItem.Kind.MUSIC)
+        if music is None:
+            raise Refused(
+                "the music hasn't been made yet, and it plays under the ad's voice. Create the "
+                "music, then assemble the ad."
+            )
         scene_clips = [_clip_and_transcript(scene) for scene in scenes]
         clips = [clip.pk for clip, _ in scene_clips]
+        # An ad made from the same clips and the same music would be this one again.
         for ad in job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).order_by("-version"):
-            if [cut["clip"] for cut in ad.cuts] == clips:
+            if [cut["clip"] for cut in ad.cuts] == clips and ad.made_from_id == music.pk:
                 _show(call.session, ad)
                 return (
-                    f"The ad was already assembled from these clips (version {ad.version}, "
-                    f"{ad.seconds:g} seconds) and shown to the shop owner, so nothing was made "
-                    "again. Assembling costs nothing."
+                    f"The ad was already assembled from these clips and this music (version "
+                    f"{ad.version}, {ad.seconds:g} seconds) and shown to the shop owner, so "
+                    "nothing was made again. Assembling costs nothing."
                 )
-        ad = assemble_ad(job, scene_clips)
+        ad = assemble_ad(job, scene_clips, music)
         _show(call.session, ad)
         first, *rest = ad.cuts
         plays = [
@@ -719,8 +727,8 @@ class AssembleAd(Tool):
         plays += [f"scene {cut['scene']} from {cut['start']:g} to {cut['end']:g}" for cut in rest]
         return (
             f"Assembled the ad (version {ad.version}, {ad.seconds:g} seconds) from each scene's "
-            "clip, cut to where its words are said, and showed it to the shop owner in the "
-            f"chat. {_listed(plays)}. Tell the shop owner."
+            "clip, cut to where its words are said, with the music under the voice, and showed "
+            f"it to the shop owner in the chat. {_listed(plays)}. Tell the shop owner."
         )
 
 

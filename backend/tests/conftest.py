@@ -7,7 +7,7 @@ import tempfile
 from collections.abc import Callable, Iterator
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import PIL.Image
 import pytest
@@ -295,6 +295,34 @@ def silences(data: bytes) -> list[tuple[float, float]]:
     starts = re.findall(r"silence_start: ([\d.]+)", heard)
     ends = re.findall(r"silence_end: ([\d.]+)", heard)
     return [(round(float(s), 1), round(float(e), 1)) for s, e in zip(starts, ends, strict=True)]
+
+
+def loudness(
+    data: bytes, band: Literal["voice", "music"], *, between: tuple[float, float] | None = None
+) -> float:
+    """How loud a video's sound is, in dB, in the fake voice's band (its 440 Hz tone) or the
+    fake music's (its 110 Hz hum): over the whole video, or `between` two times in seconds.
+    Silence is about -91 dB."""
+    # Each filter is run a few times over, so little of the other band leaks through.
+    heard = {
+        "voice": ",".join(["highpass=f=300"] * 2),
+        "music": ",".join(["lowpass=f=200"] * 4),
+    }[band]
+    if between is not None:
+        heard = f"atrim={between[0]}:{between[1]}," + heard
+    with tempfile.NamedTemporaryFile(suffix=".mp4") as file:
+        file.write(data)
+        file.flush()
+        measured = subprocess.run(
+            [settings.FFMPEG, "-i", file.name, "-af", f"{heard},volumedetect", "-f", "null", "-"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=True,
+        ).stderr
+    found = re.search(r"mean_volume: (-?[\d.]+) dB", measured)
+    assert found is not None, measured
+    return float(found.group(1))
 
 
 def lines() -> list[str]:
