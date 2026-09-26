@@ -197,15 +197,25 @@ def plan(job: Job) -> ProducerDecision:
                 job=job,
                 number=number,
                 line=scene.line,
+                shows=scene.shows or "",
                 overlay=" ".join((scene.overlay or "").split()),
             )
             for number, scene in enumerate(planned.scenes, start=1)
         )
+        job.product_name = planned.product_name
         job.product_colour = planned.product_colour
         job.person_looks = planned.person_looks
         job.person_voice = planned.person_voice
         job.status = Job.Status.PLANNED
-        job.save(update_fields=["product_colour", "person_looks", "person_voice", "status"])
+        job.save(
+            update_fields=[
+                "product_name",
+                "product_colour",
+                "person_looks",
+                "person_voice",
+                "status",
+            ]
+        )
         job.photos.filter(position__in=planned.colour_photos).update(shows_product_colour=True)
     return decision
 

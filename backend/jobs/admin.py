@@ -45,8 +45,8 @@ class ProductPhotoInline(ShowsFile, admin.TabularInline[ProductPhoto, Job]):
 
 class SceneInline(admin.TabularInline[Scene, Job]):
     model = Scene
-    fields = ["number", "line", "fact_checked", "fact_problems", "status"]
-    readonly_fields = ["number", "line", "fact_checked", "fact_problems", "status"]
+    fields = ["number", "line", "shows", "fact_checked", "fact_problems", "status"]
+    readonly_fields = ["number", "line", "shows", "fact_checked", "fact_problems", "status"]
     extra = 0
     can_delete = False
 
@@ -115,6 +115,7 @@ class JobAdmin(admin.ModelAdmin[Job]):
         "session",
         "variant_of",
         "status",
+        "product_name",
         "target_seconds",
         "created_at",
     ]
@@ -136,8 +137,10 @@ class SceneStepInline(admin.TabularInline[SceneStep, Scene]):
         "kind",
         "status",
         "reason",
+        "shows",
         "photo",
         "prompt",
+        "motion_prompt",
         "made_from",
         "picture",
         "started_at",
@@ -147,8 +150,10 @@ class SceneStepInline(admin.TabularInline[SceneStep, Scene]):
         "kind",
         "status",
         "reason",
+        "shows",
         "photo",
         "prompt",
+        "motion_prompt",
         "made_from",
         "picture",
         "started_at",
@@ -161,7 +166,7 @@ class SceneStepInline(admin.TabularInline[SceneStep, Scene]):
 
 @admin.register(Scene)
 class SceneAdmin(admin.ModelAdmin[Scene]):
-    list_display = ["job", "number", "line", "overlay", "fact_checked", "status"]
+    list_display = ["job", "number", "line", "shows", "overlay", "fact_checked", "status"]
     list_select_related = ["job"]
     list_filter = ["status"]
     search_fields = ["line"]

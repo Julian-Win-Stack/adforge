@@ -88,9 +88,36 @@ def test_the_plan_and_its_scenes_are_stored_with_the_job(
         (2, "Hand-thrown, holds 350 ml, and dishwasher safe.", "planned"),
         (3, "Yours for $24.00.", "planned"),
     ]
+    assert job.product_name == "Stoneware Mug"
     assert (job.person_looks, job.person_voice) == (
         "A potter in her thirties in a linen apron, in a sunny workshop.",
         "A warm, relaxed woman in her thirties with a soft British accent.",
+    )
+
+
+def test_a_scene_that_shows_the_product_is_stored_with_what_it_shows(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    scenes = [
+        {"line": "Meet the Stoneware Mug from Kiln & Co.", "shows": None},
+        {"line": "Hand-thrown, holds 350 ml.", "shows": "  hot tea poured into the mug  "},
+        # Blank is a scene where the person talks, as none is.
+        {"line": "Yours for $24.00.", "shows": " "},
+    ]
+    planning(fake_model, product_page_url, a_plan_with(scenes=scenes))
+
+    say(f"Make an ad for {product_page_url}")
+
+    job = Job.objects.get()
+    assert [(scene.number, scene.shows) for scene in job.scenes.all()] == [
+        (1, ""),
+        (2, "hot tea poured into the mug"),
+        (3, ""),
+    ]
+    # The producer is told what the scene shows, to describe the ad by.
+    assert (
+        "2. Hand-thrown, holds 350 ml. (Shows, while the voice says it: hot tea poured into "
+        "the mug)" in plan_ad_result()
     )
 
 
@@ -236,6 +263,27 @@ def test_the_planner_is_shown_each_photo_shrunk_to_fit_512_pixels_and_the_kept_o
             "An overlay is a few words: 30 characters at most.",
             id="an overlay too long for its band",
         ),
+        pytest.param(
+            a_plan_with(
+                scenes=[
+                    {"line": "Hot tea, poured.", "shows": "hot tea poured into the mug"},
+                    {"line": "Meet the Stoneware Mug."},
+                ]
+            ),
+            "The first scene is the person talking to camera",
+            id="opening on a scene that shows the product",
+        ),
+        pytest.param(
+            a_plan_with(
+                scenes=[
+                    {"line": "Meet my favourite mug."},
+                    {"line": "The Stoneware Mug, poured.", "shows": "tea poured into the mug"},
+                ]
+            ),
+            'No scene where the person talks to camera says "Stoneware Mug": at least one must.',
+            id="the name said only over the product",
+        ),
+        pytest.param(a_plan_with(product_name=" "), "This can't be empty.", id="no name"),
         pytest.param(a_plan_with(product_colour=" "), "This can't be empty.", id="no colour"),
         pytest.param(
             a_plan_with(person_looks=" "), "This can't be empty.", id="no look for the person"

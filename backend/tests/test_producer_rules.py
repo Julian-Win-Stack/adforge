@@ -833,6 +833,7 @@ def test_planning_again_hands_back_the_plan_and_pays_nothing(
         "2. Hand-thrown, holds 350 ml, and dishwasher safe.\n"
         "3. Yours for $24.00.\n"
         'Overlays: scene 1 "Kiln & Co", scene 3 "$24.00".\n'
+        "The product's name, said to camera: Stoneware Mug\n"
         "The product's colour: sage green, shown in photos 1.\n"
         "The person: A potter in her thirties in a linen apron, in a sunny workshop. Their "
         "voice: A warm, relaxed woman in her thirties with a soft British accent."

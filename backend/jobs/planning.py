@@ -16,15 +16,18 @@ photos there are, and the conversation with the shop owner so far, each message 
 themselves, each labelled with its number: "Photo 1", "Photo 2".
 Every claim in the ad must come from the page or the shop owner's own words. Your own \
 messages are there only to show what was asked: never take a fact from them. The photos \
-are only for the product's colour: never take any other fact from them, such as text on \
-a label. Never infer, guess or make anything up: not a price, a size, a material, a \
-benefit or a colour.
+are only for the product's colour and how it looks: never take any other fact from them, \
+such as text on a label. Never infer, guess or make anything up: not a price, a size, \
+a material, a benefit or a colour.
 Decide "plan" when you can plan the whole ad from what you have. Give the scenes in the \
 order they play, with each scene's line exactly as the person will say it. With a target \
-length, write only as many words as fit it when spoken at an easy pace. One line says \
-the product's price: the price a buyer pays today, so on a sale, the sale price. No line \
-names the product's colour: the ad shows the colour, never says it. Give a scene an \
-overlay, a few words drawn along the top of the picture while it plays, when there is \
+length, write only as many words as fit it when spoken at an easy pace. Give the \
+product's name as the ad says it, as the page states it (often the brand or a short \
+name), and say it in at least one scene where the person talks to camera; it may be said \
+in other scenes too. One line says the product's price: the price a buyer pays today, \
+so on a sale, the sale price. No line names the product's colour: the ad shows the \
+colour, never says it. Give a scene an overlay, a few words drawn along the top of the \
+picture while it plays, when there is \
 something worth showing as well as saying, such as the price or the product's name; \
 otherwise set it to null. An overlay states only what the page or the shop owner states, \
 like a line. Name the product's \
@@ -34,13 +37,60 @@ colours, don't ask which: pick one the photos show. Describe the person who pres
 ad: how they look, for a portrait, and how their voice sounds, for a voice designed to \
 match. Choose someone who suits the product and its buyers, and never a real, famous \
 person. Set question to null.
+Most scenes are the person talking to camera. A B-roll scene instead shows the product \
+while the person's voice says the line over it: the product being used, what it does, \
+or the proof. For a B-roll scene, set shows to what the scene shows, in plain words, such \
+as "a hand pours the sauce over a bowl of noodles"; for a talking scene, set it to null. \
+The first scene is always the person talking to camera. Use B-roll for lines about how \
+the product is used, what it does, or proof, and only to show what the page or the shop \
+owner states, or the photos show: a picture is a claim, just like a sentence. What a \
+scene shows must match what its line says while it says it, so a B-roll line is one \
+short sentence about what is shown. Never show before and after pictures of bodies or \
+skin, a screen whose content you'd have to invent, a result the page doesn't state, or \
+parts of the product no photo shows. How much of the ad is B-roll depends on the kind of \
+product. As a guide (B-roll share; what it can show; only if the page says; never):
+- Beauty and skincare: about 30%; a texture close-up (a dab on a fingertip), hands \
+applying it, the pack; only if the page gives the texture and how it's applied; never \
+skin before and after, skin problems or a visible result on skin.
+- Food, drink and kitchen: about 50%; a pour, sizzle and steam, a cooking step, the \
+finished dish; only foods or recipes the page names and what the cookware does; never \
+other foods, half-eaten food or chewing.
+- Fashion: about 40%; fabric close-up, the garment moving, a detail, worn and turning; \
+only the material, fit and features the page gives; never fit or stretch it doesn't \
+claim.
+- Home and cleaning: about 50%; the product in a room, hands using it, setup, a surface \
+before and after; only the result the page states; never a stronger result.
+- Tech and gadgets: 50 to 60%; design close-up, the feature working in hands, an \
+everyday setting, unboxing; only features and box contents the page lists; never \
+invented screens or readable small print.
+- Fitness equipment: about 40%; in use, folding and storing; only the exercise and size \
+claims the page makes; never body changes.
+- Supplements and health: about 20%, mostly talking; the routine, such as a scoop into a \
+shaker; only how it's taken; never any body, weight or health outcome.
+- Cars: about 50%; driving on a road, design details, the interior; only a car the page \
+names; never performance it doesn't claim or other brands' cars.
+- Car accessories: about 50%; fitted in a car, in use, an installation step; only cars \
+and installing the page describes.
+- Apps, software and services: none, unless the shop owner supplies the screens.
+- Pets: about 50%; the pet using the product; only the animal and use the page names; \
+never health outcomes.
+- Kids, baby and toys: 40 to 50%; a toy mid-play with hands only, the gear's features on \
+the product alone; only claims the page makes; never children.
+- Jewelry: about 40%; an extreme close-up, worn on a hand or neck; only the material and \
+stones the page gives; never detail the photos don't show.
+You may go against the guide for an unusual product if your reason says why.
 Decide "ask" when you don't know the one price to say, because neither the page nor the \
 shop owner gives a price, or they give different prices to choose between (such as a \
 single item, a pack and a subscription). Also decide "ask" when the page conflicts with \
 itself or is missing something else the ad needs, so that planning would mean guessing. \
+Also decide "ask" when a scene showing the product would need something neither the page, \
+the photos nor the shop owner shows or says, such as what a serum looks like out of the \
+bottle or the gadget working: say what's missing and offer that they attach a photo of \
+it, describe it in words, or choose something else. Never choose for them. \
 Ask the shop owner one short, specific question, and set plan to null.
-Give one sentence saying why: for a plan, why this many scenes; for a question, why you \
-need to ask. Write it for the shop owner."""
+Give one sentence saying why: for a plan, why this many scenes and why some show the \
+product rather than the person talking; for a question, why you need to ask. Write it \
+for the shop owner, without the word "B-roll"."""
 
 
 # An overlay longer than this would wrap into a second line, down towards the face.
@@ -49,6 +99,11 @@ MOST_OVERLAY_CHARACTERS = 30
 
 class PlannedScene(BaseModel):
     line: str = Field(description="Exactly what the person says in this scene.")
+    shows: str | None = Field(
+        default=None,
+        description="For a B-roll scene, what it shows while the person's voice says the "
+        "line, in plain words. Null for a scene where the person talks to camera.",
+    )
     overlay: str | None = Field(
         default=None,
         description="A few words drawn along the top of the picture while this scene plays, "
@@ -63,6 +118,11 @@ class PlannedScene(BaseModel):
             raise ValueError("A scene's line can't be empty.")
         return line
 
+    @field_validator("shows")
+    @classmethod
+    def _blank_is_talking(cls, shows: str | None) -> str | None:
+        return " ".join(shows.split()) or None if shows is not None else None
+
     @field_validator("overlay")
     @classmethod
     def _a_few_words(cls, overlay: str | None) -> str | None:
@@ -76,6 +136,10 @@ class PlannedScene(BaseModel):
 
 class Plan(BaseModel):
     scenes: list[PlannedScene] = Field(min_length=1)
+    product_name: str = Field(
+        description="The product's name as the ad says it, as the page states it. At least "
+        "one scene where the person talks to camera says it."
+    )
     product_colour: str = Field(
         description='The product\'s colour as the photos show it, such as "sage green".'
     )
@@ -87,12 +151,31 @@ class Plan(BaseModel):
     )
     person_voice: str = Field(description="How the person's voice sounds: age, accent, tone, pace.")
 
-    @field_validator("product_colour", "person_looks", "person_voice")
+    @field_validator("product_name", "product_colour", "person_looks", "person_voice")
     @classmethod
     def _not_empty(cls, text: str) -> str:
         if not text.strip():
             raise ValueError("This can't be empty.")
         return text
+
+    @model_validator(mode="after")
+    def _opens_on_the_person(self) -> Self:
+        if self.scenes[0].shows is not None:
+            raise ValueError("The first scene is the person talking to camera: its shows is null.")
+        return self
+
+    @model_validator(mode="after")
+    def _name_said_on_camera(self) -> Self:
+        name = " ".join(self.product_name.split()).casefold()
+        if not any(
+            scene.shows is None and name in " ".join(scene.line.split()).casefold()
+            for scene in self.scenes
+        ):
+            raise ValueError(
+                f'No scene where the person talks to camera says "{self.product_name}": at '
+                "least one must."
+            )
+        return self
 
 
 class ProducerDecision(Judgement):

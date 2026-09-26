@@ -67,6 +67,12 @@ class Job(models.Model):
     person_voice = models.TextField(
         blank=True, help_text="The producer's description of the person's voice."
     )
+    product_name = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="The product's name as the ad says it, from the plan. At least one scene "
+        "where the person talks to camera says it.",
+    )
     length_choice = models.CharField(
         max_length=20,
         choices=LengthChoice.choices,
@@ -115,13 +121,20 @@ class Scene(models.Model):
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="scenes")
     number = models.PositiveSmallIntegerField(help_text="1, 2, 3... in the order they play.")
     line = models.TextField(help_text="What the person says in this scene.")
+    shows = models.TextField(
+        blank=True,
+        help_text="What a B-roll scene shows, in plain words, while the person's voice says "
+        "the line over it. Blank for a scene where the person talks to camera.",
+    )
     overlay = models.TextField(
         blank=True,
         help_text="A few words drawn along the top of the picture while the scene plays, "
         "such as the price. Blank for none. Not fact checked yet.",
     )
     fact_checked = models.BooleanField(
-        default=False, help_text="The line passed the fact check, or the user kept it."
+        default=False,
+        help_text="The line, and what the scene shows, passed the fact check, or the user "
+        "kept them.",
     )
     fact_problems = models.JSONField(
         default=list,
@@ -140,11 +153,15 @@ class Scene(models.Model):
     def __str__(self) -> str:
         return f"Scene {self.number}: {self.line}"
 
-    def change_line(self, line: str) -> None:
-        """Give the scene a new line, unsaved. A clip says the line it was made for, so a
-        finished scene is planned again: it needs a new clip."""
+    def change_line(self, line: str, shows: str | None = None) -> None:
+        """Give the scene a new line, and what it shows if `shows` isn't None, unsaved. A
+        clip says the line and shows what it was made for, so a finished scene is planned
+        again: it needs a new clip."""
         if line != self.line:
             self.line = line
+            self.status = self.Status.PLANNED
+        if shows is not None and shows != self.shows:
+            self.shows = shows
             self.status = self.Status.PLANNED
 
 
@@ -176,6 +193,11 @@ class SceneStep(models.Model):
         help_text="The tool call that started it, which its model calls are charged to.",
     )
     line = models.TextField(help_text="The scene's line when the step started.")
+    shows = models.TextField(
+        blank=True,
+        help_text="What the scene showed when the step started: blank for the person "
+        "talking to camera.",
+    )
     note = models.TextField(
         blank=True, help_text="What the producer asked for, beyond the line. Blank for nothing."
     )
@@ -190,6 +212,11 @@ class SceneStep(models.Model):
     photo_reason = models.TextField(blank=True, help_text="Why that photo suits the line.")
     prompt = models.TextField(blank=True, help_text="What the picture model was asked to make.")
     prompt_reason = models.TextField(blank=True, help_text="Why the prompt asks for that.")
+    motion_prompt = models.TextField(
+        blank=True,
+        help_text="For a B-roll scene's starting picture, how the video model is asked to "
+        "move it. Blank for a talking scene, whose clips all move the same way.",
+    )
     made_from = models.ForeignKey(
         "ProducedItem",
         on_delete=models.PROTECT,

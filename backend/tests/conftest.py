@@ -82,6 +82,7 @@ PLAN: dict[str, Any] = {
             {"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "overlay": None},
             {"line": "Yours for $24.00.", "overlay": "$24.00"},
         ],
+        "product_name": "Stoneware Mug",
         "product_colour": "sage green",
         "colour_photos": [1],
         "person_looks": "A potter in her thirties in a linen apron, in a sunny workshop.",
@@ -109,8 +110,10 @@ FACTS_OK = facts_ok(1, 2, 3)
 
 
 def plan_with(*lines: str) -> dict[str, Any]:
-    """PLAN with these lines for its scenes."""
-    return {**PLAN, "plan": {**PLAN["plan"], "scenes": [{"line": line} for line in lines]}}
+    """PLAN with these lines for its scenes, each said by the person to camera, and the
+    product's name as "mug", which the first of them must say."""
+    scenes = [{"line": line} for line in lines]
+    return {**PLAN, "plan": {**PLAN["plan"], "scenes": scenes, "product_name": "mug"}}
 
 
 # The planning checks' arguments when the shop owner has made no choice.

@@ -937,6 +937,7 @@ def _the_plan(job: Job, reason: str) -> str:
             f"Planned {job.scenes.count()} scenes. {reason}",
             _script(job),
             _overlays(job),
+            f"The product's name, said to camera: {job.product_name}",
             f"The product's colour: {job.product_colour}, shown in photos "
             f"{', '.join(str(number) for number in colour_photos)}.",
             f"The person: {job.person_looks} Their voice: {job.person_voice}",
@@ -972,8 +973,12 @@ def _photos(count: int) -> str:
 
 
 def _script(job: Job) -> str:
+    """Each scene's line, and what a scene shows while the voice says it, if it doesn't show
+    the person talking."""
     return "The script:\n" + "\n".join(
-        f"{scene.number}. {scene.line}" for scene in job.scenes.all()
+        f"{scene.number}. {scene.line}"
+        + (f" (Shows, while the voice says it: {scene.shows})" if scene.shows else "")
+        for scene in job.scenes.all()
     )
 
 
