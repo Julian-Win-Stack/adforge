@@ -16,6 +16,7 @@ from jobs.models import Job, ProducedItem
 from .conftest import (
     HeldSteps,
     colour_at,
+    drawn_in,
     loudness,
     paid_for,
     results_of,
@@ -372,3 +373,28 @@ def test_new_music_gets_a_new_version_of_the_ad_and_the_old_one_is_kept(
     assert first.file != second.file
     assert len(videos_shown(api, session_id)) == 2
     assert results_of("assemble_ad")[-1].startswith("Assembled the ad (version 2, 9 seconds)")
+
+
+def test_the_captions_show_the_words_as_spoken_in_time_with_the_voice(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    # Scene 1's line is heard a little differently from how it was written.
+    fake_model.respond("transcribe_line", {"text": "Meet the Stoneware Mug from Kiln and Company."})
+    finish(fake_model, steps, say)
+
+    assemble(fake_model, say)
+
+    (ad,) = ads()
+    # A few words at a time, timed as the fake says them, 2 a second, scene after scene.
+    assert ad.captions == [
+        {"text": "Meet the Stoneware", "start": 0.0, "end": 1.5},
+        {"text": "Mug from Kiln", "start": 1.5, "end": 3.0},
+        {"text": "and Company.", "start": 3.0, "end": 4.0},
+        {"text": "Hand-thrown, holds 350", "start": 4.0, "end": 5.5},
+        {"text": "ml, and", "start": 5.5, "end": 6.5},
+        {"text": "dishwasher safe.", "start": 6.5, "end": 7.5},
+        {"text": "Yours for $24.00.", "start": 7.5, "end": 9.0},
+    ]
+    # Drawn along the bottom of the picture while the words are said, and nowhere else.
+    heard = read(ad.file)
+    assert [drawn_in(heard, middle) for middle in (2.0, 5.75, 8.25)] == [{"bottom"}] * 3

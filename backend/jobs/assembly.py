@@ -1,8 +1,9 @@
 """Putting the finished ad together: each scene's clip is cut to where its words are said,
 so there is no silence between scenes, and the parts are joined with ffmpeg, with the music
-under the voice."""
+under the voice and captions of the words as they were spoken along the bottom."""
 
 import json
+import math
 import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -21,6 +22,12 @@ MUSIC_VOLUME = 0.2
 # Music that runs out before the ad ends fades out over this long rather than stopping dead.
 MUSIC_FADE_SECONDS = 2
 
+# How many words a caption shows at once, at most: few enough to read at a glance.
+CAPTION_WORDS = 3
+
+# The captions are laid out for a frame this size, and ffmpeg scales them to the clips'.
+FRAME_WIDTH, FRAME_HEIGHT = 1080, 1920
+
 # Assembly re-encodes the whole ad, which takes a while for a long one at full size.
 TIMEOUT_SECONDS = 600
 
@@ -33,6 +40,15 @@ class Cut:
     clip: int
     clip_start: float
     clip_end: float
+    start: float
+    end: float
+
+
+@dataclass(frozen=True)
+class Caption:
+    """A few words drawn along the bottom of the ad, and when they show, in seconds."""
+
+    text: str
     start: float
     end: float
 
@@ -53,6 +69,73 @@ def cuts(scenes: Sequence[tuple[int, int, float, list[dict[str, Any]]]]) -> list
         end = round(start + clip_end - clip_start, 3)
         planned.append(Cut(scene, clip, clip_start, clip_end, start, end))
     return planned
+
+
+def captions(cuts: Sequence[Cut], words: Sequence[list[dict[str, Any]]]) -> list[Caption]:
+    """The ad's captions, from the words heard in each cut's clip: up to CAPTION_WORDS at a
+    time, split as evenly as that allows, never running from one scene into the next, and
+    timed from where the cut plays in the ad rather than from the start of its clip."""
+    drawn: list[Caption] = []
+    for cut, heard in zip(cuts, words, strict=True):
+        # A word's time is measured from the start of its clip; the ad's clock differs from
+        # that by however much of the clip was cut away, and by when the cut plays.
+        shift = cut.start - cut.clip_start
+        groups = math.ceil(len(heard) / CAPTION_WORDS)
+        size, extra = divmod(len(heard), groups)
+        at = 0
+        for group in range(groups):
+            said = heard[at : at + size + (1 if group < extra else 0)]
+            at += len(said)
+            drawn.append(
+                Caption(
+                    text=" ".join(word["text"] for word in said),
+                    start=round(max(cut.start, said[0]["start"] + shift), 3),
+                    end=round(min(cut.end, said[-1]["end"] + shift), 3),
+                )
+            )
+    return drawn
+
+
+# The captions' style, in the subtitle format ffmpeg draws with libass: white, bold and
+# outlined so they read over any picture, centred along the bottom (alignment 2) above a
+# margin. Sizes are for a FRAME_WIDTH by FRAME_HEIGHT frame.
+SUBTITLE_STYLE = f"""\
+[Script Info]
+ScriptType: v4.00+
+PlayResX: {FRAME_WIDTH}
+PlayResY: {FRAME_HEIGHT}
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, \
+BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, \
+BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Caption,DejaVu Sans,84,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,\
+100,100,0,0,1,5,0,2,60,60,120,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+
+def subtitles(drawn: Sequence[Caption], into: Path) -> None:
+    """Write the captions as a subtitle file for ffmpeg to draw, at `into`."""
+    lines = [SUBTITLE_STYLE]
+    for caption in drawn:
+        # Braces and backslashes would be read as styling, not shown.
+        text = caption.text.replace("\\", "").replace("{", "(").replace("}", ")")
+        lines.append(
+            f"Dialogue: 0,{_timestamp(caption.start)},{_timestamp(caption.end)},Caption,,0,0,0,,"
+            f"{text}\n"
+        )
+    into.write_text("".join(lines), encoding="utf-8")
+
+
+def _timestamp(seconds: float) -> str:
+    """Seconds as the subtitle format writes a time: hours, minutes, seconds, centiseconds."""
+    hours, rest = divmod(seconds, 3600)
+    minutes, rest = divmod(rest, 60)
+    return f"{int(hours)}:{int(minutes):02d}:{rest:05.2f}"
 
 
 def seconds_of(media: Path) -> float:
@@ -82,9 +165,11 @@ def music_filters(music_seconds: float, ad_seconds: float) -> str:
     return ",".join(fitted)
 
 
-def join(parts: Sequence[tuple[Path, Cut]], music: Path, into: Path) -> None:
+def join(
+    parts: Sequence[tuple[Path, Cut]], into: Path, *, music: Path, captions: Sequence[Caption]
+) -> None:
     """Cut each clip file to its part and join the parts, in order, with the music under
-    the voice, into the finished ad at `into`."""
+    the voice and the captions drawn along the bottom, into the finished ad at `into`."""
     inputs: list[str] = []
     filters: list[str] = []
     joined = ""
@@ -95,7 +180,11 @@ def join(parts: Sequence[tuple[Path, Cut]], music: Path, into: Path) -> None:
         filters.append(f"[{number}:v]trim={keep},setpts=PTS-STARTPTS[v{number}]")
         filters.append(f"[{number}:a]atrim={keep},asetpts=PTS-STARTPTS[a{number}]")
         joined += f"[v{number}][a{number}]"
-    filters.append(f"{joined}concat=n={len(parts)}:v=1:a=1[v][voice]")
+    filters.append(f"{joined}concat=n={len(parts)}:v=1:a=1[joined][voice]")
+    # ffmpeg reads the captions from a file beside the ad, whose path has nothing to escape.
+    drawn = into.parent / "captions.ass"
+    subtitles(captions, drawn)
+    filters.append(f"[joined]subtitles={drawn}[v]")
     inputs += ["-i", str(music)]
     ad_seconds = parts[-1][1].end
     filters.append(f"[{len(parts)}:a]{music_filters(seconds_of(music), ad_seconds)}[music]")

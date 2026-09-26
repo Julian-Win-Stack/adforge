@@ -850,13 +850,15 @@ def assemble_ad(
 ) -> ProducedItem:
     """Put the finished ad together from each scene's clip and the transcript of the audio
     it speaks, in the order the scenes play, and the music: each clip cut to where its words
-    are said, then joined, with the music under the voice. Gives back the ad, kept as the
-    job's next version. Costs nothing: no model is called."""
+    are said, then joined, with the music under the voice and captions of the words as they
+    were heard. Gives back the ad, kept as the job's next version. Costs nothing: no model
+    is called."""
     measured = []
     for clip, transcript in scenes:
         assert clip.scene is not None and clip.seconds is not None, "a clip is a scene's, measured"
         measured.append((clip.scene.number, clip.pk, clip.seconds, transcript.words))
     planned = assembly.cuts(measured)
+    drawn = assembly.captions(planned, [transcript.words for _, transcript in scenes])
     # ffmpeg reads and writes files on this machine, and the clips are in the file store.
     with tempfile.TemporaryDirectory() as folder:
         parts = []
@@ -867,7 +869,7 @@ def assemble_ad(
         under = Path(folder) / "music"
         under.write_bytes(file_store.read(music.file))
         ad = Path(folder) / "ad.mp4"
-        assembly.join(parts, under, ad)
+        assembly.join(parts, ad, music=under, captions=drawn)
         file = file_store.save("ad.mp4", ad.read_bytes())
     last = job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).aggregate(last=Max("version"))
     return ProducedItem.objects.create(
@@ -878,6 +880,7 @@ def assemble_ad(
         made_from=music,
         seconds=planned[-1].end,
         cuts=[asdict(cut) for cut in planned],
+        captions=[asdict(caption) for caption in drawn],
     )
 
 

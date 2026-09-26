@@ -279,6 +279,41 @@ def colour_at(data: bytes, seconds: float) -> str:
     )
 
 
+def drawn_in(data: bytes, seconds: float) -> set[str]:
+    """Which bands of the picture, "top" or "bottom", have something drawn over the clip
+    `seconds` in: pixels that differ from the clip's own colour, read from its middle."""
+    with tempfile.NamedTemporaryFile(suffix=".mp4") as file:
+        file.write(data)
+        file.flush()
+        frame = subprocess.run(
+            [settings.FFMPEG, "-v", "error", "-ss", str(seconds), "-i", file.name]
+            + ["-frames:v", "1", "-f", "image2pipe", "-c:v", "png", "-"],
+            capture_output=True,
+            timeout=60,
+            check=True,
+        ).stdout
+    shown = PIL.Image.open(io.BytesIO(frame)).convert("RGB")
+    width, height = shown.size
+    clip_colour = _rgb(shown, width // 2, height // 2)
+    band = height // 5
+
+    def differs(x: int, y: int) -> bool:
+        return sum(abs(a - b) for a, b in zip(_rgb(shown, x, y), clip_colour, strict=True)) > 60
+
+    drawn = set()
+    for name, top in (("top", 0), ("bottom", height - band)):
+        if any(differs(x, y) for x in range(width) for y in range(top, top + band)):
+            drawn.add(name)
+    return drawn
+
+
+def _rgb(image: PIL.Image.Image, x: int, y: int) -> tuple[int, int, int]:
+    pixel = image.getpixel((x, y))
+    assert isinstance(pixel, tuple)
+    red, green, blue = pixel
+    return red, green, blue
+
+
 def silences(data: bytes) -> list[tuple[float, float]]:
     """Where a video's sound is silent for more than a quarter of a second, in seconds."""
     with tempfile.NamedTemporaryFile(suffix=".mp4") as file:

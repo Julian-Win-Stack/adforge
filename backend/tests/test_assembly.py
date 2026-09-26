@@ -58,7 +58,7 @@ def test_music_that_runs_out_before_the_ad_ends_fades_out_rather_than_stopping_d
     parts = [(clip(tmp_path, "scene-1", seconds=9), one_scene(9.0))]
     ad = tmp_path / "ad.mp4"
 
-    assembly.join(parts, music(tmp_path, seconds=5), ad)
+    assembly.join(parts, ad, music=music(tmp_path, seconds=5), captions=[])
 
     heard = ad.read_bytes()
     playing = loudness(heard, "music", between=(1, 2))
@@ -73,3 +73,32 @@ def test_music_that_runs_out_before_the_ad_ends_fades_out_rather_than_stopping_d
     assert loudness(heard, "voice", between=(7, 9)) == pytest.approx(
         loudness(heard, "voice", between=(0, 2)), abs=1
     )
+
+
+def test_captions_are_timed_from_where_each_scene_plays_in_the_ad() -> None:
+    # Scene 2's clip has a second of silence before its words, and is kept from 0.9 seconds
+    # in; that part plays from 4.2 seconds into the ad.
+    cuts = [
+        assembly.Cut(scene=1, clip=1, clip_start=0.0, clip_end=4.2, start=0.0, end=4.2),
+        assembly.Cut(scene=2, clip=2, clip_start=0.9, clip_end=3.1, start=4.2, end=6.4),
+    ]
+    words = [
+        [
+            {"text": "Meet", "start": 0.1, "end": 0.5},
+            {"text": "the", "start": 0.5, "end": 0.8},
+            {"text": "mug.", "start": 0.8, "end": 4.1},
+        ],
+        [
+            {"text": "Yours", "start": 1.0, "end": 1.5},
+            {"text": "for", "start": 1.5, "end": 2.0},
+            {"text": "twenty", "start": 2.0, "end": 2.5},
+            {"text": "dollars.", "start": 2.5, "end": 3.0},
+        ],
+    ]
+
+    assert assembly.captions(cuts, words) == [
+        assembly.Caption(text="Meet the mug.", start=0.1, end=4.1),
+        # A caption never runs on from one scene into the next: 4 words are split 2 and 2.
+        assembly.Caption(text="Yours for", start=4.3, end=5.3),
+        assembly.Caption(text="twenty dollars.", start=5.3, end=6.3),
+    ]

@@ -282,7 +282,8 @@ class ProducedItem(models.Model):
         blank=True,
         related_name="+",
         help_text="What it was made from: for a line's audio, the voice that spoke it; for a "
-        "transcript, the audio it was heard in; for a clip, the audio it speaks.",
+        "transcript, the audio it was heard in; for a clip, the audio it speaks; for a "
+        "finished ad, the music under its voice.",
     )
     picture = models.ForeignKey(
         "self",
@@ -314,6 +315,12 @@ class ProducedItem(models.Model):
         help_text="For a finished ad, each scene in the order it plays: its clip, the part of "
         "the clip kept, and where that part plays in the ad, in seconds: "
         '[{"scene", "clip", "clip_start", "clip_end", "start", "end"}, ...].',
+    )
+    captions = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="For a finished ad, the words drawn along its bottom as they were spoken, "
+        'a few at a time, and when each shows, in seconds: [{"text", "start", "end"}, ...].',
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -67,6 +67,7 @@ class ProducedItemInline(ShowsFile, admin.TabularInline[ProducedItem, Job]):
         "text",
         "words",
         "cuts",
+        "captions",
         "created_at",
     ]
     readonly_fields = [
@@ -83,6 +84,7 @@ class ProducedItemInline(ShowsFile, admin.TabularInline[ProducedItem, Job]):
         "text",
         "words",
         "cuts",
+        "captions",
         "created_at",
     ]
     extra = 0
