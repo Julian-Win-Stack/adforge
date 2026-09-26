@@ -7,13 +7,14 @@ from pathlib import Path
 import pytest
 from django.conf import settings
 
+from gateway.fake import FakeModel
 from jobs import assembly
 
 from .conftest import loudness
 
 # The fake's pitches: a test hears the voice and the music apart by them.
-VOICE_HERTZ = 440
-MUSIC_HERTZ = 110
+VOICE_HERTZ = FakeModel.VOICE_HERTZ
+MUSIC_HERTZ = FakeModel.MUSIC_HERTZ
 
 
 def generate(into: Path, *inputs: str, seconds: float) -> Path:
@@ -60,7 +61,7 @@ def test_music_that_runs_out_before_the_ad_ends_fades_out_rather_than_stopping_d
     parts = [(clip(tmp_path, "scene-1", seconds=9), one_scene(9.0))]
     ad = tmp_path / "ad.mp4"
 
-    assembly.join(parts, ad, music=music(tmp_path, seconds=5), captions=[])
+    assembly.join(parts, ad, music=music(tmp_path, seconds=5), drawn=[])
 
     heard = ad.read_bytes()
     playing = loudness(heard, "music", between=(1, 2))
@@ -104,3 +105,10 @@ def test_captions_are_timed_from_where_each_scene_plays_in_the_ad() -> None:
         assembly.Caption(text="Yours for", start=4.3, end=5.3),
         assembly.Caption(text="twenty dollars.", start=5.3, end=6.3),
     ]
+
+
+@pytest.mark.parametrize(
+    ("seconds", "written"), [(0.0, "0:00:00.00"), (59.996, "0:01:00.00"), (3661.5, "1:01:01.50")]
+)
+def test_a_time_is_written_as_the_subtitle_format_reads_it(seconds: float, written: str) -> None:
+    assert assembly._timestamp(seconds) == written

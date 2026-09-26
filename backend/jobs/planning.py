@@ -43,12 +43,16 @@ Give one sentence saying why: for a plan, why this many scenes; for a question, 
 need to ask. Write it for the shop owner."""
 
 
+# An overlay longer than this would wrap into a second line, down towards the face.
+MOST_OVERLAY_CHARACTERS = 30
+
+
 class PlannedScene(BaseModel):
     line: str = Field(description="Exactly what the person says in this scene.")
     overlay: str | None = Field(
         default=None,
         description="A few words drawn along the top of the picture while this scene plays, "
-        "such as the price, or null for none.",
+        f"such as the price, {MOST_OVERLAY_CHARACTERS} characters at most, or null for none.",
     )
 
     # A validator rather than min_length, which OpenAI's structured output doesn't accept.
@@ -58,6 +62,16 @@ class PlannedScene(BaseModel):
         if not line.strip():
             raise ValueError("A scene's line can't be empty.")
         return line
+
+    @field_validator("overlay")
+    @classmethod
+    def _a_few_words(cls, overlay: str | None) -> str | None:
+        # Drawn in one band along the top: longer text would wrap down over the face.
+        if overlay is not None and len(" ".join(overlay.split())) > MOST_OVERLAY_CHARACTERS:
+            raise ValueError(
+                f"An overlay is a few words: {MOST_OVERLAY_CHARACTERS} characters at most."
+            )
+        return overlay
 
 
 class Plan(BaseModel):

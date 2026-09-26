@@ -936,7 +936,7 @@ def _the_plan(job: Job, reason: str) -> str:
         [
             f"Planned {job.scenes.count()} scenes. {reason}",
             _script(job),
-            _on_screen(job),
+            _overlays(job),
             f"The product's colour: {job.product_colour}, shown in photos "
             f"{', '.join(str(number) for number in colour_photos)}.",
             f"The person: {job.person_looks} Their voice: {job.person_voice}",
@@ -977,12 +977,12 @@ def _script(job: Job) -> str:
     )
 
 
-def _on_screen(job: Job) -> str:
+def _overlays(job: Job) -> str:
     """Each scene's overlay, for the scenes that have one."""
     overlays = [
         f'scene {scene.number} "{scene.overlay}"' for scene in job.scenes.all() if scene.overlay
     ]
-    return f"On screen: {', '.join(overlays)}." if overlays else "On screen: nothing."
+    return f"Overlays: {', '.join(overlays)}." if overlays else "Overlays: none."
 
 
 PRODUCER = Agent(

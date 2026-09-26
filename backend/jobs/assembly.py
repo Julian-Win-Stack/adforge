@@ -102,12 +102,12 @@ def captions(cuts: Sequence[Cut], words: Sequence[list[dict[str, Any]]]) -> list
     return drawn
 
 
-# How the text on the ad is drawn, in the subtitle format ffmpeg draws with libass. Both
+# How the text on the ad is drawn, in the ASS format ffmpeg draws with libass. Both
 # styles are white and bold so they read over any picture. A caption is outlined (border
 # style 1) and centred along the bottom (alignment 2) above a margin; an overlay sits in a
 # half-dark box (border style 3, whose box takes the outline colour) centred along the top
 # (alignment 8) below one. Sizes are for a FRAME_WIDTH by FRAME_HEIGHT frame.
-SUBTITLE_STYLES = f"""\
+TEXT_STYLES = f"""\
 [Script Info]
 ScriptType: v4.00+
 PlayResX: {FRAME_WIDTH}
@@ -128,26 +128,31 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
 
-def subtitles(drawn: Sequence[Caption], cuts: Sequence[Cut], into: Path) -> None:
-    """Write the text on the ad as a subtitle file for ffmpeg to draw, at `into`: the
-    captions, and each cut's overlay for as long as the cut plays."""
-    lines = [SUBTITLE_STYLES]
-    lines += [_dialogue("Caption", caption.text, caption.start, caption.end) for caption in drawn]
-    lines += [_dialogue("Overlay", cut.overlay, cut.start, cut.end) for cut in cuts if cut.overlay]
+def write_text_to_draw(drawn: Sequence[Caption], parts: Sequence[Cut], into: Path) -> None:
+    """Write the text on the ad as an ASS file for ffmpeg to draw, at `into`: the captions,
+    and each part's overlay for as long as the part plays."""
+    lines = [TEXT_STYLES]
+    lines += [_shown("Caption", caption.text, caption.start, caption.end) for caption in drawn]
+    lines += [
+        _shown("Overlay", part.overlay, part.start, part.end) for part in parts if part.overlay
+    ]
     into.write_text("".join(lines), encoding="utf-8")
 
 
-def _dialogue(style: str, text: str, start: float, end: float) -> str:
+def _shown(style: str, text: str, start: float, end: float) -> str:
+    """One piece of text as the ASS format lists it: in `style`, from `start` to `end`."""
     # Braces and backslashes would be read as styling, not shown.
     shown = text.replace("\\", "").replace("{", "(").replace("}", ")")
     return f"Dialogue: 0,{_timestamp(start)},{_timestamp(end)},{style},,0,0,0,,{shown}\n"
 
 
 def _timestamp(seconds: float) -> str:
-    """Seconds as the subtitle format writes a time: hours, minutes, seconds, centiseconds."""
-    hours, rest = divmod(seconds, 3600)
-    minutes, rest = divmod(rest, 60)
-    return f"{int(hours)}:{int(minutes):02d}:{rest:05.2f}"
+    """Seconds as the ASS format writes a time: hours, minutes, seconds and centiseconds,
+    counted in whole centiseconds so a time never rounds up to 60 seconds."""
+    hours, rest = divmod(round(seconds * 100), 360_000)
+    minutes, rest = divmod(rest, 6_000)
+    whole, centi = divmod(rest, 100)
+    return f"{hours}:{minutes:02d}:{whole:02d}.{centi:02d}"
 
 
 def seconds_of(media: Path) -> float:
@@ -178,7 +183,7 @@ def music_filters(music_seconds: float, ad_seconds: float) -> str:
 
 
 def join(
-    parts: Sequence[tuple[Path, Cut]], into: Path, *, music: Path, captions: Sequence[Caption]
+    parts: Sequence[tuple[Path, Cut]], into: Path, *, music: Path, drawn: Sequence[Caption]
 ) -> None:
     """Cut each clip file to its part and join the parts, in order, with the music under
     the voice, the captions drawn along the bottom and each part's overlay along the top,
@@ -196,9 +201,9 @@ def join(
     filters.append(f"{joined}concat=n={len(parts)}:v=1:a=1[joined][voice]")
     # ffmpeg reads the text to draw from a file beside the ad, whose path has nothing to
     # escape.
-    drawn = into.parent / "text.ass"
-    subtitles(captions, [cut for _, cut in parts], drawn)
-    filters.append(f"[joined]subtitles={drawn}[v]")
+    text = into.parent / "text.ass"
+    write_text_to_draw(drawn, [cut for _, cut in parts], text)
+    filters.append(f"[joined]subtitles={text}[v]")
     inputs += ["-i", str(music)]
     ad_seconds = parts[-1][1].end
     filters.append(f"[{len(parts)}:a]{music_filters(seconds_of(music), ad_seconds)}[music]")

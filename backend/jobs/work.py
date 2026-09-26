@@ -876,7 +876,7 @@ def assemble_ad(
         under = Path(folder) / "music"
         under.write_bytes(file_store.read(music.file))
         ad = Path(folder) / "ad.mp4"
-        assembly.join(parts, ad, music=under, captions=drawn)
+        assembly.join(parts, ad, music=under, drawn=drawn)
         file = file_store.save("ad.mp4", ad.read_bytes())
     last = job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).aggregate(last=Max("version"))
     return ProducedItem.objects.create(

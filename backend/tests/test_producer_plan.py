@@ -224,6 +224,18 @@ def test_the_planner_is_shown_each_photo_shrunk_to_fit_512_pixels_and_the_kept_o
             "A scene's line can't be empty.",
             id="a scene with nothing to say",
         ),
+        pytest.param(
+            a_plan_with(
+                scenes=[
+                    {
+                        "line": "Yours for $24.00.",
+                        "overlay": "Hand-thrown stoneware mug, only $24.00",
+                    }
+                ]
+            ),
+            "An overlay is a few words: 30 characters at most.",
+            id="an overlay too long for its band",
+        ),
         pytest.param(a_plan_with(product_colour=" "), "This can't be empty.", id="no colour"),
         pytest.param(
             a_plan_with(person_looks=" "), "This can't be empty.", id="no look for the person"
