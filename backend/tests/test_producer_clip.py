@@ -627,3 +627,28 @@ def test_a_finished_scene_whose_line_is_shortened_is_planned_again(
     scene = Scene.objects.get(number=1)
     assert (scene.line, scene.status) == ("Meet this Stoneware Mug.", "planned")
     assert made("clip") == [(1, 1)]
+
+
+def test_a_line_said_in_under_a_second_gets_a_clip_of_the_shortest_length_the_model_makes(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    # One word, which the fake voice says in half a second.
+    Scene.objects.filter(number=1).update(line="Welcome.")
+    fake_model.respond("choose_starting_picture", CHOICE)
+    tools: list[tuple[str, dict[str, Any]]] = [
+        ("make_starting_picture", {"scene": 1, "note": None}),
+        ("make_line_audio", {"scene": 1}),
+        ("transcribe_line_audio", {"scene": 1}),
+        ("make_clip", {"scene": 1}),
+    ]
+    for tool, arguments in tools:
+        calling(fake_model, tool, arguments)
+        say(f"Go on: {tool}")
+        run(fake_model, steps)
+
+    # The video model makes clips of at least a second; the clip keeps the audio's length,
+    # which is where the ad cuts it.
+    assert ModelCall.objects.get(purpose="make_clip").handoff["seconds"] == 1
+    clip = ProducedItem.objects.get(kind="clip")
+    assert clip.seconds == 0.5
+    assert Scene.objects.get(number=1).status == "finished"

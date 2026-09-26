@@ -262,8 +262,9 @@ class TranscriptionProvider(Protocol):
         ...
 
 
-# The longest clip the video model makes.
+# The longest and shortest clips the video model makes.
 MOST_CLIP_SECONDS = 20
+LEAST_CLIP_SECONDS = 1
 
 
 class ClipHandoff(Handoff):
@@ -273,7 +274,7 @@ class ClipHandoff(Handoff):
 
     picture: str = Field(min_length=1)
     audio: str | None = Field(default=None, min_length=1)
-    seconds: float = Field(ge=1, le=MOST_CLIP_SECONDS)
+    seconds: float = Field(ge=LEAST_CLIP_SECONDS, le=MOST_CLIP_SECONDS)
     motion_prompt: str = Field(min_length=1)
 
 

@@ -50,12 +50,20 @@ _Avoid_: Version, copy, alternative
 One spoken line in a job, and everything produced for it. A scene has no planned length: it lasts exactly as long as its line takes to say.
 _Avoid_: Shot, beat, clip, segment
 
+**Talking scene**:
+A scene in which the person says the line to camera. Every scene is one unless the plan gives it something to show, and the first scene always is.
+_Avoid_: A-roll, presenter scene
+
+**B-roll scene**:
+A scene that shows the product rather than the person talking, such as a pan sizzling, while the person's voice says the line over it. What it shows is written in plain words in the plan, and is fact checked like the line. Made with the same tools as a talking scene. The user is never told which scenes are which.
+_Avoid_: Cutaway, product shot, insert
+
 **Scene step**:
 One piece of a scene's work, run in the background: its starting picture, its line's audio, the audio's transcript, and its clip. A scene tool starts it and returns at once; when it finishes or fails, the producer is told on its next turn and tells the user.
 _Avoid_: Task, job, render
 
 **Starting picture**:
-A scene's first frame: the person holding the product, made from the portrait and one product photo. The clip is made from it.
+A scene's first frame, made from the portrait and one product photo: the person holding the product, or, for a B-roll scene, what the scene shows, with the person only if it needs them. The clip is made from it.
 _Avoid_: Start frame, keyframe, thumbnail
 
 **Line's audio**:
@@ -75,7 +83,7 @@ The on-screen text for one scene, such as the price, written by the producer whe
 _Avoid_: Caption, graphic, text layer, on-screen text
 
 **Clip**:
-A scene's starting picture animated to speak its line's audio: the same audio its transcript was heard in, so the clip lasts exactly as long. Made only once the picture is made and the audio heard, for the line as it stands. A scene whose clip is made is finished. Not shown to the user on its own.
+A scene's starting picture animated to speak its line's audio: the same audio its transcript was heard in, so the clip lasts exactly as long. A B-roll scene's is made with no sound, then has the audio laid over it and is cut to the audio's length. Made only once the picture is made and the audio heard, for the line as it stands. A scene whose clip is made is finished. Not shown to the user on its own.
 _Avoid_: Video, render, shot
 
 **Finished ad**:
