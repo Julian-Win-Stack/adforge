@@ -71,10 +71,15 @@ from .planning import (
     producer_decision_for,
 )
 from .scenes import (
+    BROLL_PICTURE_INSTRUCTIONS,
     CLIP_MOTION_PROMPT,
     STARTING_PICTURE_INSTRUCTIONS,
+    BrollPictureChoice,
+    BrollPictureHandoff,
+    StartingPictureChoice,
     StartingPictureHandoff,
     starting_picture_choice_for,
+    with_nothing_made_up,
 )
 
 if TYPE_CHECKING:
@@ -755,7 +760,9 @@ def _keep_music(job: Job, file: str, prompt: str, seconds: int) -> ProducedItem:
 def make_starting_picture(step: SceneStep) -> ProducedItem:
     """Make the scene's starting picture: a model picks the product photo that suits the
     line best and writes the prompt, then the picture is made from the portrait and that
-    photo. Gives back the picture, kept as the scene's next version.
+    photo. For a scene that shows the product rather than the person talking, the picture
+    shows what the scene shows, and the model also writes the clip's motion prompt. Gives
+    back the picture, kept as the scene's next version.
 
     Run again, as after a worker stopped, it pays for nothing already paid for: the choice
     is made from the conversation as it was when the step started, so it is answered from
@@ -769,32 +776,49 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
     assert portrait is not None, "the tool refuses a scene whose person isn't made"
     photos = list(job.photos.filter(shows_product_colour=True))
     numbers = [photo.position for photo in photos]
-    choice = call_model(
-        job=job,
-        purpose="choose_starting_picture",
-        instructions=STARTING_PICTURE_INSTRUCTIONS,
-        handoff=StartingPictureHandoff(
-            scene=scene.number,
-            line=step.line,
-            script=list(job.scenes.values_list("line", flat=True)),
-            product_colour=job.product_colour,
-            colour_photos=numbers,
-            person_looks=job.person_looks,
-            note=step.note or None,
-            conversation=_conversation(job, until=step.started_at),
-        ),
-        output=starting_picture_choice_for(numbers),
-        images=[
-            Image(label="The portrait", key=portrait.file),
-            *(Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos),
-        ],
-        pay_once=True,
+    handoff = StartingPictureHandoff(
+        scene=scene.number,
+        line=step.line,
+        script=list(job.scenes.values_list("line", flat=True)),
+        product_colour=job.product_colour,
+        colour_photos=numbers,
+        person_looks=job.person_looks,
+        note=step.note or None,
+        conversation=_conversation(job, until=step.started_at),
     )
+    images = [
+        Image(label="The portrait", key=portrait.file),
+        *(Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos),
+    ]
+    choice: StartingPictureChoice
+    if step.shows:
+        broll = call_model(
+            job=job,
+            purpose="choose_broll_picture",
+            instructions=BROLL_PICTURE_INSTRUCTIONS,
+            handoff=BrollPictureHandoff(**handoff.model_dump(), shows=step.shows),
+            output=starting_picture_choice_for(numbers, BrollPictureChoice),
+            images=images,
+            pay_once=True,
+        )
+        step.motion_prompt = broll.motion_prompt
+        choice, prompt = broll, with_nothing_made_up(broll.prompt)
+    else:
+        choice = call_model(
+            job=job,
+            purpose="choose_starting_picture",
+            instructions=STARTING_PICTURE_INSTRUCTIONS,
+            handoff=handoff,
+            output=starting_picture_choice_for(numbers, StartingPictureChoice),
+            images=images,
+            pay_once=True,
+        )
+        prompt = choice.prompt
     step.photo = job.photos.get(position=choice.photo)
     step.photo_reason = choice.photo_reason
     step.prompt = choice.prompt
     step.prompt_reason = choice.prompt_reason
-    step.save(update_fields=["photo", "photo_reason", "prompt", "prompt_reason"])
+    step.save(update_fields=["photo", "photo_reason", "prompt", "prompt_reason", "motion_prompt"])
     paid_for = _paid_for_before(job, "make_starting_picture", charged_to=step.tool_call)
     file = (
         paid_for["file"]
@@ -802,7 +826,7 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
         else edit_picture(
             job=job,
             purpose="make_starting_picture",
-            prompt=choice.prompt,
+            prompt=prompt,
             pictures=[portrait.file, step.photo.file],
         )
     )
@@ -882,7 +906,9 @@ def transcribe_line_audio(step: SceneStep) -> ProducedItem:
 def make_clip(step: SceneStep) -> ProducedItem:
     """Have the video model animate the starting picture to speak the audio the step was
     started for. Gives back the clip, kept as the scene's next version, and marks the scene
-    finished.
+    finished. A scene that shows the product rather than the person talking is made with no
+    sound, as long as the audio rounded up to a whole second; the audio is then laid over it
+    and it is cut to the audio's length. Either way, a clip lasts as long as its audio.
 
     Run again, as after a worker stopped, it pays for nothing already paid for: a clip
     asked for is waited for rather than asked for again, and one fetched is kept rather
@@ -895,14 +921,15 @@ def make_clip(step: SceneStep) -> ProducedItem:
     picture, audio = step.picture, step.made_from
     assert picture is not None and audio is not None, "a clip step starts with both"
     assert audio.seconds is not None, "a line's audio is measured when it's made"
-    video_id = _clip_asked_for(step, picture, audio) or (
+    asking = _clip_handoff(step, picture, audio)
+    video_id = _clip_asked_for(step, asking) or (
         submit_clip(
             job=job,
             purpose="make_clip",
-            picture_key=picture.file,
-            audio_key=audio.file,
-            seconds=audio.seconds,
-            motion_prompt=CLIP_MOTION_PROMPT,
+            picture_key=asking.picture,
+            audio_key=asking.audio,
+            seconds=asking.seconds,
+            motion_prompt=asking.motion_prompt,
         )
     )
 
@@ -924,6 +951,8 @@ def make_clip(step: SceneStep) -> ProducedItem:
             job=job, purpose="collect_clip", video_id=video_id, when_slow=tell_its_slow
         )
     )
+    if asking.audio is None:
+        file = _with_the_voice(file, audio)
     with transaction.atomic():
         clip = ProducedItem.objects.create(
             job=job,
@@ -932,7 +961,8 @@ def make_clip(step: SceneStep) -> ProducedItem:
             kind=ProducedItem.Kind.CLIP,
             version=_next_version(scene, ProducedItem.Kind.CLIP),
             file=file,
-            # The video model makes a clip as long as the audio it speaks.
+            # The video model makes a clip as long as the audio it speaks, and a silent
+            # clip is cut to the audio laid over it.
             seconds=audio.seconds,
             made_from=audio,
             picture=picture,
@@ -941,36 +971,70 @@ def make_clip(step: SceneStep) -> ProducedItem:
     return clip
 
 
-def _clip_asked_for(step: SceneStep, picture: ProducedItem, audio: ProducedItem) -> str | None:
-    """The id of a clip already paid for from this picture and audio that may still be made,
-    so it is waited for rather than paid for again: asked for by this step before the worker
+def _clip_handoff(step: SceneStep, picture: ProducedItem, audio: ProducedItem) -> ClipHandoff:
+    """What the video model is asked for: a clip speaking the audio, or, for a scene that
+    shows the product, a silent one as long as the audio rounded up to a whole second, that
+    moves as the picture's step planned."""
+    assert audio.seconds is not None, "a line's audio is measured when it's made"
+    if not step.shows:
+        return ClipHandoff(
+            picture=picture.file,
+            audio=audio.file,
+            seconds=audio.seconds,
+            motion_prompt=CLIP_MOTION_PROMPT,
+        )
+    assert picture.step is not None, "a starting picture is made by a scene step"
+    return ClipHandoff(
+        picture=picture.file,
+        audio=None,
+        seconds=math.ceil(audio.seconds),
+        motion_prompt=with_nothing_made_up(picture.step.motion_prompt),
+    )
+
+
+def _with_the_voice(file: str, audio: ProducedItem) -> str:
+    """A silent clip with the audio laid over it, cut to the audio's length, kept in the
+    file store. Raises ClipFailed if the clip is shorter than the audio: the line would
+    run on past the picture."""
+    assert audio.seconds is not None, "a line's audio is measured when it's made"
+    with tempfile.TemporaryDirectory() as folder:
+        silent = Path(folder) / "silent.mp4"
+        silent.write_bytes(file_store.read(file))
+        voice = Path(folder) / "voice"
+        voice.write_bytes(file_store.read(audio.file))
+        seconds = assembly.seconds_of(silent)
+        if seconds < audio.seconds - assembly.CLIP_SHORT_BY_AT_MOST_SECONDS:
+            raise ClipFailed(
+                f"it came back {round(seconds, 1):g} seconds long, shorter than the line's "
+                f"{round(audio.seconds, 1):g} seconds of audio"
+            )
+        voiced = Path(folder) / "clip.mp4"
+        assembly.lay_voice_over(silent, voice, voiced, seconds=audio.seconds)
+        return file_store.save("clip.mp4", voiced.read_bytes())
+
+
+def _clip_asked_for(step: SceneStep, asking: ClipHandoff) -> str | None:
+    """The id of a clip already paid for with this same handoff that may still be made, so
+    it is waited for rather than paid for again: asked for by this step before the worker
     stopped, or by an earlier one that stopped or gave up while the video service was down.
-    None if there is none, or the video model said it couldn't make it."""
+    None if there is none, or the video model said it couldn't make it, or it was fetched:
+    then it was kept, or it was refused."""
     job = step.scene.job
     asked_by_this_step = _paid_for_before(job, "make_clip", charged_to=step.tool_call)
     if asked_by_this_step:
         return str(asked_by_this_step["video_id"])
-    assert audio.seconds is not None, "a line's audio is measured when it's made"
-    handoff = ClipHandoff(
-        picture=picture.file,
-        audio=audio.file,
-        seconds=audio.seconds,
-        motion_prompt=CLIP_MOTION_PROMPT,
-    ).model_dump()
     asked = job.model_calls.filter(
-        purpose="make_clip", outcome=ModelCall.Outcome.SUCCEEDED, handoff=handoff
+        purpose="make_clip", outcome=ModelCall.Outcome.SUCCEEDED, handoff=asking.model_dump()
     ).last()
     if asked is None or asked.output is None:
         return None
     video_id = str(asked.output["video_id"])
+    collected = job.model_calls.filter(purpose="collect_clip", handoff={"video_id": video_id})
     # Given up on while the service was down, it may still be made. Failed (ClipFailed),
     # it never will be.
-    failed = job.model_calls.filter(
-        purpose="collect_clip",
-        handoff={"video_id": video_id},
-        error__startswith=f"{ClipFailed.__name__}:",
-    ).exists()
-    return None if failed else video_id
+    failed = collected.filter(error__startswith=f"{ClipFailed.__name__}:").exists()
+    fetched = collected.filter(outcome=ModelCall.Outcome.SUCCEEDED).exists()
+    return None if failed or fetched else video_id
 
 
 def assemble_ad(

@@ -14,7 +14,8 @@ fail.
 
 Clips need no script either: each one asked for is made at once, a real tiny clip that
 speaks the audio it was asked for, or is silent for as many seconds as were asked for when
-it has none, so ffmpeg can cut and join it. Script {"state": "working"}
+it has none, so ffmpeg can cut and join it: set `clips_short_by` to make silent ones
+shorter. Script {"state": "working"}
 for "collect_clip" to have it still being made when asked, {"state": "failed", "error": ...}
 to have it fail, or an error for "make_clip" or "collect_clip"."""
 
@@ -106,6 +107,8 @@ class FakeModel:
         # What each clip was asked for with, in turn: its seconds, whether it speaks audio,
         # and its motion prompt.
         self.clips_asked: list[tuple[float, bool, str]] = []
+        # How much shorter than asked each silent clip is made, as a real model's may be.
+        self.clips_short_by = 0.0
         # The audio each clip asked for speaks, and each clip made, by its id.
         self._clip_audio: dict[str, bytes] = {}
         self.clips: dict[str, bytes] = {}
@@ -229,7 +232,9 @@ class FakeModel:
         self._fail_if_scripted("make_clip")
         self.clips_submitted.append(f"video-{len(self.clips_submitted) + 1}")
         self.clips_asked.append((seconds, audio is not None, motion_prompt))
-        self._clip_audio[self.clips_submitted[-1]] = audio or _silence(seconds=seconds)
+        self._clip_audio[self.clips_submitted[-1]] = audio or _silence(
+            seconds=seconds - self.clips_short_by
+        )
         return self.clips_submitted[-1]
 
     def status(self, *, video_id: str) -> ClipStatus:
@@ -281,8 +286,11 @@ def _clip(video_id: str, audio: bytes | None) -> bytes:
     with tempfile.TemporaryDirectory() as folder:
         speaks = f"{folder}/audio.wav"
         made = f"{folder}/clip.mp4"
+        said = audio or _silence(seconds=1)
         with open(speaks, "wb") as file:
-            file.write(audio or _silence(seconds=1))
+            file.write(said)
+        with wave.open(io.BytesIO(said)) as heard:
+            seconds = heard.getnframes() / heard.getframerate()
         subprocess.run(
             [
                 settings.FFMPEG,
@@ -295,7 +303,9 @@ def _clip(video_id: str, audio: bytes | None) -> bytes:
                 f"color=c={colour}:s=72x128:r=25",
                 "-i",
                 speaks,
-                "-shortest",
+                # Exactly as long as the audio: -shortest can run a busy machine's clip on.
+                "-t",
+                str(seconds),
                 "-pix_fmt",
                 "yuv420p",
                 "-metadata",

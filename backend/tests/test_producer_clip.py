@@ -328,8 +328,9 @@ def test_a_changed_line_gets_no_clip_until_its_picture_and_audio_are_made_again(
 
     assert results_of("make_clip") == [
         refused(
-            "scene 1's starting picture was made for an earlier line, and the line has changed "
-            "since. Make its starting picture again first."
+            "scene 1's starting picture was made for an earlier line, or for what the scene "
+            "showed before, and the scene has changed since. Make its starting picture again "
+            "first."
         )
     ]
 

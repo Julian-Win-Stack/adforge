@@ -1,7 +1,8 @@
 """Putting the finished ad together: each scene's clip is cut to where its words are said,
 so there is no silence between scenes, and the parts are joined with ffmpeg, with the music
 under the voice, captions of the words as they were spoken along the bottom, and each
-scene's overlay along the top while it plays."""
+scene's overlay along the top while it plays. A clip made with no sound gets its voice laid
+over it here first."""
 
 import json
 import math
@@ -33,6 +34,26 @@ FRAME_WIDTH, FRAME_HEIGHT = 1080, 1920
 
 # Assembly re-encodes the whole ad, which takes a while for a long one at full size.
 TIMEOUT_SECONDS = 600
+
+# How every video made here is encoded.
+ENCODED = (
+    "-c:v",
+    "libx264",
+    "-preset",
+    "veryfast",
+    "-pix_fmt",
+    "yuv420p",
+    "-c:a",
+    "aac",
+    # So the browser can start playing it before all of it has arrived.
+    "-movflags",
+    "+faststart",
+)
+
+
+# A silent clip may come back this much shorter than the voice laid over it, about a frame
+# or two, as a video's length is counted in frames: its last frame is held to make it up.
+CLIP_SHORT_BY_AT_MOST_SECONDS = 0.1
 
 
 @dataclass(frozen=True)
@@ -209,32 +230,45 @@ def join(
     filters.append(f"[{len(parts)}:a]{music_filters(seconds_of(music), ad_seconds)}[music]")
     # The ad lasts as long as the voice; the levels set above are kept, not evened out.
     filters.append("[voice][music]amix=inputs=2:duration=first:normalize=0[a]")
+    _ffmpeg(
+        *inputs,
+        "-filter_complex",
+        ";".join(filters),
+        "-map",
+        "[v]",
+        "-map",
+        "[a]",
+        *ENCODED,
+        str(into),
+    )
+
+
+def lay_voice_over(clip: Path, voice: Path, into: Path, *, seconds: float) -> None:
+    """Replace a clip's sound with `voice` and cut it to `seconds`, into the clip at `into`.
+    A clip a little shorter than that holds its last frame to the end."""
+    _ffmpeg(
+        "-i",
+        str(clip),
+        "-i",
+        str(voice),
+        "-filter_complex",
+        f"[0:v]tpad=stop_mode=clone:stop_duration={CLIP_SHORT_BY_AT_MOST_SECONDS}[v]",
+        "-map",
+        "[v]",
+        "-map",
+        "1:a",
+        "-t",
+        str(seconds),
+        *ENCODED,
+        str(into),
+    )
+
+
+def _ffmpeg(*arguments: str) -> None:
+    """Run ffmpeg with `arguments`. Raises AssemblyFailed, saying what ffmpeg said, if it
+    fails."""
     ffmpeg = subprocess.run(
-        [
-            settings.FFMPEG,
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            *inputs,
-            "-filter_complex",
-            ";".join(filters),
-            "-map",
-            "[v]",
-            "-map",
-            "[a]",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-pix_fmt",
-            "yuv420p",
-            "-c:a",
-            "aac",
-            # So the browser can start playing it before all of it has arrived.
-            "-movflags",
-            "+faststart",
-            str(into),
-        ],
+        [settings.FFMPEG, "-hide_banner", "-loglevel", "error", *arguments],
         capture_output=True,
         text=True,
         timeout=TIMEOUT_SECONDS,

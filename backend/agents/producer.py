@@ -40,7 +40,9 @@ from .models import ToolCall
 INSTRUCTIONS = """\
 You are the producer at AdForge. You make short vertical video ads for one product at a \
 time, in a chat with the shop owner who sells it. In each ad a person speaks to camera, \
-one line per scene.
+one line per scene. Some scenes show the product instead, while the person's voice says \
+the line over it: the plan says which. They are made with the same tools, in the same \
+order. Never tell the shop owner which scenes are which, or that there are two kinds.
 You work by calling tools. Call one when you need it, read what it hands back, and decide \
 what to do next. Before a tool that takes a while, say in one short sentence what you're \
 about to do. When there is nothing left to do, or you need the shop owner, reply to them.
@@ -467,8 +469,9 @@ class CreateMusic(Tool):
 
 
 class MakeStartingPicture(Tool):
-    """Start making a scene's starting picture: the person holding the product, made from
-    the portrait and the product photo that suits the scene's line best. Works in the
+    """Start making a scene's starting picture, made from the portrait and the product photo
+    that suits the scene best: the person holding the product, or, for a scene that shows
+    the product rather than the person talking, what the scene shows. Works in the
     background and hands back at once; you are told when the picture is ready. Only for a
     line that has passed the fact check."""
 
@@ -490,7 +493,9 @@ class MakeStartingPicture(Tool):
         note = " ".join((self.note or "").split())
         steps = scene.steps.filter(kind=SceneStep.Kind.STARTING_PICTURE)
         made = (
-            steps.filter(status=SceneStep.Status.FINISHED, note=note, line=scene.line)
+            steps.filter(
+                status=SceneStep.Status.FINISHED, note=note, line=scene.line, shows=scene.shows
+            )
             .exclude(produced=None)
             .last()
         )
@@ -618,7 +623,9 @@ class TranscribeLineAudio(Tool):
 
 class MakeClip(Tool):
     """Start making a scene's clip: its starting picture animated to speak its line's audio,
-    the same audio that was transcribed. A scene whose clip is made is finished. Works in the
+    the same audio that was transcribed, or, for a scene that shows the product rather than
+    the person talking, animated with that audio laid over it. A scene whose clip is made is
+    finished. Works in the
     background and hands back at once; you are told when the clip is ready. Only once the
     scene's starting picture is made and its audio transcribed, for the line as it stands."""
 
@@ -646,11 +653,12 @@ class MakeClip(Tool):
                 f"scene {scene.number} has no starting picture yet. Make its starting picture "
                 "first."
             )
-        picture = pictures.filter(step__line=scene.line).last()
+        picture = pictures.filter(step__line=scene.line, step__shows=scene.shows).last()
         if picture is None:
             raise Refused(
-                f"scene {scene.number}'s starting picture was made for an earlier line, and the "
-                "line has changed since. Make its starting picture again first."
+                f"scene {scene.number}'s starting picture was made for an earlier line, or for "
+                "what the scene showed before, and the scene has changed since. Make its "
+                "starting picture again first."
             )
         audio = _current_audio(scene)
         if not scene.produced.filter(
@@ -773,6 +781,7 @@ def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem]:
             kind=ProducedItem.Kind.CLIP,
             step__status=SceneStep.Status.FINISHED,
             step__line=scene.line,
+            step__shows=scene.shows,
         )
         .order_by("version")
         .last()
@@ -851,7 +860,8 @@ def _start_step(
     made_from: ProducedItem | None = None,
     picture: ProducedItem | None = None,
 ) -> None:
-    """Start a scene step in the background, from the scene's line as it stands, unless one
+    """Start a scene step in the background, from the scene's line and what it shows as they
+    stand, unless one
     of its kind is already running for the scene: then refuse, saying `busy`."""
     if scene.steps.filter(kind=kind, status=SceneStep.Status.RUNNING).exists():
         raise Refused(busy)
@@ -862,6 +872,7 @@ def _start_step(
                 kind=kind,
                 tool_call=call,
                 line=scene.line,
+                shows=scene.shows,
                 note=note,
                 made_from=made_from,
                 picture=picture,
