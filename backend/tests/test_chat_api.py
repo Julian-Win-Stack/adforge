@@ -2,19 +2,22 @@
 photo, poll for what is new, rename, and come back to the whole conversation."""
 
 from collections.abc import Callable
+from datetime import timedelta
 from typing import Any
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError
+from django.utils import timezone
 from pytest_django import Settings
 from rest_framework.test import APIClient
 
 from adforge import file_store
+from agents.models import ToolCall
 from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.fake import FakeModel, turn
-from jobs.models import Job
+from jobs.models import Job, Scene, SceneStep
 
 from .conftest import MUG_FRONT, MUG_SIDE, picture, served
 
@@ -357,3 +360,81 @@ def test_talking_to_a_session_that_isnt_there_says_so(api: APIClient) -> None:
     assert api.patch(f"/api/sessions/{missing}/", {"name": "Mug"}).status_code == 404
     assert api.get(f"/api/sessions/{missing}/messages/").status_code == 404
     assert api.post(f"/api/sessions/{missing}/messages/", {"text": "Hi"}).status_code == 404
+
+
+# What the user is told when another session is making an ad.
+ANOTHER_SESSION_IS_BUSY = "Another ad is being made right now. Please try again once it's finished."
+
+
+def test_a_message_is_refused_while_another_sessions_producer_is_working(
+    api: APIClient, start_session: Callable[..., str], send: Callable[..., Any]
+) -> None:
+    working = start_session()
+    Session.objects.filter(pk=working).update(producer_running=True)
+    waiting = start_session()
+
+    refused = send(waiting, "Make me an ad for my mug")
+
+    assert refused.status_code == 409
+    assert refused.json() == {"detail": ANOTHER_SESSION_IS_BUSY}
+    # Not kept, and nothing started.
+    assert api.get(f"/api/sessions/{waiting}/messages/").json() == []
+    assert not Session.objects.get(pk=waiting).producer_running
+
+
+def test_the_busy_session_itself_can_always_be_talked_to(
+    api: APIClient, start_session: Callable[..., str], send: Callable[..., Any]
+) -> None:
+    working = start_session()
+    Session.objects.filter(pk=working).update(producer_running=True)
+
+    interrupting = send(working, "Actually, make it 20 seconds")
+
+    assert interrupting.status_code == 201, interrupting.json()
+    assert [m["text"] for m in api.get(f"/api/sessions/{working}/messages/").json()] == [
+        "Actually, make it 20 seconds"
+    ]
+
+
+def _running_step(session_id: str, seen_ago: timedelta) -> None:
+    """A scene step running in the session, last seen `seen_ago`."""
+    session = Session.objects.get(pk=session_id)
+    job = Job.objects.create(session=session, product_url="https://shop.example/products/mug")
+    scene = Scene.objects.create(job=job, number=1, line="It holds 350 ml.")
+    call = ToolCall.objects.create(
+        session=session, agent="producer", tool="make_starting_picture", call_id="c1", arguments={}
+    )
+    SceneStep.objects.create(
+        scene=scene,
+        kind=SceneStep.Kind.STARTING_PICTURE,
+        tool_call=call,
+        line=scene.line,
+        seen_at=timezone.now() - seen_ago,
+    )
+
+
+def test_a_message_is_refused_while_another_session_has_a_scene_step_working(
+    api: APIClient, start_session: Callable[..., str], send: Callable[..., Any]
+) -> None:
+    working = start_session()
+    _running_step(working, seen_ago=timedelta(seconds=30))
+    waiting = start_session()
+
+    refused = send(waiting, "Make me an ad for my mug")
+
+    assert refused.status_code == 409
+    assert refused.json() == {"detail": ANOTHER_SESSION_IS_BUSY}
+    assert api.get(f"/api/sessions/{waiting}/messages/").json() == []
+
+
+def test_a_scene_step_whose_worker_died_no_longer_keeps_its_session_busy(
+    start_session: Callable[..., str], send: Callable[..., Any]
+) -> None:
+    crashed = start_session()
+    # Still marked running, but not seen for longer than a working step ever goes unseen.
+    _running_step(crashed, seen_ago=timedelta(seconds=121))
+    waiting = start_session()
+
+    taken = send(waiting, "Make me an ad for my mug")
+
+    assert taken.status_code == 201, taken.json()

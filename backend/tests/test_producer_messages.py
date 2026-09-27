@@ -11,7 +11,7 @@ from pytest_django import Settings
 from rest_framework.test import APIClient
 
 from agents.models import ToolCall
-from agents.tasks import restart_dead_producers
+from agents.tasks import carry_on_after_the_worker_starts, restart_dead_producers
 from chat.models import Session
 from gateway.fake import FakeModel, meanwhile, turn
 
@@ -164,6 +164,21 @@ def test_a_producer_that_beat_recently_is_left_to_work(
 
     assert producer_turns() == 0
     assert chat(api, session_id) == []
+
+
+def test_a_producer_working_when_the_worker_stopped_is_started_again_as_the_worker_starts(
+    api: APIClient, fake_model: FakeModel, session_id: str, say: Callable[..., None]
+) -> None:
+    a_producer_last_beat(session_id, seconds_before_it_counts_as_dead=60)
+    say("Make me an ad for my mug")
+    fake_model.respond("produce", turn(says="Happy to: what's the link to your mug?"))
+
+    # There is one worker, so as it starts no producer from before can still be working,
+    # however recently it beat.
+    carry_on_after_the_worker_starts()
+
+    assert what_the_user_said(given_to_the_producer(1)) == ["Make me an ad for my mug"]
+    assert chat(api, session_id)[-1] == ("agent", "Happy to: what's the link to your mug?")
 
 
 def test_a_message_sent_to_a_dead_producer_starts_it_again(

@@ -1,6 +1,7 @@
 import uuid
 
 from django.db import models
+from django.utils import timezone
 
 
 class Job(models.Model):
@@ -239,6 +240,12 @@ class SceneStep(models.Model):
         help_text="What the producer is told when the step finishes or fails. Blank while it runs.",
     )
     started_at = models.DateTimeField(auto_now_add=True)
+    seen_at = models.DateTimeField(
+        default=timezone.now,
+        help_text="The step's heartbeat: when it was started, then every "
+        "STEP_HEARTBEAT_SECONDS while it works. A running step that hasn't been seen for "
+        "STEP_DEAD_AFTER_SECONDS has died, and no longer keeps its session busy.",
+    )
     finished_at = models.DateTimeField(
         null=True, blank=True, help_text="When it finished or failed. Blank while it runs."
     )

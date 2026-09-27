@@ -3,10 +3,13 @@ call the scene tools on an ad whose script has passed its checks. Scene tools st
 work in the background: here it is held until a test runs it, so a test can see what the
 tool handed back before the work is done, and what the producer was told once it was."""
 
+import time
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
 import pytest
+from pytest_django import Settings
 from rest_framework.test import APIClient
 
 from adforge.file_store import read
@@ -422,6 +425,62 @@ def test_a_step_run_again_after_its_worker_stopped_pays_for_nothing_twice(
     assert starting_pictures() == [(1, 1)]
 
 
+def test_a_step_working_when_the_worker_stopped_fails_as_the_worker_starts_and_the_producer_is_told(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    making(fake_model, (1, None))
+    say("Make scene 1's starting picture")
+    (step_id,) = steps.held
+    fake_model.respond("choose_starting_picture", CHOICE)
+    fake_model.respond("make_starting_picture", WorkerStopped())
+    with pytest.raises(WorkerStopped):
+        steps.run_next()
+
+    fake_model.respond("produce", turn(says="Scene 1's picture was interrupted. Shall I retry?"))
+    tasks.carry_on_after_the_worker_starts()
+
+    step = SceneStep.objects.get()
+    assert step.status == "failed"
+    assert step.reason == "The worker restarted while it was being made."
+    # Not run again, so it can't run twice at once if Celery hands it out too.
+    assert steps.held == []
+    tasks.run_scene_step(step_id)
+    assert paid_for().count("make_starting_picture") == 0
+    assert chat(api, session_id)[-1] == (
+        "agent",
+        "Scene 1's picture was interrupted. Shall I retry?",
+    )
+
+
+def test_a_step_handed_out_again_once_it_has_finished_is_left_alone(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    making(fake_model, (1, None))
+    say("Make scene 1's starting picture")
+    (step_id,) = steps.held
+    fake_model.respond("choose_starting_picture", CHOICE)
+    fake_model.respond("produce", turn(says="Ready!"))
+    steps.run_next()
+    conversation = chat(api, session_id)
+
+    # Celery hands the same step out a second time, as it may after a crash.
+    tasks.run_scene_step(step_id)
+
+    assert paid_for().count("make_starting_picture") == 1
+    assert starting_pictures() == [(1, 1)]
+    assert chat(api, session_id) == conversation
+
+
 def test_a_picture_paid_for_before_the_worker_stopped_is_kept_rather_than_made_again(
     api: APIClient,
     fake_model: FakeModel,
@@ -455,6 +514,35 @@ def test_a_picture_paid_for_before_the_worker_stopped_is_kept_rather_than_made_a
         if message["attachments"] and message["role"] == "agent"
     ]
     assert len(shown) == 2  # The person, then the picture, once.
+
+
+def test_a_step_beats_while_it_works(
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    settings: Settings,
+) -> None:
+    settings.STEP_HEARTBEAT_SECONDS = 0.05
+    making(fake_model, (1, None))
+    say("Make scene 1's starting picture")
+    beats: list[datetime] = []
+
+    def choosing_takes_a_while() -> dict[str, Any]:
+        beats.append(SceneStep.objects.get().seen_at)
+        time.sleep(0.3)
+        beats.append(SceneStep.objects.get().seen_at)
+        return CHOICE
+
+    fake_model.respond("choose_starting_picture", choosing_takes_a_while)
+    fake_model.respond("produce", turn(says="Ready!"))
+    steps.run_held()
+    ended = SceneStep.objects.get().seen_at
+    time.sleep(0.3)
+
+    assert beats[1] > beats[0]
+    # It stops beating once the step is done.
+    assert SceneStep.objects.get().seen_at == ended
 
 
 # --- Several scenes at the same time --------------------------------------------------------

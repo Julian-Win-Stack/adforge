@@ -2,6 +2,7 @@ import mimetypes
 import uuid
 
 from django.core.files.uploadedfile import UploadedFile
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers, status
 from rest_framework.decorators import api_view
@@ -9,7 +10,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from adforge import file_store
-from agents.tasks import wake_producer
+from agents.tasks import another_session_is_busy, hold_one_at_a_time_lock, wake_producer
 from gateway.gateway import IMAGE_TYPE_NAMES, IMAGE_TYPES
 from jobs.page import MAX_PHOTO_BYTES, MAX_PHOTOS
 
@@ -18,6 +19,9 @@ from .models import Attachment, Message, Session
 
 # As much as one message may say. Long enough for a brief pasted in one go.
 MAX_TEXT_CHARACTERS = 10_000
+
+# What the user is told when another session is working: only one works at a time.
+ANOTHER_SESSION_IS_BUSY = "Another ad is being made right now. Please try again once it's finished."
 
 
 class AttachmentSerializer(serializers.ModelSerializer[Attachment]):
@@ -125,24 +129,31 @@ def session_messages(request: Request, session_id: str) -> Response:
 
 def _send(session: Session, request: Request) -> Response:
     """Take the user's message, and start the producer on it unless it is already working.
-    It is always accepted: an interrupt is stored and acknowledged straight away rather
-    than refused, and the working producer reads it next."""
+    An interrupt is stored and acknowledged straight away rather than refused, and the
+    working producer reads it next. Only one session works at a time, so a message to a
+    session while another is busy is refused, and not kept."""
     sending = SendSerializer(data=request.data)
     sending.is_valid(raise_exception=True)
     photos: list[UploadedFile[bytes]] = sending.validated_data["photos"]
-    kept = []
-    for photo in photos:
-        extension = mimetypes.guess_extension(photo.content_type or "") or ""
-        key = file_store.save(
-            f"sessions/{session.pk}/photos/{uuid.uuid4()}{extension}", photo.read()
+    # Looked at, kept and started under one lock, so no other message can start a
+    # session between the look and the start.
+    with transaction.atomic():
+        hold_one_at_a_time_lock()
+        if another_session_is_busy(session):
+            return Response({"detail": ANOTHER_SESSION_IS_BUSY}, status=status.HTTP_409_CONFLICT)
+        kept = []
+        for photo in photos:
+            extension = mimetypes.guess_extension(photo.content_type or "") or ""
+            key = file_store.save(
+                f"sessions/{session.pk}/photos/{uuid.uuid4()}{extension}", photo.read()
+            )
+            kept.append(messages.AttachedFile(Attachment.Kind.PICTURE, key))
+        message = messages.add(
+            session, role=Message.Role.USER, text=sending.validated_data["text"], carrying=kept
         )
-        kept.append(messages.AttachedFile(Attachment.Kind.PICTURE, key))
-    message = messages.add(
-        session, role=Message.Role.USER, text=sending.validated_data["text"], carrying=kept
-    )
-    # Only once the message is saved: a producer about to stop either finds it, or has
-    # already stopped, and one is started here.
-    wake_producer(str(session.pk))
+        # Only once the message is saved: a producer about to stop either finds it, or has
+        # already stopped, and one is started here.
+        wake_producer(str(session.pk))
     # The first message may just have named the session.
     session.refresh_from_db(fields=["name"])
     return Response(

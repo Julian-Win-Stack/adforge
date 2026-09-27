@@ -86,6 +86,10 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 # it is taken for dead and started again.
 PRODUCER_HEARTBEAT_SECONDS = 30.0
 PRODUCER_DEAD_AFTER_SECONDS = 120.0
+# The same for a scene step. One that has died no longer keeps its session busy, so another
+# session may start.
+STEP_HEARTBEAT_SECONDS = 30.0
+STEP_DEAD_AFTER_SECONDS = 120.0
 CELERY_BEAT_SCHEDULE = {
     "restart-dead-producers": {
         "task": "agents.tasks.restart_dead_producers",

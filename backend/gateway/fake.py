@@ -74,7 +74,7 @@ def meanwhile(happens: Callable[[], object], then: Turn) -> Callable[[], Turn]:
     return taking
 
 
-type Outcome = dict[str, Any] | Turn | BaseException | Callable[[], Turn]
+type Outcome = dict[str, Any] | Turn | BaseException | Callable[[], Turn | dict[str, Any]]
 
 
 class FakeModel:

@@ -15,7 +15,7 @@ function fakeBackend() {
   const requests: string[] = [];
   const sent: { text: string; photos: string[] }[] = [];
   let heldPolls: Promise<void> | null = null;
-  let refusal: Record<string, string[]> | null = null;
+  let refusal: { status: number; body: Record<string, unknown> } | null = null;
 
   const summary = ({ id, name, created_at }: StoredSession): Session => ({ id, name, created_at });
 
@@ -57,9 +57,9 @@ function fakeBackend() {
       const session = find(messages[1]);
       if (method === "POST") {
         if (refusal !== null) {
-          const reasons = refusal;
+          const { status, body } = refusal;
           refusal = null;
-          return Response.json(reasons, { status: 400 });
+          return Response.json(body, { status });
         }
         let text: string;
         const photos: string[] = [];
@@ -108,7 +108,12 @@ function fakeBackend() {
     },
     /** The next message sent is refused with these reasons, as Django answers a 400. */
     refuseNextSend(reasons: Record<string, string[]>) {
-      refusal = reasons;
+      refusal = { status: 400, body: reasons };
+    },
+    /** The next message sent is refused because another session is working, as Django
+     * answers a 409. */
+    refuseNextSendAsBusy(detail: string) {
+      refusal = { status: 409, body: { detail } };
     },
     /** Keeps every poll waiting, as if the server were busy, until the returned function runs. */
     holdPolls() {
@@ -355,3 +360,18 @@ test.each([
     expect(sessionNames()).toEqual(["This is my mug"]);
   },
 );
+
+test("says so when another session is making an ad, and keeps what was typed", async () => {
+  const backend = fakeBackend();
+  const busy = "Another ad is being made right now. Please try again once it's finished.";
+  backend.refuseNextSendAsBusy(busy);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+
+  await user.type(screen.getByLabelText("Message"), "This is my mug");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  expect(await screen.findByText(busy)).toBeDefined();
+  expect(backend.sent).toEqual([]);
+  expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("This is my mug");
+});

@@ -37,7 +37,9 @@ async function readJson<T>(response: Response): Promise<T> {
 
 async function refused(response: Response): Promise<never> {
   const serverSaid = `The server answered ${response.status}.`;
-  if (response.status !== 400) throw new ApiError(serverSaid);
+  // A 400 is something wrong with what was sent, and a 409 another session making an ad:
+  // both come with a reason to show.
+  if (response.status !== 400 && response.status !== 409) throw new ApiError(serverSaid);
   let body: unknown;
   try {
     body = await response.json();
