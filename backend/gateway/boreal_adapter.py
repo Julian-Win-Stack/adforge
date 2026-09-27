@@ -54,7 +54,7 @@ class BorealProvider:
             "aspect_ratio": "9:16",
         }
         if audio is not None:
-            body["audio_url"] = self._store(audio, file_name="line.wav", content_type="audio/wav")
+            body["audio_url"] = self._store_audio(audio)
         created = self._send("POST", f"/{MODEL}", paid=True, json=body)
         return str(created["request_id"])
 
@@ -82,48 +82,42 @@ class BorealProvider:
         return ClipStatus(state="completed", video_url=made["video"]["url"])
 
     def download(self, *, url: str) -> bytes:
-        # Somewhere other than fal's API, so it isn't sent the API key.
-        try:
-            response = httpx.get(url, timeout=300, follow_redirects=True)
-        except httpx.TransportError as error:
-            raise OutsideServiceDown(f"fal's clip could not be fetched: {error}") from error
-        if response.status_code == 429 or response.status_code >= 500:
-            raise OutsideServiceDown(f"fal's clip link answered {response.status_code}")
-        response.raise_for_status()
-        return response.content
+        return _unkeyed("GET", url, "fal's clip link", follow_redirects=True).content
 
-    def _store(self, data: bytes, *, file_name: str, content_type: str) -> str:
-        """Put a file in fal's storage, for a request to link to. Gives the link."""
+    def _store_audio(self, audio: bytes) -> str:
+        """Put a line's audio in fal's storage, named as a WAV file. Gives the link to it."""
         where = self._send(
             "POST",
             f"{settings.FAL_STORAGE_URL}/storage/upload/initiate",
+            service="fal's storage",
             params={"storage_type": "gcs"},
-            json={"file_name": file_name, "content_type": content_type},
+            json={"file_name": "line.wav", "content_type": "audio/wav"},
         )
-        # Somewhere other than fal's API, so it isn't sent the API key.
-        try:
-            response = httpx.put(
-                where["upload_url"],
-                content=data,
-                headers={"Content-Type": content_type},
-                timeout=settings.FAL_TIMEOUT_SECONDS,
-            )
-        except httpx.TransportError as error:
-            raise OutsideServiceDown(f"fal's storage could not be reached: {error}") from error
-        if response.status_code == 429 or response.status_code >= 500:
-            raise OutsideServiceDown(f"fal's storage answered {response.status_code}")
-        response.raise_for_status()
+        _unkeyed(
+            "PUT",
+            where["upload_url"],
+            "fal's storage",
+            content=audio,
+            headers={"Content-Type": "audio/wav"},
+        )
         return str(where["file_url"])
 
     def _send(
-        self, method: str, path: str, *, paid: bool = False, **sending: Any
+        self,
+        method: str,
+        url: str,
+        *,
+        paid: bool = False,
+        service: str = "fal",
+        **sending: Any,
     ) -> dict[str, Any]:
-        """Send a request to fal. A `paid` one is charged for once fal has it, so it is only
-        asked again when it surely never got there."""
+        """Send a request to fal, with the API key: to a path on its queue, or to a whole
+        address such as its storage's, named `service` when it fails. A `paid` one is charged
+        for once fal has it, so it is only asked again when it surely never got there."""
         try:
-            response = self._client.request(method, path, **sending)
+            response = self._client.request(method, url, **sending)
         except _NEVER_SENT as error:
-            raise OutsideServiceDown(f"fal could not be reached: {error}") from error
+            raise OutsideServiceDown(f"{service} could not be reached: {error}") from error
         except httpx.TransportError as error:
             if paid:
                 raise ClipFailed(
@@ -131,12 +125,25 @@ class BorealProvider:
                     "still be made and charged for. It isn't asked for again, which could pay "
                     "twice"
                 ) from error
-            raise OutsideServiceDown(f"fal's reply was lost: {error}") from error
+            raise OutsideServiceDown(f"the reply from {service} was lost: {error}") from error
         if response.status_code == 429 or response.status_code >= 500:
-            raise OutsideServiceDown(f"fal answered {response.status_code}")
+            raise OutsideServiceDown(f"{service} answered {response.status_code}")
         response.raise_for_status()
         reply: dict[str, Any] = response.json()
         return reply
+
+
+def _unkeyed(method: str, url: str, service: str, **sending: Any) -> httpx.Response:
+    """Send a request somewhere other than fal's API, such as a link fal gave, so it isn't
+    sent the API key."""
+    try:
+        response = httpx.request(method, url, timeout=300, **sending)
+    except httpx.TransportError as error:
+        raise OutsideServiceDown(f"{service} could not be reached: {error}") from error
+    if response.status_code == 429 or response.status_code >= 500:
+        raise OutsideServiceDown(f"{service} answered {response.status_code}")
+    response.raise_for_status()
+    return response
 
 
 # Failures before the request left this machine: fal never had it.

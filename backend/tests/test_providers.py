@@ -146,11 +146,19 @@ def test_a_voice_is_designed_published_and_heard_through_inworld(
     )
 
 
+@pytest.mark.parametrize(
+    "speech",
+    [
+        pytest.param(b"ID3 an mp3 file", id="mp3"),
+        # RIFF holds other kinds of file too: a WAV file says WAVE after its size.
+        pytest.param(b"RIFF\x24\0\0\0AVI an avi file", id="another RIFF file"),
+    ],
+)
 def test_speech_that_isnt_a_wav_file_is_refused(
-    httpserver: HTTPServer, inworld: InworldProvider
+    httpserver: HTTPServer, inworld: InworldProvider, speech: bytes
 ) -> None:
     httpserver.expect_oneshot_request("/tts/v1/voice", method="POST").respond_with_json(
-        {"audioContent": base64.b64encode(b"ID3 an mp3 file").decode()}
+        {"audioContent": base64.b64encode(speech).decode()}
     )
 
     with use_model(inworld), pytest.raises(ValueError, match="isn't a WAV file"):
@@ -957,6 +965,28 @@ def test_a_talking_clip_is_asked_for_again_when_fals_storage_fails_for_a_moment(
         (1, ModelCall.Outcome.FAILED, None),
         (2, ModelCall.Outcome.SUCCEEDED, Decimal("0.054")),
     ]
+
+
+def test_a_talking_clip_isnt_asked_for_while_fals_storage_cant_be_reached(
+    boreal: BorealProvider, asked: list[dict[str, Any]], settings: Settings
+) -> None:
+    with socket.socket() as unused:
+        unused.bind(("127.0.0.1", 0))
+        settings.FAL_STORAGE_URL = f"http://127.0.0.1:{unused.getsockname()[1]}"
+    unreachable = BorealProvider()
+
+    # Told apart from fal's queue being down, which is a different thing to look into.
+    with (
+        use_model(unreachable),
+        pytest.raises(
+            OutsideServiceDown,
+            match="still down after 3 tries: fal's storage could not be reached",
+        ),
+    ):
+        submitting()
+
+    # With nowhere for the audio, the clip is never asked for, so nothing is paid for.
+    assert asked == []
 
 
 def test_a_clip_fal_cant_be_reached_for_is_asked_for_again(settings: Settings) -> None:

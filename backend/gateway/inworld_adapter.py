@@ -57,7 +57,7 @@ class InworldProvider:
         )
         audio = base64.b64decode(spoken["audioContent"])
         # LINEAR16 comes back as a whole WAV file; its length is measured from the header.
-        if not audio.startswith(b"RIFF"):
+        if audio[:4] != b"RIFF" or audio[8:12] != b"WAVE":
             raise ValueError("Inworld sent back audio that isn't a WAV file")
         return audio
 
