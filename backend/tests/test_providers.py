@@ -519,13 +519,15 @@ def test_music_fal_cant_make_is_not_asked_for_again(
 
 # --- Boreal on fal's queue ------------------------------------------------------------------
 # Replies shaped as fal's API schema for creatify/boreal describes them (read on 2026-09-26),
-# not yet recorded from a real run.
+# and its storage as fal's own Python client uses it (read on 2026-09-27), not yet recorded
+# from a real run.
 
 
 @pytest.fixture
 def boreal(httpserver: HTTPServer, settings: Settings) -> BorealProvider:
     settings.FAL_KEY = "fal-test-key"
     settings.FAL_QUEUE_URL = httpserver.url_for("")
+    settings.FAL_STORAGE_URL = httpserver.url_for("")
     return BorealProvider()
 
 
@@ -539,6 +541,11 @@ QUEUED = {
 # Where fal says how clip req-1 is getting on, where it says the made clip is, and the link
 # to the clip itself.
 STATUS = "/creatify/boreal/requests/req-1/status"
+# Where fal is asked for somewhere to put a file, where it says to put it, and the link it
+# then gives the file.
+STORING = "/storage/upload/initiate"
+PUTTING = "/storage-bucket/line.wav"
+STORED_LINK = "https://v3.fal.media/files/koala/line.wav"
 RESULT = "/creatify/boreal/requests/req-1"
 CLIP_LINK = "/files/out.mp4"
 MADE = b"\0\0\0\x18ftypmp42 a whole clip"
@@ -578,8 +585,40 @@ def with_files_read_back(body: dict[str, Any]) -> dict[str, Any]:
 
 
 @pytest.fixture
-def asked(httpserver: HTTPServer) -> list[dict[str, Any]]:
-    """fal taking every clip asked of it with our key, as req-1. Gives what each asked for."""
+def stored(httpserver: HTTPServer) -> list[dict[str, Any]]:
+    """fal's storage taking every file put in it with our key, at STORED_LINK. Gives what
+    each file was said to be, what it held, and whether the key went with it."""
+    files: list[dict[str, Any]] = []
+
+    def starting(request: Request) -> Response:
+        files.append({"said": request.get_json()})
+        return Response(
+            json.dumps({"upload_url": httpserver.url_for(PUTTING), "file_url": STORED_LINK}),
+            content_type="application/json",
+        )
+
+    def putting(request: Request) -> Response:
+        files[-1] |= {
+            "type": request.content_type,
+            "held": request.get_data(),
+            "keyed": "Authorization" in request.headers,
+        }
+        return Response(status=200)
+
+    httpserver.expect_request(
+        STORING,
+        method="POST",
+        query_string="storage_type=gcs",
+        headers=AUTHORISED,
+    ).respond_with_handler(starting)
+    httpserver.expect_request(PUTTING, method="PUT").respond_with_handler(putting)
+    return files
+
+
+@pytest.fixture
+def asked(httpserver: HTTPServer, stored: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """fal taking every clip asked of it with our key, as req-1, and every file put in its
+    storage. Gives what each clip asked for."""
     bodies: list[dict[str, Any]] = []
 
     def queueing(request: Request) -> Response:
@@ -619,7 +658,7 @@ def broken(request: Request) -> Response:
 
 
 def test_a_talking_clip_is_asked_for_saying_the_line_in_720p_portrait(
-    boreal: BorealProvider, asked: list[dict[str, Any]]
+    boreal: BorealProvider, asked: list[dict[str, Any]], stored: list[dict[str, Any]]
 ) -> None:
     starting_picture = picture(1152, 2048, (200, 180, 160))
     line = wav(5.4)
@@ -631,7 +670,8 @@ def test_a_talking_clip_is_asked_for_saying_the_line_in_720p_portrait(
         )
 
     (body,) = asked
-    # The picture and the line's audio are sent whole, inside the request.
+    # The picture is sent whole, inside the request; the line's audio by a link to it in fal's
+    # storage.
     assert with_files_read_back(body) == {
         "prompt": "[VISUAL]\nShe talks to the camera.\n\n[SPEECH]\nOnly the given audio, "
         "unchanged.\n\n[SOUNDS]\nNone.\n\n[TEXT]\nNone.",
@@ -639,12 +679,22 @@ def test_a_talking_clip_is_asked_for_saying_the_line_in_720p_portrait(
         "duration": 5.4,
         "resolution": "720p",
         "aspect_ratio": "9:16",
-        "audio_url": ("data:audio/wav;base64", line),
+        "audio_url": STORED_LINK,
     }
+    # Named as a WAV file, which Boreal takes. Sent inside the request, fal named it `.bin`
+    # and Boreal refused it. The link to put it at isn't fal's API, so it isn't sent the key.
+    assert stored == [
+        {
+            "said": {"file_name": "line.wav", "content_type": "audio/wav"},
+            "type": "audio/wav",
+            "held": line,
+            "keyed": False,
+        }
+    ]
 
 
 def test_a_clip_with_no_audio_is_asked_for_with_no_speech_or_sound(
-    boreal: BorealProvider, asked: list[dict[str, Any]]
+    boreal: BorealProvider, asked: list[dict[str, Any]], stored: list[dict[str, Any]]
 ) -> None:
     starting_picture = picture(72, 128, (1, 2, 3))
 
@@ -661,6 +711,7 @@ def test_a_clip_with_no_audio_is_asked_for_with_no_speech_or_sound(
         "resolution": "720p",
         "aspect_ratio": "9:16",
     }
+    assert stored == []
 
 
 def test_a_clip_asked_for_is_known_by_the_id_fal_gives_it(
@@ -859,7 +910,7 @@ def test_a_clip_link_that_no_longer_works_isnt_kept_as_the_clip(
 
 
 def test_a_clip_fal_is_too_busy_for_is_asked_for_again(
-    httpserver: HTTPServer, boreal: BorealProvider
+    httpserver: HTTPServer, boreal: BorealProvider, stored: list[dict[str, Any]]
 ) -> None:
     # Too busy to take it, so nothing was made: asking again can't pay twice.
     httpserver.expect_oneshot_request("/creatify/boreal", method="POST").respond_with_data(
@@ -876,6 +927,38 @@ def test_a_clip_fal_is_too_busy_for_is_asked_for_again(
     ]
 
 
+@pytest.mark.parametrize(
+    "asking", [STORING, PUTTING], ids=["somewhere to put the audio", "putting the audio there"]
+)
+@pytest.mark.parametrize(
+    "failing",
+    [
+        pytest.param(hanging_up, id="reply lost"),
+        pytest.param(too_busy, id="too busy"),
+        pytest.param(broken, id="server error"),
+    ],
+)
+def test_a_talking_clip_is_asked_for_again_when_fals_storage_fails_for_a_moment(
+    httpserver: HTTPServer,
+    boreal: BorealProvider,
+    asked: list[dict[str, Any]],
+    asking: str,
+    failing: Callable[[Request], Response],
+) -> None:
+    # Putting the audio in storage costs nothing, and the clip isn't asked for until it's
+    # there, so asking again can't pay twice.
+    httpserver.expect_oneshot_request(asking).respond_with_handler(failing)
+
+    with use_model(boreal):
+        assert submitting() == "req-1"
+
+    assert len(asked) == 1
+    assert [(c.attempt, c.outcome, c.cost_usd) for c in ModelCall.objects.all()] == [
+        (1, ModelCall.Outcome.FAILED, None),
+        (2, ModelCall.Outcome.SUCCEEDED, Decimal("0.054")),
+    ]
+
+
 def test_a_clip_fal_cant_be_reached_for_is_asked_for_again(settings: Settings) -> None:
     # Nothing answers where fal should be, so the request never left: nothing was paid for.
     with socket.socket() as unused:
@@ -883,13 +966,14 @@ def test_a_clip_fal_cant_be_reached_for_is_asked_for_again(settings: Settings) -
         settings.FAL_QUEUE_URL = f"http://127.0.0.1:{unused.getsockname()[1]}"
     unreachable = BorealProvider()
 
+    # With no audio, so nothing is put in fal's storage first.
     with (
         use_model(unreachable),
         pytest.raises(
             OutsideServiceDown, match="still down after 3 tries: fal could not be reached"
         ),
     ):
-        submitting()
+        submitting(audio_key=None)
 
     assert [(c.attempt, c.outcome) for c in ModelCall.objects.all()] == [
         (1, ModelCall.Outcome.FAILED),
@@ -899,7 +983,10 @@ def test_a_clip_fal_cant_be_reached_for_is_asked_for_again(settings: Settings) -
 
 
 def test_a_clip_whose_reply_from_fal_is_lost_isnt_asked_for_again(
-    httpserver: HTTPServer, boreal: BorealProvider, settings: Settings
+    httpserver: HTTPServer,
+    boreal: BorealProvider,
+    stored: list[dict[str, Any]],
+    settings: Settings,
 ) -> None:
     settings.FAL_TIMEOUT_SECONDS = 0.2
     impatient = BorealProvider()

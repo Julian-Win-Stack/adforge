@@ -110,6 +110,9 @@ FAL_KEY = os.environ.get("FAL_KEY", "")
 FAL_BASE_URL = os.environ.get("FAL_BASE_URL", "https://fal.run")
 # fal's queue, for clips: asked for, then waited for. Tests point it at a local stand-in.
 FAL_QUEUE_URL = os.environ.get("FAL_QUEUE_URL", "https://queue.fal.run")
+# fal's storage, where a clip's audio is put for fal to fetch. Tests point it at a local
+# stand-in.
+FAL_STORAGE_URL = os.environ.get("FAL_STORAGE_URL", "https://rest.fal.ai")
 # fal answers once the music is made, which takes longer the longer the music.
 FAL_TIMEOUT_SECONDS = 300.0
 

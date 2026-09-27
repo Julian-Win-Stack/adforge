@@ -5,7 +5,13 @@ clip. Given `audio_url`, the picture is animated to say it and the audio is kept
 without, the clip moves as `prompt` says. `duration` is 1 to 20 seconds and may be a
 fraction: it is rounded to a whole frame at 24 frames a second. With audio, only its first
 `duration` seconds are used, and shorter audio is padded with silence. 720p costs $0.01 a
-second. Pictures and audio are sent inside the request, as data URIs.
+second. The picture is sent inside the request, as a data URI. The audio is put in fal's storage
+first and sent as a link: fal names a file sent inside a request from its content type, it
+names `audio/wav` `.bin`, and Boreal refuses audio that isn't named as audio.
+
+fal's storage, as its own Python client uses it (read on 2026-09-27): `POST
+/storage/upload/initiate?storage_type=gcs` with the file's name and content type hands back an
+`upload_url` to `PUT` the file at, and the `file_url` it can then be fetched from.
 
 The queue: `POST /{model}` hands back a `request_id`; `GET .../requests/{id}/status` says
 IN_QUEUE, IN_PROGRESS or COMPLETED; `GET .../requests/{id}` then gives the clip, or why it
@@ -48,7 +54,7 @@ class BorealProvider:
             "aspect_ratio": "9:16",
         }
         if audio is not None:
-            body["audio_url"] = _data_uri(audio, "audio/wav")
+            body["audio_url"] = self._store(audio, file_name="line.wav", content_type="audio/wav")
         created = self._send("POST", f"/{MODEL}", paid=True, json=body)
         return str(created["request_id"])
 
@@ -85,6 +91,29 @@ class BorealProvider:
             raise OutsideServiceDown(f"fal's clip link answered {response.status_code}")
         response.raise_for_status()
         return response.content
+
+    def _store(self, data: bytes, *, file_name: str, content_type: str) -> str:
+        """Put a file in fal's storage, for a request to link to. Gives the link."""
+        where = self._send(
+            "POST",
+            f"{settings.FAL_STORAGE_URL}/storage/upload/initiate",
+            params={"storage_type": "gcs"},
+            json={"file_name": file_name, "content_type": content_type},
+        )
+        # Somewhere other than fal's API, so it isn't sent the API key.
+        try:
+            response = httpx.put(
+                where["upload_url"],
+                content=data,
+                headers={"Content-Type": content_type},
+                timeout=settings.FAL_TIMEOUT_SECONDS,
+            )
+        except httpx.TransportError as error:
+            raise OutsideServiceDown(f"fal's storage could not be reached: {error}") from error
+        if response.status_code == 429 or response.status_code >= 500:
+            raise OutsideServiceDown(f"fal's storage answered {response.status_code}")
+        response.raise_for_status()
+        return str(where["file_url"])
 
     def _send(
         self, method: str, path: str, *, paid: bool = False, **sending: Any
