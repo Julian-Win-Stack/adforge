@@ -44,6 +44,7 @@ class Seen:
 
     name: str
     kind: str
+    trace_id: str
     attributes: dict[str, Any]
     inside: list[Seen] = field(default_factory=list)
 
@@ -79,7 +80,8 @@ class Traces:
         self._client = client
 
     def all(self) -> list[Seen]:
-        """Every trace sent, in the order they began."""
+        """Every part sent at the top of a trace, in the order they began. A trace can have
+        more than one: its message's work picked up again later."""
         self._client.flush()
         spans = sorted(self._exporter.get_finished_spans(), key=lambda span: span.start_time or 0)
         seen = {span.context.span_id: _seen(span) for span in spans if span.context}
@@ -96,7 +98,13 @@ class Traces:
 
 def _seen(span: ReadableSpan) -> Seen:
     attributes = dict(span.attributes or {})
-    return Seen(span.name, str(attributes.get("langfuse.observation.type")), attributes)
+    assert span.context is not None
+    return Seen(
+        span.name,
+        str(attributes.get("langfuse.observation.type")),
+        format(span.context.trace_id, "032x"),
+        attributes,
+    )
 
 
 @pytest.fixture(scope="session")
@@ -202,6 +210,53 @@ def test_a_scene_steps_model_calls_land_under_the_tool_call_that_started_it(
     )
 
 
+def test_a_messages_work_woken_again_by_a_scene_step_stays_in_the_messages_trace(
+    traces: Traces,
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("make_starting_picture", {"scene": 1, "note": None})]),
+        turn(says="I've started scene 1's picture."),
+    )
+    say("Make scene 1's starting picture")
+    fake_model.respond("choose_starting_picture", CHOICE)
+    fake_model.respond("produce", turn(says="Scene 1's starting picture is ready!"))
+
+    steps.run_held()
+
+    # After those of the messages that made the plan and the person.
+    *_, first, woken = traces.all()
+    assert woken.trace_id == first.trace_id
+    assert (first.name, woken.name) == ("producer", "producer, woken by scene 1's starting picture")
+    assert first.attributes["langfuse.trace.name"] == "Make scene 1's starting picture"
+    assert woken.outline() == dedent(
+        """\
+        producer, woken by scene 1's starting picture (span)
+          producer turn (agent)
+            produce (generation)"""
+    )
+
+
+def test_a_new_message_starts_a_new_trace_named_after_it(
+    traces: Traces, fake_model: FakeModel, say: Callable[..., None]
+) -> None:
+    fake_model.respond("produce", turn(says="Send me your product page."), turn(says="Thanks!"))
+
+    say("Hi")
+    say("Here it comes")
+
+    first, second = traces.all()
+    assert first.trace_id != second.trace_id
+    assert [each.attributes["langfuse.trace.name"] for each in (first, second)] == [
+        "Hi",
+        "Here it comes",
+    ]
+
+
 def test_a_scene_step_lands_under_its_tool_call_run_again_after_the_worker_stopped(
     traces: Traces,
     fake_model: FakeModel,
@@ -298,6 +353,7 @@ def test_a_turn_answered_from_its_record_shows_as_such_with_no_cost(
     restart_dead_producers()
 
     stopped, again = traces.all()
+    assert (again.name, again.trace_id) == ("producer, started again", stopped.trace_id)
     assert [call.name for call in stopped.find(kind="generation")] == ["produce"]
     (answered, read_page_after, paid) = again.find(kind="generation")
     assert (answered.name, read_page_after.name, paid.name) == (

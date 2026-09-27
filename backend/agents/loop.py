@@ -86,10 +86,22 @@ class Agent:
     tools: Sequence[type[Tool]]
 
 
-def run(agent: Agent, session: Session) -> int:
+def run(agent: Agent, session: Session, *, woken_by: Sequence[str] = ()) -> int:
     """Let `agent` work in `session` until it replies. Gives the number of the last message
-    its last turn was given, so the caller can tell whether anything was said since."""
-    with tracing.message_work(agent.name, session_id=str(session.pk)):
+    its last turn was given, so the caller can tell whether anything was said since.
+    `woken_by` names the scene steps whose finishing started it, for its trace."""
+    message = session.messages.filter(role=Message.Role.USER).last()
+    with tracing.message_work(
+        agent.name,
+        session_id=str(session.pk),
+        message=message.text if message else "",
+        trace_id=message.trace_id if message else "",
+        woken_by=woken_by,
+    ) as traced:
+        # Each later time it works on the message adds to the trace started now.
+        if message is not None and not message.trace_id:
+            message.trace_id = traced.ids()[0]
+            message.save(update_fields=["trace_id"])
         return _work(agent, session)
 
 

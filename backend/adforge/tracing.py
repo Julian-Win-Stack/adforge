@@ -132,22 +132,26 @@ def _observed(
     as_type: str,
     *,
     session_id: str | None = None,
+    trace_name: str | None = None,
     parent: tuple[str, str] | None = None,
     **fields: Any,
 ) -> Iterator[Traced]:
     """Trace the block as a part inside the one running now, or under `parent`, given as
-    its trace ID and its own ID. With `session_id`, it and every part inside it belong to
-    that Langfuse session."""
+    its trace ID and its own ID: with no ID of its own, at the top of that trace. With
+    `session_id`, it and every part inside it belong to that Langfuse session, and a new
+    trace is named `trace_name`, or after the part."""
     stack = ExitStack()
     try:
         client = _client()
         trace_context: Any = None
-        if parent is not None and all(parent):
-            trace_context = {"trace_id": parent[0], "parent_span_id": parent[1]}
+        if parent is not None and parent[0]:
+            trace_context = {"trace_id": parent[0]}
+            if parent[1]:
+                trace_context["parent_span_id"] = parent[1]
         if session_id is not None:
-            # Only a new trace is named after its first part: one inside a trace keeps its name.
+            # Only a new trace is named: a part added to one keeps the name it has.
             opened: AbstractContextManager[Any] = propagate_attributes(
-                session_id=session_id, trace_name=None if trace_context else name
+                session_id=session_id, trace_name=None if trace_context else trace_name or name
             )
             stack.enter_context(opened)
         observation = stack.enter_context(
@@ -179,10 +183,17 @@ def _close(stack: ExitStack) -> None:
         logger.exception("Couldn't finish a part of a trace")
 
 
-def message_work(agent: str, *, session_id: str) -> AbstractContextManager[Traced]:
-    """Trace the block as one trace: an agent's work on a message, grouped in Langfuse with
-    the rest of its session."""
-    return _observed(agent, "span", session_id=session_id)
+def message_work(
+    agent: str, *, session_id: str, message: str, trace_id: str, woken_by: Sequence[str]
+) -> AbstractContextManager[Traced]:
+    """Trace the block as an agent's work on the user's `message`, grouped in Langfuse with
+    the rest of its session. The first time, it is a new trace named after the message.
+    Given that trace's ID, it is one more part at the top of it, named for the scene steps
+    whose finishing woke the agent, `woken_by`, or as started again when none did."""
+    if not trace_id:
+        return _observed(agent, "span", session_id=session_id, trace_name=message or agent)
+    why = f"woken by {', '.join(woken_by)}" if woken_by else "started again"
+    return _observed(f"{agent}, {why}", "span", session_id=session_id, parent=(trace_id, ""))
 
 
 def agent_turn(agent: str) -> AbstractContextManager[Traced]:

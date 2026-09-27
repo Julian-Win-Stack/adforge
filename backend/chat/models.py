@@ -47,6 +47,12 @@ class Message(models.Model):
     )
     role = models.CharField(max_length=10, choices=Role.choices)
     text = models.TextField(blank=True, help_text="Blank when the message only carries files.")
+    trace_id = models.CharField(
+        max_length=32,
+        blank=True,
+        help_text="The Langfuse trace of the agent's work on the user's message, which each "
+        "time it works on it adds to. Blank when not traced.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

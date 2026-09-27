@@ -39,7 +39,9 @@ def run_producer(session_id: str) -> None:
         # The producer only stops once it has read everything the user sent and every
         # scene step's result: a message that arrives as it replies is an interrupt, and it
         # works on that too.
-        while not _stop_unless_theres_more_to_read(session_id, loop.run(PRODUCER, session)):
+        while not _stop_unless_theres_more_to_read(
+            session_id, loop.run(PRODUCER, session, woken_by=_woken_by(session))
+        ):
             pass
     except UnusableReply as error:
         why = f"my AI model's answer couldn't be used ({error})"
@@ -62,6 +64,12 @@ def run_producer(session_id: str) -> None:
             text=f"I had to stop: {why}. Send a message to try again.",
         )
         Session.objects.filter(pk=session_id).update(producer_running=False)
+
+
+def _woken_by(session: Session) -> list[str]:
+    """The scene steps that finished since the producer last read them, by name."""
+    unread = loop.unread_steps(PRODUCER, session).select_related("scene")
+    return [_step_name(step) for step in unread.order_by("finished_at", "id")]
 
 
 def _stop_unless_theres_more_to_read(session_id: str, read_up_to: int) -> bool:
@@ -191,6 +199,11 @@ STEP_WORK = {
 }
 
 
+def _step_name(step: SceneStep) -> str:
+    """Such as "scene 1's starting picture"."""
+    return f"scene {step.scene.number}'s {STEP_WORK[SceneStep.Kind(step.kind)].name}"
+
+
 @shared_task
 def run_scene_step(step_id: int) -> None:
     """Do a scene step's work in the background, then have the producer told: it reads the
@@ -203,7 +216,7 @@ def run_scene_step(step_id: int) -> None:
         with (
             charged_to(step.tool_call),
             tracing.scene_step(
-                f"scene {scene.number}'s {work.name}",
+                _step_name(step),
                 session_id=str(session.pk),
                 trace_id=step.tool_call.trace_id,
                 parent_id=step.tool_call.observation_id,
