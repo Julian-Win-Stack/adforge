@@ -527,8 +527,8 @@ def test_music_fal_cant_make_is_not_asked_for_again(
 
 # --- Boreal on fal's queue ------------------------------------------------------------------
 # Replies shaped as fal's API schema for creatify/boreal describes them (read on 2026-09-26),
-# and its storage as fal's own Python client uses it (read on 2026-09-27), not yet recorded
-# from a real run.
+# not yet recorded from a real run. fal's storage replies as it did on 2026-09-27
+# (docs/real-api-replies.md).
 
 
 @pytest.fixture
@@ -549,11 +549,11 @@ QUEUED = {
 # Where fal says how clip req-1 is getting on, where it says the made clip is, and the link
 # to the clip itself.
 STATUS = "/creatify/boreal/requests/req-1/status"
-# Where fal is asked for somewhere to put a file, where it says to put it, and the link it
-# then gives the file.
-STORING = "/storage/upload/initiate"
-PUTTING = "/storage-bucket/line.wav"
-STORED_LINK = "https://v3.fal.media/files/koala/line.wav"
+# Where fal's storage gives a token to store files with, where a file is stored with it, and
+# the link it then gives the file.
+TOKEN = "/storage/auth/token"
+UPLOADING = "/cdn/files/upload"
+STORED_LINK = "https://v3b.fal.media/files/b/0aac27e0/hzumoERxCN0OZTqbpMb2L_line.wav"
 RESULT = "/creatify/boreal/requests/req-1"
 CLIP_LINK = "/files/out.mp4"
 MADE = b"\0\0\0\x18ftypmp42 a whole clip"
@@ -594,32 +594,37 @@ def with_files_read_back(body: dict[str, Any]) -> dict[str, Any]:
 
 @pytest.fixture
 def stored(httpserver: HTTPServer) -> list[dict[str, Any]]:
-    """fal's storage taking every file put in it with our key, at STORED_LINK. Gives what
-    each file was said to be, what it held, and whether the key went with it."""
+    """fal's storage giving a token to our key, and taking every file stored with it, at
+    STORED_LINK. Gives each file's name, what it was said to be, what it held, and what it
+    was sent with."""
     files: list[dict[str, Any]] = []
 
-    def starting(request: Request) -> Response:
-        files.append({"said": request.get_json()})
+    def uploading(request: Request) -> Response:
+        files.append(
+            {
+                "name": request.headers.get("X-Fal-File-Name"),
+                "type": request.content_type,
+                "held": request.get_data(),
+                "sent with": request.headers.get("Authorization"),
+            }
+        )
         return Response(
-            json.dumps({"upload_url": httpserver.url_for(PUTTING), "file_url": STORED_LINK}),
+            json.dumps({"access_url": STORED_LINK, "uploaded": True}),
             content_type="application/json",
         )
 
-    def putting(request: Request) -> Response:
-        files[-1] |= {
-            "type": request.content_type,
-            "held": request.get_data(),
-            "keyed": "Authorization" in request.headers,
-        }
-        return Response(status=200)
-
     httpserver.expect_request(
-        STORING,
-        method="POST",
-        query_string="storage_type=gcs",
-        headers=AUTHORISED,
-    ).respond_with_handler(starting)
-    httpserver.expect_request(PUTTING, method="PUT").respond_with_handler(putting)
+        TOKEN, method="POST", query_string="storage_type=fal-cdn-v3", headers=AUTHORISED
+    ).respond_with_json(
+        {
+            "token": "cdn-token",
+            "created_at": "2026-09-27T21:46:36.102130+00:00",
+            "expires_at": "2026-10-27T21:46:36.102130+00:00",
+            "base_url": httpserver.url_for("/cdn"),
+            "token_type": "Bearer",
+        }
+    )
+    httpserver.expect_request(UPLOADING, method="POST").respond_with_handler(uploading)
     return files
 
 
@@ -690,14 +695,9 @@ def test_a_talking_clip_is_asked_for_saying_the_line_in_720p_portrait(
         "audio_url": STORED_LINK,
     }
     # Named as a WAV file, which Boreal takes. Sent inside the request, fal named it `.bin`
-    # and Boreal refused it. The link to put it at isn't fal's API, so it isn't sent the key.
+    # and Boreal refused it. It is stored with the storage's token, not our key.
     assert stored == [
-        {
-            "said": {"file_name": "line.wav", "content_type": "audio/wav"},
-            "type": "audio/wav",
-            "held": line,
-            "keyed": False,
-        }
+        {"name": "line.wav", "type": "audio/wav", "held": line, "sent with": "Bearer cdn-token"}
     ]
 
 
@@ -936,7 +936,7 @@ def test_a_clip_fal_is_too_busy_for_is_asked_for_again(
 
 
 @pytest.mark.parametrize(
-    "asking", [STORING, PUTTING], ids=["somewhere to put the audio", "putting the audio there"]
+    "asking", [TOKEN, UPLOADING], ids=["a token to store the audio", "storing the audio"]
 )
 @pytest.mark.parametrize(
     "failing",

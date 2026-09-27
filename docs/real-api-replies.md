@@ -91,3 +91,30 @@ Run for real through `backend/gateway/fal_adapter.py` on 2026-09-25: 5 seconds o
 
 - **Make music**: `POST https://fal.run/sonilo/v1.1/text-to-music` with `Authorization: Key <FAL_KEY>` and `{"prompt", "duration", "num_samples": 1}`. `duration` is whole seconds, at most 600. It answers once the music is made. The music is fetched from `audio.url`, without the key. The shape is from fal's model page; only `audio.url` is read.
 - **Billed** at $0.0025 a second of music, as fal's model page said on 2026-09-17. The adapter bills the seconds asked for, not the few hundredths more that come back. Whether fal bills its own retries is still unknown.
+
+## fal (Boreal)
+
+**Audio sent inside the request is refused.** Sent as a `data:audio/wav;base64,…` data URI, every clip with a voice line failed when collected, with `Unsupported audio format: .bin. Supported formats: .wav, .mp3, .aiff, .aif, .aac, .ogg, .flac, .m4a` at `body.audio_url`. fal names a file sent inside a request from its content type, and doesn't know `audio/wav`, so it names it `.bin`. The picture, sent as `data:image/png`, was taken. So the line's audio is put in fal's storage first and sent as a link.
+
+**fal's storage**, asked on 2026-09-27 through `backend/gateway/boreal_adapter.py`:
+
+- `POST https://rest.fal.ai/storage/upload/initiate?storage_type=gcs`, the fallback fal's own Python client uses, answers `400` `{"detail":"Invalid storage type"}`. It no longer works.
+- **A token to store files with**: `POST https://rest.fal.ai/storage/auth/token?storage_type=fal-cdn-v3` with `Authorization: Key <FAL_KEY>` and `{}`. It lasts 30 days.
+
+  ```json
+  {
+    "token": "<cut>",
+    "created_at": "2026-09-27T21:47:25.394105+00:00",
+    "expires_at": "2026-10-27T21:47:25.394105+00:00",
+    "base_url": "https://v3b.fal.media",
+    "token_type": "Bearer"
+  }
+  ```
+
+- **Store a file**: `POST {base_url}/files/upload` with `Authorization: {token_type} {token}`, `Content-Type: audio/wav`, `X-Fal-File-Name: line.wav` and the file as the body. The link keeps the name, and fetching it gives the same file back as `audio/wav`, without any key.
+
+  ```json
+  {"access_url": "https://v3b.fal.media/files/b/0aac27e0/hzumoERxCN0OZTqbpMb2L_line.wav", "uploaded": true}
+  ```
+
+**A talking clip from a stored line**, run for real the same day: a 3.6-second line (a 48 kHz mono 16-bit WAV) and a drawn 720×1280 face, `duration: 3.6`. fal said `COMPLETED` after about 73 seconds. The clip was 720×1280, 3.71 seconds, with the line's audio in it.

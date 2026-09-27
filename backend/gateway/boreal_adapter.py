@@ -9,9 +9,10 @@ second. The picture is sent inside the request, as a data URI. The audio is put 
 first and sent as a link: fal names a file sent inside a request from its content type, it
 names `audio/wav` `.bin`, and Boreal refuses audio that isn't named as audio.
 
-fal's storage, as its own Python client uses it (read on 2026-09-27): `POST
-/storage/upload/initiate?storage_type=gcs` with the file's name and content type hands back an
-`upload_url` to `PUT` the file at, and the `file_url` it can then be fetched from.
+fal's storage, as its own Python client uses it and as it replied on 2026-09-27
+(docs/real-api-replies.md): `POST /storage/auth/token?storage_type=fal-cdn-v3` hands our key a
+token and the `base_url` to store files at; `POST {base_url}/files/upload` with the token, the
+file and its name hands back the `access_url` it can be fetched from, ending in that name.
 
 The queue: `POST /{model}` hands back a `request_id`; `GET .../requests/{id}/status` says
 IN_QUEUE, IN_PROGRESS or COMPLETED; `GET .../requests/{id}` then gives the clip, or why it
@@ -86,21 +87,25 @@ class BorealProvider:
 
     def _store_audio(self, audio: bytes) -> str:
         """Put a line's audio in fal's storage, named as a WAV file. Gives the link to it."""
-        where = self._send(
+        token = self._send(
             "POST",
-            f"{settings.FAL_STORAGE_URL}/storage/upload/initiate",
+            f"{settings.FAL_STORAGE_URL}/storage/auth/token",
             service="fal's storage",
-            params={"storage_type": "gcs"},
-            json={"file_name": "line.wav", "content_type": "audio/wav"},
+            params={"storage_type": "fal-cdn-v3"},
+            json={},
         )
-        _unkeyed(
-            "PUT",
-            where["upload_url"],
+        stored = _unkeyed(
+            "POST",
+            f"{token['base_url']}/files/upload",
             "fal's storage",
             content=audio,
-            headers={"Content-Type": "audio/wav"},
+            headers={
+                "Authorization": f"{token['token_type']} {token['token']}",
+                "Content-Type": "audio/wav",
+                "X-Fal-File-Name": "line.wav",
+            },
         )
-        return str(where["file_url"])
+        return str(stored.json()["access_url"])
 
     def _send(
         self,
