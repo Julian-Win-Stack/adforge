@@ -113,6 +113,12 @@ FAL_QUEUE_URL = os.environ.get("FAL_QUEUE_URL", "https://queue.fal.run")
 # fal answers once the music is made, which takes longer the longer the music.
 FAL_TIMEOUT_SECONDS = 300.0
 
+# Langfuse, where every agent turn, tool call and model call is sent to be looked at as a
+# tree. Tracing is off unless both keys are set.
+LANGFUSE_PUBLIC_KEY = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
+LANGFUSE_SECRET_KEY = os.environ.get("LANGFUSE_SECRET_KEY", "")
+LANGFUSE_BASE_URL = os.environ.get("LANGFUSE_BASE_URL", "https://cloud.langfuse.com")
+
 # How often to ask whether a clip is made yet. One usually takes under a minute, but it is
 # paid for, so it is waited for however long it takes: past this, the shop owner is told
 # it's still being made.

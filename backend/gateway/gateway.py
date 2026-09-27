@@ -19,7 +19,7 @@ import PIL.ImageOps
 from django.conf import settings
 from pydantic import BaseModel
 
-from adforge import file_store
+from adforge import file_store, tracing
 from adforge.retry import OutsideServiceDown, with_retries
 
 from . import catalog
@@ -556,46 +556,57 @@ def _recorded[Result](
     }
     attempts = 0
 
+    shown = _files_given(handoff, images)
+
     def attempt() -> Result:
         nonlocal attempts
         attempts += 1
-        started = time.monotonic()
-        try:
-            made = make()
-        except Exception as error:
-            # An unusable answer was still billed, so its cost is recorded like any other.
-            billed = error if isinstance(error, UnusableReply) else None
-            ModelCall.objects.create(
-                **recorded,
-                attempt=attempts,
-                outcome=ModelCall.Outcome.FAILED,
-                error=f"{type(error).__name__}: {error}",
-                input_tokens=billed.input_tokens if billed else None,
-                output_tokens=billed.output_tokens if billed else None,
-                cost_usd=(
-                    catalog.cost_usd(model, billed.input_tokens, billed.output_tokens)
-                    if billed
-                    else None
+        with tracing.model_call(
+            purpose, model=model, handoff=recorded["handoff"], shown=shown
+        ) as traced:
+            started = time.monotonic()
+            try:
+                made = make()
+            except Exception as error:
+                # An unusable answer was still billed, so its cost is recorded like any other.
+                billed = error if isinstance(error, UnusableReply) else None
+                _send_to_trace(
+                    traced,
+                    ModelCall.objects.create(
+                        **recorded,
+                        attempt=attempts,
+                        outcome=ModelCall.Outcome.FAILED,
+                        error=f"{type(error).__name__}: {error}",
+                        input_tokens=billed.input_tokens if billed else None,
+                        output_tokens=billed.output_tokens if billed else None,
+                        cost_usd=(
+                            catalog.cost_usd(model, billed.input_tokens, billed.output_tokens)
+                            if billed
+                            else None
+                        ),
+                        duration_ms=_elapsed_ms(started),
+                    ),
+                )
+                raise
+            _send_to_trace(
+                traced,
+                ModelCall.objects.create(
+                    **recorded,
+                    attempt=attempts,
+                    output=made.output,
+                    outcome=ModelCall.Outcome.SUCCEEDED,
+                    input_tokens=made.bill.input_tokens,
+                    output_tokens=made.bill.output_tokens,
+                    characters=made.bill.characters,
+                    audio_seconds=made.bill.audio_seconds,
+                    video_seconds=made.bill.video_seconds,
+                    cost_usd=made.bill.cost_usd,
+                    duration_ms=_elapsed_ms(started),
+                    decision=made.decision,
+                    reason=made.reason,
                 ),
-                duration_ms=_elapsed_ms(started),
             )
-            raise
-        ModelCall.objects.create(
-            **recorded,
-            attempt=attempts,
-            output=made.output,
-            outcome=ModelCall.Outcome.SUCCEEDED,
-            input_tokens=made.bill.input_tokens,
-            output_tokens=made.bill.output_tokens,
-            characters=made.bill.characters,
-            audio_seconds=made.bill.audio_seconds,
-            video_seconds=made.bill.video_seconds,
-            cost_usd=made.bill.cost_usd,
-            duration_ms=_elapsed_ms(started),
-            decision=made.decision,
-            reason=made.reason,
-        )
-        return made.result
+            return made.result
 
     try:
         return with_retries(attempt)
@@ -603,6 +614,46 @@ def _recorded[Result](
         raise OutsideServiceDown(
             f"The model provider was still down after {attempts} tries: {error}"
         ) from error
+
+
+def _files_given(handoff: Handoff, images: list[dict[str, str]] | None) -> list[str]:
+    """The files in the file store a call was given, by their keys: the pictures shown with
+    its handoff, and any the handoff names."""
+    given = [image["key"] for image in images or []]
+    if isinstance(handoff, PictureEditHandoff):
+        given += handoff.pictures
+    if isinstance(handoff, TranscriptionHandoff):
+        given.append(handoff.audio)
+    if isinstance(handoff, ClipHandoff):
+        given += [key for key in (handoff.picture, handoff.audio) if key is not None]
+    return given
+
+
+def _send_to_trace(traced: tracing.Traced, call: ModelCall) -> None:
+    """Send what a model call's record holds to its trace."""
+    made = call.output.get("file") if isinstance(call.output, dict) else None
+    measured = {
+        "characters": call.characters,
+        "audio_seconds": call.audio_seconds,
+        "video_seconds": call.video_seconds,
+    }
+    traced.made(
+        output=call.output,
+        files=[made] if isinstance(made, str) else [],
+        input_tokens=call.input_tokens,
+        output_tokens=call.output_tokens,
+        cost_usd=call.cost_usd,
+        error=call.error,
+        metadata={
+            "provider": call.provider,
+            "attempt": call.attempt,
+            "outcome": call.outcome,
+            "decision": call.decision,
+            "reason": call.reason,
+            "duration_ms": call.duration_ms,
+            **{name: value for name, value in measured.items() if value is not None},
+        },
+    )
 
 
 def _answered_before(
@@ -627,7 +678,16 @@ def _answered_before(
     if job is not None:
         calls = calls.filter(job=job)
     answered = calls.last()
-    return answered.output if answered else None
+    if answered is None:
+        return None
+    tracing.answered_from_record(
+        purpose,
+        model=answered.model,
+        handoff=answered.handoff,
+        shown=_files_given(handoff, images),
+        output=answered.output,
+    )
+    return answered.output
 
 
 def _picture_extension(data: bytes) -> str:

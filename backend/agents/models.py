@@ -33,6 +33,15 @@ class ToolCall(models.Model):
         help_text='What its result has the agent ask the shop owner, such as "length" or '
         '"scene 2", so a tool can tell whether they have answered since. Blank for nothing.',
     )
+    trace_id = models.CharField(
+        max_length=32,
+        blank=True,
+        help_text="The Langfuse trace its latest run is in, so a scene step it started, run "
+        "elsewhere, is traced inside it. Blank when tracing is off.",
+    )
+    observation_id = models.CharField(
+        max_length=16, blank=True, help_text="Its latest run's own ID in that trace."
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     finished_at = models.DateTimeField(null=True, blank=True)
 

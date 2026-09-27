@@ -9,6 +9,7 @@ from django.conf import settings
 from django.db import connection, transaction
 from django.utils import timezone
 
+from adforge import tracing
 from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Attachment, Message, Session
@@ -52,6 +53,7 @@ def run_producer(session_id: str) -> None:
     finally:
         stop_beating.set()
         heartbeat.join()
+        tracing.flush()
     # No producer is working any more, so the next message starts one.
     with transaction.atomic():
         messages.add(
@@ -198,7 +200,15 @@ def run_scene_step(step_id: int) -> None:
     session = step.tool_call.session
     work = STEP_WORK[SceneStep.Kind(step.kind)]
     try:
-        with charged_to(step.tool_call):
+        with (
+            charged_to(step.tool_call),
+            tracing.scene_step(
+                f"scene {scene.number}'s {work.name}",
+                session_id=str(session.pk),
+                trace_id=step.tool_call.trace_id,
+                parent_id=step.tool_call.observation_id,
+            ),
+        ):
             made = work.make(step)
         # Shown and finished together, so a step run again never shows anything twice.
         with transaction.atomic():
@@ -221,6 +231,7 @@ def run_scene_step(step_id: int) -> None:
         )
         step.finished_at = timezone.now()
         step.save(update_fields=["status", "reason", "result", "finished_at"])
+    tracing.flush()
     # Only once the result is stored: a producer that is stopping either finds it, or has
     # stopped by the time this looks, and is started again.
     wake_producer(str(session.pk))

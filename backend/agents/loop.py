@@ -19,6 +19,7 @@ from django.db.models import QuerySet
 from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from adforge import tracing
 from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Message, Session
@@ -88,6 +89,11 @@ class Agent:
 def run(agent: Agent, session: Session) -> int:
     """Let `agent` work in `session` until it replies. Gives the number of the last message
     its last turn was given, so the caller can tell whether anything was said since."""
+    with tracing.message_work(agent.name, session_id=str(session.pk)):
+        return _work(agent, session)
+
+
+def _work(agent: Agent, session: Session) -> int:
     # A tool that was running when the last worker stopped runs again first: the agent
     # can't take another turn until every tool it asked for has handed back a result.
     for call in session.tool_calls.filter(agent=agent.name, finished_at__isnull=True):
@@ -98,63 +104,80 @@ def run(agent: Agent, session: Session) -> int:
             # Its last turn was given all of them, before a worker stopped past its reply.
             _read(steps)
             return read_up_to
-        turn = take_turn(
-            session=session,
-            purpose=agent.purpose,
-            instructions=agent.instructions,
-            conversation=conversation,
-            tools=[tool.spec() for tool in agent.tools],
-        )
-        # A tool past the limit is refused, and the agent gets one turn to tell the user.
-        # Asking for another tool instead, it is stopped.
-        stopped = turn.calls and _calls_since_the_user_spoke(session) > _limit()
-        # What the agent said and the tools it asked for are written down together, before
-        # any tool runs, so a restart finds both or neither.
-        with transaction.atomic():
-            # Only the steps the turn was given: one that finished while the model worked
-            # is given on the next turn.
-            _read(steps)
-            if turn.says:
-                messages.add(session, role=Message.Role.AGENT, text=turn.says)
-            if stopped:
-                messages.add(
-                    session,
-                    role=Message.Role.AGENT,
-                    text=f"I hit my limit of {_limit()} steps for one message. Send a message "
-                    "and I'll carry on.",
-                )
+        # The turn is traced with the tools it asked for inside it.
+        with tracing.agent_turn(agent.name):
+            turn = take_turn(
+                session=session,
+                purpose=agent.purpose,
+                instructions=agent.instructions,
+                conversation=conversation,
+                tools=[tool.spec() for tool in agent.tools],
+            )
+            # A tool past the limit is refused, and the agent gets one turn to tell the user.
+            # Asking for another tool instead, it is stopped.
+            stopped = turn.calls and _calls_since_the_user_spoke(session) > _limit()
+            # What the agent said and the tools it asked for are written down together, before
+            # any tool runs, so a restart finds both or neither.
+            with transaction.atomic():
+                # Only the steps the turn was given: one that finished while the model worked
+                # is given on the next turn.
+                _read(steps)
+                if turn.says:
+                    messages.add(session, role=Message.Role.AGENT, text=turn.says)
+                if stopped:
+                    messages.add(
+                        session,
+                        role=Message.Role.AGENT,
+                        text=f"I hit my limit of {_limit()} steps for one message. Send a message "
+                        "and I'll carry on.",
+                    )
+                    return read_up_to
+                calls = [
+                    ToolCall.objects.create(
+                        session=session,
+                        agent=agent.name,
+                        tool=asked.tool,
+                        call_id=asked.call_id,
+                        arguments=asked.arguments,
+                    )
+                    for asked in turn.calls
+                ]
+            if not calls:
                 return read_up_to
-            calls = [
-                ToolCall.objects.create(
-                    session=session,
-                    agent=agent.name,
-                    tool=asked.tool,
-                    call_id=asked.call_id,
-                    arguments=asked.arguments,
-                )
-                for asked in turn.calls
-            ]
-        if not calls:
-            return read_up_to
-        for call in calls:
-            _settle(agent, call)
+            for call in calls:
+                _settle(agent, call)
 
 
 def _settle(agent: Agent, call: ToolCall) -> None:
     """Run the tool a checkpoint asked for, unless it is past the limit, and keep what it
     handed back."""
-    number = _calls_since_the_user_spoke(call.session, up_to=call)
-    if number > _limit():
-        call.result = (
-            f"Refused: this would be tool call {number} since the shop owner's last message, "
-            f"and the limit is {_limit()}. Nothing was done. Tell the shop owner plainly that "
-            "you hit the limit of work for one message, what is done so far, and that sending "
-            "a message lets you carry on."
-        )
-    else:
-        call.result = _run(agent, call)
+    with tracing.tool(call.tool, call.arguments) as traced:
+        # Kept before the tool runs, for the scene steps it starts to find. A tool run again
+        # after a restart is traced again, and the steps it starts then go inside that run.
+        call.trace_id, call.observation_id = traced.ids()
+        call.save(update_fields=["trace_id", "observation_id"])
+        number = _calls_since_the_user_spoke(call.session, up_to=call)
+        if number > _limit():
+            call.result = (
+                f"Refused: this would be tool call {number} since the shop owner's last "
+                f"message, and the limit is {_limit()}. Nothing was done. Tell the shop owner "
+                "plainly that you hit the limit of work for one message, what is done so far, "
+                "and that sending a message lets you carry on."
+            )
+        else:
+            call.result = _run(agent, call)
+        traced.update(output=call.result, **_level(call.result))
     call.finished_at = timezone.now()
     call.save(update_fields=["result", "asked_about", "finished_at"])
+
+
+def _level(result: str) -> dict[str, str]:
+    """How a tool's result is marked in its trace, so a refusal or failure stands out."""
+    if result.startswith("Failed:"):
+        return {"level": "ERROR"}
+    if result.startswith("Refused:"):
+        return {"level": "WARNING"}
+    return {}
 
 
 def _run(agent: Agent, call: ToolCall) -> str:

@@ -127,6 +127,9 @@ def _isolated_outside_world(settings: Settings, tmp_path: Path) -> None:
     settings.CLIP_POLL_SECONDS = 0
     # The test shop runs on this machine, an address real jobs are never allowed to fetch.
     settings.FETCH_PRIVATE_ADDRESSES = True
+    # Nothing is sent to Langfuse, even from a machine whose environment holds real keys.
+    settings.LANGFUSE_PUBLIC_KEY = ""
+    settings.LANGFUSE_SECRET_KEY = ""
 
 
 @pytest.fixture
