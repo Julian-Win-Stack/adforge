@@ -149,16 +149,22 @@ def test_a_messages_work_is_one_trace_of_turns_the_tools_they_asked_for_and_mode
             produce (generation)"""
     )
     assert trace.attributes["session.id"] == session_id
+    assert trace.value("input") == {"message": f"Make an ad for {page_read}"}
+    assert trace.value("output") == {"said": ["I read your mug's page."]}
     (read_page,) = trace.find(name="read_page")
-    assert read_page.value("input") == {"link": page_read, "target_seconds": None}
-    assert read_page.value("output") == results_of("read_page")[0]
+    # Each side is named, so Langfuse doesn't show them as a chat's "User" and "Assistant".
+    assert read_page.value("input") == {"arguments": {"link": page_read, "target_seconds": None}}
+    assert read_page.value("output") == {"result": results_of("read_page")[0]}
     (check_page,) = trace.find(name="check_page")
     recorded = ModelCall.objects.get(purpose="check_page")
     assert check_page.attributes["langfuse.observation.model.name"] == "gpt-5-mini"
-    assert check_page.value("input")["handoff"] == recorded.handoff
-    assert check_page.value("output")["output"] == {
-        "decision": "readable",
-        "reason": "The page names the mug, its price and its size.",
+    # With no files shown or made, neither is listed.
+    assert check_page.value("input") == {"handoff": recorded.handoff}
+    assert check_page.value("output") == {
+        "output": {
+            "decision": "readable",
+            "reason": "The page names the mug, its price and its size.",
+        }
     }
     # The fake bills 1,000 tokens in and 100 out for every call.
     assert check_page.value("usage_details") == {"input": 1_000, "output": 100}
@@ -233,6 +239,11 @@ def test_a_messages_work_woken_again_by_a_scene_step_stays_in_the_messages_trace
     assert woken.trace_id == first.trace_id
     assert (first.name, woken.name) == ("producer", "producer, woken by scene 1's starting picture")
     assert first.attributes["langfuse.trace.name"] == "Make scene 1's starting picture"
+    assert woken.value("input") == {
+        "message": "Make scene 1's starting picture",
+        "woken_by": ["scene 1's starting picture"],
+    }
+    assert woken.value("output") == {"said": ["Scene 1's starting picture is ready!"]}
     assert woken.outline() == dedent(
         """\
         producer, woken by scene 1's starting picture (span)

@@ -118,7 +118,7 @@ class Traced:
             return
         usage = {"input": input_tokens, "output": output_tokens}
         self.update(
-            output={"output": output, "made": _files(files)},
+            output={"output": output, **_listed("made", _files(files))},
             usage_details={kind: tokens for kind, tokens in usage.items() if tokens is not None},
             cost_details=None if cost_usd is None else {"total": float(cost_usd)},
             metadata=metadata,
@@ -189,11 +189,22 @@ def message_work(
     """Trace the block as an agent's work on the user's `message`, grouped in Langfuse with
     the rest of its session. The first time, it is a new trace named after the message.
     Given that trace's ID, it is one more part at the top of it, named for the scene steps
-    whose finishing woke the agent, `woken_by`, or as started again when none did."""
+    whose finishing woke the agent, `woken_by`, or as started again when none did. Its
+    output is set with `said`."""
+    given: dict[str, Any] = {"message": message, **({"woken_by": woken_by} if woken_by else {})}
     if not trace_id:
-        return _observed(agent, "span", session_id=session_id, trace_name=message or agent)
+        return _observed(
+            agent, "span", session_id=session_id, trace_name=message or agent, input=given
+        )
     why = f"woken by {', '.join(woken_by)}" if woken_by else "started again"
-    return _observed(f"{agent}, {why}", "span", session_id=session_id, parent=(trace_id, ""))
+    return _observed(
+        f"{agent}, {why}", "span", session_id=session_id, parent=(trace_id, ""), input=given
+    )
+
+
+def said(traced: Traced, texts: Sequence[str]) -> None:
+    """Record what the agent said to the user in its work on a message."""
+    traced.update(output={"said": list(texts)})
 
 
 def agent_turn(agent: str) -> AbstractContextManager[Traced]:
@@ -202,8 +213,16 @@ def agent_turn(agent: str) -> AbstractContextManager[Traced]:
 
 
 def tool(name: str, arguments: dict[str, Any]) -> AbstractContextManager[Traced]:
-    """Trace the block as one tool running."""
-    return _observed(name, "tool", input=arguments)
+    """Trace the block as one tool running. Its result is set with `handed_back`.
+
+    Both sides are named: a tool given a dict and handing back text is otherwise shown by
+    Langfuse as a chat, its arguments as "User" and its result as "Assistant"."""
+    return _observed(name, "tool", input={"arguments": arguments})
+
+
+def handed_back(traced: Traced, result: str, **fields: Any) -> None:
+    """Record what a tool handed back to the agent."""
+    traced.update(output={"result": result}, **fields)
 
 
 def scene_step(
@@ -223,7 +242,7 @@ def model_call(
     with _observed(purpose, "generation", model=model) as traced:
         # Files are only read when they will be sent.
         if traced.recording():
-            traced.update(input={"handoff": handoff, "shown": _files(shown)})
+            traced.update(input=_given(handoff, shown))
         yield traced
 
 
@@ -240,10 +259,20 @@ def answered_from_record(
     with _observed(f"{purpose} (answered from its record)", "generation", model=model) as traced:
         if traced.recording():
             traced.update(
-                input={"handoff": handoff, "shown": _files(shown)},
+                input=_given(handoff, shown),
                 output={"output": output},
                 cost_details={"total": 0.0},
             )
+
+
+def _given(handoff: dict[str, Any], shown: Sequence[str]) -> dict[str, Any]:
+    """What a model call was handed, and the files it was shown when there were any."""
+    return {"handoff": handoff, **_listed("shown", _files(shown))}
+
+
+def _listed(name: str, files: list[LangfuseMedia]) -> dict[str, list[LangfuseMedia]]:
+    """The files under `name`, or nothing when there are none, so no empty list is shown."""
+    return {name: files} if files else {}
 
 
 def _files(keys: Sequence[str]) -> list[LangfuseMedia]:

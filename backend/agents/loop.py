@@ -102,7 +102,12 @@ def run(agent: Agent, session: Session, *, woken_by: Sequence[str] = ()) -> int:
         if message is not None and not message.trace_id:
             message.trace_id = traced.ids()[0]
             message.save(update_fields=["trace_id"])
-        return _work(agent, session)
+        before = session.messages.order_by("seq").values_list("seq", flat=True).last() or 0
+        read_up_to = _work(agent, session)
+        if traced.recording():
+            said = session.messages.filter(role=Message.Role.AGENT, seq__gt=before)
+            tracing.said(traced, [text for text in said.values_list("text", flat=True) if text])
+        return read_up_to
 
 
 def _work(agent: Agent, session: Session) -> int:
@@ -178,7 +183,7 @@ def _settle(agent: Agent, call: ToolCall) -> None:
             )
         else:
             call.result = _run(agent, call)
-        traced.update(output=call.result, **_level(call.result))
+        tracing.handed_back(traced, call.result, **_level(call.result))
     call.finished_at = timezone.now()
     call.save(update_fields=["result", "asked_about", "finished_at"])
 
