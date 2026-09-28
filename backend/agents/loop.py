@@ -282,13 +282,22 @@ def _conversation(agent: Agent, session: Session) -> tuple[list[Happened], int, 
 
     A step comes where the agent was first given it, not when it finished, and one not
     given yet comes last. A step that finished while a turn was being taken is given on the
-    next, so it never lands behind a reply that hadn't seen it."""
+    next, so it never lands behind a reply that hadn't seen it.
+
+    A message with no words from the agent's side is left out: the app posts one to show
+    the shop owner a file, and the tool or step that made the file already tells the agent
+    so. Given as the agent's own "[Attached 1 picture]", it was copied as a reply with no
+    picture on it."""
     said = list(session.messages.prefetch_related("attachments"))
     finished = _finished_steps(agent, session).order_by("finished_at", "id")
     read = list(finished.filter(producer_read_at__isnull=False))
     unread = list(finished.filter(producer_read_at__isnull=True))
     happened: list[tuple[datetime, Message | ToolCall | SceneStep]] = [
-        *((message.created_at, message) for message in said),
+        *(
+            (message.created_at, message)
+            for message in said
+            if message.text or message.role == Message.Role.USER
+        ),
         *((call.created_at, call) for call in session.tool_calls.filter(agent=agent.name)),
         *((step.producer_read_at, step) for step in read if step.producer_read_at),
     ]

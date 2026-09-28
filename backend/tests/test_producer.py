@@ -355,12 +355,13 @@ def test_the_producer_takes_a_brief_to_a_checked_plan_that_is_ready_to_render(
         file_store.url(portrait.file),
         file_store.url(voice.file),
     ]
-    # The producer is told what that message carries, so it can talk about it.
-    assert given_to_the_producer(4)[-1] == {
-        "kind": "said",
-        "by": "agent",
-        "text": "[Attached 1 picture and 1 sound]",
-    }
+    # The producer learns the person was shown from its tool, not from that message.
+    person_made = given_to_the_producer(4)[-1]
+    assert (person_made["kind"], person_made.get("tool")) == ("tool_use", "create_person")
+    assert person_made["result"].startswith(
+        "Made the person, and showed the shop owner their portrait and their voice reading "
+        "the script in the chat."
+    )
     # Each tool's model calls are recorded against its checkpoint.
     checkpoints = ToolCall.objects.all()
     assert [

@@ -96,6 +96,29 @@ def test_a_starting_picture_is_made_in_the_background_and_the_producer_tells_the
     assert (told["role"], told["text"]) == ("agent", "Scene 1's starting picture is ready!")
 
 
+def test_a_starting_picture_shown_in_the_chat_isnt_given_to_the_producer_as_its_own_words(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("make_starting_picture", {"scene": 1, "note": None})]),
+        turn(says="I've started scene 1's picture."),
+    )
+    say("Make scene 1's starting picture")
+    fake_model.respond("choose_starting_picture", CHOICE)
+    fake_model.respond("produce", turn(says="Scene 1's starting picture is ready!"))
+
+    steps.run_held()
+
+    # The picture's message came between the producer's reply and the step: it is left out,
+    # as a producer given it as "[Attached 1 picture]" copied that as a reply.
+    assert given_to_the_producer(producer_turns())[-2] == {
+        "kind": "said",
+        "by": "agent",
+        "text": "I've started scene 1's picture.",
+    }
+
+
 def making(fake_model: FakeModel, *scenes: tuple[int, str | None], reply: str = "On it.") -> None:
     """Script the producer to start the starting picture for each of `scenes`, given as
     (scene, note), one turn each, then reply."""

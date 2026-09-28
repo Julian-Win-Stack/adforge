@@ -16,6 +16,7 @@ from chat.models import Session
 from gateway.fake import FakeModel, meanwhile, turn
 
 from .conftest import (
+    MUG_FRONT,
     READABLE,
     a_producer_last_beat,
     chat,
@@ -179,6 +180,16 @@ def test_a_producer_working_when_the_worker_stopped_is_started_again_as_the_work
 
     assert what_the_user_said(given_to_the_producer(1)) == ["Make me an ad for my mug"]
     assert chat(api, session_id)[-1] == ("agent", "Happy to: what's the link to your mug?")
+
+
+def test_a_photo_the_user_sends_with_no_words_is_given_to_the_producer_as_a_note(
+    fake_model: FakeModel, say: Callable[..., None]
+) -> None:
+    fake_model.respond("produce", turn(says="Nice mug! What's the link to its page?"))
+
+    say("", ("front.png", MUG_FRONT))
+
+    assert what_the_user_said(given_to_the_producer(1)) == ["[Attached 1 picture]"]
 
 
 def test_a_message_sent_to_a_dead_producer_starts_it_again(
