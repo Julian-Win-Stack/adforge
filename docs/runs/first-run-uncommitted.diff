@@ -1,0 +1,89 @@
+diff --git a/backend/jobs/work.py b/backend/jobs/work.py
+index 0d9674d..d97c54e 100644
+--- a/backend/jobs/work.py
++++ b/backend/jobs/work.py
+@@ -927,8 +927,9 @@ def make_clip(step: SceneStep) -> ProducedItem:
+     """Have the video model animate the starting picture to speak the audio the step was
+     started for. Gives back the clip, kept as the scene's next version, and marks the scene
+     finished. A scene that shows the product rather than the person talking is made with no
+-    sound, as long as the audio rounded up to a whole second; the audio is then laid over it
+-    and it is cut to the audio's length. Either way, a clip lasts as long as its audio.
++    sound, as long as the audio, so none of its motion is cut away; the audio is then laid
++    over it and it is cut to the audio's length. Either way, a clip lasts as long as its
++    audio.
+ 
+     Run again, as after a worker stopped, it pays for nothing already paid for: a clip
+     asked for is waited for rather than asked for again, and one fetched is kept rather
+@@ -993,8 +994,8 @@ def make_clip(step: SceneStep) -> ProducedItem:
+ 
+ def _clip_handoff(step: SceneStep, picture: ProducedItem, audio: ProducedItem) -> ClipHandoff:
+     """What the video model is asked for: a clip speaking the audio, or, for a scene that
+-    shows the product, a silent one as long as the audio rounded up to a whole second, that
+-    moves as the picture's step planned."""
++    shows the product, a silent one as long as the audio, that moves as the picture's step
++    planned."""
+     assert audio.seconds is not None, "a line's audio is measured when it's made"
+     if not step.shows:
+         return ClipHandoff(
+@@ -1009,7 +1010,8 @@ def _clip_handoff(step: SceneStep, picture: ProducedItem, audio: ProducedItem) -
+     return ClipHandoff(
+         picture=picture.file,
+         audio=None,
+-        seconds=math.ceil(audio.seconds),
++        # Only a line said in under the shortest clip loses the end of its clip's motion.
++        seconds=max(audio.seconds, LEAST_CLIP_SECONDS),
+         motion_prompt=with_nothing_made_up(picture.step.motion_prompt),
+     )
+ 
+diff --git a/backend/tests/test_producer_broll.py b/backend/tests/test_producer_broll.py
+index e25831a..9e0d445 100644
+--- a/backend/tests/test_producer_broll.py
++++ b/backend/tests/test_producer_broll.py
+@@ -371,19 +371,20 @@ def test_the_clip_is_asked_for_with_no_sound(
+ @pytest.mark.parametrize(
+     ("line", "asked_for"),
+     [
+-        pytest.param(LINE_2, 4, id="said in 3.5 seconds"),
+-        # 4 words, and 5, at the fake voice's 2 a second.
++        pytest.param(LINE_2, 3.5, id="said in 3.5 seconds"),
++        # 4 words, and 1, at the fake voice's 2 a second.
+         pytest.param("Tea fills the mug.", 2, id="said in 2 seconds"),
+-        pytest.param("Hot tea fills the mug.", 3, id="said in 2.5 seconds"),
++        # Boreal makes nothing shorter than a second.
++        pytest.param("Tea.", 1, id="said in half a second"),
+     ],
+ )
+-def test_the_clip_is_asked_for_as_long_as_its_line_rounded_up_to_a_whole_second(
++def test_the_clip_is_asked_for_exactly_as_long_as_its_line(
+     fake_model: FakeModel,
+     checked: None,
+     steps: HeldSteps,
+     say: Callable[..., None],
+     line: str,
+-    asked_for: int,
++    asked_for: float,
+ ) -> None:
+     Scene.objects.filter(number=2).update(line=line)
+     made_ready(fake_model, steps, say, (2,))
+@@ -416,9 +417,9 @@ def test_the_kept_clip_carries_its_lines_voice(
+ @pytest.mark.parametrize(
+     ("line", "said_in"),
+     [
+-        pytest.param(LINE_2, 3.5, id="cut from a longer clip"),
+-        # 4 words at the fake voice's 2 a second: the clip comes back just as long.
+-        pytest.param("Tea fills the mug.", 2.0, id="as long as the clip"),
++        # 1 word at the fake voice's 2 a second, in the shortest clip Boreal makes.
++        pytest.param("Tea.", 0.5, id="cut from a longer clip"),
++        pytest.param(LINE_2, 3.5, id="as long as the clip"),
+     ],
+ )
+ def test_the_kept_clip_lasts_as_long_as_its_line(
+@@ -450,7 +451,7 @@ def test_a_clip_shorter_than_its_line_fails_its_step(
+     step = SceneStep.objects.get(kind="clip")
+     assert (step.status, step.reason) == (
+         "failed",
+-        "the video model couldn't make the clip (it came back 3 seconds long, shorter than "
++        "the video model couldn't make the clip (it came back 2.5 seconds long, shorter than "
+         "the line's 3.5 seconds of audio).",
+     )
+ 
