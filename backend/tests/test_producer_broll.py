@@ -371,19 +371,20 @@ def test_the_clip_is_asked_for_with_no_sound(
 @pytest.mark.parametrize(
     ("line", "asked_for"),
     [
-        pytest.param(LINE_2, 4, id="said in 3.5 seconds"),
-        # 4 words, and 5, at the fake voice's 2 a second.
-        pytest.param("Tea fills the mug.", 2, id="said in 2 seconds"),
-        pytest.param("Hot tea fills the mug.", 3, id="said in 2.5 seconds"),
+        # Boreal makes 3.71 seconds for 3.83: the shortest it makes that is 3.5 or more.
+        pytest.param(LINE_2, 3.83, id="said in 3.5 seconds"),
+        # 4 words, and 5, at the fake voice's 2 a second: 2.04 seconds, and 2.71.
+        pytest.param("Tea fills the mug.", 2.17, id="said in 2 seconds"),
+        pytest.param("Hot tea fills the mug.", 2.83, id="said in 2.5 seconds"),
     ],
 )
-def test_the_clip_is_asked_for_as_long_as_its_line_rounded_up_to_a_whole_second(
+def test_the_clip_is_asked_for_as_the_shortest_boreal_makes_that_lasts_its_line(
     fake_model: FakeModel,
     checked: None,
     steps: HeldSteps,
     say: Callable[..., None],
     line: str,
-    asked_for: int,
+    asked_for: float,
 ) -> None:
     Scene.objects.filter(number=2).update(line=line)
     made_ready(fake_model, steps, say, (2,))
@@ -450,7 +451,7 @@ def test_a_clip_shorter_than_its_line_fails_its_step(
     step = SceneStep.objects.get(kind="clip")
     assert (step.status, step.reason) == (
         "failed",
-        "the video model couldn't make the clip (it came back 3 seconds long, shorter than "
+        "the video model couldn't make the clip (it came back 2.8 seconds long, shorter than "
         "the line's 3.5 seconds of audio).",
     )
 

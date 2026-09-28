@@ -90,6 +90,9 @@ from .scenes import (
     with_nothing_made_up,
 )
 
+# One frame of a clip: the video model makes 24 a second.
+FRAME_SECONDS = 1 / 24
+
 if TYPE_CHECKING:
     from agents.models import ToolCall
 
@@ -993,8 +996,8 @@ def make_clip(step: SceneStep) -> ProducedItem:
 
 def _clip_handoff(step: SceneStep, picture: ProducedItem, audio: ProducedItem) -> ClipHandoff:
     """What the video model is asked for: a clip speaking the audio, or, for a scene that
-    shows the product, a silent one as long as the audio rounded up to a whole second, that
-    moves as the picture's step planned."""
+    shows the product, a silent one that moves as the picture's step planned, the shortest
+    the model makes that still lasts as long as the audio."""
     assert audio.seconds is not None, "a line's audio is measured when it's made"
     if not step.shows:
         return ClipHandoff(
@@ -1009,9 +1012,19 @@ def _clip_handoff(step: SceneStep, picture: ProducedItem, audio: ProducedItem) -
     return ClipHandoff(
         picture=picture.file,
         audio=None,
-        seconds=math.ceil(audio.seconds),
+        seconds=_silent_clip_seconds(audio.seconds),
         motion_prompt=with_nothing_made_up(picture.step.motion_prompt),
     )
+
+
+def _silent_clip_seconds(audio_seconds: float) -> float:
+    """How long to ask for a silent clip so it lasts the audio with as little cut away as
+    can be. Boreal makes a clip of 8 frames at a time, plus one, at 24 a second, rounding
+    down: asked for `s` seconds, it makes floor(3s)/3 + 1/24 (measured on the clips of the
+    first run, docs/runs/first-run.md). So it is asked for halfway into the shortest third
+    of a second whose clip is long enough, which a rounding either way still lands in."""
+    thirds = math.ceil(3 * (audio_seconds - FRAME_SECONDS))
+    return round(max((thirds + 0.5) / 3, LEAST_CLIP_SECONDS), 2)
 
 
 def _with_the_voice(file: str, audio: ProducedItem) -> str:

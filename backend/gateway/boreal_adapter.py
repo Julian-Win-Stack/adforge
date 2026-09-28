@@ -2,12 +2,13 @@
 
 From fal's page for `creatify/boreal` (read on 2026-09-26): one endpoint does both kinds of
 clip. Given `audio_url`, the picture is animated to say it and the audio is kept as given;
-without, the clip moves as `prompt` says. `duration` is 1 to 20 seconds and may be a
-fraction: it is rounded to a whole frame at 24 frames a second. With audio, only its first
-`duration` seconds are used, and shorter audio is padded with silence. 720p costs $0.01 a
-second. The picture is sent inside the request, as a data URI. The audio is put in fal's storage
-first and sent as a link: fal names a file sent inside a request from its content type, it
-names `audio/wav` `.bin`, and Boreal refuses audio that isn't named as audio.
+without, the clip moves as `prompt` says. `duration` is 1 to 20 seconds and may be a fraction.
+Measured on the first run's clips (docs/runs/first-run.md), a clip is 8 frames at a time plus
+one, at 24 a second, rounded down: asked for `s` seconds, it lasts floor(3s)/3 + 1/24. With
+audio, only its first `duration` seconds are used, and shorter audio is padded with silence.
+720p costs $0.01 a second. The picture is sent inside the request, as a data URI. The audio is
+put in fal's storage first and sent as a link: fal names a file sent inside a request from its
+content type, it names `audio/wav` `.bin`, and Boreal refuses audio that isn't named as audio.
 
 fal's storage, as its own Python client uses it and as it replied on 2026-09-27
 (docs/real-api-replies.md): `POST /storage/auth/token?storage_type=fal-cdn-v3` hands our key a
