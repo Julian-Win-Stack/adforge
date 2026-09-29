@@ -17,6 +17,14 @@ class Job(models.Model):
         SHORTEN = "shorten"
         KEEP_LONGER = "keep_longer"
 
+    class ProductSize(models.TextChoices):
+        """How big the product is, which decides the pose every talking scene is planned
+        around: the same values as the plan's product_size."""
+
+        TINY = "tiny"  # fits on a fingertip: earrings, earbuds, a ring
+        HANDHELD = "handheld"  # held in one or two hands: a bottle, a bag, a rolled mat
+        LARGE = "large"  # can't be held: a chair, a treadmill, a mattress
+
     class PersonGender(models.TextChoices):
         """What the person presents as, in the portrait and the voice alike: the same values
         as the plan's person_gender."""
@@ -68,6 +76,14 @@ class Job(models.Model):
         blank=True,
         help_text="The colour the ad shows the product in, picked by the producer from the "
         "product photos.",
+    )
+    product_size = models.CharField(
+        max_length=20,
+        choices=ProductSize.choices,
+        blank=True,
+        help_text="How big the product is, from the plan. Code turns it into the pose every "
+        "talking scene's starting picture and clip are asked for. Blank for a job planned "
+        "before it was asked, which is posed as handheld, as every job was then.",
     )
     person_gender = models.CharField(
         max_length=10,

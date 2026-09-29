@@ -33,14 +33,19 @@ otherwise set it to null. An overlay states only what the page or the shop owner
 like a line. Name the product's \
 colour as the photos show it, in plain words such as "sage green", and give the numbers \
 of the photos that show the product in that colour. If the product comes in several \
-colours, don't ask which: pick one the photos show. Describe the person who presents the \
-ad: whether they are a man or a woman, how they look, for a portrait, and how their voice \
-sounds, for a voice designed to match. The portrait and the voice are made separately \
-from these words, and both are of the same person, so the looks and the voice must agree \
-with the gender you set and with each other. Describe only the person and where they \
-are: never the product, anything they hold, any animal, or what they do in a scene. \
-Choose someone who suits the product and its buyers, and never a real, famous person. \
-Set question to null.
+colours, don't ask which: pick one the photos show. Say how big the product is, judged \
+from the photos you chose: "tiny" if it fits on a fingertip, such as earrings, earbuds or \
+a ring; "handheld" if it's held in one or two hands, such as a bottle, a bag, a power bank \
+or a rolled-up mat; "large" if it can't be held, such as a chair, a treadmill or a \
+mattress. The size decides how the person is posed with the product in every scene where \
+they talk to camera, so judge it by what a person could really hold. Describe the person \
+who presents the ad: whether they are a man or a woman, how they look, for a portrait, \
+and how their voice sounds, for a voice designed to match. The portrait and the voice are \
+made separately from these words, and both are of the same person, so the looks and the \
+voice must agree with the gender you set and with each other. Describe only the person \
+and where they are: never the product, anything they hold, any animal, or what they do in \
+a scene. Choose someone who suits the product and its buyers, and never a real, famous \
+person. Set question to null.
 Most scenes are the person talking to camera. A B-roll scene instead shows the product \
 while the person's voice says the line over it: the product being used, what it does, \
 or the proof. For a B-roll scene, set shows to what the scene shows, in plain words, such \
@@ -138,6 +143,10 @@ class PlannedScene(BaseModel):
         return overlay
 
 
+# How big the product is. Code owns the pose for each size (jobs.scenes.POSES), so a
+# chair is never asked for at chest height and studs are never lost on an open palm.
+ProductSize = Literal["tiny", "handheld", "large"]
+
 # What the person presents as. Code puts it into both the portrait's prompt and the
 # voice's description; a plan that leaves it out is refused, so neither model is left to
 # pick a gender at random and disagree with the other.
@@ -155,6 +164,10 @@ class Plan(BaseModel):
     )
     colour_photos: list[StrictInt] = Field(
         min_length=1, description="The numbers of the photos showing the product in that colour."
+    )
+    product_size: ProductSize = Field(
+        description='How big the product is: "tiny" fits on a fingertip, "handheld" is held '
+        'in one or two hands, "large" can\'t be held.'
     )
     person_gender: PersonGender = Field(
         description="Whether the person presenting the ad is a man or a woman: the portrait "

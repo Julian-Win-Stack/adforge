@@ -81,13 +81,14 @@ from .planning import (
 )
 from .scenes import (
     BROLL_PICTURE_INSTRUCTIONS,
-    CLIP_MOTION_PROMPT,
     STARTING_PICTURE_INSTRUCTIONS,
     BrollPictureChoice,
     BrollPictureHandoff,
     StartingPictureChoice,
     StartingPictureHandoff,
+    pose_for,
     starting_picture_choice_for,
+    talking_motion_prompt,
     with_nothing_made_up,
 )
 
@@ -227,6 +228,7 @@ def plan(job: Job) -> ProducerDecision:
         )
         job.product_name = planned.product_name
         job.product_colour = planned.product_colour
+        job.product_size = planned.product_size
         job.person_gender = planned.person_gender
         job.person_looks = planned.person_looks
         job.person_voice = planned.person_voice
@@ -235,6 +237,7 @@ def plan(job: Job) -> ProducerDecision:
             update_fields=[
                 "product_name",
                 "product_colour",
+                "product_size",
                 "person_gender",
                 "person_looks",
                 "person_voice",
@@ -827,6 +830,7 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
         product_colour=job.product_colour,
         colour_photos=numbers,
         person_looks=job.person_looks,
+        pose=pose_for(job.product_size),
         note=step.note or None,
         conversation=_conversation(job, until=step.started_at),
     )
@@ -1027,7 +1031,7 @@ def _clip_handoff(step: SceneStep, picture: ProducedItem, audio: ProducedItem) -
             # Audio shorter than the shortest clip the model makes is padded with silence,
             # which the ad cuts away with the rest of the clip past the last word.
             seconds=max(audio.seconds, LEAST_CLIP_SECONDS),
-            motion_prompt=CLIP_MOTION_PROMPT,
+            motion_prompt=talking_motion_prompt(step.scene.job.product_size),
         )
     assert picture.step is not None, "a starting picture is made by a scene step"
     return ClipHandoff(

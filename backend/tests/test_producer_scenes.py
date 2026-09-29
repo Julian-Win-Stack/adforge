@@ -24,6 +24,7 @@ from jobs.models import Job, Scene, SceneStep
 from .conftest import (
     HeldSteps,
     WorkerStopped,
+    a_plan_with,
     chat,
     given_to_the_producer,
     handoffs,
@@ -319,6 +320,11 @@ def test_the_photo_and_prompt_are_chosen_from_the_line_and_the_picture_made_from
         "product_colour": "sage green",
         "colour_photos": [1],
         "person_looks": "A potter in her thirties in a linen apron, in a sunny workshop.",
+        # The mug is handheld, so the pose is the one for a product held in the hands.
+        "pose": (
+            "The person holds the product at chest height, beside their face, with any "
+            "label facing the camera, so the top and bottom of the frame stay clear."
+        ),
         "note": "She is outdoors, in the garden.",
         "conversation": chose["conversation"],
     }
@@ -344,6 +350,47 @@ def test_the_photo_and_prompt_are_chosen_from_the_line_and_the_picture_made_from
     )
     shown = api.get(f"/api/sessions/{session_id}/messages/").json()[-2]
     assert [attached["url"] for attached in shown["attachments"]] == [f"/media/{picture.file}"]
+
+
+@pytest.mark.parametrize(
+    ("the_plan", "pose"),
+    [
+        pytest.param(
+            a_plan_with(product_size="large"),
+            "The product stands on the floor at its real size, and the person stands beside "
+            "it with one hand resting on it, framed so both fit, with space above the head "
+            "and below the product, so the top and bottom of the frame stay clear.",
+            id="large",
+        ),
+        pytest.param(
+            a_plan_with(product_size="tiny"),
+            "The person holds the product up close to the camera between finger and thumb, "
+            "so it fills a good part of the frame, with any label facing the camera, and "
+            "the top and bottom of the frame stay clear.",
+            id="tiny",
+        ),
+    ],
+    indirect=["the_plan"],
+)
+def test_the_pose_the_picture_is_planned_around_comes_from_the_products_size(
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    pose: str,
+) -> None:
+    """The plan says how big the product is; code, not the model, turns that into the pose
+    the picture is planned around, so a chair is never shrunk to fit a chest."""
+    making(fake_model, (1, None))
+    say("Make scene 1's starting picture")
+    fake_model.respond("choose_starting_picture", CHOICE)
+    fake_model.respond("produce", turn(says="Scene 1's picture is ready!"))
+
+    steps.run_held()
+
+    (chose,) = handoffs("choose_starting_picture")
+    assert chose["pose"] == pose
+    assert "chest height" not in chose["pose"]
 
 
 def test_the_chosen_photo_and_prompt_are_kept_with_why_and_the_photos_are_never_changed(
