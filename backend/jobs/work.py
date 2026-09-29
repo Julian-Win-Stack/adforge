@@ -227,6 +227,7 @@ def plan(job: Job) -> ProducerDecision:
         )
         job.product_name = planned.product_name
         job.product_colour = planned.product_colour
+        job.person_gender = planned.person_gender
         job.person_looks = planned.person_looks
         job.person_voice = planned.person_voice
         job.status = Job.Status.PLANNED
@@ -234,6 +235,7 @@ def plan(job: Job) -> ProducerDecision:
             update_fields=[
                 "product_name",
                 "product_colour",
+                "person_gender",
                 "person_looks",
                 "person_voice",
                 "status",
@@ -247,7 +249,25 @@ PORTRAIT_PROMPT = """\
 A photorealistic vertical portrait of the person who presents a video ad, looking \
 straight at the camera with a friendly expression, head and shoulders in frame, lit \
 naturally. Not a real, famous person. No text, logos or products in the picture. The \
-person: {looks}"""
+person: {who}"""
+
+
+def _who_the_person_is(job: Job) -> str:
+    """The person as the portrait's prompt describes them: the plan's gender first, then
+    its looks, so the picture model never picks a gender at random. A job planned before
+    the plan said the gender has only the looks."""
+    if not job.person_gender:
+        return job.person_looks
+    return f"a {job.person_gender}. {job.person_looks}"
+
+
+def _how_the_voice_sounds(job: Job) -> str:
+    """The voice as it is designed: the plan's gender first, then its description, so the
+    voice presents as the person the portrait shows rather than as a random pick. A job
+    planned before the plan said the gender has only the description."""
+    if not job.person_gender:
+        return job.person_voice
+    return f"A {job.person_gender}'s voice. {job.person_voice}"
 
 
 def create_person(job: Job) -> tuple[ProducedItem, ProducedItem]:
@@ -268,7 +288,7 @@ def create_person(job: Job) -> tuple[ProducedItem, ProducedItem]:
                 else draw_picture(
                     job=job,
                     purpose="draw_person",
-                    prompt=PORTRAIT_PROMPT.format(looks=job.person_looks),
+                    prompt=PORTRAIT_PROMPT.format(who=_who_the_person_is(job)),
                 )
             ),
         )
@@ -281,7 +301,7 @@ def create_person(job: Job) -> tuple[ProducedItem, ProducedItem]:
             else design_voice(
                 job=job,
                 purpose="design_voice",
-                description=job.person_voice,
+                description=_how_the_voice_sounds(job),
                 sample=job.scenes.values_list("line", flat=True)[0],
             )
         )

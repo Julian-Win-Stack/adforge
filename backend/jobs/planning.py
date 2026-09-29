@@ -34,10 +34,13 @@ like a line. Name the product's \
 colour as the photos show it, in plain words such as "sage green", and give the numbers \
 of the photos that show the product in that colour. If the product comes in several \
 colours, don't ask which: pick one the photos show. Describe the person who presents the \
-ad: how they look, for a portrait, and how their voice sounds, for a voice designed to \
-match. Describe only the person and where they are: never the product, anything they \
-hold, any animal, or what they do in a scene. Choose someone who suits the product and \
-its buyers, and never a real, famous person. Set question to null.
+ad: whether they are a man or a woman, how they look, for a portrait, and how their voice \
+sounds, for a voice designed to match. The portrait and the voice are made separately \
+from these words, and both are of the same person, so the looks and the voice must agree \
+with the gender you set and with each other. Describe only the person and where they \
+are: never the product, anything they hold, any animal, or what they do in a scene. \
+Choose someone who suits the product and its buyers, and never a real, famous person. \
+Set question to null.
 Most scenes are the person talking to camera. A B-roll scene instead shows the product \
 while the person's voice says the line over it: the product being used, what it does, \
 or the proof. For a B-roll scene, set shows to what the scene shows, in plain words, such \
@@ -135,6 +138,12 @@ class PlannedScene(BaseModel):
         return overlay
 
 
+# What the person presents as. Code puts it into both the portrait's prompt and the
+# voice's description; a plan that leaves it out is refused, so neither model is left to
+# pick a gender at random and disagree with the other.
+PersonGender = Literal["man", "woman"]
+
+
 class Plan(BaseModel):
     scenes: list[PlannedScene] = Field(min_length=1)
     product_name: str = Field(
@@ -146,6 +155,10 @@ class Plan(BaseModel):
     )
     colour_photos: list[StrictInt] = Field(
         min_length=1, description="The numbers of the photos showing the product in that colour."
+    )
+    person_gender: PersonGender = Field(
+        description="Whether the person presenting the ad is a man or a woman: the portrait "
+        "and the voice both present as this."
     )
     person_looks: str = Field(
         description=(

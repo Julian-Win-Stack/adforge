@@ -17,6 +17,13 @@ class Job(models.Model):
         SHORTEN = "shorten"
         KEEP_LONGER = "keep_longer"
 
+    class PersonGender(models.TextChoices):
+        """What the person presents as, in the portrait and the voice alike: the same values
+        as the plan's person_gender."""
+
+        MAN = "man"
+        WOMAN = "woman"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     session = models.ForeignKey(
         "chat.Session",
@@ -61,6 +68,14 @@ class Job(models.Model):
         blank=True,
         help_text="The colour the ad shows the product in, picked by the producer from the "
         "product photos.",
+    )
+    person_gender = models.CharField(
+        max_length=10,
+        choices=PersonGender.choices,
+        blank=True,
+        help_text="What the person presents as, from the plan. Code puts it into both the "
+        "portrait's prompt and the voice's description, so the two can't disagree. Blank "
+        "for a job planned before it was asked, whose person is made from the words alone.",
     )
     person_looks = models.TextField(
         blank=True, help_text="The producer's description of the person the portrait shows."

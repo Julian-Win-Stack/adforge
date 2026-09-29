@@ -27,11 +27,16 @@ def test_the_person_is_drawn_then_given_a_voice_that_is_measured_on_the_script(
     say("Make the person")
 
     assert paid_for() == ["check_page", "plan_ad", "draw_person", "design_voice", "measure_voice"]
+    # The portrait and the voice are each made from words alone, so the plan's gender is
+    # put into both by code: neither model is left to pick one at random.
     (drawn,) = handoffs("draw_person")
-    assert "A potter in her thirties in a linen apron, in a sunny workshop." in drawn["prompt"]
+    assert (
+        "The person: a woman. A potter in her thirties in a linen apron, in a sunny workshop."
+        in drawn["prompt"]
+    )
     (designed,) = handoffs("design_voice")
     assert designed["description"] == (
-        "A warm, relaxed woman in her thirties with a soft British accent."
+        "A woman's voice. A warm, relaxed woman in her thirties with a soft British accent."
     )
     # The voice reads the whole script, 18 words, so its speed is measured on it.
     assert handoffs("measure_voice") == [
