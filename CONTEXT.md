@@ -94,6 +94,14 @@ _Avoid_: Final video, render, output
 The presenter in an ad: one portrait and one matching voice. Every scene in a job shows the same person. The plan says whether they are a man or a woman, and code puts that into both the portrait's prompt and the voice's description, so the two can't disagree.
 _Avoid_: Avatar, actor, character, persona
 
+**Product size**:
+How big the product is, judged by the plan from the photos: tiny (fits on a fingertip: earrings, earbuds), handheld (held in one or two hands: a bottle, a rolled mat) or large (can't be held: a chair, a treadmill). Decides the pose.
+_Avoid_: Scale, dimensions, category
+
+**Pose**:
+How the person is placed with the product in a talking scene: one fixed sentence per product size, owned by code. The same sentence is handed to the model that plans the starting picture and put into the clip's motion prompt, so the picture and the clip never disagree about where the product is. Every pose keeps the top and bottom of the frame clear for the overlay and the captions.
+_Avoid_: Framing, composition, blocking
+
 **Page text**:
 The words a visitor sees on the product page plus the structured product data the page declares for search engines. The only place facts about the product may come from. Models read this, never the HTML.
 _Avoid_: Page content, scraped text, HTML

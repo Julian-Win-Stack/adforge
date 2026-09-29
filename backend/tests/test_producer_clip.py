@@ -23,6 +23,7 @@ from .conftest import (
     NO_CHOICES,
     HeldSteps,
     WorkerStopped,
+    a_plan_with,
     chat,
     facts_ok,
     given_to_the_producer,
@@ -211,13 +212,41 @@ def test_the_clip_is_made_in_the_background_from_the_picture_and_the_audio_heard
         "picture": picture.file,
         "audio": transcript.made_from.file if transcript.made_from else None,
         "seconds": 4.0,
+        # The mug is handheld, so the motion holds the handheld pose its picture was made in.
         "motion_prompt": (
-            "The person talks to the camera naturally, like a casual phone video, holding the "
-            "product still beside their face with any label facing the camera. Minimal hand "
-            "movement."
+            "The person talks to the camera naturally, like a casual phone video. The person "
+            "holds the product at chest height, beside their face, with any label facing the "
+            "camera, so the top and bottom of the frame stay clear. Minimal hand movement."
         ),
     }
     assert submitted.tool_call == SceneStep.objects.get(kind="clip").tool_call
+
+
+@pytest.mark.parametrize(
+    "the_plan", [a_plan_with(product_size="large")], indirect=True, ids=["large"]
+)
+def test_a_talking_clips_motion_prompt_carries_the_pose_its_picture_was_planned_around(
+    fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    """The video model is told the same pose the picture was made in, so it doesn't invent
+    limbs to hold a chair beside a face that the picture shows standing on the floor."""
+    calling(fake_model, "make_clip")
+    say("Make scene 1's clip")
+
+    run(fake_model, steps)
+
+    pose = (
+        "The product stands on the floor at its real size, and the person stands beside it "
+        "with one hand resting on it, framed so both fit, with space above the head and "
+        "below the product, so the top and bottom of the frame stay clear."
+    )
+    (chose,) = handoffs("choose_starting_picture")
+    assert chose["pose"] == pose
+    submitted = ModelCall.objects.get(purpose="make_clip")
+    assert submitted.handoff["motion_prompt"] == (
+        f"The person talks to the camera naturally, like a casual phone video. {pose} "
+        "Minimal hand movement."
+    )
 
 
 def test_the_tool_takes_only_the_scene_so_the_clip_is_made_from_what_was_checked() -> None:

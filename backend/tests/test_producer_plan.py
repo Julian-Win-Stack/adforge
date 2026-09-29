@@ -24,6 +24,7 @@ from .conftest import (
     MUG_SIDE,
     PLAN,
     READABLE,
+    a_plan_with,
     openai_answer,
     openai_turn,
     paid_for,
@@ -62,11 +63,6 @@ def planning_through_openai(
     )
 
 
-def a_plan_with(**changes: Any) -> dict[str, Any]:
-    """PLAN with some of its plan's fields replaced."""
-    return {**PLAN, "plan": {**PLAN["plan"], **changes}}
-
-
 def a_plan_without(field: str) -> dict[str, Any]:
     """PLAN with one of its plan's fields left out altogether."""
     return {**PLAN, "plan": {name: value for name, value in PLAN["plan"].items() if name != field}}
@@ -93,7 +89,7 @@ def test_the_plan_and_its_scenes_are_stored_with_the_job(
         (2, "Hand-thrown, holds 350 ml, and dishwasher safe.", "planned"),
         (3, "Yours for $24.00.", "planned"),
     ]
-    assert job.product_name == "Stoneware Mug"
+    assert (job.product_name, job.product_size) == ("Stoneware Mug", "handheld")
     assert (job.person_gender, job.person_looks, job.person_voice) == (
         "woman",
         "A potter in her thirties in a linen apron, in a sunny workshop.",
@@ -346,6 +342,16 @@ def test_the_planner_is_shown_each_photo_shrunk_to_fit_512_pixels_and_the_kept_o
             "Input should be 'man' or 'woman'",
             id="a gender that is neither",
         ),
+        # The starting picture's pose depends on how big the product is: a chair can't be
+        # held at chest height, and studs held there are a few pixels.
+        pytest.param(
+            a_plan_without("product_size"), "Field required", id="no size for the product"
+        ),
+        pytest.param(
+            a_plan_with(product_size="medium"),
+            "Input should be 'tiny', 'handheld' or 'large'",
+            id="a size that isn't one of the three",
+        ),
         pytest.param(
             a_plan_with(colour_photos=[]),
             "List should have at least 1 item",
@@ -397,7 +403,12 @@ def test_a_plan_that_breaks_the_rules_is_handed_back_keeps_nothing_and_is_still_
     assert broken_rule in result
     job = Job.objects.get()
     assert not job.scenes.exists()
-    assert (job.product_colour, job.person_looks, job.person_voice) == ("", "", "")
+    assert (job.product_colour, job.product_size, job.person_looks, job.person_voice) == (
+        "",
+        "",
+        "",
+        "",
+    )
     assert job.person_gender == ""
     assert not job.photos.filter(shows_product_colour=True).exists()
     # The bad plan is still paid for: 1,200 x $4.00/M in + 300 x $20.00/M out.

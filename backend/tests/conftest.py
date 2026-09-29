@@ -85,6 +85,7 @@ PLAN: dict[str, Any] = {
         "product_name": "Stoneware Mug",
         "product_colour": "sage green",
         "colour_photos": [1],
+        "product_size": "handheld",
         "person_gender": "woman",
         "person_looks": "A potter in her thirties in a linen apron, in a sunny workshop.",
         "person_voice": "A warm, relaxed woman in her thirties with a soft British accent.",
@@ -108,6 +109,11 @@ def facts_ok(*scenes: int) -> dict[str, Any]:
 
 # The mug plan's fact check, when all three lines match the page.
 FACTS_OK = facts_ok(1, 2, 3)
+
+
+def a_plan_with(**changes: Any) -> dict[str, Any]:
+    """PLAN with some of its plan's fields replaced."""
+    return {**PLAN, "plan": {**PLAN["plan"], **changes}}
 
 
 def plan_with(*lines: str) -> dict[str, Any]:
@@ -395,10 +401,20 @@ def page_read(fake_model: FakeModel, product_page_url: str, say: Callable[..., N
 
 
 @pytest.fixture
-def planned(fake_model: FakeModel, page_read: str, say: Callable[..., None]) -> None:
+def the_plan(request: pytest.FixtureRequest) -> dict[str, Any]:
+    """What the planner answers: PLAN, unless a test parametrizes this fixture indirectly
+    with a plan of its own, such as one for a large product."""
+    plan: dict[str, Any] = getattr(request, "param", PLAN)
+    return plan
+
+
+@pytest.fixture
+def planned(
+    fake_model: FakeModel, page_read: str, the_plan: dict[str, Any], say: Callable[..., None]
+) -> None:
     """A chat whose ad is planned: three scenes."""
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
-    fake_model.respond("plan_ad", PLAN)
+    fake_model.respond("plan_ad", the_plan)
     say("Plan it")
 
 
