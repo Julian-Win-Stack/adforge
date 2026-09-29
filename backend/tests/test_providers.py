@@ -146,6 +146,41 @@ def test_a_voice_is_designed_published_and_heard_through_inworld(
     )
 
 
+def test_a_voice_description_is_sent_to_inworld_in_plain_ascii(
+    httpserver: HTTPServer, inworld: InworldProvider
+) -> None:
+    # Inworld refuses any other character in a description with a 400, and the planner
+    # writes typeset ones: a curly apostrophe stopped an ad in the first run (#01 redo).
+    sent: list[dict[str, Any]] = []
+
+    def design(request: Request) -> Response:
+        sent.append(request.get_json())
+        return Response(json.dumps({"previewVoices": [{"voiceId": VOICE_ID}]}))
+
+    httpserver.expect_oneshot_request(
+        "/voices/v1/voices:design", method="POST"
+    ).respond_with_handler(design)
+    httpserver.expect_oneshot_request(
+        f"/voices/v1/voices/{VOICE_ID}:publish", method="POST"
+    ).respond_with_json({"voiceId": VOICE_ID})
+
+    with use_model(inworld):
+        voice_id = design_voice(
+            job=None,
+            purpose="design_voice",
+            description="A clear, warm woman’s voice — like a café owner’s, “bright”, "
+            "‘lively’ and calm, a Spanish señora – 30s to 40s…🙂",
+            sample="Yours for $24.00.",
+        )
+
+    assert voice_id == VOICE_ID
+    (designed,) = sent
+    assert designed["designPrompt"] == (
+        "A clear, warm woman's voice - like a cafe owner's, \"bright\", 'lively' and calm, "
+        "a Spanish senora - 30s to 40s..."
+    )
+
+
 @pytest.mark.parametrize(
     "speech",
     [
