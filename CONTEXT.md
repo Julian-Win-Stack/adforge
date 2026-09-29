@@ -75,7 +75,7 @@ What was heard in a line's audio, word by word with when each was said, exactly 
 _Avoid_: Captions, subtitles
 
 **Caption**:
-A few of a transcript's words drawn along the bottom of the finished ad while they are said: what was spoken, never the line. Timed from where the scene plays in the ad.
+A few of a line's words drawn along the bottom of the finished ad while they are said: the words as the line writes them, each timed from when the transcript heard it. Timed from where the scene plays in the ad.
 _Avoid_: Subtitle, lower third
 
 **Overlay**:
@@ -87,7 +87,7 @@ A scene's starting picture animated to speak its line's audio: the same audio it
 _Avoid_: Video, render, shot
 
 **Finished ad**:
-Every scene's clip put together in order, each cut to where its words are said so there is no silence between scenes, with the captions, each scene's overlay and the music under the voice. Shown to the user in the chat. Made again as a new version when a clip, an overlay or the music changes; the old one is kept.
+Every scene's clip put together in order, each talking scene's cut to where its words are said so there is no silence between scenes, and each B-roll scene's kept whole so its motion plays out, with the captions, each scene's overlay and the music under the voice. Shown to the user in the chat. Made again as a new version when a clip, an overlay or the music changes; the old one is kept.
 _Avoid_: Final video, render, output
 
 **Person**:

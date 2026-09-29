@@ -12,7 +12,7 @@ from gateway.types import Handoff, Judgement
 from .planning import ChatMessage
 
 # A script fits its target when it runs no more than this much over it. Shorter always fits.
-LENGTH_ALLOWANCE_SECONDS = 1
+LENGTH_ALLOWANCE_SECONDS = 2
 # Times the producer rewrites a line the fact check failed, or shortens a script that
 # doesn't fit or a line too long for a clip, before the user is asked instead.
 MOST_REWRITES = 2

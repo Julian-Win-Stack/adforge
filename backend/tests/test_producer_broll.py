@@ -178,6 +178,12 @@ def assembled(
     fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
 ) -> ProducedItem:
     """The finished ad, made through the chat, with scene 2 showing the mug."""
+    return assemble_through_the_chat(fake_model, steps, say)
+
+
+def assemble_through_the_chat(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+) -> ProducedItem:
     calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
     made_ready(fake_model, steps, say, (1, 2, 3))
     calling(fake_model, say, *[("make_clip", {"scene": scene}) for scene in (1, 2, 3)])
@@ -194,6 +200,25 @@ def test_a_scene_that_shows_the_product_plays_in_its_turn(assembled: ProducedIte
     ]
     # Scene 2's clip, the second the video model made, is lime.
     assert colour_at(read(assembled.file), 5.75) == "lime"
+
+
+def test_a_scene_that_shows_the_product_plays_its_whole_clip(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    # A second of silence before and after every line, as a real voice leaves.
+    fake_model.pause_seconds = 1.0
+
+    ad = assemble_through_the_chat(fake_model, steps, say)
+
+    # Scene 2's clip lasts as long as its audio, 3.5 seconds of words and 2 of silence, and
+    # all of it is kept, so its motion plays out. The talking scenes around it are cut to
+    # their words.
+    assert [(cut["scene"], cut["clip_start"], cut["clip_end"]) for cut in ad.cuts] == [
+        (1, 0.9, 5.1),
+        (2, 0.0, 5.5),
+        (3, 0.9, 3.1),
+    ]
+    assert colour_at(read(ad.file), 9.5) == "lime"
 
 
 def test_a_scene_that_shows_the_product_has_its_words_captioned(assembled: ProducedItem) -> None:

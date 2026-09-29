@@ -3,6 +3,7 @@ and music: what the chat can't easily set up, such as music that runs out before
 
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 from django.conf import settings
@@ -112,3 +113,163 @@ def test_captions_are_timed_from_where_each_scene_plays_in_the_ad() -> None:
 )
 def test_a_time_is_written_as_the_subtitle_format_reads_it(seconds: float, written: str) -> None:
     assert assembly._timestamp(seconds) == written
+
+
+def a_scene(
+    words: list[dict[str, Any]], *, seconds: float, broll: bool = False
+) -> tuple[int, int, float, list[dict[str, Any]], str, bool]:
+    """One scene for `cuts`: its number, its clip's id, how long the clip lasts, the words
+    heard in it, its overlay, and whether it shows the product rather than the person."""
+    return (1, 1, seconds, words, "", broll)
+
+
+def heard(*timed: tuple[str, float, float]) -> list[dict[str, Any]]:
+    return [{"text": text, "start": start, "end": end} for text, start, end in timed]
+
+
+@pytest.mark.parametrize(
+    ("last", "seconds", "clip_end"),
+    [
+        # "sixty dollars" is heard as one token, "$60", timed only to the end of "sixty": the
+        # clip is kept long enough after it for "dollars" to be said.
+        ("$60", 5.0, 3.6),
+        # But never past the end of the clip.
+        ("$60", 3.3, 3.3),
+        # A last word that is a word is kept with the usual margin.
+        ("dollars.", 5.0, 3.1),
+    ],
+)
+def test_a_line_ending_in_a_number_is_kept_long_enough_for_the_number_to_be_said(
+    last: str, seconds: float, clip_end: float
+) -> None:
+    words = heard(("Only", 0.5, 1.0), (last, 2.5, 3.0))
+
+    (cut,) = assembly.cuts([a_scene(words, seconds=seconds)])
+
+    assert (cut.clip_start, cut.clip_end) == (0.4, clip_end)
+
+
+def test_a_scene_that_shows_the_product_keeps_its_whole_clip() -> None:
+    words = heard(("Drizzle", 0.3, 1.0), ("it", 1.0, 2.0))
+
+    broll, talking = assembly.cuts(
+        [a_scene(words, seconds=3.0, broll=True), a_scene(words, seconds=3.0)]
+    )
+
+    # The clip's motion plays out to its end, past the last word.
+    assert (broll.clip_start, broll.clip_end, broll.start, broll.end) == (0.0, 3.0, 0.0, 3.0)
+    # A talking scene is still cut to its words.
+    assert (talking.clip_start, talking.clip_end, talking.start, talking.end) == (
+        0.2,
+        2.1,
+        3.0,
+        4.9,
+    )
+
+
+def texts(timed: list[dict[str, Any]]) -> list[str]:
+    return [word["text"] for word in timed]
+
+
+def test_the_script_is_timed_by_the_words_heard_where_they_are_heard_differently() -> None:
+    line = (
+        "This is Beardbrand Fox Hunt Men's Cologne, a crisp and clean, alcohol-free eau de parfum."
+    )
+    words = heard(
+        ("This", 0.08, 0.2),
+        ("is", 0.26, 0.42),
+        ("Beard", 0.46, 0.7),
+        ("Brand", 0.78, 1.04),
+        ("Foxhunt", 1.12, 1.62),
+        ("Men's", 1.7, 1.94),
+        ("Cologne,", 2.0, 2.42),
+        ("a", 2.88, 2.94),
+        ("crisp", 3.0, 3.3),
+        ("and", 3.34, 3.44),
+        ("clean", 3.52, 3.86),
+        ("alcohol-free", 4.38, 5.08),
+        ("eau", 5.14, 5.26),
+        ("de", 5.34, 5.48),
+        ("parfum", 5.58, 6.06),
+    )
+
+    timed = assembly.timed_script(line, words)
+
+    assert texts(timed) == line.split()
+    # "Beardbrand Fox Hunt" share the time "Beard Brand Foxhunt" was heard in, from 0.46 to
+    # 1.62 seconds, split by how long each word is written: 10, 3 and 4 letters.
+    assert timed[2:5] == heard(
+        ("Beardbrand", 0.46, 1.142), ("Fox", 1.142, 1.347), ("Hunt", 1.347, 1.62)
+    )
+    # The words heard as written keep their own times.
+    assert timed[5] == {"text": "Men's", "start": 1.7, "end": 1.94}
+    assert timed[-1] == {"text": "parfum.", "start": 5.58, "end": 6.06}
+    cut = assembly.Cut(
+        scene=1, clip=1, clip_start=0.0, clip_end=6.2, start=0.0, end=6.2, overlay=""
+    )
+    assert [caption.text for caption in assembly.captions([cut], [timed])][:2] == [
+        "This is Beardbrand",
+        "Fox Hunt Men's",
+    ]
+
+
+def test_a_price_is_captioned_as_the_script_writes_it() -> None:
+    line = "The Gripmunk Slim Case for iPhone 17e is fourteen ninety-nine."
+    words = heard(
+        ("The", 0.08, 0.12),
+        ("Gripmonk", 0.2, 0.56),
+        ("Slim", 0.64, 0.84),
+        ("Case", 0.94, 1.2),
+        ("for", 1.26, 1.38),
+        ("iPhone", 1.46, 1.74),
+        ("17E", 1.84, 2.4),
+        ("is", 3.0, 3.14),
+        ("$14.99", 3.14, 4.28),
+    )
+
+    timed = assembly.timed_script(line, words)
+
+    assert texts(timed) == line.split()
+    cut = assembly.Cut(
+        scene=1, clip=1, clip_start=0.0, clip_end=4.4, start=0.0, end=4.4, overlay=""
+    )
+    last = assembly.captions([cut], [timed])[-1]
+    assert (last.text, last.start, last.end) == ("fourteen ninety-nine.", 3.14, 4.28)
+
+
+def test_a_word_the_transcript_missed_is_timed_between_its_neighbours() -> None:
+    words = heard(("Meet", 0.0, 0.5), ("mug.", 1.0, 1.5))
+
+    timed = assembly.timed_script("Meet the mug.", words)
+
+    assert timed == heard(("Meet", 0.0, 0.5), ("the", 0.5, 1.0), ("mug.", 1.0, 1.5))
+
+
+def test_a_line_heard_as_written_keeps_the_times_it_was_heard_at() -> None:
+    words = heard(("Yours", 1.0, 1.5), ("for", 1.5, 2.0), ("$24.00.", 2.0, 2.9))
+
+    assert assembly.timed_script("Yours for $24.00.", words) == words
+
+
+@pytest.mark.parametrize(
+    ("line", "words", "timed"),
+    [
+        # Heard back to back, with no gap between them: "the" shares the word before it, by
+        # length.
+        (
+            "Meet the mug.",
+            heard(("Meet", 0.0, 0.5), ("mug.", 0.5, 1.0)),
+            heard(("Meet", 0.0, 0.286), ("the", 0.286, 0.5), ("mug.", 0.5, 1.0)),
+        ),
+        # The line's first word, with nothing before it: it shares the word after it.
+        (
+            "Hi there.",
+            heard(("there.", 1.0, 1.5)),
+            heard(("Hi", 1.0, 1.143), ("there.", 1.143, 1.5)),
+        ),
+    ],
+)
+def test_a_word_the_transcript_missed_with_no_gap_for_it_shares_a_neighbours_time(
+    line: str, words: list[dict[str, Any]], timed: list[dict[str, Any]]
+) -> None:
+    assert assembly.timed_script(line, words) == timed

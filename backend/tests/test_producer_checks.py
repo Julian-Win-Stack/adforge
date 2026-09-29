@@ -9,7 +9,7 @@ import pytest
 
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from jobs.checks import most_words_in_a_line
+from jobs.checks import fits_target, most_words, most_words_in_a_line
 from jobs.models import Job, Scene
 
 from .conftest import (
@@ -212,8 +212,8 @@ def test_an_unclear_page_is_asked_about_straight_away_and_checked_again_with_the
 
 
 # The mug plan is 18 words, which the fake voice says in 9 seconds.
-@pytest.mark.parametrize("target_seconds", [8, 9, 30])
-def test_a_script_no_more_than_a_second_over_its_target_fits(
+@pytest.mark.parametrize("target_seconds", [7, 9, 30])
+def test_a_script_no_more_than_2_seconds_over_its_target_fits(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], target_seconds: int
 ) -> None:
     checking(fake_model, product_page_url, PLAN, target_seconds=target_seconds)
@@ -232,15 +232,15 @@ def test_a_script_no_more_than_a_second_over_its_target_fits(
 def test_a_script_too_long_for_its_target_is_handed_back_to_ask_the_user_about(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
-    checking(fake_model, product_page_url, PLAN, target_seconds=7)
+    checking(fake_model, product_page_url, PLAN, target_seconds=6)
     fake_model.respond("fact_check", FACTS_OK)
 
-    say(f"Make a 7 second ad for {product_page_url}")
+    say(f"Make a 6 second ad for {product_page_url}")
 
     (result,) = results_of("run_planning_checks")
     assert result.splitlines()[0] == (
-        "Your script runs about 9.0 seconds, 2.0 over your 7-second target. Why: At the "
-        "voice's measured speed the script runs 9.0 seconds, more than 1 second over the 7 "
+        "Your script runs about 9.0 seconds, 3.0 over your 6-second target. Why: At the "
+        "voice's measured speed the script runs 9.0 seconds, more than 2 seconds over the 6 "
         "seconds you asked for. Ask the shop owner whether to shorten it to fit, or keep it "
         "longer."
     )
@@ -270,7 +270,7 @@ def test_a_script_the_user_chooses_to_shorten_is_rewritten_and_its_new_lines_che
     fake_model: FakeModel, asked_about_length: None, say: Callable[..., None]
 ) -> None:
     choosing_length(fake_model, "shorten")
-    # 12 words: 6 seconds, within a second of the target.
+    # 12 words: 6 seconds, within 2 seconds of the target.
     fake_model.respond(
         "shorten_script",
         {
@@ -292,8 +292,8 @@ def test_a_script_the_user_chooses_to_shorten_is_rewritten_and_its_new_lines_che
         "2. Yours for $24.00, today."
     )
     (sent,) = handoffs("shorten_script")
-    # 5 seconds, plus the 1 allowed over, at 2 words a second.
-    assert (sent["target_seconds"], sent["most_words"]) == (5, 12)
+    # 5 seconds, plus the 2 allowed over, at 2 words a second.
+    assert (sent["target_seconds"], sent["most_words"]) == (5, 14)
     # The unchanged first line passed before, so only the new second line is checked.
     assert handoffs("fact_check")[1]["lines"] == [
         {"scene": 2, "line": "Yours for $24.00, today.", "shows": None}
@@ -304,7 +304,7 @@ def test_a_script_still_too_long_after_two_shortenings_is_asked_about_again(
     fake_model: FakeModel, asked_about_length: None, say: Callable[..., None]
 ) -> None:
     choosing_length(fake_model, "shorten")
-    # 16 words, then 13: 8 and 6.5 seconds, both over 6.
+    # 16 words, then 15: 8 and 7.5 seconds, both over 7.
     fake_model.respond(
         "shorten_script",
         {
@@ -316,7 +316,7 @@ def test_a_script_still_too_long_after_two_shortenings_is_asked_about_again(
         {
             "lines": [
                 {"scene": 1, "line": "Meet the Stoneware Mug from Kiln & Co."},
-                {"scene": 2, "line": "Holds 350 ml for $24.00."},
+                {"scene": 2, "line": "Hand-thrown, it holds 350 ml, for $24.00."},
             ]
         },
     )
@@ -325,7 +325,7 @@ def test_a_script_still_too_long_after_two_shortenings_is_asked_about_again(
     say("Shorten it")
 
     assert results_of("run_planning_checks")[1].startswith(
-        "Your script runs about 6.5 seconds, 1.5 over your 5-second target."
+        "Your script runs about 7.5 seconds, 2.5 over your 5-second target."
     )
     assert paid_for().count("shorten_script") == 2
 
@@ -1063,6 +1063,19 @@ def test_a_line_may_have_the_whole_words_the_voice_says_within_18_seconds(
     words_per_second: float, most: int
 ) -> None:
     assert most_words_in_a_line(words_per_second) == most
+
+
+@pytest.mark.parametrize(("seconds", "fits"), [(17.0, True), (17.1, False), (9.0, True)])
+def test_a_script_fits_a_15_second_target_up_to_2_seconds_over_it(
+    seconds: float, fits: bool
+) -> None:
+    # The guess at the ad's length misses by up to about 2 seconds either way: a script only
+    # a little over is left alone, and a shorter one always fits.
+    assert fits_target(seconds, 15) is fits
+
+
+def test_a_script_is_shortened_to_the_words_said_within_the_target_and_2_seconds() -> None:
+    assert most_words(15, 2.0) == 34
 
 
 @pytest.mark.parametrize(

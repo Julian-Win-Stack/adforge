@@ -167,9 +167,10 @@ def test_the_dead_air_between_scenes_is_cut_on_the_word_timings(
 
     (ad,) = ads()
     # Each scene is kept from its first word to its last, with a tenth of a second either
-    # side so no sound is clipped: 9 seconds of words and 0.6 of margin.
-    assert ad.seconds == 9.6
-    assert video(read(ad.file))[2] == pytest.approx(9.6, abs=0.1)
+    # side so no sound is clipped, and six tenths after scene 3's last word, a price, for the
+    # rest of it to be said: 9 seconds of words and 1.1 of margin.
+    assert ad.seconds == 10.1
+    assert video(read(ad.file))[2] == pytest.approx(10.1, abs=0.1)
     # The words are heard all the way through: only the margins are quiet, a fifth of a
     # second between scenes, too short to be dead air.
     assert silences(read(ad.file)) == []
@@ -198,9 +199,9 @@ def test_the_dead_air_between_scenes_is_cut_on_the_word_timings(
             "scene": 3,
             "clip": clips[2].pk,
             "clip_start": 0.9,
-            "clip_end": 2.6,
+            "clip_end": 3.1,
             "start": 7.9,
-            "end": 9.6,
+            "end": 10.1,
             "overlay": "$24.00",
         },
     ]
@@ -379,7 +380,7 @@ def test_new_music_gets_a_new_version_of_the_ad_and_the_old_one_is_kept(
     assert results_of("assemble_ad")[-1].startswith("Assembled the ad (version 2, 9 seconds)")
 
 
-def test_the_captions_show_the_words_as_spoken_in_time_with_the_voice(
+def test_the_captions_show_the_script_in_time_with_the_voice(
     fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     # Scene 1's line is heard a little differently from how it was written.
@@ -389,11 +390,12 @@ def test_the_captions_show_the_words_as_spoken_in_time_with_the_voice(
     assemble(fake_model, say)
 
     (ad,) = ads()
-    # A few words at a time, timed as the fake says them, 2 a second, scene after scene.
+    # A few words at a time, timed as the fake says them, 2 a second, scene after scene. The
+    # words are the script's: "& Co." is shown where "and Company." was heard.
     assert ad.captions == [
         {"text": "Meet the Stoneware", "start": 0.0, "end": 1.5},
         {"text": "Mug from Kiln", "start": 1.5, "end": 3.0},
-        {"text": "and Company.", "start": 3.0, "end": 4.0},
+        {"text": "& Co.", "start": 3.0, "end": 4.0},
         {"text": "Hand-thrown, holds 350", "start": 4.0, "end": 5.5},
         {"text": "ml, and", "start": 5.5, "end": 6.5},
         {"text": "dishwasher safe.", "start": 6.5, "end": 7.5},

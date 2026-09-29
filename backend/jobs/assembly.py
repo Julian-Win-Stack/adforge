@@ -1,9 +1,10 @@
 """Putting the finished ad together: each scene's clip is cut to where its words are said,
 so there is no silence between scenes, and the parts are joined with ffmpeg, with the music
-under the voice, captions of the words as they were spoken along the bottom, and each
-scene's overlay along the top while it plays. A clip made with no sound gets its voice laid
-over it here first."""
+under the voice, captions of the script's words, timed as they were spoken, along the
+bottom, and each scene's overlay along the top while it plays. A clip made with no sound
+gets its voice laid over it here first."""
 
+import difflib
 import json
 import math
 import subprocess
@@ -16,6 +17,12 @@ from django.conf import settings
 
 # Kept either side of a scene's words, so the first and last sounds aren't clipped.
 MARGIN_SECONDS = 0.1
+
+# Kept after a scene's last word instead when it has a digit in it. The transcriber writes a
+# number as one token, such as "$60", timed only to the end of its first spoken word, so the
+# rest ("dollars", "ninety-nine") is still being said when it ends. A guess at how long that
+# takes: the first run lost at most 0.51 seconds of it.
+NUMBER_MARGIN_SECONDS = 0.6
 
 # How loud the music plays under the voice: a fifth of its own volume, about 14 dB down, so
 # the voice is clearly heard over it. Fixed, the same for every ad.
@@ -83,23 +90,121 @@ class AssemblyFailed(Exception):
     """ffmpeg couldn't put the ad together. Says what ffmpeg said."""
 
 
-def cuts(scenes: Sequence[tuple[int, int, float, list[dict[str, Any]], str]]) -> list[Cut]:
+def cuts(
+    scenes: Sequence[tuple[int, int, float, list[dict[str, Any]], str, bool]],
+) -> list[Cut]:
     """Where to cut each scene's clip, and where each part plays once they are joined, from
-    each scene's number, its clip's id, how long the clip lasts, the words heard in it, and
-    its overlay. Each clip is kept from its first word to its last, with MARGIN_SECONDS
-    either side."""
+    each scene's number, its clip's id, how long the clip lasts, the words heard in it, its
+    overlay, and whether it shows the product rather than the person talking. A talking
+    scene's clip is kept from its first word to its last, with MARGIN_SECONDS either side,
+    or NUMBER_MARGIN_SECONDS after a last word with a digit in it. A scene showing the
+    product keeps its whole clip, so its motion plays out after the words."""
     planned: list[Cut] = []
-    for scene, clip, seconds, words, overlay in scenes:
-        clip_start = round(max(0.0, words[0]["start"] - MARGIN_SECONDS), 3)
-        clip_end = round(min(seconds, words[-1]["end"] + MARGIN_SECONDS), 3)
+    for scene, clip, seconds, words, overlay, broll in scenes:
+        if broll:
+            clip_start, clip_end = 0.0, seconds
+        else:
+            last = words[-1]
+            said_a_number = any(character.isdigit() for character in last["text"])
+            margin = NUMBER_MARGIN_SECONDS if said_a_number else MARGIN_SECONDS
+            clip_start = round(max(0.0, words[0]["start"] - MARGIN_SECONDS), 3)
+            clip_end = round(min(seconds, last["end"] + margin), 3)
         start = planned[-1].end if planned else 0.0
         end = round(start + clip_end - clip_start, 3)
         planned.append(Cut(scene, clip, clip_start, clip_end, start, end, overlay))
     return planned
 
 
+def timed_script(line: str, heard: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The line's own words, as the script writes them, each timed from the words heard: the
+    transcriber may write a word differently ("Beard Brand" for "Beardbrand", "$14.99" for
+    "fourteen ninety-nine"), but it knows when each was said. The voice is trusted to say
+    the line as written."""
+    written = line.split()
+    matched = difflib.SequenceMatcher(
+        None,
+        [_plain(word) for word in written],
+        [_plain(word["text"]) for word in heard],
+        autojunk=False,
+    )
+    timed: list[dict[str, Any]] = []
+    for kind, first, past, heard_first, heard_past in matched.get_opcodes():
+        if kind == "equal":
+            timed += [
+                {"text": word, "start": said["start"], "end": said["end"]}
+                for word, said in zip(
+                    written[first:past], heard[heard_first:heard_past], strict=True
+                )
+            ]
+        elif kind == "replace":
+            # Heard differently: the written words share the time the heard ones took.
+            timed += _spread(
+                written[first:past], heard[heard_first]["start"], heard[heard_past - 1]["end"]
+            )
+        elif kind == "delete":
+            # Not heard at all: the written words go in the gap between their neighbours.
+            gap_start = timed[-1]["end"] if timed else heard[0]["start"]
+            gap_end = heard[heard_first]["start"] if heard_first < len(heard) else gap_start
+            timed += _spread(written[first:past], gap_start, max(gap_start, gap_end))
+        # Words heard that the line doesn't have ("insert") aren't shown.
+    return _none_left_untimed(timed)
+
+
+def _none_left_untimed(timed: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`timed`, with any words given no time, such as one not heard between two heard back
+    to back, sharing the time of the word before them, or of the word after them at the
+    start of the line, so their caption is seen."""
+    shared: list[dict[str, Any]] = []
+    at = 0
+    while at < len(timed):
+        past = at
+        while past < len(timed) and timed[past]["start"] == timed[past]["end"]:
+            past += 1
+        if past == at:
+            shared.append(timed[at])
+            at += 1
+            continue
+        if shared:
+            together = [shared.pop(), *timed[at:past]]
+        elif past < len(timed):
+            together = [*timed[at:past], timed[past]]
+            past += 1
+        else:
+            # Not one word of the line has any time: there is none to share.
+            together = timed[at:past]
+        shared += _spread(
+            [word["text"] for word in together],
+            min(word["start"] for word in together),
+            max(word["end"] for word in together),
+        )
+        at = past
+    return shared
+
+
+def _plain(word: str) -> str:
+    """A word as it is compared: lowercased, without punctuation."""
+    return "".join(character for character in word.lower() if character.isalnum())
+
+
+def _spread(words: Sequence[str], start: float, end: float) -> list[dict[str, Any]]:
+    """`words` timed one after another from `start` to `end`, each given a share of the time
+    as long as the word."""
+    lengths = [max(1, len(_plain(word))) for word in words]
+    total = sum(lengths)
+    timed = []
+    for number, word in enumerate(words):
+        timed.append(
+            {
+                "text": word,
+                "start": round(start + (end - start) * sum(lengths[:number]) / total, 3),
+                "end": round(start + (end - start) * sum(lengths[: number + 1]) / total, 3),
+            }
+        )
+    return timed
+
+
 def captions(cuts: Sequence[Cut], words: Sequence[list[dict[str, Any]]]) -> list[Caption]:
-    """The ad's captions, from the words heard in each cut's clip: up to CAPTION_WORDS at a
+    """The ad's captions, from the timed words of each cut's clip: up to CAPTION_WORDS at a
     time, split as evenly as that allows, never running from one scene into the next, and
     timed from where the cut plays in the ad rather than from the start of its clip."""
     drawn: list[Caption] = []

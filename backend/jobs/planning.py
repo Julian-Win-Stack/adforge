@@ -35,8 +35,9 @@ colour as the photos show it, in plain words such as "sage green", and give the 
 of the photos that show the product in that colour. If the product comes in several \
 colours, don't ask which: pick one the photos show. Describe the person who presents the \
 ad: how they look, for a portrait, and how their voice sounds, for a voice designed to \
-match. Choose someone who suits the product and its buyers, and never a real, famous \
-person. Set question to null.
+match. Describe only the person and where they are: never the product, anything they \
+hold, any animal, or what they do in a scene. Choose someone who suits the product and \
+its buyers, and never a real, famous person. Set question to null.
 Most scenes are the person talking to camera. A B-roll scene instead shows the product \
 while the person's voice says the line over it: the product being used, what it does, \
 or the proof. For a B-roll scene, set shows to what the scene shows, in plain words, such \
@@ -147,7 +148,10 @@ class Plan(BaseModel):
         min_length=1, description="The numbers of the photos showing the product in that colour."
     )
     person_looks: str = Field(
-        description="How the person presenting the ad looks: age, style, clothes, setting."
+        description=(
+            "How the person presenting the ad looks: age, style, clothes, setting. Only the "
+            "person: no product, props or animals."
+        )
     )
     person_voice: str = Field(description="How the person's voice sounds: age, accent, tone, pace.")
 
