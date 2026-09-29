@@ -1,6 +1,7 @@
 """Designs voices and speaks with them through Inworld's HTTP API."""
 
 import base64
+import unicodedata
 from typing import Any
 
 import httpx
@@ -10,6 +11,29 @@ from adforge.retry import OutsideServiceDown
 
 # Uncompressed audio, so its length can be read without extra tools.
 _SAMPLE_RATE = 48_000
+
+# Inworld answers 400 to a voice description holding anything but printable ASCII, and
+# the planner writes typeset characters, such as a curly apostrophe: a description is
+# sent with each quote and dash swapped for its plain twin, which nothing else gives.
+_PLAIN = str.maketrans(
+    {
+        "\u2018": "'",  # ‘
+        "\u2019": "'",  # ’
+        "\u201c": '"',  # “
+        "\u201d": '"',  # ”
+        "\u2013": "-",  # –
+        "\u2014": "-",  # —
+    }
+)
+
+
+def _plain_ascii(text: str) -> str:
+    """`text` as Inworld accepts a voice description. Quotes and dashes are swapped for
+    their plain twins; splitting each character into its plain parts then takes accents
+    off letters (é keeps its e), makes … three dots and a space that doesn't break a
+    space; anything left with no plain part, such as an emoji, is left out."""
+    split = unicodedata.normalize("NFKD", text.translate(_PLAIN))
+    return split.encode("ascii", "ignore").decode("ascii")
 
 
 class InworldProvider:
@@ -27,7 +51,7 @@ class InworldProvider:
         designed = self._post(
             "/voices/v1/voices:design",
             {
-                "designPrompt": description,
+                "designPrompt": _plain_ascii(description),
                 "langCode": "EN_US",
                 "previewText": sample,
                 "voiceDesignConfig": {"numberOfSamples": 1},
