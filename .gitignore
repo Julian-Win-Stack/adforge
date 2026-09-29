@@ -23,3 +23,12 @@ dist/
 docs/system-tour.md
 docs/learning/
 docs/offloading-research.md
+
+# Scraping test: the write-ups, inputs and scripts are kept; the scraped pages, photos and
+# contact sheets they were made from stay on this machine
+docs/scraping-test/outputs/
+docs/scraping-test/job-a/*/
+docs/scraping-test/job-b/outputs/
+docs/scraping-test/job-b/label-checks/
+docs/scraping-test/job-b/labels100.json
+docs/scraping-test/job-b/missing100.json

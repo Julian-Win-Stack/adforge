@@ -1,0 +1,612 @@
+{
+ "01-naturium": {
+  "product": "Naturium Multi-Active Exosome Serum",
+  "facts": [
+   {
+    "id": "name",
+    "fact": "Name: Multi-Active Exosome Serum",
+    "look_for": [
+     "Multi-Active Exosome Serum"
+    ]
+   },
+   {
+    "id": "price",
+    "fact": "Price: $27",
+    "look_for": [
+     "$27",
+     "27.00"
+    ]
+   },
+   {
+    "id": "size",
+    "fact": "Size: 1.0 fl oz / 30 ml",
+    "look_for": [
+     "30 ML",
+     "30ML",
+     "1.0 FL OZ"
+    ]
+   },
+   {
+    "id": "claim",
+    "fact": "Main claim: biomimetic exosomes help improve firmness, elasticity and the look of fine lines and wrinkles",
+    "look_for": [
+     "biomimetic exosomes"
+    ]
+   },
+   {
+    "id": "study",
+    "fact": "Study: 94% saw reduced look of fine lines and wrinkles in 30 days; 91% say skin looks renewed after one use",
+    "look_for": [
+     "94%"
+    ]
+   },
+   {
+    "id": "how_much",
+    "fact": "How to use: 1 to 2 pea-sized drops, AM + PM, avoiding the eye area",
+    "look_for": [
+     "pea-sized"
+    ]
+   },
+   {
+    "id": "free_from",
+    "fact": "Vegan, fragrance free, cruelty free, dermatologist tested",
+    "look_for": [
+     "Fragrance Free",
+     "fragrance-free"
+    ]
+   },
+   {
+    "id": "rating",
+    "fact": "Rating: 4.8 stars from 117 reviews",
+    "look_for": [
+     "117"
+    ]
+   }
+  ],
+  "photos_note": "10 product photos + 1 video. Key ones: #1 front of bottle, #2 texture drops, #7 man holding the bottle, #10 pump dispensing a drop. Several photos carry claims as text inside the image (100% / 97% / 91% clinical results)."
+ },
+ "03-vital-proteins": {
+  "product": "Vital Proteins Salted Caramel Collagen Peptides",
+  "facts": [
+   {
+    "id": "name",
+    "fact": "Name: Salted Caramel Collagen Peptides",
+    "look_for": [
+     "Salted Caramel Collagen Peptides"
+    ]
+   },
+   {
+    "id": "price",
+    "fact": "Price: $27.00 for 10.5 oz ($39.99 for 25.7 oz)",
+    "look_for": [
+     "$27.00",
+     "27.00"
+    ]
+   },
+   {
+    "id": "second_size",
+    "fact": "Second size: 25.7 oz at $39.99",
+    "look_for": [
+     "39.99"
+    ]
+   },
+   {
+    "id": "dose",
+    "fact": "20g of collagen peptides per serving, for hair, skin, nails, bones and joints",
+    "look_for": [
+     "20g"
+    ]
+   },
+   {
+    "id": "ingredients",
+    "fact": "Ingredients: sea salt, natural flavor, stevia, bovine collagen peptides",
+    "look_for": [
+     "stevia"
+    ]
+   },
+   {
+    "id": "how_to_use",
+    "fact": "How to use: 1 serving in 8 fl oz of hot or cold liquid",
+    "look_for": [
+     "8 fl oz"
+    ]
+   },
+   {
+    "id": "diet",
+    "fact": "Made without gluten, dairy or soy; paleo and keto friendly",
+    "look_for": [
+     "keto"
+    ]
+   },
+   {
+    "id": "rating",
+    "fact": "Rating: 4.5 stars from 52 reviews",
+    "look_for": [
+     "52 Reviews",
+     "(52)",
+     "\"reviewCount\": 52",
+     "reviewCount\":52"
+    ]
+   }
+  ],
+  "photos_note": "6 product photos for the 10.5 oz tub (hero, back, supplement facts, usage, benefits, brand) + 1 video."
+ },
+ "06-anker": {
+  "product": "Anker 313 Power Bank (PowerCore 10K)",
+  "facts": [
+   {
+    "id": "name",
+    "fact": "Name: Anker 313 Power Bank (PowerCore 10K)",
+    "look_for": [
+     "313 Power Bank"
+    ]
+   },
+   {
+    "id": "price",
+    "fact": "Price: $25.99",
+    "look_for": [
+     "25.99"
+    ]
+   },
+   {
+    "id": "capacity",
+    "fact": "Capacity: 10,000mAh; charges a phone up to 3 times, most tablets once",
+    "look_for": [
+     "three times",
+     "3 times"
+    ]
+   },
+   {
+    "id": "ports",
+    "fact": "Ports: USB-C and Micro-USB input, USB-A output (up to 2.4 A with PowerIQ)",
+    "look_for": [
+     "PowerIQ"
+    ]
+   },
+   {
+    "id": "weight",
+    "fact": "Weight: about half a pound (7.5 oz), slightly heavier than a baseball",
+    "look_for": [
+     "baseball"
+    ]
+   },
+   {
+    "id": "trickle",
+    "fact": "Trickle-charging mode for earphones and small devices",
+    "look_for": [
+     "Trickle"
+    ]
+   },
+   {
+    "id": "not_included",
+    "fact": "USB-C cable, Lightning cable and AC adapter not included",
+    "look_for": [
+     "not included"
+    ]
+   },
+   {
+    "id": "rating",
+    "fact": "Rating: 4.8 stars from 2,187 reviews",
+    "look_for": [
+     "2187",
+     "2,187"
+    ]
+   }
+  ],
+  "photos_note": "6 gallery photos (black) + 6 description images further down the page."
+ },
+ "07-great-jones": {
+  "product": "Great Jones Dutch Baby",
+  "facts": [
+   {
+    "id": "name",
+    "fact": "Name: Dutch Baby (3.5-quart cast-iron Dutch oven)",
+    "look_for": [
+     "Dutch Baby"
+    ]
+   },
+   {
+    "id": "price",
+    "fact": "Price: $165",
+    "look_for": [
+     "$165",
+     "165.00"
+    ]
+   },
+   {
+    "id": "size",
+    "fact": "Volume: 3.5 quarts; 9\" wide, 6\" tall with lid; 11 lbs",
+    "look_for": [
+     "3.5 qt",
+     "3.5-quart",
+     "3.5 quart"
+    ]
+   },
+   {
+    "id": "for_who",
+    "fact": "Made for cooking for one or two people; nests inside The Dutchess",
+    "look_for": [
+     "one or two"
+    ]
+   },
+   {
+    "id": "stovetops",
+    "fact": "Safe for all stovetops, including induction",
+    "look_for": [
+     "induction"
+    ]
+   },
+   {
+    "id": "care",
+    "fact": "Oven-safe up to 500 degrees; dishwasher-friendly",
+    "look_for": [
+     "500 degrees"
+    ]
+   },
+   {
+    "id": "colours",
+    "fact": "6 colours: Blueberry, Taffy, Salt, Broccoli, Pepper, Mustard",
+    "look_for": [
+     "Broccoli"
+    ]
+   },
+   {
+    "id": "rating",
+    "fact": "Rating: 4.5 stars from 448 reviews",
+    "look_for": [
+     "448"
+    ]
+   }
+  ],
+  "photos_note": "Gallery says 1 of 11 (Blueberry selected): about 10 product photos, mostly the pot from different angles plus lifestyle shots."
+ },
+ "10-maxbone": {
+  "product": "maxbone Enrichment Tether Toy",
+  "facts": [
+   {
+    "id": "name",
+    "fact": "Name: Enrichment Tether Toy",
+    "look_for": [
+     "Enrichment Tether Toy"
+    ]
+   },
+   {
+    "id": "price",
+    "fact": "Price: $20.00",
+    "look_for": [
+     "$20.00",
+     "20.00"
+    ]
+   },
+   {
+    "id": "material",
+    "fact": "Made from natural non-toxic rubber (BPA-free, food-grade silicone)",
+    "look_for": [
+     "non-toxic rubber",
+     "non toxic"
+    ]
+   },
+   {
+    "id": "features",
+    "fact": "Dishwasher safe and squeaker-free",
+    "look_for": [
+     "Squeaker-free",
+     "squeaker"
+    ]
+   },
+   {
+    "id": "use",
+    "fact": "Chew toy or fetch toy, indoor or outdoor; add a treat inside",
+    "look_for": [
+     "treat inside"
+    ]
+   },
+   {
+    "id": "ages",
+    "fact": "For dogs of all ages, including senior dogs and teething puppies",
+    "look_for": [
+     "teething"
+    ]
+   },
+   {
+    "id": "size",
+    "fact": "Size: 4\" diameter",
+    "look_for": [
+     "4” Diameter",
+     "4\" Diameter",
+     "4” diameter",
+     "4 inch"
+    ]
+   },
+   {
+    "id": "in_stock",
+    "fact": "In stock (the page also has hidden 'Out Of Stock!' template text)",
+    "look_for": [
+     "InStock",
+     "in stock",
+     "\"available\": true",
+     "available\":true"
+    ]
+   }
+  ],
+  "photos_note": "5 product photos (the toy, and the toy with a dog)."
+ },
+ "12-smartish": {
+  "product": "Smartish Gripmunk Slim Case for iPhone 17e",
+  "facts": [
+   {
+    "id": "name",
+    "fact": "Name: Gripmunk - Slim Case for iPhone 17e",
+    "look_for": [
+     "Gripmunk"
+    ]
+   },
+   {
+    "id": "model",
+    "fact": "Phone: iPhone 17e (the page title wrongly says 16e)",
+    "look_for": [
+     "17e"
+    ]
+   },
+   {
+    "id": "price",
+    "fact": "Price: $14.99, was $19.99 (on sale)",
+    "look_for": [
+     "14.99"
+    ]
+   },
+   {
+    "id": "was_price",
+    "fact": "Old price: $19.99",
+    "look_for": [
+     "19.99"
+    ]
+   },
+   {
+    "id": "drop",
+    "fact": "Drop-tested 50 times from 6 feet; air-pocket corners",
+    "look_for": [
+     "6 feet",
+     "6 ft"
+    ]
+   },
+   {
+    "id": "clear",
+    "fact": "Anti-yellowing material stays crystal clear",
+    "look_for": [
+     "Anti-Yellowing",
+     "anti-yellowing"
+    ]
+   },
+   {
+    "id": "grip",
+    "fact": "Textured, grippy sides with finger grooves",
+    "look_for": [
+     "finger grooves",
+     "Finger grooves"
+    ]
+   },
+   {
+    "id": "no_magsafe",
+    "fact": "Not compatible with MagSafe or wireless chargers",
+    "look_for": [
+     "Not compatible with MagSafe"
+    ]
+   }
+  ],
+  "photos_note": "About 9 gallery photos (clear case on a phone, drop-protection and grip graphics). Served from an app's own image server, so they aren't matched by URL in the scoring."
+ },
+ "18-starface": {
+  "product": "Starface Hydro-Stars + Big Yellow",
+  "facts": [
+   {
+    "id": "name",
+    "fact": "Name: hydro-stars® + big yellow",
+    "look_for": [
+     "big yellow",
+     "Big Yellow"
+    ]
+   },
+   {
+    "id": "price",
+    "fact": "Price: $14.99",
+    "look_for": [
+     "14.99"
+    ]
+   },
+   {
+    "id": "contents",
+    "fact": "32 hydrocolloid stars in a mirrored yellow compact that can be refilled",
+    "look_for": [
+     "32"
+    ]
+   },
+   {
+    "id": "claim",
+    "fact": "Clinically proven to shrink pimples in 6 hours (23-subject study over 5 days)",
+    "look_for": [
+     "six hours",
+     "6 hours"
+    ]
+   },
+   {
+    "id": "study",
+    "fact": "Results: 87% saw a noticeable difference in 6 hours; 81% said patches stayed in place",
+    "look_for": [
+     "87%"
+    ]
+   },
+   {
+    "id": "improved",
+    "fact": "Improved formula: 2x stickier, 50% more absorbent",
+    "look_for": [
+     "2x stickier"
+    ]
+   },
+   {
+    "id": "how_to",
+    "fact": "How to use: clean, dry skin; wear for 6+ hours or overnight",
+    "look_for": [
+     "clean, dry skin",
+     "clean and dry"
+    ]
+   },
+   {
+    "id": "badges",
+    "fact": "Vegan, cruelty free, dermatologist tested, safe for sensitive skin",
+    "look_for": [
+     "sensitive skin"
+    ]
+   }
+  ],
+  "photos_note": "4 product photos: compact, lifestyle portrait, patches on a person, improvements graphic."
+ },
+ "20-supergoop": {
+  "product": "Supergoop Unseen Sunscreen SPF 50",
+  "facts": [
+   {
+    "id": "name",
+    "fact": "Name: Unseen Sunscreen SPF 50",
+    "look_for": [
+     "Unseen Sunscreen"
+    ]
+   },
+   {
+    "id": "price",
+    "fact": "Price: $38 for 1.7 fl oz (other sizes: 2.5 oz, 0.68 oz travel, 2-pack)",
+    "look_for": [
+     "$38",
+     "38.00"
+    ]
+   },
+   {
+    "id": "sizes",
+    "fact": "Sizes offered: 1.7 fl oz, 2.5 fl oz, 0.68 fl oz, 2 x 1.7 fl oz",
+    "look_for": [
+     "0.68"
+    ]
+   },
+   {
+    "id": "claim",
+    "fact": "100% invisible, weightless, scentless; no white cast on all skin tones",
+    "look_for": [
+     "white cast"
+    ]
+   },
+   {
+    "id": "primer",
+    "fact": "Doubles as a makeup primer for all-day wear",
+    "look_for": [
+     "primer"
+    ]
+   },
+   {
+    "id": "skin_types",
+    "fact": "Non-acnegenic; for normal, combination, dry, oily, sensitive or acne-prone skin",
+    "look_for": [
+     "acnegenic"
+    ]
+   },
+   {
+    "id": "seal",
+    "fact": "Holds the Skin Cancer Foundation Seal of Recommendation",
+    "look_for": [
+     "Skin Cancer Foundation"
+    ]
+   },
+   {
+    "id": "how_to",
+    "fact": "How to use: apply 15 minutes before sun; reapply at least every 2 hours",
+    "look_for": [
+     "every 2 hours"
+    ]
+   },
+   {
+    "id": "rating",
+    "fact": "5,746 reviews",
+    "look_for": [
+     "5746",
+     "5,746"
+    ]
+   }
+  ],
+  "photos_note": "8 gallery photos for the 1.7 oz size (tube, texture, seal, lifestyle) + 1 video; each other size has its own main photo."
+ },
+ "21-snoo": {
+  "product": "SNOO Smart Sleeper (link now dead)",
+  "facts": [],
+  "photos_note": "On 2026-09-28 the link shows Happiest Baby's 'Oops! We can't seem to find what you're looking for' page in a real browser, so there are no facts to check. A good scraper should report that the page isn't a product."
+ },
+ "23-amazon": {
+  "product": "Stanley Quencher H2.0 FlowState Tumbler 30 oz, Lilac (Amazon)",
+  "facts": [
+   {
+    "id": "name",
+    "fact": "Name: STANLEY Quencher H2.0 Flow State Tumbler, 30 oz, Lilac",
+    "look_for": [
+     "Quencher H2.0"
+    ]
+   },
+   {
+    "id": "price",
+    "fact": "Price: $37.75 (Amazon prices change often)",
+    "look_for": [
+     "37.75"
+    ]
+   },
+   {
+    "id": "insulation",
+    "fact": "Double-wall vacuum insulation keeps drinks cold, iced or hot for hours",
+    "look_for": [
+     "vacuum insulation"
+    ]
+   },
+   {
+    "id": "cup_holder",
+    "fact": "Narrow base fits most car cup holders",
+    "look_for": [
+     "cup holder"
+    ]
+   },
+   {
+    "id": "lid",
+    "fact": "FlowState lid with 3 positions: straw opening, drink opening, full cover",
+    "look_for": [
+     "three positions",
+     "3-Position"
+    ]
+   },
+   {
+    "id": "material",
+    "fact": "90% recycled BPA-free stainless steel",
+    "look_for": [
+     "90% recycled"
+    ]
+   },
+   {
+    "id": "dishwasher",
+    "fact": "Dishwasher safe",
+    "look_for": [
+     "dishwasher",
+     "Dishwasher"
+    ]
+   },
+   {
+    "id": "warranty",
+    "fact": "Lifetime warranty",
+    "look_for": [
+     "LIFETIME WARRANTY",
+     "lifetime warranty"
+    ]
+   },
+   {
+    "id": "rating",
+    "fact": "Rating: 4.7 stars from 205,520 ratings",
+    "look_for": [
+     "205,520"
+    ]
+   }
+  ],
+  "photos_note": "7 product photos + 1 video in the gallery (Lilac)."
+ }
+}

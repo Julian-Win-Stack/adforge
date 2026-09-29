@@ -1,0 +1,352 @@
+{
+ "other-19-paulaschoice-2pct-bha": {
+  "store_type": "other",
+  "missing_sentences": 196,
+  "real_product_info_missed": 120
+ },
+ "small-21-brooklinen-luxe-core-sheets": {
+  "store_type": "small-brand",
+  "missing_sentences": 173,
+  "real_product_info_missed": 40
+ },
+ "small-13-cymbiotika-liposomal-vitamin-c": {
+  "store_type": "small-brand",
+  "missing_sentences": 129,
+  "real_product_info_missed": 36
+ },
+ "small-36-cotopaxi-allpa-35l": {
+  "store_type": "small-brand",
+  "missing_sentences": 94,
+  "real_product_info_missed": 35
+ },
+ "other-18-lifeextension-two-per-day": {
+  "store_type": "other",
+  "missing_sentences": 131,
+  "real_product_info_missed": 33
+ },
+ "small-12-thorne-basic-nutrients-2-day": {
+  "store_type": "small-brand",
+  "missing_sentences": 47,
+  "real_product_info_missed": 27
+ },
+ "small-24-our-place-always-pan": {
+  "store_type": "small-brand",
+  "missing_sentences": 75,
+  "real_product_info_missed": 18
+ },
+ "small-25-graza-sizzle-olive-oil": {
+  "store_type": "small-brand",
+  "missing_sentences": 39,
+  "real_product_info_missed": 17
+ },
+ "small-07-tower28-sos-rescue-spray": {
+  "store_type": "small-brand",
+  "missing_sentences": 36,
+  "real_product_info_missed": 16
+ },
+ "small-29-fable-the-game": {
+  "store_type": "small-brand",
+  "missing_sentences": 25,
+  "real_product_info_missed": 14
+ },
+ "other-17-zwilling-pro-chefs-knife": {
+  "store_type": "other",
+  "missing_sentences": 82,
+  "real_product_info_missed": 10
+ },
+ "small-28-wild-one-harness-walk-kit": {
+  "store_type": "small-brand",
+  "missing_sentences": 32,
+  "real_product_info_missed": 8
+ },
+ "small-09-ritual-essential-women-18": {
+  "store_type": "small-brand",
+  "missing_sentences": 19,
+  "real_product_info_missed": 6
+ },
+ "small-10-momentous-creatine": {
+  "store_type": "small-brand",
+  "missing_sentences": 57,
+  "real_product_info_missed": 6
+ },
+ "small-03-ilia-super-serum-skin-tint": {
+  "store_type": "small-brand",
+  "missing_sentences": 111,
+  "real_product_info_missed": 5
+ },
+ "small-19-moft-snap-on-stand-wallet": {
+  "store_type": "small-brand",
+  "missing_sentences": 39,
+  "real_product_info_missed": 5
+ },
+ "amazon-02-maybelline-sky-high-mascara": {
+  "store_type": "amazon",
+  "missing_sentences": 200,
+  "real_product_info_missed": 4
+ },
+ "other-09-bulknutrients-wpi": {
+  "store_type": "other",
+  "missing_sentences": 52,
+  "real_product_info_missed": 4
+ },
+ "small-06-necessaire-body-wash": {
+  "store_type": "small-brand",
+  "missing_sentences": 64,
+  "real_product_info_missed": 3
+ },
+ "amazon-06-fire-tv-stick-4k-plus": {
+  "store_type": "amazon",
+  "missing_sentences": 126,
+  "real_product_info_missed": 3
+ },
+ "other-02-nopong-original-deodorant": {
+  "store_type": "other",
+  "missing_sentences": 54,
+  "real_product_info_missed": 3
+ },
+ "other-11-kong-classic": {
+  "store_type": "other",
+  "missing_sentences": 33,
+  "real_product_info_missed": 3
+ },
+ "small-35-allbirds-mens-tree-runners": {
+  "store_type": "small-brand",
+  "missing_sentences": 9,
+  "real_product_info_missed": 2
+ },
+ "small-38-vuori-kore-short-black": {
+  "store_type": "small-brand",
+  "missing_sentences": 31,
+  "real_product_info_missed": 2
+ },
+ "other-05-woofandwiggle-anorak-raincoat": {
+  "store_type": "other",
+  "missing_sentences": 12,
+  "real_product_info_missed": 2
+ },
+ "other-16-bose-quietcomfort-ultra": {
+  "store_type": "other",
+  "missing_sentences": 19,
+  "real_product_info_missed": 2
+ },
+ "small-05-kosas-revealer-concealer": {
+  "store_type": "small-brand",
+  "missing_sentences": 27,
+  "real_product_info_missed": 1
+ },
+ "small-08-liquid-iv-lemon-lime": {
+  "store_type": "small-brand",
+  "missing_sentences": 79,
+  "real_product_info_missed": 1
+ },
+ "small-11-lmnt-recharge-electrolyte": {
+  "store_type": "small-brand",
+  "missing_sentences": 16,
+  "real_product_info_missed": 1
+ },
+ "small-14-bloom-greens-superfoods": {
+  "store_type": "small-brand",
+  "missing_sentences": 22,
+  "real_product_info_missed": 1
+ },
+ "small-17-satechi-3in1-qi2-stand": {
+  "store_type": "small-brand",
+  "missing_sentences": 14,
+  "real_product_info_missed": 1
+ },
+ "small-20-rokform-iphone-16-pro-rugged": {
+  "store_type": "small-brand",
+  "missing_sentences": 56,
+  "real_product_info_missed": 1
+ },
+ "small-22-caraway-cookware-set": {
+  "store_type": "small-brand",
+  "missing_sentences": 33,
+  "real_product_info_missed": 1
+ },
+ "small-23-parachute-linen-sheet-set": {
+  "store_type": "small-brand",
+  "missing_sentences": 17,
+  "real_product_info_missed": 1
+ },
+ "small-31-petlibro-granary-wifi-feeder": {
+  "store_type": "small-brand",
+  "missing_sentences": 38,
+  "real_product_info_missed": 1
+ },
+ "retail-15-ulta-sol-de-janeiro-bum-bum": {
+  "store_type": "big-retailer",
+  "missing_sentences": 8,
+  "real_product_info_missed": 1
+ },
+ "retail-16-ulta-elf-halo-glow": {
+  "store_type": "big-retailer",
+  "missing_sentences": 11,
+  "real_product_info_missed": 1
+ },
+ "other-03-nalgene-32oz-wide-mouth": {
+  "store_type": "other",
+  "missing_sentences": 1,
+  "real_product_info_missed": 1
+ },
+ "other-06-disruptiveyouth-v-bottoms": {
+  "store_type": "other",
+  "missing_sentences": 10,
+  "real_product_info_missed": 1
+ },
+ "small-02-ouai-detox-shampoo": {
+  "store_type": "small-brand",
+  "missing_sentences": 28,
+  "real_product_info_missed": 0
+ },
+ "small-01-glossier-boy-brow": {
+  "store_type": "small-brand",
+  "missing_sentences": 26,
+  "real_product_info_missed": 0
+ },
+ "small-04-summer-fridays-jet-lag-mask": {
+  "store_type": "small-brand",
+  "missing_sentences": 27,
+  "real_product_info_missed": 0
+ },
+ "small-15-nomad-modern-leather-case": {
+  "store_type": "small-brand",
+  "missing_sentences": 15,
+  "real_product_info_missed": 0
+ },
+ "small-18-twelve-south-hirise-3-deluxe": {
+  "store_type": "small-brand",
+  "missing_sentences": 17,
+  "real_product_info_missed": 0
+ },
+ "small-30-jinx-chicken-kibble": {
+  "store_type": "small-brand",
+  "missing_sentences": 24,
+  "real_product_info_missed": 0
+ },
+ "small-26-fellow-stagg-ekg-kettle": {
+  "store_type": "small-brand",
+  "missing_sentences": 89,
+  "real_product_info_missed": 0
+ },
+ "small-27-material-reboard": {
+  "store_type": "small-brand",
+  "missing_sentences": 14,
+  "real_product_info_missed": 0
+ },
+ "small-32-diggs-revol-crate": {
+  "store_type": "small-brand",
+  "missing_sentences": 79,
+  "real_product_info_missed": 0
+ },
+ "retail-07-walmart-mainstays-towel": {
+  "store_type": "big-retailer",
+  "missing_sentences": 37,
+  "real_product_info_missed": 0
+ },
+ "retail-08-walmart-purina-one-dog": {
+  "store_type": "big-retailer",
+  "missing_sentences": 42,
+  "real_product_info_missed": 0
+ },
+ "retail-06-walmart-nature-made-d3": {
+  "store_type": "big-retailer",
+  "missing_sentences": 46,
+  "real_product_info_missed": 0
+ },
+ "retail-26-wayfair-leonard-bed": {
+  "store_type": "big-retailer",
+  "missing_sentences": 11,
+  "real_product_info_missed": 0
+ },
+ "retail-30-costco-kirkland-fish-oil": {
+  "store_type": "big-retailer",
+  "missing_sentences": 1,
+  "real_product_info_missed": 0
+ },
+ "amazon-01-cerave-moisturizing-cream": {
+  "store_type": "amazon",
+  "missing_sentences": 199,
+  "real_product_info_missed": 0
+ },
+ "amazon-03-nature-made-vitamin-d3": {
+  "store_type": "amazon",
+  "missing_sentences": 90,
+  "real_product_info_missed": 0
+ },
+ "amazon-04-optimum-nutrition-gold-standard-whey": {
+  "store_type": "amazon",
+  "missing_sentences": 85,
+  "real_product_info_missed": 0
+ },
+ "amazon-05-apple-airpods-pro-2": {
+  "store_type": "amazon",
+  "missing_sentences": 39,
+  "real_product_info_missed": 0
+ },
+ "amazon-08-lodge-cast-iron-skillet": {
+  "store_type": "amazon",
+  "missing_sentences": 417,
+  "real_product_info_missed": 0
+ },
+ "amazon-07-stanley-quencher-40oz": {
+  "store_type": "amazon",
+  "missing_sentences": 50,
+  "real_product_info_missed": 0
+ },
+ "amazon-09-greenies-dental-treats": {
+  "store_type": "amazon",
+  "missing_sentences": 68,
+  "real_product_info_missed": 0
+ },
+ "other-01-mahalo-rare-indigo-balm": {
+  "store_type": "other",
+  "missing_sentences": 62,
+  "real_product_info_missed": 0
+ },
+ "amazon-10-carhartt-midweight-hoodie": {
+  "store_type": "amazon",
+  "missing_sentences": 45,
+  "real_product_info_missed": 0
+ },
+ "other-04-pine64-pinetab2": {
+  "store_type": "other",
+  "missing_sentences": 3,
+  "real_product_info_missed": 0
+ },
+ "other-07-redd-mint-chocolate-bar": {
+  "store_type": "other",
+  "missing_sentences": 3,
+  "real_product_info_missed": 0
+ },
+ "other-08-curology-acne-body-wash": {
+  "store_type": "other",
+  "missing_sentences": 5,
+  "real_product_info_missed": 0
+ },
+ "other-10-discountelectronics-dell-latitude": {
+  "store_type": "other",
+  "missing_sentences": 3,
+  "real_product_info_missed": 0
+ },
+ "other-12-whitestuff-jumper-dress": {
+  "store_type": "other",
+  "missing_sentences": 39,
+  "real_product_info_missed": 0
+ },
+ "other-13-oakfurnitureking-oslo-table": {
+  "store_type": "other",
+  "missing_sentences": 2,
+  "real_product_info_missed": 0
+ },
+ "other-15-beyerdynamic-dt-770-pro-x": {
+  "store_type": "other",
+  "missing_sentences": 27,
+  "real_product_info_missed": 0
+ },
+ "other-20-barbour-classic-bedale": {
+  "store_type": "other",
+  "missing_sentences": 11,
+  "real_product_info_missed": 0
+ }
+}
