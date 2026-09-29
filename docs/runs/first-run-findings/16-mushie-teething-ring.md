@@ -1,0 +1,21 @@
+# 16 · Mushie Space Teething Ring
+**Result:** finished ad, 5 scenes, 28.28 s (no target), 00:59:19 → 01:04:23, no errors.
+
+## Silent problems
+- **The burned-in caption spells the brand "Mooshee"** — captions are built from the transcript words (`assembly.captions`), and scene 1's transcript (`[01:00:53] transcribe_line`) heard `"Mooshee"` at 0.44–0.72 s. So the very first caption of the ad reads "Meet the Mooshee" while the overlay above it reads "Mushie Space Teething Ring". The producer saw this and called it a match: "The wording matches, with 'Mushie' pronounced 'Mooshee.'" (`[01:00:56]`), then "All five voice lines have now been checked and match the approved script" (`[01:01:02]`), without asking the shop owner or remaking the line (as it did in #11). first-run.md records the pronunciation being accepted (known) but not that it goes on screen. Severity: high (brand misspelt in the hook).
+- **The portrait contained a made-up product** — `person_looks` "…holding the teething ring…" went into the portrait prompt (`[00:59:51] draw_person`: "No text, logos or products in the picture. The person: … holding the teething ring"). Proof it was drawn anyway: scene 1's prompt says "Replace the item in her hand with the Mushie Space Teething Ring from the second picture" and scene 3's "Replace the teether she is holding" (`[01:00:49]`). The shop owner was shown a presenter holding an invented teether. Severity: med.
+- **Photo 3 is an infographic and was still fed to the picture model** — scene 2's reason: "without the added writing seen in Photo 3"; scene 3's prompt: "do not include the infographic writing or arrows from the reference" (`[01:00:49]`). Yet the plan marked photo 3 as a colour photo, the fact check was shown it, and scene 3's picker chose it *because of its text*: "it clearly presents the product alongside the stated food-grade silicone and material-free claims" — a fact taken from a picture, which the rules forbid, and an image reference that can leak text into a "no added text" picture. Severity: med.
+- **Presenter and voice planned without a gender; may not match** — plan: `person_looks` "A friendly presenter in their early 30s…", `person_voice` "A warm adult voice…" (`[00:59:29]`). The portrait came out as a woman (every scene prompt: "the woman from the first picture"); the voice was designed from "A warm adult voice" with no link to the portrait (`[01:00:13] design_voice`). Whether they match can't be seen in the trace. Severity: low (risk, unverified).
+- **Page text is full of other products' copy** — the alt texts and reviews in `page_text` describe "Nature Teething Ring sets … animal, rainbow, and sun charms", "cactus, horse, and hat" shapes, "Dino toys", and give three different colour lists (blue/beige/cream; blue/tan/gray; gray/beige/brown). None leaked into the plan, but nothing stops it. Severity: low.
+
+Baby-product checks: no baby anywhere. Both B-roll "shows" say "Adult hands" and the prompts say "Show only the same adult presenter's hands"; photo 4 (not marked as a colour photo) was never used. Safety-type claims are all on the page word for word: "100% food grade silicone", "Free of BPA, BPS, PVC and phthalates", "Recommended age: 3 months+", "comfort, support and soothing relief". The page's "Third-party tested to meet CPSIA, ASTM, and Prop 65" and an alt text's "toxin-free" were not used. B-roll share 2 of 5 = 40%, within the 40–50% guide.
+
+## Loud failures
+None found.
+
+## Waste
+- 20 producer turns (51 s), 9 narration only. All 5 pictures fired at once (`[01:00:45]`) — exactly the 5/min image limit, so no 429s this time; a sixth scene would have hit it as #15 did.
+- Timing consistent: cuts = last word + 0.1 s; spans sum to 28.28; silent clips asked for 5.17 s (4.98 s audio) and 6.5 s (6.16 s); music 33 s > 28.28 s. Scene 3 is a 7.7 s single talking shot ("BPA, BPS, PVC, and phthalates" read slowly), the longest scene, against the 2–3 s pacing lesson.
+
+## Bottom line
+Facts and baby-safety are clean, but the ad opens with "Meet the Mooshee" written on screen under a "Mushie" overlay, and the producer waved it through as a match. Biggest fix: treat a transcript that spells the product name differently from the plan as a failure to ask about or remake, not "matches".

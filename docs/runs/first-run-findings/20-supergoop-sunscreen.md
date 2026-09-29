@@ -1,0 +1,37 @@
+# 20 · Supergoop Unseen Sunscreen SPF 50
+
+**Result:** finished, 29.34 s, 6 scenes (2 B-roll), no target length, 2 failed calls (429, retried), ~5 min wall clock incl. ~27 s waiting for the shop owner.
+
+## Silent problems
+
+- **Every scene is drawn from the one photo that carries an award badge** — photo 1 is the page's `Unseen_PDP_Image_Allure_Seal_2025.png` (kept photos follow the page's image list: png, jpg, jpg, png, jpg; the picture model itself calls it "the separate red award badge from the source photo"). All 6 `choose_*` calls picked photo 1. Only scenes 2, 3 and 5 explicitly say to leave the badge out (`[01:19:11] choose_broll_picture scene 2`: "do not include the separate red award badge from the source photo"); scenes 1, 4 and 6 say "Preserve the product exactly as shown, including its shape, colors, branding, label, and print" and rely on a generic "no graphic badges" clause (`[01:19:11] choose_starting_picture scene 1`). If the image model keeps the seal, the ad shows an Allure award the page text never names (it says only "award-winning"). Nothing checks the pictures that came back. Severity: med.
+
+- **Texture photos exist but were locked out; the gel-on-face B-roll was drawn from words alone** — the page lists `…product-and-texture-74ml.jpg`, `…product-and-texture-20ml.jpg` and `…model-with-benefits-and-texture-on-face.jpg` among its images, but the plan marked only photos 1 and 6 as showing the colour (`[01:17:57] plan_ad out`: `"colour_photos": [1, 6]`), so `choose_broll_picture` and `fact_check` were shown only those two (`shown: 2 images` at `[01:18:45]`). Scene 3's picture model then reports "neither available photo shows the gel texture or its finish on skin" (`[01:19:11] choose_starting_picture scene 3`), and scene 2's "A hand applies the clear gel evenly across the face and neck" was invented from the description. The planner's guide for skincare allows a texture shot "only if the page gives the texture", and the page had photos of it. (The 74 ml / 20 ml texture photos are the 2.5 oz and 0.68 oz tubes, so excluding them may have been a deliberate size filter, but the reason isn't recorded and the model-on-face photo has no size in it.) Severity: med.
+
+- **Clinical claims are repeated without the page's own qualifiers** — line 4 "It is clinically tested to improve skin clarity and support longer-lasting, all-day makeup wear" and overlay "Clinically tested" (`[01:17:57] plan_ad`). The page states both, but footnoted: "¹Based on an independent clinical study with 33 women after using product for 4 weeks", "²Based on an independent clinical study with 33 women 8 hours after one application as compared to foundation alone". `fact_check` passed it as "ok" (`[01:18:45]`), correctly by its rule ("the page states it"), but an ad repeating a clinical claim while dropping the sample size and comparison is the kind of thing an ad platform or the FTC judges on the ad, not the page. Severity: med.
+
+- **Portrait prompt asks for "no products" and then for the product** — `[01:18:11] draw_person in.prompt`: "No text, logos or products in the picture. The person: … holding the sunscreen tube on camera." The plan's `person_looks` carries the product into a prompt that forbids it; an invented tube in the portrait would then be "the same face, hair and clothes" reference for six scenes. Severity: med.
+
+- **The producer's reply was literally the attachment placeholder** — `[01:19:50] SAYS: "[Attached 1 picture]"` after its history showed three real `[Attached 1 picture]` entries. This is the mechanism behind the "agent message whose whole text is '[Attached 1 picture]' with no attachment" (known, first-run "Message #26"): the model copies the placeholder it is shown for attachments as if it were something to say. Severity: low (known symptom; cause not in first-run).
+
+- **Scene 5's B-roll shows props the page doesn't** — `shows`: "Hands place the sunscreen tube beside everyday skincare products" (`[01:17:57] plan_ad`), and the picture prompt asks for "a few everyday skincare products on the bathroom counter" (`[01:19:11] choose_broll_picture scene 5`). Scene 4's prompt, by contrast, forbids "extra products". The fact check passed the `shows` as ok; the page only says "Complete your skincare routine". Unbranded props, so low risk, but it is exactly the "nothing neither the page nor the photos show" case the B-roll rule names. Severity: low.
+
+- **Price written as "$38", not words; the transcript can't tell you how it was read** — line 6 "The 1.7-ounce tube is $38." (#19 spelled its price out: "eighty dollars and ninety-seven cents"). The transcript gives "$38" as one token lasting 0.44 s (1.98–2.42, `[01:19:18] transcribe_line scene 6`), against 1.4 s for "$80.97" in #19; whether "dollars" was said can't be confirmed from text, and the producer said "All six spoken lines are now verified and accurate" (`[01:19:20]`). The price is right and tied to the right variant: user said "The 1.7 oz at $38.", schema `"price": "38.0"` for the default variant, and the picture model reads "1.7 fl oz / 50 mL" off photo 1 (`[01:19:13] choose_starting_picture scene 6`). Severity: low.
+
+- **"Supergoop!" with the bang in a spoken line** — the name is passed to TTS with its exclamation mark ("Meet Supergoop! Unseen Sunscreen SPF 50", `[01:19:10] speak_line scene 1`); the transcript shows a 0.3 s gap after "Supergoop!" (0.96 → 1.26) that no other word boundary in the line has, consistent with the TTS treating it as a sentence end. Cosmetic; can't hear it. Severity: low.
+
+## Loud failures
+
+- 2 × `make_starting_picture` 429 "input-images per min: Limit 5, Used 5" for scene 5 (`[01:19:23]`, `[01:19:25]`), succeeded on attempt 3 (`[01:19:34]`). Never reached the producer, so the shop owner wasn't told; nothing to tell, since the step finished. (known)
+
+## Waste
+
+- **Six pictures fired in one minute against a 5/min limit** — the known 429s cost scene 5 ~11 s and two failed calls; a 6-scene ad will hit this every time unless picture starts are spaced.
+- **Music in its own serial turn before any scene work** — `[01:18:50]–[01:19:06]`: `create_music` (14.9 s) plus one extra `produce` call before the 12 scene tools were even started at `[01:19:06]`. ~16 s idle for everything else.
+- **Clips took 2–3× longer than in #19** — collect_clip 143 s, 113 s, 123 s, 92 s, 82 s, 112 s vs 31–64 s in #19, with all six queued at Boreal at once; the ad waited ~2 min 20 s on scene 1's clip alone. Outside our control, but the "taking longer than usual" message never fired (0 occurrences in the trace), so the shop owner saw nothing for 72 s between `[01:20:03]` and `[01:21:15]`.
+- **Five wake-up turns that only report "Scene N is finished"** (`[01:21:15]`, `[01:21:22]`, `[01:21:42]`, `[01:21:53]`, `[01:21:58]`): 5 `produce` calls for one-line status.
+- **Photo 6 shown to every choose_* call and never picked or mentioned**; the other 4 photos were never shown to any scene tool (see the texture-photo problem above).
+
+## Bottom line
+
+The script is sound: the price and size are the shop owner's own, every line is on the page, the voice said every word, and the cuts match the transcripts exactly; but the pictures rest on the one award-badged marketing image for all six scenes while the page's real texture photos were never offered, and a "clinically tested" claim goes out without its footnotes. Single biggest fix: don't let a colour filter be the only gate on which photos a scene can use (and keep badge-overlaid images from being the default choice).

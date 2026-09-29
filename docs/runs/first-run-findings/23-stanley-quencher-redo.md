@@ -1,0 +1,30 @@
+# 23 · Stanley Quencher H2.0 30 oz (Amazon) — redo
+**Result:** Finished ad, 28.32 s, six scenes (30 s asked). 23:32:57 → 23:37:07 (4 min 10 s, 17 s of it waiting for the photo). (known)
+
+## Silent problems
+- **Portrait prompt contradiction recurs** — `[23:34:05] draw_person`: "No text, logos or products in the picture. The person: A casually polished woman in her late 20s wearing simple neutral athleisure, holding the tumbler in a bright modern kitchen and home-office setting." Same cause as the first try (`person_looks` pasted into `PORTRAIT_PROMPT`). This time the scene prompts say "Give her the pastel lilac STANLEY tumbler" (`[23:35:04]`) rather than "Replace the tumbler", so the portrait may have obeyed "no products"; can't be seen from the trace. Severity: med (unchanged risk).
+- **Scene 2's B-roll is mood, not proof, and nearly a still** — shows "The tumbler stands on a desk as the daylight shifts to suggest time passing"; `[23:35:04] choose_broll_picture` motion prompt "The tumbler remains still while natural daylight and soft shadows gradually shift across the desk and tumbler". 4.9 s of a motionless product on a desk under the 9-hours/40-hours line. `docs/what-makes-a-good-ad.md`: "Proof, not mood"; the planner's home-goods guide says "hands using it". The first try's pour was riskier (invented open top) but at least showed use. Severity: low-med.
+- **Silent clips asked for whole seconds, then trimmed** (known, pre-`71dec51`) — scene 2 audio 5.4 s → asked 6.0; scene 4 5.54 → 6.0; scene 5 5.96 → 6.0 (`[23:35:43]`, `[23:35:46]`, `[23:35:57] make_clip`). The ad keeps only first word to last word: scene 4 keeps 0–4.98 s of a 6-s motion "lowers the tumbler … until the base rests inside it"; scene 5 keeps 0–5.44 s of "lowers … releases it, and moves out of frame". The endings the motion prompts asked for are cut. Severity: low (known category).
+- **Script fully supported this time** — I checked every claim against the page text: "cold for 9 hours and iced for 40 hours", "rotating cover with three positions … full-cover top", "comfort-grip handle and a narrow base that will fit most cup holders", "90% recycled BPA free stainless steel", "just pop them into the dishwasher", "$37.75" (Buy New; Used $22.95 correctly ignored). `[23:34:39] fact_check` all "ok" in 2.2 s. The vague "everyday hydration companion" of the first try is gone. Severity: none.
+- **"word-for-word" over-claim** — `[23:35:13]` "Three voice lines were confirmed word-for-word", `[23:35:15]` "All six voice lines have now been confirmed correctly". Transcripts differ from the lines in hyphens/punctuation ("full cover top", "Double wall") and normalise "$37.75" to one token 0.76–2.92 s (`[23:35:13] transcribe_line` scene 6); pronunciation of "H2.0"/"Quencher" is unverifiable. Severity: low.
+- **Caption spelling of the name depends on the transcriber** — heard "FlowState" here (`[23:35:13]`) vs "Flow State" in the first try (`[22:12:11]`) for the same voice text; the caption shows whichever it wrote, while the overlay says "3-position FlowState lid" and the plan says "Flow State Tumbler". Severity: low.
+- **Settings drift across B-roll** — `person_looks` gives two settings at once ("kitchen and home-office"); scene 2 is a desk, scene 4 "inside a car" (`[23:35:04]`), scene 5 a dishwasher. `BROLL_PICTURE_INSTRUCTIONS` asks for "the setting and light of the portrait's"; only the light was kept. Allowed by each "shows", but the ad changes room every scene. Severity: low.
+- **429 retries again inside the 12-s window** — scene 5's picture: `23:35:16` and `23:35:19` failed ("Please try again in 12s"), `23:35:27` succeeded, 11 s after the first. Got lucky where the first try's scene 3 didn't. Severity: low here (not surfaced, correctly, since the step succeeded).
+- **Timing math verified** — cuts 4.76 + 4.90 + 5.22 + 4.98 + 5.44 + 3.02 = 28.32 s, matching `[23:37:04] assemble_ad` spans; music 35 s > 28.32 → trimmed; no last word closer than 0.28 s to its clip's end. Predicted 66 words / 2.2 wps = 30.0 s; the word-to-word trims took it to 28.3 s.
+
+## Loud failures
+- None reached the owner. Two 429s inside scene 5's picture step (known), recovered on the third attempt.
+- `make_clip` scene 5 refused: "starting picture is still being made" (`[23:35:48]`); the producer said so honestly. (known)
+- Producer message whose whole text is "[Attached 1 picture]" (`[23:35:46]` SAYS). (known)
+
+## Waste
+- 27 `produce` turns (≈ $0.58 of $1.68, ~$0.021 each): six are wake-ups that only report "Scene N is finished" (`23:36:16`–`23:37:01`), one is the refused `make_clip`, one is the "[Attached 1 picture]" turn, one is an empty message (`[23:33:27]` SAYS "") before the 35-s `plan_ad`.
+- Three silent clips bought at 6.0 s and used for 4.9–5.4 s.
+- Scene 1's `collect_clip` took 72.9 s (`[23:35:44]`), against 21–62 s for the others; it set the finish time.
+
+## Compared with the first try
+- Changed: 7 → 6 scenes; scene 2's pour → still tumbler on a desk; scene 3's lid-rotation B-roll → the person talking; handle and cup holder merged into one B-roll (scene 4); a new dishwasher B-roll (scene 5) carrying the 90 % recycled / BPA-free claim; "Get it new for…" / "New: $37.75" → "It's yours for $37.75" / "$37.75"; name "FlowState Tumbler" → "Flow State Tumbler" (the page title); presenter "adult" → "woman in her late 20s" for both looks and voice; voice 2.6 → 2.2 wps; silent clips whole-second (all worked) instead of exact (all failed); 3 → 2 image 429s, none fatal.
+- Recurred: product in the portrait prompt; every picture from the single photo; fact check passes in one call without a query; "verified" language; 429s from firing every scene at once; a "[Attached 1 picture]" message; whole-second silent clips trimmed.
+
+## Bottom line
+A shop owner would probably accept this one: every line is on the page, the price is plain, 28.3 s for a 30-s ask, nothing failed in view. Biggest fix: stop pasting the product into the portrait prompt; next, steer the planner to B-roll that shows the product in use rather than a still tumbler with shifting light.
