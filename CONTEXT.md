@@ -91,7 +91,7 @@ Every scene's clip put together in order, each talking scene's cut to where its 
 _Avoid_: Final video, render, output
 
 **Person**:
-The presenter in an ad: one portrait and one matching voice. Every scene in a job shows the same person.
+The presenter in an ad: one portrait and one matching voice. Every scene in a job shows the same person. The plan says whether they are a man or a woman, and code puts that into both the portrait's prompt and the voice's description, so the two can't disagree.
 _Avoid_: Avatar, actor, character, persona
 
 **Page text**:

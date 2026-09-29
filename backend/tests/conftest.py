@@ -85,6 +85,7 @@ PLAN: dict[str, Any] = {
         "product_name": "Stoneware Mug",
         "product_colour": "sage green",
         "colour_photos": [1],
+        "person_gender": "woman",
         "person_looks": "A potter in her thirties in a linen apron, in a sunny workshop.",
         "person_voice": "A warm, relaxed woman in her thirties with a soft British accent.",
     },

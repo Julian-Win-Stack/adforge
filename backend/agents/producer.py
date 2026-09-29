@@ -979,7 +979,10 @@ def _the_plan(job: Job, reason: str) -> str:
             f"The product's name, said to camera: {job.product_name}",
             f"The product's colour: {job.product_colour}, shown in photos "
             f"{', '.join(str(number) for number in colour_photos)}.",
-            f"The person: {job.person_looks} Their voice: {job.person_voice}",
+            # A job planned before the plan said the gender has none.
+            "The person: "
+            + (f"a {job.person_gender}. " if job.person_gender else "")
+            + f"{job.person_looks} Their voice: {job.person_voice}",
         ]
     )
 

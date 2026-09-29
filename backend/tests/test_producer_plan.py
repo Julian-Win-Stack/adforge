@@ -67,6 +67,11 @@ def a_plan_with(**changes: Any) -> dict[str, Any]:
     return {**PLAN, "plan": {**PLAN["plan"], **changes}}
 
 
+def a_plan_without(field: str) -> dict[str, Any]:
+    """PLAN with one of its plan's fields left out altogether."""
+    return {**PLAN, "plan": {name: value for name, value in PLAN["plan"].items() if name != field}}
+
+
 def plan_ad_result() -> str:
     (result,) = results_of("plan_ad")
     return result
@@ -89,7 +94,8 @@ def test_the_plan_and_its_scenes_are_stored_with_the_job(
         (3, "Yours for $24.00.", "planned"),
     ]
     assert job.product_name == "Stoneware Mug"
-    assert (job.person_looks, job.person_voice) == (
+    assert (job.person_gender, job.person_looks, job.person_voice) == (
+        "woman",
         "A potter in her thirties in a linen apron, in a sunny workshop.",
         "A warm, relaxed woman in her thirties with a soft British accent.",
     )
@@ -329,6 +335,17 @@ def test_the_planner_is_shown_each_photo_shrunk_to_fit_512_pixels_and_the_kept_o
         pytest.param(
             a_plan_with(person_voice=""), "This can't be empty.", id="no voice for the person"
         ),
+        # The voice and the portrait are each designed from words alone, and each picks a
+        # gender at random when the words don't give one. So the plan must say it, as a
+        # choice code enforces rather than a word the planner may leave out.
+        pytest.param(
+            a_plan_without("person_gender"), "Field required", id="no gender for the person"
+        ),
+        pytest.param(
+            a_plan_with(person_gender="adult"),
+            "Input should be 'man' or 'woman'",
+            id="a gender that is neither",
+        ),
         pytest.param(
             a_plan_with(colour_photos=[]),
             "List should have at least 1 item",
@@ -381,6 +398,7 @@ def test_a_plan_that_breaks_the_rules_is_handed_back_keeps_nothing_and_is_still_
     job = Job.objects.get()
     assert not job.scenes.exists()
     assert (job.product_colour, job.person_looks, job.person_voice) == ("", "", "")
+    assert job.person_gender == ""
     assert not job.photos.filter(shows_product_colour=True).exists()
     # The bad plan is still paid for: 1,200 x $4.00/M in + 300 x $20.00/M out.
     plan_call = ModelCall.objects.get(purpose="plan_ad")
