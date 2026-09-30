@@ -1,0 +1,45 @@
+{
+ "shopify": {
+  "title": "SOS Rescue Spray",
+  "photos": [
+   "https://cdn.shopify.com/s/files/1/2926/6108/files/SOS_20Spray_20_E2_80_94_C2_A04_20oz.webp?v=1762649181",
+   "https://cdn.shopify.com/s/files/1/2926/6108/files/SOS_SPRAY-OG_f9587118-eb21-4e70-8cb4-e813a13165dc.png?v=1774803592",
+   "https://cdn.shopify.com/s/files/1/2926/6108/files/HERO_IMAGE-1_d4f508a4-73c7-474e-b8ca-b067edf4807c.png?v=1774803592",
+   "https://cdn.shopify.com/s/files/1/2926/6108/files/Size_Comparison_Value_1f1d6df7-0266-4127-8eea-ca898199bf95.png?v=1774803592",
+   "https://cdn.shopify.com/s/files/1/2926/6108/files/B_A_16.png?v=1774574385",
+   "https://cdn.shopify.com/s/files/1/2926/6108/files/B_A_17.png?v=1774574385",
+   "https://cdn.shopify.com/s/files/1/2926/6108/files/B_A_23.png?v=1774574385",
+   "https://cdn.shopify.com/s/files/1/2926/6108/files/B_A_20.png?v=1774574385",
+   "https://cdn.shopify.com/s/files/1/2926/6108/files/Product_Benefits_1_8f42823e-86b4-4686-9eef-f4bff916f626.png?v=1774574385",
+   "https://cdn.shopify.com/s/files/1/2926/6108/files/SOS_SPRAY-OG-1_06fdaec8-c960-49bc-91b5-997767569931.png?v=1774574385",
+   "https://cdn.shopify.com/s/files/1/2926/6108/files/ROUTINE_48f21983-936a-4896-8f1d-7f7683490c42.png?v=1774574385",
+   "https://cdn.shopify.com/s/files/1/2926/6108/files/Frame_16883_31d0ad02-7932-4e98-8370-9c8f560bdc9f.jpg?v=1774574385",
+   "https://cdn.shopify.com/s/files/1/2926/6108/files/HERO_IMAGE_f90edc56-86f0-4ee1-9115-7fcb243b12a7.png?v=1774574385",
+   "https://cdn.shopify.com/s/files/1/2926/6108/files/Set-SOSSprayDuo_0f2911ab-b960-46b4-989b-1e0b15f5d602.webp?v=1774574385",
+   "https://cdn.shopify.com/s/files/1/2926/6108/files/SOS_20Spray_20_E2_80_94_C2_A01_20oz.webp?v=1774574385",
+   "https://cdn.shopify.com/s/files/1/2926/6108/files/SOS_20Spray_20_E2_80_94_C2_A016_20oz.webp?v=1774574385"
+  ],
+  "text": "Got angry skin? Not on our watch. This dermatologist-approved toner with hypochlorous acid helps calm visible irritation, reduce redness, and keep flare-ups in check\u2014one spritz at a time.",
+  "options": [
+   {
+    "id": 2031226585143,
+    "product_id": 1512793538615,
+    "name": "Size",
+    "position": 1,
+    "values": [
+     "Standard",
+     "Duo",
+     "Jumbo",
+     "Travel"
+    ]
+   }
+  ]
+ },
+ "amazon": null,
+ "json_ld": {
+  "photos": [
+   "https://www.tower28beauty.com/cdn/shop/files/SOS_20Spray_20_E2_80_94_C2_A04_20oz.webp?v=1762649181&width=1920"
+  ],
+  "text": "Got angry skin? Not on our watch. This dermatologist-approved toner with hypochlorous acid helps calm visible irritation, reduce redness, and keep flare-ups in check\u2014one spritz at a time."
+ }
+}

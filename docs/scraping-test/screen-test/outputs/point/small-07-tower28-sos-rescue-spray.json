@@ -1,0 +1,46 @@
+{
+ "key": "small-07-tower28-sos-rescue-spray",
+ "model": "gpt-5.6-sol",
+ "answer": {
+  "product": "Tower 28 SOS Daily Rescue Facial Spray with Hypochlorous Acid (SOS Rescue Spray)",
+  "gallery_images": [
+   4,
+   8,
+   15,
+   16,
+   17,
+   24
+  ],
+  "more_images": [
+   48,
+   95,
+   216,
+   220
+  ],
+  "product_sections": [
+   8,
+   9,
+   10,
+   11,
+   12,
+   37,
+   38,
+   39,
+   40,
+   41,
+   42,
+   43,
+   45,
+   46,
+   47,
+   48,
+   49,
+   50
+  ],
+  "notes": "Excluded certification seals, ingredient/text cards, before-and-after skin images, reviews, paired products, bundles, recommendations, and footer content. Size variants shown in the gallery are treated as the same product."
+ },
+ "tiles": 10,
+ "in": 35478,
+ "out": 2044,
+ "seconds": 32
+}

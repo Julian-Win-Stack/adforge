@@ -1,0 +1,15 @@
+{
+ "shopify": null,
+ "amazon": null,
+ "json_ld": {
+  "photos": [
+   "https://api.beyerdynamic.de/media/catalog/product/d/t/dt-770-pro-x-beyerdynamic-perspective.png?store=usa_en&amp;image-type=image",
+   "https://api.beyerdynamic.de/media/catalog/product/d/t/dt-770-pro-x-handmade-in-germany-perspective_transparent_1.png?store=usa_en&amp;image-type=image",
+   "https://api.beyerdynamic.de/media/catalog/product/d/t/dt-770-pro-x-studio-kopfhoerer-people-beyerdynamic_1.png?store=usa_en&amp;image-type=image",
+   "https://api.beyerdynamic.de/media/catalog/product/d/t/dt-770-pro-x-beyerdynamic-front.png?store=usa_en&amp;image-type=image",
+   "https://api.beyerdynamic.de/media/catalog/product/d/t/dt-770-pro-x-beyerdynamic-side.png?store=usa_en&amp;image-type=image",
+   "https://api.beyerdynamic.de/media/catalog/product/d/t/dt-770-pro-x_award_delamar.png?store=usa_en&amp;image-type=image"
+  ],
+  "text": "\r\nCircumaural studio headphones for recording and monitoring\u00a0\r\nFor a range of devices thanks to a flexible STELLAR.45 driver\u00a0\r\nIncludes detachable cable with mini XLR connector\u00a0\r\nExtremely comfortable, even after hours of use\u00a0\r\nMade in Germany\u00a0\r\n"
+ }
+}

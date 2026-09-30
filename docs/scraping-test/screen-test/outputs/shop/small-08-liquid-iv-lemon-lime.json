@@ -1,0 +1,12 @@
+{
+ "shopify": {
+  "error": "KeyError: 'product'"
+ },
+ "amazon": null,
+ "json_ld": {
+  "photos": [
+   "https://cdn.shopify.com/s/files/1/1338/1013/files/HMO_LL_16ct_PDP_5d06a7d4-5650-432a-9c54-78fc806aa73b.jpg?v=1762182393"
+  ],
+  "text": "Liquid I.V.'s Lemon Lime Hydration Multiplier: 16 single-serve sticks of electrolyte powder with 3x the electrolytes of the leading sports drink."
+ }
+}

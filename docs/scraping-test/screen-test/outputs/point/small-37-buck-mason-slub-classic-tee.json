@@ -1,0 +1,24 @@
+{
+ "key": "small-37-buck-mason-slub-classic-tee",
+ "model": "gpt-5.6-sol",
+ "answer": {
+  "product": "Buck Mason Slub Classic Tee",
+  "gallery_images": [
+   1,
+   3,
+   5,
+   7,
+   9,
+   11
+  ],
+  "more_images": [],
+  "product_sections": [
+   1
+  ],
+  "notes": "Included the visible gallery photos across the selectable color variants. Excluded the knitting-mill video image and store/footer image."
+ },
+ "tiles": 9,
+ "in": 24431,
+ "out": 781,
+ "seconds": 10
+}

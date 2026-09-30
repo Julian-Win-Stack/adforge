@@ -1,0 +1,35 @@
+{
+ "key": "other-03-nalgene-32oz-wide-mouth",
+ "model": "gpt-5.6-sol",
+ "answer": {
+  "product": "Nalgene 32oz Wide Mouth Bottle",
+  "gallery_images": [
+   26,
+   27,
+   28,
+   29,
+   30,
+   31,
+   32,
+   33
+  ],
+  "more_images": [],
+  "product_sections": [
+   3,
+   8,
+   10,
+   11,
+   12,
+   13,
+   14,
+   15,
+   16,
+   17
+  ],
+  "notes": "Included all product-gallery views, including duplicate thumbnail/full-size image elements. Excluded separately sold accessories, recommended products, feature-icon graphics, and reviews."
+ },
+ "tiles": 10,
+ "in": 30046,
+ "out": 739,
+ "seconds": 15
+}

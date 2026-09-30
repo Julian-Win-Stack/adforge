@@ -1,0 +1,18 @@
+[
+  {"label": "P1", "verdict": "no_product", "why": "BHA pore diagram with texture swirl and benefit icons, no bottle."},
+  {"label": "P2", "verdict": "no_product", "why": "Clear liquid droplet texture with text, no bottle."},
+  {"label": "P3", "verdict": "other_product", "why": "BHA vs 8% AHA comparison chart showing both bottles side by side."},
+  {"label": "P4", "verdict": "no_product", "why": "Before/after skin close-up of blemishes, no bottle."},
+  {"label": "P5", "verdict": "product_other_variant", "why": "Size lineup: pads box, limited jumbo, standard and mini BHA bottles."},
+  {"label": "P6", "verdict": "product", "why": "Close-up of the black 2% BHA Liquid Exfoliant bottle with ingredient notes."},
+  {"label": "P7", "verdict": "no_product", "why": "Before/after forehead lines close-up, no bottle."},
+  {"label": "P8", "verdict": "product", "why": "2% BHA Liquid Exfoliant bottle front with Allure award badge."},
+  {"label": "P9", "verdict": "no_product", "why": "Close-up of a model's face with benefit text, no bottle."},
+  {"label": "P10", "verdict": "other_product", "why": "Routine group shot: BHA bottle with CellularYouth serum and Pro-Collagen moisturizer."},
+  {"label": "P11", "verdict": "no_product", "why": "Before/after eye-area skin close-up, no bottle."},
+  {"label": "P12", "verdict": "other_product", "why": "Flat lay centred on a blue Paula's Choice cleanser, BHA bottle beside it."},
+  {"label": "P13", "verdict": "product", "why": "BHA bottle standing prominently on a bathroom counter, small serum beside it."},
+  {"label": "P14", "verdict": "product", "why": "Hand tipping the BHA bottle onto a cotton pad, how-to-use text."},
+  {"label": "P15", "verdict": "other_product", "why": "Comparison chart of 1% BHA gel, 2% BHA liquid and 4% BHA serum bottles."},
+  {"label": "P16", "verdict": "product", "why": "Hand holding the 2% BHA Liquid Exfoliant bottle, 'Shake' text."}
+]

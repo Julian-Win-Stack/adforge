@@ -1,0 +1,60 @@
+{
+ "key": "amazon-06-fire-tv-stick-4k-plus",
+ "model": "gpt-5.6-sol",
+ "answer": {
+  "product": "Amazon Fire TV Stick 4K Plus with Alexa Voice Remote",
+  "gallery_images": [
+   4,
+   5,
+   11
+  ],
+  "more_images": [
+   20,
+   21,
+   32,
+   33,
+   41
+  ],
+  "product_sections": [
+   9,
+   16,
+   17,
+   18,
+   19,
+   20,
+   22,
+   32,
+   33,
+   34,
+   35,
+   36,
+   37,
+   39,
+   41,
+   42,
+   43,
+   44,
+   45,
+   46,
+   47,
+   50,
+   51,
+   52,
+   53,
+   54,
+   55,
+   56,
+   57,
+   58,
+   60,
+   61,
+   62,
+   63
+  ],
+  "notes": "Excluded bundles, recommendations, comparison-table products, reviews, and linked images for separate product pages. Also omitted mixed sections that recommend or describe other devices or separately sold accessories."
+ },
+ "tiles": 14,
+ "in": 51143,
+ "out": 2830,
+ "seconds": 32
+}

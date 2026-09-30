@@ -1,0 +1,34 @@
+{
+ "key": "small-25-graza-sizzle-olive-oil",
+ "model": "gpt-5.6-sol",
+ "answer": {
+  "product": "Graza \u201cSizzle\u201d Extra Virgin Olive Oil",
+  "gallery_images": [
+   7,
+   8,
+   9,
+   10,
+   11,
+   12,
+   13,
+   14,
+   15,
+   16,
+   17,
+   18
+  ],
+  "more_images": [
+   68
+  ],
+  "product_sections": [
+   13,
+   16,
+   25
+  ],
+  "notes": "Excluded spray, Drizzle, Duo/bundle imagery, food-only recipe images, customer review uploads, illustrations, and footer/social images."
+ },
+ "tiles": 10,
+ "in": 30263,
+ "out": 2260,
+ "seconds": 40
+}

@@ -1,0 +1,8 @@
+[
+  {"label": "P1", "verdict": "product_other_variant", "why": "Model wearing the crewneck tee in olive (page shows white first)."},
+  {"label": "P2", "verdict": "product_other_variant", "why": "Model wearing the tee in faded charcoal (Venice Wash)."},
+  {"label": "P3", "verdict": "product_other_variant", "why": "Cropped model wearing the tee in black with jeans."},
+  {"label": "P4", "verdict": "product_other_variant", "why": "Model in side view wearing the tee in navy."},
+  {"label": "P5", "verdict": "product_other_variant", "why": "Model wearing the tee in brown with khakis."},
+  {"label": "P6", "verdict": "product", "why": "Model wearing the white slub classic tee, same shot as the page's main image."}
+]

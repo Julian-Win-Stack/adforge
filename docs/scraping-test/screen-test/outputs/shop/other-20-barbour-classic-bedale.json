@@ -1,0 +1,16 @@
+{
+ "shopify": null,
+ "amazon": null,
+ "json_ld": {
+  "photos": [
+   "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dwbf0ca0e9/images/MWX0010OL71/MWX0010OL71_01front.jpg?sw=1500&q=70&strip=false",
+   "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dw534fb119/images/MWX0010OL71/MWX0010OL71_03getthelook.jpg?sw=1500&q=70&strip=false",
+   "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dw2fcf273f/images/MWX0010OL71/MWX0010OL71_04back.jpg?sw=1500&q=70&strip=false",
+   "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dwc11426c2/images/MWX0010OL71/MWX0010OL71_05detaila.jpg?sw=1500&q=70&strip=false",
+   "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dw2249802e/images/MWX0010OL71/MWX0010OL71_05detailb.jpg?sw=1500&q=70&strip=false",
+   "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dwa49d7b14/images/MWX0010OL71/MWX0010OL71_05detailc.jpg?sw=1500&q=70&strip=false",
+   "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dw3bdda881/images/MWX0010OL71/MWX0010OL71_05detaild.jpg?sw=1500&q=70&strip=false"
+  ],
+  "text": "At the very heart of the Classic collection and a firm favourite year after year, the Classic Bedale is made using Barbour's 6oz Sylkoil. Originally introduced for riding, this relaxed-fit jacket is now a seasonal staple in town and country alike."
+ }
+}

@@ -1,0 +1,35 @@
+{
+ "key": "small-25-graza-sizzle-olive-oil",
+ "model": "gpt-5.6-sol",
+ "answer": {
+  "product": "Graza \u201cSizzle\u201d Extra Virgin Olive Oil, 750 mL",
+  "gallery_images": [
+   7,
+   8,
+   9,
+   10,
+   11,
+   12,
+   13,
+   14,
+   15,
+   16,
+   17,
+   18
+  ],
+  "more_images": [
+   68
+  ],
+  "product_sections": [
+   13,
+   16,
+   18,
+   25
+  ],
+  "notes": "Gallery IDs include the main product photos and their thumbnail/duplicate instances. Excluded the separate Sizzle Spray, Duo imagery, recipes without a visible bottle, reviews, and other products."
+ },
+ "tiles": 10,
+ "in": 30220,
+ "out": 1922,
+ "seconds": 21
+}

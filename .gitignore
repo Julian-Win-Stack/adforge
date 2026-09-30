@@ -28,6 +28,9 @@ docs/offloading-research.md
 # contact sheets they were made from stay on this machine
 docs/scraping-test/outputs/
 docs/scraping-test/job-a/*/
+docs/scraping-test/screen-test/sheets/
+docs/scraping-test/screen-test/tops/
+docs/scraping-test/screen-test/outputs/pages/
 docs/scraping-test/job-b/outputs/
 docs/scraping-test/job-b/label-checks/
 docs/scraping-test/job-b/labels100.json

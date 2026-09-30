@@ -1,0 +1,3371 @@
+[
+ {
+  "key": "amazon-06-fire-tv-stick-4k-plus",
+  "counts": {
+   "tested": 10,
+   "shop": 10,
+   "screen": 8
+  },
+  "all": {
+   "tested": 21,
+   "shop": 12,
+   "screen": 8
+  },
+  "shop_source": "amazon",
+  "fallback": "shop",
+  "pictures": [
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/96ee021c1194.jpg",
+    "hash": 114184130336603485410560869301563102550896149680205426035433130056643256477695,
+    "url": "https://m.media-amazon.com/images/I/61NhJ+Z+TYL._AC_UC154,154_CACC,154,154_QL85_.jpg?aicid=community-reviews",
+    "by": [
+     [
+      "tested",
+      1
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/ff4e79d00287.jpg",
+    "hash": 89728930053599481152027852266861281840530956146513607510072558488796912970899,
+    "url": "https://m.media-amazon.com/images/I/819cMLMuz1L._AC_UC154,154_CACC,154,154_QL85_.jpg?aicid=community-reviews",
+    "by": [
+     [
+      "tested",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/5c733445c6b5.jpg",
+    "hash": 10434601227361607470240718694807834115197158680500660482975490440283530077785,
+    "url": "https://m.media-amazon.com/images/G/01/kindle/journeys/vkZfUFE1uYfNNlPTlFIwGgDgT92BDAEECenZOuaBgrao3D/NTEyNWI1OGIt._CB798790785_.png",
+    "by": [
+     [
+      "tested",
+      3
+     ],
+     [
+      "screen",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/348f1c098dbf.jpg",
+    "hash": 14463032034502180731115575260168165748005445686609082971062272,
+    "url": "https://m.media-amazon.com/images/G/01/kindle/journeys/vkZfUFE1uYfNNlPTlFIwGgDgT92BDAEECenZOuaBgrao3D/YmMxODU4OGEt._CB578168325_.jpg",
+    "by": [
+     [
+      "tested",
+      4
+     ],
+     [
+      "screen",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/7744a54294d5.jpg",
+    "hash": 112542813944177586800749125743310456899672584765487112233360222213502850888608,
+    "url": "https://m.media-amazon.com/images/I/71CFxiD6yaL._AC_UC154,154_CACC,154,154_QL85_.jpg?aicid=community-reviews",
+    "by": [
+     [
+      "tested",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/a5bb323caf76.jpg",
+    "hash": 4167497318506509783669995602916810027349216071954000434829274745049956215810,
+    "url": "https://m.media-amazon.com/images/I/81eGPm8KdTL._AC_UC154,154_CACC,154,154_QL85_.jpg?aicid=community-reviews",
+    "by": [
+     [
+      "tested",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/e73040abc9aa.jpg",
+    "hash": 71886712149127297359354675827445050815659757787969927897589690801395469615619,
+    "url": "https://m.media-amazon.com/images/I/61GJQa8WcwL._AC_UC154,154_CACC,154,154_QL85_.jpg?aicid=community-reviews",
+    "by": [
+     [
+      "tested",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/d6db98ae916a.jpg",
+    "hash": 450556327519920310873400083425747071872109049355995737391964152325136514656,
+    "url": "https://m.media-amazon.com/images/G/01/kindle/journeys/vkZfUFE1uYfNNlPTlFIwGgDgT92BDAEECenZOuaBgrao3D/Njc0YTI0MmUt._CB774832364_.jpg",
+    "by": [
+     [
+      "tested",
+      8
+     ],
+     [
+      "screen",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/c58b42929bcf.jpg",
+    "hash": 109397656967945569589124744358307026184293212547291257115039516343657868611685,
+    "url": "https://m.media-amazon.com/images/I/81+Qy8kUdUL._AC_UC154,154_CACC,154,154_QL85_.jpg?aicid=community-reviews",
+    "by": [
+     [
+      "tested",
+      9
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/b17a0d1e7fb0.jpg",
+    "hash": 25375864807630949589833472690507580779205590375218616141968100734114991834650,
+    "url": "https://m.media-amazon.com/images/I/41E5zZefWLL.jpg",
+    "by": [
+     [
+      "tested",
+      10
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/6a54616eccae.jpg",
+    "hash": 73104201962290704807899803737170980057188233315356839142003866108694914745113,
+    "url": "https://m.media-amazon.com/images/I/61JBEw26D7L.jpg",
+    "by": [
+     [
+      "shop",
+      1
+     ],
+     [
+      "screen",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/f09507d1cbff.jpg",
+    "hash": 4707900008997526889821202909515777357991979174881583431680,
+    "url": "https://m.media-amazon.com/images/I/51WtNy0OxLL.jpg",
+    "by": [
+     [
+      "shop",
+      2
+     ],
+     [
+      "screen",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/e2ab6ec0bf8e.jpg",
+    "hash": 48495004220778762754929152454481743582667561911025312213890169579874764157742,
+    "url": "https://m.media-amazon.com/images/I/816DajgEtzL.jpg",
+    "by": [
+     [
+      "shop",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/e5cc8eda55a8.jpg",
+    "hash": 62705147445597274699172193475289919192838680767764401292234286255985018501370,
+    "url": "https://m.media-amazon.com/images/I/81ukyzJyU6L.jpg",
+    "by": [
+     [
+      "shop",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/580e0e49e3c9.jpg",
+    "hash": 73388762393150285382726744754084419314491096045595284644886919975520364920832,
+    "url": "https://m.media-amazon.com/images/I/51U7drCB6UL.jpg",
+    "by": [
+     [
+      "shop",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/3400c643f223.jpg",
+    "hash": 31549410866348373253564345707684636707456318008089188062418359567622491641857,
+    "url": "https://m.media-amazon.com/images/I/813-c1gaMrL.jpg",
+    "by": [
+     [
+      "shop",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/6f4a3a7cb3fe.jpg",
+    "hash": 33570174114029074373574745076420645605804473352331482664584082674000734529171,
+    "url": "https://m.media-amazon.com/images/I/71WXxW70OxL.jpg",
+    "by": [
+     [
+      "shop",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/97569fbbd891.jpg",
+    "hash": 70844752590746920942643907671097229492803096049719784346280734033626916893490,
+    "url": "https://m.media-amazon.com/images/I/7175Ndc5-9L.jpg",
+    "by": [
+     [
+      "shop",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/4b02a121de0d.jpg",
+    "hash": 69784841915458651082867449536405801868071745266275577103400287639630384201728,
+    "url": "https://m.media-amazon.com/images/I/61aWkiWJObL.jpg",
+    "by": [
+     [
+      "shop",
+      9
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/ee9557523353.jpg",
+    "hash": 68978706726934167135637943790804302669805048601100691164662433950739841679360,
+    "url": "https://m.media-amazon.com/images/I/51zbi2kvSUL.jpg",
+    "by": [
+     [
+      "shop",
+      10
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/2a8473642d02.jpg",
+    "hash": 73104201530957886207976149375565677120032631585748756507844653109228455674649,
+    "url": "https://m.media-amazon.com/images/I/31kUK5Jm2pL.jpg",
+    "by": [
+     [
+      "screen",
+      1
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/fed79ca82c6d.jpg",
+    "hash": 7009189257768877362523020460389971523265014611738971440926710621607138631669,
+    "url": "https://m.media-amazon.com/images/G/01/kindle/journeys/vkZfUFE1uYfNNlPTlFIwGgDgT92BDAEECenZOuaBgrao3D/MWU0OTcxMWQt.jpg",
+    "by": [
+     [
+      "screen",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-06-fire-tv-stick-4k-plus/664e2c7e7d80.jpg",
+    "hash": 3329777698180485397175598500920081174109996864408631277760020480,
+    "url": "https://m.media-amazon.com/images/G/01/kindle/journeys/vkZfUFE1uYfNNlPTlFIwGgDgT92BDAEECenZOuaBgrao3D/NDk5YWQ3OGIt.jpg",
+    "by": [
+     [
+      "screen",
+      6
+     ]
+    ]
+   }
+  ],
+  "errors": []
+ },
+ {
+  "key": "amazon-07-stanley-quencher-40oz",
+  "counts": {
+   "tested": 8,
+   "shop": 3,
+   "screen": 6
+  },
+  "all": {
+   "tested": 8,
+   "shop": 3,
+   "screen": 6
+  },
+  "shop_source": "amazon",
+  "fallback": "shop",
+  "pictures": [
+   {
+    "path": "/tmp/sp/img/amazon-07-stanley-quencher-40oz/d5c818aac28c.jpg",
+    "hash": 1809334220818205111431605610801328153433769725114753258972975494820985314304,
+    "url": "https://images-na.ssl-images-amazon.com/images/I/41zDdUnsEbL._AC_UL165_SR165,165_.jpg",
+    "by": [
+     [
+      "tested",
+      1
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-07-stanley-quencher-40oz/44211b41f778.jpg",
+    "hash": 44115310673087444742443631277007213024130180053808172964783830608904167408008,
+    "url": "https://m.media-amazon.com/images/I/61DzzO0-twL._AC_SR139,139_CB1169409_QL70_.jpg",
+    "by": [
+     [
+      "tested",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-07-stanley-quencher-40oz/d7a4dc6a3a2e.jpg",
+    "hash": 1356959251726036827166363476434556068286780279275949491759531654699718542208,
+    "url": "https://m.media-amazon.com/images/I/21GWGt0wvPL._AC_US100_.jpg",
+    "by": [
+     [
+      "tested",
+      3
+     ],
+     [
+      "shop",
+      2
+     ],
+     [
+      "screen",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-07-stanley-quencher-40oz/6f39e4a4828c.jpg",
+    "hash": 1122521747894227319301936510362258757393062555549696,
+    "url": "https://m.media-amazon.com/images/I/21R02ke8LvL._AC_US100_.jpg",
+    "by": [
+     [
+      "tested",
+      4
+     ],
+     [
+      "shop",
+      3
+     ],
+     [
+      "screen",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-07-stanley-quencher-40oz/4c4644ef4c77.jpg",
+    "hash": 6281235819616043252050083199724642366638663169728993626373896629779112882179,
+    "url": "https://images-na.ssl-images-amazon.com/images/I/511Mqr02yeL._AC_UL165_SR165,165_.jpg",
+    "by": [
+     [
+      "tested",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-07-stanley-quencher-40oz/6b803525ae5f.jpg",
+    "hash": 1809279007689925906343102755497230586680625442014298748368642083224285092864,
+    "url": "https://m.media-amazon.com/images/I/21GH2k1n0SL._AC_.jpg",
+    "by": [
+     [
+      "tested",
+      6
+     ],
+     [
+      "tested",
+      8
+     ],
+     [
+      "shop",
+      1
+     ],
+     [
+      "screen",
+      1
+     ],
+     [
+      "screen",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-07-stanley-quencher-40oz/b480764b7795.jpg",
+    "hash": 68752829824765170478503760259962198452460581665180023226221757295351201593344,
+    "url": "https://images-na.ssl-images-amazon.com/images/I/61ye+-Udc0L._AC_UL165_SR165,165_.jpg",
+    "by": [
+     [
+      "tested",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-07-stanley-quencher-40oz/b88fe200337c.jpg",
+    "hash": 31879819264229069719528052676559039283646474996222235288172191431131349018499,
+    "url": "https://m.media-amazon.com/images/I/71bA1jqkUXL.jpg",
+    "by": [
+     [
+      "screen",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-07-stanley-quencher-40oz/9b8aa2b871e0.jpg",
+    "hash": 72719123822834441308915107768285530123191900787905875820707303545357196123267,
+    "url": "https://m.media-amazon.com/images/I/61u0l+VIpCL.jpg",
+    "by": [
+     [
+      "screen",
+      6
+     ]
+    ]
+   }
+  ],
+  "errors": []
+ },
+ {
+  "key": "amazon-09-greenies-dental-treats",
+  "counts": {
+   "tested": 10,
+   "shop": 10,
+   "screen": 8
+  },
+  "all": {
+   "tested": 21,
+   "shop": 10,
+   "screen": 8
+  },
+  "shop_source": "amazon",
+  "fallback": "shop",
+  "pictures": [
+   {
+    "path": "/tmp/sp/img/amazon-09-greenies-dental-treats/27fe6aaa4118.jpg",
+    "hash": 66094399642712454055486373971432139753210449994715693297400037049670568364034,
+    "url": "https://images-na.ssl-images-amazon.com/images/I/81A3kFFcE4L._AC_UL165_SR165,165_.jpg",
+    "by": [
+     [
+      "tested",
+      1
+     ],
+     [
+      "tested",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-09-greenies-dental-treats/e5c09290ae1e.jpg",
+    "hash": 54306615880138954539452871367056735056941249132989907270938103535871586761112,
+    "url": "https://images-na.ssl-images-amazon.com/images/I/71Rcvz62kpL._AC_UL232_SR232,232_.jpg",
+    "by": [
+     [
+      "tested",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-09-greenies-dental-treats/8489e0259356.jpg",
+    "hash": 2756426578309071982174419446125025022403936838415534555709196421486918296792,
+    "url": "https://m.media-amazon.com/images/S/aplus-media-library-service-media/abe235fb-6fd7-4ef0-aaaf-f337ed257143.__CR0,0,1464,600_PT0_SX1464_V1___.jpg",
+    "by": [
+     [
+      "tested",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-09-greenies-dental-treats/32a32717dda3.jpg",
+    "hash": 39237658097904065648231733395479700078786450671271711372384508640051635040303,
+    "url": "https://m.media-amazon.com/images/S/aplus-media-library-service-media/34583d06-249e-443d-bfc5-d4147e93dabb.__CR0,0,1464,600_PT0_SX1464_V1___.jpg",
+    "by": [
+     [
+      "tested",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-09-greenies-dental-treats/d40e4c6f817b.jpg",
+    "hash": 4521389220797324214691694707521556819019556968794010974068357444322484749311,
+    "url": "https://m.media-amazon.com/images/I/71Y2h8Qw-sL._AC_UC154,154_CACC,154,154_QL85_.jpg?aicid=community-reviews",
+    "by": [
+     [
+      "tested",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-09-greenies-dental-treats/cca0c71ab289.jpg",
+    "hash": 78051630290164007340730028227063717174224488434090689167421184797138657083391,
+    "url": "https://m.media-amazon.com/images/I/81GGO4KLN5L._AC_UC154,154_CACC,154,154_QL85_.jpg?aicid=community-reviews",
+    "by": [
+     [
+      "tested",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-09-greenies-dental-treats/42bc98fef20c.jpg",
+    "hash": 2756398968544482554161797624784842359238650360498272781792639744836154713825,
+    "url": "https://m.media-amazon.com/images/S/aplus-media-library-service-media/f64cbcd8-8359-4b07-9301-fa2f5c66d575.__CR0,0,1464,600_PT0_SX1464_V1___.jpg",
+    "by": [
+     [
+      "tested",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-09-greenies-dental-treats/3b096af2d9b9.jpg",
+    "hash": 82349623846281052867640765895953616590096051895864641064803152898246551388162,
+    "url": "https://images-na.ssl-images-amazon.com/images/I/81bIHtEtB-L._AC_UL165_SR165,165_.jpg",
+    "by": [
+     [
+      "tested",
+      9
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-09-greenies-dental-treats/8b18dcf29340.jpg",
+    "hash": 9509883127543920302552831041958108443205196020654389713510391623922632741714,
+    "url": "https://m.media-amazon.com/images/S/aplus-media-library-service-media/6ac80284-9a18-4b5f-81ec-0eea29d23467.__CR0,0,1464,600_PT0_SX1464_V1___.jpg",
+    "by": [
+     [
+      "tested",
+      10
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-09-greenies-dental-treats/446a513953b0.jpg",
+    "hash": 66094399642712454055486373971432139753210449994715538749139318955273877833730,
+    "url": "https://m.media-amazon.com/images/I/819MWUOFSQL.jpg",
+    "by": [
+     [
+      "shop",
+      1
+     ],
+     [
+      "screen",
+      1
+     ],
+     [
+      "screen",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-09-greenies-dental-treats/21517d7d9d71.jpg",
+    "hash": 9334393865724983286061622478235657065472266021928617687190266425360205219528,
+    "url": "https://m.media-amazon.com/images/I/81KsFtEX84L.jpg",
+    "by": [
+     [
+      "shop",
+      2
+     ],
+     [
+      "screen",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-09-greenies-dental-treats/1f438cf7f181.jpg",
+    "hash": 39058517928115858438279111783205083795779887456339641658271227322093585564900,
+    "url": "https://m.media-amazon.com/images/I/81lh4TodVAL.jpg",
+    "by": [
+     [
+      "shop",
+      3
+     ],
+     [
+      "screen",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-09-greenies-dental-treats/aa35b0d4c62d.jpg",
+    "hash": 67475023177873093767820640808543092009812369006855528022023690973639916943560,
+    "url": "https://m.media-amazon.com/images/I/91fOt4PPidL.jpg",
+    "by": [
+     [
+      "shop",
+      4
+     ],
+     [
+      "screen",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-09-greenies-dental-treats/2f1f947a3be8.jpg",
+    "hash": 20901849916209707736068924194092400740092529504155236270608857939762985826335,
+    "url": "https://m.media-amazon.com/images/I/81X48lTac3L.jpg",
+    "by": [
+     [
+      "shop",
+      5
+     ],
+     [
+      "screen",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-09-greenies-dental-treats/0180949808f8.jpg",
+    "hash": 32428886326506750166588105106043334896478456955950226266488024574236176663118,
+    "url": "https://m.media-amazon.com/images/I/916zcajaYfL.jpg",
+    "by": [
+     [
+      "shop",
+      6
+     ],
+     [
+      "screen",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-09-greenies-dental-treats/b3498b92d88f.jpg",
+    "hash": 72570230936979172066992665822671333154554319741527414131811350427448895104788,
+    "url": "https://m.media-amazon.com/images/I/91E5YY63O6L.jpg",
+    "by": [
+     [
+      "shop",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-09-greenies-dental-treats/fac0fd96de4c.jpg",
+    "hash": 1259758883132735829665095844288141302494893324208546649499182951672429956301,
+    "url": "https://m.media-amazon.com/images/I/81AYKpJmccL.jpg",
+    "by": [
+     [
+      "shop",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-09-greenies-dental-treats/7c8d1d991281.jpg",
+    "hash": 1573724635848561749696791628549122593024373783581376577275658725214388224,
+    "url": "https://m.media-amazon.com/images/I/8140qhPXR6L.jpg",
+    "by": [
+     [
+      "shop",
+      9
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-09-greenies-dental-treats/4a180cdd690b.jpg",
+    "hash": 2588490595617245675023399462849675524853275430326566432271800817680384,
+    "url": "https://m.media-amazon.com/images/I/61mQB48e1oL.jpg",
+    "by": [
+     [
+      "shop",
+      10
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/amazon-09-greenies-dental-treats/c4ff7bd3384c.jpg",
+    "hash": 29000310620189924333867145450540997864379454240468290386603317475936997349489,
+    "url": "https://m.media-amazon.com/images/S/aplus-media-library-service-media/fa42d2dd-0863-4a2e-9f7a-ce773dbd7405.jpg",
+    "by": [
+     [
+      "screen",
+      8
+     ]
+    ]
+   }
+  ],
+  "errors": []
+ },
+ {
+  "key": "other-03-nalgene-32oz-wide-mouth",
+  "counts": {
+   "tested": 9,
+   "shop": 10,
+   "screen": 6
+  },
+  "all": {
+   "tested": 9,
+   "shop": 30,
+   "screen": 6
+  },
+  "shop_source": "json_ld",
+  "fallback": "shop",
+  "pictures": [
+   {
+    "path": "/tmp/sp/img/other-03-nalgene-32oz-wide-mouth/a503d20e912a.jpg",
+    "hash": 48745168240518765975835405049419411953867522723596008429624037075846016,
+    "url": "https://nalgene.com/wp-content/uploads/2024/01/32oz-WM-Periwinkle-Front-1.jpg",
+    "by": [
+     [
+      "tested",
+      1
+     ],
+     [
+      "tested",
+      7
+     ],
+     [
+      "shop",
+      1
+     ],
+     [
+      "screen",
+      1
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-03-nalgene-32oz-wide-mouth/81614aa9dfd6.jpg",
+    "hash": 117341377685159014426435952363306169595743983975326784599985221105877888,
+    "url": "https://nalgene.com/wp-content/uploads/2020/08/32oz-WM-Perwinkle_Back.jpg",
+    "by": [
+     [
+      "tested",
+      2
+     ],
+     [
+      "screen",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-03-nalgene-32oz-wide-mouth/acfe839f962e.jpg",
+    "hash": 102416879592776326320348991560951182809399582323238427170940175924637079178376,
+    "url": "https://nalgene.com/wp-content/uploads/2020/08/Periwinkle-With-Color-505x757.jpg",
+    "by": [
+     [
+      "tested",
+      3
+     ],
+     [
+      "tested",
+      6
+     ],
+     [
+      "screen",
+      4
+     ],
+     [
+      "screen",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-03-nalgene-32oz-wide-mouth/a484243b1d73.jpg",
+    "hash": 683299164102970229393944332244090757043817227951857294151573178109931760,
+    "url": "https://nalgene.com/wp-content/uploads/2024/01/32oz-WM-Periwinkle-Top-505x339.jpg",
+    "by": [
+     [
+      "tested",
+      4
+     ],
+     [
+      "tested",
+      9
+     ],
+     [
+      "screen",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-03-nalgene-32oz-wide-mouth/6f110d65f499.jpg",
+    "hash": 103958823078771742690125646224700725086475186886823806958324868129490816,
+    "url": "https://nalgene.com/wp-content/uploads/2024/01/32oz-WM-Periwinkle-Front_V2-505x757.jpg",
+    "by": [
+     [
+      "tested",
+      5
+     ],
+     [
+      "screen",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-03-nalgene-32oz-wide-mouth/b3cf1d6b165f.jpg",
+    "hash": 445349366992578253931331086136828906521281567306256854719846365238223831288,
+    "url": "https://nalgene.com/wp-content/themes/nalgene-twentytwenty/assets/images/carts-empty-graphic.png",
+    "by": [
+     [
+      "tested",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-03-nalgene-32oz-wide-mouth/d9483a89643f.jpg",
+    "hash": 10514544996994785662895228880520558715814313768553113844431463118536816,
+    "url": "https://nalgene.com/wp-content/uploads/2024/08/32oz-WM-Odyssey-Gray-Front.png",
+    "by": [
+     [
+      "shop",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-03-nalgene-32oz-wide-mouth/2a0eabbca785.jpg",
+    "hash": 14453695764329185040390149346906410408538509005661156272737872890564480,
+    "url": "https://nalgene.com/wp-content/uploads/2024/01/32oz-WM-Cornflower-Front_V2.jpg",
+    "by": [
+     [
+      "shop",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-03-nalgene-32oz-wide-mouth/38f72489e007.jpg",
+    "hash": 104174502651305478795356548171744814441382459628896880223362751097996032,
+    "url": "https://nalgene.com/wp-content/uploads/2024/01/32oz-WM-Pastel-Green-Front_V2.jpg",
+    "by": [
+     [
+      "shop",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-03-nalgene-32oz-wide-mouth/df20b3e77f82.jpg",
+    "hash": 48744849812488156803214121838652649215242702430128393602914889207119872,
+    "url": "https://nalgene.com/wp-content/uploads/2024/01/32oz-WM-Laker-Front_V2.jpg",
+    "by": [
+     [
+      "shop",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-03-nalgene-32oz-wide-mouth/a2a4ea629337.jpg",
+    "hash": 48960531877785320238783425576365807035115702339087931266843013424349696,
+    "url": "https://nalgene.com/wp-content/uploads/2024/01/32oz-WM-Marmalade-Front_V2.jpg",
+    "by": [
+     [
+      "shop",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-03-nalgene-32oz-wide-mouth/8fea18225275.jpg",
+    "hash": 14237594941825290367582309784268136585338418921720040173575014830837632,
+    "url": "https://nalgene.com/wp-content/uploads/2024/01/32oz-WM-Indigo-Front_V2-e1773256561983.jpg",
+    "by": [
+     [
+      "shop",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-03-nalgene-32oz-wide-mouth/f046529abfc2.jpg",
+    "hash": 21355547423411414319669783481968156259073431629915499009522478631358336,
+    "url": "https://nalgene.com/wp-content/uploads/2024/01/32oz-WM-Baby-Blue-Front_V2.jpg",
+    "by": [
+     [
+      "shop",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-03-nalgene-32oz-wide-mouth/1a923e9ec00c.jpg",
+    "hash": 335707084686727163791935659574756098467942946523053859380935000064,
+    "url": "https://nalgene.com/wp-content/uploads/2023/09/32oz-WM-Denim-front.jpg",
+    "by": [
+     [
+      "shop",
+      9
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-03-nalgene-32oz-wide-mouth/3a964ae9be93.jpg",
+    "hash": 107941402770654290140694395091223855825868146240404498062414025851128,
+    "url": "https://nalgene.com/wp-content/uploads/2023/01/32oz-WM-Jade-Front-1.png",
+    "by": [
+     [
+      "shop",
+      10
+     ]
+    ]
+   }
+  ],
+  "errors": []
+ },
+ {
+  "key": "other-15-beyerdynamic-dt-770-pro-x",
+  "counts": {
+   "tested": 10,
+   "shop": 6,
+   "screen": 5
+  },
+  "all": {
+   "tested": 14,
+   "shop": 6,
+   "screen": 5
+  },
+  "shop_source": "json_ld",
+  "fallback": "shop",
+  "pictures": [
+   {
+    "path": "/tmp/sp/img/other-15-beyerdynamic-dt-770-pro-x/26eb6718493f.jpg",
+    "hash": 1725456333706487344903789340737713433588193823378599919300058388902272,
+    "url": "https://api.beyerdynamic.de/media/catalog/product/d/t/dt-770-pro-x-handmade-in-germany-perspective_transparent_1.png?store=usa_en&image-type=image",
+    "by": [
+     [
+      "tested",
+      1
+     ],
+     [
+      "shop",
+      2
+     ],
+     [
+      "screen",
+      1
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-15-beyerdynamic-dt-770-pro-x/99a06443c40d.jpg",
+    "hash": 40196369268643334169256480132259854869820478207770409068096088922328987748,
+    "url": "https://dfnqgzctqh74q.cloudfront.net/files/67f777b716e5f000086a3daa/Thumbnail-Featurevideo-DT-770-PRO-X-EN.jpg",
+    "by": [
+     [
+      "tested",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-15-beyerdynamic-dt-770-pro-x/aa7e424bb2fb.jpg",
+    "hash": 441731986463159004855738517186314393508069821290068680141603325553678336,
+    "url": "https://dfnqgzctqh74q.cloudfront.net/files/68419ad34015680008ee2661/beyerdynamic-DT770Pro-X-pro-zubehoer-XL-EN.jpg",
+    "by": [
+     [
+      "tested",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-15-beyerdynamic-dt-770-pro-x/2fae89615b65.jpg",
+    "hash": 49048020958943453182366477762124259874556646294428814470023310380834716850207,
+    "url": "https://dfnqgzctqh74q.cloudfront.net/files/67efb180fb14ee000853ed8c/DT-770-PRO-X-Made-in-Germany-Desktop-1.jpg",
+    "by": [
+     [
+      "tested",
+      4
+     ],
+     [
+      "screen",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-15-beyerdynamic-dt-770-pro-x/322f830ce6cf.jpg",
+    "hash": 41411162621084485015973734318549675417081960840920305309650679396041472,
+    "url": "https://api.beyerdynamic.de/media/catalog/product/d/t/dt-770-pro-x-beyerdynamic-front.png?store=usa_en&image-type=image",
+    "by": [
+     [
+      "tested",
+      5
+     ],
+     [
+      "shop",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-15-beyerdynamic-dt-770-pro-x/eec568bce6bb.jpg",
+    "hash": 2761603409215162540688698872424472934028961411001117622266504582708816835196,
+    "url": "https://dfnqgzctqh74q.cloudfront.net/files/67efb082fb14ee000853ed89/DT-770-PRO-X-Made-in-Germany-Desktop-2.jpg",
+    "by": [
+     [
+      "tested",
+      6
+     ],
+     [
+      "screen",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-15-beyerdynamic-dt-770-pro-x/31a77528d357.jpg",
+    "hash": 337476389621575922884303990545742752070811244887142358236475832766448993663,
+    "url": "https://dfnqgzctqh74q.cloudfront.net/files/67fe12feae748400081627bd/WEB8631-DT770PROX-Hotspot-1920x900px.jpg",
+    "by": [
+     [
+      "tested",
+      7
+     ],
+     [
+      "screen",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-15-beyerdynamic-dt-770-pro-x/0a3846394580.jpg",
+    "hash": 108641550381133090092913912017454462919007820081902397961689372261956440237134,
+    "url": "https://dfnqgzctqh74q.cloudfront.net/files/67ffd4b626f37c0008612b93/Banner-DT-770-PRO-X-XL.jpg",
+    "by": [
+     [
+      "tested",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-15-beyerdynamic-dt-770-pro-x/dbfd1a9ba890.jpg",
+    "hash": 31478820667958039725723718450476284105584004786272234031321328439243189418095,
+    "url": "https://dfnqgzctqh74q.cloudfront.net/files/67f4df459b0d1f000885c3cc/DT-770-pro-x-cable-beyerdynamic.jpg",
+    "by": [
+     [
+      "tested",
+      9
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-15-beyerdynamic-dt-770-pro-x/37d493012ec1.jpg",
+    "hash": 6353684226177763448482770321431696462212492643091594739433583540206769718950,
+    "url": "https://dfnqgzctqh74q.cloudfront.net/files/680f6184766f3d00081d58b6/Landingpage-DT770ProX-Collage-xl-l.jpg",
+    "by": [
+     [
+      "tested",
+      10
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-15-beyerdynamic-dt-770-pro-x/085aa88d3fa4.jpg",
+    "hash": 6902483556233605383420217827444617598692906211153909592885578388473344,
+    "url": "https://api.beyerdynamic.de/media/catalog/product/d/t/dt-770-pro-x-beyerdynamic-perspective.png?store=usa_en&amp;image-type=image",
+    "by": [
+     [
+      "shop",
+      1
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-15-beyerdynamic-dt-770-pro-x/d301f5538ffe.jpg",
+    "hash": 766969898160118177632011165024193986787982681469623718745836445132415424,
+    "url": "https://api.beyerdynamic.de/media/catalog/product/d/t/dt-770-pro-x-studio-kopfhoerer-people-beyerdynamic_1.png?store=usa_en&amp;image-type=image",
+    "by": [
+     [
+      "shop",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-15-beyerdynamic-dt-770-pro-x/0e069f50d3ca.jpg",
+    "hash": 20706766108574650866462562792441515371162012897363239875654623538712624,
+    "url": "https://api.beyerdynamic.de/media/catalog/product/d/t/dt-770-pro-x-beyerdynamic-side.png?store=usa_en&amp;image-type=image",
+    "by": [
+     [
+      "shop",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-15-beyerdynamic-dt-770-pro-x/06fa9cedbc6b.jpg",
+    "hash": 20180654568053924716169660216390137208470737717821440,
+    "url": "https://api.beyerdynamic.de/media/catalog/product/d/t/dt-770-pro-x_award_delamar.png?store=usa_en&amp;image-type=image",
+    "by": [
+     [
+      "shop",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-15-beyerdynamic-dt-770-pro-x/3056b63a6939.jpg",
+    "hash": 3618677144091182356099878295992070935165244788741783786399887705390947815168,
+    "url": "https://dfnqgzctqh74q.cloudfront.net/files/67efafc31c2d4d000819ec90/DT-770-PRO-X-Made-in-Germany-Desktop-3.jpg",
+    "by": [
+     [
+      "screen",
+      5
+     ]
+    ]
+   }
+  ],
+  "errors": []
+ },
+ {
+  "key": "other-19-paulaschoice-2pct-bha",
+  "counts": {
+   "tested": 10,
+   "shop": 1,
+   "screen": 10
+  },
+  "all": {
+   "tested": 16,
+   "shop": 1,
+   "screen": 19
+  },
+  "shop_source": "json_ld",
+  "fallback": "screen",
+  "pictures": [
+   {
+    "path": "/tmp/sp/img/other-19-paulaschoice-2pct-bha/a170dcc118d8.jpg",
+    "hash": 231459850426110666439204814894104547735576547039558623195119530227060965504,
+    "url": "https://www.paulaschoice.com/dw/image/v2/BBNX_PRD/on/demandware.static/-/Sites-pc-catalog/default/dw006e394e/images/products/2-percent-bha-liquid-exfoliant-2010-portrait.png?sw=1000&sfrm=png",
+    "by": [
+     [
+      "tested",
+      1
+     ],
+     [
+      "shop",
+      1
+     ],
+     [
+      "screen",
+      1
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-19-paulaschoice-2pct-bha/3497857de77c.jpg",
+    "hash": 95976595965864637706052389729396205080308734433600396286350422036879437398130,
+    "url": "https://www.paulaschoice.com/dw/image/v2/BBNX_PRD/on/demandware.static/-/Sites-pc-catalog/default/dw4506282a/images/products/2010_l_AHA-vs-BHA.png?sw=1000&sfrm=jpg",
+    "by": [
+     [
+      "tested",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-19-paulaschoice-2pct-bha/a9ad87883ec0.jpg",
+    "hash": 1388762983809937570796375296417799480116579729471677603609892782463208915468,
+    "url": "https://image-transform.poweredbyhue.app/assets/skin-twin-assets/1787294260153-yd6cfbs3.jpg?tr=f-webp,q-90,h-600,w-400",
+    "by": [
+     [
+      "tested",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-19-paulaschoice-2pct-bha/80602f0be54d.jpg",
+    "hash": 20835786008204858772099543149143871497697025299452539782626737883675684298752,
+    "url": "https://www.paulaschoice.com/on/demandware.static/-/Library-Sites-paulachoice/default/dwd171773e/images/pdp/how-to-use-image/how-to-use.gif",
+    "by": [
+     [
+      "tested",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-19-paulaschoice-2pct-bha/b2210167ed39.jpg",
+    "hash": 638502165654111956884578224344323171561129565833331606312129925394,
+    "url": "https://www.paulaschoice.com/dw/image/v2/BBNX_PRD/on/demandware.static/-/Sites-pc-catalog/default/dw6a4eecf9/images/products/2010_h_BHA-Franchise.png?sw=1000&sfrm=jpg",
+    "by": [
+     [
+      "tested",
+      5
+     ],
+     [
+      "screen",
+      10
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-19-paulaschoice-2pct-bha/ac53bc647492.jpg",
+    "hash": 69309113108107169743485427875270869428689270774468523916614814430745936029441,
+    "url": "https://image-transform.poweredbyhue.app/assets/skin-twin-assets/1787296012869-4qcmnp5b.jpg?tr=f-webp,q-90,h-600,w-400",
+    "by": [
+     [
+      "tested",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-19-paulaschoice-2pct-bha/688524a8f7f2.jpg",
+    "hash": 87750114385639588685283755915412817109183819739327491878551752668606835556352,
+    "url": "https://www.paulaschoice.com/dw/image/v2/BBNX_PRD/on/demandware.static/-/Sites-pc-catalog/default/dwa822d0d1/images/products/2010_f_How-To-Use.png?sw=1000&sfrm=jpg",
+    "by": [
+     [
+      "tested",
+      7
+     ],
+     [
+      "screen",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-19-paulaschoice-2pct-bha/d517a897b0a3.jpg",
+    "hash": 107913577146343193674516446392792784864301139593066871764694051040081392435200,
+    "url": "https://www.paulaschoice.com/dw/image/v2/BBNX_PRD/on/demandware.static/-/Sites-pc-catalog/default/dw0ff193f1/images/products/2010_m_Product-Pairing.png?sw=1000&sfrm=jpg",
+    "by": [
+     [
+      "tested",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-19-paulaschoice-2pct-bha/8227afce675d.jpg",
+    "hash": 23266273529053247487638701384492167261867342183888108014675228083292567291192,
+    "url": "https://www.paulaschoice.com/dw/image/v2/BBNX_PRD/on/demandware.static/-/Sites-pc-catalog/default/dwd6137661/images/products/2010_j_Moisturizer%20Chart.png?sw=1000&sfrm=jpg",
+    "by": [
+     [
+      "tested",
+      9
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-19-paulaschoice-2pct-bha/871fc72e2562.jpg",
+    "hash": 9002248822394202260951172439259793512090077483884075936934760796098383053112,
+    "url": "https://www.paulaschoice.com/dw/image/v2/BBNX_PRD/on/demandware.static/-/Sites-pc-catalog/default/dw2c5a407b/images/products/2010_e_Ingredients.png?sw=1000&sfrm=jpg",
+    "by": [
+     [
+      "tested",
+      10
+     ],
+     [
+      "screen",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-19-paulaschoice-2pct-bha/b24c8c1e64dc.jpg",
+    "hash": 43960876541033000292872524864154884023138044834666377792912233653786793769769,
+    "url": "https://www.paulaschoice.com/dw/image/v2/BBNX_PRD/on/demandware.static/-/Sites-pc-catalog/default/dwc81fb310/images/products/2010_b_B&A-01.png?sw=1000&sfrm=jpg",
+    "by": [
+     [
+      "screen",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-19-paulaschoice-2pct-bha/e0611f75b19c.jpg",
+    "hash": 12099559381318304187091853589717118167958135628245915854876949964456744479520,
+    "url": "https://www.paulaschoice.com/dw/image/v2/BBNX_PRD/on/demandware.static/-/Sites-pc-catalog/default/dw96e9f0af/images/products/2010_b_B&A-02_updated.png?sw=1000&sfrm=jpg",
+    "by": [
+     [
+      "screen",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-19-paulaschoice-2pct-bha/d461925386a3.jpg",
+    "hash": 96238198135243297802079046656383582571505553472209468269033520551957752998752,
+    "url": "https://www.paulaschoice.com/dw/image/v2/BBNX_PRD/on/demandware.static/-/Sites-pc-catalog/default/dw45c86ea5/images/products/2010_b_B&A-03.png?sw=1000&sfrm=jpg",
+    "by": [
+     [
+      "screen",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-19-paulaschoice-2pct-bha/50fc4bbe4f02.jpg",
+    "hash": 55974541507230763679135130365461338449251105380905516600861315054742401051384,
+    "url": "https://www.paulaschoice.com/dw/image/v2/BBNX_PRD/on/demandware.static/-/Sites-pc-catalog/default/dw7e62d796/images/products/2010_c_Clinical-Claims.png?sw=1000&sfrm=jpg",
+    "by": [
+     [
+      "screen",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-19-paulaschoice-2pct-bha/7d04f06b823a.jpg",
+    "hash": 17242718637957431995781585403974845391698524033922888881652425962723360541388,
+    "url": "https://www.paulaschoice.com/dw/image/v2/BBNX_PRD/on/demandware.static/-/Sites-pc-catalog/default/dw6b202a35/images/products/2010_d_Skin-Concerns.png?sw=1000&sfrm=jpg",
+    "by": [
+     [
+      "screen",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-19-paulaschoice-2pct-bha/8427cb720c6a.jpg",
+    "hash": 38883684697534094981593011202751036522668353407988037337234535998046666528,
+    "url": "https://www.paulaschoice.com/dw/image/v2/BBNX_PRD/on/demandware.static/-/Sites-pc-catalog/default/dw053a00fb/images/products/2010_g_Texture.png?sw=1000&sfrm=jpg",
+    "by": [
+     [
+      "screen",
+      9
+     ]
+    ]
+   }
+  ],
+  "errors": []
+ },
+ {
+  "key": "other-20-barbour-classic-bedale",
+  "counts": {
+   "tested": 10,
+   "shop": 7,
+   "screen": 8
+  },
+  "all": {
+   "tested": 89,
+   "shop": 7,
+   "screen": 8
+  },
+  "shop_source": "json_ld",
+  "fallback": "shop",
+  "pictures": [
+   {
+    "path": "/tmp/sp/img/other-20-barbour-classic-bedale/fc4a14e601b1.jpg",
+    "hash": 1397597246041493429932827480819270635380876754071743643957467823716656552071,
+    "url": "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dwbf0ca0e9/images/MWX0010OL71/MWX0010OL71_01front.jpg?q=70&sh=1875&strip=false&sw=1500",
+    "by": [
+     [
+      "tested",
+      1
+     ],
+     [
+      "shop",
+      1
+     ],
+     [
+      "screen",
+      1
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-20-barbour-classic-bedale/12010d3d3d52.jpg",
+    "hash": 3180425008947091532151505327380037941609309751866099831823457789570672430283,
+    "url": "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dw777a8fb6/images/MWX0018BK91/MWX0018BK91_05detaila.jpg?q=70&sh=1239&strip=false&sw=991",
+    "by": [
+     [
+      "tested",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-20-barbour-classic-bedale/a3b3821cdebd.jpg",
+    "hash": 1385229235700386978311114730888129115282287716618569224856606232726095273088,
+    "url": "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dw398b7b32/images/MWX0018NY91/MWX0018NY91_01front.jpg?q=70&sh=1239&strip=false&sw=991",
+    "by": [
+     [
+      "tested",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-20-barbour-classic-bedale/f0db069496b8.jpg",
+    "hash": 71889586510818923998595875603491206235685743991122945370340260720676710954532,
+    "url": "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dw506c7105/images/MWX0018BK91/MWX0018BK91_05detaild.jpg?q=70&sh=1239&strip=false&sw=991",
+    "by": [
+     [
+      "tested",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-20-barbour-classic-bedale/e4014b336a1e.jpg",
+    "hash": 1413499220523831741521418459937145028277802665841505294407694226927679178432,
+    "url": "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dw3378753b/images/MWX0018NY91/MWX0018NY91_03getthelook.jpg?q=70&sh=1239&strip=false&sw=991",
+    "by": [
+     [
+      "tested",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-20-barbour-classic-bedale/62557c4014da.jpg",
+    "hash": 3222770888730197826368341116689554140050271459042645014713167805709084302532,
+    "url": "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dw1f37cbac/images/MWX0018RU52/MWX0018RU52_04back.jpg?q=70&sh=1239&strip=false&sw=991",
+    "by": [
+     [
+      "tested",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-20-barbour-classic-bedale/c15113d8f7b4.jpg",
+    "hash": 6374977571592884723713958739132316424751733742193104244496009959890359431696,
+    "url": "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dwb526280c/images/MWX0018SG91/MWX0018SG91_05detaila.jpg?q=70&sh=1239&strip=false&sw=991",
+    "by": [
+     [
+      "tested",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-20-barbour-classic-bedale/5a91115c6352.jpg",
+    "hash": 8028730782506641220067610489606331731721821942855582048099794790828526841985,
+    "url": "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dw9d0ee5d1/images/MWX0018NY91/MWX0018NY91_05detailc.jpg?q=70&sh=1239&strip=false&sw=991",
+    "by": [
+     [
+      "tested",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-20-barbour-classic-bedale/1231d8c621a3.jpg",
+    "hash": 3399511296677252238532172306107702974941238848184079441573562368259743960582,
+    "url": "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dw7a3eb64c/images/MWX0018RU52/MWX0018RU52_05detaila.jpg?q=70&sh=1239&strip=false&sw=991",
+    "by": [
+     [
+      "tested",
+      9
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-20-barbour-classic-bedale/9c2b158bb302.jpg",
+    "hash": 9910405895259142435633668243765673146785064981425353884574777744975999834120,
+    "url": "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dw5f94c119/images/MWX0018RU52/MWX0018RU52_05detailb.jpg?q=70&sh=1239&strip=false&sw=991",
+    "by": [
+     [
+      "tested",
+      10
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-20-barbour-classic-bedale/c46a84be85d7.jpg",
+    "hash": 683780247891534884379198736768588019083104418761963318991469746701758170307,
+    "url": "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dw534fb119/images/MWX0010OL71/MWX0010OL71_03getthelook.jpg?sw=1500&q=70&strip=false",
+    "by": [
+     [
+      "shop",
+      2
+     ],
+     [
+      "screen",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-20-barbour-classic-bedale/1ef655547e4f.jpg",
+    "hash": 3185667181256683751107195502705734280438565997853516677129977188275762437863,
+    "url": "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dw2fcf273f/images/MWX0010OL71/MWX0010OL71_04back.jpg?sw=1500&q=70&strip=false",
+    "by": [
+     [
+      "shop",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-20-barbour-classic-bedale/8464dab0cb96.jpg",
+    "hash": 401086820458775870107195823917432217746506606335669189590196386423032996015,
+    "url": "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dwc11426c2/images/MWX0010OL71/MWX0010OL71_05detaila.jpg?sw=1500&q=70&strip=false",
+    "by": [
+     [
+      "shop",
+      4
+     ],
+     [
+      "screen",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-20-barbour-classic-bedale/cc71171091f8.jpg",
+    "hash": 3284610185427213968149444250085434756661022621590620073071152564449283178804,
+    "url": "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dw2249802e/images/MWX0010OL71/MWX0010OL71_05detailb.jpg?sw=1500&q=70&strip=false",
+    "by": [
+     [
+      "shop",
+      5
+     ],
+     [
+      "screen",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-20-barbour-classic-bedale/1110ca31a331.jpg",
+    "hash": 51655433400648448483654496355125700054622864136238440962816902486039574890482,
+    "url": "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dwa49d7b14/images/MWX0010OL71/MWX0010OL71_05detailc.jpg?sw=1500&q=70&strip=false",
+    "by": [
+     [
+      "shop",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-20-barbour-classic-bedale/b61fdd5d99ce.jpg",
+    "hash": 31104588681930840441538768680546179008585206265761923595489924354269717806081,
+    "url": "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dw3bdda881/images/MWX0010OL71/MWX0010OL71_05detaild.jpg?sw=1500&q=70&strip=false",
+    "by": [
+     [
+      "shop",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-20-barbour-classic-bedale/bc9e557088b7.jpg",
+    "hash": 3178599792997570069415725926065618107806186402920556631530580671207068344039,
+    "url": "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dw2fcf273f/images/MWX0010OL71/MWX0010OL71_04back.jpg?q=70&sh=1875&strip=false&sw=1500",
+    "by": [
+     [
+      "screen",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-20-barbour-classic-bedale/4146af34deb9.jpg",
+    "hash": 109547833034569804378242332257103312552701019991078081598862877615174576916466,
+    "url": "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dwa49d7b14/images/MWX0010OL71/MWX0010OL71_05detailc.jpg?q=70&sh=1875&strip=false&sw=1500",
+    "by": [
+     [
+      "screen",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-20-barbour-classic-bedale/751005793038.jpg",
+    "hash": 31104588682141465024900399988755448289785584885190141550259029874986686430209,
+    "url": "https://www.barbour.com/dw/image/v2/blcl_prd/on/demandware.static/-/Sites-master-catalog/default/dw3bdda881/images/MWX0010OL71/MWX0010OL71_05detaild.jpg?q=70&sh=1875&strip=false&sw=1500",
+    "by": [
+     [
+      "screen",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/other-20-barbour-classic-bedale/2f0853a9f4a4.jpg",
+    "hash": 3166293479679220857453817131119809486022651791475451236525319936729193396672,
+    "url": "https://www.barbour.com/on/demandware.static/-/Sites-master-catalog/default/dwbc8ca4ea/images/MWX0010OL71/MWX0010OL71_02flat.jpg",
+    "by": [
+     [
+      "screen",
+      8
+     ]
+    ]
+   }
+  ],
+  "errors": []
+ },
+ {
+  "key": "small-00-mackweldon-crew",
+  "counts": {
+   "tested": 0,
+   "shop": 10,
+   "screen": 8
+  },
+  "all": {
+   "tested": 0,
+   "shop": 10,
+   "screen": 8
+  },
+  "shop_source": "shopify",
+  "fallback": "shop",
+  "pictures": [
+   {
+    "path": "/tmp/sp/img/small-00-mackweldon-crew/d252835e8d15.jpg",
+    "hash": 99984684383608263859487218026466634772258208392403201824915456,
+    "url": "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/Vintage-French-Terry-Crew-Neck-Sweatshirt_Night-Sky_M01K43-NSK.png?v=1786551091",
+    "by": [
+     [
+      "shop",
+      1
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-00-mackweldon-crew/ce0482388de9.jpg",
+    "hash": 210726174774109765576788984268512237679061623913419591209078226944,
+    "url": "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/Vintage-French-Terry-Crew-Neck-Sweatshirt_Eventide_M01K43-ETD.png?v=1786551090",
+    "by": [
+     [
+      "shop",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-00-mackweldon-crew/c4780239c489.jpg",
+    "hash": 101591440061903403507203345595814184449090802276551293638017024,
+    "url": "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/Vintage-French-Terry-Crew-Neck-Sweatshirt_Grey-Heather_M01K43-GH.png?v=1786551089",
+    "by": [
+     [
+      "shop",
+      3
+     ],
+     [
+      "screen",
+      1
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-00-mackweldon-crew/f6f4107c3571.jpg",
+    "hash": 50169667843873369638183304416715326387166550365553451656544256,
+    "url": "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/Vintage-French-Terry-Crew-Neck-Sweatshirt_Charcoal-Heather_M01K43-CHH.png?v=1786551091",
+    "by": [
+     [
+      "shop",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-00-mackweldon-crew/06faa4a568c5.jpg",
+    "hash": 1413499220365862551121918356480069344524728340223451581927565535957245496464,
+    "url": "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/VintageFrenchTerryRaglanLSCrew_2026_Q3_PDP_FULL_1.jpg?v=1786551060",
+    "by": [
+     [
+      "shop",
+      5
+     ],
+     [
+      "screen",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-00-mackweldon-crew/b54ae7e7c2e2.jpg",
+    "hash": 1413529847075881834836125972365739749686083936974924977806224760478160272836,
+    "url": "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/VintageFrenchTerryRaglanLSCrew_2026_Q3_PDP_FRONT_1.jpg?v=1786551060",
+    "by": [
+     [
+      "shop",
+      6
+     ],
+     [
+      "screen",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-00-mackweldon-crew/45e390de6dda.jpg",
+    "hash": 6389022944589433875609782348393055301006612732363727578994022662769694214088,
+    "url": "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/VintageFrenchTerryRaglanLSCrew_2026_Q3_PDP_FRONT-SIDE_1.jpg?v=1786551060",
+    "by": [
+     [
+      "shop",
+      7
+     ],
+     [
+      "screen",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-00-mackweldon-crew/3d7cf3fa5b4d.jpg",
+    "hash": 1611416502648199747348693524086412776311285777572930956591452077257747676914,
+    "url": "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/VintageFrenchTerryRaglanLSCrew_2026_Q3_PDP_BACK_1.jpg?v=1786551060",
+    "by": [
+     [
+      "shop",
+      8
+     ],
+     [
+      "screen",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-00-mackweldon-crew/e0c4e08ad288.jpg",
+    "hash": 28506524530127383164718786386345937600538696067659362501706367227569242266491,
+    "url": "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/VintageFrenchTerryRaglanLSCrew_2026_Q3_PDP_DETAIL-2_1.jpg?v=1786551060",
+    "by": [
+     [
+      "shop",
+      9
+     ],
+     [
+      "screen",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-00-mackweldon-crew/98a1aaba9fe0.jpg",
+    "hash": 62249126904156004165530776141158044845220556367025905057970700904992714456792,
+    "url": "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/VintageFrenchTerryRaglanLSCrew_2026_Q3_PDP_DETAIL-1_1.jpg?v=1786551060",
+    "by": [
+     [
+      "shop",
+      10
+     ],
+     [
+      "screen",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-00-mackweldon-crew/d1d6973da3db.jpg",
+    "hash": 47518102251279161922069197670500804703643592299421763122667591004610541740504,
+    "url": "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/072026_MACKWELDON_VINO_0986_under20mb.jpg?v=1788989404",
+    "by": [
+     [
+      "screen",
+      8
+     ]
+    ]
+   }
+  ],
+  "errors": []
+ },
+ {
+  "key": "small-01-glossier-boy-brow",
+  "counts": {
+   "tested": 10,
+   "shop": 10,
+   "screen": 10
+  },
+  "all": {
+   "tested": 15,
+   "shop": 62,
+   "screen": 11
+  },
+  "shop_source": "shopify",
+  "fallback": "shop",
+  "pictures": [
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/09b66f9315ea.jpg",
+    "hash": 12426424250258835636501088588365305465810722149004856472490536573562527481955,
+    "url": "https://glossier-prod.imgix.net/files/glossier-boy-brow-ugc-3.png?auto=compress,format&cs=srgb&w={width}",
+    "by": [
+     [
+      "tested",
+      1
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/53547d5569ec.jpg",
+    "hash": 58309404011281135133151357898072163811369928265020834459144263445518894025,
+    "url": "https://glossier-prod.imgix.net/files/glossier-boy-brow-dark-brown-carousel-6.png?auto=compress,format&cs=srgb&w={width}",
+    "by": [
+     [
+      "tested",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/1f2761d8db84.jpg",
+    "hash": 77505695986634809264657903620171739935027136197118873213419947452207781171776,
+    "url": "https://glossier-prod.imgix.net/files/glossier-boy-brow-dark-brown-carousel-3.png?auto=compress,format&cs=srgb&w={width}",
+    "by": [
+     [
+      "tested",
+      3
+     ],
+     [
+      "shop",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/caec0f0f06b6.jpg",
+    "hash": 91555878087415338160041782497366949791855673051551107532715686482656225968412,
+    "url": "https://glossier-prod.imgix.net/files/glossier-boy-brow-dark-brown-carousel-5.png?auto=compress,format&cs=srgb&w={width}",
+    "by": [
+     [
+      "tested",
+      4
+     ],
+     [
+      "shop",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/3a5f999b2c50.jpg",
+    "hash": 6902430887131666078799954292822018547434008676540359555915534850064704,
+    "url": "https://glossier-prod.imgix.net/files/glossier-bba-set-carousel-01a.png?auto=compress,format&cs=srgb&w={width}",
+    "by": [
+     [
+      "tested",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/4df74a1f58ab.jpg",
+    "hash": 59249668768814166556402990395074124357724160000634102392318871485513095081486,
+    "url": "https://glossier-prod.imgix.net/files/glossier-boy-brow-dark-brown-carousel-4.png?auto=compress,format&cs=srgb&w={width}",
+    "by": [
+     [
+      "tested",
+      6
+     ],
+     [
+      "screen",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/12acea54058f.jpg",
+    "hash": 26333094980124058412192262627291416215474389160512543062533079040,
+    "url": "https://glossier-prod.imgix.net/files/glossier-boy-brow-dark-brown-carousel-9.png?auto=compress,format&cs=srgb&w={width}",
+    "by": [
+     [
+      "tested",
+      7
+     ],
+     [
+      "screen",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/feed6fb6cd71.jpg",
+    "hash": 86879007336583034180320008074222285380715702051985439843077856300563257517912,
+    "url": "https://glossier-prod.imgix.net/files/glossier-boybrow-review-highlight-mobile.png?auto=compress,format&cs=srgb&w={width}",
+    "by": [
+     [
+      "tested",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/41480d93ad56.jpg",
+    "hash": 58071649721451655730641845383426785337404591790095526412217111811070323919841,
+    "url": "https://glossier-prod.imgix.net/files/glossier-boybrow-review-highlight.png?auto=compress,format&cs=srgb&w={width}",
+    "by": [
+     [
+      "tested",
+      9
+     ],
+     [
+      "screen",
+      9
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/d50f40a0ec28.jpg",
+    "hash": 14671902285594257757802439510641981744042962005358930665492010458908738717680,
+    "url": "https://glossier-prod.imgix.net/files/glossier-boy-brow-b_a-before-module-1.png?auto=compress,format&cs=srgb&w={width}",
+    "by": [
+     [
+      "tested",
+      10
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/f996027e96d8.jpg",
+    "hash": 21202919665720495285172174383884003189837143744898096412640242109257875808,
+    "url": "https://cdn.shopify.com/s/files/1/0627/9164/7477/files/glossier-0917-boy-brow-black-carousel-1.png?v=1789652768",
+    "by": [
+     [
+      "shop",
+      1
+     ],
+     [
+      "shop",
+      10
+     ],
+     [
+      "screen",
+      1
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/28a40b771382.jpg",
+    "hash": 56311600117820949723660272407012594945709703604273199733762011491072143850497,
+    "url": "https://cdn.shopify.com/s/files/1/0627/9164/7477/files/glossier-boy-brow-black-carousel-2.png?v=1787604506",
+    "by": [
+     [
+      "shop",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/b9af122b23b1.jpg",
+    "hash": 46856777309680600585272700702100317569085537342028759045696784587229104295683,
+    "url": "https://cdn.shopify.com/s/files/1/0627/9164/7477/files/glossier-boy-brow-black-carousel-4.png?v=1787604506",
+    "by": [
+     [
+      "shop",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/29afec162131.jpg",
+    "hash": 87190093732712584790584328095769785567081505983422272144691289806590173124803,
+    "url": "https://cdn.shopify.com/s/files/1/0627/9164/7477/files/glossier-boy-brow-black-carousel-6.png?v=1787604506",
+    "by": [
+     [
+      "shop",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/2b32703527a7.jpg",
+    "hash": 15105487121276870571684515768164166565841735975291029378023796992909760250367,
+    "url": "https://cdn.shopify.com/s/files/1/0627/9164/7477/files/glossier-boy-brow-black-carousel-7.png?v=1787604506",
+    "by": [
+     [
+      "shop",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/4c8aeaae045a.jpg",
+    "hash": 367086843254658770154916484802606682292294146716155705731207988872588787971,
+    "url": "https://cdn.shopify.com/s/files/1/0627/9164/7477/files/glossier-boy-brow-black-carousel-8.png?v=1787604506",
+    "by": [
+     [
+      "shop",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/da447550a4ec.jpg",
+    "hash": 1766874025138241887487913093488527241001849886512409292879429189349998593,
+    "url": "https://cdn.shopify.com/s/files/1/0627/9164/7477/files/glossier-boy-brow-black-carousel-9.png?v=1787604506",
+    "by": [
+     [
+      "shop",
+      9
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/b3f614fc6a53.jpg",
+    "hash": 81758059980844692543635391769592333232646340230045509694438303381488347481628,
+    "url": "https://glossier-prod.imgix.net/files/glossier-boy-brow-dark-brown-carousel-2.png?auto=compress,format&cs=srgb&w=100",
+    "by": [
+     [
+      "screen",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/8a6ba45a3405.jpg",
+    "hash": 77505695986634809264657903620171739570584809493672554461710423808500612256320,
+    "url": "https://glossier-prod.imgix.net/files/glossier-boy-brow-dark-brown-carousel-3.png?auto=compress,format&cs=srgb&w=100",
+    "by": [
+     [
+      "screen",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/379620f1bd92.jpg",
+    "hash": 91540197319320508905359642778508340413058525656462989184992555033898881171612,
+    "url": "https://glossier-prod.imgix.net/files/glossier-boy-brow-dark-brown-carousel-5.png?auto=compress,format&cs=srgb&w=100",
+    "by": [
+     [
+      "screen",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/59ec3a79fc7a.jpg",
+    "hash": 1773749246423840096064579633421371444272627503984588154600157605819844480,
+    "url": "https://glossier-prod.imgix.net/files/glossier-boy-brow-dark-brown-carousel-6.png?auto=compress,format&cs=srgb&w=100",
+    "by": [
+     [
+      "screen",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/bed349827350.jpg",
+    "hash": 3604537003029046584213572527681995584195882462341805629380206969608692506611,
+    "url": "https://glossier-prod.imgix.net/files/glossier-boy-brow-dark-brown-carousel-8.png?auto=compress,format&cs=srgb&w=100",
+    "by": [
+     [
+      "screen",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-01-glossier-boy-brow/cf56fa0da844.jpg",
+    "hash": 68764086680295966189725522067786598125478534610046417688190687865769053535644,
+    "url": "https://glossier-prod.imgix.net/files/glossier-boy-brow-ugc-1.png?auto=compress,format&cs=srgb&w=1377",
+    "by": [
+     [
+      "screen",
+      10
+     ]
+    ]
+   }
+  ],
+  "errors": []
+ },
+ {
+  "key": "small-05-kosas-revealer-concealer",
+  "counts": {
+   "tested": 10,
+   "shop": 10,
+   "screen": 10
+  },
+  "all": {
+   "tested": 75,
+   "shop": 38,
+   "screen": 43
+  },
+  "shop_source": "shopify",
+  "fallback": "shop",
+  "pictures": [
+   {
+    "path": "/tmp/sp/img/small-05-kosas-revealer-concealer/51857b44fe35.jpg",
+    "hash": 9641775387557839184848465686430295033439204475684882097373184,
+    "url": "https://kosas.com/cdn/shop/files/RC2024_04_vessel.jpg?v=1770932035&width=1920",
+    "by": [
+     [
+      "tested",
+      1
+     ],
+     [
+      "tested",
+      4
+     ],
+     [
+      "tested",
+      9
+     ],
+     [
+      "tested",
+      10
+     ],
+     [
+      "shop",
+      2
+     ],
+     [
+      "shop",
+      3
+     ],
+     [
+      "shop",
+      5
+     ],
+     [
+      "shop",
+      8
+     ],
+     [
+      "shop",
+      9
+     ],
+     [
+      "shop",
+      10
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-05-kosas-revealer-concealer/05bbc6d6795e.jpg",
+    "hash": 80150699449230335999331482223498944468955736076074477011955434992788875265072,
+    "url": "https://kosas.com/cdn/shop/files/01_Shade_Chart_0.5-2.3.jpg?v=1770932083&width=240",
+    "by": [
+     [
+      "tested",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-05-kosas-revealer-concealer/f0ef82c9f623.jpg",
+    "hash": 33253045312696237966292818742677696044282365832867242302973719879145628996224,
+    "url": "https://kosas.com/cdn/shop/files/1_-_Before_and_After_Cards_6.8.jpg?v=1770932075&width=1920",
+    "by": [
+     [
+      "tested",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-05-kosas-revealer-concealer/0ee9f8457959.jpg",
+    "hash": 55041613986633314864142855654755952325129244041753204036526674409691301193446,
+    "url": "https://kosas.com/cdn/shop/files/8.7_N.jpg?v=1704344798&width=640",
+    "by": [
+     [
+      "tested",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-05-kosas-revealer-concealer/2c7a9598799d.jpg",
+    "hash": 65823014510717826245678751027191777911630564437169440379266936375545212354980,
+    "url": "https://kosas.com/cdn/shop/files/05_Ingredient_Claims.jpg?v=1770932078&width=1920",
+    "by": [
+     [
+      "tested",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-05-kosas-revealer-concealer/e58013c35b67.jpg",
+    "hash": 25503501826996405614110556078205224980791709472310306335152656952732312706204,
+    "url": "https://kosas.com/cdn/shop/files/2.6_C.jpg?v=1704344784&width=640",
+    "by": [
+     [
+      "tested",
+      7
+     ],
+     [
+      "screen",
+      9
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-05-kosas-revealer-concealer/f015b8153973.jpg",
+    "hash": 6790096887881899366283651502711108082383277395997056613674713790786354391584,
+    "url": "https://kosas.com/cdn/shop/files/1_-_Before_and_After_Cards_3.6_ab60cdcf-ea8a-4f3f-beb8-dba969b1665c.jpg?v=1770932074&width=240",
+    "by": [
+     [
+      "tested",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-05-kosas-revealer-concealer/4efbe260140c.jpg",
+    "hash": 9641775387557838471202850068320923039911497439991777802059776,
+    "url": "https://cdn.shopify.com/s/files/1/0131/5409/1065/files/RC2024_01_vessel.jpg?v=1770932034",
+    "by": [
+     [
+      "shop",
+      1
+     ],
+     [
+      "shop",
+      4
+     ],
+     [
+      "shop",
+      6
+     ],
+     [
+      "shop",
+      7
+     ],
+     [
+      "screen",
+      1
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-05-kosas-revealer-concealer/5b974551ce39.jpg",
+    "hash": 10946005613475588384704364218483302915331348053117478978603592525407137012505,
+    "url": "https://kosas.com/cdn/shop/files/0.5_N.jpg?v=1704344783",
+    "by": [
+     [
+      "screen",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-05-kosas-revealer-concealer/65a3f220335e.jpg",
+    "hash": 27086111943445928256377991431715103857493227491166889118164450958472781208689,
+    "url": "https://kosas.com/cdn/shop/files/0.7_C.jpg?v=1704344783",
+    "by": [
+     [
+      "screen",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-05-kosas-revealer-concealer/c3b4cc091e76.jpg",
+    "hash": 13689702797891487145095750275989745706415580178223988190096515633950739766300,
+    "url": "https://kosas.com/cdn/shop/files/01_N.jpg?v=1704344784",
+    "by": [
+     [
+      "screen",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-05-kosas-revealer-concealer/0eaac4e04f89.jpg",
+    "hash": 21831941485017634984363413060976711837843115562348170732762183828903853399425,
+    "url": "https://kosas.com/cdn/shop/files/1.5_C.jpg?v=1704344784",
+    "by": [
+     [
+      "screen",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-05-kosas-revealer-concealer/ff78ba36f4d2.jpg",
+    "hash": 13011450937556439798952054219580291784183385968606698732018792283907375275604,
+    "url": "https://kosas.com/cdn/shop/files/02_W.jpg?v=1704344783",
+    "by": [
+     [
+      "screen",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-05-kosas-revealer-concealer/d6a2f9934029.jpg",
+    "hash": 65027649454681675319729294951273121028976925985296824309074209738731267694115,
+    "url": "https://kosas.com/cdn/shop/files/2.3_N.jpg?v=1704344783",
+    "by": [
+     [
+      "screen",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-05-kosas-revealer-concealer/a3701fd82961.jpg",
+    "hash": 34729755960474561185753688562252423953783083094555701187748878776145344764009,
+    "url": "https://kosas.com/cdn/shop/files/2.5_C.jpg?v=1704344783",
+    "by": [
+     [
+      "screen",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-05-kosas-revealer-concealer/f493c3ab1584.jpg",
+    "hash": 56194379289684493900519938779777604296199366880973411648023743889803586738214,
+    "url": "https://kosas.com/cdn/shop/files/03_W.jpg?v=1704344784",
+    "by": [
+     [
+      "screen",
+      10
+     ]
+    ]
+   }
+  ],
+  "errors": []
+ },
+ {
+  "key": "small-07-tower28-sos-rescue-spray",
+  "counts": {
+   "tested": 9,
+   "shop": 10,
+   "screen": 6
+  },
+  "all": {
+   "tested": 9,
+   "shop": 16,
+   "screen": 6
+  },
+  "shop_source": "shopify",
+  "fallback": "shop",
+  "pictures": [
+   {
+    "path": "/tmp/sp/img/small-07-tower28-sos-rescue-spray/9d8a1bdc2253.jpg",
+    "hash": 25881943727584480910653165205859745440962005895181989618688119340531744,
+    "url": "https://www.tower28beauty.com/cdn/shop/files/SOS_20Spray_20_E2_80_94_C2_A04_20oz.webp?v=1762649181&width=400",
+    "by": [
+     [
+      "tested",
+      1
+     ],
+     [
+      "shop",
+      1
+     ],
+     [
+      "screen",
+      1
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-07-tower28-sos-rescue-spray/043bbea4e69a.jpg",
+    "hash": 32507989835322262461989955547217527042155182977047368955522726673453040069104,
+    "url": "https://www.tower28beauty.com/cdn/shop/files/SOS_Spray_-_Split_Screen_Accordian.png?v=1690824676&width=2000",
+    "by": [
+     [
+      "tested",
+      2
+     ],
+     [
+      "screen",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-07-tower28-sos-rescue-spray/c6ed7ab530da.jpg",
+    "hash": 102223607909027551073524426889679851865059624015542712297540629369971947348076,
+    "url": "https://www.tower28beauty.com/cdn/shop/files/Tower-insta2_30460e79-ac78-4333-8d9f-79f4c4a68dd6.jpg?v=1690919837&width=400",
+    "by": [
+     [
+      "tested",
+      3
+     ],
+     [
+      "screen",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-07-tower28-sos-rescue-spray/9f17f9df4f46.jpg",
+    "hash": 7206450529738225153920810295532968755026588718702762416011445698260591079,
+    "url": "https://www.tower28beauty.com/cdn/shop/files/SOS_SPRAY-OG_f9587118-eb21-4e70-8cb4-e813a13165dc.png?v=1774803592&width=2000",
+    "by": [
+     [
+      "tested",
+      4
+     ],
+     [
+      "shop",
+      2
+     ],
+     [
+      "screen",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-07-tower28-sos-rescue-spray/0327e5c19843.jpg",
+    "hash": 13808866171107555358352649516966239209333819851769826247792935592273500,
+    "url": "https://www.tower28beauty.com/cdn/shop/files/Frame_16883_31d0ad02-7932-4e98-8370-9c8f560bdc9f.jpg?v=1774574385&width=150",
+    "by": [
+     [
+      "tested",
+      5
+     ],
+     [
+      "screen",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-07-tower28-sos-rescue-spray/4a1638604482.jpg",
+    "hash": 1725936830126536649455544703228207515203206044937074310259799246788664,
+    "url": "https://www.tower28beauty.com/cdn/shop/files/Image_1_4ab3c8d7-8590-43d9-805d-67503b9a430d.png?crop=center&height=240&v=1743726170&width=240",
+    "by": [
+     [
+      "tested",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-07-tower28-sos-rescue-spray/6cd46a2be8f3.jpg",
+    "hash": 78990244861034996751906297474797059252517619167339498418221350912,
+    "url": "https://www.tower28beauty.com/cdn/shop/files/SOS_20Spray_20_E2_80_94_C2_A01_20oz.webp?v=1774574385&width=400",
+    "by": [
+     [
+      "tested",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-07-tower28-sos-rescue-spray/e7b27560e2a4.jpg",
+    "hash": 25882364981873348312724691013116540313872869565458676586374232010653696,
+    "url": "https://www.tower28beauty.com/cdn/shop/files/SOS_20Spray_20_E2_80_94_C2_A016_20oz.webp?v=1774574385&width=150",
+    "by": [
+     [
+      "tested",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-07-tower28-sos-rescue-spray/07b3eef7e7da.jpg",
+    "hash": 408152267232721981316099186177471587940790641339523194500375784497602195253,
+    "url": "https://www.tower28beauty.com/cdn/shop/files/footer-sos-spray.png?v=1741364387&width=400",
+    "by": [
+     [
+      "tested",
+      9
+     ],
+     [
+      "screen",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-07-tower28-sos-rescue-spray/136d5ac2c14c.jpg",
+    "hash": 78990244963713297061631269539297944041893941896458691842994339840,
+    "url": "https://cdn.shopify.com/s/files/1/2926/6108/files/HERO_IMAGE-1_d4f508a4-73c7-474e-b8ca-b067edf4807c.png?v=1774803592",
+    "by": [
+     [
+      "shop",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-07-tower28-sos-rescue-spray/3dba081f5d95.jpg",
+    "hash": 10913605565820893167499064086629829792751992721114540458722771234892779356432,
+    "url": "https://cdn.shopify.com/s/files/1/2926/6108/files/Size_Comparison_Value_1f1d6df7-0266-4127-8eea-ca898199bf95.png?v=1774803592",
+    "by": [
+     [
+      "shop",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-07-tower28-sos-rescue-spray/785f918d7d9a.jpg",
+    "hash": 2728502542572329046670369565050007173549361166209384075514311227282577834312,
+    "url": "https://cdn.shopify.com/s/files/1/2926/6108/files/B_A_16.png?v=1774574385",
+    "by": [
+     [
+      "shop",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-07-tower28-sos-rescue-spray/c472c77aae21.jpg",
+    "hash": 11771778132273939200048184196090709998071312941816026588445664914970729316872,
+    "url": "https://cdn.shopify.com/s/files/1/2926/6108/files/B_A_17.png?v=1774574385",
+    "by": [
+     [
+      "shop",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-07-tower28-sos-rescue-spray/dad9ea37a85a.jpg",
+    "hash": 11771750532027376844618353948162990647574492504442902502266308174560180241480,
+    "url": "https://cdn.shopify.com/s/files/1/2926/6108/files/B_A_23.png?v=1774574385",
+    "by": [
+     [
+      "shop",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-07-tower28-sos-rescue-spray/0aa1e13cf4f9.jpg",
+    "hash": 5562553406014667245643105018805105028032012636151367161819774401777620182124,
+    "url": "https://cdn.shopify.com/s/files/1/2926/6108/files/B_A_20.png?v=1774574385",
+    "by": [
+     [
+      "shop",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-07-tower28-sos-rescue-spray/fb8e5e8e98b4.jpg",
+    "hash": 7075530984937773524207084282169207162728997412821604790248480493471203367,
+    "url": "https://cdn.shopify.com/s/files/1/2926/6108/files/Product_Benefits_1_8f42823e-86b4-4686-9eef-f4bff916f626.png?v=1774574385",
+    "by": [
+     [
+      "shop",
+      9
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-07-tower28-sos-rescue-spray/7e333039873b.jpg",
+    "hash": 57903114114537866176372462784487934556417603642039267729455096524106171940866,
+    "url": "https://cdn.shopify.com/s/files/1/2926/6108/files/SOS_SPRAY-OG-1_06fdaec8-c960-49bc-91b5-997767569931.png?v=1774574385",
+    "by": [
+     [
+      "shop",
+      10
+     ]
+    ]
+   }
+  ],
+  "errors": []
+ },
+ {
+  "key": "small-08-liquid-iv-lemon-lime",
+  "counts": {
+   "tested": 10,
+   "shop": 1,
+   "screen": 3
+  },
+  "all": {
+   "tested": 16,
+   "shop": 1,
+   "screen": 3
+  },
+  "shop_source": "json_ld",
+  "fallback": "screen",
+  "pictures": [
+   {
+    "path": "/tmp/sp/img/small-08-liquid-iv-lemon-lime/ce2282a0b791.jpg",
+    "hash": 1689994559207725511196075825906110467892973205381286917468143484928,
+    "url": "https://cdn.shopify.com/s/files/1/1338/1013/files/HMO_LL_16ct_PDP_5d06a7d4-5650-432a-9c54-78fc806aa73b.jpg?v=1762182393&width=180&height=180&crop=center",
+    "by": [
+     [
+      "tested",
+      1
+     ],
+     [
+      "shop",
+      1
+     ],
+     [
+      "screen",
+      1
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-08-liquid-iv-lemon-lime/dae1adbd77ba.jpg",
+    "hash": 55048671880981850592293797877945836502580163009428890263650603180547501562057,
+    "url": "https://cdn.shopify.com/s/files/1/1338/1013/files/preview_images/8d7dab686f054b89bef613aa19f6b661.thumbnail.0000000000.jpg?v=1759176861&width=250",
+    "by": [
+     [
+      "tested",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-08-liquid-iv-lemon-lime/1bccef12fb17.jpg",
+    "hash": 58095483966261485568156488534580570325761377482366341085839935888845966450168,
+    "url": "https://cdn.shopify.com/s/files/1/1338/1013/files/LemonLime_PDP19-fotor-2026090912926.jpg?v=1788942591&width=180&height=180&crop=center",
+    "by": [
+     [
+      "tested",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-08-liquid-iv-lemon-lime/1221494afb43.jpg",
+    "hash": 62943575452056579922762327534179562412613223084076199965848171712972398693542,
+    "url": "https://cdn.shopify.com/s/files/1/1338/1013/files/GeneralPDP9_a97a0e45-344e-4e43-8261-109e1aa8742d.jpg?v=1788942162&width=180&height=180&crop=center",
+    "by": [
+     [
+      "tested",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-08-liquid-iv-lemon-lime/0879339c24d9.jpg",
+    "hash": 6766337840137247247099277353166044677269795724573570735881773383680,
+    "url": "https://cdn.shopify.com/s/files/1/1338/1013/files/image_2023.png?v=1713986700",
+    "by": [
+     [
+      "tested",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-08-liquid-iv-lemon-lime/64969c5d17c5.jpg",
+    "hash": 9953691727418155560572472609354013709868379425591925191535700314447178693659,
+    "url": "https://cdn-yotpo-images-production.yotpo.com/Review/746726144/743903030/original.jpg?1755822951&format=webp&height=300&width=300",
+    "by": [
+     [
+      "tested",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-08-liquid-iv-lemon-lime/5bb9802dd5de.jpg",
+    "hash": 279549856683216650295629732611127264515064203598089067338789377483523166555,
+    "url": "https://cdn.shopify.com/s/files/1/1338/1013/files/preview_images/719d06ef72cc4cdabd6f027074269b57.thumbnail.0000000000.jpg?v=1748892052&width=250",
+    "by": [
+     [
+      "tested",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-08-liquid-iv-lemon-lime/90da22291e08.jpg",
+    "hash": 14040353960569738127678756937854237644078444581132112102498617287631031957510,
+    "url": "https://cdn.shopify.com/s/files/1/1338/1013/files/preview_images/cde07d7380704f5381e7329e731be2c7.thumbnail.0000000000.jpg?v=1780421950&width=250",
+    "by": [
+     [
+      "tested",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-08-liquid-iv-lemon-lime/ac3c20b0ddb7.jpg",
+    "hash": 55307842491747667033031082235860712751794821640592675499209762112250350497824,
+    "url": "https://cdn.shopify.com/s/files/1/1338/1013/files/preview_images/501e03cff2c04e21b04d0b8eda986018.thumbnail.0000000000.jpg?v=1759176835&width=250",
+    "by": [
+     [
+      "tested",
+      9
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-08-liquid-iv-lemon-lime/2c2a93aa91ea.jpg",
+    "hash": 109685841623300646620219759083514431772864988214025614291215802478364199748730,
+    "url": "https://cdn.shopify.com/s/files/1/1338/1013/files/HMO-LL-Alt-Image-1_4d2ecf3c-4254-4575-add6-5965e42e44a3.jpg?v=1727378119&width=180&height=180&crop=center",
+    "by": [
+     [
+      "tested",
+      10
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-08-liquid-iv-lemon-lime/403fe6243a60.jpg",
+    "hash": 21312221171031104261393704335923936559970919553739947067760407620609868771,
+    "url": "https://cdn.shopify.com/s/files/1/1338/1013/files/HMO-LL-Alt-Image-2_1a6d9c1b-14a4-49f2-8ba0-077b394c3bea.jpg?v=1747431568",
+    "by": [
+     [
+      "screen",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-08-liquid-iv-lemon-lime/f379c1b37afe.jpg",
+    "hash": 66088149134564199503126468895847286685380156386522152333290077363143836823683,
+    "url": "https://cdn.shopify.com/s/files/1/1338/1013/files/GeneralPDP3_8e765f41-5dfb-4dd6-bda9-299009c561fa.jpg?v=1789507058",
+    "by": [
+     [
+      "screen",
+      3
+     ]
+    ]
+   }
+  ],
+  "errors": []
+ },
+ {
+  "key": "small-19-moft-snap-on-stand-wallet",
+  "counts": {
+   "tested": 10,
+   "shop": 10,
+   "screen": 10
+  },
+  "all": {
+   "tested": 359,
+   "shop": 83,
+   "screen": 18
+  },
+  "shop_source": "shopify",
+  "fallback": "shop",
+  "pictures": [
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/8c40da0ffbc2.jpg",
+    "hash": 50845306022730071840164223534288378758399024957554940162605056,
+    "url": "https://www.moft.com/cdn/shop/files/Soft_Energy_Collection11.png?v=1779820303&width=600",
+    "by": [
+     [
+      "tested",
+      1
+     ],
+     [
+      "shop",
+      1
+     ],
+     [
+      "screen",
+      1
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/6472a2f1997b.jpg",
+    "hash": 301343795980099394114020818323807620381639694982405664276544,
+    "url": "https://www.moft.com/cdn/shop/files/MagSafe_WALLET_STAND_MOFT8.png?v=1767844297&width=1",
+    "by": [
+     [
+      "tested",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/d91e2a533eb7.jpg",
+    "hash": 55219025844672729272581888730757450853253618069140933399272811535546368,
+    "url": "https://www.moft.com/cdn/shop/files/Slice_12.png?v=1786959452&width=2400",
+    "by": [
+     [
+      "tested",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/816daf7f6341.jpg",
+    "hash": 10957553756052573530741806463694254100879807512080748442334005997032585540429,
+    "url": "https://www.moft.com/cdn/shop/files/tripod_stand8_3053fa19-6aa8-4174-8154-5b98e16c8663.png?v=1768913044&width=1",
+    "by": [
+     [
+      "tested",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/9faa2cdc53e6.jpg",
+    "hash": 863360065461337250550186238821407704259193155454183441610566292996096,
+    "url": "https://www.moft.com/cdn/shop/files/MagSafe_WALLET_STAND_MOFT14.png?v=1767844297&width=1",
+    "by": [
+     [
+      "tested",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/4992662ea83b.jpg",
+    "hash": 80992887592314616187908091126957726412485293459114238295548542459409991809031,
+    "url": "https://www.moft.com/cdn/shop/files/magsafe_wallet11_6a252358-e15a-4c77-92b9-b718a2ce1437.png?v=1773222781&width=1",
+    "by": [
+     [
+      "tested",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/0427b4da8dd9.jpg",
+    "hash": 10353052310381940067232544603060484663134213141481695414060321152696320,
+    "url": "https://www.moft.com/cdn/shop/files/phone_tripod_stand_Khaki_Green_63326413.png?v=1787747446&width=1",
+    "by": [
+     [
+      "tested",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/bedcf9331f92.jpg",
+    "hash": 91255538975540130276217814360930288609836907612061556382559060408046414989712,
+    "url": "https://www.moft.com/cdn/shop/files/phone_tripod_stand_Beach_White_2755.png?v=1786961672&width=1",
+    "by": [
+     [
+      "tested",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/52991db985c7.jpg",
+    "hash": 315985084380311427150904022114423283467989853438624653600507297856,
+    "url": "https://www.moft.com/cdn/shop/files/MagSafe_wallet5_f89a6876-6f7c-475e-b86e-52ffeea68977.png?v=1773222781&width=1",
+    "by": [
+     [
+      "tested",
+      9
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/d61b0367d410.jpg",
+    "hash": 367545709135351145800037195378310861292096017988726929342033239612040806812,
+    "url": "https://www.moft.com/cdn/shop/files/MagSafeTripod34.png?v=1768911974&width=1",
+    "by": [
+     [
+      "tested",
+      10
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/ee61331f0ede.jpg",
+    "hash": 2061914388298359777907895142626942620696467707482702487492000240321612941677,
+    "url": "https://cdn.shopify.com/s/files/1/0069/9292/0627/files/MOFTSnapStand_Wallet.gif?v=1764817398",
+    "by": [
+     [
+      "shop",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/04612aa0510f.jpg",
+    "hash": 215771724002865083468852084640690014890502929162153254828000552157184,
+    "url": "https://cdn.shopify.com/s/files/1/0069/9292/0627/files/MagSafe_WALLET_STAND_MOFT17.png?v=1767844297",
+    "by": [
+     [
+      "shop",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/e7600ad17262.jpg",
+    "hash": 50373140032734719875098249824878666824778177183756952010752,
+    "url": "https://cdn.shopify.com/s/files/1/0069/9292/0627/files/MagSafeTripod1.jpg?v=1767850591",
+    "by": [
+     [
+      "shop",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/00e931929de0.jpg",
+    "hash": 3314666026653669508272449939303352553427675223616835628826624,
+    "url": "https://cdn.shopify.com/s/files/1/0069/9292/0627/files/MagSafe_wallet.jpg?v=1767844297",
+    "by": [
+     [
+      "shop",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/0cf800f47a26.jpg",
+    "hash": 904573902065155441784862070734977824928208100104769244233728,
+    "url": "https://cdn.shopify.com/s/files/1/0069/9292/0627/files/phone_stand_wallet_Terracotta_2560.png?v=1786988680",
+    "by": [
+     [
+      "shop",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/085723b5bdb3.jpg",
+    "hash": 493503036943120303161899081726835084419683198513560158208,
+    "url": "https://cdn.shopify.com/s/files/1/0069/9292/0627/files/phone_stand_wallet_Terracotta_2566.png?v=1786988707",
+    "by": [
+     [
+      "shop",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/fe0504da154a.jpg",
+    "hash": 215725648826985729803514191971288370610175337651899519690605827460992,
+    "url": "https://cdn.shopify.com/s/files/1/0069/9292/0627/files/phone_stand_wallet_Terracotta_6332627.png?v=1786988670",
+    "by": [
+     [
+      "shop",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/fdf63a3c1fee.jpg",
+    "hash": 107938519465528871796890850033341469530020728824350351155317511815264,
+    "url": "https://cdn.shopify.com/s/files/1/0069/9292/0627/files/phone_stand_wallet_Terracotta_2564.png?v=1786988685",
+    "by": [
+     [
+      "shop",
+      9
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/180a90562efa.jpg",
+    "hash": 678484802041142561098788606429665306710007656285044281007766799912202666112,
+    "url": "https://cdn.shopify.com/s/files/1/0069/9292/0627/files/phone_stand_wallet_Terracotta_6332673.png?v=1786988673",
+    "by": [
+     [
+      "shop",
+      10
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/4b987456f8ef.jpg",
+    "hash": 112639989238675915676993439547267781576175461237797201690138049522784248253536,
+    "url": "https://www.moft.com/cdn/shop/files/MagSafewallet10_1b544ebe-ef24-439a-b871-3cfed80e2e6f.png?v=1779820551",
+    "by": [
+     [
+      "screen",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/2c77b2badf5c.jpg",
+    "hash": 109228209228335308470295134102868465744851924462733016388715916122225058447679,
+    "url": "https://www.moft.com/cdn/shop/files/MagSafewallet11_ac77ebf9-b25d-45db-bb17-fac552f34e8d.png?v=1779820336",
+    "by": [
+     [
+      "screen",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/e09c992bc0aa.jpg",
+    "hash": 3307280033975821804963400930801920612335231253138167892650491904,
+    "url": "https://www.moft.com/cdn/shop/files/MagSafewallet1_f0d29f99-f847-43fc-aecc-54f35607e06d.png?v=1779820386",
+    "by": [
+     [
+      "screen",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/21d5d870e702.jpg",
+    "hash": 323618092802733990157149973991909490891175077364219273633373624467456,
+    "url": "https://www.moft.com/cdn/shop/files/MagSafewallet2_a10868fc-1453-4b25-ad1e-6ac279b97f9e.png?v=1779820415",
+    "by": [
+     [
+      "screen",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/68251d92fc4c.jpg",
+    "hash": 56564988967753034363910992598915448683968748091663863899159742599447707648,
+    "url": "https://www.moft.com/cdn/shop/files/MagSafewallet3_a246759f-28c8-434e-9509-06ec02f7c7cc.png?v=1779820405",
+    "by": [
+     [
+      "screen",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/0c24bc1feee6.jpg",
+    "hash": 203095131987581376803223738212037827439210271406311866368,
+    "url": "https://www.moft.com/cdn/shop/files/MagSafewallet4_972d7fc1-aa75-4f41-865e-beb7b0aa175b.png?v=1779820462",
+    "by": [
+     [
+      "screen",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/9c22c5084de0.jpg",
+    "hash": 226171953457869744875207648866361327863779723964022305451346544812137382272,
+    "url": "https://www.moft.com/cdn/shop/files/MagSafewallet5_ccb14862-dc84-4983-8a68-c9ce1da73c7f.png?v=1779820541",
+    "by": [
+     [
+      "screen",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/e8232cd20688.jpg",
+    "hash": 107939392439255660051185619873479582671379653165657946444108773523705,
+    "url": "https://www.moft.com/cdn/shop/files/wallet_stand_aera_1.png?v=1790677722",
+    "by": [
+     [
+      "screen",
+      9
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-19-moft-snap-on-stand-wallet/6742882a373f.jpg",
+    "hash": 2685502808155550787059500823056399445340215720718030790041941343232,
+    "url": "https://www.moft.com/cdn/shop/files/wallet_stand_aera_3.png?v=1790677937",
+    "by": [
+     [
+      "screen",
+      10
+     ]
+    ]
+   }
+  ],
+  "errors": []
+ },
+ {
+  "key": "small-25-graza-sizzle-olive-oil",
+  "counts": {
+   "tested": 10,
+   "shop": 6,
+   "screen": 6
+  },
+  "all": {
+   "tested": 16,
+   "shop": 6,
+   "screen": 6
+  },
+  "shop_source": "shopify",
+  "fallback": "shop",
+  "pictures": [
+   {
+    "path": "/tmp/sp/img/small-25-graza-sizzle-olive-oil/22545db08cc8.jpg",
+    "hash": 52657351059267239620214436899352190007667611083897294148167794688,
+    "url": "https://www.graza.co/cdn/shop/files/43cb2e161fcc8365e3c54629a1af9659497ed3cf.png?v=1756974476&width=350",
+    "by": [
+     [
+      "tested",
+      1
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-25-graza-sizzle-olive-oil/df08b99734bc.jpg",
+    "hash": 167047906818901580441208269263998056950260004945794170880,
+    "url": "https://www.graza.co/cdn/shop/files/408d19c3b6d8091e4d2b3859428ba403ceb745f0.png?v=1756974390&width=350",
+    "by": [
+     [
+      "tested",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-25-graza-sizzle-olive-oil/b30358baf530.jpg",
+    "hash": 226161600680378911977684840559387003392065211419750430115630208667639873536,
+    "url": "https://www.graza.co/cdn/shop/files/graza-sizzle-transparent.png?v=1699438202&width=150",
+    "by": [
+     [
+      "tested",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-25-graza-sizzle-olive-oil/9526931fe184.jpg",
+    "hash": 76819004805209571262527551189678162430263541532124512256,
+    "url": "https://www.graza.co/cdn/shop/files/ea6b0974f938e589e8952e7c57216b22720581c5.png?v=1756974476&width=350",
+    "by": [
+     [
+      "tested",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-25-graza-sizzle-olive-oil/7afaaf79fe72.jpg",
+    "hash": 35560288636363892209034437195446144204452779188329187063869721039630854266098,
+    "url": "https://www.graza.co/cdn/shop/files/shoppable-cta-2_320x.jpg?v=2378746405171998541",
+    "by": [
+     [
+      "tested",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-25-graza-sizzle-olive-oil/1c0b3d9ae8f3.jpg",
+    "hash": 87195247833826093849900573306836139218561121220342520730368440639189074572838,
+    "url": "https://www.graza.co/cdn/shop/files/ce20c6df-564d-48cb-b9d0-cc9e5566d282_200x.jpg?v=13722629527874958495",
+    "by": [
+     [
+      "tested",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-25-graza-sizzle-olive-oil/2907e82cf018.jpg",
+    "hash": 88315419626390680617532838928950331434725740380854374114746988361003816894732,
+    "url": "https://www.graza.co/cdn/shop/files/275968465_1208194362921591_8651807219107918255_n_200x.jpg?v=4751358068290030924",
+    "by": [
+     [
+      "tested",
+      7
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-25-graza-sizzle-olive-oil/4b9b12d7634d.jpg",
+    "hash": 1583119126554920746602759186234015835491001674861850722176687820391646804736,
+    "url": "https://www.graza.co/cdn/shop/files/Screen_Shot_2024-05-06_at_11.46.14_PM_200x.png?v=6110668680696088585",
+    "by": [
+     [
+      "tested",
+      8
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-25-graza-sizzle-olive-oil/12264a9e38cc.jpg",
+    "hash": 30550905697206817459702102425629383707107716746175018049147013408159180226087,
+    "url": "https://www.graza.co/cdn/shop/files/IMG_1676_200x.png?v=12189333901994515122",
+    "by": [
+     [
+      "tested",
+      9
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-25-graza-sizzle-olive-oil/a7743503c176.jpg",
+    "hash": 18266458102274362017414607829696708399386424657639008017799133185850519337052,
+    "url": "https://www.graza.co/cdn/shop/files/30_product_sizzle750ml_0002_fe965569-a5c7-45ca-8809-47da9aba1e32_450x.jpg?v=1762198144",
+    "by": [
+     [
+      "tested",
+      10
+     ],
+     [
+      "shop",
+      1
+     ],
+     [
+      "shop",
+      2
+     ],
+     [
+      "screen",
+      2
+     ],
+     [
+      "screen",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-25-graza-sizzle-olive-oil/6f5f887d1667.jpg",
+    "hash": 115070988739895239810941488248082876751435590298406052549329975683942455509987,
+    "url": "https://cdn.shopify.com/s/files/1/0550/0003/9638/products/graza-pdp-sizzle-header-3_2x_068ad6a2-c3ed-4baa-94cd-9a74bcd84564.jpg?v=1751537035",
+    "by": [
+     [
+      "shop",
+      3
+     ],
+     [
+      "screen",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-25-graza-sizzle-olive-oil/083db9218876.jpg",
+    "hash": 17283368461511597476998062824928211683404945015802726690637077095499203741555,
+    "url": "https://cdn.shopify.com/s/files/1/0550/0003/9638/files/Resize1.png?v=1751537035",
+    "by": [
+     [
+      "shop",
+      4
+     ],
+     [
+      "screen",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-25-graza-sizzle-olive-oil/3bfd943b3047.jpg",
+    "hash": 5930952688742534426891494499347832768198086253305069538352632939627280583027,
+    "url": "https://cdn.shopify.com/s/files/1/0550/0003/9638/products/graza-home-sizzle-in-usecopy_2x_4225c9a8-cb52-46e2-9b64-69d2342d581e.jpg?v=1751537035",
+    "by": [
+     [
+      "shop",
+      5
+     ],
+     [
+      "screen",
+      5
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-25-graza-sizzle-olive-oil/764a38b14e10.jpg",
+    "hash": 22103900322439192683850588090615002709509458899331142176657511166379402194951,
+    "url": "https://cdn.shopify.com/s/files/1/0550/0003/9638/files/Resize2_4d19ab7e-97e0-4126-8f1e-a8fe00ded990.png?v=1751537035",
+    "by": [
+     [
+      "shop",
+      6
+     ],
+     [
+      "screen",
+      1
+     ]
+    ]
+   }
+  ],
+  "errors": []
+ },
+ {
+  "key": "small-37-buck-mason-slub-classic-tee",
+  "counts": {
+   "tested": 0,
+   "shop": 6,
+   "screen": 6
+  },
+  "all": {
+   "tested": 0,
+   "shop": 6,
+   "screen": 6
+  },
+  "shop_source": "json_ld",
+  "fallback": "shop",
+  "pictures": [
+   {
+    "path": "/tmp/sp/img/small-37-buck-mason-slub-classic-tee/50aa5c6386a1.jpg",
+    "hash": 1468299059510906396671919351527516261012943145502175900558194980147967233607,
+    "url": "https://cdn.shopify.com/s/files/1/0123/5065/2473/files/BM11030.102COLVW_SLUB-CLASSIC-TEE_COAL-VENICE-WASH_1269.jpg?v=1764201521",
+    "by": [
+     [
+      "shop",
+      1
+     ],
+     [
+      "screen",
+      4
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-37-buck-mason-slub-classic-tee/384230ebc995.jpg",
+    "hash": 1630824293862761907517470950821109582065118886950198363992272109194267532815,
+    "url": "https://cdn.shopify.com/s/files/1/0123/5065/2473/files/BM11030.102WHT_WHITESLUBCLASSICTEE_WHITE_0914_1.jpg?v=1783374991",
+    "by": [
+     [
+      "shop",
+      2
+     ],
+     [
+      "screen",
+      1
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-37-buck-mason-slub-classic-tee/335b7d0e75d7.jpg",
+    "hash": 61864531696646793141979132436540007246558431746927613838685522303619368783,
+    "url": "https://cdn.shopify.com/s/files/1/0123/5065/2473/products/buck-mason-midnight-slub-classic-tee-03.jpg?v=1695675305",
+    "by": [
+     [
+      "shop",
+      3
+     ],
+     [
+      "screen",
+      3
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-37-buck-mason-slub-classic-tee/9bf3c76d08ee.jpg",
+    "hash": 3443692047599309642871529643956214130350512585140503491566471230139551325287,
+    "url": "https://cdn.shopify.com/s/files/1/0123/5065/2473/files/BM11030.102BLK_BLACK-SLUB-CLASSIC-TEE_2022.jpg?v=1740692721",
+    "by": [
+     [
+      "shop",
+      4
+     ],
+     [
+      "screen",
+      2
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-37-buck-mason-slub-classic-tee/03b16c533279.jpg",
+    "hash": 1417060092018144918389557831331636508563564583550028823311437527838439706213,
+    "url": "https://cdn.shopify.com/s/files/1/0123/5065/2473/files/BM11030.102_SLUB-CLASSIC-TEE_AMBERWOOD_56628_1.jpg?v=1786034075",
+    "by": [
+     [
+      "shop",
+      5
+     ],
+     [
+      "screen",
+      6
+     ]
+    ]
+   },
+   {
+    "path": "/tmp/sp/img/small-37-buck-mason-slub-classic-tee/8d4505fa8065.jpg",
+    "hash": 1420597450910930825599265043294216994736924500619816308278761192805462883661,
+    "url": "https://cdn.shopify.com/s/files/1/0123/5065/2473/files/BM11030.102_SLUB-CLASSIC-TEE_OLIVE-DRAB_54434_1.jpg?v=1786033555",
+    "by": [
+     [
+      "shop",
+      6
+     ],
+     [
+      "screen",
+      5
+     ]
+    ]
+   }
+  ],
+  "errors": []
+ }
+]

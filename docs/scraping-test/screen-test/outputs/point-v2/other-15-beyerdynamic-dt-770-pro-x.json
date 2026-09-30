@@ -1,0 +1,44 @@
+{
+ "key": "other-15-beyerdynamic-dt-770-pro-x",
+ "model": "gpt-5.6-sol",
+ "answer": {
+  "product": "beyerdynamic DT 770 PRO X studio headphones",
+  "gallery_images": [
+   1,
+   2,
+   3,
+   4
+  ],
+  "more_images": [
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11,
+   13,
+   14
+  ],
+  "product_sections": [
+   0,
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   11,
+   12,
+   13,
+   14
+  ],
+  "notes": "Excluded I12 because it shows HEADPHONE LAB software rather than the headphones, and excluded accessory/recommendation images linked to separate product pages. Excluded review, downloads, accessories, recommendations, general shop, newsletter, and footer sections."
+ },
+ "tiles": 12,
+ "in": 36095,
+ "out": 651,
+ "seconds": 13
+}

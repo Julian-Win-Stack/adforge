@@ -1,0 +1,41 @@
+{
+ "key": "small-00-mackweldon-crew",
+ "model": "gpt-5.6-sol",
+ "answer": {
+  "product": "Vintage French Terry Crew Neck Sweatshirt",
+  "gallery_images": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11,
+   12,
+   13
+  ],
+  "more_images": [
+   17,
+   26
+  ],
+  "product_sections": [
+   5,
+   6,
+   7,
+   8,
+   9,
+   11,
+   12,
+   13
+  ],
+  "notes": "I17 clearly shows the sweatshirt in use, and I26 is the same sweatshirt in the collection grid. Excluded linked companion products, promotional graphics, reviews, and collection merchandising sections."
+ },
+ "tiles": 5,
+ "in": 16852,
+ "out": 898,
+ "seconds": 12
+}

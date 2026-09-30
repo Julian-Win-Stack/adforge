@@ -1,0 +1,27 @@
+{
+ "key": "other-20-barbour-classic-bedale",
+ "model": "gpt-5.6-sol",
+ "answer": {
+  "product": "Barbour Classic Bedale\u00ae Waxed Jacket in Olive",
+  "gallery_images": [
+   16,
+   17,
+   18,
+   19,
+   20,
+   21,
+   22,
+   23
+  ],
+  "more_images": [],
+  "product_sections": [
+   2,
+   3
+  ],
+  "notes": "Excluded all images and text from the \u201cYou may also like\u201d recommendations."
+ },
+ "tiles": 10,
+ "in": 29859,
+ "out": 419,
+ "seconds": 8
+}

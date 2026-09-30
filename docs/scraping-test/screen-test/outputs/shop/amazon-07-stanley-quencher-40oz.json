@@ -1,0 +1,14 @@
+{
+ "shopify": null,
+ "amazon": {
+  "photos": [
+   "https://m.media-amazon.com/images/I/41MWGSJZ8fL._AC_SL1500_.jpg",
+   "https://m.media-amazon.com/images/I/41zW6Ae4adL._AC_SL1500_.jpg",
+   "https://m.media-amazon.com/images/I/21R02ke8LvL._AC_.jpg"
+  ]
+ },
+ "json_ld": {
+  "photos": [],
+  "text": ""
+ }
+}

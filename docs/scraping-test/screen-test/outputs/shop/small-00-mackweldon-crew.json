@@ -1,0 +1,59 @@
+{
+ "shopify": {
+  "title": "Vintage French Terry Crew Neck Sweatshirt",
+  "photos": [
+   "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/Vintage-French-Terry-Crew-Neck-Sweatshirt_Night-Sky_M01K43-NSK.png?v=1786551091",
+   "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/Vintage-French-Terry-Crew-Neck-Sweatshirt_Eventide_M01K43-ETD.png?v=1786551090",
+   "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/Vintage-French-Terry-Crew-Neck-Sweatshirt_Grey-Heather_M01K43-GH.png?v=1786551089",
+   "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/Vintage-French-Terry-Crew-Neck-Sweatshirt_Charcoal-Heather_M01K43-CHH.png?v=1786551091",
+   "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/VintageFrenchTerryRaglanLSCrew_2026_Q3_PDP_FULL_1.jpg?v=1786551060",
+   "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/VintageFrenchTerryRaglanLSCrew_2026_Q3_PDP_FRONT_1.jpg?v=1786551060",
+   "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/VintageFrenchTerryRaglanLSCrew_2026_Q3_PDP_FRONT-SIDE_1.jpg?v=1786551060",
+   "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/VintageFrenchTerryRaglanLSCrew_2026_Q3_PDP_BACK_1.jpg?v=1786551060",
+   "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/VintageFrenchTerryRaglanLSCrew_2026_Q3_PDP_DETAIL-2_1.jpg?v=1786551060",
+   "https://cdn.shopify.com/s/files/1/0078/6825/2273/files/VintageFrenchTerryRaglanLSCrew_2026_Q3_PDP_DETAIL-1_1.jpg?v=1786551060"
+  ],
+  "text": "No frills, all comfort. We set out to recreate the feeling of a classic crew\u2014albeit with a polished look and 100% premium French terry. Featuring vintage-inspired stitching and raglan sleeves for greater freedom of movement, this is bound to become your new (old) favorite.\nRoomy but never slouchy, we wear our Vintage French Terry to the office with chinos, to the bar with jeans, and to the couch with\u2026well,\nmore\nVintage French Terry\n.",
+  "options": [
+   {
+    "id": 9920987037809,
+    "product_id": 7798916907121,
+    "name": "Color",
+    "position": 1,
+    "values": [
+     "Grey Heather",
+     "Night Sky",
+     "Eventide",
+     "Charcoal Heather"
+    ]
+   },
+   {
+    "id": 9920987070577,
+    "product_id": 7798916907121,
+    "name": "Size",
+    "position": 2,
+    "values": [
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL"
+    ]
+   }
+  ]
+ },
+ "amazon": null,
+ "json_ld": {
+  "photos": [
+   "https://mackweldon.com/cdn/shop/files/Vintage-French-Terry-Crew-Neck-Sweatshirt_Night-Sky_M01K43-NSK.png?v=1786551091&width=2048",
+   "https://mackweldon.com/cdn/shop/files/Vintage-French-Terry-Crew-Neck-Sweatshirt_Eventide_M01K43-ETD.png?v=1786551090&width=2048",
+   "https://mackweldon.com/cdn/shop/files/Vintage-French-Terry-Crew-Neck-Sweatshirt_Grey-Heather_M01K43-GH.png?v=1786551089&width=2048",
+   "https://mackweldon.com/cdn/shop/files/Vintage-French-Terry-Crew-Neck-Sweatshirt_Charcoal-Heather_M01K43-CHH.png?v=1786551091&width=2048",
+   "https://mackweldon.com/cdn/shop/files/VintageFrenchTerryRaglanLSCrew_2026_Q3_PDP_FULL_1.jpg?v=1786551060&width=2048",
+   "https://mackweldon.com/cdn/shop/files/VintageFrenchTerryRaglanLSCrew_2026_Q3_PDP_FRONT_1.jpg?v=1786551060&width=2048",
+   "https://mackweldon.com/cdn/shop/files/VintageFrenchTerryRaglanLSCrew_2026_Q3_PDP_FRONT-SIDE_1.jpg?v=1786551060&width=2048",
+   "https://mackweldon.com/cdn/shop/files/VintageFrenchTerryRaglanLSCrew_2026_Q3_PDP_BACK_1.jpg?v=1786551060&width=2048"
+  ],
+  "text": "No frills, all comfort. We set out to recreate the feeling of a classic crew\u2014albeit with a polished look and 100% premium French terry. Featuring vintage-inspired stitching and raglan sleeves for greater freedom of movement, this is bound to become your new (old) favorite.\u00a0Roomy but never slouchy, we wear our Vintage French Terry to the office with chinos, to the bar with jeans, and to the couch with\u2026well, more Vintage French Terry."
+ }
+}

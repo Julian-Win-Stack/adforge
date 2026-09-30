@@ -1,0 +1,47 @@
+{
+ "key": "small-19-moft-snap-on-stand-wallet",
+ "model": "gpt-5.6-sol",
+ "answer": {
+  "product": "Snap-on Phone Stand & Wallet AERA",
+  "gallery_images": [
+   81,
+   82,
+   83,
+   84,
+   85,
+   86,
+   87,
+   88
+  ],
+  "more_images": [
+   192,
+   194,
+   196,
+   197,
+   198,
+   199,
+   200,
+   201,
+   202,
+   203,
+   208,
+   227
+  ],
+  "product_sections": [
+   5,
+   7,
+   9,
+   10,
+   11,
+   12,
+   13,
+   14,
+   16
+  ],
+  "notes": "Excluded the Trackable Wallet Stand, phone cases, Snap System imagery, comparison content for other products, and review photos."
+ },
+ "tiles": 11,
+ "in": 36926,
+ "out": 2914,
+ "seconds": 32
+}
