@@ -1,0 +1,31 @@
+{
+  "note": "The fixed test set. 'picture' and 'audio' are keys under /app/media (the app's file store). 'motion_prompt' is the B-roll scene's saved motion prompt as of the first run; NOTHING_MADE_UP is added by the script as the app does. 'choose_call' is the gateway_modelcall id of the saved choose_broll_picture call the tuned prompts are regenerated from.",
+  "scenes": [
+    {"id": "B1", "job": "eb52304c", "scene": 3, "kind": "broll", "why": "whole chair spins, wheels too (CSV run 14)",
+     "picture": "make_starting_picture_ofNOysE.png", "audio": "speak_line_LPUaXn3.wav", "audio_seconds": 6.42, "old_clip": "clip_y6WeAcR.mp4", "choose_call": 1298,
+     "motion_prompt": "The hand smoothly turns the chair a short distance on its base, then eases it back slightly. Keep the camera steady and the movement natural."},
+    {"id": "B2", "job": "eb52304c", "scene": 4, "kind": "broll", "why": "chair floats instead of the seat rising (run 14)",
+     "picture": "make_starting_picture_b0qTiWx.png", "audio": "speak_line_pblf5HM.wav", "audio_seconds": 6.16, "old_clip": "clip_82S8App.mp4", "choose_call": 1296,
+     "motion_prompt": "The hand gently operates the lever, and the chair seat shifts slightly in height. Keep the camera steady with subtle natural phone-video movement."},
+    {"id": "B3", "job": "98473621", "scene": 5, "kind": "broll", "why": "tube pushed down and changes shape (run 20)",
+     "picture": "make_starting_picture_br4Nl1v.png", "audio": "speak_line_4GPSk3e.wav", "audio_seconds": 5.50, "old_clip": "clip_aDYTHVZ.mp4", "choose_call": 1646,
+     "motion_prompt": "The hands finish placing the tube beside the skincare products, pause briefly, then pick it up again. Keep the movement natural and unhurried."},
+    {"id": "G1", "job": "b2e75d04", "scene": 2, "kind": "broll", "why": "guard: walking worked",
+     "picture": "make_starting_picture_4dBnLxB.png", "audio": "speak_line_XrO567M.wav", "audio_seconds": 5.44, "old_clip": "clip_EQ8UH9J.mp4", "choose_call": 284,
+     "motion_prompt": "The person walks steadily as the treadmill belt moves backward beneath their feet. Add only subtle natural body movement and a slight handheld phone-camera drift."},
+    {"id": "G2", "job": "f507ca42", "scene": 2, "kind": "broll", "why": "guard: stretch worked",
+     "picture": "make_starting_picture_c5U3nj7.png", "audio": "speak_line_BY4NpJA.wav", "audio_seconds": 4.86, "old_clip": "clip_sueJA1r.mp4", "choose_call": 1577,
+     "motion_prompt": "The person slowly deepens the stretch and then eases slightly, while the mat remains still. Use subtle handheld phone-camera movement."},
+    {"id": "G3", "job": "8293cced", "scene": 2, "kind": "broll", "why": "guard: camera glide over the clasp worked",
+     "picture": "make_starting_picture_YDm3flI.png", "audio": "speak_line_aWIQ8ff.wav", "audio_seconds": 5.84, "old_clip": "clip_Avots0H.mp4", "choose_call": 682,
+     "motion_prompt": "Slowly glide the camera across the metal frame toward the stone kiss-lock detail. Keep the bag still and the movement smooth and subtle."},
+    {"id": "T1", "job": "6f334378", "scene": 1, "kind": "talking", "why": "slow motion / lip sync (run 8)",
+     "picture": "make_starting_picture_cslCTPX.png", "audio": "speak_line_VG6y9HT.wav", "audio_seconds": 5.42, "old_clip": "clip_c8ylpKY.mp4"},
+    {"id": "T2", "job": "98473621", "scene": 6, "kind": "talking", "why": "unrealistic expression (run 20)",
+     "picture": "make_starting_picture_p5b0YeM.png", "audio": "speak_line_zxz1oz8.wav", "audio_seconds": 3.56, "old_clip": "clip_lJuF1sh.mp4"},
+    {"id": "T3", "job": "b2e75d04", "scene": 5, "kind": "talking", "why": "cringy last scene (run 24)",
+     "picture": "make_starting_picture_YHcaQ5n.png", "audio": "speak_line_9oSeUa7.wav", "audio_seconds": 5.42, "old_clip": "clip_uS5JEI9.mp4"},
+    {"id": "T4", "job": "f507ca42", "scene": 3, "kind": "talking", "why": "ends on a shocked face (run 19)",
+     "picture": "make_starting_picture_CXjyZdZ.png", "audio": "speak_line_F0oeCgV.wav", "audio_seconds": 6.88, "old_clip": "clip_Cs4NnHI.mp4"}
+  ]
+}

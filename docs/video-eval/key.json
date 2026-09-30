@@ -1,0 +1,338 @@
+{
+  "qwlulsqk": {
+    "arm": "tuned",
+    "scene": "B2",
+    "run": 1,
+    "kind": "broll"
+  },
+  "pwpjrsch": {
+    "arm": "tuned_A",
+    "scene": "T2",
+    "run": 2,
+    "kind": "talking"
+  },
+  "nslrunmn": {
+    "arm": "baseline",
+    "scene": "T4",
+    "run": 2,
+    "kind": "talking"
+  },
+  "xuielgel": {
+    "arm": "tuned",
+    "scene": "G1",
+    "run": 1,
+    "kind": "broll"
+  },
+  "iznawkvv": {
+    "arm": "heygen",
+    "scene": "T2",
+    "run": 2,
+    "kind": "talking"
+  },
+  "zhyvvbuk": {
+    "arm": "baseline",
+    "scene": "T1",
+    "run": 2,
+    "kind": "talking"
+  },
+  "qhmvlzfs": {
+    "arm": "tuned_B",
+    "scene": "T2",
+    "run": 1,
+    "kind": "talking"
+  },
+  "pwisxvtj": {
+    "arm": "baseline",
+    "scene": "T2",
+    "run": 1,
+    "kind": "talking"
+  },
+  "qzfszjzq": {
+    "arm": "tuned_A",
+    "scene": "T2",
+    "run": 1,
+    "kind": "talking"
+  },
+  "tbrbvjrd": {
+    "arm": "baseline",
+    "scene": "G3",
+    "run": 2,
+    "kind": "broll"
+  },
+  "omjvbpuq": {
+    "arm": "baseline",
+    "scene": "T3",
+    "run": 2,
+    "kind": "talking"
+  },
+  "nnmufvuw": {
+    "arm": "heygen",
+    "scene": "T4",
+    "run": 1,
+    "kind": "talking"
+  },
+  "dantyijq": {
+    "arm": "baseline",
+    "scene": "B2",
+    "run": 1,
+    "kind": "broll"
+  },
+  "ekyoxceu": {
+    "arm": "baseline",
+    "scene": "G1",
+    "run": 1,
+    "kind": "broll"
+  },
+  "ndijjrvv": {
+    "arm": "heygen",
+    "scene": "T4",
+    "run": 2,
+    "kind": "talking"
+  },
+  "cmwshyxz": {
+    "arm": "tuned_A",
+    "scene": "T1",
+    "run": 1,
+    "kind": "talking"
+  },
+  "kcbtrdtw": {
+    "arm": "baseline",
+    "scene": "G2",
+    "run": 2,
+    "kind": "broll"
+  },
+  "hozdnvqm": {
+    "arm": "tuned",
+    "scene": "B3",
+    "run": 2,
+    "kind": "broll"
+  },
+  "rgvpjnjy": {
+    "arm": "tuned_B",
+    "scene": "T4",
+    "run": 1,
+    "kind": "talking"
+  },
+  "uvjcwxhi": {
+    "arm": "tuned",
+    "scene": "B1",
+    "run": 2,
+    "kind": "broll"
+  },
+  "bmsdfjul": {
+    "arm": "tuned",
+    "scene": "G3",
+    "run": 2,
+    "kind": "broll"
+  },
+  "slocglec": {
+    "arm": "tuned",
+    "scene": "B3",
+    "run": 1,
+    "kind": "broll"
+  },
+  "jhcshlrm": {
+    "arm": "tuned_B",
+    "scene": "T3",
+    "run": 1,
+    "kind": "talking"
+  },
+  "tkwpjchz": {
+    "arm": "heygen",
+    "scene": "T1",
+    "run": 2,
+    "kind": "talking"
+  },
+  "owzjottx": {
+    "arm": "baseline",
+    "scene": "T4",
+    "run": 1,
+    "kind": "talking"
+  },
+  "cwnlbhik": {
+    "arm": "tuned_B",
+    "scene": "T2",
+    "run": 2,
+    "kind": "talking"
+  },
+  "pjhzflrb": {
+    "arm": "baseline",
+    "scene": "B2",
+    "run": 2,
+    "kind": "broll"
+  },
+  "npculhox": {
+    "arm": "tuned",
+    "scene": "B2",
+    "run": 2,
+    "kind": "broll"
+  },
+  "lxtfkxzm": {
+    "arm": "baseline",
+    "scene": "G1",
+    "run": 2,
+    "kind": "broll"
+  },
+  "jqidsmil": {
+    "arm": "baseline",
+    "scene": "T2",
+    "run": 2,
+    "kind": "talking"
+  },
+  "wwztuqal": {
+    "arm": "tuned",
+    "scene": "G2",
+    "run": 1,
+    "kind": "broll"
+  },
+  "vfkkjpkf": {
+    "arm": "tuned",
+    "scene": "G1",
+    "run": 2,
+    "kind": "broll"
+  },
+  "eqlinamq": {
+    "arm": "baseline",
+    "scene": "T1",
+    "run": 1,
+    "kind": "talking"
+  },
+  "udnrtvba": {
+    "arm": "tuned_B",
+    "scene": "T1",
+    "run": 1,
+    "kind": "talking"
+  },
+  "tzjhkksu": {
+    "arm": "tuned",
+    "scene": "B1",
+    "run": 1,
+    "kind": "broll"
+  },
+  "isroutlx": {
+    "arm": "tuned",
+    "scene": "G3",
+    "run": 1,
+    "kind": "broll"
+  },
+  "bwjnxezw": {
+    "arm": "tuned",
+    "scene": "G2",
+    "run": 2,
+    "kind": "broll"
+  },
+  "spscsmdf": {
+    "arm": "heygen",
+    "scene": "T3",
+    "run": 1,
+    "kind": "talking"
+  },
+  "hzrsiwut": {
+    "arm": "baseline",
+    "scene": "B1",
+    "run": 2,
+    "kind": "broll"
+  },
+  "aecpqwkp": {
+    "arm": "tuned_B",
+    "scene": "T3",
+    "run": 2,
+    "kind": "talking"
+  },
+  "irfuayex": {
+    "arm": "tuned_A",
+    "scene": "T1",
+    "run": 2,
+    "kind": "talking"
+  },
+  "effsshpj": {
+    "arm": "baseline",
+    "scene": "B1",
+    "run": 1,
+    "kind": "broll"
+  },
+  "beendnjv": {
+    "arm": "tuned_B",
+    "scene": "T4",
+    "run": 2,
+    "kind": "talking"
+  },
+  "ypxkxkcf": {
+    "arm": "tuned_A",
+    "scene": "T4",
+    "run": 2,
+    "kind": "talking"
+  },
+  "ynwpozzi": {
+    "arm": "baseline",
+    "scene": "G2",
+    "run": 1,
+    "kind": "broll"
+  },
+  "jsluxeyg": {
+    "arm": "baseline",
+    "scene": "G3",
+    "run": 1,
+    "kind": "broll"
+  },
+  "ekcfbozg": {
+    "arm": "tuned_A",
+    "scene": "T3",
+    "run": 1,
+    "kind": "talking"
+  },
+  "maryhzji": {
+    "arm": "tuned_A",
+    "scene": "T3",
+    "run": 2,
+    "kind": "talking"
+  },
+  "dktdqnzc": {
+    "arm": "tuned_A",
+    "scene": "T4",
+    "run": 1,
+    "kind": "talking"
+  },
+  "kprfhbzi": {
+    "arm": "baseline",
+    "scene": "B3",
+    "run": 1,
+    "kind": "broll"
+  },
+  "ootzvohh": {
+    "arm": "baseline",
+    "scene": "T3",
+    "run": 1,
+    "kind": "talking"
+  },
+  "fhckoqlx": {
+    "arm": "baseline",
+    "scene": "B3",
+    "run": 2,
+    "kind": "broll"
+  },
+  "lmzcptyc": {
+    "arm": "heygen",
+    "scene": "T3",
+    "run": 2,
+    "kind": "talking"
+  },
+  "lnodgzdz": {
+    "arm": "tuned_B",
+    "scene": "T1",
+    "run": 2,
+    "kind": "talking"
+  },
+  "cwiiluvu": {
+    "arm": "heygen",
+    "scene": "T2",
+    "run": 1,
+    "kind": "talking"
+  },
+  "mqsrgddf": {
+    "arm": "heygen",
+    "scene": "T1",
+    "run": 1,
+    "kind": "talking"
+  }
+}

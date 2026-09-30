@@ -1,0 +1,1042 @@
+{
+ "qwlulsqk": {
+  "arm": "tuned",
+  "scene": "B2",
+  "run": 1,
+  "kind": "broll",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "This is all okay, but one that handle is lifted, the share should the share should become longer and higher, but nothing really happens. Like the hand is just holding up the handle to go to make the share go up, but nothing is happening ",
+  "res": {
+   "keeps_size_and_shape": true,
+   "no_extra_hands_limbs_objects": true,
+   "motion_could_happen": true
+  },
+  "pass": true,
+  "code": "qwlulsqk"
+ },
+ "pwpjrsch": {
+  "arm": "tuned_A",
+  "scene": "T2",
+  "run": 2,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "fail",
+   "normal_speed": "",
+   "calm_face_fits_line": "failed",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "",
+  "res": {
+   "lips_in_step": false,
+   "normal_speed": true,
+   "calm_face_fits_line": false,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": false,
+  "code": "pwpjrsch"
+ },
+ "nslrunmn": {
+  "arm": "baseline",
+  "scene": "T4",
+  "run": 2,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "failed",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "I mean the mat, one laying down. I think it is huge, but I haven't seen the laying down picture yet for this one. Alright, I haven't seen it yet, but if it is laying down, I think it would be a lot bigger. But right now, in the picture or in the video, it is just so tiny. That the man like holding it in his hands ",
+  "res": {
+   "lips_in_step": true,
+   "normal_speed": true,
+   "calm_face_fits_line": true,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": true,
+  "code": "nslrunmn"
+ },
+ "xuielgel": {
+  "arm": "tuned",
+  "scene": "G1",
+  "run": 1,
+  "kind": "broll",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "",
+  "res": {
+   "keeps_size_and_shape": true,
+   "no_extra_hands_limbs_objects": true,
+   "motion_could_happen": true
+  },
+  "pass": true,
+  "code": "xuielgel"
+ },
+ "iznawkvv": {
+  "arm": "heygen",
+  "scene": "T2",
+  "run": 2,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "",
+  "res": {
+   "lips_in_step": true,
+   "normal_speed": true,
+   "calm_face_fits_line": true,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": true,
+  "code": "iznawkvv"
+ },
+ "zhyvvbuk": {
+  "arm": "baseline",
+  "scene": "T1",
+  "run": 2,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "failed",
+   "normal_speed": "failed",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "",
+  "res": {
+   "lips_in_step": false,
+   "normal_speed": false,
+   "calm_face_fits_line": true,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": false,
+  "code": "zhyvvbuk"
+ },
+ "qhmvlzfs": {
+  "arm": "tuned_B",
+  "scene": "T2",
+  "run": 1,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "failed",
+   "normal_speed": "failed",
+   "calm_face_fits_line": "failed",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "",
+  "res": {
+   "lips_in_step": false,
+   "normal_speed": false,
+   "calm_face_fits_line": false,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": false,
+  "code": "qhmvlzfs"
+ },
+ "pwisxvtj": {
+  "arm": "baseline",
+  "scene": "T2",
+  "run": 1,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "failed",
+   "normal_speed": "",
+   "calm_face_fits_line": "failed",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "",
+  "res": {
+   "lips_in_step": false,
+   "normal_speed": true,
+   "calm_face_fits_line": false,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": false,
+  "code": "pwisxvtj"
+ },
+ "qzfszjzq": {
+  "arm": "tuned_A",
+  "scene": "T2",
+  "run": 1,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "failed",
+   "normal_speed": "",
+   "calm_face_fits_line": "failed",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "",
+  "res": {
+   "lips_in_step": false,
+   "normal_speed": true,
+   "calm_face_fits_line": false,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": false,
+  "code": "qzfszjzq"
+ },
+ "tbrbvjrd": {
+  "arm": "baseline",
+  "scene": "G3",
+  "run": 2,
+  "kind": "broll",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "",
+  "res": {
+   "keeps_size_and_shape": true,
+   "no_extra_hands_limbs_objects": true,
+   "motion_could_happen": true
+  },
+  "pass": true,
+  "code": "tbrbvjrd"
+ },
+ "omjvbpuq": {
+  "arm": "baseline",
+  "scene": "T3",
+  "run": 2,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "failed",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "",
+  "res": {
+   "lips_in_step": true,
+   "normal_speed": true,
+   "calm_face_fits_line": true,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": true,
+  "code": "omjvbpuq"
+ },
+ "nnmufvuw": {
+  "arm": "heygen",
+  "scene": "T4",
+  "run": 1,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "failed",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "",
+  "res": {
+   "lips_in_step": true,
+   "normal_speed": true,
+   "calm_face_fits_line": true,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": true,
+  "code": "nnmufvuw"
+ },
+ "dantyijq": {
+  "arm": "baseline",
+  "scene": "B2",
+  "run": 1,
+  "kind": "broll",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": "failed"
+  },
+  "notes": "",
+  "res": {
+   "keeps_size_and_shape": true,
+   "no_extra_hands_limbs_objects": true,
+   "motion_could_happen": false
+  },
+  "pass": false,
+  "code": "dantyijq"
+ },
+ "ekyoxceu": {
+  "arm": "baseline",
+  "scene": "G1",
+  "run": 1,
+  "kind": "broll",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "",
+  "res": {
+   "keeps_size_and_shape": true,
+   "no_extra_hands_limbs_objects": true,
+   "motion_could_happen": true
+  },
+  "pass": true,
+  "code": "ekyoxceu"
+ },
+ "ndijjrvv": {
+  "arm": "heygen",
+  "scene": "T4",
+  "run": 2,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "failed",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "I mean the mat, one laying down. I think it is huge, but I haven't seen the laying down picture yet for this one. Alright, I haven't seen it yet, but if it is laying down, I think it would be a lot bigger. But right now, in the picture or in the video, it is just so tiny. That the man like holding it in his hands ",
+  "res": {
+   "lips_in_step": true,
+   "normal_speed": true,
+   "calm_face_fits_line": true,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": true,
+  "code": "ndijjrvv"
+ },
+ "cmwshyxz": {
+  "arm": "tuned_A",
+  "scene": "T1",
+  "run": 1,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "failed",
+   "normal_speed": "failed",
+   "calm_face_fits_line": "failed",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "",
+  "res": {
+   "lips_in_step": false,
+   "normal_speed": false,
+   "calm_face_fits_line": false,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": false,
+  "code": "cmwshyxz"
+ },
+ "kcbtrdtw": {
+  "arm": "baseline",
+  "scene": "G2",
+  "run": 2,
+  "kind": "broll",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "",
+  "res": {
+   "keeps_size_and_shape": true,
+   "no_extra_hands_limbs_objects": true,
+   "motion_could_happen": true
+  },
+  "pass": true,
+  "code": "kcbtrdtw"
+ },
+ "rgvpjnjy": {
+  "arm": "tuned_B",
+  "scene": "T4",
+  "run": 1,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "failed",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "The president is not speaking all the words ",
+  "res": {
+   "lips_in_step": false,
+   "normal_speed": true,
+   "calm_face_fits_line": true,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": false,
+  "code": "rgvpjnjy"
+ },
+ "uvjcwxhi": {
+  "arm": "tuned",
+  "scene": "B1",
+  "run": 2,
+  "kind": "broll",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": "failed"
+  },
+  "notes": "The whole shit, including the wheel, is spinning. I don't think it should be like that ",
+  "res": {
+   "keeps_size_and_shape": true,
+   "no_extra_hands_limbs_objects": true,
+   "motion_could_happen": false
+  },
+  "pass": false,
+  "code": "uvjcwxhi"
+ },
+ "bmsdfjul": {
+  "arm": "tuned",
+  "scene": "G3",
+  "run": 2,
+  "kind": "broll",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "I think we are like the camera angle is getting too close to the purse, and it becomes so uncomfortable for the user, or like quite weird in it is start to look quite weird in the user viewer's eyes ",
+  "res": {
+   "keeps_size_and_shape": true,
+   "no_extra_hands_limbs_objects": true,
+   "motion_could_happen": true
+  },
+  "pass": true,
+  "code": "bmsdfjul"
+ },
+ "jhcshlrm": {
+  "arm": "tuned_B",
+  "scene": "T3",
+  "run": 1,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "failed",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "The walking machine becomes so small that the guy is holding it in his hands ",
+  "res": {
+   "lips_in_step": true,
+   "normal_speed": true,
+   "calm_face_fits_line": true,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": true,
+  "code": "jhcshlrm"
+ },
+ "cwnlbhik": {
+  "arm": "tuned_B",
+  "scene": "T2",
+  "run": 2,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "failed",
+   "normal_speed": "",
+   "calm_face_fits_line": "failed",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "The person is not speaking other words ",
+  "res": {
+   "lips_in_step": false,
+   "normal_speed": true,
+   "calm_face_fits_line": false,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": false,
+  "code": "cwnlbhik"
+ },
+ "npculhox": {
+  "arm": "tuned",
+  "scene": "B2",
+  "run": 2,
+  "kind": "broll",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "The handle is lifted, but the shade is not. The shade height is not going up ",
+  "res": {
+   "keeps_size_and_shape": true,
+   "no_extra_hands_limbs_objects": true,
+   "motion_could_happen": true
+  },
+  "pass": true,
+  "code": "npculhox"
+ },
+ "tzjhkksu": {
+  "arm": "tuned",
+  "scene": "B1",
+  "run": 1,
+  "kind": "broll",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "The whole shit, including the wheel, is spinning. I don't think it should be like that ",
+  "res": {
+   "keeps_size_and_shape": true,
+   "no_extra_hands_limbs_objects": true,
+   "motion_could_happen": true
+  },
+  "pass": true,
+  "code": "tzjhkksu"
+ },
+ "isroutlx": {
+  "arm": "tuned",
+  "scene": "G3",
+  "run": 1,
+  "kind": "broll",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "I think we are like the camera angle is getting too close to the purse, and it becomes so uncomfortable for the user, or like quite weird in it is start to look quite weird in the user viewer's eyes ",
+  "res": {
+   "keeps_size_and_shape": true,
+   "no_extra_hands_limbs_objects": true,
+   "motion_could_happen": true
+  },
+  "pass": true,
+  "code": "isroutlx"
+ },
+ "spscsmdf": {
+  "arm": "heygen",
+  "scene": "T3",
+  "run": 1,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "failed",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "The walking machine becomes so small that the guy is holding it in his hands ",
+  "res": {
+   "lips_in_step": true,
+   "normal_speed": true,
+   "calm_face_fits_line": true,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": true,
+  "code": "spscsmdf"
+ },
+ "aecpqwkp": {
+  "arm": "tuned_B",
+  "scene": "T3",
+  "run": 2,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "failed",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "The walking machine becomes so small that the guy is holding it in his hands ",
+  "res": {
+   "lips_in_step": true,
+   "normal_speed": true,
+   "calm_face_fits_line": true,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": true,
+  "code": "aecpqwkp"
+ },
+ "irfuayex": {
+  "arm": "tuned_A",
+  "scene": "T1",
+  "run": 2,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "failed",
+   "normal_speed": "failed",
+   "calm_face_fits_line": "failed",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "The person is not speaking all the words ",
+  "res": {
+   "lips_in_step": false,
+   "normal_speed": false,
+   "calm_face_fits_line": false,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": false,
+  "code": "irfuayex"
+ },
+ "beendnjv": {
+  "arm": "tuned_B",
+  "scene": "T4",
+  "run": 2,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "failed",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "I mean, the guy is not even speaking at all ",
+  "res": {
+   "lips_in_step": false,
+   "normal_speed": true,
+   "calm_face_fits_line": true,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": false,
+  "code": "beendnjv"
+ },
+ "ypxkxkcf": {
+  "arm": "tuned_A",
+  "scene": "T4",
+  "run": 2,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "failed",
+   "normal_speed": "failed",
+   "calm_face_fits_line": "failed",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "failed",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "I think the mat is so small that the guy is holding everything in his hands ",
+  "res": {
+   "lips_in_step": false,
+   "normal_speed": false,
+   "calm_face_fits_line": false,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": false,
+  "code": "ypxkxkcf"
+ },
+ "ekcfbozg": {
+  "arm": "tuned_A",
+  "scene": "T3",
+  "run": 1,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "failed",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "The walking machine becomes so small that the guy is holding it in his hands ",
+  "res": {
+   "lips_in_step": true,
+   "normal_speed": true,
+   "calm_face_fits_line": true,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": true,
+  "code": "ekcfbozg"
+ },
+ "maryhzji": {
+  "arm": "tuned_A",
+  "scene": "T3",
+  "run": 2,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "failed",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "The walking machine becomes so small that the guy is holding it in his hands ",
+  "res": {
+   "lips_in_step": true,
+   "normal_speed": true,
+   "calm_face_fits_line": true,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": true,
+  "code": "maryhzji"
+ },
+ "dktdqnzc": {
+  "arm": "tuned_A",
+  "scene": "T4",
+  "run": 1,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "failed",
+   "normal_speed": "failed",
+   "calm_face_fits_line": "failed",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "failed",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "I think the mat is so small ",
+  "res": {
+   "lips_in_step": false,
+   "normal_speed": false,
+   "calm_face_fits_line": false,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": false,
+  "code": "dktdqnzc"
+ },
+ "lmzcptyc": {
+  "arm": "heygen",
+  "scene": "T3",
+  "run": 2,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "failed",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "The walking machine becomes so small that the guy is holding it in his hands ",
+  "res": {
+   "lips_in_step": true,
+   "normal_speed": true,
+   "calm_face_fits_line": true,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": true,
+  "code": "lmzcptyc"
+ },
+ "lnodgzdz": {
+  "arm": "tuned_B",
+  "scene": "T1",
+  "run": 2,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "failed",
+   "normal_speed": "failed",
+   "calm_face_fits_line": "failed",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "The person is not even speaking the words in the picture. Only the voice is coming. The the guy the person is just making the impressions and just smiling ",
+  "res": {
+   "lips_in_step": false,
+   "normal_speed": false,
+   "calm_face_fits_line": false,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": false,
+  "code": "lnodgzdz"
+ },
+ "hozdnvqm": {
+  "arm": "tuned",
+  "scene": "B3",
+  "run": 2,
+  "kind": "broll",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "(left blank: read as all pass)",
+  "res": {
+   "keeps_size_and_shape": true,
+   "no_extra_hands_limbs_objects": true,
+   "motion_could_happen": true
+  },
+  "pass": true,
+  "code": "hozdnvqm"
+ },
+ "slocglec": {
+  "arm": "tuned",
+  "scene": "B3",
+  "run": 1,
+  "kind": "broll",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "(left blank: read as all pass)",
+  "res": {
+   "keeps_size_and_shape": true,
+   "no_extra_hands_limbs_objects": true,
+   "motion_could_happen": true
+  },
+  "pass": true,
+  "code": "slocglec"
+ },
+ "tkwpjchz": {
+  "arm": "heygen",
+  "scene": "T1",
+  "run": 2,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "(left blank: read as all pass)",
+  "res": {
+   "lips_in_step": true,
+   "normal_speed": true,
+   "calm_face_fits_line": true,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": true,
+  "code": "tkwpjchz"
+ },
+ "wwztuqal": {
+  "arm": "tuned",
+  "scene": "G2",
+  "run": 1,
+  "kind": "broll",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "(left blank: read as all pass)",
+  "res": {
+   "keeps_size_and_shape": true,
+   "no_extra_hands_limbs_objects": true,
+   "motion_could_happen": true
+  },
+  "pass": true,
+  "code": "wwztuqal"
+ },
+ "vfkkjpkf": {
+  "arm": "tuned",
+  "scene": "G1",
+  "run": 2,
+  "kind": "broll",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "(left blank: read as all pass)",
+  "res": {
+   "keeps_size_and_shape": true,
+   "no_extra_hands_limbs_objects": true,
+   "motion_could_happen": true
+  },
+  "pass": true,
+  "code": "vfkkjpkf"
+ },
+ "udnrtvba": {
+  "arm": "tuned_B",
+  "scene": "T1",
+  "run": 1,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "(left blank: read as all pass)",
+  "res": {
+   "lips_in_step": true,
+   "normal_speed": true,
+   "calm_face_fits_line": true,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": true,
+  "code": "udnrtvba"
+ },
+ "bwjnxezw": {
+  "arm": "tuned",
+  "scene": "G2",
+  "run": 2,
+  "kind": "broll",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "(left blank: read as all pass)",
+  "res": {
+   "keeps_size_and_shape": true,
+   "no_extra_hands_limbs_objects": true,
+   "motion_could_happen": true
+  },
+  "pass": true,
+  "code": "bwjnxezw"
+ },
+ "cwiiluvu": {
+  "arm": "heygen",
+  "scene": "T2",
+  "run": 1,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "(left blank: read as all pass)",
+  "res": {
+   "lips_in_step": true,
+   "normal_speed": true,
+   "calm_face_fits_line": true,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": true,
+  "code": "cwiiluvu"
+ },
+ "mqsrgddf": {
+  "arm": "heygen",
+  "scene": "T1",
+  "run": 1,
+  "kind": "talking",
+  "grades": {
+   "lips_in_step": "",
+   "normal_speed": "",
+   "calm_face_fits_line": "",
+   "no_extra_hands_or_objects": "",
+   "keeps_size_and_shape": "",
+   "no_extra_hands_limbs_objects": "",
+   "motion_could_happen": ""
+  },
+  "notes": "(left blank: read as all pass)",
+  "res": {
+   "lips_in_step": true,
+   "normal_speed": true,
+   "calm_face_fits_line": true,
+   "no_extra_hands_or_objects": true
+  },
+  "pass": true,
+  "code": "mqsrgddf"
+ }
+}
