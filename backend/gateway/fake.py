@@ -15,10 +15,10 @@ fail.
 Clips need no script either: each one asked for is made at once, a real tiny clip that
 speaks the audio it was asked for, or is silent for as many seconds as were asked for when
 it has none, so ffmpeg can cut and join it: set `clips_short_by` to make silent ones
-shorter. The fake makes both kinds, talking and B-roll, and is scripted for either under
-its own names: {"state": "working"} for "collect_clip" to have a clip still being made when
-asked, {"state": "failed", "error": ...} to have it fail, or an error for "make_clip" or
-"collect_clip"."""
+shorter. The fake makes talking clips and B-roll ones alike, and its clip scripts are keyed
+"make_clip" and "collect_clip" whichever purpose asked: {"state": "working"} for
+"collect_clip" to have a clip still being made when asked, {"state": "failed", "error": ...}
+to have it fail, or an error for "make_clip" or "collect_clip"."""
 
 import io
 import itertools

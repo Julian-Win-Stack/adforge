@@ -149,10 +149,18 @@ def _transcribers() -> TranscriptionProvider:
 
 def _clips(model: str) -> ClipProvider:
     """The service that makes clips with `model`: talking clips and B-roll ones each have
-    their own, so a clip is always waited for at the service it was asked of."""
+    their own, so a clip is always waited for at the service it was asked of. A model the
+    catalog names that no service here makes is a mistake, not Boreal's."""
     if _override is not None:
         return cast(ClipProvider, _override)
-    return _heygen() if model.startswith("heygen/") else _boreal()
+    return _CLIP_SERVICES[model]()
+
+
+# Which service makes clips with which model. Each is made once and kept.
+_CLIP_SERVICES: dict[str, Callable[[], ClipProvider]] = {
+    "heygen/avatar-iv": _heygen,
+    "creatify/boreal": _boreal,
+}
 
 
 def _music() -> MusicProvider:
