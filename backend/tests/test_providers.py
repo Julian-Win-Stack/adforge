@@ -7,7 +7,7 @@ import json
 import socket
 import time
 import wave
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from decimal import Decimal
 from typing import Any
 
@@ -19,6 +19,7 @@ from werkzeug import Request, Response
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
+from gateway import gateway
 from gateway.boreal_adapter import BorealProvider
 from gateway.elevenlabs_adapter import ElevenLabsProvider
 from gateway.fal_adapter import FalProvider
@@ -33,6 +34,7 @@ from gateway.gateway import (
     transcribe,
     use_model,
 )
+from gateway.heygen_adapter import HeyGenProvider
 from gateway.inworld_adapter import InworldProvider
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
@@ -599,7 +601,7 @@ def submitting(picture_key: str = "", audio_key: str | None = "", seconds: float
     for a silent one when `audio_key` is None."""
     return submit_clip(
         job=None,
-        purpose="make_clip",
+        purpose="make_broll_clip",
         picture_key=picture_key
         or file_store.save("starting_picture.png", picture(72, 128, (1, 2, 3))),
         audio_key=audio_key
@@ -612,7 +614,7 @@ def submitting(picture_key: str = "", audio_key: str | None = "", seconds: float
 
 def collecting() -> str:
     """Wait for clip req-1 to be made, then fetch it."""
-    return collect_clip(job=None, purpose="collect_clip", video_id="req-1")
+    return collect_clip(job=None, purpose="collect_broll_clip", video_id="req-1")
 
 
 def with_files_read_back(body: dict[str, Any]) -> dict[str, Any]:
@@ -1075,3 +1077,328 @@ def test_a_clip_whose_reply_from_fal_is_lost_isnt_asked_for_again(
     # fal may have taken it, and charged for it: asking again could pay twice.
     assert taken == ["/creatify/boreal"]
     assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
+
+
+# --- HeyGen Avatar IV --------------------------------------------------------------------------
+# Replies as HeyGen gave them on 2026-09-24 and 2026-09-25 (docs/real-api-replies.md), with
+# what its docs said on 2026-09-29: a clip's first status may be `waiting`, and the code for a
+# clip it doesn't know of is now `not_found`.
+
+
+@pytest.fixture
+def heygen(httpserver: HTTPServer, settings: Settings) -> HeyGenProvider:
+    settings.HEYGEN_API_KEY = "heygen-test-key"
+    settings.HEYGEN_BASE_URL = httpserver.url_for("")
+    return HeyGenProvider()
+
+
+HEYGEN_AUTHORISED = {"x-api-key": "heygen-test-key"}
+HEYGEN_CLIP = "/v3/videos/vid-1"
+
+
+def taking_uploads(httpserver: HTTPServer) -> list[tuple[str, bytes, str]]:
+    """HeyGen taking every file uploaded to it with our key. Gives each one's name, bytes and
+    type."""
+    uploaded: list[tuple[str, bytes, str]] = []
+
+    def upload(request: Request) -> Response:
+        file = request.files["file"]
+        uploaded.append((file.filename or "", file.read(), file.content_type or ""))
+        return Response(
+            json.dumps({"data": {"asset_id": f"asset-{len(uploaded)}"}}),
+            content_type="application/json",
+        )
+
+    httpserver.expect_request(
+        "/v3/assets", method="POST", headers=HEYGEN_AUTHORISED
+    ).respond_with_handler(upload)
+    return uploaded
+
+
+def asking_heygen(picture_key: str = "", audio_key: str = "") -> str:
+    """Ask for a 5.4-second talking clip, of a picture and audio kept in the file store."""
+    return submit_clip(
+        job=None,
+        purpose="make_talking_clip",
+        picture_key=picture_key
+        or file_store.save("starting_picture.png", picture(72, 128, (1, 2, 3))),
+        audio_key=audio_key or file_store.save("speak_line.wav", wav(5.4)),
+        seconds=5.4,
+        motion_prompt="She talks to the camera.",
+    )
+
+
+def collecting_from_heygen() -> str:
+    """Wait for clip vid-1 to be made, then fetch it."""
+    return collect_clip(job=None, purpose="collect_talking_clip", video_id="vid-1")
+
+
+def test_a_talking_clip_is_made_from_a_picture_and_audio_through_heygen(
+    httpserver: HTTPServer, heygen: HeyGenProvider
+) -> None:
+    starting_picture = picture(1152, 2048, (200, 180, 160))
+    line = wav(5.4)
+    uploaded = taking_uploads(httpserver)
+    # The request the eval's 8 passing clips were made with (#87).
+    httpserver.expect_oneshot_request(
+        "/v3/videos",
+        method="POST",
+        headers=HEYGEN_AUTHORISED,
+        json={
+            "type": "image",
+            "image": {"type": "asset_id", "asset_id": "asset-1"},
+            "audio_asset_id": "asset-2",
+            "motion_prompt": "She talks to the camera.",
+            "expressiveness": "low",
+            "aspect_ratio": "9:16",
+            "resolution": "1080p",
+            "title": "AdForge clip",
+        },
+    ).respond_with_json({"data": {"video_id": "vid-1", "status": "waiting"}})
+    # Waiting, then being made, then made.
+    for status in ("waiting", "processing"):
+        httpserver.expect_oneshot_request(
+            HEYGEN_CLIP, method="GET", headers=HEYGEN_AUTHORISED
+        ).respond_with_json({"data": {"id": "vid-1", "status": status}})
+    httpserver.expect_oneshot_request(
+        HEYGEN_CLIP, method="GET", headers=HEYGEN_AUTHORISED
+    ).respond_with_json(
+        {
+            "data": {
+                "id": "vid-1",
+                "status": "completed",
+                "duration": 5.42,
+                "video_url": httpserver.url_for(CLIP_LINK),
+            }
+        }
+    )
+    httpserver.expect_oneshot_request(CLIP_LINK).respond_with_data(MADE)
+
+    with use_model(heygen):
+        video_id = asking_heygen(
+            file_store.save("starting_picture.png", starting_picture),
+            file_store.save("speak_line.wav", line),
+        )
+        key = collecting_from_heygen()
+
+    assert video_id == "vid-1"
+    assert uploaded == [
+        ("starting_picture.png", starting_picture, "image/png"),
+        ("line.wav", line, "audio/wav"),
+    ]
+    assert file_store.read(key) == MADE
+    # The link to the clip is somewhere other than HeyGen's API: it isn't sent our key.
+    (fetching,) = [request for request, _ in httpserver.log if request.path == CLIP_LINK]
+    assert "x-api-key" not in fetching.headers
+
+
+def test_a_talking_clip_is_billed_by_heygen_for_every_second_of_it(
+    httpserver: HTTPServer, heygen: HeyGenProvider
+) -> None:
+    taking_uploads(httpserver)
+    httpserver.expect_request("/v3/videos", method="POST").respond_with_json(
+        {"data": {"video_id": "vid-1"}}
+    )
+
+    with use_model(heygen):
+        asking_heygen()
+
+    submitted = ModelCall.objects.get()
+    # $0.05 a second, at 720p and 1080p alike.
+    assert (
+        submitted.provider,
+        submitted.model,
+        submitted.video_seconds,
+        submitted.cost_usd,
+        submitted.output,
+    ) == ("heygen", "heygen/avatar-iv", 5.4, Decimal("0.27"), {"video_id": "vid-1"})
+
+
+def test_heygen_is_never_asked_for_a_clip_with_no_audio(
+    httpserver: HTTPServer, heygen: HeyGenProvider
+) -> None:
+    # It makes talking clips only: a silent one is B-roll's, and Boreal's to make.
+    with use_model(heygen), pytest.raises(ValueError, match="HeyGen only makes talking clips"):
+        submit_clip(
+            job=None,
+            purpose="make_talking_clip",
+            picture_key=file_store.save("p.png", picture(72, 128, (1, 2, 3))),
+            audio_key=None,
+            seconds=5,
+            motion_prompt="She talks to the camera.",
+        )
+    assert httpserver.log == []
+
+
+def test_a_clip_heygen_couldnt_make_is_not_asked_for_again(
+    httpserver: HTTPServer, heygen: HeyGenProvider
+) -> None:
+    httpserver.expect_oneshot_request(HEYGEN_CLIP).respond_with_json(
+        {"data": {"id": "vid-1", "status": "failed", "failure_message": "No face was found."}}
+    )
+
+    with use_model(heygen), pytest.raises(ClipFailed, match=r"^No face was found\.$"):
+        collecting_from_heygen()
+    assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        pytest.param("video_not_found", id="as HeyGen answered on 2026-09-25"),
+        pytest.param("not_found", id="as its docs say on 2026-09-29"),
+    ],
+)
+def test_a_clip_heygen_no_longer_knows_of_counts_as_one_it_couldnt_make(
+    httpserver: HTTPServer, heygen: HeyGenProvider, code: str
+) -> None:
+    httpserver.expect_oneshot_request(HEYGEN_CLIP).respond_with_json(
+        {"error": {"code": code, "message": "Video vid-1 not found"}}, status=404
+    )
+
+    # Waited for, it would never be made.
+    with (
+        use_model(heygen),
+        pytest.raises(
+            ClipFailed, match="^HeyGen no longer knows of this clip: Video vid-1 not found$"
+        ),
+    ):
+        collecting_from_heygen()
+
+
+def test_a_not_found_from_heygen_that_isnt_about_the_clip_doesnt_count_as_the_clip_failing(
+    httpserver: HTTPServer, heygen: HeyGenProvider
+) -> None:
+    # Such as its address having moved: the clip it was asked about may still be made, and
+    # counting it as failed would pay for it again.
+    httpserver.expect_oneshot_request(HEYGEN_CLIP).respond_with_data("Not Found", status=404)
+
+    with use_model(heygen), pytest.raises(httpx.HTTPStatusError, match="404 NOT FOUND"):
+        collecting_from_heygen()
+
+
+@pytest.mark.parametrize(
+    "failing",
+    [
+        pytest.param(hanging_up, id="reply lost"),
+        pytest.param(too_busy, id="too busy"),
+        pytest.param(broken, id="server error"),
+    ],
+)
+def test_a_made_clip_is_still_fetched_when_heygen_fails_for_a_moment(
+    httpserver: HTTPServer, heygen: HeyGenProvider, failing: Callable[[Request], Response]
+) -> None:
+    # Asking about a clip costs nothing, so it is asked again. Giving up would pay twice.
+    httpserver.expect_oneshot_request(HEYGEN_CLIP).respond_with_handler(failing)
+    httpserver.expect_oneshot_request(HEYGEN_CLIP).respond_with_json(
+        {"data": {"id": "vid-1", "status": "completed", "video_url": httpserver.url_for(CLIP_LINK)}}
+    )
+    httpserver.expect_oneshot_request(CLIP_LINK).respond_with_data(MADE)
+
+    with use_model(heygen):
+        key = collecting_from_heygen()
+
+    assert file_store.read(key) == MADE
+    assert [(c.attempt, c.outcome) for c in ModelCall.objects.all()] == [
+        (1, ModelCall.Outcome.FAILED),
+        (2, ModelCall.Outcome.SUCCEEDED),
+    ]
+
+
+def test_a_clip_heygen_is_too_busy_for_is_asked_for_again(
+    httpserver: HTTPServer, heygen: HeyGenProvider
+) -> None:
+    taking_uploads(httpserver)
+    # Too busy to take it, so nothing was made: asking again can't pay twice.
+    httpserver.expect_oneshot_request("/v3/videos", method="POST").respond_with_data(
+        "Service Unavailable", status=503
+    )
+    httpserver.expect_oneshot_request("/v3/videos", method="POST").respond_with_json(
+        {"data": {"video_id": "vid-1"}}
+    )
+
+    with use_model(heygen):
+        assert asking_heygen() == "vid-1"
+
+    assert [(c.attempt, c.outcome, c.cost_usd) for c in ModelCall.objects.all()] == [
+        (1, ModelCall.Outcome.FAILED, None),
+        (2, ModelCall.Outcome.SUCCEEDED, Decimal("0.27")),
+    ]
+
+
+def test_a_clip_whose_reply_from_heygen_is_lost_isnt_asked_for_again(
+    httpserver: HTTPServer, heygen: HeyGenProvider, settings: Settings
+) -> None:
+    settings.HEYGEN_TIMEOUT_SECONDS = 0.2
+    impatient = HeyGenProvider()
+    taking_uploads(httpserver)
+    taken: list[str] = []
+
+    def answering_too_late(request: Request) -> Response:
+        taken.append(request.path)
+        time.sleep(0.5)
+        return Response(json.dumps({"data": {"video_id": "vid-1"}}))
+
+    httpserver.expect_request("/v3/videos", method="POST").respond_with_handler(answering_too_late)
+
+    with (
+        use_model(impatient),
+        pytest.raises(ClipFailed, match="^HeyGen's reply was lost after the clip was asked for"),
+    ):
+        asking_heygen()
+
+    # HeyGen may have taken it, and charged for it: asking again could pay twice.
+    assert taken == ["/v3/videos"]
+    assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
+
+
+@pytest.fixture
+def real_services(httpserver: HTTPServer, settings: Settings) -> Iterator[None]:
+    """The gateway's own services, not one handed to it, each pointed at the stand-in."""
+    settings.HEYGEN_API_KEY = "heygen-test-key"
+    settings.HEYGEN_BASE_URL = httpserver.url_for("")
+    settings.FAL_KEY = "fal-test-key"
+    settings.FAL_QUEUE_URL = httpserver.url_for("")
+    # Made once and kept: made again here with the stand-in's address, and after, so no
+    # other test is sent to it.
+    gateway._heygen.cache_clear()
+    gateway._boreal.cache_clear()
+    yield
+    gateway._heygen.cache_clear()
+    gateway._boreal.cache_clear()
+
+
+def test_a_talking_clip_is_made_by_heygen_and_a_b_roll_clip_by_boreal(
+    httpserver: HTTPServer, real_services: None
+) -> None:
+    taking_uploads(httpserver)
+    httpserver.expect_request("/v3/videos", method="POST").respond_with_json(
+        {"data": {"video_id": "vid-1"}}
+    )
+    httpserver.expect_request("/creatify/boreal", method="POST").respond_with_json(QUEUED)
+    httpserver.expect_request(HEYGEN_CLIP).respond_with_json(
+        {"data": {"id": "vid-1", "status": "completed", "video_url": httpserver.url_for(CLIP_LINK)}}
+    )
+    httpserver.expect_request(STATUS).respond_with_json(
+        {"request_id": "req-1", "status": "COMPLETED"}
+    )
+    httpserver.expect_request(RESULT).respond_with_json(
+        {"video": {"url": httpserver.url_for(CLIP_LINK), "content_type": "video/mp4"}}
+    )
+    httpserver.expect_request(CLIP_LINK).respond_with_data(MADE)
+
+    assert asking_heygen() == "vid-1"
+    assert submitting(audio_key=None) == "req-1"
+    # Each clip is waited for at the service that was asked for it.
+    collecting_from_heygen()
+    collect_clip(job=None, purpose="collect_broll_clip", video_id="req-1")
+
+    assert [
+        (call.purpose, call.provider, call.model)
+        for call in ModelCall.objects.order_by("created_at", "id")
+    ] == [
+        ("make_talking_clip", "heygen", "heygen/avatar-iv"),
+        ("make_broll_clip", "fal", "creatify/boreal"),
+        ("collect_talking_clip", "heygen", "heygen/avatar-iv"),
+        ("collect_broll_clip", "fal", "creatify/boreal"),
+    ]

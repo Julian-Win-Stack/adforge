@@ -66,6 +66,7 @@ if TYPE_CHECKING:
     from .boreal_adapter import BorealProvider
     from .elevenlabs_adapter import ElevenLabsProvider
     from .fal_adapter import FalProvider
+    from .heygen_adapter import HeyGenProvider
     from .inworld_adapter import InworldProvider
     from .openai_adapter import OpenAIProvider
 
@@ -117,6 +118,13 @@ def _boreal() -> BorealProvider:
 
 
 @cache
+def _heygen() -> HeyGenProvider:
+    from .heygen_adapter import HeyGenProvider
+
+    return HeyGenProvider()
+
+
+@cache
 def _fal() -> FalProvider:
     from .fal_adapter import FalProvider
 
@@ -139,8 +147,12 @@ def _transcribers() -> TranscriptionProvider:
     return cast(TranscriptionProvider, _override) if _override is not None else _elevenlabs()
 
 
-def _clips() -> ClipProvider:
-    return cast(ClipProvider, _override) if _override is not None else _boreal()
+def _clips(model: str) -> ClipProvider:
+    """The service that makes clips with `model`: talking clips and B-roll ones each have
+    their own, so a clip is always waited for at the service it was asked of."""
+    if _override is not None:
+        return cast(ClipProvider, _override)
+    return _heygen() if model.startswith("heygen/") else _boreal()
 
 
 def _music() -> MusicProvider:
@@ -418,7 +430,7 @@ def submit_clip(
         picture=picture_key, audio=audio_key, seconds=seconds, motion_prompt=motion_prompt
     )
     model = catalog.MODEL_FOR_PURPOSE[purpose]
-    provider = _clips()
+    provider = _clips(model)
 
     def submit() -> _Made[str]:
         video_id = provider.submit(
@@ -453,7 +465,7 @@ def collect_clip(
     clip's key in the file store."""
     handoff = ClipCollectHandoff(video_id=video_id)
     model = catalog.MODEL_FOR_PURPOSE[purpose]
-    provider = _clips()
+    provider = _clips(model)
 
     # Counted from the first look, not from each retry, and told of once across retries.
     waited_since = time.monotonic()

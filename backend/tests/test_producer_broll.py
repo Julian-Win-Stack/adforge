@@ -162,7 +162,7 @@ def clip_of_scene_2(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., 
 
 def clips_asked(field: str) -> list[Any]:
     """`field` of what the video model was asked for, for each clip, oldest first."""
-    return [handoff[field] for handoff in handoffs("make_clip")]
+    return [handoff[field] for handoff in handoffs("make_broll_clip")]
 
 
 def kept_clips() -> list[bytes]:
@@ -357,7 +357,7 @@ def test_a_picture_made_before_the_scene_changed_what_it_shows_gets_no_clip(
 
     clip_of_scene_2(fake_model, steps, say)
 
-    assert list(ModelCall.objects.filter(purpose="make_clip")) == []
+    assert list(ModelCall.objects.filter(purpose="make_broll_clip")) == []
     assert results_of("make_clip") == [
         "Refused: scene 2's starting picture was made for an earlier line, or for what the "
         "scene showed before, and the scene has changed since. Make its starting picture "
@@ -520,8 +520,8 @@ def restarted(
 
 def test_a_clip_fetched_before_the_worker_stopped_isnt_paid_for_again(restarted: None) -> None:
     assert [purpose for purpose in paid_for() if purpose.endswith("_clip")] == [
-        "make_clip",
-        "collect_clip",
+        "make_broll_clip",
+        "collect_broll_clip",
     ]
 
 

@@ -120,6 +120,12 @@ FAL_STORAGE_URL = os.environ.get("FAL_STORAGE_URL", "https://rest.fal.ai")
 # fal answers once the music is made, which takes longer the longer the music.
 FAL_TIMEOUT_SECONDS = 300.0
 
+HEYGEN_API_KEY = os.environ.get("HEYGEN_API_KEY", "")
+# Where talking clips are made. Tests point it at a local stand-in.
+HEYGEN_BASE_URL = os.environ.get("HEYGEN_BASE_URL", "https://api.heygen.com")
+# How long to wait for HeyGen to answer one request.
+HEYGEN_TIMEOUT_SECONDS = 120.0
+
 # Langfuse, where every agent turn, tool call and model call is sent to be looked at as a
 # tree. Tracing is off unless both keys are set.
 LANGFUSE_PUBLIC_KEY = os.environ.get("LANGFUSE_PUBLIC_KEY", "")

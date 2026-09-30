@@ -970,10 +970,11 @@ def make_clip(step: SceneStep) -> ProducedItem:
     assert picture is not None and audio is not None, "a clip step starts with both"
     assert audio.seconds is not None, "a line's audio is measured when it's made"
     handoff = _clip_handoff(step, picture, audio)
-    video_id = _clip_asked_for(step, handoff) or (
+    making, collecting = _clip_purposes(step)
+    video_id = _clip_asked_for(step, handoff, making, collecting) or (
         submit_clip(
             job=job,
-            purpose="make_clip",
+            purpose=making,
             picture_key=handoff.picture,
             audio_key=handoff.audio,
             seconds=handoff.seconds,
@@ -991,13 +992,11 @@ def make_clip(step: SceneStep) -> ProducedItem:
             ),
         )
 
-    fetched = _paid_for_before(job, "collect_clip", charged_to=step.tool_call)
+    fetched = _paid_for_before(job, collecting, charged_to=step.tool_call)
     file = (
         fetched["file"]
         if fetched
-        else collect_clip(
-            job=job, purpose="collect_clip", video_id=video_id, when_slow=tell_its_slow
-        )
+        else collect_clip(job=job, purpose=collecting, video_id=video_id, when_slow=tell_its_slow)
     )
     if handoff.audio is None:
         file = _with_the_voice(file, audio)
@@ -1019,6 +1018,14 @@ def make_clip(step: SceneStep) -> ProducedItem:
     return clip
 
 
+def _clip_purposes(step: SceneStep) -> tuple[str, str]:
+    """What a scene's clip is asked for and collected as: talking clips and B-roll ones are
+    each made by their own video model."""
+    if step.shows:
+        return "make_broll_clip", "collect_broll_clip"
+    return "make_talking_clip", "collect_talking_clip"
+
+
 def _clip_handoff(step: SceneStep, picture: ProducedItem, audio: ProducedItem) -> ClipHandoff:
     """What the video model is asked for: a clip speaking the audio, or, for a scene that
     shows the product, a silent one that moves as the picture's step planned, the shortest
@@ -1028,8 +1035,9 @@ def _clip_handoff(step: SceneStep, picture: ProducedItem, audio: ProducedItem) -
         return ClipHandoff(
             picture=picture.file,
             audio=audio.file,
-            # Audio shorter than the shortest clip the model makes is padded with silence,
-            # which the ad cuts away with the rest of the clip past the last word.
+            # The talking video model makes the clip as long as the audio, whatever it is
+            # asked for, so this is only the seconds it is billed for: at least the shortest
+            # clip a handoff takes.
             seconds=max(audio.seconds, LEAST_CLIP_SECONDS),
             motion_prompt=talking_motion_prompt(step.scene.job.product_size),
         )
@@ -1073,23 +1081,26 @@ def _with_the_voice(file: str, audio: ProducedItem) -> str:
         return file_store.save("clip.mp4", voiced.read_bytes())
 
 
-def _clip_asked_for(step: SceneStep, handoff: ClipHandoff) -> str | None:
+def _clip_asked_for(
+    step: SceneStep, handoff: ClipHandoff, making: str, collecting: str
+) -> str | None:
     """The id of a clip already paid for with this same handoff that may still be made, so
     it is waited for rather than paid for again: asked for by this step before the worker
     stopped, or by an earlier one that stopped or gave up while the video service was down.
     None if there is none, or the video model said it couldn't make it, or it was fetched:
-    then it was kept, or it was refused."""
+    then it was kept, or it was refused. `making` and `collecting` are the purposes this kind
+    of clip is asked for and collected as."""
     job = step.scene.job
-    asked_by_this_step = _paid_for_before(job, "make_clip", charged_to=step.tool_call)
+    asked_by_this_step = _paid_for_before(job, making, charged_to=step.tool_call)
     if asked_by_this_step:
         return str(asked_by_this_step["video_id"])
     asked = job.model_calls.filter(
-        purpose="make_clip", outcome=ModelCall.Outcome.SUCCEEDED, handoff=handoff.model_dump()
+        purpose=making, outcome=ModelCall.Outcome.SUCCEEDED, handoff=handoff.model_dump()
     ).last()
     if asked is None or asked.output is None:
         return None
     video_id = str(asked.output["video_id"])
-    collected = job.model_calls.filter(purpose="collect_clip", handoff={"video_id": video_id})
+    collected = job.model_calls.filter(purpose=collecting, handoff={"video_id": video_id})
     # Given up on while the service was down, it may still be made. Failed (ClipFailed),
     # it never will be.
     failed = collected.filter(error__startswith=f"{ClipFailed.__name__}:").exists()

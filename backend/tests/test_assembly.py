@@ -1,6 +1,7 @@
 """Putting the finished ad together with ffmpeg, called directly on tiny generated clips
 and music: what the chat can't easily set up, such as music that runs out before the ad."""
 
+import json
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,32 @@ def clip(folder: Path, name: str, *, seconds: float, colour: str = "red") -> Pat
     )
 
 
+def sized_clip(folder: Path, name: str, *, size: str, fps: int, seconds: float) -> Path:
+    """A clip as a video model makes it: `size` such as 720x1280, at `fps` frames a second,
+    with a steady tone for its voice."""
+    return generate(
+        folder / f"{name}.mp4",
+        f"color=c=red:s={size}:r={fps}",
+        f"sine=frequency={VOICE_HERTZ}:sample_rate=8000",
+        seconds=seconds,
+    )
+
+
+def frame(video: Path) -> tuple[int, int, str, str]:
+    """A video's width, height, frame rate and average frame rate, as ffprobe reads them.
+    The two rates agree when every frame is shown for the same time."""
+    probed = subprocess.run(
+        [settings.FFPROBE, "-v", "error", "-select_streams", "v", "-show_streams", "-of", "json"]
+        + [str(video)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+    (stream,) = json.loads(probed.stdout)["streams"]
+    return stream["width"], stream["height"], stream["r_frame_rate"], stream["avg_frame_rate"]
+
+
 def music(folder: Path, *, seconds: float) -> Path:
     """Music that hums steadily for `seconds`."""
     return generate(
@@ -77,6 +104,30 @@ def test_music_that_runs_out_before_the_ad_ends_fades_out_rather_than_stopping_d
     assert loudness(heard, "voice", between=(7, 9)) == pytest.approx(
         loudness(heard, "voice", between=(0, 2)), abs=1
     )
+
+
+def test_clips_of_different_sizes_and_frame_rates_are_joined_into_one_ad_at_1080p_25fps(
+    tmp_path: Path,
+) -> None:
+    # A talking clip as HeyGen makes it, then a B-roll clip as Boreal does.
+    parts = [
+        (
+            sized_clip(tmp_path, "scene-1", size="1080x1920", fps=25, seconds=2),
+            assembly.Cut(scene=1, clip=1, clip_start=0, clip_end=2, start=0, end=2, overlay=""),
+        ),
+        (
+            sized_clip(tmp_path, "scene-2", size="720x1280", fps=24, seconds=2),
+            assembly.Cut(scene=2, clip=2, clip_start=0, clip_end=2, start=2, end=4, overlay=""),
+        ),
+    ]
+    ad = tmp_path / "ad.mp4"
+
+    assembly.join(parts, ad, music=music(tmp_path, seconds=4), drawn=[])
+
+    # The B-roll clip is scaled up, the same 9:16 shape, and every frame lasts 1/25 second:
+    # a rate that changes partway is handled badly by some players and upload sites.
+    assert frame(ad) == (1080, 1920, "25/1", "25/1")
+    assert assembly.seconds_of(ad) == pytest.approx(4, abs=0.1)
 
 
 def test_captions_are_timed_from_where_each_scene_plays_in_the_ad() -> None:

@@ -202,7 +202,7 @@ def _submit(
 ) -> str:
     return submit_clip(
         job=None,
-        purpose="make_clip",
+        purpose="make_broll_clip",
         picture_key=picture_key,
         audio_key=audio_key,
         seconds=seconds,
@@ -289,7 +289,7 @@ def test_a_clip_is_asked_for_again_while_the_video_service_is_down(
 def test_a_clip_being_made_is_waited_for_then_kept(fake_model: FakeModel) -> None:
     fake_model.respond("collect_clip", {"state": "working"}, {"state": "working"})
 
-    key = collect_clip(job=None, purpose="collect_clip", video_id="video-1")
+    key = collect_clip(job=None, purpose="collect_broll_clip", video_id="video-1")
 
     assert file_store.read(key) == fake_model.clips["video-1"]
     collected = ModelCall.objects.get()
@@ -325,7 +325,7 @@ def test_a_slow_clip_is_waited_for_until_it_is_made(
     # never given up on.
     fake_model.respond("collect_clip", *[{"state": "working"}] * 60)
 
-    key = collect_clip(job=None, purpose="collect_clip", video_id="video-1")
+    key = collect_clip(job=None, purpose="collect_broll_clip", video_id="video-1")
 
     assert clock.now == 3600
     assert file_store.read(key) == fake_model.clips["video-1"]
@@ -346,7 +346,7 @@ def test_a_slow_clip_is_told_of_once_counted_from_the_first_look_even_if_the_ser
 
     collect_clip(
         job=None,
-        purpose="collect_clip",
+        purpose="collect_broll_clip",
         video_id="video-1",
         when_slow=lambda: told_slow_at.append(clock.now),
     )

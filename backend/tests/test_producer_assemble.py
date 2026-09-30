@@ -11,6 +11,7 @@ from rest_framework.test import APIClient
 
 from adforge.file_store import read
 from gateway.fake import FakeModel, turn
+from jobs import assembly
 from jobs.models import Job, ProducedItem
 
 from .conftest import (
@@ -138,7 +139,8 @@ def test_the_scenes_are_assembled_into_one_ad_that_plays_in_the_chat(
     (ad,) = ads()
     assert (ad.version, ad.scene, ad.seconds) == (1, None, 9.0)
     width, height, seconds = video(read(ad.file))
-    assert (width, height) == (72, 128)
+    # Every ad is made at the one frame size, whatever size its clips came at.
+    assert (width, height) == (assembly.FRAME_WIDTH, assembly.FRAME_HEIGHT)
     assert seconds == pytest.approx(9.0, abs=0.1)
     # Each scene's own clip, in order: the fake's clips are red, lime and blue, and each
     # is looked at halfway through its scene.

@@ -469,7 +469,10 @@ def test_a_clip_and_the_music_made_are_shown_in_the_trace(
 
     calls = {found.name: found for trace in traces.all() for found in trace.find(kind="generation")}
     # The clip is asked for from the starting picture and the line's audio, then collected.
-    assert kinds_of_file(calls["make_clip"].value("input")["shown"]) == ["image/png", "audio/wav"]
-    assert kinds_of_file(calls["collect_clip"].value("output")["made"]) == ["video/mp4"]
+    assert kinds_of_file(calls["make_talking_clip"].value("input")["shown"]) == [
+        "image/png",
+        "audio/wav",
+    ]
+    assert kinds_of_file(calls["collect_talking_clip"].value("output")["made"]) == ["video/mp4"]
     assert kinds_of_file(calls["transcribe_line"].value("input")["shown"]) == ["audio/wav"]
     assert kinds_of_file(calls["make_music"].value("output")["made"]) == ["audio/mp4"]

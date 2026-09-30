@@ -18,9 +18,13 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "measure_voice": "inworld-tts-2",
     "speak_line": "inworld-tts-2",
     "transcribe_line": "scribe_v2",
-    # A clip is asked for, then waited for and fetched: two calls, only the first paid.
-    "make_clip": "creatify/boreal",
-    "collect_clip": "creatify/boreal",
+    # A clip is asked for, then waited for and fetched: two calls, only the first paid. Each
+    # kind has its own model: HeyGen's talking clips passed the blind-graded eval (#87) 8 of
+    # 8, Boreal's at most 3 of 8, and Boreal's B-roll met its mark.
+    "make_talking_clip": "heygen/avatar-iv",
+    "collect_talking_clip": "heygen/avatar-iv",
+    "make_broll_clip": "creatify/boreal",
+    "collect_broll_clip": "creatify/boreal",
     "make_music": "sonilo/v1.1/text-to-music",
 }
 
@@ -49,10 +53,12 @@ PRICE_PER_HOUR_OF_AUDIO: dict[str, Decimal] = {
     "scribe_v2": Decimal("0.22"),
 }
 
-# US dollars per second of video made. From fal's model page for Boreal on 2026-09-26, at
-# the 720p the adapter asks for.
+# US dollars per second of video made. Boreal's from fal's model page on 2026-09-26, at the
+# 720p the adapter asks for. HeyGen's from its own pricing page on 2026-09-29: a photo avatar
+# is 0.1 credits a second at $0.50 a credit, the same at 720p and 1080p.
 PRICE_PER_SECOND_OF_VIDEO: dict[str, Decimal] = {
     "creatify/boreal": Decimal("0.01"),
+    "heygen/avatar-iv": Decimal("0.05"),
 }
 
 

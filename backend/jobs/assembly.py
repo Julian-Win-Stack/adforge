@@ -34,10 +34,15 @@ MUSIC_FADE_SECONDS = 2
 # How many words a caption shows at once, at most: few enough to read at a glance.
 CAPTION_WORDS = 3
 
-# The captions and overlays are laid out for a frame this size, and ffmpeg scales them to
-# the clips'. They keep to bands along the top and bottom: the face and the product are in
-# the middle, and the starting picture is asked for with room above the head.
+# The frame every ad is made at, and the captions and overlays laid out for. Talking clips
+# come this size from HeyGen; B-roll clips come at 720x1280 from Boreal and are scaled up,
+# the same 9:16 shape, since ffmpeg won't join clips of different sizes. The text keeps to
+# bands along the top and bottom: the face and the product are in the middle, and the
+# starting picture is asked for with room above the head.
 FRAME_WIDTH, FRAME_HEIGHT = 1080, 1920
+# HeyGen's clips are 25 frames a second and Boreal's 24: joined as they come, the ad's rate
+# would change partway, which some players and upload sites handle badly.
+FRAME_RATE = 25
 
 # Assembly re-encodes the whole ad, which takes a while for a long one at full size.
 TIMEOUT_SECONDS = 600
@@ -320,8 +325,12 @@ def join(
     for number, (clip, cut) in enumerate(parts):
         inputs += ["-i", str(clip)]
         keep = f"start={cut.clip_start}:end={cut.clip_end}"
-        # Each part's clock starts again from 0, so the parts play one after another.
-        filters.append(f"[{number}:v]trim={keep},setpts=PTS-STARTPTS[v{number}]")
+        # Each part's clock starts again from 0, so the parts play one after another, at the
+        # one size and rate the ad is made at.
+        filters.append(
+            f"[{number}:v]trim={keep},setpts=PTS-STARTPTS,"
+            f"scale={FRAME_WIDTH}:{FRAME_HEIGHT},fps={FRAME_RATE}[v{number}]"
+        )
         filters.append(f"[{number}:a]atrim={keep},asetpts=PTS-STARTPTS[a{number}]")
         joined += f"[v{number}][a{number}]"
     filters.append(f"{joined}concat=n={len(parts)}:v=1:a=1[joined][voice]")

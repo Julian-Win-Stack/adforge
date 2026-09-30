@@ -232,12 +232,12 @@ def test_nothing_in_the_whole_flow_is_paid_for_twice(ad_made_through_the_chat: N
         "transcribe_line",
         "transcribe_line",
         # Each clip once, though the producer asked for every one again.
-        "make_clip",
-        "collect_clip",
-        "make_clip",
-        "collect_clip",
-        "make_clip",
-        "collect_clip",
+        "make_talking_clip",
+        "collect_talking_clip",
+        "make_broll_clip",
+        "collect_broll_clip",
+        "make_talking_clip",
+        "collect_talking_clip",
     ]
 
 
