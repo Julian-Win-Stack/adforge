@@ -1,0 +1,53 @@
+{
+  "note": "One arm is one way of asking Boreal. talking_visual null = the app's talking_motion_prompt(''); broll_prompts null = each scene's saved motion_prompt in set.json, else a path (relative to this folder) to a JSON file mapping scene id to a motion prompt. NOTHING_MADE_UP is always added to B-roll prompts, as the app does.",
+  "arms": [
+    {
+      "name": "baseline",
+      "resolution": "720p",
+      "negative_prompt": "",
+      "talking_visual": null,
+      "speech_note": null,
+      "broll_prompts": null
+    },
+    {
+      "name": "tuned",
+      "resolution": "720p",
+      "negative_prompt": "product changing shape or size, product bending or squashing, floating objects, extra hands, extra fingers, extra limbs",
+      "talking_visual": null,
+      "speech_note": null,
+      "broll_prompts": "tuned_broll_prompts.json"
+    },
+    {
+      "name": "tuned_A",
+      "resolution": "720p",
+      "negative_prompt": "slow motion, exaggerated expression, shocked face, extra hands, extra fingers",
+      "talking_visual": "The person talks to the camera like a casual phone video, at a natural everyday pace, with clear, precise mouth movement on every word and small natural head movement. A relaxed everyday expression. The person holds the product at chest height, beside their face, with any label facing the camera, so the top and bottom of the frame stay clear. Minimal hand movement.",
+      "speech_note": "The person starts speaking at once, from the very first moment.",
+      "broll_prompts": null
+    },
+    {
+      "name": "tuned_B",
+      "resolution": "720p",
+      "negative_prompt": "slow motion, exaggerated expression, shocked face, extra hands, extra fingers",
+      "talking_visual": "The person talks to the camera like a casual phone video, calm and still, with a relaxed, neutral face and no big expressions. The person holds the product at chest height, beside their face, with any label facing the camera, so the top and bottom of the frame stay clear. Minimal hand and head movement.",
+      "speech_note": "The person starts speaking at once, from the very first moment.",
+      "broll_prompts": null
+    },
+    {
+      "name": "tuned_A_1080p",
+      "resolution": "1080p",
+      "negative_prompt": "slow motion, exaggerated expression, shocked face, extra hands, extra fingers",
+      "talking_visual": "The person talks to the camera like a casual phone video, at a natural everyday pace, with clear, precise mouth movement on every word and small natural head movement. A relaxed everyday expression. The person holds the product at chest height, beside their face, with any label facing the camera, so the top and bottom of the frame stay clear. Minimal hand movement.",
+      "speech_note": "The person starts speaking at once, from the very first moment.",
+      "broll_prompts": null
+    },
+    {
+      "name": "tuned_B_1080p",
+      "resolution": "1080p",
+      "negative_prompt": "slow motion, exaggerated expression, shocked face, extra hands, extra fingers",
+      "talking_visual": "The person talks to the camera like a casual phone video, calm and still, with a relaxed, neutral face and no big expressions. The person holds the product at chest height, beside their face, with any label facing the camera, so the top and bottom of the frame stay clear. Minimal hand and head movement.",
+      "speech_note": "The person starts speaking at once, from the very first moment.",
+      "broll_prompts": null
+    }
+  ]
+}
