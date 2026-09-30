@@ -32,3 +32,5 @@ docs/scraping-test/job-b/outputs/
 docs/scraping-test/job-b/label-checks/
 docs/scraping-test/job-b/labels100.json
 docs/scraping-test/job-b/missing100.json
+docs/scraping-test/fix-test/outputs/
+docs/scraping-test/fix-test/user-check-images/
