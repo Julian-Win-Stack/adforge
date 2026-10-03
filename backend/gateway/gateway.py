@@ -80,9 +80,11 @@ _running_tool: ContextVar[ToolCall | None] = ContextVar("running_tool", default=
 IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
 # The same formats, as a person would name them.
 IMAGE_TYPE_NAMES = "PNG, JPEG, WebP or GIF"
-# The most of an image a model looks at in the "low" detail the adapter asks for. A bigger
-# image is shrunk to fit first: the model sees the same picture, and the request stays small.
-MAX_IMAGE_SIDE = 512
+# Every image goes to every model sharp, at the "high" detail the adapter asks for, so small
+# print on a label, a thumbnail in a page screenshot or a shade of colour can be read. A
+# bigger image is shrunk to fit this first: the model looks at no more than this anyway, and
+# the request stays small. Never 512 px, never low: decided in #1 step 1.
+MAX_IMAGE_SIDE = 2048
 
 
 class UnreadableImage(ValueError):

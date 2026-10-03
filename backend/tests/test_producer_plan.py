@@ -20,6 +20,7 @@ from jobs.models import Job
 from jobs.work import keep_photo
 
 from .conftest import (
+    COPIED,
     MUG_FRONT,
     MUG_SIDE,
     PLAN,
@@ -57,6 +58,7 @@ def planning_through_openai(
     openai_server(
         openai_turn("", ("call_1", "read_page", {"link": link, "target_seconds": None})),
         openai_answer(READABLE),
+        openai_answer(COPIED),
         openai_turn("", ("call_2", "plan_ad", {})),
         openai_answer(reply),
         openai_turn("Here's the plan."),
@@ -184,7 +186,7 @@ def test_the_products_colour_and_the_photos_showing_it_are_stored(
 def the_plan_message(httpserver: HTTPServer) -> dict[str, Any]:
     """The one message the plan's request sent the model: after the producer's first turn,
     the page check and its second turn."""
-    _, _, _, plan, _ = [
+    _, _, _, _, plan, _ = [
         request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
     ]
     [message] = plan["input"]
@@ -208,7 +210,9 @@ def test_the_planner_is_handed_the_page_text_the_target_the_photo_count_and_the_
     say(f"Make me a 12 second ad for {product_page_url}")
 
     handoff = ModelCall.objects.get(purpose="plan_ad").handoff
-    assert "$24.00" in handoff["page_text"]
+    assert "Hand-thrown, holds 350 ml, dishwasher safe." in handoff["page_text"]
+    # The price is only in the declared data: the copy model skips the price in the words.
+    assert '"price": "24.00"' in handoff["page_text"]
     # Stock is only in the page's structured data, never in the words a visitor sees.
     assert "InStock" in handoff["page_text"]
     del handoff["page_text"]
@@ -243,7 +247,7 @@ def test_the_planner_is_shown_every_product_photo_by_its_number(
         {"type": "input_text", "text": "Photo 1"},
         {"type": "input_text", "text": "Photo 2"},
     ]
-    assert [(image["type"], image["detail"]) for image in images] == [("input_image", "low")] * 2
+    assert [(image["type"], image["detail"]) for image in images] == [("input_image", "high")] * 2
     # The front photo is sage green and the side one cream, so each label is on its own photo.
     assert [
         (media_type, image_shown.getpixel((0, 0))) for media_type, image_shown in map(shown, images)
@@ -262,7 +266,7 @@ def test_the_planner_is_shown_every_product_photo_by_its_number(
     assert json.loads(handoff["text"]) == call.handoff
 
 
-def test_the_planner_is_shown_each_photo_shrunk_to_fit_512_pixels_and_the_kept_ones_are_unchanged(
+def test_the_planner_is_shown_each_photo_shrunk_to_fit_2048_pixels_and_the_kept_ones_are_unchanged(
     httpserver: HTTPServer,
     openai_server: Callable[..., None],
     product_page_url: str,
@@ -273,8 +277,9 @@ def test_the_planner_is_shown_each_photo_shrunk_to_fit_512_pixels_and_the_kept_o
     say(f"Make an ad for {product_page_url}")
 
     _, *photos = the_plan_message(httpserver)["content"]
-    # The front photo, 400 x 300, already fits. The side one, 1600 x 1200, is shrunk to fit.
-    assert [shown(image)[1].size for image in photos[1::2]] == [(400, 300), (512, 384)]
+    # The front photo, 400 x 300, already fits. The side one, 1600 x 1200, is sent as it is:
+    # 2,048 px is the most a model looks at, so nothing under it is shrunk.
+    assert [shown(image)[1].size for image in photos[1::2]] == [(400, 300), (1600, 1200)]
     kept = Job.objects.get().photos.all()
     assert [file_store.read(photo.file) for photo in kept] == [MUG_FRONT, MUG_SIDE]
 
@@ -415,7 +420,7 @@ def test_a_plan_that_breaks_the_rules_is_handed_back_keeps_nothing_and_is_still_
     plan_call = ModelCall.objects.get(purpose="plan_ad")
     assert (plan_call.outcome, plan_call.cost_usd) == ("failed", Decimal("0.0108"))
     # Nothing is made from a plan that broke the rules.
-    assert paid_for() == ["check_page", "plan_ad"]
+    assert paid_for() == ["check_page", "copy_page_text", "plan_ad"]
 
 
 def test_a_photo_models_cant_read_is_handed_back_saying_why_and_the_planner_isnt_paid(
@@ -434,5 +439,5 @@ def test_a_photo_models_cant_read_is_handed_back_saying_why_and_the_planner_isnt
         f"Failed: Photo 3 (jobs/{job.pk}/photos/3.bmp) is image/bmp, which models can't read. "
         "Only PNG, JPEG, WebP or GIF pictures can be shown to a model."
     )
-    assert paid_for() == ["check_page"]
+    assert paid_for() == ["check_page", "copy_page_text"]
     assert not job.scenes.exists()

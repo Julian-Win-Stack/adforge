@@ -32,7 +32,10 @@ something worth showing as well as saying, such as the price or the product's na
 otherwise set it to null. An overlay states only what the page or the shop owner states, \
 like a line. Name the product's \
 colour as the photos show it, in plain words such as "sage green", and give the numbers \
-of the photos that show the product in that colour. If the product comes in several \
+of the photos that show the product in that colour. Leave out any photo that shows \
+another product next to this one, even one from the same brand or range, such as a \
+line-up, a set, a routine or a comparison, and any photo where this product can't be \
+clearly seen. If the product comes in several \
 colours, don't ask which: pick one the photos show. Say how big the product is, judged \
 from the photos you chose: "tiny" if it fits on a fingertip, such as earrings, earbuds or \
 a ring; "handheld" if it's held in one or two hands, such as a bottle, a bag, a power bank \

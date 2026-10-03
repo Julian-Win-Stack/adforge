@@ -190,13 +190,14 @@ def _input[Out: BaseModel](request: ModelRequest[Out]) -> str | ResponseInputPar
 
 
 def _image_part(image: LoadedImage) -> ResponseInputImageParam:
-    # "low" detail shows the model a 512 x 512 version: enough to judge colour, at a
-    # fraction of the cost of full detail.
+    # "high" detail shows the model the picture as sent (the gateway has already shrunk it to
+    # fit MAX_IMAGE_SIDE), so small print and look-alike products can be told apart. It costs
+    # more than "low" per picture; decided for every call alike in #1 step 1.
     data = base64.b64encode(image.data).decode("ascii")
     return {
         "type": "input_image",
         "image_url": f"data:{image.media_type};base64,{data}",
-        "detail": "low",
+        "detail": "high",
     }
 
 

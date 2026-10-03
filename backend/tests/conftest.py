@@ -4,6 +4,7 @@ import re
 import socket
 import subprocess
 import tempfile
+import time
 from collections.abc import Callable, Iterator
 from datetime import timedelta
 from pathlib import Path
@@ -18,6 +19,7 @@ from pydantic import BaseModel
 from pytest_django import Settings
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
+from werkzeug import Request, Response
 
 from adforge import celery_app
 from agents import tasks
@@ -70,6 +72,12 @@ PRODUCT_PAGE = """<!doctype html>
 
 # What the page check answers for the mug's page.
 READABLE = {"decision": "readable", "reason": "The page names the mug, its price and its size."}
+
+# What the copy model copies out of the mug's page: all of it but the price.
+COPIED = {
+    "product": "Stoneware Mug",
+    "passages": ["Stoneware Mug", "Hand-thrown, holds 350 ml, dishwasher safe."],
+}
 
 # What the producer plans for the mug's page: three scenes.
 PLAN: dict[str, Any] = {
@@ -137,6 +145,9 @@ def _isolated_outside_world(settings: Settings, tmp_path: Path) -> None:
     # Nothing is sent to Langfuse, even from a machine whose environment holds real keys.
     settings.LANGFUSE_PUBLIC_KEY = ""
     settings.LANGFUSE_SECRET_KEY = ""
+    # Pages are read with the plain download, never by the real Firecrawl. A test that reads
+    # through Firecrawl uses the `firecrawl` fixture's stand-in.
+    settings.FIRECRAWL_API_KEY = ""
 
 
 @pytest.fixture
@@ -147,8 +158,16 @@ def api() -> APIClient:
 @pytest.fixture
 def fake_model() -> Iterator[FakeModel]:
     fake = FakeModel()
+    fake.answer_unscripted("copy_page_text", copy_every_line)
     with use_model(fake):
         yield fake
+
+
+def copy_every_line(request: ModelRequest[Any]) -> dict[str, Any]:
+    """What the copy model answers when a test doesn't say: every line of the page it was
+    given, so the product's own text is the whole page, as before it was copied out."""
+    given = request.handoff.model_dump()
+    return {"product": given["product"], "passages": given["page_text"].splitlines()}
 
 
 @pytest.fixture
@@ -165,6 +184,76 @@ def product_page_url(httpserver: HTTPServer) -> str:
         MUG_SIDE, content_type="image/png"
     )
     return httpserver.url_for("/products/mug")
+
+
+# A real answer of Firecrawl's page read, for OUAI's Detox Shampoo, trimmed to the product's
+# own text and one "Pairs Well With" product.
+FIRECRAWL_PAGE_READ = (Path(__file__).parent / "fixtures" / "firecrawl_page_read.json").read_text()
+# The shampoo's photo, as the page declares it twice: at full size, and 1,920 px wide.
+SHAMPOO_PHOTO = picture(300, 400, (201, 141, 60), format="JPEG")
+SHAMPOO_PHOTO_PATH = (
+    "/cdn/shop/files/Update_2_DetoxShampoo_260611-17-23_Site_Asset_PDP_Product_"
+    "Thumbnail_1440x1780_11.jpg"
+)
+
+
+class FakeFirecrawl:
+    """A stand-in Firecrawl on the local web server. It answers /v2/scrape by what the
+    request asks for, as the real one does: a page read (markdown and rawHtml) gets the
+    saved real answer, with the shop's address swapped for the local shop's."""
+
+    def __init__(self, httpserver: HTTPServer) -> None:
+        self.shop = httpserver.url_for("").rstrip("/")
+        # What every request asked for, oldest first.
+        self.requests: list[dict[str, Any]] = []
+        # Answers to give before the real ones, such as "busy": each (status, body).
+        self.first: list[tuple[int, dict[str, Any]]] = []
+        # How long it takes to answer, for a test of Firecrawl timing out.
+        self.takes_seconds = 0.0
+        # The page read's answer, for a test to change, such as the shop's status code.
+        self.page_read: dict[str, Any] = json.loads(
+            re.sub(r"https?://theouai\.com", self.shop, FIRECRAWL_PAGE_READ)
+        )
+        httpserver.expect_request("/v2/scrape", method="POST").respond_with_handler(self._answer)
+
+    def answers_first(self, status: int, error: str, *, times: int = 1) -> None:
+        """Have the next `times` requests answered with an error, as when Firecrawl is busy."""
+        self.first += [(status, {"success": False, "error": error})] * times
+
+    def _answer(self, request: Request) -> Response:
+        if request.headers.get("Authorization") != "Bearer fc-test":
+            return Response(json.dumps({"success": False, "error": "Unauthorized"}), status=401)
+        asked = request.get_json()
+        self.requests.append(asked)
+        time.sleep(self.takes_seconds)
+        if self.first:
+            status, body = self.first.pop(0)
+        elif set(asked["formats"]) == {"markdown", "rawHtml"}:
+            status, body = 200, self.page_read
+        else:
+            status, body = 400, {"success": False, "error": f"Unknown formats {asked['formats']}"}
+        return Response(json.dumps(body), status=status, content_type="application/json")
+
+
+@pytest.fixture
+def firecrawl(httpserver: HTTPServer, settings: Settings) -> FakeFirecrawl:
+    """Pages are read through a stand-in Firecrawl, set up with a key as a real server is."""
+    settings.FIRECRAWL_API_KEY = "fc-test"
+    settings.FIRECRAWL_URL = httpserver.url_for("")
+    return FakeFirecrawl(httpserver)
+
+
+@pytest.fixture
+def shampoo_page_url(httpserver: HTTPServer, firecrawl: FakeFirecrawl) -> str:
+    """The shampoo's page on the local shop, as a plain download gets it, with its photo.
+    Gives the link."""
+    httpserver.expect_request("/products/detox-shampoo").respond_with_data(
+        firecrawl.page_read["data"]["rawHtml"], content_type="text/html; charset=utf-8"
+    )
+    httpserver.expect_request(SHAMPOO_PHOTO_PATH).respond_with_data(
+        SHAMPOO_PHOTO, content_type="image/jpeg"
+    )
+    return httpserver.url_for("/products/detox-shampoo")
 
 
 @pytest.fixture

@@ -5,6 +5,12 @@ from decimal import Decimal
 MODEL_FOR_PURPOSE: dict[str, str] = {
     "produce": "gpt-5.6-sol",
     "check_page": "gpt-5-mini",
+    # The copy test (docs/scraping-test/copy-test/results.md) kept 87% of the product's facts
+    # and let no other product's sentence through at 0.2 cents a page.
+    "copy_page_text": "gpt-6-luna",
+    # The picker reads a marked screenshot of the page: 92% of its photos were the right
+    # product's (docs/scraping-test/ref-photo-test/results.md).
+    "pick_photos": "gpt-5.6-sol",
     "plan_ad": "gpt-5.6-sol",
     "fact_check": "gpt-5.6-terra",
     "rewrite_line": "gpt-5.6-sol",
@@ -31,6 +37,7 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
 # US dollars per million tokens: (input, output). From OpenAI's pricing page.
 PRICE_PER_MILLION_TOKENS: dict[str, tuple[Decimal, Decimal]] = {
     "gpt-5-mini": (Decimal("0.25"), Decimal("2.00")),
+    "gpt-6-luna": (Decimal("0.10"), Decimal("0.50")),
     "gpt-5.6-sol": (Decimal("4.00"), Decimal("20.00")),
     "gpt-5.6-terra": (Decimal("2.00"), Decimal("12.00")),
 }

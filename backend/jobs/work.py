@@ -3,6 +3,7 @@ person, running the planning checks, making the music, making each scene and ass
 finished ad."""
 
 import io
+import json
 import math
 import mimetypes
 import tempfile
@@ -12,11 +13,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Max, QuerySet
 
 from adforge import file_store
-from adforge.retry import OutsideServiceDown
+from adforge.retry import OutsideServiceDown, with_retries
 from chat import messages
 from chat.models import Message
 from gateway.gateway import (
@@ -43,9 +45,10 @@ from gateway.types import (
     Image,
     Judgement,
     MusicHandoff,
+    UnusableReply,
 )
 
-from . import assembly, page
+from . import assembly, firecrawl, page, page_text
 from .checks import (
     FACT_CHECK_INSTRUCTIONS,
     LENGTH_ALLOWANCE_SECONDS,
@@ -72,6 +75,7 @@ from .checks import (
     shortened_script_for,
 )
 from .models import Job, ProducedItem, ProductPhoto, Scene, SceneStep
+from .notices import post_notice
 from .planning import (
     PLAN_INSTRUCTIONS,
     ChatMessage,
@@ -99,9 +103,10 @@ if TYPE_CHECKING:
     from agents.models import ToolCall
 
 CHECK_INSTRUCTIONS = """\
-You check whether a product page was read properly. It was fetched with a plain HTTP \
-request, so nothing that needs JavaScript ran. You get the page's visible text, followed \
-by any product data the page declares for search engines.
+You check whether a product page was read properly. It may have been read in a real \
+browser, or with a plain HTTP request, in which case nothing that needs JavaScript ran. You \
+get the page's visible text, followed by any product data the page declares for search \
+engines.
 Decide "readable" if the text names one product and says what it is, enough to script a \
 short video ad from. Decide "unreadable" if the text is mostly empty, a loading screen, a \
 cookie wall, a bot check or an error page, or if it lists many products (a category, \
@@ -121,13 +126,103 @@ class PageCheck(Judgement):
     decision: Literal["readable", "unreadable"]
 
 
-def keep_page(job: Job, download: page.Download, product_page: page.ProductPage) -> None:
-    """Store the page's text and its original HTML with the job. Only for a page found to
-    show its product, whose photos are kept: the job counts as having its page from then."""
-    job.page_text = product_page.text
+NO_FIRECRAWL = (
+    "Firecrawl isn't set up (FIRECRAWL_API_KEY is empty), so the page was read with a plain "
+    "download instead: text that needs JavaScript or sits in closed tabs may be missing from "
+    "the ad. This is probably a setup mistake."
+)
+
+
+def fetch_page(job: Job, link: str) -> page.Download:
+    """Read the page at `link` through Firecrawl, or with a plain download when Firecrawl
+    isn't set up or can't read it; each fallback posts a notice. A link to a private network
+    address is refused before anything is asked of anyone. Raises PageUnreadable for a page
+    that won't read, and OutsideServiceDown if the shop stays down."""
+    with_retries(lambda: page.check_where_it_points(link))
+    if not settings.FIRECRAWL_API_KEY:
+        post_notice(job, NO_FIRECRAWL, Message.Level.PROBLEM)
+        return _plain_download(link)
+    try:
+        answer = _firecrawl_page_read(job, link)
+    except (firecrawl.FirecrawlFailed, OutsideServiceDown) as error:
+        post_notice(
+            job,
+            f"Firecrawl couldn't open the page ({error}). Read it with the plain download "
+            "instead, so text that needs JavaScript or sits in closed tabs may be missing from "
+            "the ad.",
+            Message.Level.PROBLEM,
+        )
+        return _plain_download(link)
+    return firecrawl.as_download(answer, link)
+
+
+def _plain_download(link: str) -> page.Download:
+    return page.download(link, max_bytes=page.MAX_PAGE_BYTES, what="product page")
+
+
+def _firecrawl_page_read(job: Job, link: str) -> dict[str, Any]:
+    """Firecrawl's page read of `link`: the one this job saved for it, if it read the link
+    before, so a read run again is given the same page and pays for nothing twice; else a
+    new one, saved as soon as it arrives."""
+    saved: dict[str, str] = (
+        job.firecrawl.get("files", {}) if job.firecrawl.get("url") == link else {}
+    )
+    if "page" in saved:
+        answer: dict[str, Any] = json.loads(file_store.read(saved["page"]))
+        return answer
+    answer = firecrawl.read_page(link)
+    saved["page"] = file_store.save(
+        f"jobs/{job.pk}/firecrawl/page.json", json.dumps(answer, ensure_ascii=False).encode()
+    )
+    job.firecrawl = {"url": link, "files": saved}
+    job.save(update_fields=["firecrawl"])
+    return answer
+
+
+def copy_page_text(job: Job, download: page.Download, product_page: page.ProductPage) -> str:
+    """This product's own text: what a model copies out of the page about it, each sentence
+    matched back to the page, then the product data the page declares. However little is
+    kept is used. A failed copy call posts a notice and is raised: the page isn't read."""
+    if download.markdown is not None:
+        given = page_text.shorten_links(download.markdown)
+        on_the_page = page_text.markdown_to_text(download.markdown)
+    else:
+        given = on_the_page = product_page.words
+    try:
+        copied = call_model(
+            job=job,
+            purpose="copy_page_text",
+            instructions=page_text.COPY_INSTRUCTIONS,
+            handoff=page_text.CopyHandoff(
+                product=product_page.name,
+                page_url=download.final_url,
+                shop_description=product_page.description or "(none)",
+                page_text=given,
+            ),
+            output=page_text.CopiedText,
+            # A page read again, as after a worker stopped, isn't copied and paid for twice.
+            pay_once=True,
+        )
+    except (UnusableReply, OutsideServiceDown) as error:
+        post_notice(
+            job,
+            f"Picking this product's own text out of the page failed ({error}), so the page "
+            "wasn't read and nothing was kept from it. Ask to read it again.",
+            Message.Level.PROBLEM,
+        )
+        raise
+    return "\n".join(page_text.match_back(copied.passages, on_the_page)) + product_page.declared
+
+
+def keep_page(job: Job, download: page.Download, product_page: page.ProductPage, text: str) -> None:
+    """Store the product's own text, the page's whole text and its original HTML with the
+    job. Only for a page found to show its product, whose photos are kept: the job counts as
+    having its page from then."""
+    job.page_text = text
+    job.page_text_full = product_page.text
     job.page_html_key = file_store.save(f"jobs/{job.pk}/page.html", download.content)
     job.status = Job.Status.PAGE_READ
-    job.save(update_fields=["page_text", "page_html_key", "status"])
+    job.save(update_fields=["page_text", "page_text_full", "page_html_key", "status"])
 
 
 def check_page(job: Job, download: page.Download, product_page: page.ProductPage) -> PageCheck:

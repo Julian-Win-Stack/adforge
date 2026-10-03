@@ -90,6 +90,7 @@ class FakeModel:
 
     def __init__(self) -> None:
         self._scripts: defaultdict[str, deque[Outcome]] = defaultdict(deque)
+        self._unscripted: dict[str, Callable[[ModelRequest[Any]], dict[str, Any]]] = {}
         self.words_per_second = 2.0
         # Silence before and after the words in every audio spoken, as a real voice leaves.
         self.pause_seconds = 0.0
@@ -119,8 +120,19 @@ class FakeModel:
     def respond(self, purpose: str, *outcomes: Outcome) -> None:
         self._scripts[purpose].extend(outcomes)
 
+    def answer_unscripted(
+        self, purpose: str, answer: Callable[[ModelRequest[Any]], dict[str, Any]]
+    ) -> None:
+        """Answer every call for `purpose` that has nothing scripted with what `answer`
+        makes from the request, rather than failing."""
+        self._unscripted[purpose] = answer
+
     def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]:
-        outcome = self._next(request.purpose)
+        unscripted = self._unscripted.get(request.purpose)
+        if unscripted is not None and not self._scripts[request.purpose]:
+            outcome: dict[str, Any] | Turn = unscripted(request)
+        else:
+            outcome = self._next(request.purpose)
         assert isinstance(outcome, dict), f"{request.purpose!r} was scripted a turn, not output"
         try:
             output = request.output.model_validate(outcome)

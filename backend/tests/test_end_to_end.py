@@ -206,6 +206,7 @@ def test_the_b_roll_scenes_picture_is_planned_from_its_rewritten_shows_after_the
 def test_nothing_in_the_whole_flow_is_paid_for_twice(ad_made_through_the_chat: None) -> None:
     assert paid_for() == [
         "check_page",
+        "copy_page_text",
         "plan_ad",
         "draw_person",
         "design_voice",

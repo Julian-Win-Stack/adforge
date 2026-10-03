@@ -20,6 +20,7 @@ from chat.models import Session
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs.models import Job, ProducedItem, ProductPhoto
+from jobs.work import NO_FIRECRAWL
 
 from .conftest import (
     MUG_FRONT,
@@ -181,6 +182,7 @@ def test_a_turn_paid_for_when_the_worker_stopped_is_taken_again_without_paying(
     assert chat(api, session_id) == [
         ("user", f"Make an ad for {product_page_url}"),
         ("agent", "I'll read your mug's page."),
+        ("notice", NO_FIRECRAWL),
         ("agent", "I read your mug's page."),
     ]
 

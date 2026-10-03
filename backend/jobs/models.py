@@ -62,14 +62,27 @@ class Job(models.Model):
     )
     page_text = models.TextField(
         blank=True,
-        help_text="The words a visitor sees, then the product data the page declares for "
+        help_text="Only this product's own text: the sentences a model copied out of the "
+        "page about it, each found on the page, then the product data the page declares for "
         "search engines. Model calls read this.",
+    )
+    page_text_full = models.TextField(
+        blank=True,
+        help_text="Every word a visitor sees on the page, then its declared product data, "
+        "other products' text included. Kept for debugging; no model call reads it.",
     )
     page_html_key = models.CharField(
         max_length=500,
         blank=True,
         help_text="Key in the file store of the page's original HTML, exactly as served. "
         "Blank until the page has been found to show its product and its photos are kept.",
+    )
+    firecrawl = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Firecrawl's answers for the link read, kept so reading it again reuses "
+        'them: {"url": link, "files": {"page": key in the file store}}. Empty until '
+        "Firecrawl has answered.",
     )
     product_colour = models.CharField(
         max_length=100,

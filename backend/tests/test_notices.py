@@ -11,6 +11,7 @@ from chat.models import Message
 from gateway.fake import FakeModel, turn
 from jobs.models import Job
 from jobs.notices import post_notice
+from jobs.work import NO_FIRECRAWL
 
 from .conftest import PLAN, chat, given_to_the_producer, handoffs
 
@@ -33,6 +34,8 @@ def test_a_notice_is_shown_in_the_chat_with_its_level_in_order_and_kept_with_the
 
     assert chat(api, session_id) == [
         ("user", f"Make an ad for {page_read}"),
+        # Tests read pages with the plain download, which says so.
+        ("notice", NO_FIRECRAWL),
         ("agent", "I read your mug's page."),
         ("notice", FELL_BACK),
         ("notice", NORMAL),
@@ -40,12 +43,14 @@ def test_a_notice_is_shown_in_the_chat_with_its_level_in_order_and_kept_with_the
     shown = api.get(f"/api/sessions/{session_id}/messages/").json()
     assert [(message["seq"], message["role"], message["level"]) for message in shown] == [
         (1, "user", ""),
-        (2, "agent", ""),
-        (3, "notice", "problem"),
-        (4, "notice", "info"),
+        (2, "notice", "problem"),
+        (3, "agent", ""),
+        (4, "notice", "problem"),
+        (5, "notice", "info"),
     ]
     job.refresh_from_db()
     assert [(warning["level"], warning["text"]) for warning in job.warnings] == [
+        ("problem", NO_FIRECRAWL),
         ("problem", FELL_BACK),
         ("info", NORMAL),
     ]

@@ -107,7 +107,7 @@ How the person is placed with the product in a talking scene: one fixed sentence
 _Avoid_: Framing, composition, blocking
 
 **Page text**:
-The words a visitor sees on the product page plus the structured product data the page declares for search engines. The only place facts about the product may come from. Models read this, never the HTML.
+The words on the product page about the product this page sells, plus the structured product data the page declares for search engines. A model copies this product's passages out of the page word for word, and code keeps only the copied sentences it finds on the page, so text about other products sold alongside it ("pairs well with", bundles) and anything the model made up never gets in. The only place facts about the product may come from. Models read this, never the HTML. The whole visible text is kept beside it, for looking things up, but no model writes from it.
 _Avoid_: Page content, scraped text, HTML
 
 **User-supplied fact**:

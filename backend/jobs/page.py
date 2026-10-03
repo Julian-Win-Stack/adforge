@@ -1,9 +1,11 @@
 """Fetching a product page with a plain HTTP request and pulling out its text and photos.
-A headless browser is only added if plain fetches miss what real product pages show."""
+Firecrawl (jobs/firecrawl.py) reads pages in a real browser; this plain download is what
+reads them when it can't, and what fetches every photo."""
 
 import ipaddress
 import json
 import socket
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urljoin, urlparse
@@ -43,12 +45,19 @@ class Download:
     content: bytes
     content_type: str
     charset: str | None
+    # The page as Firecrawl wrote it out in markdown, links and images included. None when
+    # the page came from a plain download.
+    markdown: str | None = None
 
 
 @dataclass(frozen=True)
 class ProductPage:
-    text: str
+    text: str  # The words a visitor sees, then the declared product data.
+    words: str  # Only the words a visitor sees.
+    declared: str  # DECLARED_DATA_HEADING and the declared product data, or "" if none.
     photo_urls: list[str]
+    name: str  # The declared product's name, else the page's title, else "".
+    description: str  # The declared product's description, else og:description, else "".
 
 
 def download(url: str, *, max_bytes: int, what: str) -> Download:
@@ -60,7 +69,7 @@ def download(url: str, *, max_bytes: int, what: str) -> Download:
         current = url
         # Redirects are followed by hand so every hop gets checked.
         for _ in range(MAX_REDIRECTS + 1):
-            _check_where_it_points(current)
+            check_where_it_points(current)
             try:
                 with httpx.stream("GET", current, headers=HEADERS, timeout=20) as response:
                     if response.is_redirect:
@@ -93,7 +102,7 @@ def download(url: str, *, max_bytes: int, what: str) -> Download:
     return with_retries(attempt)
 
 
-def _check_where_it_points(url: str) -> None:
+def check_where_it_points(url: str) -> None:
     """Look the link's host up, and refuse links to this machine or a private network (like
     localhost or a cloud's settings address), so a pasted link can't make the server reach
     places only it can see. A host that changes its address between this check and the
@@ -134,13 +143,39 @@ def parse(page: Download) -> ProductPage:
     soup = BeautifulSoup(page.content, "html.parser", from_encoding=page.charset)
     products = _declared_products(soup)
     photo_urls = _photo_urls(soup, products, page.final_url)
+    name = _first_text(product.get("name") for product in products) or _title(soup)
+    description = _first_text(product.get("description") for product in products) or (
+        _first_text(
+            meta.get("content") for meta in soup.find_all("meta", property="og:description")
+        )
+    )
     for hidden in soup(["script", "style", "noscript", "template", "svg"]):
         hidden.decompose()
-    text = soup.get_text("\n", strip=True)
+    words = soup.get_text("\n", strip=True)
+    declared = ""
     if products:
-        declared = "\n".join(json.dumps(product, ensure_ascii=False) for product in products)
-        text += f"{DECLARED_DATA_HEADING}{declared}"
-    return ProductPage(text=text, photo_urls=photo_urls)
+        listed = "\n".join(json.dumps(product, ensure_ascii=False) for product in products)
+        declared = f"{DECLARED_DATA_HEADING}{listed}"
+    return ProductPage(
+        text=words + declared,
+        words=words,
+        declared=declared,
+        photo_urls=photo_urls,
+        name=name,
+        description=description,
+    )
+
+
+def _first_text(values: Iterable[Any]) -> str:
+    """The first of `values` that is a string with words in it, its spaces tidied."""
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return " ".join(value.split())
+    return ""
+
+
+def _title(soup: BeautifulSoup) -> str:
+    return _first_text([soup.title.get_text()]) if soup.title else ""
 
 
 def for_model(page_text: str) -> str:

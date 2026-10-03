@@ -101,6 +101,12 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 # Empty means OpenAI's own servers. Tests point it at a local stand-in.
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "")
 
+# Firecrawl reads product pages in a real browser. Empty means the page is read with a plain
+# download instead, and the user is told so.
+FIRECRAWL_API_KEY = os.environ.get("FIRECRAWL_API_KEY", "")
+# Tests point it at a local stand-in.
+FIRECRAWL_URL = os.environ.get("FIRECRAWL_URL", "https://api.firecrawl.dev")
+
 INWORLD_API_KEY = os.environ.get("INWORLD_API_KEY", "")
 # Tests point it at a local stand-in.
 INWORLD_BASE_URL = os.environ.get("INWORLD_BASE_URL", "https://api.inworld.ai")

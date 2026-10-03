@@ -14,6 +14,7 @@ import pytest
 from django.db import IntegrityError
 from pytest_django import Settings
 from pytest_httpserver import HTTPServer
+from rest_framework.test import APIClient
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
@@ -22,16 +23,21 @@ from chat.models import Attachment
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs.models import Job
-from jobs.work import keep_photo
+from jobs.page import DECLARED_DATA_HEADING
+from jobs.work import NO_FIRECRAWL, keep_photo
 
 from .conftest import (
+    COPIED,
     MUG_FRONT,
     MUG_SIDE,
     PLAN,
     PRODUCT_PAGE,
     PUBLIC_ADDRESS,
     READABLE,
+    SHAMPOO_PHOTO_PATH,
     FakeDns,
+    FakeFirecrawl,
+    handoffs,
     openai_answer,
     openai_reply,
     openai_turn,
@@ -74,14 +80,18 @@ def test_the_page_text_and_the_html_exactly_as_served_are_kept(
     say(f"Make an ad for {product_page_url}")
 
     job = Job.objects.get()
-    assert "Stoneware Mug" in job.page_text
-    assert "$24.00" in job.page_text
-    assert "Hand-thrown, holds 350 ml, dishwasher safe." in job.page_text
-    assert "tracking code" not in job.page_text
+    assert "Stoneware Mug" in job.page_text_full
+    assert "$24.00" in job.page_text_full
+    assert "Hand-thrown, holds 350 ml, dishwasher safe." in job.page_text_full
+    assert "tracking code" not in job.page_text_full
     # Stock is only in the page's structured data, never in the words a visitor sees.
-    assert "InStock" in job.page_text
+    assert "InStock" in job.page_text_full
     check = ModelCall.objects.get(purpose="check_page")
-    assert "InStock" in check.handoff["page_text"]
+    assert check.handoff["page_text"] == job.page_text_full
+    # The copy model copied every line here; "$24.00" is too short to be a sentence, and the
+    # price is still in the declared data.
+    assert job.page_text.startswith("Stoneware Mug\nHand-thrown, holds 350 ml, dishwasher safe.")
+    assert '"price": "24.00"' in job.page_text
     served = PRODUCT_PAGE.format(side=httpserver.url_for("/cdn/mug-side.png")).encode()
     assert file_store.read(job.page_html_key) == served
 
@@ -109,12 +119,14 @@ def test_a_long_page_still_hands_the_models_its_product_data(
 
     say(f"Make an ad for {link}")
 
-    assert len(Job.objects.get().page_text) > 200_000
-    for purpose in ("check_page", "plan_ad"):
-        sent = ModelCall.objects.get(purpose=purpose).handoff["page_text"]
-        assert len(sent) <= 200_000
-        assert sent.startswith("Stoneware Mug | Kiln & Co\nStoneware Mug\n$24.00")
-        assert '"availability": "https://schema.org/InStock"' in sent
+    assert len(Job.objects.get().page_text_full) > 200_000
+    sent = ModelCall.objects.get(purpose="check_page").handoff["page_text"]
+    assert len(sent) <= 200_000
+    assert sent.startswith("Stoneware Mug | Kiln & Co\nStoneware Mug\n$24.00")
+    assert '"availability": "https://schema.org/InStock"' in sent
+    # The product's own text keeps its declared data however long the page was.
+    planned_from = ModelCall.objects.get(purpose="plan_ad").handoff["page_text"]
+    assert '"availability": "https://schema.org/InStock"' in planned_from
 
 
 def test_the_page_check_is_recorded_with_its_cost_time_outcome_and_judgement(
@@ -390,6 +402,300 @@ def test_a_model_provider_that_stays_down_leaves_the_page_to_be_read_again_later
     assert results_of("read_page")[1].endswith("Kept 2 product photos.")
 
 
+# --- Through Firecrawl: only this product's text ---------------------------------------------
+
+# What the shampoo's page says about the shampoo, and what the copy model answers.
+ON_THE_PAGE = (
+    "This clarifying shampoo deeply cleanses away dirt, oil and product buildup with apple "
+    "cider vinegar while keratin helps strengthen hair."
+)
+PAGE_WROTE = (
+    "This concentrated shampoo with apple cider vinegar will deeply cleanse away dirt, oil, "
+    "and impurities."
+)
+REWORDED = (
+    "This concentrated shampoo with apple cider vinegar deeply cleanses away dirt, oil and "
+    "impurities."
+)
+MADE_UP = "Dermatologists rank it the number one shampoo for hair growth."
+SHAMPOO_COPIED = {
+    "product": "Detox Clarifying Hair Shampoo",
+    "passages": [ON_THE_PAGE, REWORDED, MADE_UP],
+}
+
+
+def notices(api: APIClient, session_id: str) -> list[tuple[str, str]]:
+    """Every notice in the chat, oldest first: its level and what it says."""
+    messages = api.get(f"/api/sessions/{session_id}/messages/").json()
+    return [
+        (message["level"], message["text"]) for message in messages if message["role"] == "notice"
+    ]
+
+
+def test_a_page_selling_two_products_keeps_only_this_ones_text(
+    api: APIClient,
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("copy_page_text", SHAMPOO_COPIED)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    assert read_page_result().endswith("Kept 2 product photos.")
+    job = Job.objects.get()
+    # The sentence on the page is kept, the reworded one is kept as the page wrote it, and
+    # the made-up one is dropped. The price is only in the declared data that follows.
+    words, heading, declared = job.page_text.partition(DECLARED_DATA_HEADING)
+    assert words == f"{ON_THE_PAGE}\n{PAGE_WROTE}"
+    assert heading and '"price": 34.0' in declared
+    # The product the page says pairs well with this one is on the page, and not in its text.
+    assert "Fine Hair Conditioner" in job.page_text_full
+    assert "Fine Hair Conditioner" not in job.page_text
+    assert job.page_text_full.endswith(heading + declared)
+    # Firecrawl read the page, so the shop itself was only asked for the photos.
+    assert firecrawl.requests == [
+        {"url": shampoo_page_url, "formats": ["markdown", "rawHtml"], "timeout": 300_000}
+    ]
+    assert "/products/detox-shampoo" not in [request.path for request, _ in httpserver.log]
+    assert file_store.read(job.page_html_key) == firecrawl.page_read["data"]["rawHtml"].encode()
+    # The copy model is given the page with no image links, and each link cut to its path.
+    (given,) = handoffs("copy_page_text")
+    assert given["product"] == "Detox Clarifying Hair Shampoo"
+    assert given["page_url"] == shampoo_page_url
+    assert "![" not in given["page_text"] and ".jpg" not in given["page_text"]
+    assert "[TRAVEL (3 OZ)](/products/detox-shampoo-travel)" in given["page_text"]
+    assert "[Fine Hair Conditioner](/products/fine-hair-conditioner)" in given["page_text"]
+    assert paid_for() == ["check_page", "copy_page_text"]
+    assert notices(api, session_id) == []
+    assert job.warnings == []
+
+
+def _firecrawl_is_down(firecrawl: FakeFirecrawl, monkeypatch: pytest.MonkeyPatch) -> str:
+    firecrawl.answers_first(503, "Service unavailable", times=3)
+    return "Firecrawl answered 503: Service unavailable"
+
+
+def _the_shop_is_down_for_firecrawl(
+    firecrawl: FakeFirecrawl, monkeypatch: pytest.MonkeyPatch
+) -> str:
+    firecrawl.page_read["data"]["metadata"]["statusCode"] = 503
+    return "the shop answered Firecrawl 503"
+
+
+def _firecrawl_times_out(firecrawl: FakeFirecrawl, monkeypatch: pytest.MonkeyPatch) -> str:
+    # Waiting the real 330 seconds would make the test too slow.
+    monkeypatch.setattr("jobs.firecrawl.HTTP_TIMEOUT_SECONDS", 0.2)
+    firecrawl.takes_seconds = 0.5
+    return "timed out after 5 min"
+
+
+@pytest.mark.parametrize(
+    ("goes_wrong", "tries"),
+    [
+        pytest.param(_firecrawl_is_down, 3, id="Firecrawl itself stays down"),
+        pytest.param(_the_shop_is_down_for_firecrawl, 1, id="the shop was down for Firecrawl"),
+        # Firecrawl already waited 5 minutes for the page: asking again would wait as long.
+        pytest.param(_firecrawl_times_out, 1, id="Firecrawl times out"),
+    ],
+)
+def test_firecrawl_being_down_reads_the_page_plainly_and_says_so(
+    api: APIClient,
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+    goes_wrong: Callable[[FakeFirecrawl, pytest.MonkeyPatch], str],
+    tries: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    why = goes_wrong(firecrawl, monkeypatch)
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    assert len(firecrawl.requests) == tries
+    assert read_page_result().endswith("Kept 2 product photos.")
+    job = Job.objects.get()
+    # The words a visitor sees, from the plain download, and the declared data.
+    assert f"{ON_THE_PAGE}\n" in job.page_text
+    assert '"price": 34.0' in job.page_text
+    assert notices(api, session_id) == [
+        (
+            "problem",
+            f"Firecrawl couldn't open the page ({why}). Read it with the plain download "
+            "instead, so text that needs JavaScript or sits in closed tabs may be missing from "
+            "the ad.",
+        )
+    ]
+
+
+def test_without_a_firecrawl_key_the_page_is_read_plainly_and_says_so(
+    api: APIClient,
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+    settings: Settings,
+) -> None:
+    settings.FIRECRAWL_API_KEY = ""
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    assert firecrawl.requests == []
+    assert read_page_result().endswith("Kept 2 product photos.")
+    assert f"{ON_THE_PAGE}\n" in Job.objects.get().page_text
+    assert notices(api, session_id) == [("problem", NO_FIRECRAWL)]
+
+
+def test_a_page_the_shop_answers_firecrawl_404_for_cant_be_read_and_isnt_downloaded_plainly(
+    api: APIClient,
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    # Firecrawl answers 200 even when the shop didn't: the shop's answer is in the metadata.
+    firecrawl.page_read["data"]["metadata"]["statusCode"] = 404
+    reading(fake_model, shampoo_page_url)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    assert read_page_result() == (
+        f"The page couldn't be read: {shampoo_page_url} answered 404 Not Found, so trying "
+        "again won't help. Ask the shop owner for a working link to the product's own page."
+    )
+    assert [request.path for request, _ in httpserver.log] == ["/v2/scrape"]
+    assert paid_for() == []
+    assert notices(api, session_id) == []
+
+
+def test_a_failed_copy_call_leaves_the_page_unread_and_says_so(
+    api: APIClient,
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("copy_page_text", *[OutsideServiceDown("503 from the provider")] * 3)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    why = "The model provider was still down after 3 tries: 503 from the provider"
+    assert read_page_result() == (
+        f"Failed: picking this product's own text out of the page failed ({why}), so the "
+        "page wasn't read. Tell the shop owner they can ask to read it again."
+    )
+    job = Job.objects.get()
+    assert (job.page_text, job.page_text_full, job.page_html_key) == ("", "", "")
+    assert not job.photos.exists()
+    assert notices(api, session_id) == [
+        (
+            "problem",
+            f"Picking this product's own text out of the page failed ({why}), so the page "
+            "wasn't read and nothing was kept from it. Ask to read it again.",
+        )
+    ]
+
+    # Reading it again works, from the answer Firecrawl gave the first time.
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("copy_page_text", SHAMPOO_COPIED)
+    say("Try again")
+
+    assert results_of("read_page")[1].endswith("Kept 2 product photos.")
+    assert Job.objects.get().page_text.startswith(f"{ON_THE_PAGE}\n{PAGE_WROTE}")
+    assert len(firecrawl.requests) == 1
+    assert paid_for().count("check_page") == 1
+
+
+def test_a_private_address_is_refused_before_firecrawl_is_asked(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    dns: FakeDns,
+    say: Callable[..., None],
+) -> None:
+    dns.records["localhost"] = "127.0.0.1"  # The shop is on this machine.
+    reading(fake_model, shampoo_page_url)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    assert read_page_result() == (
+        f"The page couldn't be read: {shampoo_page_url} leads to a private network address, "
+        "which is never fetched. Ask the shop owner for a working link to the product's own "
+        "page."
+    )
+    assert firecrawl.requests == []
+    assert len(httpserver.log) == 0
+
+
+def test_a_page_read_again_doesnt_pay_for_the_copy_or_the_picker_twice(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    say: Callable[..., None],
+) -> None:
+    # The page's photo can't be used, so the page isn't read yet and is read again when asked.
+    httpserver.expect_request(SHAMPOO_PHOTO_PATH).respond_with_data(
+        "<html>Gone</html>", content_type="text/html"
+    )
+    link = httpserver.url_for("/products/detox-shampoo")
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": link, "target_seconds": None})]),
+        turn(says="That page has no photo of your shampoo I can use."),
+        turn(calls=[("read_page", {"link": link, "target_seconds": None})]),
+        turn(says="It still has no photo I can use."),
+    )
+    # A second check and a second copy, were the page wrongly paid for again.
+    fake_model.respond("check_page", READABLE, READABLE)
+    fake_model.respond("copy_page_text", SHAMPOO_COPIED, SHAMPOO_COPIED)
+    say(f"Make an ad for {link}")
+
+    say("Try it again")
+
+    assert len(results_of("read_page")) == 2
+    assert paid_for() == ["check_page", "copy_page_text"]
+    assert len(firecrawl.requests) == 1
+
+
+def test_firecrawl_saying_too_many_requests_is_tried_again(
+    api: APIClient,
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    firecrawl.answers_first(429, "Rate limit exceeded")
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("copy_page_text", SHAMPOO_COPIED)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    assert read_page_result().endswith("Kept 2 product photos.")
+    assert len(firecrawl.requests) == 2
+    assert Job.objects.get().page_text.startswith(f"{ON_THE_PAGE}\n{PAGE_WROTE}")
+    assert notices(api, session_id) == []
+
+
 # --- The page's photos ------------------------------------------------------------------------
 
 
@@ -557,6 +863,7 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
     openai_server(
         openai_turn("", ("call_1", "read_page", read_page)),
         openai_answer(READABLE),
+        openai_answer(COPIED),
         openai_turn("", ("call_2", "plan_ad", {})),
         openai_answer(PLAN),
         openai_turn("Here's the plan."),
@@ -570,7 +877,7 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
         "Hand-thrown, holds 350 ml, and dishwasher safe.",
         "Yours for $24.00.",
     ]
-    _, check, _, plan, _ = [
+    _, check, _, _, plan, _ = [
         request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
     ]
     assert check["model"] == "gpt-5-mini"

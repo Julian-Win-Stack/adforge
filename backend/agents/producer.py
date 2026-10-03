@@ -9,18 +9,21 @@ from django.db import IntegrityError, transaction
 from django.db.models import Max, Sum
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.models import ModelCall
-from gateway.types import MusicHandoff
+from gateway.types import MusicHandoff, UnusableReply
 from jobs import page
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
 from jobs.models import Job, ProducedItem, ProductPhoto, Scene, SceneStep
 from jobs.work import (
     assemble_ad,
     check_page,
+    copy_page_text,
     create_music,
     create_person,
+    fetch_page,
     keep_page,
     latest,
     music_mood,
@@ -125,6 +128,7 @@ class ReadPage(Tool):
             job.product_url = self.link
             job.target_seconds = self.target_seconds
             job.page_text = ""
+            job.page_text_full = ""
             job.page_html_key = ""
             job.status = Job.Status.READING_PAGE
             job.save(
@@ -132,12 +136,13 @@ class ReadPage(Tool):
                     "product_url",
                     "target_seconds",
                     "page_text",
+                    "page_text_full",
                     "page_html_key",
                     "status",
                 ]
             )
         try:
-            download = page.download(self.link, max_bytes=page.MAX_PAGE_BYTES, what="product page")
+            download = fetch_page(job, self.link)
         except page.PageUnreadable as error:
             return (
                 f"The page couldn't be read: {error} Ask the shop owner for a working link to "
@@ -150,10 +155,18 @@ class ReadPage(Tool):
                 f"The page was read but can't be used: {check.reason} Ask the shop owner for "
                 "a link to the product's own page."
             )
+        # Before the photos: a page whose text can't be copied isn't read, and keeps nothing.
+        try:
+            text = copy_page_text(job, download, product_page)
+        except (UnusableReply, OutsideServiceDown) as error:
+            return (
+                f"Failed: picking this product's own text out of the page failed ({error}), so "
+                "the page wasn't read. Tell the shop owner they can ask to read it again."
+            )
         skipped = save_photos(job, product_page.photo_urls)
         # Only once every photo is kept: a worker that stops part-way through them leaves the
         # page unread, so the read run again keeps them all rather than the few already kept.
-        keep_page(job, download, product_page)
+        keep_page(job, download, product_page, text)
         kept = job.photos.count()
         told = [f"Started job {job.pk} and read {download.final_url}. {check.reason}"]
         if download.final_url != self.link:
