@@ -2,19 +2,22 @@
 person, running the planning checks, making the music, making each scene and assembling the
 finished ad."""
 
+import contextvars
 import io
 import json
 import math
 import mimetypes
 import tempfile
 import wave
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from django.conf import settings
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Max, QuerySet
 
 from adforge import file_store
@@ -48,7 +51,7 @@ from gateway.types import (
     UnusableReply,
 )
 
-from . import assembly, firecrawl, page, page_text
+from . import assembly, firecrawl, page, page_text, photos
 from .checks import (
     FACT_CHECK_INSTRUCTIONS,
     LENGTH_ALLOWANCE_SECONDS,
@@ -133,50 +136,122 @@ NO_FIRECRAWL = (
 )
 
 
-def fetch_page(job: Job, link: str) -> page.Download:
+@dataclass(frozen=True)
+class PageRead:
+    """What reading a page gave: the page itself, Firecrawl's marked screenshot of it and
+    its record of the product. Without Firecrawl's key the other two are None; a call that
+    failed gives why."""
+
+    download: page.Download
+    marked: firecrawl.Marked | firecrawl.FirecrawlFailed | None = None
+    # The shop's record of the product; None if Firecrawl found none, or wasn't asked.
+    record: dict[str, Any] | firecrawl.FirecrawlFailed | None = None
+
+
+def fetch_page(job: Job, link: str) -> PageRead:
     """Read the page at `link` through Firecrawl, or with a plain download when Firecrawl
-    isn't set up or can't read it; each fallback posts a notice. A link to a private network
-    address is refused before anything is asked of anyone. Raises PageUnreadable for a page
-    that won't read, and OutsideServiceDown if the shop stays down."""
+    isn't set up or can't read it; each fallback posts a notice. Firecrawl's three calls are
+    made at the same time. A link to a private network address is refused before anything
+    is asked of anyone. Raises PageUnreadable for a page that won't read, and
+    OutsideServiceDown if the shop stays down."""
     with_retries(lambda: page.check_where_it_points(link))
     if not settings.FIRECRAWL_API_KEY:
         post_notice(job, NO_FIRECRAWL, Message.Level.PROBLEM)
-        return _plain_download(link)
-    try:
-        answer = _firecrawl_page_read(job, link)
-    except (firecrawl.FirecrawlFailed, OutsideServiceDown) as error:
+        return PageRead(_plain_download(link))
+    answers = _firecrawl_answers(job, link)
+    marked, record, read = answers["marked"], answers["product"], answers["page"]
+    if isinstance(read, page.PageUnreadable):
+        raise read
+    if isinstance(read, Exception):
         post_notice(
             job,
-            f"Firecrawl couldn't open the page ({error}). Read it with the plain download "
+            f"Firecrawl couldn't open the page ({read}). Read it with the plain download "
             "instead, so text that needs JavaScript or sits in closed tabs may be missing from "
             "the ad.",
             Message.Level.PROBLEM,
         )
-        return _plain_download(link)
-    return firecrawl.as_download(answer, link)
+        download = _plain_download(link)
+    else:
+        download = firecrawl.as_download(read, link)
+    return PageRead(
+        download,
+        marked=_failed(marked) if isinstance(marked, Exception) else _as_marked(job, marked),
+        record=_failed(record) if isinstance(record, Exception) else firecrawl.record_in(record),
+    )
+
+
+def _failed(error: Exception) -> firecrawl.FirecrawlFailed:
+    return (
+        error
+        if isinstance(error, firecrawl.FirecrawlFailed)
+        else firecrawl.FirecrawlFailed(str(error))
+    )
 
 
 def _plain_download(link: str) -> page.Download:
     return page.download(link, max_bytes=page.MAX_PAGE_BYTES, what="product page")
 
 
-def _firecrawl_page_read(job: Job, link: str) -> dict[str, Any]:
-    """Firecrawl's page read of `link`: the one this job saved for it, if it read the link
-    before, so a read run again is given the same page and pays for nothing twice; else a
-    new one, saved as soon as it arrives."""
+type _Answer = dict[str, Any]
+type _FirecrawlCall = Literal["page", "marked", "product"]
+
+
+def _firecrawl_answers(job: Job, link: str) -> dict[_FirecrawlCall, _Answer | Exception]:
+    """Firecrawl's three answers for `link`: the ones this job saved for it, if it read the
+    link before, so a read run again is given the same page and pays for nothing twice; else
+    new ones, asked for at the same time and each saved as soon as it arrives. A call that
+    failed gives its error, which isn't saved: a read run again asks again."""
     saved: dict[str, str] = (
         job.firecrawl.get("files", {}) if job.firecrawl.get("url") == link else {}
     )
-    if "page" in saved:
-        answer: dict[str, Any] = json.loads(file_store.read(saved["page"]))
-        return answer
-    answer = firecrawl.read_page(link)
-    saved["page"] = file_store.save(
-        f"jobs/{job.pk}/firecrawl/page.json", json.dumps(answer, ensure_ascii=False).encode()
+    if job.firecrawl.get("url") != link:
+        job.firecrawl = {"url": link, "files": saved}
+    answers: dict[_FirecrawlCall, _Answer | Exception] = {
+        call: json.loads(file_store.read(saved[call]))
+        for call in ("page", "marked", "product")
+        if call in saved
+    }
+    asks: dict[_FirecrawlCall, Callable[[], Any]] = {
+        "page": lambda: firecrawl.read_page(link),
+        "marked": lambda: firecrawl.marked_screenshot(link),
+        "product": lambda: firecrawl.product_record(link),
+    }
+    # The calls only wait on Firecrawl; the answers are saved here, by this thread.
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        asked = {pool.submit(ask): call for call, ask in asks.items() if call not in answers}
+        for done in as_completed(asked):
+            call = asked[done]
+            try:
+                answer = done.result()
+            except (firecrawl.FirecrawlFailed, OutsideServiceDown, page.PageUnreadable) as error:
+                answers[call] = error
+                continue
+            if call == "marked":
+                answer, shot = answer
+                saved["screenshot"] = file_store.save(
+                    f"jobs/{job.pk}/firecrawl/screenshot.png", shot
+                )
+            answers[call] = answer
+            # The picker's pictures were made from the answers before this one.
+            job.firecrawl.pop("picker_images", None)
+            saved[call] = file_store.save(
+                f"jobs/{job.pk}/firecrawl/{call}.json",
+                json.dumps(answer, ensure_ascii=False).encode(),
+            )
+            job.save(update_fields=["firecrawl"])
+    return answers
+
+
+def _as_marked(job: Job, answer: _Answer) -> firecrawl.Marked | firecrawl.FirecrawlFailed:
+    try:
+        marks = firecrawl.marks_in(answer)
+    except firecrawl.FirecrawlFailed as error:
+        return error
+    return firecrawl.Marked(
+        marks=marks,
+        title=str(answer.get("metadata", {}).get("title") or ""),
+        screenshot=file_store.read(job.firecrawl["files"]["screenshot"]),
     )
-    job.firecrawl = {"url": link, "files": saved}
-    job.save(update_fields=["firecrawl"])
-    return answer
 
 
 def copy_page_text(job: Job, download: page.Download, product_page: page.ProductPage) -> str:
@@ -212,6 +287,139 @@ def copy_page_text(job: Job, download: page.Download, product_page: page.Product
         )
         raise
     return "\n".join(page_text.match_back(copied.passages, on_the_page)) + product_page.declared
+
+
+@dataclass(frozen=True)
+class Picked:
+    """The picker's photo links, gallery first, or None when the page's declared photos are
+    used instead; and the notices to post about how they were picked."""
+
+    urls: list[str] | None
+    notices: list[tuple[str, Message.Level]]
+
+
+DECLARED_INSTEAD = (
+    "Used the photos the page declares for search engines instead, which may include other "
+    "products' photos and miss some of this one's."
+)
+
+
+def copy_and_pick(job: Job, read: PageRead, product_page: page.ProductPage) -> tuple[str, Picked]:
+    """This product's own text and photos, copied and picked off the page at the same time.
+    A failed copy call is raised, as by copy_page_text."""
+    context = contextvars.copy_context()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        picking = pool.submit(context.run, _closing_its_connection, pick_photos, job, read)
+        text = copy_page_text(job, read.download, product_page)
+    return text, picking.result()
+
+
+def _closing_its_connection[Out](work: Callable[..., Out], *args: Any) -> Out:
+    """Run `work` in a thread of its own, then close the database connection the thread
+    opened."""
+    try:
+        return work(*args)
+    finally:
+        connection.close()
+
+
+def pick_photos(job: Job, read: PageRead) -> Picked:
+    """Have a model pick this product's photos off Firecrawl's marked screenshot of the page,
+    with the shop's record of the product and its official photos as a reference. Without a
+    marked screenshot, or when the picker fails or picks nothing, the page's declared photos
+    are used. Says what fell back in the notices; posts none itself."""
+    if read.marked is None:  # Firecrawl isn't set up, which was already said.
+        return Picked(None, [])
+    if isinstance(read.marked, firecrawl.FirecrawlFailed):
+        return Picked(
+            None,
+            [
+                (
+                    f"Firecrawl couldn't take the page's marked screenshot ({read.marked}), so "
+                    f"this product's photos couldn't be picked off it. {DECLARED_INSTEAD}",
+                    Message.Level.PROBLEM,
+                )
+            ],
+        )
+    notices: list[tuple[str, Message.Level]] = []
+    record = read.record
+    if isinstance(record, firecrawl.FirecrawlFailed):
+        notices.append(
+            (
+                f"Firecrawl couldn't get the shop's record of the product ({record}), so its "
+                "photos were picked without the official photos to compare them with: a "
+                "look-alike product's photo is a little more likely to get through.",
+                Message.Level.PROBLEM,
+            )
+        )
+        record = None
+    elif record is None:
+        notices.append(
+            (
+                "Firecrawl found no record of the product on the page, as on many pages, so its "
+                "photos were picked without the shop's official photos to compare them with.",
+                Message.Level.INFO,
+            )
+        )
+    try:
+        picked = call_model(
+            job=job,
+            purpose="pick_photos",
+            instructions=photos.PICK_INSTRUCTIONS,
+            handoff=photos.handoff(record, read.marked.marks, read.marked.title),
+            output=photos.PickedPhotos,
+            images=_picker_images(job, record, read.marked.screenshot),
+            # A page read again, as after a worker stopped, isn't picked and paid for twice.
+            pay_once=True,
+        )
+    except (UnusableReply, OutsideServiceDown) as error:
+        notices.append(
+            (
+                f"Picking this product's photos off the page failed ({error}). {DECLARED_INSTEAD}",
+                Message.Level.PROBLEM,
+            )
+        )
+        return Picked(None, notices)
+    urls = photos.picked_links(picked, read.marked.marks)
+    if not urls:
+        notices.append(
+            (
+                f"The photo picker found no photo of this product on the page. {DECLARED_INSTEAD}",
+                Message.Level.PROBLEM,
+            )
+        )
+        return Picked(None, notices)
+    return Picked(urls, notices)
+
+
+def _picker_images(job: Job, record: dict[str, Any] | None, screenshot: bytes) -> list[Image]:
+    """The pictures the picker is shown: the record's official photos, R1, R2, ..., then the
+    screenshot's parts, top to bottom. Kept with the job's Firecrawl answers, so a read run
+    again shows the same files and pays for nothing twice."""
+    shown = job.firecrawl.get("picker_images")
+    if shown is not None:
+        return [Image(label, key) for label, key in shown]
+    images: list[Image] = []
+    for url in photos.reference_urls(record) if record else []:
+        try:
+            official = page.download(url, max_bytes=page.MAX_PHOTO_BYTES, what="product photo")
+        except page.PageUnreadable, OutsideServiceDown:
+            continue  # A guide only: the picker does without it.
+        if official.content_type not in IMAGE_TYPES:
+            continue
+        number = len(images) + 1
+        extension = mimetypes.guess_extension(official.content_type) or ""
+        key = file_store.save(
+            f"jobs/{job.pk}/firecrawl/official-{number}{extension}", official.content
+        )
+        images.append(Image(f"R{number}", key))
+    parts = photos.parts(screenshot)
+    for number, (top, part) in enumerate(parts, 1):
+        key = file_store.save(f"jobs/{job.pk}/firecrawl/part-{number}.jpg", part)
+        images.append(Image(f"Part {number} of {len(parts)} (from {top} px down the page):", key))
+    job.firecrawl["picker_images"] = [[image.label, image.key] for image in images]
+    job.save(update_fields=["firecrawl"])
+    return images
 
 
 def keep_page(job: Job, download: page.Download, product_page: page.ProductPage, text: str) -> None:
@@ -251,15 +459,22 @@ class SkippedPhoto:
     reason: str
 
 
-def save_photos(job: Job, urls: list[str]) -> list[SkippedPhoto]:
-    """Download and keep each photo, after any the job already has. Gives back each one
-    that was skipped, with why."""
+def save_photos(job: Job, urls: list[str], *, merge_copies: bool = False) -> list[SkippedPhoto]:
+    """Download and keep each photo, after any the job already has, up to MAX_PHOTOS. With
+    `merge_copies`, a photo that is a copy of one already kept, at another size or under
+    another name, is left out. Gives back each one that was skipped, with why."""
     # A read run again after a crash starts the page's photos afresh, so each is kept once.
     # Photos the user attached are theirs, and stay.
     job.photos.exclude(source_url="").delete()
     saved = job.photos.aggregate(last=Max("position"))["last"] or 0
+    copies = photos.Copies()
+    kept = 0
     skipped = []
     for url in urls:
+        if kept >= page.MAX_PHOTOS:
+            break
+        if merge_copies and copies.seen_link(url):
+            continue
         try:
             photo = page.download(url, max_bytes=page.MAX_PHOTO_BYTES, what="product photo")
         except (page.PageUnreadable, OutsideServiceDown) as error:
@@ -275,7 +490,10 @@ def save_photos(job: Job, urls: list[str]) -> list[SkippedPhoto]:
                 )
             )
             continue
+        if merge_copies and not copies.is_new(url, photo.content):
+            continue
         saved += 1
+        kept += 1
         keep_photo(job, saved, photo.content, photo.content_type, source_url=url)
     return skipped
 

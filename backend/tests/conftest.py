@@ -1,5 +1,6 @@
 import io
 import json
+import random
 import re
 import socket
 import subprocess
@@ -77,6 +78,16 @@ READABLE = {"decision": "readable", "reason": "The page names the mug, its price
 COPIED = {
     "product": "Stoneware Mug",
     "passages": ["Stoneware Mug", "Hand-thrown, holds 350 ml, dishwasher safe."],
+}
+
+# What the photo picker answers when a test doesn't say: on the shampoo's marked
+# screenshot, its big gallery photo (I8) and the same photo's thumbnail (I16).
+SHAMPOO_PICKED = {
+    "product": "Detox Clarifying Hair Shampoo",
+    "gallery_images": [8, 16],
+    "more_images": [],
+    "product_sections": [15, 30],
+    "notes": "",
 }
 
 # What the producer plans for the mug's page: three scenes.
@@ -159,6 +170,7 @@ def api() -> APIClient:
 def fake_model() -> Iterator[FakeModel]:
     fake = FakeModel()
     fake.answer_unscripted("copy_page_text", copy_every_line)
+    fake.answer_unscripted("pick_photos", lambda _: SHAMPOO_PICKED)
     with use_model(fake):
         yield fake
 
@@ -197,42 +209,121 @@ SHAMPOO_PHOTO_PATH = (
 )
 
 
+# Real answers of Firecrawl's other two calls for the same page, trimmed: the marked
+# screenshot's (its marking script's list cut to six pictures and five text pieces, and the
+# HTML and markdown it also sends left out), and the product record's (two images a size).
+FIRECRAWL_MARKED = (Path(__file__).parent / "fixtures" / "firecrawl_marked.json").read_text()
+FIRECRAWL_PRODUCT = (Path(__file__).parent / "fixtures" / "firecrawl_product.json").read_text()
+# The record's first official photo, R1, where the shop's CDN keeps it.
+SHAMPOO_RECORD_PHOTO_PATH = (
+    "/s/files/1/1043/7322/files/Update_2_DetoxShampoo_260611-17-23_Site_Asset_PDP_Product_"
+    "Thumbnail_1440x1780_11.jpg"
+)
+
+
+def screenshot(width: int, height: int) -> bytes:
+    """A page screenshot, dark at the top and light at the bottom, so no part is blank."""
+    file = io.BytesIO()
+    PIL.Image.linear_gradient("L").resize((width, height)).convert("RGB").save(file, "PNG")
+    return file.getvalue()
+
+
+def photo(seed: int, width: int = 64, height: int = 80) -> bytes:
+    """A photo of its own: random dots, so no two seeds look alike to the copy check, and
+    one seed looks the same at every size."""
+    dots = random.Random(seed).randbytes(16 * 20 * 3)
+    small = PIL.Image.frombytes("RGB", (16, 20), dots)
+    file = io.BytesIO()
+    small.resize((width, height), PIL.Image.Resampling.NEAREST).save(file, "PNG")
+    return file.getvalue()
+
+
+type FirecrawlCall = Literal["page", "marked", "product"]
+
+
+@pytest.fixture(scope="session")
+def make_httpserver() -> Iterator[HTTPServer]:
+    """The local web server, answering requests at the same time as real servers do: the
+    page is read with Firecrawl's three calls at once, and a slow one mustn't hold up the
+    others."""
+    server = HTTPServer(threaded=True)
+    server.start()
+    yield server
+    server.clear()
+    if server.is_running():
+        server.stop()
+
+
 class FakeFirecrawl:
     """A stand-in Firecrawl on the local web server. It answers /v2/scrape by what the
-    request asks for, as the real one does: a page read (markdown and rawHtml) gets the
-    saved real answer, with the shop's address swapped for the local shop's."""
+    request asks for, as the real one does: a page read (markdown and rawHtml), a marked
+    screenshot (actions) and a product record each get the saved real answer, with the shop's
+    address swapped for the local shop's. The screenshot is served from the local server."""
 
     def __init__(self, httpserver: HTTPServer) -> None:
         self.shop = httpserver.url_for("").rstrip("/")
         # What every request asked for, oldest first.
         self.requests: list[dict[str, Any]] = []
-        # Answers to give before the real ones, such as "busy": each (status, body).
-        self.first: list[tuple[int, dict[str, Any]]] = []
-        # How long it takes to answer, for a test of Firecrawl timing out.
+        # Answers to give each call before the real ones, such as "busy": each (status, body).
+        self.first: dict[FirecrawlCall, list[tuple[int, dict[str, Any]]]] = {
+            "page": [],
+            "marked": [],
+            "product": [],
+        }
+        # How long the page read takes to answer, for a test of Firecrawl timing out.
         self.takes_seconds = 0.0
-        # The page read's answer, for a test to change, such as the shop's status code.
+        # Each call's answer, for a test to change, such as the shop's status code.
         self.page_read: dict[str, Any] = json.loads(
             re.sub(r"https?://theouai\.com", self.shop, FIRECRAWL_PAGE_READ)
         )
+        shop_links = r"(?:https?:)?//(?:theouai\.com|cdn\.shopify\.com)"
+        self.marked: dict[str, Any] = json.loads(re.sub(shop_links, self.shop, FIRECRAWL_MARKED))
+        self.marked["data"]["actions"]["screenshots"] = [f"{self.shop}/firecrawl/screenshot.png"]
+        self.product: dict[str, Any] = json.loads(re.sub(shop_links, self.shop, FIRECRAWL_PRODUCT))
+        # 2,600 px tall: three parts of 1,200 px.
+        self.screenshot = screenshot(480, 2_600)
         httpserver.expect_request("/v2/scrape", method="POST").respond_with_handler(self._answer)
+        httpserver.expect_request("/firecrawl/screenshot.png").respond_with_handler(
+            lambda _: Response(self.screenshot, content_type="image/png")
+        )
 
-    def answers_first(self, status: int, error: str, *, times: int = 1) -> None:
-        """Have the next `times` requests answered with an error, as when Firecrawl is busy."""
-        self.first += [(status, {"success": False, "error": error})] * times
+    def answers_first(
+        self, status: int, error: str, *, times: int = 1, call: FirecrawlCall = "page"
+    ) -> None:
+        """Have the next `times` requests for `call` answered with an error, as when Firecrawl
+        is busy."""
+        self.first[call] += [(status, {"success": False, "error": error})] * times
+
+    def asked(self, call: FirecrawlCall) -> list[dict[str, Any]]:
+        """What every request for `call` asked for, oldest first."""
+        return [asked for asked in self.requests if _which_call(asked) == call]
 
     def _answer(self, request: Request) -> Response:
         if request.headers.get("Authorization") != "Bearer fc-test":
             return Response(json.dumps({"success": False, "error": "Unauthorized"}), status=401)
         asked = request.get_json()
         self.requests.append(asked)
-        time.sleep(self.takes_seconds)
-        if self.first:
-            status, body = self.first.pop(0)
-        elif set(asked["formats"]) == {"markdown", "rawHtml"}:
-            status, body = 200, self.page_read
-        else:
+        call = _which_call(asked)
+        if call == "page":
+            time.sleep(self.takes_seconds)
+        answers = {"page": self.page_read, "marked": self.marked, "product": self.product}
+        if call is None:
             status, body = 400, {"success": False, "error": f"Unknown formats {asked['formats']}"}
+        elif self.first[call]:
+            status, body = self.first[call].pop(0)
+        else:
+            status, body = 200, answers[call]
         return Response(json.dumps(body), status=status, content_type="application/json")
+
+
+def _which_call(asked: dict[str, Any]) -> FirecrawlCall | None:
+    if "actions" in asked:
+        return "marked"
+    if asked["formats"] == ["product"]:
+        return "product"
+    if set(asked["formats"]) == {"markdown", "rawHtml"}:
+        return "page"
+    return None
 
 
 @pytest.fixture
@@ -251,6 +342,9 @@ def shampoo_page_url(httpserver: HTTPServer, firecrawl: FakeFirecrawl) -> str:
         firecrawl.page_read["data"]["rawHtml"], content_type="text/html; charset=utf-8"
     )
     httpserver.expect_request(SHAMPOO_PHOTO_PATH).respond_with_data(
+        SHAMPOO_PHOTO, content_type="image/jpeg"
+    )
+    httpserver.expect_request(SHAMPOO_RECORD_PHOTO_PATH).respond_with_data(
         SHAMPOO_PHOTO, content_type="image/jpeg"
     )
     return httpserver.url_for("/products/detox-shampoo")

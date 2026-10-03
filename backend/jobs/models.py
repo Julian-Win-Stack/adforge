@@ -81,8 +81,9 @@ class Job(models.Model):
         default=dict,
         blank=True,
         help_text="Firecrawl's answers for the link read, kept so reading it again reuses "
-        'them: {"url": link, "files": {"page": key in the file store}}. Empty until '
-        "Firecrawl has answered.",
+        'them: {"url": link, "files": {"page", "marked", "product", "screenshot": key in the '
+        'file store}, "picker_images": [[label, key], ...]}, each added as it arrives. Empty '
+        "until Firecrawl has answered.",
     )
     product_colour = models.CharField(
         max_length=100,

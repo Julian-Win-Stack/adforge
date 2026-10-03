@@ -17,10 +17,13 @@ from gateway.types import MusicHandoff, UnusableReply
 from jobs import page
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
 from jobs.models import Job, ProducedItem, ProductPhoto, Scene, SceneStep
+from jobs.notices import post_notice
 from jobs.work import (
+    DECLARED_INSTEAD,
+    SkippedPhoto,
     assemble_ad,
     check_page,
-    copy_page_text,
+    copy_and_pick,
     create_music,
     create_person,
     fetch_page,
@@ -142,12 +145,13 @@ class ReadPage(Tool):
                 ]
             )
         try:
-            download = fetch_page(job, self.link)
+            read = fetch_page(job, self.link)
         except page.PageUnreadable as error:
             return (
                 f"The page couldn't be read: {error} Ask the shop owner for a working link to "
                 "the product's own page."
             )
+        download = read.download
         product_page = page.parse(download)
         check = check_page(job, download, product_page)
         if check.decision == "unreadable":
@@ -156,18 +160,36 @@ class ReadPage(Tool):
                 "a link to the product's own page."
             )
         # Before the photos: a page whose text can't be copied isn't read, and keeps nothing.
+        # The photos are picked while the text is copied.
         try:
-            text = copy_page_text(job, download, product_page)
+            text, picked = copy_and_pick(job, read, product_page)
         except (UnusableReply, OutsideServiceDown) as error:
             return (
                 f"Failed: picking this product's own text out of the page failed ({error}), so "
                 "the page wasn't read. Tell the shop owner they can ask to read it again."
             )
-        skipped = save_photos(job, product_page.photo_urls)
+        for notice, level in picked.notices:
+            post_notice(job, notice, level)
+        if picked.urls is None:
+            skipped = save_photos(job, product_page.photo_urls)
+        else:
+            skipped = save_photos(job, picked.urls, merge_copies=True)
+            if skipped and not job.photos.exclude(source_url="").exists():
+                post_notice(job, _none_kept(skipped), Message.Level.PROBLEM)
+                skipped = save_photos(job, product_page.photo_urls)
+            elif skipped:
+                post_notice(job, _not_downloaded(skipped), Message.Level.PROBLEM)
         # Only once every photo is kept: a worker that stops part-way through them leaves the
         # page unread, so the read run again keeps them all rather than the few already kept.
         keep_page(job, download, product_page, text)
         kept = job.photos.count()
+        if kept == 0:
+            post_notice(
+                job,
+                "No usable product photo was found on the page, and every scene is made from "
+                "one, so the ad can't be made until the shop owner attaches at least one.",
+                Message.Level.PROBLEM,
+            )
         told = [f"Started job {job.pk} and read {download.final_url}. {check.reason}"]
         if download.final_url != self.link:
             told.append(f"The link led to {download.final_url}, so that is the page read.")
@@ -1022,6 +1044,25 @@ def _dollars(amount: Decimal) -> str:
     exact = f"{amount.normalize():f}"
     cents = f"{amount:.2f}"
     return f"${exact if len(exact) > len(cents) else cents}"
+
+
+def _not_downloaded(skipped: list[SkippedPhoto]) -> str:
+    """The notice for picked photos that couldn't be kept: how many, and which."""
+    listed = "\n".join(f"- {photo.url}: {photo.reason}" for photo in skipped)
+    return (
+        f"{_photos(len(skipped)).capitalize()} picked off the page couldn't be kept, so the ad "
+        f"is made without {'them' if len(skipped) != 1 else 'it'}; the rest were kept:\n{listed}"
+    )
+
+
+def _none_kept(skipped: list[SkippedPhoto]) -> str:
+    """The notice for when no photo picked off the page could be kept, and the page's
+    declared photos are used instead."""
+    listed = "".join(f"\n- {photo.url}: {photo.reason}" for photo in skipped)
+    return (
+        f"None of the {_photos(len(skipped))} picked off the page could be kept. "
+        f"{DECLARED_INSTEAD}{listed}"
+    )
 
 
 def _photos(count: int) -> str:

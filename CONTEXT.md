@@ -110,6 +110,10 @@ _Avoid_: Framing, composition, blocking
 The words on the product page about the product this page sells, plus the structured product data the page declares for search engines. A model copies this product's passages out of the page word for word, and code keeps only the copied sentences it finds on the page, so text about other products sold alongside it ("pairs well with", bundles) and anything the model made up never gets in. The only place facts about the product may come from. Models read this, never the HTML. The whole visible text is kept beside it, for looking things up, but no model writes from it.
 _Avoid_: Page content, scraped text, HTML
 
+**Product photo**:
+A photo of the product this page sells, kept with the job; scenes are made from them. A model picks them off a screenshot of the page with every picture numbered, comparing them with the shop's own record of the product and its official photos, so photos of other products on the page ("you may also like", bundles, line-ups) are left out. Each is fetched at its biggest size, copies of one photo are kept once, gallery first, up to 50. When the page can't be screenshotted or the picker fails, the photos the page declares for search engines are used instead, and a notice says so. The user can attach their own.
+_Avoid_: Image, picture (for these), asset
+
 **User-supplied fact**:
 Something the user states that the page does not, such as a promo code or a replacement line. Used as written and not fact checked, because the user is the source.
 _Avoid_: Override, manual input

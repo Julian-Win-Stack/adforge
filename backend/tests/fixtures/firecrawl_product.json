@@ -1,0 +1,71 @@
+{
+ "success": true,
+ "data": {
+  "metadata": {
+   "title": "\n\n  Detox Clarifying Hair Shampoo\n  \n  \n  \n    – OUAI\n  \n",
+   "sourceURL": "https://theouai.com/products/detox-shampoo",
+   "url": "https://theouai.com/products/detox-shampoo",
+   "statusCode": 200,
+   "contentType": "text/html; charset=utf-8"
+  },
+  "product": {
+   "title": "Detox Clarifying Hair Shampoo",
+   "brand": "Ouai",
+   "category": "Shampoo",
+   "url": "https://theouai.com/products/detox-shampoo",
+   "description": "This clarifying shampoo deeply cleanses away dirt, oil, and product buildup with detoxifying apple cider vinegar and hair-strengthening keratin. Been on a dry shampoo binge? This concentrated shampoo with apple cider vinegar will deeply cleanse away dirt, oil, and impurities. It also removes buildup from styling products and hard water deposits. Leaves hair feeling refreshed and super clean. Here’s your fresh start, see you next week. Detox your OUAI by pairing it with your favorite hair shampoo 1-2x a week as a deep cleansing clarifying treatment or use in place of your main shampoo for more oily hair types as needed!",
+   "variants": [
+    {
+     "id": "39726738407494",
+     "sku": "FG-0129-A-00",
+     "title": "Full Size (10 fl oz)",
+     "values": {
+      "size": "Full Size (10 fl oz)"
+     },
+     "price": {
+      "amount": 34,
+      "currency": "USD",
+      "formatted": "$34.00"
+     },
+     "availability": {
+      "inStock": true,
+      "text": "In stock"
+     },
+     "images": [
+      {
+       "url": "https://cdn.shopify.com/s/files/1/1043/7322/files/Update_2_DetoxShampoo_260611-17-23_Site_Asset_PDP_Product_Thumbnail_1440x1780_11.jpg?v=1783623478"
+      },
+      {
+       "url": "https://cdn.shopify.com/s/files/1/1043/7322/files/Detox_Shampoo_PDP_Asset_Thumbnail_Hover.jpg?v=1782764654"
+      }
+     ]
+    },
+    {
+     "id": "40213559214150",
+     "sku": "FG-0793-B-00",
+     "title": "Travel Size (3 fl oz)",
+     "values": {
+      "size": "Travel Size (3 fl oz)"
+     },
+     "price": {
+      "amount": 16,
+      "currency": "USD",
+      "formatted": "$16.00"
+     },
+     "availability": {
+      "inStock": true,
+      "text": "In stock"
+     },
+     "images": [
+      {
+       "url": "https://cdn.shopify.com/s/files/1/1043/7322/files/Update_2_DetoxShampoo_260611-17-23_Site_Asset_PDP_Product_Thumbnail_1440x1780_11.jpg?v=1783623478"
+      },
+      {
+       "url": "https://cdn.shopify.com/s/files/1/1043/7322/files/Detox_Shampoo_PDP_Asset_Thumbnail_Hover.jpg?v=1782764654"
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

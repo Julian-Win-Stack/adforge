@@ -18,7 +18,8 @@ from adforge.retry import OutsideServiceDown, with_retries
 
 MAX_PAGE_BYTES = 5_000_000
 MAX_PHOTO_BYTES = 15_000_000
-MAX_PHOTOS = 10
+# The most product photos a job keeps from its page, and a user may attach to one message.
+MAX_PHOTOS = 50
 MAX_REDIRECTS = 10
 # How much page text a model is sent.
 PAGE_TEXT_FOR_MODEL = 200_000

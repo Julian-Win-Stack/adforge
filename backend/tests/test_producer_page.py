@@ -4,6 +4,7 @@ and what was paid for, with the shop served from a real local web server."""
 
 import json
 import logging
+import re
 import socket
 from collections.abc import Callable
 from decimal import Decimal
@@ -15,12 +16,13 @@ from django.db import IntegrityError
 from pytest_django import Settings
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
+from werkzeug import Request, Response
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
 from agents.models import ToolCall
 from chat.models import Attachment
-from gateway.fake import FakeModel, turn
+from gateway.fake import FakeModel, Outcome, turn
 from gateway.models import ModelCall
 from jobs.models import Job
 from jobs.page import DECLARED_DATA_HEADING
@@ -34,7 +36,9 @@ from .conftest import (
     PRODUCT_PAGE,
     PUBLIC_ADDRESS,
     READABLE,
+    SHAMPOO_PHOTO,
     SHAMPOO_PHOTO_PATH,
+    SHAMPOO_PICKED,
     FakeDns,
     FakeFirecrawl,
     handoffs,
@@ -42,6 +46,7 @@ from .conftest import (
     openai_reply,
     openai_turn,
     paid_for,
+    photo,
     picture,
     results_of,
 )
@@ -432,7 +437,31 @@ def notices(api: APIClient, session_id: str) -> list[tuple[str, str]]:
     ]
 
 
-def test_a_page_selling_two_products_keeps_only_this_ones_text(
+# The shampoo's other gallery photos on the local shop: I10, which the page offers at several
+# sizes, and I15. I23 is the "Pairs Well With" conditioner's photo.
+SPLASH_PATH = "/cdn/shop/files/Detox_Shampoo_PDP_Asset_Thumbnail_Hover.jpg"
+SPLASH, SPLASH_SMALL = photo(10, 1296, 1600), photo(10, 180, 222)
+LATHER_PATH = "/cdn/shop/files/Detox_Shampoo_PDP_Asset_Image_Carousel_1.jpg"
+LATHER = photo(15)
+CONDITIONER_PATH = (
+    "/s/files/1/1043/7322/files/Update_2_FineHairCondtioner_260611-17-23_Site_Asset_PDP_"
+    "Product_Thumbnail_1440x1780_15_400x400.jpg"
+)
+
+
+def serve_the_other_photos(httpserver: HTTPServer) -> None:
+    def splash(request: Request) -> Response:
+        small = "width" in request.args
+        return Response(SPLASH_SMALL if small else SPLASH, content_type="image/png")
+
+    httpserver.expect_request(SPLASH_PATH).respond_with_handler(splash)
+    httpserver.expect_request(LATHER_PATH).respond_with_data(LATHER, content_type="image/png")
+    httpserver.expect_request(CONDITIONER_PATH).respond_with_data(
+        photo(23), content_type="image/png"
+    )
+
+
+def test_a_page_selling_two_products_keeps_only_this_ones_text_and_photos(
     api: APIClient,
     fake_model: FakeModel,
     httpserver: HTTPServer,
@@ -441,14 +470,38 @@ def test_a_page_selling_two_products_keeps_only_this_ones_text(
     session_id: str,
     say: Callable[..., None],
 ) -> None:
+    serve_the_other_photos(httpserver)
     reading(fake_model, shampoo_page_url)
     fake_model.respond("check_page", READABLE)
     fake_model.respond("copy_page_text", SHAMPOO_COPIED)
+    # I16 is a thumbnail of I8's photo.
+    fake_model.respond(
+        "pick_photos", {**SHAMPOO_PICKED, "gallery_images": [8, 10, 16], "more_images": [15]}
+    )
 
     say(f"Make an ad for {shampoo_page_url}")
 
-    assert read_page_result().endswith("Kept 2 product photos.")
+    assert read_page_result().endswith("Kept 3 product photos.")
     job = Job.objects.get()
+    # Gallery first, each at its biggest size, the copy kept once, and not the conditioner.
+    shop = firecrawl.shop
+    assert [(photo.source_url, file_store.read(photo.file)) for photo in job.photos.all()] == [
+        (f"{shop}{SHAMPOO_PHOTO_PATH}?v=1783623478", SHAMPOO_PHOTO),
+        (f"{shop}{SPLASH_PATH}?v=1782764654", SPLASH),
+        (f"{shop}{LATHER_PATH}?v=1782764664", LATHER),
+    ]
+    # The picker saw the record's official photo, then the screenshot top to bottom.
+    (picker,) = ModelCall.objects.filter(purpose="pick_photos")
+    assert [image["label"] for image in picker.images] == [
+        "R1",
+        "Part 1 of 3 (from 0 px down the page):",
+        "Part 2 of 3 (from 1200 px down the page):",
+        "Part 3 of 3 (from 2400 px down the page):",
+    ]
+    assert file_store.read(picker.images[0]["key"]) == SHAMPOO_PHOTO
+    assert "Title: Detox Clarifying Hair Shampoo" in picker.handoff["official_record"]
+    assert 'I23: alt="An ivory OUAI Fine Hair Conditioner' in picker.handoff["numbered_pictures"]
+    assert "links to /products/fine-hair-conditioner" in picker.handoff["numbered_pictures"]
     # The sentence on the page is kept, the reworded one is kept as the page wrote it, and
     # the made-up one is dropped. The price is only in the declared data that follows.
     words, heading, declared = job.page_text.partition(DECLARED_DATA_HEADING)
@@ -459,10 +512,11 @@ def test_a_page_selling_two_products_keeps_only_this_ones_text(
     assert "Fine Hair Conditioner" not in job.page_text
     assert job.page_text_full.endswith(heading + declared)
     # Firecrawl read the page, so the shop itself was only asked for the photos.
-    assert firecrawl.requests == [
+    assert firecrawl.asked("page") == [
         {"url": shampoo_page_url, "formats": ["markdown", "rawHtml"], "timeout": 300_000}
     ]
     assert "/products/detox-shampoo" not in [request.path for request, _ in httpserver.log]
+    assert len(firecrawl.asked("marked")) == len(firecrawl.asked("product")) == 1
     assert file_store.read(job.page_html_key) == firecrawl.page_read["data"]["rawHtml"].encode()
     # The copy model is given the page with no image links, and each link cut to its path.
     (given,) = handoffs("copy_page_text")
@@ -471,7 +525,7 @@ def test_a_page_selling_two_products_keeps_only_this_ones_text(
     assert "![" not in given["page_text"] and ".jpg" not in given["page_text"]
     assert "[TRAVEL (3 OZ)](/products/detox-shampoo-travel)" in given["page_text"]
     assert "[Fine Hair Conditioner](/products/fine-hair-conditioner)" in given["page_text"]
-    assert paid_for() == ["check_page", "copy_page_text"]
+    assert sorted(paid_for()) == ["check_page", "copy_page_text", "pick_photos"]
     assert notices(api, session_id) == []
     assert job.warnings == []
 
@@ -521,8 +575,9 @@ def test_firecrawl_being_down_reads_the_page_plainly_and_says_so(
 
     say(f"Make an ad for {shampoo_page_url}")
 
-    assert len(firecrawl.requests) == tries
-    assert read_page_result().endswith("Kept 2 product photos.")
+    assert len(firecrawl.asked("page")) == tries
+    # The photos are still picked off Firecrawl's marked screenshot.
+    assert read_page_result().endswith("Kept 1 product photo.")
     job = Job.objects.get()
     # The words a visitor sees, from the plain download, and the declared data.
     assert f"{ON_THE_PAGE}\n" in job.page_text
@@ -577,7 +632,7 @@ def test_a_page_the_shop_answers_firecrawl_404_for_cant_be_read_and_isnt_downloa
         f"The page couldn't be read: {shampoo_page_url} answered 404 Not Found, so trying "
         "again won't help. Ask the shop owner for a working link to the product's own page."
     )
-    assert [request.path for request, _ in httpserver.log] == ["/v2/scrape"]
+    assert "/products/detox-shampoo" not in [request.path for request, _ in httpserver.log]
     assert paid_for() == []
     assert notices(api, session_id) == []
 
@@ -617,10 +672,11 @@ def test_a_failed_copy_call_leaves_the_page_unread_and_says_so(
     fake_model.respond("copy_page_text", SHAMPOO_COPIED)
     say("Try again")
 
-    assert results_of("read_page")[1].endswith("Kept 2 product photos.")
+    assert results_of("read_page")[1].endswith("Kept 1 product photo.")
     assert Job.objects.get().page_text.startswith(f"{ON_THE_PAGE}\n{PAGE_WROTE}")
-    assert len(firecrawl.requests) == 1
-    assert paid_for().count("check_page") == 1
+    # Each of Firecrawl's three calls was made once.
+    assert len(firecrawl.requests) == 3
+    assert paid_for().count("check_page") == paid_for().count("pick_photos") == 1
 
 
 def test_a_private_address_is_refused_before_firecrawl_is_asked(
@@ -646,9 +702,11 @@ def test_a_private_address_is_refused_before_firecrawl_is_asked(
 
 
 def test_a_page_read_again_doesnt_pay_for_the_copy_or_the_picker_twice(
+    api: APIClient,
     fake_model: FakeModel,
     httpserver: HTTPServer,
     firecrawl: FakeFirecrawl,
+    session_id: str,
     say: Callable[..., None],
 ) -> None:
     # The page's photo can't be used, so the page isn't read yet and is read again when asked.
@@ -671,8 +729,293 @@ def test_a_page_read_again_doesnt_pay_for_the_copy_or_the_picker_twice(
     say("Try it again")
 
     assert len(results_of("read_page")) == 2
-    assert paid_for() == ["check_page", "copy_page_text"]
-    assert len(firecrawl.requests) == 1
+    assert sorted(paid_for()) == ["check_page", "copy_page_text", "pick_photos"]
+    # Each of Firecrawl's three calls was made once.
+    assert len(firecrawl.requests) == 3
+    no_photo = (
+        "problem",
+        "No usable product photo was found on the page, and every scene is made from one, so "
+        "the ad can't be made until the shop owner attaches at least one.",
+    )
+    assert notices(api, session_id).count(no_photo) == 2
+
+
+# --- Through Firecrawl: only this product's photos -------------------------------------------
+
+DECLARED_INSTEAD = (
+    "Used the photos the page declares for search engines instead, which may include other "
+    "products' photos and miss some of this one's."
+)
+
+
+def test_a_failed_screenshot_falls_back_to_the_declared_photos(
+    api: APIClient,
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    firecrawl.answers_first(400, "Actions failed", call="marked")
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("copy_page_text", SHAMPOO_COPIED)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    # The page declares the shampoo's photo twice: at full size, and 1,920 px wide.
+    assert read_page_result().endswith("Kept 2 product photos.")
+    assert Job.objects.get().page_text.startswith(f"{ON_THE_PAGE}\n{PAGE_WROTE}")
+    assert "pick_photos" not in paid_for()
+    assert notices(api, session_id) == [
+        (
+            "problem",
+            "Firecrawl couldn't take the page's marked screenshot (Firecrawl answered 400: "
+            "Actions failed), so this product's photos couldn't be picked off it. "
+            + DECLARED_INSTEAD,
+        )
+    ]
+
+
+def _no_record(firecrawl: FakeFirecrawl) -> None:
+    del firecrawl.product["data"]["product"]
+
+
+def _record_call_fails(firecrawl: FakeFirecrawl) -> None:
+    firecrawl.answers_first(400, "Product extraction failed", call="product")
+
+
+@pytest.mark.parametrize(
+    ("goes_wrong", "notice"),
+    [
+        pytest.param(
+            _no_record,
+            (
+                "info",
+                "Firecrawl found no record of the product on the page, as on many pages, so its "
+                "photos were picked without the shop's official photos to compare them with.",
+            ),
+            id="no record",
+        ),
+        pytest.param(
+            _record_call_fails,
+            (
+                "problem",
+                "Firecrawl couldn't get the shop's record of the product (Firecrawl answered "
+                "400: Product extraction failed), so its photos were picked without the "
+                "official photos to compare them with: a look-alike product's photo is a "
+                "little more likely to get through.",
+            ),
+            id="the record call fails",
+        ),
+    ],
+)
+def test_a_page_with_no_product_record_is_picked_without_one(
+    api: APIClient,
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+    goes_wrong: Callable[[FakeFirecrawl], None],
+    notice: tuple[str, str],
+) -> None:
+    goes_wrong(firecrawl)
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    assert read_page_result().endswith("Kept 1 product photo.")
+    (picker,) = ModelCall.objects.filter(purpose="pick_photos")
+    assert picker.handoff["official_record"] == (
+        "Official record of the product: none was found for this page."
+    )
+    assert [image["label"] for image in picker.images] == [
+        "Part 1 of 3 (from 0 px down the page):",
+        "Part 2 of 3 (from 1200 px down the page):",
+        "Part 3 of 3 (from 2400 px down the page):",
+    ]
+    assert notices(api, session_id) == [notice]
+
+
+@pytest.mark.parametrize(
+    ("picker_answers", "why"),
+    [
+        pytest.param(
+            [OutsideServiceDown("503 from the provider")] * 3,
+            "Picking this product's photos off the page failed (The model provider was still "
+            "down after 3 tries: 503 from the provider). ",
+            id="the picker fails",
+        ),
+        pytest.param(
+            [{**SHAMPOO_PICKED, "gallery_images": [], "more_images": []}],
+            "The photo picker found no photo of this product on the page. ",
+            id="it picks nothing",
+        ),
+        pytest.param(
+            # The logo isn't numbered, and there is no I99 on the page.
+            [{**SHAMPOO_PICKED, "gallery_images": [99], "more_images": []}],
+            "The photo picker found no photo of this product on the page. ",
+            id="it picks only numbers that aren't on the page",
+        ),
+    ],
+)
+def test_a_picker_that_fails_or_picks_nothing_falls_back_to_the_declared_photos(
+    api: APIClient,
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+    picker_answers: list[Outcome],
+    why: str,
+) -> None:
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("pick_photos", *picker_answers)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    assert read_page_result().endswith("Kept 2 product photos.")
+    shop = firecrawl.shop
+    assert [photo.source_url for photo in Job.objects.get().photos.all()] == [
+        f"{shop}{SHAMPOO_PHOTO_PATH}?v=1783623478&width=1920",
+        f"{shop}{SHAMPOO_PHOTO_PATH}?v=1783623478",
+    ]
+    assert notices(api, session_id) == [("problem", why + DECLARED_INSTEAD)]
+
+
+def test_photos_that_wont_download_are_named_and_the_rest_kept(
+    api: APIClient,
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    httpserver.expect_request(SPLASH_PATH).respond_with_data("Not here", status=404)
+    httpserver.expect_request(LATHER_PATH).respond_with_data(
+        "<html>Summer sale!</html>", content_type="text/html"
+    )
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond(
+        "pick_photos", {**SHAMPOO_PICKED, "gallery_images": [8, 10], "more_images": [15]}
+    )
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    assert "Kept 1 product photo." in read_page_result()
+    shop = firecrawl.shop
+    splash, lather = f"{shop}{SPLASH_PATH}?v=1782764654", f"{shop}{LATHER_PATH}?v=1782764664"
+    assert [photo.source_url for photo in Job.objects.get().photos.all()] == [
+        f"{shop}{SHAMPOO_PHOTO_PATH}?v=1783623478"
+    ]
+    assert notices(api, session_id) == [
+        (
+            "problem",
+            "2 product photos picked off the page couldn't be kept, so the ad is made without "
+            "them; the rest were kept:\n"
+            f"- {splash}: {splash} answered 404 NOT FOUND, so trying again won't help.\n"
+            f"- {lather}: It came back as text/html, not a PNG, JPEG, WebP or GIF image.",
+        )
+    ]
+
+
+def test_picked_photos_that_all_fail_fall_back_to_the_declared_photos(
+    api: APIClient,
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    httpserver.expect_request(SPLASH_PATH).respond_with_data("Not here", status=404)
+    httpserver.expect_request(LATHER_PATH).respond_with_data(
+        "<html>Summer sale!</html>", content_type="text/html"
+    )
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("pick_photos", {**SHAMPOO_PICKED, "gallery_images": [10, 15]})
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    assert read_page_result().endswith("Kept 2 product photos.")
+    shop = firecrawl.shop
+    assert [photo.source_url for photo in Job.objects.get().photos.all()] == [
+        f"{shop}{SHAMPOO_PHOTO_PATH}?v=1783623478&width=1920",
+        f"{shop}{SHAMPOO_PHOTO_PATH}?v=1783623478",
+    ]
+    splash, lather = f"{shop}{SPLASH_PATH}?v=1782764654", f"{shop}{LATHER_PATH}?v=1782764664"
+    assert notices(api, session_id) == [
+        (
+            "problem",
+            "None of the 2 product photos picked off the page could be kept. "
+            + DECLARED_INSTEAD
+            + f"\n- {splash}: {splash} answered 404 NOT FOUND, so trying again won't help."
+            f"\n- {lather}: It came back as text/html, not a PNG, JPEG, WebP or GIF image.",
+        )
+    ]
+
+
+def test_a_record_that_arrives_when_the_page_is_read_again_is_shown_to_the_picker(
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    # The first read gets no record, and stops when the copy call fails.
+    firecrawl.answers_first(400, "Product extraction failed", call="product")
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("copy_page_text", *[OutsideServiceDown("503 from the provider")] * 3)
+    say(f"Make an ad for {shampoo_page_url}")
+
+    reading(fake_model, shampoo_page_url)
+    say("Try again")
+
+    first, again = ModelCall.objects.filter(purpose="pick_photos").order_by("created_at")
+    assert first.handoff["official_record"].startswith("Official record of the product: none")
+    assert "Title: Detox Clarifying Hair Shampoo" in again.handoff["official_record"]
+    assert [image["label"] for image in again.images][0] == "R1"
+
+
+def test_more_than_50_picked_photos_keeps_the_first_50(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    # 55 more numbered pictures, I100 to I154, each a photo of its own.
+    returns = firecrawl.marked["data"]["actions"]["javascriptReturns"]
+    marks = json.loads(returns[3]["value"])
+    marks["imgs"] += [
+        {"n": n, "src": f"{firecrawl.shop}/cdn/many/{n}.png", "srcset": "", "alt": "", "href": ""}
+        for n in range(100, 155)
+    ]
+    returns[3]["value"] = json.dumps(marks)
+    httpserver.expect_request(re.compile(r"/cdn/many/\d+\.png")).respond_with_handler(
+        lambda request: Response(
+            photo(int(request.path.split("/")[-1].split(".")[0])), content_type="image/png"
+        )
+    )
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    # The gallery is numbered after the rest of the page here: it still comes first.
+    gallery, more = list(range(130, 155)), list(range(100, 130))
+    fake_model.respond(
+        "pick_photos", {**SHAMPOO_PICKED, "gallery_images": gallery, "more_images": more}
+    )
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    assert read_page_result().endswith("Kept 50 product photos.")
+    kept = [photo.source_url for photo in Job.objects.get().photos.all()]
+    assert kept == [f"{firecrawl.shop}/cdn/many/{n}.png" for n in [*gallery, *more][:50]]
 
 
 def test_firecrawl_saying_too_many_requests_is_tried_again(
@@ -690,8 +1033,8 @@ def test_firecrawl_saying_too_many_requests_is_tried_again(
 
     say(f"Make an ad for {shampoo_page_url}")
 
-    assert read_page_result().endswith("Kept 2 product photos.")
-    assert len(firecrawl.requests) == 2
+    assert read_page_result().endswith("Kept 1 product photo.")
+    assert len(firecrawl.asked("page")) == 2
     assert Job.objects.get().page_text.startswith(f"{ON_THE_PAGE}\n{PAGE_WROTE}")
     assert notices(api, session_id) == []
 
