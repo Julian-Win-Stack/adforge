@@ -34,11 +34,18 @@ class Session(models.Model):
 
 
 class Message(models.Model):
-    """One turn in a session, from the user or the agent. The only way the two talk."""
+    """One turn in a session, from the user or the agent, or a notice the code posts when a
+    step fell back or failed. The only way the user and the agent talk; a notice is for the
+    user alone, and no model is ever given it."""
 
     class Role(models.TextChoices):
         USER = "user"
         AGENT = "agent"
+        NOTICE = "notice"
+
+    class Level(models.TextChoices):
+        PROBLEM = "problem"  # Shown red: something went wrong that affects the ad.
+        INFO = "info"  # Shown grey: normal, worth knowing.
 
     session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name="messages")
     seq = models.PositiveIntegerField(
@@ -46,6 +53,12 @@ class Message(models.Model):
         "asks for what has happened since."
     )
     role = models.CharField(max_length=10, choices=Role.choices)
+    level = models.CharField(
+        max_length=10,
+        choices=Level.choices,
+        blank=True,
+        help_text="How a notice is shown. Blank for the user's and the agent's messages.",
+    )
     text = models.TextField(blank=True, help_text="Blank when the message only carries files.")
     trace_id = models.CharField(
         max_length=32,

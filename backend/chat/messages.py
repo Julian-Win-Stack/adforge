@@ -26,10 +26,11 @@ def add(
     *,
     role: Message.Role,
     text: str = "",
+    level: Message.Level | None = None,
     carrying: Sequence[AttachedFile] = (),
 ) -> Message:
     """Say something in a session, with any files it carries, and name the session from
-    the first thing the user types.
+    the first thing the user types. A notice carries its `level`; nothing else does.
 
     Messages are numbered 1, 2, 3... per session. The session row is locked while
     numbering, so messages always become visible in number order. Without that, a poll
@@ -40,7 +41,9 @@ def add(
     with transaction.atomic():
         locked = Session.objects.select_for_update().get(pk=session.pk)
         last = locked.messages.aggregate(last=Max("seq"))["last"] or 0
-        message = Message.objects.create(session=locked, seq=last + 1, role=role, text=text)
+        message = Message.objects.create(
+            session=locked, seq=last + 1, role=role, level=level or "", text=text
+        )
         Attachment.objects.bulk_create(
             Attachment(message=message, position=position, kind=attached.kind, file=attached.file)
             for position, attached in enumerate(carrying, start=1)

@@ -40,7 +40,7 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
 
     class Meta:
         model = Message
-        fields = ["seq", "role", "text", "created_at", "attachments"]
+        fields = ["seq", "role", "level", "text", "created_at", "attachments"]
 
 
 class SessionSerializer(serializers.ModelSerializer[Session]):

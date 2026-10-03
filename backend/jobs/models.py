@@ -111,6 +111,12 @@ class Job(models.Model):
         blank=True,
         help_text="What the user chose when the script didn't fit the target length.",
     )
+    warnings = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Every notice posted while making this ad, each {level, text, at}, so an "
+        "ad made with a fallback can be found after the chat has scrolled away.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

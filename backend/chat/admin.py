@@ -5,8 +5,8 @@ from .models import Attachment, Message, Session
 
 class MessageInline(admin.TabularInline[Message, Session]):
     model = Message
-    fields = ["seq", "role", "text", "created_at"]
-    readonly_fields = ["seq", "role", "text", "created_at"]
+    fields = ["seq", "role", "level", "text", "created_at"]
+    readonly_fields = ["seq", "role", "level", "text", "created_at"]
     extra = 0
     can_delete = False
     show_change_link = True

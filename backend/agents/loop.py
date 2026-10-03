@@ -292,7 +292,9 @@ def _conversation(agent: Agent, session: Session) -> tuple[list[Happened], int, 
     A message with no words from the agent's side is left out: the app posts one to show
     the shop owner a file, and the tool or step that made the file already tells the agent
     so. Given as the agent's own "[Attached 1 picture]", it was copied as a reply with no
-    picture on it."""
+    picture on it. A notice is left out too: it is code telling the shop owner about a
+    fallback, which the tool's result already told the agent, and given as the agent's own
+    words it would read as something it said."""
     said = list(session.messages.prefetch_related("attachments"))
     finished = _finished_steps(agent, session).order_by("finished_at", "id")
     read = list(finished.filter(producer_read_at__isnull=False))
@@ -301,7 +303,8 @@ def _conversation(agent: Agent, session: Session) -> tuple[list[Happened], int, 
         *(
             (message.created_at, message)
             for message in said
-            if message.text or message.role == Message.Role.USER
+            if message.role != Message.Role.NOTICE
+            and (message.text or message.role == Message.Role.USER)
         ),
         *((call.created_at, call) for call in session.tool_calls.filter(agent=agent.name)),
         *((step.producer_read_at, step) for step in read if step.producer_read_at),

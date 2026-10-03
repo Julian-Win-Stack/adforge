@@ -1172,11 +1172,12 @@ def latest(job: Job, kind: ProducedItem.Kind) -> ProducedItem | None:
 def _conversation(job: Job, *, until: datetime | None = None) -> list[ChatMessage]:
     """What the user and the producer have said, for the models that plan and check the ad
     and plan its scenes: all of it, or what was said by `until`. Facts may come from the
-    user's words; the producer's show what the user was answering."""
+    user's words; the producer's show what the user was answering. Notices are code's
+    words to the user, not the producer's, and are left out."""
     if job.session is None:
         # A job started before sessions existed has no conversation.
         return []
-    said = job.session.messages.prefetch_related("attachments")
+    said = job.session.messages.exclude(role=Message.Role.NOTICE).prefetch_related("attachments")
     if until is not None:
         said = said.filter(created_at__lte=until)
     return [
