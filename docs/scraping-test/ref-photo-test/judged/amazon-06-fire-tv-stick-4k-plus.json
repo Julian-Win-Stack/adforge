@@ -1,0 +1,52 @@
+[
+ {
+  "label": "P1",
+  "verdict": "product",
+  "why": "Fire TV Stick 4K Plus box with stick and remote."
+ },
+ {
+  "label": "P2",
+  "verdict": "product",
+  "why": "In-box contents: stick, Alexa remote, batteries, adapter, cable, HDMI extender."
+ },
+ {
+  "label": "P3",
+  "verdict": "product",
+  "why": "Small Fire TV stick photo beside a line-drawn TV icon."
+ },
+ {
+  "label": "P4",
+  "verdict": "product",
+  "why": "Remote and stick on peach background, 'cinematic 4K' ad with app logos."
+ },
+ {
+  "label": "P5",
+  "verdict": "no_product",
+  "why": "Living room with TV showing Fire TV UI; stick not visible, remote only a speck on table."
+ },
+ {
+  "label": "P6",
+  "verdict": "product",
+  "why": "Remote and stick on peach background."
+ },
+ {
+  "label": "P7",
+  "verdict": "no_product",
+  "why": "TV showing football and smart-home controls; no stick or remote visible."
+ },
+ {
+  "label": "P8",
+  "verdict": "product",
+  "why": "Remote and stick on black background."
+ },
+ {
+  "label": "P9",
+  "verdict": "product",
+  "why": "Remote and stick on peach background, 'cinematic 4K' ad with app logos."
+ },
+ {
+  "label": "P10",
+  "verdict": "product",
+  "why": "Fire TV Stick 4K Plus box with stick and remote."
+ }
+]

@@ -1,0 +1,17 @@
+[
+ {
+  "label": "P1",
+  "verdict": "product",
+  "why": "Fragrance-Free Body Wash 500ml pump bottle, front."
+ },
+ {
+  "label": "P2",
+  "verdict": "product",
+  "why": "Fragrance-Free Body Wash pump bottle with water splash."
+ },
+ {
+  "label": "P3",
+  "verdict": "no_product",
+  "why": "Gel texture swatch only, no bottle."
+ }
+]

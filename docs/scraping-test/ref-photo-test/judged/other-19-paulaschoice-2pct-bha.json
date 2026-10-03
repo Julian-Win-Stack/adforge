@@ -1,0 +1,22 @@
+[
+{"label":"P1","verdict":"no_product","why":"Woman touching her face; no bottle visible."},
+{"label":"P2","verdict":"product","why":"Woman holding the 2% BHA Liquid Exfoliant bottle decorated with award stickers."},
+{"label":"P3","verdict":"product","why":"Black 2% BHA Liquid Exfoliant bottle, front."},
+{"label":"P4","verdict":"other_product","why":"Lineup of 1% BHA, 2% BHA and 4% BHA products comparing different items."},
+{"label":"P5","verdict":"other_product","why":"Routine set with peptide moisturizer, serum and toner; BHA bottle lying in the back."},
+{"label":"P6","verdict":"no_product","why":"Before/after skin close-ups, no bottle."},
+{"label":"P7","verdict":"product","why":"2% BHA Liquid in its size options (standard, jumbo, mini) plus pads box."},
+{"label":"P8","verdict":"other_product","why":"Woman holding a light blue/white tube, not the black BHA bottle."},
+{"label":"P9","verdict":"product","why":"2% BHA Liquid Exfoliant bottle beside ingredient callouts."},
+{"label":"P10","verdict":"product","why":"Hand pouring the 2% BHA bottle onto a cotton pad."},
+{"label":"P11","verdict":"no_product","why":"Before/after forehead skin shots."},
+{"label":"P12","verdict":"product","why":"Woman holding the black EXFOLIATE BHA bottle."},
+{"label":"P13","verdict":"no_product","why":"Before/after eye-area skin shots."},
+{"label":"P14","verdict":"no_product","why":"Close-up of a woman's face with benefit text; no bottle."},
+{"label":"P15","verdict":"product","why":"2% BHA Liquid Exfoliant bottle on black background."},
+{"label":"P16","verdict":"other_product","why":"Group of several Paula's Choice products (blue, pink bottles) with BHA among them."},
+{"label":"P17","verdict":"no_product","why":"Salicylic acid pore diagram and icons."},
+{"label":"P18","verdict":"other_product","why":"Comparison chart of 2% BHA vs 8% AHA with both bottles."},
+{"label":"P19","verdict":"other_product","why":"Comparison chart of 1%, 2% and 4% BHA products."},
+{"label":"P20","verdict":"no_product","why":"Clear liquid splash texture with text."}
+]

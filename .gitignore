@@ -37,3 +37,38 @@ docs/scraping-test/job-b/labels100.json
 docs/scraping-test/job-b/missing100.json
 docs/scraping-test/fix-test/outputs/
 docs/scraping-test/fix-test/user-check-images/
+docs/scraping-test/text-test/sheets/
+docs/scraping-test/text-test/tops/
+docs/scraping-test/text-test/outputs/pages/
+docs/scraping-test/text-test/outputs/*/pages/
+docs/scraping-test/text-test/outputs/
+docs/scraping-test/text-test/text/
+docs/scraping-test/text-test/text-open/
+docs/scraping-test/text-test/text-final/
+docs/scraping-test/text-test/judged/
+docs/scraping-test/text-test/judged-open/
+docs/scraping-test/text-test/judged-final/
+
+# Run reviews: the pages are built from the database by build*.py; the grades CSVs are kept
+docs/runs/second-run-review/*.html
+
+# Local preview servers for the review pages
+.claude/launch.json
+
+# Test outputs: images, contact sheets and raw model answers, rebuilt by each test's scripts
+docs/scraping-test/copy-test/outputs/
+docs/scraping-test/photo-merge-test/outputs/
+docs/scraping-test/ref-photo-test/outputs/
+docs/scraping-test/ref-photo-test/sheets/
+docs/scraping-test/ref-photo-test/tops/
+docs/scraping-test/ref-photo-test/review/img/
+docs/scraping-test/text-test/wrong-photos/
+docs/scraping-test/firecrawl-photos/index.html
+docs/scraping-test/firecrawl-product/index.html
+docs/scraping-test/copy-test/inputs/sections-mini.json
+docs/scraping-test/copy-test/inputs/sections-mini-b.json
+docs/scraping-test/copy-test/inputs/text_input.json
+docs/scraping-test/ref-photo-test/review/photos.html
+
+# Temporary scripts: kept on this machine only, never committed
+backend/scratch/

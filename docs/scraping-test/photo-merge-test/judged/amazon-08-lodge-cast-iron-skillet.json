@@ -1,0 +1,412 @@
+[
+{
+"label": "A1",
+"verdict": "product",
+"why": "Dimension chart with photos of a Lodge skillet."
+},
+{
+"label": "A2",
+"verdict": "product",
+"why": "Skillet with steak and tomatoes."
+},
+{
+"label": "A3",
+"verdict": "product_other_variant",
+"why": "Several 3.5-inch mini skillets with pies, another size."
+},
+{
+"label": "A4",
+"verdict": "product",
+"why": "Skillet with vegetables, 'ready to use' text."
+},
+{
+"label": "A5",
+"verdict": "product",
+"why": "Black cast iron skillet with helper handle, studio."
+},
+{
+"label": "A6",
+"verdict": "product",
+"why": "Black cast iron skillet, studio."
+},
+{
+"label": "A7",
+"verdict": "no_product",
+"why": "Line drawing with dimensions only."
+},
+{
+"label": "A8",
+"verdict": "product",
+"why": "Dimension chart with skillet photos."
+},
+{
+"label": "A9",
+"verdict": "no_product",
+"why": "Black cast iron texture close-up."
+},
+{
+"label": "A10",
+"verdict": "product",
+"why": "Hands washing the skillet in a sink."
+},
+{
+"label": "A11",
+"verdict": "product",
+"why": "Black cast iron skillet, studio."
+},
+{
+"label": "A12",
+"verdict": "product",
+"why": "Skillet with oysters on coals."
+},
+{
+"label": "A13",
+"verdict": "product",
+"why": "Skillet with chicken and rice."
+},
+{
+"label": "A14",
+"verdict": "product",
+"why": "Skillet with steak, red holder on handle, in use."
+},
+{
+"label": "A15",
+"verdict": "product",
+"why": "Skillet top view with Lodge label."
+},
+{
+"label": "A16",
+"verdict": "no_product",
+"why": "Foundry worker and Lodge logo, 'trusted since 1896'."
+},
+{
+"label": "A17",
+"verdict": "product",
+"why": "Skillet holding a lattice pie."
+},
+{
+"label": "A18",
+"verdict": "product",
+"why": "Skillet with steak, 'perfect sear' text."
+},
+{
+"label": "A19",
+"verdict": "product_other_variant",
+"why": "Dimension chart of the 12-inch skillet, another size."
+},
+{
+"label": "A20",
+"verdict": "product",
+"why": "Dimension chart of the 10.25-inch (Medium) skillet."
+},
+{
+"label": "A21",
+"verdict": "product",
+"why": "Skillet with oysters, 'ready to use' text."
+},
+{
+"label": "A22",
+"verdict": "product",
+"why": "Black cast iron skillet, studio."
+},
+{
+"label": "A23",
+"verdict": "product",
+"why": "Skillet with chicken, 'perfect sear' text."
+},
+{
+"label": "A24",
+"verdict": "product",
+"why": "Skillet with gratin held by hands."
+},
+{
+"label": "A25",
+"verdict": "other_product",
+"why": "Skillet with red silicone handle holder sold together, caption about the holder (bundle)."
+},
+{
+"label": "A26",
+"verdict": "product",
+"why": "Skillet with helper handle, studio."
+},
+{
+"label": "A27",
+"verdict": "other_product",
+"why": "Chart of skillet with red handle holder (skillet + holder bundle)."
+},
+{
+"label": "A28",
+"verdict": "product",
+"why": "Skillet with stir-fry, 'ready to use' text."
+},
+{
+"label": "A29",
+"verdict": "product",
+"why": "Skillet with cake, red holder on handle, in use."
+},
+{
+"label": "A30",
+"verdict": "other_product",
+"why": "Skillet with a loose red silicone handle holder (bundle)."
+},
+{
+"label": "A31",
+"verdict": "product",
+"why": "Skillet with cornbread."
+},
+{
+"label": "A32",
+"verdict": "product",
+"why": "Skillet top view with Lodge label."
+},
+{
+"label": "A33",
+"verdict": "product",
+"why": "Skillet with biscuits."
+},
+{
+"label": "A34",
+"verdict": "product",
+"why": "Skillet with chicken thighs."
+},
+{
+"label": "A35",
+"verdict": "other_product",
+"why": "Set of three skillets of different sizes (bundle)."
+},
+{
+"label": "A36",
+"verdict": "product",
+"why": "Skillet with lattice pie, 'ready to use' text."
+},
+{
+"label": "A37",
+"verdict": "product",
+"why": "Skillet top view with Lodge label."
+},
+{
+"label": "A38",
+"verdict": "other_product",
+"why": "Chart of skillet with red handle holder (skillet + holder bundle)."
+},
+{
+"label": "A39",
+"verdict": "product",
+"why": "Skillet with helper handle, studio."
+},
+{
+"label": "A40",
+"verdict": "product_other_variant",
+"why": "Dimension chart of a 13.25-inch skillet, another size."
+},
+{
+"label": "A41",
+"verdict": "product",
+"why": "Two skillets with potato gratin."
+},
+{
+"label": "A42",
+"verdict": "no_product",
+"why": "Line drawing with dimensions only."
+},
+{
+"label": "A43",
+"verdict": "product",
+"why": "Skillet with cornbread, 'ready to use' text."
+},
+{
+"label": "A44",
+"verdict": "product",
+"why": "Dimension chart of the 10.25-inch (Medium) skillet."
+},
+{
+"label": "A45",
+"verdict": "product_other_variant",
+"why": "Dimension chart of the 3.5-inch skillet, another size."
+},
+{
+"label": "A46",
+"verdict": "no_product",
+"why": "Line drawing of the skillet with dimensions."
+},
+{
+"label": "A47",
+"verdict": "product",
+"why": "Skillet on a gas stove."
+},
+{
+"label": "A48",
+"verdict": "no_product",
+"why": "Lodge 'PFAS-free' logo graphic, skillet only as cut-off edges."
+},
+{
+"label": "A49",
+"verdict": "product_other_variant",
+"why": "Dimension chart of the Small skillet, another size."
+},
+{
+"label": "A50",
+"verdict": "product",
+"why": "Skillet with helper handle, studio."
+},
+{
+"label": "A51",
+"verdict": "other_product",
+"why": "Three labelled skillets of different sizes (set)."
+},
+{
+"label": "A52",
+"verdict": "product",
+"why": "'One pan, every heat source' collage of the skillet in use."
+},
+{
+"label": "A53",
+"verdict": "product_other_variant",
+"why": "Dimension chart of the Small skillet, another size."
+},
+{
+"label": "A54",
+"verdict": "product_other_variant",
+"why": "Dimension chart of the 6.5-inch skillet, another size."
+},
+{
+"label": "A55",
+"verdict": "product",
+"why": "Dimension chart of the 10.25-inch skillet."
+},
+{
+"label": "A56",
+"verdict": "product_other_variant",
+"why": "Three same-size labelled skillets (3-count pack option)."
+},
+{
+"label": "A57",
+"verdict": "product",
+"why": "Skillet side view, studio."
+},
+{
+"label": "A58",
+"verdict": "no_product",
+"why": "Black cast iron texture close-up."
+},
+{
+"label": "A59",
+"verdict": "product",
+"why": "Skillet top view, studio."
+},
+{
+"label": "A60",
+"verdict": "product",
+"why": "Skillet with pork chops, 'perfect sear' text."
+},
+{
+"label": "A61",
+"verdict": "product",
+"why": "Skillet top view with Lodge label."
+},
+{
+"label": "A62",
+"verdict": "product",
+"why": "Skillet with helper handle, studio."
+},
+{
+"label": "A63",
+"verdict": "product",
+"why": "Skillet top view with Lodge label."
+},
+{
+"label": "A64",
+"verdict": "other_product",
+"why": "Stove scene with a Dutch oven, griddle and skillets."
+},
+{
+"label": "A65",
+"verdict": "no_product",
+"why": "Foundry worker and Lodge logo, 'made in the USA'."
+},
+{
+"label": "A66",
+"verdict": "product",
+"why": "'One pan, every heat source' collage of the skillet in use."
+},
+{
+"label": "A67",
+"verdict": "product_other_variant",
+"why": "Dimension chart of the 12-inch skillet, another size."
+},
+{
+"label": "A68",
+"verdict": "product_other_variant",
+"why": "Dimension chart of the Large skillet, another size."
+},
+{
+"label": "A69",
+"verdict": "product_other_variant",
+"why": "Dimension chart of the Small skillet, another size."
+},
+{
+"label": "A70",
+"verdict": "product",
+"why": "Skillet with cornbread, hands with towel."
+},
+{
+"label": "A71",
+"verdict": "product",
+"why": "Small skillet top view with Lodge label."
+},
+{
+"label": "A72",
+"verdict": "product",
+"why": "Skillet with oysters, 'ready to use' text."
+},
+{
+"label": "A73",
+"verdict": "product",
+"why": "Skillet with shrimp, 'perfect sear' text."
+},
+{
+"label": "A74",
+"verdict": "product",
+"why": "Small skillet top view with Lodge label."
+},
+{
+"label": "A75",
+"verdict": "no_product",
+"why": "Lodge 'PFAS-free' logo graphic, skillet only as cut-off edges."
+},
+{
+"label": "A76",
+"verdict": "product",
+"why": "Small skillet, studio."
+},
+{
+"label": "A77",
+"verdict": "product",
+"why": "Skillet with bread rolls, 'perfect sear' text."
+},
+{
+"label": "A78",
+"verdict": "product",
+"why": "Dimension chart of the 10.25-inch skillet."
+},
+{
+"label": "A79",
+"verdict": "product",
+"why": "Skillet with pork chops."
+},
+{
+"label": "A80",
+"verdict": "product_other_variant",
+"why": "Dimension chart of the 15-inch skillet, another size."
+},
+{
+"label": "A81",
+"verdict": "other_product",
+"why": "Outdoor grill with many Lodge pans and a griddle."
+},
+{
+"label": "A82",
+"verdict": "other_product",
+"why": "Campfire scene: skillet with oysters and a lidded Dutch oven."
+}
+]

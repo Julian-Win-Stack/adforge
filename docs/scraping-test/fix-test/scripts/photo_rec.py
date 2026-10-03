@@ -111,7 +111,10 @@ def run_page(key, rows):
         why: str
 
     path = OUT / f"{key}.json"
-    if path.exists(): return key, "cached"
+    done = {}
+    if path.exists():  # retry only the calls that gave up
+        done = {v["n"]: v for v in json.load(open(path))["verdicts"] if not (v["why"] or "").startswith("gave up")}
+        if len(done) == len(json.load(open(path))["verdicts"]): return key, "cached"
     rec = load_record(key)
     refs = json.load(open(RECIMG / key / "refs.json")) if (RECIMG / key / "refs.json").exists() else []
     client = openai.OpenAI()
@@ -124,6 +127,7 @@ def run_page(key, rows):
         head.append({"type": "input_text", "text": "(The record has no official photos.)"})
 
     def judge(row):
+        if row["n"] in done: return done[row["n"]]
         t0 = time.time()
         content = head + [{"type": "input_text", "text": "Picture to judge:"}, image_part(CACHE / key / row["file"])]
         out, tin, tout, err = call(client, INSTRUCTIONS, content, Verdict)
@@ -153,7 +157,7 @@ if __name__ == "__main__":
     else:
         OUT.mkdir(parents=True, exist_ok=True)
         t0 = time.time()
-        with ThreadPoolExecutor(8) as pool:  # 8 pages x 8 images = 64 calls in flight
+        with ThreadPoolExecutor(int(__import__("os").environ.get("PAGES", 8))) as pool:  # 8 pages x 8 images = 64 calls in flight
             for key, msg in pool.map(lambda k: run_page(k, by_key[k]), keys):
                 print(key, msg, flush=True)
         print(f"PHOTO DONE {time.time() - t0:.0f}s")

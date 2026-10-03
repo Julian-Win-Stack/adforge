@@ -1,0 +1,162 @@
+[
+{
+"label": "A1",
+"verdict": "no_product",
+"why": "Smiling woman's face, no product."
+},
+{
+"label": "A2",
+"verdict": "no_product",
+"why": "Eye and brow close-up, no product."
+},
+{
+"label": "A3",
+"verdict": "no_product",
+"why": "Eye and brow close-up, no product."
+},
+{
+"label": "A4",
+"verdict": "product",
+"why": "Boy Brow wand brushing a brow, in use."
+},
+{
+"label": "A5",
+"verdict": "product",
+"why": "Boy Brow wand at the brow, in use."
+},
+{
+"label": "A6",
+"verdict": "product",
+"why": "Hand applying Boy Brow wand to brow."
+},
+{
+"label": "A7",
+"verdict": "product",
+"why": "Man applying Boy Brow wand to brow."
+},
+{
+"label": "A8",
+"verdict": "product",
+"why": "Woman brushing brow with Boy Brow, tube in mouth."
+},
+{
+"label": "A9",
+"verdict": "no_product",
+"why": "Black product swatch only."
+},
+{
+"label": "A10",
+"verdict": "no_product",
+"why": "Clear product swatch only."
+},
+{
+"label": "A11",
+"verdict": "other_product",
+"why": "How-to graphic: Boy Brow Arch pencil next to Boy Brow."
+},
+{
+"label": "A12",
+"verdict": "no_product",
+"why": "Before/after black brow, no product."
+},
+{
+"label": "A13",
+"verdict": "no_product",
+"why": "Before/after blond brow, no product."
+},
+{
+"label": "A14",
+"verdict": "product",
+"why": "Boy Brow wand on a brow, in use."
+},
+{
+"label": "A15",
+"verdict": "product",
+"why": "Boy Brow wand brushing a brow."
+},
+{
+"label": "A16",
+"verdict": "no_product",
+"why": "Brown product swatch only."
+},
+{
+"label": "A17",
+"verdict": "product",
+"why": "Boy Brow wand brushing brow, smiling woman."
+},
+{
+"label": "A18",
+"verdict": "no_product",
+"why": "Before/after clear brow, no product."
+},
+{
+"label": "A19",
+"verdict": "no_product",
+"why": "Face close-up, no product."
+},
+{
+"label": "A20",
+"verdict": "no_product",
+"why": "Face close-up, no product."
+},
+{
+"label": "A21",
+"verdict": "product",
+"why": "Boy Brow tube and wand with shade swatches."
+},
+{
+"label": "A22",
+"verdict": "product",
+"why": "Boy Brow wand on a brow."
+},
+{
+"label": "A23",
+"verdict": "no_product",
+"why": "Before/after auburn brow, no product."
+},
+{
+"label": "A24",
+"verdict": "no_product",
+"why": "Face close-up, no product."
+},
+{
+"label": "A25",
+"verdict": "no_product",
+"why": "Before/after grey brow, no product."
+},
+{
+"label": "A26",
+"verdict": "product",
+"why": "Row of Boy Brow wands in all shades, 'volumizing gel-pomade'."
+},
+{
+"label": "A27",
+"verdict": "no_product",
+"why": "White product swatch only."
+},
+{
+"label": "A28",
+"verdict": "no_product",
+"why": "Before/after brown brow, no product."
+},
+{
+"label": "A29",
+"verdict": "no_product",
+"why": "Face close-up, no product."
+},
+{
+"label": "A30",
+"verdict": "no_product",
+"why": "Blond product swatch only."
+},
+{
+"label": "A31",
+"verdict": "no_product",
+"why": "Auburn product swatch only."
+},
+{
+"label": "A32",
+"verdict": "product",
+"why": "Woman applying Boy Brow wand to brow."
+}
+]

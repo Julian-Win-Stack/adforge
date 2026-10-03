@@ -1,0 +1,52 @@
+[
+ {
+  "label": "P1",
+  "verdict": "product",
+  "why": "Model wearing black QuietComfort Ultra headphones."
+ },
+ {
+  "label": "P2",
+  "verdict": "no_product",
+  "why": "Dark silhouette in tall grass; headphones only a tiny backlit blob, not clearly visible."
+ },
+ {
+  "label": "P3",
+  "verdict": "product",
+  "why": "Black QuietComfort Ultra headphones on dark green background."
+ },
+ {
+  "label": "P4",
+  "verdict": "product",
+  "why": "Black QuietComfort Ultra headphones, studio product shot."
+ },
+ {
+  "label": "P5",
+  "verdict": "product",
+  "why": "Woman in green wearing black QuietComfort Ultra headphones."
+ },
+ {
+  "label": "P6",
+  "verdict": "product",
+  "why": "Man in patterned shirt wearing black QuietComfort Ultra headphones."
+ },
+ {
+  "label": "P7",
+  "verdict": "product",
+  "why": "Man wearing white QuietComfort Ultra headphones, side view."
+ },
+ {
+  "label": "P8",
+  "verdict": "product",
+  "why": "Model wearing black QuietComfort Ultra headphones, close-up."
+ },
+ {
+  "label": "P9",
+  "verdict": "product",
+  "why": "Man in blue wearing white QuietComfort Ultra headphones."
+ },
+ {
+  "label": "P10",
+  "verdict": "product",
+  "why": "Woman wearing silver/black QuietComfort Ultra headphones."
+ }
+]
