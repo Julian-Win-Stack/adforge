@@ -84,3 +84,15 @@ def test_a_job_with_no_session_keeps_the_notice_without_a_chat_to_post_in() -> N
     job.refresh_from_db()
     assert [warning["text"] for warning in job.warnings] == [FELL_BACK]
     assert not Message.objects.exists()
+
+
+def test_notices_posted_through_two_copies_of_the_same_job_are_both_kept() -> None:
+    first = Job.objects.create(product_url="https://shop.example/products/mug")
+    second = Job.objects.get(pk=first.pk)
+
+    post_notice(first, FELL_BACK, Message.Level.PROBLEM)
+    post_notice(second, NORMAL, Message.Level.INFO)
+
+    stored = Job.objects.get(pk=first.pk)
+    assert [warning["text"] for warning in stored.warnings] == [FELL_BACK, NORMAL]
+    assert second.warnings == stored.warnings

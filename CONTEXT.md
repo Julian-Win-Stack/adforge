@@ -11,8 +11,12 @@ One chat thread, named and returned to. Holds the whole conversation and every a
 _Avoid_: Chat, thread, conversation, project
 
 **Message**:
-One turn in a session, from the user or the producer. The only way the user and AdForge communicate.
+One turn in a session, from the user or the producer, or a notice. The only way the user and AdForge communicate.
 _Avoid_: Comment, note, activity entry
+
+**Notice**:
+A message the code posts, not the producer, when a step fell back to a worse source or failed. It says what failed, what was used instead, and what that means for the ad. Shown red when it affects the ad, grey when it is only worth knowing. Kept with the job as one of its warnings, and never given to a model.
+_Avoid_: Alert, error message, system message
 
 **Attachment**:
 A file a message carries: a photo the user attached, or a picture, sound or video the producer made. Kept through the file store and shown in the chat.
