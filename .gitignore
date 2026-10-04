@@ -72,3 +72,12 @@ docs/scraping-test/ref-photo-test/review/photos.html
 
 # Temporary scripts: kept on this machine only, never committed
 backend/scratch/
+
+# B-roll checks: the saved Creatify replies (*.json) are kept for the gateway's tests; the
+# videos, frames and pictures they were judged from stay on this machine
+docs/runs/second-run-review/check/**/*.mp4
+docs/runs/second-run-review/check/**/*.png
+docs/runs/second-run-review/check/**/*.jpg
+
+# Local Claude Code settings
+.claude/settings.json

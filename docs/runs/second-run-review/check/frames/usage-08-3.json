@@ -1,0 +1,35 @@
+{
+ "usage": "The bottle is held neck-down with its nozzle tucked under the toilet bowl's rim; it is squeezed, the gel runs down the inside of the bowl, then the bowl is scrubbed.",
+ "prompt": "Upright 9:16 close-up phone photo looking down into a white toilet bowl with a visible brown hard-water stain ring on the inside wall. A hand holds the bottle from the picture tipped steeply neck-down, its long angled neck reaching under the front rim so the nozzle is hidden beneath the rim's edge. The label turns with the bottle, tilted and partly upside down, as on a real bottle held this way, and otherwise looks exactly as in the picture. A ribbon of clear, thick gel has just started to come out from under the rim and is beginning to run down the inside wall toward the stain ring. The rim, the bottle and the stain ring are in the middle of the frame, with the raised seat above and the inside of the bowl below. Bright bathroom light. Natural, casual phone-video look.",
+ "photo": "broll-test/photos/08/01.png",
+ "picture": "make_starting_picture_dCzVpsc.png",
+ "check": {
+  "answers": [
+   {
+    "question": "Is the bottle's nozzle under the bowl's rim, not hanging in the open bowl or in the water?",
+    "yes": true,
+    "reason": "The nozzle is visibly tucked beneath the rim."
+   },
+   {
+    "question": "Is clear gel coming out from under the rim and running down the inside wall of the bowl?",
+    "yes": true,
+    "reason": "Clear gel is dripping from beneath the rim down the bowl wall."
+   },
+   {
+    "question": "Is a brown stain ring visible on the bowl's wall, where the gel is running?",
+    "yes": true,
+    "reason": "A distinct brown ring crosses the area beneath the gel."
+   },
+   {
+    "question": "Is the label turned the way it would be on a real bottle held at this angle?",
+    "yes": true,
+    "reason": "The label is aligned naturally with the tilted bottle."
+   },
+   {
+    "question": "Do the bottle and its label look like the bottle in Photo 1?",
+    "yes": true,
+    "reason": "The bottle shape, yellow label, branding, and text match Photo 1."
+   }
+  ]
+ }
+}

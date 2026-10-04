@@ -1,0 +1,8 @@
+{
+ "start": "make_starting_picture_y33T6yT.png",
+ "end": "make_starting_picture_UJaLumv.png",
+ "start_prompt": "Close-up, upright 9:16 phone photo looking into a clean white toilet bowl at the underside of the front rim. A hand holds the bottle from the second picture tilted forward, its long angled neck tucked under the rim and the nozzle pointing down. The bottle's front label faces the camera and looks exactly as in the second picture. A small bead of clear, colourless, thick gel is just starting to come out of the nozzle. Soft, bright bathroom light like the first picture. The bottle and rim sit in the middle of the frame, so the top and bottom stay clear. Natural, casual phone-video look. No added text.",
+ "end_prompt": "Edit the first picture. The hand has moved the nozzle a little further along under the rim. A ribbon of the same clear, thick gel now lines the underside of the rim, and a few thick drips have started to creep slowly down the inside wall of the bowl, clinging to it. Keep everything else exactly the same: camera, framing, light, the hand's grip, and the bottle and its label, which looks exactly as in the second picture. No added text.",
+ "motion_prompt": "The hand gently squeezes the bottle and moves the nozzle along under the rim. Thick, clear gel comes out and clings to the bowl, slowly creeping down the wall. Slight handheld camera movement.",
+ "product_photo": "broll-test/photos/08/01.png"
+}

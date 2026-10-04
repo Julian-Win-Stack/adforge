@@ -1,0 +1,40 @@
+{
+ "sent": {
+  "model": "boreal-h3",
+  "prompt": "Image 1 is the pot. Image 2 shows only how the pot looks in a kitchen while cooking. The pot holds beef bourguignon, and a wooden spoon slowly stirs it. The pot is in the middle of the frame; the top and bottom stay empty.",
+  "resolution": "768p",
+  "duration": 5,
+  "aspect_ratio": "9:16",
+  "reference_image_urls": [
+   "https://v3b.fal.media/files/b/0aacf42c/LZpPcHESnwNwsuambZndk_02.png",
+   "https://v3b.fal.media/files/b/0aacf42c/k1hPS2o7dMcC16-cKzPgL_11.png"
+  ]
+ },
+ "got": {
+  "id": "1321ecdc-9ce8-47da-bc89-06586cc9b4f0",
+  "created_at": "2026-10-03T16:03:32.884640-07:00",
+  "updated_at": "2026-10-03T16:03:32.907861-07:00",
+  "model": "boreal-h3",
+  "prompt": "Image 1 is the pot. Image 2 shows only how the pot looks in a kitchen while cooking. The pot holds beef bourguignon, and a wooden spoon slowly stirs it. The pot is in the middle of the frame; the top and bottom stay empty.",
+  "image_url": null,
+  "end_image_url": null,
+  "audio_url": null,
+  "reference_image_urls": [
+   "https://cdn.creatify.ai/images/70ef4f55-dee3-572a-8df9-1d900d5660aa.png",
+   "https://cdn.creatify.ai/images/7168da44-fffb-588c-9fcf-eb0fecd433a1.png"
+  ],
+  "reference_video_urls": [],
+  "reference_audio_urls": [],
+  "resolution": "768p",
+  "aspect_ratio": "9:16",
+  "duration": 5.0,
+  "negative_prompt": null,
+  "prompt_enhancement": "auto",
+  "webhook_url": null,
+  "status": "done",
+  "failed_reason": null,
+  "video_output": "https://cdn.creatify.ai/boreal_api/c2pa/20261003/d90ce728c5ad4bf8bf7243ed15c32f88.mp4",
+  "credits_used": 2,
+  "progress": 1
+ }
+}

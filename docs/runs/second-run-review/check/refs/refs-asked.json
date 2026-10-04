@@ -1,0 +1,23 @@
+{
+ "02-2": {
+  "references": [
+   "broll-test/photos/02/01.jpg",
+   "broll-test/photos/02/04.jpg"
+  ],
+  "prompt": "Image 1 is the blush. Image 2 shows only how the blended blush looks on skin; she is not the woman in the video. A woman swipes the blush across her cheek, then blends it in with her fingertips. Her face is in the middle of the frame; the top and bottom stay empty."
+ },
+ "03-2": {
+  "references": [
+   "broll-test/photos/03/01.jpg",
+   "broll-test/photos/03/04.jpg"
+  ],
+  "prompt": "Image 1 is the collagen tub. Image 2 shows only how the powder falls from the spoon; ignore its words and drawings. A spoon tips the powder into a cup of coffee and it dissolves. The cup is in the middle of the frame; the top and bottom stay empty."
+ },
+ "07-4": {
+  "references": [
+   "broll-test/photos/07/02.png",
+   "broll-test/photos/07/11.png"
+  ],
+  "prompt": "Image 1 is the pot. Image 2 shows only how the pot looks in a kitchen while cooking. The pot holds beef bourguignon, and a wooden spoon slowly stirs it. The pot is in the middle of the frame; the top and bottom stay empty."
+ }
+}

@@ -1,0 +1,23 @@
+{
+ "sent": {
+  "model": "boreal-h3",
+  "resolution": "768p",
+  "duration": 5,
+  "image_url": "https://v3b.fal.media/files/b/0aacf0df/qUpksHBlsM-2Yx0VgOUTX_make_starting_picture_y33T6yT.png",
+  "end_image_url": "https://v3b.fal.media/files/b/0aacf0e0/yufZLckqWMzkaE7oFY-AJ_make_starting_picture_UJaLumv.png",
+  "reference_image_urls": [
+   "https://v3b.fal.media/files/b/0aacf0e4/4Wrall52jqoWQIKSr0x82_01.png"
+  ],
+  "prompt": "Image 1 is the toilet bowl cleaner bottle: keep its shape and label exactly. The hand gently squeezes the bottle and moves the nozzle along under the rim. Thick, clear gel comes out and clings to the bowl, slowly creeping down the wall. Slight handheld camera movement."
+ },
+ "sent_keys": {
+  "image_url": "make_starting_picture_y33T6yT.png",
+  "end_image_url": "make_starting_picture_UJaLumv.png",
+  "reference_image_urls": [
+   "broll-test/photos/08/01.png"
+  ],
+  "prompt": "Image 1 is the toilet bowl cleaner bottle: keep its shape and label exactly. The hand gently squeezes the bottle and moves the nozzle along under the rim. Thick, clear gel comes out and clings to the bowl, slowly creeping down the wall. Slight handheld camera movement."
+ },
+ "reply_status": 400,
+ "refused": "{\"non_field_errors\": [\"A reference render takes no image_url or end_image_url; send the frames as reference_image_urls\"]}"
+}

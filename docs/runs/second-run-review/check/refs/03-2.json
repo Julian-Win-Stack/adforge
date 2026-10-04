@@ -1,0 +1,40 @@
+{
+ "sent": {
+  "model": "boreal-h3",
+  "prompt": "Image 1 is the collagen tub. Image 2 shows only how the powder falls from the spoon; ignore its words and drawings. A spoon tips the powder into a cup of coffee and it dissolves. The cup is in the middle of the frame; the top and bottom stay empty.",
+  "resolution": "768p",
+  "duration": 6,
+  "aspect_ratio": "9:16",
+  "reference_image_urls": [
+   "https://v3b.fal.media/files/b/0aacf42c/y-wKTckNJ8B8npG3Rtg9x_01.jpg",
+   "https://v3b.fal.media/files/b/0aacf42c/VZ24oa6wLVt2H9bgWs_ux_04.jpg"
+  ]
+ },
+ "got": {
+  "id": "fa190f61-61c7-4f3a-8322-ab5aaf08ae55",
+  "created_at": "2026-10-03T16:03:29.231066-07:00",
+  "updated_at": "2026-10-03T16:03:29.259240-07:00",
+  "model": "boreal-h3",
+  "prompt": "Image 1 is the collagen tub. Image 2 shows only how the powder falls from the spoon; ignore its words and drawings. A spoon tips the powder into a cup of coffee and it dissolves. The cup is in the middle of the frame; the top and bottom stay empty.",
+  "image_url": null,
+  "end_image_url": null,
+  "audio_url": null,
+  "reference_image_urls": [
+   "https://cdn.creatify.ai/images/ce958e24-a300-588b-b547-c8fad7e52e9b.jpg",
+   "https://cdn.creatify.ai/images/bdff1465-30df-5a95-8410-c80a3171e032.jpg"
+  ],
+  "reference_video_urls": [],
+  "reference_audio_urls": [],
+  "resolution": "768p",
+  "aspect_ratio": "9:16",
+  "duration": 6.0,
+  "negative_prompt": null,
+  "prompt_enhancement": "auto",
+  "webhook_url": null,
+  "status": "done",
+  "failed_reason": null,
+  "video_output": "https://cdn.creatify.ai/boreal_api/c2pa/20261003/92bd6fb884b348c199599f595b8aa2ba.mp4",
+  "credits_used": 2.5,
+  "progress": 1
+ }
+}

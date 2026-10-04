@@ -1,0 +1,12 @@
+{
+ "08-3": {
+  "photo": "broll-test/photos/08/01.png",
+  "prompt": "Upright 9:16 phone photo of a clean white toilet in a bright bathroom. The bottle from the picture stands on the floor right beside the toilet, its front label facing the camera and looking exactly as in the picture. A hand holds a toilet brush resting inside the bowl, about to start scrubbing. The toilet and bottle are in the middle of the frame, with plain wall above and floor tiles below. Natural, casual phone-video look.",
+  "picture": "make_starting_picture_cFFDM38.png"
+ },
+ "05-3": {
+  "photo": "broll-test/photos/05/01.jpg",
+  "prompt": "Upright 9:16 phone photo of a woman standing in a bright, simple room, wearing the bag from the picture across her body: the chain strap goes over one shoulder and across her chest, and the bag rests at the opposite hip, facing the camera. The bag looks exactly as in the picture. She stands still, about to turn a little. Framed from her shoulders to her knees, the bag in the middle of the frame, with plain wall above and floor below. Natural, casual phone-video look.",
+  "picture": "make_starting_picture_QhJwYKx.png"
+ }
+}

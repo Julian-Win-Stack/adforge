@@ -1,0 +1,33 @@
+{
+ "sent": {
+  "model": "boreal-h3",
+  "prompt": "The hand squeezes the bottle; thick, clear gel comes out from under the rim and slowly runs down the bowl, clinging over the stain ring. Slight handheld camera movement.",
+  "resolution": "768p",
+  "duration": 5,
+  "image_url": "https://v3b.fal.media/files/b/0aacf4ac/3cuop63jjuYQ3dTOG11Qh_make_starting_picture_dCzVpsc.png"
+ },
+ "got": {
+  "id": "75ac522b-4a46-4b60-97be-5a5915909f48",
+  "created_at": "2026-10-03T16:24:43.989039-07:00",
+  "updated_at": "2026-10-03T16:24:44.031422-07:00",
+  "model": "boreal-h3",
+  "prompt": "The hand squeezes the bottle; thick, clear gel comes out from under the rim and slowly runs down the bowl, clinging over the stain ring. Slight handheld camera movement.",
+  "image_url": "https://cdn.creatify.ai/images/d7e04899-ce1c-52ec-a967-b9b94b888361.png",
+  "end_image_url": null,
+  "audio_url": null,
+  "reference_image_urls": [],
+  "reference_video_urls": [],
+  "reference_audio_urls": [],
+  "resolution": "768p",
+  "aspect_ratio": "auto",
+  "duration": 5.0,
+  "negative_prompt": null,
+  "prompt_enhancement": "auto",
+  "webhook_url": null,
+  "status": "done",
+  "failed_reason": null,
+  "video_output": "https://cdn.creatify.ai/boreal_api/c2pa/20261003/ed360f30b59347a3b9c93bd1b9d17a79.mp4",
+  "credits_used": 2,
+  "progress": 1
+ }
+}
