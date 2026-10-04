@@ -183,13 +183,18 @@ def test_the_products_colour_and_the_photos_showing_it_are_stored(
 # --- What the planner is given --------------------------------------------------------------
 
 
-def the_plan_message(httpserver: HTTPServer) -> dict[str, Any]:
-    """The one message the plan's request sent the model: after the producer's first turn,
-    the page check and its second turn."""
+def the_plan_request(httpserver: HTTPServer) -> dict[str, Any]:
+    """The plan's request to the model: after the producer's first turn, the page check, the
+    page's copy and the producer's second turn."""
     _, _, _, _, plan, _ = [
         request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
     ]
-    [message] = plan["input"]
+    return plan  # type: ignore[no-any-return]
+
+
+def the_plan_message(httpserver: HTTPServer) -> dict[str, Any]:
+    """The one message the plan's request sent the model."""
+    [message] = the_plan_request(httpserver)["input"]
     return message  # type: ignore[no-any-return]
 
 
@@ -227,6 +232,32 @@ def test_the_planner_is_handed_the_page_text_the_target_the_photo_count_and_the_
             {"by": "producer", "text": "Now I'll plan the ad."},
         ],
     }
+
+
+def test_the_planner_is_told_to_copy_the_products_name_word_for_word_from_a_talking_line(
+    httpserver: HTTPServer,
+    openai_server: Callable[..., None],
+    product_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    # A page's title often has more in it than anyone says, such as "Anker 313 Power Bank
+    # (PowerCore 10K)" or "hydro-stars® + big yellow". Given as the name, it's in no line, so
+    # the plan is refused and paid for again: 9 of the first 122 plans were.
+    planning_through_openai(openai_server, product_page_url, PLAN)
+
+    say(f"Make an ad for {product_page_url}")
+
+    request = the_plan_request(httpserver)
+    assert (
+        "Give the product's name exactly as the person says it in one of those scenes, copied "
+        "word for word from its line: not the page's full title, and nothing the person "
+        "doesn't say, such as a part in brackets or a symbol like ® or ™."
+    ) in request["instructions"]
+    plan = request["text"]["format"]["schema"]["$defs"]["Plan"]
+    assert plan["properties"]["product_name"]["description"] == (
+        "The product's name copied word for word from a line where the person talks to camera, "
+        "exactly as they say it there: not the page's full title."
+    )
 
 
 def test_the_planner_is_shown_every_product_photo_by_its_number(

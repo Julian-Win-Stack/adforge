@@ -21,13 +21,15 @@ such as text on a label. Never infer, guess or make anything up: not a price, a 
 a material, a benefit or a colour.
 Decide "plan" when you can plan the whole ad from what you have. Give the scenes in the \
 order they play, with each scene's line exactly as the person will say it. With a target \
-length, write only as many words as fit it when spoken at an easy pace. Give the \
-product's name as the ad says it, as the page states it (often the brand or a short \
-name), and say it in at least one scene where the person talks to camera; it may be said \
-in other scenes too. One line says the product's price: the price a buyer pays today, \
-so on a sale, the sale price. No line names the product's colour: the ad shows the \
-colour, never says it. Give a scene an overlay, a few words drawn along the top of the \
-picture while it plays, when there is \
+length, write only as many words as fit it when spoken at an easy pace. Say the \
+product's name, as the page states it (often the brand or a short name), in at least one \
+scene where the person talks to camera; it may be said in other scenes too. Give the \
+product's name exactly as the person says it in one of those scenes, copied word for \
+word from its line: not the page's full title, and nothing the person doesn't say, such \
+as a part in brackets or a symbol like ® or ™. One line says the product's price: the \
+price a buyer pays today, so on a sale, the sale price. No line names the product's \
+colour: the ad shows the colour, never says it. Give a scene an overlay, a few words \
+drawn along the top of the picture while it plays, when there is \
 something worth showing as well as saying, such as the price or the product's name; \
 otherwise set it to null. An overlay states only what the page or the shop owner states, \
 like a line. Name the product's \
@@ -159,8 +161,8 @@ PersonGender = Literal["man", "woman"]
 class Plan(BaseModel):
     scenes: list[PlannedScene] = Field(min_length=1)
     product_name: str = Field(
-        description="The product's name as the ad says it, as the page states it. At least "
-        "one scene where the person talks to camera says it."
+        description="The product's name copied word for word from a line where the person "
+        "talks to camera, exactly as they say it there: not the page's full title."
     )
     product_colour: str = Field(
         description='The product\'s colour as the photos show it, such as "sage green".'
