@@ -3,7 +3,7 @@
 - Date: 2026-10-03
 - Ticket: #94. Follows the Boreal-H3 check on scene #16 (`docs/runs/second-run-review/check/`).
 - Status: the logic is agreed and tested (five tests, 2026-10-03, about $4). Ready to build.
-  Items 42 to 53 were settled with the user on 2026-10-05, before building.
+  Items 42 to 54 were settled with the user on 2026-10-05, before building.
   Nothing is built yet. Issue #94 is not to be edited (the user, 2026-10-03).
 
 ## Decided
@@ -221,6 +221,9 @@
 53. **Only faces matter for people (2026-10-05).** "Who is in it" has two labels, "no face"
     (nobody, or only a hand or body) and "has face" (the presenter's face is shown; the
     portrait is sent). Replaces item 27's three labels. A hand or body is never a concern.
+54. **The after-build tests are approved (2026-10-05):** the graded run with the people and
+    added-text checks, about $35 to $50 plus re-runs; ask again only if the counted figure
+    is over $50. Every result goes into "Test results".
 
 ## What Boreal-H3 takes
 

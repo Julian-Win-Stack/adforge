@@ -3,7 +3,7 @@
 - Date: 2026-10-04
 - Status: draft, for the user to agree. Nothing is built yet.
 - The decisions behind it, with the reasons: `docs/broll-picture-logic.md` ("Decided", items
-  1 to 53). This plan says only how they are built and tested. Where the two disagree, the
+  1 to 54). This plan says only how they are built and tested. Where the two disagree, the
   logic doc wins and this plan is fixed.
 
 ## What build 1 is, in one paragraph
@@ -39,7 +39,7 @@ Questions reading the code raised, now items 32 to 40 in the logic doc:
 
 ## Settled with the user on 2026-10-05
 
-Items 42 to 53 in the logic doc. Where they change a phase below, the phase is updated.
+Items 42 to 54 in the logic doc. Where they change a phase below, the phase is updated.
 
 1. "Describe it in words" is not offered in build 1: the question offers "attach a photo"
    or "use without proven result" (item 42).
@@ -56,6 +56,7 @@ Items 42 to 53 in the logic doc. Where they change a phase below, the phase is u
    (item 50, #109). Measuring left for later: #108, #110, #111 (item 51).
 10. The second kind is named "showcase" instead of "looks good" (item 52).
 11. "Who is in it" is "no face" or "has face": only faces matter (item 53).
+12. The after-build tests are approved; results always recorded (item 54).
 
 ## Phase 0: tests before building (about $2, each needs the user's yes first)
 
@@ -353,7 +354,11 @@ One migration. Each new field shown in the admin.
    It checks that the whole thing runs end to end, not the clips' quality. No permission
    needed for this one ad (item 33).
 
-## After building: the tests (each needs the user's yes and its exact cost)
+## After building: the tests (approved by the user, 2026-10-05)
+
+Approved: the graded run and its two watched-for checks, about $35 to $50 plus any re-runs.
+The exact figure is still counted from the plans first; ask again only if it comes out over
+$50. Every result is written down (item 4 below).
 
 1. **The graded run (item 30).** Full ads for the 8 test products, quality checks off. The
    user watches each B-roll clip and grades it pass or fail, writing down what went wrong
