@@ -8,6 +8,8 @@ a visitor sees and screenshots the whole page, for picking the product's photos;
 "product record" asks for the shop's own record of the product, as the picker's reference."""
 
 import json
+import re
+import time
 from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
@@ -28,6 +30,12 @@ HTTP_TIMEOUT_SECONDS = 330
 # The page read: what the copy test's markdown was fetched with (docs/scraping-test/scripts/
 # scrape.py). onlyMainContent is left at Firecrawl's default.
 PAGE_READ_FORMATS = ["markdown", "rawHtml"]
+# Firecrawl allows so many requests a minute, and says how long until more when they are used
+# up: it is waited out this many times before the page is read some other way.
+RATE_LIMIT_WAITS = 6
+# How long to wait when Firecrawl doesn't say, and the longest wait taken when it does.
+RATE_LIMIT_WAIT_SECONDS = 60
+MAX_RATE_LIMIT_WAIT_SECONDS = 120
 # The screenshot is a very tall picture.
 MAX_SCREENSHOT_BYTES = 50_000_000
 
@@ -57,14 +65,23 @@ ACTIONS: list[dict[str, Any]] = [
 ]
 
 
+class _RateLimited(Exception):
+    """Firecrawl's requests for this minute are used up: ask again after `seconds`."""
+
+    def __init__(self, message: str, seconds: float) -> None:
+        super().__init__(message)
+        self.seconds = seconds
+
+
 class FirecrawlFailed(Exception):
     """Firecrawl couldn't read the page, and asking it again won't help: the page is read
     some other way. The message says why, in a few words."""
 
 
 def scrape(body: dict[str, Any]) -> dict[str, Any]:
-    """Ask Firecrawl to scrape a page, as `body` says, retrying while it is busy or down.
-    Gives back its answer's `data`. Raises OutsideServiceDown if it stays down, and
+    """Ask Firecrawl to scrape a page, as `body` says, retrying while it is busy or down, and
+    waiting as long as it says while its requests for the minute are used up. Gives back its
+    answer's `data`. Raises OutsideServiceDown if it stays down or rate-limited, and
     FirecrawlFailed if it turns the request down or runs out of time."""
 
     def attempt() -> dict[str, Any]:
@@ -80,8 +97,12 @@ def scrape(body: dict[str, Any]) -> dict[str, Any]:
             raise FirecrawlFailed(f"timed out after {TIMEOUT_MS // 60_000} min") from error
         except httpx.TransportError as error:
             raise OutsideServiceDown(f"Firecrawl could not be reached: {error}") from error
+        if response.status_code == 429:
+            raise _RateLimited(
+                f"Firecrawl answered 429: {_error(response)}", _rate_limit_wait(response)
+            )
         # 408 is Firecrawl giving up on a slow page, which may load the next time.
-        if response.status_code in (408, 429) or response.status_code >= 500:
+        if response.status_code == 408 or response.status_code >= 500:
             raise OutsideServiceDown(
                 f"Firecrawl answered {response.status_code}: {_error(response)}"
             )
@@ -93,7 +114,26 @@ def scrape(body: dict[str, Any]) -> dict[str, Any]:
         data: dict[str, Any] = answer["data"]
         return data
 
-    return with_retries(attempt)
+    for _ in range(RATE_LIMIT_WAITS):
+        try:
+            return with_retries(attempt)
+        except _RateLimited as limited:
+            time.sleep(limited.seconds)
+    try:
+        return with_retries(attempt)
+    except _RateLimited as limited:
+        raise OutsideServiceDown(str(limited)) from limited
+
+
+def _rate_limit_wait(response: httpx.Response) -> float:
+    """How long a 429 says to wait: its Retry-After, else the "retry after 23s" in its error,
+    else a minute; at least a second and at most MAX_RATE_LIMIT_WAIT_SECONDS."""
+    said = re.search(r"retry after (\d+(?:\.\d+)?)\s*s", _error(response), re.IGNORECASE)
+    try:
+        seconds = float(response.headers.get("Retry-After") or (said and said[1]) or "")
+    except ValueError:
+        seconds = RATE_LIMIT_WAIT_SECONDS
+    return min(max(seconds, 1.0), MAX_RATE_LIMIT_WAIT_SECONDS)
 
 
 def read_page(link: str) -> dict[str, Any]:

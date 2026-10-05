@@ -1019,6 +1019,27 @@ def test_more_than_50_picked_photos_keeps_the_first_50(
     assert kept == [f"{firecrawl.shop}/cdn/many/{n}.png" for n in [*gallery, *more][:50]]
 
 
+# Firecrawl's answer when more than a minute's worth of requests were asked for.
+RATE_LIMITED = (
+    "Rate limit exceeded. Consumed (req/min): 34, Remaining (req/min): 0. Upgrade your plan at "
+    "https://firecrawl.dev/pricing for increased rate limits or please retry after {}s, resets "
+    "at Mon Oct 05 2026 12:00:00 GMT+0000"
+)
+
+
+@pytest.fixture
+def waits(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Every wait longer than nothing, oldest first, without waiting."""
+    waited: list[float] = []
+
+    def wait(seconds: float) -> None:
+        if seconds:
+            waited.append(seconds)
+
+    monkeypatch.setattr("time.sleep", wait)
+    return waited
+
+
 def test_firecrawl_saying_too_many_requests_is_tried_again(
     api: APIClient,
     fake_model: FakeModel,
@@ -1026,6 +1047,7 @@ def test_firecrawl_saying_too_many_requests_is_tried_again(
     shampoo_page_url: str,
     session_id: str,
     say: Callable[..., None],
+    waits: list[float],
 ) -> None:
     firecrawl.answers_first(429, "Rate limit exceeded")
     reading(fake_model, shampoo_page_url)
@@ -1036,7 +1058,59 @@ def test_firecrawl_saying_too_many_requests_is_tried_again(
 
     assert read_page_result().endswith("Kept 1 product photo.")
     assert len(firecrawl.asked("page")) == 2
+    # It didn't say how long to wait: a minute is waited, as the limit is per minute.
+    assert waits == [60]
     assert Job.objects.get().page_text.startswith(f"{ON_THE_PAGE}\n{PAGE_WROTE}")
+    assert notices(api, session_id) == []
+
+
+def test_firecrawl_staying_rate_limited_is_waited_out_as_it_says(
+    api: APIClient,
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+    waits: list[float],
+) -> None:
+    # Longer than the ordinary retries for a busy service last.
+    firecrawl.answers_first(429, RATE_LIMITED.format(25), times=5, headers={"Retry-After": "25"})
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("copy_page_text", SHAMPOO_COPIED)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    assert read_page_result().endswith("Kept 1 product photo.")
+    assert len(firecrawl.asked("page")) == 6
+    assert waits == [25] * 5
+    assert Job.objects.get().page_text.startswith(f"{ON_THE_PAGE}\n{PAGE_WROTE}")
+    assert notices(api, session_id) == []
+
+
+def test_the_screenshot_and_the_record_wait_out_a_rate_limit_too(
+    api: APIClient,
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+    waits: list[float],
+) -> None:
+    # No Retry-After: the wait is read from the error.
+    firecrawl.answers_first(429, RATE_LIMITED.format(40), times=4, call="marked")
+    firecrawl.answers_first(429, RATE_LIMITED.format(40), times=4, call="product")
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("copy_page_text", SHAMPOO_COPIED)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    assert read_page_result().endswith("Kept 1 product photo.")
+    assert len(firecrawl.asked("marked")) == len(firecrawl.asked("product")) == 5
+    assert waits == [40] * 8
+    (picking,) = ModelCall.objects.filter(purpose="pick_photos")
+    assert "Title: Detox Clarifying Hair Shampoo" in picking.handoff["official_record"]
     assert notices(api, session_id) == []
 
 

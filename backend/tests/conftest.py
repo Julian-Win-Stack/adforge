@@ -292,8 +292,9 @@ class FakeFirecrawl:
         self.shop = httpserver.url_for("").rstrip("/")
         # What every request asked for, oldest first.
         self.requests: list[dict[str, Any]] = []
-        # Answers to give each call before the real ones, such as "busy": each (status, body).
-        self.first: dict[FirecrawlCall, list[tuple[int, dict[str, Any]]]] = {
+        # Answers to give each call before the real ones, such as "busy": each (status, body,
+        # headers).
+        self.first: dict[FirecrawlCall, list[tuple[int, dict[str, Any], dict[str, str]]]] = {
             "page": [],
             "marked": [],
             "product": [],
@@ -316,11 +317,17 @@ class FakeFirecrawl:
         )
 
     def answers_first(
-        self, status: int, error: str, *, times: int = 1, call: FirecrawlCall = "page"
+        self,
+        status: int,
+        error: str,
+        *,
+        times: int = 1,
+        call: FirecrawlCall = "page",
+        headers: dict[str, str] | None = None,
     ) -> None:
         """Have the next `times` requests for `call` answered with an error, as when Firecrawl
         is busy."""
-        self.first[call] += [(status, {"success": False, "error": error})] * times
+        self.first[call] += [(status, {"success": False, "error": error}, headers or {})] * times
 
     def asked(self, call: FirecrawlCall) -> list[dict[str, Any]]:
         """What every request for `call` asked for, oldest first."""
@@ -335,13 +342,16 @@ class FakeFirecrawl:
         if call == "page":
             time.sleep(self.takes_seconds)
         answers = {"page": self.page_read, "marked": self.marked, "product": self.product}
+        headers: dict[str, str] = {}
         if call is None:
             status, body = 400, {"success": False, "error": f"Unknown formats {asked['formats']}"}
         elif self.first[call]:
-            status, body = self.first[call].pop(0)
+            status, body, headers = self.first[call].pop(0)
         else:
             status, body = 200, answers[call]
-        return Response(json.dumps(body), status=status, content_type="application/json")
+        return Response(
+            json.dumps(body), status=status, headers=headers, content_type="application/json"
+        )
 
 
 def _which_call(asked: dict[str, Any]) -> FirecrawlCall | None:
