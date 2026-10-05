@@ -3,7 +3,7 @@
 - Date: 2026-10-04
 - Status: draft, for the user to agree. Nothing is built yet.
 - The decisions behind it, with the reasons: `docs/broll-picture-logic.md` ("Decided", items
-  1 to 54). This plan says only how they are built and tested. Where the two disagree, the
+  1 to 55). This plan says only how they are built and tested. Where the two disagree, the
   logic doc wins and this plan is fixed.
 
 ## What build 1 is, in one paragraph
@@ -39,7 +39,7 @@ Questions reading the code raised, now items 32 to 40 in the logic doc:
 
 ## Settled with the user on 2026-10-05
 
-Items 42 to 54 in the logic doc. Where they change a phase below, the phase is updated.
+Items 42 to 55 in the logic doc. Where they change a phase below, the phase is updated.
 
 1. "Describe it in words" is not offered in build 1: the question offers "attach a photo"
    or "use without proven result" (item 42).
@@ -57,6 +57,7 @@ Items 42 to 54 in the logic doc. Where they change a phase below, the phase is u
 10. The second kind is named "showcase" instead of "looks good" (item 52).
 11. "Who is in it" is "no face" or "has face": only faces matter (item 53).
 12. The after-build tests are approved; results always recorded (item 54).
+13. Way 3's picture labels come from structured output, one slot per picture (item 55).
 
 ## Phase 0: tests before building (about $2, each needs the user's yes first)
 
@@ -274,9 +275,11 @@ One migration. Each new field shown in the admin.
    `shows`, the usage fact, the result, the person label and the pictures with their jobs,
    and writes:
    - way 1: the picture prompt and the video prompt;
-   - way 3: the video prompt, which names every picture by number with its one job, and
-     for a photo with a face, what to ignore ("Image 2 is only for the gel's colour. Don't
-     show the woman in it."). An answer that leaves a picture out fails while it's read.
+   - way 3: structured output with one required slot per picture sent (`image_1` ...
+     `image_N`, built for that scene's count) holding its job, and for a photo with a face
+     what to ignore ("only the gel's colour; ignore the woman"), plus an `action` slot.
+     Code joins them into the video prompt: "Image 1 is ... Image 2 is ... <action>". A
+     missing slot fails while it's read, so no picture goes unnamed (item 55).
    - Rules from "Prompt rules" in the logic doc: one continuous shot; the product does
      what the line claims, held as the usage fact says; the main action in the middle of
      the frame, nothing about the top and bottom; ends on the result ("does a job") or on
@@ -287,7 +290,7 @@ One migration. Each new field shown in the admin.
    out of date, like one made for an earlier line today.
 7. **Tests:** way 1 sends the main photo and no portrait for "no face"; the portrait
    for "has face"; way 3 sends the pictures in order, a photo without a face before
-   one with; a prompt that skips "Image 2" is refused; the stored step has its way, its
+   one with; an answer missing the `image_2` slot is refused, and the joined prompt names every picture; the stored step has its way, its
    pictures and its prompt.
 
 ---

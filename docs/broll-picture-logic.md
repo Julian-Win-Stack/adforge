@@ -3,7 +3,7 @@
 - Date: 2026-10-03
 - Ticket: #94. Follows the Boreal-H3 check on scene #16 (`docs/runs/second-run-review/check/`).
 - Status: the logic is agreed and tested (five tests, 2026-10-03, about $4). Ready to build.
-  Items 42 to 54 were settled with the user on 2026-10-05, before building.
+  Items 42 to 55 were settled with the user on 2026-10-05, before building.
   Nothing is built yet. Issue #94 is not to be edited (the user, 2026-10-03).
 
 ## Decided
@@ -224,6 +224,10 @@
 54. **The after-build tests are approved (2026-10-05):** the graded run with the people and
     added-text checks, about $35 to $50 plus re-runs; ask again only if the counted figure
     is over $50. Every result goes into "Test results".
+55. **Way 3's picture labels come from structured output (2026-10-05, the user's idea).** The
+    prompt writer's answer has one required slot per picture (`image_1` ... `image_N`) plus
+    `action`; code joins them into "Image 1 is ... Image 2 is ... <action>". No picture can
+    be left unnamed, and the AI still writes each picture's hint.
 
 ## What Boreal-H3 takes
 
