@@ -5,6 +5,7 @@ import base64
 import io
 import json
 import socket
+import threading
 import time
 import wave
 from collections.abc import Callable, Iterator, Sequence
@@ -948,6 +949,25 @@ def test_a_clip_creatify_is_too_busy_for_is_asked_for_again(
     ]
 
 
+@pytest.mark.parametrize("status", [500, 502, 504])
+def test_a_clip_creatify_errors_on_isnt_asked_for_again(
+    httpserver: HTTPServer, creatify: CreatifyProvider, stored: list[dict[str, Any]], status: int
+) -> None:
+    # It got there, so it may have been made and charged for: asking again could pay twice.
+    httpserver.expect_request(TASKS, method="POST").respond_with_data("Oops", status=status)
+
+    with (
+        use_model(creatify),
+        pytest.raises(
+            ClipFailed, match=f"^Creatify answered {status} after the clip was asked for"
+        ),
+    ):
+        asking_creatify()
+
+    assert [request.path for request, _ in httpserver.log].count(TASKS) == 1
+    assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
+
+
 def test_a_clip_creatify_refuses_fails_with_its_words_and_isnt_asked_for_again(
     httpserver: HTTPServer, creatify: CreatifyProvider, stored: list[dict[str, Any]]
 ) -> None:
@@ -1047,6 +1067,15 @@ def test_a_clip_creatify_cant_be_reached_for_is_asked_for_again(
     ]
 
 
+def waiting_for_the_late_answer(httpserver: HTTPServer, path: str) -> None:
+    """The stand-in logs a request only once it has answered it. A late answer must land in this
+    test's log, not in the next test's."""
+    deadline = time.monotonic() + 5
+    while not any(request.path == path for request, _ in httpserver.log):
+        assert time.monotonic() < deadline, f"{path} was never answered"
+        time.sleep(0.01)
+
+
 def test_a_clip_whose_reply_from_creatify_is_lost_isnt_asked_for_again(
     httpserver: HTTPServer,
     creatify: CreatifyProvider,
@@ -1057,9 +1086,11 @@ def test_a_clip_whose_reply_from_creatify_is_lost_isnt_asked_for_again(
     impatient = CreatifyProvider()
     taken: list[str] = []
 
+    gave_up = threading.Event()
+
     def answering_too_late(request: Request) -> Response:
         taken.append(request.path)
-        time.sleep(0.5)
+        gave_up.wait(timeout=5)
         return Response(json.dumps(WAITING), status=201)
 
     httpserver.expect_request(TASKS, method="POST").respond_with_handler(answering_too_late)
@@ -1069,6 +1100,8 @@ def test_a_clip_whose_reply_from_creatify_is_lost_isnt_asked_for_again(
         pytest.raises(ClipFailed, match="^Creatify's reply was lost after the clip was asked for"),
     ):
         asking_creatify()
+    gave_up.set()
+    waiting_for_the_late_answer(httpserver, TASKS)
 
     # Creatify may have taken it, and charged for it: asking again could pay twice.
     assert taken == [TASKS]
@@ -1330,9 +1363,11 @@ def test_a_clip_whose_reply_from_heygen_is_lost_isnt_asked_for_again(
     taking_uploads(httpserver)
     taken: list[str] = []
 
+    gave_up = threading.Event()
+
     def answering_too_late(request: Request) -> Response:
         taken.append(request.path)
-        time.sleep(0.5)
+        gave_up.wait(timeout=5)
         return Response(json.dumps({"data": {"video_id": "vid-1"}}))
 
     httpserver.expect_request("/v3/videos", method="POST").respond_with_handler(answering_too_late)
@@ -1342,6 +1377,8 @@ def test_a_clip_whose_reply_from_heygen_is_lost_isnt_asked_for_again(
         pytest.raises(ClipFailed, match="^HeyGen's reply was lost after the clip was asked for"),
     ):
         asking_heygen()
+    gave_up.set()
+    waiting_for_the_late_answer(httpserver, "/v3/videos")
 
     # HeyGen may have taken it, and charged for it: asking again could pay twice.
     assert taken == ["/v3/videos"]

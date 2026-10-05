@@ -6,6 +6,8 @@ The models are faked at the gateway, and the shop is served from a real local we
 from collections.abc import Callable
 
 import pytest
+from django.db import connection
+from django.db.migrations.executor import MigrationExecutor
 from django.db.models.signals import post_save
 from django.test import Client
 from pytest_httpserver import HTTPServer
@@ -254,3 +256,18 @@ def a_page_with_no_photos(httpserver: HTTPServer) -> str:
         content_type="text/html",
     )
     return httpserver.url_for("/products/mug")
+
+
+def test_a_photo_kept_before_face_notes_counts_as_having_a_face() -> None:
+    # Never noted, so it's taken as one with a face, as a photo whose noting failed is.
+    executor = MigrationExecutor(connection)
+    before = [("jobs", "0027_firecrawl_answers_kept")]
+    executor.migrate(before)
+    old = executor.loader.project_state(before).apps
+    job = old.get_model("jobs", "Job").objects.create(product_url="https://shop.example/mug")
+    old.get_model("jobs", "ProductPhoto").objects.create(job=job, position=1, file="photo-1")
+
+    executor = MigrationExecutor(connection)
+    executor.migrate(executor.loader.graph.leaf_nodes())
+
+    assert ProductPhoto.objects.get().has_face is True

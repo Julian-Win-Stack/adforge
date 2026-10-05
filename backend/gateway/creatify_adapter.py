@@ -142,6 +142,14 @@ class CreatifyProvider:
         if paid and 400 <= response.status_code < 500 and response.status_code != 429:
             # Refused: nothing was made, and asked again it would only be refused again.
             raise ClipFailed(f"Creatify refused it ({response.status_code}): {response.text}")
+        if paid and response.status_code >= 500 and response.status_code != 503:
+            # It got there and went wrong: it may still be made, and charged for. Too busy (503)
+            # means it wasn't taken, so that one is asked again.
+            raise ClipFailed(
+                f"Creatify answered {response.status_code} after the clip was asked for, so it "
+                "may still be made and charged for. It isn't asked for again, which could pay "
+                "twice"
+            )
         reply: dict[str, Any] = _checked(response, "Creatify").json()
         return reply
 

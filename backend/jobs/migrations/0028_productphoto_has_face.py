@@ -9,8 +9,16 @@ class Migration(migrations.Migration):
         ("jobs", "0027_firecrawl_answers_kept"),
     ]
 
+    # A photo kept before face notes was never noted, so it counts as having a face, as one
+    # whose noting failed does: new photos are noted as they are kept.
     operations = [
         migrations.AddField(
+            model_name="productphoto",
+            name="has_face",
+            field=models.BooleanField(default=True),
+            preserve_default=False,
+        ),
+        migrations.AlterField(
             model_name="productphoto",
             name="has_face",
             field=models.BooleanField(

@@ -78,7 +78,8 @@ class Cut:
     """The part of a scene's clip's picture the ad keeps and where it plays in the ad, the
     same for its voice, in seconds, and the scene's overlay, drawn while its picture plays:
     blank for none. A picture that plays longer than the part kept holds its last frame; one
-    that plays not at all (start and end the same) is said entirely over the scene before.
+    that plays not at all (start and end the same) is said entirely over the scene before,
+    its overlay drawn while it is said.
     """
 
     scene: int
@@ -306,13 +307,16 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 def write_text_to_draw(drawn: Sequence[Caption], parts: Sequence[Cut], into: Path) -> None:
     """Write the text on the ad as an ASS file for ffmpeg to draw, at `into`: the captions,
-    and each part's overlay for as long as its picture plays."""
+    and each part's overlay for as long as its picture plays, or, for a part whose picture
+    plays not at all, while its line is said."""
     lines = [TEXT_STYLES]
     lines += [_shown("Caption", caption.text, caption.start, caption.end) for caption in drawn]
     lines += [
         _shown("Overlay", part.overlay, part.start, part.end)
+        if part.end > part.start
+        else _shown("Overlay", part.overlay, part.voice_start, part.voice_end)
         for part in parts
-        if part.overlay and part.end > part.start
+        if part.overlay
     ]
     into.write_text("".join(lines), encoding="utf-8")
 

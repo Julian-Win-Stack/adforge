@@ -218,6 +218,31 @@ def test_talking_then_broll_then_talking(
     assert [drawn_in(heard, at) for at in (8.75, 9.25)] == [{"bottom"}, {"top", "bottom"}]
 
 
+@pytest.mark.parametrize("the_plan", [a_plan_showing(2, scenes=SHOWING_2)], indirect=True)
+def test_a_short_last_line_said_over_a_long_broll_clip_still_shows_its_overlay(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    # Scene 2's clip comes back 8 seconds long for its 4 seconds of line, so it runs 4
+    # seconds past it: longer than all of scene 3's line takes to say.
+    fake_model.clips_short_by = -3.0
+    ad = assembled_with(fake_model, steps, say, {2})
+
+    assert placed(ad) == [
+        ((0.0, 4.0, 0.0, 4.0), (0.0, 4.0, 0.0, 4.0)),
+        ((0.0, 8.0, 4.0, 12.0), (0.0, 4.0, 4.0, 8.0)),
+        # Scene 3's line is said entirely over the B-roll's end: none of its picture plays.
+        ((1.5, 1.5, 12.0, 12.0), (0.0, 1.5, 8.0, 9.5)),
+    ]
+    heard = file_store.read(ad.file)
+    voice_has_no_gap(ad, said_for=9.5)
+    # Its overlay shows while its line is said instead, so the price is still seen.
+    assert [drawn_in(heard, at) for at in (7.75, 8.75, 10.5)] == [
+        {"bottom"},
+        {"top", "bottom"},
+        set(),
+    ]
+
+
 @pytest.mark.parametrize("the_plan", [a_plan_showing(2, 3, scenes=FOUR_SCENES)], indirect=True)
 def test_talking_then_broll_then_broll_then_talking(
     fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
