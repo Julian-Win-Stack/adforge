@@ -2,130 +2,564 @@
   {
     "case": "1 needed photo missing",
     "run": 1,
-    "verdict": "look",
-    "question": "Which price should the ad say: the $9.99 one-time purchase or the $9.49 subscription price?"
+    "verdict": "pass",
+    "question": "Which price should I say\u2014$9.99 one-time or $9.49 subscription\u2014and will you attach a photo of the gel coming out, or should I propose a squeezing angle that hides the gel for your approval?",
+    "reason": "I need your price choice and a gel reference so the squeezing shot does not invent the cleaner\u2019s appearance.",
+    "colour_photos": null,
+    "broll_scenes": null
   },
   {
     "case": "1 needed photo missing",
     "run": 2,
     "verdict": "pass",
-    "question": "Should the ad say $9.99 one-time or $9.49 subscription, and will you attach a photo showing the gel or go ahead without one so I can explain how I\u2019d show the squeeze shot instead?"
+    "question": "Use the $9.99 one-time price or $9.49 subscription price\u2014and either attach a photo of the cleaner being squeezed under the rim or say \u201cgo ahead without one\u201d so I can propose the shot for approval?",
+    "reason": "I need your price choice and a reference for the cleaner coming from the nozzle so the ad does not guess.",
+    "colour_photos": null,
+    "broll_scenes": null
   },
   {
     "case": "1 needed photo missing",
     "run": 3,
     "verdict": "pass",
-    "question": "Should I use the $9.99 one-time price or $9.49 subscription price, and will you attach a photo of the gel coming out\u2014or go ahead without one so I can propose how to show it for your approval?"
+    "question": "Should I say $9.99 one-time or $9.49 subscription, and will you attach a photo of the gel being squeezed or should I proceed without one and show the nozzle under the rim as the bottle is squeezed without revealing the gel?",
+    "reason": "I need your chosen purchase price and a visual reference for the gel so the under-rim squeeze shot does not guess its appearance.",
+    "colour_photos": null,
+    "broll_scenes": null
   },
   {
     "case": "2 does a job, no how to use",
     "run": 1,
-    "verdict": "fail"
+    "verdict": "pass",
+    "question": "Could you attach a photo of the Dutch Baby being used, or should I go ahead without one and propose how to show it using the photos provided?",
+    "reason": "I need to know how you want the Dutch oven shown in use because the page does not describe a cooking method and no photo shows it being used.",
+    "colour_photos": null,
+    "broll_scenes": null
   },
   {
     "case": "2 does a job, no how to use",
     "run": 2,
-    "verdict": "fail"
+    "verdict": "pass",
+    "question": "Could you attach a photo of the Dutch Baby being used, or should I go ahead without one and propose how I\u2019d show it using the photos provided?",
+    "reason": "I need to see or confirm how the Dutch oven should be used on screen so the ad does not invent a cooking method or result.",
+    "colour_photos": null,
+    "broll_scenes": null
   },
   {
     "case": "2 does a job, no how to use",
     "run": 3,
-    "verdict": "fail"
+    "verdict": "pass",
+    "question": "Could you attach a photo of the Dutch Baby being used, or should I go ahead without one and tell you how I\u2019d show it using the photos provided?",
+    "reason": "The Dutch Baby does a visible cooking job, but the page does not say how it should be used, so I need your direction before planning that demonstration.",
+    "colour_photos": null,
+    "broll_scenes": null
   },
   {
     "case": "3 showcase, no how to use",
     "run": 1,
-    "verdict": "pass"
+    "verdict": "pass",
+    "reason": "Five concise scenes cover the clutch\u2019s style, details, capacity, carrying options, and price without overstating the page.",
+    "colour_photos": [
+      1,
+      2,
+      3
+    ],
+    "broll_scenes": [
+      {
+        "line": "The sleek metal frame and stone kiss-lock detail add a luxurious finishing touch.",
+        "shows": "an extreme close-up moves across the metal frame and stone kiss-lock detail",
+        "broll_kind": "showcase",
+        "person_shown": "no face",
+        "usage": null,
+        "result": null,
+        "needs": []
+      },
+      {
+        "line": "Carry it as a clutch, or attach the removable strap for hands-free wear.",
+        "shows": "the presenter carries the bag as a clutch, attaches its strap, and wears it crossbody",
+        "broll_kind": "showcase",
+        "person_shown": "no face",
+        "usage": "Carry it as a clutch, or attach the removable crossbody strap for hands-free wear.",
+        "result": null,
+        "needs": [
+          {
+            "what": "the removable crossbody strap",
+            "photos": [
+              2
+            ]
+          }
+        ]
+      }
+    ]
   },
   {
     "case": "3 showcase, no how to use",
     "run": 2,
-    "verdict": "pass"
+    "verdict": "pass",
+    "reason": "Five scenes give enough room to introduce the bag, demonstrate its two carrying options and capacity, highlight its details, and state the price.",
+    "colour_photos": [
+      1,
+      2,
+      3
+    ],
+    "broll_scenes": [
+      {
+        "line": "Wear it crossbody with the removable strap, or carry it as a clutch.",
+        "shows": "The presenter, framed without her face, wears the bag crossbody and then carries it as a clutch.",
+        "broll_kind": "showcase",
+        "person_shown": "no face",
+        "usage": "Wear it crossbody with the removable strap or carry it as a clutch.",
+        "result": null,
+        "needs": [
+          {
+            "what": "the removable crossbody strap",
+            "photos": [
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "line": "The compact design fits a phone, small wallet, keys, small headphones, and compact makeup.",
+        "shows": "A hand opens the bag and places the listed daily essentials inside.",
+        "broll_kind": "does a job",
+        "person_shown": "no face",
+        "usage": "Place a phone, small wallet, keys, small headphones, and compact makeup inside.",
+        "result": "The listed daily essentials fit inside the open bag.",
+        "needs": [
+          {
+            "what": "the open interior",
+            "photos": [
+              3
+            ]
+          }
+        ]
+      }
+    ]
   },
   {
     "case": "3 showcase, no how to use",
     "run": 3,
-    "verdict": "pass"
+    "verdict": "pass",
+    "reason": "Five scenes give the bag\u2019s name, key design, capacity, styling options, and price while keeping two scenes focused on its fashion details.",
+    "colour_photos": [
+      1,
+      2,
+      3
+    ],
+    "broll_scenes": [
+      {
+        "line": "The sleek metal frame and stone kiss-lock detail add a touch of luxury.",
+        "shows": "A close-up moves across the textile exterior, sleek metal frame, and stone kiss-lock detail.",
+        "broll_kind": "showcase",
+        "person_shown": "no face",
+        "usage": null,
+        "result": null,
+        "needs": []
+      },
+      {
+        "line": "Carry it as a clutch, or add the removable strap for hands-free wear.",
+        "shows": "The presenter\u2019s hands attach the strap, followed by a neck-down view of the bag worn crossbody.",
+        "broll_kind": "showcase",
+        "person_shown": "no face",
+        "usage": "Carry it as a clutch or wear it crossbody with the removable strap.",
+        "result": null,
+        "needs": [
+          {
+            "what": "the crossbody strap",
+            "photos": [
+              2
+            ]
+          }
+        ]
+      }
+    ]
   },
   {
     "case": "4 everything present",
     "run": 1,
-    "verdict": "pass"
+    "verdict": "pass",
+    "reason": "Four scenes give the sauce a quick introduction, show two everyday uses, and close with the price.",
+    "colour_photos": [
+      1,
+      2
+    ],
+    "broll_scenes": [
+      {
+        "line": "Squeeze Chili Crunch Sauce over a bowl for a rich, smooth finishing drizzle.",
+        "shows": "A hand squeezes the sauce over a prepared bowl.",
+        "broll_kind": "does a job",
+        "person_shown": "no face",
+        "usage": "Use it as a finishing drizzle over a bowl.",
+        "result": "A smooth drizzle of sauce finishes the bowl.",
+        "needs": [
+          {
+            "what": "the sauce being squeezed from the bottle",
+            "photos": [
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "line": "Use it as a dipping sauce, with bold heat that won\u2019t mask what\u2019s underneath.",
+        "shows": "A hand dips a bite of food into a small bowl of the sauce.",
+        "broll_kind": "does a job",
+        "person_shown": "no face",
+        "usage": "Use it as a dipping sauce.",
+        "result": "The dipped bite is coated with sauce.",
+        "needs": [
+          {
+            "what": "the sauce served for dipping",
+            "photos": [
+              3
+            ]
+          }
+        ]
+      }
+    ]
   },
   {
     "case": "4 everything present",
     "run": 2,
-    "verdict": "look",
-    "question": "The page says both \u201cSold Out\u201d and \u201cIn Stock\u201d; which availability is correct?"
+    "verdict": "pass",
+    "reason": "Five scenes give the ad room to introduce the sauce, demonstrate two stated uses, explain its flavor, and clearly give the price.",
+    "colour_photos": [
+      1,
+      2
+    ],
+    "broll_scenes": [
+      {
+        "line": "Drizzle it over a bowl for rich, smooth flavor and balanced heat.",
+        "shows": "A hand squeezes the sauce over a bowl, ending on the finished drizzle.",
+        "broll_kind": "does a job",
+        "person_shown": "no face",
+        "usage": "Use it as a finishing drizzle over a bowl.",
+        "result": "The bowl finished with a drizzle of sauce.",
+        "needs": [
+          {
+            "what": "the sauce outside the bottle",
+            "photos": [
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "line": "Spread it on a sandwich for a rich, deeply savory finish.",
+        "shows": "A hand spreads the sauce across a sandwich, ending with the sauce evenly spread.",
+        "broll_kind": "does a job",
+        "person_shown": "no face",
+        "usage": "Use it as a sandwich spread.",
+        "result": "The sauce spread across the sandwich.",
+        "needs": [
+          {
+            "what": "the sauce outside the bottle",
+            "photos": [
+              2
+            ]
+          }
+        ]
+      }
+    ]
   },
   {
     "case": "4 everything present",
     "run": 3,
-    "verdict": "pass"
+    "verdict": "pass",
+    "reason": "Four scenes give the sauce a quick introduction, show two stated ways to use it, and clearly present the price.",
+    "colour_photos": [
+      1,
+      2
+    ],
+    "broll_scenes": [
+      {
+        "line": "Squeeze it over a bowl for a rich, smooth finishing drizzle.",
+        "shows": "a hand squeezes the sauce over a finished bowl",
+        "broll_kind": "does a job",
+        "person_shown": "no face",
+        "usage": "Squeeze it over a bowl as a finishing drizzle.",
+        "result": "the finished bowl topped with a drizzle of sauce",
+        "needs": [
+          {
+            "what": "the sauce being squeezed from the bottle",
+            "photos": [
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "line": "Squeeze it into a small dish for a deeply savory dipping sauce.",
+        "shows": "a hand squeezes the sauce from the bottle into a small dipping dish",
+        "broll_kind": "does a job",
+        "person_shown": "no face",
+        "usage": "Use it as a dipping sauce.",
+        "result": "the dipping dish filled with sauce",
+        "needs": [
+          {
+            "what": "the sauce being squeezed from the bottle",
+            "photos": [
+              3
+            ]
+          }
+        ]
+      }
+    ]
   },
   {
     "case": "5 serum, one photo, texture",
     "run": 1,
     "verdict": "pass",
-    "question": "Could you attach a photo showing a drop of the serum on a fingertip, or should I go ahead without that shot and explain an alternative using the bottle photo?"
+    "question": "Should the ad say \u201c$27\u201d or use the subscription price, and can you attach a photo of a drop on a fingertip\u2014or say \u201cgo ahead without one\u201d and I\u2019ll propose how to show it with what we have?",
+    "reason": "I need your choice because the page offers a $27 one-time purchase and a 10%-off subscription, and the requested drop is not shown in the supplied photo.",
+    "colour_photos": null,
+    "broll_scenes": null
   },
   {
     "case": "5 serum, one photo, texture",
     "run": 2,
     "verdict": "pass",
-    "question": "Could you attach a photo showing a drop of the serum, or should I go ahead without one and propose an alternative using the bottle photo?"
+    "question": "Could you attach a photo showing a drop on a fingertip, or should I go ahead without one and propose how to show that moment using what we have?",
+    "reason": "You asked to show a drop on a fingertip, but the supplied photo does not show what the serum looks like outside the bottle.",
+    "colour_photos": null,
+    "broll_scenes": null
   },
   {
     "case": "5 serum, one photo, texture",
     "run": 3,
     "verdict": "pass",
-    "question": "Should I say $27 one-time or the 10%-off subscription price, and will you attach a photo of the serum drop on a fingertip or go ahead without one so I can suggest an alternative shot for approval?"
+    "question": "Could you attach a photo showing a drop of the serum, or should I go ahead without it and show a close-up of the closed bottle instead?",
+    "reason": "I need to ask because the requested drop is not shown in the supplied product photo, so its appearance would have to be guessed.",
+    "colour_photos": null,
+    "broll_scenes": null
   },
   {
     "case": "6 blush, cheek photo",
     "run": 1,
-    "verdict": "pass"
+    "verdict": "pass",
+    "reason": "Six concise scenes give the product introduction, formula, application, benefits, versatility, and price while keeping the visual demonstration appropriate for a beauty product.",
+    "colour_photos": [
+      1,
+      2
+    ],
+    "broll_scenes": [
+      {
+        "line": "The cream formula is lightweight and buildable, never heavy or cakey.",
+        "shows": "a close-up of the creamy blush swatch catching soft light",
+        "broll_kind": "showcase",
+        "person_shown": "no face",
+        "usage": null,
+        "result": null,
+        "needs": [
+          {
+            "what": "the creamy blush swatch",
+            "photos": [
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "line": "Swipe it directly onto cheeks, blend with fingertips, and layer for more saturated color.",
+        "shows": "the presenter swipes the blush directly onto her cheek, blends it with her fingertips, and reveals the finished flush",
+        "broll_kind": "does a job",
+        "person_shown": "has face",
+        "usage": "Swipe directly onto cheeks, blend with fingertips, and layer for more saturated color.",
+        "result": "a soft, buildable flush with a satin, natural finish",
+        "needs": [
+          {
+            "what": "the finished flush on cheeks",
+            "photos": [
+              3
+            ]
+          }
+        ]
+      }
+    ]
   },
   {
     "case": "6 blush, cheek photo",
     "run": 2,
-    "verdict": "pass"
+    "verdict": "pass",
+    "reason": "Four concise scenes cover the product, application, key benefits, and price, with one application scene keeping the beauty ad focused on the presenter.",
+    "colour_photos": [
+      1,
+      2
+    ],
+    "broll_scenes": [
+      {
+        "line": "Swipe it directly onto your cheeks, blend with fingertips, and layer for more saturated color.",
+        "shows": "The presenter swipes the balm directly onto her cheeks, blends it with her fingertips, and finishes with a soft, natural-looking flush.",
+        "broll_kind": "does a job",
+        "person_shown": "has face",
+        "usage": "Swipe directly onto cheeks, blend with fingertips, and layer for more saturated color.",
+        "result": "A soft, natural-looking flush on the cheeks.",
+        "needs": [
+          {
+            "what": "the soft, natural-looking cheek finish",
+            "photos": [
+              3
+            ]
+          }
+        ]
+      }
+    ]
   },
   {
     "case": "6 blush, cheek photo",
     "run": 3,
-    "verdict": "pass"
+    "verdict": "pass",
+    "reason": "Four concise scenes introduce Flush Balm, demonstrate the stated application, highlight key benefits, and finish with the price.",
+    "colour_photos": [
+      1,
+      2
+    ],
+    "broll_scenes": [
+      {
+        "line": "Swipe it directly onto cheeks, blend with your fingertips, and layer for more color.",
+        "shows": "The presenter swipes the balm directly onto her cheek and blends it with her fingertips.",
+        "broll_kind": "showcase",
+        "person_shown": "has face",
+        "usage": "Swipe directly onto cheeks, blend with fingertips, and layer for more saturated color.",
+        "result": null,
+        "needs": [
+          {
+            "what": "the cream texture",
+            "photos": [
+              2
+            ]
+          },
+          {
+            "what": "the product worn on cheeks",
+            "photos": [
+              3
+            ]
+          }
+        ]
+      }
+    ]
   },
   {
     "case": "7 power bank charging a phone",
     "run": 1,
-    "verdict": "pass"
+    "verdict": "pass",
+    "reason": "Six concise scenes balance the key charging, capacity, portability, safety, design, and price points while showing the product in use.",
+    "colour_photos": [
+      1
+    ],
+    "broll_scenes": [
+      {
+        "line": "Its 10,000mAh capacity can charge a phone up to three times.",
+        "shows": "a hand connects the power bank to a phone with a charging cable",
+        "broll_kind": "does a job",
+        "person_shown": "no face",
+        "usage": "charging a phone",
+        "result": "the phone connected and charging from the power bank",
+        "needs": []
+      },
+      {
+        "line": "At just half a pound, it fits comfortably in your palm or pocket.",
+        "shows": "a hand holds the slim power bank and slides it into a pocket",
+        "broll_kind": "showcase",
+        "person_shown": "no face",
+        "usage": null,
+        "result": null,
+        "needs": []
+      },
+      {
+        "line": "The premium exterior is designed for durability and scratch resistance.",
+        "shows": "a close-up slowly moves across the power bank\u2019s textured exterior and rounded edges",
+        "broll_kind": "showcase",
+        "person_shown": "no face",
+        "usage": null,
+        "result": null,
+        "needs": []
+      }
+    ]
   },
   {
     "case": "7 power bank charging a phone",
     "run": 2,
-    "verdict": "pass"
+    "verdict": "pass",
+    "reason": "Four scenes give enough time to introduce the charger, show it charging a phone, highlight its portability, and close with safety features and the price.",
+    "colour_photos": [
+      1
+    ],
+    "broll_scenes": [
+      {
+        "line": "Its 10,000mAh capacity can charge a phone up to three times.",
+        "shows": "a hand connects the power bank to a phone with a charging cable, keeping the phone screen out of view",
+        "broll_kind": "does a job",
+        "person_shown": "no face",
+        "usage": "connect the power bank to a phone with a charging cable",
+        "result": "the phone connected and charging",
+        "needs": []
+      },
+      {
+        "line": "At just half a pound, it fits comfortably in your palm or pocket.",
+        "shows": "a hand holds the slim power bank, then slips it into a pocket",
+        "broll_kind": "showcase",
+        "person_shown": "no face",
+        "usage": null,
+        "result": null,
+        "needs": []
+      }
+    ]
   },
   {
     "case": "7 power bank charging a phone",
     "run": 3,
-    "verdict": "pass"
+    "verdict": "pass",
+    "reason": "Four concise scenes introduce the charger, demonstrate phone charging, highlight portability, and clearly state the current price.",
+    "colour_photos": [
+      1
+    ],
+    "broll_scenes": [
+      {
+        "line": "Connect your phone for optimized charging with Anker\u2019s PowerIQ and VoltageBoost technologies.",
+        "shows": "a hand connects the power bank to a phone with a charging cable, keeping the phone screen out of view",
+        "broll_kind": "does a job",
+        "person_shown": "no face",
+        "usage": "Connect the power bank to a phone with a charging cable.",
+        "result": "the phone connected and charging from the power bank",
+        "needs": []
+      },
+      {
+        "line": "Its slim design fits comfortably in your palm or pocket for work or travel.",
+        "shows": "close views of the power bank in a hand and slipping into a pocket",
+        "broll_kind": "showcase",
+        "person_shown": "no face",
+        "usage": null,
+        "result": null,
+        "needs": []
+      }
+    ]
   },
   {
     "case": "8 no photo clearly shows the product",
     "run": 1,
-    "verdict": "fail"
+    "verdict": "pass",
+    "question": "Could you attach a clear photo of the Anker 313 Power Bank by itself?",
+    "reason": "The supplied images are compatibility charts where the power bank is small beside other products, so I need a clear product photo to plan the ad without guessing its appearance.",
+    "colour_photos": null,
+    "broll_scenes": null
   },
   {
     "case": "8 no photo clearly shows the product",
     "run": 2,
-    "verdict": "look",
-    "question": "Is this version\u2019s USB-C port an output up to 15W, or is it input-only?"
+    "verdict": "pass",
+    "question": "Could you attach a clear photo of the power bank alone, without phones, watches, tablets, or other products beside it?",
+    "reason": "I need a photo that clearly shows the power bank by itself, because both supplied photos also show other products.",
+    "colour_photos": null,
+    "broll_scenes": null
   },
   {
     "case": "8 no photo clearly shows the product",
     "run": 3,
     "verdict": "pass",
-    "question": "Could you attach a clear photo of the power bank by itself?"
+    "question": "Could you attach a clear photo of the Anker 313 Power Bank by itself?",
+    "reason": "The supplied images are compatibility charts where the power bank is shown alongside many other products, so I need a clear product photo to plan the ad without guessing its appearance.",
+    "colour_photos": null,
+    "broll_scenes": null
   }
 ]

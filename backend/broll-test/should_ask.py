@@ -218,7 +218,21 @@ def plan_once(case: Case, run: int) -> dict[str, Any]:
             output=producer_decision_for(len(keys)),
             images=[Image(label=f"Photo {n}", key=key) for n, key in enumerate(keys, start=1)],
         )
-        return {"case": case.name, "run": run, **verdict(case, decision.question)}
+        planned = decision.plan
+        # What it planned instead of asking, so a failed "ask" case can be read.
+        scenes = (
+            [scene.model_dump(exclude={"overlay"}) for scene in planned.scenes if scene.shows]
+            if planned
+            else None
+        )
+        return {
+            "case": case.name,
+            "run": run,
+            **verdict(case, decision.question),
+            "reason": decision.reason,
+            "colour_photos": planned.colour_photos if planned else None,
+            "broll_scenes": scenes,
+        }
     except Exception as error:  # noqa: BLE001 - a failed run is a result too
         return {"case": case.name, "run": run, "verdict": "failed", "error": repr(error)}
     finally:
@@ -241,13 +255,15 @@ def run() -> None:
     unfilled = [f"{case.name}: {case.to_fill}" for case in CASES if case.to_fill]
     if unfilled:
         sys.exit("Fill these in first:\n" + "\n".join(unfilled))
-    runs = [(case, number) for case in CASES for number in range(1, RUNS + 1)]
+    # Only the cases named by their number, such as "run 2 8", or all of them.
+    chosen = [case for case in CASES if not sys.argv[2:] or case.name.split()[0] in sys.argv[2:]]
+    runs = [(case, number) for case in chosen for number in range(1, RUNS + 1)]
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(lambda each: plan_once(*each), runs))
     RESULTS.parent.mkdir(parents=True, exist_ok=True)
     RESULTS.write_text(json.dumps(results, indent=2))
     print("Wrote", RESULTS)
-    for case in CASES:
+    for case in chosen:
         mine = [result for result in results if result["case"] == case.name]
         # A question about something else counts neither way, so a "look" left as one is
         # out of the rate: a person judges each and edits its verdict in the results.

@@ -130,7 +130,9 @@ Decide "ask" when you don't know the one price to say, because neither the page 
 shop owner gives a price, or they give different prices to choose between (such as a \
 single item, a pack and a subscription). Also decide "ask" when the page conflicts with \
 itself or is missing something else the ad needs, so that planning would mean guessing. \
-Also decide "ask" when no photo clearly shows the product: ask them to attach one.
+Also decide "ask" when no photo clearly shows the product: ask them to attach one. A \
+photo where the product is small beside pictures of other products, such as a chart of the \
+devices it works with, or half hidden by text, doesn't clearly show it.
 Ask because of a scene that shows the product in only two cases, and nothing else:
 - The scene needs something of the product that no photo shows and the video would \
 have to guess, such as what a serum looks like out of the bottle or a gel coming out of \
@@ -138,8 +140,9 @@ its tube. Ordinary things around the product are never missing: a phone, a hand,
 bowl of noodles can be shown without a photo. A photo that shows it, even one where the \
 product isn't clearly seen, such as blush on a cheek, is enough.
 - The product does a job you can see, such as a cleaner or a pan, and neither the page \
-nor the shop owner says how it is used. A product shown at its best needs no "how to \
-use": never ask for one.
+nor the shop owner says how it is used. Ask even if you could plan it only at its best: \
+an ad for such a product shows it doing its job. A product that doesn't do a job you can \
+see, such as a bag, needs no "how to use": never ask for one.
 Then say in plain words what's missing and offer two answers: attach a photo of it (for \
 a missing "how to use", of the product being used), or go ahead without one, and you'll \
 say how you'd show it instead. Never choose for them. If they go ahead without one, ask \
