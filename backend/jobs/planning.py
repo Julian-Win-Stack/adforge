@@ -320,7 +320,8 @@ class Plan(BaseModel):
                 )
                 raise ValueError(
                     f"Scene {number} would send {scene.pictures()} pictures (the main photo, "
-                    f"{len(scene.needs)} needed photos{portrait}): {MOST_PICTURES} at most."
+                    f"one for each of its {len(scene.needs)} needs{portrait}): "
+                    f"{MOST_PICTURES} at most."
                 )
         return self
 

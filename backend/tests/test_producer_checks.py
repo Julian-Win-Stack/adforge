@@ -19,6 +19,7 @@ from .conftest import (
     READABLE,
     a_plan_with,
     broll,
+    broll_labels,
     facts_ok,
     handoffs,
     lines,
@@ -1009,20 +1010,11 @@ def test_a_scene_dropped_in_shortening_takes_what_it_shows_with_it(
 def test_a_scene_dropped_in_shortening_takes_its_broll_labels_with_it(
     shortened_dropping_the_pour: None,
 ) -> None:
-    assert broll_labels_now() == [("", "", "", "", []), ("", "", "", "", [])]
-
-
-def broll_labels_now() -> list[tuple[str, str, str, str, list[dict[str, Any]]]]:
-    """Each scene's B-roll kind, person, usage, result and needs, in order."""
-    return list(
-        Job.objects.get().scenes.values_list(
-            "broll_kind", "person_shown", "usage", "result", "needs"
-        )
-    )
+    assert broll_labels() == [("", "", "", "", []), ("", "", "", "", [])]
 
 
 # A scene where the mug does a job, with the presenter's face and a need of its own.
-TEA_POURED: dict[str, Any] = {
+POUR_DOES_A_JOB: dict[str, Any] = {
     "line": "Pour in hot tea and it stays warm in your hands.",
     "shows": POUR,
     "broll_kind": "does a job",
@@ -1041,7 +1033,7 @@ def test_a_line_moved_up_in_shortening_takes_its_broll_labels_with_it(
         scenes=[
             {"line": "Meet the Stoneware Mug from Kiln & Co."},
             {"line": "Hand-thrown, holds 350 ml, and dishwasher safe."},
-            TEA_POURED,
+            POUR_DOES_A_JOB,
         ]
     )
     checking(fake_model, product_page_url, plan, target_seconds=5)
@@ -1060,7 +1052,7 @@ def test_a_line_moved_up_in_shortening_takes_its_broll_labels_with_it(
         ("Meet the Stoneware Mug.", ""),
         ("Pour in hot tea and it stays warm.", POUR),
     ]
-    assert broll_labels_now() == [
+    assert broll_labels() == [
         ("", "", "", "", []),
         (
             "does a job",

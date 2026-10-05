@@ -29,6 +29,7 @@ from .conftest import (
     SHOWCASE,
     a_plan_with,
     broll,
+    broll_labels,
     openai_answer,
     openai_turn,
     paid_for,
@@ -243,22 +244,12 @@ def planned_with_broll(
     say(f"Make an ad for {product_page_url}")
 
 
-def broll_fields() -> list[tuple[int, str, str, str, str, list[dict[str, Any]]]]:
-    """Each stored scene's number and its B-roll kind, person, usage, result and needs."""
-    return list(
-        Job.objects.get().scenes.values_list(
-            "number", "broll_kind", "person_shown", "usage", "result", "needs"
-        )
-    )
-
-
 def test_each_broll_scenes_kind_person_usage_result_and_needs_are_stored(
     planned_with_broll: None,
 ) -> None:
-    assert broll_fields() == [
-        (1, "", "", "", "", []),
+    assert broll_labels() == [
+        ("", "", "", "", []),
         (
-            2,
             "does a job",
             "has face",
             "Pour a hot drink into the mug.",
@@ -268,8 +259,8 @@ def test_each_broll_scenes_kind_person_usage_result_and_needs_are_stored(
                 {"what": "the glaze up close", "photos": [1, 2]},
             ],
         ),
-        (3, "showcase", "no face", "", "", []),
-        (4, "", "", "", "", []),
+        ("showcase", "no face", "", "", []),
+        ("", "", "", "", []),
     ]
 
 
@@ -283,7 +274,7 @@ def test_a_scene_sending_exactly_five_pictures_is_planned(
 
     say(f"Make an ad for {product_page_url}")
 
-    assert [len(scene_needs) for *_, scene_needs in broll_fields()] == [0, 3]
+    assert [len(scene_needs) for *_, scene_needs in broll_labels()] == [0, 3]
 
 
 def test_a_broll_scenes_blank_usage_and_result_are_stored_blank(
@@ -297,7 +288,7 @@ def test_a_broll_scenes_blank_usage_and_result_are_stored_blank(
 
     say(f"Make an ad for {product_page_url}")
 
-    assert broll_fields()[1] == (2, "showcase", "no face", "", "", [])
+    assert broll_labels()[1] == ("showcase", "no face", "", "", [])
 
 
 def test_the_planner_is_told_how_to_plan_each_broll_scene(
@@ -312,17 +303,19 @@ def test_the_planner_is_told_how_to_plan_each_broll_scene(
 
     request = the_plan_request(httpserver)
     instructions = request["instructions"]
-    # Test A (#96): with this hint, 0 of 39 B-roll lines took under 4 seconds to say. Any
-    # upper number makes the planner squeeze good lines, and "one short sentence" disagrees.
+    # Test A in docs/plans/broll-boreal-h3.md: with this hint, 0 of 39 B-roll lines took
+    # under 4 seconds to say. Any upper number makes the planner squeeze good lines, and "one
+    # short sentence" disagrees.
     assert "A B-roll line has at least about 10 words." in instructions
     assert "short sentence" not in instructions
-    # The ad's colour (item 43), and the one photo a scene may never need (item 44).
+    # The ad's colour, and the one photo a scene may never need: items 43 and 44 of
+    # docs/broll-picture-logic.md.
     assert (
         "pick the colour with the most photos where the product is clearly seen; on a tie, "
         "the colour of Photo 1"
     ) in instructions
     assert "Never name a photo that shows the product in another colour" in instructions
-    # The two kinds, "showcase" when unsure, and only the presenter's face (items 12, 27).
+    # The two kinds, "showcase" when unsure, and only the presenter's face: items 12 and 27.
     assert '"showcase" when unsure' in instructions
     assert "The only person ever shown is the presenter" in instructions
     scene = request["text"]["format"]["schema"]["$defs"]["PlannedScene"]["properties"]
@@ -576,8 +569,8 @@ def test_the_planner_is_shown_each_photo_shrunk_to_fit_2048_pixels_and_the_kept_
                 person_shown="has face",
                 needs=[{"what": f"part {n}", "photos": [1]} for n in range(1, 5)],
             ),
-            "Scene 2 would send 6 pictures (the main photo, 4 needed photos and the "
-            "presenter's portrait): 5 at most.",
+            "Scene 2 would send 6 pictures (the main photo, one for each of its 4 needs and "
+            "the presenter's portrait): 5 at most.",
             id="a scene sending six pictures",
         ),
         pytest.param(a_plan_with(product_name=" "), "This can't be empty.", id="no name"),

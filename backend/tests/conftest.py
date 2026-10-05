@@ -31,7 +31,7 @@ from gateway.gateway import use_model
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import ModelReply, ModelRequest, TurnReply, TurnRequest
-from jobs.models import Job
+from jobs.models import BROLL_FIELDS, Job
 
 celery_app.conf.update(task_always_eager=True, task_eager_propagates=True)
 
@@ -126,6 +126,11 @@ SHOWCASE: dict[str, Any] = {
     "result": None,
     "needs": [],
 }
+
+
+def broll_labels() -> list[tuple[str, str, str, str, list[dict[str, Any]]]]:
+    """Each stored scene's B-roll kind, person, usage, result and needs, in order."""
+    return list(Job.objects.get().scenes.values_list(*BROLL_FIELDS))
 
 
 def broll(scene: dict[str, Any]) -> dict[str, Any]:
