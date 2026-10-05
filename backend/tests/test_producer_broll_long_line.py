@@ -137,7 +137,9 @@ def test_the_shorter_line_is_fact_checked_again_with_what_the_scene_shows(
 
     audio_of_scene_2(fake_model, steps, say)
 
-    assert handoffs("fact_check")[-1]["lines"] == [{"scene": 2, "line": SHORTER, "shows": SHOWS}]
+    assert handoffs("fact_check")[-1]["lines"] == [
+        {"scene": 2, "line": SHORTER, "shows": SHOWS, "usage": None, "result": None}
+    ]
 
 
 def test_the_shop_owner_isnt_told_a_line_was_shortened(
