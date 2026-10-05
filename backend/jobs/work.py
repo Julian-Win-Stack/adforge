@@ -1456,14 +1456,17 @@ def assemble_ad(
 ) -> ProducedItem:
     """Put the finished ad together from each scene's clip and the transcript of the audio
     it speaks, in the order the scenes play, and the music: each talking scene's clip cut to
-    where its words are said and each one showing the product kept whole, then joined, with
-    the music under the voice, captions of each line as written, timed as it was heard, and
-    each scene's overlay while it plays. Gives back the ad, kept as the job's next version.
-    Costs nothing: no model is called."""
+    where its words are said and each one showing the product kept whole, the next line said
+    over its end (the early cut), then joined, with the music under the voice, captions of
+    each line as written, timed as it was heard, and each scene's overlay while its picture
+    plays. Gives back the ad, kept as the job's next version. Costs nothing: no model is
+    called."""
     measured = []
     timed = []
     for clip, transcript in scenes:
         assert clip.scene is not None and clip.seconds is not None, "a clip is a scene's, measured"
+        audio = clip.made_from
+        assert audio is not None and audio.seconds is not None, "a clip speaks measured audio"
         measured.append(
             (
                 clip.scene.number,
@@ -1472,6 +1475,7 @@ def assemble_ad(
                 transcript.words,
                 clip.scene.overlay,
                 bool(clip.scene.shows),
+                audio.seconds,
             )
         )
         timed.append(assembly.timed_script(clip.scene.line, transcript.words))

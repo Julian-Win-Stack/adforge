@@ -12,7 +12,7 @@ from django.conf import settings
 from gateway.fake import FakeModel
 from jobs import assembly
 
-from .conftest import loudness
+from .conftest import colour_at, loudness
 
 # The fake's pitches: a test hears the voice and the music apart by them.
 VOICE_HERTZ = FakeModel.VOICE_HERTZ
@@ -76,11 +76,35 @@ def music(folder: Path, *, seconds: float) -> Path:
     )
 
 
+def a_cut(
+    scene: int,
+    *,
+    picture: tuple[float, float, float, float],
+    voice: tuple[float, float, float, float] | None = None,
+) -> assembly.Cut:
+    """Scene `scene`'s cut: the part of its clip's `picture` kept and where it plays in the
+    ad, and the same for its `voice`, as (from, to in the clip, start, end in the ad): the
+    picture's own, unless the voice is given."""
+    clip_start, clip_end, start, end = picture
+    voice_clip_start, voice_clip_end, voice_start, voice_end = voice or picture
+    return assembly.Cut(
+        scene=scene,
+        clip=scene,
+        clip_start=clip_start,
+        clip_end=clip_end,
+        start=start,
+        end=end,
+        overlay="",
+        voice_clip_start=voice_clip_start,
+        voice_clip_end=voice_clip_end,
+        voice_start=voice_start,
+        voice_end=voice_end,
+    )
+
+
 def one_scene(seconds: float) -> assembly.Cut:
     """An ad of one scene whose clip is kept whole."""
-    return assembly.Cut(
-        scene=1, clip=1, clip_start=0.0, clip_end=seconds, start=0.0, end=seconds, overlay=""
-    )
+    return a_cut(1, picture=(0.0, seconds, 0.0, seconds))
 
 
 def test_music_that_runs_out_before_the_ad_ends_fades_out_rather_than_stopping_dead(
@@ -113,11 +137,11 @@ def test_clips_of_different_sizes_and_frame_rates_are_joined_into_one_ad_at_1080
     parts = [
         (
             sized_clip(tmp_path, "scene-1", size="1080x1920", fps=25, seconds=2),
-            assembly.Cut(scene=1, clip=1, clip_start=0, clip_end=2, start=0, end=2, overlay=""),
+            a_cut(1, picture=(0, 2, 0, 2)),
         ),
         (
             sized_clip(tmp_path, "scene-2", size="720x1280", fps=24, seconds=2),
-            assembly.Cut(scene=2, clip=2, clip_start=0, clip_end=2, start=2, end=4, overlay=""),
+            a_cut(2, picture=(0, 2, 2, 4)),
         ),
     ]
     ad = tmp_path / "ad.mp4"
@@ -130,12 +154,111 @@ def test_clips_of_different_sizes_and_frame_rates_are_joined_into_one_ad_at_1080
     assert assembly.seconds_of(ad) == pytest.approx(4, abs=0.1)
 
 
+def test_a_broll_picture_plays_whole_under_the_next_line_and_the_talking_lips_stay_in_step(
+    tmp_path: Path,
+) -> None:
+    # A B-roll clip kept whole: 3 seconds of yellow, its line said over its first 2.
+    broll_clip = generate(
+        tmp_path / "scene-1.mp4",
+        "color=c=yellow:s=72x128:r=25",
+        f"sine=frequency={VOICE_HERTZ}:sample_rate=8000,volume=volume=0:enable='gte(t,2)'",
+        seconds=3,
+    )
+    # A talking clip whose lips move from 1.5 seconds in: red while quiet, then blue while
+    # the words are said.
+    talking_clip = generate(
+        tmp_path / "scene-2.mp4",
+        "color=c=red:s=72x128:r=25,drawbox=c=blue:t=fill:enable='gte(t,1.5)'",
+        f"sine=frequency={VOICE_HERTZ}:sample_rate=8000,volume=volume=0:enable='lt(t,1.5)'",
+        seconds=3,
+    )
+    planned = assembly.cuts(
+        [
+            (1, 1, 3.0, [{"text": "Look", "start": 0.0, "end": 2.0}], "", True, 2.0),
+            (2, 2, 3.0, [{"text": "Hi.", "start": 0.1, "end": 2.9}], "", False, 3.0),
+        ]
+    )
+    ad = tmp_path / "ad.mp4"
+
+    assembly.join(
+        list(zip([broll_clip, talking_clip], planned, strict=True)),
+        ad,
+        music=music(tmp_path, seconds=10),
+        drawn=[],
+    )
+
+    # The talking voice starts at 2, over the B-roll's last second, and lasts 3 seconds; the
+    # B-roll picture plays to 3, then the talking picture, a second in, to 5.
+    assert assembly.seconds_of(ad) == pytest.approx(5, abs=0.1)
+    made = ad.read_bytes()
+    assert colour_at(made, 2.5) == "yellow"
+    # Its words start 1.5 seconds into the talking clip: 3.5 into the ad, where its lips
+    # start moving.
+    assert [colour_at(made, at) for at in (3.25, 3.75)] == ["red", "blue"]
+    quiet = loudness(made, "voice", between=(2.1, 3.4))
+    assert loudness(made, "voice", between=(0, 1.9)) > quiet + 30
+    assert loudness(made, "voice", between=(3.6, 4.9)) > quiet + 30
+
+
+def test_a_broll_picture_that_ends_the_ad_plays_its_end_over_the_music_only(
+    tmp_path: Path,
+) -> None:
+    broll_clip = generate(
+        tmp_path / "scene-1.mp4",
+        "color=c=yellow:s=72x128:r=25",
+        f"sine=frequency={VOICE_HERTZ}:sample_rate=8000,volume=volume=0:enable='gte(t,2)'",
+        seconds=5,
+    )
+    planned = assembly.cuts(
+        [(1, 1, 5.0, [{"text": "Look", "start": 0.0, "end": 2.0}], "", True, 2.0)]
+    )
+    ad = tmp_path / "ad.mp4"
+
+    assembly.join([(broll_clip, planned[0])], ad, music=music(tmp_path, seconds=7), drawn=[])
+
+    assert assembly.seconds_of(ad) == pytest.approx(5, abs=0.1)
+    made = ad.read_bytes()
+    assert colour_at(made, 4.5) == "yellow"
+    assert loudness(made, "music", between=(2.5, 4.9)) > -40
+    assert (
+        loudness(made, "voice", between=(0, 1.9)) > loudness(made, "voice", between=(2.5, 4.9)) + 30
+    )
+
+
+def test_a_talking_scene_said_entirely_over_a_broll_picture_shows_none_of_its_own(
+    tmp_path: Path,
+) -> None:
+    clips = [
+        clip(tmp_path, "scene-1", seconds=3, colour="yellow"),
+        clip(tmp_path, "scene-2", seconds=1, colour="red"),
+        clip(tmp_path, "scene-3", seconds=2, colour="blue"),
+    ]
+    planned = assembly.cuts(
+        [
+            (1, 1, 3.0, [{"text": "Look", "start": 0.0, "end": 2.0}], "", True, 2.0),
+            (2, 2, 1.0, [{"text": "Hi.", "start": 0.1, "end": 0.9}], "", False, 1.0),
+            (3, 3, 2.0, [{"text": "Bye.", "start": 0.1, "end": 1.9}], "", False, 2.0),
+        ]
+    )
+    ad = tmp_path / "ad.mp4"
+
+    assembly.join(
+        list(zip(clips, planned, strict=True)), ad, music=music(tmp_path, seconds=7), drawn=[]
+    )
+
+    # Scene 2 is said from 2 to 3, under the B-roll's last second: its red is never seen.
+    assert assembly.seconds_of(ad) == pytest.approx(5, abs=0.1)
+    made = ad.read_bytes()
+    assert [colour_at(made, at) for at in (2.5, 3.5, 4.5)] == ["yellow", "blue", "blue"]
+    assert loudness(made, "voice", between=(0.1, 4.9)) > -40
+
+
 def test_captions_are_timed_from_where_each_scene_plays_in_the_ad() -> None:
     # Scene 2's clip has a second of silence before its words, and is kept from 0.9 seconds
     # in; that part plays from 4.2 seconds into the ad.
     cuts = [
-        assembly.Cut(scene=1, clip=1, clip_start=0.0, clip_end=4.2, start=0.0, end=4.2, overlay=""),
-        assembly.Cut(scene=2, clip=2, clip_start=0.9, clip_end=3.1, start=4.2, end=6.4, overlay=""),
+        a_cut(1, picture=(0.0, 4.2, 0.0, 4.2)),
+        a_cut(2, picture=(0.9, 3.1, 4.2, 6.4)),
     ]
     words = [
         [
@@ -167,11 +290,17 @@ def test_a_time_is_written_as_the_subtitle_format_reads_it(seconds: float, writt
 
 
 def a_scene(
-    words: list[dict[str, Any]], *, seconds: float, broll: bool = False
-) -> tuple[int, int, float, list[dict[str, Any]], str, bool]:
-    """One scene for `cuts`: its number, its clip's id, how long the clip lasts, the words
-    heard in it, its overlay, and whether it shows the product rather than the person."""
-    return (1, 1, seconds, words, "", broll)
+    words: list[dict[str, Any]],
+    *,
+    seconds: float,
+    broll: bool = False,
+    said_for: float | None = None,
+    number: int = 1,
+) -> tuple[int, int, float, list[dict[str, Any]], str, bool, float]:
+    """One scene for `cuts`: its number, its clip's id, how long the clip's picture lasts,
+    the words heard in it, its overlay, whether it shows the product rather than the person,
+    and how long its line's audio lasts: as long as the clip, unless `said_for`."""
+    return (number, number, seconds, words, "", broll, seconds if said_for is None else said_for)
 
 
 def heard(*timed: tuple[str, float, float]) -> list[dict[str, Any]]:
@@ -218,6 +347,128 @@ def test_a_scene_that_shows_the_product_keeps_its_whole_clip() -> None:
     )
 
 
+def talking(
+    number: int, seconds: float
+) -> tuple[int, int, float, list[dict[str, Any]], str, bool, float]:
+    """A talking scene whose words fill its clip of `seconds`, but for the margin kept either
+    side of them: the whole clip is kept for its words."""
+    return a_scene(
+        heard(("Hi", 0.1, 1.0), ("there.", 1.0, seconds - 0.1)), seconds=seconds, number=number
+    )
+
+
+def broll(
+    number: int, *, picture: float, said_for: float
+) -> tuple[int, int, float, list[dict[str, Any]], str, bool, float]:
+    """A scene showing the product whose clip's picture lasts `picture` seconds, longer than
+    its line's audio of `said_for`, as a B-roll clip kept whole does."""
+    return a_scene(
+        heard(("Look", 0.0, said_for)),
+        seconds=picture,
+        broll=True,
+        said_for=said_for,
+        number=number,
+    )
+
+
+Placed = tuple[tuple[float, float, float, float], tuple[float, float, float, float]]
+
+
+def placed(cuts: list[assembly.Cut]) -> list[Placed]:
+    """Where each part of each clip plays: its picture's (from, to in the clip, start, end in
+    the ad), then its voice's."""
+    return [
+        (
+            (cut.clip_start, cut.clip_end, cut.start, cut.end),
+            (cut.voice_clip_start, cut.voice_clip_end, cut.voice_start, cut.voice_end),
+        )
+        for cut in cuts
+    ]
+
+
+def test_the_next_line_starts_over_the_end_of_a_broll_clip_and_the_talking_scene_catches_up() -> (
+    None
+):
+    planned = assembly.cuts([talking(1, 4.0), broll(2, picture=5.0, said_for=3.5), talking(3, 3.0)])
+
+    assert placed(planned) == [
+        ((0.0, 4.0, 0.0, 4.0), (0.0, 4.0, 0.0, 4.0)),
+        # The B-roll picture plays whole, to 9 seconds; its voice ends at 7.5.
+        ((0.0, 5.0, 4.0, 9.0), (0.0, 3.5, 4.0, 7.5)),
+        # Scene 3's voice starts at 7.5, over the B-roll's end, and keeps all its sound; its
+        # picture skips the 1.5 seconds it is behind, so the lips match the words.
+        ((1.5, 3.0, 9.0, 10.5), (0.0, 3.0, 7.5, 10.5)),
+    ]
+
+
+def test_a_second_broll_scene_plays_from_its_start_and_the_talking_scene_skips_more() -> None:
+    planned = assembly.cuts(
+        [
+            broll(1, picture=5.0, said_for=4.0),
+            broll(2, picture=5.0, said_for=3.5),
+            talking(3, 3.0),
+        ]
+    )
+
+    assert placed(planned) == [
+        ((0.0, 5.0, 0.0, 5.0), (0.0, 4.0, 0.0, 4.0)),
+        # Its line starts at 4, over the end of the first clip, but its picture plays whole
+        # from 5: a second behind its line.
+        ((0.0, 5.0, 5.0, 10.0), (0.0, 3.5, 4.0, 7.5)),
+        # 2.5 seconds behind by now: the talking scene skips that much of its picture.
+        ((2.5, 3.0, 10.0, 10.5), (0.0, 3.0, 7.5, 10.5)),
+    ]
+
+
+def test_a_broll_scene_that_ends_the_ad_plays_its_end_over_the_music_only() -> None:
+    planned = assembly.cuts([talking(1, 4.0), talking(2, 3.0), broll(3, picture=5.0, said_for=1.5)])
+
+    assert placed(planned)[-1] == ((0.0, 5.0, 7.0, 12.0), (0.0, 1.5, 7.0, 8.5))
+
+
+def test_a_talking_scene_shorter_than_the_overlap_is_skipped_and_the_rest_carried_on() -> None:
+    planned = assembly.cuts([broll(1, picture=5.0, said_for=3.0), talking(2, 1.0), talking(3, 3.0)])
+
+    assert placed(planned) == [
+        ((0.0, 5.0, 0.0, 5.0), (0.0, 3.0, 0.0, 3.0)),
+        # Said while the B-roll still plays: none of its picture is seen.
+        ((1.0, 1.0, 5.0, 5.0), (0.0, 1.0, 3.0, 4.0)),
+        # Still a second behind: scene 3 skips it.
+        ((1.0, 3.0, 5.0, 7.0), (0.0, 3.0, 4.0, 7.0)),
+    ]
+
+
+def test_a_broll_clip_a_little_shorter_than_its_line_holds_its_last_frame_to_its_end() -> None:
+    planned = assembly.cuts([broll(1, picture=3.4, said_for=3.5), talking(2, 2.0)])
+
+    assert placed(planned) == [
+        ((0.0, 3.4, 0.0, 3.5), (0.0, 3.5, 0.0, 3.5)),
+        ((0.0, 2.0, 3.5, 5.5), (0.0, 2.0, 3.5, 5.5)),
+    ]
+
+
+def test_clips_as_long_as_their_voice_play_picture_and_voice_together() -> None:
+    planned = assembly.cuts([talking(1, 4.0), broll(2, picture=3.5, said_for=3.5), talking(3, 3.0)])
+
+    assert [picture for picture, _ in placed(planned)] == [
+        (0.0, 4.0, 0.0, 4.0),
+        (0.0, 3.5, 4.0, 7.5),
+        (0.0, 3.0, 7.5, 10.5),
+    ]
+    assert [picture for picture, _ in placed(planned)] == [voice for _, voice in placed(planned)]
+
+
+def test_captions_follow_the_voice_and_not_the_picture_after_a_broll_scene() -> None:
+    planned = assembly.cuts([broll(1, picture=5.0, said_for=3.0), talking(2, 3.0)])
+    words = [heard(("Look", 0.0, 3.0)), heard(("Hi", 0.1, 1.0), ("there.", 1.0, 2.9))]
+
+    assert assembly.captions(planned, words) == [
+        assembly.Caption(text="Look", start=0.0, end=3.0),
+        # Scene 2's words are said from 3 seconds into the ad, while the B-roll still plays.
+        assembly.Caption(text="Hi there.", start=3.1, end=5.9),
+    ]
+
+
 def texts(timed: list[dict[str, Any]]) -> list[str]:
     return [word["text"] for word in timed]
 
@@ -255,9 +506,7 @@ def test_the_script_is_timed_by_the_words_heard_where_they_are_heard_differently
     # The words heard as written keep their own times.
     assert timed[5] == {"text": "Men's", "start": 1.7, "end": 1.94}
     assert timed[-1] == {"text": "parfum.", "start": 5.58, "end": 6.06}
-    cut = assembly.Cut(
-        scene=1, clip=1, clip_start=0.0, clip_end=6.2, start=0.0, end=6.2, overlay=""
-    )
+    cut = a_cut(1, picture=(0.0, 6.2, 0.0, 6.2))
     assert [caption.text for caption in assembly.captions([cut], [timed])][:2] == [
         "This is Beardbrand",
         "Fox Hunt Men's",
@@ -281,9 +530,7 @@ def test_a_price_is_captioned_as_the_script_writes_it() -> None:
     timed = assembly.timed_script(line, words)
 
     assert texts(timed) == line.split()
-    cut = assembly.Cut(
-        scene=1, clip=1, clip_start=0.0, clip_end=4.4, start=0.0, end=4.4, overlay=""
-    )
+    cut = a_cut(1, picture=(0.0, 4.4, 0.0, 4.4))
     last = assembly.captions([cut], [timed])[-1]
     assert (last.text, last.start, last.end) == ("fourteen ninety-nine.", 3.14, 4.28)
 

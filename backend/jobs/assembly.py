@@ -2,7 +2,12 @@
 so there is no silence between scenes, and the parts are joined with ffmpeg, with the music
 under the voice, captions of the script's words, timed as they were spoken, along the
 bottom, and each scene's overlay along the top while it plays. A clip made with no sound
-gets its voice laid over it here first."""
+gets its voice laid over it here first.
+
+A clip's picture and its voice are placed apart (the early cut): the voice never stops, each
+line starting where the last one ends, while a scene showing the product plays its whole
+picture, past the end of its line. The next line is said over that end, and a talking scene
+after it skips the start of its picture by as much, so its lips match its words."""
 
 import difflib
 import json
@@ -70,8 +75,11 @@ CLIP_SHORT_BY_AT_MOST_SECONDS = 0.1
 
 @dataclass(frozen=True)
 class Cut:
-    """The part of a scene's clip the ad keeps, where it plays in the ad, in seconds, and
-    the scene's overlay, drawn while it plays: blank for none."""
+    """The part of a scene's clip's picture the ad keeps and where it plays in the ad, the
+    same for its voice, in seconds, and the scene's overlay, drawn while its picture plays:
+    blank for none. A picture that plays longer than the part kept holds its last frame; one
+    that plays not at all (start and end the same) is said entirely over the scene before.
+    """
 
     scene: int
     clip: int
@@ -80,6 +88,10 @@ class Cut:
     start: float
     end: float
     overlay: str
+    voice_clip_start: float
+    voice_clip_end: float
+    voice_start: float
+    voice_end: float
 
 
 @dataclass(frozen=True)
@@ -96,27 +108,59 @@ class AssemblyFailed(Exception):
 
 
 def cuts(
-    scenes: Sequence[tuple[int, int, float, list[dict[str, Any]], str, bool]],
+    scenes: Sequence[tuple[int, int, float, list[dict[str, Any]], str, bool, float]],
 ) -> list[Cut]:
-    """Where to cut each scene's clip, and where each part plays once they are joined, from
-    each scene's number, its clip's id, how long the clip lasts, the words heard in it, its
-    overlay, and whether it shows the product rather than the person talking. A talking
-    scene's clip is kept from its first word to its last, with MARGIN_SECONDS either side,
-    or NUMBER_MARGIN_SECONDS after a last word with a digit in it. A scene showing the
-    product keeps its whole clip, so its motion plays out after the words."""
+    """Where to cut each scene's clip, and where its picture and its voice play once they
+    are joined, from each scene's number, its clip's id, how long the clip's picture lasts,
+    the words heard in it, its overlay, whether it shows the product rather than the person
+    talking, and how long its line's audio lasts.
+
+    The voices play one after another with no gap. A talking scene's voice is kept from its
+    first word to its last, with MARGIN_SECONDS either side, or NUMBER_MARGIN_SECONDS after
+    a last word with a digit in it. A scene showing the product keeps its whole voice, and
+    its whole picture, so its motion plays out after the words, from where the last picture
+    ended: the next line is said over that end. A talking scene's picture plays alongside
+    its voice, so its lips match its words: it skips as much of its start as the pictures
+    before it run past their voices, all of it if that is more than it lasts, the rest then
+    skipped by the scene after it. A clip whose picture lasts as long as its voice plays
+    them together."""
     planned: list[Cut] = []
-    for scene, clip, seconds, words, overlay, broll in scenes:
+    # Where the next voice starts in the ad, and the next picture: never before the voice.
+    voice_at = picture_at = 0.0
+    for scene, clip, seconds, words, overlay, broll, said_for in scenes:
         if broll:
+            voice_clip_start, voice_clip_end = 0.0, said_for
             clip_start, clip_end = 0.0, seconds
+            voice_end = round(voice_at + said_for, 3)
+            # A clip a little shorter than its line holds its last frame to the line's end.
+            end = round(max(picture_at + seconds, voice_end), 3)
         else:
             last = words[-1]
             said_a_number = any(character.isdigit() for character in last["text"])
             margin = NUMBER_MARGIN_SECONDS if said_a_number else MARGIN_SECONDS
-            clip_start = round(max(0.0, words[0]["start"] - MARGIN_SECONDS), 3)
-            clip_end = round(min(seconds, last["end"] + margin), 3)
-        start = planned[-1].end if planned else 0.0
-        end = round(start + clip_end - clip_start, 3)
-        planned.append(Cut(scene, clip, clip_start, clip_end, start, end, overlay))
+            voice_clip_start = round(max(0.0, words[0]["start"] - MARGIN_SECONDS), 3)
+            voice_clip_end = round(min(seconds, last["end"] + margin), 3)
+            voice_end = round(voice_at + voice_clip_end - voice_clip_start, 3)
+            behind = round(picture_at - voice_at, 3)
+            clip_start = round(min(voice_clip_start + behind, voice_clip_end), 3)
+            clip_end = voice_clip_end
+            end = max(picture_at, voice_end)
+        planned.append(
+            Cut(
+                scene=scene,
+                clip=clip,
+                clip_start=clip_start,
+                clip_end=clip_end,
+                start=picture_at,
+                end=end,
+                overlay=overlay,
+                voice_clip_start=voice_clip_start,
+                voice_clip_end=voice_clip_end,
+                voice_start=voice_at,
+                voice_end=voice_end,
+            )
+        )
+        voice_at, picture_at = voice_end, end
     return planned
 
 
@@ -211,12 +255,13 @@ def _spread(words: Sequence[str], start: float, end: float) -> list[dict[str, An
 def captions(cuts: Sequence[Cut], words: Sequence[list[dict[str, Any]]]) -> list[Caption]:
     """The ad's captions, from the timed words of each cut's clip: up to CAPTION_WORDS at a
     time, split as evenly as that allows, never running from one scene into the next, and
-    timed from where the cut plays in the ad rather than from the start of its clip."""
+    timed from where the cut's voice plays in the ad rather than from the start of its clip:
+    captions follow the voice, not the picture."""
     drawn: list[Caption] = []
     for cut, heard in zip(cuts, words, strict=True):
         # A word's time is measured from the start of its clip; the ad's clock differs from
-        # that by however much of the clip was cut away, and by when the cut plays.
-        shift = cut.start - cut.clip_start
+        # that by however much of the clip's voice was cut away, and by when the voice plays.
+        shift = cut.voice_start - cut.voice_clip_start
         groups = math.ceil(len(heard) / CAPTION_WORDS)
         size, extra = divmod(len(heard), groups)
         at = 0
@@ -226,8 +271,8 @@ def captions(cuts: Sequence[Cut], words: Sequence[list[dict[str, Any]]]) -> list
             drawn.append(
                 Caption(
                     text=" ".join(word["text"] for word in said),
-                    start=round(max(cut.start, said[0]["start"] + shift), 3),
-                    end=round(min(cut.end, said[-1]["end"] + shift), 3),
+                    start=round(max(cut.voice_start, said[0]["start"] + shift), 3),
+                    end=round(min(cut.voice_end, said[-1]["end"] + shift), 3),
                 )
             )
     return drawn
@@ -261,11 +306,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 def write_text_to_draw(drawn: Sequence[Caption], parts: Sequence[Cut], into: Path) -> None:
     """Write the text on the ad as an ASS file for ffmpeg to draw, at `into`: the captions,
-    and each part's overlay for as long as the part plays."""
+    and each part's overlay for as long as its picture plays."""
     lines = [TEXT_STYLES]
     lines += [_shown("Caption", caption.text, caption.start, caption.end) for caption in drawn]
     lines += [
-        _shown("Overlay", part.overlay, part.start, part.end) for part in parts if part.overlay
+        _shown("Overlay", part.overlay, part.start, part.end)
+        for part in parts
+        if part.overlay and part.end > part.start
     ]
     into.write_text("".join(lines), encoding="utf-8")
 
@@ -316,24 +363,41 @@ def music_filters(music_seconds: float, ad_seconds: float) -> str:
 def join(
     parts: Sequence[tuple[Path, Cut]], into: Path, *, music: Path, drawn: Sequence[Caption]
 ) -> None:
-    """Cut each clip file to its part and join the parts, in order, with the music under
-    the voice, the captions drawn along the bottom and each part's overlay along the top,
-    into the finished ad at `into`."""
+    """Cut each clip file to its part's picture and voice, join the pictures, in order, and
+    the voices, in order, apart, as each plays at its own time, and put them together with
+    the music under the voice, the captions drawn along the bottom and each part's overlay
+    along the top, into the finished ad at `into`. The ad lasts as long as its picture."""
     inputs: list[str] = []
     filters: list[str] = []
-    joined = ""
+    pictures: list[str] = []
+    voices: list[str] = []
     for number, (clip, cut) in enumerate(parts):
         inputs += ["-i", str(clip)]
-        keep = f"start={cut.clip_start}:end={cut.clip_end}"
         # Each part's clock starts again from 0, so the parts play one after another, at the
-        # one size and rate the ad is made at.
+        # one size and rate the ad is made at. Each is cut to the frames between where it
+        # starts and ends in the ad, counted from the ad's start, so the pictures never drift
+        # from the voices, which are joined apart: its last frame is held for any it lacks.
+        frames = round(cut.end * FRAME_RATE) - round(cut.start * FRAME_RATE)
+        if frames > 0:
+            held = max(0.0, cut.end - cut.start - (cut.clip_end - cut.clip_start))
+            filters.append(
+                f"[{number}:v]trim=start={cut.clip_start}:end={cut.clip_end},"
+                f"setpts=PTS-STARTPTS,"
+                f"tpad=stop_mode=clone:stop_duration={round(held + 2 / FRAME_RATE, 3)},"
+                f"scale={FRAME_WIDTH}:{FRAME_HEIGHT},fps={FRAME_RATE},"
+                f"trim=end_frame={frames}[v{number}]"
+            )
+            pictures.append(f"[v{number}]")
+        # A voice whose clip's sound runs out early is made up with silence, so the voices
+        # after it still start on time.
         filters.append(
-            f"[{number}:v]trim={keep},setpts=PTS-STARTPTS,"
-            f"scale={FRAME_WIDTH}:{FRAME_HEIGHT},fps={FRAME_RATE}[v{number}]"
+            f"[{number}:a]atrim=start={cut.voice_clip_start}:end={cut.voice_clip_end},"
+            f"asetpts=PTS-STARTPTS,"
+            f"apad=whole_dur={round(cut.voice_end - cut.voice_start, 3)}[a{number}]"
         )
-        filters.append(f"[{number}:a]atrim={keep},asetpts=PTS-STARTPTS[a{number}]")
-        joined += f"[v{number}][a{number}]"
-    filters.append(f"{joined}concat=n={len(parts)}:v=1:a=1[joined][voice]")
+        voices.append(f"[a{number}]")
+    filters.append(f"{''.join(pictures)}concat=n={len(pictures)}:v=1:a=0[joined]")
+    filters.append(f"{''.join(voices)}concat=n={len(voices)}:v=0:a=1[said]")
     # ffmpeg reads the text to draw from a file beside the ad, whose path has nothing to
     # escape.
     text = into.parent / "text.ass"
@@ -342,7 +406,9 @@ def join(
     inputs += ["-i", str(music)]
     ad_seconds = parts[-1][1].end
     filters.append(f"[{len(parts)}:a]{music_filters(seconds_of(music), ad_seconds)}[music]")
-    # The ad lasts as long as the voice; the levels set above are kept, not evened out.
+    # A picture that plays on past the last line plays over the music only.
+    filters.append(f"[said]apad=whole_dur={ad_seconds}[voice]")
+    # The ad lasts as long as its picture; the levels set above are kept, not evened out.
     filters.append("[voice][music]amix=inputs=2:duration=first:normalize=0[a]")
     _ffmpeg(
         *inputs,

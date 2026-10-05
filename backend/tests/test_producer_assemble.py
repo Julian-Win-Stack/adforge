@@ -187,6 +187,11 @@ def test_the_dead_air_between_scenes_is_cut_on_the_word_timings(
             "start": 0.0,
             "end": 4.2,
             "overlay": "Kiln & Co",
+            # Its voice plays where its picture does: no scene shows the product.
+            "voice_clip_start": 0.9,
+            "voice_clip_end": 5.1,
+            "voice_start": 0.0,
+            "voice_end": 4.2,
         },
         {
             "scene": 2,
@@ -196,6 +201,10 @@ def test_the_dead_air_between_scenes_is_cut_on_the_word_timings(
             "start": 4.2,
             "end": 7.9,
             "overlay": "",
+            "voice_clip_start": 0.9,
+            "voice_clip_end": 4.6,
+            "voice_start": 4.2,
+            "voice_end": 7.9,
         },
         {
             "scene": 3,
@@ -205,6 +214,10 @@ def test_the_dead_air_between_scenes_is_cut_on_the_word_timings(
             "start": 7.9,
             "end": 10.1,
             "overlay": "$24.00",
+            "voice_clip_start": 0.9,
+            "voice_clip_end": 3.1,
+            "voice_start": 7.9,
+            "voice_end": 10.1,
         },
     ]
 

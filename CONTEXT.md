@@ -79,7 +79,7 @@ What was heard in a line's audio, word by word with when each was said, exactly 
 _Avoid_: Captions, subtitles
 
 **Caption**:
-A few of a line's words drawn along the bottom of the finished ad while they are said: the words as the line writes them, each timed from when the transcript heard it. Timed from where the scene plays in the ad.
+A few of a line's words drawn along the bottom of the finished ad while they are said: the words as the line writes them, each timed from when the transcript heard it. Timed from where the scene's line is said in the ad, which can be over the end of the scene before's picture.
 _Avoid_: Subtitle, lower third
 
 **Overlay**:
