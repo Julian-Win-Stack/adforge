@@ -39,7 +39,7 @@ Questions reading the code raised, now items 32 to 40 in the logic doc:
 
 ## Settled with the user on 2026-10-05
 
-Items 42 to 51 in the logic doc. Where they change a phase below, the phase is updated.
+Items 42 to 52 in the logic doc. Where they change a phase below, the phase is updated.
 
 1. "Describe it in words" is not offered in build 1: the question offers "attach a photo"
    or "use without proven result" (item 42).
