@@ -48,7 +48,7 @@ from jobs.planning import (  # noqa: E402
 
 HERE = Path(__file__).resolve().parent / "should-ask"
 # Copied to docs/runs/broll-tests/ once a person has judged its "look" runs.
-RESULTS = Path("/app/media/broll-test/should-ask/results.json")
+RESULTS = Path(os.environ.get("MEDIA_ROOT", "/app/media")) / "broll-test/should-ask/results.json"
 RUNS = 3
 
 
@@ -78,7 +78,7 @@ CASES = [
         url="https://mollyssuds.com/products/toilet-bowl-cleaner",
         right="ask",
         why="The shop owner wants the gel squeezed under the rim; no photo shows the gel.",
-        photos=[1, 2],
+        photos=[1, 3],  # Photo 2 is photo 1 again.
         gap_words=["gel", "liquid", "squeez", "out of the bottle", "inside"],
         said=["Show the cleaner being squeezed under the rim."],
     ),
@@ -90,7 +90,26 @@ CASES = [
         why="A pan does a job you can see, and its page has had every line on how it's used cut.",
         photos=[1, 2, 3],
         gap_words=["how it's used", "how to use", "how you use", "used", "cook", "bake", "roast"],
-        to_fill="cut: every line saying how it's used",
+        # Every line saying how it's used or what to cook in it; the title keeps "Dutch oven".
+        cut=[
+            "Oven-safe",
+            "placing it in the oven",
+            "What to Cook",
+            "Beef bourguignon",
+            "Mashed potatoes",
+            "Congee",
+            "stovetop",
+            "stoves",
+            "burner",
+            "cook for one",
+            "cooking",
+            "casserole",
+            "pancakes",
+            "in the oven",
+            "oven-friendly",
+            "why they cook",
+            "what bake this weekend",
+        ],
     ),
     Case(
         name="3 showcase, no how to use",
@@ -98,7 +117,7 @@ CASES = [
         url="https://www.stevemadden.com/products/bkenzo-gold",
         right="don't ask",
         why='A bag is shown at its best: it needs no "how to use".',
-        photos=[1, 2, 3, 4],
+        photos=[1, 3, 4],  # 5 and 6 repeat photo 1; 2 is a close-up of it.
     ),
     Case(
         name="4 everything present",
@@ -106,7 +125,7 @@ CASES = [
         url="https://shop.momofuku.com/products/chili-crunch-sauce",
         right="don't ask",
         why="The page says what to put it on, and a photo shows it out of the jar.",
-        photos=[1, 2, 3],
+        photos=[1, 3, 4],  # Photo 2 is photo 1 again; 3 shows it in a bowl.
     ),
     Case(
         name="5 serum, one photo, texture",
@@ -124,7 +143,7 @@ CASES = [
         url="https://www.meritbeauty.com/products/flush-balm",
         right="don't ask",
         why="A photo shows the blush on a cheek, which is the needed photo.",
-        photos=[1, 2, 3],
+        photos=[1, 3, 4],  # Photo 2 is photo 1 again; 4 is the blush on a cheek.
     ),
     Case(
         name="7 power bank charging a phone",
@@ -132,8 +151,8 @@ CASES = [
         url="https://www.anker.com/products/a1229",
         right="don't ask",
         why="The page says it charges phones; a phone is an ordinary thing, never missing.",
-        photos=[1],
-        to_fill="photos: only the power bank on its own",
+        photos=[1],  # The black power bank on its own.
+        said=["Show it charging a phone."],
     ),
     Case(
         name="8 no photo clearly shows the product",
@@ -141,8 +160,7 @@ CASES = [
         url="https://www.anker.com/products/a1229",
         right="ask",
         why="The only photos sent show the power bank among other products or hidden.",
-        photos=[],
-        to_fill="photos: only ones where it isn't clearly seen",
+        photos=[6, 12],  # Charts of the phones it charges, the power bank small below.
         gap_words=["photo", "picture", "clearly"],
     ),
 ]
@@ -159,7 +177,9 @@ def collect() -> None:
         read = page.parse(firecrawl.as_download(firecrawl.read_page(url), url))
         (folder / "page.txt").write_text(read.text)
         for number, photo_url in enumerate(read.photo_urls, start=1):
-            got = page.download(photo_url, max_bytes=page.MAX_PHOTO_BYTES, what="photo")
+            # Some shops refuse their photos over plain http, which their pages link to.
+            secure = photo_url.replace("http://", "https://", 1)
+            got = page.download(secure, max_bytes=page.MAX_PHOTO_BYTES, what="photo")
             extension = mimetypes.guess_extension(got.content_type) or ".jpg"
             (folder / f"photo-{number}{extension}").write_bytes(got.content)
         print(f"{product}: {len(read.photo_urls)} photos")

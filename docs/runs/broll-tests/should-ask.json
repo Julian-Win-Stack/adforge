@@ -1,0 +1,131 @@
+[
+  {
+    "case": "1 needed photo missing",
+    "run": 1,
+    "verdict": "look",
+    "question": "Which price should the ad say: the $9.99 one-time purchase or the $9.49 subscription price?"
+  },
+  {
+    "case": "1 needed photo missing",
+    "run": 2,
+    "verdict": "pass",
+    "question": "Should the ad say $9.99 one-time or $9.49 subscription, and will you attach a photo showing the gel or go ahead without one so I can explain how I\u2019d show the squeeze shot instead?"
+  },
+  {
+    "case": "1 needed photo missing",
+    "run": 3,
+    "verdict": "pass",
+    "question": "Should I use the $9.99 one-time price or $9.49 subscription price, and will you attach a photo of the gel coming out\u2014or go ahead without one so I can propose how to show it for your approval?"
+  },
+  {
+    "case": "2 does a job, no how to use",
+    "run": 1,
+    "verdict": "fail"
+  },
+  {
+    "case": "2 does a job, no how to use",
+    "run": 2,
+    "verdict": "fail"
+  },
+  {
+    "case": "2 does a job, no how to use",
+    "run": 3,
+    "verdict": "fail"
+  },
+  {
+    "case": "3 showcase, no how to use",
+    "run": 1,
+    "verdict": "pass"
+  },
+  {
+    "case": "3 showcase, no how to use",
+    "run": 2,
+    "verdict": "pass"
+  },
+  {
+    "case": "3 showcase, no how to use",
+    "run": 3,
+    "verdict": "pass"
+  },
+  {
+    "case": "4 everything present",
+    "run": 1,
+    "verdict": "pass"
+  },
+  {
+    "case": "4 everything present",
+    "run": 2,
+    "verdict": "look",
+    "question": "The page says both \u201cSold Out\u201d and \u201cIn Stock\u201d; which availability is correct?"
+  },
+  {
+    "case": "4 everything present",
+    "run": 3,
+    "verdict": "pass"
+  },
+  {
+    "case": "5 serum, one photo, texture",
+    "run": 1,
+    "verdict": "pass",
+    "question": "Could you attach a photo showing a drop of the serum on a fingertip, or should I go ahead without that shot and explain an alternative using the bottle photo?"
+  },
+  {
+    "case": "5 serum, one photo, texture",
+    "run": 2,
+    "verdict": "pass",
+    "question": "Could you attach a photo showing a drop of the serum, or should I go ahead without one and propose an alternative using the bottle photo?"
+  },
+  {
+    "case": "5 serum, one photo, texture",
+    "run": 3,
+    "verdict": "pass",
+    "question": "Should I say $27 one-time or the 10%-off subscription price, and will you attach a photo of the serum drop on a fingertip or go ahead without one so I can suggest an alternative shot for approval?"
+  },
+  {
+    "case": "6 blush, cheek photo",
+    "run": 1,
+    "verdict": "pass"
+  },
+  {
+    "case": "6 blush, cheek photo",
+    "run": 2,
+    "verdict": "pass"
+  },
+  {
+    "case": "6 blush, cheek photo",
+    "run": 3,
+    "verdict": "pass"
+  },
+  {
+    "case": "7 power bank charging a phone",
+    "run": 1,
+    "verdict": "pass"
+  },
+  {
+    "case": "7 power bank charging a phone",
+    "run": 2,
+    "verdict": "pass"
+  },
+  {
+    "case": "7 power bank charging a phone",
+    "run": 3,
+    "verdict": "pass"
+  },
+  {
+    "case": "8 no photo clearly shows the product",
+    "run": 1,
+    "verdict": "fail"
+  },
+  {
+    "case": "8 no photo clearly shows the product",
+    "run": 2,
+    "verdict": "look",
+    "question": "Is this version\u2019s USB-C port an output up to 15W, or is it input-only?"
+  },
+  {
+    "case": "8 no photo clearly shows the product",
+    "run": 3,
+    "verdict": "pass",
+    "question": "Could you attach a clear photo of the power bank by itself?"
+  }
+]
