@@ -1,12 +1,15 @@
 """The small functions that reading a page is built from, each with its tricky inputs."""
 
 import io
+import json
+from typing import Any
 
 import PIL.Image
 import PIL.ImageDraw
 import pytest
 
-from jobs.page_text import match_back
+from jobs.page import DECLARED_DATA_HEADING
+from jobs.page_text import PRICES_HEADING, match_back, record_prices, without_prices
 from jobs.photos import Copies, best_url
 
 from .conftest import photo
@@ -72,6 +75,102 @@ def test_a_copied_sentence_is_kept_only_if_the_page_says_it(
     copied: list[str], kept: list[str]
 ) -> None:
     assert match_back(copied, PAGE) == kept
+
+
+def option(title: str, amount: object, currency: object = "USD", **more: object) -> dict[str, Any]:
+    """One variant of a Firecrawl product record, with its price."""
+    return {"title": title, "price": {"amount": amount, "currency": currency}, **more}
+
+
+SHADES = [option(f"Shade {n}", 32) for n in range(1, 39)]
+
+
+@pytest.mark.parametrize(
+    ("variants", "prices"),
+    [
+        pytest.param(
+            [option("Full Size (10 fl oz)", 34), option("Travel Size (3 fl oz)", 16)],
+            "34.00 USD: Full Size (10 fl oz)\n16.00 USD: Travel Size (3 fl oz)",
+            id="one line for each price",
+        ),
+        pytest.param(
+            [option("Cream", 445), option("Navy", 445.0), option("Large", "595.00")],
+            "445.00 USD: Cream; Navy\n595.00 USD: Large",
+            id="options at one price share its line",
+        ),
+        pytest.param(
+            SHADES,
+            "32.00 USD: Shade 1; Shade 2; Shade 3; Shade 4; Shade 5; Shade 6; Shade 7; "
+            "Shade 8; Shade 9; Shade 10; and 28 more",
+            id="a long list of options is cut short",
+        ),
+        pytest.param(
+            [option("Cream", 445, sale={"originalPrice": {"amount": 675, "currency": "USD"}})],
+            "445.00 USD, was 675.00 USD: Cream",
+            id="a sale keeps its price before",
+        ),
+        pytest.param([option("Mug", 1299.5, "JPY")], "1,299.50 JPY: Mug", id="any currency"),
+        pytest.param([option("Mug", 24, None)], "24.00: Mug", id="no currency"),
+        pytest.param(
+            [option("Mug", None), option("Mug", "ask us"), option("Mug", True), {"title": "Mug"}],
+            "",
+            id="no amount that is a number",
+        ),
+        pytest.param([], "", id="no variants"),
+    ],
+)
+def test_a_records_prices_are_listed_with_the_options_sold_at_each(
+    variants: list[dict[str, Any]], prices: str
+) -> None:
+    listed = record_prices({"title": "Mug", "variants": variants})
+    assert listed == (f"{PRICES_HEADING}{prices}" if prices else "")
+
+
+def test_a_record_without_a_variants_list_has_no_prices() -> None:
+    assert record_prices({"title": "Mug", "variants": "none"}) == ""
+    assert record_prices({}) == ""
+
+
+def test_declared_data_keeps_everything_but_its_prices() -> None:
+    mug = {
+        "@type": "Product",
+        "name": "Stoneware Mug",
+        "brand": {"@type": "Brand", "name": "Kiln & Co"},
+        "offers": [
+            {
+                "@type": "Offer",
+                "price": "24.00",
+                "priceCurrency": "USD",
+                "priceValidUntil": "2026-12-31",
+                "priceSpecification": {"@type": "UnitPriceSpecification", "price": 24},
+                "availability": "https://schema.org/InStock",
+            },
+            {"@type": "AggregateOffer", "lowPrice": 19, "highPrice": 24, "offerCount": 2},
+        ],
+    }
+    bowl = {"@type": "Product", "name": "Bowl", "offers": {"price": 30, "sku": "B1"}}
+    declared = DECLARED_DATA_HEADING + "\n".join(json.dumps(p) for p in (mug, bowl))
+
+    kept = without_prices(declared)
+
+    heading, listed = kept[: len(DECLARED_DATA_HEADING)], kept[len(DECLARED_DATA_HEADING) :]
+    assert heading == DECLARED_DATA_HEADING
+    assert [json.loads(line) for line in listed.split("\n")] == [
+        {
+            "@type": "Product",
+            "name": "Stoneware Mug",
+            "brand": {"@type": "Brand", "name": "Kiln & Co"},
+            "offers": [
+                {"@type": "Offer", "availability": "https://schema.org/InStock"},
+                {"@type": "AggregateOffer", "offerCount": 2},
+            ],
+        },
+        {"@type": "Product", "name": "Bowl", "offers": {"sku": "B1"}},
+    ]
+
+
+def test_no_declared_data_stays_none() -> None:
+    assert without_prices("") == ""
 
 
 CLOUDINARY = "https://res.cloudinary.com/shop/image/upload"

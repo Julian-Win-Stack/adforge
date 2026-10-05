@@ -254,10 +254,17 @@ def _as_marked(job: Job, answer: _Answer) -> firecrawl.Marked | firecrawl.Firecr
     )
 
 
-def copy_page_text(job: Job, download: page.Download, product_page: page.ProductPage) -> str:
+def copy_page_text(
+    job: Job,
+    download: page.Download,
+    product_page: page.ProductPage,
+    record: dict[str, Any] | firecrawl.FirecrawlFailed | None,
+) -> str:
     """This product's own text: what a model copies out of the page about it, each sentence
-    matched back to the page, then the product data the page declares. However little is
-    kept is used. A failed copy call posts a notice and is raised: the page isn't read."""
+    matched back to the page, then the prices in Firecrawl's `record` of it, then the product
+    data the page declares without its prices: the record's are the only ones that count.
+    However little is kept is used. A failed copy call posts a notice and is raised: the
+    page isn't read."""
     if download.markdown is not None:
         given = page_text.shorten_links(download.markdown)
         on_the_page = page_text.markdown_to_text(download.markdown)
@@ -286,7 +293,9 @@ def copy_page_text(job: Job, download: page.Download, product_page: page.Product
             Message.Level.PROBLEM,
         )
         raise
-    return "\n".join(page_text.match_back(copied.passages, on_the_page)) + product_page.declared
+    prices = page_text.record_prices(record) if isinstance(record, dict) else ""
+    copied_text = "\n".join(page_text.match_back(copied.passages, on_the_page))
+    return copied_text + prices + page_text.without_prices(product_page.declared)
 
 
 @dataclass(frozen=True)
@@ -310,7 +319,7 @@ def copy_and_pick(job: Job, read: PageRead, product_page: page.ProductPage) -> t
     context = contextvars.copy_context()
     with ThreadPoolExecutor(max_workers=1) as pool:
         picking = pool.submit(context.run, _closing_its_connection, pick_photos, job, read)
-        text = copy_page_text(job, read.download, product_page)
+        text = copy_page_text(job, read.download, product_page, read.record)
     return text, picking.result()
 
 

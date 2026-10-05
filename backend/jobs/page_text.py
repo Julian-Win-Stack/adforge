@@ -7,12 +7,17 @@ are those the test scored with (copy-test/scripts/copy_text.py, text-test/script
 scripts/missing.py)."""
 
 import difflib
+import json
+import math
 import re
+from typing import Any
 from urllib.parse import urlparse
 
 from pydantic import BaseModel
 
 from gateway.types import Handoff
+
+from .page import DECLARED_DATA_HEADING
 
 # How alike a copied sentence and a page sentence must be, from 0 to 1, to count as the
 # same sentence with small changes, such as a fixed typo. The page's sentence is kept.
@@ -25,6 +30,14 @@ CANDIDATES = 25
 LONGEST_SENTENCE = 300
 # Bits shorter than this, normalised, aren't sentences: "Size:", "$34", "Add to cart".
 SHORTEST_SENTENCE = 12
+
+# Heading of the prices from Firecrawl's record of the product, which follow the copied text.
+# They are the only prices the planner is given: the copy model leaves prices out, as a page
+# shows other products' prices too, and the declared data's prices are taken out. Without a
+# record, the planner asks the shop owner the price.
+PRICES_HEADING = "\n\nPrices in the shop's own record of the product:\n"
+# How many options are named on a price's line; the rest are counted.
+OPTIONS_NAMED = 10
 
 # A markdown image, ![alt](url), and a markdown link, [text](url), its text kept in group 1.
 IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
@@ -159,3 +172,74 @@ def match_back(passages: list[str], page: str) -> list[str]:
             if found not in kept:
                 kept.append(found)
     return kept
+
+
+def record_prices(record: dict[str, Any]) -> str:
+    """PRICES_HEADING and each price in Firecrawl's `record` of the product, one line each,
+    with the price it was before a sale and the options sold at it, or "" if it gives none.
+    An option whose amount isn't a number is left out."""
+    variants = record.get("variants")
+    options: dict[str, list[str]] = {}
+    for variant in variants if isinstance(variants, list) else []:
+        if not isinstance(variant, dict):
+            continue
+        price = _money(variant.get("price"))
+        if price is None:
+            continue
+        sale = variant.get("sale")
+        before = _money(sale.get("originalPrice")) if isinstance(sale, dict) else None
+        if before is not None:
+            price += f", was {before}"
+        names = options.setdefault(price, [])
+        name = str(variant.get("title") or "")
+        if name and name not in names:
+            names.append(name)
+    if not options:
+        return ""
+    lines = []
+    for price, names in options.items():
+        named = "; ".join(names[:OPTIONS_NAMED])
+        if len(names) > OPTIONS_NAMED:
+            named += f"; and {len(names) - OPTIONS_NAMED} more"
+        lines.append(f"{price}: {named}" if named else price)
+    return PRICES_HEADING + "\n".join(lines)
+
+
+def _money(price: Any) -> str | None:
+    """A record's price, {"amount": 34, "currency": "USD"}, as "34.00 USD"; None if its
+    amount isn't a number."""
+    if not isinstance(price, dict):
+        return None
+    amount = price.get("amount")
+    if isinstance(amount, bool) or not isinstance(amount, (int, float, str)):
+        return None
+    try:
+        number = float(amount)
+    except TypeError, ValueError:
+        return None
+    if not math.isfinite(number):
+        return None
+    written = f"{number:,.2f}"
+    currency = price.get("currency")
+    return f"{written} {currency}" if isinstance(currency, str) and currency else written
+
+
+def without_prices(declared: str) -> str:
+    """The product data a page declares, DECLARED_DATA_HEADING and one JSON object a line,
+    with every field whose name has "price" in it taken out, such as price, lowPrice and
+    priceCurrency, so only the record's prices count; "" stays ""."""
+    if not declared:
+        return ""
+    listed = declared.removeprefix(DECLARED_DATA_HEADING)
+    products = [
+        json.dumps(_priceless(json.loads(line)), ensure_ascii=False) for line in listed.split("\n")
+    ]
+    return DECLARED_DATA_HEADING + "\n".join(products)
+
+
+def _priceless(data: Any) -> Any:
+    if isinstance(data, dict):
+        return {k: _priceless(v) for k, v in data.items() if "price" not in str(k).casefold()}
+    if isinstance(data, list):
+        return [_priceless(item) for item in data]
+    return data

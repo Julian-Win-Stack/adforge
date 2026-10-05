@@ -216,8 +216,9 @@ def test_the_planner_is_handed_the_page_text_the_target_the_photo_count_and_the_
 
     handoff = ModelCall.objects.get(purpose="plan_ad").handoff
     assert "Hand-thrown, holds 350 ml, dishwasher safe." in handoff["page_text"]
-    # The price is only in the declared data: the copy model skips the price in the words.
-    assert '"price": "24.00"' in handoff["page_text"]
+    # The mug's page has no record of the product, so the planner is given no price: the copy
+    # model skips the price in the words, and the declared data's price is taken out.
+    assert "24.00" not in handoff["page_text"]
     # Stock is only in the page's structured data, never in the words a visitor sees.
     assert "InStock" in handoff["page_text"]
     del handoff["page_text"]

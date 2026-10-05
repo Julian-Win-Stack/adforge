@@ -26,6 +26,7 @@ from gateway.fake import FakeModel, Outcome, turn
 from gateway.models import ModelCall
 from jobs.models import Job
 from jobs.page import DECLARED_DATA_HEADING
+from jobs.page_text import PRICES_HEADING
 from jobs.work import NO_FIRECRAWL, keep_photo
 
 from .conftest import (
@@ -93,10 +94,12 @@ def test_the_page_text_and_the_html_exactly_as_served_are_kept(
     assert "InStock" in job.page_text_full
     check = ModelCall.objects.get(purpose="check_page")
     assert check.handoff["page_text"] == job.page_text_full
-    # The copy model copied every line here; "$24.00" is too short to be a sentence, and the
-    # price is still in the declared data.
+    # The copy model copied every line here; "$24.00" is too short to be a sentence. With no
+    # record of the product there is no price for the planner, which asks the shop owner:
+    # the declared data keeps its stock, not its price.
     assert job.page_text.startswith("Stoneware Mug\nHand-thrown, holds 350 ml, dishwasher safe.")
-    assert '"price": "24.00"' in job.page_text
+    assert "24.00" not in job.page_text and "priceCurrency" not in job.page_text
+    assert '"availability": "https://schema.org/InStock"' in job.page_text
     served = PRODUCT_PAGE.format(side=httpserver.url_for("/cdn/mug-side.png")).encode()
     assert file_store.read(job.page_html_key) == served
 
@@ -503,14 +506,20 @@ def test_a_page_selling_two_products_keeps_only_this_ones_text_and_photos(
     assert 'I23: alt="An ivory OUAI Fine Hair Conditioner' in picker.handoff["numbered_pictures"]
     assert "links to /products/fine-hair-conditioner" in picker.handoff["numbered_pictures"]
     # The sentence on the page is kept, the reworded one is kept as the page wrote it, and
-    # the made-up one is dropped. The price is only in the declared data that follows.
+    # the made-up one is dropped. The prices follow, each option's from the shop's record,
+    # then the declared data.
     words, heading, declared = job.page_text.partition(DECLARED_DATA_HEADING)
-    assert words == f"{ON_THE_PAGE}\n{PAGE_WROTE}"
-    assert heading and '"price": 34.0' in declared
+    assert words == (
+        f"{ON_THE_PAGE}\n{PAGE_WROTE}{PRICES_HEADING}"
+        "34.00 USD: Full Size (10 fl oz)\n16.00 USD: Travel Size (3 fl oz)"
+    )
+    # The declared data keeps all but its price: only the record's prices count.
+    assert heading and '"brand"' in declared and "price" not in declared.casefold()
     # The product the page says pairs well with this one is on the page, and not in its text.
     assert "Fine Hair Conditioner" in job.page_text_full
     assert "Fine Hair Conditioner" not in job.page_text
-    assert job.page_text_full.endswith(heading + declared)
+    # The full page text, kept for debugging, keeps the declared price.
+    assert '"price": 34.0' in job.page_text_full.partition(DECLARED_DATA_HEADING)[2]
     # Firecrawl read the page, so the shop itself was only asked for the photos.
     assert firecrawl.asked("page") == [
         {"url": shampoo_page_url, "formats": ["markdown", "rawHtml"], "timeout": 300_000}
@@ -579,9 +588,12 @@ def test_firecrawl_being_down_reads_the_page_plainly_and_says_so(
     # The photos are still picked off Firecrawl's marked screenshot.
     assert read_page_result().endswith("Kept 1 product photo.")
     job = Job.objects.get()
-    # The words a visitor sees, from the plain download, and the declared data.
+    # The words a visitor sees, from the plain download, the record's prices, and the
+    # declared data without its price.
     assert f"{ON_THE_PAGE}\n" in job.page_text
-    assert '"price": 34.0' in job.page_text
+    words, heading, declared = job.page_text.partition(DECLARED_DATA_HEADING)
+    assert f"{PRICES_HEADING}34.00 USD: Full Size (10 fl oz)" in words
+    assert heading and "price" not in declared.casefold()
     assert notices(api, session_id) == [
         (
             "problem",
@@ -837,6 +849,8 @@ def test_a_page_with_no_product_record_is_picked_without_one(
         "Part 3 of 3 (from 2400 px down the page):",
     ]
     assert notices(api, session_id) == [notice]
+    # With no record there are no prices from it: the declared data follows the copied text.
+    assert PRICES_HEADING not in Job.objects.get().page_text
 
 
 @pytest.mark.parametrize(
