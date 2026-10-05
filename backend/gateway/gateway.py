@@ -297,7 +297,7 @@ def call_model[Out: BaseModel](
             purpose=purpose,
             job=job,
             images=_shown(request),
-            any_images=images_may_move,
+            images_may_move=images_may_move,
         )
         if answered is not None:
             return output.model_validate(answered)
@@ -744,10 +744,10 @@ def _answered_before(
     session: Session | None = None,
     job: Job | None = None,
     images: list[dict[str, str]] | None = None,
-    any_images: bool = False,
+    images_may_move: bool = False,
 ) -> dict[str, Any] | None:
     """What a call for `purpose` answered when handed exactly `handoff` and shown exactly
-    `images`, or any images with `any_images`, if one was paid for. Every call is recorded
+    `images`, or any images with `images_may_move`, if one was paid for. Every call is recorded
     as soon as it succeeds, so an answer a worker stopped before it could keep is handed back
     rather than paid for again."""
     calls = ModelCall.objects.filter(
@@ -755,7 +755,7 @@ def _answered_before(
         outcome=ModelCall.Outcome.SUCCEEDED,
         handoff=handoff.model_dump(mode="json"),
     )
-    if not any_images:
+    if not images_may_move:
         calls = calls.filter(images=images or [])
     if session is not None:
         calls = calls.filter(session=session)

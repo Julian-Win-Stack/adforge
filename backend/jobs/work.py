@@ -28,6 +28,7 @@ from gateway import catalog
 from gateway.gateway import (
     IMAGE_TYPE_NAMES,
     IMAGE_TYPES,
+    UnreadableImage,
     call_model,
     collect_clip,
     design_voice,
@@ -547,9 +548,9 @@ def keep_photo(
     )
 
 
-def note_face(job: Job, photo: str, key: str) -> bool:
+def note_face(job: Job, source: str, key: str) -> bool:
     """Whether the photo in the file store at `key` shows a stranger's face, by a call of its
-    own: for a photo the picker never saw. `photo` names it by where it came from, so a page
+    own: for a photo the picker never saw. `source` names it by where it came from, so a page
     read again pays for nothing twice though its photos are stored again under new keys. A
     failed call counts as a face, the safe side: such a photo is only used when no other shows
     what's needed. Nothing is said about it."""
@@ -558,13 +559,13 @@ def note_face(job: Job, photo: str, key: str) -> bool:
             job=job,
             purpose="note_face",
             instructions=photos.NOTE_FACE_INSTRUCTIONS,
-            handoff=photos.FaceNoteHandoff(photo=photo),
+            handoff=photos.FaceNoteHandoff(photo=source),
             output=photos.FaceNote,
             images=[Image("Photo", key)],
             pay_once=True,
             images_may_move=True,
         )
-    except UnusableReply, OutsideServiceDown:
+    except UnusableReply, OutsideServiceDown, UnreadableImage:
         return True
     return noted.has_face
 
