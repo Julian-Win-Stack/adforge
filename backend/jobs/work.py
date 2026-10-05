@@ -61,11 +61,14 @@ from . import assembly, firecrawl, page, page_text, photos
 from .checks import (
     FACT_CHECK_INSTRUCTIONS,
     LENGTH_ALLOWANCE_SECONDS,
+    LONGEST_BROLL_LINE_SECONDS,
     LONGEST_LINE_SECONDS,
+    MOST_BROLL_SHORTENINGS,
     MOST_REWRITES,
     REWRITE_INSTRUCTIONS,
     SHORTEN_INSTRUCTIONS,
     SHORTEN_LINE_INSTRUCTIONS,
+    FactCheck,
     FactCheckHandoff,
     LineToCheck,
     Problem,
@@ -795,23 +798,7 @@ def _needs_fixing(scene: Scene) -> bool:
 def _checked(job: Job, scenes: list[Scene], conversation: list[ChatMessage]) -> Asking | None:
     """Fact-check the scenes' lines and what they show, storing why each that failed did.
     When the page itself is unclear, gives back what to ask the user instead."""
-    showing = [scene.number for scene in scenes if scene.shows]
-    # What a scene shows may be supported by how the product looks in its photos. A script
-    # where the person talks throughout is checked on text alone.
-    photos = job.photos.filter(shows_product_colour=True) if showing else []
-    check = call_model(
-        job=job,
-        purpose="fact_check",
-        instructions=FACT_CHECK_INSTRUCTIONS,
-        handoff=FactCheckHandoff(
-            page_text=page.for_model(job.page_text),
-            conversation=conversation,
-            product_colour=job.product_colour,
-            lines=[_to_check(scene) for scene in scenes],
-        ),
-        output=fact_check_for([scene.number for scene in scenes], showing=showing),
-        images=[Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos],
-    )
+    check = _ask_fact_check(job, [_to_check(scene) for scene in scenes], conversation)
     if check.decision == "unclear":
         assert check.question is not None
         return Asking(about="unclear_page", question=check.question, reason=check.reason)
@@ -834,6 +821,32 @@ def _checked(job: Job, scenes: list[Scene], conversation: list[ChatMessage]) -> 
         )
         scene.save(update_fields=["fact_problems"])
     return None
+
+
+def _ask_fact_check(
+    job: Job, lines: list[LineToCheck], conversation: list[ChatMessage], *, pay_once: bool = False
+) -> FactCheck:
+    """Have `lines`, and what their scenes show, checked against the page and what the user
+    said. With `pay_once`, a check already made of these same lines is answered from its
+    record."""
+    showing = [line.scene for line in lines if line.shows]
+    # What a scene shows may be supported by how the product looks in its photos. A script
+    # where the person talks throughout is checked on text alone.
+    photos = job.photos.filter(shows_product_colour=True) if showing else []
+    return call_model(
+        job=job,
+        purpose="fact_check",
+        instructions=FACT_CHECK_INSTRUCTIONS,
+        handoff=FactCheckHandoff(
+            page_text=page.for_model(job.page_text),
+            conversation=conversation,
+            product_colour=job.product_colour,
+            lines=lines,
+        ),
+        output=fact_check_for([line.scene for line in lines], showing=showing),
+        images=[Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos],
+        pay_once=pay_once,
+    )
 
 
 def _to_check(scene: Scene) -> LineToCheck:
@@ -865,7 +878,9 @@ def _rewrite_line(job: Job, scene: Scene, conversation: list[ChatMessage]) -> No
     )
     scene.fact_problems[-1]["rewritten"] = True
     scene.change_line(rewrite.line, rewrite.shows or "")
-    scene.save(update_fields=["line", "shows", *BROLL_FIELDS, "status", "fact_problems"])
+    scene.save(
+        update_fields=["line", "shortened_from", "shows", *BROLL_FIELDS, "status", "fact_problems"]
+    )
 
 
 def _about_line(scene: Scene) -> Asking:
@@ -969,25 +984,42 @@ def _fit_line(job: Job, scene: Scene, words_per_second: float) -> Literal[False]
 
 
 def _shorten_line(job: Job, scene: Scene, words_per_second: float) -> None:
+    shortened = _shorter_line(
+        job, scene, most_words_in_a_line(words_per_second), _conversation(job)
+    )
+    # A new line is fact checked again.
+    scene.change_line(shortened)
+    scene.fact_checked = False
+    scene.fact_problems = []
+    scene.save(update_fields=["line", "shortened_from", "status", "fact_checked", "fact_problems"])
+
+
+def _shorter_line(
+    job: Job,
+    scene: Scene,
+    most_words: int,
+    conversation: list[ChatMessage],
+    *,
+    pay_once: bool = False,
+) -> str:
+    """Have the scene's line rewritten in at most `most_words`. With `pay_once`, a line
+    already shortened from this same script is answered from its record."""
     shortened = call_model(
         job=job,
         purpose="shorten_line",
         instructions=SHORTEN_LINE_INSTRUCTIONS,
         handoff=ShortenLineHandoff(
             page_text=page.for_model(job.page_text),
-            conversation=_conversation(job),
+            conversation=conversation,
             product_colour=job.product_colour,
             script=[_to_check(each) for each in job.scenes.all()],
             scene=scene.number,
-            most_words=most_words_in_a_line(words_per_second),
+            most_words=most_words,
         ),
         output=RewrittenLine,
+        pay_once=pay_once,
     )
-    # A new line is fact checked again.
-    scene.change_line(" ".join(shortened.line.split()))
-    scene.fact_checked = False
-    scene.fact_problems = []
-    scene.save(update_fields=["line", "status", "fact_checked", "fact_problems"])
+    return " ".join(shortened.line.split())
 
 
 def _shortened_since_the_user_spoke(job: Job) -> int:
@@ -1061,6 +1093,7 @@ def _shorten(job: Job, words_per_second: float) -> None:
                 scene.save(
                     update_fields=[
                         "line",
+                        "shortened_from",
                         "shows",
                         "overlay",
                         *BROLL_FIELDS,
@@ -1283,13 +1316,87 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
 
 def make_line_audio(step: SceneStep) -> ProducedItem:
     """Have the person's voice say the scene's line: the voice and the line as they were when
-    the step started. Gives back the audio, kept as the scene's next version.
+    the step started. Gives back the audio, kept as the scene's next version. A B-roll line
+    whose audio is too long for any clip is then shortened, or its scene is said to camera
+    instead (see `_fit_its_clip`).
 
     Run again, as after a worker stopped, it pays for nothing already paid for: audio made
     but not kept is kept rather than spoken again."""
-    made = step.produced.first()
-    if made is not None:
-        return made
+    audio = step.produced.first() or _speak_line(step)
+    _fit_its_clip(step, audio)
+    return audio
+
+
+def too_long_for_a_clip(step: SceneStep, audio: ProducedItem) -> bool:
+    """Whether a B-roll line's audio takes longer to say than any B-roll clip lasts."""
+    assert audio.seconds is not None, "a line's audio is measured when it's made"
+    return bool(step.shows) and audio.seconds > MOST_BROLL_SECONDS
+
+
+def _fit_its_clip(step: SceneStep, audio: ProducedItem) -> None:
+    """For a B-roll line whose audio is too long for any clip, before any clip is paid for:
+    shorten the line and fact check it again, so its audio is made again. Once it was
+    shortened MOST_BROLL_SHORTENINGS times, or if the shorter line fails the fact check,
+    the scene is said to camera instead, and the chat says why. Nobody is asked.
+
+    Run again, as after a worker stopped, it pays for nothing already paid for, and does
+    nothing once the scene has changed since the step started."""
+    if not too_long_for_a_clip(step, audio):
+        return
+    assert audio.seconds is not None
+    scene = Scene.objects.get(pk=step.scene_id)
+    if (scene.line, scene.shows) != (step.line, step.shows):
+        return
+    job = scene.job
+    # Shortenings at planning count too. This step's own, paid for before a restart, is
+    # used rather than counted.
+    shortened = (
+        job.model_calls.filter(
+            purpose="shorten_line",
+            outcome=ModelCall.Outcome.SUCCEEDED,
+            handoff__scene=scene.number,
+        )
+        .exclude(tool_call=step.tool_call)
+        .count()
+    )
+    if shortened >= MOST_BROLL_SHORTENINGS:
+        _say_it_to_camera(scene)
+        return
+    conversation = _conversation(job, until=step.started_at)
+    # At the pace this line was really said.
+    most_words = math.floor(LONGEST_BROLL_LINE_SECONDS * count_words(scene.line) / audio.seconds)
+    line = _shorter_line(job, scene, most_words, conversation, pay_once=True)
+    check = _ask_fact_check(
+        job,
+        [LineToCheck(scene=scene.number, line=line, shows=scene.shows)],
+        conversation,
+        pay_once=True,
+    )
+    if check.decision == "unclear" or check.lines[0].verdict != "ok":
+        _say_it_to_camera(scene)
+        return
+    was = [*scene.shortened_from, scene.line]
+    scene.change_line(line)
+    scene.shortened_from = was
+    scene.save(update_fields=["line", "shortened_from", "status"])
+
+
+def _say_it_to_camera(scene: Scene) -> None:
+    """Have the person say a B-roll scene's line to camera, as it stands, and tell the user
+    why: its line is too long for any B-roll clip."""
+    with transaction.atomic():
+        scene.change_line(scene.line, shows="")
+        scene.shortened_from = []
+        scene.save(update_fields=["shows", *BROLL_FIELDS, "shortened_from", "status"])
+        post_notice(
+            scene.job,
+            f"Scene {scene.number} couldn't be made as a product shot because its line is too "
+            "long for a clip, so it will be said to camera instead.",
+            Message.Level.INFO,
+        )
+
+
+def _speak_line(step: SceneStep) -> ProducedItem:
     scene = step.scene
     job = scene.job
     voice = step.made_from
@@ -1349,8 +1456,8 @@ def make_clip(step: SceneStep) -> ProducedItem:
     started for. Gives back the clip, kept as the scene's next version, and marks the scene
     finished. A scene that shows the product rather than the person talking is made with no
     sound, from its starting picture, in the fewest whole seconds that cover the audio; the
-    audio is then laid over it and it is cut to the audio's length. Either way, a clip lasts
-    as long as its audio.
+    audio is then laid over its start, and it is kept whole, as long as it was made. A
+    talking clip lasts as long as its audio.
 
     Run again, as after a worker stopped, it pays for nothing already paid for: a clip
     asked for is waited for rather than asked for again, and one fetched is kept rather
@@ -1385,8 +1492,11 @@ def make_clip(step: SceneStep) -> ProducedItem:
             job, making, handoff
         )
         file = collect_clip(job=job, purpose=collecting, video_id=video_id, when_slow=tell_its_slow)
+    # The talking video model makes a clip as long as the audio it speaks. A B-roll clip is
+    # kept whole, as long as it was made, with the audio laid over its start.
+    seconds = audio.seconds
     if isinstance(handoff, BrollClipHandoff):
-        file = _with_the_voice(file, audio)
+        file, seconds = _with_the_voice(file, audio)
     with transaction.atomic():
         clip = ProducedItem.objects.create(
             job=job,
@@ -1395,9 +1505,7 @@ def make_clip(step: SceneStep) -> ProducedItem:
             kind=ProducedItem.Kind.CLIP,
             version=_next_version(scene, ProducedItem.Kind.CLIP),
             file=file,
-            # The video model makes a clip as long as the audio it speaks, and a silent
-            # clip is cut to the audio laid over it.
-            seconds=audio.seconds,
+            seconds=seconds,
             made_from=audio,
             picture=picture,
         )
@@ -1472,10 +1580,10 @@ def _broll_clip_seconds(audio_seconds: float) -> int:
     return max(LEAST_BROLL_SECONDS, math.ceil(audio_seconds - 1e-6))
 
 
-def _with_the_voice(file: str, audio: ProducedItem) -> str:
-    """A silent clip with the audio laid over it, cut to the audio's length, kept in the
-    file store. Raises ClipFailed if the clip is shorter than the audio: the line would
-    run on past the picture."""
+def _with_the_voice(file: str, audio: ProducedItem) -> tuple[str, float]:
+    """A silent clip kept whole with the audio laid over its start, then silence to its
+    end, kept in the file store, and how long it lasts. Raises ClipFailed if the clip is
+    shorter than the audio: the line would run on past the picture."""
     assert audio.seconds is not None, "a line's audio is measured when it's made"
     with tempfile.TemporaryDirectory() as folder:
         silent = Path(folder) / "silent.mp4"
@@ -1489,8 +1597,8 @@ def _with_the_voice(file: str, audio: ProducedItem) -> str:
                 f"{round(audio.seconds, 1):g} seconds of audio"
             )
         voiced = Path(folder) / "clip.mp4"
-        assembly.lay_voice_over(silent, voice, voiced, seconds=audio.seconds)
-        return file_store.save("clip.mp4", voiced.read_bytes())
+        seconds = assembly.lay_voice_over(silent, voice, voiced)
+        return file_store.save("clip.mp4", voiced.read_bytes()), seconds
 
 
 def _clip_asked_for(

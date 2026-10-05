@@ -208,10 +208,12 @@ def test_a_broll_scene_planned_before_it_had_labels_still_makes_its_ad(
 
 
 def test_a_scene_that_shows_the_product_plays_in_its_turn(assembled: ProducedItem) -> None:
+    # Scene 2's 5-second clip plays whole, past its line, while scene 3's line is said
+    # over its end: scene 3's line is shorter than that, so none of its picture shows.
     assert [(cut["scene"], cut["start"], cut["end"]) for cut in assembled.cuts] == [
         (1, 0.0, 4.0),
-        (2, 4.0, 7.5),
-        (3, 7.5, 9.0),
+        (2, 4.0, 9.0),
+        (3, 9.0, 9.0),
     ]
     # Scene 2's clip, the second the video model made, is lime.
     assert colour_at(read(assembled.file), 5.75) == "lime"
@@ -225,13 +227,14 @@ def test_a_scene_that_shows_the_product_plays_its_whole_clip(
 
     ad = assemble_through_the_chat(fake_model, steps, say)
 
-    # Scene 2's clip lasts as long as its audio, 3.5 seconds of words and 2 of silence, and
-    # all of it is kept, so its motion plays out. The talking scenes around it are cut to
-    # their words.
+    # Scene 2's audio, 3.5 seconds of words and 2 of silence, is covered by a 6-second
+    # clip, and all of it is kept, so its motion plays out. The talking scenes around it are
+    # cut to their words, scene 3 skipping the start of its picture by as much as scene 2's
+    # picture runs on past its words.
     assert [(cut["scene"], cut["clip_start"], cut["clip_end"]) for cut in ad.cuts] == [
         (1, 0.9, 5.1),
-        (2, 0.0, 5.5),
-        (3, 0.9, 3.1),
+        (2, 0.0, 6.0),
+        (3, 1.4, 3.1),
     ]
     assert colour_at(read(ad.file), 9.5) == "lime"
 
@@ -439,24 +442,11 @@ def test_the_clip_is_asked_for_as_the_fewest_whole_seconds_that_cover_its_line(
     clip_of_scene_2(fake_model, steps, say)
 
     assert clips_asked("seconds") == [asked_for]
-    assert [clip.seconds for clip in ProducedItem.objects.filter(kind="clip")] == [said_in]
-
-
-def test_a_line_too_long_for_boreal_h3_fails_its_clip_before_anything_is_paid_for(
-    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    fake_model.words_per_second = 7 / 15.5
-    made_ready(fake_model, steps, say, (2,))
-
-    clip_of_scene_2(fake_model, steps, say)
-
-    assert list(ModelCall.objects.filter(purpose="make_broll_clip")) == []
-    step = SceneStep.objects.get(kind="clip")
-    assert (step.status, step.reason) == (
-        "failed",
-        "the video model couldn't make the clip (its line takes 15.5 seconds to say, and the "
-        "B-roll video model makes clips of at most 15 seconds).",
-    )
+    # Kept whole, at the length the video model made it.
+    kept = ProducedItem.objects.filter(kind="clip")
+    assert [(clip.seconds, round(video(read(clip.file))[2], 1)) for clip in kept] == [
+        (asked_for, asked_for)
+    ]
 
 
 def test_a_clip_creatify_rejects_fails_its_step_with_creatifys_reason(
@@ -505,40 +495,48 @@ def test_the_clip_is_asked_to_move_as_planned_with_nothing_made_up(
     ]
 
 
-def test_the_kept_clip_carries_its_lines_voice(
-    fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    clip_of_scene_2(fake_model, steps, say)
-
-    # The video model's clip is silent; the voice is heard all the way through the one kept.
-    assert [silences(clip) for clip in kept_clips()] == [[]]
-
-
 @pytest.mark.parametrize(
-    ("line", "said_in"),
+    ("said_in", "made"),
     [
-        pytest.param(LINE_2, 3.5, id="cut from a longer clip"),
-        # 4 words at the fake voice's 2 a second: the clip comes back just as long.
-        pytest.param("Tea fills the mug.", 2.0, id="as long as the clip"),
+        pytest.param(4.2, 5, id="4.2 seconds of audio in a 5-second clip"),
+        pytest.param(6.3, 7, id="6.3 seconds of audio in a 7-second clip"),
     ],
 )
-def test_the_kept_clip_lasts_as_long_as_its_line(
+def test_the_kept_clip_is_whole_with_its_voice_at_its_start_and_silence_after(
     fake_model: FakeModel,
     checked: None,
     steps: HeldSteps,
     say: Callable[..., None],
-    line: str,
     said_in: float,
+    made: int,
 ) -> None:
-    Scene.objects.filter(number=2).update(line=line)
+    fake_model.words_per_second = 7 / said_in
     made_ready(fake_model, steps, say, (2,))
 
     clip_of_scene_2(fake_model, steps, say)
 
-    kept = ProducedItem.objects.filter(kind="clip")
-    assert [(clip.seconds, round(video(read(clip.file))[2], 1)) for clip in kept] == [
-        (said_in, said_in)
-    ]
+    (clip,) = ProducedItem.objects.filter(kind="clip")
+    assert (clip.seconds, round(video(read(clip.file))[2], 1)) == (made, made)
+    # The video model's clip is silent: the voice is heard from its start to the end of
+    # the line, then it is silent to its end (give or take a frame of sound).
+    ((silent_from, silent_to),) = silences(read(clip.file))
+    assert (silent_from, round(silent_to)) == (said_in, made)
+    # The line's audio keeps its own length.
+    assert clip.made_from is not None and clip.made_from.seconds == said_in
+
+
+def test_a_clip_as_long_as_its_line_carries_its_voice_throughout(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    # 10 words at the fake voice's 2 a second: the 5-second clip comes back just as long.
+    Scene.objects.filter(number=2).update(
+        line="Tea fills the mug, and its glaze shines right through."
+    )
+    made_ready(fake_model, steps, say, (2,))
+
+    clip_of_scene_2(fake_model, steps, say)
+
+    assert [silences(clip) for clip in kept_clips()] == [[]]
 
 
 def test_a_clip_shorter_than_its_line_fails_its_step(
@@ -602,7 +600,9 @@ def test_a_clip_fetched_before_the_worker_stopped_isnt_paid_for_again(restarted:
 
 
 def test_a_clip_fetched_before_the_worker_stopped_still_gets_its_voice(restarted: None) -> None:
-    assert [silences(clip) for clip in kept_clips()] == [[]]
+    # Scene 2's 3.5 seconds of line, then silence to the end of its 5-second clip.
+    ((clip,),) = [silences(clip) for clip in kept_clips()]
+    assert (clip[0], round(clip[1])) == (3.5, 5)
 
 
 def test_a_clip_asked_of_the_old_boreal_before_the_switch_fails_once_collected(

@@ -87,7 +87,7 @@ The on-screen text for one scene, such as the price, written by the producer whe
 _Avoid_: Caption, graphic, text layer, on-screen text
 
 **Clip**:
-A scene's starting picture animated to speak its line's audio: the same audio its transcript was heard in, so the clip lasts exactly as long. A B-roll scene's is made with no sound, then has the audio laid over it and is cut to the audio's length. Made only once the picture is made and the audio heard, for the line as it stands. A scene whose clip is made is finished. Not shown to the user on its own.
+A scene's starting picture animated to speak its line's audio: the same audio its transcript was heard in, so the clip lasts exactly as long. A B-roll scene's is made with no sound, in the fewest whole seconds that cover the audio (at least 5), then has the audio laid over its start and is kept whole, silent after the line. A B-roll line whose audio is too long for any clip is shortened before a clip is paid for, or, after 3 shortenings, said to camera instead. Made only once the picture is made and the audio heard, for the line as it stands. A scene whose clip is made is finished. Not shown to the user on its own.
 _Avoid_: Video, render, shot
 
 **Finished ad**:

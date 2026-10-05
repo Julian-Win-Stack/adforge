@@ -19,6 +19,12 @@ MOST_REWRITES = 2
 # The longest a scene's line may take to say. The video model makes clips of at most
 # MOST_CLIP_SECONDS, and the voice's speed is measured on the whole script, not per line.
 LONGEST_LINE_SECONDS = 18
+# The longest a B-roll scene's line may take to say: its clip lasts at most
+# MOST_BROLL_SECONDS, and a second is left over for the next line to start over its end.
+LONGEST_BROLL_LINE_SECONDS = 14
+# How many times a B-roll scene's line is shortened, over the job's whole life, before the
+# scene is said to camera instead.
+MOST_BROLL_SHORTENINGS = 3
 
 FACT_CHECK_INSTRUCTIONS = """\
 You check the script of a short video ad against the product page it was written from. \

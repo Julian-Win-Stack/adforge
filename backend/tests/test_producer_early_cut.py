@@ -3,18 +3,14 @@ next line has already started over it, driven through the chat. The producer's m
 scene models are faked at the gateway, but the clips are real tiny videos and ffmpeg runs
 for real.
 
-Until B-roll clips are kept whole, a clip is cut to its line when it is kept, so the clip is
-lengthened in the file store here, as a kept-whole clip will be: its voice at its start and
-silence after, its last frame held."""
+A B-roll clip is kept whole: its voice at its start and silence after. The fake video
+model makes each as long as it is asked for, the fewest whole seconds that cover its line,
+at least 5; set `clips_short_by` to have them come back shorter."""
 
-import subprocess
-import tempfile
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 import pytest
-from django.conf import settings
 
 from adforge import file_store
 from gateway.fake import FakeModel, turn
@@ -111,34 +107,11 @@ def run(fake_model: FakeModel, steps: HeldSteps) -> None:
     steps.run_held()
 
 
-def kept_whole(scene: int, *, seconds: float) -> None:
-    """Scene `scene`'s clip, kept at `seconds` rather than cut to its line, as a B-roll clip
-    kept whole is: its voice at its start, then silence to its end."""
-    clip = ProducedItem.objects.get(kind="clip", scene__number=scene)
-    with tempfile.TemporaryDirectory() as folder:
-        cut, whole = Path(folder) / "cut.mp4", Path(folder) / "whole.mp4"
-        cut.write_bytes(file_store.read(clip.file))
-        subprocess.run(
-            [settings.FFMPEG, "-hide_banner", "-loglevel", "error", "-i", str(cut)]
-            + ["-vf", f"tpad=stop_mode=clone:stop_duration={seconds}"]
-            + ["-af", f"apad=whole_dur={seconds}", "-t", str(seconds), str(whole)],
-            check=True,
-            capture_output=True,
-            timeout=60,
-        )
-        clip.file = file_store.save("clip.mp4", whole.read_bytes())
-    clip.seconds = seconds
-    clip.save()
-
-
 def assembled_with(
-    fake_model: FakeModel,
-    steps: HeldSteps,
-    say: Callable[..., None],
-    broll: dict[int, float],
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], broll: set[int]
 ) -> ProducedItem:
     """The finished ad, made through the chat, each of `broll`'s scenes showing the mug
-    with its clip kept whole at the seconds given."""
+    with its clip kept whole."""
     calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
     scenes = tuple(Job.objects.get().scenes.order_by("number").values_list("number", flat=True))
     calling(
@@ -157,8 +130,6 @@ def assembled_with(
     run(fake_model, steps)
     calling(fake_model, say, *[("make_clip", {"scene": scene}) for scene in scenes])
     run(fake_model, steps)
-    for scene, seconds in broll.items():
-        kept_whole(scene, seconds=seconds)
     calling(fake_model, say, ("assemble_ad", {}))
     return Job.objects.get().produced.get(kind="finished_ad")
 
@@ -203,20 +174,23 @@ def captions_follow_the_voice(ad: ProducedItem) -> None:
 def test_talking_then_broll_then_talking(
     fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    ad = assembled_with(fake_model, steps, say, {2: 4.5})
+    # Scene 2's 3.5 seconds of line are asked 5 seconds of clip, which comes back 4.
+    fake_model.clips_short_by = 1.0
+    ad = assembled_with(fake_model, steps, say, {2})
 
+    assert ProducedItem.objects.get(kind="clip", scene__number=2).seconds == 4.0
     assert placed(ad) == [
         ((0.0, 4.0, 0.0, 4.0), (0.0, 4.0, 0.0, 4.0)),
-        # The B-roll picture plays whole, to 8.5 seconds; its line ends at 7.5.
-        ((0.0, 4.5, 4.0, 8.5), (0.0, 3.5, 4.0, 7.5)),
+        # The B-roll picture plays whole, to 8 seconds; its line ends at 7.5.
+        ((0.0, 4.0, 4.0, 8.0), (0.0, 3.5, 4.0, 7.5)),
         # Scene 3's line starts at 7.5, over the B-roll's end, with all its sound; its
-        # picture skips the second it is behind, so its lips match its words.
-        ((1.0, 1.5, 8.5, 9.0), (0.0, 1.5, 7.5, 9.0)),
+        # picture skips the half second it is behind, so its lips match its words.
+        ((0.5, 1.5, 8.0, 9.0), (0.0, 1.5, 7.5, 9.0)),
     ]
     assert ad.seconds == 9.0
     heard = file_store.read(ad.file)
     assert video(heard)[2] == pytest.approx(9.0, abs=0.1)
-    assert [colour_at(heard, at) for at in (2.0, 6.0, 8.25, 8.75)] == [
+    assert [colour_at(heard, at) for at in (2.0, 6.0, 7.75, 8.25)] == [
         "red",
         "lime",
         "lime",
@@ -228,21 +202,24 @@ def test_talking_then_broll_then_talking(
     assert ad.captions[-1] == {"text": "Yours for $24.00.", "start": 7.5, "end": 9.0}
     # Scene 3's overlay shows while its picture plays, not while its line is said over
     # scene 2's picture, which has none.
-    assert [drawn_in(heard, at) for at in (8.25, 8.75)] == [{"bottom"}, {"top", "bottom"}]
+    assert [drawn_in(heard, at) for at in (7.75, 8.25)] == [{"bottom"}, {"top", "bottom"}]
 
 
 @pytest.mark.parametrize("the_plan", [a_plan_showing(2, 3, scenes=FOUR_SCENES)], indirect=True)
 def test_talking_then_broll_then_broll_then_talking(
     fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    ad = assembled_with(fake_model, steps, say, {2: 4.5, 3: 3.5})
+    # Scenes 2 and 3, of 3.5 and 3 seconds of line, are each asked 5 seconds of clip, which
+    # come back 4.
+    fake_model.clips_short_by = 1.0
+    ad = assembled_with(fake_model, steps, say, {2, 3})
 
     assert placed(ad) == [
         ((0.0, 4.0, 0.0, 4.0), (0.0, 4.0, 0.0, 4.0)),
-        ((0.0, 4.5, 4.0, 8.5), (0.0, 3.5, 4.0, 7.5)),
+        ((0.0, 4.0, 4.0, 8.0), (0.0, 3.5, 4.0, 7.5)),
         # Its line starts at 7.5, over the end of the first B-roll clip, but its picture
-        # plays from its start, at 8.5: a second behind its line.
-        ((0.0, 3.5, 8.5, 12.0), (0.0, 3.0, 7.5, 10.5)),
+        # plays from its start, at 8: half a second behind its line.
+        ((0.0, 4.0, 8.0, 12.0), (0.0, 3.0, 7.5, 10.5)),
         # A second and a half behind by now: the talking scene skips that much more of its
         # picture, so its lips match its words.
         ((1.5, 3.0, 12.0, 13.5), (0.0, 3.0, 10.5, 13.5)),
@@ -250,7 +227,7 @@ def test_talking_then_broll_then_broll_then_talking(
     assert ad.seconds == 13.5
     heard = file_store.read(ad.file)
     assert video(heard)[2] == pytest.approx(13.5, abs=0.1)
-    assert [colour_at(heard, at) for at in (8.25, 8.75, 11.75, 12.25)] == [
+    assert [colour_at(heard, at) for at in (7.75, 8.25, 11.75, 12.25)] == [
         "lime",
         "blue",
         "blue",
@@ -267,7 +244,8 @@ def test_talking_then_broll_then_broll_then_talking(
 def test_ending_on_broll(
     fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    ad = assembled_with(fake_model, steps, say, {3: 5.0})
+    # Scene 3's 1.5 seconds of line are covered by a 5-second clip, the shortest made.
+    ad = assembled_with(fake_model, steps, say, {3})
 
     assert placed(ad)[-1] == ((0.0, 5.0, 7.5, 12.5), (0.0, 1.5, 7.5, 9.0))
     # The ad runs to the end of its last picture.

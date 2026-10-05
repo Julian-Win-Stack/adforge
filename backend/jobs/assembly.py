@@ -423,25 +423,28 @@ def join(
     )
 
 
-def lay_voice_over(clip: Path, voice: Path, into: Path, *, seconds: float) -> None:
-    """Replace a clip's sound with `voice` and cut it to `seconds`, into the clip at `into`.
-    A clip a little shorter than that holds its last frame to the end."""
+def lay_voice_over(clip: Path, voice: Path, into: Path) -> float:
+    """Replace a clip's sound with `voice`, then silence to the clip's end, into the clip at
+    `into`: the clip is kept whole. A clip a little shorter than its voice holds its last
+    frame until the voice ends. Gives how long the clip at `into` lasts."""
+    seconds = max(seconds_of(clip), seconds_of(voice))
     _ffmpeg(
         "-i",
         str(clip),
         "-i",
         str(voice),
         "-filter_complex",
-        f"[0:v]tpad=stop_mode=clone:stop_duration={CLIP_SHORT_BY_AT_MOST_SECONDS}[v]",
+        f"[0:v]tpad=stop_mode=clone:stop_duration={CLIP_SHORT_BY_AT_MOST_SECONDS}[v];[1:a]apad[a]",
         "-map",
         "[v]",
         "-map",
-        "1:a",
+        "[a]",
         "-t",
         str(seconds),
         *ENCODED,
         str(into),
     )
+    return seconds
 
 
 def _ffmpeg(*arguments: str) -> None:

@@ -424,7 +424,16 @@ class RunPlanningChecks(Tool):
                 scene.change_line(scene.line, "")
             # The shop owner knows their product: the line they chose isn't checked again.
             scene.fact_checked = True
-            scene.save(update_fields=["line", "shows", *BROLL_FIELDS, "status", "fact_checked"])
+            scene.save(
+                update_fields=[
+                    "line",
+                    "shortened_from",
+                    "shows",
+                    *BROLL_FIELDS,
+                    "status",
+                    "fact_checked",
+                ]
+            )
         if self.length_choice is not None:
             job.length_choice = Job.LengthChoice(self.length_choice)
             job.save(update_fields=["length_choice"])
@@ -695,7 +704,10 @@ class MakeClip(Tool):
                 f"scene {scene.number} has no starting picture yet. Make its starting picture "
                 "first."
             )
-        picture = pictures.filter(step__line=scene.line, step__shows=scene.shows).last()
+        # A line shortened to fit its clip still shows what its picture was made for.
+        picture = pictures.filter(
+            step__line__in=[scene.line, *scene.shortened_from], step__shows=scene.shows
+        ).last()
         if picture is None:
             raise Refused(
                 f"scene {scene.number}'s starting picture was made for an earlier line, or for "

@@ -17,8 +17,14 @@ from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.gateway import charged_to
 from gateway.types import UnusableReply
-from jobs.models import ProducedItem, SceneStep
-from jobs.work import make_clip, make_line_audio, make_starting_picture, transcribe_line_audio
+from jobs.models import ProducedItem, Scene, SceneStep
+from jobs.work import (
+    make_clip,
+    make_line_audio,
+    make_starting_picture,
+    too_long_for_a_clip,
+    transcribe_line_audio,
+)
 
 from . import loop
 from .loop import EXPECTED_FAILURES, why_it_failed
@@ -176,6 +182,23 @@ def _picture_finished(step: SceneStep, picture: ProducedItem) -> str:
 
 
 def _audio_finished(step: SceneStep, audio: ProducedItem) -> str:
+    number = step.scene.number
+    # A B-roll line too long for any clip was shortened, or its scene is now said to camera:
+    # see make_line_audio. The shop owner isn't told: the chat says so if the scene changed.
+    scene = Scene.objects.get(pk=step.scene_id)
+    too_long = (
+        f"Background step finished: scene {number}'s line's audio takes {audio.seconds:g} "
+        "seconds to say, too long for any clip. "
+    )
+    if too_long_for_a_clip(step, audio) and not scene.shows:
+        return (
+            f"{too_long}Scene {number} is now a talking scene. Make its starting picture "
+            "again, then its audio and its clip."
+        )
+    if too_long_for_a_clip(step, audio) and step.line in scene.shortened_from:
+        return (
+            f"{too_long}Scene {number}'s line was shortened to fit its clip. Make its audio again."
+        )
     return (
         f"Background step finished: scene {step.scene.number}'s line's audio is ready "
         f"(version {audio.version}, {audio.seconds:g} seconds). It isn't shown to the shop "

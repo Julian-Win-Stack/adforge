@@ -178,11 +178,13 @@ def test_the_b_roll_scene_plays_in_its_turn_with_the_voice_heard_over_it(
     ad_made_through_the_chat: None,
 ) -> None:
     ads = Job.objects.get().produced.filter(kind="finished_ad")
-    # Scene 2 plays for its shortened line's 2.5 seconds, between scenes 1 and 3.
+    # Scene 2's 5-second clip plays whole, after scene 1, past its shortened line's 2.5
+    # seconds: scene 3's 1-second line is said over its end, so none of scene 3's picture
+    # shows.
     assert [(cut["scene"], cut["start"], cut["end"]) for ad in ads for cut in ad.cuts] == [
         (1, 0.0, 2.0),
-        (2, 2.0, 4.5),
-        (3, 4.5, 5.5),
+        (2, 2.0, 7.0),
+        (3, 7.0, 7.0),
     ]
     heard = read(ads.get().file)
     # Halfway through, it shows its own clip: the fake's clips are red, lime and blue in the

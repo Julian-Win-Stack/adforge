@@ -247,6 +247,13 @@ class Scene(models.Model):
         help_text="Why the fact check failed this line each time, oldest first. Two rewrites "
         "are tried before the user is asked.",
     )
+    shortened_from = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The lines this line was shortened from, oldest first, because their audio "
+        "was too long for a B-roll clip. A starting picture made for one of them still suits "
+        "it. Emptied when the line changes any other way.",
+    )
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PLANNED)
 
     class Meta:
@@ -265,6 +272,7 @@ class Scene(models.Model):
         scene, with no B-roll labels."""
         if line != self.line:
             self.line = line
+            self.shortened_from = []
             self.status = self.Status.PLANNED
         if shows is not None and shows != self.shows:
             self.shows = shows
