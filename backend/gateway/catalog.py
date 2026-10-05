@@ -19,6 +19,7 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "rewrite_line": "gpt-5.6-sol",
     "shorten_script": "gpt-5.6-sol",
     "shorten_line": "gpt-5.6-sol",
+    "lengthen_line": "gpt-5.6-sol",
     "draw_person": "gpt-image-2.5-sunburst",
     "choose_starting_picture": "gpt-5.6-sol",
     "choose_broll_picture": "gpt-5.6-sol",

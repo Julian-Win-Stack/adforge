@@ -347,12 +347,12 @@ class LineChoice(BaseModel):
 
 class RunPlanningChecks(Tool):
     """Check the script before anything is made from it: every line, and what each scene
-    shows, against the product page, then each line against the longest a scene can last,
-    and the whole script against the target length. A line that fails is rewritten, or
-    shortened, and checked again. Hands back what to ask the shop owner when a line still
-    fails after 2 rewrites or is still too long after 2 shortenings, when the page itself
-    is unclear, or when the script runs over the target. Once they have answered, run the
-    checks again with their choices."""
+    shows, against the product page, then each line against how long its scene can last,
+    and the whole script against the target length. A line that fails is rewritten,
+    shortened or lengthened, and checked again. Hands back what to ask the shop owner when a
+    line still fails after 2 rewrites, when a line the person says to camera is still too
+    long after 2 shortenings, when the page itself is unclear, or when the script runs over
+    the target. Once they have answered, run the checks again with their choices."""
 
     name = "run_planning_checks"
 

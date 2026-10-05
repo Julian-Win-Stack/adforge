@@ -31,16 +31,30 @@ from .conftest import (
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
 
-# The fake voice says 2 words a second, so the plan's lines of 8, 7 and 3 words take 4,
-# 3.5 and 1.5 seconds to say. Scenes 1 and 3 have an overlay, scene 2 none. The first scene
-# is always the person talking to camera.
+# The fake voice says 2 words a second. A B-roll line takes at least 4 seconds to say, so
+# each scene showing the mug says 8 words. Scenes 1 and 3 have an overlay, scene 2 none. The
+# first scene is always the person talking to camera.
+SCENE_1, SCENE_2, SCENE_3 = PLAN["plan"]["scenes"]
+# 8 words: 4 seconds.
+SAID_OVER_2 = {**SCENE_2, "line": "Hand-thrown, holds 350 ml, and dishwasher safe too."}
+
+# Showing the mug in scene 2: lines of 8, 8 and 3 words take 4, 4 and 1.5 seconds to say.
+SHOWING_2 = [SCENE_1, SAID_OVER_2, SCENE_3]
 
 # Two scenes showing the mug in a row need a fourth scene, the person talking after them:
-# its lines of 8, 7, 6 and 6 words take 4, 3.5, 3 and 3 seconds to say.
+# its lines of 8, 8, 8 and 6 words take 4, 4, 4 and 3 seconds to say.
 FOUR_SCENES = [
-    *PLAN["plan"]["scenes"][:2],
-    {"line": "Pour, sip, and enjoy every cup.", "overlay": None},
+    SCENE_1,
+    SAID_OVER_2,
+    {"line": "Pour, sip, and enjoy every single cup today.", "overlay": None},
     {"line": "Get yours today for just $24.00.", "overlay": "$24.00"},
+]
+
+# Ending on the mug: lines of 8, 7 and 8 words take 4, 3.5 and 4 seconds to say.
+ENDING_ON_IT = [
+    SCENE_1,
+    SCENE_2,
+    {**SCENE_3, "line": "Get yours today for just $24.00 from Kiln."},
 ]
 
 
@@ -170,95 +184,92 @@ def captions_follow_the_voice(ad: ProducedItem) -> None:
         assert all(caption["end"] <= line[1] for caption in shown)
 
 
-@pytest.mark.parametrize("the_plan", [a_plan_showing(2)], indirect=True)
+@pytest.mark.parametrize("the_plan", [a_plan_showing(2, scenes=SHOWING_2)], indirect=True)
 def test_talking_then_broll_then_talking(
     fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    # Scene 2's 3.5 seconds of line are asked 5 seconds of clip, which comes back 4.
-    fake_model.clips_short_by = 1.0
+    # Scene 2's 4 seconds of line are covered by a 5-second clip, the shortest made.
     ad = assembled_with(fake_model, steps, say, {2})
 
-    assert ProducedItem.objects.get(kind="clip", scene__number=2).seconds == 4.0
+    assert ProducedItem.objects.get(kind="clip", scene__number=2).seconds == 5.0
     assert placed(ad) == [
         ((0.0, 4.0, 0.0, 4.0), (0.0, 4.0, 0.0, 4.0)),
-        # The B-roll picture plays whole, to 8 seconds; its line ends at 7.5.
-        ((0.0, 4.0, 4.0, 8.0), (0.0, 3.5, 4.0, 7.5)),
-        # Scene 3's line starts at 7.5, over the B-roll's end, with all its sound; its
-        # picture skips the half second it is behind, so its lips match its words.
-        ((0.5, 1.5, 8.0, 9.0), (0.0, 1.5, 7.5, 9.0)),
+        # The B-roll picture plays whole, to 9 seconds; its line ends at 8.
+        ((0.0, 5.0, 4.0, 9.0), (0.0, 4.0, 4.0, 8.0)),
+        # Scene 3's line starts at 8, over the B-roll's end, with all its sound; its
+        # picture skips the second it is behind, so its lips match its words.
+        ((1.0, 1.5, 9.0, 9.5), (0.0, 1.5, 8.0, 9.5)),
     ]
-    assert ad.seconds == 9.0
+    assert ad.seconds == 9.5
     heard = file_store.read(ad.file)
-    assert video(heard)[2] == pytest.approx(9.0, abs=0.1)
-    assert [colour_at(heard, at) for at in (2.0, 6.0, 7.75, 8.25)] == [
+    assert video(heard)[2] == pytest.approx(9.5, abs=0.1)
+    assert [colour_at(heard, at) for at in (2.0, 6.0, 8.75, 9.25)] == [
         "red",
         "lime",
         "lime",
         "blue",
     ]
-    voice_has_no_gap(ad, said_for=9.0)
+    voice_has_no_gap(ad, said_for=9.5)
     captions_follow_the_voice(ad)
     # Scene 3's caption shows from when its line starts, over the B-roll's end.
-    assert ad.captions[-1] == {"text": "Yours for $24.00.", "start": 7.5, "end": 9.0}
+    assert ad.captions[-1] == {"text": "Yours for $24.00.", "start": 8.0, "end": 9.5}
     # Scene 3's overlay shows while its picture plays, not while its line is said over
     # scene 2's picture, which has none.
-    assert [drawn_in(heard, at) for at in (7.75, 8.25)] == [{"bottom"}, {"top", "bottom"}]
+    assert [drawn_in(heard, at) for at in (8.75, 9.25)] == [{"bottom"}, {"top", "bottom"}]
 
 
 @pytest.mark.parametrize("the_plan", [a_plan_showing(2, 3, scenes=FOUR_SCENES)], indirect=True)
 def test_talking_then_broll_then_broll_then_talking(
     fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    # Scenes 2 and 3, of 3.5 and 3 seconds of line, are each asked 5 seconds of clip, which
-    # come back 4.
-    fake_model.clips_short_by = 1.0
+    # Scenes 2 and 3, of 4 seconds of line each, are each covered by a 5-second clip.
     ad = assembled_with(fake_model, steps, say, {2, 3})
 
     assert placed(ad) == [
         ((0.0, 4.0, 0.0, 4.0), (0.0, 4.0, 0.0, 4.0)),
-        ((0.0, 4.0, 4.0, 8.0), (0.0, 3.5, 4.0, 7.5)),
-        # Its line starts at 7.5, over the end of the first B-roll clip, but its picture
-        # plays from its start, at 8: half a second behind its line.
-        ((0.0, 4.0, 8.0, 12.0), (0.0, 3.0, 7.5, 10.5)),
-        # A second and a half behind by now: the talking scene skips that much more of its
-        # picture, so its lips match its words.
-        ((1.5, 3.0, 12.0, 13.5), (0.0, 3.0, 10.5, 13.5)),
+        ((0.0, 5.0, 4.0, 9.0), (0.0, 4.0, 4.0, 8.0)),
+        # Its line starts at 8, over the end of the first B-roll clip, but its picture
+        # plays from its start, at 9: a second behind its line.
+        ((0.0, 5.0, 9.0, 14.0), (0.0, 4.0, 8.0, 12.0)),
+        # Two seconds behind by now: the talking scene skips that much of its picture, so
+        # its lips match its words.
+        ((2.0, 3.0, 14.0, 15.0), (0.0, 3.0, 12.0, 15.0)),
     ]
-    assert ad.seconds == 13.5
+    assert ad.seconds == 15.0
     heard = file_store.read(ad.file)
-    assert video(heard)[2] == pytest.approx(13.5, abs=0.1)
-    assert [colour_at(heard, at) for at in (7.75, 8.25, 11.75, 12.25)] == [
+    assert video(heard)[2] == pytest.approx(15.0, abs=0.1)
+    assert [colour_at(heard, at) for at in (8.75, 9.25, 13.75, 14.25)] == [
         "lime",
         "blue",
         "blue",
         "yellow",
     ]
-    voice_has_no_gap(ad, said_for=13.5)
+    voice_has_no_gap(ad, said_for=15.0)
     captions_follow_the_voice(ad)
     # Scene 4's overlay shows once its picture plays, not while its line is said over
     # scene 3's.
-    assert [drawn_in(heard, at) for at in (11.75, 12.25)] == [{"bottom"}, {"top", "bottom"}]
+    assert [drawn_in(heard, at) for at in (13.75, 14.25)] == [{"bottom"}, {"top", "bottom"}]
 
 
-@pytest.mark.parametrize("the_plan", [a_plan_showing(3)], indirect=True)
+@pytest.mark.parametrize("the_plan", [a_plan_showing(3, scenes=ENDING_ON_IT)], indirect=True)
 def test_ending_on_broll(
     fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    # Scene 3's 1.5 seconds of line are covered by a 5-second clip, the shortest made.
+    # Scene 3's 4 seconds of line are covered by a 5-second clip, the shortest made.
     ad = assembled_with(fake_model, steps, say, {3})
 
-    assert placed(ad)[-1] == ((0.0, 5.0, 7.5, 12.5), (0.0, 1.5, 7.5, 9.0))
+    assert placed(ad)[-1] == ((0.0, 5.0, 7.5, 12.5), (0.0, 4.0, 7.5, 11.5))
     # The ad runs to the end of its last picture.
     assert ad.seconds == 12.5
     heard = file_store.read(ad.file)
     assert video(heard)[2] == pytest.approx(12.5, abs=0.1)
     assert colour_at(heard, 12.0) == "blue"
-    voice_has_no_gap(ad, said_for=9.0)
+    voice_has_no_gap(ad, said_for=11.5)
     captions_follow_the_voice(ad)
     # After the last line, the end of the clip plays over the music only, with its overlay.
-    assert loudness(heard, "music", between=(9.5, 12.4)) > -40
+    assert loudness(heard, "music", between=(11.6, 12.4)) > -40
     assert (
-        loudness(heard, "voice", between=(9.5, 12.4))
-        < loudness(heard, "voice", between=(7.6, 8.9)) - 30
+        loudness(heard, "voice", between=(11.6, 12.4))
+        < loudness(heard, "voice", between=(7.6, 11.4)) - 30
     )
     assert drawn_in(heard, 12.0) == {"top"}

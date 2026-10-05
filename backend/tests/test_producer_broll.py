@@ -39,6 +39,9 @@ from .conftest import (
 pytestmark = pytest.mark.django_db(transaction=True)
 
 SHOWS = "Hot tea poured into the mug on a workbench."
+# Scene 2's line: its 8 words take the fake voice, at 2 a second, 4 seconds to say, the
+# least a B-roll line may take.
+LINE_2 = "Hand-thrown, holds 350 ml, and dishwasher safe too."
 
 # The mug plan, with its second scene showing the mug rather than the person saying it.
 BROLL_PLAN: dict[str, Any] = {
@@ -46,7 +49,7 @@ BROLL_PLAN: dict[str, Any] = {
     "plan": {
         **PLAN["plan"],
         "scenes": [
-            broll({**scene, "shows": SHOWS if number == 2 else None})
+            broll({**scene, "line": LINE_2, "shows": SHOWS} if number == 2 else scene)
             for number, scene in enumerate(PLAN["plan"]["scenes"], start=1)
         ],
     },
@@ -87,9 +90,6 @@ DOES_A_JOB: dict[str, Any] = {
     "result": "The mug is full of steaming tea.",
     "needs": [],
 }
-
-# Scene 2's line: its 7 words take the fake voice, at 2 a second, 3.5 seconds to say.
-LINE_2 = "Hand-thrown, holds 350 ml, and dishwasher safe."
 
 
 @pytest.fixture
@@ -227,12 +227,12 @@ def test_a_broll_scene_planned_before_it_had_labels_still_makes_its_ad(
 
 
 def test_a_scene_that_shows_the_product_plays_in_its_turn(assembled: ProducedItem) -> None:
-    # Scene 2's 5-second clip plays whole, past its line, while scene 3's line is said
-    # over its end: scene 3's line is shorter than that, so none of its picture shows.
+    # Scene 2's 5-second clip plays whole, a second past its line, while scene 3's line is
+    # said over its end: only the last half second of scene 3's picture shows.
     assert [(cut["scene"], cut["start"], cut["end"]) for cut in assembled.cuts] == [
         (1, 0.0, 4.0),
         (2, 4.0, 9.0),
-        (3, 9.0, 9.0),
+        (3, 9.0, 9.5),
     ]
     # Scene 2's clip, the second the video model made, is lime.
     assert colour_at(read(assembled.file), 5.75) == "lime"
@@ -246,23 +246,22 @@ def test_a_scene_that_shows_the_product_plays_its_whole_clip(
 
     ad = assemble_through_the_chat(fake_model, steps, say)
 
-    # Scene 2's audio, 3.5 seconds of words and 2 of silence, is covered by a 6-second
-    # clip, and all of it is kept, so its motion plays out. The talking scenes around it are
-    # cut to their words, scene 3 skipping the start of its picture by as much as scene 2's
-    # picture runs on past its words.
+    # Scene 2's audio, 4 seconds of words and 2 of silence, is covered by a 6-second clip,
+    # and all of it is kept, so its motion plays out. The talking scenes around it are cut
+    # to their words: the clip ends with its audio, so scene 3 skips none of its picture.
     assert [(cut["scene"], cut["clip_start"], cut["clip_end"]) for cut in ad.cuts] == [
         (1, 0.9, 5.1),
         (2, 0.0, 6.0),
-        (3, 1.4, 3.1),
+        (3, 0.9, 3.1),
     ]
     assert colour_at(read(ad.file), 9.5) == "lime"
 
 
 def test_a_scene_that_shows_the_product_has_its_words_captioned(assembled: ProducedItem) -> None:
-    assert [c["text"] for c in assembled.captions if 4.0 <= c["start"] < 7.5] == [
+    assert [c["text"] for c in assembled.captions if 4.0 <= c["start"] < 8.0] == [
         "Hand-thrown, holds 350",
-        "ml, and",
-        "dishwasher safe.",
+        "ml, and dishwasher",
+        "safe too.",
     ]
     assert drawn_in(read(assembled.file), 5.75) == {"bottom"}
 
@@ -278,7 +277,7 @@ def test_the_picture_is_planned_from_what_the_scene_shows(ready: None) -> None:
     (planned,) = handoffs("choose_broll_picture")
     assert (planned["scene"], planned["line"], planned["shows"]) == (
         2,
-        "Hand-thrown, holds 350 ml, and dishwasher safe.",
+        LINE_2,
         "Hot tea poured into the mug on a workbench.",
     )
 
@@ -678,7 +677,7 @@ def test_the_clip_is_asked_for_as_the_fewest_whole_seconds_that_cover_its_line(
     asked_for: int,
 ) -> None:
     # Scene 2's 7 words, said at whatever pace takes this long.
-    fake_model.words_per_second = 7 / said_in
+    fake_model.words_per_second = 8 / said_in
     made_ready(fake_model, steps, say, (2,))
 
     clip_of_scene_2(fake_model, steps, say)
@@ -749,7 +748,7 @@ def test_the_kept_clip_is_whole_with_its_voice_at_its_start_and_silence_after(
     said_in: float,
     made: int,
 ) -> None:
-    fake_model.words_per_second = 7 / said_in
+    fake_model.words_per_second = 8 / said_in
     made_ready(fake_model, steps, say, (2,))
 
     clip_of_scene_2(fake_model, steps, say)
@@ -790,7 +789,7 @@ def test_a_clip_shorter_than_its_line_fails_its_step(
     assert (step.status, step.reason) == (
         "failed",
         "the video model couldn't make the clip (it came back 3 seconds long, shorter than "
-        "the line's 3.5 seconds of audio).",
+        "the line's 4 seconds of audio).",
     )
 
 
@@ -839,9 +838,9 @@ def test_a_clip_fetched_before_the_worker_stopped_isnt_paid_for_again(restarted:
 
 
 def test_a_clip_fetched_before_the_worker_stopped_still_gets_its_voice(restarted: None) -> None:
-    # Scene 2's 3.5 seconds of line, then silence to the end of its 5-second clip.
+    # Scene 2's 4 seconds of line, then silence to the end of its 5-second clip.
     ((clip,),) = [silences(clip) for clip in kept_clips()]
-    assert (clip[0], round(clip[1])) == (3.5, 5)
+    assert (clip[0], round(clip[1])) == (4.0, 5)
 
 
 def test_a_clip_asked_of_the_old_boreal_before_the_switch_fails_once_collected(

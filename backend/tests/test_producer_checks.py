@@ -376,13 +376,15 @@ def test_a_script_the_user_chooses_to_keep_longer_goes_on_unchanged(
 # --- Scenes that show something while the line is said ---------------------------------------
 
 POUR = "tea poured from a teapot into the mug"
+# Scene 2's line: its 8 words take the fake voice the 4 seconds a B-roll line takes at least.
+SAID_OVER = "Hand-thrown, holds 350 ml, and dishwasher safe too."
 
 
 def showing(shows: str) -> dict[str, Any]:
     """The mug plan, with its second scene showing `shows` while its line is said."""
     scenes = [
         {"line": "Meet the Stoneware Mug from Kiln & Co."},
-        broll({"line": "Hand-thrown, holds 350 ml.", "shows": shows}),
+        broll({"line": SAID_OVER, "shows": shows}),
         {"line": "Yours for $24.00."},
     ]
     return {**PLAN, "plan": {**PLAN["plan"], "scenes": scenes}}
@@ -437,7 +439,7 @@ def rewrote_what_scene_2_shows(
     )
     fake_model.respond(
         "rewrite_line",
-        broll({"line": "Hand-thrown, holds 350 ml.", "shows": "the mug turned in a hand"}),
+        broll({"line": SAID_OVER, "shows": "the mug turned in a hand"}),
     )
     say(f"Make an ad for {product_page_url}")
 
@@ -453,7 +455,7 @@ def test_what_a_scene_shows_is_handed_to_the_fact_check(rewrote_what_scene_2_sho
         },
         {
             "scene": 2,
-            "line": "Hand-thrown, holds 350 ml.",
+            "line": SAID_OVER,
             "shows": POUR,
             "usage": None,
             "result": None,
@@ -473,7 +475,7 @@ def test_what_a_scene_shows_that_the_page_doesnt_support_is_rewritten(
     rewrote_what_scene_2_shows: None,
 ) -> None:
     scene = Job.objects.get().scenes.get(number=2)
-    assert (scene.line, scene.shows) == ("Hand-thrown, holds 350 ml.", "the mug turned in a hand")
+    assert (scene.line, scene.shows) == (SAID_OVER, "the mug turned in a hand")
 
 
 def test_the_rewrite_is_told_it_was_what_the_scene_shows_that_failed(
@@ -502,7 +504,7 @@ def test_the_rewrite_is_handed_what_each_scene_shows(rewrote_what_scene_2_shows:
             },
             {
                 "scene": 2,
-                "line": "Hand-thrown, holds 350 ml.",
+                "line": SAID_OVER,
                 "shows": POUR,
                 "usage": None,
                 "result": None,
@@ -517,7 +519,7 @@ def test_a_rewritten_shows_is_fact_checked_again(rewrote_what_scene_2_shows: Non
         [
             {
                 "scene": 2,
-                "line": "Hand-thrown, holds 350 ml.",
+                "line": SAID_OVER,
                 "shows": "the mug turned in a hand",
                 "usage": None,
                 "result": None,
@@ -632,12 +634,12 @@ def test_a_scene_showing_something_unsupported_can_be_rewritten_for_the_person_t
     fake_model.respond(
         "fact_check", shows_wrong("The page doesn't mention tea.", passing=(1, 3)), facts_ok(2)
     )
-    fake_model.respond("rewrite_line", {"line": "Hand-thrown, holds 350 ml.", "shows": shows})
+    fake_model.respond("rewrite_line", {"line": SAID_OVER, "shows": shows})
 
     say(f"Make an ad for {product_page_url}")
 
     scene = Job.objects.get().scenes.get(number=2)
-    assert (scene.line, scene.shows) == ("Hand-thrown, holds 350 ml.", "")
+    assert (scene.line, scene.shows) == (SAID_OVER, "")
     # A talking scene has no B-roll labels.
     assert (scene.broll_kind, scene.person_shown) == ("", "")
 
@@ -662,8 +664,8 @@ def asked_about_what_scene_2_shows(
     )
     fake_model.respond(
         "rewrite_line",
-        broll({"line": "Hand-thrown, holds 350 ml.", "shows": "coffee poured into the mug"}),
-        broll({"line": "Hand-thrown, holds 350 ml.", "shows": "cocoa poured into the mug"}),
+        broll({"line": SAID_OVER, "shows": "coffee poured into the mug"}),
+        broll({"line": SAID_OVER, "shows": "cocoa poured into the mug"}),
     )
     say(f"Make an ad for {product_page_url}")
 
@@ -673,8 +675,8 @@ def test_a_scene_still_showing_the_unsupported_after_two_rewrites_is_asked_about
 ) -> None:
     (asked,) = results_of("run_planning_checks")
     assert asked.splitlines()[0] == (
-        "Scene 2's line still fails the fact check after 2 rewrites: \"Hand-thrown, holds 350 "
-        "ml.\" While it's said, the ad shows: cocoa poured into the mug. The page doesn't "
+        f'Scene 2\'s line still fails the fact check after 2 rewrites: "{SAID_OVER}" '
+        "While it's said, the ad shows: cocoa poured into the mug. The page doesn't "
         "mention cocoa. The page says: The page doesn't mention it. Why: The line was "
         "rewritten 2 times and still failed the fact check, so you decide: the check itself "
         "may be wrong. Ask the shop owner whether to keep this line and what the ad shows "
@@ -703,7 +705,7 @@ def test_a_scene_the_user_has_the_person_say_shows_the_person_talking(
     had_the_person_say_scene_2: None,
 ) -> None:
     scene = Job.objects.get().scenes.get(number=2)
-    assert (scene.line, scene.shows) == ("Hand-thrown, holds 350 ml.", "")
+    assert (scene.line, scene.shows) == (SAID_OVER, "")
 
 
 def test_a_scene_the_user_has_the_person_say_loses_its_broll_labels(
@@ -736,7 +738,7 @@ RESULT = "the mug full of steaming tea"
 
 # Scene 2 of `doing_a_job()`: the mug doing a job, which needs photo 2 for its glaze.
 DOES_A_JOB: dict[str, Any] = {
-    "line": "Hand-thrown, holds 350 ml.",
+    "line": SAID_OVER,
     "shows": POUR,
     "broll_kind": "does a job",
     "person_shown": "no face",
@@ -785,7 +787,7 @@ def test_a_scenes_usage_and_result_are_handed_to_the_fact_check(
 ) -> None:
     assert handoffs("fact_check")[0]["lines"][1] == {
         "scene": 2,
-        "line": "Hand-thrown, holds 350 ml.",
+        "line": SAID_OVER,
         "shows": POUR,
         "usage": USAGE,
         "result": RESULT,
@@ -989,6 +991,10 @@ LONGEST = " ".join(["Hand-thrown and dishwasher safe, it holds 350 ml."] * 4) + 
 )
 
 
+# 8 words: within the 4 to 14 seconds a B-roll line takes, and a talking line's 18.
+SHORTENED = "Hand-thrown and dishwasher safe, it holds 350 ml."
+
+
 def scene_2_saying(line: str, *, shows: str | None = None) -> dict[str, Any]:
     """The mug plan with scene 2 saying `line`, over what it `shows` if anything."""
     plan = plan_with("Meet the Stoneware Mug from Kiln & Co.", line, "Yours for $24.00.")
@@ -1008,14 +1014,14 @@ def shortened_scene_2(
     shows: str | None = getattr(request, "param", None)
     checking(fake_model, product_page_url, scene_2_saying(TOO_LONG, shows=shows))
     fake_model.respond("fact_check", FACTS_OK, facts_ok(2))
-    fake_model.respond("shorten_line", {"line": "Hand-thrown and dishwasher safe."})
+    fake_model.respond("shorten_line", {"line": SHORTENED})
     say(f"Make an ad for {product_page_url}")
 
 
 def test_a_line_too_long_for_one_scene_is_shortened(shortened_scene_2: None) -> None:
     assert lines() == [
         "Meet the Stoneware Mug from Kiln & Co.",
-        "Hand-thrown and dishwasher safe.",
+        SHORTENED,
         "Yours for $24.00.",
     ]
 
@@ -1056,7 +1062,7 @@ def test_a_shortened_line_is_fact_checked_again_with_what_its_scene_shows(
         [
             {
                 "scene": 2,
-                "line": "Hand-thrown and dishwasher safe.",
+                "line": SHORTENED,
                 "shows": shows,
                 "usage": None,
                 "result": None,
@@ -1088,19 +1094,17 @@ def test_a_line_said_in_exactly_18_seconds_isnt_shortened(
 
 @pytest.fixture
 def asked_for_a_shorter_line(
-    request: pytest.FixtureRequest,
     fake_model: FakeModel,
     product_page_url: str,
     say: Callable[..., None],
 ) -> None:
-    """A chat whose scene 2's line was still too long after 2 shortenings, and whose
-    producer has asked the user for a shorter one. Parametrize it indirectly with what
-    scene 2 shows: nothing unless given."""
-    shows: str | None = getattr(request, "param", None)
+    """A chat whose scene 2's line, said to camera, was still too long after 2 shortenings,
+    and whose producer has asked the user for a shorter one. A B-roll line is never asked
+    about (tests/test_producer_broll_line_length.py)."""
     checking(
         fake_model,
         product_page_url,
-        scene_2_saying(TOO_LONG, shows=shows),
+        scene_2_saying(TOO_LONG),
         reply="Scene 2 is too long. What should it say?",
     )
     fake_model.respond("fact_check", FACTS_OK, facts_ok(2), facts_ok(2))
@@ -1108,25 +1112,13 @@ def asked_for_a_shorter_line(
     say(f"Make an ad for {product_page_url}")
 
 
-@pytest.mark.parametrize(
-    ("asked_for_a_shorter_line", "while_its_said"),
-    [
-        pytest.param(None, "", id="said to camera"),
-        pytest.param(
-            POUR,
-            " While it's said, the ad shows: tea poured from a teapot into the mug.",
-            id="said over the pour",
-        ),
-    ],
-    indirect=["asked_for_a_shorter_line"],
-)
 def test_a_line_still_too_long_after_two_shortenings_is_asked_about(
-    asked_for_a_shorter_line: None, while_its_said: str
+    asked_for_a_shorter_line: None,
 ) -> None:
     (asked,) = results_of("run_planning_checks")
     assert asked.splitlines()[0] == (
         "Scene 2's line still takes about 20.5 seconds to say after 2 shortenings, and a scene "
-        f'can last at most 18 seconds: "{TOO_LONG} Really."{while_its_said} Why: The line was '
+        f'can last at most 18 seconds: "{TOO_LONG} Really." Why: The line was '
         "shortened 2 times and is still too long for one scene, so you choose a shorter line. "
         "Ask the shop owner for a shorter line of their own."
     )
@@ -1272,7 +1264,7 @@ def test_the_shortening_model_is_handed_what_each_scene_shows(
             },
             {
                 "scene": 2,
-                "line": "Hand-thrown, holds 350 ml.",
+                "line": SAID_OVER,
                 "shows": POUR,
                 "usage": None,
                 "result": None,
@@ -1493,8 +1485,8 @@ def test_a_script_is_shortened_to_the_words_said_within_the_target_and_2_seconds
 def test_a_finished_scene_is_planned_again_only_when_what_it_shows_changes(
     shows: str, status: str
 ) -> None:
-    scene = Scene(line="Hand-thrown, holds 350 ml.", shows=POUR, status=Scene.Status.FINISHED)
+    scene = Scene(line=SAID_OVER, shows=POUR, status=Scene.Status.FINISHED)
 
-    scene.change_line("Hand-thrown, holds 350 ml.", shows)
+    scene.change_line(SAID_OVER, shows)
 
     assert scene.status == status

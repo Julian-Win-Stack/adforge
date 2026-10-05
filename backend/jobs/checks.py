@@ -16,14 +16,18 @@ LENGTH_ALLOWANCE_SECONDS = 2
 # Times the producer rewrites a line the fact check failed, or shortens a script that
 # doesn't fit or a line too long for a clip, before the user is asked instead.
 MOST_REWRITES = 2
-# The longest a scene's line may take to say. The video model makes clips of at most
+# The longest a talking scene's line may take to say. The video model makes clips of at most
 # MOST_CLIP_SECONDS, and the voice's speed is measured on the whole script, not per line.
 LONGEST_LINE_SECONDS = 18
-# The longest a B-roll scene's line may take to say: its clip lasts at most
-# MOST_BROLL_SECONDS, and a second is left over for the next line to start over its end.
+# How long a B-roll scene's line must take to say. Its clip lasts 5 to 15 whole seconds
+# (MOST_BROLL_SECONDS at most), and the next line starts while the clip's end still plays:
+# a line of at least 4 s leaves at most about 1 s of clip under the next line.
+SHORTEST_BROLL_LINE_SECONDS = 4
 LONGEST_BROLL_LINE_SECONDS = 14
-# How many times a B-roll scene's line is shortened, over the job's whole life, before the
-# scene is said to camera instead.
+# Times a B-roll line is lengthened, before it is kept as it is, or shortened, over the job's
+# whole life, before its scene is said to camera instead. The shop owner is never asked about
+# a B-roll line's length.
+MOST_LENGTHENINGS = 2
 MOST_BROLL_SHORTENINGS = 3
 
 FACT_CHECK_INSTRUCTIONS = """\
@@ -103,6 +107,19 @@ in the ad. If it says the price, it must still say the price. Every claim must b
 by the page or by the shop owner's own words: your own messages only show what was \
 asked. Never name the product's colour. Never infer or guess."""
 
+LENGTHEN_LINE_INSTRUCTIONS = """\
+You are the producer of a short vertical video ad. A person speaks to camera, one line \
+per scene. One scene shows something else while the person's voice says its line, \
+described in its "shows", and its line is too short: the clip it plays over lasts longer \
+than the line takes to say. You get the page's text, the conversation with the shop \
+owner so far, labelled "user" for them and "producer" for you, the colour the ad shows \
+the product in, the whole script, the scene whose line is too short, and the fewest words \
+it needs at the speed the chosen voice speaks.
+Rewrite that one line to have at least the fewest words. Keep what the line is for in the \
+ad, and add only what the page or the shop owner's own words state: your own messages \
+only show what was asked. It must still match what the scene shows. If it says the price, \
+it must still say the price. Never name the product's colour. Never infer or guess."""
+
 SHORTEN_INSTRUCTIONS = """\
 You are the producer of a short vertical video ad. A person speaks to camera, one line \
 per scene. The script is too long for the shop owner's target length. You get the \
@@ -144,8 +161,19 @@ def line_seconds(line: str, words_per_second: float) -> float:
 
 
 def most_words_in_a_line(words_per_second: float) -> int:
-    """The most words a line can have and still be said within LONGEST_LINE_SECONDS."""
+    """The most words a talking line can have and still be said within LONGEST_LINE_SECONDS."""
     return math.floor(LONGEST_LINE_SECONDS * words_per_second)
+
+
+def fewest_words_in_a_broll_line(words_per_second: float) -> int:
+    """The fewest words a B-roll line can have and take SHORTEST_BROLL_LINE_SECONDS to say."""
+    return math.ceil(SHORTEST_BROLL_LINE_SECONDS * words_per_second)
+
+
+def most_words_in_a_broll_line(words_per_second: float) -> int:
+    """The most words a B-roll line can have and still be said within
+    LONGEST_BROLL_LINE_SECONDS."""
+    return math.floor(LONGEST_BROLL_LINE_SECONDS * words_per_second)
 
 
 # Which part of a scene the fact check found wrong: its line, what it shows, or both.
@@ -296,6 +324,15 @@ class ShortenLineHandoff(Handoff):
     script: list[LineToCheck]
     scene: int
     most_words: int
+
+
+class LengthenLineHandoff(Handoff):
+    page_text: str
+    conversation: list[ChatMessage]
+    product_colour: str
+    script: list[LineToCheck]
+    scene: int
+    fewest_words: int
 
 
 class ShortenHandoff(Handoff):

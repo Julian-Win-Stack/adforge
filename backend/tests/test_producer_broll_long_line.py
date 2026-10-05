@@ -29,18 +29,18 @@ from .test_producer_broll import (
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
 
-# Scene 2's line, LINE_2, has 7 words. At this pace its audio takes 15.5 seconds: too long
+# Scene 2's line, LINE_2, has 8 words. At this pace its audio takes 15.5 seconds: too long
 # for Boreal-H3, which makes clips of at most 15.
-TOO_SLOW = 7 / 15.5
+TOO_SLOW = 8 / 15.5
 
-# 4 words: 8.9 seconds at that pace, which a 9-second clip covers.
+# 4 words: 7.75 seconds at that pace, which an 8-second clip covers.
 SHORTER = "Hand-thrown and dishwasher safe."
 
-# Three shorter lines that still take 15.5 seconds to say, 7 words each.
+# Three shorter lines that still take 15.5 seconds to say, 8 words each.
 STILL_LONG = [
-    "Hand-thrown, holds 350 ml, dishwasher safe too.",
-    "Thrown by hand, 350 ml, dishwasher safe.",
-    "Handmade, holds 350 ml, and dishwasher safe.",
+    "Hand-thrown, holds 350 ml, and dishwasher safe, too.",
+    "Thrown by hand, holds 350 ml, dishwasher safe.",
+    "Handmade, it holds 350 ml, and dishwasher safe.",
 ]
 
 SHORTENED = "Scene 2's line was shortened to fit its clip. Make its audio again."
@@ -124,9 +124,9 @@ def test_the_line_is_shortened_to_14_seconds_at_its_real_pace(
 
     audio_of_scene_2(fake_model, steps, say)
 
-    # 7 words took 15.5 seconds: 6 fit in 14.
+    # 8 words took 15.5 seconds: 7 fit in 14.
     ((shortened, words),) = [(h["scene"], h["most_words"]) for h in handoffs("shorten_line")]
-    assert (shortened, words) == (2, 6)
+    assert (shortened, words) == (2, 7)
 
 
 def test_the_shorter_line_is_fact_checked_again_with_what_the_scene_shows(
@@ -192,8 +192,8 @@ def test_no_clip_is_paid_for_until_the_audio_fits(
         "make_broll_clip",
         "collect_broll_clip",
     ]
-    # The shorter line takes 8.9 seconds to say.
-    assert clips_asked("seconds") == [9]
+    # The shorter line takes 7.75 seconds to say.
+    assert clips_asked("seconds") == [8]
     assert Scene.objects.get(number=2).status == "finished"
 
 

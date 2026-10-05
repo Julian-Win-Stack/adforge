@@ -37,15 +37,21 @@ pytestmark = pytest.mark.django_db(transaction=True)
 POUR = "tea poured from a teapot into the mug"
 TURNED = "the mug turned slowly in a hand"
 
-# The mug's plan, with scene 2 a B-roll scene. Its 18 words take the fake voice, at 2 words
-# a second, 9 seconds to say: over the shop owner's 5-second target.
+# Scene 2's line: its 8 words take the fake voice, at 2 words a second, the 4 seconds a
+# B-roll line takes at least.
+SAID_OVER = "Hand-thrown, holds 350 ml, and dishwasher safe too."
+# Scene 2's line once the script is shortened, also 8 words.
+SHORTENED_2 = "It's hand-thrown, holds 350 ml, and dishwasher safe."
+
+# The mug's plan, with scene 2 a B-roll scene. Its 19 words take the fake voice 9.5 seconds
+# to say: over the shop owner's 5-second target.
 PLANNED: dict[str, Any] = {
     **PLAN,
     "plan": {
         **PLAN["plan"],
         "scenes": [
             {"line": "Meet the Stoneware Mug from Kiln & Co.", "overlay": "Kiln & Co"},
-            broll({"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "shows": POUR}),
+            broll({"line": SAID_OVER, "shows": POUR}),
             {"line": "Yours for $24.00.", "overlay": "$24.00"},
         ],
     },
@@ -68,12 +74,12 @@ POUR_UNSUPPORTED: dict[str, Any] = {
     ],
 }
 
-# The script shortened with every scene kept: 11 words, 5.5 seconds, within a second of the
-# target. Scene 2's 5 words take 2.5 seconds.
+# The script shortened with every scene kept: 14 words, 7 seconds, within the 2 seconds over
+# the target it may run. Scene 2's 8 words take 4 seconds, the least a B-roll line may take.
 SHORTENED: dict[str, Any] = {
     "lines": [
         {"scene": 1, "line": "Meet the Stoneware Mug."},
-        {"scene": 2, "line": "It's hand-thrown and dishwasher safe."},
+        {"scene": 2, "line": SHORTENED_2},
         {"scene": 3, "line": "Just $24.00."},
     ]
 }
@@ -130,7 +136,7 @@ def ad_made_through_the_chat(
     fake_model.respond("fact_check", POUR_UNSUPPORTED, facts_ok(2))
     fake_model.respond(
         "rewrite_line",
-        broll({"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "shows": TURNED}),
+        broll({"line": SAID_OVER, "shows": TURNED}),
     )
     chatting(
         f"Make a 5 second ad for {product_page_url}",
@@ -179,7 +185,7 @@ def test_the_b_roll_scene_plays_in_its_turn_with_the_voice_heard_over_it(
     ad_made_through_the_chat: None,
 ) -> None:
     ads = Job.objects.get().produced.filter(kind="finished_ad")
-    # Scene 2's 5-second clip plays whole, after scene 1, past its shortened line's 2.5
+    # Scene 2's 5-second clip plays whole, after scene 1, past its shortened line's 4
     # seconds: scene 3's 1-second line is said over its end, so none of scene 3's picture
     # shows.
     assert [(cut["scene"], cut["start"], cut["end"]) for ad in ads for cut in ad.cuts] == [
@@ -204,7 +210,7 @@ def test_the_b_roll_scenes_picture_is_planned_from_its_rewritten_shows_after_the
     assert [
         (planned["scene"], planned["line"], planned["shows"])
         for planned in handoffs("choose_broll_picture")
-    ] == [(2, "It's hand-thrown and dishwasher safe.", "the mug turned slowly in a hand")]
+    ] == [(2, SHORTENED_2, "the mug turned slowly in a hand")]
 
 
 def test_nothing_in_the_whole_flow_is_paid_for_twice(ad_made_through_the_chat: None) -> None:
