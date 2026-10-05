@@ -3,7 +3,7 @@
 - Date: 2026-10-03
 - Ticket: #94. Follows the Boreal-H3 check on scene #16 (`docs/runs/second-run-review/check/`).
 - Status: the logic is agreed and tested (five tests, 2026-10-03, about $4). Ready to build.
-  Items 42 to 55 were settled with the user on 2026-10-05, before building.
+  Items 42 to 56 were settled with the user on 2026-10-05, before building.
   Nothing is built yet. Issue #94 is not to be edited (the user, 2026-10-03).
 
 ## Decided
@@ -228,6 +228,11 @@
     prompt writer's answer has one required slot per picture (`image_1` ... `image_N`) plus
     `action`; code joins them into "Image 1 is ... Image 2 is ... <action>". No picture can
     be left unnamed, and the AI still writes each picture's hint.
+56. **A B-roll scene that becomes a talking scene is shown in the chat (2026-10-05).** The
+    warning of items 35 and 47 is posted as a notice with the reason ("Scene 3 couldn't be
+    made as a product shot because its line is too long for a clip, so it will be said to
+    camera instead."). The one exception to "the user is never told which scenes are which".
+    Only that scene changes; the rest of the plan stays.
 
 ## What Boreal-H3 takes
 

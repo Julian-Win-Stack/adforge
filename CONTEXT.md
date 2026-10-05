@@ -59,7 +59,7 @@ A scene in which the person says the line to camera. Every scene is one unless t
 _Avoid_: A-roll, presenter scene
 
 **B-roll scene**:
-A scene that shows the product rather than the person talking, such as a pan sizzling, while the person's voice says the line over it. What it shows is written in plain words in the plan, and is fact checked like the line. Made with the same tools as a talking scene. The user is never told which scenes are which.
+A scene that shows the product rather than the person talking, such as a pan sizzling, while the person's voice says the line over it. What it shows is written in plain words in the plan, and is fact checked like the line. Made with the same tools as a talking scene. The user is never told which scenes are which, except when a B-roll scene has to become a talking scene: a notice says so, with the reason.
 _Avoid_: Cutaway, product shot, insert
 
 **Scene step**:

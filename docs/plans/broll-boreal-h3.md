@@ -4,7 +4,7 @@
 - Status: agreed with the user on 2026-10-04, updated 2026-10-05. Built through sub-issues
   #97 to #107 on the branch `89-firecrawl-page-read`. The GitHub copy is #96.
 - The decisions behind it, with the reasons: `docs/broll-picture-logic.md` ("Decided", items
-  1 to 55). This plan says only how they are built and tested. Where the two disagree, the
+  1 to 56). This plan says only how they are built and tested. Where the two disagree, the
   logic doc wins and this plan is fixed.
 
 ## What build 1 is, in one paragraph
@@ -40,7 +40,7 @@ Questions reading the code raised, now items 32 to 40 in the logic doc:
 
 ## Settled with the user on 2026-10-05
 
-Items 42 to 55 in the logic doc. Where they change a phase below, the phase is updated.
+Items 42 to 56 in the logic doc. Where they change a phase below, the phase is updated.
 
 1. "Describe it in words" is not offered in build 1: the question offers "attach a photo"
    or "use without proven result" (item 42).
@@ -59,6 +59,7 @@ Items 42 to 55 in the logic doc. Where they change a phase below, the phase is u
 11. "Who is in it" is "no face" or "has face": only faces matter (item 53).
 12. The after-build tests are approved; results always recorded (item 54).
 13. Way 3's picture labels come from structured output, one slot per picture (item 55).
+14. A B-roll scene that becomes a talking scene is shown in the chat, with the reason (item 56).
 
 ## Phase 0: tests before building (about $2, each needs the user's yes first)
 
