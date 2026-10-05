@@ -177,6 +177,16 @@ class ProductPhoto(models.Model):
 # a talking scene.
 BROLL_FIELDS = ["broll_kind", "person_shown", "usage", "result", "needs"]
 
+# Each B-roll field as a scene step keeps its copy: a step's own `result` is what the
+# producer is told when it finishes.
+STEP_BROLL_FIELDS = {
+    "broll_kind": "broll_kind",
+    "person_shown": "person_shown",
+    "usage": "usage",
+    "result": "broll_result",
+    "needs": "needs",
+}
+
 
 class Scene(models.Model):
     class Status(models.TextChoices):
@@ -322,6 +332,29 @@ class SceneStep(models.Model):
         help_text="What the scene showed when the step started: blank for the person "
         "talking to camera.",
     )
+    broll_kind = models.CharField(
+        max_length=20,
+        choices=Scene.BrollKind.choices,
+        blank=True,
+        help_text="The scene's B-roll kind when the step started.",
+    )
+    person_shown = models.CharField(
+        max_length=20,
+        choices=Scene.PersonShown.choices,
+        blank=True,
+        help_text="Whether the scene showed the presenter's face when the step started.",
+    )
+    usage = models.TextField(
+        blank=True, help_text="How the scene used the product when the step started."
+    )
+    broll_result = models.TextField(
+        blank=True, help_text="The result the scene ended on when the step started."
+    )
+    needs = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="What the scene needed that the main photo can't show when the step started.",
+    )
     note = models.TextField(
         blank=True, help_text="What the producer asked for, beyond the line. Blank for nothing."
     )
@@ -340,6 +373,20 @@ class SceneStep(models.Model):
         blank=True,
         help_text="For a B-roll scene's starting picture, how the video model is asked to "
         "move it. Blank for a talking scene, whose clips all move the same way.",
+    )
+    way = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="For a B-roll scene's starting picture, how its clip is made: 1, from a "
+        "starting picture made from the main photo. Blank for a talking scene, and for a "
+        "B-roll scene planned before it had its B-roll labels.",
+    )
+    pictures_sent = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="For a B-roll scene's starting picture, the pictures sent, in order, each "
+        'with its job, such as [{"image": 1, "photo": 3, "job": "the product, only how it looks"}, '
+        '{"image": 2, "portrait": true, "job": "the presenter"}]. Empty otherwise.',
     )
     made_from = models.ForeignKey(
         "ProducedItem",
@@ -391,6 +438,20 @@ class SceneStep(models.Model):
 
     def __str__(self) -> str:
         return f"Scene {self.scene.number} {self.kind} ({self.status})"
+
+    @staticmethod
+    def made_for(scene: Scene, through: str = "") -> dict[str, Any]:
+        """What a step made for `scene` as it stands has: its line, what it shows and its
+        B-roll labels. A step is started with them, and they filter steps, or what steps
+        made `through` a relation to them, such as "step__", to those still up to date."""
+        return {
+            f"{through}line": scene.line,
+            f"{through}shows": scene.shows,
+            **{
+                f"{through}{STEP_BROLL_FIELDS[field]}": getattr(scene, field)
+                for field in BROLL_FIELDS
+            },
+        }
 
 
 class ProducedItem(models.Model):

@@ -16,6 +16,7 @@ from gateway.models import ModelCall
 from gateway.types import ModelReply, ModelRequest
 from jobs import work
 from jobs.models import Job, ProducedItem, Scene, SceneStep
+from jobs.scenes import BROLL_KIND_RULES, BROLL_PICTURE_INSTRUCTIONS, BROLL_SHARED_RULES
 
 from .conftest import (
     FACTS_OK,
@@ -67,6 +68,24 @@ BROLL_CHOICE: dict[str, Any] = {
     "prompt_reason": "It shows the pour the line describes, in the person's workshop.",
     "motion_prompt": MOTION,
     "motion_prompt_reason": "The pour and the steam are what moves in the scene.",
+}
+
+# Scene 2's labels as stored when it shows the mug at its best, as planned.
+SHOWCASE: dict[str, Any] = {
+    "broll_kind": "showcase",
+    "person_shown": "no face",
+    "usage": "",
+    "result": "",
+    "needs": [],
+}
+
+# Scene 2's labels when it shows the mug doing a job rather than at its best.
+DOES_A_JOB: dict[str, Any] = {
+    "broll_kind": "does a job",
+    "person_shown": "no face",
+    "usage": "Hot tea is poured into the mug from a teapot.",
+    "result": "The mug is full of steaming tea.",
+    "needs": [],
 }
 
 # Scene 2's line: its 7 words take the fake voice, at 2 a second, 3.5 seconds to say.
@@ -264,6 +283,20 @@ def test_the_picture_is_planned_from_what_the_scene_shows(ready: None) -> None:
     )
 
 
+def test_the_picture_is_planned_from_the_scenes_broll_labels(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    Scene.objects.filter(number=2).update(**DOES_A_JOB)
+
+    picture_of(fake_model, steps, say, 2)
+
+    (planned,) = handoffs("choose_broll_picture")
+    told = ("broll_kind", "person_shown", "usage", "result")
+    assert {field: planned[field] for field in told} == {field: DOES_A_JOB[field] for field in told}
+    # What each picture the picture model gets is for, in the order it gets them.
+    assert planned["pictures"] == [{"image": 1, "job": "the product, only how it looks"}]
+
+
 @pytest.mark.parametrize(
     ("scene", "planner", "what_it_shows"),
     [
@@ -280,12 +313,9 @@ def test_the_picture_is_planned_from_what_the_scene_shows(ready: None) -> None:
         pytest.param(
             2,
             "choose_broll_picture",
-            "You plan the starting picture for one scene of a short vertical video ad. The scene "
-            "doesn't show the person talking to camera: it shows what the scene's \"shows\" "
-            "describes, while the person's voice says the scene's line over it. The picture is "
-            "made by a picture model from two pictures: the portrait first, then one product "
-            "photo. A video model then animates it, with no sound, so it is the scene's first "
-            "frame.",
+            "You write the prompts for one B-roll scene of a short vertical video ad. The scene "
+            'doesn\'t show the person talking to camera: it shows what "shows" describes, while '
+            "the presenter's voice says the scene's line over it.",
             id="the product",
         ),
     ],
@@ -306,7 +336,63 @@ def test_the_model_planning_a_picture_is_told_what_the_scene_shows(
     assert told.splitlines()[0] == what_it_shows
 
 
-def test_the_model_planning_the_picture_is_told_to_make_nothing_up(
+@pytest.mark.parametrize(
+    ("labels", "its_rules", "the_other_kinds"),
+    [
+        pytest.param(SHOWCASE, "showcase", "does a job", id="showcase"),
+        pytest.param(DOES_A_JOB, "does a job", "showcase", id="does a job"),
+    ],
+)
+def test_the_model_planning_the_picture_is_given_only_its_kinds_rules(
+    fake_model: FakeModel,
+    instructed: dict[str, list[str]],
+    checked: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    labels: dict[str, Any],
+    its_rules: str,
+    the_other_kinds: str,
+) -> None:
+    Scene.objects.filter(number=2).update(**labels)
+
+    picture_of(fake_model, steps, say, 2)
+
+    (told,) = instructed["choose_broll_picture"]
+    assert BROLL_SHARED_RULES in told
+    assert BROLL_KIND_RULES[its_rules] in told
+    assert BROLL_KIND_RULES[the_other_kinds] not in told
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        "One continuous shot",
+        "The product does what the line claims",
+        'held and used the way "usage" says',
+        "in the middle of the frame",
+        "Say nothing about the top or the bottom of the frame",
+        "Only the presenter is shown",
+        "Any hand is fine",
+        "The product is shown, not described",
+        'Never write "no speech", "no sound" or "no text"',
+        "only the product",
+        "the setting is described in words",
+        'the "before"',
+    ],
+)
+def test_the_model_planning_the_picture_is_given_the_shared_prompt_rules(rule: str) -> None:
+    assert rule in BROLL_SHARED_RULES
+
+
+def test_a_does_a_job_scene_ends_on_its_result() -> None:
+    assert "ends on the result" in BROLL_KIND_RULES["does a job"]
+
+
+def test_a_showcase_scene_ends_on_the_product_at_its_best() -> None:
+    assert "ends on the product at its best" in BROLL_KIND_RULES["showcase"]
+
+
+def test_the_model_planning_the_picture_is_no_longer_told_only_what_shows_describes(
     fake_model: FakeModel,
     instructed: dict[str, list[str]],
     checked: None,
@@ -316,32 +402,147 @@ def test_the_model_planning_the_picture_is_told_to_make_nothing_up(
     picture_of(fake_model, steps, say, 2)
 
     (told,) = instructed["choose_broll_picture"]
-    assert [rule for rule in told.splitlines() if rule.startswith("Make nothing up")] == [
-        'Make nothing up, in either prompt. Show only what "shows" describes: no result, use, '
-        "feature, texture, colour or amount it doesn't state, nothing that makes the product "
-        "look bigger, better or more effective than described, and no part of the product the "
-        "photos don't show."
-    ]
+    assert "Make nothing up" not in told
 
 
-def test_the_model_planning_the_picture_is_shown_the_portrait_and_the_photos_in_the_ads_colour(
-    ready: None,
-) -> None:
+def test_a_scene_with_no_face_is_planned_from_the_photos_alone(ready: None) -> None:
     job = Job.objects.get()
     # Photo 2 shows the mug in cream, and the ad's colour is sage green.
     assert ModelCall.objects.get(purpose="choose_broll_picture").images == [
-        {"label": "The portrait", "key": job.produced.get(kind="portrait").file},
         {"label": "Photo 1", "key": job.photos.get(position=1).file},
     ]
 
 
-def test_the_picture_is_asked_for_with_nothing_made_up(ready: None) -> None:
+def test_a_scene_with_no_face_sends_the_image_maker_the_main_photo_alone(ready: None) -> None:
     (asked,) = handoffs("make_starting_picture")
-    # Whatever the model wrote, the tool adds that nothing is to be made up.
-    assert asked["prompt"] == (
-        "The mug on a workbench in a sunny workshop, tea being poured into it. Show only what "
-        "is described; add or change nothing about the product."
+    assert asked["pictures"] == [Job.objects.get().photos.get(position=1).file]
+
+
+@pytest.fixture
+def with_a_face(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    """Scene 2, showing the presenter's face, with its starting picture, audio and
+    transcript made."""
+    Scene.objects.filter(number=2).update(person_shown="has face")
+    made_ready(fake_model, steps, say, (2,))
+
+
+def test_a_scene_with_a_face_sends_the_image_maker_the_main_photo_then_the_portrait(
+    with_a_face: None,
+) -> None:
+    job = Job.objects.get()
+    (asked,) = handoffs("make_starting_picture")
+    assert asked["pictures"] == [
+        job.photos.get(position=1).file,
+        job.produced.get(kind="portrait").file,
+    ]
+
+
+def test_a_scene_with_a_face_is_planned_from_the_photos_and_the_portrait(
+    with_a_face: None,
+) -> None:
+    job = Job.objects.get()
+    assert ModelCall.objects.get(purpose="choose_broll_picture").images == [
+        {"label": "Photo 1", "key": job.photos.get(position=1).file},
+        {"label": "The portrait", "key": job.produced.get(kind="portrait").file},
+    ]
+    (planned,) = handoffs("choose_broll_picture")
+    assert planned["pictures"] == [
+        {"image": 1, "job": "the product, only how it looks"},
+        {"image": 2, "job": "the presenter"},
+    ]
+
+
+def test_the_main_photo_is_the_one_the_picture_chooser_picks(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    job = Job.objects.get()
+    # Both photos show the mug in the ad's colour, and the chooser picks the second.
+    job.photos.update(shows_product_colour=True)
+    calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": None}))
+    fake_model.respond("choose_broll_picture", {**BROLL_CHOICE, "photo": 2})
+    run(fake_model, steps)
+
+    (asked,) = handoffs("make_starting_picture")
+    assert asked["pictures"] == [job.photos.get(position=2).file]
+    assert SceneStep.objects.get(kind="starting_picture").photo == job.photos.get(position=2)
+
+
+def test_the_picture_step_stores_its_way_its_pictures_and_both_prompts(
+    with_a_face: None,
+) -> None:
+    step = SceneStep.objects.get(kind="starting_picture")
+    assert (step.way, step.pictures_sent, step.prompt, step.motion_prompt) == (
+        1,
+        [
+            {"image": 1, "photo": 1, "job": "the product, only how it looks"},
+            {"image": 2, "portrait": True, "job": "the presenter"},
+        ],
+        BROLL_CHOICE["prompt"],
+        MOTION,
     )
+    assert (step.photo_reason, step.prompt_reason) == (
+        BROLL_CHOICE["photo_reason"],
+        BROLL_CHOICE["prompt_reason"],
+    )
+
+
+def test_the_picture_is_asked_for_as_the_model_wrote_it(ready: None) -> None:
+    (asked,) = handoffs("make_starting_picture")
+    # Nothing is added: the real photo of the product is what keeps it true.
+    assert asked["prompt"] == BROLL_CHOICE["prompt"]
+
+
+# A scene planned before the plan gave B-roll scenes their labels is made as before.
+
+
+@pytest.fixture
+def unlabelled(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    Scene.objects.update(broll_kind="", person_shown="", usage="", result="", needs=[])
+    made_ready(fake_model, steps, say, (2,))
+
+
+def test_an_unlabelled_scene_is_planned_as_before(
+    fake_model: FakeModel,
+    instructed: dict[str, list[str]],
+    checked: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    Scene.objects.update(broll_kind="", person_shown="", usage="", result="", needs=[])
+
+    picture_of(fake_model, steps, say, 2)
+
+    (told,) = instructed["choose_broll_picture"]
+    assert told == BROLL_PICTURE_INSTRUCTIONS
+
+
+def test_an_unlabelled_scenes_picture_is_made_as_before(unlabelled: None) -> None:
+    job = Job.objects.get()
+    (asked,) = handoffs("make_starting_picture")
+    assert asked == {
+        "prompt": (
+            "The mug on a workbench in a sunny workshop, tea being poured into it. Show only "
+            "what is described; add or change nothing about the product."
+        ),
+        "pictures": [job.produced.get(kind="portrait").file, job.photos.get(position=1).file],
+    }
+    step = SceneStep.objects.get(kind="starting_picture")
+    assert (step.way, step.pictures_sent) == (None, [])
+
+
+def test_an_unlabelled_scenes_clip_is_asked_for_as_before(
+    fake_model: FakeModel, unlabelled: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    clip_of_scene_2(fake_model, steps, say)
+
+    assert clips_asked("prompt") == [
+        "Steam rises as the tea fills the mug; the camera holds still. Show only what is "
+        "described; add or change nothing about the product."
+    ]
 
 
 def test_a_picture_planned_before_the_worker_stopped_isnt_paid_for_again(
@@ -381,6 +582,47 @@ def test_a_picture_made_before_the_scene_changed_what_it_shows_gets_no_clip(
         "scene showed before, and the scene has changed since. Make its starting picture "
         "again first. Nothing was done."
     ]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        pytest.param({"broll_kind": "does a job", "result": "The mug is full."}, id="kind"),
+        pytest.param({"person_shown": "has face"}, id="person"),
+        pytest.param({"usage": "Pour the tea in slowly."}, id="usage"),
+        pytest.param({"result": "Steam rises from the full mug."}, id="result"),
+        pytest.param({"needs": [{"what": "the tea", "photos": [2]}]}, id="needs"),
+    ],
+)
+def test_a_picture_made_before_the_scenes_broll_labels_changed_gets_no_clip(
+    fake_model: FakeModel,
+    ready: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    change: dict[str, Any],
+) -> None:
+    Scene.objects.filter(number=2).update(**change)
+
+    clip_of_scene_2(fake_model, steps, say)
+
+    assert list(ModelCall.objects.filter(purpose="make_broll_clip")) == []
+    assert results_of("make_clip") == [
+        "Refused: scene 2's starting picture was made for an earlier line, or for what the "
+        "scene showed before, and the scene has changed since. Make its starting picture "
+        "again first. Nothing was done."
+    ]
+
+
+def test_a_picture_made_before_the_scenes_broll_labels_changed_is_made_again(
+    fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    Scene.objects.filter(number=2).update(usage="Pour the tea in slowly.")
+
+    picture_of(fake_model, steps, say, 2)
+
+    assert paid_for().count("make_starting_picture") == 2
+    latest = SceneStep.objects.filter(kind="starting_picture").last()
+    assert latest is not None and latest.usage == "Pour the tea in slowly."
 
 
 def test_a_scene_that_no_longer_shows_the_product_gets_a_picture_of_the_person_talking(
@@ -483,16 +725,13 @@ def test_the_talking_scenes_clips_are_still_asked_of_heygen(assembled: ProducedI
     ] * 2
 
 
-def test_the_clip_is_asked_to_move_as_planned_with_nothing_made_up(
+def test_the_clip_is_asked_to_move_as_planned(
     fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     clip_of_scene_2(fake_model, steps, say)
 
-    # As it is: Boreal-H3 is sent no sections.
-    assert clips_asked("prompt") == [
-        "Steam rises as the tea fills the mug; the camera holds still. Show only what is "
-        "described; add or change nothing about the product."
-    ]
+    # As the model wrote it: Boreal-H3 is sent no sections, and nothing is added.
+    assert clips_asked("prompt") == [MOTION]
 
 
 @pytest.mark.parametrize(

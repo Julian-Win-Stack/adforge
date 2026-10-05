@@ -97,11 +97,16 @@ from .planning import (
 )
 from .scenes import (
     BROLL_PICTURE_INSTRUCTIONS,
+    MAIN_PHOTO_JOB,
+    PORTRAIT_JOB,
     STARTING_PICTURE_INSTRUCTIONS,
     BrollPictureChoice,
     BrollPictureHandoff,
+    BrollPromptHandoff,
+    PictureJob,
     StartingPictureChoice,
     StartingPictureHandoff,
+    broll_prompt_instructions,
     pose_for,
     starting_picture_choice_for,
     talking_motion_prompt,
@@ -1269,6 +1274,10 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
     made = step.produced.first()
     if made is not None:
         return made
+    if step.broll_kind:
+        return _make_broll_picture(step)
+    # A talking scene, or a B-roll one planned before the plan gave B-roll scenes their
+    # labels, as every scene was made before.
     scene = step.scene
     job = scene.job
     portrait = latest(job, ProducedItem.Kind.PORTRAIT)
@@ -1319,15 +1328,88 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
     step.prompt = choice.prompt
     step.prompt_reason = choice.prompt_reason
     step.save(update_fields=["photo", "photo_reason", "prompt", "prompt_reason", "motion_prompt"])
+    return _keep_starting_picture(step, prompt, [portrait.file, step.photo.file])
+
+
+def _make_broll_picture(step: SceneStep) -> ProducedItem:
+    """Make a B-roll scene's starting picture, way 1: the model writing the scene's prompts,
+    told the shared rules and its kind's, picks the main photo from the photos in the ad's
+    colour and writes the picture's prompt and the clip's. The picture is made from the main
+    photo, and from the presenter's portrait after it when the scene shows their face."""
+    scene = step.scene
+    job = scene.job
+    photos = list(job.photos.filter(shows_product_colour=True))
+    numbers = [photo.position for photo in photos]
+    images = [Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos]
+    pictures = [PictureJob(image=1, job=MAIN_PHOTO_JOB)]
+    portrait = None
+    if step.person_shown == Scene.PersonShown.HAS_FACE:
+        portrait = latest(job, ProducedItem.Kind.PORTRAIT)
+        assert portrait is not None, "the tool refuses a scene whose person isn't made"
+        images.append(Image(label="The portrait", key=portrait.file))
+        pictures.append(PictureJob(image=2, job=PORTRAIT_JOB))
+    choice = call_model(
+        job=job,
+        purpose="choose_broll_picture",
+        instructions=broll_prompt_instructions(step.broll_kind),
+        handoff=BrollPromptHandoff(
+            scene=scene.number,
+            line=step.line,
+            script=list(job.scenes.values_list("line", flat=True)),
+            shows=step.shows,
+            broll_kind=step.broll_kind,
+            person_shown=step.person_shown,
+            usage=step.usage,
+            result=step.broll_result,
+            pictures=pictures,
+            product_colour=job.product_colour,
+            colour_photos=numbers,
+            person_looks=job.person_looks,
+            note=step.note or None,
+            conversation=_conversation(job, until=step.started_at),
+        ),
+        output=starting_picture_choice_for(numbers, BrollPictureChoice),
+        images=images,
+        pay_once=True,
+    )
+    step.photo = job.photos.get(position=choice.photo)
+    step.photo_reason = choice.photo_reason
+    step.prompt = choice.prompt
+    step.prompt_reason = choice.prompt_reason
+    step.motion_prompt = choice.motion_prompt
+    step.way = 1
+    main_photo, *rest = (picture.model_dump() for picture in pictures)
+    step.pictures_sent = [
+        {**main_photo, "photo": choice.photo},
+        *({**picture, "portrait": True} for picture in rest),
+    ]
+    step.save(
+        update_fields=[
+            "photo",
+            "photo_reason",
+            "prompt",
+            "prompt_reason",
+            "motion_prompt",
+            "way",
+            "pictures_sent",
+        ]
+    )
+    sent = [step.photo.file, *([portrait.file] if portrait else [])]
+    return _keep_starting_picture(step, choice.prompt, sent)
+
+
+def _keep_starting_picture(step: SceneStep, prompt: str, pictures: list[str]) -> ProducedItem:
+    """Have the picture model make the step's starting picture from `pictures`, as `prompt`
+    says, unless it was made before the worker stopped, and keep it as the scene's next
+    version."""
+    scene = step.scene
+    job = scene.job
     paid_for = _paid_for_before(job, "make_starting_picture", charged_to=step.tool_call)
     file = (
         paid_for["file"]
         if paid_for
         else edit_picture(
-            job=job,
-            purpose="make_starting_picture",
-            prompt=prompt,
-            pictures=[portrait.file, step.photo.file],
+            job=job, purpose="make_starting_picture", prompt=prompt, pictures=pictures
         )
     )
     return ProducedItem.objects.create(
@@ -1592,10 +1674,13 @@ def _clip_handoff(
             f"its line takes {round(audio.seconds, 1):g} seconds to say, and the B-roll video "
             f"model makes clips of at most {MOST_BROLL_SECONDS} seconds"
         )
+    motion = picture.step.motion_prompt
     return BrollClipHandoff(
         starting_picture=picture.file,
         seconds=_broll_clip_seconds(audio.seconds),
-        prompt=with_nothing_made_up(picture.step.motion_prompt),
+        # A scene planned before it had its B-roll labels is moved as before. A labelled
+        # scene's prompt is sent as written: the real photo of the product keeps it true.
+        prompt=motion if picture.step.way else with_nothing_made_up(motion),
     )
 
 

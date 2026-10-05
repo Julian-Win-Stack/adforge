@@ -62,6 +62,71 @@ about the product come only from what you are shown.
 Give a one-sentence reason for the photo, one for the prompt and one for the motion prompt, \
 written for the shop owner."""
 
+# What the model writing a B-roll scene's prompts is told: the shared rules, then only the
+# rules of the scene's kind, so a rule for one kind can't be used on another
+# (docs/broll-picture-logic.md, "Two kinds of scene" and "Prompt rules").
+BROLL_SHARED_RULES = """\
+You write the prompts for one B-roll scene of a short vertical video ad. The scene doesn't \
+show the person talking to camera: it shows what "shows" describes, while the presenter's \
+voice says the scene's line over it.
+A picture model makes the scene's starting picture from the pictures in "pictures", in that \
+order, each named by its number ("Image 1") and used only for its job. A video model then \
+animates the picture into one clip, and the clip's sound is replaced by the voice.
+You are shown the product photos you may pick from, each labelled with its number, and the \
+presenter's portrait when the scene shows their face. Every product photo shows the product \
+in the ad's colour. Pick the photo whose view of the product suits the scene best: it is \
+Image 1.
+Then write the picture model's prompt and the video model's prompt, following these rules:
+- Take only the product from Image 1, exactly as it looks, with any label or print \
+unchanged. Nothing else from that photo: not its background, setting or people. The setting \
+is the ad's choice: the setting is described in words.
+- The starting picture is the "before": the moment just before the action, with the \
+product ready to be used. The video prompt does the action.
+- One continuous shot, with no cuts. One action every 2 to 3 seconds.
+- The product does what the line claims, on screen, held and used the way "usage" says, \
+not standing idle beside the action.
+- The main action, or the product, is in the middle of the frame. Say nothing about the \
+top or the bottom of the frame.
+- Only the presenter is shown. When "person_shown" is "has face", the person is the \
+presenter from the portrait, with the same face, hair and clothes. When it is "no face", no \
+face is seen. Any hand is fine.
+- The product is shown, not described: the pictures show how it looks, so don't describe \
+its shape, colours or brand name in words.
+- Never write "no speech", "no sound" or "no text".
+- Upright 9:16, with a natural, casual phone-video look.
+The producer may add a note, such as what the shop owner asked for this scene. Follow it \
+unless it asks for something you can't do with these pictures, or something "shows" doesn't \
+describe, and then say so in a reason.
+Use the conversation with the shop owner for their wishes about how the ad looks. Facts \
+about the product come only from what you are shown.
+Give a one-sentence reason for the photo, one for the picture prompt and one for the video \
+prompt, written for the shop owner."""
+
+BROLL_KIND_RULES: dict[str, str] = {
+    "does a job": """\
+This scene does a job you can see: the result in "result" comes from the product being \
+used. The starting picture shows what the result will change, before it changes. The video \
+prompt ends on the result, happening because the product, or the tool used with it, acts, \
+not by itself. A result on a screen is shown without numbers or words, such as a charging \
+light coming on.""",
+    "showcase": """\
+This scene is a showcase: the real product shown clearly, in use the way the page says, with \
+one simple action, such as worn and turning, picked up, set down, or a slow camera move. \
+The video prompt ends on the product at its best, such as a bag catching the light as she \
+turns. Show no result or change the page doesn't prove.""",
+}
+
+
+def broll_prompt_instructions(broll_kind: str) -> str:
+    """What the model writing the prompts of a B-roll scene of `broll_kind` is told."""
+    return f"{BROLL_SHARED_RULES}\n{BROLL_KIND_RULES[broll_kind]}"
+
+
+# The job of each picture the picture model gets for a way 1 B-roll scene.
+MAIN_PHOTO_JOB = "the product, only how it looks"
+PORTRAIT_JOB = "the presenter"
+
+
 # Added by code to every prompt for a scene that shows the product, after what the model
 # wrote, so the rule is in every prompt sent whatever the model leaves out.
 NOTHING_MADE_UP = "Show only what is described; add or change nothing about the product."
@@ -132,6 +197,28 @@ class StartingPictureHandoff(Handoff):
 
 class BrollPictureHandoff(StartingPictureHandoff):
     shows: str
+
+
+class PictureJob(Handoff):
+    image: int
+    job: str
+
+
+class BrollPromptHandoff(Handoff):
+    scene: int
+    line: str
+    script: list[str]
+    shows: str
+    broll_kind: str
+    person_shown: str
+    usage: str
+    result: str
+    pictures: list[PictureJob]
+    product_colour: str
+    colour_photos: list[int]
+    person_looks: str
+    note: str | None
+    conversation: list[ChatMessage]
 
 
 class StartingPictureChoice(BaseModel):

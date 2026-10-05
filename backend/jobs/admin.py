@@ -6,7 +6,15 @@ from django.utils.html import format_html
 from adforge import file_store
 from gateway.models import ModelCall
 
-from .models import BROLL_FIELDS, Job, ProducedItem, ProductPhoto, Scene, SceneStep
+from .models import (
+    BROLL_FIELDS,
+    STEP_BROLL_FIELDS,
+    Job,
+    ProducedItem,
+    ProductPhoto,
+    Scene,
+    SceneStep,
+)
 
 _PICTURE_ENDINGS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 _AUDIO_ENDINGS = {".wav", ".mp3"}
@@ -149,6 +157,9 @@ class SceneStepInline(admin.TabularInline[SceneStep, Scene]):
         "status",
         "reason",
         "shows",
+        *STEP_BROLL_FIELDS.values(),
+        "way",
+        "pictures_sent",
         "photo",
         "prompt",
         "motion_prompt",
@@ -162,6 +173,9 @@ class SceneStepInline(admin.TabularInline[SceneStep, Scene]):
         "status",
         "reason",
         "shows",
+        *STEP_BROLL_FIELDS.values(),
+        "way",
+        "pictures_sent",
         "photo",
         "prompt",
         "motion_prompt",

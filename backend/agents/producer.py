@@ -545,9 +545,7 @@ class MakeStartingPicture(Tool):
         note = " ".join((self.note or "").split())
         steps = scene.steps.filter(kind=SceneStep.Kind.STARTING_PICTURE)
         made = (
-            steps.filter(
-                status=SceneStep.Status.FINISHED, note=note, line=scene.line, shows=scene.shows
-            )
+            steps.filter(status=SceneStep.Status.FINISHED, note=note, **SceneStep.made_for(scene))
             .exclude(produced=None)
             .last()
         )
@@ -706,8 +704,10 @@ class MakeClip(Tool):
                 "first."
             )
         # A line shortened to fit its clip still shows what its picture was made for.
+        made_for = SceneStep.made_for(scene, through="step__")
+        del made_for["step__line"]
         picture = pictures.filter(
-            step__line__in=[scene.line, *scene.shortened_from], step__shows=scene.shows
+            step__line__in=[scene.line, *scene.shortened_from], **made_for
         ).last()
         if picture is None:
             raise Refused(
@@ -835,8 +835,7 @@ def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem]:
         scene.produced.filter(
             kind=ProducedItem.Kind.CLIP,
             step__status=SceneStep.Status.FINISHED,
-            step__line=scene.line,
-            step__shows=scene.shows,
+            **SceneStep.made_for(scene, through="step__"),
         )
         .order_by("version")
         .last()
@@ -915,9 +914,9 @@ def _start_step(
     made_from: ProducedItem | None = None,
     picture: ProducedItem | None = None,
 ) -> None:
-    """Start a scene step in the background, from the scene's line and what it shows as they
-    stand, unless one
-    of its kind is already running for the scene: then refuse, saying `busy`."""
+    """Start a scene step in the background, from the scene's line, what it shows and its
+    B-roll labels as they stand, unless one of its kind is already running for the scene:
+    then refuse, saying `busy`."""
     if scene.steps.filter(kind=kind, status=SceneStep.Status.RUNNING).exists():
         raise Refused(busy)
     try:
@@ -926,8 +925,7 @@ def _start_step(
                 scene=scene,
                 kind=kind,
                 tool_call=call,
-                line=scene.line,
-                shows=scene.shows,
+                **SceneStep.made_for(scene),
                 note=note,
                 made_from=made_from,
                 picture=picture,
