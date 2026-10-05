@@ -546,10 +546,10 @@ class MakeStartingPicture(Tool):
         steps = scene.steps.filter(kind=SceneStep.Kind.STARTING_PICTURE)
         made = (
             steps.filter(status=SceneStep.Status.FINISHED, note=note, **SceneStep.made_for(scene))
-            .filter(Q(way=3) | Q(produced__isnull=False))
+            .filter(Q(way=SceneStep.Way.FROM_EXAMPLES) | Q(produced__isnull=False))
             .last()
         )
-        if made is not None and made.way == 3:
+        if made is not None and made.way == SceneStep.Way.FROM_EXAMPLES:
             # A B-roll scene made way 3 has no picture, and the shop owner is shown none.
             assert made.photo is not None, "a way 3 step picks its main photo"
             return (
@@ -708,7 +708,7 @@ class MakeClip(Tool):
         # 3, with the example pictures picked and no picture.
         picture_steps = scene.steps.filter(
             kind=SceneStep.Kind.STARTING_PICTURE, status=SceneStep.Status.FINISHED
-        ).filter(Q(way=3) | Q(produced__isnull=False))
+        ).filter(Q(way=SceneStep.Way.FROM_EXAMPLES) | Q(produced__isnull=False))
         if not picture_steps.exists():
             raise Refused(
                 f"scene {scene.number} has no starting picture yet. Make its starting picture "

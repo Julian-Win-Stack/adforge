@@ -310,6 +310,12 @@ class SceneStep(models.Model):
         TRANSCRIPT = "transcript"
         CLIP = "clip"
 
+    class Way(models.IntegerChoices):
+        """How a B-roll scene's clip is made (docs/broll-picture-logic.md, "The logic")."""
+
+        FROM_PICTURE = 1, "From a starting picture"
+        FROM_EXAMPLES = 3, "From example pictures"
+
     class Status(models.TextChoices):
         RUNNING = "running"
         FINISHED = "finished"
@@ -375,6 +381,7 @@ class SceneStep(models.Model):
         "move it. Blank for a talking scene, whose clips all move the same way.",
     )
     way = models.PositiveSmallIntegerField(
+        choices=Way.choices,
         null=True,
         blank=True,
         help_text="For a B-roll scene's starting picture, how its clip is made: 1, from a "

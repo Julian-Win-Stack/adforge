@@ -111,6 +111,7 @@ from .scenes import (
     BrollPictureChoice,
     BrollPictureHandoff,
     BrollPromptHandoff,
+    ExamplePicture,
     PictureJob,
     StartingPictureChoice,
     StartingPictureHandoff,
@@ -1483,7 +1484,7 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
     step.prompt = choice.prompt
     step.prompt_reason = choice.prompt_reason
     step.motion_prompt = choice.motion_prompt
-    step.way = 1
+    step.way = SceneStep.Way.FROM_PICTURE
     main_photo, *rest = (picture.model_dump() for picture in pictures)
     step.pictures_sent = [
         {**main_photo, "photo": choice.photo},
@@ -1518,7 +1519,9 @@ def _pick_example_pictures(step: SceneStep) -> None:
         portrait = latest(job, ProducedItem.Kind.PORTRAIT)
         assert portrait is not None, "the tool refuses a scene whose person isn't made"
     photos = {photo.position: photo for photo in job.photos.all()}
-    colour_photos = [number for number, photo in photos.items() if photo.shows_product_colour]
+    colour_photos = {
+        number: photo.has_face for number, photo in photos.items() if photo.shows_product_colour
+    }
     # Room for the main photo and the portrait, if it is sent.
     room = MOST_EXAMPLE_PICTURES - 1 - (1 if portrait else 0)
     needs = photos_for_needs(
@@ -1531,7 +1534,7 @@ def _pick_example_pictures(step: SceneStep) -> None:
     choice = call_model(
         job=job,
         purpose="choose_broll_picture",
-        instructions=broll_prompt_instructions(step.broll_kind, way=3),
+        instructions=broll_prompt_instructions(step.broll_kind, SceneStep.Way.FROM_EXAMPLES),
         handoff=BrollExamplesHandoff(
             scene=scene.number,
             line=step.line,
@@ -1544,7 +1547,7 @@ def _pick_example_pictures(step: SceneStep) -> None:
             needs=needs,
             portrait=portrait is not None,
             product_colour=job.product_colour,
-            colour_photos=colour_photos,
+            colour_photos=list(colour_photos),
             person_looks=job.person_looks,
             note=step.note or None,
             conversation=_conversation(job, until=step.started_at),
@@ -1553,18 +1556,29 @@ def _pick_example_pictures(step: SceneStep) -> None:
         images=images,
         pay_once=True,
     )
-    sent = example_pictures(choice.photo, needs, portrait is not None)
+    main = ExamplePicture(choice.photo, colour_photos[choice.photo])
+    sent = example_pictures(main, needs, portrait is not None)
     step.photo = photos[choice.photo]
     step.photo_reason = choice.photo_reason
     step.prompt = ""
     step.prompt_reason = choice.action_reason()
     step.motion_prompt = choice.video_prompt()
-    step.way = 3
+    step.way = SceneStep.Way.FROM_EXAMPLES
+
+    def file_of(picture: ExamplePicture) -> str:
+        if picture.photo is not None:
+            return photos[picture.photo].file
+        assert portrait is not None, "the portrait is sent only when it is made"
+        return portrait.file
+
+    # Each with its file, so the clip is sent the pictures picked, though the portrait is
+    # made again or the page's photos read again before it is made.
     step.pictures_sent = [
         {
             "image": n,
             **({"portrait": True} if picture.portrait else {"photo": picture.photo}),
             "job": slot.said(),
+            "file": file_of(picture),
         }
         for n, (picture, slot) in enumerate(zip(sent, choice.slots(), strict=True), start=1)
     ]
@@ -1579,21 +1593,6 @@ def _pick_example_pictures(step: SceneStep) -> None:
             "pictures_sent",
         ]
     )
-
-
-def example_picture_files(step: SceneStep) -> list[str]:
-    """The files of the example pictures a way 3 picture step picked, in the order sent:
-    each product photo's, and the presenter's portrait's as it is now."""
-    job = step.scene.job
-    files = []
-    for picture in step.pictures_sent:
-        if picture.get("portrait"):
-            portrait = latest(job, ProducedItem.Kind.PORTRAIT)
-            assert portrait is not None, "a way 3 step sends the portrait only once it is made"
-            files.append(portrait.file)
-        else:
-            files.append(job.photos.get(position=picture["photo"]).file)
-    return files
 
 
 def _keep_starting_picture(step: SceneStep, prompt: str, pictures: list[str]) -> ProducedItem:
@@ -1877,9 +1876,9 @@ def _clip_handoff(
             f"its line takes {round(audio.seconds, 1):g} seconds to say, and the B-roll video "
             f"model makes clips of at most {MOST_BROLL_SECONDS} seconds"
         )
-    if planned.way == 3:
+    if planned.way == SceneStep.Way.FROM_EXAMPLES:
         return BrollClipHandoff(
-            example_pictures=example_picture_files(planned),
+            example_pictures=[picture["file"] for picture in planned.pictures_sent],
             seconds=_broll_clip_seconds(audio.seconds),
             prompt=planned.motion_prompt,
         )

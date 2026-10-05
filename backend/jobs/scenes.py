@@ -325,13 +325,15 @@ class ExamplePicture:
         return self.photo is None
 
 
-def example_pictures(main: int, needs: list[NeedPhoto], portrait: bool) -> list[ExamplePicture]:
+def example_pictures(
+    main: ExamplePicture, needs: list[NeedPhoto], portrait: bool
+) -> list[ExamplePicture]:
     """The example pictures a way 3 B-roll scene sends, in order: its main photo, then the
     photo of each of its needs unless it is the main photo, which isn't sent twice, then the
     presenter's portrait when the scene shows their face."""
     return [
-        ExamplePicture(main),
-        *(ExamplePicture(need.photo, need.has_face) for need in needs if need.photo != main),
+        main,
+        *(ExamplePicture(need.photo, need.has_face) for need in needs if need.photo != main.photo),
         *([ExamplePicture(None)] if portrait else []),
     ]
 
@@ -384,6 +386,13 @@ def starting_picture_choice_for[Choice: StartingPictureChoice](
     return StartingPictureChoiceForJob
 
 
+def _not_empty(text: str) -> str:
+    """`text`, unless there is nothing in it: then it fails while the answer is read."""
+    if not text.strip():
+        raise ValueError("This can't be empty.")
+    return text
+
+
 class PictureSlot(BaseModel):
     """What one example picture is for, as the video prompt says it."""
 
@@ -399,9 +408,7 @@ class PictureSlot(BaseModel):
     @field_validator("job")
     @classmethod
     def _not_empty(cls, text: str) -> str:
-        if not text.strip():
-            raise ValueError("This can't be empty.")
-        return text
+        return _not_empty(text)
 
     def said(self) -> str:
         """The job as the video prompt says it, after "Image N is"."""
@@ -437,24 +444,28 @@ class BrollExamplesChoice(BaseModel):
 
 
 def broll_examples_choice_for(
-    colour_photos: list[int], needs: list[NeedPhoto], portrait: bool
+    colour_photos: dict[int, bool], needs: list[NeedPhoto], portrait: bool
 ) -> type[BrollExamplesChoice]:
-    """The answer for a way 3 B-roll scene whose main photo is one of `colour_photos`, with
+    """The answer for a way 3 B-roll scene whose main photo is one of `colour_photos`, each
+    with whether it shows a stranger's face, with
     `needs`' photos and, if `portrait`, the portrait: one slot per picture sent. Which are
     sent can depend on the main photo picked (a need's photo that is the main photo isn't
     sent twice), so a slot only some picks send may be null. One missing, null for a picture
     sent, given for a picture not sent, or saying nothing to ignore in a photo with a face
     fails while the answer is read, like any other broken answer."""
-    counts = [len(example_pictures(main, needs, portrait)) for main in colour_photos]
+
+    def sent_with(main: int) -> list[ExamplePicture]:
+        return example_pictures(ExamplePicture(main, colour_photos[main]), needs, portrait)
+
+    # With no photo to pick, any pick is refused while the answer is read.
+    counts = [len(sent_with(main)) for main in colour_photos] or [1]
     least, most = min(counts), max(counts)
 
     class Checked(BrollExamplesChoice):
         @field_validator("photo_reason", "action", "prompt_reason", check_fields=False)
         @classmethod
         def _not_empty(cls, text: str) -> str:
-            if not text.strip():
-                raise ValueError("This can't be empty.")
-            return text
+            return _not_empty(text)
 
         @model_validator(mode="after")
         def _one_slot_per_picture_sent(self) -> Self:
@@ -464,7 +475,7 @@ def broll_examples_choice_for(
                     f"Photo {self.photo} isn't one showing the product in the ad's colour: "
                     f"those are {shown}."
                 )
-            sent = example_pictures(self.photo, needs, portrait)
+            sent = sent_with(self.photo)
             for n in range(1, most + 1):
                 slot = getattr(self, f"image_{n}")
                 if n > len(sent) and slot is not None:

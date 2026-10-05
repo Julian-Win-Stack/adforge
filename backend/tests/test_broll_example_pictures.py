@@ -72,7 +72,7 @@ WOMAN = NeedPhoto(what=["the colour"], photo=3, has_face=True)
 def test_the_pictures_are_sent_in_order(
     main: int, portrait: bool, sent: list[ExamplePicture]
 ) -> None:
-    assert example_pictures(main, [GEL, WOMAN], portrait) == sent
+    assert example_pictures(ExamplePicture(main), [GEL, WOMAN], portrait) == sent
 
 
 def slot(job: str, ignore: str | None = None) -> dict[str, Any]:
@@ -90,14 +90,14 @@ ANSWER: dict[str, Any] = {
 
 
 def test_each_picture_sent_has_a_required_slot() -> None:
-    choice = broll_examples_choice_for([1], [GEL], portrait=False)
+    choice = broll_examples_choice_for({1: False}, [GEL], portrait=False)
     schema = choice.model_json_schema()
     assert {"image_1", "image_2"} <= set(schema["required"])
     assert "image_3" not in schema["properties"]
 
 
 def test_the_joined_prompt_names_every_picture_then_the_action() -> None:
-    choice = broll_examples_choice_for([1], [GEL, WOMAN], portrait=True)
+    choice = broll_examples_choice_for({1: False}, [GEL, WOMAN], portrait=True)
     answer = choice.model_validate(
         {
             **ANSWER,
@@ -122,7 +122,7 @@ def test_the_joined_prompt_names_every_picture_then_the_action() -> None:
     ],
 )
 def test_a_broken_answer_is_refused(changes: dict[str, Any], why: str) -> None:
-    choice = broll_examples_choice_for([1], [GEL], portrait=False)
+    choice = broll_examples_choice_for({1: False}, [GEL], portrait=False)
     with pytest.raises(ValidationError, match=why):
         choice.model_validate({**ANSWER, **changes})
 
@@ -130,8 +130,16 @@ def test_a_broken_answer_is_refused(changes: dict[str, Any], why: str) -> None:
 def test_a_slot_given_for_a_picture_not_sent_is_refused() -> None:
     # Photo 4 shows the product in the ad's colour too, and is the gel's photo: picked as
     # the main photo, it isn't sent twice, so only one picture is sent.
-    choice = broll_examples_choice_for([1, 4], [GEL], portrait=False)
+    choice = broll_examples_choice_for({1: False, 4: False}, [GEL], portrait=False)
     with pytest.raises(ValidationError, match="image_2 must be null"):
         choice.model_validate({**ANSWER, "photo": 4})
     answer = choice.model_validate({**ANSWER, "photo": 4, "image_2": None})
     assert answer.video_prompt().startswith("Image 1 is the bottle; keep its label exactly. A ")
+
+
+def test_a_main_photo_with_a_face_must_say_what_to_ignore_in_it() -> None:
+    choice = broll_examples_choice_for({1: True}, [GEL], portrait=False)
+    with pytest.raises(ValidationError, match="Image 1 shows a stranger's face"):
+        choice.model_validate(ANSWER)
+    answer = choice.model_validate({**ANSWER, "image_1": slot("the bottle", "the man")})
+    assert answer.video_prompt().startswith("Image 1 is the bottle; ignore the man. ")

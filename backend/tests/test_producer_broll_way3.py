@@ -112,8 +112,13 @@ def test_the_picture_step_stores_way_3_its_pictures_with_their_jobs_and_the_vide
     assert (way_3.way, way_3.pictures_sent, way_3.motion_prompt, way_3.prompt) == (
         3,
         [
-            {"image": 1, "photo": 1, "job": "the mug; keep its glaze exactly"},
-            {"image": 2, "photo": 4, "job": "only the tea's colour"},
+            {
+                "image": 1,
+                "photo": 1,
+                "job": "the mug; keep its glaze exactly",
+                "file": photo_file(1),
+            },
+            {"image": 2, "photo": 4, "job": "only the tea's colour", "file": photo_file(4)},
         ],
         VIDEO_PROMPT,
         "",
@@ -182,6 +187,7 @@ def test_a_need_whose_photos_all_have_a_face_sends_the_first_with_what_to_ignore
         "image": 2,
         "photo": 4,
         "job": "only the tea's colour; ignore the woman",
+        "file": photo_file(4),
     }
     assert "Image 2 is only the tea's colour; ignore the woman. " in step.motion_prompt
 
@@ -207,11 +213,12 @@ def test_the_portrait_is_sent_last_for_a_scene_that_shows_the_presenters_face(
 
     step = picture_step_of_scene_2(fake_model, steps, say, answer)
 
-    assert step.pictures_sent == [
-        {"image": 1, "photo": 1, "job": "the mug; keep its glaze exactly"},
-        {"image": 2, "photo": 4, "job": "only the tea's colour"},
-        {"image": 3, "portrait": True, "job": "the presenter"},
+    assert [{**picture, "file": None} for picture in step.pictures_sent] == [
+        {"image": 1, "photo": 1, "job": "the mug; keep its glaze exactly", "file": None},
+        {"image": 2, "photo": 4, "job": "only the tea's colour", "file": None},
+        {"image": 3, "portrait": True, "job": "the presenter", "file": None},
     ]
+    assert step.pictures_sent[2]["file"] == portrait_file()
     assert ModelCall.objects.get(purpose="choose_broll_picture").images[-1] == {
         "label": "The portrait",
         "key": portrait_file(),
@@ -263,9 +270,11 @@ def test_a_needs_photo_that_is_the_main_photo_isnt_sent_twice(
 
     step = picture_step_of_scene_2(fake_model, steps, say, answer)
 
-    assert step.pictures_sent == [
-        {"image": 1, "photo": 3, "job": "the mug and the tea's colour"},
-        {"image": 2, "portrait": True, "job": "the presenter"},
+    assert [
+        (p["image"], p.get("photo"), p.get("portrait"), p["job"]) for p in step.pictures_sent
+    ] == [
+        (1, 3, None, "the mug and the tea's colour"),
+        (2, None, True, "the presenter"),
     ]
     assert step.motion_prompt.startswith(
         "Image 1 is the mug and the tea's colour. Image 2 is the presenter. Tea is poured"
@@ -374,6 +383,20 @@ def test_the_clip_is_asked_for_from_the_example_pictures_and_no_starting_picture
         f"Background step finished: scene 2's clip is ready (version 1, {clip.seconds:g} "
         "seconds), made from audio version 1. Scene 2 is finished. Tell the shop owner."
     )
+
+
+def test_the_clip_is_sent_the_pictures_picked_though_the_page_is_read_again_since(
+    fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    picked = photo_file(4)
+    # The page's photos stored again under new keys, as when the page is read again.
+    for each in ProductPhoto.objects.filter(position__in=(1, 4)):
+        each.file = file_store.save(f"again-{each.position}.png", photo(each.position))
+        each.save()
+
+    clip_of_scene_2(fake_model, steps, say)
+
+    assert clips_asked("example_pictures")[0][1] == picked
 
 
 def test_the_clip_tool_refuses_while_the_picture_step_is_running(
