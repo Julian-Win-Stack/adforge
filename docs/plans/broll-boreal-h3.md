@@ -3,7 +3,7 @@
 - Date: 2026-10-04
 - Status: draft, for the user to agree. Nothing is built yet.
 - The decisions behind it, with the reasons: `docs/broll-picture-logic.md` ("Decided", items
-  1 to 52). This plan says only how they are built and tested. Where the two disagree, the
+  1 to 53). This plan says only how they are built and tested. Where the two disagree, the
   logic doc wins and this plan is fixed.
 
 ## What build 1 is, in one paragraph
@@ -39,7 +39,7 @@ Questions reading the code raised, now items 32 to 40 in the logic doc:
 
 ## Settled with the user on 2026-10-05
 
-Items 42 to 52 in the logic doc. Where they change a phase below, the phase is updated.
+Items 42 to 53 in the logic doc. Where they change a phase below, the phase is updated.
 
 1. "Describe it in words" is not offered in build 1: the question offers "attach a photo"
    or "use without proven result" (item 42).
@@ -55,6 +55,7 @@ Items 42 to 52 in the logic doc. Where they change a phase below, the phase is u
 9. No judge until the graded run; no B-roll for real shop owners until a judge exists
    (item 50, #109). Measuring left for later: #108, #110, #111 (item 51).
 10. The second kind is named "showcase" instead of "looks good" (item 52).
+11. "Who is in it" is "no face" or "has face": only faces matter (item 53).
 
 ## Phase 0: tests before building (about $2, each needs the user's yes first)
 
@@ -164,7 +165,7 @@ One migration. Each new field shown in the admin.
    photo (item 26).
 2. **`Scene`**, for B-roll scenes (blank for talking ones):
    - `broll_kind`: "does a job" or "showcase" (item 12).
-   - `person_shown`: "none", "a hand only" or "a face or body" (item 27).
+   - `person_shown`: "no face" or "has face" (item 27).
    - `usage`: the usage fact, from the page's "how to use" (item 10).
    - `result`: the result it promises, for "does a job" (item 11).
    - `needs`: what the scene needs that the main photo can't show, each with the photos
@@ -202,10 +203,10 @@ One migration. Each new field shown in the admin.
    - A needed photo is one of the job's photos (any colour check is the planner's: the
      instructions say never a photo of the product in another colour, item 44).
    - At most 5 pictures in all: the main photo, the needed photos, and the portrait when
-     the person is "a face or body" (item 27).
+     the person is "has face" (item 27).
 3. **`PLAN_INSTRUCTIONS`:**
    - The two kinds and how to pick ("showcase" when unsure).
-   - Who is in the scene, in the three labels; the person shown is always the presenter.
+   - Who is in the scene, in the two labels; the person shown is always the presenter.
    - Read the usage from the page's "how to use" and plan the scene with it; for "does a
      job", write the result you can see, and the scene ends on it.
    - "A B-roll line has at least about 10 words." The old "a B-roll line is one short
@@ -262,11 +263,11 @@ One migration. Each new field shown in the admin.
 2. **The main photo:** picked by the existing picture chooser from the marked photos, the
    best one for the scene (item 45), for way 1 and way 3 alike.
 3. **Way 1:** the image maker gets the main photo, plus the portrait when the person is
-   "a face or body". The prompt (written by the model, rules below) says to take only the
+   "has face". The prompt (written by the model, rules below) says to take only the
    product from the photo; the setting is described in words. The picture is the "before".
 4. **Way 3:** code builds the example pictures, in order: the main photo, then for each
    need, a photo from its list without a face if there is one, otherwise the first (item
-   28), then the portrait when the person is "a face or body". No picture is made.
+   28), then the portrait when the person is "has face". No picture is made.
 5. **The prompt writer** (`jobs/scenes.py`, `BROLL_PICTURE_INSTRUCTIONS` rewritten): one
    model, the shared rules plus only the scene's kind's rules (item 12). It gets the line,
    `shows`, the usage fact, the result, the person label and the pictures with their jobs,
@@ -283,8 +284,8 @@ One migration. Each new field shown in the admin.
    - `NOTHING_MADE_UP` is no longer added to B-roll prompts (decided 2026-10-03).
 6. **Stale steps:** a picture step made for an earlier line, "shows" or B-roll fields is
    out of date, like one made for an earlier line today.
-7. **Tests:** way 1 sends the main photo and no portrait for "a hand only"; the portrait
-   for "a face or body"; way 3 sends the pictures in order, a photo without a face before
+7. **Tests:** way 1 sends the main photo and no portrait for "no face"; the portrait
+   for "has face"; way 3 sends the pictures in order, a photo without a face before
    one with; a prompt that skips "Image 2" is refused; the stored step has its way, its
    pictures and its prompt.
 

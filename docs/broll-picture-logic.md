@@ -3,7 +3,7 @@
 - Date: 2026-10-03
 - Ticket: #94. Follows the Boreal-H3 check on scene #16 (`docs/runs/second-run-review/check/`).
 - Status: the logic is agreed and tested (five tests, 2026-10-03, about $4). Ready to build.
-  Items 42 to 52 were settled with the user on 2026-10-05, before building.
+  Items 42 to 53 were settled with the user on 2026-10-05, before building.
   Nothing is built yet. Issue #94 is not to be edited (the user, 2026-10-03).
 
 ## Decided
@@ -104,11 +104,10 @@
     - Up to 5 pictures in all, the presenter's portrait counted (5 are free). Only what the
       scene needs, each with its job named. Cut back only if tests show the model mixing
       them up.
-    - The planner labels each B-roll scene "person in the scene: none / a hand only / a
-      face or body". Code sends the presenter's portrait when it is "a face or body".
-    - Shop photos with a face or body may be sent, with the portrait, and the prompt says to
+    - The planner labels each B-roll scene "person in the scene: no face / has face". Code sends the presenter's portrait when it is "has face".
+    - Shop photos with a face may be sent, with the portrait, and the prompt says to
       use the presenter. Tested after building.
-    - Not yet decided: a photo with a face or body for a scene that shows no person, and
+    - Not yet decided: a photo with a face for a scene that shows no person, and
       photos with printed words. Decided in items 28 and 29.
 28. **Which shop photo does a job (2026-10-04).**
     1. A photo without a stranger's face for the job, if there is one (code picks it from
@@ -219,6 +218,9 @@
     evals for every AI call (#111). None of them blocks build 1.
 52. **The second kind is named "showcase" (2026-10-05),** replacing "looks good", which read
     as confusing. Same meaning: the product shown at its best. "Does a job" stays.
+53. **Only faces matter for people (2026-10-05).** "Who is in it" has two labels, "no face"
+    (nobody, or only a hand or body) and "has face" (the presenter's face is shown; the
+    portrait is sent). Replaces item 27's three labels. A hand or body is never a concern.
 
 ## What Boreal-H3 takes
 
@@ -274,7 +276,7 @@ sent together with the presenter's portrait has never been tried (corrected 2026
 
 - The presenter's portrait is given to the picture maker (way 1) or as an example picture
   (way 3) whenever the scene shows a person (item 27).
-- Shop photos with a face or body may be sent (item 27, replacing "never sent"), with the
+- Shop photos with a face may be sent (item 27, replacing "never sent"), with the
   presenter's portrait and a prompt that says to use the presenter. Tested after building;
   if the shop's person leaks into the video, they stop being sent.
 - Tested after building, not before (decided 2026-10-03). The production prompts (the
