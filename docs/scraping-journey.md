@@ -38,6 +38,7 @@ Firecrawl is a hosted browser. It opens the page like a real visitor, runs the J
 
 - It opened **94 of 100** pages, including 26 of the 30 big retailers.
 - It got the full text, including text that only loads with JavaScript.
+- Its product record, the shop's own record of the product that the app also asks for, gave the right price for the product I was targeting on **36 of 36** pages where it found one. I checked it later, on the 37 pages of the colour-list test ([#110](https://github.com/Julian-Win-Stack/adforge/issues/110)): 12 against the price I told the planner, 22 against the price the page declares for Google, and 2 by hand. On the 37th page, Bose's, it found no product at all.
 
 I thought about running my own browser instead. It would fix the JavaScript pages but not the blocking, since stores like Sephora block by browser fingerprint and IP address. Getting past that means proxies and constant upkeep every time a store changes its defences. Firecrawl already does that for 1 credit a page, so I used it.
 
@@ -109,6 +110,7 @@ For each product link, Firecrawl makes three calls at once: the page text, the m
 
 - **Text:** a cheap model copies this product's passages, and each sentence is checked against the page.
 - **Photos:** a model picks this product's photos from the screenshot, using the shop's record as a reference. Copies are merged and each photo is downloaded at its biggest size.
+- **Price:** only from the shop's product record. The text step leaves prices out, because a page shows other products' prices too, and the price the page declares for Google is taken out as well. If the record has no price, the planner asks the shop owner.
 - **If something fails** (no Firecrawl key, a timeout, the picker finding nothing), the app falls back to the old way and posts a notice in the chat, so a failure is never silent.
 
 The photo picker still lets a few wrong photos through. It doesn't happen often, and it's almost always a photo where this product sits next to other products, like a set or a line-up. So the planner has its own rule: leave out any photo that shows another product next to this one. I tested it on a few products whose photos still had this problem, and the other products didn't make it into the ad. The text didn't need a rule like this, because almost nothing about other products got through the text step.
