@@ -106,6 +106,11 @@ Each phase ends with the whole test suite green. Tests are written first, throug
 as the others are (`backend/tests/test_producer_broll.py` and friends), with the outside
 services faked. No phase calls a paid service; the first paid run is in Phase 10.
 
+**Testing focus (the user, 2026-10-05):** mostly integration tests that run each ticket's
+main flow end to end through the chat; unit tests too, but only in support (a validator,
+the seconds rule, a price). Phase 10 adds one faked end-to-end test of a whole ad with a
+talking scene, a way 1 B-roll scene and a way 3 B-roll scene.
+
 ---
 
 ### Phase 2: Boreal-H3 in the gateway, replacing the old Boreal
