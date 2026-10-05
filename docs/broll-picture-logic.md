@@ -3,7 +3,7 @@
 - Date: 2026-10-03
 - Ticket: #94. Follows the Boreal-H3 check on scene #16 (`docs/runs/second-run-review/check/`).
 - Status: the logic is agreed and tested (five tests, 2026-10-03, about $4). Ready to build.
-  Items 42 to 51 were settled with the user on 2026-10-05, before building.
+  Items 42 to 52 were settled with the user on 2026-10-05, before building.
   Nothing is built yet. Issue #94 is not to be edited (the user, 2026-10-03).
 
 ## Decided
@@ -36,7 +36,7 @@
 11. **End on the result.** The starting picture sets up the "before"; the video prompt does
     the action and ends on the result, described in words. No end picture.
 12. **Two kinds of scene,** one prompt-writing agent with a rule set per kind: "does a job
-    you can see" (the result comes from the product being used) and "looks good"
+    you can see" (the result comes from the product being used) and "showcase"
     (everything else, the default when unsure).
 13. **The clip isn't cut where the spoken line ends.** It plays to its end.
 14. **Only the presenter is shown.** Any hand is fine. Tested after building; the production
@@ -206,7 +206,7 @@
     shop owner is asked to attach a photo of the product. A case for it is in the "Should we
     ask?" eval.
 49. **The "Should we ask?" eval (2026-10-05).** 8 cases: a needed photo missing (ask); "how
-    to use" missing on a "does a job" product (ask); a "looks good" product without "how to
+    to use" missing on a "does a job" product (ask); a "showcase" product without "how to
     use" (don't ask); everything present (don't ask); the serum with one photo, a scene
     wanting its texture (ask); the blush with a cheek photo (don't ask); the power bank shown
     charging a phone, no photo of it, the page says it charges phones (don't ask); no photo
@@ -217,6 +217,8 @@
 51. **What build 1 doesn't measure is tracked (2026-10-05):** the fact check's accuracy and
     claims made across lines (#108), the photos the colour list throws away (#110), and
     evals for every AI call (#111). None of them blocks build 1.
+52. **The second kind is named "showcase" (2026-10-05),** replacing "looks good", which read
+    as confusing. Same meaning: the product shown at its best. "Does a job" stays.
 
 ## What Boreal-H3 takes
 
@@ -325,9 +327,9 @@ small rule set, not a new agent.
 | Kind | Examples | Its own rules |
 |---|---|---|
 | Does a job you can see | toilet cleaner, blush, collagen powder, power bank, blender | The result comes from the product being used; end on it |
-| Looks good (everything else) | bag, clothes, jewellery, decor | Shown in use; nothing invented; end at its best |
+| Showcase (everything else) | bag, clothes, jewellery, decor | Shown in use; nothing invented; end at its best |
 
-When the planner isn't sure, it picks "looks good": it can't invent a result. First drafted
+When the planner isn't sure, it picks "showcase": it can't invent a result. First drafted
 as three kinds (changes something, worn or carried, other); "worn or carried" and "other"
 were merged because their rules were the same, and gadgets moved to "does a job", because a
 gadget shown only looking nice never proves it works.
@@ -339,7 +341,7 @@ gadget shown only looking nice never proves it works.
   A result shown on
   a screen is shown without numbers or words (the charging light comes on, not "80%"): video
   makers garble them.
-- **Looks good.** The real product shown clearly, in use the way the page says; one simple
+- **Showcase.** The real product shown clearly, in use the way the page says; one simple
   action (worn and turning, picked up, set down, or a slow camera move); ending on the moment
   the product looks its best, such as the bag catching the light as she turns; no result or
   change the page doesn't prove.

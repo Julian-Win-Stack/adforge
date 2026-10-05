@@ -3,7 +3,7 @@
 - Date: 2026-10-04
 - Status: draft, for the user to agree. Nothing is built yet.
 - The decisions behind it, with the reasons: `docs/broll-picture-logic.md` ("Decided", items
-  1 to 51). This plan says only how they are built and tested. Where the two disagree, the
+  1 to 52). This plan says only how they are built and tested. Where the two disagree, the
   logic doc wins and this plan is fixed.
 
 ## What build 1 is, in one paragraph
@@ -54,6 +54,7 @@ Items 42 to 51 in the logic doc. Where they change a phase below, the phase is u
 8. The "Should we ask?" eval has 8 cases, each run 3 times (item 49).
 9. No judge until the graded run; no B-roll for real shop owners until a judge exists
    (item 50, #109). Measuring left for later: #108, #110, #111 (item 51).
+10. The second kind is named "showcase" instead of "looks good" (item 52).
 
 ## Phase 0: tests before building (about $2, each needs the user's yes first)
 
@@ -162,7 +163,7 @@ One migration. Each new field shown in the admin.
 1. **`ProductPhoto.has_face`**: yes or no. A stranger's face in the
    photo (item 26).
 2. **`Scene`**, for B-roll scenes (blank for talking ones):
-   - `broll_kind`: "does a job" or "looks good" (item 12).
+   - `broll_kind`: "does a job" or "showcase" (item 12).
    - `person_shown`: "none", "a hand only" or "a face or body" (item 27).
    - `usage`: the usage fact, from the page's "how to use" (item 10).
    - `result`: the result it promises, for "does a job" (item 11).
@@ -203,7 +204,7 @@ One migration. Each new field shown in the admin.
    - At most 5 pictures in all: the main photo, the needed photos, and the portrait when
      the person is "a face or body" (item 27).
 3. **`PLAN_INSTRUCTIONS`:**
-   - The two kinds and how to pick ("looks good" when unsure).
+   - The two kinds and how to pick ("showcase" when unsure).
    - Who is in the scene, in the three labels; the person shown is always the presenter.
    - Read the usage from the page's "how to use" and plan the scene with it; for "does a
      job", write the result you can see, and the scene ends on it.
@@ -277,7 +278,7 @@ One migration. Each new field shown in the admin.
    - Rules from "Prompt rules" in the logic doc: one continuous shot; the product does
      what the line claims, held as the usage fact says; the main action in the middle of
      the frame, nothing about the top and bottom; ends on the result ("does a job") or on
-     the product at its best ("looks good"); only the presenter, any hand is fine; the
+     the product at its best ("showcase"); only the presenter, any hand is fine; the
      product shown, not described; no "no speech, no sound, no text".
    - `NOTHING_MADE_UP` is no longer added to B-roll prompts (decided 2026-10-03).
 6. **Stale steps:** a picture step made for an earlier line, "shows" or B-roll fields is
