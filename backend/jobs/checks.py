@@ -14,7 +14,7 @@ from .planning import BROLL_DETAILS_INSTRUCTIONS, ChatMessage, ScriptScene, phot
 # A script fits its target when it runs no more than this much over it. Shorter always fits.
 LENGTH_ALLOWANCE_SECONDS = 2
 # Times the producer rewrites a line the fact check failed, or shortens a script that
-# doesn't fit or a line too long for a clip, before the user is asked instead.
+# doesn't fit or a talking line too long for its clip, before the user is asked instead.
 MOST_REWRITES = 2
 # The longest a talking scene's line may take to say. The video model makes clips of at most
 # MOST_CLIP_SECONDS, and the voice's speed is measured on the whole script, not per line.
