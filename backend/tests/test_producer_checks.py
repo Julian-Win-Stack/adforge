@@ -17,6 +17,8 @@ from .conftest import (
     NO_CHOICES,
     PLAN,
     READABLE,
+    a_plan_with,
+    broll,
     facts_ok,
     handoffs,
     lines,
@@ -371,7 +373,7 @@ def showing(shows: str) -> dict[str, Any]:
     """The mug plan, with its second scene showing `shows` while its line is said."""
     scenes = [
         {"line": "Meet the Stoneware Mug from Kiln & Co."},
-        {"line": "Hand-thrown, holds 350 ml.", "shows": shows},
+        broll({"line": "Hand-thrown, holds 350 ml.", "shows": shows}),
         {"line": "Yours for $24.00."},
     ]
     return {**PLAN, "plan": {**PLAN["plan"], "scenes": scenes}}
@@ -594,6 +596,8 @@ def test_a_scene_showing_something_unsupported_can_be_rewritten_for_the_person_t
 
     scene = Job.objects.get().scenes.get(number=2)
     assert (scene.line, scene.shows) == ("Hand-thrown, holds 350 ml.", "")
+    # A talking scene has no B-roll labels.
+    assert (scene.broll_kind, scene.person_shown) == ("", "")
 
 
 @pytest.fixture
@@ -660,6 +664,19 @@ def test_a_scene_the_user_has_the_person_say_shows_the_person_talking(
     assert (scene.line, scene.shows) == ("Hand-thrown, holds 350 ml.", "")
 
 
+def test_a_scene_the_user_has_the_person_say_loses_its_broll_labels(
+    had_the_person_say_scene_2: None,
+) -> None:
+    scene = Job.objects.get().scenes.get(number=2)
+    assert (
+        scene.broll_kind,
+        scene.person_shown,
+        scene.usage,
+        scene.result,
+        scene.needs,
+    ) == ("", "", "", "", [])
+
+
 def test_a_scene_the_user_has_the_person_say_goes_on_without_another_fact_check(
     had_the_person_say_scene_2: None,
 ) -> None:
@@ -684,7 +701,7 @@ LONGEST = " ".join(["Hand-thrown and dishwasher safe, it holds 350 ml."] * 4) + 
 def scene_2_saying(line: str, *, shows: str | None = None) -> dict[str, Any]:
     """The mug plan with scene 2 saying `line`, over what it `shows` if anything."""
     plan = plan_with("Meet the Stoneware Mug from Kiln & Co.", line, "Yours for $24.00.")
-    plan["plan"]["scenes"][1]["shows"] = shows
+    plan["plan"]["scenes"][1] = broll({**plan["plan"]["scenes"][1], "shows": shows})
     return plan
 
 
@@ -986,6 +1003,72 @@ def test_a_scene_dropped_in_shortening_takes_what_it_shows_with_it(
     assert lines_and_shows() == [
         ("Meet the Stoneware Mug from Kiln & Co.", ""),
         ("Yours for $24.00.", ""),
+    ]
+
+
+def test_a_scene_dropped_in_shortening_takes_its_broll_labels_with_it(
+    shortened_dropping_the_pour: None,
+) -> None:
+    assert broll_labels_now() == [("", "", "", "", []), ("", "", "", "", [])]
+
+
+def broll_labels_now() -> list[tuple[str, str, str, str, list[dict[str, Any]]]]:
+    """Each scene's B-roll kind, person, usage, result and needs, in order."""
+    return list(
+        Job.objects.get().scenes.values_list(
+            "broll_kind", "person_shown", "usage", "result", "needs"
+        )
+    )
+
+
+# A scene where the mug does a job, with the presenter's face and a need of its own.
+TEA_POURED: dict[str, Any] = {
+    "line": "Pour in hot tea and it stays warm in your hands.",
+    "shows": POUR,
+    "broll_kind": "does a job",
+    "person_shown": "has face",
+    "usage": "Pour a hot drink into the mug.",
+    "result": "The mug full of steaming tea.",
+    "needs": [{"what": "the handle", "photos": [2]}],
+}
+
+
+def test_a_line_moved_up_in_shortening_takes_its_broll_labels_with_it(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    # Scene 2, said to camera, is dropped, so the pour's line plays second.
+    plan = a_plan_with(
+        scenes=[
+            {"line": "Meet the Stoneware Mug from Kiln & Co."},
+            {"line": "Hand-thrown, holds 350 ml, and dishwasher safe."},
+            TEA_POURED,
+        ]
+    )
+    checking(fake_model, product_page_url, plan, target_seconds=5)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3))
+    say(f"Make a 5 second ad for {product_page_url}")
+    shortening_to(
+        fake_model,
+        (1, "Meet the Stoneware Mug."),
+        (3, "Pour in hot tea and it stays warm."),
+    )
+    fake_model.respond("fact_check", facts_ok(1, 2))
+
+    say("Shorten it")
+
+    assert lines_and_shows() == [
+        ("Meet the Stoneware Mug.", ""),
+        ("Pour in hot tea and it stays warm.", POUR),
+    ]
+    assert broll_labels_now() == [
+        ("", "", "", "", []),
+        (
+            "does a job",
+            "has face",
+            "Pour a hot drink into the mug.",
+            "The mug full of steaming tea.",
+            [{"what": "the handle", "photos": [2]}],
+        ),
     ]
 
 

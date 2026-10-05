@@ -16,7 +16,7 @@ from gateway.models import ModelCall
 from gateway.types import MusicHandoff, UnusableReply
 from jobs import page
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
-from jobs.models import Job, ProducedItem, ProductPhoto, Scene, SceneStep
+from jobs.models import BROLL_FIELDS, Job, ProducedItem, ProductPhoto, Scene, SceneStep
 from jobs.notices import post_notice
 from jobs.work import (
     DECLARED_INSTEAD,
@@ -424,7 +424,7 @@ class RunPlanningChecks(Tool):
                 scene.change_line(scene.line, "")
             # The shop owner knows their product: the line they chose isn't checked again.
             scene.fact_checked = True
-            scene.save(update_fields=["line", "shows", "status", "fact_checked"])
+            scene.save(update_fields=["line", "shows", *BROLL_FIELDS, "status", "fact_checked"])
         if self.length_choice is not None:
             job.length_choice = Job.LengthChoice(self.length_choice)
             job.save(update_fields=["length_choice"])

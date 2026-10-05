@@ -117,6 +117,24 @@ PLAN: dict[str, Any] = {
 # The plan's 18 words take the fake voice 9 seconds: it speaks 2 words a second.
 
 
+# What the planner says about a B-roll scene when a test doesn't say: it shows the mug at
+# its best, with no face in it, and needs nothing the main photo can't show.
+SHOWCASE: dict[str, Any] = {
+    "broll_kind": "showcase",
+    "person_shown": "no face",
+    "usage": None,
+    "result": None,
+    "needs": [],
+}
+
+
+def broll(scene: dict[str, Any]) -> dict[str, Any]:
+    """A planned scene with SHOWCASE's B-roll labels when it shows something, as every
+    B-roll scene must have them; a scene the person says to camera as it is."""
+    shows = scene.get("shows")
+    return {**SHOWCASE, **scene} if shows and shows.strip() else scene
+
+
 def facts_ok(*scenes: int) -> dict[str, Any]:
     """What the fact check answers when every one of `scenes` matches the page."""
     return {

@@ -23,6 +23,7 @@ from .conftest import (
     PLAN,
     HeldSteps,
     WorkerStopped,
+    broll,
     colour_at,
     drawn_in,
     handoffs,
@@ -44,7 +45,7 @@ BROLL_PLAN: dict[str, Any] = {
     "plan": {
         **PLAN["plan"],
         "scenes": [
-            {**scene, "shows": SHOWS if number == 2 else None}
+            broll({**scene, "shows": SHOWS if number == 2 else None})
             for number, scene in enumerate(PLAN["plan"]["scenes"], start=1)
         ],
     },
@@ -191,6 +192,19 @@ def assemble_through_the_chat(
     run(fake_model, steps)
     calling(fake_model, say, ("assemble_ad", {}))
     return Job.objects.get().produced.get(kind="finished_ad")
+
+
+def test_a_broll_scene_planned_before_it_had_labels_still_makes_its_ad(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    # A job planned before the plan gave each B-roll scene its kind, person, usage, result
+    # and needs has them blank.
+    Scene.objects.update(broll_kind="", person_shown="", usage="", result="", needs=[])
+
+    ad = assemble_through_the_chat(fake_model, steps, say)
+
+    assert [cut["scene"] for cut in ad.cuts] == [1, 2, 3]
+    assert len(clips_asked("motion_prompt")) == 1
 
 
 def test_a_scene_that_shows_the_product_plays_in_its_turn(assembled: ProducedItem) -> None:

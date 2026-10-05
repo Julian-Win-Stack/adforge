@@ -38,7 +38,8 @@ of the photos that show the product in that colour. Leave out any photo that sho
 another product next to this one, even one from the same brand or range, such as a \
 line-up, a set, a routine or a comparison, and any photo where this product can't be \
 clearly seen. If the product comes in several \
-colours, don't ask which: pick one the photos show. Say how big the product is, judged \
+colours, don't ask which: pick the colour with the most photos where the product is \
+clearly seen; on a tie, the colour of Photo 1, the first photo. Say how big the product is, judged \
 from the photos you chose: "tiny" if it fits on a fingertip, such as earrings, earbuds or \
 a ring; "handheld" if it's held in one or two hands, such as a bottle, a bag, a power bank \
 or a rolled-up mat; "large" if it can't be held, such as a chair, a treadmill or a \
@@ -58,11 +59,12 @@ as "a hand pours the sauce over a bowl of noodles"; for a talking scene, set it 
 The first scene is always the person talking to camera. Use B-roll for lines about how \
 the product is used, what it does, or proof, and only to show what the page or the shop \
 owner states, or the photos show: a picture is a claim, just like a sentence. What a \
-scene shows must match what its line says while it says it, so a B-roll line is one \
-short sentence about what is shown. Never show before and after pictures of bodies or \
-skin, a screen whose content you'd have to invent, a result the page doesn't state, or \
-parts of the product no photo shows. How much of the ad is B-roll depends on the kind of \
-product. As a guide (B-roll share; what it can show; only if the page says; never):
+scene shows must match what its line says while it says it, so a B-roll line is about \
+what is shown. A B-roll line has at least about 10 words. Never show before and after \
+pictures of bodies or skin, a screen whose content you'd have to invent, a result the \
+page doesn't state, or parts of the product no photo shows. How much of the ad is B-roll \
+depends on the kind of product. As a guide (B-roll share; what it can show; only if the \
+page says; never):
 - Beauty and skincare: about 30%; a texture close-up (a dab on a fingertip), hands \
 applying it, the pack; only if the page gives the texture and how it's applied; never \
 skin before and after, skin problems or a visible result on skin.
@@ -93,6 +95,24 @@ the product alone; only claims the page makes; never children.
 - Jewelry: about 40%; an extreme close-up, worn on a hand or neck; only the material and \
 stones the page gives; never detail the photos don't show.
 You may go against the guide for an unusual product if your reason says why.
+For each B-roll scene, also give:
+- Its kind: "does a job" when the product does something you can see, such as a pan \
+searing a steak or a cloth wiping a spill away; "showcase" for everything else, the \
+product at its best. Choose "showcase" when unsure.
+- Who is in it: "has face" when the presenter's face is in the scene, "no face" when it \
+isn't. A hand or a body without a face is "no face". The only person ever shown is the \
+presenter: never anyone else.
+- Its usage: how the product is used in the scene, read from the page's "how to use", and \
+plan the scene with it. Null if the product isn't used in it.
+- For "does a job", its result: what you can see at the end, which the scene ends on, \
+such as "the spill wiped away". Only a result the page states. Null for "showcase".
+- Its needs: what the scene needs that the main photo can't show, such as what a gel \
+looks like out of the tube, each with the numbers of the photos that show it. The main \
+photo is one of the photos showing the product in its colour; leave needs empty when it's \
+enough. A needed photo may be any of the photos, even one where the product isn't \
+clearly seen. Never name a photo that shows the product in another colour than the one \
+you picked. A scene's clip is sent at most 5 pictures: the main photo, one for each need, \
+and the presenter's portrait when it "has face".
 Decide "ask" when you don't know the one price to say, because neither the page nor the \
 shop owner gives a price, or they give different prices to choose between (such as a \
 single item, a pack and a subscription). Also decide "ask" when the page conflicts with \
@@ -111,6 +131,32 @@ rather than the person talking, or that there are two kinds of scene."""
 MOST_OVERLAY_CHARACTERS = 30
 
 
+# What a B-roll scene is: the product doing something you can see, or at its best.
+BrollKind = Literal["does a job", "showcase"]
+
+# Whether a B-roll scene shows the presenter's face. Only a face matters: a hand or a body
+# never does, and the only face ever shown is the presenter's, from their portrait.
+PersonShown = Literal["no face", "has face"]
+
+# The most pictures a B-roll clip is sent, the presenter's portrait counted: the most
+# Boreal-H3 takes for free.
+MOST_PICTURES = 5
+
+
+class Need(BaseModel):
+    what: str = Field(description='What the scene needs, in a few words, such as "the gel".')
+    photos: list[StrictInt] = Field(
+        min_length=1, description="The numbers of the photos that show it."
+    )
+
+    @field_validator("what")
+    @classmethod
+    def _not_empty(cls, what: str) -> str:
+        if not what.strip():
+            raise ValueError("This can't be empty.")
+        return what
+
+
 class PlannedScene(BaseModel):
     line: str = Field(description="Exactly what the person says in this scene.")
     shows: str | None = Field(
@@ -122,6 +168,36 @@ class PlannedScene(BaseModel):
         default=None,
         description="A few words drawn along the top of the picture while this scene plays, "
         f"such as the price, {MOST_OVERLAY_CHARACTERS} characters at most, or null for none.",
+    )
+
+    broll_kind: BrollKind | None = Field(
+        default=None,
+        description='For a B-roll scene, "does a job" when the product does something you can '
+        'see, or "showcase" for the product at its best; "showcase" when unsure. Null for a '
+        "scene where the person talks to camera.",
+    )
+    person_shown: PersonShown | None = Field(
+        default=None,
+        description='For a B-roll scene, "has face" when the presenter\'s face is in it, or '
+        '"no face" when it shows no face (a hand is fine). Null for a scene where the person '
+        "talks to camera.",
+    )
+    usage: str | None = Field(
+        default=None,
+        description="For a B-roll scene, how the product is used in it, read from the page's "
+        '"how to use"; null when it isn\'t used. Null for a scene where the person talks to '
+        "camera.",
+    )
+    result: str | None = Field(
+        default=None,
+        description='For a "does a job" scene, the result you can see, which the scene ends '
+        'on. Null for a "showcase" scene or a scene where the person talks to camera.',
+    )
+    needs: list[Need] = Field(
+        default_factory=list,
+        description="For a B-roll scene, what it needs that the main photo can't show, each "
+        "with the numbers of the photos that show it. Empty when the main photo is enough, "
+        "and for a scene where the person talks to camera.",
     )
 
     # A validator rather than min_length, which OpenAI's structured output doesn't accept.
@@ -146,6 +222,42 @@ class PlannedScene(BaseModel):
                 f"An overlay is a few words: {MOST_OVERLAY_CHARACTERS} characters at most."
             )
         return overlay
+
+    @field_validator("usage", "result")
+    @classmethod
+    def _blank_is_none(cls, text: str | None) -> str | None:
+        return text if text is not None and text.strip() else None
+
+    @model_validator(mode="after")
+    def _labelled_as_its_kind(self) -> Self:
+        if self.shows is None:
+            if any((self.broll_kind, self.person_shown, self.usage, self.result, self.needs)):
+                raise ValueError(
+                    "A scene where the person talks to camera has no B-roll kind, person, "
+                    "usage, result or needs."
+                )
+            return self
+        if self.broll_kind is None:
+            raise ValueError('A B-roll scene needs its kind: "does a job" or "showcase".')
+        if self.person_shown is None:
+            raise ValueError('A B-roll scene needs who is in it: "no face" or "has face".')
+        if self.broll_kind == "does a job":
+            if self.usage is None:
+                raise ValueError(
+                    'A "does a job" scene needs its usage: how the product is used in it.'
+                )
+            if self.result is None:
+                raise ValueError(
+                    'A "does a job" scene needs its result: what you can see at its end.'
+                )
+        elif self.result is not None:
+            raise ValueError('A "showcase" scene has no result.')
+        return self
+
+    def pictures(self) -> int:
+        """How many pictures the scene's clip is sent: the main photo, one for each need,
+        and the presenter's portrait when the face is shown."""
+        return 1 + len(self.needs) + (self.person_shown == "has face")
 
 
 # How big the product is. Code owns the pose for each size (jobs.scenes.POSES), so a
@@ -200,6 +312,19 @@ class Plan(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _five_pictures_at_most(self) -> Self:
+        for number, scene in enumerate(self.scenes, start=1):
+            if scene.pictures() > MOST_PICTURES:
+                portrait = (
+                    " and the presenter's portrait" if scene.person_shown == "has face" else ""
+                )
+                raise ValueError(
+                    f"Scene {number} would send {scene.pictures()} pictures (the main photo, "
+                    f"{len(scene.needs)} needed photos{portrait}): {MOST_PICTURES} at most."
+                )
+        return self
+
+    @model_validator(mode="after")
     def _name_said_on_camera(self) -> Self:
         name = " ".join(self.product_name.split()).casefold()
         if not any(
@@ -229,12 +354,16 @@ class ProducerDecision(Judgement):
 
 def producer_decision_for(photo_count: int) -> type[ProducerDecision]:
     """The producer's decision for a job with `photo_count` photos. A plan naming a photo
-    the job doesn't have fails while the answer is read, like any other broken plan."""
+    the job doesn't have, for its colour or for what a scene needs, fails while the answer
+    is read, like any other broken plan."""
 
     class ProducerDecisionForJob(ProducerDecision):
         @model_validator(mode="after")
         def _real_photos(self) -> Self:
-            for number in self.plan.colour_photos if self.plan else []:
+            named = list(self.plan.colour_photos) if self.plan else []
+            for scene in self.plan.scenes if self.plan else []:
+                named += [number for need in scene.needs for number in need.photos]
+            for number in named:
                 if not 1 <= number <= photo_count:
                     raise ValueError(f"There's no photo {number}: the job has {photo_count}.")
             return self

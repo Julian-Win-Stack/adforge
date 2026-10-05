@@ -20,6 +20,7 @@ from .conftest import (
     PLAN,
     READABLE,
     HeldSteps,
+    broll,
     chat,
     colour_at,
     facts_ok,
@@ -44,7 +45,7 @@ PLANNED: dict[str, Any] = {
         **PLAN["plan"],
         "scenes": [
             {"line": "Meet the Stoneware Mug from Kiln & Co.", "overlay": "Kiln & Co"},
-            {"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "shows": POUR},
+            broll({"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "shows": POUR}),
             {"line": "Yours for $24.00.", "overlay": "$24.00"},
         ],
     },

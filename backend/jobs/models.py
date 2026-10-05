@@ -171,11 +171,25 @@ class ProductPhoto(models.Model):
         return self.source_url
 
 
+# What the plan says about a B-roll scene: its kind, who is in it, how the product is
+# used, the result it ends on and what it needs that the main photo can't show. Blank for
+# a talking scene.
+BROLL_FIELDS = ["broll_kind", "person_shown", "usage", "result", "needs"]
+
+
 class Scene(models.Model):
     class Status(models.TextChoices):
         PLANNED = "planned"
         # Its clip is made.
         FINISHED = "finished"
+
+    class BrollKind(models.TextChoices):
+        DOES_A_JOB = "does a job"
+        SHOWCASE = "showcase"
+
+    class PersonShown(models.TextChoices):
+        NO_FACE = "no face"
+        HAS_FACE = "has face"
 
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="scenes")
     number = models.PositiveSmallIntegerField(help_text="1, 2, 3... in the order they play.")
@@ -189,6 +203,38 @@ class Scene(models.Model):
         blank=True,
         help_text="A few words drawn along the top of the picture while the scene plays, "
         "such as the price. Blank for none. Not fact checked yet.",
+    )
+    broll_kind = models.CharField(
+        max_length=20,
+        choices=BrollKind.choices,
+        blank=True,
+        help_text='A B-roll scene\'s kind: "does a job" (the product does something you can '
+        'see) or "showcase" (the product at its best). Blank for a talking scene, and for a '
+        "B-roll scene planned before it was given.",
+    )
+    person_shown = models.CharField(
+        max_length=20,
+        choices=PersonShown.choices,
+        blank=True,
+        help_text="Whether a B-roll scene shows the presenter's face. Blank for a talking "
+        "scene, and for a B-roll scene planned before it was given.",
+    )
+    usage = models.TextField(
+        blank=True,
+        help_text='How the product is used in a B-roll scene, from the page\'s "how to use". '
+        "Blank when it isn't used, and for a talking scene.",
+    )
+    result = models.TextField(
+        blank=True,
+        help_text='What you can see at the end of a "does a job" scene, which it ends on. '
+        "Blank otherwise.",
+    )
+    needs = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="What a B-roll scene needs that the main photo can't show, each with the "
+        'numbers of the photos that show it, such as [{"what": "the gel", "photos": [3, 5]}]. '
+        "Empty when the main photo is enough.",
     )
     fact_checked = models.BooleanField(
         default=False,
@@ -215,13 +261,17 @@ class Scene(models.Model):
     def change_line(self, line: str, shows: str | None = None) -> None:
         """Give the scene a new line, and what it shows if `shows` isn't None, unsaved. A
         clip says the line and shows what it was made for, so a finished scene is planned
-        again: it needs a new clip."""
+        again: it needs a new clip. A scene that no longer shows anything is a talking
+        scene, with no B-roll labels."""
         if line != self.line:
             self.line = line
             self.status = self.Status.PLANNED
         if shows is not None and shows != self.shows:
             self.shows = shows
             self.status = self.Status.PLANNED
+        if not self.shows:
+            self.broll_kind = self.person_shown = self.usage = self.result = ""
+            self.needs = []
 
 
 class SceneStep(models.Model):

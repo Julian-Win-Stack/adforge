@@ -83,7 +83,7 @@ from .checks import (
     script_seconds,
     shortened_script_for,
 )
-from .models import Job, ProducedItem, ProductPhoto, Scene, SceneStep
+from .models import BROLL_FIELDS, Job, ProducedItem, ProductPhoto, Scene, SceneStep
 from .notices import post_notice
 from .planning import (
     PLAN_INSTRUCTIONS,
@@ -599,6 +599,11 @@ def plan(job: Job) -> ProducerDecision:
                 line=scene.line,
                 shows=scene.shows or "",
                 overlay=" ".join((scene.overlay or "").split()),
+                broll_kind=scene.broll_kind or "",
+                person_shown=scene.person_shown or "",
+                usage=scene.usage or "",
+                result=scene.result or "",
+                needs=[need.model_dump() for need in scene.needs],
             )
             for number, scene in enumerate(planned.scenes, start=1)
         )
@@ -860,7 +865,7 @@ def _rewrite_line(job: Job, scene: Scene, conversation: list[ChatMessage]) -> No
     )
     scene.fact_problems[-1]["rewritten"] = True
     scene.change_line(rewrite.line, rewrite.shows or "")
-    scene.save(update_fields=["line", "shows", "status", "fact_problems"])
+    scene.save(update_fields=["line", "shows", *BROLL_FIELDS, "status", "fact_problems"])
 
 
 def _about_line(scene: Scene) -> Asking:
@@ -1009,10 +1014,14 @@ def _last_heard_from_the_user(job: Job) -> datetime | None:
     return spoke
 
 
+def _broll_fields(scene: Scene) -> dict[str, Any]:
+    return {field: getattr(scene, field) for field in BROLL_FIELDS}
+
+
 def _shorten(job: Job, words_per_second: float) -> None:
     """Have the script rewritten to fit its target. Each line comes back with the scene it
-    comes from, and takes that scene's "shows" and overlay with it, so a dropped scene
-    takes them away and a line never moves under another scene's picture."""
+    comes from, and takes that scene's "shows", overlay and B-roll fields with it, so a
+    dropped scene takes them away and a line never moves under another scene's picture."""
     assert job.target_seconds is not None
     script = [_to_check(scene) for scene in job.scenes.all()]
     shortened = call_model(
@@ -1031,15 +1040,22 @@ def _shorten(job: Job, words_per_second: float) -> None:
     )
     with transaction.atomic():
         scenes = list(job.scenes.all())
-        was = {scene.number: (scene.shows, scene.overlay) for scene in scenes}
+        was = {scene.number: (scene.shows, scene.overlay, _broll_fields(scene)) for scene in scenes}
         # A line that passed the fact check word for word, showing the same, still has;
         # anything else is new.
         checked = {(scene.line, scene.shows) for scene in scenes if scene.fact_checked}
         for scene, kept in zip(scenes, shortened.lines, strict=False):
-            shows, overlay = was[kept.scene]
-            if (scene.line, scene.shows, scene.overlay) != (kept.line, shows, overlay):
+            shows, overlay, broll = was[kept.scene]
+            if (scene.line, scene.shows, scene.overlay, _broll_fields(scene)) != (
+                kept.line,
+                shows,
+                overlay,
+                broll,
+            ):
                 scene.change_line(kept.line, shows=shows)
                 scene.overlay = overlay
+                for field, value in broll.items():
+                    setattr(scene, field, value)
                 scene.fact_checked = (kept.line, shows) in checked
                 scene.fact_problems = []
                 scene.save(
@@ -1047,6 +1063,7 @@ def _shorten(job: Job, words_per_second: float) -> None:
                         "line",
                         "shows",
                         "overlay",
+                        *BROLL_FIELDS,
                         "status",
                         "fact_checked",
                         "fact_problems",
