@@ -32,6 +32,7 @@ from .conftest import (
     COPIED,
     MUG_FRONT,
     MUG_SIDE,
+    NO_FACE,
     PLAN,
     PRODUCT_PAGE,
     PUBLIC_ADDRESS,
@@ -1207,6 +1208,8 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
         openai_turn("", ("call_1", "read_page", read_page)),
         openai_answer(READABLE),
         openai_answer(COPIED),
+        openai_answer(NO_FACE),
+        openai_answer(NO_FACE),
         openai_turn("", ("call_2", "plan_ad", {})),
         openai_answer(PLAN),
         openai_turn("Here's the plan."),
@@ -1220,7 +1223,7 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
         "Hand-thrown, holds 350 ml, and dishwasher safe.",
         "Yours for $24.00.",
     ]
-    _, check, _, _, plan, _ = [
+    _, check, _, _, _, _, plan, _ = [
         request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
     ]
     assert check["model"] == "gpt-5-mini"

@@ -32,6 +32,7 @@ from jobs.work import (
     music_mood,
     music_prompt,
     music_seconds,
+    note_face,
     plan,
     run_checks,
     save_photos,
@@ -173,7 +174,7 @@ class ReadPage(Tool):
         if picked.urls is None:
             skipped = save_photos(job, product_page.photo_urls)
         else:
-            skipped = save_photos(job, picked.urls, merge_copies=True)
+            skipped = save_photos(job, picked.urls, merge_copies=True, faces=picked.faces)
             if skipped and not job.photos.exclude(source_url="").exists():
                 post_notice(job, _none_kept(skipped), Message.Level.PROBLEM)
                 skipped = save_photos(job, product_page.photo_urls)
@@ -231,7 +232,13 @@ class UsePhotos(Tool):
                 continue
             position += 1
             added += 1
-            ProductPhoto.objects.create(job=job, position=position, file=attached.file)
+            # The shop owner's photo was never seen by the picker, so it is noted on its own.
+            ProductPhoto.objects.create(
+                job=job,
+                position=position,
+                file=attached.file,
+                has_face=note_face(job, attached.file, attached.file),
+            )
         count = job.photos.count()
         return f"Added {added} of the shop owner's photos. The job now has {_photos(count)}."
 

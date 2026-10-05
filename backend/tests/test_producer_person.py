@@ -29,6 +29,8 @@ def test_the_person_is_drawn_then_given_a_voice_that_is_measured_on_the_script(
     assert paid_for() == [
         "check_page",
         "copy_page_text",
+        "note_face",
+        "note_face",
         "plan_ad",
         "draw_person",
         "design_voice",

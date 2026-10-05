@@ -37,8 +37,8 @@ class ShowsFile:
 
 class ProductPhotoInline(ShowsFile, admin.TabularInline[ProductPhoto, Job]):
     model = ProductPhoto
-    fields = ["position", "source_url", "file_preview", "shows_product_colour"]
-    readonly_fields = ["position", "source_url", "file_preview", "shows_product_colour"]
+    fields = ["position", "source_url", "file_preview", "shows_product_colour", "has_face"]
+    readonly_fields = ["position", "source_url", "file_preview", "shows_product_colour", "has_face"]
     extra = 0
     can_delete = False
 

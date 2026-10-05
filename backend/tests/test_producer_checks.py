@@ -754,6 +754,8 @@ def test_a_line_said_in_exactly_18_seconds_isnt_shortened(
     assert paid_for() == [
         "check_page",
         "copy_page_text",
+        "note_face",
+        "note_face",
         "plan_ad",
         "draw_person",
         "design_voice",
@@ -1000,6 +1002,8 @@ def test_a_line_that_moved_but_already_passed_the_fact_check_isnt_checked_again(
     assert paid_for() == [
         "check_page",
         "copy_page_text",
+        "note_face",
+        "note_face",
         "plan_ad",
         "draw_person",
         "design_voice",

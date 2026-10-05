@@ -25,6 +25,7 @@ from .conftest import (
     FACTS_OK,
     MUG_FRONT,
     MUG_SIDE,
+    NO_FACE,
     PLAN,
     READABLE,
     chat,
@@ -75,9 +76,10 @@ def test_the_producer_reads_the_page_its_given_and_tells_the_user_what_it_found(
     assert checkpoint.job == job
     assert checkpoint.finished
     assert "Kept 2 product photos" in checkpoint.result
-    # Checking the page cost 1,000 tokens in and 100 out on gpt-5-mini, $0.00045, and copying
-    # its text the same on gpt-6-luna, $0.00015.
-    assert checkpoint.cost_usd() == Decimal("0.0006")
+    # Checking the page cost 1,000 tokens in and 100 out on gpt-5-mini, $0.00045, copying
+    # its text the same on gpt-6-luna, $0.00015, and noting each of its 2 photos' faces the
+    # same on gpt-5.6-sol, $0.006 each.
+    assert checkpoint.cost_usd() == Decimal("0.0126")
     # The producer's second turn was given what the tool produced.
     assert given_to_the_producer(2)[-1] == {
         "kind": "tool_use",
@@ -211,6 +213,8 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
         openai_turn("I'll read your product page first.", ("call_a1", "read_page", arguments)),
         openai_answer(READABLE),
         openai_answer(COPIED),
+        openai_answer(NO_FACE),
+        openai_answer(NO_FACE),
         openai_turn("Your mug's page has what the ad needs."),
     )
 
@@ -221,7 +225,7 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
         ("notice", NO_FIRECRAWL),
         ("agent", "Your mug's page has what the ad needs."),
     ]
-    first, _check, _copy, second = [
+    first, _check, _copy, _front, _side, second = [
         request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
     ]
     assert first["model"] == "gpt-5.6-sol"
@@ -375,7 +379,7 @@ def test_the_producer_takes_a_brief_to_a_checked_plan_that_is_ready_to_render(
         (each.tool, each.job_id, list(each.model_calls.values_list("purpose", flat=True)))
         for each in checkpoints
     ] == [
-        ("read_page", job.pk, ["check_page", "copy_page_text"]),
+        ("read_page", job.pk, ["check_page", "copy_page_text", "note_face", "note_face"]),
         ("plan_ad", job.pk, ["plan_ad"]),
         ("create_person", job.pk, ["draw_person", "design_voice", "measure_voice"]),
         ("run_planning_checks", job.pk, ["fact_check"]),

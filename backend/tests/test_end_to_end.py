@@ -207,6 +207,8 @@ def test_nothing_in_the_whole_flow_is_paid_for_twice(ad_made_through_the_chat: N
     assert paid_for() == [
         "check_page",
         "copy_page_text",
+        "note_face",
+        "note_face",
         "plan_ad",
         "draw_person",
         "design_voice",

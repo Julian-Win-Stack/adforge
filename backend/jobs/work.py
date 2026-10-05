@@ -298,6 +298,8 @@ class Picked:
 
     urls: list[str] | None
     notices: list[tuple[str, Message.Level]]
+    # The picked links the picker marked with a stranger's face.
+    faces: frozenset[str] = frozenset()
 
 
 DECLARED_INSTEAD = (
@@ -382,8 +384,8 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
             )
         )
         return Picked(None, notices)
-    urls = photos.picked_links(picked, read.marked.marks)
-    if not urls:
+    links = photos.picked_links(picked, read.marked.marks)
+    if not links:
         notices.append(
             (
                 f"The photo picker found no photo of this product on the page. {DECLARED_INSTEAD}",
@@ -391,7 +393,11 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
             )
         )
         return Picked(None, notices)
-    return Picked(urls, notices)
+    return Picked(
+        [url for url, _ in links],
+        notices,
+        frozenset(url for url, has_face in links if has_face),
+    )
 
 
 def _picker_images(job: Job, record: dict[str, Any] | None, screenshot: bytes) -> list[Image]:
@@ -461,21 +467,30 @@ class SkippedPhoto:
     reason: str
 
 
-def save_photos(job: Job, urls: list[str], *, merge_copies: bool = False) -> list[SkippedPhoto]:
+def save_photos(
+    job: Job,
+    urls: list[str],
+    *,
+    merge_copies: bool = False,
+    faces: frozenset[str] | None = None,
+) -> list[SkippedPhoto]:
     """Download and keep each photo, after any the job already has, up to MAX_PHOTOS. With
     `merge_copies`, a photo that is a copy of one already kept, at another size or under
-    another name, is left out. Gives back each one that was skipped, with why."""
+    another name, is left out, and the one kept has a face if either does. `faces` are the
+    links the picker marked with a face; without them, each photo kept is given its Face note
+    by a call of its own. Gives back each one that was skipped, with why."""
     # A read run again after a crash starts the page's photos afresh, so each is kept once.
     # Photos the user attached are theirs, and stay.
     job.photos.exclude(source_url="").delete()
     saved = job.photos.aggregate(last=Max("position"))["last"] or 0
     copies = photos.Copies()
-    kept = 0
+    kept: list[ProductPhoto] = []
     skipped = []
     for url in urls:
-        if kept >= page.MAX_PHOTOS:
+        if len(kept) >= page.MAX_PHOTOS:
             break
-        if merge_copies and copies.seen_link(url):
+        if merge_copies and (copy := copies.kept_at_link(url)) is not None:
+            _merge_face(kept[copy], url, faces)
             continue
         try:
             photo = page.download(url, max_bytes=page.MAX_PHOTO_BYTES, what="product photo")
@@ -492,21 +507,66 @@ def save_photos(job: Job, urls: list[str], *, merge_copies: bool = False) -> lis
                 )
             )
             continue
-        if merge_copies and not copies.is_new(url, photo.content):
+        if merge_copies and (copy := copies.copy_of(url, photo.content)) is not None:
+            _merge_face(kept[copy], url, faces)
             continue
         saved += 1
-        kept += 1
-        keep_photo(job, saved, photo.content, photo.content_type, source_url=url)
+        has_face = url in faces if faces is not None else None
+        kept.append(
+            keep_photo(
+                job, saved, photo.content, photo.content_type, source_url=url, has_face=has_face
+            )
+        )
     return skipped
 
 
+def _merge_face(kept: ProductPhoto, url: str, faces: frozenset[str] | None) -> None:
+    """A copy of a kept photo was marked with a face, so the kept one has one."""
+    if faces is not None and url in faces and not kept.has_face:
+        kept.has_face = True
+        kept.save(update_fields=["has_face"])
+
+
 def keep_photo(
-    job: Job, position: int, content: bytes, content_type: str, *, source_url: str = ""
-) -> None:
-    """Store a product photo with the job. An uploaded photo has no source link."""
+    job: Job,
+    position: int,
+    content: bytes,
+    content_type: str,
+    *,
+    source_url: str = "",
+    has_face: bool | None = False,
+) -> ProductPhoto:
+    """Store a product photo with the job, with its Face note, or with None, noted by a call
+    of its own. An uploaded photo has no source link."""
     extension = mimetypes.guess_extension(content_type) or ""
     key = file_store.save(f"jobs/{job.pk}/photos/{position}{extension}", content)
-    ProductPhoto.objects.create(job=job, position=position, source_url=source_url, file=key)
+    if has_face is None:
+        has_face = note_face(job, source_url, key)
+    return ProductPhoto.objects.create(
+        job=job, position=position, source_url=source_url, file=key, has_face=has_face
+    )
+
+
+def note_face(job: Job, photo: str, key: str) -> bool:
+    """Whether the photo in the file store at `key` shows a stranger's face, by a call of its
+    own: for a photo the picker never saw. `photo` names it by where it came from, so a page
+    read again pays for nothing twice though its photos are stored again under new keys. A
+    failed call counts as a face, the safe side: such a photo is only used when no other shows
+    what's needed. Nothing is said about it."""
+    try:
+        noted = call_model(
+            job=job,
+            purpose="note_face",
+            instructions=photos.NOTE_FACE_INSTRUCTIONS,
+            handoff=photos.FaceNoteHandoff(photo=photo),
+            output=photos.FaceNote,
+            images=[Image("Photo", key)],
+            pay_once=True,
+            images_may_move=True,
+        )
+    except UnusableReply, OutsideServiceDown:
+        return True
+    return noted.has_face
 
 
 def plan(job: Job) -> ProducerDecision:

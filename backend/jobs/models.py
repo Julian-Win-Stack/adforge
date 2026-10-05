@@ -153,6 +153,13 @@ class ProductPhoto(models.Model):
         default=False,
         help_text="Shows the product in the job's product colour, so the ad can use it.",
     )
+    has_face = models.BooleanField(
+        default=False,
+        help_text=(
+            "Shows a stranger's face you could recognise. Yes too when noting it failed: "
+            "such a photo is only used when no other shows what's needed."
+        ),
+    )
 
     class Meta:
         ordering = ["job", "position"]

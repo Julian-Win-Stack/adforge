@@ -88,7 +88,11 @@ SHAMPOO_PICKED = {
     "more_images": [],
     "product_sections": [15, 30],
     "notes": "",
+    "face_images": [],
 }
+
+# What the Face-note call answers for a photo with no stranger's face in it.
+NO_FACE: dict[str, Any] = {"has_face": False}
 
 # What the producer plans for the mug's page: three scenes.
 PLAN: dict[str, Any] = {
@@ -171,6 +175,7 @@ def fake_model() -> Iterator[FakeModel]:
     fake = FakeModel()
     fake.answer_unscripted("copy_page_text", copy_every_line)
     fake.answer_unscripted("pick_photos", lambda _: SHAMPOO_PICKED)
+    fake.answer_unscripted("note_face", lambda _: NO_FACE)
     with use_model(fake):
         yield fake
 

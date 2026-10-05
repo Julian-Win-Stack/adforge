@@ -273,11 +273,14 @@ def call_model[Out: BaseModel](
     output: type[Out],
     images: Sequence[Image] = (),
     pay_once: bool = False,
+    images_may_move: bool = False,
 ) -> Out:
     """Ask a model for `output`. `images` are pictures shown alongside the handoff, read
     here from the file store so the record of which were shown can't disagree with what
     was sent. With `pay_once`, what the job's model already answered for this same handoff
-    and images is handed back, and nothing is paid."""
+    and images is handed back, and nothing is paid. With `images_may_move` too, the same
+    handoff is enough: for pictures stored again under new keys, as a page's photos are when
+    it is read again, and named in the handoff by where they came from."""
     # Validate again here rather than trusting the caller built the handoff properly.
     handoff = type(handoff).model_validate(handoff.model_dump())
     request = ModelRequest(
@@ -289,7 +292,13 @@ def call_model[Out: BaseModel](
         images=tuple(_load(image) for image in images),
     )
     if pay_once and job is not None:
-        answered = _answered_before(handoff, purpose=purpose, job=job, images=_shown(request))
+        answered = _answered_before(
+            handoff,
+            purpose=purpose,
+            job=job,
+            images=_shown(request),
+            any_images=images_may_move,
+        )
         if answered is not None:
             return output.model_validate(answered)
     provider = _provider()
@@ -735,16 +744,19 @@ def _answered_before(
     session: Session | None = None,
     job: Job | None = None,
     images: list[dict[str, str]] | None = None,
+    any_images: bool = False,
 ) -> dict[str, Any] | None:
     """What a call for `purpose` answered when handed exactly `handoff` and shown exactly
-    `images`, if one was paid for. Every call is recorded as soon as it succeeds, so an
-    answer a worker stopped before it could keep is handed back rather than paid for again."""
+    `images`, or any images with `any_images`, if one was paid for. Every call is recorded
+    as soon as it succeeds, so an answer a worker stopped before it could keep is handed back
+    rather than paid for again."""
     calls = ModelCall.objects.filter(
         purpose=purpose,
         outcome=ModelCall.Outcome.SUCCEEDED,
         handoff=handoff.model_dump(mode="json"),
-        images=images or [],
     )
+    if not any_images:
+        calls = calls.filter(images=images or [])
     if session is not None:
         calls = calls.filter(session=session)
     if job is not None:

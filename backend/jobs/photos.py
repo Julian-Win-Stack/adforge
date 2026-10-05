@@ -66,7 +66,18 @@ colour or shade, labelled R1, R2, ... Use them to know exactly what this product
 and to tell it apart from look-alikes: a picture shows this product only if the product in it \
 matches one of the official photos (any colour, shade or size in the record). A different \
 shape, label, model or design is another product, even from the same brand. The official \
-photos are a guide only: answer with I numbers from the page, never R numbers."""
+photos are a guide only: answer with I numbers from the page, never R numbers.
+
+Then note faces: face_images are the I numbers, among the ones you picked, of pictures that \
+show a person's face you could recognise. A body, a hand, an arm, lips or a face turned away, \
+cut off or too small to recognise doesn't count."""
+
+# A photo the picker never saw gets its Face note from a call of its own, worded as the
+# picker's note (tested on the 8 test products' 74 photos: backend/broll-test/face_notes.py).
+NOTE_FACE_INSTRUCTIONS = """\
+You look at one product photo from a shop's page, for an advert. Say whether it shows a \
+person's face you could recognise: has_face. A body, a hand, an arm, lips or a face turned \
+away, cut off or too small to recognise doesn't count."""
 
 NO_RECORD = "Official record of the product: none was found for this page."
 
@@ -102,6 +113,18 @@ class PickedPhotos(BaseModel):
     # Asked for because the picker was tested with it; the text is copied by its own call.
     product_sections: list[int]
     notes: str
+    # Last, as the picker was tested with it: the marks of picked pictures with a face.
+    face_images: list[int]
+
+
+class FaceNoteHandoff(Handoff):
+    # Where the photo came from: its link on the page, or its key in the file store when the
+    # shop owner attached it. Not a page photo's key, which changes when the page is read again.
+    photo: str
+
+
+class FaceNote(BaseModel):
+    has_face: bool
 
 
 def handoff(record: dict[str, Any] | None, marks: dict[str, Any], title: str) -> PickHandoff:
@@ -136,12 +159,13 @@ def numbered(marks: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def picked_links(picked: PickedPhotos, marks: dict[str, Any]) -> list[str]:
-    """The picked photos' links at their biggest size, gallery first. Numbers the page didn't
-    show are dropped."""
+def picked_links(picked: PickedPhotos, marks: dict[str, Any]) -> list[tuple[str, bool]]:
+    """The picked photos' links at their biggest size, gallery first, each with whether the
+    picker marked it with a face. Numbers the page didn't show are dropped, and so are marks
+    of pictures that weren't picked."""
     by_number = {picture["n"]: picture for picture in numbered(marks)}
     return [
-        best_url(by_number[number])
+        (best_url(by_number[number]), number in picked.face_images)
         for number in [*picked.gallery_images, *picked.more_images]
         if number in by_number
     ]
@@ -304,32 +328,44 @@ def dhash(content: bytes) -> int:
 
 class Copies:
     """Photos seen so far, to keep each photo once: two are copies when their links differ
-    only in size, or their fingerprints differ in at most MOST_BITS_APART bits."""
+    only in size, or their fingerprints differ in at most MOST_BITS_APART bits. Kept photos
+    are numbered from 0 in the order kept."""
 
     def __init__(self) -> None:
-        self._keys: set[str] = set()
-        self._hashes: list[int] = []
+        self._keys: dict[str, int] = {}
+        self._hashes: list[tuple[int, int]] = []
 
     def seen_link(self, url: str) -> bool:
         """Whether a photo at this link, at any size, was already kept."""
-        return same_key(url) in self._keys
+        return self.kept_at_link(url) is not None
+
+    def kept_at_link(self, url: str) -> int | None:
+        """The number of the kept photo at this link, at any size, if one was kept."""
+        return self._keys.get(same_key(url))
 
     def is_new(self, url: str, content: bytes) -> bool:
         """Whether the photo isn't a copy of one already kept; if so, it counts as kept."""
-        if self.seen_link(url):
-            return False
+        return self.copy_of(url, content) is None
+
+    def copy_of(self, url: str, content: bytes) -> int | None:
+        """The number of the kept photo this one is a copy of, or None if it is new; if so,
+        it counts as kept."""
+        kept = self.kept_at_link(url)
+        if kept is not None:
+            return kept
         try:
             fingerprint = dhash(content)
         except OSError, ValueError, Image.DecompressionBombError:
             fingerprint = None
-        if fingerprint is not None and any(
-            (fingerprint ^ kept).bit_count() <= MOST_BITS_APART for kept in self._hashes
-        ):
-            return False
-        self._keys.add(same_key(url))
         if fingerprint is not None:
-            self._hashes.append(fingerprint)
-        return True
+            for kept_hash, number in self._hashes:
+                if (fingerprint ^ kept_hash).bit_count() <= MOST_BITS_APART:
+                    return number
+        number = len(self._keys)
+        self._keys[same_key(url)] = number
+        if fingerprint is not None:
+            self._hashes.append((fingerprint, number))
+        return None
 
 
 @contextmanager

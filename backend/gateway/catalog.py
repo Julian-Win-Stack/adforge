@@ -11,6 +11,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # The picker reads a marked screenshot of the page: 92% of its photos were the right
     # product's (docs/scraping-test/ref-photo-test/results.md).
     "pick_photos": "gpt-5.6-sol",
+    # A photo the picker never saw gets its Face note from the same model, as the picker
+    # gives it for the photos it picks.
+    "note_face": "gpt-5.6-sol",
     "plan_ad": "gpt-5.6-sol",
     "fact_check": "gpt-5.6-terra",
     "rewrite_line": "gpt-5.6-sol",
