@@ -129,7 +129,8 @@ def ad_made_through_the_chat(
     # supports, and checked again.
     fake_model.respond("fact_check", POUR_UNSUPPORTED, facts_ok(2))
     fake_model.respond(
-        "rewrite_line", {"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "shows": TURNED}
+        "rewrite_line",
+        broll({"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "shows": TURNED}),
     )
     chatting(
         f"Make a 5 second ad for {product_page_url}",

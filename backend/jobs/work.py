@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from django.conf import settings
 from django.db import connection, transaction
-from django.db.models import Max, QuerySet
+from django.db.models import Max, Q, QuerySet
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown, with_retries
@@ -602,11 +602,7 @@ def plan(job: Job) -> ProducerDecision:
                 line=scene.line,
                 shows=scene.shows or "",
                 overlay=" ".join((scene.overlay or "").split()),
-                broll_kind=scene.broll_kind or "",
-                person_shown=scene.person_shown or "",
-                usage=scene.usage or "",
-                result=scene.result or "",
-                needs=[need.model_dump() for need in scene.needs],
+                **scene.broll_details(),
             )
             for number, scene in enumerate(planned.scenes, start=1)
         )
@@ -830,9 +826,22 @@ def _ask_fact_check(
     said. With `pay_once`, a check already made of these same lines is answered from its
     record."""
     showing = [line.scene for line in lines if line.shows]
-    # What a scene shows may be supported by how the product looks in its photos. A script
-    # where the person talks throughout is checked on text alone.
-    photos = job.photos.filter(shows_product_colour=True) if showing else []
+    # What a scene shows may be supported by how the product looks in its photos: those in
+    # the ad's colour, and those the scenes need. A script where the person talks
+    # throughout is checked on text alone.
+    needed = {
+        number
+        for scene in job.scenes.filter(number__in=showing)
+        for need in scene.needs
+        for number in need["photos"]
+    }
+    photos = (
+        job.photos.filter(Q(shows_product_colour=True) | Q(position__in=needed)).order_by(
+            "position"
+        )
+        if showing
+        else []
+    )
     return call_model(
         job=job,
         purpose="fact_check",
@@ -850,10 +859,20 @@ def _ask_fact_check(
 
 
 def _to_check(scene: Scene) -> LineToCheck:
-    return LineToCheck(scene=scene.number, line=scene.line, shows=scene.shows or None)
+    return LineToCheck(
+        scene=scene.number,
+        line=scene.line,
+        shows=scene.shows or None,
+        usage=scene.usage or None,
+        result=scene.result or None,
+    )
 
 
 def _rewrite_line(job: Job, scene: Scene, conversation: list[ChatMessage]) -> None:
+    """Have the scene rewritten whole: its line, what it shows and its B-roll details. A
+    scene that shows something is rewritten seeing the job's photos, to say what it needs."""
+    photos = list(job.photos.all())
+    colour_photos = [photo.position for photo in photos if photo.shows_product_colour]
     rewrite = call_model(
         job=job,
         purpose="rewrite_line",
@@ -862,6 +881,8 @@ def _rewrite_line(job: Job, scene: Scene, conversation: list[ChatMessage]) -> No
             page_text=page.for_model(job.page_text),
             conversation=conversation,
             product_colour=job.product_colour,
+            photo_count=len(photos),
+            colour_photos=colour_photos,
             script=[_to_check(each) for each in job.scenes.all()],
             scene=scene.number,
             problems=[
@@ -874,10 +895,15 @@ def _rewrite_line(job: Job, scene: Scene, conversation: list[ChatMessage]) -> No
                 for problem in scene.fact_problems
             ],
         ),
-        output=rewritten_scene_for(shows_something=bool(scene.shows)),
+        output=rewritten_scene_for(
+            scene.number, shows_something=bool(scene.shows), photo_count=len(photos)
+        ),
+        images=[Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos]
+        if scene.shows
+        else [],
     )
     scene.fact_problems[-1]["rewritten"] = True
-    scene.change_line(rewrite.line, rewrite.shows or "")
+    scene.change_line(rewrite.line, rewrite.shows or "", broll=rewrite.broll_details())
     scene.save(
         update_fields=["line", "shortened_from", "shows", *BROLL_FIELDS, "status", "fact_problems"]
     )
@@ -1368,7 +1394,7 @@ def _fit_its_clip(step: SceneStep, audio: ProducedItem) -> None:
     line = _shorter_line(job, scene, most_words, conversation, pay_once=True)
     check = _ask_fact_check(
         job,
-        [LineToCheck(scene=scene.number, line=line, shows=scene.shows)],
+        [_to_check(scene).model_copy(update={"line": line})],
         conversation,
         pay_once=True,
     )

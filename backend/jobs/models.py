@@ -1,4 +1,5 @@
 import uuid
+from typing import Any
 
 from django.db import models
 from django.utils import timezone
@@ -265,11 +266,13 @@ class Scene(models.Model):
     def __str__(self) -> str:
         return f"Scene {self.number}: {self.line}"
 
-    def change_line(self, line: str, shows: str | None = None) -> None:
-        """Give the scene a new line, and what it shows if `shows` isn't None, unsaved. A
-        clip says the line and shows what it was made for, so a finished scene is planned
-        again: it needs a new clip. A scene that no longer shows anything is a talking
-        scene, with no B-roll labels."""
+    def change_line(
+        self, line: str, shows: str | None = None, *, broll: dict[str, Any] | None = None
+    ) -> None:
+        """Give the scene a new line, what it shows if `shows` isn't None, and its B-roll
+        labels if `broll` isn't None, unsaved. A clip says the line and shows what it was
+        made for, so a finished scene is planned again: it needs a new clip. A scene that no
+        longer shows anything is a talking scene, with no B-roll labels."""
         if line != self.line:
             self.line = line
             self.shortened_from = []
@@ -277,6 +280,10 @@ class Scene(models.Model):
         if shows is not None and shows != self.shows:
             self.shows = shows
             self.status = self.Status.PLANNED
+        for field, value in (broll or {}).items():
+            if value != getattr(self, field):
+                setattr(self, field, value)
+                self.status = self.Status.PLANNED
         if not self.shows:
             self.broll_kind = self.person_shown = self.usage = self.result = ""
             self.needs = []

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, StrictInt, field_validator, model_validat
 
 from gateway.types import Handoff, Judgement
 
-from .planning import ChatMessage
+from .planning import BROLL_DETAILS_INSTRUCTIONS, ChatMessage, ScriptScene, photos_missing
 
 # A script fits its target when it runs no more than this much over it. Shorter always fits.
 LENGTH_ALLOWANCE_SECONDS = 2
@@ -33,11 +33,14 @@ search engines, the conversation with the shop owner so far, the colour the ad s
 product in, and the lines to check, each with its scene number. Each message in the \
 conversation is labelled "user" for the shop owner or "producer" for the producer.
 Some scenes don't show the person talking: they show something else while the line is \
-said, described in the scene's "shows". Check a "shows" like a line: everything it shows, \
-such as what the product is used for, with what, what it does and any result, must be \
-stated by the page or the shop owner, or shown by the product photos. When a scene has a \
-"shows", you also get the product photos in the ad's colour. Use them only for what the \
-product looks like: never read a fact such as a price or a size from them.
+said, described in the scene's "shows", with how the product is used in it, its \
+"usage", and what you can see at its end, its "result". Check a "shows", a "usage" and a \
+"result" like a line: everything they show, such as what the product is used for, how, \
+with what, what it does and any result, must be stated by the page or the shop owner, or \
+shown by the product photos. A wrong "usage" or "result" is a wrong "shows". When a scene \
+has a "shows", you also get the product photos in the ad's colour and the photos each \
+such scene needs. Use them only for what the product looks like: never read a fact such \
+as a price or a size from them.
 Check every price, number, product name and claim in each line. A line is "ok" only if \
 the page or the shop owner's own words state everything it claims. The producer's \
 messages are there only to show what was asked: never take a fact from them, except a \
@@ -56,16 +59,21 @@ prices for the same thing, or contradicts itself. Then ask the shop owner one sh
 specific question and give no verdicts.
 Give one sentence saying why, written for the shop owner."""
 
-REWRITE_INSTRUCTIONS = """\
+REWRITE_INSTRUCTIONS = (
+    """\
 You are the producer of a short vertical video ad. A person speaks to camera, one line \
 per scene. Some scenes instead show something else while the person's voice says the \
 line, described in the scene's "shows"; for a scene where the person talks, "shows" is \
 null. The fact check failed one of your scenes. You get the page's text, the \
 conversation with the shop owner so far, labelled "user" for them and "producer" for \
-you, the colour the ad shows the product in, the whole script, the scene that failed, \
-and each reason it failed, oldest first, with whether its line, its "shows" or both were \
-wrong.
-Rewrite that one scene so every claim in its line, and everything its "shows" shows, is \
+you, the colour the ad shows the product in, how many product photos there are and the \
+numbers of those showing the product in that colour, the whole script, the scene that \
+failed, and each reason it failed, oldest first, with whether its line, its "shows" or \
+both were wrong. A scene that shows something has its "usage", how the product is used \
+in it, and its "result", what you can see at its end; a wrong "usage" or "result" is a \
+wrong "shows". For such a scene, the product photos come after, each labelled with its \
+number: "Photo 1", "Photo 2".
+Rewrite that one scene whole so every claim in its line, and everything it shows, is \
 stated by the page or by the shop owner's own words, or for what the product looks like, \
 shown by the product photos. Your own messages only show what was asked: never take a \
 fact from them, except a "shows" you proposed that the shop owner then approved, which \
@@ -75,7 +83,12 @@ name the product's colour. Never infer or guess.
 Give back the scene's "shows" too: unchanged if it wasn't wrong. Keep a scene that shows \
 something showing something, unless nothing the page, the photos or the shop owner \
 support could be shown: then give null, and the person says the line to camera. For a \
-scene where the person talks, always give null."""
+scene where the person talks, always give null, and no B-roll details.
+A scene that shows something is a B-roll scene. Give back all its B-roll details with \
+its line and "shows", so they always match what it shows.
+"""
+    + BROLL_DETAILS_INSTRUCTIONS
+)
 
 SHORTEN_LINE_INSTRUCTIONS = """\
 You are the producer of a short vertical video ad. A person speaks to camera, one line \
@@ -144,6 +157,9 @@ class LineToCheck(BaseModel):
     line: str
     # What the scene shows while the line is said. None for the person talking to camera.
     shows: str | None = None
+    # How the product is used in a scene that shows something, and the result it ends on.
+    usage: str | None = None
+    result: str | None = None
 
 
 class FactCheckHandoff(Handoff):
@@ -214,6 +230,8 @@ class RewriteHandoff(Handoff):
     page_text: str
     conversation: list[ChatMessage]
     product_colour: str
+    photo_count: int
+    colour_photos: list[int]
     script: list[LineToCheck]
     scene: int
     problems: list[Problem]
@@ -230,27 +248,42 @@ class RewrittenLine(BaseModel):
         return line
 
 
-class RewrittenScene(RewrittenLine):
-    shows: str | None = Field(
-        description="What the scene shows while the line is said, or null for the person "
-        "talking to camera."
-    )
+class RewrittenScene(ScriptScene):
+    """A scene rewritten whole: its line, what it shows and its B-roll details together."""
 
-    @field_validator("shows")
-    @classmethod
-    def _blank_is_talking(cls, shows: str | None) -> str | None:
-        return " ".join(shows.split()) or None if shows is not None else None
+    # Overrides the planner's rule: a rewrite giving a blank "shows" makes the person say
+    # the line, and the B-roll details it gave with it are dropped.
+    @model_validator(mode="after")
+    def _labelled_as_its_kind(self) -> Self:
+        if self.shows is None:
+            self.broll_kind = self.person_shown = self.usage = self.result = None
+            self.needs = []
+            return self
+        return self.check_broll_details()
 
 
-def rewritten_scene_for(*, shows_something: bool) -> type[RewrittenScene]:
-    """A rewrite of a scene that shows something, or of one where the person talks: a
-    rewrite never turns the person talking into a scene that shows something else."""
+def rewritten_scene_for(
+    number: int, *, shows_something: bool, photo_count: int
+) -> type[RewrittenScene]:
+    """A rewrite of scene `number`, which shows something or where the person talks, in a
+    job with `photo_count` photos: a rewrite never turns the person talking into a scene
+    that shows something else, and follows the planner's rules for a B-roll scene."""
 
     class RewrittenSceneForItsKind(RewrittenScene):
         @model_validator(mode="after")
         def _talking_stays_talking(self) -> Self:
             if not shows_something and self.shows is not None:
                 raise ValueError('The person talks in this scene: its "shows" must be null.')
+            return self
+
+        @model_validator(mode="after")
+        def _its_pictures_can_be_sent(self) -> Self:
+            for problem in (
+                photos_missing(self, photo_count),
+                self.too_many_pictures(number),
+            ):
+                if problem is not None:
+                    raise ValueError(problem)
             return self
 
     return RewrittenSceneForItsKind
