@@ -26,11 +26,11 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "transcribe_line": "scribe_v2",
     # A clip is asked for, then waited for and fetched: two calls, only the first paid. Each
     # kind has its own model: HeyGen's talking clips passed the blind-graded eval (#87) 8 of
-    # 8, Boreal's at most 3 of 8, and Boreal's B-roll met its mark.
+    # 8; B-roll is Boreal-H3, on Creatify's own API (docs/broll-picture-logic.md, item 31).
     "make_talking_clip": "heygen/avatar-iv",
     "collect_talking_clip": "heygen/avatar-iv",
-    "make_broll_clip": "creatify/boreal",
-    "collect_broll_clip": "creatify/boreal",
+    "make_broll_clip": "creatify/boreal-h3",
+    "collect_broll_clip": "creatify/boreal-h3",
     "make_music": "sonilo/v1.1/text-to-music",
 }
 
@@ -60,11 +60,13 @@ PRICE_PER_HOUR_OF_AUDIO: dict[str, Decimal] = {
     "scribe_v2": Decimal("0.22"),
 }
 
-# US dollars per second of video made. Boreal's from fal's model page on 2026-09-26, at the
-# 720p the adapter asks for. HeyGen's from its own pricing page on 2026-09-29: a photo avatar
-# is 0.1 credits a second at $0.50 a credit, the same at 720p and 1080p.
+# US dollars per second of video made. Boreal-H3's from Creatify on 2026-10-03: 0.4 credits a
+# second at the 768p the adapter asks for, at $99 for 500 credits (API Starter); up to 5
+# example pictures are free, so nothing else is billed. HeyGen's from its own pricing page on
+# 2026-09-29: a photo avatar is 0.1 credits a second at $0.50 a credit, the same at 720p and
+# 1080p.
 PRICE_PER_SECOND_OF_VIDEO: dict[str, Decimal] = {
-    "creatify/boreal": Decimal("0.01"),
+    "creatify/boreal-h3": Decimal("0.0792"),
     "heygen/avatar-iv": Decimal("0.05"),
 }
 

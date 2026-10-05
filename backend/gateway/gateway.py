@@ -26,7 +26,10 @@ from . import catalog
 from .models import ModelCall
 from .types import (
     AgentProvider,
+    BrollClipHandoff,
+    BrollClipProvider,
     ClipCollectHandoff,
+    ClipCollector,
     ClipFailed,
     ClipHandoff,
     ClipProvider,
@@ -63,7 +66,7 @@ if TYPE_CHECKING:
     from chat.models import Session
     from jobs.models import Job
 
-    from .boreal_adapter import BorealProvider
+    from .creatify_adapter import CreatifyProvider
     from .elevenlabs_adapter import ElevenLabsProvider
     from .fal_adapter import FalProvider
     from .heygen_adapter import HeyGenProvider
@@ -113,10 +116,10 @@ def _elevenlabs() -> ElevenLabsProvider:
 
 
 @cache
-def _boreal() -> BorealProvider:
-    from .boreal_adapter import BorealProvider
+def _creatify() -> CreatifyProvider:
+    from .creatify_adapter import CreatifyProvider
 
-    return BorealProvider()
+    return CreatifyProvider()
 
 
 @cache
@@ -149,19 +152,19 @@ def _transcribers() -> TranscriptionProvider:
     return cast(TranscriptionProvider, _override) if _override is not None else _elevenlabs()
 
 
-def _clips(model: str) -> ClipProvider:
+def _clips(model: str) -> ClipCollector:
     """The service that makes clips with `model`: talking clips and B-roll ones each have
     their own, so a clip is always waited for at the service it was asked of. A model the
-    catalog names that no service here makes is a mistake, not Boreal's."""
+    catalog names that no service here makes is a mistake, not the service's."""
     if _override is not None:
-        return cast(ClipProvider, _override)
+        return cast(ClipCollector, _override)
     return _CLIP_SERVICES[model]()
 
 
 # Which service makes clips with which model. Each is made once and kept.
-_CLIP_SERVICES: dict[str, Callable[[], ClipProvider]] = {
+_CLIP_SERVICES: dict[str, Callable[[], ClipCollector]] = {
     "heygen/avatar-iv": _heygen,
-    "creatify/boreal": _boreal,
+    "creatify/boreal-h3": _creatify,
 }
 
 
@@ -440,7 +443,7 @@ def submit_clip(
         picture=picture_key, audio=audio_key, seconds=seconds, motion_prompt=motion_prompt
     )
     model = catalog.MODEL_FOR_PURPOSE[purpose]
-    provider = _clips(model)
+    provider = cast(ClipProvider, _clips(model))
 
     def submit() -> _Made[str]:
         video_id = provider.submit(
@@ -448,6 +451,49 @@ def submit_clip(
             audio=None if handoff.audio is None else file_store.read(handoff.audio),
             seconds=handoff.seconds,
             motion_prompt=handoff.motion_prompt,
+        )
+        return _Made(
+            result=video_id,
+            output={"video_id": video_id},
+            bill=_Bill(
+                video_seconds=handoff.seconds,
+                cost_usd=catalog.video_cost_usd(model, handoff.seconds),
+            ),
+        )
+
+    return _recorded(job, purpose, model, provider.name, handoff, submit)
+
+
+def submit_broll_clip(
+    *,
+    job: Job | None,
+    purpose: str,
+    starting_picture_key: str | None,
+    example_picture_keys: Sequence[str],
+    seconds: int,
+    prompt: str,
+) -> str:
+    """Ask for a B-roll clip, with no sound, of `seconds` whole seconds as `prompt` says:
+    from a starting picture, its first frame, or from example pictures, never both, each given
+    by its key in the file store. This is what is paid for: every second of it. Returns the
+    clip's id, to collect it with once it's made."""
+    handoff = BrollClipHandoff(
+        starting_picture=starting_picture_key,
+        example_pictures=list(example_picture_keys),
+        seconds=seconds,
+        prompt=prompt,
+    )
+    model = catalog.MODEL_FOR_PURPOSE[purpose]
+    provider = cast(BrollClipProvider, _clips(model))
+
+    def submit() -> _Made[str]:
+        video_id = provider.submit_broll(
+            starting_picture=None
+            if handoff.starting_picture is None
+            else file_store.read(handoff.starting_picture),
+            example_pictures=[file_store.read(key) for key in handoff.example_pictures],
+            seconds=handoff.seconds,
+            prompt=handoff.prompt,
         )
         return _Made(
             result=video_id,
@@ -648,6 +694,10 @@ def _files_given(handoff: Handoff, images: list[dict[str, str]] | None) -> list[
         given.append(handoff.audio)
     if isinstance(handoff, ClipHandoff):
         given += [key for key in (handoff.picture, handoff.audio) if key is not None]
+    if isinstance(handoff, BrollClipHandoff):
+        given += (
+            [handoff.starting_picture] if handoff.starting_picture else handoff.example_pictures
+        )
     return given
 
 

@@ -7,8 +7,9 @@ import json
 import socket
 import time
 import wave
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -20,7 +21,7 @@ from werkzeug import Request, Response
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
 from gateway import gateway
-from gateway.boreal_adapter import BorealProvider
+from gateway.creatify_adapter import CreatifyProvider
 from gateway.elevenlabs_adapter import ElevenLabsProvider
 from gateway.fal_adapter import FalProvider
 from gateway.gateway import (
@@ -30,6 +31,7 @@ from gateway.gateway import (
     edit_picture,
     make_music,
     speak,
+    submit_broll_clip,
     submit_clip,
     transcribe,
     use_model,
@@ -562,71 +564,74 @@ def test_music_fal_cant_make_is_not_asked_for_again(
     assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
 
 
-# --- Boreal on fal's queue ------------------------------------------------------------------
-# Replies shaped as fal's API schema for creatify/boreal describes them (read on 2026-09-26),
-# not yet recorded from a real run. fal's storage replies as it did on 2026-09-27
-# (docs/real-api-replies.md).
+# --- Boreal-H3 on Creatify's own API ------------------------------------------------------------
+# Its `done` replies and its refusal are Creatify's real ones from the scene #16 check
+# (docs/runs/second-run-review/check/, copied into tests/creatify/). The reply to a new task,
+# and those of a task still being made, failed or rejected, are written in the same shape.
+# fal's storage replies as it did on 2026-09-27 (docs/real-api-replies.md).
 
-
-@pytest.fixture
-def boreal(httpserver: HTTPServer, settings: Settings) -> BorealProvider:
-    settings.FAL_KEY = "fal-test-key"
-    settings.FAL_QUEUE_URL = httpserver.url_for("")
-    settings.FAL_STORAGE_URL = httpserver.url_for("")
-    return BorealProvider()
-
-
-AUTHORISED = {"Authorization": "Key fal-test-key"}
-QUEUED = {
-    "request_id": "req-1",
-    "status": "IN_QUEUE",
-    "status_url": "https://queue.fal.run/creatify/boreal/requests/req-1/status",
-    "response_url": "https://queue.fal.run/creatify/boreal/requests/req-1",
+REPLIES = Path(__file__).parent / "creatify"
+# The check asked for a clip from a start and an end picture; the app sends only a starting
+# picture, and Creatify's reply has the same shape either way.
+DONE_FROM_START_AND_END_PICTURES: dict[str, Any] = json.loads(
+    (REPLIES / "done-from-start-and-end-pictures.json").read_text()
+)
+DONE_FROM_EXAMPLE_PICTURES: dict[str, Any] = json.loads(
+    (REPLIES / "done-from-example-pictures.json").read_text()
+)
+TASK_ID = DONE_FROM_START_AND_END_PICTURES["id"]
+# The task as Creatify has it before it is made: what it was asked for, and no clip yet.
+WAITING = {
+    **DONE_FROM_START_AND_END_PICTURES,
+    "status": "pending",
+    "video_output": None,
+    "progress": 0,
 }
-# Where fal says how clip req-1 is getting on, where it says the made clip is, and the link
-# to the clip itself.
-STATUS = "/creatify/boreal/requests/req-1/status"
+MAKING = {**WAITING, "status": "running", "progress": 0.4}
+TASKS = "/api/boreal/"
+TASK = f"/api/boreal/{TASK_ID}/"
+CREATIFY_AUTHORISED = {"X-API-ID": "creatify-test-id", "X-API-KEY": "creatify-test-key"}
+AUTHORISED = {"Authorization": "Key fal-test-key"}
 # Where fal's storage gives a token to store files with, where a file is stored with it, and
 # the link it then gives the file.
 TOKEN = "/storage/auth/token"
 UPLOADING = "/cdn/files/upload"
-STORED_LINK = "https://v3b.fal.media/files/b/0aac27e0/hzumoERxCN0OZTqbpMb2L_line.wav"
-RESULT = "/creatify/boreal/requests/req-1"
+STORED_LINK = "https://v3b.fal.media/files/b/0aacf0df/qUpksHBlsM-2Yx0VgOUTX_picture.png"
 CLIP_LINK = "/files/out.mp4"
 MADE = b"\0\0\0\x18ftypmp42 a whole clip"
+STARTING_PICTURE = picture(768, 1365, (200, 180, 160))
+EXAMPLE_PICTURES = [picture(800, 800, (10, 20, 30)), picture(600, 900, (40, 50, 60), "JPEG")]
+PROMPT = "The hand squeezes the bottle; clear gel clings to the bowl."
 
 
-def submitting(picture_key: str = "", audio_key: str | None = "", seconds: float = 5.4) -> str:
-    """Ask for a 5.4-second talking clip, of a picture and audio kept in the file store, or
-    for a silent one when `audio_key` is None."""
-    return submit_clip(
+@pytest.fixture
+def creatify(httpserver: HTTPServer, settings: Settings) -> CreatifyProvider:
+    settings.CREATIFY_API_ID = "creatify-test-id"
+    settings.CREATIFY_API_KEY = "creatify-test-key"
+    settings.CREATIFY_BASE_URL = httpserver.url_for("")
+    settings.FAL_KEY = "fal-test-key"
+    settings.FAL_STORAGE_URL = httpserver.url_for("")
+    return CreatifyProvider()
+
+
+def asking_creatify(
+    *, start: bytes | None = STARTING_PICTURE, examples: Sequence[bytes] = (), seconds: int = 7
+) -> str:
+    """Ask for a B-roll clip of pictures kept in the file store: from a starting picture, or
+    from example pictures when there is none."""
+    return submit_broll_clip(
         job=None,
         purpose="make_broll_clip",
-        picture_key=picture_key
-        or file_store.save("starting_picture.png", picture(72, 128, (1, 2, 3))),
-        audio_key=audio_key
-        if audio_key is None
-        else audio_key or file_store.save("speak_line.wav", wav(5.4)),
+        starting_picture_key=None if start is None else file_store.save("start.png", start),
+        example_picture_keys=[file_store.save("example", data) for data in examples],
         seconds=seconds,
-        motion_prompt="She talks to the camera.",
+        prompt=PROMPT,
     )
 
 
-def collecting() -> str:
-    """Wait for clip req-1 to be made, then fetch it."""
-    return collect_clip(job=None, purpose="collect_broll_clip", video_id="req-1")
-
-
-def with_files_read_back(body: dict[str, Any]) -> dict[str, Any]:
-    """A request's body with each file sent inside it as a data URI read back: what the URI
-    says the file is, and the file."""
-    read_back: dict[str, Any] = {}
-    for name, value in body.items():
-        if isinstance(value, str) and value.startswith("data:"):
-            says, encoded = value.split(",", 1)
-            value = (says, base64.b64decode(encoded))
-        read_back[name] = value
-    return read_back
+def collecting_from_creatify() -> str:
+    """Wait for the task to be made, then fetch its clip."""
+    return collect_clip(job=None, purpose="collect_broll_clip", video_id=TASK_ID)
 
 
 @pytest.fixture
@@ -645,9 +650,9 @@ def stored(httpserver: HTTPServer) -> list[dict[str, Any]]:
                 "sent with": request.headers.get("Authorization"),
             }
         )
+        link = STORED_LINK.replace("picture.png", f"{len(files)}-{files[-1]['name']}")
         return Response(
-            json.dumps({"access_url": STORED_LINK, "uploaded": True}),
-            content_type="application/json",
+            json.dumps({"access_url": link, "uploaded": True}), content_type="application/json"
         )
 
     httpserver.expect_request(
@@ -665,30 +670,33 @@ def stored(httpserver: HTTPServer) -> list[dict[str, Any]]:
     return files
 
 
+def stored_link(number: int, name: str) -> str:
+    """The link fal's storage gives the `number`th file stored, named `name`."""
+    return STORED_LINK.replace("picture.png", f"{number}-{name}")
+
+
 @pytest.fixture
-def asked(httpserver: HTTPServer, stored: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """fal taking every clip asked of it with our key, as req-1, and every file put in its
-    storage. Gives what each clip asked for."""
+def tasked(httpserver: HTTPServer, stored: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Creatify taking every task asked of it with our keys, and every picture put in fal's
+    storage. Gives what each task asked for."""
     bodies: list[dict[str, Any]] = []
 
-    def queueing(request: Request) -> Response:
+    def taking(request: Request) -> Response:
         bodies.append(request.get_json())
-        return Response(json.dumps(QUEUED), content_type="application/json")
+        return Response(json.dumps(WAITING), status=201, content_type="application/json")
 
     httpserver.expect_request(
-        "/creatify/boreal", method="POST", headers=AUTHORISED
-    ).respond_with_handler(queueing)
+        TASKS, method="POST", headers=CREATIFY_AUTHORISED
+    ).respond_with_handler(taking)
     return bodies
 
 
 @pytest.fixture
-def made(httpserver: HTTPServer) -> None:
-    """fal having made clip req-1: it says so, says where the clip is, and hands it over."""
-    httpserver.expect_request(STATUS, headers=AUTHORISED).respond_with_json(
-        {"request_id": "req-1", "status": "COMPLETED"}
-    )
-    httpserver.expect_request(RESULT, headers=AUTHORISED).respond_with_json(
-        {"video": {"url": httpserver.url_for(CLIP_LINK), "content_type": "video/mp4"}}
+def done(httpserver: HTTPServer) -> None:
+    """Creatify having made the task: it says so, with the link to the clip, and the link
+    hands it over."""
+    httpserver.expect_request(TASK, headers=CREATIFY_AUTHORISED).respond_with_json(
+        {**DONE_FROM_START_AND_END_PICTURES, "video_output": httpserver.url_for(CLIP_LINK)}
     )
     httpserver.expect_request(CLIP_LINK).respond_with_data(MADE)
 
@@ -707,210 +715,180 @@ def broken(request: Request) -> Response:
     return Response("Internal Server Error", status=500)
 
 
-def test_a_talking_clip_is_asked_for_saying_the_line_in_720p_portrait(
-    boreal: BorealProvider, asked: list[dict[str, Any]], stored: list[dict[str, Any]]
+def test_a_b_roll_clip_from_a_starting_picture_is_asked_of_boreal_h3_at_768p(
+    creatify: CreatifyProvider, tasked: list[dict[str, Any]], stored: list[dict[str, Any]]
 ) -> None:
-    starting_picture = picture(1152, 2048, (200, 180, 160))
-    line = wav(5.4)
+    with use_model(creatify):
+        asking_creatify(start=STARTING_PICTURE, seconds=7)
 
-    with use_model(boreal):
-        submitting(
-            file_store.save("starting_picture.png", starting_picture),
-            file_store.save("speak_line.wav", line),
-        )
-
-    (body,) = asked
-    # The picture is sent whole, inside the request; the line's audio by a link to it in fal's
-    # storage.
-    assert with_files_read_back(body) == {
-        "prompt": "[VISUAL]\nShe talks to the camera.\n\n[SPEECH]\nOnly the given audio, "
-        "unchanged.\n\n[SOUNDS]\nNone.\n\n[TEXT]\nNone.",
-        "image_url": ("data:image/png;base64", starting_picture),
-        "duration": 5.4,
-        "resolution": "720p",
-        "aspect_ratio": "9:16",
-        "audio_url": STORED_LINK,
+    (body,) = tasked
+    # The prompt as it is. No shape: with a starting picture, Boreal-H3 takes only its own.
+    assert body == {
+        "model": "boreal-h3",
+        "resolution": "768p",
+        "duration": 7,
+        "prompt": PROMPT,
+        "prompt_enhancement": "auto",
+        "image_url": stored_link(1, "starting-picture.png"),
     }
-    # Named as a WAV file, which Boreal takes. Sent inside the request, fal named it `.bin`
-    # and Boreal refused it. It is stored with the storage's token, not our key.
+    # The picture is put on fal's storage first, with the storage's token, not our key.
     assert stored == [
-        {"name": "line.wav", "type": "audio/wav", "held": line, "sent with": "Bearer cdn-token"}
+        {
+            "name": "starting-picture.png",
+            "type": "image/png",
+            "held": STARTING_PICTURE,
+            "sent with": "Bearer cdn-token",
+        }
     ]
 
 
-def test_a_clip_with_no_audio_is_asked_for_with_no_speech_or_sound(
-    boreal: BorealProvider, asked: list[dict[str, Any]], stored: list[dict[str, Any]]
+def test_a_b_roll_clip_from_example_pictures_is_asked_for_upright_with_each_in_order(
+    creatify: CreatifyProvider, tasked: list[dict[str, Any]], stored: list[dict[str, Any]]
 ) -> None:
-    starting_picture = picture(72, 128, (1, 2, 3))
+    with use_model(creatify):
+        asking_creatify(start=None, examples=EXAMPLE_PICTURES, seconds=5)
 
-    with use_model(boreal):
-        submitting(file_store.save("p.png", starting_picture), None, seconds=6)
-
-    (body,) = asked
-    # No audio is sent: the voice is laid over the clip afterwards.
-    assert with_files_read_back(body) == {
-        "prompt": "[VISUAL]\nShe talks to the camera.\n\n[SPEECH]\nNone. Nobody speaks."
-        "\n\n[SOUNDS]\nNone.\n\n[TEXT]\nNone.",
-        "image_url": ("data:image/png;base64", starting_picture),
-        "duration": 6,
-        "resolution": "720p",
+    (body,) = tasked
+    # In order, as the prompt names them: Image 1, Image 2. Any picture's shape works: the
+    # video's is set (shape check, 2026-10-03).
+    assert body == {
+        "model": "boreal-h3",
+        "resolution": "768p",
+        "duration": 5,
+        "prompt": PROMPT,
+        "prompt_enhancement": "auto",
         "aspect_ratio": "9:16",
+        "reference_image_urls": [
+            stored_link(1, "example-picture-1.png"),
+            stored_link(2, "example-picture-2.jpeg"),
+        ],
     }
-    assert stored == []
+    assert [(file["type"], file["held"]) for file in stored] == [
+        ("image/png", EXAMPLE_PICTURES[0]),
+        ("image/jpeg", EXAMPLE_PICTURES[1]),
+    ]
 
 
-def test_a_clip_asked_for_is_known_by_the_id_fal_gives_it(
-    boreal: BorealProvider, asked: list[dict[str, Any]]
+def test_creatify_rewriting_the_prompt_is_a_setting(
+    creatify: CreatifyProvider, tasked: list[dict[str, Any]], settings: Settings
 ) -> None:
-    with use_model(boreal):
-        video_id = submitting()
+    settings.CREATIFY_PROMPT_ENHANCEMENT = "none"
 
-    # Recorded, so a step run again waits for this clip rather than paying for another.
-    assert (video_id, ModelCall.objects.get().output) == ("req-1", {"video_id": "req-1"})
+    with use_model(CreatifyProvider()):
+        asking_creatify()
+
+    assert [body["prompt_enhancement"] for body in tasked] == ["none"]
 
 
-def test_a_talking_clip_is_billed_by_fal_for_every_second_of_it(
-    boreal: BorealProvider, asked: list[dict[str, Any]]
+def test_a_b_roll_clip_is_billed_for_every_second_asked_for(
+    creatify: CreatifyProvider, tasked: list[dict[str, Any]]
 ) -> None:
-    with use_model(boreal):
-        submitting(seconds=5.4)
+    with use_model(creatify):
+        video_id = asking_creatify(seconds=7)
 
     submitted = ModelCall.objects.get()
-    # $0.01 a second at 720p.
-    assert (submitted.provider, submitted.model, submitted.video_seconds, submitted.cost_usd) == (
-        "fal",
-        "creatify/boreal",
-        5.4,
-        Decimal("0.054"),
-    )
+    # 0.4 credits a second at 768p, at $99 for 500 credits: $0.0792 a second.
+    assert (
+        submitted.provider,
+        submitted.model,
+        submitted.video_seconds,
+        submitted.cost_usd,
+        submitted.output,
+    ) == ("creatify", "creatify/boreal-h3", 7, Decimal("0.5544"), {"video_id": TASK_ID})
+    assert video_id == TASK_ID
 
 
-def test_a_clip_is_fetched_only_once_fal_says_it_is_made(
-    httpserver: HTTPServer, boreal: BorealProvider
+def test_a_b_roll_clip_is_fetched_once_creatify_says_it_is_done(
+    httpserver: HTTPServer, creatify: CreatifyProvider
 ) -> None:
-    # A clip waits in fal's queue, is worked on, then is made.
-    for state in ("IN_QUEUE", "IN_PROGRESS", "COMPLETED"):
-        httpserver.expect_oneshot_request(STATUS, headers=AUTHORISED).respond_with_json(
-            {"request_id": "req-1", "status": state}
+    finished = {**DONE_FROM_START_AND_END_PICTURES, "video_output": httpserver.url_for(CLIP_LINK)}
+    for reply in (WAITING, MAKING, finished):
+        httpserver.expect_oneshot_request(TASK, headers=CREATIFY_AUTHORISED).respond_with_json(
+            reply
         )
-    httpserver.expect_oneshot_request(RESULT, headers=AUTHORISED).respond_with_json(
-        {"video": {"url": httpserver.url_for(CLIP_LINK), "content_type": "video/mp4"}}
+    httpserver.expect_oneshot_request(CLIP_LINK).respond_with_data(MADE)
+
+    with use_model(creatify):
+        key = collecting_from_creatify()
+
+    assert file_store.read(key) == MADE
+    assert [request.path for request, _ in httpserver.log] == [TASK, TASK, TASK, CLIP_LINK]
+    # The link to the clip is somewhere other than Creatify's API: it isn't sent the keys.
+    clip_request = httpserver.log[-1][0]
+    assert "X-API-KEY" not in clip_request.headers
+
+
+def test_creatifys_real_reply_for_a_clip_from_example_pictures_is_read_as_done(
+    httpserver: HTTPServer, creatify: CreatifyProvider
+) -> None:
+    httpserver.expect_oneshot_request(TASK).respond_with_json(
+        {**DONE_FROM_EXAMPLE_PICTURES, "video_output": httpserver.url_for(CLIP_LINK)}
     )
     httpserver.expect_oneshot_request(CLIP_LINK).respond_with_data(MADE)
 
-    with use_model(boreal):
-        key = collecting()
-
-    assert file_store.read(key) == MADE
-    assert [request.path for request, _ in httpserver.log] == [
-        STATUS,
-        STATUS,
-        STATUS,
-        RESULT,
-        CLIP_LINK,
-    ]
+    with use_model(creatify):
+        assert file_store.read(collecting_from_creatify()) == MADE
 
 
-def test_a_fetched_clip_is_recorded_at_no_cost(boreal: BorealProvider, made: None) -> None:
-    with use_model(boreal):
-        key = collecting()
-
-    # Paid for when it was asked for: waiting for it and fetching it cost nothing more.
-    collected = ModelCall.objects.get()
-    assert (collected.handoff, collected.output, collected.cost_usd) == (
-        {"video_id": "req-1"},
-        {"file": key},
-        Decimal(0),
-    )
-
-
-def test_a_clip_boreal_couldnt_make_is_not_asked_for_again(
-    httpserver: HTTPServer, boreal: BorealProvider
+@pytest.mark.parametrize("status", ["failed", "rejected"])
+def test_a_clip_creatify_failed_or_rejected_fails_with_its_reason_and_isnt_asked_for_again(
+    httpserver: HTTPServer, creatify: CreatifyProvider, status: str
 ) -> None:
-    httpserver.expect_oneshot_request(STATUS).respond_with_json(
-        {"request_id": "req-1", "status": "COMPLETED"}
-    )
-    httpserver.expect_oneshot_request(RESULT).respond_with_json(
-        {"detail": "The image was flagged by the content checker."}, status=422
+    httpserver.expect_oneshot_request(TASK).respond_with_json(
+        {
+            **WAITING,
+            "status": status,
+            "failed_reason": "The prompt was flagged by the content checker.",
+        }
     )
 
-    with use_model(boreal), pytest.raises(ClipFailed, match="flagged by the content checker"):
-        collecting()
+    with (
+        use_model(creatify),
+        pytest.raises(ClipFailed, match=r"^The prompt was flagged by the content checker\.$"),
+    ):
+        collecting_from_creatify()
     assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
 
 
-def test_a_clip_fal_finished_with_an_error_counts_as_one_it_couldnt_make(
-    httpserver: HTTPServer, boreal: BorealProvider
+def test_a_clip_creatify_failed_without_a_reason_says_so(
+    httpserver: HTTPServer, creatify: CreatifyProvider
 ) -> None:
-    # fal says why as it says the clip is finished: there is no clip to fetch.
-    httpserver.expect_oneshot_request(STATUS).respond_with_json(
-        {"request_id": "req-1", "status": "COMPLETED", "error": "The video could not be made."}
+    httpserver.expect_oneshot_request(TASK).respond_with_json({**WAITING, "status": "failed"})
+
+    with use_model(creatify), pytest.raises(ClipFailed, match="^Creatify gave no reason$"):
+        collecting_from_creatify()
+
+
+def test_a_clip_creatify_no_longer_knows_of_counts_as_one_it_couldnt_make(
+    httpserver: HTTPServer, creatify: CreatifyProvider
+) -> None:
+    httpserver.expect_oneshot_request(TASK).respond_with_json(
+        {"detail": "No Boreal task matches the given query."}, status=404
     )
 
-    with use_model(boreal), pytest.raises(ClipFailed, match=r"^The video could not be made\.$"):
-        collecting()
-
-
-def test_a_clip_fal_no_longer_knows_of_counts_as_one_it_couldnt_make(
-    httpserver: HTTPServer, boreal: BorealProvider
-) -> None:
-    httpserver.expect_oneshot_request(STATUS).respond_with_json(
-        {"detail": "Request not found"}, status=404
-    )
-
-    # Waited for, it would never be made.
     with (
-        use_model(boreal),
-        pytest.raises(ClipFailed, match="^fal no longer knows of this clip: Request not found$"),
+        use_model(creatify),
+        pytest.raises(
+            ClipFailed,
+            match="^Creatify no longer knows of this clip: No Boreal task matches",
+        ),
     ):
-        collecting()
+        collecting_from_creatify()
 
 
-@pytest.mark.parametrize(
-    "asking", [STATUS, RESULT], ids=["how the clip is getting on", "where the clip is"]
-)
-@pytest.mark.parametrize(
-    ("reply", "content_type"),
-    [
-        pytest.param("Not Found", "text/plain", id="plain text"),
-        pytest.param('{"message": "Not Found"}', "application/json", id="JSON without a detail"),
-    ],
-)
-def test_a_not_found_that_isnt_fals_own_reply_doesnt_count_as_the_clip_failing(
-    httpserver: HTTPServer,
-    boreal: BorealProvider,
-    made: None,
-    asking: str,
-    reply: str,
-    content_type: str,
+def test_a_not_found_that_isnt_creatifys_own_reply_doesnt_count_as_the_clip_failing(
+    httpserver: HTTPServer, creatify: CreatifyProvider
 ) -> None:
-    # Such as its address having moved: the clip it was asked about may still be made, and
-    # counting it as failed would pay for it again.
-    httpserver.expect_oneshot_request(asking).respond_with_data(
-        reply, status=404, content_type=content_type
-    )
+    # Such as its address having moved: the clip may still be made, and counting it as
+    # failed would pay for it again.
+    httpserver.expect_oneshot_request(TASK).respond_with_data("Not Found", status=404)
 
-    with use_model(boreal), pytest.raises(httpx.HTTPStatusError, match="404 NOT FOUND"):
-        collecting()
-
-
-def test_fal_refusing_to_say_how_a_clip_is_getting_on_doesnt_count_as_the_clip_failing(
-    httpserver: HTTPServer, boreal: BorealProvider
-) -> None:
-    # Such as when the account has run out of money. The clip is already paid for: counted
-    # as failed, it would be paid for again once the account is topped up.
-    httpserver.expect_oneshot_request(STATUS).respond_with_json(
-        {"detail": "User is locked. Reason: Exhausted balance."}, status=403
-    )
-
-    with use_model(boreal), pytest.raises(httpx.HTTPStatusError, match="403 FORBIDDEN"):
-        collecting()
+    with use_model(creatify), pytest.raises(httpx.HTTPStatusError, match="404 NOT FOUND"):
+        collecting_from_creatify()
 
 
 @pytest.mark.parametrize(
-    "asking",
-    [STATUS, RESULT, CLIP_LINK],
-    ids=["how the clip is getting on", "where the clip is", "the clip itself"],
+    "asking", [TASK, CLIP_LINK], ids=["how the clip is getting on", "the clip itself"]
 )
 @pytest.mark.parametrize(
     "failing",
@@ -920,19 +898,18 @@ def test_fal_refusing_to_say_how_a_clip_is_getting_on_doesnt_count_as_the_clip_f
         pytest.param(broken, id="server error"),
     ],
 )
-def test_a_made_clip_is_still_fetched_when_fal_fails_for_a_moment(
+def test_a_made_clip_is_still_fetched_when_creatify_fails_for_a_moment(
     httpserver: HTTPServer,
-    boreal: BorealProvider,
-    made: None,
+    creatify: CreatifyProvider,
+    done: None,
     asking: str,
     failing: Callable[[Request], Response],
 ) -> None:
-    # Asking about a clip, or fetching it, costs nothing, so it is asked again. Giving up
-    # would pay for the clip a second time.
+    # Asking about a clip, or fetching it, costs nothing, so it is asked again.
     httpserver.expect_oneshot_request(asking).respond_with_handler(failing)
 
-    with use_model(boreal):
-        key = collecting()
+    with use_model(creatify):
+        key = collecting_from_creatify()
 
     assert file_store.read(key) == MADE
     assert [(c.attempt, c.outcome) for c in ModelCall.objects.all()] == [
@@ -941,39 +918,60 @@ def test_a_made_clip_is_still_fetched_when_fal_fails_for_a_moment(
     ]
 
 
-def test_a_clip_link_that_no_longer_works_isnt_kept_as_the_clip(
-    httpserver: HTTPServer, boreal: BorealProvider, made: None
-) -> None:
-    # The link to a made clip only works for a while.
-    httpserver.expect_oneshot_request(CLIP_LINK).respond_with_data(
-        "Request has expired", status=403
+def test_a_fetched_clip_is_recorded_at_no_cost(creatify: CreatifyProvider, done: None) -> None:
+    with use_model(creatify):
+        key = collecting_from_creatify()
+
+    collected = ModelCall.objects.get()
+    assert (collected.handoff, collected.output, collected.cost_usd) == (
+        {"video_id": TASK_ID},
+        {"file": key},
+        Decimal(0),
     )
 
-    with use_model(boreal), pytest.raises(httpx.HTTPStatusError, match="403 FORBIDDEN"):
-        collecting()
-    assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
 
-
-def test_a_clip_fal_is_too_busy_for_is_asked_for_again(
-    httpserver: HTTPServer, boreal: BorealProvider, stored: list[dict[str, Any]]
+def test_a_clip_creatify_is_too_busy_for_is_asked_for_again(
+    httpserver: HTTPServer, creatify: CreatifyProvider, stored: list[dict[str, Any]]
 ) -> None:
     # Too busy to take it, so nothing was made: asking again can't pay twice.
-    httpserver.expect_oneshot_request("/creatify/boreal", method="POST").respond_with_data(
+    httpserver.expect_oneshot_request(TASKS, method="POST").respond_with_data(
         "Service Unavailable", status=503
     )
-    httpserver.expect_oneshot_request("/creatify/boreal", method="POST").respond_with_json(QUEUED)
+    httpserver.expect_oneshot_request(TASKS, method="POST").respond_with_json(WAITING, status=201)
 
-    with use_model(boreal):
-        assert submitting() == "req-1"
+    with use_model(creatify):
+        assert asking_creatify() == TASK_ID
 
     assert [(c.attempt, c.outcome, c.cost_usd) for c in ModelCall.objects.all()] == [
         (1, ModelCall.Outcome.FAILED, None),
-        (2, ModelCall.Outcome.SUCCEEDED, Decimal("0.054")),
+        (2, ModelCall.Outcome.SUCCEEDED, Decimal("0.5544")),
     ]
 
 
+def test_a_clip_creatify_refuses_fails_with_its_words_and_isnt_asked_for_again(
+    httpserver: HTTPServer, creatify: CreatifyProvider, stored: list[dict[str, Any]]
+) -> None:
+    refused = (REPLIES / "refused-both-ways.json").read_text()
+    httpserver.expect_request(TASKS, method="POST").respond_with_data(
+        refused, status=400, content_type="application/json"
+    )
+
+    with (
+        use_model(creatify),
+        pytest.raises(ClipFailed, match="^Creatify refused it .400.: .*takes no image_url"),
+    ):
+        asking_creatify()
+
+    # Asked again, it would only be refused again.
+    assert len([r for r, _ in httpserver.log if r.path == TASKS]) == 1
+    # Our keys are never written into what is recorded.
+    failed = ModelCall.objects.get()
+    assert "creatify-test-key" not in failed.error
+    assert "creatify-test-key" not in json.dumps(failed.handoff)
+
+
 @pytest.mark.parametrize(
-    "asking", [TOKEN, UPLOADING], ids=["a token to store the audio", "storing the audio"]
+    "asking", [TOKEN, UPLOADING], ids=["a token to store a picture", "storing a picture"]
 )
 @pytest.mark.parametrize(
     "failing",
@@ -983,36 +981,35 @@ def test_a_clip_fal_is_too_busy_for_is_asked_for_again(
         pytest.param(broken, id="server error"),
     ],
 )
-def test_a_talking_clip_is_asked_for_again_when_fals_storage_fails_for_a_moment(
+def test_a_b_roll_clip_is_asked_for_again_when_fals_storage_fails_for_a_moment(
     httpserver: HTTPServer,
-    boreal: BorealProvider,
-    asked: list[dict[str, Any]],
+    creatify: CreatifyProvider,
+    tasked: list[dict[str, Any]],
     asking: str,
     failing: Callable[[Request], Response],
 ) -> None:
-    # Putting the audio in storage costs nothing, and the clip isn't asked for until it's
-    # there, so asking again can't pay twice.
+    # Storing a picture costs nothing, and the clip isn't asked for until it's there, so
+    # asking again can't pay twice.
     httpserver.expect_oneshot_request(asking).respond_with_handler(failing)
 
-    with use_model(boreal):
-        assert submitting() == "req-1"
+    with use_model(creatify):
+        assert asking_creatify() == TASK_ID
 
-    assert len(asked) == 1
-    assert [(c.attempt, c.outcome, c.cost_usd) for c in ModelCall.objects.all()] == [
-        (1, ModelCall.Outcome.FAILED, None),
-        (2, ModelCall.Outcome.SUCCEEDED, Decimal("0.054")),
+    assert len(tasked) == 1
+    assert [(c.attempt, c.outcome) for c in ModelCall.objects.all()] == [
+        (1, ModelCall.Outcome.FAILED),
+        (2, ModelCall.Outcome.SUCCEEDED),
     ]
 
 
-def test_a_talking_clip_isnt_asked_for_while_fals_storage_cant_be_reached(
-    boreal: BorealProvider, asked: list[dict[str, Any]], settings: Settings
+def test_a_b_roll_clip_isnt_asked_for_while_fals_storage_cant_be_reached(
+    creatify: CreatifyProvider, tasked: list[dict[str, Any]], settings: Settings
 ) -> None:
     with socket.socket() as unused:
         unused.bind(("127.0.0.1", 0))
         settings.FAL_STORAGE_URL = f"http://127.0.0.1:{unused.getsockname()[1]}"
-    unreachable = BorealProvider()
+    unreachable = CreatifyProvider()
 
-    # Told apart from fal's queue being down, which is a different thing to look into.
     with (
         use_model(unreachable),
         pytest.raises(
@@ -1020,27 +1017,28 @@ def test_a_talking_clip_isnt_asked_for_while_fals_storage_cant_be_reached(
             match="still down after 3 tries: fal's storage could not be reached",
         ),
     ):
-        submitting()
+        asking_creatify()
 
-    # With nowhere for the audio, the clip is never asked for, so nothing is paid for.
-    assert asked == []
+    # With nowhere for the picture, the clip is never asked for, so nothing is paid for.
+    assert tasked == []
 
 
-def test_a_clip_fal_cant_be_reached_for_is_asked_for_again(settings: Settings) -> None:
-    # Nothing answers where fal should be, so the request never left: nothing was paid for.
+def test_a_clip_creatify_cant_be_reached_for_is_asked_for_again(
+    creatify: CreatifyProvider, stored: list[dict[str, Any]], settings: Settings
+) -> None:
+    # Nothing answers where Creatify should be, so the request never left: nothing was paid.
     with socket.socket() as unused:
         unused.bind(("127.0.0.1", 0))
-        settings.FAL_QUEUE_URL = f"http://127.0.0.1:{unused.getsockname()[1]}"
-    unreachable = BorealProvider()
+        settings.CREATIFY_BASE_URL = f"http://127.0.0.1:{unused.getsockname()[1]}"
+    unreachable = CreatifyProvider()
 
-    # With no audio, so nothing is put in fal's storage first.
     with (
         use_model(unreachable),
         pytest.raises(
-            OutsideServiceDown, match="still down after 3 tries: fal could not be reached"
+            OutsideServiceDown, match="still down after 3 tries: Creatify could not be reached"
         ),
     ):
-        submitting(audio_key=None)
+        asking_creatify()
 
     assert [(c.attempt, c.outcome) for c in ModelCall.objects.all()] == [
         (1, ModelCall.Outcome.FAILED),
@@ -1049,33 +1047,31 @@ def test_a_clip_fal_cant_be_reached_for_is_asked_for_again(settings: Settings) -
     ]
 
 
-def test_a_clip_whose_reply_from_fal_is_lost_isnt_asked_for_again(
+def test_a_clip_whose_reply_from_creatify_is_lost_isnt_asked_for_again(
     httpserver: HTTPServer,
-    boreal: BorealProvider,
+    creatify: CreatifyProvider,
     stored: list[dict[str, Any]],
     settings: Settings,
 ) -> None:
-    settings.FAL_TIMEOUT_SECONDS = 0.2
-    impatient = BorealProvider()
+    settings.CREATIFY_TIMEOUT_SECONDS = 0.2
+    impatient = CreatifyProvider()
     taken: list[str] = []
 
     def answering_too_late(request: Request) -> Response:
         taken.append(request.path)
         time.sleep(0.5)
-        return Response(json.dumps(QUEUED))
+        return Response(json.dumps(WAITING), status=201)
 
-    httpserver.expect_request("/creatify/boreal", method="POST").respond_with_handler(
-        answering_too_late
-    )
+    httpserver.expect_request(TASKS, method="POST").respond_with_handler(answering_too_late)
 
     with (
         use_model(impatient),
-        pytest.raises(ClipFailed, match="^fal's reply was lost after the clip was asked for"),
+        pytest.raises(ClipFailed, match="^Creatify's reply was lost after the clip was asked for"),
     ):
-        submitting()
+        asking_creatify()
 
-    # fal may have taken it, and charged for it: asking again could pay twice.
-    assert taken == ["/creatify/boreal"]
+    # Creatify may have taken it, and charged for it: asking again could pay twice.
+    assert taken == [TASKS]
     assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
 
 
@@ -1217,7 +1213,7 @@ def test_a_talking_clip_is_billed_by_heygen_for_every_second_of_it(
 def test_heygen_is_never_asked_for_a_clip_with_no_audio(
     httpserver: HTTPServer, heygen: HeyGenProvider
 ) -> None:
-    # It makes talking clips only: a silent one is B-roll's, and Boreal's to make.
+    # It makes talking clips only: a silent one is B-roll's, and Boreal-H3's to make.
     with use_model(heygen), pytest.raises(ValueError, match="HeyGen only makes talking clips"):
         submit_clip(
             job=None,
@@ -1357,48 +1353,47 @@ def real_services(httpserver: HTTPServer, settings: Settings) -> Iterator[None]:
     """The gateway's own services, not one handed to it, each pointed at the stand-in."""
     settings.HEYGEN_API_KEY = "heygen-test-key"
     settings.HEYGEN_BASE_URL = httpserver.url_for("")
+    settings.CREATIFY_API_ID = "creatify-test-id"
+    settings.CREATIFY_API_KEY = "creatify-test-key"
+    settings.CREATIFY_BASE_URL = httpserver.url_for("")
     settings.FAL_KEY = "fal-test-key"
-    settings.FAL_QUEUE_URL = httpserver.url_for("")
+    settings.FAL_STORAGE_URL = httpserver.url_for("")
     # Made once and kept: made again here with the stand-in's address, and after, so no
     # other test is sent to it.
     gateway._heygen.cache_clear()
-    gateway._boreal.cache_clear()
+    gateway._creatify.cache_clear()
     yield
     gateway._heygen.cache_clear()
-    gateway._boreal.cache_clear()
+    gateway._creatify.cache_clear()
 
 
-def test_a_talking_clip_is_made_by_heygen_and_a_b_roll_clip_by_boreal(
-    httpserver: HTTPServer, real_services: None
+def test_a_talking_clip_is_made_by_heygen_and_a_b_roll_clip_by_boreal_h3_on_creatify(
+    httpserver: HTTPServer, real_services: None, tasked: list[dict[str, Any]]
 ) -> None:
     taking_uploads(httpserver)
     httpserver.expect_request("/v3/videos", method="POST").respond_with_json(
         {"data": {"video_id": "vid-1"}}
     )
-    httpserver.expect_request("/creatify/boreal", method="POST").respond_with_json(QUEUED)
     httpserver.expect_request(HEYGEN_CLIP).respond_with_json(
         {"data": {"id": "vid-1", "status": "completed", "video_url": httpserver.url_for(CLIP_LINK)}}
     )
-    httpserver.expect_request(STATUS).respond_with_json(
-        {"request_id": "req-1", "status": "COMPLETED"}
-    )
-    httpserver.expect_request(RESULT).respond_with_json(
-        {"video": {"url": httpserver.url_for(CLIP_LINK), "content_type": "video/mp4"}}
+    httpserver.expect_request(TASK).respond_with_json(
+        {**DONE_FROM_START_AND_END_PICTURES, "video_output": httpserver.url_for(CLIP_LINK)}
     )
     httpserver.expect_request(CLIP_LINK).respond_with_data(MADE)
 
     assert asking_heygen() == "vid-1"
-    assert submitting(audio_key=None) == "req-1"
+    assert asking_creatify() == TASK_ID
     # Each clip is waited for at the service that was asked for it.
     collecting_from_heygen()
-    collect_clip(job=None, purpose="collect_broll_clip", video_id="req-1")
+    collecting_from_creatify()
 
     assert [
         (call.purpose, call.provider, call.model)
         for call in ModelCall.objects.order_by("created_at", "id")
     ] == [
         ("make_talking_clip", "heygen", "heygen/avatar-iv"),
-        ("make_broll_clip", "fal", "creatify/boreal"),
+        ("make_broll_clip", "creatify", "creatify/boreal-h3"),
         ("collect_talking_clip", "heygen", "heygen/avatar-iv"),
-        ("collect_broll_clip", "fal", "creatify/boreal"),
+        ("collect_broll_clip", "creatify", "creatify/boreal-h3"),
     ]

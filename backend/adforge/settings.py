@@ -120,8 +120,8 @@ FAL_KEY = os.environ.get("FAL_KEY", "")
 FAL_BASE_URL = os.environ.get("FAL_BASE_URL", "https://fal.run")
 # fal's queue, for clips: asked for, then waited for. Tests point it at a local stand-in.
 FAL_QUEUE_URL = os.environ.get("FAL_QUEUE_URL", "https://queue.fal.run")
-# fal's storage, where a clip's audio is put for fal to fetch. Tests point it at a local
-# stand-in.
+# fal's storage, where a B-roll clip's pictures are put for Creatify to fetch. Tests point it
+# at a local stand-in.
 FAL_STORAGE_URL = os.environ.get("FAL_STORAGE_URL", "https://rest.fal.ai")
 # fal answers once the music is made, which takes longer the longer the music.
 FAL_TIMEOUT_SECONDS = 300.0
@@ -131,6 +131,16 @@ HEYGEN_API_KEY = os.environ.get("HEYGEN_API_KEY", "")
 HEYGEN_BASE_URL = os.environ.get("HEYGEN_BASE_URL", "https://api.heygen.com")
 # How long to wait for HeyGen to answer one request.
 HEYGEN_TIMEOUT_SECONDS = 120.0
+
+CREATIFY_API_ID = os.environ.get("CREATIFY_API_ID", "")
+CREATIFY_API_KEY = os.environ.get("CREATIFY_API_KEY", "")
+# Where B-roll clips are made, by Boreal-H3. Tests point it at a local stand-in.
+CREATIFY_BASE_URL = os.environ.get("CREATIFY_BASE_URL", "https://api.creatify.ai")
+# How long to wait for Creatify to answer one request.
+CREATIFY_TIMEOUT_SECONDS = 120.0
+# "auto" has Creatify rewrite each B-roll prompt the way Boreal-H3 was evaluated with;
+# "none" sends it as written.
+CREATIFY_PROMPT_ENHANCEMENT = os.environ.get("CREATIFY_PROMPT_ENHANCEMENT", "auto")
 
 # Langfuse, where every agent turn, tool call and model call is sent to be looked at as a
 # tree. Tracing is off unless both keys are set.

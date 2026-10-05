@@ -2,7 +2,8 @@
 saved handoffs and read the motion prompts it writes now. Costs about $0.016 a call in
 tokens, no video. For the eval's six B-roll scenes the photo is pinned to the one the old
 run picked, so the new motion prompt fits the starting picture we already have; their
-prompts are written to tuned_broll_prompts.json for make_clips.py."""
+prompts are written to tuned_broll_prompts.json for make_clips.py (since removed, with the
+old Boreal)."""
 
 import json
 import os

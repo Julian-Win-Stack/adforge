@@ -14,6 +14,7 @@ from agents import tasks
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import ModelReply, ModelRequest
+from jobs import work
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 
 from .conftest import (
@@ -385,38 +386,97 @@ def test_a_scene_that_no_longer_shows_the_product_gets_a_picture_of_the_person_t
 # --- The clip ----------------------------------------------------------------------------------
 
 
-def test_the_clip_is_asked_for_with_no_sound(
+def test_the_clip_is_asked_of_boreal_h3_on_creatify_from_its_starting_picture(
     fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     clip_of_scene_2(fake_model, steps, say)
 
-    assert clips_asked("audio") == [None]
+    starting_picture = ProducedItem.objects.get(kind="starting_picture", scene__number=2)
+    assert (clips_asked("starting_picture"), clips_asked("example_pictures")) == (
+        [starting_picture.file],
+        [[]],
+    )
+    assert ModelCall.objects.filter(purpose="make_broll_clip").get().model == "creatify/boreal-h3"
 
 
 @pytest.mark.parametrize(
-    ("line", "asked_for"),
+    ("said_in", "asked_for"),
     [
-        # Boreal makes 3.71 seconds for 3.83: the shortest it makes that is 3.5 or more.
-        pytest.param(LINE_2, 3.83, id="said in 3.5 seconds"),
-        # 4 words, and 5, at the fake voice's 2 a second: 2.04 seconds, and 2.71.
-        pytest.param("Tea fills the mug.", 2.17, id="said in 2 seconds"),
-        pytest.param("Hot tea fills the mug.", 2.83, id="said in 2.5 seconds"),
+        # Boreal-H3 makes 5 to 15 whole seconds: the fewest that cover the line, at least 5.
+        pytest.param(3.5, 5, id="said in 3.5 seconds"),
+        pytest.param(4.2, 5, id="said in 4.2 seconds"),
+        pytest.param(5.0, 5, id="said in exactly 5 seconds"),
+        pytest.param(6.3, 7, id="said in 6.3 seconds"),
+        pytest.param(15.0, 15, id="said in exactly 15 seconds"),
     ],
 )
-def test_the_clip_is_asked_for_as_the_shortest_boreal_makes_that_lasts_its_line(
+def test_the_clip_is_asked_for_as_the_fewest_whole_seconds_that_cover_its_line(
     fake_model: FakeModel,
     checked: None,
     steps: HeldSteps,
     say: Callable[..., None],
-    line: str,
-    asked_for: float,
+    said_in: float,
+    asked_for: int,
 ) -> None:
-    Scene.objects.filter(number=2).update(line=line)
+    # Scene 2's 7 words, said at whatever pace takes this long.
+    fake_model.words_per_second = 7 / said_in
     made_ready(fake_model, steps, say, (2,))
 
     clip_of_scene_2(fake_model, steps, say)
 
     assert clips_asked("seconds") == [asked_for]
+    assert [clip.seconds for clip in ProducedItem.objects.filter(kind="clip")] == [said_in]
+
+
+def test_a_line_too_long_for_boreal_h3_fails_its_clip_before_anything_is_paid_for(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    fake_model.words_per_second = 7 / 15.5
+    made_ready(fake_model, steps, say, (2,))
+
+    clip_of_scene_2(fake_model, steps, say)
+
+    assert list(ModelCall.objects.filter(purpose="make_broll_clip")) == []
+    step = SceneStep.objects.get(kind="clip")
+    assert (step.status, step.reason) == (
+        "failed",
+        "the video model couldn't make the clip (its line takes 15.5 seconds to say, and the "
+        "B-roll video model makes clips of at most 15 seconds).",
+    )
+
+
+def test_a_clip_creatify_rejects_fails_its_step_with_creatifys_reason(
+    fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    fake_model.respond(
+        "collect_clip",
+        {"state": "failed", "error": "The prompt was flagged by the content checker."},
+    )
+
+    clip_of_scene_2(fake_model, steps, say)
+
+    # What the producer is told, to pass on to the shop owner.
+    step = SceneStep.objects.get(kind="clip")
+    assert (step.status, step.reason) == (
+        "failed",
+        "the video model couldn't make the clip (The prompt was flagged by the content checker.).",
+    )
+
+
+def test_the_talking_scenes_clips_are_still_asked_of_heygen(assembled: ProducedItem) -> None:
+    assert [
+        (call.purpose, call.model)
+        for call in ModelCall.objects.filter(purpose__endswith="_clip").order_by("created_at")
+        if call.purpose.startswith("make_")
+    ] == [
+        ("make_talking_clip", "heygen/avatar-iv"),
+        ("make_broll_clip", "creatify/boreal-h3"),
+        ("make_talking_clip", "heygen/avatar-iv"),
+    ]
+    # Each says its line, as before.
+    assert [sorted(handoff) for handoff in handoffs("make_talking_clip")] == [
+        ["audio", "motion_prompt", "picture", "seconds"]
+    ] * 2
 
 
 def test_the_clip_is_asked_to_move_as_planned_with_nothing_made_up(
@@ -424,7 +484,8 @@ def test_the_clip_is_asked_to_move_as_planned_with_nothing_made_up(
 ) -> None:
     clip_of_scene_2(fake_model, steps, say)
 
-    assert clips_asked("motion_prompt") == [
+    # As it is: Boreal-H3 is sent no sections.
+    assert clips_asked("prompt") == [
         "Steam rises as the tea fills the mug; the camera holds still. Show only what is "
         "described; add or change nothing about the product."
     ]
@@ -469,14 +530,15 @@ def test_the_kept_clip_lasts_as_long_as_its_line(
 def test_a_clip_shorter_than_its_line_fails_its_step(
     fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    fake_model.clips_short_by = 1.0
+    # Asked for 5 seconds, it comes back 3.
+    fake_model.clips_short_by = 2.0
 
     clip_of_scene_2(fake_model, steps, say)
 
     step = SceneStep.objects.get(kind="clip")
     assert (step.status, step.reason) == (
         "failed",
-        "the video model couldn't make the clip (it came back 2.8 seconds long, shorter than "
+        "the video model couldn't make the clip (it came back 3 seconds long, shorter than "
         "the line's 3.5 seconds of audio).",
     )
 
@@ -484,7 +546,7 @@ def test_a_clip_shorter_than_its_line_fails_its_step(
 def test_a_clip_that_came_back_shorter_than_its_line_is_asked_for_afresh(
     fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    fake_model.clips_short_by = 1.0
+    fake_model.clips_short_by = 2.0
     clip_of_scene_2(fake_model, steps, say)
     fake_model.clips_short_by = 0
 
@@ -527,3 +589,36 @@ def test_a_clip_fetched_before_the_worker_stopped_isnt_paid_for_again(restarted:
 
 def test_a_clip_fetched_before_the_worker_stopped_still_gets_its_voice(restarted: None) -> None:
     assert [silences(clip) for clip in kept_clips()] == [[]]
+
+
+def test_a_clip_asked_of_the_old_boreal_before_the_switch_fails_once_collected(
+    fake_model: FakeModel,
+    ready: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    (step_id,) = steps.held
+    # The worker stops once the clip is asked for, before it is collected.
+    with monkeypatch.context() as stopping:
+        stopping.setattr(work, "collect_clip", the_worker_stops)
+        with pytest.raises(WorkerStopped):
+            steps.run_next()
+    # It was asked of the old Boreal on fal, before Boreal-H3 replaced it.
+    ModelCall.objects.filter(purpose="make_broll_clip").update(
+        model="creatify/boreal",
+        provider="fal",
+        output={"video_id": "fal-request-1"},
+    )
+    fake_model.respond("produce", turn(says="It failed."))
+
+    tasks.run_scene_step(step_id)
+
+    step = SceneStep.objects.get(pk=step_id)
+    assert (step.status, step.reason) == (
+        "failed",
+        "the video model couldn't make the clip (it was asked of creatify/boreal, a video "
+        "model no longer used, so it can't be collected).",
+    )
+    assert paid_for().count("make_broll_clip") == 1

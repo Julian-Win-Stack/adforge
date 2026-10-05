@@ -24,6 +24,7 @@ from adforge import file_store
 from adforge.retry import OutsideServiceDown, with_retries
 from chat import messages
 from chat.models import Message
+from gateway import catalog
 from gateway.gateway import (
     IMAGE_TYPE_NAMES,
     IMAGE_TYPES,
@@ -34,6 +35,7 @@ from gateway.gateway import (
     edit_picture,
     make_music,
     speak,
+    submit_broll_clip,
     submit_clip,
     transcribe,
     transcription_from,
@@ -41,7 +43,10 @@ from gateway.gateway import (
 )
 from gateway.models import ModelCall
 from gateway.types import (
+    LEAST_BROLL_SECONDS,
     LEAST_CLIP_SECONDS,
+    MOST_BROLL_SECONDS,
+    BrollClipHandoff,
     ClipFailed,
     ClipHandoff,
     Handoff,
@@ -98,9 +103,6 @@ from .scenes import (
     talking_motion_prompt,
     with_nothing_made_up,
 )
-
-# One frame of a clip: the video model makes 24 a second.
-FRAME_SECONDS = 1 / 24
 
 if TYPE_CHECKING:
     from agents.models import ToolCall
@@ -1268,8 +1270,9 @@ def make_clip(step: SceneStep) -> ProducedItem:
     """Have the video model animate the starting picture to speak the audio the step was
     started for. Gives back the clip, kept as the scene's next version, and marks the scene
     finished. A scene that shows the product rather than the person talking is made with no
-    sound, as long as the audio rounded up to a whole second; the audio is then laid over it
-    and it is cut to the audio's length. Either way, a clip lasts as long as its audio.
+    sound, from its starting picture, in the fewest whole seconds that cover the audio; the
+    audio is then laid over it and it is cut to the audio's length. Either way, a clip lasts
+    as long as its audio.
 
     Run again, as after a worker stopped, it pays for nothing already paid for: a clip
     asked for is waited for rather than asked for again, and one fetched is kept rather
@@ -1284,16 +1287,6 @@ def make_clip(step: SceneStep) -> ProducedItem:
     assert audio.seconds is not None, "a line's audio is measured when it's made"
     handoff = _clip_handoff(step, picture, audio)
     making, collecting = _clip_purposes(step)
-    video_id = _clip_asked_for(step, handoff, making, collecting) or (
-        submit_clip(
-            job=job,
-            purpose=making,
-            picture_key=handoff.picture,
-            audio_key=handoff.audio,
-            seconds=handoff.seconds,
-            motion_prompt=handoff.motion_prompt,
-        )
-    )
 
     def tell_its_slow() -> None:
         messages.add(
@@ -1305,13 +1298,16 @@ def make_clip(step: SceneStep) -> ProducedItem:
             ),
         )
 
+    # A clip fetched before the worker stopped is kept, whichever video model made it.
     fetched = _paid_for_before(job, collecting, charged_to=step.tool_call)
-    file = (
-        fetched["file"]
-        if fetched
-        else collect_clip(job=job, purpose=collecting, video_id=video_id, when_slow=tell_its_slow)
-    )
-    if handoff.audio is None:
+    if fetched:
+        file = fetched["file"]
+    else:
+        video_id = _clip_asked_for(step, handoff, making, collecting) or _ask_for_clip(
+            job, making, handoff
+        )
+        file = collect_clip(job=job, purpose=collecting, video_id=video_id, when_slow=tell_its_slow)
+    if isinstance(handoff, BrollClipHandoff):
         file = _with_the_voice(file, audio)
     with transaction.atomic():
         clip = ProducedItem.objects.create(
@@ -1331,6 +1327,27 @@ def make_clip(step: SceneStep) -> ProducedItem:
     return clip
 
 
+def _ask_for_clip(job: Job, making: str, handoff: ClipHandoff | BrollClipHandoff) -> str:
+    """Ask the video model for the clip `handoff` describes, and pay for it. Gives its id."""
+    if isinstance(handoff, BrollClipHandoff):
+        return submit_broll_clip(
+            job=job,
+            purpose=making,
+            starting_picture_key=handoff.starting_picture,
+            example_picture_keys=handoff.example_pictures,
+            seconds=handoff.seconds,
+            prompt=handoff.prompt,
+        )
+    return submit_clip(
+        job=job,
+        purpose=making,
+        picture_key=handoff.picture,
+        audio_key=handoff.audio,
+        seconds=handoff.seconds,
+        motion_prompt=handoff.motion_prompt,
+    )
+
+
 def _clip_purposes(step: SceneStep) -> tuple[str, str]:
     """What a scene's clip is asked for and collected as: talking clips and B-roll ones are
     each made by their own video model."""
@@ -1339,10 +1356,13 @@ def _clip_purposes(step: SceneStep) -> tuple[str, str]:
     return "make_talking_clip", "collect_talking_clip"
 
 
-def _clip_handoff(step: SceneStep, picture: ProducedItem, audio: ProducedItem) -> ClipHandoff:
+def _clip_handoff(
+    step: SceneStep, picture: ProducedItem, audio: ProducedItem
+) -> ClipHandoff | BrollClipHandoff:
     """What the video model is asked for: a clip speaking the audio, or, for a scene that
-    shows the product, a silent one that moves as the picture's step planned, the shortest
-    the model makes that still lasts as long as the audio."""
+    shows the product, a silent one from its starting picture that moves as the picture's
+    step planned, in the fewest whole seconds that cover the audio. Raises ClipFailed for a
+    line longer than the longest B-roll clip, before anything is paid for."""
     assert audio.seconds is not None, "a line's audio is measured when it's made"
     if not step.shows:
         return ClipHandoff(
@@ -1355,22 +1375,23 @@ def _clip_handoff(step: SceneStep, picture: ProducedItem, audio: ProducedItem) -
             motion_prompt=talking_motion_prompt(step.scene.job.product_size),
         )
     assert picture.step is not None, "a starting picture is made by a scene step"
-    return ClipHandoff(
-        picture=picture.file,
-        audio=None,
-        seconds=_silent_clip_seconds(audio.seconds),
-        motion_prompt=with_nothing_made_up(picture.step.motion_prompt),
+    if audio.seconds > MOST_BROLL_SECONDS:
+        raise ClipFailed(
+            f"its line takes {round(audio.seconds, 1):g} seconds to say, and the B-roll video "
+            f"model makes clips of at most {MOST_BROLL_SECONDS} seconds"
+        )
+    return BrollClipHandoff(
+        starting_picture=picture.file,
+        seconds=_broll_clip_seconds(audio.seconds),
+        prompt=with_nothing_made_up(picture.step.motion_prompt),
     )
 
 
-def _silent_clip_seconds(audio_seconds: float) -> float:
-    """How long to ask for a silent clip so it lasts the audio with as little cut away as
-    can be. Boreal makes a clip of 8 frames at a time, plus one, at 24 a second, rounding
-    down: asked for `s` seconds, it makes floor(3s)/3 + 1/24 (measured on the clips of the
-    first run, docs/runs/first-run.md). So it is asked for halfway into the shortest third
-    of a second whose clip is long enough, which a rounding either way still lands in."""
-    thirds = math.ceil(3 * (audio_seconds - FRAME_SECONDS))
-    return round(max((thirds + 0.5) / 3, LEAST_CLIP_SECONDS), 2)
+def _broll_clip_seconds(audio_seconds: float) -> int:
+    """How many seconds to ask for a B-roll clip covering `audio_seconds` of its line: the
+    video model makes only whole seconds, at least LEAST_BROLL_SECONDS. A hair over a whole
+    second, as a measurement can be, isn't counted as another second."""
+    return max(LEAST_BROLL_SECONDS, math.ceil(audio_seconds - 1e-6))
 
 
 def _with_the_voice(file: str, audio: ProducedItem) -> str:
@@ -1395,7 +1416,7 @@ def _with_the_voice(file: str, audio: ProducedItem) -> str:
 
 
 def _clip_asked_for(
-    step: SceneStep, handoff: ClipHandoff, making: str, collecting: str
+    step: SceneStep, handoff: ClipHandoff | BrollClipHandoff, making: str, collecting: str
 ) -> str | None:
     """The id of a clip already paid for with this same handoff that may still be made, so
     it is waited for rather than paid for again: asked for by this step before the worker
@@ -1404,9 +1425,18 @@ def _clip_asked_for(
     then it was kept, or it was refused. `making` and `collecting` are the purposes this kind
     of clip is asked for and collected as."""
     job = step.scene.job
-    asked_by_this_step = _paid_for_before(job, making, charged_to=step.tool_call)
-    if asked_by_this_step:
-        return str(asked_by_this_step["video_id"])
+    asked_by_this_step = job.model_calls.filter(
+        purpose=making, outcome=ModelCall.Outcome.SUCCEEDED, tool_call=step.tool_call
+    ).last()
+    if asked_by_this_step is not None and asked_by_this_step.output is not None:
+        # Such as one asked of the old Boreal before Boreal-H3 replaced it: no service here
+        # can wait for it, and asking again might pay twice.
+        if asked_by_this_step.model != catalog.MODEL_FOR_PURPOSE[making]:
+            raise ClipFailed(
+                f"it was asked of {asked_by_this_step.model}, a video model no longer used, "
+                "so it can't be collected"
+            )
+        return str(asked_by_this_step.output["video_id"])
     asked = job.model_calls.filter(
         purpose=making, outcome=ModelCall.Outcome.SUCCEEDED, handoff=handoff.model_dump()
     ).last()

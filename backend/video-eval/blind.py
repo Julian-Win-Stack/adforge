@@ -61,7 +61,7 @@ def load_set() -> list[dict[str, Any]]:
 def clips_of(arms: list[str]) -> list[dict[str, Any]]:
     """The ok clips of those arms recorded in runs.jsonl, whose files are still there."""
     if not RUNS_FILE.exists():
-        sys.exit(f"no {RUNS_FILE}: make some clips first (make_clips.py)")
+        sys.exit(f"no {RUNS_FILE}: make some clips first (make_clips.py, now in git history)")
     rows = [json.loads(line) for line in RUNS_FILE.read_text().splitlines() if line.strip()]
     clips = [row for row in rows if row["arm"] in arms and row["status"] in ("ok", "completed")]
     # The HeyGen script records no file; its clips live where make_clips.py puts its own.
