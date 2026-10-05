@@ -378,8 +378,9 @@ class SceneStep(models.Model):
         null=True,
         blank=True,
         help_text="For a B-roll scene's starting picture, how its clip is made: 1, from a "
-        "starting picture made from the main photo. Blank for a talking scene, and for a "
-        "B-roll scene planned before it had its B-roll labels.",
+        "starting picture made from the main photo; 3, from example pictures, with no "
+        "picture made. Blank for a talking scene, and for a B-roll scene planned before it "
+        "had its B-roll labels.",
     )
     pictures_sent = models.JSONField(
         default=list,
@@ -403,7 +404,17 @@ class SceneStep(models.Model):
         null=True,
         blank=True,
         related_name="+",
-        help_text="The starting picture a clip animates, fixed when it starts.",
+        help_text="The starting picture a clip animates, fixed when it starts. Blank for a "
+        "B-roll scene made way 3, which has none.",
+    )
+    picture_step = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="For a clip, the starting picture step it was made from, fixed when it "
+        "starts: for a B-roll scene made way 3, it holds the example pictures and the prompt.",
     )
     result = models.TextField(
         blank=True,

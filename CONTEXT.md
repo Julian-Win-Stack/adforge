@@ -67,7 +67,7 @@ One piece of a scene's work, run in the background: its starting picture, its li
 _Avoid_: Task, job, render
 
 **Starting picture**:
-A scene's first frame, made from the portrait and one product photo: the person holding the product, or, for a B-roll scene, what the scene shows, with the person only if it needs them. The clip is made from it.
+A scene's first frame, made from the portrait and one product photo: the person holding the product, or, for a B-roll scene, what the scene shows, with the person only if it needs them. The clip is made from it. A B-roll scene that needs something its main photo can't show (way 3) has none: its picture step picks example pictures instead (the main photo, a photo for each need, then the portrait if its face is shown, at most 5), and its clip is made from those.
 _Avoid_: Start frame, keyframe, thumbnail
 
 **Line's audio**:

@@ -6,7 +6,7 @@ from typing import Literal
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.db import IntegrityError, transaction
-from django.db.models import Max, Sum
+from django.db.models import Max, Q, Sum
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from adforge.retry import OutsideServiceDown
@@ -546,9 +546,18 @@ class MakeStartingPicture(Tool):
         steps = scene.steps.filter(kind=SceneStep.Kind.STARTING_PICTURE)
         made = (
             steps.filter(status=SceneStep.Status.FINISHED, note=note, **SceneStep.made_for(scene))
-            .exclude(produced=None)
+            .filter(Q(way=3) | Q(produced__isnull=False))
             .last()
         )
+        if made is not None and made.way == 3:
+            # A B-roll scene made way 3 has no picture, and the shop owner is shown none.
+            assert made.photo is not None, "a way 3 step picks its main photo"
+            return (
+                f"Scene {scene.number} is already ready for its clip from this line "
+                f"{'with this note' if note else 'with no note'}, so nothing was made or paid "
+                f"for again. Making it cost {_dollars(made.tool_call.cost_usd())}. Photo "
+                f"{made.photo.position} was used: {made.photo_reason}"
+            )
         if made is not None:
             picture = made.produced.get()
             assert made.photo is not None, "a finished starting picture was made from a photo"
@@ -695,21 +704,23 @@ class MakeClip(Tool):
                     f"scene {scene.number}'s {what} is still being made. You'll be told when "
                     "it's ready; make the clip then."
                 )
-        pictures = scene.produced.filter(
-            kind=ProducedItem.Kind.STARTING_PICTURE, step__status=SceneStep.Status.FINISHED
-        ).order_by("version")
-        if not pictures.exists():
+        # A picture step is finished with its picture made, or, for a B-roll scene made way
+        # 3, with the example pictures picked and no picture.
+        picture_steps = scene.steps.filter(
+            kind=SceneStep.Kind.STARTING_PICTURE, status=SceneStep.Status.FINISHED
+        ).filter(Q(way=3) | Q(produced__isnull=False))
+        if not picture_steps.exists():
             raise Refused(
                 f"scene {scene.number} has no starting picture yet. Make its starting picture "
                 "first."
             )
         # A line shortened to fit its clip still shows what its picture was made for.
-        made_for = SceneStep.made_for(scene, through="step__")
-        del made_for["step__line"]
-        picture = pictures.filter(
-            step__line__in=[scene.line, *scene.shortened_from], **made_for
+        made_for = SceneStep.made_for(scene)
+        del made_for["line"]
+        picture_step = picture_steps.filter(
+            line__in=[scene.line, *scene.shortened_from], **made_for
         ).last()
-        if picture is None:
+        if picture_step is None:
             raise Refused(
                 f"scene {scene.number}'s starting picture was made for an earlier line, or for "
                 "what the scene showed before, and the scene has changed since. Make its "
@@ -726,22 +737,25 @@ class MakeClip(Tool):
                 "transcribed yet, and a clip is only made from audio that was heard saying the "
                 "line. Transcribe it first."
             )
+        picture = picture_step.produced.first()
         made = (
             scene.produced.filter(
                 kind=ProducedItem.Kind.CLIP,
                 step__status=SceneStep.Status.FINISHED,
-                picture=picture,
                 made_from=audio,
+                # A clip made before clips kept their picture step has only its picture.
+                **({"picture": picture} if picture else {"step__picture_step": picture_step}),
             )
             .order_by("version")
             .last()
         )
         if made is not None:
             assert made.step is not None, "a clip is made by a scene step"
+            made_from = "from this starting picture" if picture else "for this scene"
             return (
-                f"Scene {scene.number}'s clip was already made from this starting picture and "
-                f"audio (version {made.version}), so nothing was made or paid for again. Making "
-                f"it cost {_dollars(made.step.tool_call.cost_usd())}. Scene {scene.number} is "
+                f"Scene {scene.number}'s clip was already made {made_from} and audio "
+                f"(version {made.version}), so nothing was made or paid for again. Making it "
+                f"cost {_dollars(made.step.tool_call.cost_usd())}. Scene {scene.number} is "
                 "finished."
             )
         _start_step(
@@ -752,6 +766,7 @@ class MakeClip(Tool):
             "ready.",
             made_from=audio,
             picture=picture,
+            picture_step=picture_step,
         )
         return (
             f"Started scene {scene.number}'s clip. It isn't made yet: you'll be told when it's "
@@ -913,6 +928,7 @@ def _start_step(
     note: str = "",
     made_from: ProducedItem | None = None,
     picture: ProducedItem | None = None,
+    picture_step: SceneStep | None = None,
 ) -> None:
     """Start a scene step in the background, from the scene's line, what it shows and its
     B-roll labels as they stand, unless one of its kind is already running for the scene:
@@ -929,6 +945,7 @@ def _start_step(
                 note=note,
                 made_from=made_from,
                 picture=picture,
+                picture_step=picture_step,
             )
     except IntegrityError:
         # Another started it since the look above.

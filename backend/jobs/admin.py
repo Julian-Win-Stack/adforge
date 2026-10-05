@@ -165,6 +165,7 @@ class SceneStepInline(admin.TabularInline[SceneStep, Scene]):
         "motion_prompt",
         "made_from",
         "picture",
+        "picture_step",
         "started_at",
         "finished_at",
     ]
@@ -181,6 +182,7 @@ class SceneStepInline(admin.TabularInline[SceneStep, Scene]):
         "motion_prompt",
         "made_from",
         "picture",
+        "picture_step",
         "started_at",
         "finished_at",
     ]
@@ -213,7 +215,7 @@ class SceneStepAdmin(admin.ModelAdmin[SceneStep]):
     list_select_related = ["scene__job"]
     list_filter = ["kind", "status"]
     readonly_fields = ["started_at"]
-    raw_id_fields = ["made_from", "picture"]
+    raw_id_fields = ["made_from", "picture", "picture_step"]
 
 
 @admin.register(ProducedItem)

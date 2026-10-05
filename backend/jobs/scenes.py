@@ -1,8 +1,9 @@
 """What the model that plans a scene's starting picture is told, handed and answers."""
 
-from typing import Self, cast
+from dataclasses import dataclass
+from typing import Any, Self, cast
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, create_model, field_validator, model_validator
 
 from gateway.types import Handoff
 
@@ -65,23 +66,14 @@ written for the shop owner."""
 # What the model writing a B-roll scene's prompts is told: the shared rules, then only the
 # rules of the scene's kind, so a rule for one kind can't be used on another
 # (docs/broll-picture-logic.md, "Two kinds of scene" and "Prompt rules").
-BROLL_SHARED_RULES = """\
+_BROLL_SCENE = """\
 You write the prompts for one B-roll scene of a short vertical video ad. The scene doesn't \
 show the person talking to camera: it shows what "shows" describes, while the presenter's \
 voice says the scene's line over it.
-A picture model makes the scene's starting picture from the pictures in "pictures", in that \
-order, each named by its number ("Image 1") and used only for its job. A video model then \
-animates the picture into one clip, and the clip's sound is replaced by the voice.
-You are shown the product photos you may pick from, each labelled with its number, and the \
-presenter's portrait when the scene shows their face. Every product photo shows the product \
-in the ad's colour. Pick the photo whose view of the product suits the scene best: it is \
-Image 1.
-Then write the picture model's prompt and the video model's prompt, following these rules:
-- Take only the product from Image 1, exactly as it looks, with any label or print \
-unchanged. Nothing else from that photo: not its background, setting or people. The setting \
-is the ad's choice: the setting is described in words.
-- The starting picture is the "before": the moment just before the action, with the \
-product ready to be used. The video prompt does the action.
+"""
+
+# The rules every B-roll prompt follows, made either way.
+_BROLL_PROMPT_RULES = """\
 - One continuous shot, with no cuts. One action every 2 to 3 seconds.
 - The product does what the line claims, on screen, held and used the way "usage" says, \
 not standing idle beside the action.
@@ -99,8 +91,60 @@ unless it asks for something you can't do with these pictures, or something "sho
 describe, and then say so in a reason.
 Use the conversation with the shop owner for their wishes about how the ad looks. Facts \
 about the product come only from what you are shown.
+"""
+
+# Way 1: a starting picture is made from the main photo, then animated.
+BROLL_SHARED_RULES = f"""\
+{_BROLL_SCENE}\
+A picture model makes the scene's starting picture from the pictures in "pictures", in that \
+order, each named by its number ("Image 1") and used only for its job. A video model then \
+animates the picture into one clip, and the clip's sound is replaced by the voice.
+You are shown the product photos you may pick from, each labelled with its number, and the \
+presenter's portrait when the scene shows their face. Every product photo shows the product \
+in the ad's colour. Pick the photo whose view of the product suits the scene best: it is \
+Image 1.
+Then write the picture model's prompt and the video model's prompt, following these rules:
+- Take only the product from Image 1, exactly as it looks, with any label or print \
+unchanged. Nothing else from that photo: not its background, setting or people. The setting \
+is the ad's choice: the setting is described in words.
+- The starting picture is the "before": the moment just before the action, with the \
+product ready to be used. The video prompt does the action.
+{_BROLL_PROMPT_RULES}\
 Give a one-sentence reason for the photo, one for the picture prompt and one for the video \
 prompt, written for the shop owner."""
+
+# Way 3: the video model gets real shop photos as example pictures, and no picture is made
+# (docs/broll-picture-logic.md, items 27, 28 and 55).
+BROLL_WAY_3_RULES = f"""\
+{_BROLL_SCENE}\
+No picture is made for this scene. The video model makes the clip from example pictures: \
+real shop photos, and the presenter's portrait when the scene shows their face. They show it \
+how things look; none of them is a frame of the clip. The clip's sound is replaced by the \
+voice.
+You are shown the product photos you may pick the main photo from, each labelled with its \
+number, then the photos of what the scene needs that the main photo can't show ("needs"), \
+then the portrait when "portrait" is true. Every photo in "colour_photos" shows the product \
+in the ad's colour. Pick the one whose view of the product suits the scene best: it is the \
+main photo, Image 1.
+The pictures are sent in this order, each named by its number: Image 1, the main photo; then \
+the photo of each of "needs", unless it is the main photo, which isn't sent twice; then the \
+portrait. Give each picture sent its one job in its own slot, "image_1" for Image 1 and so \
+on, such as "the bottle; keep its label exactly" or "only the gel's colour". Leave the slots \
+after the last picture sent empty. For a photo with a stranger's face ("has_face"), also say \
+what in it to ignore, such as "the woman"; the presenter is the only person shown. Code \
+writes "Image 1 is" before each job, so don't number them yourself.
+Then write the action: the one shot the clip shows, from its first moment, following these \
+rules:
+- Take only the product from Image 1, exactly as it looks, with any label or print \
+unchanged. Nothing else from that photo: not its background, setting or people. The setting \
+is the ad's choice: the setting is described in words. Take from each other picture only its \
+job.
+- The clip opens on the "before": the moment just before the action, with the product ready \
+to be used. Where the rules below speak of the starting picture, they mean that first \
+moment. The action then happens.
+{_BROLL_PROMPT_RULES}\
+Give a one-sentence reason for the main photo and one for the action, written for the shop \
+owner."""
 
 BROLL_KIND_RULES: dict[str, str] = {
     "does a job": """\
@@ -117,9 +161,11 @@ turns. Show no result or change the page doesn't prove.""",
 }
 
 
-def broll_prompt_instructions(broll_kind: str) -> str:
-    """What the model writing the prompts of a B-roll scene of `broll_kind` is told."""
-    return f"{BROLL_SHARED_RULES}\n{BROLL_KIND_RULES[broll_kind]}"
+def broll_prompt_instructions(broll_kind: str, way: int = 1) -> str:
+    """What the model writing the prompts of a B-roll scene of `broll_kind`, made `way`, is
+    told."""
+    shared = BROLL_WAY_3_RULES if way == 3 else BROLL_SHARED_RULES
+    return f"{shared}\n{BROLL_KIND_RULES[broll_kind]}"
 
 
 # The job of each picture the picture model gets for a way 1 B-roll scene.
@@ -221,6 +267,75 @@ class BrollPromptHandoff(Handoff):
     conversation: list[ChatMessage]
 
 
+class NeedPhoto(Handoff):
+    """The photo sent for what a way 3 B-roll scene needs that the main photo can't show:
+    for one need, or for several that the same photo shows."""
+
+    what: list[str]
+    photo: int
+    has_face: bool
+
+
+class BrollExamplesHandoff(Handoff):
+    scene: int
+    line: str
+    script: list[str]
+    shows: str
+    broll_kind: str
+    person_shown: str
+    usage: str
+    result: str
+    needs: list[NeedPhoto]
+    portrait: bool
+    product_colour: str
+    colour_photos: list[int]
+    person_looks: str
+    note: str | None
+    conversation: list[ChatMessage]
+
+
+def photos_for_needs(
+    needs: list[dict[str, Any]], faces: dict[int, bool], most: int
+) -> list[NeedPhoto]:
+    """The photo sent for each of a scene's `needs`, given which photos the job has and
+    whether each shows a stranger's face (`faces`): the first of the need's photos without
+    a face, otherwise its first (docs/broll-picture-logic.md, item 28). A photo is sent once,
+    for every need it shows, and at most `most` are sent: the needs' last are left out."""
+    sent: dict[int, list[str]] = {}
+    for need in needs:
+        photos = [number for number in need["photos"] if number in faces]
+        if photos:
+            photo = next((number for number in photos if not faces[number]), photos[0])
+            sent.setdefault(photo, []).append(need["what"])
+    return [
+        NeedPhoto(what=what, photo=photo, has_face=faces[photo]) for photo, what in sent.items()
+    ][:most]
+
+
+@dataclass(frozen=True)
+class ExamplePicture:
+    """One example picture sent to the video model: a product photo by its number, or the
+    presenter's portrait."""
+
+    photo: int | None
+    has_face: bool = False
+
+    @property
+    def portrait(self) -> bool:
+        return self.photo is None
+
+
+def example_pictures(main: int, needs: list[NeedPhoto], portrait: bool) -> list[ExamplePicture]:
+    """The example pictures a way 3 B-roll scene sends, in order: its main photo, then the
+    photo of each of its needs unless it is the main photo, which isn't sent twice, then the
+    presenter's portrait when the scene shows their face."""
+    return [
+        ExamplePicture(main),
+        *(ExamplePicture(need.photo, need.has_face) for need in needs if need.photo != main),
+        *([ExamplePicture(None)] if portrait else []),
+    ]
+
+
 class StartingPictureChoice(BaseModel):
     photo: int = Field(description="The number of the product photo to make the picture from.")
     photo_reason: str = Field(description="One sentence saying why that photo suits the line.")
@@ -267,3 +382,125 @@ def starting_picture_choice_for[Choice: StartingPictureChoice](
             return self
 
     return StartingPictureChoiceForJob
+
+
+class PictureSlot(BaseModel):
+    """What one example picture is for, as the video prompt says it."""
+
+    job: str = Field(
+        description='This picture\'s one job, such as "the bottle; keep its label exactly" or '
+        '"only the gel\'s colour". Without "Image N is": code writes that.'
+    )
+    ignore: str | None = Field(
+        description="For a photo with a stranger's face, what in it to ignore, such as "
+        '"the woman". Null otherwise.'
+    )
+
+    @field_validator("job")
+    @classmethod
+    def _not_empty(cls, text: str) -> str:
+        if not text.strip():
+            raise ValueError("This can't be empty.")
+        return text
+
+    def said(self) -> str:
+        """The job as the video prompt says it, after "Image N is"."""
+        job = self.job.strip().rstrip(".")
+        ignore = (self.ignore or "").strip().rstrip(".")
+        return f"{job}; ignore {ignore}" if ignore else job
+
+
+class BrollExamplesChoice(BaseModel):
+    """The answer for a way 3 B-roll scene: the main photo, a slot per example picture sent
+    (`image_1` ... `image_N`, added for each scene by broll_examples_choice_for), and the
+    action."""
+
+    photo: int = Field(description="The number of the main photo: Image 1.")
+    photo_reason: str = Field(description="One sentence saying why that photo suits the scene.")
+
+    def slots(self) -> list[PictureSlot]:
+        """Each picture's slot, Image 1 first, up to the last one filled."""
+        slots: list[PictureSlot | None] = []
+        while (slot := getattr(self, f"image_{len(slots) + 1}", None)) is not None:
+            slots.append(slot)
+        return cast(list[PictureSlot], slots)
+
+    def video_prompt(self) -> str:
+        """The video model's prompt: each picture named as "Image N" with its job, then the
+        action (docs/broll-picture-logic.md, item 55)."""
+        named = [f"Image {n} is {slot.said()}." for n, slot in enumerate(self.slots(), start=1)]
+        return " ".join([*named, cast(str, self.__dict__["action"]).strip()])
+
+    def action_reason(self) -> str:
+        """Why the action is shown that way."""
+        return cast(str, self.__dict__["prompt_reason"])
+
+
+def broll_examples_choice_for(
+    colour_photos: list[int], needs: list[NeedPhoto], portrait: bool
+) -> type[BrollExamplesChoice]:
+    """The answer for a way 3 B-roll scene whose main photo is one of `colour_photos`, with
+    `needs`' photos and, if `portrait`, the portrait: one slot per picture sent. Which are
+    sent can depend on the main photo picked (a need's photo that is the main photo isn't
+    sent twice), so a slot only some picks send may be null. One missing, null for a picture
+    sent, given for a picture not sent, or saying nothing to ignore in a photo with a face
+    fails while the answer is read, like any other broken answer."""
+    counts = [len(example_pictures(main, needs, portrait)) for main in colour_photos]
+    least, most = min(counts), max(counts)
+
+    class Checked(BrollExamplesChoice):
+        @field_validator("photo_reason", "action", "prompt_reason", check_fields=False)
+        @classmethod
+        def _not_empty(cls, text: str) -> str:
+            if not text.strip():
+                raise ValueError("This can't be empty.")
+            return text
+
+        @model_validator(mode="after")
+        def _one_slot_per_picture_sent(self) -> Self:
+            if self.photo not in colour_photos:
+                shown = ", ".join(str(number) for number in colour_photos)
+                raise ValueError(
+                    f"Photo {self.photo} isn't one showing the product in the ad's colour: "
+                    f"those are {shown}."
+                )
+            sent = example_pictures(self.photo, needs, portrait)
+            for n in range(1, most + 1):
+                slot = getattr(self, f"image_{n}")
+                if n > len(sent) and slot is not None:
+                    raise ValueError(f"image_{n} must be null: {len(sent)} pictures are sent.")
+                if n <= len(sent) and slot is None:
+                    raise ValueError(
+                        f"image_{n} is null, but {len(sent)} pictures are sent: give Image "
+                        f"{n}'s job."
+                    )
+                if n <= len(sent) and sent[n - 1].has_face and not (slot.ignore or "").strip():
+                    raise ValueError(
+                        f"Image {n} shows a stranger's face: image_{n} must say what in it "
+                        "to ignore."
+                    )
+            return self
+
+    slots: dict[str, Any] = {
+        f"image_{n}": (
+            PictureSlot if n <= least else PictureSlot | None,
+            Field(
+                description=f"Image {n}'s job"
+                + ("." if n <= least else ", or null when fewer pictures are sent.")
+            ),
+        )
+        for n in range(1, most + 1)
+    }
+    return create_model(
+        "BrollExamplesChoiceForScene",
+        __base__=Checked,
+        **slots,
+        action=(
+            str,
+            Field(description="The shot the clip shows, after the pictures are named."),
+        ),
+        prompt_reason=(
+            str,
+            Field(description="One sentence saying why the action is shown that way."),
+        ),
+    )
