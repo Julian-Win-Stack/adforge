@@ -782,7 +782,7 @@ def _fact_check(job: Job) -> Asking | None:
             continue
         if len(scene.fact_problems) > MOST_REWRITES:
             return _about_line(scene)
-        _rewrite_line(job, scene, conversation)
+        _rewrite_scene(job, scene, conversation)
     return None
 
 
@@ -868,7 +868,7 @@ def _to_check(scene: Scene) -> LineToCheck:
     )
 
 
-def _rewrite_line(job: Job, scene: Scene, conversation: list[ChatMessage]) -> None:
+def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> None:
     """Have the scene rewritten whole: its line, what it shows and its B-roll details. A
     scene that shows something is rewritten seeing the job's photos, to say what it needs."""
     photos = list(job.photos.all())

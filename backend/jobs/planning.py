@@ -273,6 +273,7 @@ class ScriptScene(BaseModel):
         return self
 
     def has_broll_details(self) -> bool:
+        """Whether any of the B-roll details is given."""
         return any((self.broll_kind, self.person_shown, self.usage, self.result, self.needs))
 
     def broll_details(self) -> dict[str, Any]:
@@ -303,7 +304,12 @@ class ScriptScene(BaseModel):
 
 def photos_missing(scene: ScriptScene, photo_count: int) -> str | None:
     """Why a scene's needs name a photo the job doesn't have, or None."""
-    for number in (number for need in scene.needs for number in need.photos):
+    return photo_missing([number for need in scene.needs for number in need.photos], photo_count)
+
+
+def photo_missing(numbers: list[int], photo_count: int) -> str | None:
+    """Why `numbers` name a photo the job doesn't have, or None."""
+    for number in numbers:
         if not 1 <= number <= photo_count:
             return f"There's no photo {number}: the job has {photo_count}."
     return None
@@ -423,11 +429,11 @@ def producer_decision_for(photo_count: int) -> type[ProducerDecision]:
         def _real_photos(self) -> Self:
             if self.plan is None:
                 return self
-            for number in self.plan.colour_photos:
-                if not 1 <= number <= photo_count:
-                    raise ValueError(f"There's no photo {number}: the job has {photo_count}.")
-            for scene in self.plan.scenes:
-                if (missing := photos_missing(scene, photo_count)) is not None:
+            for missing in (
+                photo_missing(self.plan.colour_photos, photo_count),
+                *(photos_missing(scene, photo_count) for scene in self.plan.scenes),
+            ):
+                if missing is not None:
                     raise ValueError(missing)
             return self
 
