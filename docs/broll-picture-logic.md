@@ -3,6 +3,7 @@
 - Date: 2026-10-03
 - Ticket: #94. Follows the Boreal-H3 check on scene #16 (`docs/runs/second-run-review/check/`).
 - Status: the logic is agreed and tested (five tests, 2026-10-03, about $4). Ready to build.
+  Items 42 to 51 were settled with the user on 2026-10-05, before building.
   Nothing is built yet. Issue #94 is not to be edited (the user, 2026-10-03).
 
 ## Decided
@@ -180,6 +181,42 @@
     guess, so it doesn't break item 4. Not in build 1: there the words go into the video
     prompt. Ticket #95, built if the graded run shows clips from words alone come out
     wrong.
+42. **"Describe it in words" is not offered in build 1 (2026-10-05).** Replaces item 20's
+    and item 41's "the words go into the video prompt". When a needed photo is missing, the
+    question offers only "attach a photo" or "use without proven result". Answering in words
+    comes back with #95.
+43. **The ad's colour is the one with the most clear photos (2026-10-05).** The planner
+    still picks one colour per ad (so an ad never mixes colours), but now picks the colour
+    with the most photos where the product is clearly seen; on a tie, the colour of Photo 1
+    (the first photo on the page).
+44. **A needed photo can be any photo except one showing the product in another colour
+    (2026-10-05).** Replaces "one of the job's photos in the ad's colour" (the marked
+    photos): in-use photos (blush on a cheek, gel in a bowl) are often not marked because the
+    product isn't clearly seen in them. The planner is told the rule; code can't check
+    colour, since no colour is saved per photo. Whether to save one is decided after #110.
+45. **The main photo is picked by the existing picture chooser (2026-10-05),** for way 1 and
+    way 3 alike. Replaces item 26's "the first photo on the page": the first photo may be a
+    poor one. The chooser picks the best marked photo for the scene, as it does today.
+46. **The fact check also sees each B-roll scene's needed photos (2026-10-05),** not only the
+    marked photos, so a scene a needed photo proves (the gel's colour) isn't failed wrongly.
+47. **A line whose real audio is over 15 s is shortened up to 3 times (2026-10-05).** Adds a
+    limit to item 36. Still over 15 s: the scene becomes a talking scene and the job records
+    a warning, as in item 35.
+48. **No photo clearly shows the product: the planner asks (2026-10-05).** New rule: the
+    shop owner is asked to attach a photo of the product. A case for it is in the "Should we
+    ask?" eval.
+49. **The "Should we ask?" eval (2026-10-05).** 8 cases: a needed photo missing (ask); "how
+    to use" missing on a "does a job" product (ask); a "looks good" product without "how to
+    use" (don't ask); everything present (don't ask); the serum with one photo, a scene
+    wanting its texture (ask); the blush with a cheek photo (don't ask); the power bank shown
+    charging a phone, no photo of it, the page says it charges phones (don't ask); no photo
+    clearly shows the product (ask). Claude drafts the cases, the user approves them, then
+    each runs 3 times, reported as a pass rate per case. The user approved the cost.
+50. **No judge until the graded run, and no B-roll for real shop owners until a judge exists
+    (2026-10-05).** Confirms item 22. The decision is tracked in #109.
+51. **What build 1 doesn't measure is tracked (2026-10-05):** the fact check's accuracy and
+    claims made across lines (#108), the photos the colour list throws away (#110), and
+    evals for every AI call (#111). None of them blocks build 1.
 
 ## What Boreal-H3 takes
 

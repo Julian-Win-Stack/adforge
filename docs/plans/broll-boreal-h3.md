@@ -3,7 +3,7 @@
 - Date: 2026-10-04
 - Status: draft, for the user to agree. Nothing is built yet.
 - The decisions behind it, with the reasons: `docs/broll-picture-logic.md` ("Decided", items
-  1 to 31). This plan says only how they are built and tested. Where the two disagree, the
+  1 to 51). This plan says only how they are built and tested. Where the two disagree, the
   logic doc wins and this plan is fixed.
 
 ## What build 1 is, in one paragraph
@@ -36,6 +36,24 @@ Questions reading the code raised, now items 32 to 40 in the logic doc:
 9. Way 3 needs no new tools: way 1 and way 3 are branches inside the same tools (item 40).
 10. A picture made from the shop owner's words, for them to approve, comes later, not in
     build 1 (item 41, ticket #95).
+
+## Settled with the user on 2026-10-05
+
+Items 42 to 51 in the logic doc. Where they change a phase below, the phase is updated.
+
+1. "Describe it in words" is not offered in build 1: the question offers "attach a photo"
+   or "use without proven result" (item 42).
+2. The ad's colour is the one with the most clear photos; on a tie, Photo 1's (item 43).
+3. A needed photo can be any photo except one showing the product in another colour
+   (item 44).
+4. The main photo is picked by the existing picture chooser, for both ways (item 45).
+5. The fact check also sees each B-roll scene's needed photos (item 46).
+6. A line whose real audio is over 15 s is shortened up to 3 times, then becomes a talking
+   scene with a warning (item 47).
+7. No photo clearly shows the product: the planner asks for one (item 48).
+8. The "Should we ask?" eval has 8 cases, each run 3 times (item 49).
+9. No judge until the graded run; no B-roll for real shop owners until a judge exists
+   (item 50, #109). Measuring left for later: #108, #110, #111 (item 51).
 
 ## Phase 0: tests before building (about $2, each needs the user's yes first)
 
@@ -175,7 +193,8 @@ One migration. Each new field shown in the admin.
 2. **Validators** (a broken plan fails while it's read, as today):
    - A B-roll scene has a kind and a person label; a talking scene has none of them.
    - A "does a job" scene has a usage fact and a result.
-   - A needed photo is one of the job's photos in the ad's colour.
+   - A needed photo is one of the job's photos (any colour check is the planner's: the
+     instructions say never a photo of the product in another colour, item 44).
    - At most 5 pictures in all: the main photo, the needed photos, and the portrait when
      the person is "a face or body" (item 27).
 3. **`PLAN_INSTRUCTIONS`:**
@@ -188,15 +207,18 @@ One migration. Each new field shown in the admin.
    - Name what the scene needs that the main photo can't show, and the photos that show it.
    - **Asking (items 20, 32):** ask, before planning, only when a
      needed photo doesn't exist or a "does a job" product's page has no "how to use". The
-     question offers three answers: describe it in words, attach a photo, or "use without
-     proven result", where the producer says how it would show the scene and the shop owner
-     approves or changes it. What they type is a fact from the shop owner (ADR 0002).
+     question offers two answers: attach a photo, or "use without proven result", where the
+     producer says how it would show the scene and the shop owner approves or changes it
+     (item 42). What they type is a fact from the shop owner (ADR 0002).
      Nothing else is asked because of B-roll.
+   - **No photo clearly shows the product (item 48):** ask the shop owner to attach one.
+   - **The colour (item 43):** pick the colour with the most photos where the product is
+     clearly seen; on a tie, Photo 1's colour.
 4. **`plan()`** (`jobs/work.py`) stores the new fields.
-5. **The "Should we ask?" eval** (items 21, 32): written situations, each with
-   the right answer (ask or don't), run against the planner's instructions. Every one must
-   match. Kept with the other evals, run on demand, not in the test suite (it calls a real
-   model).
+5. **The "Should we ask?" eval** (items 21, 32, 49): the 8 cases of item 49, each with
+   the right answer (ask or don't), run against the planner's instructions. Claude drafts
+   them, the user approves them; each runs 3 times and is reported as a pass rate. Kept
+   with the other evals, run on demand, not in the test suite (it calls a real model).
 6. **Tests:** a plan's B-roll fields are stored; a "does a job" scene without a usage fact
    is refused and asked for again; a scene that would send 6 pictures is refused; an old
    plan without the fields still works.
@@ -207,6 +229,7 @@ One migration. Each new field shown in the admin.
 
 1. **Fact check** (`jobs/checks.py`): `LineToCheck` gets `usage` and `result`; the
    instructions say they are checked like "shows": what the page or the shop owner states.
+   It is also shown each B-roll scene's needed photos, besides the marked ones (item 46).
 2. **Rewrite** (item 39): `RewrittenScene` gives back the B-roll fields too, and they
    are checked again.
 3. **B-roll line length:** `SHORTEST_BROLL_LINE_SECONDS = 4` and
@@ -230,7 +253,8 @@ One migration. Each new field shown in the admin.
 ### Phase 7: the picture step, way 1 and way 3 (items 8, 9, 11, 12, 14, 15, 26 to 29)
 
 1. **Which way:** plain code. The scene's `needs` is empty: way 1. Otherwise: way 3.
-2. **The main photo:** the first photo on the page in the ad's colour (lowest position).
+2. **The main photo:** picked by the existing picture chooser from the marked photos, the
+   best one for the scene (item 45), for way 1 and way 3 alike.
 3. **Way 1:** the image maker gets the main photo, plus the portrait when the person is
    "a face or body". The prompt (written by the model, rules below) says to take only the
    product from the photo; the setting is described in words. The picture is the "before".
@@ -267,7 +291,8 @@ One migration. Each new field shown in the admin.
    - The real audio is known once the line's audio is made. A B-roll line whose audio is
      over 15 s (item 36): the audio step shortens the line (fact checked again), and the
      producer is told to make its audio again. The shop owner isn't told. No clip is paid
-     for until the audio fits.
+     for until the audio fits. At most 3 shortenings; still over 15 s, the scene becomes a
+     talking scene and the job records a warning (item 47).
 2. **Sent:** way 1, the starting picture; way 3, the example pictures. With the prompt.
 3. **Kept whole:** the clip isn't cut to its line. Its sound is replaced by the line's
    audio, followed by silence to the clip's end (`lay_voice_over` stops cutting). The
