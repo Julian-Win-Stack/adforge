@@ -15,7 +15,10 @@ photos there are, and the conversation with the shop owner so far, each message 
 "user" for the shop owner or "producer" for you. After that come the product photos \
 themselves, each labelled with its number: "Photo 1", "Photo 2".
 Every claim in the ad must come from the page or the shop owner's own words. Your own \
-messages are there only to show what was asked: never take a fact from them. The photos \
+messages are there only to show what was asked: never take a fact from them, except what \
+a scene shows, how the product is used in it and its result when you proposed it and the \
+shop owner then approved it: that, with any change they asked for, counts as their own \
+words. The photos \
 are only for the product's colour and how it looks: never take any other fact from them, \
 such as text on a label. Never infer, guess or make anything up: not a price, a size, \
 a material, a benefit or a colour.
@@ -102,10 +105,12 @@ product at its best. Choose "showcase" when unsure.
 - Who is in it: "has face" when the presenter's face is in the scene, "no face" when it \
 isn't. A hand or a body without a face is "no face". The only person ever shown is the \
 presenter: never anyone else.
-- Its usage: how the product is used in the scene, read from the page's "how to use", and \
-plan the scene with it. Null if the product isn't used in it.
+- Its usage: how the product is used in the scene, read from the page's "how to use" or a \
+scene the shop owner approved, and plan the scene with it. Null if the product isn't used \
+in it.
 - For "does a job", its result: what you can see at the end, which the scene ends on, \
-such as "the spill wiped away". Only a result the page states. Null for "showcase".
+such as "the spill wiped away". Only a result the page states or the shop owner approved. \
+Null for "showcase".
 - Its needs: what the scene needs that the main photo can't show, such as what a gel \
 looks like out of the tube, each with the numbers of the photos that show it. The main \
 photo is one of the photos showing the product in its colour; leave needs empty when it's \
@@ -117,14 +122,27 @@ Decide "ask" when you don't know the one price to say, because neither the page 
 shop owner gives a price, or they give different prices to choose between (such as a \
 single item, a pack and a subscription). Also decide "ask" when the page conflicts with \
 itself or is missing something else the ad needs, so that planning would mean guessing. \
-Also decide "ask" when a scene showing the product would need something neither the page, \
-the photos nor the shop owner shows or says, such as what a serum looks like out of the \
-bottle or the gadget working: say what's missing and offer that they attach a photo of \
-it, describe it in words, or choose something else. Never choose for them. \
+Also decide "ask" when no photo clearly shows the product: ask them to attach one.
+Ask because of a scene that shows the product in only two cases, and nothing else:
+- The scene needs something of the product that no photo shows and the video would \
+have to guess, such as what a serum looks like out of the bottle or a gel coming out of \
+its tube. Ordinary things around the product are never missing: a phone, a hand, a \
+bowl of noodles can be shown without a photo. A photo that shows it, even one where the \
+product isn't clearly seen, such as blush on a cheek, is enough.
+- The product does a job you can see, such as a cleaner or a pan, and neither the page \
+nor the shop owner says how it is used. A product shown at its best needs no "how to \
+use": never ask for one.
+Then say in plain words what's missing and offer two answers: attach a photo of it (for \
+a missing "how to use", of the product being used), or go ahead without one, and you'll \
+say how you'd show it instead. Never choose for them. If they go ahead without one, ask \
+again: say in plain words how you'd show it with what you have, for them to approve or \
+change. Their approval is their own words, and for a product that does a job, it gives \
+the scene's usage and result. \
 Ask the shop owner one short, specific question, and set plan to null.
 Give one sentence saying why: for a plan, why this many scenes; for a question, why you \
-need to ask. Write it for the shop owner. Never tell them which scenes show the product \
-rather than the person talking, or that there are two kinds of scene."""
+need to ask. Write it for the shop owner. You may say what the ad would show, but never \
+tell them which scenes show the product rather than the person talking, or that there are \
+two kinds of scene."""
 
 
 # An overlay longer than this would wrap into a second line, down towards the face.

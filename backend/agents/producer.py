@@ -277,7 +277,8 @@ class PlanAd(Tool):
             call.asked_about = "the plan"
             return (
                 f"The ad can't be planned until the shop owner answers: {decision.question} "
-                f"Why: {decision.reason} Ask them, and plan again once they have answered."
+                f"Why: {decision.reason} Ask them, and plan again once they have answered. "
+                "If they answer with a photo, add it with use_photos before planning again."
             )
         return _the_plan(job, decision.reason)
 

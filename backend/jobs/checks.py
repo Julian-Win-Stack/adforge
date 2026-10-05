@@ -40,7 +40,9 @@ stated by the page or the shop owner, or shown by the product photos. When a sce
 product looks like: never read a fact such as a price or a size from them.
 Check every price, number, product name and claim in each line. A line is "ok" only if \
 the page or the shop owner's own words state everything it claims. The producer's \
-messages are there only to show what was asked: never take a fact from them. A claim \
+messages are there only to show what was asked: never take a fact from them, except a \
+"shows" the producer proposed that the shop owner then approved, which with any change \
+they asked for counts as the shop owner's own words. A claim \
 nobody states is wrong, even if it is probably true: nothing may be guessed. A price \
 must be the price a buyer pays today. A line that names the product's colour, or any \
 other colour of the product, is wrong too: the ad shows the colour, never says it. \
@@ -66,9 +68,10 @@ wrong.
 Rewrite that one scene so every claim in its line, and everything its "shows" shows, is \
 stated by the page or by the shop owner's own words, or for what the product looks like, \
 shown by the product photos. Your own messages only show what was asked: never take a \
-fact from them. Keep what the line is for in the ad and about the same length. If it \
-says the price, it must still say the price. Never name the product's colour. Never \
-infer or guess.
+fact from them, except a "shows" you proposed that the shop owner then approved, which \
+with any change they asked for counts as their own words. Keep what the line is for in the \
+ad and about the same length. If it says the price, it must still say the price. Never \
+name the product's colour. Never infer or guess.
 Give back the scene's "shows" too: unchanged if it wasn't wrong. Keep a scene that shows \
 something showing something, unless nothing the page, the photos or the shop owner \
 support could be shown: then give null, and the person says the line to camera. For a \
