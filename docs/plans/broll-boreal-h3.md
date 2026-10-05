@@ -1,7 +1,8 @@
 # Plan: B-roll on Boreal-H3 (build 1)
 
 - Date: 2026-10-04
-- Status: draft, for the user to agree. Nothing is built yet.
+- Status: agreed with the user on 2026-10-04, updated 2026-10-05. Built through sub-issues
+  #97 to #107 on the branch `89-firecrawl-page-read`. The GitHub copy is #96.
 - The decisions behind it, with the reasons: `docs/broll-picture-logic.md` ("Decided", items
   1 to 55). This plan says only how they are built and tested. Where the two disagree, the
   logic doc wins and this plan is fixed.

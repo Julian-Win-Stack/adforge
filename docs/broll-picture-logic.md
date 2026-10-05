@@ -264,8 +264,7 @@ From Creatify's API page (Create a Boreal task) and the scene #16 check.
 1. **Does the scene show something the pack photo can't?** Such as gel coming out, blush on
    a cheek, powder in a drink: a texture, a colour, the inside, a result.
    - **No real photo of it:** the scene isn't made. The planner asks the shop owner to
-     attach a photo, describe it, or choose something else (`backend/jobs/planning.py`
-     already says this).
+     attach a photo or use the scene without a proven result (item 42).
    - **A real photo of it:** use **references**, so the model sees that photo.
 2. **Otherwise** (the product standing, picked up, turned, a close-up of the pack): use the
    **start picture only**. We control the framing and nothing has to be invented.
@@ -418,7 +417,8 @@ From the MiniMax H3 prompt guides (Boreal-H3 is built on H3) and the four mistak
 - The video's shape is set with `aspect_ratio: "9:16"`; the pictures can be any shape.
 
 **Start picture (way 1)**
-- The picture maker gets only the shop's real product photo, and the prompt uses it only
+- The picture maker gets the shop's real product photo (plus the presenter's portrait for a
+  "has face" scene, item 27), and the prompt uses the photo only
   for how the product looks (decided 2026-10-03). No in-use photos, and nothing from the
   shop's photos' backgrounds or scenes: the setting is the ad's choice (a cup can be shown
   on a beach), so it is described in words in the prompt.
