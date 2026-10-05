@@ -31,7 +31,7 @@ from gateway.gateway import use_model
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import ModelReply, ModelRequest, TurnReply, TurnRequest
-from jobs.models import Job
+from jobs.models import BROLL_FIELDS, Job
 
 celery_app.conf.update(task_always_eager=True, task_eager_propagates=True)
 
@@ -88,7 +88,11 @@ SHAMPOO_PICKED = {
     "more_images": [],
     "product_sections": [15, 30],
     "notes": "",
+    "face_images": [],
 }
+
+# What the Face-note call answers for a photo with no stranger's face in it.
+NO_FACE: dict[str, Any] = {"has_face": False}
 
 # What the producer plans for the mug's page: three scenes.
 PLAN: dict[str, Any] = {
@@ -111,6 +115,29 @@ PLAN: dict[str, Any] = {
     },
 }
 # The plan's 18 words take the fake voice 9 seconds: it speaks 2 words a second.
+
+
+# What the planner says about a B-roll scene when a test doesn't say: it shows the mug at
+# its best, with no face in it, and needs nothing the main photo can't show.
+SHOWCASE: dict[str, Any] = {
+    "broll_kind": "showcase",
+    "person_shown": "no face",
+    "usage": None,
+    "result": None,
+    "needs": [],
+}
+
+
+def broll_labels() -> list[tuple[str, str, str, str, list[dict[str, Any]]]]:
+    """Each stored scene's B-roll kind, person, usage, result and needs, in order."""
+    return list(Job.objects.get().scenes.values_list(*BROLL_FIELDS))
+
+
+def broll(scene: dict[str, Any]) -> dict[str, Any]:
+    """A planned scene with SHOWCASE's B-roll labels when it shows something, as every
+    B-roll scene must have them; a scene the person says to camera as it is."""
+    shows = scene.get("shows")
+    return {**SHOWCASE, **scene} if shows and shows.strip() else scene
 
 
 def facts_ok(*scenes: int) -> dict[str, Any]:
@@ -171,6 +198,7 @@ def fake_model() -> Iterator[FakeModel]:
     fake = FakeModel()
     fake.answer_unscripted("copy_page_text", copy_every_line)
     fake.answer_unscripted("pick_photos", lambda _: SHAMPOO_PICKED)
+    fake.answer_unscripted("note_face", lambda _: NO_FACE)
     with use_model(fake):
         yield fake
 
@@ -264,8 +292,9 @@ class FakeFirecrawl:
         self.shop = httpserver.url_for("").rstrip("/")
         # What every request asked for, oldest first.
         self.requests: list[dict[str, Any]] = []
-        # Answers to give each call before the real ones, such as "busy": each (status, body).
-        self.first: dict[FirecrawlCall, list[tuple[int, dict[str, Any]]]] = {
+        # Answers to give each call before the real ones, such as "busy": each (status, body,
+        # headers).
+        self.first: dict[FirecrawlCall, list[tuple[int, dict[str, Any], dict[str, str]]]] = {
             "page": [],
             "marked": [],
             "product": [],
@@ -288,11 +317,17 @@ class FakeFirecrawl:
         )
 
     def answers_first(
-        self, status: int, error: str, *, times: int = 1, call: FirecrawlCall = "page"
+        self,
+        status: int,
+        error: str,
+        *,
+        times: int = 1,
+        call: FirecrawlCall = "page",
+        headers: dict[str, str] | None = None,
     ) -> None:
         """Have the next `times` requests for `call` answered with an error, as when Firecrawl
         is busy."""
-        self.first[call] += [(status, {"success": False, "error": error})] * times
+        self.first[call] += [(status, {"success": False, "error": error}, headers or {})] * times
 
     def asked(self, call: FirecrawlCall) -> list[dict[str, Any]]:
         """What every request for `call` asked for, oldest first."""
@@ -307,13 +342,16 @@ class FakeFirecrawl:
         if call == "page":
             time.sleep(self.takes_seconds)
         answers = {"page": self.page_read, "marked": self.marked, "product": self.product}
+        headers: dict[str, str] = {}
         if call is None:
             status, body = 400, {"success": False, "error": f"Unknown formats {asked['formats']}"}
         elif self.first[call]:
-            status, body = self.first[call].pop(0)
+            status, body, headers = self.first[call].pop(0)
         else:
             status, body = 200, answers[call]
-        return Response(json.dumps(body), status=status, content_type="application/json")
+        return Response(
+            json.dumps(body), status=status, headers=headers, content_type="application/json"
+        )
 
 
 def _which_call(asked: dict[str, Any]) -> FirecrawlCall | None:

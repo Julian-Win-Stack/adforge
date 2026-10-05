@@ -78,3 +78,6 @@ backend/scratch/
 docs/runs/second-run-review/check/**/*.mp4
 docs/runs/second-run-review/check/**/*.png
 docs/runs/second-run-review/check/**/*.jpg
+
+# Local Claude Code settings
+.claude/settings.json

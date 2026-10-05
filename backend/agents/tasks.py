@@ -17,8 +17,14 @@ from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.gateway import charged_to
 from gateway.types import UnusableReply
-from jobs.models import ProducedItem, SceneStep
-from jobs.work import make_clip, make_line_audio, make_starting_picture, transcribe_line_audio
+from jobs.models import ProducedItem, Scene, SceneStep
+from jobs.work import (
+    make_clip,
+    make_line_audio,
+    make_starting_picture,
+    too_long_for_a_clip,
+    transcribe_line_audio,
+)
 
 from . import loop
 from .loop import EXPECTED_FAILURES, why_it_failed
@@ -165,8 +171,15 @@ def another_session_is_busy(session: Session) -> bool:
     )
 
 
-def _picture_finished(step: SceneStep, picture: ProducedItem) -> str:
+def _picture_finished(step: SceneStep, picture: ProducedItem | None) -> str:
     assert step.photo is not None, "a starting picture is made from a photo"
+    # A B-roll scene made way 3 has no picture: its clip is made from photos, and the
+    # producer isn't told which way a scene is made.
+    if picture is None:
+        return (
+            f"Background step finished: Scene {step.scene.number} is ready for its clip. "
+            f"Photo {step.photo.position} was used: {step.photo_reason}"
+        )
     return (
         f"Background step finished: scene {step.scene.number}'s starting picture is ready "
         f"(version {picture.version}), and is shown to the shop owner in the chat. "
@@ -175,7 +188,25 @@ def _picture_finished(step: SceneStep, picture: ProducedItem) -> str:
     )
 
 
-def _audio_finished(step: SceneStep, audio: ProducedItem) -> str:
+def _audio_finished(step: SceneStep, audio: ProducedItem | None) -> str:
+    assert audio is not None, "a line's audio step makes its audio"
+    number = step.scene.number
+    # A B-roll line too long for any clip was shortened, or its scene is now said to camera:
+    # see make_line_audio. The shop owner isn't told: the chat says so if the scene changed.
+    scene = Scene.objects.get(pk=step.scene_id)
+    too_long = (
+        f"Background step finished: scene {number}'s line's audio takes {audio.seconds:g} "
+        "seconds to say, too long for any clip. "
+    )
+    if too_long_for_a_clip(step, audio) and not scene.shows:
+        return (
+            f"{too_long}Scene {number} is now a talking scene. Make its starting picture "
+            "again, then its audio and its clip."
+        )
+    if too_long_for_a_clip(step, audio) and step.line in scene.shortened_from:
+        return (
+            f"{too_long}Scene {number}'s line was shortened to fit its clip. Make its audio again."
+        )
     return (
         f"Background step finished: scene {step.scene.number}'s line's audio is ready "
         f"(version {audio.version}, {audio.seconds:g} seconds). It isn't shown to the shop "
@@ -183,8 +214,10 @@ def _audio_finished(step: SceneStep, audio: ProducedItem) -> str:
     )
 
 
-def _transcript_finished(step: SceneStep, transcript: ProducedItem) -> str:
-    assert transcript.made_from is not None, "a transcript is made from audio"
+def _transcript_finished(step: SceneStep, transcript: ProducedItem | None) -> str:
+    assert transcript is not None and transcript.made_from is not None, (
+        "a transcript is made from audio"
+    )
     return (
         f"Background step finished: scene {step.scene.number}'s audio (version "
         f"{transcript.made_from.version}) was transcribed (version {transcript.version}). It "
@@ -192,14 +225,15 @@ def _transcript_finished(step: SceneStep, transcript: ProducedItem) -> str:
     )
 
 
-def _clip_finished(step: SceneStep, clip: ProducedItem) -> str:
-    assert clip.picture is not None and clip.made_from is not None, "a clip is made from both"
+def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
+    assert clip is not None and clip.made_from is not None, "a clip is made from its audio"
     number = step.scene.number
+    # A B-roll scene made way 3 has no starting picture.
+    picture = f"starting picture version {clip.picture.version} and " if clip.picture else ""
     return (
         f"Background step finished: scene {number}'s clip is ready (version {clip.version}, "
-        f"{clip.seconds:g} seconds), made from starting picture version {clip.picture.version} "
-        f"and audio version {clip.made_from.version}. Scene {number} is finished. Tell the "
-        "shop owner."
+        f"{clip.seconds:g} seconds), made from {picture}audio version "
+        f"{clip.made_from.version}. Scene {number} is finished. Tell the shop owner."
     )
 
 
@@ -209,9 +243,10 @@ class StepWork:
     itself, what the producer is told when it finishes, and what the chat shows then."""
 
     name: str
-    make: Callable[[SceneStep], ProducedItem]
-    finished: Callable[[SceneStep, ProducedItem], str]
-    shown: Callable[[ProducedItem], list[messages.AttachedFile]]
+    # Gives what it made: nothing, for a B-roll scene's starting picture made way 3.
+    make: Callable[[SceneStep], ProducedItem | None]
+    finished: Callable[[SceneStep, ProducedItem | None], str]
+    shown: Callable[[ProducedItem | None], list[messages.AttachedFile]]
 
 
 STEP_WORK = {
@@ -219,7 +254,9 @@ STEP_WORK = {
         name="starting picture",
         make=make_starting_picture,
         finished=_picture_finished,
-        shown=lambda picture: [messages.AttachedFile(Attachment.Kind.PICTURE, picture.file)],
+        shown=lambda picture: (
+            [messages.AttachedFile(Attachment.Kind.PICTURE, picture.file)] if picture else []
+        ),
     ),
     # The line's audio and its transcript are the producer's to judge, not the shop owner's.
     SceneStep.Kind.LINE_AUDIO: StepWork(

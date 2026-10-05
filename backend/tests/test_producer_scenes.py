@@ -154,6 +154,8 @@ def test_a_line_that_hasnt_passed_the_fact_check_gets_no_starting_picture(
     assert paid_for() == [
         "check_page",
         "copy_page_text",
+        "note_face",
+        "note_face",
         "plan_ad",
         "draw_person",
         "design_voice",

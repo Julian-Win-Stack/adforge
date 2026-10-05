@@ -37,16 +37,10 @@ from jobs.models import Job  # noqa: E402
 OUT = Path("/app/media/broll-test/face-notes")
 PRODUCTS = ["02", "03", "05", "06", "07", "08", "01", "09"]
 
-FACE_NOTE = """
-
-Then note faces: face_images are the I numbers, among the ones you picked, of pictures that \
-show a person's face you could recognise. A body, a hand, an arm, lips or a face turned away, \
-cut off or too small to recognise doesn't count."""
-INSTRUCTIONS = photos.PICK_INSTRUCTIONS + FACE_NOTE
-
-
-class PickedWithFaces(photos.PickedPhotos):
-    face_images: list[int]
+# The Face note's wording, tested here, is now the picker's own: in photos.PICK_INSTRUCTIONS,
+# with face_images on photos.PickedPhotos.
+INSTRUCTIONS = photos.PICK_INSTRUCTIONS
+PickedWithFaces = photos.PickedPhotos
 
 
 def firecrawl_answers(product: str, link: str) -> tuple[dict[str, Any], bytes, dict[str, Any]]:

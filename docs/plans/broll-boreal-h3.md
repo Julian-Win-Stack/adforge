@@ -1,9 +1,10 @@
 # Plan: B-roll on Boreal-H3 (build 1)
 
 - Date: 2026-10-04
-- Status: draft, for the user to agree. Nothing is built yet.
+- Status: agreed with the user on 2026-10-04, updated 2026-10-05. Built through sub-issues
+  #97 to #107 on the branch `89-firecrawl-page-read`. The GitHub copy is #96.
 - The decisions behind it, with the reasons: `docs/broll-picture-logic.md` ("Decided", items
-  1 to 31). This plan says only how they are built and tested. Where the two disagree, the
+  1 to 56). This plan says only how they are built and tested. Where the two disagree, the
   logic doc wins and this plan is fixed.
 
 ## What build 1 is, in one paragraph
@@ -36,6 +37,29 @@ Questions reading the code raised, now items 32 to 40 in the logic doc:
 9. Way 3 needs no new tools: way 1 and way 3 are branches inside the same tools (item 40).
 10. A picture made from the shop owner's words, for them to approve, comes later, not in
     build 1 (item 41, ticket #95).
+
+## Settled with the user on 2026-10-05
+
+Items 42 to 56 in the logic doc. Where they change a phase below, the phase is updated.
+
+1. "Describe it in words" is not offered in build 1: the question offers "attach a photo"
+   or "use without proven result" (item 42).
+2. The ad's colour is the one with the most clear photos; on a tie, Photo 1's (item 43).
+3. A needed photo can be any photo except one showing the product in another colour
+   (item 44).
+4. The main photo is picked by the existing picture chooser, for both ways (item 45).
+5. The fact check also sees each B-roll scene's needed photos (item 46).
+6. A line whose real audio is over 15 s is shortened up to 3 times, then becomes a talking
+   scene with a warning (item 47).
+7. No photo clearly shows the product: the planner asks for one (item 48).
+8. The "Should we ask?" eval has 8 cases, each run 3 times (item 49).
+9. No judge until the graded run; no B-roll for real shop owners until a judge exists
+   (item 50, #109). Measuring left for later: #108, #110, #111 (item 51).
+10. The second kind is named "showcase" instead of "looks good" (item 52).
+11. "Who is in it" is "no face" or "has face": only faces matter (item 53).
+12. The after-build tests are approved; results always recorded (item 54).
+13. Way 3's picture labels come from structured output, one slot per picture (item 55).
+14. A B-roll scene that becomes a talking scene is shown in the chat, with the reason (item 56).
 
 ## Phase 0: tests before building (about $2, each needs the user's yes first)
 
@@ -88,6 +112,11 @@ Each phase ends with the whole test suite green. Tests are written first, throug
 as the others are (`backend/tests/test_producer_broll.py` and friends), with the outside
 services faked. No phase calls a paid service; the first paid run is in Phase 10.
 
+**Testing focus (the user, 2026-10-05):** mostly integration tests that run each ticket's
+main flow end to end through the chat; unit tests too, but only in support (a validator,
+the seconds rule, a price). Phase 10 adds one faked end-to-end test of a whole ad with a
+talking scene, a way 1 B-roll scene and a way 3 B-roll scene.
+
 ---
 
 ### Phase 2: Boreal-H3 in the gateway, replacing the old Boreal
@@ -139,8 +168,8 @@ One migration. Each new field shown in the admin.
 1. **`ProductPhoto.has_face`**: yes or no. A stranger's face in the
    photo (item 26).
 2. **`Scene`**, for B-roll scenes (blank for talking ones):
-   - `broll_kind`: "does a job" or "looks good" (item 12).
-   - `person_shown`: "none", "a hand only" or "a face or body" (item 27).
+   - `broll_kind`: "does a job" or "showcase" (item 12).
+   - `person_shown`: "no face" or "has face" (item 27).
    - `usage`: the usage fact, from the page's "how to use" (item 10).
    - `result`: the result it promises, for "does a job" (item 11).
    - `needs`: what the scene needs that the main photo can't show, each with the photos
@@ -175,12 +204,13 @@ One migration. Each new field shown in the admin.
 2. **Validators** (a broken plan fails while it's read, as today):
    - A B-roll scene has a kind and a person label; a talking scene has none of them.
    - A "does a job" scene has a usage fact and a result.
-   - A needed photo is one of the job's photos in the ad's colour.
+   - A needed photo is one of the job's photos (any colour check is the planner's: the
+     instructions say never a photo of the product in another colour, item 44).
    - At most 5 pictures in all: the main photo, the needed photos, and the portrait when
-     the person is "a face or body" (item 27).
+     the person is "has face" (item 27).
 3. **`PLAN_INSTRUCTIONS`:**
-   - The two kinds and how to pick ("looks good" when unsure).
-   - Who is in the scene, in the three labels; the person shown is always the presenter.
+   - The two kinds and how to pick ("showcase" when unsure).
+   - Who is in the scene, in the two labels; the person shown is always the presenter.
    - Read the usage from the page's "how to use" and plan the scene with it; for "does a
      job", write the result you can see, and the scene ends on it.
    - "A B-roll line has at least about 10 words." The old "a B-roll line is one short
@@ -188,15 +218,18 @@ One migration. Each new field shown in the admin.
    - Name what the scene needs that the main photo can't show, and the photos that show it.
    - **Asking (items 20, 32):** ask, before planning, only when a
      needed photo doesn't exist or a "does a job" product's page has no "how to use". The
-     question offers three answers: describe it in words, attach a photo, or "use without
-     proven result", where the producer says how it would show the scene and the shop owner
-     approves or changes it. What they type is a fact from the shop owner (ADR 0002).
+     question offers two answers: attach a photo, or "use without proven result", where the
+     producer says how it would show the scene and the shop owner approves or changes it
+     (item 42). What they type is a fact from the shop owner (ADR 0002).
      Nothing else is asked because of B-roll.
+   - **No photo clearly shows the product (item 48):** ask the shop owner to attach one.
+   - **The colour (item 43):** pick the colour with the most photos where the product is
+     clearly seen; on a tie, Photo 1's colour.
 4. **`plan()`** (`jobs/work.py`) stores the new fields.
-5. **The "Should we ask?" eval** (items 21, 32): written situations, each with
-   the right answer (ask or don't), run against the planner's instructions. Every one must
-   match. Kept with the other evals, run on demand, not in the test suite (it calls a real
-   model).
+5. **The "Should we ask?" eval** (items 21, 32, 49): the 8 cases of item 49, each with
+   the right answer (ask or don't), run against the planner's instructions. Claude drafts
+   them, the user approves them; each runs 3 times and is reported as a pass rate. Kept
+   with the other evals, run on demand, not in the test suite (it calls a real model).
 6. **Tests:** a plan's B-roll fields are stored; a "does a job" scene without a usage fact
    is refused and asked for again; a scene that would send 6 pictures is refused; an old
    plan without the fields still works.
@@ -207,6 +240,7 @@ One migration. Each new field shown in the admin.
 
 1. **Fact check** (`jobs/checks.py`): `LineToCheck` gets `usage` and `result`; the
    instructions say they are checked like "shows": what the page or the shop owner states.
+   It is also shown each B-roll scene's needed photos, besides the marked ones (item 46).
 2. **Rewrite** (item 39): `RewrittenScene` gives back the B-roll fields too, and they
    are checked again.
 3. **B-roll line length:** `SHORTEST_BROLL_LINE_SECONDS = 4` and
@@ -230,32 +264,35 @@ One migration. Each new field shown in the admin.
 ### Phase 7: the picture step, way 1 and way 3 (items 8, 9, 11, 12, 14, 15, 26 to 29)
 
 1. **Which way:** plain code. The scene's `needs` is empty: way 1. Otherwise: way 3.
-2. **The main photo:** the first photo on the page in the ad's colour (lowest position).
+2. **The main photo:** picked by the existing picture chooser from the marked photos, the
+   best one for the scene (item 45), for way 1 and way 3 alike.
 3. **Way 1:** the image maker gets the main photo, plus the portrait when the person is
-   "a face or body". The prompt (written by the model, rules below) says to take only the
+   "has face". The prompt (written by the model, rules below) says to take only the
    product from the photo; the setting is described in words. The picture is the "before".
 4. **Way 3:** code builds the example pictures, in order: the main photo, then for each
    need, a photo from its list without a face if there is one, otherwise the first (item
-   28), then the portrait when the person is "a face or body". No picture is made.
+   28), then the portrait when the person is "has face". No picture is made.
 5. **The prompt writer** (`jobs/scenes.py`, `BROLL_PICTURE_INSTRUCTIONS` rewritten): one
    model, the shared rules plus only the scene's kind's rules (item 12). It gets the line,
    `shows`, the usage fact, the result, the person label and the pictures with their jobs,
    and writes:
    - way 1: the picture prompt and the video prompt;
-   - way 3: the video prompt, which names every picture by number with its one job, and
-     for a photo with a face, what to ignore ("Image 2 is only for the gel's colour. Don't
-     show the woman in it."). An answer that leaves a picture out fails while it's read.
+   - way 3: structured output with one required slot per picture sent (`image_1` ...
+     `image_N`, built for that scene's count) holding its job, and for a photo with a face
+     what to ignore ("only the gel's colour; ignore the woman"), plus an `action` slot.
+     Code joins them into the video prompt: "Image 1 is ... Image 2 is ... <action>". A
+     missing slot fails while it's read, so no picture goes unnamed (item 55).
    - Rules from "Prompt rules" in the logic doc: one continuous shot; the product does
      what the line claims, held as the usage fact says; the main action in the middle of
      the frame, nothing about the top and bottom; ends on the result ("does a job") or on
-     the product at its best ("looks good"); only the presenter, any hand is fine; the
+     the product at its best ("showcase"); only the presenter, any hand is fine; the
      product shown, not described; no "no speech, no sound, no text".
    - `NOTHING_MADE_UP` is no longer added to B-roll prompts (decided 2026-10-03).
 6. **Stale steps:** a picture step made for an earlier line, "shows" or B-roll fields is
    out of date, like one made for an earlier line today.
-7. **Tests:** way 1 sends the main photo and no portrait for "a hand only"; the portrait
-   for "a face or body"; way 3 sends the pictures in order, a photo without a face before
-   one with; a prompt that skips "Image 2" is refused; the stored step has its way, its
+7. **Tests:** way 1 sends the main photo and no portrait for "no face"; the portrait
+   for "has face"; way 3 sends the pictures in order, a photo without a face before
+   one with; an answer missing the `image_2` slot is refused, and the joined prompt names every picture; the stored step has its way, its
    pictures and its prompt.
 
 ---
@@ -267,7 +304,8 @@ One migration. Each new field shown in the admin.
    - The real audio is known once the line's audio is made. A B-roll line whose audio is
      over 15 s (item 36): the audio step shortens the line (fact checked again), and the
      producer is told to make its audio again. The shop owner isn't told. No clip is paid
-     for until the audio fits.
+     for until the audio fits. At most 3 shortenings; still over 15 s, the scene becomes a
+     talking scene and the job records a warning (item 47).
 2. **Sent:** way 1, the starting picture; way 3, the example pictures. With the prompt.
 3. **Kept whole:** the clip isn't cut to its line. Its sound is replaced by the line's
    audio, followed by silence to the clip's end (`lay_voice_over` stops cutting). The
@@ -321,7 +359,11 @@ One migration. Each new field shown in the admin.
    It checks that the whole thing runs end to end, not the clips' quality. No permission
    needed for this one ad (item 33).
 
-## After building: the tests (each needs the user's yes and its exact cost)
+## After building: the tests (approved by the user, 2026-10-05)
+
+Approved: the graded run and its two watched-for checks, about $35 to $50 plus any re-runs.
+The exact figure is still counted from the plans first; ask again only if it comes out over
+$50. Every result is written down (item 4 below).
 
 1. **The graded run (item 30).** Full ads for the 8 test products, quality checks off. The
    user watches each B-roll clip and grades it pass or fail, writing down what went wrong

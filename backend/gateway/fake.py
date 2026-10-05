@@ -13,10 +13,11 @@ its number written into it so each is its own. Script an error for "make_music" 
 fail.
 
 Clips need no script either: each one asked for is made at once, a real tiny clip that
-speaks the audio it was asked for, or is silent for as many seconds as were asked for when
-it has none, so ffmpeg can cut and join it: set `clips_short_by` to make silent ones
-shorter. The fake makes talking clips and B-roll ones alike, and its clip scripts are keyed
-"make_clip" and "collect_clip" whichever purpose asked: {"state": "working"} for
+speaks the audio a talking clip was asked for, or, for a B-roll clip, is silent for exactly
+the seconds asked for, so ffmpeg can cut and join it: set `clips_short_by` to make B-roll
+ones shorter. What each B-roll clip was sent is kept in `broll_clips_asked`. The fake makes
+talking clips and B-roll ones alike, and its clip scripts are keyed "make_clip" and
+"collect_clip" whichever purpose asked: {"state": "working"} for
 "collect_clip" to have a clip still being made when asked, {"state": "failed", "error": ...}
 to have it fail, or an error for "make_clip" or "collect_clip"."""
 
@@ -109,6 +110,9 @@ class FakeModel:
         # What each clip was asked for with, in turn: its seconds, whether it speaks audio,
         # and its motion prompt.
         self.clips_asked: list[tuple[float, bool, str]] = []
+        # What each B-roll clip was sent, in turn: its starting picture or example pictures,
+        # its seconds and its prompt.
+        self.broll_clips_asked: list[dict[str, Any]] = []
         # How much shorter than asked each silent clip is made, as a real model's may be.
         self.clips_short_by = 0.0
         # The audio each clip asked for speaks, and each clip made, by its id.
@@ -248,6 +252,27 @@ class FakeModel:
         self._clip_audio[self.clips_submitted[-1]] = audio or _silence(
             seconds=seconds - self.clips_short_by
         )
+        return self.clips_submitted[-1]
+
+    def submit_broll(
+        self,
+        *,
+        starting_picture: bytes | None,
+        example_pictures: Sequence[bytes],
+        seconds: int,
+        prompt: str,
+    ) -> str:
+        self._fail_if_scripted("make_clip")
+        self.clips_submitted.append(f"video-{len(self.clips_submitted) + 1}")
+        self.broll_clips_asked.append(
+            {
+                "starting_picture": starting_picture,
+                "example_pictures": list(example_pictures),
+                "seconds": seconds,
+                "prompt": prompt,
+            }
+        )
+        self._clip_audio[self.clips_submitted[-1]] = _silence(seconds=seconds - self.clips_short_by)
         return self.clips_submitted[-1]
 
     def status(self, *, video_id: str) -> ClipStatus:

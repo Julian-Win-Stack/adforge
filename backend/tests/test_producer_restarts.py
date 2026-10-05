@@ -380,10 +380,10 @@ def test_a_line_being_rewritten_when_the_worker_stopped_is_rewritten_without_che
     # The old line isn't checked again: after the restart only its rewrite is.
     assert [handed["lines"] for handed in handoffs("fact_check")] == [
         [
-            {"scene": 1, "line": "Meet the mug.", "shows": None},
-            {"scene": 2, "line": "$19.99.", "shows": None},
+            {"scene": 1, "line": "Meet the mug.", "shows": None, "usage": None, "result": None},
+            {"scene": 2, "line": "$19.99.", "shows": None, "usage": None, "result": None},
         ],
-        [{"scene": 2, "line": "Yours for $24.00.", "shows": None}],
+        [{"scene": 2, "line": "Yours for $24.00.", "shows": None, "usage": None, "result": None}],
     ]
     (sent,) = ModelCall.objects.filter(
         purpose="rewrite_line", outcome=ModelCall.Outcome.SUCCEEDED

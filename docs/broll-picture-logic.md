@@ -3,6 +3,7 @@
 - Date: 2026-10-03
 - Ticket: #94. Follows the Boreal-H3 check on scene #16 (`docs/runs/second-run-review/check/`).
 - Status: the logic is agreed and tested (five tests, 2026-10-03, about $4). Ready to build.
+  Items 42 to 56 were settled with the user on 2026-10-05, before building.
   Nothing is built yet. Issue #94 is not to be edited (the user, 2026-10-03).
 
 ## Decided
@@ -35,7 +36,7 @@
 11. **End on the result.** The starting picture sets up the "before"; the video prompt does
     the action and ends on the result, described in words. No end picture.
 12. **Two kinds of scene,** one prompt-writing agent with a rule set per kind: "does a job
-    you can see" (the result comes from the product being used) and "looks good"
+    you can see" (the result comes from the product being used) and "showcase"
     (everything else, the default when unsure).
 13. **The clip isn't cut where the spoken line ends.** It plays to its end.
 14. **Only the presenter is shown.** Any hand is fine. Tested after building; the production
@@ -103,11 +104,10 @@
     - Up to 5 pictures in all, the presenter's portrait counted (5 are free). Only what the
       scene needs, each with its job named. Cut back only if tests show the model mixing
       them up.
-    - The planner labels each B-roll scene "person in the scene: none / a hand only / a
-      face or body". Code sends the presenter's portrait when it is "a face or body".
-    - Shop photos with a face or body may be sent, with the portrait, and the prompt says to
+    - The planner labels each B-roll scene "person in the scene: no face / has face". Code sends the presenter's portrait when it is "has face".
+    - Shop photos with a face may be sent, with the portrait, and the prompt says to
       use the presenter. Tested after building.
-    - Not yet decided: a photo with a face or body for a scene that shows no person, and
+    - Not yet decided: a photo with a face for a scene that shows no person, and
       photos with printed words. Decided in items 28 and 29.
 28. **Which shop photo does a job (2026-10-04).**
     1. A photo without a stranger's face for the job, if there is one (code picks it from
@@ -180,6 +180,59 @@
     guess, so it doesn't break item 4. Not in build 1: there the words go into the video
     prompt. Ticket #95, built if the graded run shows clips from words alone come out
     wrong.
+42. **"Describe it in words" is not offered in build 1 (2026-10-05).** Replaces item 20's
+    and item 41's "the words go into the video prompt". When a needed photo is missing, the
+    question offers only "attach a photo" or "use without proven result". Answering in words
+    comes back with #95.
+43. **The ad's colour is the one with the most clear photos (2026-10-05).** The planner
+    still picks one colour per ad (so an ad never mixes colours), but now picks the colour
+    with the most photos where the product is clearly seen; on a tie, the colour of Photo 1
+    (the first photo on the page).
+44. **A needed photo can be any photo except one showing the product in another colour
+    (2026-10-05).** Replaces "one of the job's photos in the ad's colour" (the marked
+    photos): in-use photos (blush on a cheek, gel in a bowl) are often not marked because the
+    product isn't clearly seen in them. The planner is told the rule; code can't check
+    colour, since no colour is saved per photo. Whether to save one is decided after #110.
+45. **The main photo is picked by the existing picture chooser (2026-10-05),** for way 1 and
+    way 3 alike. Replaces item 26's "the first photo on the page": the first photo may be a
+    poor one. The chooser picks the best marked photo for the scene, as it does today.
+46. **The fact check also sees each B-roll scene's needed photos (2026-10-05),** not only the
+    marked photos, so a scene a needed photo proves (the gel's colour) isn't failed wrongly.
+47. **A line whose real audio is over 15 s is shortened up to 3 times (2026-10-05).** Adds a
+    limit to item 36. Still over 15 s: the scene becomes a talking scene and the job records
+    a warning, as in item 35.
+48. **No photo clearly shows the product: the planner asks (2026-10-05).** New rule: the
+    shop owner is asked to attach a photo of the product. A case for it is in the "Should we
+    ask?" eval.
+49. **The "Should we ask?" eval (2026-10-05).** 8 cases: a needed photo missing (ask); "how
+    to use" missing on a "does a job" product (ask); a "showcase" product without "how to
+    use" (don't ask); everything present (don't ask); the serum with one photo, a scene
+    wanting its texture (ask); the blush with a cheek photo (don't ask); the power bank shown
+    charging a phone, no photo of it, the page says it charges phones (don't ask); no photo
+    clearly shows the product (ask). Claude drafts the cases, the user approves them, then
+    each runs 3 times, reported as a pass rate per case. The user approved the cost.
+50. **No judge until the graded run, and no B-roll for real shop owners until a judge exists
+    (2026-10-05).** Confirms item 22. The decision is tracked in #109.
+51. **What build 1 doesn't measure is tracked (2026-10-05):** the fact check's accuracy and
+    claims made across lines (#108), the photos the colour list throws away (#110), and
+    evals for every AI call (#111). None of them blocks build 1.
+52. **The second kind is named "showcase" (2026-10-05),** replacing "looks good", which read
+    as confusing. Same meaning: the product shown at its best. "Does a job" stays.
+53. **Only faces matter for people (2026-10-05).** "Who is in it" has two labels, "no face"
+    (nobody, or only a hand or body) and "has face" (the presenter's face is shown; the
+    portrait is sent). Replaces item 27's three labels. A hand or body is never a concern.
+54. **The after-build tests are approved (2026-10-05):** the graded run with the people and
+    added-text checks, about $35 to $50 plus re-runs; ask again only if the counted figure
+    is over $50. Every result goes into "Test results".
+55. **Way 3's picture labels come from structured output (2026-10-05, the user's idea).** The
+    prompt writer's answer has one required slot per picture (`image_1` ... `image_N`) plus
+    `action`; code joins them into "Image 1 is ... Image 2 is ... <action>". No picture can
+    be left unnamed, and the AI still writes each picture's hint.
+56. **A B-roll scene that becomes a talking scene is shown in the chat (2026-10-05).** The
+    warning of items 35 and 47 is posted as a notice with the reason ("Scene 3 couldn't be
+    made as a product shot because its line is too long for a clip, so it will be said to
+    camera instead."). The one exception to "the user is never told which scenes are which".
+    Only that scene changes; the rest of the plan stays.
 
 ## What Boreal-H3 takes
 
@@ -216,8 +269,7 @@ From Creatify's API page (Create a Boreal task) and the scene #16 check.
 1. **Does the scene show something the pack photo can't?** Such as gel coming out, blush on
    a cheek, powder in a drink: a texture, a colour, the inside, a result.
    - **No real photo of it:** the scene isn't made. The planner asks the shop owner to
-     attach a photo, describe it, or choose something else (`backend/jobs/planning.py`
-     already says this).
+     attach a photo or use the scene without a proven result (item 42).
    - **A real photo of it:** use **references**, so the model sees that photo.
 2. **Otherwise** (the product standing, picked up, turned, a close-up of the pack): use the
    **start picture only**. We control the framing and nothing has to be invented.
@@ -235,7 +287,7 @@ sent together with the presenter's portrait has never been tried (corrected 2026
 
 - The presenter's portrait is given to the picture maker (way 1) or as an example picture
   (way 3) whenever the scene shows a person (item 27).
-- Shop photos with a face or body may be sent (item 27, replacing "never sent"), with the
+- Shop photos with a face may be sent (item 27, replacing "never sent"), with the
   presenter's portrait and a prompt that says to use the presenter. Tested after building;
   if the shop's person leaks into the video, they stop being sent.
 - Tested after building, not before (decided 2026-10-03). The production prompts (the
@@ -288,9 +340,9 @@ small rule set, not a new agent.
 | Kind | Examples | Its own rules |
 |---|---|---|
 | Does a job you can see | toilet cleaner, blush, collagen powder, power bank, blender | The result comes from the product being used; end on it |
-| Looks good (everything else) | bag, clothes, jewellery, decor | Shown in use; nothing invented; end at its best |
+| Showcase (everything else) | bag, clothes, jewellery, decor | Shown in use; nothing invented; end at its best |
 
-When the planner isn't sure, it picks "looks good": it can't invent a result. First drafted
+When the planner isn't sure, it picks "showcase": it can't invent a result. First drafted
 as three kinds (changes something, worn or carried, other); "worn or carried" and "other"
 were merged because their rules were the same, and gadgets moved to "does a job", because a
 gadget shown only looking nice never proves it works.
@@ -302,7 +354,7 @@ gadget shown only looking nice never proves it works.
   A result shown on
   a screen is shown without numbers or words (the charging light comes on, not "80%"): video
   makers garble them.
-- **Looks good.** The real product shown clearly, in use the way the page says; one simple
+- **Showcase.** The real product shown clearly, in use the way the page says; one simple
   action (worn and turning, picked up, set down, or a slow camera move); ending on the moment
   the product looks its best, such as the bag catching the light as she turns; no result or
   change the page doesn't prove.
@@ -370,7 +422,8 @@ From the MiniMax H3 prompt guides (Boreal-H3 is built on H3) and the four mistak
 - The video's shape is set with `aspect_ratio: "9:16"`; the pictures can be any shape.
 
 **Start picture (way 1)**
-- The picture maker gets only the shop's real product photo, and the prompt uses it only
+- The picture maker gets the shop's real product photo (plus the presenter's portrait for a
+  "has face" scene, item 27), and the prompt uses the photo only
   for how the product looks (decided 2026-10-03). No in-use photos, and nothing from the
   shop's photos' backgrounds or scenes: the setting is the ad's choice (a cup can be shown
   on a beach), so it is described in words in the prompt.

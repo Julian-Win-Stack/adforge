@@ -6,7 +6,7 @@ from typing import Literal
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.db import IntegrityError, transaction
-from django.db.models import Max, Sum
+from django.db.models import Max, Q, Sum
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from adforge.retry import OutsideServiceDown
@@ -16,7 +16,7 @@ from gateway.models import ModelCall
 from gateway.types import MusicHandoff, UnusableReply
 from jobs import page
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
-from jobs.models import Job, ProducedItem, ProductPhoto, Scene, SceneStep
+from jobs.models import BROLL_FIELDS, Job, ProducedItem, ProductPhoto, Scene, SceneStep
 from jobs.notices import post_notice
 from jobs.work import (
     DECLARED_INSTEAD,
@@ -32,6 +32,7 @@ from jobs.work import (
     music_mood,
     music_prompt,
     music_seconds,
+    note_face,
     plan,
     run_checks,
     save_photos,
@@ -173,7 +174,7 @@ class ReadPage(Tool):
         if picked.urls is None:
             skipped = save_photos(job, product_page.photo_urls)
         else:
-            skipped = save_photos(job, picked.urls, merge_copies=True)
+            skipped = save_photos(job, picked.urls, merge_copies=True, faces=picked.faces)
             if skipped and not job.photos.exclude(source_url="").exists():
                 post_notice(job, _none_kept(skipped), Message.Level.PROBLEM)
                 skipped = save_photos(job, product_page.photo_urls)
@@ -231,7 +232,13 @@ class UsePhotos(Tool):
                 continue
             position += 1
             added += 1
-            ProductPhoto.objects.create(job=job, position=position, file=attached.file)
+            # The shop owner's photo was never seen by the picker, so it is noted on its own.
+            ProductPhoto.objects.create(
+                job=job,
+                position=position,
+                file=attached.file,
+                has_face=note_face(job, attached.file, attached.file),
+            )
         count = job.photos.count()
         return f"Added {added} of the shop owner's photos. The job now has {_photos(count)}."
 
@@ -270,7 +277,8 @@ class PlanAd(Tool):
             call.asked_about = "the plan"
             return (
                 f"The ad can't be planned until the shop owner answers: {decision.question} "
-                f"Why: {decision.reason} Ask them, and plan again once they have answered."
+                f"Why: {decision.reason} Ask them, and plan again once they have answered. "
+                "If they answer with a photo, add it with use_photos before planning again."
             )
         return _the_plan(job, decision.reason)
 
@@ -339,12 +347,12 @@ class LineChoice(BaseModel):
 
 class RunPlanningChecks(Tool):
     """Check the script before anything is made from it: every line, and what each scene
-    shows, against the product page, then each line against the longest a scene can last,
-    and the whole script against the target length. A line that fails is rewritten, or
-    shortened, and checked again. Hands back what to ask the shop owner when a line still
-    fails after 2 rewrites or is still too long after 2 shortenings, when the page itself
-    is unclear, or when the script runs over the target. Once they have answered, run the
-    checks again with their choices."""
+    shows, against the product page, then each line against how long its scene can last,
+    and the whole script against the target length. A line that fails is rewritten,
+    shortened or lengthened, and checked again. Hands back what to ask the shop owner when a
+    line still fails after 2 rewrites, when a line the person says to camera is still too
+    long after 2 shortenings, when the page itself is unclear, or when the script runs over
+    the target. Once they have answered, run the checks again with their choices."""
 
     name = "run_planning_checks"
 
@@ -417,7 +425,16 @@ class RunPlanningChecks(Tool):
                 scene.change_line(scene.line, "")
             # The shop owner knows their product: the line they chose isn't checked again.
             scene.fact_checked = True
-            scene.save(update_fields=["line", "shows", "status", "fact_checked"])
+            scene.save(
+                update_fields=[
+                    "line",
+                    "shortened_from",
+                    "shows",
+                    *BROLL_FIELDS,
+                    "status",
+                    "fact_checked",
+                ]
+            )
         if self.length_choice is not None:
             job.length_choice = Job.LengthChoice(self.length_choice)
             job.save(update_fields=["length_choice"])
@@ -528,12 +545,19 @@ class MakeStartingPicture(Tool):
         note = " ".join((self.note or "").split())
         steps = scene.steps.filter(kind=SceneStep.Kind.STARTING_PICTURE)
         made = (
-            steps.filter(
-                status=SceneStep.Status.FINISHED, note=note, line=scene.line, shows=scene.shows
-            )
-            .exclude(produced=None)
+            steps.filter(status=SceneStep.Status.FINISHED, note=note, **SceneStep.made_for(scene))
+            .filter(Q(way=SceneStep.Way.FROM_EXAMPLES) | Q(produced__isnull=False))
             .last()
         )
+        if made is not None and made.way == SceneStep.Way.FROM_EXAMPLES:
+            # A B-roll scene made way 3 has no picture, and the shop owner is shown none.
+            assert made.photo is not None, "a way 3 step picks its main photo"
+            return (
+                f"Scene {scene.number} is already ready for its clip from this line "
+                f"{'with this note' if note else 'with no note'}, so nothing was made or paid "
+                f"for again. Making it cost {_dollars(made.tool_call.cost_usd())}. Photo "
+                f"{made.photo.position} was used: {made.photo_reason}"
+            )
         if made is not None:
             picture = made.produced.get()
             assert made.photo is not None, "a finished starting picture was made from a photo"
@@ -680,16 +704,23 @@ class MakeClip(Tool):
                     f"scene {scene.number}'s {what} is still being made. You'll be told when "
                     "it's ready; make the clip then."
                 )
-        pictures = scene.produced.filter(
-            kind=ProducedItem.Kind.STARTING_PICTURE, step__status=SceneStep.Status.FINISHED
-        ).order_by("version")
-        if not pictures.exists():
+        # A picture step is finished with its picture made, or, for a B-roll scene made way
+        # 3, with the example pictures picked and no picture.
+        picture_steps = scene.steps.filter(
+            kind=SceneStep.Kind.STARTING_PICTURE, status=SceneStep.Status.FINISHED
+        ).filter(Q(way=SceneStep.Way.FROM_EXAMPLES) | Q(produced__isnull=False))
+        if not picture_steps.exists():
             raise Refused(
                 f"scene {scene.number} has no starting picture yet. Make its starting picture "
                 "first."
             )
-        picture = pictures.filter(step__line=scene.line, step__shows=scene.shows).last()
-        if picture is None:
+        # A line shortened to fit its clip still shows what its picture was made for.
+        made_for = SceneStep.made_for(scene)
+        del made_for["line"]
+        picture_step = picture_steps.filter(
+            line__in=[scene.line, *scene.shortened_from], **made_for
+        ).last()
+        if picture_step is None:
             raise Refused(
                 f"scene {scene.number}'s starting picture was made for an earlier line, or for "
                 "what the scene showed before, and the scene has changed since. Make its "
@@ -706,22 +737,25 @@ class MakeClip(Tool):
                 "transcribed yet, and a clip is only made from audio that was heard saying the "
                 "line. Transcribe it first."
             )
+        picture = picture_step.produced.first()
         made = (
             scene.produced.filter(
                 kind=ProducedItem.Kind.CLIP,
                 step__status=SceneStep.Status.FINISHED,
-                picture=picture,
                 made_from=audio,
+                # A clip made before clips kept their picture step has only its picture.
+                **({"picture": picture} if picture else {"step__picture_step": picture_step}),
             )
             .order_by("version")
             .last()
         )
         if made is not None:
             assert made.step is not None, "a clip is made by a scene step"
+            made_from = "from this starting picture" if picture else "for this scene"
             return (
-                f"Scene {scene.number}'s clip was already made from this starting picture and "
-                f"audio (version {made.version}), so nothing was made or paid for again. Making "
-                f"it cost {_dollars(made.step.tool_call.cost_usd())}. Scene {scene.number} is "
+                f"Scene {scene.number}'s clip was already made {made_from} and audio "
+                f"(version {made.version}), so nothing was made or paid for again. Making it "
+                f"cost {_dollars(made.step.tool_call.cost_usd())}. Scene {scene.number} is "
                 "finished."
             )
         _start_step(
@@ -732,6 +766,7 @@ class MakeClip(Tool):
             "ready.",
             made_from=audio,
             picture=picture,
+            picture_step=picture_step,
         )
         return (
             f"Started scene {scene.number}'s clip. It isn't made yet: you'll be told when it's "
@@ -815,8 +850,7 @@ def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem]:
         scene.produced.filter(
             kind=ProducedItem.Kind.CLIP,
             step__status=SceneStep.Status.FINISHED,
-            step__line=scene.line,
-            step__shows=scene.shows,
+            **SceneStep.made_for(scene, through="step__"),
         )
         .order_by("version")
         .last()
@@ -894,10 +928,11 @@ def _start_step(
     note: str = "",
     made_from: ProducedItem | None = None,
     picture: ProducedItem | None = None,
+    picture_step: SceneStep | None = None,
 ) -> None:
-    """Start a scene step in the background, from the scene's line and what it shows as they
-    stand, unless one
-    of its kind is already running for the scene: then refuse, saying `busy`."""
+    """Start a scene step in the background, from the scene's line, what it shows and its
+    B-roll labels as they stand, unless one of its kind is already running for the scene:
+    then refuse, saying `busy`."""
     if scene.steps.filter(kind=kind, status=SceneStep.Status.RUNNING).exists():
         raise Refused(busy)
     try:
@@ -906,11 +941,11 @@ def _start_step(
                 scene=scene,
                 kind=kind,
                 tool_call=call,
-                line=scene.line,
-                shows=scene.shows,
+                **SceneStep.made_for(scene),
                 note=note,
                 made_from=made_from,
                 picture=picture,
+                picture_step=picture_step,
             )
     except IntegrityError:
         # Another started it since the look above.

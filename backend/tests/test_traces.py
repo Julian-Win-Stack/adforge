@@ -146,6 +146,8 @@ def test_a_messages_work_is_one_trace_of_turns_the_tools_they_asked_for_and_mode
             read_page (tool)
               check_page (generation)
               copy_page_text (generation)
+              note_face (generation)
+              note_face (generation)
           producer turn (agent)
             produce (generation)"""
     )
@@ -367,13 +369,14 @@ def test_a_turn_answered_from_its_record_shows_as_such_with_no_cost(
     stopped, again = traces.all()
     assert (again.name, again.trace_id) == ("producer, started again", stopped.trace_id)
     assert [call.name for call in stopped.find(kind="generation")] == ["produce"]
-    (answered, checked_after, copied_after, paid) = again.find(kind="generation")
+    (answered, checked_after, copied_after, *noted, paid) = again.find(kind="generation")
     assert (answered.name, checked_after.name, copied_after.name, paid.name) == (
         "produce (answered from its record)",
         "check_page",
         "copy_page_text",
         "produce",
     )
+    assert [call.name for call in noted] == ["note_face", "note_face"]
     assert answered.value("cost_details") == {"total": 0}
     paid_before = ModelCall.objects.filter(purpose="produce").first()
     assert paid_before is not None

@@ -113,11 +113,12 @@ grading files go to `backend/media/video-eval/`, which git ignores.
 
 ```
 docker compose exec -T backend python video-eval/tuned_broll_prompts.py      # text check
-docker compose exec -T backend python video-eval/make_clips.py --arm baseline --runs 2 --dry-run
-docker compose exec -T backend python video-eval/make_clips.py --arm baseline --runs 2
 docker compose exec -T backend python video-eval/heygen_clips.py --arm heygen --runs 2
 docker compose exec -T backend python video-eval/blind.py --arms baseline,tuned,1080p,heygen
 ```
+
+`make_clips.py`, which made the Boreal-on-fal arms, was removed with the old Boreal when
+Boreal-H3 replaced it for B-roll (#97); it is in git history.
 
 Every clip is recorded in `backend/media/video-eval/runs.jsonl`: seconds asked, seconds got,
 frames, time to make, cost. Clips are made straight through the providers, never through a job.
