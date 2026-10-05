@@ -204,7 +204,7 @@ def test_a_broll_scene_planned_before_it_had_labels_still_makes_its_ad(
     ad = assemble_through_the_chat(fake_model, steps, say)
 
     assert [cut["scene"] for cut in ad.cuts] == [1, 2, 3]
-    assert len(clips_asked("motion_prompt")) == 1
+    assert len(clips_asked("prompt")) == 1
 
 
 def test_a_scene_that_shows_the_product_plays_in_its_turn(assembled: ProducedItem) -> None:

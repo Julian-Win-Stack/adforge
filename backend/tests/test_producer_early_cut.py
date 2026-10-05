@@ -20,7 +20,17 @@ from adforge import file_store
 from gateway.fake import FakeModel, turn
 from jobs.models import Job, ProducedItem
 
-from .conftest import NO_CHOICES, PLAN, HeldSteps, colour_at, drawn_in, facts_ok, loudness, video
+from .conftest import (
+    NO_CHOICES,
+    PLAN,
+    HeldSteps,
+    broll,
+    colour_at,
+    drawn_in,
+    facts_ok,
+    loudness,
+    video,
+)
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -46,7 +56,9 @@ def a_plan_showing(*shown: int, scenes: list[dict[str, Any]] | None = None) -> d
         "plan": {
             **PLAN["plan"],
             "scenes": [
-                {**scene, "shows": "Hot tea poured into the mug." if number in shown else None}
+                broll(
+                    {**scene, "shows": "Hot tea poured into the mug." if number in shown else None}
+                )
                 for number, scene in enumerate(scenes or PLAN["plan"]["scenes"], start=1)
             ],
         },
