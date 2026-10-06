@@ -1,0 +1,953 @@
+{
+ "t07-great-jones-dutch-baby": {
+  "dropped": {
+   "8": [
+    "with_others",
+    false,
+    "the pot next to a bigger pot of the same colour"
+   ],
+   "9": [
+    "with_others",
+    true,
+    "two pots nested, same colour: the plan's scene 4 shows the Dutch Baby nested inside The Dutchess"
+   ],
+   "11": [
+    "other_colour",
+    false,
+    "pink pot"
+   ],
+   "12": [
+    "other_colour",
+    true,
+    "yellow pot of food from above; shows it in use"
+   ],
+   "13": [
+    "unsure",
+    true,
+    "stew in a dark pot seen from above; colour can't be told"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "n11-our-place-always-pan": {
+  "dropped": {
+   "5": [
+    "other_colour",
+    false,
+    "blue pan"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "n13-wild-one-harness-kit": {
+  "dropped": {
+   "1": [
+    "other_colour",
+    false,
+    "pink kit on a dog"
+   ],
+   "3": [
+    "other_colour",
+    false,
+    "tan and red harness"
+   ],
+   "4": [
+    "other_colour",
+    false,
+    "blue and tan kit"
+   ],
+   "5": [
+    "not_clear",
+    true,
+    "dog wearing the lilac harness, with a green leash"
+   ],
+   "6": [
+    "other_colour",
+    false,
+    "brown harness"
+   ],
+   "7": [
+    "other_colour",
+    false,
+    "brown leash"
+   ],
+   "8": [
+    "other_colour",
+    false,
+    "brown bag holder"
+   ],
+   "9": [
+    "not_clear",
+    true,
+    "close-up of the lilac leash with water drops: shows it is waterproof"
+   ],
+   "10": [
+    "other_colour",
+    false,
+    "navy harness close-up"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "n15-cotopaxi-allpa": {
+  "dropped": {
+   "8": [
+    "not_clear",
+    true,
+    "the black bag open, packed with cubes"
+   ],
+   "9": [
+    "other_colour",
+    false,
+    "light blue bag"
+   ],
+   "10": [
+    "other_colour",
+    false,
+    "navy bag"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "t09-momofuku-chili-crunch": {
+  "dropped": {
+   "2": [
+    "clear_right_colour",
+    true,
+    "the bottle in a tray of ingredients, clearly seen"
+   ],
+   "3": [
+    "with_others",
+    false,
+    "with the brand's other sauces, text over it"
+   ],
+   "4": [
+    "not_clear",
+    false,
+    "bottle half hidden behind a printed note"
+   ],
+   "5": [
+    "with_others",
+    false,
+    "many other products on the counter"
+   ],
+   "6": [
+    "with_others",
+    false,
+    "people at a table with other sauces"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "n08-moft-stand-wallet": {
+  "dropped": {},
+  "wrong_on_list": {
+   "1": [
+    "other_colour",
+    "pink wallet, the plan's colour is pale lavender"
+   ],
+   "3": [
+    "not_clear",
+    "seen edge-on, a thin line under the weight figures"
+   ]
+  }
+ },
+ "n07-peak-design-backpack": {
+  "dropped": {
+   "25": [
+    "other_colour",
+    false,
+    "charcoal"
+   ],
+   "26": [
+    "other_size",
+    false,
+    "two black bags of different sizes side by side"
+   ],
+   "27": [
+    "other_colour",
+    false,
+    "black and charcoal two-tone"
+   ],
+   "28": [
+    "with_others",
+    false,
+    "charcoal bag with camera inserts"
+   ],
+   "29": [
+    "not_clear",
+    true,
+    "black bag open on someone's shoulder with a camera inside"
+   ],
+   "30": [
+    "other_colour",
+    false,
+    "charcoal"
+   ],
+   "31": [
+    "other_colour",
+    false,
+    "blue"
+   ],
+   "32": [
+    "other_colour",
+    false,
+    "olive"
+   ],
+   "33": [
+    "other_colour",
+    false,
+    "navy"
+   ],
+   "34": [
+    "other_colour",
+    false,
+    "tan"
+   ],
+   "35": [
+    "other_colour",
+    false,
+    "ash grey"
+   ],
+   "36": [
+    "other_colour",
+    false,
+    "burgundy"
+   ],
+   "37": [
+    "other_colour",
+    false,
+    "olive, small"
+   ],
+   "38": [
+    "other_colour",
+    false,
+    "olive, side"
+   ],
+   "39": [
+    "other_colour",
+    false,
+    "olive, open"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "t15-necessaire-body-ritual-kit": {
+  "dropped": {
+   "4": [
+    "not_clear",
+    true,
+    "smears of the three products' textures, no packaging"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "t16-mushie-teething-ring": {
+  "dropped": {},
+  "wrong_on_list": {},
+  "other": "Photos 3 and 4 show a baby; the ad must never show children."
+ },
+ "t08-mollys-suds-cleaner": {
+  "dropped": {
+   "2": [
+    "clear_right_colour",
+    true,
+    "the bottle on a toilet tank in a bathroom, clearly seen"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "t02-merit-flush-balm": {
+  "dropped": {
+   "2": [
+    "other_colour",
+    false,
+    "a deeper berry shade on the cheek; the jar isn't seen"
+   ],
+   "7": [
+    "other_colour",
+    false,
+    "a deeper berry shade on the cheek; the jar isn't seen"
+   ],
+   "8": [
+    "other_colour",
+    false,
+    "a deeper berry shade on the cheek; the jar isn't seen"
+   ],
+   "9": [
+    "other_colour",
+    false,
+    "a deeper berry shade on the cheek; the jar isn't seen"
+   ],
+   "10": [
+    "other_colour",
+    false,
+    "a deeper berry shade on the cheek; the jar isn't seen"
+   ],
+   "11": [
+    "other_colour",
+    false,
+    "a deeper berry shade on the cheek; the jar isn't seen"
+   ],
+   "12": [
+    "other_colour",
+    false,
+    "a deeper berry shade on the cheek; the jar isn't seen"
+   ],
+   "13": [
+    "other_colour",
+    false,
+    "a deeper berry shade on the cheek; the jar isn't seen"
+   ],
+   "14": [
+    "other_colour",
+    false,
+    "a deeper berry shade on the cheek; the jar isn't seen"
+   ],
+   "3": [
+    "not_clear",
+    true,
+    "pink blush on a cheek; the jar isn't seen"
+   ],
+   "4": [
+    "not_clear",
+    true,
+    "pink blush on a cheek; the jar isn't seen"
+   ],
+   "5": [
+    "not_clear",
+    true,
+    "pink blush on a cheek; the jar isn't seen"
+   ],
+   "6": [
+    "not_clear",
+    true,
+    "pink blush on a cheek; the jar isn't seen"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "t04-mack-weldon-sweatshirt": {
+  "dropped": {
+   "1": [
+    "other_colour",
+    false,
+    "light grey sweatshirt"
+   ],
+   "8": [
+    "unsure",
+    null,
+    "man in a dark sweatshirt outside a bar at night; navy or charcoal can't be told"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "n06-nomad-leather-case": {
+  "dropped": {
+   "1": [
+    "clear_right_colour",
+    true,
+    "black case on a phone, clearly seen"
+   ],
+   "2": [
+    "clear_right_colour",
+    true,
+    "black case on a phone, back, clearly seen"
+   ],
+   "3": [
+    "clear_right_colour",
+    true,
+    "black case on a phone with a MagSafe charger"
+   ],
+   "4": [
+    "clear_right_colour",
+    true,
+    "black case on a phone, back"
+   ],
+   "5": [
+    "not_clear",
+    false,
+    "phone's screen; only the case's edges"
+   ],
+   "7": [
+    "unsure",
+    true,
+    "case in a hand, worn and greyer; maybe aged leather"
+   ],
+   "8": [
+    "clear_right_colour",
+    true,
+    "black case on a phone with a MagSafe charger"
+   ],
+   "9": [
+    "unsure",
+    true,
+    "case in a hand, greyer; maybe aged leather"
+   ],
+   "12": [
+    "unsure",
+    true,
+    "case held to an ear; greyer"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "n01-glossier-boy-brow": {
+  "dropped": {
+   "2": [
+    "not_clear",
+    true,
+    "woman brushing her brow; the tube is small"
+   ],
+   "3": [
+    "not_clear",
+    false,
+    "an eye and brow, no product"
+   ],
+   "4": [
+    "not_clear",
+    false,
+    "a face, no product"
+   ],
+   "5": [
+    "not_clear",
+    true,
+    "the wand on a brow, close-up"
+   ],
+   "6": [
+    "with_others",
+    false,
+    "several tubes, other shades"
+   ],
+   "7": [
+    "with_others",
+    false,
+    "many tubes, other shades"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "t11-beardbrand-fox-hunt": {
+  "dropped": {
+   "4": [
+    "not_clear",
+    false,
+    "blurred"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "t13-gorjana-melrose-studs": {
+  "dropped": {
+   "3": [
+    "not_clear",
+    true,
+    "woman wearing the stud, small in the picture"
+   ],
+   "5": [
+    "with_others",
+    false,
+    "in a tray with other jewellery"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "t20-supergoop-unseen": {
+  "dropped": {
+   "2": [
+    "not_clear",
+    true,
+    "the clear gel on a cheek, with claims written over it"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "n05-liquid-iv-lemon-lime": {
+  "dropped": {
+   "3": [
+    "no_product",
+    false,
+    "a man drinking, claims written over it; no pack"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "n18-kong-classic": {
+  "dropped": {},
+  "wrong_on_list": {}
+ },
+ "t03-vital-proteins-collagen": {
+  "dropped": {},
+  "wrong_on_list": {}
+ },
+ "t10-maxbone-tether-toy": {
+  "dropped": {},
+  "wrong_on_list": {}
+ },
+ "t14-branch-swivel-chair": {
+  "dropped": {
+   "4": [
+    "other_colour",
+    false,
+    "cream chair at a desk"
+   ],
+   "5": [
+    "other_colour",
+    false,
+    "cream chair through a doorway"
+   ],
+   "6": [
+    "other_colour",
+    false,
+    "cream chair, a buyer's photo"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "n03-kosas-revealer": {
+  "dropped": {
+   "8": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "9": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "10": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "11": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "12": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "13": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "14": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "15": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "16": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "17": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "18": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "19": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "20": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "21": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "22": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "23": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "24": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "25": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "26": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "27": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "28": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "29": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "30": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "31": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "32": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "33": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "34": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "35": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "36": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "37": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "38": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "39": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a darker shade"
+   ],
+   "2": [
+    "unsure",
+    true,
+    "a woman holding the tube up to her face; a light shade, maybe the plan's"
+   ],
+   "3": [
+    "unsure",
+    true,
+    "a woman holding the tube up to her face; a light shade, maybe the plan's"
+   ],
+   "4": [
+    "unsure",
+    true,
+    "a woman holding the tube up to her face; a light shade, maybe the plan's"
+   ],
+   "6": [
+    "unsure",
+    true,
+    "a woman holding the tube up to her face; a light shade, maybe the plan's"
+   ],
+   "7": [
+    "unsure",
+    true,
+    "a woman holding the tube up to her face; a light shade, maybe the plan's"
+   ],
+   "5": [
+    "other_colour",
+    false,
+    "a woman holding the tube in a slightly darker shade"
+   ],
+   "40": [
+    "with_others",
+    false,
+    "three tubes of different shades"
+   ],
+   "42": [
+    "with_others",
+    false,
+    "a pile of caps, no tube"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "n02-ilia-skin-tint": {
+  "dropped": {
+   "4": [
+    "with_others",
+    false,
+    "swatches of every shade on three arms"
+   ],
+   "5": [
+    "with_others",
+    false,
+    "five faces in five shades"
+   ],
+   "6": [
+    "unsure",
+    true,
+    "the bottle held up against the sky, claims written beside it; shade can't be told"
+   ],
+   "7": [
+    "no_product",
+    false,
+    "a face and claims, no bottle"
+   ],
+   "8": [
+    "no_product",
+    false,
+    "drops of colour and claims"
+   ],
+   "9": [
+    "no_product",
+    false,
+    "four faces before and after, no bottle"
+   ],
+   "10": [
+    "with_others",
+    false,
+    "with the brand's concealer"
+   ],
+   "11": [
+    "unsure",
+    true,
+    "the bottle close-up with a claim written over it"
+   ],
+   "12": [
+    "no_product",
+    false,
+    "three people, no bottle"
+   ],
+   "13": [
+    "with_others",
+    false,
+    "compared with the brand's other sunscreen"
+   ],
+   "14": [
+    "unsure",
+    true,
+    "the bottle in a hand, 'how to use' written over it"
+   ],
+   "15": [
+    "other_colour",
+    false,
+    "a darker tint dripping down the bottle"
+   ]
+  },
+  "wrong_on_list": {
+   "2": [
+    "not_clear",
+    "a face before and after, no bottle"
+   ],
+   "3": [
+    "not_clear",
+    "a face wearing it, no bottle"
+   ]
+  }
+ },
+ "n16-buck-mason-tee": {
+  "dropped": {
+   "2": [
+    "other_colour",
+    false,
+    "black"
+   ],
+   "3": [
+    "other_colour",
+    false,
+    "navy"
+   ],
+   "4": [
+    "other_colour",
+    false,
+    "washed black"
+   ],
+   "5": [
+    "other_colour",
+    false,
+    "olive"
+   ],
+   "6": [
+    "other_colour",
+    false,
+    "brown"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "n12-fellow-stagg-kettle": {
+  "dropped": {
+   "7": [
+    "other_colour",
+    false,
+    "black base's dial"
+   ],
+   "8": [
+    "other_colour",
+    false,
+    "cream kettle"
+   ],
+   "9": [
+    "other_colour",
+    false,
+    "white base"
+   ],
+   "10": [
+    "other_colour",
+    false,
+    "black spout pouring"
+   ],
+   "11": [
+    "other_colour",
+    false,
+    "black base from above"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "n09-rokform-rugged-case": {
+  "dropped": {
+   "3": [
+    "with_others",
+    false,
+    "with a magnetic charger, features written beside it"
+   ],
+   "4": [
+    "with_others",
+    true,
+    "with a bike mount: the plan's scene 5 twists the case into a ROKFORM mount"
+   ],
+   "8": [
+    "clear_right_colour",
+    true,
+    "the case on a car's dashboard mount, clearly seen"
+   ],
+   "9": [
+    "not_clear",
+    true,
+    "the case in a pouch on a vest, top half seen"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "n10-caraway-cookware-set": {
+  "dropped": {
+   "5": [
+    "other_colour",
+    false,
+    "navy set on a table"
+   ],
+   "7": [
+    "not_clear",
+    true,
+    "close-up of the grey non-stick inside"
+   ],
+   "13": [
+    "not_clear",
+    false,
+    "tiny picture of the set in its rack"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "n19-bose-qc-ultra": {
+  "dropped": {
+   "1": [
+    "no_product",
+    false,
+    "a green, cut-out art picture"
+   ],
+   "4": [
+    "other_colour",
+    false,
+    "white headphones"
+   ],
+   "5": [
+    "other_colour",
+    false,
+    "light headphones under green light"
+   ],
+   "7": [
+    "other_colour",
+    false,
+    "white headphones"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "n14-allbirds-tree-runners": {
+  "dropped": {
+   "4": [
+    "not_clear",
+    false,
+    "the sole only"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "n20-stanley-quencher-amazon": {
+  "dropped": {
+   "3": [
+    "not_clear",
+    false,
+    "the lid and straw only"
+   ]
+  },
+  "wrong_on_list": {}
+ },
+ "n17-nalgene-32oz": {
+  "dropped": {},
+  "wrong_on_list": {}
+ },
+ "t12-smartish-gripmunk": {
+  "dropped": {},
+  "wrong_on_list": {}
+ },
+ "t17-brickell-beard-oil": {
+  "dropped": {},
+  "wrong_on_list": {}
+ },
+ "n04-rare-beauty-blush": {
+  "dropped": {},
+  "wrong_on_list": {},
+  "other": "The picker kept only 1 photo off Sephora's page."
+ }
+}
