@@ -18,7 +18,7 @@ from agents.producer import PRODUCER
 from chat import messages
 from chat.models import Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
-from gateway.types import UnusableReply
+from gateway.types import BlockedBySafetyFilter, UnusableReply
 from jobs.models import Job
 
 from .conftest import (
@@ -180,6 +180,29 @@ def test_when_the_producers_own_model_fails_the_chat_is_told_why(
     fake_model.respond("produce", turn(says="Sure. What's the link to your product's page?"))
     say("Try again")
     assert chat(api, session_id)[-1] == ("agent", "Sure. What's the link to your product's page?")
+
+
+def test_a_picture_the_safety_filter_blocks_stops_the_run_and_asks_for_another_product(
+    api: APIClient,
+    fake_model: FakeModel,
+    page_read: str,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]))
+    fake_model.respond(
+        "plan_ad", BlockedBySafetyFilter("Image processing blocked due to content policy")
+    )
+
+    say("Plan it")
+
+    assert chat(api, session_id)[-1] == (
+        "agent",
+        "I had to stop: the AI service's safety filter blocked something on this product's "
+        "page, and this version of the app can't handle that yet. Please create a new "
+        "session with a different product.",
+    )
+    assert ToolCall.objects.get(tool="plan_ad").finished
 
 
 def test_an_unexpected_error_in_the_producer_is_logged(

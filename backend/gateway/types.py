@@ -66,6 +66,11 @@ class UnusableReply(Exception):
         self.output_tokens = output_tokens
 
 
+class BlockedBySafetyFilter(Exception):
+    """The provider's safety filter refused what it was sent, such as a product photo it
+    took for something it isn't. Asking again sends the same thing, so it isn't retried."""
+
+
 class ModelProvider(Protocol):
     """Talks to one model provider. Raises OutsideServiceDown for errors worth retrying,
     and UnusableReply for an answer that was billed but can't be used."""

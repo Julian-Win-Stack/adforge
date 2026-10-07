@@ -16,7 +16,7 @@ from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.gateway import charged_to
-from gateway.types import UnusableReply
+from gateway.types import BlockedBySafetyFilter, UnusableReply
 from jobs.models import ProducedItem, Scene, SceneStep
 from jobs.work import (
     make_clip,
@@ -27,7 +27,7 @@ from jobs.work import (
 )
 
 from . import loop
-from .loop import EXPECTED_FAILURES, why_it_failed
+from .loop import BLOCKED, EXPECTED_FAILURES, why_it_failed
 from .producer import PRODUCER
 
 logger = logging.getLogger(__name__)
@@ -40,6 +40,7 @@ def run_producer(session_id: str) -> None:
     """Let the producer work in the session until it replies. If it can't carry on, the
     chat is told why."""
     session = Session.objects.get(pk=session_id)
+    try_again = " Send a message to try again."
     beating = _beating(
         settings.PRODUCER_HEARTBEAT_SECONDS,
         lambda: Session.objects.filter(pk=session_id).update(producer_seen_at=timezone.now()),
@@ -54,6 +55,9 @@ def run_producer(session_id: str) -> None:
                 session_id, loop.run(PRODUCER, session, woken_by=_woken_by(session))
             ):
                 pass
+    except BlockedBySafetyFilter:
+        why = BLOCKED
+        try_again = ""
     except UnusableReply as error:
         why = f"my AI model's answer couldn't be used ({error})"
     except OutsideServiceDown as error:
@@ -70,7 +74,7 @@ def run_producer(session_id: str) -> None:
         messages.add(
             session,
             role=Message.Role.AGENT,
-            text=f"I had to stop: {why}. Send a message to try again.",
+            text=f"I had to stop: {why}.{try_again}",
         )
         Session.objects.filter(pk=session_id).update(producer_running=False)
 

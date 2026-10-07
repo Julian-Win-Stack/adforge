@@ -31,6 +31,7 @@ from gateway.gateway import (
     take_turn,
 )
 from gateway.types import (
+    BlockedBySafetyFilter,
     ClipFailed,
     Happened,
     Said,
@@ -48,7 +49,20 @@ logger = logging.getLogger(__name__)
 
 # What outside work is known to fail with, and says why well enough for the agent. Anything
 # else is a bug, whose details go to the server log.
-EXPECTED_FAILURES = (UnusableReply, OutsideServiceDown, UnreadableImage, ClipFailed)
+EXPECTED_FAILURES = (
+    UnusableReply,
+    OutsideServiceDown,
+    UnreadableImage,
+    ClipFailed,
+    BlockedBySafetyFilter,
+)
+
+# Asking again sends the same thing, so the run stops and the shop owner starts afresh.
+BLOCKED = (
+    "the AI service's safety filter blocked something on this product's page, and this "
+    "version of the app can't handle that yet. Please create a new session with a different "
+    "product"
+)
 
 
 class Refused(Exception):
@@ -167,7 +181,8 @@ def _work(agent: Agent, session: Session) -> int:
 
 def _settle(agent: Agent, call: ToolCall) -> None:
     """Run the tool a checkpoint asked for, unless it is past the limit, and keep what it
-    handed back."""
+    handed back. A call the safety filter blocked is kept as failed, then stops the run."""
+    blocked: BlockedBySafetyFilter | None = None
     with tracing.tool(call.tool, call.arguments) as traced:
         # Kept before the tool runs, for the scene steps it starts to find. A tool run again
         # after a restart is traced again, and the steps it starts then go inside that run.
@@ -182,10 +197,16 @@ def _settle(agent: Agent, call: ToolCall) -> None:
                 "and that sending a message lets you carry on."
             )
         else:
-            call.result = _run(agent, call)
+            try:
+                call.result = _run(agent, call)
+            except BlockedBySafetyFilter as error:
+                blocked = error
+                call.result = f"Failed: {why_it_failed(error, 'the tool')}"
         tracing.handed_back(traced, call.result, **_level(call.result))
     call.finished_at = timezone.now()
     call.save(update_fields=["result", "asked_about", "finished_at"])
+    if blocked is not None:
+        raise blocked
 
 
 def _level(result: str) -> dict[str, str]:
@@ -212,6 +233,8 @@ def _run(agent: Agent, call: ToolCall) -> str:
             return given.run(call)
     except Refused as refused:
         return f"Refused: {refused} Nothing was done."
+    except BlockedBySafetyFilter:
+        raise  # It stops the whole run, once the call is kept as failed.
     except Exception as error:
         if not isinstance(error, EXPECTED_FAILURES):
             logger.exception("The %s tool failed for checkpoint %s", call.tool, call.pk)
@@ -227,6 +250,8 @@ def why_it_failed(error: Exception, stopped: str) -> str:
         return f"an outside service stayed down after several tries ({error})."
     if isinstance(error, UnreadableImage):
         return f"{error}. Only {IMAGE_TYPE_NAMES} pictures can be shown to a model."
+    if isinstance(error, BlockedBySafetyFilter):
+        return f"{BLOCKED}."
     if isinstance(error, ClipFailed):
         return f"the video model couldn't make the clip ({error})."
     return f"an unexpected error stopped {stopped}. The details are in the server log."

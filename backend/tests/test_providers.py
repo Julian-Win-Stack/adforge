@@ -42,7 +42,7 @@ from gateway.heygen_adapter import HeyGenProvider
 from gateway.inworld_adapter import InworldProvider
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
-from gateway.types import ClipFailed, Word
+from gateway.types import BlockedBySafetyFilter, ClipFailed, Word
 
 from .conftest import picture
 
@@ -1474,3 +1474,25 @@ def test_without_both_azure_settings_openai_is_used() -> None:
     environ = {"OPENAI_API_KEY": "sk-openai", "AZURE_OPENAI_KEY": "azure-key"}
 
     assert openai_account(environ) == ("sk-openai", "")
+
+
+def test_a_call_the_safety_filter_blocks_is_said_to_be_blocked(
+    httpserver: HTTPServer, settings: Settings
+) -> None:
+    settings.OPENAI_API_KEY = "sk-test"
+    settings.OPENAI_BASE_URL = httpserver.url_for("/v1")
+    httpserver.expect_request("/v1/images/generations", method="POST").respond_with_json(
+        {
+            "error": {
+                "message": "Image processing blocked due to content policy violation.",
+                "type": "invalid_request_error",
+                "param": "input",
+                "code": "content_policy_violation",
+            }
+        },
+        status=400,
+    )
+
+    with use_model(OpenAIProvider()), pytest.raises(BlockedBySafetyFilter, match="blocked"):
+        draw_picture(job=None, purpose="draw_person", prompt="A man's stubbled neck.")
+    assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
