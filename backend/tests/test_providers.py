@@ -21,6 +21,7 @@ from werkzeug import Request, Response
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
+from adforge.settings import openai_account
 from gateway import gateway
 from gateway.creatify_adapter import CreatifyProvider
 from gateway.elevenlabs_adapter import ElevenLabsProvider
@@ -1434,3 +1435,22 @@ def test_a_talking_clip_is_made_by_heygen_and_a_b_roll_clip_by_boreal_h3_on_crea
         ("collect_talking_clip", "heygen", "heygen/avatar-iv"),
         ("collect_broll_clip", "creatify", "creatify/boreal-h3"),
     ]
+
+
+def test_openai_models_are_reached_through_azure_when_its_key_and_address_are_set() -> None:
+    environ = {
+        "OPENAI_API_KEY": "sk-openai",
+        "AZURE_OPENAI_KEY": "azure-key",
+        "AZURE_OPENAI_BASE_URL": "https://example.openai.azure.com/openai/v1/",
+    }
+
+    assert openai_account(environ) == (
+        "azure-key",
+        "https://example.openai.azure.com/openai/v1/",
+    )
+
+
+def test_openai_models_are_reached_through_openai_without_a_full_azure_setup() -> None:
+    environ = {"OPENAI_API_KEY": "sk-openai", "AZURE_OPENAI_KEY": "azure-key"}
+
+    assert openai_account(environ) == ("sk-openai", "")
