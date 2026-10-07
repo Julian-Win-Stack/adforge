@@ -100,14 +100,17 @@ CELERY_BEAT_SCHEDULE = {
 
 
 def openai_account(environ: Mapping[str, str]) -> tuple[str, str]:
-    """The key and address for OpenAI's models. Our Azure copy of them wins when both its key
-    and its address are set; it serves the same model names."""
-    if environ.get("AZURE_OPENAI_KEY") and environ.get("AZURE_OPENAI_BASE_URL"):
-        return environ["AZURE_OPENAI_KEY"], environ["AZURE_OPENAI_BASE_URL"]
+    """The key and address for OpenAI's models. Our Azure copy of them, which serves the same
+    model names, wins when both its key and its address are set. An empty address means
+    OpenAI's own servers."""
+    azure_key = environ.get("AZURE_OPENAI_KEY", "")
+    azure_address = environ.get("AZURE_OPENAI_BASE_URL", "")
+    if azure_key and azure_address:
+        return azure_key, azure_address
     return environ.get("OPENAI_API_KEY", ""), environ.get("OPENAI_BASE_URL", "")
 
 
-# An empty address means OpenAI's own servers. Tests point it at a local stand-in.
+# Tests point the address at a local stand-in.
 OPENAI_API_KEY, OPENAI_BASE_URL = openai_account(os.environ)
 
 # Firecrawl reads product pages in a real browser. Empty means the page is read with a plain

@@ -1437,20 +1437,40 @@ def test_a_talking_clip_is_made_by_heygen_and_a_b_roll_clip_by_boreal_h3_on_crea
     ]
 
 
-def test_openai_models_are_reached_through_azure_when_its_key_and_address_are_set() -> None:
-    environ = {
-        "OPENAI_API_KEY": "sk-openai",
-        "AZURE_OPENAI_KEY": "azure-key",
-        "AZURE_OPENAI_BASE_URL": "https://example.openai.azure.com/openai/v1/",
-    }
-
-    assert openai_account(environ) == (
-        "azure-key",
-        "https://example.openai.azure.com/openai/v1/",
+def test_with_azure_set_up_a_portrait_is_drawn_by_the_same_model_on_azure(
+    httpserver: HTTPServer, settings: Settings
+) -> None:
+    settings.OPENAI_API_KEY, settings.OPENAI_BASE_URL = openai_account(
+        {
+            "OPENAI_API_KEY": "sk-openai",
+            "AZURE_OPENAI_KEY": "azure-key",
+            "AZURE_OPENAI_BASE_URL": httpserver.url_for("/openai/v1/"),
+        }
+    )
+    portrait = picture(720, 1280, (180, 150, 120))
+    httpserver.expect_oneshot_request(
+        "/openai/v1/images/generations",
+        method="POST",
+        headers={"Authorization": "Bearer azure-key"},
+        json={
+            "model": "gpt-image-2.5-sunburst",
+            "prompt": "A potter in her thirties in a linen apron.",
+            "size": "720x1280",
+            "quality": "high",
+        },
+    ).respond_with_json(
+        {"created": 1_789_849_905, "data": [{"b64_json": base64.b64encode(portrait).decode()}]}
     )
 
+    with use_model(OpenAIProvider()):
+        key = draw_picture(
+            job=None, purpose="draw_person", prompt="A potter in her thirties in a linen apron."
+        )
 
-def test_openai_models_are_reached_through_openai_without_a_full_azure_setup() -> None:
+    assert file_store.read(key) == portrait
+
+
+def test_without_both_azure_settings_openai_is_used() -> None:
     environ = {"OPENAI_API_KEY": "sk-openai", "AZURE_OPENAI_KEY": "azure-key"}
 
     assert openai_account(environ) == ("sk-openai", "")
