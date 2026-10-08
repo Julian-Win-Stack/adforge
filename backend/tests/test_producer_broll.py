@@ -20,7 +20,6 @@ from jobs.scenes import (
     BROLL_KIND_RULES,
     BROLL_PICTURE_INSTRUCTIONS,
     BROLL_SHARED_RULES,
-    BROLL_WAY_3_RULES,
 )
 
 from .conftest import (
@@ -388,9 +387,9 @@ def test_the_model_planning_the_picture_is_given_the_shared_prompt_rules(rule: s
     assert rule in BROLL_SHARED_RULES
 
 
-# Rules Julian's grades proved, told whichever way the scene is made
+# Rules Julian's grades proved
 # (decisions/agreed-vs-built-2026-10-08.md rows 1, 5, 7, 10, 17).
-@pytest.mark.parametrize("rules", [BROLL_SHARED_RULES, BROLL_WAY_3_RULES], ids=["way 1", "way 3"])
+@pytest.mark.parametrize("rules", [BROLL_SHARED_RULES], ids=["way 1"])
 @pytest.mark.parametrize(
     "rule",
     [
@@ -430,7 +429,7 @@ def test_the_model_writing_the_prompts_is_told_the_proven_rules(rules: str, rule
     assert rule in rules
 
 
-@pytest.mark.parametrize("rules", [BROLL_SHARED_RULES, BROLL_WAY_3_RULES], ids=["way 1", "way 3"])
+@pytest.mark.parametrize("rules", [BROLL_SHARED_RULES], ids=["way 1"])
 @pytest.mark.parametrize(
     "dropped",
     [
