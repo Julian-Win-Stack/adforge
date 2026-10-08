@@ -375,6 +375,13 @@ def test_the_planner_is_told_how_to_plan_each_broll_scene(
     # Audit row 11: the second way's clip is made from the first's, once code knows the pair.
     assert "mark the second as the second way of use" in instructions
     assert "The person can name the other steps in a talking scene." in instructions
+    # Left after the rule above (free check, 08 Oct): a strap clipped on then the bag carried
+    # (#5), a curler turned then glided (N5), straps slipped on then a walk (N4).
+    assert "is a movement of its own: a scene films it or what comes after it" in instructions
+    assert "film the product already set up that way" in instructions
+    # Two end states are two clips with a cut (graded #5 bag, PERFECT); #12's drop ended on
+    # the phone face down, its unharmed screen never seen.
+    assert "give what's seen after it its own B-roll scene right after" in instructions
     # The ad's colour, and the one photo a scene may never need: items 43 and 44 of
     # docs/broll-picture-logic.md.
     assert (
@@ -438,7 +445,11 @@ def test_the_planner_is_told_to_ask_for_a_before_and_after_nobody_could_picture(
     # N3's shower cleaner was planned with a result nobody could picture and
     # no photo of it, so the video guessed; a dirty toilet scrubbed clean needed no photo.
     assert "in only three cases" in instructions
-    assert "isn't common knowledge" in instructions
+    # N3's soap scum was judged common knowledge, so it never asked: what decides is whether
+    # a camera can see it, not whether people know the word.
+    assert "a thin film, haze, cloudiness or water spots" in instructions
+    assert "even when everyone knows the word" in instructions
+    assert "a coloured mark anyone sees at a glance" in instructions
     assert "of it before and after" in instructions
     # Only a photo shows it: a page that says "removes the film" still leaves its look to a
     # guess, which is how N3's result was invented.

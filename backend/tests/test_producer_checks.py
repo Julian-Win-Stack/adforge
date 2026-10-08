@@ -606,6 +606,7 @@ def test_a_rewrite_is_told_a_broll_scene_films_one_action_as_the_planner_is(
     assert "A B-roll scene films one action" in instructions
     assert "film only the main step" in instructions
     assert "even for steps that flow into each other" in instructions
+    assert "is a movement of its own: a scene films it or what comes after it" in instructions
     # A rewrite changes one scene: it can't add a talking scene for the other steps.
     assert "name the other steps" not in instructions
 

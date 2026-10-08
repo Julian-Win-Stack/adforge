@@ -39,7 +39,9 @@ claims. When the page or the line lists steps for using the product, film only t
 step, the one that shows it working, such as the cloth wiping a stain away rather than \
 spraying, waiting and rinsing, and write that B-roll line about that step. This holds \
 even for steps that flow into each other with no pause: the video skips the middle of a \
-chain of movements, so film only the main one.
+chain of movements, so film only the main one. Putting the product on or taking it off, \
+attaching, fitting, adjusting or turning it is a movement of its own: a scene films it or \
+what comes after it, never both.
 """
 
 PLAN_INSTRUCTIONS = (
@@ -128,8 +130,12 @@ what is shown. A B-roll line has at least about 10 words.
 The person can name the other steps in a talking scene. When a line claims the product \
 can be used in two different ways that can't be seen at once, such as a jacket worn on \
 either side, give each way its own B-roll scene, back to back, each with its own line \
-and its one action, and mark the second as the second way of use. Never more than two \
-scenes for one such claim. Never show before \
+and its one action, and mark the second as the second way of use; for each way, film the \
+product already set up that way, never the change from one way to the other. Never more \
+than two scenes for one such claim. A scene's result is what the camera sees when its one \
+movement ends. When the line's proof needs something seen after that, such as a dropped \
+item turned over to show it's unharmed, give what's seen after it its own B-roll scene \
+right after, with its own line and its one movement. Never show before \
 and after pictures of bodies or skin, a screen whose content you'd have to invent, a \
 result the page doesn't state, or parts of the product no photo \
 shows. How much of the ad is B-roll depends on the kind of product. As a guide (B-roll \
@@ -184,12 +190,14 @@ product isn't clearly seen, such as blush on a cheek, is enough.
 nor the shop owner says how it is used. Ask even if you could plan it only at its best: \
 an ad for such a product shows it doing its job. A product that doesn't do a job you can \
 see, such as a bag, needs no "how to use": never ask for one.
-- The scene ends on a result you can see, but what the thing looks like before and \
-after isn't common knowledge and no photo shows it, so the video would have to guess, \
-such as a cleaner that removes a build-up most people never notice, or a coating that \
-keeps a mirror from fogging. The page naming the result isn't enough: the video would \
-still guess how it looks. A result anyone can picture, such as a greasy pan wiped clean \
-or a muddy floor mopped, needs nothing more: never ask about it.
+- The scene ends on a result you can see, what the product removes or prevents is a thin \
+film, haze, cloudiness or water spots on a surface such as glass, tile, a mirror or \
+chrome, and no photo shows that surface before and after. Ask even when everyone knows the \
+word: a camera barely sees a thin film, so the video would guess how it looks and how much \
+changes. The page naming the result isn't enough: the video would still guess how it \
+looks. When what it removes is a coloured mark anyone sees at a glance, such as a stain, a \
+ring, rust, mud, grease or dirt, never ask: show that mark, even if the page also names a \
+film.
 Then say in plain words what's missing and offer two answers: attach a photo of it (for \
 a missing "how to use", of the product being used; for a result, of it before and \
 after), or go ahead without one, and you'll \
