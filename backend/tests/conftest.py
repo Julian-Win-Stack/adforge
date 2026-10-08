@@ -156,6 +156,19 @@ def facts_ok(*scenes: int) -> dict[str, Any]:
 # The mug plan's fact check, when all three lines match the page.
 FACTS_OK = facts_ok(1, 2, 3)
 
+# A B-roll starting picture's check, when it finds nothing wrong.
+PICTURE_OK: dict[str, Any] = {
+    check: {"passes": True, "problem": None}
+    for check in (
+        "real_objects",
+        "matches_the_shop_photo",
+        "label_turns_with_the_product",
+        "shows_the_before",
+        "no_face",
+        "prompts_agree",
+    )
+}
+
 
 def a_plan_with(**changes: Any) -> dict[str, Any]:
     """PLAN with some of its plan's fields replaced."""
@@ -199,6 +212,7 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("copy_page_text", copy_every_line)
     fake.answer_unscripted("pick_photos", lambda _: SHAMPOO_PICKED)
     fake.answer_unscripted("note_face", lambda _: NO_FACE)
+    fake.answer_unscripted("check_starting_picture", lambda _: PICTURE_OK)
     with use_model(fake):
         yield fake
 

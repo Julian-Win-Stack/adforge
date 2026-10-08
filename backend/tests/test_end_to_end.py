@@ -249,6 +249,8 @@ def test_nothing_in_the_whole_flow_is_paid_for_twice(ad_made_through_the_chat: N
         "make_starting_picture",
         "choose_broll_picture",
         "make_starting_picture",
+        # Checked before any clip is paid for.
+        "check_starting_picture",
         "choose_starting_picture",
         "make_starting_picture",
         "speak_line",
@@ -274,7 +276,7 @@ def test_the_shop_owner_is_never_told_which_scenes_are_b_roll(
     assert [text for text in told if "b-roll" in text.lower()] == []
 
 
-# --- An ad with both ways of making a B-roll scene ----------------------------------------------
+# --- An ad with a B-roll scene that needs a photo of its own ------------------------------------
 
 # The fake voice says 2 words a second. Scene 2's 8 words take 4 seconds, so its clip is
 # asked for 5; scene 3's 11 take 5.5, so its clip is asked for 6.
@@ -290,9 +292,9 @@ BOTH_WAYS: dict[str, Any] = {
         **PLAN["plan"],
         "scenes": [
             {"line": "Meet the Stoneware Mug.", "overlay": "Kiln & Co"},
-            # Way 1: nothing it shows is missing from the main photo.
+            # Nothing it shows is missing from the main photo.
             broll({"line": TURNING, "shows": TURNED}),
-            # Way 3: it needs the handle from the side.
+            # It needs the handle from the side.
             broll(
                 {
                     "line": HANDLE,
@@ -305,27 +307,24 @@ BOTH_WAYS: dict[str, Any] = {
     },
 }
 
-# How scene 3's prompt is written: a job for each example picture, and what happens.
+# How scene 3's prompts are written.
+HANDLE_PROMPT = "A hand lifts the mug by its handle on a sunny workbench, turning it to the side."
 HANDLE_PICTURES: dict[str, Any] = {
     "photo": 1,
     "photo_reason": "The front of the mug shows its glaze.",
-    "image_1": {"job": "the mug; keep its glaze exactly", "ignore": None},
-    "image_2": {"job": "only the handle's shape", "ignore": None},
-    "action": "A hand lifts the mug by its handle on a sunny workbench, turning it to the side.",
+    "prompt": "A hand about to lift the mug by its handle (Image 2) on a sunny workbench.",
     "prompt_reason": "It shows the handle the line is about.",
+    "motion_prompt": HANDLE_PROMPT,
+    "motion_prompt_reason": "Lifting it turns the handle to the camera.",
 }
-HANDLE_PROMPT = (
-    "Image 1 is the mug; keep its glaze exactly. Image 2 is only the handle's shape. A hand "
-    "lifts the mug by its handle on a sunny workbench, turning it to the side."
-)
 
 
 @pytest.fixture
-def ad_made_both_ways(
+def ad_made_with_needs(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], steps: HeldSteps
 ) -> None:
-    """A chat that took the mug's 4-scene ad, with a way 1 and a way 3 B-roll scene, from the
-    shop owner's first message to the finished ad."""
+    """A chat that took the mug's 4-scene ad, with two B-roll scenes, one of which needs a
+    photo of the handle, from the shop owner's first message to the finished ad."""
 
     def chatting(message: str, *answer: Turn | Callable[[], Turn]) -> None:
         chat_and_run(fake_model, say, steps, message, *answer)
@@ -342,8 +341,8 @@ def ad_made_both_ways(
         turn(says="Here's your script. Shall I make it?"),
     )
 
-    # The talking scenes' pictures, then scene 2's (way 1) and scene 3's (way 3) prompts, in
-    # the order the steps run.
+    # The talking scenes' pictures, then scene 2's and scene 3's prompts, in the order the
+    # steps run.
     fake_model.respond("choose_starting_picture", TALKING, TALKING)
     fake_model.respond("choose_broll_picture", SHOWING, HANDLE_PICTURES)
     chatting(
@@ -366,31 +365,31 @@ def ad_made_both_ways(
     chatting("Put it together", turn(calls=[("assemble_ad", {})]), turn(says="Here's your ad!"))
 
 
-def test_way_1_sends_its_starting_picture_and_way_3_its_example_pictures(
-    ad_made_both_ways: None,
+def test_every_b_roll_clip_is_sent_its_starting_picture_and_no_shop_photo(
+    ad_made_with_needs: None,
 ) -> None:
     job = Job.objects.get()
-    (way_1_picture,) = job.produced.filter(kind="starting_picture", scene__number=2)
+    pictures = dict(
+        job.produced.filter(kind="starting_picture").values_list("scene__number", "file")
+    )
     asked = [
         (handoff["starting_picture"], handoff["example_pictures"], handoff["seconds"])
         for handoff in handoffs("make_broll_clip")
     ]
-    assert asked == [
-        (way_1_picture.file, [], 5),
-        (None, [job.photos.get(position=1).file, job.photos.get(position=2).file], 6),
-    ]
+    assert asked == [(pictures[2], [], 5), (pictures[3], [], 6)]
     # The clip's look and real length first, then the prompt as written.
     assert handoffs("make_broll_clip")[1]["prompt"] == (
         "A 6-second handheld phone video, casual, not cinematic, real-time speed. " + HANDLE_PROMPT
     )
-    # Way 3 makes no picture: only the talking scenes and scene 2 have one.
-    assert sorted(
-        job.produced.filter(kind="starting_picture").values_list("scene__number", flat=True)
-    ) == [1, 2, 4]
+    # The handle's photo went to the picture model, after the main photo.
+    assert handoffs("make_starting_picture")[2]["pictures"] == [
+        job.photos.get(position=1).file,
+        job.photos.get(position=2).file,
+    ]
 
 
 def test_each_b_roll_clip_plays_whole_while_the_next_line_is_said_over_its_end(
-    ad_made_both_ways: None,
+    ad_made_with_needs: None,
 ) -> None:
     (ad,) = Job.objects.get().produced.filter(kind="finished_ad")
     # Scene 2's 5-second clip starts after scene 1's 2 seconds and plays whole. Scene 3's line
@@ -415,7 +414,9 @@ def test_each_b_roll_clip_plays_whole_while_the_next_line_is_said_over_its_end(
     assert loudness(heard, "voice", between=(6.2, 6.8)) == pytest.approx(-17, abs=1)
 
 
-def test_the_ad_with_both_ways_pays_for_each_thing_once(ad_made_both_ways: None) -> None:
+def test_the_ad_with_a_scene_needing_a_photo_pays_for_each_thing_once(
+    ad_made_with_needs: None,
+) -> None:
     assert paid_for() == [
         "check_page",
         "copy_page_text",
@@ -431,8 +432,11 @@ def test_the_ad_with_both_ways_pays_for_each_thing_once(ad_made_both_ways: None)
         "make_starting_picture",
         "choose_broll_picture",
         "make_starting_picture",
-        # Scene 3, way 3: its prompt is written, and no picture is made.
+        # Each B-roll picture is checked before any clip is paid for.
+        "check_starting_picture",
         "choose_broll_picture",
+        "make_starting_picture",
+        "check_starting_picture",
         "choose_starting_picture",
         "make_starting_picture",
         "speak_line",

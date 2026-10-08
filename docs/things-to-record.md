@@ -76,3 +76,13 @@ The pattern: you started with a simple download, moved to a real browser (Firecr
 ----------------------------------------
 
 
+
+
+----------------------------------------
+
+Every B-roll scene now gets a drawn start picture, and the picture is checked before we pay for video (2026-10-08).
+
+Before, a scene that "needed" something the main photo couldn't show skipped the start picture and sent the shop photos straight to the video model. The photos' own scenes leaked into the clip (#12 failed that way; drawn, it passed), and a wrong "need" on Lemi Shine dropped the picture and the video model invented a dirty tile.
+Now the extra photos go to the picture model instead, each with one job ("only how the tea's colour looks").
+The check looks at the start picture beside the shop photo: real object shapes, product matches the photo, label turns with the product, the "before" is shown, no face when there should be none, and no clashing orders in the prompts. A picture that fails is redrawn from fixed prompts, at most twice. A redraw costs cents; a bad clip costs about $0.40.
+GIF shop photos are turned into PNG before drawing, because the picture model refuses GIFs (BrüMate can cooler).

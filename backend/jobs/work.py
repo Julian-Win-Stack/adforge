@@ -47,7 +47,6 @@ from gateway.types import (
     LEAST_BROLL_SECONDS,
     LEAST_CLIP_SECONDS,
     MOST_BROLL_SECONDS,
-    MOST_EXAMPLE_PICTURES,
     BrollClipHandoff,
     ClipFailed,
     ClipHandoff,
@@ -95,6 +94,15 @@ from .checks import (
 )
 from .models import BROLL_FIELDS, Job, ProducedItem, ProductPhoto, Scene, SceneStep
 from .notices import post_notice
+from .picture_check import (
+    MOST_REDRAWS,
+    REDO_RULES,
+    STARTING_PICTURE_CHECK,
+    BrollRedoHandoff,
+    Redo,
+    StartingPictureCheck,
+    StartingPictureCheckHandoff,
+)
 from .planning import (
     PLAN_INSTRUCTIONS,
     ChatMessage,
@@ -105,20 +113,19 @@ from .planning import (
 from .scenes import (
     BROLL_PICTURE_INSTRUCTIONS,
     MAIN_PHOTO_JOB,
+    MOST_NEEDS_PHOTOS,
     PORTRAIT_JOB,
     STARTING_PICTURE_INSTRUCTIONS,
-    BrollExamplesHandoff,
     BrollPictureChoice,
     BrollPictureHandoff,
     BrollPromptHandoff,
-    ExamplePicture,
+    NeedPhoto,
     PictureJob,
     StartingPictureChoice,
     StartingPictureHandoff,
-    broll_examples_choice_for,
     broll_prompt_instructions,
     broll_video_prompt,
-    example_pictures,
+    need_job,
     photos_for_needs,
     pose_for,
     starting_picture_choice_for,
@@ -1394,7 +1401,7 @@ def _keep_music(job: Job, file: str, prompt: str, seconds: int) -> ProducedItem:
     )
 
 
-def make_starting_picture(step: SceneStep) -> ProducedItem | None:
+def make_starting_picture(step: SceneStep) -> ProducedItem:
     """Make the scene's starting picture: a model picks the product photo that suits the
     line best and writes the prompt, then the picture is made from the portrait and that
     photo. For a scene that shows the product rather than the person talking, the picture
@@ -1407,9 +1414,6 @@ def make_starting_picture(step: SceneStep) -> ProducedItem | None:
     made = step.produced.first()
     if made is not None:
         return made
-    if step.broll_kind and step.needs:
-        _pick_example_pictures(step)
-        return None
     if step.broll_kind:
         return _make_broll_picture(step)
     # A talking scene, or a B-roll one planned before the plan gave B-roll scenes their
@@ -1478,46 +1482,115 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
     numbers = [photo.position for photo in photos]
     images = [Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos]
     pictures = [PictureJob(image=1, job=MAIN_PHOTO_JOB)]
+    # What the scene needs that the main photo can't show comes from a photo of its own,
+    # sent to the picture model after the main photo, never to the video model: sent to it,
+    # a shop photo's own scene leaked into the clip (graded #12).
+    faces = {photo.position: photo.has_face for photo in job.photos.all()}
+    needs = photos_for_needs(step.needs, faces, MOST_NEEDS_PHOTOS)
+    for need in needs:
+        need_photo = job.photos.get(position=need.photo)
+        images.append(Image(label=f"Photo {need.photo}", key=need_photo.file))
+        pictures.append(PictureJob(image=len(pictures) + 1, job=need_job(need)))
     portrait = None
     if step.person_shown == Scene.PersonShown.HAS_FACE:
         portrait = latest(job, ProducedItem.Kind.PORTRAIT)
         assert portrait is not None, "the tool refuses a scene whose person isn't made"
         images.append(Image(label="The portrait", key=portrait.file))
-        pictures.append(PictureJob(image=2, job=PORTRAIT_JOB))
-    choice = call_model(
-        job=job,
-        purpose="choose_broll_picture",
-        instructions=broll_prompt_instructions(step.broll_kind),
-        handoff=BrollPromptHandoff(
-            scene=scene.number,
-            line=step.line,
-            script=list(job.scenes.values_list("line", flat=True)),
-            shows=step.shows,
-            broll_kind=step.broll_kind,
-            person_shown=step.person_shown,
-            usage=step.usage,
-            result=step.broll_result,
-            pictures=pictures,
-            product_colour=job.product_colour,
-            colour_photos=numbers,
-            person_looks=job.person_looks,
-            note=step.note or None,
-            conversation=_conversation(job, until=step.started_at),
-        ),
-        output=starting_picture_choice_for(numbers, BrollPictureChoice),
-        images=images,
-        pay_once=True,
+        pictures.append(PictureJob(image=len(pictures) + 1, job=PORTRAIT_JOB))
+    handoff = BrollPromptHandoff(
+        scene=scene.number,
+        line=step.line,
+        script=list(job.scenes.values_list("line", flat=True)),
+        shows=step.shows,
+        broll_kind=step.broll_kind,
+        person_shown=step.person_shown,
+        usage=step.usage,
+        result=step.broll_result,
+        pictures=pictures,
+        product_colour=job.product_colour,
+        colour_photos=numbers,
+        person_looks=job.person_looks,
+        note=step.note or None,
+        conversation=_conversation(job, until=step.started_at),
     )
-    step.photo = job.photos.get(position=choice.photo)
+    # Pictures drawn for the step before the worker stopped, oldest first, so a step run
+    # again pays for none of them twice.
+    drawn = _pictures_drawn(step)
+    redo: tuple[Redo, str] | None = None
+    for tries in range(MOST_REDRAWS + 1):
+        instructions = broll_prompt_instructions(step.broll_kind)
+        asked: BrollPromptHandoff = handoff
+        shown = images
+        if redo is not None:
+            # Told what was wrong with the last picture, and shown it.
+            instructions = f"{instructions}\n{REDO_RULES}"
+            asked = BrollRedoHandoff(**dict(handoff), redo=redo[0])
+            shown = [*images, Image(label="The last picture", key=redo[1])]
+        choice = call_model(
+            job=job,
+            purpose="choose_broll_picture",
+            instructions=instructions,
+            handoff=asked,
+            output=starting_picture_choice_for(numbers, BrollPictureChoice),
+            images=shown,
+            pay_once=True,
+        )
+        _plan_broll_picture(step, choice, pictures, needs, portrait is not None)
+        sent = [
+            job.photos.get(position=choice.photo).file,
+            *(job.photos.get(position=need.photo).file for need in needs),
+            *([portrait.file] if portrait else []),
+        ]
+        file = (
+            drawn[tries]
+            if tries < len(drawn)
+            else edit_picture(
+                job=job, purpose="make_starting_picture", prompt=choice.prompt, pictures=sent
+            )
+        )
+        problems = _check_broll_picture(step, choice, file)
+        if not problems:
+            break
+        redo = (
+            Redo(
+                picture_prompt=choice.prompt, video_prompt=choice.motion_prompt, problems=problems
+            ),
+            file,
+        )
+    return ProducedItem.objects.create(
+        job=job,
+        scene=scene,
+        step=step,
+        kind=ProducedItem.Kind.STARTING_PICTURE,
+        version=_next_version(scene, ProducedItem.Kind.STARTING_PICTURE),
+        file=file,
+    )
+
+
+def _plan_broll_picture(
+    step: SceneStep,
+    choice: BrollPictureChoice,
+    pictures: list[PictureJob],
+    needs: list[NeedPhoto],
+    portrait: bool,
+) -> None:
+    """Keep what the model writing a B-roll scene's prompts chose with the step: the main
+    photo, both prompts and each picture sent with its job."""
+    step.photo = step.scene.job.photos.get(position=choice.photo)
     step.photo_reason = choice.photo_reason
     step.prompt = choice.prompt
     step.prompt_reason = choice.prompt_reason
     step.motion_prompt = choice.motion_prompt
     step.way = SceneStep.Way.FROM_PICTURE
-    main_photo, *rest = (picture.model_dump() for picture in pictures)
+    main_photo, *need_photos = (picture.model_dump() for picture in pictures)
+    portrait_sent = [need_photos.pop()] if portrait else []
     step.pictures_sent = [
         {**main_photo, "photo": choice.photo},
-        *({**picture, "portrait": True} for picture in rest),
+        *(
+            {**picture, "photo": need.photo}
+            for picture, need in zip(need_photos, needs, strict=True)
+        ),
+        *({**picture, "portrait": True} for picture in portrait_sent),
     ]
     step.save(
         update_fields=[
@@ -1530,98 +1603,43 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
             "pictures_sent",
         ]
     )
-    sent = [step.photo.file, *([portrait.file] if portrait else [])]
-    return _keep_starting_picture(step, choice.prompt, sent)
 
 
-def _pick_example_pictures(step: SceneStep) -> None:
-    """Plan a B-roll scene with needs, way 3: no picture is made. The model writing the
-    scene's prompts, told the shared rules and its kind's, picks the main photo from the
-    photos in the ad's colour; code adds a photo for each need, then the presenter's portrait
-    when the scene shows their face, at most MOST_EXAMPLE_PICTURES in all. The model gives
-    each picture sent its job in a slot of its own, and the action, which code joins into
-    the video prompt the clip is asked for with."""
-    scene = step.scene
-    job = scene.job
-    portrait = None
-    if step.person_shown == Scene.PersonShown.HAS_FACE:
-        portrait = latest(job, ProducedItem.Kind.PORTRAIT)
-        assert portrait is not None, "the tool refuses a scene whose person isn't made"
-    photos = {photo.position: photo for photo in job.photos.all()}
-    colour_photos = {
-        number: photo.has_face for number, photo in photos.items() if photo.shows_product_colour
-    }
-    # Room for the main photo and the portrait, if it is sent.
-    room = MOST_EXAMPLE_PICTURES - 1 - (1 if portrait else 0)
-    needs = photos_for_needs(
-        step.needs, {number: photo.has_face for number, photo in photos.items()}, room
-    )
-    shown = [*colour_photos, *(need.photo for need in needs if need.photo not in colour_photos)]
-    images = [Image(label=f"Photo {number}", key=photos[number].file) for number in shown]
-    if portrait:
-        images.append(Image(label="The portrait", key=portrait.file))
-    choice = call_model(
-        job=job,
-        purpose="choose_broll_picture",
-        instructions=broll_prompt_instructions(step.broll_kind, SceneStep.Way.FROM_EXAMPLES),
-        handoff=BrollExamplesHandoff(
-            scene=scene.number,
-            line=step.line,
-            script=list(job.scenes.values_list("line", flat=True)),
+def _pictures_drawn(step: SceneStep) -> list[str]:
+    """Each starting picture paid for for `step`, oldest first."""
+    calls = step.scene.job.model_calls.filter(
+        purpose="make_starting_picture",
+        outcome=ModelCall.Outcome.SUCCEEDED,
+        tool_call=step.tool_call,
+    ).order_by("created_at", "id")
+    return [call.output["file"] for call in calls if call.output is not None]
+
+
+def _check_broll_picture(step: SceneStep, choice: BrollPictureChoice, picture: str) -> list[str]:
+    """What is wrong with a B-roll scene's starting picture, drawn as `choice` says, checked
+    beside its shop photo before any clip is paid for: nothing, when it passes."""
+    assert step.photo is not None, "a B-roll picture is drawn from its main photo"
+    check = call_model(
+        job=step.scene.job,
+        purpose="check_starting_picture",
+        instructions=STARTING_PICTURE_CHECK,
+        handoff=StartingPictureCheckHandoff(
             shows=step.shows,
             broll_kind=step.broll_kind,
             person_shown=step.person_shown,
             usage=step.usage,
             result=step.broll_result,
-            needs=needs,
-            portrait=portrait is not None,
-            product_colour=job.product_colour,
-            colour_photos=list(colour_photos),
-            person_looks=job.person_looks,
-            note=step.note or None,
-            conversation=_conversation(job, until=step.started_at),
+            picture_prompt=choice.prompt,
+            video_prompt=choice.motion_prompt,
         ),
-        output=broll_examples_choice_for(colour_photos, needs, portrait is not None),
-        images=images,
+        output=StartingPictureCheck,
+        images=[
+            Image(label="The shop photo", key=step.photo.file),
+            Image(label="The starting picture", key=picture),
+        ],
         pay_once=True,
     )
-    main = ExamplePicture(choice.photo, colour_photos[choice.photo])
-    sent = example_pictures(main, needs, portrait is not None)
-    step.photo = photos[choice.photo]
-    step.photo_reason = choice.photo_reason
-    step.prompt = ""
-    step.prompt_reason = choice.action_reason()
-    step.motion_prompt = choice.video_prompt()
-    step.way = SceneStep.Way.FROM_EXAMPLES
-
-    def file_of(picture: ExamplePicture) -> str:
-        if picture.photo is not None:
-            return photos[picture.photo].file
-        assert portrait is not None, "the portrait is sent only when it is made"
-        return portrait.file
-
-    # Each with its file, so the clip is sent the pictures picked, though the portrait is
-    # made again or the page's photos read again before it is made.
-    step.pictures_sent = [
-        {
-            "image": n,
-            **({"portrait": True} if picture.portrait else {"photo": picture.photo}),
-            "job": slot.said(),
-            "file": file_of(picture),
-        }
-        for n, (picture, slot) in enumerate(zip(sent, choice.slots(), strict=True), start=1)
-    ]
-    step.save(
-        update_fields=[
-            "photo",
-            "photo_reason",
-            "prompt",
-            "prompt_reason",
-            "motion_prompt",
-            "way",
-            "pictures_sent",
-        ]
-    )
+    return check.problems()
 
 
 def _keep_starting_picture(step: SceneStep, prompt: str, pictures: list[str]) -> ProducedItem:
@@ -1882,8 +1900,7 @@ def _clip_handoff(
 ) -> ClipHandoff | BrollClipHandoff:
     """What the video model is asked for: a clip speaking the audio, or, for a scene that
     shows the product, a silent one that moves as the picture's step planned, in the fewest
-    whole seconds that cover the audio: from its starting picture, or, for a scene made way
-    3, from the example pictures its picture step picked. Raises ClipFailed for a line
+    whole seconds that cover the audio, from its starting picture. Raises ClipFailed for a line
     longer than the longest B-roll clip, before anything is paid for."""
     assert audio.seconds is not None, "a line's audio is measured when it's made"
     if not step.shows:
@@ -1906,13 +1923,7 @@ def _clip_handoff(
             f"model makes clips of at most {MOST_BROLL_SECONDS} seconds"
         )
     seconds = _broll_clip_seconds(audio.seconds)
-    if planned.way == SceneStep.Way.FROM_EXAMPLES:
-        return BrollClipHandoff(
-            example_pictures=[picture["file"] for picture in planned.pictures_sent],
-            seconds=seconds,
-            prompt=broll_video_prompt(planned.motion_prompt, seconds),
-        )
-    assert picture is not None, "a scene made way 1 has its starting picture"
+    assert picture is not None, "a B-roll scene's clip is made from its starting picture"
     motion = planned.motion_prompt
     return BrollClipHandoff(
         starting_picture=picture.file,
