@@ -74,8 +74,8 @@ voice says the scene's line over it.
 
 # The rules every B-roll prompt follows, made either way.
 _BROLL_PROMPT_RULES = """\
-- One continuous shot, with no cuts. Do what "shows" says, at a natural, real-time \
-pace. Never write seconds or timings, or words that slow it down, such as \
+- One continuous shot, with no cuts. Do what "shows" says, except as the next rule says, at \
+a natural, real-time pace. Never write seconds or timings, or words that slow it down, such as \
 "slowly" or "gently".
 - When "shows" lists separate steps, with a wait, a set-up or a change of state between \
 them, film only the main one: the step that proves the line. The voice carries the rest. \
@@ -83,8 +83,7 @@ Two or three actions that flow as one, by one person, are fine. Never film the f
 change between two states, such as clipping, unclipping or folding: open with it done.
 - The product, or the tool used with it, does what the line claims, on screen, the way \
 "usage" says: something always acts. The product may stand in view, label to the camera, \
-when holding it would bend its shape, such as a bottle standing nearby while the tool used \
-with it does the work.
+when holding it would bend its shape, while the tool used with it does the work.
 - The main action, or the product, is in the middle of the frame. Say nothing about the \
 top or the bottom of the frame.
 - Only the presenter is shown. When "person_shown" is "has face", the person is the \
@@ -124,12 +123,14 @@ product ready to be used. The video prompt does the action.
 - The picture prompt opens: "An upright 9:16 photo taken on a phone in a real, ordinary \
 <place>, casual, not a studio shot." with the scene's setting as the place.
 - Anything that must be right goes in the starting picture, said plainly: the camera is a \
-phone held by a person, so say where they hold it, its height and angle; each object the action happens to other than the \
-product, with every part named as a real, ordinary one, like one from a hardware store; the \
-problem the product fixes, as it looks before; exact counts, and left or right; and any hand \
-at the first moment of the action, already holding what it uses.
+phone held by a person, so say where they hold it, its height and angle; each object the \
+action happens to, other than the product, with every part named as a real, ordinary one, \
+like one you'd buy in any shop; the problem the product fixes, as it looks before; exact \
+counts, and left or right; and any hand already in place for the action, holding what it \
+uses.
 - When the product is in an unusual pose, such as upside down, say the pose once and what \
-it does to each part you see, such as its label turning upside down with it.
+it does to the product's shape and to each part you see, such as its label turning with \
+it, even though the product is otherwise not described.
 {_BROLL_PROMPT_RULES}\
 Give a one-sentence reason for the photo, one for the picture prompt and one for the video \
 prompt, written for the shop owner."""
@@ -197,7 +198,7 @@ PORTRAIT_JOB = "the presenter"
 def broll_video_prompt(prompt: str, seconds: int) -> str:
     """A B-roll scene's video prompt as it is sent: the clip's look and real length first,
     so no prompt goes without them, then the prompt as the model wrote it. Both clips Julian
-    graded best opened this way (decisions/2026-10-08-teach-app-5s-prompt-style.md, #2)."""
+    graded best opened this way (docs/broll-picture-logic.md, "Prompt rules")."""
     return (
         f"A {seconds}-second handheld phone video, casual, not cinematic, real-time speed. {prompt}"
     )

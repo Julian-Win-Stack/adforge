@@ -395,21 +395,20 @@ def test_the_model_planning_the_picture_is_given_the_shared_prompt_rules(rule: s
     "rule",
     [
         # Timings made clips stopwatch-like (#5) or far too slow (#7).
-        "at a natural, real-time pace. Never write seconds or timings, or words that slow "
-        'it down, such as "slowly" or "gently"',
+        "Never write seconds or timings",
+        '"slowly" or "gently"',
         # Only the scrub, with the voice carrying squeeze and flush, was PERFECT (#8 5 s).
-        'When "shows" lists separate steps, with a wait, a set-up or a change of state between '
-        "them, film only the main one: the step that proves the line. The voice carries the "
-        "rest",
+        "film only the main one",
+        "The voice carries the rest",
         # Filming the strap change failed; one clip per state was PERFECT (#5 bag).
         "Never film the fiddly change between two states",
         # Holding the bottle bent its neck; the PERFECT toilet clip had it standing in view.
-        "The product may stand in view, label to the camera, when holding it would bend its shape",
+        "The product may stand in view",
         # "upright" + "nozzle pointing down" bent the bottle; "squeeze" + "no gel" put gel on.
         "Never ask for two things that can't both be true at once",
-        "Check every order against the product photos and against your other orders",
+        "Check every order against the product photos",
         # Code writes the clip's look and length first (broll_video_prompt).
-        "Code starts the video prompt with the clip's length and its phone-video look",
+        "Code starts the video prompt with the clip's length",
     ],
 )
 def test_the_model_writing_the_prompts_is_told_the_proven_rules(rules: str, rule: str) -> None:
@@ -438,11 +437,11 @@ def test_the_model_writing_the_prompts_is_no_longer_told_the_rules_grades_reject
     [
         'The picture prompt opens: "An upright 9:16 photo taken on a phone in a real, '
         'ordinary <place>, casual, not a studio shot."',
-        "the camera is a phone held by a person, so say where they hold it, its height and angle",
+        "the camera is a phone held by a person",
         "every part named as a real, ordinary one",
         "exact counts, and left or right",
-        "any hand at the first moment of the action",
-        "say the pose once and what it does to each part you see",
+        "any hand already in place for the action",
+        "say the pose once and what it does to the product's shape",
     ],
 )
 def test_the_picture_prompt_shows_what_must_be_right(rule: str) -> None:

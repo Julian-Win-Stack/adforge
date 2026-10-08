@@ -393,6 +393,12 @@ From the MiniMax H3 prompt guides (Boreal-H3 is built on H3) and the four mistak
 - One continuous shot, doing what "shows" says in order at a natural, real-time pace. No
   seconds, timings, "slowly" or "gently" (2026-10-08): "one action per 2 to 3 seconds" gave
   stopwatch timings, #5 "3 actions in 6 s" and #7 "far too slow", both failed by the user.
+- When "shows" lists separate steps (a wait, a set-up or a change of state between them),
+  only the main one is filmed, the step that proves the line; the voice carries the rest.
+  Two or three actions that flow as one are fine. The fiddly change between two states
+  (clipping, unclipping, folding) is never filmed (2026-10-08: the toilet scrub-only clip
+  was graded perfect; the bag clip that filmed the strap change failed, one clip per state
+  passed). The planner owns splitting such lines; this is the prompt writer's backstop.
 - The product, or the tool used with it, acts; the product may stand in view when holding it
   would bend its shape (2026-10-08: the toilet clip the user graded perfect had the bottle
   standing on the tank; holding it bent its neck).
