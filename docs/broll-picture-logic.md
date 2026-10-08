@@ -233,6 +233,13 @@
     made as a product shot because its line is too long for a clip, so it will be said to
     camera instead."). The one exception to "the user is never told which scenes are which".
     Only that scene changes; the rest of the plan stays.
+57. **Every B-roll scene gets a drawn starting picture; way 3 is gone (2026-10-08).** Shop
+    photos are no longer sent to the video model as example pictures: their own scene
+    leaked into the clip (#12), and a wrong "need" that skipped the starting picture let
+    the video model invent a dirty tile (N3 Lemi Shine). A scene's needs photos now go to
+    the picture model with its main photo, and the drawn picture is checked beside the shop
+    photo before the clip is paid for. Items 7, 40 and 55, and "references" in "The logic"
+    below, describe the old way 3 and are kept as history.
 
 ## What Boreal-H3 takes
 
@@ -265,6 +272,9 @@ From Creatify's API page (Create a Boreal task) and the scene #16 check.
     has to be made for references. Kept in `docs/runs/second-run-review/check/shape-check/`.
 
 ## The logic: which way for which scene
+
+Since item 57 (2026-10-08), step 1's "references" is no longer built: every B-roll scene is
+made from its starting picture.
 
 1. **Does the scene show something the pack photo can't?** Such as gel coming out, blush on
    a cheek, powder in a drink: a texture, a colour, the inside, a result.
