@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from adforge.retry import OutsideServiceDown
 from agents import tasks
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
@@ -161,3 +162,29 @@ def test_a_picture_whose_check_cant_be_read_is_kept_and_not_paid_for_again(
     assert step.status == "finished"
     assert step.produced.get().file == pictures_drawn()[0]
     assert paid_for().count("make_starting_picture") == 1
+
+
+def test_a_picture_whose_check_service_is_down_is_kept_and_not_paid_for_again(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    fake_model.respond(
+        "check_starting_picture", *[OutsideServiceDown("azure answered 503")] * 3
+    )
+
+    step = picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE)
+
+    assert step.status == "finished"
+    assert step.produced.get().file == pictures_drawn()[0]
+    assert paid_for().count("make_starting_picture") == 1
+
+
+def test_with_quality_checks_switched_off_a_picture_is_kept_unchecked(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], settings: Any
+) -> None:
+    settings.QUALITY_CHECKS = False
+
+    step = picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE)
+
+    assert step.status == "finished"
+    assert paid_for()[-2:] == ["choose_broll_picture", "make_starting_picture"]
+    assert "check_starting_picture" not in paid_for()

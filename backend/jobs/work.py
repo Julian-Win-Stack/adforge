@@ -1620,8 +1620,10 @@ def _pictures_drawn(step: SceneStep) -> list[str]:
 def _check_broll_picture(step: SceneStep, choice: BrollPictureChoice, picture: str) -> list[str]:
     """What is wrong with a B-roll scene's starting picture, drawn as `choice` says, checked
     beside its shop photo before any clip is paid for: nothing, when it passes or its check
-    can't be had."""
+    can't be had, or quality checks are switched off."""
     assert step.photo is not None, "a B-roll picture is drawn from its main photo"
+    if not settings.QUALITY_CHECKS:
+        return []
     try:
         check = call_model(
             job=step.scene.job,
