@@ -347,6 +347,51 @@ def test_a_shortened_scene_keeps_its_part_of_the_script(
     ]
 
 
+@pytest.mark.parametrize(
+    ("kept", "second_ways"),
+    [
+        pytest.param((1, 3, 4, 5), [False, False, True, False], id="both ways kept"),
+        pytest.param((1, 2, 4, 5), [False, False, False, False], id="the first way dropped"),
+    ],
+)
+def test_a_shortened_second_way_of_use_stays_one_while_the_first_plays_just_before_it(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    kept: tuple[int, ...],
+    second_ways: list[bool],
+) -> None:
+    sip = {"line": "Sip hot tea from it on a cold and rainy morning.", "shows": "a hand lifts it"}
+    chill = {"line": "Or fill it with ice and cold brew on a summer day.", "shows": "ice drops in"}
+    scenes = [
+        {"line": "Meet the Stoneware Mug from Kiln & Co."},
+        {"line": "It's hand-thrown in a small studio by one potter."},
+        broll(sip),
+        broll({**chill, "second_way_of_use": True}),
+        {"line": "Yours for $24.00."},
+    ]
+    checking(
+        fake_model,
+        product_page_url,
+        a_plan_with(scenes=scenes),
+        target_seconds=5,
+        reply="Your script runs over. Shorten it, or keep it longer?",
+    )
+    fake_model.respond("fact_check", facts_ok(1, 2, 3, 4, 5))
+    say(f"Make a 5 second ad for {product_page_url}")
+    choosing_length(fake_model, "shorten")
+    fake_model.respond(
+        "shorten_script",
+        {"lines": [{"scene": number, "line": scenes[number - 1]["line"]} for number in kept]},
+    )
+
+    say("Shorten it")
+
+    assert list(Job.objects.get().scenes.values_list("second_way_of_use", flat=True)) == (
+        second_ways
+    )
+
+
 def test_shortening_is_told_to_keep_the_hook_and_the_call_to_action(
     fake_model: FakeModel, asked_about_length: None, say: Callable[..., None]
 ) -> None:

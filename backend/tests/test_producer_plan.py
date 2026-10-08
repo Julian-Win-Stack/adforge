@@ -146,6 +146,35 @@ def test_the_scripts_format_and_each_scenes_part_are_stored(
     ]
 
 
+def test_the_second_way_of_using_the_product_is_stored_with_its_scene(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    # Audit row 11: graded #5 bag, PERFECT as two clips for its two ways, the second clip's
+    # start picture an edit of the first's. Code can only do that knowing which scenes pair.
+    scenes = [
+        {"line": "Meet the Stoneware Mug from Kiln & Co."},
+        broll({"line": "Sip hot tea from it on a cold morning.", "shows": "a hand lifts it"}),
+        broll(
+            {
+                "line": "Or fill it with ice and cold brew in summer.",
+                "shows": "ice drops into it",
+                "second_way_of_use": True,
+            }
+        ),
+        {"line": "Yours for $24.00."},
+    ]
+    planning(fake_model, product_page_url, a_plan_with(scenes=scenes))
+
+    say(f"Make an ad for {product_page_url}")
+
+    assert list(Job.objects.get().scenes.values_list("number", "second_way_of_use")) == [
+        (1, False),
+        (2, False),
+        (3, True),
+        (4, False),
+    ]
+
+
 def what_each_scene_shows() -> list[tuple[int, str]]:
     """Each stored scene's number and what it shows, in order."""
     return list(Job.objects.get().scenes.values_list("number", "shows"))
@@ -343,6 +372,8 @@ def test_the_planner_is_told_how_to_plan_each_broll_scene(
     # middle of three steps that flowed into each other.
     assert "even for steps that flow into each other" in instructions
     assert "give each way its own B-roll scene" in instructions
+    # Audit row 11: the second way's clip is made from the first's, once code knows the pair.
+    assert "mark the second as the second way of use" in instructions
     assert "The person can name the other steps in a talking scene." in instructions
     # The ad's colour, and the one photo a scene may never need: items 43 and 44 of
     # docs/broll-picture-logic.md.
@@ -553,6 +584,23 @@ def test_the_planner_is_shown_each_photo_shrunk_to_fit_2048_pixels_and_the_kept_
 # --- A plan that can't be used ----------------------------------------------------------------
 
 
+def a_plan_with_ways(*kinds: str) -> dict[str, Any]:
+    """PLAN with a scene of each kind after its opening line: "talking" to camera,
+    "broll" showing the mug, "second way" showing it used the second of two ways, or
+    "talking second way", said to camera yet given as a second way."""
+    scenes: list[dict[str, Any]] = [{"line": "Meet the Stoneware Mug."}]
+    for kind in kinds:
+        line = {"line": "Holds 350 ml of hot tea or cold brew."}
+        if kind == "talking":
+            scenes.append(line)
+        elif kind == "talking second way":
+            scenes.append({**line, "second_way_of_use": True})
+        else:
+            scenes.append(broll({**line, "shows": "the mug in a hand"}))
+            scenes[-1]["second_way_of_use"] = kind == "second way"
+    return a_plan_with(scenes=scenes)
+
+
 @pytest.mark.parametrize(
     ("reply", "broken_rule"),
     [
@@ -689,6 +737,21 @@ def test_the_planner_is_shown_each_photo_shrunk_to_fit_2048_pixels_and_the_kept_
         # held at chest height, and studs held there are a few pixels.
         pytest.param(
             a_plan_without("product_size"), "Field required", id="no size for the product"
+        ),
+        pytest.param(
+            a_plan_with_ways("talking", "second way"),
+            "Scene 3 shows a second way of use, so scene 2 must be B-roll showing the first.",
+            id="a second way of use after a talking scene",
+        ),
+        pytest.param(
+            a_plan_with_ways("broll", "second way", "second way"),
+            "Scene 4 shows a third way of use: one claim has two B-roll scenes at most.",
+            id="a third way of use",
+        ),
+        pytest.param(
+            a_plan_with_ways("broll", "talking second way"),
+            "Scene 3 is said to camera: only a B-roll scene shows a second way of use.",
+            id="a talking scene given as a second way of use",
         ),
         pytest.param(
             a_plan_with(product_size="medium"),

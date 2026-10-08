@@ -629,6 +629,7 @@ def plan(job: Job) -> ProducerDecision:
                 shows=scene.shows or "",
                 overlay=" ".join((scene.overlay or "").split()),
                 part=scene.part or "",
+                second_way_of_use=scene.second_way_of_use,
                 **scene.broll_details(),
             )
             for number, scene in enumerate(planned.scenes, start=1)
@@ -1222,18 +1223,25 @@ def _shorten(job: Job, words_per_second: float) -> None:
         checked = {(scene.line, scene.shows) for scene in scenes if scene.fact_checked}
         # A line the user chose stays theirs when it moves: it is never rewritten.
         problems = {scene.number: scene.fact_problems for scene in scenes}
+        # A second way of use stays one only while the first still plays just before it.
+        second_ways = {scene.number for scene in scenes if scene.second_way_of_use}
+        before = None
         for scene, kept in zip(scenes, shortened.lines, strict=False):
             shows, overlay, part, broll = was[kept.scene]
-            if (scene.line, scene.shows, scene.overlay, scene.part, _broll_fields(scene)) != (
-                kept.line,
-                shows,
-                overlay,
-                part,
-                broll,
-            ):
+            second_way = kept.scene in second_ways and before == kept.scene - 1
+            before = kept.scene
+            if (
+                scene.line,
+                scene.shows,
+                scene.overlay,
+                scene.part,
+                scene.second_way_of_use,
+                _broll_fields(scene),
+            ) != (kept.line, shows, overlay, part, second_way, broll):
                 scene.change_line(kept.line, shows=shows)
                 scene.overlay = overlay
                 scene.part = part
+                scene.second_way_of_use = second_way
                 for field, value in broll.items():
                     setattr(scene, field, value)
                 scene.fact_checked = (kept.line, shows) in checked
@@ -1245,6 +1253,7 @@ def _shorten(job: Job, words_per_second: float) -> None:
                         "shows",
                         "overlay",
                         "part",
+                        "second_way_of_use",
                         *BROLL_FIELDS,
                         "status",
                         "fact_checked",

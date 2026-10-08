@@ -128,7 +128,8 @@ what is shown. A B-roll line has at least about 10 words.
 The person can name the other steps in a talking scene. When a line claims the product \
 can be used in two different ways that can't be seen at once, such as a jacket worn on \
 either side, give each way its own B-roll scene, back to back, each with its own line \
-and its one action. Never more than two scenes for one such claim. Never show before \
+and its one action, and mark the second as the second way of use. Never more than two \
+scenes for one such claim. Never show before \
 and after pictures of bodies or skin, a screen whose content you'd have to invent, a \
 result the page doesn't state, or parts of the product no photo \
 shows. How much of the ad is B-roll depends on the kind of product. As a guide (B-roll \
@@ -401,6 +402,11 @@ class PlannedScene(ScriptScene):
         description='The part of the script this scene plays: "hook" for the first scene, '
         '"call to action" for the last, and one of the parts of the script\'s format between.',
     )
+    second_way_of_use: bool = Field(
+        default=False,
+        description="True for a B-roll scene showing the second of two ways the product can be "
+        "used, the first being the B-roll scene just before it; otherwise false.",
+    )
     overlay: str | None = Field(
         default=None,
         description="A few words drawn along the top of the picture while this scene plays, "
@@ -479,6 +485,31 @@ class Plan(BaseModel):
         for number, scene in enumerate(self.scenes, start=1):
             if (too_many := scene.too_many_pictures(number)) is not None:
                 raise ValueError(too_many)
+        return self
+
+    @model_validator(mode="after")
+    def _second_way_after_the_first(self) -> Self:
+        # The two ways of one claim play back to back, so a second way's clip can be made
+        # from the first's (audit row 11).
+        for number, scene in enumerate(self.scenes[1:], start=2):
+            if not scene.second_way_of_use:
+                continue
+            if scene.shows is None:
+                raise ValueError(
+                    f"Scene {number} is said to camera: only a B-roll scene shows a second way "
+                    "of use."
+                )
+            first = self.scenes[number - 2]
+            if first.shows is None:
+                raise ValueError(
+                    f"Scene {number} shows a second way of use, so scene {number - 1} must be "
+                    "B-roll showing the first."
+                )
+            if first.second_way_of_use:
+                raise ValueError(
+                    f"Scene {number} shows a third way of use: one claim has two B-roll scenes "
+                    "at most."
+                )
         return self
 
     @model_validator(mode="after")
