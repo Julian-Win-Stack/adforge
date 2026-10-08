@@ -478,6 +478,29 @@ def test_what_a_scene_shows_that_the_page_doesnt_support_is_rewritten(
     assert (scene.line, scene.shows) == (SAID_OVER, "the mug turned in a hand")
 
 
+def test_a_rewrite_is_told_a_broll_scene_films_one_action_as_the_planner_is(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    # Audit row 2's gap: a rewrite that isn't told can pack the steps back into one scene.
+    told: list[str] = []
+
+    def rewrite(request: Any) -> dict[str, Any]:
+        told.append(request.instructions)
+        return broll({"line": SAID_OVER, "shows": "the mug turned in a hand"})
+
+    checking(fake_model, product_page_url, showing(POUR))
+    fake_model.respond(
+        "fact_check", shows_wrong("The page doesn't mention tea.", passing=(1, 3)), facts_ok(2)
+    )
+    fake_model.answer_unscripted("rewrite_line", rewrite)
+
+    say(f"Make an ad for {product_page_url}")
+
+    (instructions,) = told
+    assert "A B-roll scene films one action" in instructions
+    assert "film only the main step" in instructions
+
+
 def test_the_rewrite_is_told_it_was_what_the_scene_shows_that_failed(
     rewrote_what_scene_2_shows: None,
 ) -> None:

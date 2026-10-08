@@ -30,6 +30,16 @@ ad's. A scene's clip is sent at most 5 pictures: the main photo, one for each ne
 and the presenter's portrait when it "has face".
 """
 
+# What a B-roll scene films, for the planner and a rewrite alike. Graded #8 toilet (4
+# steps in one clip) and #5 bag (strap on and off in one clip) failed; one step was perfect.
+BROLL_ONE_ACTION_INSTRUCTIONS = """\
+A B-roll scene films one action: the one moment that proves what its line claims. When \
+the page lists steps for using the product, film only the main step, the one that shows it \
+working, such as the cloth wiping a stain away rather than spraying, waiting and rinsing, \
+and write that B-roll line about that step; the person can name the other steps in a \
+talking scene.
+"""
+
 PLAN_INSTRUCTIONS = (
     """\
 You are the producer of a short vertical video ad for one product. A person speaks to \
@@ -88,11 +98,17 @@ The first scene is always the person talking to camera. Use B-roll for lines abo
 the product is used, what it does, or proof, and only to show what the page or the shop \
 owner states, or the photos show: a picture is a claim, just like a sentence. What a \
 scene shows must match what its line says while it says it, so a B-roll line is about \
-what is shown. A B-roll line has at least about 10 words. Never show before and after \
-pictures of bodies or skin, a screen whose content you'd have to invent, a result the \
-page doesn't state, or parts of the product no photo shows. How much of the ad is B-roll \
-depends on the kind of product. As a guide (B-roll share; what it can show; only if the \
-page says; never):
+what is shown. A B-roll line has at least about 10 words.
+"""
+    + BROLL_ONE_ACTION_INSTRUCTIONS
+    + """\
+When a line claims the product can be used in two different ways that can't be seen at \
+once, such as a jacket worn on either side, give each way its own B-roll scene, back to \
+back, each with its own line and its one action. Never more than two scenes for one such \
+claim. Never show before and after pictures of bodies or skin, a screen whose content \
+you'd have to invent, a result the page doesn't state, or parts of the product no photo \
+shows. How much of the ad is B-roll depends on the kind of product. As a guide (B-roll \
+share; what it can show; only if the page says; never):
 - Beauty and skincare: about 30%; a texture close-up (a dab on a fingertip), hands \
 applying it, the pack; only if the page gives the texture and how it's applied; never \
 skin before and after, skin problems or a visible result on skin.

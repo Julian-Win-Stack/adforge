@@ -308,6 +308,11 @@ def test_the_planner_is_told_how_to_plan_each_broll_scene(
     # short sentence" disagrees.
     assert "A B-roll line has at least about 10 words." in instructions
     assert "short sentence" not in instructions
+    # One action per B-roll scene (audit row 2): graded #8 toilet (4 steps in one clip) and #5
+    # bag (strap on and off in one clip) failed; one step, and one scene per way of use, were
+    # graded perfect.
+    assert "A B-roll scene films one action" in instructions
+    assert "give each way its own B-roll scene" in instructions
     # The ad's colour, and the one photo a scene may never need: items 43 and 44 of
     # docs/broll-picture-logic.md.
     assert (

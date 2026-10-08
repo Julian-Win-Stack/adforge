@@ -9,7 +9,13 @@ from pydantic import BaseModel, Field, StrictInt, field_validator, model_validat
 
 from gateway.types import Handoff, Judgement
 
-from .planning import BROLL_DETAILS_INSTRUCTIONS, ChatMessage, ScriptScene, photos_missing
+from .planning import (
+    BROLL_DETAILS_INSTRUCTIONS,
+    BROLL_ONE_ACTION_INSTRUCTIONS,
+    ChatMessage,
+    ScriptScene,
+    photos_missing,
+)
 
 # A script fits its target when it runs no more than this much over it. Shorter always fits.
 LENGTH_ALLOWANCE_SECONDS = 2
@@ -91,6 +97,7 @@ scene where the person talks, always give null, and no B-roll details.
 A scene that shows something is a B-roll scene. Give back all its B-roll details with \
 its line and "shows", so they always match what it shows.
 """
+    + BROLL_ONE_ACTION_INSTRUCTIONS
     + BROLL_DETAILS_INSTRUCTIONS
 )
 
