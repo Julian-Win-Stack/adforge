@@ -15,7 +15,7 @@ from gateway.fake import FakeModel
 from gateway.models import ModelCall
 from jobs.models import Job, ProductPhoto, Scene, SceneStep
 
-from .conftest import HeldSteps, handoffs, photo
+from .conftest import HeldSteps, handoffs, photo, results_of
 from .test_producer_broll import (
     BROLL_CHOICE,
     calling,
@@ -69,7 +69,7 @@ def picture_of_scene_2(
     calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": None}))
     fake_model.respond("choose_broll_picture", BROLL_CHOICE)
     run(fake_model, steps)
-    return SceneStep.objects.get(kind="starting_picture", scene__number=2)
+    return SceneStep.objects.filter(kind="starting_picture", scene__number=2).last()  # type: ignore[return-value]
 
 
 def test_a_scene_with_needs_gets_a_starting_picture_made_from_its_needs_photos_too(
@@ -150,3 +150,42 @@ def test_the_clip_is_made_from_the_starting_picture_and_no_shop_photo(
         [picture.file],
         [[]],
     )
+
+
+# A scene whose picture step finished before every B-roll scene got a picture (way 3) has
+# no picture: its clip waits for a picture made again.
+
+
+@pytest.fixture
+def made_without_a_picture(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    made_ready(fake_model, steps, say, (2,))
+    step = SceneStep.objects.get(kind="starting_picture", scene__number=2)
+    step.produced.all().delete()
+    step.way = SceneStep.Way.FROM_EXAMPLES
+    step.save(update_fields=["way"])
+
+
+@pytest.mark.usefixtures("made_without_a_picture")
+def test_a_scene_whose_picture_step_made_no_picture_gets_no_clip(
+    fake_model: FakeModel, say: Callable[..., None]
+) -> None:
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+
+    (result,) = results_of("make_clip")
+    assert "scene 2 has no starting picture yet" in result
+    assert clips_asked("starting_picture") == []
+
+
+@pytest.mark.usefixtures("made_without_a_picture")
+def test_a_scene_whose_picture_step_made_no_picture_has_its_picture_made_again(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    step = picture_of_scene_2(fake_model, steps, say)
+
+    assert step.status == "finished"
+    assert step.produced.get().kind == "starting_picture"

@@ -145,3 +145,19 @@ def test_a_picture_step_run_again_after_the_worker_stopped_pays_for_no_picture_t
     assert paid_for().count("choose_broll_picture") == 2
     step = SceneStep.objects.get(pk=step_id)
     assert step.produced.get().file == pictures_drawn()[1]
+
+
+def test_a_picture_whose_check_cant_be_read_is_kept_and_not_paid_for_again(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    # A check that fails without saying why can't be read, but the picture is paid for.
+    fake_model.respond(
+        "check_starting_picture",
+        {**PICTURE_OK, "real_objects": {"passes": False, "problem": ""}},
+    )
+
+    step = picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE)
+
+    assert step.status == "finished"
+    assert step.produced.get().file == pictures_drawn()[0]
+    assert paid_for().count("make_starting_picture") == 1

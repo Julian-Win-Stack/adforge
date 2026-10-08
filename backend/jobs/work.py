@@ -1472,10 +1472,17 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
 
 
 def _make_broll_picture(step: SceneStep) -> ProducedItem:
-    """Make a B-roll scene's starting picture, way 1: the model writing the scene's prompts,
-    told the shared rules and its kind's, picks the main photo from the photos in the ad's
-    colour and writes the picture's prompt and the clip's. The picture is made from the main
-    photo, and from the presenter's portrait after it when the scene shows their face."""
+    """Make a B-roll scene's starting picture: the model writing the scene's prompts, told the
+    shared rules and its kind's, picks the main photo from the photos in the ad's colour and
+    writes the picture's prompt and the clip's. The picture is made from the main photo, then
+    a photo for each of the scene's needs, then the presenter's portrait when the scene shows
+    their face. It is checked beside the main photo before any clip is paid for; one that
+    fails is drawn again from prompts written to fix what the check found, at most
+    MOST_REDRAWS times, and the last one drawn is kept.
+
+    Run again, as after a worker stopped, it pays for nothing already paid for: each model's
+    answer for the same handoff is answered from its record, and each picture drawn is
+    reused in turn."""
     scene = step.scene
     job = scene.job
     photos = list(job.photos.filter(shows_product_colour=True))
@@ -1486,6 +1493,8 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
     # sent to the picture model after the main photo, never to the video model: sent to it,
     # a shop photo's own scene leaked into the clip (graded #12).
     faces = {photo.position: photo.has_face for photo in job.photos.all()}
+    # Picked before the main photo is, so a need's photo the model then picks as the main
+    # photo is sent twice, each time with its own job.
     needs = photos_for_needs(step.needs, faces, MOST_NEEDS_PHOTOS)
     for need in needs:
         need_photo = job.photos.get(position=need.photo)
@@ -1557,14 +1566,7 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
             ),
             file,
         )
-    return ProducedItem.objects.create(
-        job=job,
-        scene=scene,
-        step=step,
-        kind=ProducedItem.Kind.STARTING_PICTURE,
-        version=_next_version(scene, ProducedItem.Kind.STARTING_PICTURE),
-        file=file,
-    )
+    return _keep_picture(step, file)
 
 
 def _plan_broll_picture(
@@ -1617,28 +1619,34 @@ def _pictures_drawn(step: SceneStep) -> list[str]:
 
 def _check_broll_picture(step: SceneStep, choice: BrollPictureChoice, picture: str) -> list[str]:
     """What is wrong with a B-roll scene's starting picture, drawn as `choice` says, checked
-    beside its shop photo before any clip is paid for: nothing, when it passes."""
+    beside its shop photo before any clip is paid for: nothing, when it passes or its check
+    can't be had."""
     assert step.photo is not None, "a B-roll picture is drawn from its main photo"
-    check = call_model(
-        job=step.scene.job,
-        purpose="check_starting_picture",
-        instructions=STARTING_PICTURE_CHECK,
-        handoff=StartingPictureCheckHandoff(
-            shows=step.shows,
-            broll_kind=step.broll_kind,
-            person_shown=step.person_shown,
-            usage=step.usage,
-            result=step.broll_result,
-            picture_prompt=choice.prompt,
-            video_prompt=choice.motion_prompt,
-        ),
-        output=StartingPictureCheck,
-        images=[
-            Image(label="The shop photo", key=step.photo.file),
-            Image(label="The starting picture", key=picture),
-        ],
-        pay_once=True,
-    )
+    try:
+        check = call_model(
+            job=step.scene.job,
+            purpose="check_starting_picture",
+            instructions=STARTING_PICTURE_CHECK,
+            handoff=StartingPictureCheckHandoff(
+                shows=step.shows,
+                broll_kind=step.broll_kind,
+                person_shown=step.person_shown,
+                usage=step.usage,
+                result=step.broll_result,
+                picture_prompt=choice.prompt,
+                video_prompt=choice.motion_prompt,
+            ),
+            output=StartingPictureCheck,
+            images=[
+                Image(label="The shop photo", key=step.photo.file),
+                Image(label="The starting picture", key=picture),
+            ],
+            pay_once=True,
+        )
+    except UnusableReply, OutsideServiceDown:
+        # The picture is paid for, and the check is only advice: a check that can't be had
+        # keeps the picture rather than failing the step and paying for it again.
+        return []
     return check.problems()
 
 
@@ -1646,8 +1654,7 @@ def _keep_starting_picture(step: SceneStep, prompt: str, pictures: list[str]) ->
     """Have the picture model make the step's starting picture from `pictures`, as `prompt`
     says, unless it was made before the worker stopped, and keep it as the scene's next
     version."""
-    scene = step.scene
-    job = scene.job
+    job = step.scene.job
     paid_for = _paid_for_before(job, "make_starting_picture", charged_to=step.tool_call)
     file = (
         paid_for["file"]
@@ -1656,8 +1663,15 @@ def _keep_starting_picture(step: SceneStep, prompt: str, pictures: list[str]) ->
             job=job, purpose="make_starting_picture", prompt=prompt, pictures=pictures
         )
     )
+    return _keep_picture(step, file)
+
+
+def _keep_picture(step: SceneStep, file: str) -> ProducedItem:
+    """Keep the picture in the file store at `file` as the step's scene's next version of
+    its starting picture."""
+    scene = step.scene
     return ProducedItem.objects.create(
-        job=job,
+        job=scene.job,
         scene=scene,
         step=step,
         kind=ProducedItem.Kind.STARTING_PICTURE,
