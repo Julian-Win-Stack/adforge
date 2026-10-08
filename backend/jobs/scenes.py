@@ -76,9 +76,10 @@ voice says the scene's line over it.
 _BROLL_PROMPT_RULES = """\
 - One continuous shot, with no cuts, at a natural, real-time pace. Never write seconds or \
 timings, or words that slow it down, such as "slowly" or "gently".
-- Film one movement only, whatever "shows" lists: the one that proves the line. The voice \
-carries the rest. Never film the fiddly change between two states, such as clipping, \
-unclipping or folding: open with it done.
+- Film one movement only, whatever "shows" lists: one hand or tool doing one thing, such \
+as one wipe, one pour or one pass. Keep the movement that makes the line's claim happen on \
+screen, not a step before or after it. The voice carries the rest. Never film the fiddly \
+change between two states, such as clipping, unclipping or folding: open with it done.
 - The product, or the tool used with it, does what the line claims, on screen, the way \
 "usage" says: something always acts. The product may stand in view, label to the camera, \
 when holding it would bend its shape, while the tool used with it does the work.
