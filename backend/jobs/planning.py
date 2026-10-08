@@ -32,11 +32,14 @@ and the presenter's portrait when it "has face".
 
 # What a B-roll scene films, for the planner and a rewrite alike. Graded #8 toilet (4
 # steps in one clip) and #5 bag (strap on and off in one clip) failed; one step was perfect.
+# No exception for steps that flow together: N5's clip jumped where Boreal skipped the middle.
 BROLL_ONE_ACTION_INSTRUCTIONS = """\
-A B-roll scene films one action: the one moment that proves what its line claims. When \
-the page lists steps for using the product, film only the main step, the one that shows it \
-working, such as the cloth wiping a stain away rather than spraying, waiting and rinsing, \
-and write that B-roll line about that step.
+A B-roll scene films one action: one movement, the one moment that proves what its line \
+claims. When the page or the line lists steps for using the product, film only the main \
+step, the one that shows it working, such as the cloth wiping a stain away rather than \
+spraying, waiting and rinsing, and write that B-roll line about that step. This holds \
+even for steps that flow into each other with no pause: the video skips the middle of a \
+chain of movements, so film only the main one.
 """
 
 PLAN_INSTRUCTIONS = (

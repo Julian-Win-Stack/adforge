@@ -339,6 +339,9 @@ def test_the_planner_is_told_how_to_plan_each_broll_scene(
     # bag (strap on and off in one clip) failed; one step, and one scene per way of use, were
     # graded perfect.
     assert "A B-roll scene films one action" in instructions
+    # One movement, no exceptions (Julian, 19:11): N5's clip jumped where Boreal skipped the
+    # middle of three steps that flowed into each other.
+    assert "even for steps that flow into each other" in instructions
     assert "give each way its own B-roll scene" in instructions
     assert "The person can name the other steps in a talking scene." in instructions
     # The ad's colour, and the one photo a scene may never need: items 43 and 44 of
