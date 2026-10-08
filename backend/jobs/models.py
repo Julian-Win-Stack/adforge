@@ -229,11 +229,11 @@ class Scene(models.Model):
         "last, and between them the parts of the job's script format, in their order. Blank "
         "for a scene planned before it was given.",
     )
-    second_way_of_use = models.BooleanField(
+    second_state = models.BooleanField(
         default=False,
-        help_text="For a B-roll scene, whether it shows the second of two ways the product can "
-        "be used, the first being the scene just before it: so its clip is made to match that "
-        "one's, with the same person and place.",
+        help_text="For a B-roll scene, whether it shows the second of two end states one claim "
+        "needs, such as the second way a bag is carried, the first being the B-roll scene just "
+        "before it.",
     )
     broll_kind = models.CharField(
         max_length=20,

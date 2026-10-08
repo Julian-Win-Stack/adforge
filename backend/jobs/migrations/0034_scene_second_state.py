@@ -12,10 +12,10 @@ class Migration(migrations.Migration):
     operations = [
         migrations.AddField(
             model_name="scene",
-            name="second_way_of_use",
+            name="second_state",
             field=models.BooleanField(
                 default=False,
-                help_text="For a B-roll scene, whether it shows the second of two ways the product can be used, the first being the scene just before it: so its clip is made to match that one's, with the same person and place.",
+                help_text="For a B-roll scene, whether it shows the second of two end states one claim needs, such as the second way a bag is carried, the first being the B-roll scene just before it.",
             ),
         ),
     ]

@@ -94,8 +94,8 @@ _Avoid_: Template, framework, ad format
 What a scene does in the script: the hook first, the call to action last, and the script format's parts between them, in their order, such as "before state". The hook is a line that makes the viewer stop and watch; the call to action says the price and tells the viewer to get it now. Each is one scene.
 _Avoid_: Beat, section, stage
 
-**Second way of use**:
-A B-roll scene showing the second of two ways a line claims the product can be used, such as a bag carried as a clutch after it is worn crossbody. It plays just after the B-roll scene showing the first way, and one claim has two such scenes at most, so its clip can be made to match the first's.
+**Second state**:
+A B-roll scene showing the second of two end states one claim needs: the second way the product can be used, such as a bag carried as a clutch after it is worn crossbody, or the proof seen only after an action ends, such as a dropped item turned over unharmed. It plays just after the B-roll scene showing the first, and one claim has two such scenes at most, so its clip can be made to match the first's.
 _Avoid_: Pair, variant, alternate use
 
 **Clip**:

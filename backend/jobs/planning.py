@@ -127,15 +127,15 @@ what is shown. A B-roll line has at least about 10 words.
 """
     + BROLL_ONE_ACTION_INSTRUCTIONS
     + """\
-The person can name the other steps in a talking scene. When a line claims the product \
-can be used in two different ways that can't be seen at once, such as a jacket worn on \
-either side, give each way its own B-roll scene, back to back, each with its own line \
-and its one action, and mark the second as the second way of use; for each way, film the \
-product already set up that way, never the change from one way to the other. Never more \
-than two scenes for one such claim. A scene's result is what the camera sees when its one \
-movement ends. When the line's proof needs something seen after that, such as a dropped \
-item turned over to show it's unharmed, give what's seen after it its own B-roll scene \
-right after, with its own line and its one movement. Never show before \
+The person can name the other steps in a talking scene. A scene's result is what the \
+camera sees when its one action ends. When a claim needs two end states, give each its \
+own B-roll scene, back to back, each with its own line and its one action, and mark the \
+second as the second state. A claim needs two end states in two cases. The product can be \
+used in two different ways that can't be seen at once, such as a jacket worn on either \
+side: film each way with the product already set up that way, never the change from one \
+way to the other. Or the proof is seen only after the action ends, such as a dropped \
+item turned over to show it's unharmed: give what's seen after it its own B-roll scene \
+right after. Never more than two scenes for one claim. Never show before \
 and after pictures of bodies or skin, a screen whose content you'd have to invent, a \
 result the page doesn't state, or parts of the product no photo \
 shows. How much of the ad is B-roll depends on the kind of product. As a guide (B-roll \
@@ -154,7 +154,7 @@ before and after; only the result the page states; never a stronger result.
 - Tech and gadgets: 50 to 60%; design close-up, the feature working in hands, an \
 everyday setting, unboxing; only features and box contents the page lists; never \
 invented screens or readable small print.
-- Fitness equipment: about 40%; in use, folding and storing; only the exercise and size \
+- Fitness equipment: about 40%; in use, folded away; only the exercise and size \
 claims the page makes; never body changes.
 - Supplements and health: about 20%, mostly talking; the routine, such as a scoop into a \
 shaker; only how it's taken; never any body, weight or health outcome.
@@ -190,7 +190,7 @@ product isn't clearly seen, such as blush on a cheek, is enough.
 nor the shop owner says how it is used. Ask even if you could plan it only at its best: \
 an ad for such a product shows it doing its job. A product that doesn't do a job you can \
 see, such as a bag, needs no "how to use": never ask for one.
-- The scene ends on a result you can see, what the product removes or prevents is a thin \
+- The scene ends on a result, what the product removes or prevents is a thin \
 film, haze, cloudiness or water spots on a surface such as glass, tile, a mirror or \
 chrome, and no photo shows that surface before and after. Ask even when everyone knows the \
 word: a camera barely sees a thin film, so the video would guess how it looks and how much \
@@ -410,10 +410,10 @@ class PlannedScene(ScriptScene):
         description='The part of the script this scene plays: "hook" for the first scene, '
         '"call to action" for the last, and one of the parts of the script\'s format between.',
     )
-    second_way_of_use: bool = Field(
+    second_state: bool = Field(
         default=False,
-        description="True for a B-roll scene showing the second of two ways the product can be "
-        "used, the first being the B-roll scene just before it; otherwise false.",
+        description="True for a B-roll scene showing the second of two end states one claim "
+        "needs, the first being the B-roll scene just before it; otherwise false.",
     )
     overlay: str | None = Field(
         default=None,
@@ -496,27 +496,26 @@ class Plan(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _second_way_after_the_first(self) -> Self:
-        # The two ways of one claim play back to back, so a second way's clip can be made
+    def _second_state_after_the_first(self) -> Self:
+        # The two end states of one claim play back to back, so the second's clip can be made
         # from the first's (audit row 11).
         for number, scene in enumerate(self.scenes[1:], start=2):
-            if not scene.second_way_of_use:
+            if not scene.second_state:
                 continue
             if scene.shows is None:
                 raise ValueError(
-                    f"Scene {number} is said to camera: only a B-roll scene shows a second way "
+                    f"Scene {number} is said to camera: only a B-roll scene shows a second state "
                     "of use."
                 )
             first = self.scenes[number - 2]
             if first.shows is None:
                 raise ValueError(
-                    f"Scene {number} shows a second way of use, so scene {number - 1} must be "
+                    f"Scene {number} shows a second state, so scene {number - 1} must be "
                     "B-roll showing the first."
                 )
-            if first.second_way_of_use:
+            if first.second_state:
                 raise ValueError(
-                    f"Scene {number} shows a third way of use: one claim has two B-roll scenes "
-                    "at most."
+                    f"Scene {number} shows a third state: one claim has two B-roll scenes at most."
                 )
         return self
 
