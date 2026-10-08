@@ -4,8 +4,8 @@ on this machine, and ffmpeg runs for real on tiny clips.
 
 The mug's first ad: what scene 2 shows fails the fact check and is rewritten, the shop owner
 has the script shortened to their target, and every scene is made and assembled. Its second
-ad has a talking scene, a B-roll scene made way 1 (from a starting picture), a B-roll scene
-made way 3 (from example pictures) and a talking scene to end on."""
+ad has a talking scene, two B-roll scenes, each made from its starting picture, and a
+talking scene to end on."""
 
 from collections.abc import Callable
 from typing import Any

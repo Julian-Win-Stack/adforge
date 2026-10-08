@@ -185,6 +185,17 @@ def clip_of_scene_2(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., 
     run(fake_model, steps)
 
 
+def picture_of_scene_2(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], *choices: dict[str, Any]
+) -> SceneStep:
+    """Scene 2's latest starting picture step, made with the prompts in `choices`, one for each
+    draw (the usual prompts when none are given)."""
+    calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": None}))
+    fake_model.respond("choose_broll_picture", *(choices or (BROLL_CHOICE,)))
+    run(fake_model, steps)
+    return SceneStep.objects.filter(kind="starting_picture", scene__number=2).last()  # type: ignore[return-value]
+
+
 def clips_asked(field: str) -> list[Any]:
     """`field` of what the video model was asked for, for each clip, oldest first."""
     return [handoff[field] for handoff in handoffs("make_broll_clip")]
@@ -389,7 +400,6 @@ def test_the_model_planning_the_picture_is_given_the_shared_prompt_rules(rule: s
 
 # Rules Julian's grades proved
 # (decisions/agreed-vs-built-2026-10-08.md rows 1, 5, 7, 10, 17).
-@pytest.mark.parametrize("rules", [BROLL_SHARED_RULES], ids=["way 1"])
 @pytest.mark.parametrize(
     "rule",
     [
@@ -425,11 +435,10 @@ def test_the_model_planning_the_picture_is_given_the_shared_prompt_rules(rule: s
         "Code starts the video prompt with the clip's length",
     ],
 )
-def test_the_model_writing_the_prompts_is_told_the_proven_rules(rules: str, rule: str) -> None:
-    assert rule in rules
+def test_the_model_writing_the_prompts_is_told_the_proven_rules(rule: str) -> None:
+    assert rule in BROLL_SHARED_RULES
 
 
-@pytest.mark.parametrize("rules", [BROLL_SHARED_RULES], ids=["way 1"])
 @pytest.mark.parametrize(
     "dropped",
     [
@@ -441,9 +450,9 @@ def test_the_model_writing_the_prompts_is_told_the_proven_rules(rules: str, rule
     ],
 )
 def test_the_model_writing_the_prompts_is_no_longer_told_the_rules_grades_rejected(
-    rules: str, dropped: str
+    dropped: str,
 ) -> None:
-    assert dropped not in rules
+    assert dropped not in BROLL_SHARED_RULES
 
 
 # What both best start pictures did (#8 toilet 5 s, #12 V2): rows 9, 18, 31.

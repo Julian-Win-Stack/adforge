@@ -108,7 +108,7 @@ Use the conversation with the shop owner for their wishes about how the ad looks
 about the product come only from what you are shown.
 """
 
-# Way 1: a starting picture is made from the main photo, then animated.
+# Every B-roll scene: a starting picture is made from the main photo, then animated.
 BROLL_SHARED_RULES = f"""\
 {_BROLL_SCENE}\
 A picture model makes the scene's starting picture from the pictures in "pictures", in that \
@@ -163,7 +163,7 @@ def broll_prompt_instructions(broll_kind: str) -> str:
     return f"{BROLL_SHARED_RULES}\n{BROLL_KIND_RULES[broll_kind]}"
 
 
-# The job of each picture the picture model gets for a way 1 B-roll scene.
+# The job of each picture the picture model gets for a B-roll scene's starting picture.
 MAIN_PHOTO_JOB = "the product, only how it looks"
 PORTRAIT_JOB = "the presenter"
 

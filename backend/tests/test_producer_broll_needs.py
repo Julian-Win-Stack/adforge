@@ -17,14 +17,13 @@ from jobs.models import Job, ProductPhoto, Scene, SceneStep
 
 from .conftest import HeldSteps, handoffs, photo, results_of
 from .test_producer_broll import (
-    BROLL_CHOICE,
     calling,
     checked,  # noqa: F401 (a fixture)
     clip_of_scene_2,
     clips_asked,
     instructed,  # noqa: F401 (a fixture)
     made_ready,
-    run,
+    picture_of_scene_2,
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
@@ -61,15 +60,6 @@ def portrait_file() -> str:
 def needing(needs: list[dict[str, Any]], **labels: Any) -> None:
     """Give scene 2 `needs`, and any other B-roll labels."""
     Scene.objects.filter(number=2).update(needs=needs, **labels)
-
-
-def picture_of_scene_2(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
-) -> SceneStep:
-    calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": None}))
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
-    run(fake_model, steps)
-    return SceneStep.objects.filter(kind="starting_picture", scene__number=2).last()  # type: ignore[return-value]
 
 
 def test_a_scene_with_needs_gets_a_starting_picture_made_from_its_needs_photos_too(
@@ -152,8 +142,8 @@ def test_the_clip_is_made_from_the_starting_picture_and_no_shop_photo(
     )
 
 
-# A scene whose picture step finished before every B-roll scene got a picture (way 3) has
-# no picture: its clip waits for a picture made again.
+# A scene whose picture step finished before every B-roll scene got a picture (old example
+# pictures) has no picture: its clip waits for a picture made again.
 
 
 @pytest.fixture

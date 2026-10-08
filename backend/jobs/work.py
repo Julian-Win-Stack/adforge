@@ -740,11 +740,19 @@ def _paid_for_before(
     """What a call for `purpose` made before the worker stopped, if it was paid for but not
     kept: for the job, or for the tool call it was `charged_to`. Every call is recorded as
     soon as it succeeds, so a restart reuses what it made."""
+    call = _paid_calls(job, purpose, charged_to=charged_to).last()
+    return call.output if call else None
+
+
+def _paid_calls(
+    job: Job, purpose: str, *, charged_to: ToolCall | None = None
+) -> QuerySet[ModelCall]:
+    """Every call for `purpose` that succeeded, oldest first: for the job, or for the tool
+    call it was `charged_to`."""
     calls = job.model_calls.filter(purpose=purpose, outcome=ModelCall.Outcome.SUCCEEDED)
     if charged_to is not None:
         calls = calls.filter(tool_call=charged_to)
-    call = calls.last()
-    return call.output if call else None
+    return calls
 
 
 def _measure_voice(job: Job, voice: ProducedItem) -> None:
@@ -1609,11 +1617,7 @@ def _plan_broll_picture(
 
 def _pictures_drawn(step: SceneStep) -> list[str]:
     """Each starting picture paid for for `step`, oldest first."""
-    calls = step.scene.job.model_calls.filter(
-        purpose="make_starting_picture",
-        outcome=ModelCall.Outcome.SUCCEEDED,
-        tool_call=step.tool_call,
-    ).order_by("created_at", "id")
+    calls = _paid_calls(step.scene.job, "make_starting_picture", charged_to=step.tool_call)
     return [call.output["file"] for call in calls if call.output is not None]
 
 

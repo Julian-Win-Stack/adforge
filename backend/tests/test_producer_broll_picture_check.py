@@ -21,7 +21,7 @@ from .test_producer_broll import (
     calling,
     checked,  # noqa: F401 (a fixture)
     instructed,  # noqa: F401 (a fixture)
-    run,
+    picture_of_scene_2,
 )
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("checked")]
@@ -45,15 +45,6 @@ def pictures_drawn() -> list[str]:
     """The file of each starting picture paid for, oldest first."""
     calls = ModelCall.objects.filter(purpose="make_starting_picture").order_by("id")
     return [call.output["file"] for call in calls if call.output is not None]
-
-
-def picture_of_scene_2(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], *choices: dict[str, Any]
-) -> SceneStep:
-    calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": None}))
-    fake_model.respond("choose_broll_picture", *choices)
-    run(fake_model, steps)
-    return SceneStep.objects.get(kind="starting_picture", scene__number=2)
 
 
 def test_a_picture_that_passes_is_checked_once_beside_the_shop_photo(
@@ -167,9 +158,7 @@ def test_a_picture_whose_check_cant_be_read_is_kept_and_not_paid_for_again(
 def test_a_picture_whose_check_service_is_down_is_kept_and_not_paid_for_again(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    fake_model.respond(
-        "check_starting_picture", *[OutsideServiceDown("azure answered 503")] * 3
-    )
+    fake_model.respond("check_starting_picture", *[OutsideServiceDown("azure answered 503")] * 3)
 
     step = picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE)
 
