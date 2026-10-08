@@ -402,8 +402,18 @@ def test_the_model_planning_the_picture_is_given_the_shared_prompt_rules(rule: s
         # (N5 s2), so Julian made it one movement, no exceptions.
         "Film one movement only",
         '"usage" tells how it is held and used, not how many steps to film',
-        'when "shows" names only one movement, film that one',
-        "Keep the movement that makes the line's claim happen on screen",
+        # A plan "shows" of holding up the phone after its drop was overridden back to the
+        # drop by the line's claim, 4 runs of 4 (#12, compare.md cause check), so "shows"
+        # decides which movement.
+        '"shows" says which: when it names one movement, film that one, even when the line',
+        # "The one that makes the line's claim happen" picked the flush over the scrub Julian
+        # graded PERFECT (#8 5 s, round 8): the movement is the product's or its tool's.
+        'When "shows" lists more than one, film the one where the product, or the tool used '
+        "with it, does the work",
+        # The bag's "the presenter wears the bag" came back as the bag alone (5 s3, rounds 7-8).
+        'When "shows" names a person or a hand, they are in the clip, doing what it says',
+        # "locked-off", "stationary camera" clashed with the handheld look code writes first.
+        "never call the camera fixed, locked-off or stationary",
         "The voice carries the rest",
         # Filming the strap change failed; one clip per state was PERFECT (#5 bag).
         "Never film the fiddly change between two states",
@@ -456,6 +466,22 @@ def test_the_picture_prompt_shows_what_must_be_right(rule: str) -> None:
 
 def test_a_does_a_job_scene_ends_on_its_result() -> None:
     assert "ends on the result" in BROLL_KIND_RULES["does a job"]
+
+
+# The toilet clip's whole ring vanished where nothing touched it, "time-compressed", after
+# filming the gel go on; Julian: "just scrub it and then that scrub area become clean", "you
+# don't need to even put in the gel at all" (decisions/2026-10-08-result-only-where-scrubbed.md).
+@pytest.mark.parametrize(
+    "rule",
+    [
+        "The result shows only where the product, or the tool used with it, touches",
+        "nothing else changes",
+        "never all at once, sped up or time-compressed",
+        "putting the product on is never filmed or drawn",
+    ],
+)
+def test_a_does_a_job_scene_changes_only_where_it_is_touched(rule: str) -> None:
+    assert rule in BROLL_KIND_RULES["does a job"]
 
 
 def test_a_showcase_scene_ends_on_what_its_line_proves() -> None:

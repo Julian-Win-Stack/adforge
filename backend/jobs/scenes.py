@@ -76,10 +76,12 @@ voice says the scene's line over it.
 _BROLL_PROMPT_RULES = """\
 - One continuous shot, with no cuts, at a natural, real-time pace. Never write seconds or \
 timings, or words that slow it down, such as "slowly" or "gently".
-- Film one movement only, whatever "shows", "usage" or the line list: one hand or tool \
-doing one thing, such as one wipe, one pour or one pass. Keep the movement that makes the \
-line's claim happen on screen, not a step before or after it; when "shows" names only one \
-movement, film that one. The voice carries the rest. \
+- Film one movement only: one hand or tool doing one thing, such as one wipe, one pour or \
+one pass. "shows" says which: when it names one movement, film that one, even when the line, \
+"usage" or "result" name another, such as a step before it. When "shows" lists more than \
+one, film the one where the product, or the tool used with it, does the work, not a step \
+before it, such as putting the product on, or after it, such as rinsing. The voice carries \
+the rest. \
 Never film the fiddly change between two states, such as clipping, unclipping or folding: \
 open with it done.
 - The product, or the tool used with it, does what the line claims, on screen, held the way \
@@ -90,7 +92,8 @@ when holding it would bend its shape, while the tool used with it does the work.
 top or the bottom of the frame.
 - Only the presenter is shown. When "person_shown" is "has face", the person is the \
 presenter from the portrait, with the same face, hair and clothes. When it is "no face", no \
-face is seen. Any hand is fine.
+face is seen. Any hand is fine. When "shows" names a person or a hand, they are in the \
+clip, doing what it says.
 - The product is shown, not described: the pictures show how it looks, so don't describe \
 its shape, colours or brand name in words.
 - Never write "no speech", "no sound" or "no text".
@@ -98,7 +101,7 @@ its shape, colours or brand name in words.
 such as "upright" and "nozzle pointing down", or "squeeze" and "no gel". Check every order \
 against the product photos and against your other orders.
 - Code starts the video prompt with the clip's length and its phone-video look, so write \
-neither.
+neither, and never call the camera fixed, locked-off or stationary.
 The producer may add a note, such as what the shop owner asked for this scene. Follow it \
 unless it asks for something you can't do with these pictures, or something "shows" doesn't \
 describe, and then say so in a reason.
@@ -175,7 +178,11 @@ BROLL_KIND_RULES: dict[str, str] = {
 This scene does a job you can see: the result in "result" comes from the product being \
 used. The starting picture shows what the result will change, before it changes. The video \
 prompt ends on the result, happening because the product, or the tool used with it, acts, \
-not by itself. A result on a screen is shown without numbers or words, such as a charging \
+not by itself. The result shows only where the product, or the tool used with it, touches, \
+and nothing else changes. It happens as the touch passes, at a real-time pace: never all at \
+once, sped up or time-compressed. When a tool does the work after the product is put on, \
+such as a brush after a gel, putting the product on is never filmed or drawn: the voice \
+carries it. A result on a screen is shown without numbers or words, such as a charging \
 light coming on.""",
     "showcase": """\
 This scene is a showcase: the real product shown clearly, in use the way the page says, with \

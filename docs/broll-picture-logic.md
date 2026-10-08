@@ -393,8 +393,13 @@ From the MiniMax H3 prompt guides (Boreal-H3 is built on H3) and the four mistak
 - One continuous shot, doing what "shows" says in order at a natural, real-time pace. No
   seconds, timings, "slowly" or "gently" (2026-10-08): "one action per 2 to 3 seconds" gave
   stopwatch timings, #5 "3 actions in 6 s" and #7 "far too slow", both failed by the user.
-- One movement per clip, no exceptions (the user's decision, 2026-10-08): only the movement
-  that proves the line is filmed; the voice carries the rest. The fiddly change between two
+- One movement per clip, no exceptions (the user's decision, 2026-10-08): the plan's "shows"
+  says which movement (a hold-up "shows" was turned back into the drop its line claims,
+  #12, 4 runs of 4). When it lists several, the one where the product or its tool does the
+  work is filmed, not putting the product on before it or rinsing after it ("the one that
+  proves the line" picked the toilet's flush over the scrub graded perfect). A person or hand
+  "shows" names is in the clip (the bag scene's wearer was left out). The
+  voice carries the rest. The fiddly change between two
   states (clipping, unclipping, folding) is never filmed. Why: the toilet scrub-only clip was
   graded perfect; the bag clip that filmed the strap change failed, one clip per state
   passed; "two or three actions that flow as one" let clamp + rotate + glide through on a
@@ -403,11 +408,17 @@ From the MiniMax H3 prompt guides (Boreal-H3 is built on H3) and the four mistak
 - The product, or the tool used with it, acts; the product may stand in view when holding it
   would bend its shape (2026-10-08: the toilet clip the user graded perfect had the bottle
   standing on the tank; holding it bent its neck).
+- A job's result shows only where the product or its tool touches, and nothing else
+  changes; it happens as the touch passes, never all at once or time-compressed. When a
+  tool works after the product is put on, putting it on is never filmed or drawn (the user,
+  2026-10-08: "just scrub it and then that scrub area become clean", "you don't need to even
+  put in the gel at all"; the toilet clip's whole ring had vanished where nothing touched it).
 - Never two orders that can't both be true ("upright" + "nozzle pointing down" bent the
   bottle; "squeeze" + "no gel" put gel on the rim). Each order is checked against the photos.
 - Code starts every B-roll video prompt with "A {N}-second handheld phone video, casual, not
   cinematic, real-time speed.", N the clip's real length, as both best-graded clips did; the
-  video prompt no longer says "9:16" (the API sends it).
+  video prompt no longer says "9:16" (the API sends it), and never calls the camera fixed,
+  locked-off or stationary, which clashes with "handheld".
 - The starting picture's prompt opens "An upright 9:16 photo taken on a phone in a real,
   ordinary <place>, casual, not a studio shot." and says plainly what must be right: camera
   height and angle, every part of the object named as a real, ordinary one, the problem as it
