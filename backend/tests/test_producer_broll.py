@@ -397,8 +397,10 @@ def test_the_model_planning_the_picture_is_given_the_shared_prompt_rules(rule: s
         # Timings made clips stopwatch-like (#5) or far too slow (#7).
         "Never write seconds or timings",
         '"slowly" or "gently"',
-        # Only the scrub, with the voice carrying squeeze and flush, was PERFECT (#8 5 s).
-        "film only the main one",
+        # Only the scrub, with the voice carrying squeeze and flush, was PERFECT (#8 5 s);
+        # "flows as one" let clamp + rotate + glide through and Boreal skipped the middle
+        # (N5 s2), so Julian made it one movement, no exceptions.
+        "Film one movement only",
         "The voice carries the rest",
         # Filming the strap change failed; one clip per state was PERFECT (#5 bag).
         "Never film the fiddly change between two states",
@@ -423,6 +425,7 @@ def test_the_model_writing_the_prompts_is_told_the_proven_rules(rules: str, rule
         "not standing idle beside the action",
         # The API already sends the shape; the video prompt doesn't repeat it.
         "Upright 9:16",
+        "flow as one",
     ],
 )
 def test_the_model_writing_the_prompts_is_no_longer_told_the_rules_grades_rejected(

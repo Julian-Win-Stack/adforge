@@ -74,13 +74,11 @@ voice says the scene's line over it.
 
 # The rules every B-roll prompt follows, made either way.
 _BROLL_PROMPT_RULES = """\
-- One continuous shot, with no cuts. Do what "shows" says, except as the next rule says, at \
-a natural, real-time pace. Never write seconds or timings, or words that slow it down, such as \
-"slowly" or "gently".
-- When "shows" lists separate steps, with a wait, a set-up or a change of state between \
-them, film only the main one: the step that proves the line. The voice carries the rest. \
-Two or three actions that flow as one, by one person, are fine. Never film the fiddly \
-change between two states, such as clipping, unclipping or folding: open with it done.
+- One continuous shot, with no cuts, at a natural, real-time pace. Never write seconds or \
+timings, or words that slow it down, such as "slowly" or "gently".
+- Film one movement only, whatever "shows" lists: the one that proves the line. The voice \
+carries the rest. Never film the fiddly change between two states, such as clipping, \
+unclipping or folding: open with it done.
 - The product, or the tool used with it, does what the line claims, on screen, the way \
 "usage" says: something always acts. The product may stand in view, label to the camera, \
 when holding it would bend its shape, while the tool used with it does the work.
