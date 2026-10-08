@@ -41,7 +41,9 @@ spraying, waiting and rinsing, and write that B-roll line about that step. This 
 even for steps that flow into each other with no pause: the video skips the middle of a \
 chain of movements, so film only the main one. Putting the product on or taking it off, \
 attaching, fitting, adjusting or turning it is a movement of its own: a scene films it or \
-what comes after it, never both.
+what comes after it, never both. Write what the scene shows with one verb for what moves, \
+such as "a hand pours the sauce", never two joined by "and" or "then", such as "lifts and \
+pours".
 """
 
 PLAN_INSTRUCTIONS = (
@@ -504,8 +506,7 @@ class Plan(BaseModel):
                 continue
             if scene.shows is None:
                 raise ValueError(
-                    f"Scene {number} is said to camera: only a B-roll scene shows a second state "
-                    "of use."
+                    f"Scene {number} is said to camera: only a B-roll scene shows a second state."
                 )
             first = self.scenes[number - 2]
             if first.shows is None:

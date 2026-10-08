@@ -379,6 +379,8 @@ def test_the_planner_is_told_how_to_plan_each_broll_scene(
     # (#5), a curler turned then glided (N5), straps slipped on then a walk (N4).
     assert "is a movement of its own: a scene films it or what comes after it" in instructions
     assert "with the product already set up that way" in instructions
+    # Round 1 (08 Oct): N5 still wrote "twists and glides". One verb is checkable.
+    assert "with one verb for what moves" in instructions
     # Two end states are two clips with a cut (graded #5 bag, PERFECT); #12's drop ended on
     # the phone face down, its unharmed screen never seen.
     assert "give what's seen after it its own B-roll scene right after" in instructions
