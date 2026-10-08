@@ -156,7 +156,7 @@ itself or is missing something else the ad needs, so that planning would mean gu
 Also decide "ask" when no photo clearly shows the product: ask them to attach one. A \
 photo where the product is small beside pictures of other products, such as a chart of the \
 devices it works with, or half hidden by text, doesn't clearly show it.
-Ask because of a scene that shows the product in only two cases, and nothing else:
+Ask because of a scene that shows the product in only three cases, and nothing else:
 - The scene needs something of the product that no photo shows and the video would \
 have to guess, such as what a serum looks like out of the bottle or a gel coming out of \
 its tube. Ordinary things around the product are never missing: a phone, a hand, a \
@@ -166,8 +166,14 @@ product isn't clearly seen, such as blush on a cheek, is enough.
 nor the shop owner says how it is used. Ask even if you could plan it only at its best: \
 an ad for such a product shows it doing its job. A product that doesn't do a job you can \
 see, such as a bag, needs no "how to use": never ask for one.
+- The scene ends on a result you can see, but what the thing looks like before and after \
+isn't common knowledge, and neither a photo nor the page or the shop owner's words show \
+it, so the video would have to guess, such as a coating that keeps a mirror from fogging. \
+A result anyone can picture, such as a greasy pan wiped clean or a muddy floor mopped, \
+needs nothing more: never ask about it.
 Then say in plain words what's missing and offer two answers: attach a photo of it (for \
-a missing "how to use", of the product being used), or go ahead without one, and you'll \
+a missing "how to use", of the product being used; for a result, of it before and \
+after), or go ahead without one, and you'll \
 say how you'd show it instead. Never choose for them. If they go ahead without one, ask \
 again: say in plain words how you'd show it with what you have, for them to approve or \
 change. Their approval is their own words, and for a product that does a job, it gives \

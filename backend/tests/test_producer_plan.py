@@ -375,6 +375,24 @@ def test_the_planner_is_told_the_shape_of_every_script(
     assert "part" in scene
 
 
+def test_the_planner_is_told_to_ask_for_a_before_and_after_nobody_could_picture(
+    httpserver: HTTPServer,
+    openai_server: Callable[..., None],
+    product_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    planning_through_openai(openai_server, product_page_url, PLAN)
+
+    say(f"Make an ad for {product_page_url}")
+
+    instructions = the_plan_request(httpserver)["instructions"]
+    # Audit row 19: N3's shower cleaner was planned with a result nobody could picture and
+    # no photo of it, so the video guessed; a dirty toilet scrubbed clean needed no photo.
+    assert "in only three cases" in instructions
+    assert "isn't common knowledge" in instructions
+    assert "of it before and after" in instructions
+
+
 # --- What the planner is given --------------------------------------------------------------
 
 
