@@ -117,6 +117,7 @@ from .scenes import (
     StartingPictureHandoff,
     broll_examples_choice_for,
     broll_prompt_instructions,
+    broll_video_prompt,
     example_pictures,
     photos_for_needs,
     pose_for,
@@ -1904,20 +1905,22 @@ def _clip_handoff(
             f"its line takes {round(audio.seconds, 1):g} seconds to say, and the B-roll video "
             f"model makes clips of at most {MOST_BROLL_SECONDS} seconds"
         )
+    seconds = _broll_clip_seconds(audio.seconds)
     if planned.way == SceneStep.Way.FROM_EXAMPLES:
         return BrollClipHandoff(
             example_pictures=[picture["file"] for picture in planned.pictures_sent],
-            seconds=_broll_clip_seconds(audio.seconds),
-            prompt=planned.motion_prompt,
+            seconds=seconds,
+            prompt=broll_video_prompt(planned.motion_prompt, seconds),
         )
     assert picture is not None, "a scene made way 1 has its starting picture"
     motion = planned.motion_prompt
     return BrollClipHandoff(
         starting_picture=picture.file,
-        seconds=_broll_clip_seconds(audio.seconds),
+        seconds=seconds,
         # A scene planned before it had its B-roll labels is moved as before. A labelled
-        # scene's prompt is sent as written: the real photo of the product keeps it true.
-        prompt=motion if planned.way else with_nothing_made_up(motion),
+        # scene's prompt is sent as written, after its look and length: the real photo of
+        # the product keeps it true.
+        prompt=broll_video_prompt(motion, seconds) if planned.way else with_nothing_made_up(motion),
     )
 
 

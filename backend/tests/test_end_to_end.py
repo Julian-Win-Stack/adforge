@@ -379,7 +379,10 @@ def test_way_1_sends_its_starting_picture_and_way_3_its_example_pictures(
         (way_1_picture.file, [], 5),
         (None, [job.photos.get(position=1).file, job.photos.get(position=2).file], 6),
     ]
-    assert handoffs("make_broll_clip")[1]["prompt"] == HANDLE_PROMPT
+    # The clip's look and real length first, then the prompt as written.
+    assert handoffs("make_broll_clip")[1]["prompt"] == (
+        "A 6-second handheld phone video, casual, not cinematic, real-time speed. " + HANDLE_PROMPT
+    )
     # Way 3 makes no picture: only the talking scenes and scene 2 have one.
     assert sorted(
         job.produced.filter(kind="starting_picture").values_list("scene__number", flat=True)

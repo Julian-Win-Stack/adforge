@@ -355,9 +355,10 @@ gadget shown only looking nice never proves it works.
   a screen is shown without numbers or words (the charging light comes on, not "80%"): video
   makers garble them.
 - **Showcase.** The real product shown clearly, in use the way the page says; one simple
-  action (worn and turning, picked up, set down, or a slow camera move); ending on the moment
-  the product looks its best, such as the bag catching the light as she turns; no result or
-  change the page doesn't prove.
+  action a person really does with it (worn while walking, picked up, set down); ending on
+  what the line proves, filmed; no result or change the page doesn't prove. (Until
+  2026-10-08 it ended "at its best" with "a slow camera move" allowed: the forced ending made
+  pointless zooms in #15 and #4, and the user graded the retest without it "a lot better".)
 
 The checker's questions come from templates, not written by hand:
 1. Is the promised result visible by the end, coming from the product being used? (does a
@@ -389,7 +390,22 @@ From the MiniMax H3 prompt guides (Boreal-H3 is built on H3) and the four mistak
   cleaner's first test showed the bottle standing idle while a hand scrubbed: it showed
   nothing the line says ("the clinging gel fights rings and stains") and was graded useless.
   Its redo shows the gel coming out over a hard-water ring.
-- One continuous shot. One action per 2 to 3 seconds, so a 5 s clip holds one or two.
+- One continuous shot, doing what "shows" says in order at a natural, real-time pace. No
+  seconds, timings, "slowly" or "gently" (2026-10-08): "one action per 2 to 3 seconds" gave
+  stopwatch timings, #5 "3 actions in 6 s" and #7 "far too slow", both failed by the user.
+- The product, or the tool used with it, acts; the product may stand in view when holding it
+  would bend its shape (2026-10-08: the toilet clip the user graded perfect had the bottle
+  standing on the tank; holding it bent its neck).
+- Never two orders that can't both be true ("upright" + "nozzle pointing down" bent the
+  bottle; "squeeze" + "no gel" put gel on the rim). Each order is checked against the photos.
+- Code starts every B-roll video prompt with "A {N}-second handheld phone video, casual, not
+  cinematic, real-time speed.", N the clip's real length, as both best-graded clips did; the
+  video prompt no longer says "9:16" (the API sends it).
+- The starting picture's prompt opens "An upright 9:16 photo taken on a phone in a real,
+  ordinary <place>, casual, not a studio shot." and says plainly what must be right: camera
+  height and angle, every part of the object named as a real, ordinary one, the problem as it
+  looks before, counts and left/right, the hand at the first moment. A product in an unusual
+  pose gets the pose said once and what it does to each part (the label turns with it).
 - The product is held the way it is really used, taken from the page's "how to use"
   (the toilet cleaner's bottle is used upside down, not with the nozzle pointing up).
 - The prompt says only that the main action or product is in the middle of the frame, and

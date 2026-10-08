@@ -370,7 +370,14 @@ def test_the_clip_is_asked_for_from_the_example_pictures_and_no_starting_picture
         clips_asked("starting_picture"),
         clips_asked("example_pictures"),
         clips_asked("prompt"),
-    ) == ([None], [[photo_file(1), photo_file(4)]], [VIDEO_PROMPT])
+    ) == (
+        [None],
+        [[photo_file(1), photo_file(4)]],
+        [
+            "A 5-second handheld phone video, casual, not cinematic, real-time speed. "
+            + VIDEO_PROMPT
+        ],
+    )
     clip = ProducedItem.objects.get(kind="clip")
     assert clip.picture is None
     assert clip.step is not None and clip.step.picture_step == SceneStep.objects.get(

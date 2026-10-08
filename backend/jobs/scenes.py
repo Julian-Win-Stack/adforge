@@ -74,9 +74,13 @@ voice says the scene's line over it.
 
 # The rules every B-roll prompt follows, made either way.
 _BROLL_PROMPT_RULES = """\
-- One continuous shot, with no cuts. One action every 2 to 3 seconds.
-- The product does what the line claims, on screen, held and used the way "usage" says, \
-not standing idle beside the action.
+- One continuous shot, with no cuts. Do what "shows" says, in order, at a natural, \
+real-time pace. Never write seconds or timings, or words that slow it down, such as \
+"slowly" or "gently".
+- The product, or the tool used with it, does what the line claims, on screen, the way \
+"usage" says: something always acts. The product may stand in view, label to the camera, \
+when holding it would bend its shape, such as a bottle standing nearby while the tool used \
+with it does the work.
 - The main action, or the product, is in the middle of the frame. Say nothing about the \
 top or the bottom of the frame.
 - Only the presenter is shown. When "person_shown" is "has face", the person is the \
@@ -85,7 +89,11 @@ face is seen. Any hand is fine.
 - The product is shown, not described: the pictures show how it looks, so don't describe \
 its shape, colours or brand name in words.
 - Never write "no speech", "no sound" or "no text".
-- Upright 9:16, with a natural, casual phone-video look.
+- Never ask for two things that can't both be true at once, of the product or the scene, \
+such as "upright" and "nozzle pointing down", or "squeeze" and "no gel". Check every order \
+against the product photos and against your other orders.
+- Code starts the video prompt with the clip's length and its phone-video look, so write \
+neither.
 The producer may add a note, such as what the shop owner asked for this scene. Follow it \
 unless it asks for something you can't do with these pictures, or something "shows" doesn't \
 describe, and then say so in a reason.
@@ -109,6 +117,15 @@ unchanged. Nothing else from that photo: not its background, setting or people. 
 is the ad's choice: the setting is described in words.
 - The starting picture is the "before": the moment just before the action, with the \
 product ready to be used. The video prompt does the action.
+- The picture prompt opens: "An upright 9:16 photo taken on a phone in a real, ordinary \
+<place>, casual, not a studio shot." with the scene's setting as the place.
+- Anything that must be right goes in the starting picture, said plainly: where the camera \
+is and who holds it, its height and angle; each object the action happens to other than the \
+product, with every part named as a real, ordinary one, like one from a hardware store; the \
+problem the product fixes, as it looks before; exact counts, and left or right; and any hand \
+at the first moment of the action, already holding what it uses.
+- When the product is in an unusual pose, such as upside down, say the pose once and what \
+it does to each part you see, such as its label turning upside down with it.
 {_BROLL_PROMPT_RULES}\
 Give a one-sentence reason for the photo, one for the picture prompt and one for the video \
 prompt, written for the shop owner."""
@@ -155,9 +172,9 @@ not by itself. A result on a screen is shown without numbers or words, such as a
 light coming on.""",
     "showcase": """\
 This scene is a showcase: the real product shown clearly, in use the way the page says, with \
-one simple action, such as worn and turning, picked up, set down, or a slow camera move. \
-The video prompt ends on the product at its best, such as a bag catching the light as she \
-turns. Show no result or change the page doesn't prove.""",
+one simple action a person really does with it, such as worn while walking, picked up or set \
+down. The video prompt ends on what the line proves, filmed: the moment that shows its \
+claim is true. Show no result or change the page doesn't prove.""",
 }
 
 
@@ -171,6 +188,15 @@ def broll_prompt_instructions(broll_kind: str, way: int = 1) -> str:
 # The job of each picture the picture model gets for a way 1 B-roll scene.
 MAIN_PHOTO_JOB = "the product, only how it looks"
 PORTRAIT_JOB = "the presenter"
+
+
+def broll_video_prompt(prompt: str, seconds: int) -> str:
+    """A B-roll scene's video prompt as it is sent: the clip's look and real length first,
+    so no prompt goes without them, then the prompt as the model wrote it. Both clips Julian
+    graded best opened this way (decisions/2026-10-08-teach-app-5s-prompt-style.md, #2)."""
+    return (
+        f"A {seconds}-second handheld phone video, casual, not cinematic, real-time speed. {prompt}"
+    )
 
 
 # Added by code to every prompt for a scene that shows the product, after what the model
