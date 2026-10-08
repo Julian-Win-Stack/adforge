@@ -401,6 +401,8 @@ def test_the_model_planning_the_picture_is_given_the_shared_prompt_rules(rule: s
         # "flows as one" let clamp + rotate + glide through and Boreal skipped the middle
         # (N5 s2), so Julian made it one movement, no exceptions.
         "Film one movement only",
+        '"usage" tells how it is held and used, not how many steps to film',
+        'when "shows" names only one movement, film that one',
         "Keep the movement that makes the line's claim happen on screen",
         "The voice carries the rest",
         # Filming the strap change failed; one clip per state was PERFECT (#5 bag).
