@@ -501,10 +501,10 @@ class Plan(BaseModel):
     def _second_state_after_the_first(self) -> Self:
         # The two end states of one claim play back to back, so the second's clip can be made
         # from the first's (audit row 11).
-        for number, scene in enumerate(self.scenes[1:], start=2):
+        for number, scene in enumerate(self.scenes, start=1):
             if not scene.second_state:
                 continue
-            if scene.shows is None:
+            if scene.shows is None or number == 1:
                 raise ValueError(
                     f"Scene {number} is said to camera: only a B-roll scene shows a second state."
                 )

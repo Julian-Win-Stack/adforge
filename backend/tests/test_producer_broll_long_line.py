@@ -251,6 +251,26 @@ def test_a_line_still_too_long_after_three_shortenings_becomes_a_talking_scene(
     assert (scene.line, scene.shows) == (STILL_LONG[-1], "")
 
 
+def test_a_scene_that_becomes_a_talking_scene_shows_no_second_state_nor_does_the_next(
+    fake_model: FakeModel, too_long: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    # A second state plays right after the B-roll scene showing the first, and is made from
+    # it: once scene 2 is said to camera, neither it nor scene 3 is a second state.
+    Scene.objects.filter(number__in=[2, 3]).update(second_state=True)
+    for line in STILL_LONG:
+        fake_model.respond("shorten_line", {"line": line})
+        fake_model.respond("fact_check", facts_ok(2))
+    for _ in [*STILL_LONG, "talking"]:
+        audio_of_scene_2(fake_model, steps, say)
+
+    assert Scene.objects.get(number=2).shows == ""
+    assert list(Scene.objects.order_by("number").values_list("second_state", flat=True)) == [
+        False,
+        False,
+        False,
+    ]
+
+
 def test_the_chat_says_why_a_scene_became_a_talking_scene(
     shortened_three_times: str, api: APIClient, session_id: str
 ) -> None:

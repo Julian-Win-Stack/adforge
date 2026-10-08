@@ -762,6 +762,11 @@ def a_plan_with_ways(*kinds: str) -> dict[str, Any]:
             id="a third state",
         ),
         pytest.param(
+            a_plan_with(scenes=[{"line": "Meet the Stoneware Mug.", "second_state": True}]),
+            "Scene 1 is said to camera: only a B-roll scene shows a second state.",
+            id="the opening scene given as a second state",
+        ),
+        pytest.param(
             a_plan_with_ways("broll", "talking second state"),
             "Scene 3 is said to camera: only a B-roll scene shows a second state.",
             id="a talking scene given as a second state",

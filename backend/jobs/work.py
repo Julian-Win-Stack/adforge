@@ -1755,11 +1755,16 @@ def _fit_its_clip(step: SceneStep, audio: ProducedItem) -> None:
 
 def _say_it_to_camera(scene: Scene) -> None:
     """Have the person say a B-roll scene's line to camera, as it stands, and tell the user
-    why: its line is too long for a B-roll clip."""
+    why: its line is too long for a B-roll clip. A talking scene shows no second state, and
+    the scene after it no longer follows the first state it was made from."""
     with transaction.atomic():
         scene.change_line(scene.line, shows="")
         scene.shortened_from = []
-        scene.save(update_fields=["shows", *BROLL_FIELDS, "shortened_from", "status"])
+        scene.second_state = False
+        scene.save(
+            update_fields=["shows", *BROLL_FIELDS, "shortened_from", "second_state", "status"]
+        )
+        scene.job.scenes.filter(number=scene.number + 1).update(second_state=False)
         post_notice(
             scene.job,
             f"Scene {scene.number} couldn't be made as a product shot because its line is too "
