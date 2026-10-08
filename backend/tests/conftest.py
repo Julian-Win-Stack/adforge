@@ -1,9 +1,11 @@
 import io
 import json
+import random
 import re
 import socket
 import subprocess
 import tempfile
+import time
 from collections.abc import Callable, Iterator
 from datetime import timedelta
 from pathlib import Path
@@ -18,6 +20,7 @@ from pydantic import BaseModel
 from pytest_django import Settings
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
+from werkzeug import Request, Response
 
 from adforge import celery_app
 from agents import tasks
@@ -28,7 +31,7 @@ from gateway.gateway import use_model
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import ModelReply, ModelRequest, TurnReply, TurnRequest
-from jobs.models import Job
+from jobs.models import BROLL_FIELDS, Job
 
 celery_app.conf.update(task_always_eager=True, task_eager_propagates=True)
 
@@ -71,6 +74,26 @@ PRODUCT_PAGE = """<!doctype html>
 # What the page check answers for the mug's page.
 READABLE = {"decision": "readable", "reason": "The page names the mug, its price and its size."}
 
+# What the copy model copies out of the mug's page: all of it but the price.
+COPIED = {
+    "product": "Stoneware Mug",
+    "passages": ["Stoneware Mug", "Hand-thrown, holds 350 ml, dishwasher safe."],
+}
+
+# What the photo picker answers when a test doesn't say: on the shampoo's marked
+# screenshot, its big gallery photo (I8) and the same photo's thumbnail (I16).
+SHAMPOO_PICKED = {
+    "product": "Detox Clarifying Hair Shampoo",
+    "gallery_images": [8, 16],
+    "more_images": [],
+    "product_sections": [15, 30],
+    "notes": "",
+    "face_images": [],
+}
+
+# What the Face-note call answers for a photo with no stranger's face in it.
+NO_FACE: dict[str, Any] = {"has_face": False}
+
 # What the producer plans for the mug's page: three scenes.
 PLAN: dict[str, Any] = {
     "decision": "plan",
@@ -92,6 +115,29 @@ PLAN: dict[str, Any] = {
     },
 }
 # The plan's 18 words take the fake voice 9 seconds: it speaks 2 words a second.
+
+
+# What the planner says about a B-roll scene when a test doesn't say: it shows the mug at
+# its best, with no face in it, and needs nothing the main photo can't show.
+SHOWCASE: dict[str, Any] = {
+    "broll_kind": "showcase",
+    "person_shown": "no face",
+    "usage": None,
+    "result": None,
+    "needs": [],
+}
+
+
+def broll_labels() -> list[tuple[str, str, str, str, list[dict[str, Any]]]]:
+    """Each stored scene's B-roll kind, person, usage, result and needs, in order."""
+    return list(Job.objects.get().scenes.values_list(*BROLL_FIELDS))
+
+
+def broll(scene: dict[str, Any]) -> dict[str, Any]:
+    """A planned scene with SHOWCASE's B-roll labels when it shows something, as every
+    B-roll scene must have them; a scene the person says to camera as it is."""
+    shows = scene.get("shows")
+    return {**SHOWCASE, **scene} if shows and shows.strip() else scene
 
 
 def facts_ok(*scenes: int) -> dict[str, Any]:
@@ -137,6 +183,9 @@ def _isolated_outside_world(settings: Settings, tmp_path: Path) -> None:
     # Nothing is sent to Langfuse, even from a machine whose environment holds real keys.
     settings.LANGFUSE_PUBLIC_KEY = ""
     settings.LANGFUSE_SECRET_KEY = ""
+    # Pages are read with the plain download, never by the real Firecrawl. A test that reads
+    # through Firecrawl uses the `firecrawl` fixture's stand-in.
+    settings.FIRECRAWL_API_KEY = ""
 
 
 @pytest.fixture
@@ -147,8 +196,18 @@ def api() -> APIClient:
 @pytest.fixture
 def fake_model() -> Iterator[FakeModel]:
     fake = FakeModel()
+    fake.answer_unscripted("copy_page_text", copy_every_line)
+    fake.answer_unscripted("pick_photos", lambda _: SHAMPOO_PICKED)
+    fake.answer_unscripted("note_face", lambda _: NO_FACE)
     with use_model(fake):
         yield fake
+
+
+def copy_every_line(request: ModelRequest[Any]) -> dict[str, Any]:
+    """What the copy model answers when a test doesn't say: every line of the page it was
+    given, so the product's own text is the whole page, as before it was copied out."""
+    given = request.handoff.model_dump()
+    return {"product": given["product"], "passages": given["page_text"].splitlines()}
 
 
 @pytest.fixture
@@ -165,6 +224,168 @@ def product_page_url(httpserver: HTTPServer) -> str:
         MUG_SIDE, content_type="image/png"
     )
     return httpserver.url_for("/products/mug")
+
+
+# A real answer of Firecrawl's page read, for OUAI's Detox Shampoo, trimmed to the product's
+# own text and one "Pairs Well With" product.
+FIRECRAWL_PAGE_READ = (Path(__file__).parent / "fixtures" / "firecrawl_page_read.json").read_text()
+# The shampoo's photo, as the page declares it twice: at full size, and 1,920 px wide.
+SHAMPOO_PHOTO = picture(300, 400, (201, 141, 60), format="JPEG")
+SHAMPOO_PHOTO_PATH = (
+    "/cdn/shop/files/Update_2_DetoxShampoo_260611-17-23_Site_Asset_PDP_Product_"
+    "Thumbnail_1440x1780_11.jpg"
+)
+
+
+# Real answers of Firecrawl's other two calls for the same page, trimmed: the marked
+# screenshot's (its marking script's list cut to six pictures and five text pieces, and the
+# HTML and markdown it also sends left out), and the product record's (two images a size).
+FIRECRAWL_MARKED = (Path(__file__).parent / "fixtures" / "firecrawl_marked.json").read_text()
+FIRECRAWL_PRODUCT = (Path(__file__).parent / "fixtures" / "firecrawl_product.json").read_text()
+# The record's first official photo, R1, where the shop's CDN keeps it.
+SHAMPOO_RECORD_PHOTO_PATH = (
+    "/s/files/1/1043/7322/files/Update_2_DetoxShampoo_260611-17-23_Site_Asset_PDP_Product_"
+    "Thumbnail_1440x1780_11.jpg"
+)
+
+
+def screenshot(width: int, height: int) -> bytes:
+    """A page screenshot, dark at the top and light at the bottom, so no part is blank."""
+    file = io.BytesIO()
+    PIL.Image.linear_gradient("L").resize((width, height)).convert("RGB").save(file, "PNG")
+    return file.getvalue()
+
+
+def photo(seed: int, width: int = 64, height: int = 80) -> bytes:
+    """A photo of its own: random dots, so no two seeds look alike to the copy check, and
+    one seed looks the same at every size."""
+    dots = random.Random(seed).randbytes(16 * 20 * 3)
+    small = PIL.Image.frombytes("RGB", (16, 20), dots)
+    file = io.BytesIO()
+    small.resize((width, height), PIL.Image.Resampling.NEAREST).save(file, "PNG")
+    return file.getvalue()
+
+
+type FirecrawlCall = Literal["page", "marked", "product"]
+
+
+@pytest.fixture(scope="session")
+def make_httpserver() -> Iterator[HTTPServer]:
+    """The local web server, answering requests at the same time as real servers do: the
+    page is read with Firecrawl's three calls at once, and a slow one mustn't hold up the
+    others."""
+    server = HTTPServer(threaded=True)
+    server.start()
+    yield server
+    server.clear()
+    if server.is_running():
+        server.stop()
+
+
+class FakeFirecrawl:
+    """A stand-in Firecrawl on the local web server. It answers /v2/scrape by what the
+    request asks for, as the real one does: a page read (markdown and rawHtml), a marked
+    screenshot (actions) and a product record each get the saved real answer, with the shop's
+    address swapped for the local shop's. The screenshot is served from the local server."""
+
+    def __init__(self, httpserver: HTTPServer) -> None:
+        self.shop = httpserver.url_for("").rstrip("/")
+        # What every request asked for, oldest first.
+        self.requests: list[dict[str, Any]] = []
+        # Answers to give each call before the real ones, such as "busy": each (status, body,
+        # headers).
+        self.first: dict[FirecrawlCall, list[tuple[int, dict[str, Any], dict[str, str]]]] = {
+            "page": [],
+            "marked": [],
+            "product": [],
+        }
+        # How long the page read takes to answer, for a test of Firecrawl timing out.
+        self.takes_seconds = 0.0
+        # Each call's answer, for a test to change, such as the shop's status code.
+        self.page_read: dict[str, Any] = json.loads(
+            re.sub(r"https?://theouai\.com", self.shop, FIRECRAWL_PAGE_READ)
+        )
+        shop_links = r"(?:https?:)?//(?:theouai\.com|cdn\.shopify\.com)"
+        self.marked: dict[str, Any] = json.loads(re.sub(shop_links, self.shop, FIRECRAWL_MARKED))
+        self.marked["data"]["actions"]["screenshots"] = [f"{self.shop}/firecrawl/screenshot.png"]
+        self.product: dict[str, Any] = json.loads(re.sub(shop_links, self.shop, FIRECRAWL_PRODUCT))
+        # 2,600 px tall: three parts of 1,200 px.
+        self.screenshot = screenshot(480, 2_600)
+        httpserver.expect_request("/v2/scrape", method="POST").respond_with_handler(self._answer)
+        httpserver.expect_request("/firecrawl/screenshot.png").respond_with_handler(
+            lambda _: Response(self.screenshot, content_type="image/png")
+        )
+
+    def answers_first(
+        self,
+        status: int,
+        error: str,
+        *,
+        times: int = 1,
+        call: FirecrawlCall = "page",
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        """Have the next `times` requests for `call` answered with an error, as when Firecrawl
+        is busy."""
+        self.first[call] += [(status, {"success": False, "error": error}, headers or {})] * times
+
+    def asked(self, call: FirecrawlCall) -> list[dict[str, Any]]:
+        """What every request for `call` asked for, oldest first."""
+        return [asked for asked in self.requests if _which_call(asked) == call]
+
+    def _answer(self, request: Request) -> Response:
+        if request.headers.get("Authorization") != "Bearer fc-test":
+            return Response(json.dumps({"success": False, "error": "Unauthorized"}), status=401)
+        asked = request.get_json()
+        self.requests.append(asked)
+        call = _which_call(asked)
+        if call == "page":
+            time.sleep(self.takes_seconds)
+        answers = {"page": self.page_read, "marked": self.marked, "product": self.product}
+        headers: dict[str, str] = {}
+        if call is None:
+            status, body = 400, {"success": False, "error": f"Unknown formats {asked['formats']}"}
+        elif self.first[call]:
+            status, body, headers = self.first[call].pop(0)
+        else:
+            status, body = 200, answers[call]
+        return Response(
+            json.dumps(body), status=status, headers=headers, content_type="application/json"
+        )
+
+
+def _which_call(asked: dict[str, Any]) -> FirecrawlCall | None:
+    if "actions" in asked:
+        return "marked"
+    if asked["formats"] == ["product"]:
+        return "product"
+    if set(asked["formats"]) == {"markdown", "rawHtml"}:
+        return "page"
+    return None
+
+
+@pytest.fixture
+def firecrawl(httpserver: HTTPServer, settings: Settings) -> FakeFirecrawl:
+    """Pages are read through a stand-in Firecrawl, set up with a key as a real server is."""
+    settings.FIRECRAWL_API_KEY = "fc-test"
+    settings.FIRECRAWL_URL = httpserver.url_for("")
+    return FakeFirecrawl(httpserver)
+
+
+@pytest.fixture
+def shampoo_page_url(httpserver: HTTPServer, firecrawl: FakeFirecrawl) -> str:
+    """The shampoo's page on the local shop, as a plain download gets it, with its photo.
+    Gives the link."""
+    httpserver.expect_request("/products/detox-shampoo").respond_with_data(
+        firecrawl.page_read["data"]["rawHtml"], content_type="text/html; charset=utf-8"
+    )
+    httpserver.expect_request(SHAMPOO_PHOTO_PATH).respond_with_data(
+        SHAMPOO_PHOTO, content_type="image/jpeg"
+    )
+    httpserver.expect_request(SHAMPOO_RECORD_PHOTO_PATH).respond_with_data(
+        SHAMPOO_PHOTO, content_type="image/jpeg"
+    )
+    return httpserver.url_for("/products/detox-shampoo")
 
 
 @pytest.fixture

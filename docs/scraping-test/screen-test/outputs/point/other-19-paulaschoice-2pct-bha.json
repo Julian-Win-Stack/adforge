@@ -1,0 +1,63 @@
+{
+ "key": "other-19-paulaschoice-2pct-bha",
+ "model": "gpt-5.6-sol",
+ "answer": {
+  "product": "Paula\u2019s Choice SKIN PERFECTING 2% BHA Liquid Exfoliant \u2014 Full Size, 4 fl. oz.",
+  "gallery_images": [
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11,
+   12,
+   13,
+   14,
+   15,
+   16,
+   17
+  ],
+  "more_images": [
+   18,
+   19,
+   21,
+   25
+  ],
+  "product_sections": [
+   2,
+   3,
+   4,
+   6,
+   8,
+   9,
+   10,
+   11,
+   12,
+   13,
+   16,
+   17,
+   18,
+   19,
+   20,
+   22,
+   23,
+   24,
+   25,
+   26,
+   27,
+   28,
+   29,
+   30,
+   31
+  ],
+  "notes": "Excluded promotional imagery, before/after and comparison graphics, reviews/social content, routine recommendations for other products, awards, and research section T32 because it also contains cross-sold products. I23 and I26 show additional products; I24 does not visibly show the product. Unseen social-carousel images were omitted where exact contents were uncertain."
+ },
+ "tiles": 10,
+ "in": 31357,
+ "out": 1658,
+ "seconds": 22
+}

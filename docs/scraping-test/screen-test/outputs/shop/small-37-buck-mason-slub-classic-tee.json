@@ -1,0 +1,17 @@
+{
+ "shopify": {
+  "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+ },
+ "amazon": null,
+ "json_ld": {
+  "photos": [
+   "https://cdn.shopify.com/s/files/1/0123/5065/2473/files/BM11030.102COLVW_SLUB-CLASSIC-TEE_COAL-VENICE-WASH_1269.jpg?v=1764201521",
+   "https://cdn.shopify.com/s/files/1/0123/5065/2473/files/BM11030.102WHT_WHITESLUBCLASSICTEE_WHITE_0914_1.jpg?v=1783374991",
+   "https://cdn.shopify.com/s/files/1/0123/5065/2473/products/buck-mason-midnight-slub-classic-tee-03.jpg?v=1695675305",
+   "https://cdn.shopify.com/s/files/1/0123/5065/2473/files/BM11030.102BLK_BLACK-SLUB-CLASSIC-TEE_2022.jpg?v=1740692721",
+   "https://cdn.shopify.com/s/files/1/0123/5065/2473/files/BM11030.102_SLUB-CLASSIC-TEE_AMBERWOOD_56628_1.jpg?v=1786034075",
+   "https://cdn.shopify.com/s/files/1/0123/5065/2473/files/BM11030.102_SLUB-CLASSIC-TEE_OLIVE-DRAB_54434_1.jpg?v=1786033555"
+  ],
+  "text": "A perfect-fit classic tee in our signature USA-grown cotton with a light slub texture. Made at BM Knitting Mills in Mohnton, PA."
+ }
+}

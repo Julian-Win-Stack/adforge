@@ -1,0 +1,35 @@
+{
+ "key": "amazon-07-stanley-quencher-40oz",
+ "model": "gpt-5.6-sol",
+ "answer": {
+  "product": "Stanley Quencher H2.0 FlowState Tumbler 40oz (Charcoal)",
+  "gallery_images": [
+   5,
+   6,
+   7,
+   8
+  ],
+  "more_images": [
+   23,
+   24
+  ],
+  "product_sections": [
+   12,
+   13,
+   45,
+   46,
+   47,
+   50,
+   51,
+   52,
+   53,
+   60,
+   62
+  ],
+  "notes": "I23 explicitly identifies the charcoal model, and I24 visibly shows the charcoal tumbler. Other video and recommendation images were excluded because the exact product variant was uncertain or they link to separate products."
+ },
+ "tiles": 6,
+ "in": 26047,
+ "out": 499,
+ "seconds": 8
+}

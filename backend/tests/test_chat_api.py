@@ -76,6 +76,7 @@ def test_a_new_session_is_named_from_the_users_first_message(
     assert sent.json()["message"] == {
         "seq": 1,
         "role": "user",
+        "level": "",
         "text": "Make me a 15 second ad for https://shop.example/products/mug",
         "created_at": sent.json()["message"]["created_at"],
         "attachments": [],

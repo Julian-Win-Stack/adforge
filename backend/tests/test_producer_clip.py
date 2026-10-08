@@ -80,7 +80,7 @@ def told() -> str:
 def refused(why: str) -> str:
     """What a refused make_clip hands back, once nothing was started or paid for."""
     assert not SceneStep.objects.filter(kind="clip").exists()
-    assert "make_clip" not in paid_for()
+    assert "make_talking_clip" not in paid_for()
     return f"Refused: {why} Nothing was done."
 
 
@@ -165,8 +165,8 @@ def test_a_whole_scene_is_made_and_each_step_is_paid_for_once(
         "make_starting_picture",
         "speak_line",
         "transcribe_line",
-        "make_clip",
-        "collect_clip",
+        "make_talking_clip",
+        "collect_talking_clip",
     ]
     assert results_of("make_clip") == [CLIP_STARTED]
     assert made("clip") == [(1, 1)]
@@ -207,7 +207,7 @@ def test_the_clip_is_made_in_the_background_from_the_picture_and_the_audio_heard
     after = api.get(f"/api/sessions/{session_id}/messages/").json()[messages_before:]
     assert [m["attachments"] for m in after] == [[], [], []]
     # The video model was asked once, and its records are charged to the tool call.
-    submitted = ModelCall.objects.get(purpose="make_clip")
+    submitted = ModelCall.objects.get(purpose="make_talking_clip")
     assert submitted.handoff == {
         "picture": picture.file,
         "audio": transcript.made_from.file if transcript.made_from else None,
@@ -242,7 +242,7 @@ def test_a_talking_clips_motion_prompt_carries_the_pose_its_picture_was_planned_
     )
     (chose,) = handoffs("choose_starting_picture")
     assert chose["pose"] == pose
-    submitted = ModelCall.objects.get(purpose="make_clip")
+    submitted = ModelCall.objects.get(purpose="make_talking_clip")
     assert submitted.handoff["motion_prompt"] == (
         f"The person talks to the camera naturally, like a casual phone video. {pose} "
         "Minimal hand movement."
@@ -400,10 +400,10 @@ def test_a_clip_already_made_is_handed_back_and_charges_nothing(
 
     assert paid_for() == paid
     assert steps.held == []
-    # 4 seconds of video at $0.01 a second.
+    # 4 seconds of talking video at $0.05 a second.
     assert results_of("make_clip")[-1] == (
         "Scene 1's clip was already made from this starting picture and audio (version 1), "
-        "so nothing was made or paid for again. Making it cost $0.04. Scene 1 is finished."
+        "so nothing was made or paid for again. Making it cost $0.20. Scene 1 is finished."
     )
 
 
@@ -430,7 +430,7 @@ def test_a_new_starting_picture_gets_a_new_clip_and_the_old_clip_is_kept(
         fake_model.clips["video-1"],
         fake_model.clips["video-2"],
     )
-    assert paid_for().count("make_clip") == 2
+    assert paid_for().count("make_talking_clip") == 2
     assert told() == (
         "Background step finished: scene 1's clip is ready (version 2, 4 seconds), made from "
         "starting picture version 3 and audio version 1. Scene 1 is finished. Tell the shop "
@@ -462,7 +462,7 @@ def test_a_clip_asked_for_before_the_worker_stopped_isnt_asked_for_again(
     tasks.run_scene_step(step_id)
 
     assert fake_model.clips_submitted == ["video-1"]
-    assert paid_for().count("make_clip") == 1
+    assert paid_for().count("make_talking_clip") == 1
     assert SceneStep.objects.get(pk=step_id).status == "finished"
     assert read(ProducedItem.objects.get(kind="clip").file) == fake_model.clips["video-1"]
 
@@ -487,7 +487,7 @@ def test_a_clip_fetched_before_the_worker_stopped_isnt_fetched_again(
     tasks.run_scene_step(step_id)
 
     assert fake_model.clips_submitted == fake_model.clips_downloaded == ["video-1"]
-    assert paid_for().count("collect_clip") == 1
+    assert paid_for().count("collect_talking_clip") == 1
     assert made("clip") == [(1, 1)]
     assert Scene.objects.get(number=1).status == "finished"
 
@@ -518,7 +518,7 @@ def test_a_clip_the_video_service_is_down_for_fails_its_step_and_the_producer_is
 
     step = clip_step_failed()
     assert step.reason.startswith("an outside service stayed down after several tries")
-    tries = ModelCall.objects.filter(purpose="make_clip")
+    tries = ModelCall.objects.filter(purpose="make_talking_clip")
     assert [(t.attempt, t.outcome) for t in tries] == [(1, "failed"), (2, "failed"), (3, "failed")]
 
 
@@ -535,7 +535,7 @@ def test_a_clip_the_video_model_couldnt_make_isnt_asked_for_again(
     assert step.reason == "the video model couldn't make the clip (No face was found.)."
     # Asking again would pay again, so it isn't retried.
     assert fake_model.clips_submitted == ["video-1"]
-    assert ModelCall.objects.filter(purpose="collect_clip").count() == 1
+    assert ModelCall.objects.filter(purpose="collect_talking_clip").count() == 1
 
 
 def test_a_slow_clip_is_waited_for_and_the_shop_owner_told_it_is_still_being_made(
@@ -583,7 +583,7 @@ def test_a_clip_given_up_on_while_heygen_was_down_is_waited_for_again_rather_tha
 
     # The clip first asked for, and paid for, is the one kept.
     assert fake_model.clips_submitted == ["video-1"]
-    assert paid_for().count("make_clip") == 1
+    assert paid_for().count("make_talking_clip") == 1
     assert made("clip") == [(1, 1)]
     assert read(ProducedItem.objects.get(kind="clip").file) == fake_model.clips["video-1"]
     assert Scene.objects.get(number=1).status == "finished"
@@ -707,4 +707,4 @@ def test_a_line_said_in_under_a_second_gets_a_clip_of_the_shortest_length_the_mo
         run(fake_model, steps)
 
     # The video model makes clips of at least a second.
-    assert [handoff["seconds"] for handoff in handoffs("make_clip")] == [1]
+    assert [handoff["seconds"] for handoff in handoffs("make_talking_clip")] == [1]

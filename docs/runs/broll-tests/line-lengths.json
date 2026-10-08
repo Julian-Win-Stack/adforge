@@ -1,0 +1,1059 @@
+{
+  "instructions_hint": "What a scene shows must match what its line says while it says it. A B-roll line has at least about 10 words.",
+  "speeds": {
+    "02": 2.453,
+    "03": 2.297,
+    "05": 2.545,
+    "06": 2.284,
+    "07": 2.347,
+    "08": 2.088,
+    "01": 2.091,
+    "09": 2.138
+  },
+  "targets": {
+    "02": 30,
+    "03": 30,
+    "05": 30,
+    "06": 30,
+    "07": null,
+    "08": 15,
+    "01": 30,
+    "09": 6
+  },
+  "plans": [
+    {
+      "product": "02",
+      "run": 1,
+      "scenes": [
+        {
+          "line": "Meet MERIT Flush Balm, a lightweight cream blush with a natural satin finish.",
+          "shows": null
+        },
+        {
+          "line": "Swipe it directly onto cheeks, blend with fingertips, and layer for more saturated color.",
+          "shows": "A hand swipes the open balm onto a cheek and blends it with fingertips."
+        },
+        {
+          "line": "Microfine pigment gives a touch of color without covering your natural skin texture.",
+          "shows": null
+        },
+        {
+          "line": "It\u2019s fragrance-free, non-comedogenic, vegan, and safe for sensitive and acne-prone skin.",
+          "shows": null
+        },
+        {
+          "line": "You can also tap it onto lips for a hint of color.",
+          "shows": "A fingertip taps the balm gently onto the lips."
+        },
+        {
+          "line": "Flush Balm is thirty dollars, with free shipping and returns.",
+          "shows": null
+        }
+      ]
+    },
+    {
+      "product": "02",
+      "run": 2,
+      "scenes": [
+        {
+          "line": "Meet MERIT Flush Balm, a lightweight cream blush with a natural satin finish.",
+          "shows": null
+        },
+        {
+          "line": "Swipe it directly onto cheeks, then blend with fingertips for soft, buildable color.",
+          "shows": "A hand swipes the open balm onto a cheek, then blends it with fingertips."
+        },
+        {
+          "line": "Microfine pigment adds color without covering your natural skin texture.",
+          "shows": null
+        },
+        {
+          "line": "The formula is fragrance-free, non-comedogenic, and safe for sensitive skin.",
+          "shows": null
+        },
+        {
+          "line": "Tap it onto lips for a hint of color, then layer for more saturation.",
+          "shows": "A hand taps the open balm onto lips and gently blends the color."
+        },
+        {
+          "line": "It\u2019s vegan, Leaping Bunny-certified, and available for thirty dollars.",
+          "shows": null
+        }
+      ]
+    },
+    {
+      "product": "02",
+      "run": 3,
+      "scenes": [
+        {
+          "line": "Meet MERIT Flush Balm, a lightweight cream blush with a satin, natural-looking finish.",
+          "shows": null
+        },
+        {
+          "line": "Swipe it directly onto cheeks, then blend with your fingertips for buildable color.",
+          "shows": "A hand swipes the open balm directly onto a cheek and blends it with fingertips."
+        },
+        {
+          "line": "Microfine pigment powders add color without covering your natural skin texture.",
+          "shows": null
+        },
+        {
+          "line": "The lightweight, buildable formula leaves a long-lasting glow that never feels heavy or cakey.",
+          "shows": "A close-up of the cream tint swatch shown in photo 3."
+        },
+        {
+          "line": "It\u2019s fragrance-free, non-comedogenic, vegan, and safe for sensitive skin.",
+          "shows": null
+        },
+        {
+          "line": "Flush Balm is thirty dollars, and you can use it on cheeks or lips.",
+          "shows": null
+        }
+      ]
+    },
+    {
+      "product": "03",
+      "run": 1,
+      "scenes": [
+        {
+          "line": "Meet Vital Proteins Salted Caramel Collagen Peptides, a creamy, caramel-y, slightly salty twist for your daily routine.",
+          "shows": null
+        },
+        {
+          "line": "It mixes easily into coffee, smoothies, or whatever else you're into.",
+          "shows": "A hand stirs the powder into a cup of coffee beside the canister."
+        },
+        {
+          "line": "It's made without gluten, dairy, or soy, and it's paleo and keto friendly.",
+          "shows": null
+        },
+        {
+          "line": "The 10.5-ounce size is $27 for a one-time purchase.",
+          "shows": null
+        },
+        {
+          "line": "Add it daily for skin, hair, nail, bone, and joint support.",
+          "shows": null
+        }
+      ]
+    },
+    {
+      "product": "03",
+      "run": 2,
+      "scenes": [
+        {
+          "line": "Meet Vital Proteins Salted Caramel Collagen Peptides, a seasonal upgrade for your daily routine.",
+          "shows": null
+        },
+        {
+          "line": "It has a caramel-y, creamy, slightly salty twist, with 20 grams of collagen peptides per serving.",
+          "shows": null
+        },
+        {
+          "line": "It mixes easily into coffee, smoothies, or whatever else you're into.",
+          "shows": "A hand spoons the pale powder into a cup of coffee beside the canister and stirs it thoroughly."
+        },
+        {
+          "line": "It's made without gluten, dairy, or soy, and it's paleo and keto friendly.",
+          "shows": null
+        },
+        {
+          "line": "Get the 10.5-ounce canister for $27, and add it to your daily routine.",
+          "shows": null
+        }
+      ]
+    },
+    {
+      "product": "03",
+      "run": 3,
+      "scenes": [
+        {
+          "line": "Meet Vital Proteins Salted Caramel Collagen Peptides, a seasonal upgrade for your daily wellness routine.",
+          "shows": null
+        },
+        {
+          "line": "It mixes easily into coffee, smoothies, and whatever else you\u2019re into, blending right into your daily routine.",
+          "shows": "The 10.5-ounce tub sits beside a mug while a hand stirs the powder into coffee."
+        },
+        {
+          "line": "It offers skin, hair, and nail support, plus bone and joint support, flexibility, and movement.",
+          "shows": null
+        },
+        {
+          "line": "It\u2019s made without gluten, dairy, or soy, and it\u2019s both paleo and keto friendly.",
+          "shows": null
+        },
+        {
+          "line": "The 10.5-ounce size is twenty-seven dollars for a one-time purchase.",
+          "shows": null
+        }
+      ]
+    },
+    {
+      "product": "05",
+      "run": 1,
+      "scenes": [
+        {
+          "line": "Meet the Steve Madden Kenzo Bag, a sophisticated clutch made for evening occasions or everyday elegance.",
+          "shows": null
+        },
+        {
+          "line": "Its sleek metal frame and stone kiss-lock detail give the compact design polished structure.",
+          "shows": "A close-up moves across the metal frame, textile exterior, and stone kiss-lock detail."
+        },
+        {
+          "line": "Carry it as a clutch, or add the removable crossbody strap for hands-free wear.",
+          "shows": null
+        },
+        {
+          "line": "Inside, it fits a phone, small wallet, keys, small headphones, and compact makeup.",
+          "shows": "The bag stands open, revealing its compact lined interior and interior pocket."
+        },
+        {
+          "line": "It\u2019s eighty-eight dollars and includes a duster bag.",
+          "shows": null
+        }
+      ]
+    },
+    {
+      "product": "05",
+      "run": 2,
+      "scenes": [
+        {
+          "line": "Meet the Steve Madden Kenzo Bag, a sophisticated clutch for evening occasions or everyday elegance.",
+          "shows": null
+        },
+        {
+          "line": "Its sleek metal frame and stone kiss-lock detail bring structure and a polished finish.",
+          "shows": "A close-up moves across the metal frame and stone kiss-lock detail."
+        },
+        {
+          "line": "It fits your phone, small wallet, keys, small headphones, and compact makeup.",
+          "shows": null
+        },
+        {
+          "line": "Carry it as a clutch, or add the removable crossbody strap for hands-free wear.",
+          "shows": "The bag is shown from an angle with its removable crossbody strap draped across it."
+        },
+        {
+          "line": "The Kenzo Bag is eighty-eight dollars and includes a duster bag.",
+          "shows": null
+        }
+      ]
+    },
+    {
+      "product": "05",
+      "run": 3,
+      "scenes": [
+        {
+          "line": "Meet the Kenzo Bag, a sophisticated clutch made for evening occasions or everyday elegance.",
+          "shows": null
+        },
+        {
+          "line": "Its sleek metal frame and stone kiss-lock detail add structure and a touch of luxury.",
+          "shows": "A close-up moves across the metal frame and stone kiss-lock detail."
+        },
+        {
+          "line": "Carry it as a clutch, or use the removable crossbody strap for hands-free wear.",
+          "shows": null
+        },
+        {
+          "line": "It fits a phone, small wallet, keys, small headphones, and compact makeup.",
+          "shows": "A hand places the listed daily essentials into the open clutch."
+        },
+        {
+          "line": "It's eighty-eight dollars and includes a tassel charm and duster bag.",
+          "shows": null
+        }
+      ]
+    },
+    {
+      "product": "06",
+      "run": 1,
+      "failed": "UnusableReply: gpt-5.6-sol gave an answer for plan_ad that could not be read: 1 validation error for ProducerDecisionForJob\nplan\n  Value error, No scene where the person talks to camera says \"Anker 313 Power Bank (PowerCore 10K)\": at least one must. [type=value_error, input_value={'scenes': [{'line': 'Mee... an easy, upbeat pace.'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error"
+    },
+    {
+      "product": "06",
+      "run": 2,
+      "failed": "UnusableReply: gpt-5.6-sol gave an answer for plan_ad that could not be read: 1 validation error for ProducerDecisionForJob\nplan\n  Value error, No scene where the person talks to camera says \"Anker 313 Power Bank (PowerCore 10K)\": at least one must. [type=value_error, input_value={'scenes': [{'line': 'Mee...d conversational pace.'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error"
+    },
+    {
+      "product": "06",
+      "run": 3,
+      "scenes": [
+        {
+          "line": "Meet the Anker 313 Power Bank, PowerCore 10K\u2014compact power for work or travel.",
+          "shows": null
+        },
+        {
+          "line": "Its 10,000 milliamp-hour capacity can charge a phone up to three times.",
+          "shows": "The power bank charges a face-down phone through a cable connected to its USB-A port."
+        },
+        {
+          "line": "At seven and a half ounces, it fits comfortably in your palm or pocket.",
+          "shows": "A hand holds the slim power bank, then slips it into a coat pocket."
+        },
+        {
+          "line": "PowerIQ and VoltageBoost deliver an optimized charge up to 2.4 amps.",
+          "shows": null
+        },
+        {
+          "line": "Its safety system provides surge protection, short-circuit prevention, and advanced safety features.",
+          "shows": "A slow close-up moves across the power bank\u2019s textured exterior, button, and visible ports."
+        },
+        {
+          "line": "Get the Anker 313 Power Bank today for $25.99.",
+          "shows": null
+        }
+      ]
+    },
+    {
+      "product": "07",
+      "run": 1,
+      "scenes": [
+        {
+          "line": "Meet the Dutch Baby, a round 3.5-quart cast-iron Dutch oven from Great Jones.",
+          "shows": null
+        },
+        {
+          "line": "Its 3.5-quart size fits neatly on one burner for smaller batches.",
+          "shows": "the Dutch Baby centered on a single stovetop burner"
+        },
+        {
+          "line": "It\u2019s ideal when you\u2019re cooking for one or two people.",
+          "shows": null
+        },
+        {
+          "line": "It\u2019s safe for every stovetop, including induction, and oven-safe up to 500 degrees.",
+          "shows": "the Dutch Baby resting on an induction stovetop"
+        },
+        {
+          "line": "Make beef bourguignon, mashed potatoes, or congee in one compact pot.",
+          "shows": "the open Dutch Baby shown in turn with beef bourguignon, mashed potatoes, and congee"
+        },
+        {
+          "line": "The Dutch Baby is $165, with free shipping and a 30-day free trial.",
+          "shows": null
+        }
+      ]
+    },
+    {
+      "product": "07",
+      "run": 2,
+      "scenes": [
+        {
+          "line": "Meet Dutch Baby, the round 3.5-quart cast-iron Dutch oven from Great Jones.",
+          "shows": null
+        },
+        {
+          "line": "It fits neatly on one burner and is ideal when cooking for one or two.",
+          "shows": "Dutch Baby sitting neatly on a single stovetop burner"
+        },
+        {
+          "line": "Its 3.5-quart size is customized for smaller batches and kitchens.",
+          "shows": null
+        },
+        {
+          "line": "Cook beef bourguignon, mashed potatoes, or congee in this enameled cast-iron pot.",
+          "shows": "Dutch Baby shown with beef bourguignon, mashed potatoes, and congee in sequence"
+        },
+        {
+          "line": "It's safe for every stovetop, including induction, and oven-safe up to 500 degrees.",
+          "shows": "Dutch Baby on an induction stovetop, followed by it inside an oven"
+        },
+        {
+          "line": "Dutch Baby is $165, with free shipping, a 30-day free trial, and free returns.",
+          "shows": null
+        }
+      ]
+    },
+    {
+      "product": "07",
+      "run": 3,
+      "scenes": [
+        {
+          "line": "Meet Dutch Baby, Great Jones's round, 3.5-quart cast-iron Dutch oven.",
+          "shows": null
+        },
+        {
+          "line": "It fits perfectly on one burner and is safe for all stovetops, including induction.",
+          "shows": "the Dutch oven centered on a single induction burner"
+        },
+        {
+          "line": "It's customized for smaller batches and kitchens, especially if you cook for one or two.",
+          "shows": null
+        },
+        {
+          "line": "You can use it for beef bourguignon, mashed potatoes, or congee.",
+          "shows": "beef bourguignon served inside the open Dutch oven"
+        },
+        {
+          "line": "It has a 4.5 rating from 448 reviews, and 89% would recommend it to a friend.",
+          "shows": "a slow close-up moving around the Dutch oven and its lid"
+        },
+        {
+          "line": "Dutch Baby is $165, with free shipping on orders over $100.",
+          "shows": null
+        }
+      ]
+    },
+    {
+      "product": "08",
+      "run": 1,
+      "scenes": [
+        {
+          "line": "Meet Molly\u2019s Suds Toilet Bowl Cleaner, made with 98% plant-based ingredients.",
+          "shows": null
+        },
+        {
+          "line": "Its clinging gel fights toilet rings and stains from hard water.",
+          "shows": "A hand points the bottle nozzle beneath the toilet rim and gently squeezes without showing the gel."
+        },
+        {
+          "line": "Squeeze under the rim, scrub, wait several minutes, then flush.",
+          "shows": "The bottle remains visible beside the toilet as hands scrub with a toilet brush, pause, and flush."
+        },
+        {
+          "line": "It\u2019s $9.99.",
+          "shows": null
+        }
+      ]
+    },
+    {
+      "product": "08",
+      "run": 2,
+      "scenes": [
+        {
+          "line": "Meet Molly\u2019s Suds Toilet Bowl Cleaner.",
+          "shows": null
+        },
+        {
+          "line": "Point the nozzle under the rim, squeeze gently, scrub, and let sit.",
+          "shows": "A hand points the bottle nozzle under a toilet bowl rim, squeezes gently, then scrubs with a toilet brush."
+        },
+        {
+          "line": "Its extended-reach neck gives 360-degree coverage under the toilet rim.",
+          "shows": "A close-up follows the bottle\u2019s extended neck moving around beneath the toilet bowl rim."
+        },
+        {
+          "line": "It\u2019s $9.99, made with 98% plant-based ingredients.",
+          "shows": null
+        }
+      ]
+    },
+    {
+      "product": "08",
+      "run": 3,
+      "scenes": [
+        {
+          "line": "Meet Molly\u2019s Suds Toilet Bowl Cleaner, made with 98% plant-based ingredients.",
+          "shows": null
+        },
+        {
+          "line": "The clinging gel fights rings and stains from hard water and rust.",
+          "shows": "A hand holds the bottle beside a toilet while the extended-reach neck is shown close-up."
+        },
+        {
+          "line": "Squeeze under the rim, scrub, wait several minutes, then flush.",
+          "shows": "A hand points the bottle nozzle under the toilet rim and squeezes gently, then scrubs with a toilet brush while the bottle remains beside the toilet."
+        },
+        {
+          "line": "It\u2019s $9.99.",
+          "shows": null
+        }
+      ]
+    },
+    {
+      "product": "01",
+      "run": 1,
+      "scenes": [
+        {
+          "line": "Meet Naturium\u2019s Multi-Active Exosome Serum, a rejuvenating formula designed to help improve firmness, elasticity, and the look of fine lines and wrinkles.",
+          "shows": null
+        },
+        {
+          "line": "It combines microalgae-derived biomimetic exosomes, peptides, and antioxidants to support skin\u2019s natural renewal process.",
+          "shows": "A slow close-up moves across the front and reflective finish of the serum bottle."
+        },
+        {
+          "line": "In a consumer study, 94% saw a reduced look of fine lines and wrinkles after 30 days of daily use.",
+          "shows": null
+        },
+        {
+          "line": "Use it daily, morning and night. It\u2019s twenty-seven dollars.",
+          "shows": null
+        }
+      ]
+    },
+    {
+      "product": "01",
+      "run": 2,
+      "scenes": [
+        {
+          "line": "Meet Naturium\u2019s Multi-Active Exosome Serum, which helps improve firmness, elasticity, and the look of fine lines and wrinkles.",
+          "shows": null
+        },
+        {
+          "line": "It uses microalgae-derived biomimetic exosomes, peptides, and antioxidants to support skin\u2019s natural renewal process.",
+          "shows": "A slow close-up moves over the front of the sealed serum bottle."
+        },
+        {
+          "line": "In a consumer study, 94% saw a reduced look of fine lines and wrinkles in 30 days.",
+          "shows": "The serum bottle stands centered as the camera slowly moves closer."
+        },
+        {
+          "line": "Use one or two pea-sized drops daily, morning and night, avoiding the eye area.",
+          "shows": null
+        },
+        {
+          "line": "It\u2019s vegan, cruelty-free, fragrance-free, and twenty-seven dollars.",
+          "shows": null
+        }
+      ]
+    },
+    {
+      "product": "01",
+      "run": 3,
+      "scenes": [
+        {
+          "line": "Meet Naturium\u2019s Multi-Active Exosome Serum, a rejuvenating daily serum for firmer, more elastic-looking skin.",
+          "shows": null
+        },
+        {
+          "line": "Its microalgae-derived biomimetic exosomes, peptides, and antioxidants support skin\u2019s natural renewal process.",
+          "shows": "Close-up views of the closed serum bottle and its reflective packaging."
+        },
+        {
+          "line": "In a consumer study, 94% saw a reduced look of fine lines and wrinkles after 30 days of daily use.",
+          "shows": null
+        },
+        {
+          "line": "Use one to two pea-sized drops morning and evening, avoiding the eye area. It\u2019s twenty-seven dollars.",
+          "shows": null
+        }
+      ]
+    },
+    {
+      "product": "09",
+      "run": 1,
+      "scenes": [
+        {
+          "line": "Momofuku Chili Crunch Sauce.",
+          "shows": null
+        },
+        {
+          "line": "Drizzle it over a bowl\u2014bold heat, just ten dollars.",
+          "shows": "a hand drizzles Chili Crunch Sauce over a bowl"
+        }
+      ]
+    },
+    {
+      "product": "09",
+      "run": 2,
+      "scenes": [
+        {
+          "line": "Meet Chili Crunch Sauce\u2014squeeze, spread, drizzle, or dip, for just ten dollars.",
+          "shows": null
+        }
+      ]
+    },
+    {
+      "product": "09",
+      "run": 3,
+      "scenes": [
+        {
+          "line": "Try Momofuku Chili Crunch Sauce.",
+          "shows": null
+        },
+        {
+          "line": "Drizzle it over a bowl for balanced heat\u2014ten dollars.",
+          "shows": "A hand squeezes the sauce over a bowl."
+        }
+      ]
+    }
+  ],
+  "broll_lines": [
+    {
+      "product": "02",
+      "run": 1,
+      "scene": 2,
+      "line": "Swipe it directly onto cheeks, blend with fingertips, and layer for more saturated color.",
+      "shows": "A hand swipes the open balm onto a cheek and blends it with fingertips.",
+      "words": 14,
+      "estimated_seconds": 5.71,
+      "spoken_seconds": 5.78
+    },
+    {
+      "product": "02",
+      "run": 1,
+      "scene": 5,
+      "line": "You can also tap it onto lips for a hint of color.",
+      "shows": "A fingertip taps the balm gently onto the lips.",
+      "words": 12,
+      "estimated_seconds": 4.89,
+      "spoken_seconds": 3.24
+    },
+    {
+      "product": "02",
+      "run": 2,
+      "scene": 2,
+      "line": "Swipe it directly onto cheeks, then blend with fingertips for soft, buildable color.",
+      "shows": "A hand swipes the open balm onto a cheek, then blends it with fingertips.",
+      "words": 13,
+      "estimated_seconds": 5.3,
+      "spoken_seconds": 5.46
+    },
+    {
+      "product": "02",
+      "run": 2,
+      "scene": 5,
+      "line": "Tap it onto lips for a hint of color, then layer for more saturation.",
+      "shows": "A hand taps the open balm onto lips and gently blends the color.",
+      "words": 14,
+      "estimated_seconds": 5.71,
+      "spoken_seconds": 4.64
+    },
+    {
+      "product": "02",
+      "run": 3,
+      "scene": 2,
+      "line": "Swipe it directly onto cheeks, then blend with your fingertips for buildable color.",
+      "shows": "A hand swipes the open balm directly onto a cheek and blends it with fingertips.",
+      "words": 13,
+      "estimated_seconds": 5.3,
+      "spoken_seconds": 5.12
+    },
+    {
+      "product": "02",
+      "run": 3,
+      "scene": 4,
+      "line": "The lightweight, buildable formula leaves a long-lasting glow that never feels heavy or cakey.",
+      "shows": "A close-up of the cream tint swatch shown in photo 3.",
+      "words": 14,
+      "estimated_seconds": 5.71,
+      "spoken_seconds": 6.0
+    },
+    {
+      "product": "03",
+      "run": 1,
+      "scene": 2,
+      "line": "It mixes easily into coffee, smoothies, or whatever else you're into.",
+      "shows": "A hand stirs the powder into a cup of coffee beside the canister.",
+      "words": 11,
+      "estimated_seconds": 4.79,
+      "spoken_seconds": 4.16
+    },
+    {
+      "product": "03",
+      "run": 2,
+      "scene": 3,
+      "line": "It mixes easily into coffee, smoothies, or whatever else you're into.",
+      "shows": "A hand spoons the pale powder into a cup of coffee beside the canister and stirs it thoroughly.",
+      "words": 11,
+      "estimated_seconds": 4.79,
+      "spoken_seconds": 4.34
+    },
+    {
+      "product": "03",
+      "run": 3,
+      "scene": 2,
+      "line": "It mixes easily into coffee, smoothies, and whatever else you\u2019re into, blending right into your daily routine.",
+      "shows": "The 10.5-ounce tub sits beside a mug while a hand stirs the powder into coffee.",
+      "words": 17,
+      "estimated_seconds": 7.4,
+      "spoken_seconds": 6.6
+    },
+    {
+      "product": "05",
+      "run": 1,
+      "scene": 2,
+      "line": "Its sleek metal frame and stone kiss-lock detail give the compact design polished structure.",
+      "shows": "A close-up moves across the metal frame, textile exterior, and stone kiss-lock detail.",
+      "words": 14,
+      "estimated_seconds": 5.5,
+      "spoken_seconds": 5.46
+    },
+    {
+      "product": "05",
+      "run": 1,
+      "scene": 4,
+      "line": "Inside, it fits a phone, small wallet, keys, small headphones, and compact makeup.",
+      "shows": "The bag stands open, revealing its compact lined interior and interior pocket.",
+      "words": 13,
+      "estimated_seconds": 5.11,
+      "spoken_seconds": 6.76
+    },
+    {
+      "product": "05",
+      "run": 2,
+      "scene": 2,
+      "line": "Its sleek metal frame and stone kiss-lock detail bring structure and a polished finish.",
+      "shows": "A close-up moves across the metal frame and stone kiss-lock detail.",
+      "words": 14,
+      "estimated_seconds": 5.5,
+      "spoken_seconds": 5.38
+    },
+    {
+      "product": "05",
+      "run": 2,
+      "scene": 4,
+      "line": "Carry it as a clutch, or add the removable crossbody strap for hands-free wear.",
+      "shows": "The bag is shown from an angle with its removable crossbody strap draped across it.",
+      "words": 14,
+      "estimated_seconds": 5.5,
+      "spoken_seconds": 4.7
+    },
+    {
+      "product": "05",
+      "run": 3,
+      "scene": 2,
+      "line": "Its sleek metal frame and stone kiss-lock detail add structure and a touch of luxury.",
+      "shows": "A close-up moves across the metal frame and stone kiss-lock detail.",
+      "words": 15,
+      "estimated_seconds": 5.89,
+      "spoken_seconds": 5.0
+    },
+    {
+      "product": "05",
+      "run": 3,
+      "scene": 4,
+      "line": "It fits a phone, small wallet, keys, small headphones, and compact makeup.",
+      "shows": "A hand places the listed daily essentials into the open clutch.",
+      "words": 12,
+      "estimated_seconds": 4.72,
+      "spoken_seconds": 5.44
+    },
+    {
+      "product": "06",
+      "run": 3,
+      "scene": 2,
+      "line": "Its 10,000 milliamp-hour capacity can charge a phone up to three times.",
+      "shows": "The power bank charges a face-down phone through a cable connected to its USB-A port.",
+      "words": 12,
+      "estimated_seconds": 5.25,
+      "spoken_seconds": 4.68
+    },
+    {
+      "product": "06",
+      "run": 3,
+      "scene": 3,
+      "line": "At seven and a half ounces, it fits comfortably in your palm or pocket.",
+      "shows": "A hand holds the slim power bank, then slips it into a coat pocket.",
+      "words": 14,
+      "estimated_seconds": 6.13,
+      "spoken_seconds": 4.36
+    },
+    {
+      "product": "06",
+      "run": 3,
+      "scene": 5,
+      "line": "Its safety system provides surge protection, short-circuit prevention, and advanced safety features.",
+      "shows": "A slow close-up moves across the power bank\u2019s textured exterior, button, and visible ports.",
+      "words": 12,
+      "estimated_seconds": 5.25,
+      "spoken_seconds": 6.62
+    },
+    {
+      "product": "07",
+      "run": 1,
+      "scene": 2,
+      "line": "Its 3.5-quart size fits neatly on one burner for smaller batches.",
+      "shows": "the Dutch Baby centered on a single stovetop burner",
+      "words": 11,
+      "estimated_seconds": 4.69,
+      "spoken_seconds": 4.84
+    },
+    {
+      "product": "07",
+      "run": 1,
+      "scene": 4,
+      "line": "It\u2019s safe for every stovetop, including induction, and oven-safe up to 500 degrees.",
+      "shows": "the Dutch Baby resting on an induction stovetop",
+      "words": 13,
+      "estimated_seconds": 5.54,
+      "spoken_seconds": 5.44
+    },
+    {
+      "product": "07",
+      "run": 1,
+      "scene": 5,
+      "line": "Make beef bourguignon, mashed potatoes, or congee in one compact pot.",
+      "shows": "the open Dutch Baby shown in turn with beef bourguignon, mashed potatoes, and congee",
+      "words": 11,
+      "estimated_seconds": 4.69,
+      "spoken_seconds": 4.96
+    },
+    {
+      "product": "07",
+      "run": 2,
+      "scene": 2,
+      "line": "It fits neatly on one burner and is ideal when cooking for one or two.",
+      "shows": "Dutch Baby sitting neatly on a single stovetop burner",
+      "words": 15,
+      "estimated_seconds": 6.39,
+      "spoken_seconds": 4.36
+    },
+    {
+      "product": "07",
+      "run": 2,
+      "scene": 4,
+      "line": "Cook beef bourguignon, mashed potatoes, or congee in this enameled cast-iron pot.",
+      "shows": "Dutch Baby shown with beef bourguignon, mashed potatoes, and congee in sequence",
+      "words": 12,
+      "estimated_seconds": 5.11,
+      "spoken_seconds": 5.18
+    },
+    {
+      "product": "07",
+      "run": 2,
+      "scene": 5,
+      "line": "It's safe for every stovetop, including induction, and oven-safe up to 500 degrees.",
+      "shows": "Dutch Baby on an induction stovetop, followed by it inside an oven",
+      "words": 13,
+      "estimated_seconds": 5.54,
+      "spoken_seconds": 5.54
+    },
+    {
+      "product": "07",
+      "run": 3,
+      "scene": 2,
+      "line": "It fits perfectly on one burner and is safe for all stovetops, including induction.",
+      "shows": "the Dutch oven centered on a single induction burner",
+      "words": 14,
+      "estimated_seconds": 5.96,
+      "spoken_seconds": 4.96
+    },
+    {
+      "product": "07",
+      "run": 3,
+      "scene": 4,
+      "line": "You can use it for beef bourguignon, mashed potatoes, or congee.",
+      "shows": "beef bourguignon served inside the open Dutch oven",
+      "words": 11,
+      "estimated_seconds": 4.69,
+      "spoken_seconds": 4.2
+    },
+    {
+      "product": "07",
+      "run": 3,
+      "scene": 5,
+      "line": "It has a 4.5 rating from 448 reviews, and 89% would recommend it to a friend.",
+      "shows": "a slow close-up moving around the Dutch oven and its lid",
+      "words": 16,
+      "estimated_seconds": 6.82,
+      "spoken_seconds": 6.74
+    },
+    {
+      "product": "08",
+      "run": 1,
+      "scene": 2,
+      "line": "Its clinging gel fights toilet rings and stains from hard water.",
+      "shows": "A hand points the bottle nozzle beneath the toilet rim and gently squeezes without showing the gel.",
+      "words": 11,
+      "estimated_seconds": 5.27,
+      "spoken_seconds": 3.86
+    },
+    {
+      "product": "08",
+      "run": 1,
+      "scene": 3,
+      "line": "Squeeze under the rim, scrub, wait several minutes, then flush.",
+      "shows": "The bottle remains visible beside the toilet as hands scrub with a toilet brush, pause, and flush.",
+      "words": 10,
+      "estimated_seconds": 4.79,
+      "spoken_seconds": 4.3
+    },
+    {
+      "product": "08",
+      "run": 2,
+      "scene": 2,
+      "line": "Point the nozzle under the rim, squeeze gently, scrub, and let sit.",
+      "shows": "A hand points the bottle nozzle under a toilet bowl rim, squeezes gently, then scrubs with a toilet brush.",
+      "words": 12,
+      "estimated_seconds": 5.75,
+      "spoken_seconds": 4.52
+    },
+    {
+      "product": "08",
+      "run": 2,
+      "scene": 3,
+      "line": "Its extended-reach neck gives 360-degree coverage under the toilet rim.",
+      "shows": "A close-up follows the bottle\u2019s extended neck moving around beneath the toilet bowl rim.",
+      "words": 10,
+      "estimated_seconds": 4.79,
+      "spoken_seconds": 4.7
+    },
+    {
+      "product": "08",
+      "run": 3,
+      "scene": 2,
+      "line": "The clinging gel fights rings and stains from hard water and rust.",
+      "shows": "A hand holds the bottle beside a toilet while the extended-reach neck is shown close-up.",
+      "words": 12,
+      "estimated_seconds": 5.75,
+      "spoken_seconds": 3.98
+    },
+    {
+      "product": "08",
+      "run": 3,
+      "scene": 3,
+      "line": "Squeeze under the rim, scrub, wait several minutes, then flush.",
+      "shows": "A hand points the bottle nozzle under the toilet rim and squeezes gently, then scrubs with a toilet brush while the bottle remains beside the toilet.",
+      "words": 10,
+      "estimated_seconds": 4.79,
+      "spoken_seconds": 4.24
+    },
+    {
+      "product": "01",
+      "run": 1,
+      "scene": 2,
+      "line": "It combines microalgae-derived biomimetic exosomes, peptides, and antioxidants to support skin\u2019s natural renewal process.",
+      "shows": "A slow close-up moves across the front and reflective finish of the serum bottle.",
+      "words": 14,
+      "estimated_seconds": 6.69,
+      "spoken_seconds": 8.04
+    },
+    {
+      "product": "01",
+      "run": 2,
+      "scene": 2,
+      "line": "It uses microalgae-derived biomimetic exosomes, peptides, and antioxidants to support skin\u2019s natural renewal process.",
+      "shows": "A slow close-up moves over the front of the sealed serum bottle.",
+      "words": 14,
+      "estimated_seconds": 6.69,
+      "spoken_seconds": 7.84
+    },
+    {
+      "product": "01",
+      "run": 2,
+      "scene": 3,
+      "line": "In a consumer study, 94% saw a reduced look of fine lines and wrinkles in 30 days.",
+      "shows": "The serum bottle stands centered as the camera slowly moves closer.",
+      "words": 17,
+      "estimated_seconds": 8.13,
+      "spoken_seconds": 5.88
+    },
+    {
+      "product": "01",
+      "run": 3,
+      "scene": 2,
+      "line": "Its microalgae-derived biomimetic exosomes, peptides, and antioxidants support skin\u2019s natural renewal process.",
+      "shows": "Close-up views of the closed serum bottle and its reflective packaging.",
+      "words": 12,
+      "estimated_seconds": 5.74,
+      "spoken_seconds": 7.32
+    },
+    {
+      "product": "09",
+      "run": 1,
+      "scene": 2,
+      "line": "Drizzle it over a bowl\u2014bold heat, just ten dollars.",
+      "shows": "a hand drizzles Chili Crunch Sauce over a bowl",
+      "words": 9,
+      "estimated_seconds": 4.21,
+      "spoken_seconds": 4.18
+    },
+    {
+      "product": "09",
+      "run": 3,
+      "scene": 2,
+      "line": "Drizzle it over a bowl for balanced heat\u2014ten dollars.",
+      "shows": "A hand squeezes the sauce over a bowl.",
+      "words": 9,
+      "estimated_seconds": 4.21,
+      "spoken_seconds": 4.0
+    }
+  ],
+  "second_run_broll_lines": [
+    {
+      "product": "02",
+      "line": "Swipe it directly onto cheeks, then blend with your fingertips for soft, buildable color.",
+      "words": 14,
+      "estimated_seconds": 5.71
+    },
+    {
+      "product": "02",
+      "line": "It can also be tapped onto lips for a hint of color.",
+      "words": 12,
+      "estimated_seconds": 4.89
+    },
+    {
+      "product": "03",
+      "line": "It mixes easily into coffee or smoothies, so it blends right into your daily routine.",
+      "words": 15,
+      "estimated_seconds": 6.53
+    },
+    {
+      "product": "05",
+      "line": "Carry it as a clutch, or wear the removable strap crossbody for hands-free wear.",
+      "words": 14,
+      "estimated_seconds": 5.5
+    },
+    {
+      "product": "05",
+      "line": "It fits a phone, small wallet, keys, small headphones, and compact makeup.",
+      "words": 12,
+      "estimated_seconds": 4.72
+    },
+    {
+      "product": "06",
+      "line": "Its 10,000mAh capacity can charge a phone up to three times and most tablets once.",
+      "words": 15,
+      "estimated_seconds": 6.57
+    },
+    {
+      "product": "06",
+      "line": "Its slim design fits comfortably in your palm or pocket, perfect for work or travel.",
+      "words": 15,
+      "estimated_seconds": 6.57
+    },
+    {
+      "product": "06",
+      "line": "Press the power button twice to activate trickle-charging mode for low-power devices.",
+      "words": 12,
+      "estimated_seconds": 5.25
+    },
+    {
+      "product": "07",
+      "line": "It fits perfectly on one burner and is ideal for cooking for one or two.",
+      "words": 15,
+      "estimated_seconds": 6.39
+    },
+    {
+      "product": "07",
+      "line": "It\u2019s safe for all stovetops, including induction.",
+      "words": 7,
+      "estimated_seconds": 2.98
+    },
+    {
+      "product": "07",
+      "line": "Make beef bourguignon, mashed potatoes, or congee.",
+      "words": 7,
+      "estimated_seconds": 2.98
+    },
+    {
+      "product": "08",
+      "line": "Its extended-reach neck provides 360-degree coverage under the rim.",
+      "words": 9,
+      "estimated_seconds": 4.31
+    },
+    {
+      "product": "08",
+      "line": "The clinging gel fights rings and stains from hard water and rust.",
+      "words": 12,
+      "estimated_seconds": 5.75
+    },
+    {
+      "product": "01",
+      "line": "It combines microalgae-derived biomimetic exosomes, peptides, and antioxidants.",
+      "words": 8,
+      "estimated_seconds": 3.83
+    },
+    {
+      "product": "09",
+      "line": "Drizzle it over a bowl\u2014just ten dollars.",
+      "words": 7,
+      "estimated_seconds": 3.27
+    }
+  ]
+}

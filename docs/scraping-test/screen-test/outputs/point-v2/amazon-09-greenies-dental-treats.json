@@ -1,0 +1,49 @@
+{
+ "key": "amazon-09-greenies-dental-treats",
+ "model": "gpt-5.6-sol",
+ "answer": {
+  "product": "Greenies Regular Dental Dog Treats, Original Chicken Flavor, Regular size for dogs 25\u201350 lbs, 36 Count (Pack of 1)",
+  "gallery_images": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8
+  ],
+  "more_images": [
+   69,
+   79
+  ],
+  "product_sections": [
+   6,
+   9,
+   44,
+   49,
+   50,
+   51,
+   53,
+   67,
+   69,
+   70,
+   75,
+   78,
+   79,
+   80,
+   86,
+   93,
+   95,
+   96,
+   98,
+   99,
+   101
+  ],
+  "notes": "Excluded recommendation, bundle, review, and customer-video content; images showing other Greenies sizes, flavors, or product lines; and sections mixing this item with separately sold dog-size or flavor variants."
+ },
+ "tiles": 12,
+ "in": 48430,
+ "out": 2732,
+ "seconds": 48
+}

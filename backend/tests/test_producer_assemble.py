@@ -11,6 +11,7 @@ from rest_framework.test import APIClient
 
 from adforge.file_store import read
 from gateway.fake import FakeModel, turn
+from jobs import assembly
 from jobs.models import Job, ProducedItem
 
 from .conftest import (
@@ -138,7 +139,8 @@ def test_the_scenes_are_assembled_into_one_ad_that_plays_in_the_chat(
     (ad,) = ads()
     assert (ad.version, ad.scene, ad.seconds) == (1, None, 9.0)
     width, height, seconds = video(read(ad.file))
-    assert (width, height) == (72, 128)
+    # Every ad is made at the one frame size, whatever size its clips came at.
+    assert (width, height) == (assembly.FRAME_WIDTH, assembly.FRAME_HEIGHT)
     assert seconds == pytest.approx(9.0, abs=0.1)
     # Each scene's own clip, in order: the fake's clips are red, lime and blue, and each
     # is looked at halfway through its scene.
@@ -185,6 +187,11 @@ def test_the_dead_air_between_scenes_is_cut_on_the_word_timings(
             "start": 0.0,
             "end": 4.2,
             "overlay": "Kiln & Co",
+            # Its voice plays where its picture does: no scene shows the product.
+            "voice_clip_start": 0.9,
+            "voice_clip_end": 5.1,
+            "voice_start": 0.0,
+            "voice_end": 4.2,
         },
         {
             "scene": 2,
@@ -194,6 +201,10 @@ def test_the_dead_air_between_scenes_is_cut_on_the_word_timings(
             "start": 4.2,
             "end": 7.9,
             "overlay": "",
+            "voice_clip_start": 0.9,
+            "voice_clip_end": 4.6,
+            "voice_start": 4.2,
+            "voice_end": 7.9,
         },
         {
             "scene": 3,
@@ -203,6 +214,10 @@ def test_the_dead_air_between_scenes_is_cut_on_the_word_timings(
             "start": 7.9,
             "end": 10.1,
             "overlay": "$24.00",
+            "voice_clip_start": 0.9,
+            "voice_clip_end": 3.1,
+            "voice_start": 7.9,
+            "voice_end": 10.1,
         },
     ]
 

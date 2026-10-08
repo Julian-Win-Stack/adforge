@@ -1,0 +1,33 @@
+{
+ "sent": {
+  "model": "boreal-h3",
+  "prompt": "The brush scrubs along the ring in small strokes; the gel and the brown stain lift away. The clip ends on a clean, white bowl with no ring.",
+  "resolution": "768p",
+  "duration": 5,
+  "image_url": "https://v3b.fal.media/files/b/0aacf4ea/vemugparzAKk3RJPdGAkQ_make_starting_picture_vVXH8iR.png"
+ },
+ "got": {
+  "id": "0872bef0-9459-4701-9ccb-7d6bb303c36c",
+  "created_at": "2026-10-03T16:35:04.512380-07:00",
+  "updated_at": "2026-10-03T16:35:04.540574-07:00",
+  "model": "boreal-h3",
+  "prompt": "The brush scrubs along the ring in small strokes; the gel and the brown stain lift away. The clip ends on a clean, white bowl with no ring.",
+  "image_url": "https://cdn.creatify.ai/images/35d702ce-58e7-5c7f-a518-f18c7eef057d.png",
+  "end_image_url": null,
+  "audio_url": null,
+  "reference_image_urls": [],
+  "reference_video_urls": [],
+  "reference_audio_urls": [],
+  "resolution": "768p",
+  "aspect_ratio": "auto",
+  "duration": 5.0,
+  "negative_prompt": null,
+  "prompt_enhancement": "auto",
+  "webhook_url": null,
+  "status": "done",
+  "failed_reason": null,
+  "video_output": "https://cdn.creatify.ai/boreal_api/c2pa/20261003/c6fccffd24f84d0b938b42c927313b1f.mp4",
+  "credits_used": 2,
+  "progress": 1
+ }
+}

@@ -1,0 +1,142 @@
+[
+ {
+  "n": 1,
+  "key": "small-32-diggs-revol-crate",
+  "n_img": 1,
+  "filter_kept": true,
+  "review_truth": "product"
+ },
+ {
+  "n": 2,
+  "key": "amazon-04-optimum-nutrition-gold-standard-whey",
+  "n_img": 61,
+  "filter_kept": true,
+  "review_truth": "product"
+ },
+ {
+  "n": 3,
+  "key": "retail-19-chewy-blue-buffalo-dog-food",
+  "n_img": 29,
+  "filter_kept": false,
+  "review_truth": "not"
+ },
+ {
+  "n": 4,
+  "key": "amazon-03-nature-made-vitamin-d3",
+  "n_img": 78,
+  "filter_kept": false,
+  "review_truth": "not"
+ },
+ {
+  "n": 5,
+  "key": "small-02-ouai-detox-shampoo",
+  "n_img": 33,
+  "filter_kept": false,
+  "review_truth": "not"
+ },
+ {
+  "n": 6,
+  "key": "retail-19-chewy-blue-buffalo-dog-food",
+  "n_img": 44,
+  "filter_kept": false,
+  "review_truth": "not"
+ },
+ {
+  "n": 7,
+  "key": "small-18-twelve-south-hirise-3-deluxe",
+  "n_img": 1,
+  "filter_kept": true,
+  "review_truth": "product"
+ },
+ {
+  "n": 8,
+  "key": "small-03-ilia-super-serum-skin-tint",
+  "n_img": 101,
+  "filter_kept": false,
+  "review_truth": "product"
+ },
+ {
+  "n": 9,
+  "key": "small-35-allbirds-mens-tree-runners",
+  "n_img": 25,
+  "filter_kept": false,
+  "review_truth": "not"
+ },
+ {
+  "n": 10,
+  "key": "retail-21-chewy-frisco-cat-tree",
+  "n_img": 76,
+  "filter_kept": true,
+  "review_truth": "product"
+ },
+ {
+  "n": 11,
+  "key": "small-19-moft-snap-on-stand-wallet",
+  "n_img": 351,
+  "filter_kept": false,
+  "review_truth": "not"
+ },
+ {
+  "n": 12,
+  "key": "other-01-mahalo-rare-indigo-balm",
+  "n_img": 33,
+  "filter_kept": false,
+  "review_truth": "not"
+ },
+ {
+  "n": 13,
+  "key": "small-32-diggs-revol-crate",
+  "n_img": 5,
+  "filter_kept": true,
+  "review_truth": "product"
+ },
+ {
+  "n": 14,
+  "key": "small-26-fellow-stagg-ekg-kettle",
+  "n_img": 12,
+  "filter_kept": true,
+  "review_truth": "product"
+ },
+ {
+  "n": 15,
+  "key": "amazon-07-stanley-quencher-40oz",
+  "n_img": 31,
+  "filter_kept": false,
+  "review_truth": "not"
+ },
+ {
+  "n": 16,
+  "key": "small-20-rokform-iphone-16-pro-rugged",
+  "n_img": 9,
+  "filter_kept": true,
+  "review_truth": "product"
+ },
+ {
+  "n": 17,
+  "key": "small-19-moft-snap-on-stand-wallet",
+  "n_img": 544,
+  "filter_kept": true,
+  "review_truth": "product"
+ },
+ {
+  "n": 18,
+  "key": "small-19-moft-snap-on-stand-wallet",
+  "n_img": 208,
+  "filter_kept": true,
+  "review_truth": "product"
+ },
+ {
+  "n": 19,
+  "key": "small-05-kosas-revealer-concealer",
+  "n_img": 71,
+  "filter_kept": true,
+  "review_truth": "product"
+ },
+ {
+  "n": 20,
+  "key": "small-07-tower28-sos-rescue-spray",
+  "n_img": 150,
+  "filter_kept": false,
+  "review_truth": "not"
+ }
+]

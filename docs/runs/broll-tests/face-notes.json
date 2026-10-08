@@ -1,0 +1,897 @@
+[
+  {
+    "product": "02",
+    "name": "R2 02 \u00b7 Makeup \u00b7 Merit Flush Balm",
+    "picked": {
+      "product": "Merit Beauty Flush Balm",
+      "gallery_images": [
+        5,
+        8,
+        9,
+        10,
+        11,
+        12,
+        14,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "more_images": [
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40
+      ],
+      "product_sections": [
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91
+      ],
+      "notes": "Excluded swatch-only images, the multi-shade swatch line-up, award badge, Signature Bag promotion, recommendations, standards icons, reviews, and footer content.",
+      "face_images": [
+        8,
+        9,
+        10,
+        11,
+        12,
+        16,
+        17,
+        18,
+        19,
+        20,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40
+      ]
+    },
+    "kept": [
+      {
+        "mark": 5,
+        "url": "https://www.meritbeauty.com/cdn/shop/files/MERIT24-FlushBalm-LeBonBon_f63dc88e-8ad4-4dcc-9d81-915da4d35633.jpg?v=1762550276",
+        "file": "/app/media/broll-test/face-notes/02/I5.img",
+        "face": false
+      },
+      {
+        "mark": 8,
+        "url": "https://www.meritbeauty.com/cdn/shop/files/MERIT24-FlushBalm-LeBonBon-Ajong.jpg?v=1762550276",
+        "file": "/app/media/broll-test/face-notes/02/I8.img",
+        "face": true
+      },
+      {
+        "mark": 9,
+        "url": "https://www.meritbeauty.com/cdn/shop/files/MERIT24-FlushBalm-LeBonBon-Sejal.jpg?v=1762550276",
+        "file": "/app/media/broll-test/face-notes/02/I9.img",
+        "face": true
+      },
+      {
+        "mark": 10,
+        "url": "https://www.meritbeauty.com/cdn/shop/files/MERIT24-FlushBalm-LeBonBon-Early.jpg?v=1762550276",
+        "file": "/app/media/broll-test/face-notes/02/I10.img",
+        "face": true
+      },
+      {
+        "mark": 11,
+        "url": "https://www.meritbeauty.com/cdn/shop/files/MERIT24-FlushBalm-LeBonBon-Milano.jpg?v=1762550276",
+        "file": "/app/media/broll-test/face-notes/02/I11.img",
+        "face": true
+      },
+      {
+        "mark": 12,
+        "url": "https://www.meritbeauty.com/cdn/shop/files/MERIT24-FlushBalm-LeBonBon-Natalia.jpg?v=1762550276",
+        "file": "/app/media/broll-test/face-notes/02/I12.img",
+        "face": true
+      },
+      {
+        "mark": 32,
+        "url": "https://www.meritbeauty.com/cdn/shop/files/MERIT24-FlushBalm-Fox-Ajong_77ee54be-841f-4822-beec-25b183b42dff.jpg?v=1744736722",
+        "file": "/app/media/broll-test/face-notes/02/I32.img",
+        "face": true
+      },
+      {
+        "mark": 33,
+        "url": "https://www.meritbeauty.com/cdn/shop/files/MERIT24-FlushBalm-Persimmon-Ajong.jpg?v=1744400859",
+        "file": "/app/media/broll-test/face-notes/02/I33.img",
+        "face": true
+      },
+      {
+        "mark": 34,
+        "url": "https://www.meritbeauty.com/cdn/shop/files/MERIT24-FlushBalm-Rouge-Ajong.jpg?v=1744400862",
+        "file": "/app/media/broll-test/face-notes/02/I34.img",
+        "face": true
+      },
+      {
+        "mark": 35,
+        "url": "https://www.meritbeauty.com/cdn/shop/files/MERIT24-FlushBalm-Postmodern-Ajong.jpg?v=1744400863",
+        "file": "/app/media/broll-test/face-notes/02/I35.img",
+        "face": true
+      },
+      {
+        "mark": 36,
+        "url": "https://www.meritbeauty.com/cdn/shop/files/MERIT24-FlushBalm-Lusitano-Ajong.jpg?v=1744400865",
+        "file": "/app/media/broll-test/face-notes/02/I36.img",
+        "face": true
+      },
+      {
+        "mark": 38,
+        "url": "https://www.meritbeauty.com/cdn/shop/files/MERIT24-FlushBalm-Cheeky-Ajong.jpg?v=1752587584",
+        "file": "/app/media/broll-test/face-notes/02/I38.img",
+        "face": true
+      },
+      {
+        "mark": 39,
+        "url": "https://www.meritbeauty.com/cdn/shop/files/MERIT24-FlushBalm-Apres-Ajong.jpg?v=1752587584",
+        "file": "/app/media/broll-test/face-notes/02/I39.img",
+        "face": true
+      },
+      {
+        "mark": 40,
+        "url": "https://www.meritbeauty.com/cdn/shop/files/MERIT24-FlushBalm-Archival-Ajong.jpg?v=1744400873",
+        "file": "/app/media/broll-test/face-notes/02/I40.img",
+        "face": true
+      }
+    ]
+  },
+  {
+    "product": "03",
+    "name": "R2 03 \u00b7 Supplement \u00b7 Vital Proteins Salted Caramel Collagen Peptides",
+    "picked": {
+      "product": "Vital Proteins Salted Caramel Collagen Peptides",
+      "gallery_images": [
+        2,
+        3,
+        5,
+        8,
+        9,
+        11
+      ],
+      "more_images": [
+        18,
+        35
+      ],
+      "product_sections": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "notes": "Excluded gallery nutrition/benefit text cards and the model/text image where the product is not clearly visible. Also excluded generic or other-flavour collagen imagery, product line-ups, recommendations, reviews, Q&A, and blog images that do not show this exact product.",
+      "face_images": []
+    },
+    "kept": [
+      {
+        "mark": 2,
+        "url": "https://www.vitalproteins.com/cdn/shop/files/1_HERO_SaltedCaramel-10oz_600x.jpg?v=1790102728",
+        "file": "/app/media/broll-test/face-notes/03/I2.img",
+        "face": false
+      },
+      {
+        "mark": 3,
+        "url": "https://www.vitalproteins.com/cdn/shop/files/2_SaltedCaramel-10oz_600x.jpg?v=1757004197",
+        "file": "/app/media/broll-test/face-notes/03/I3.img",
+        "face": false
+      },
+      {
+        "mark": 5,
+        "url": "https://www.vitalproteins.com/cdn/shop/files/4_USAGE_SaltedCaramel-10oz_600x.jpg?v=1757004197",
+        "file": "/app/media/broll-test/face-notes/03/I5.img",
+        "face": false
+      },
+      {
+        "mark": 18,
+        "url": "https://www.vitalproteins.com/cdn/shop/files/Salted_Caramel_Blog.jpg?v=1757009046",
+        "file": "/app/media/broll-test/face-notes/03/I18.img",
+        "face": false
+      },
+      {
+        "mark": 35,
+        "url": "https://www.vitalproteins.com/cdn/shop/articles/VP_Salted_Caramel_Banana_Cream_Iced_Latte_1_of_4_c7f8d859-d126-4083-8f9d-a18aa655c55b.jpg?v=1790158803",
+        "file": "/app/media/broll-test/face-notes/03/I35.img",
+        "face": false
+      }
+    ]
+  },
+  {
+    "product": "05",
+    "name": "R2 05 \u00b7 Well-known brand \u00b7 Steve Madden Kenzo Bag Gold",
+    "picked": {
+      "product": "STEVEMADDEN KENZO BAG GOLD",
+      "gallery_images": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "more_images": [
+        8,
+        11,
+        14,
+        16,
+        20,
+        23
+      ],
+      "product_sections": [
+        20,
+        21,
+        23,
+        27,
+        28
+      ],
+      "notes": "The additional KENZO bag images are isolated product thumbnails within the \u201cWear It With\u201d area; images of the accompanying dresses and shoes were excluded.",
+      "face_images": []
+    },
+    "kept": [
+      {
+        "mark": 1,
+        "url": "https://www.stevemadden.com/cdn/shop/files/STEVEMADDEN_HANDBAGS_BKENZO_GOLD_01.jpg?v=1787774959",
+        "file": "/app/media/broll-test/face-notes/05/I1.img",
+        "face": false
+      },
+      {
+        "mark": 2,
+        "url": "https://www.stevemadden.com/cdn/shop/files/STEVEMADDEN_HANDBAGS_BKENZO_GOLD_04.jpg?v=1787774958",
+        "file": "/app/media/broll-test/face-notes/05/I2.img",
+        "face": false
+      },
+      {
+        "mark": 3,
+        "url": "https://www.stevemadden.com/cdn/shop/files/STEVEMADDEN_HANDBAGS_BKENZO_GOLD_03.jpg?v=1787774959",
+        "file": "/app/media/broll-test/face-notes/05/I3.img",
+        "face": false
+      },
+      {
+        "mark": 4,
+        "url": "https://www.stevemadden.com/cdn/shop/files/STEVEMADDEN_HANDBAGS_BKENZO_GOLD_05.jpg?v=1787774944",
+        "file": "/app/media/broll-test/face-notes/05/I4.img",
+        "face": false
+      },
+      {
+        "mark": 5,
+        "url": "https://www.stevemadden.com/cdn/shop/files/STEVEMADDEN_HANDBAGS_BKENZO_GOLD_02.jpg?v=1787774944",
+        "file": "/app/media/broll-test/face-notes/05/I5.img",
+        "face": false
+      },
+      {
+        "mark": 8,
+        "url": "https://content.stylitics.com/images/items/38808878?size=large",
+        "file": "/app/media/broll-test/face-notes/05/I8.img",
+        "face": false
+      }
+    ]
+  },
+  {
+    "product": "06",
+    "name": "R2 06 \u00b7 Gadget \u00b7 Anker 313 Power Bank",
+    "picked": {
+      "product": "Anker 313 Power Bank (PowerCore 10K)",
+      "gallery_images": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "more_images": [
+        19,
+        28,
+        30,
+        31,
+        32
+      ],
+      "product_sections": [
+        10,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        38,
+        40,
+        51,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99
+      ],
+      "notes": "I3\u2013I14 are the product gallery's duplicated responsive image sets. Excluded review imagery, recommendations, brand graphics, abstract technology graphics, and the compatibility lineup containing other products.",
+      "face_images": []
+    },
+    "kept": [
+      {
+        "mark": 3,
+        "url": "https://cdn.shopify.com/s/files/1/0493/9834/9974/files/USB-C_Input_and_Output_Black_-01.png?v=1763975109",
+        "file": "/app/media/broll-test/face-notes/06/I3.img",
+        "face": false
+      },
+      {
+        "mark": 4,
+        "url": "https://cdn.shopify.com/s/files/1/0493/9834/9974/files/USB-CInputandOutput_Black_-03.jpg?v=1763975109",
+        "file": "/app/media/broll-test/face-notes/06/I4.img",
+        "face": false
+      },
+      {
+        "mark": 5,
+        "url": "https://cdn.shopify.com/s/files/1/0493/9834/9974/files/USB-CInputandOutput_Black_-02.jpg?v=1763975109",
+        "file": "/app/media/broll-test/face-notes/06/I5.img",
+        "face": false
+      },
+      {
+        "mark": 6,
+        "url": "https://cdn.shopify.com/s/files/1/0493/9834/9974/files/USB-CInputandOutput_Black_-04.jpg?v=1763975109",
+        "file": "/app/media/broll-test/face-notes/06/I6.img",
+        "face": false
+      },
+      {
+        "mark": 7,
+        "url": "https://cdn.shopify.com/s/files/1/0493/9834/9974/files/USB-CInputandOutput_Black_-05.jpg?v=1763975109",
+        "file": "/app/media/broll-test/face-notes/06/I7.img",
+        "face": false
+      },
+      {
+        "mark": 8,
+        "url": "https://cdn.shopify.com/s/files/1/0493/9834/9974/files/USB-CInputandOutput_Black_-06.jpg?v=1763975109",
+        "file": "/app/media/broll-test/face-notes/06/I8.img",
+        "face": false
+      },
+      {
+        "mark": 28,
+        "url": "https://d2211byn0pk9fi.cloudfront.net/spree/ckeditor_assets/pictures/1600/original_a1229011-2.jpg?alt=Anker+power+bank+with+slim+design+for+fast+charging",
+        "file": "/app/media/broll-test/face-notes/06/I28.img",
+        "face": false
+      },
+      {
+        "mark": 30,
+        "url": "https://d2211byn0pk9fi.cloudfront.net/spree/ckeditor_assets/pictures/1602/original_a1229011-4.jpg?alt=soundcore+smart+speaker+with+circular+touch+panel+and+blue+lights",
+        "file": "/app/media/broll-test/face-notes/06/I30.img",
+        "face": false
+      },
+      {
+        "mark": 31,
+        "url": "https://d2211byn0pk9fi.cloudfront.net/spree/ckeditor_assets/pictures/1603/original_a1229011-5.jpg?alt=Anker+portable+charger+with+PowerIQ+for+VoltageBoost+fast+charging",
+        "file": "/app/media/broll-test/face-notes/06/I31.img",
+        "face": false
+      },
+      {
+        "mark": 32,
+        "url": "https://d2211byn0pk9fi.cloudfront.net/spree/ckeditor_assets/pictures/1604/original_a1229011-6.jpg?alt=Anker+power+bank+with+micro+USB+and+USB-C+input+ports",
+        "file": "/app/media/broll-test/face-notes/06/I32.img",
+        "face": false
+      }
+    ]
+  },
+  {
+    "product": "07",
+    "name": "R2 07 \u00b7 Kitchen \u00b7 Great Jones Dutch Baby",
+    "picked": {
+      "product": "Great Jones Dutch Baby 3.5-Quart Cast-Iron Dutch Oven",
+      "gallery_images": [
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71
+      ],
+      "more_images": [
+        81,
+        82,
+        83
+      ],
+      "product_sections": [
+        3,
+        4,
+        5,
+        7,
+        10,
+        11,
+        13
+      ],
+      "notes": "Excluded related-product, bundle, frequently-bought-together, collection lineup, review, Q&A, cart, and uncertain category images. T12 mixes recommendations for other products with product details, so it was excluded.",
+      "face_images": []
+    },
+    "kept": [
+      {
+        "mark": 49,
+        "url": "https://greatjonesgoods.com/cdn/shop/products/BABYDUTCH_14296_211119-5.png?v=1762443730",
+        "file": "/app/media/broll-test/face-notes/07/I49.img",
+        "face": false
+      },
+      {
+        "mark": 50,
+        "url": "https://greatjonesgoods.com/cdn/shop/products/BABYDUTCH_14297.png?v=1637629123",
+        "file": "/app/media/broll-test/face-notes/07/I50.img",
+        "face": false
+      },
+      {
+        "mark": 51,
+        "url": "https://greatjonesgoods.com/cdn/shop/products/BABYDUTCH_14308.png?v=1637629123",
+        "file": "/app/media/broll-test/face-notes/07/I51.img",
+        "face": false
+      },
+      {
+        "mark": 53,
+        "url": "https://greatjonesgoods.com/cdn/shop/products/BABYDUTCH_14356.png?v=1637629123",
+        "file": "/app/media/broll-test/face-notes/07/I53.img",
+        "face": false
+      },
+      {
+        "mark": 54,
+        "url": "https://greatjonesgoods.com/cdn/shop/products/BABYDUTCH_14358.png?v=1637629123",
+        "file": "/app/media/broll-test/face-notes/07/I54.img",
+        "face": false
+      },
+      {
+        "mark": 55,
+        "url": "https://greatjonesgoods.com/cdn/shop/products/BABYDUTCH_14322.png?v=1637629123",
+        "file": "/app/media/broll-test/face-notes/07/I55.img",
+        "face": false
+      },
+      {
+        "mark": 56,
+        "url": "https://greatjonesgoods.com/cdn/shop/products/BABYDUTCH_14323.png?v=1637629123",
+        "file": "/app/media/broll-test/face-notes/07/I56.img",
+        "face": false
+      },
+      {
+        "mark": 57,
+        "url": "https://greatjonesgoods.com/cdn/shop/products/DoubleDutch_Blueberry1_9cefb191-ae4f-4c68-9759-bc2c583717f4.png?v=1666885729",
+        "file": "/app/media/broll-test/face-notes/07/I57.img",
+        "face": false
+      },
+      {
+        "mark": 58,
+        "url": "https://greatjonesgoods.com/cdn/shop/products/DoubleDutch_Blueberry2_cc345aae-dc3a-4506-85e7-4a75696a5466.png?v=1666885729",
+        "file": "/app/media/broll-test/face-notes/07/I58.img",
+        "face": false
+      },
+      {
+        "mark": 59,
+        "url": "https://greatjonesgoods.com/cdn/shop/files/PDPImages_Lifestyle.png?v=1700617225",
+        "file": "/app/media/broll-test/face-notes/07/I59.img",
+        "face": false
+      },
+      {
+        "mark": 63,
+        "url": "",
+        "failed": " is not a web link."
+      },
+      {
+        "mark": 64,
+        "url": "",
+        "failed": " is not a web link."
+      },
+      {
+        "mark": 65,
+        "url": "",
+        "failed": " is not a web link."
+      },
+      {
+        "mark": 66,
+        "url": "",
+        "failed": " is not a web link."
+      },
+      {
+        "mark": 67,
+        "url": "",
+        "failed": " is not a web link."
+      },
+      {
+        "mark": 68,
+        "url": "",
+        "failed": " is not a web link."
+      },
+      {
+        "mark": 69,
+        "url": "",
+        "failed": " is not a web link."
+      },
+      {
+        "mark": 70,
+        "url": "",
+        "failed": " is not a web link."
+      },
+      {
+        "mark": 81,
+        "url": "https://greatjonesgoods.com/cdn/shop/files/zoeadjonyohDutch_Baby4-50-35_582x617_crop_center.jpg?v=1643854194",
+        "file": "/app/media/broll-test/face-notes/07/I81.img",
+        "face": false
+      },
+      {
+        "mark": 82,
+        "url": "https://greatjonesgoods.com/cdn/shop/files/78c55f3e-b3fd-4f11-87a0-071c941daa10_582x617_crop_center.jpg?v=1643854348",
+        "file": "/app/media/broll-test/face-notes/07/I82.img",
+        "face": false
+      },
+      {
+        "mark": 83,
+        "url": "https://greatjonesgoods.com/cdn/shop/files/salganz_2021-11-05_21-22-39_11838951-d2d0-4acd-bab2-9a0281d37fc7_582x617_crop_center.jpg?v=1638135240",
+        "file": "/app/media/broll-test/face-notes/07/I83.img",
+        "face": false
+      }
+    ]
+  },
+  {
+    "product": "08",
+    "name": "R2 08 \u00b7 Cleaning \u00b7 Molly's Suds Toilet Bowl Cleaner",
+    "picked": {
+      "product": "Molly\u2019s Suds Toilet Bowl Cleaner",
+      "gallery_images": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "more_images": [],
+      "product_sections": [
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55
+      ],
+      "notes": "I2\u2013I5 are the product gallery. Related-product images and review text are excluded.",
+      "face_images": []
+    },
+    "kept": [
+      {
+        "mark": 2,
+        "url": "https://mollyssuds.com/cdn/shop/files/TBC-3PK-MAIN_4100x.png?v=1755113749",
+        "file": "/app/media/broll-test/face-notes/08/I2.img",
+        "face": false
+      },
+      {
+        "mark": 3,
+        "url": "https://mollyssuds.com/cdn/shop/files/TBC-Lifestyle_4100x.jpg?v=1756503747",
+        "file": "/app/media/broll-test/face-notes/08/I3.img",
+        "face": false
+      }
+    ]
+  },
+  {
+    "product": "01",
+    "name": "R2 01 \u00b7 Skincare \u00b7 Naturium Multi-Active Exosome Serum",
+    "picked": {
+      "product": "Naturium Multi-Active Exosome Serum",
+      "gallery_images": [
+        11,
+        13,
+        16,
+        17,
+        18,
+        20,
+        21,
+        25,
+        27,
+        30,
+        31,
+        32,
+        34,
+        35
+      ],
+      "more_images": [],
+      "product_sections": [
+        5,
+        7,
+        10,
+        11,
+        12,
+        13,
+        16,
+        17,
+        18,
+        21,
+        22,
+        23,
+        24,
+        25
+      ],
+      "notes": "Gallery selections include both full-size gallery images and corresponding thumbnails where the serum bottle is visible. Text-only cards, model-only images, comparison imagery containing other products, recommendations, and reviews were excluded.",
+      "face_images": [
+        17,
+        31
+      ]
+    },
+    "kept": [
+      {
+        "mark": 11,
+        "url": "https://naturium.com/cdn/shop/files/NATR-21366-Multi-Active-Exosome-Serum-Front-CapOn-bonebkgd.jpg?v=1784050827",
+        "file": "/app/media/broll-test/face-notes/01/I11.img",
+        "face": false
+      },
+      {
+        "mark": 13,
+        "url": "https://naturium.com/cdn/shop/files/NATR-21366-Alt-Images-Multi-Active-Exosome-Serum-2_f6375496-33ea-492f-b902-dbcf82ceeca4.jpg?v=1785289482",
+        "file": "/app/media/broll-test/face-notes/01/I13.img",
+        "face": false
+      },
+      {
+        "mark": 16,
+        "url": "https://naturium.com/cdn/shop/files/NATR-21366-Alt-Images-Multi-Active-Exosome-Serum-6_e8a0444c-dd16-4841-8205-4048d2967c25.jpg?v=1785289541",
+        "file": "/app/media/broll-test/face-notes/01/I16.img",
+        "face": false
+      },
+      {
+        "mark": 17,
+        "url": "https://naturium.com/cdn/shop/files/NATR-21366-Alt-Images-Multi-Active-Exosome-Serum-8_d90cc4b4-a8f0-493c-b4e9-647cdca7d6e7.jpg?v=1785289578",
+        "file": "/app/media/broll-test/face-notes/01/I17.img",
+        "face": true
+      },
+      {
+        "mark": 18,
+        "url": "https://naturium.com/cdn/shop/files/NATR-21366-Alt-Images-Multi-Active-Exosome-Serum-3_c0ebbda6-3943-4f30-a02e-4e9f91fd5123.jpg?v=1785289498",
+        "file": "/app/media/broll-test/face-notes/01/I18.img",
+        "face": false
+      },
+      {
+        "mark": 20,
+        "url": "https://naturium.com/cdn/shop/files/NATR-21366-Alt-Images-Multi-Active-Exosome-Serum-4_4ce8a4f3-e60a-4884-b7ca-20a754ed555c.jpg?v=1785289514",
+        "file": "/app/media/broll-test/face-notes/01/I20.img",
+        "face": false
+      },
+      {
+        "mark": 21,
+        "url": "https://naturium.com/cdn/shop/files/NATR-21366-Alt-Images-Multi-Active-Exosome-Serum-10_bc432076-4e05-4214-b4f7-47ec471cb360.jpg?v=1785289589",
+        "file": "/app/media/broll-test/face-notes/01/I21.img",
+        "face": false
+      }
+    ]
+  },
+  {
+    "product": "09",
+    "name": "R2 09 \u00b7 Food \u00b7 Momofuku Chili Crunch Sauce",
+    "picked": {
+      "product": "Momofuku Goods Chili Crunch Sauce",
+      "gallery_images": [
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35
+      ],
+      "more_images": [
+        37,
+        38,
+        39
+      ],
+      "product_sections": [
+        12,
+        14,
+        15,
+        16,
+        17,
+        23,
+        24,
+        25
+      ],
+      "notes": "Gallery assets appear multiple times for responsive/carousel layouts. Related noodles, other sauces, review media, and the founder image were excluded.",
+      "face_images": [
+        20,
+        27,
+        34
+      ]
+    },
+    "kept": [
+      {
+        "mark": 14,
+        "url": "https://shop.momofuku.com/cdn/shop/files/Chili_Crunch_Sauce_Hero_2560x.jpg?v=1788377407",
+        "file": "/app/media/broll-test/face-notes/09/I14.img",
+        "face": false
+      },
+      {
+        "mark": 16,
+        "url": "https://shop.momofuku.com/cdn/shop/files/Chili_Crunch_Sauce.jpg?v=1789149188",
+        "file": "/app/media/broll-test/face-notes/09/I16.img",
+        "face": false
+      },
+      {
+        "mark": 17,
+        "url": "https://shop.momofuku.com/cdn/shop/files/image_94.png?v=1789153739",
+        "file": "/app/media/broll-test/face-notes/09/I17.img",
+        "face": false
+      },
+      {
+        "mark": 18,
+        "url": "https://shop.momofuku.com/cdn/shop/files/2026-09_02_Drizzle_Restaurant_Story_png.jpg?v=1789149082",
+        "file": "/app/media/broll-test/face-notes/09/I18.img",
+        "face": false
+      },
+      {
+        "mark": 19,
+        "url": "https://shop.momofuku.com/cdn/shop/files/Drizzle_Supplementary_4.jpg?v=1789149045",
+        "file": "/app/media/broll-test/face-notes/09/I19.img",
+        "face": false
+      },
+      {
+        "mark": 20,
+        "url": "https://shop.momofuku.com/cdn/shop/files/Drizzle_Supplementary_3.jpg?v=1789149160",
+        "file": "/app/media/broll-test/face-notes/09/I20.img",
+        "face": true
+      },
+      {
+        "mark": 21,
+        "url": "https://shop.momofuku.com/cdn/shop/files/2026-08-04_Drizzle_Hero_Cards_YL_CCS.png?v=1787940199",
+        "file": "/app/media/broll-test/face-notes/09/I21.img",
+        "face": false
+      },
+      {
+        "mark": 38,
+        "url": "https://cld.accentuate.io/8079429238960/1789160370914/Spread-%E2%80%93%C2%A0Chili-Crunch-Sauce-%E2%80%93%C2%A0AJB.jpg?v=1789160399501&options=w_1920",
+        "file": "/app/media/broll-test/face-notes/09/I38.img",
+        "face": false
+      },
+      {
+        "mark": 39,
+        "url": "https://cld.accentuate.io/8079429238960/1789160430819/Brij_13.jpg?v=1789160430819&options=w_1920",
+        "file": "/app/media/broll-test/face-notes/09/I39.img",
+        "face": false
+      }
+    ]
+  }
+]

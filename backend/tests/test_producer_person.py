@@ -26,7 +26,16 @@ def test_the_person_is_drawn_then_given_a_voice_that_is_measured_on_the_script(
 
     say("Make the person")
 
-    assert paid_for() == ["check_page", "plan_ad", "draw_person", "design_voice", "measure_voice"]
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "plan_ad",
+        "draw_person",
+        "design_voice",
+        "measure_voice",
+    ]
     # The portrait and the voice are each made from words alone, so the plan's gender is
     # put into both by code: neither model is left to pick one at random.
     (drawn,) = handoffs("draw_person")

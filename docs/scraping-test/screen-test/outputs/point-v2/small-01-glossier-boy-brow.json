@@ -1,0 +1,35 @@
+{
+ "key": "small-01-glossier-boy-brow",
+ "model": "gpt-5.6-sol",
+ "answer": {
+  "product": "Glossier Boy Brow tinted grooming pomade",
+  "gallery_images": [
+   5,
+   6,
+   7,
+   8,
+   9,
+   12,
+   14,
+   15,
+   16,
+   19
+  ],
+  "more_images": [
+   22,
+   43,
+   44
+  ],
+  "product_sections": [
+   2,
+   8,
+   9,
+   64
+  ],
+  "notes": "The page shows Dark Brown selected, with other shades offered as variants. Sets, recommendations, reviews, and non-product gallery cards were excluded."
+ },
+ "tiles": 6,
+ "in": 20583,
+ "out": 2782,
+ "seconds": 47
+}

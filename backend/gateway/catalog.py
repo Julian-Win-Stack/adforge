@@ -5,11 +5,21 @@ from decimal import Decimal
 MODEL_FOR_PURPOSE: dict[str, str] = {
     "produce": "gpt-5.6-sol",
     "check_page": "gpt-5-mini",
+    # The copy test (docs/scraping-test/copy-test/results.md) kept 87% of the product's facts
+    # and let no other product's sentence through at 0.2 cents a page.
+    "copy_page_text": "gpt-6-luna",
+    # The picker reads a marked screenshot of the page: 92% of its photos were the right
+    # product's (docs/scraping-test/ref-photo-test/results.md).
+    "pick_photos": "gpt-5.6-sol",
+    # A photo the picker never saw gets its Face note from the same model, as the picker
+    # gives it for the photos it picks.
+    "note_face": "gpt-5.6-sol",
     "plan_ad": "gpt-5.6-sol",
     "fact_check": "gpt-5.6-terra",
     "rewrite_line": "gpt-5.6-sol",
     "shorten_script": "gpt-5.6-sol",
     "shorten_line": "gpt-5.6-sol",
+    "lengthen_line": "gpt-5.6-sol",
     "draw_person": "gpt-image-2.5-sunburst",
     "choose_starting_picture": "gpt-5.6-sol",
     "choose_broll_picture": "gpt-5.6-sol",
@@ -18,15 +28,20 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "measure_voice": "inworld-tts-2",
     "speak_line": "inworld-tts-2",
     "transcribe_line": "scribe_v2",
-    # A clip is asked for, then waited for and fetched: two calls, only the first paid.
-    "make_clip": "creatify/boreal",
-    "collect_clip": "creatify/boreal",
+    # A clip is asked for, then waited for and fetched: two calls, only the first paid. Each
+    # kind has its own model: HeyGen's talking clips passed the blind-graded eval (#87) 8 of
+    # 8; B-roll is Boreal-H3, on Creatify's own API (docs/broll-picture-logic.md, item 31).
+    "make_talking_clip": "heygen/avatar-iv",
+    "collect_talking_clip": "heygen/avatar-iv",
+    "make_broll_clip": "creatify/boreal-h3",
+    "collect_broll_clip": "creatify/boreal-h3",
     "make_music": "sonilo/v1.1/text-to-music",
 }
 
 # US dollars per million tokens: (input, output). From OpenAI's pricing page.
 PRICE_PER_MILLION_TOKENS: dict[str, tuple[Decimal, Decimal]] = {
     "gpt-5-mini": (Decimal("0.25"), Decimal("2.00")),
+    "gpt-6-luna": (Decimal("0.10"), Decimal("0.50")),
     "gpt-5.6-sol": (Decimal("4.00"), Decimal("20.00")),
     "gpt-5.6-terra": (Decimal("2.00"), Decimal("12.00")),
 }
@@ -49,10 +64,14 @@ PRICE_PER_HOUR_OF_AUDIO: dict[str, Decimal] = {
     "scribe_v2": Decimal("0.22"),
 }
 
-# US dollars per second of video made. From fal's model page for Boreal on 2026-09-26, at
-# the 720p the adapter asks for.
+# US dollars per second of video made. Boreal-H3's from Creatify on 2026-10-03: 0.4 credits a
+# second at the 768p the adapter asks for, at $99 for 500 credits (API Starter); up to 5
+# example pictures are free, so nothing else is billed. HeyGen's from its own pricing page on
+# 2026-09-29: a photo avatar is 0.1 credits a second at $0.50 a credit, the same at 720p and
+# 1080p.
 PRICE_PER_SECOND_OF_VIDEO: dict[str, Decimal] = {
-    "creatify/boreal": Decimal("0.01"),
+    "creatify/boreal-h3": Decimal("0.0792"),
+    "heygen/avatar-iv": Decimal("0.05"),
 }
 
 

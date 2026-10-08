@@ -151,7 +151,16 @@ def test_a_line_that_hasnt_passed_the_fact_check_gets_no_starting_picture(
     ]
     assert not SceneStep.objects.exists()
     assert steps.held == []
-    assert paid_for() == ["check_page", "plan_ad", "draw_person", "design_voice", "measure_voice"]
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "plan_ad",
+        "draw_person",
+        "design_voice",
+        "measure_voice",
+    ]
 
 
 def test_a_starting_picture_already_being_made_isnt_started_again(

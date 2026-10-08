@@ -1,7 +1,7 @@
 import base64
 import io
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from decimal import Decimal
 from typing import Any
 
@@ -14,7 +14,14 @@ from pytest_httpserver import HTTPServer
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
 from gateway.fake import FakeModel
-from gateway.gateway import UnreadableImage, call_model, collect_clip, speak, submit_clip
+from gateway.gateway import (
+    UnreadableImage,
+    call_model,
+    collect_clip,
+    speak,
+    submit_broll_clip,
+    submit_clip,
+)
 from gateway.models import ModelCall
 from gateway.types import Image, UnusableReply
 from jobs.work import PageCheck, PageCheckHandoff
@@ -202,7 +209,7 @@ def _submit(
 ) -> str:
     return submit_clip(
         job=None,
-        purpose="make_clip",
+        purpose="make_talking_clip",
         picture_key=picture_key,
         audio_key=audio_key,
         seconds=seconds,
@@ -219,7 +226,7 @@ def test_a_clip_with_no_picture_is_refused_before_the_video_service_is_called(
     assert not ModelCall.objects.exists()
 
 
-# Boreal makes clips of 1 to 20 seconds.
+# A talking clip is asked for as 1 to 20 seconds.
 @pytest.mark.parametrize("seconds", [0.5, 20.5])
 def test_a_clip_of_a_length_the_video_model_cant_make_is_refused_before_it_is_called(
     fake_model: FakeModel, seconds: float
@@ -245,30 +252,109 @@ def test_a_clip_at_either_end_of_the_lengths_the_video_model_makes_is_asked_for(
     assert fake_model.clips_asked == [(seconds, True, "She talks to the camera.")]
 
 
+def _broll(
+    *,
+    start: str | None = "start.png",
+    examples: Sequence[str] = (),
+    seconds: int = 5,
+) -> str:
+    return submit_broll_clip(
+        job=None,
+        purpose="make_broll_clip",
+        starting_picture_key=start,
+        example_picture_keys=list(examples),
+        seconds=seconds,
+        prompt="Tea is poured into the mug.",
+    )
+
+
 @pytest.fixture
-def silent_clip_asked(fake_model: FakeModel) -> str:
-    """A 5-second clip with no audio, asked for through the gateway. Gives its picture's key."""
-    picture_key = file_store.save("picture.png", picture(72, 128, (1, 2, 3)))
-    _submit(picture_key, audio_key=None, seconds=5)
-    return picture_key
+def pictures_kept() -> list[str]:
+    """Six different pictures in the file store, by their keys."""
+    return [file_store.save(f"photo-{n}.png", picture(72, 128, (n, 2, 3))) for n in range(1, 7)]
 
 
-def test_a_clip_with_no_audio_is_asked_for_silent(
-    fake_model: FakeModel, silent_clip_asked: str
+def test_a_b_roll_clip_from_a_starting_picture_is_sent_its_picture_seconds_and_prompt(
+    fake_model: FakeModel, pictures_kept: list[str]
 ) -> None:
-    assert fake_model.clips_asked == [(5, False, "She talks to the camera.")]
+    _broll(start=pictures_kept[0], seconds=7)
+
+    assert fake_model.broll_clips_asked == [
+        {
+            "starting_picture": file_store.read(pictures_kept[0]),
+            "example_pictures": [],
+            "seconds": 7,
+            "prompt": "Tea is poured into the mug.",
+        }
+    ]
     assert ModelCall.objects.get().handoff == {
-        "picture": silent_clip_asked,
-        "audio": None,
-        "seconds": 5,
-        "motion_prompt": "She talks to the camera.",
+        "starting_picture": pictures_kept[0],
+        "example_pictures": [],
+        "seconds": 7,
+        "prompt": "Tea is poured into the mug.",
     }
 
 
-def test_a_clip_with_no_audio_is_billed_for_the_seconds_asked(silent_clip_asked: str) -> None:
+def test_a_b_roll_clip_from_example_pictures_is_sent_each_in_order(
+    fake_model: FakeModel, pictures_kept: list[str]
+) -> None:
+    _broll(start=None, examples=pictures_kept[:5])
+
+    (asked,) = fake_model.broll_clips_asked
+    assert (asked["starting_picture"], asked["example_pictures"]) == (
+        None,
+        [file_store.read(key) for key in pictures_kept[:5]],
+    )
+
+
+@pytest.mark.parametrize("seconds", [5, 7, 15])
+def test_a_b_roll_clip_is_billed_for_every_second_asked_for(
+    fake_model: FakeModel, seconds: int
+) -> None:
+    _broll(start=file_store.save("start.png", picture(72, 128, (1, 2, 3))), seconds=seconds)
+
     submitted = ModelCall.objects.get()
-    # $0.01 a second at 720p.
-    assert (submitted.video_seconds, submitted.cost_usd) == (5, Decimal("0.05"))
+    # 0.4 credits a second at 768p, at $99 for 500 credits.
+    assert (submitted.model, submitted.video_seconds, submitted.cost_usd) == (
+        "creatify/boreal-h3",
+        seconds,
+        seconds * Decimal("0.0792"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("asked", "why"),
+    [
+        pytest.param(
+            {"start": "photo", "examples": ["photo"]},
+            "never both",
+            id="a starting picture and example pictures",
+        ),
+        pytest.param(
+            {"start": None, "examples": ["photo"] * 6},
+            "at most 5 items",
+            id="6 example pictures",
+        ),
+        pytest.param({"start": None}, "needs a starting picture or example", id="no picture"),
+        pytest.param({"seconds": 4}, "greater than or equal to 5", id="4 seconds"),
+        pytest.param({"seconds": 16}, "less than or equal to 15", id="16 seconds"),
+        pytest.param({"seconds": 5.5}, "valid integer", id="part of a second"),
+    ],
+)
+def test_a_b_roll_clip_boreal_h3_cant_make_is_refused_before_anything_is_sent(
+    fake_model: FakeModel, pictures_kept: list[str], asked: dict[str, Any], why: str
+) -> None:
+    named = {
+        "start": pictures_kept[0] if asked.get("start", "photo") else None,
+        "examples": pictures_kept[: len(asked.get("examples", []))],
+        "seconds": asked.get("seconds", 5),
+    }
+
+    with pytest.raises(ValidationError, match=why):
+        _broll(**named)
+
+    assert fake_model.broll_clips_asked == []
+    assert not ModelCall.objects.exists()
 
 
 def test_a_clip_is_asked_for_again_while_the_video_service_is_down(
@@ -289,7 +375,7 @@ def test_a_clip_is_asked_for_again_while_the_video_service_is_down(
 def test_a_clip_being_made_is_waited_for_then_kept(fake_model: FakeModel) -> None:
     fake_model.respond("collect_clip", {"state": "working"}, {"state": "working"})
 
-    key = collect_clip(job=None, purpose="collect_clip", video_id="video-1")
+    key = collect_clip(job=None, purpose="collect_broll_clip", video_id="video-1")
 
     assert file_store.read(key) == fake_model.clips["video-1"]
     collected = ModelCall.objects.get()
@@ -325,7 +411,7 @@ def test_a_slow_clip_is_waited_for_until_it_is_made(
     # never given up on.
     fake_model.respond("collect_clip", *[{"state": "working"}] * 60)
 
-    key = collect_clip(job=None, purpose="collect_clip", video_id="video-1")
+    key = collect_clip(job=None, purpose="collect_broll_clip", video_id="video-1")
 
     assert clock.now == 3600
     assert file_store.read(key) == fake_model.clips["video-1"]
@@ -346,7 +432,7 @@ def test_a_slow_clip_is_told_of_once_counted_from_the_first_look_even_if_the_ser
 
     collect_clip(
         job=None,
-        purpose="collect_clip",
+        purpose="collect_broll_clip",
         video_id="video-1",
         when_slow=lambda: told_slow_at.append(clock.now),
     )

@@ -30,8 +30,16 @@ function fakeBackend() {
     role: Message["role"],
     text: string,
     attachments: Attachment[] = [],
+    level?: Message["level"],
   ) {
-    const message = { seq: session.messages.length + 1, role, text, created_at: NOW, attachments };
+    const message = {
+      seq: session.messages.length + 1,
+      role,
+      level: level ?? ("" as const),
+      text,
+      created_at: NOW,
+      attachments,
+    };
     session.messages.push(message);
     if (message.seq === 1 && session.name === "" && text) session.name = text.slice(0, 80);
     return message;
@@ -105,6 +113,10 @@ function fakeBackend() {
     /** The agent says something in the newest session, as it would while the page polls. */
     agentSays(text: string, attachments: Attachment[] = []) {
       add(sessions[0], "agent", text, attachments);
+    },
+    /** Code posts a notice in the newest session: a step fell back or failed. */
+    notice(text: string, level: "problem" | "info") {
+      add(sessions[0], "notice", text, [], level);
     },
     /** The next message sent is refused with these reasons, as Django answers a 400. */
     refuseNextSend(reasons: Record<string, string[]>) {
@@ -324,6 +336,37 @@ test("takes a message while the agent is still working", async () => {
     "YouMake it 10 seconds instead",
     "AgentChanging it to 10 seconds",
   ]);
+});
+
+test("shows a notice as its own line, red or grey, and keeps the working dots going", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: "Mug ad" }));
+  await findSaid("Make me an ad for my mug");
+
+  backend.notice("Firecrawl couldn't open the page. Read it with the plain download.", "problem");
+  backend.notice("No official record of the product was found, which is normal.", "info");
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await findSaid("No official record of the product was found, which is normal.");
+
+  // Neither notice is labelled as the user's or the agent's words.
+  expect(conversation()).toEqual([
+    "YouMake me an ad for my mug",
+    "Firecrawl couldn't open the page. Read it with the plain download.",
+    "No official record of the product was found, which is normal.",
+  ]);
+  const [problem, info] = screen.getAllByRole("status");
+  expect(problem.className).toBe("notice error");
+  expect(info.className).toBe("notice info");
+  // The producer hasn't answered yet, so it is still working.
+  expect(screen.getByText("The producer is working")).toBeDefined();
+
+  backend.agentSays("I read your mug's page.");
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await findSaid("I read your mug's page.");
+  expect(screen.queryByText("The producer is working")).toBeNull();
 });
 
 test.each([

@@ -1,5 +1,5 @@
 """The prompt variants the eval tests. Nothing here is used by the app: if a variant wins,
-its text is moved into backend/jobs/scenes.py and backend/gateway/boreal_adapter.py by a
+its text is moved into backend/jobs/scenes.py and the clip adapters by a
 ticket of its own."""
 
 import sys

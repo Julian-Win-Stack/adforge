@@ -1,0 +1,18 @@
+[
+  {"label": "P1", "verdict": "no_product", "why": "Shade-guide grid of model faces with shade names, no concealer tube."},
+  {"label": "P2", "verdict": "no_product", "why": "Before/after face close-ups labelled 3.6 C, no tube visible."},
+  {"label": "P3", "verdict": "product", "why": "Red-haired model holding a pale Kosas Revealer tube to her cheek."},
+  {"label": "P4", "verdict": "product", "why": "Dark-haired model holding a light Kosas Revealer tube by her eye."},
+  {"label": "P5", "verdict": "product", "why": "Blonde model holding a light Kosas Revealer tube to her cheek."},
+  {"label": "P6", "verdict": "product", "why": "Grey-haired model holding a light Kosas Revealer tube to her cheek."},
+  {"label": "P7", "verdict": "product_other_variant", "why": "Model holding a Kosas Revealer tube in a deep brown shade, not 0.5 N."},
+  {"label": "P8", "verdict": "product", "why": "Model holding a light Kosas Revealer tube to her cheek."},
+  {"label": "P9", "verdict": "product", "why": "Model holding a light Kosas Revealer tube beside her face."},
+  {"label": "P10", "verdict": "product", "why": "Red-haired model holding a light Kosas Revealer tube by her eye."},
+  {"label": "P11", "verdict": "no_product", "why": "Caffeine + hyaluronic acid claims text with before/after faces, no tube."},
+  {"label": "P12", "verdict": "no_product", "why": "Before/after face close-ups labelled 6.8 W, no tube visible."},
+  {"label": "P13", "verdict": "product", "why": "Blonde model holding a light Kosas Revealer tube by her ear."},
+  {"label": "P14", "verdict": "product", "why": "Curly-haired model holding a light Kosas Revealer tube to her cheek."},
+  {"label": "P15", "verdict": "product_other_variant", "why": "Revealer tube and wand with a beige swatch, visibly darker than the 0.5 N shown first."},
+  {"label": "P16", "verdict": "product", "why": "Revealer tube and wand with a very pale swatch matching the page's main image."}
+]

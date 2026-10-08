@@ -1,0 +1,17 @@
+[
+ {
+  "label": "P1",
+  "verdict": "no_product",
+  "why": "Man drinking from a clear cup with benefit text; no pouch or stick visible."
+ },
+ {
+  "label": "P2",
+  "verdict": "product",
+  "why": "Lemon Lime Hydration Multiplier 16-stick pouch with lemons and limes."
+ },
+ {
+  "label": "P3",
+  "verdict": "product",
+  "why": "Lemon Lime Hydration Multiplier 16-stick pouch, front packshot."
+ }
+]

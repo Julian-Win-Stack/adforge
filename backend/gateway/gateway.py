@@ -26,7 +26,10 @@ from . import catalog
 from .models import ModelCall
 from .types import (
     AgentProvider,
+    BrollClipHandoff,
+    BrollClipProvider,
     ClipCollectHandoff,
+    ClipCollector,
     ClipFailed,
     ClipHandoff,
     ClipProvider,
@@ -63,9 +66,10 @@ if TYPE_CHECKING:
     from chat.models import Session
     from jobs.models import Job
 
-    from .boreal_adapter import BorealProvider
+    from .creatify_adapter import CreatifyProvider
     from .elevenlabs_adapter import ElevenLabsProvider
     from .fal_adapter import FalProvider
+    from .heygen_adapter import HeyGenProvider
     from .inworld_adapter import InworldProvider
     from .openai_adapter import OpenAIProvider
 
@@ -79,9 +83,11 @@ _running_tool: ContextVar[ToolCall | None] = ContextVar("running_tool", default=
 IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
 # The same formats, as a person would name them.
 IMAGE_TYPE_NAMES = "PNG, JPEG, WebP or GIF"
-# The most of an image a model looks at in the "low" detail the adapter asks for. A bigger
-# image is shrunk to fit first: the model sees the same picture, and the request stays small.
-MAX_IMAGE_SIDE = 512
+# Every image goes to every model sharp, at the "high" detail the adapter asks for, so small
+# print on a label, a thumbnail in a page screenshot or a shade of colour can be read. A
+# bigger image is shrunk to fit this first: the model looks at no more than this anyway, and
+# the request stays small. Never 512 px, never low: decided in #1 step 1.
+MAX_IMAGE_SIDE = 2048
 
 
 class UnreadableImage(ValueError):
@@ -110,10 +116,17 @@ def _elevenlabs() -> ElevenLabsProvider:
 
 
 @cache
-def _boreal() -> BorealProvider:
-    from .boreal_adapter import BorealProvider
+def _creatify() -> CreatifyProvider:
+    from .creatify_adapter import CreatifyProvider
 
-    return BorealProvider()
+    return CreatifyProvider()
+
+
+@cache
+def _heygen() -> HeyGenProvider:
+    from .heygen_adapter import HeyGenProvider
+
+    return HeyGenProvider()
 
 
 @cache
@@ -139,8 +152,20 @@ def _transcribers() -> TranscriptionProvider:
     return cast(TranscriptionProvider, _override) if _override is not None else _elevenlabs()
 
 
-def _clips() -> ClipProvider:
-    return cast(ClipProvider, _override) if _override is not None else _boreal()
+def _clips(model: str) -> ClipCollector:
+    """The service that makes clips with `model`: talking clips and B-roll ones each have
+    their own, so a clip is always waited for at the service it was asked of. A model the
+    catalog names that no service here makes is a mistake, not the service's."""
+    if _override is not None:
+        return cast(ClipCollector, _override)
+    return _CLIP_SERVICES[model]()
+
+
+# Which service makes clips with which model. Each is made once and kept.
+_CLIP_SERVICES: dict[str, Callable[[], ClipCollector]] = {
+    "heygen/avatar-iv": _heygen,
+    "creatify/boreal-h3": _creatify,
+}
 
 
 def _music() -> MusicProvider:
@@ -248,11 +273,14 @@ def call_model[Out: BaseModel](
     output: type[Out],
     images: Sequence[Image] = (),
     pay_once: bool = False,
+    images_may_move: bool = False,
 ) -> Out:
     """Ask a model for `output`. `images` are pictures shown alongside the handoff, read
     here from the file store so the record of which were shown can't disagree with what
     was sent. With `pay_once`, what the job's model already answered for this same handoff
-    and images is handed back, and nothing is paid."""
+    and images is handed back, and nothing is paid. With `images_may_move` too, the same
+    handoff is enough: for pictures stored again under new keys, as a page's photos are when
+    it is read again, and named in the handoff by where they came from."""
     # Validate again here rather than trusting the caller built the handoff properly.
     handoff = type(handoff).model_validate(handoff.model_dump())
     request = ModelRequest(
@@ -264,7 +292,13 @@ def call_model[Out: BaseModel](
         images=tuple(_load(image) for image in images),
     )
     if pay_once and job is not None:
-        answered = _answered_before(handoff, purpose=purpose, job=job, images=_shown(request))
+        answered = _answered_before(
+            handoff,
+            purpose=purpose,
+            job=job,
+            images=_shown(request),
+            images_may_move=images_may_move,
+        )
         if answered is not None:
             return output.model_validate(answered)
     provider = _provider()
@@ -418,7 +452,7 @@ def submit_clip(
         picture=picture_key, audio=audio_key, seconds=seconds, motion_prompt=motion_prompt
     )
     model = catalog.MODEL_FOR_PURPOSE[purpose]
-    provider = _clips()
+    provider = cast(ClipProvider, _clips(model))
 
     def submit() -> _Made[str]:
         video_id = provider.submit(
@@ -426,6 +460,49 @@ def submit_clip(
             audio=None if handoff.audio is None else file_store.read(handoff.audio),
             seconds=handoff.seconds,
             motion_prompt=handoff.motion_prompt,
+        )
+        return _Made(
+            result=video_id,
+            output={"video_id": video_id},
+            bill=_Bill(
+                video_seconds=handoff.seconds,
+                cost_usd=catalog.video_cost_usd(model, handoff.seconds),
+            ),
+        )
+
+    return _recorded(job, purpose, model, provider.name, handoff, submit)
+
+
+def submit_broll_clip(
+    *,
+    job: Job | None,
+    purpose: str,
+    starting_picture_key: str | None,
+    example_picture_keys: Sequence[str],
+    seconds: int,
+    prompt: str,
+) -> str:
+    """Ask for a B-roll clip, with no sound, of `seconds` whole seconds as `prompt` says:
+    from a starting picture, its first frame, or from example pictures, never both, each given
+    by its key in the file store. This is what is paid for: every second of it. Returns the
+    clip's id, to collect it with once it's made."""
+    handoff = BrollClipHandoff(
+        starting_picture=starting_picture_key,
+        example_pictures=list(example_picture_keys),
+        seconds=seconds,
+        prompt=prompt,
+    )
+    model = catalog.MODEL_FOR_PURPOSE[purpose]
+    provider = cast(BrollClipProvider, _clips(model))
+
+    def submit() -> _Made[str]:
+        video_id = provider.submit_broll(
+            starting_picture=None
+            if handoff.starting_picture is None
+            else file_store.read(handoff.starting_picture),
+            example_pictures=[file_store.read(key) for key in handoff.example_pictures],
+            seconds=handoff.seconds,
+            prompt=handoff.prompt,
         )
         return _Made(
             result=video_id,
@@ -453,7 +530,7 @@ def collect_clip(
     clip's key in the file store."""
     handoff = ClipCollectHandoff(video_id=video_id)
     model = catalog.MODEL_FOR_PURPOSE[purpose]
-    provider = _clips()
+    provider = _clips(model)
 
     # Counted from the first look, not from each retry, and told of once across retries.
     waited_since = time.monotonic()
@@ -626,6 +703,10 @@ def _files_given(handoff: Handoff, images: list[dict[str, str]] | None) -> list[
         given.append(handoff.audio)
     if isinstance(handoff, ClipHandoff):
         given += [key for key in (handoff.picture, handoff.audio) if key is not None]
+    if isinstance(handoff, BrollClipHandoff):
+        given += (
+            [handoff.starting_picture] if handoff.starting_picture else handoff.example_pictures
+        )
     return given
 
 
@@ -663,16 +744,19 @@ def _answered_before(
     session: Session | None = None,
     job: Job | None = None,
     images: list[dict[str, str]] | None = None,
+    images_may_move: bool = False,
 ) -> dict[str, Any] | None:
     """What a call for `purpose` answered when handed exactly `handoff` and shown exactly
-    `images`, if one was paid for. Every call is recorded as soon as it succeeds, so an
-    answer a worker stopped before it could keep is handed back rather than paid for again."""
+    `images`, or any images with `images_may_move`, if one was paid for. Every call is recorded
+    as soon as it succeeds, so an answer a worker stopped before it could keep is handed back
+    rather than paid for again."""
     calls = ModelCall.objects.filter(
         purpose=purpose,
         outcome=ModelCall.Outcome.SUCCEEDED,
         handoff=handoff.model_dump(mode="json"),
-        images=images or [],
     )
+    if not images_may_move:
+        calls = calls.filter(images=images or [])
     if session is not None:
         calls = calls.filter(session=session)
     if job is not None:

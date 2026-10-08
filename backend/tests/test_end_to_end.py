@@ -1,8 +1,11 @@
-"""One ad with a B-roll scene, made through the chat from the shop owner's first message to
-the finished ad: what scene 2 shows fails the fact check and is rewritten, the shop owner
-has the script shortened to their target, and every scene is made and assembled. The
-producer's model and every outside service are faked at the gateway, the shop is served on
-this machine, and ffmpeg runs for real on tiny clips."""
+"""Whole ads made through the chat, from the shop owner's first message to the finished ad.
+The producer's model and every outside service are faked at the gateway, the shop is served
+on this machine, and ffmpeg runs for real on tiny clips.
+
+The mug's first ad: what scene 2 shows fails the fact check and is rewritten, the shop owner
+has the script shortened to their target, and every scene is made and assembled. Its second
+ad has a talking scene, a B-roll scene made way 1 (from a starting picture), a B-roll scene
+made way 3 (from example pictures) and a talking scene to end on."""
 
 from collections.abc import Callable
 from typing import Any
@@ -20,6 +23,7 @@ from .conftest import (
     PLAN,
     READABLE,
     HeldSteps,
+    broll,
     chat,
     colour_at,
     facts_ok,
@@ -36,15 +40,21 @@ pytestmark = pytest.mark.django_db(transaction=True)
 POUR = "tea poured from a teapot into the mug"
 TURNED = "the mug turned slowly in a hand"
 
-# The mug's plan, with scene 2 a B-roll scene. Its 18 words take the fake voice, at 2 words
-# a second, 9 seconds to say: over the shop owner's 5-second target.
+# Scene 2's line: its 8 words take the fake voice, at 2 words a second, the 4 seconds a
+# B-roll line takes at least.
+SAID_OVER = "Hand-thrown, holds 350 ml, and dishwasher safe too."
+# Scene 2's line once the script is shortened, also 8 words.
+SHORTENED_2 = "It's hand-thrown, holds 350 ml, and dishwasher safe."
+
+# The mug's plan, with scene 2 a B-roll scene. Its 19 words take the fake voice 9.5 seconds
+# to say: over the shop owner's 5-second target.
 PLANNED: dict[str, Any] = {
     **PLAN,
     "plan": {
         **PLAN["plan"],
         "scenes": [
             {"line": "Meet the Stoneware Mug from Kiln & Co.", "overlay": "Kiln & Co"},
-            {"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "shows": POUR},
+            broll({"line": SAID_OVER, "shows": POUR}),
             {"line": "Yours for $24.00.", "overlay": "$24.00"},
         ],
     },
@@ -67,12 +77,12 @@ POUR_UNSUPPORTED: dict[str, Any] = {
     ],
 }
 
-# The script shortened with every scene kept: 11 words, 5.5 seconds, within a second of the
-# target. Scene 2's 5 words take 2.5 seconds.
+# The script shortened with every scene kept: 14 words, 7 seconds, within the 2 seconds over
+# the target it may run. Scene 2's 8 words take 4 seconds, the least a B-roll line may take.
 SHORTENED: dict[str, Any] = {
     "lines": [
         {"scene": 1, "line": "Meet the Stoneware Mug."},
-        {"scene": 2, "line": "It's hand-thrown and dishwasher safe."},
+        {"scene": 2, "line": SHORTENED_2},
         {"scene": 3, "line": "Just $24.00."},
     ]
 }
@@ -95,9 +105,25 @@ SHOWING: dict[str, Any] = {
 }
 
 
-def every_scene(tool: str, **arguments: Any) -> list[tuple[str, dict[str, Any]]]:
-    """A call of `tool` for each of the ad's three scenes."""
-    return [(tool, {"scene": scene, **arguments}) for scene in (1, 2, 3)]
+def every_scene(tool: str, scenes: int = 3, **arguments: Any) -> list[tuple[str, dict[str, Any]]]:
+    """A call of `tool` for each of the ad's `scenes` scenes."""
+    return [(tool, {"scene": scene, **arguments}) for scene in range(1, scenes + 1)]
+
+
+def chat_and_run(
+    fake_model: FakeModel,
+    say: Callable[..., None],
+    steps: HeldSteps,
+    message: str,
+    *answer: Turn | Callable[[], Turn],
+) -> None:
+    """The shop owner says `message`, and the producer answers with the turns in `answer`.
+    Then every scene step it started runs, as a worker would, and the producer tells the
+    shop owner as each one finishes."""
+    fake_model.respond("produce", *answer)
+    say(message)
+    fake_model.respond("produce", *[turn(says="That part's ready.") for _ in steps.held])
+    steps.run_held()
 
 
 def asking_what_the_checks_ask() -> Turn:
@@ -114,13 +140,7 @@ def ad_made_through_the_chat(
     """A chat that took the mug's ad from the shop owner's first message to the finished ad."""
 
     def chatting(message: str, *answer: Turn | Callable[[], Turn]) -> None:
-        """The shop owner says `message`, and the producer answers with the turns in `answer`.
-        Then every scene step it started runs, as a worker would, and the producer tells the
-        shop owner as each one finishes."""
-        fake_model.respond("produce", *answer)
-        say(message)
-        fake_model.respond("produce", *[turn(says="That part's ready.") for _ in steps.held])
-        steps.run_held()
+        chat_and_run(fake_model, say, steps, message, *answer)
 
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", PLANNED)
@@ -128,7 +148,8 @@ def ad_made_through_the_chat(
     # supports, and checked again.
     fake_model.respond("fact_check", POUR_UNSUPPORTED, facts_ok(2))
     fake_model.respond(
-        "rewrite_line", {"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "shows": TURNED}
+        "rewrite_line",
+        broll({"line": SAID_OVER, "shows": TURNED}),
     )
     chatting(
         f"Make a 5 second ad for {product_page_url}",
@@ -177,11 +198,13 @@ def test_the_b_roll_scene_plays_in_its_turn_with_the_voice_heard_over_it(
     ad_made_through_the_chat: None,
 ) -> None:
     ads = Job.objects.get().produced.filter(kind="finished_ad")
-    # Scene 2 plays for its shortened line's 2.5 seconds, between scenes 1 and 3.
+    # Scene 2's 5-second clip plays whole, after scene 1, past its shortened line's 4
+    # seconds: scene 3's 1-second line is said over its end, so none of scene 3's picture
+    # shows.
     assert [(cut["scene"], cut["start"], cut["end"]) for ad in ads for cut in ad.cuts] == [
         (1, 0.0, 2.0),
-        (2, 2.0, 4.5),
-        (3, 4.5, 5.5),
+        (2, 2.0, 7.0),
+        (3, 7.0, 7.0),
     ]
     heard = read(ads.get().file)
     # Halfway through, it shows its own clip: the fake's clips are red, lime and blue in the
@@ -200,12 +223,15 @@ def test_the_b_roll_scenes_picture_is_planned_from_its_rewritten_shows_after_the
     assert [
         (planned["scene"], planned["line"], planned["shows"])
         for planned in handoffs("choose_broll_picture")
-    ] == [(2, "It's hand-thrown and dishwasher safe.", "the mug turned slowly in a hand")]
+    ] == [(2, SHORTENED_2, "the mug turned slowly in a hand")]
 
 
 def test_nothing_in_the_whole_flow_is_paid_for_twice(ad_made_through_the_chat: None) -> None:
     assert paid_for() == [
         "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
         "plan_ad",
         "draw_person",
         "design_voice",
@@ -232,12 +258,12 @@ def test_nothing_in_the_whole_flow_is_paid_for_twice(ad_made_through_the_chat: N
         "transcribe_line",
         "transcribe_line",
         # Each clip once, though the producer asked for every one again.
-        "make_clip",
-        "collect_clip",
-        "make_clip",
-        "collect_clip",
-        "make_clip",
-        "collect_clip",
+        "make_talking_clip",
+        "collect_talking_clip",
+        "make_broll_clip",
+        "collect_broll_clip",
+        "make_talking_clip",
+        "collect_talking_clip",
     ]
 
 
@@ -246,3 +272,180 @@ def test_the_shop_owner_is_never_told_which_scenes_are_b_roll(
 ) -> None:
     told = [text for role, text in chat(api, session_id) if role == "agent"]
     assert [text for text in told if "b-roll" in text.lower()] == []
+
+
+# --- An ad with both ways of making a B-roll scene ----------------------------------------------
+
+# The fake voice says 2 words a second. Scene 2's 8 words take 4 seconds, so its clip is
+# asked for 5; scene 3's 11 take 5.5, so its clip is asked for 6.
+TURNING = "Hand-thrown, holds 350 ml, and dishwasher safe too."
+HANDLE = "Every mug is hand-thrown, so each one is a little different."
+
+# What scene 3 needs that the mug's front can't show: its handle, which photo 2 shows.
+HANDLE_NEEDS = [{"what": "the handle's shape", "photos": [2]}]
+
+BOTH_WAYS: dict[str, Any] = {
+    **PLAN,
+    "plan": {
+        **PLAN["plan"],
+        "scenes": [
+            {"line": "Meet the Stoneware Mug.", "overlay": "Kiln & Co"},
+            # Way 1: nothing it shows is missing from the main photo.
+            broll({"line": TURNING, "shows": TURNED}),
+            # Way 3: it needs the handle from the side.
+            broll(
+                {
+                    "line": HANDLE,
+                    "shows": "the mug's handle, seen from the side, as a hand lifts it",
+                    "needs": HANDLE_NEEDS,
+                }
+            ),
+            {"line": "Yours today for just $24.00, from Kiln & Co.", "overlay": "$24.00"},
+        ],
+    },
+}
+
+# How scene 3's prompt is written: a job for each example picture, and what happens.
+HANDLE_PICTURES: dict[str, Any] = {
+    "photo": 1,
+    "photo_reason": "The front of the mug shows its glaze.",
+    "image_1": {"job": "the mug; keep its glaze exactly", "ignore": None},
+    "image_2": {"job": "only the handle's shape", "ignore": None},
+    "action": "A hand lifts the mug by its handle on a sunny workbench, turning it to the side.",
+    "prompt_reason": "It shows the handle the line is about.",
+}
+HANDLE_PROMPT = (
+    "Image 1 is the mug; keep its glaze exactly. Image 2 is only the handle's shape. A hand "
+    "lifts the mug by its handle on a sunny workbench, turning it to the side."
+)
+
+
+@pytest.fixture
+def ad_made_both_ways(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None], steps: HeldSteps
+) -> None:
+    """A chat that took the mug's 4-scene ad, with a way 1 and a way 3 B-roll scene, from the
+    shop owner's first message to the finished ad."""
+
+    def chatting(message: str, *answer: Turn | Callable[[], Turn]) -> None:
+        chat_and_run(fake_model, say, steps, message, *answer)
+
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", BOTH_WAYS)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3, 4))
+    chatting(
+        f"Make a 15 second ad for {product_page_url}",
+        turn(calls=[("read_page", {"link": product_page_url, "target_seconds": 15})]),
+        turn(calls=[("plan_ad", {})]),
+        turn(calls=[("create_person", {})]),
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(says="Here's your script. Shall I make it?"),
+    )
+
+    # The talking scenes' pictures, then scene 2's (way 1) and scene 3's (way 3) prompts, in
+    # the order the steps run.
+    fake_model.respond("choose_starting_picture", TALKING, TALKING)
+    fake_model.respond("choose_broll_picture", SHOWING, HANDLE_PICTURES)
+    chatting(
+        "Looks good, go ahead",
+        turn(calls=[("create_music", {"mood": "light upbeat lo-fi"})]),
+        turn(
+            calls=every_scene("make_starting_picture", scenes=4, note=None)
+            + every_scene("make_line_audio", scenes=4)
+        ),
+        turn(says="The music is made, and every scene is on its way."),
+    )
+    chatting(
+        "Keep going",
+        turn(calls=every_scene("transcribe_line_audio", scenes=4)),
+        turn(says="Listening to each line."),
+    )
+    chatting(
+        "Keep going", turn(calls=every_scene("make_clip", scenes=4)), turn(says="Making clips.")
+    )
+    chatting("Put it together", turn(calls=[("assemble_ad", {})]), turn(says="Here's your ad!"))
+
+
+def test_way_1_sends_its_starting_picture_and_way_3_its_example_pictures(
+    ad_made_both_ways: None,
+) -> None:
+    job = Job.objects.get()
+    (way_1_picture,) = job.produced.filter(kind="starting_picture", scene__number=2)
+    asked = [
+        (handoff["starting_picture"], handoff["example_pictures"], handoff["seconds"])
+        for handoff in handoffs("make_broll_clip")
+    ]
+    assert asked == [
+        (way_1_picture.file, [], 5),
+        (None, [job.photos.get(position=1).file, job.photos.get(position=2).file], 6),
+    ]
+    assert handoffs("make_broll_clip")[1]["prompt"] == HANDLE_PROMPT
+    # Way 3 makes no picture: only the talking scenes and scene 2 have one.
+    assert sorted(
+        job.produced.filter(kind="starting_picture").values_list("scene__number", flat=True)
+    ) == [1, 2, 4]
+
+
+def test_each_b_roll_clip_plays_whole_while_the_next_line_is_said_over_its_end(
+    ad_made_both_ways: None,
+) -> None:
+    (ad,) = Job.objects.get().produced.filter(kind="finished_ad")
+    # Scene 2's 5-second clip starts after scene 1's 2 seconds and plays whole. Scene 3's line
+    # starts at 6, over its end, so scene 3's picture runs a second behind its line, plays
+    # its 6 seconds whole, and scene 4 skips the start of its picture to catch up: its 9
+    # words, said from 11.5, end at 16.
+    assert [(cut["scene"], cut["start"], cut["end"]) for cut in ad.cuts] == [
+        (1, 0.0, 2.0),
+        (2, 2.0, 7.0),
+        (3, 7.0, 13.0),
+        (4, 13.0, 16.0),
+    ]
+    heard = read(ad.file)
+    # The fake's clips are red, lime, blue and yellow in the order they were asked for.
+    assert [colour_at(heard, at) for at in (1.0, 4.5, 10.0, 14.5)] == [
+        "red",
+        "lime",
+        "blue",
+        "yellow",
+    ]
+    # The voice never stops: scene 3's line is heard over the end of scene 2's clip.
+    assert loudness(heard, "voice", between=(6.2, 6.8)) == pytest.approx(-17, abs=1)
+
+
+def test_the_ad_with_both_ways_pays_for_each_thing_once(ad_made_both_ways: None) -> None:
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "plan_ad",
+        "draw_person",
+        "design_voice",
+        "measure_voice",
+        "fact_check",
+        "make_music",
+        "choose_starting_picture",
+        "make_starting_picture",
+        "choose_broll_picture",
+        "make_starting_picture",
+        # Scene 3, way 3: its prompt is written, and no picture is made.
+        "choose_broll_picture",
+        "choose_starting_picture",
+        "make_starting_picture",
+        "speak_line",
+        "speak_line",
+        "speak_line",
+        "speak_line",
+        "transcribe_line",
+        "transcribe_line",
+        "transcribe_line",
+        "transcribe_line",
+        "make_talking_clip",
+        "collect_talking_clip",
+        "make_broll_clip",
+        "collect_broll_clip",
+        "make_broll_clip",
+        "collect_broll_clip",
+        "make_talking_clip",
+        "collect_talking_clip",
+    ]

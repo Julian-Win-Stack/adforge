@@ -1,4 +1,5 @@
 import uuid
+from typing import Any
 
 from django.db import models
 from django.utils import timezone
@@ -62,14 +63,28 @@ class Job(models.Model):
     )
     page_text = models.TextField(
         blank=True,
-        help_text="The words a visitor sees, then the product data the page declares for "
+        help_text="Only this product's own text: the sentences a model copied out of the "
+        "page about it, each found on the page, then the product data the page declares for "
         "search engines. Model calls read this.",
+    )
+    page_text_full = models.TextField(
+        blank=True,
+        help_text="Every word a visitor sees on the page, then its declared product data, "
+        "other products' text included. Kept for debugging; no model call reads it.",
     )
     page_html_key = models.CharField(
         max_length=500,
         blank=True,
         help_text="Key in the file store of the page's original HTML, exactly as served. "
         "Blank until the page has been found to show its product and its photos are kept.",
+    )
+    firecrawl = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Firecrawl's answers for the link read, kept so reading it again reuses "
+        'them: {"url": link, "files": {"page", "marked", "product", "screenshot": key in the '
+        'file store}, "picker_images": [[label, key], ...]}, each added as it arrives. Empty '
+        "until Firecrawl has answered.",
     )
     product_colour = models.CharField(
         max_length=100,
@@ -111,6 +126,12 @@ class Job(models.Model):
         blank=True,
         help_text="What the user chose when the script didn't fit the target length.",
     )
+    warnings = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Every notice posted while making this ad, each {level, text, at}, so an "
+        "ad made with a fallback can be found after the chat has scrolled away.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -133,6 +154,13 @@ class ProductPhoto(models.Model):
         default=False,
         help_text="Shows the product in the job's product colour, so the ad can use it.",
     )
+    has_face = models.BooleanField(
+        default=False,
+        help_text=(
+            "Shows a stranger's face you could recognise. Yes too when noting it failed: "
+            "such a photo is only used when no other shows what's needed."
+        ),
+    )
 
     class Meta:
         ordering = ["job", "position"]
@@ -144,11 +172,35 @@ class ProductPhoto(models.Model):
         return self.source_url
 
 
+# What the plan says about a B-roll scene: its kind, who is in it, how the product is
+# used, the result it ends on and what it needs that the main photo can't show. Blank for
+# a talking scene.
+BROLL_FIELDS = ["broll_kind", "person_shown", "usage", "result", "needs"]
+
+# Each B-roll field as a scene step keeps its copy: a step's own `result` is what the
+# producer is told when it finishes.
+STEP_BROLL_FIELDS = {
+    "broll_kind": "broll_kind",
+    "person_shown": "person_shown",
+    "usage": "usage",
+    "result": "broll_result",
+    "needs": "needs",
+}
+
+
 class Scene(models.Model):
     class Status(models.TextChoices):
         PLANNED = "planned"
         # Its clip is made.
         FINISHED = "finished"
+
+    class BrollKind(models.TextChoices):
+        DOES_A_JOB = "does a job"
+        SHOWCASE = "showcase"
+
+    class PersonShown(models.TextChoices):
+        NO_FACE = "no face"
+        HAS_FACE = "has face"
 
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="scenes")
     number = models.PositiveSmallIntegerField(help_text="1, 2, 3... in the order they play.")
@@ -163,6 +215,38 @@ class Scene(models.Model):
         help_text="A few words drawn along the top of the picture while the scene plays, "
         "such as the price. Blank for none. Not fact checked yet.",
     )
+    broll_kind = models.CharField(
+        max_length=20,
+        choices=BrollKind.choices,
+        blank=True,
+        help_text='A B-roll scene\'s kind: "does a job" (the product does something you can '
+        'see) or "showcase" (the product at its best). Blank for a talking scene, and for a '
+        "B-roll scene planned before it was given.",
+    )
+    person_shown = models.CharField(
+        max_length=20,
+        choices=PersonShown.choices,
+        blank=True,
+        help_text="Whether a B-roll scene shows the presenter's face. Blank for a talking "
+        "scene, and for a B-roll scene planned before it was given.",
+    )
+    usage = models.TextField(
+        blank=True,
+        help_text='How the product is used in a B-roll scene, from the page\'s "how to use". '
+        "Blank when it isn't used, and for a talking scene.",
+    )
+    result = models.TextField(
+        blank=True,
+        help_text='What you can see at the end of a "does a job" scene, which it ends on. '
+        "Blank otherwise.",
+    )
+    needs = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="What a B-roll scene needs that the main photo can't show, each with the "
+        'numbers of the photos that show it, such as [{"what": "the gel", "photos": [3, 5]}]. '
+        "Empty when the main photo is enough.",
+    )
     fact_checked = models.BooleanField(
         default=False,
         help_text="The line, and what the scene shows, passed the fact check, or the user "
@@ -173,6 +257,13 @@ class Scene(models.Model):
         blank=True,
         help_text="Why the fact check failed this line each time, oldest first. Two rewrites "
         "are tried before the user is asked.",
+    )
+    shortened_from = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The lines this line was shortened from, oldest first, because their audio "
+        "was too long for a B-roll clip. A starting picture made for one of them still suits "
+        "it. Emptied when the line changes any other way.",
     )
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PLANNED)
 
@@ -185,16 +276,27 @@ class Scene(models.Model):
     def __str__(self) -> str:
         return f"Scene {self.number}: {self.line}"
 
-    def change_line(self, line: str, shows: str | None = None) -> None:
-        """Give the scene a new line, and what it shows if `shows` isn't None, unsaved. A
-        clip says the line and shows what it was made for, so a finished scene is planned
-        again: it needs a new clip."""
+    def change_line(
+        self, line: str, shows: str | None = None, *, broll: dict[str, Any] | None = None
+    ) -> None:
+        """Give the scene a new line, what it shows if `shows` isn't None, and its B-roll
+        labels if `broll` isn't None, unsaved. A clip says the line and shows what it was
+        made for, so a finished scene is planned again: it needs a new clip. A scene that no
+        longer shows anything is a talking scene, with no B-roll labels."""
         if line != self.line:
             self.line = line
+            self.shortened_from = []
             self.status = self.Status.PLANNED
         if shows is not None and shows != self.shows:
             self.shows = shows
             self.status = self.Status.PLANNED
+        for field, value in (broll or {}).items():
+            if value != getattr(self, field):
+                setattr(self, field, value)
+                self.status = self.Status.PLANNED
+        if not self.shows:
+            self.broll_kind = self.person_shown = self.usage = self.result = ""
+            self.needs = []
 
 
 class SceneStep(models.Model):
@@ -207,6 +309,12 @@ class SceneStep(models.Model):
         LINE_AUDIO = "line_audio"
         TRANSCRIPT = "transcript"
         CLIP = "clip"
+
+    class Way(models.IntegerChoices):
+        """How a B-roll scene's clip is made (docs/broll-picture-logic.md, "The logic")."""
+
+        FROM_PICTURE = 1, "From a starting picture"
+        FROM_EXAMPLES = 3, "From example pictures"
 
     class Status(models.TextChoices):
         RUNNING = "running"
@@ -230,6 +338,29 @@ class SceneStep(models.Model):
         help_text="What the scene showed when the step started: blank for the person "
         "talking to camera.",
     )
+    broll_kind = models.CharField(
+        max_length=20,
+        choices=Scene.BrollKind.choices,
+        blank=True,
+        help_text="The scene's B-roll kind when the step started.",
+    )
+    person_shown = models.CharField(
+        max_length=20,
+        choices=Scene.PersonShown.choices,
+        blank=True,
+        help_text="Whether the scene showed the presenter's face when the step started.",
+    )
+    usage = models.TextField(
+        blank=True, help_text="How the scene used the product when the step started."
+    )
+    broll_result = models.TextField(
+        blank=True, help_text="The result the scene ended on when the step started."
+    )
+    needs = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="What the scene needed that the main photo can't show when the step started.",
+    )
     note = models.TextField(
         blank=True, help_text="What the producer asked for, beyond the line. Blank for nothing."
     )
@@ -249,6 +380,22 @@ class SceneStep(models.Model):
         help_text="For a B-roll scene's starting picture, how the video model is asked to "
         "move it. Blank for a talking scene, whose clips all move the same way.",
     )
+    way = models.PositiveSmallIntegerField(
+        choices=Way.choices,
+        null=True,
+        blank=True,
+        help_text="For a B-roll scene's starting picture, how its clip is made: 1, from a "
+        "starting picture made from the main photo; 3, from example pictures, with no "
+        "picture made. Blank for a talking scene, and for a B-roll scene planned before it "
+        "had its B-roll labels.",
+    )
+    pictures_sent = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="For a B-roll scene's starting picture, the pictures sent, in order, each "
+        'with its job, such as [{"image": 1, "photo": 3, "job": "the product, only how it looks"}, '
+        '{"image": 2, "portrait": true, "job": "the presenter"}]. Empty otherwise.',
+    )
     made_from = models.ForeignKey(
         "ProducedItem",
         on_delete=models.PROTECT,
@@ -264,7 +411,17 @@ class SceneStep(models.Model):
         null=True,
         blank=True,
         related_name="+",
-        help_text="The starting picture a clip animates, fixed when it starts.",
+        help_text="The starting picture a clip animates, fixed when it starts. Blank for a "
+        "B-roll scene made way 3, which has none.",
+    )
+    picture_step = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="For a clip, the starting picture step it was made from, fixed when it "
+        "starts: for a B-roll scene made way 3, it holds the example pictures and the prompt.",
     )
     result = models.TextField(
         blank=True,
@@ -299,6 +456,20 @@ class SceneStep(models.Model):
 
     def __str__(self) -> str:
         return f"Scene {self.scene.number} {self.kind} ({self.status})"
+
+    @staticmethod
+    def made_for(scene: Scene, through: str = "") -> dict[str, Any]:
+        """What a step made for `scene` as it stands has: its line, what it shows and its
+        B-roll labels. A step is started with them, and they filter steps, or what steps
+        made `through` a relation to them, such as "step__", to those still up to date."""
+        return {
+            f"{through}line": scene.line,
+            f"{through}shows": scene.shows,
+            **{
+                f"{through}{STEP_BROLL_FIELDS[field]}": getattr(scene, field)
+                for field in BROLL_FIELDS
+            },
+        }
 
 
 class ProducedItem(models.Model):

@@ -1,0 +1,40 @@
+{
+ "key": "small-01-glossier-boy-brow",
+ "model": "gpt-5.6-sol",
+ "answer": {
+  "product": "Glossier Boy Brow Grooming Pomade / Tinted Brow Gel",
+  "gallery_images": [
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   12,
+   13,
+   14,
+   15,
+   16,
+   17,
+   18,
+   20,
+   21
+  ],
+  "more_images": [
+   22,
+   43,
+   44
+  ],
+  "product_sections": [
+   2,
+   8,
+   9,
+   64
+  ],
+  "notes": "Excluded the apparent text/information-card gallery pair I11/I19, product sets and recommendations, reviews, and footer content."
+ },
+ "tiles": 6,
+ "in": 20540,
+ "out": 2172,
+ "seconds": 26
+}

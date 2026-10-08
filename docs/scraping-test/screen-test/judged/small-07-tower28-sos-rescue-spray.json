@@ -1,0 +1,19 @@
+[
+  {"label": "P1", "verdict": "product", "why": "Close-up of the orange SOS spray pump misting against a blue sky."},
+  {"label": "P2", "verdict": "product", "why": "Size lineup of orange SOS bottles: 16oz refill, Standard 4oz and Travel, standard included."},
+  {"label": "P3", "verdict": "product_other_variant", "why": "SOS Duo box with a full-size and a mini SOS spray; Duo is a separate size option."},
+  {"label": "P4", "verdict": "product", "why": "Close-up of the orange SOS spray bottle covered in water droplets."},
+  {"label": "P5", "verdict": "product_other_variant", "why": "Full-size plus mini SOS sprays sold as a $30 duo; the Duo size option."},
+  {"label": "P6", "verdict": "no_product", "why": "Before/after photos of blemished cheek skin; no bottle."},
+  {"label": "P7", "verdict": "product", "why": "Orange SOS spray bottle lying on clear wet plastic."},
+  {"label": "P8", "verdict": "product", "why": "Orange SOS bottle with certification badges beside hypochlorous acid claims text."},
+  {"label": "P9", "verdict": "product", "why": "Standard orange SOS spray bottle, front packshot."},
+  {"label": "P10", "verdict": "product", "why": "Hand holding and spraying the orange SOS bottle, with usage text."},
+  {"label": "P11", "verdict": "product_other_variant", "why": "Large screw-cap SOS refill bottle, the Jumbo size rather than the Standard spray."},
+  {"label": "P12", "verdict": "product", "why": "Extreme close-up of the SOS bottle label under a clear droplet."},
+  {"label": "P13", "verdict": "no_product", "why": "Before/after photos of facial redness; no bottle."},
+  {"label": "P14", "verdict": "no_product", "why": "Hypochlorous acid ingredient graphic with water splash and badges; no bottle."},
+  {"label": "P15", "verdict": "product_other_variant", "why": "Small 1oz Travel-size SOS spray rather than the Standard 4oz."},
+  {"label": "P16", "verdict": "no_product", "why": "Before/after photos of an allergic skin reaction; no bottle."},
+  {"label": "P17", "verdict": "no_product", "why": "Before/after photos of dry skin on a neck; no bottle."}
+]

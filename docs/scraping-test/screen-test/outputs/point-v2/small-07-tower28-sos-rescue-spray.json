@@ -1,0 +1,40 @@
+{
+ "key": "small-07-tower28-sos-rescue-spray",
+ "model": "gpt-5.6-sol",
+ "answer": {
+  "product": "Tower 28 SOS Rescue Spray",
+  "gallery_images": [
+   4,
+   16,
+   17,
+   24
+  ],
+  "more_images": [
+   48,
+   95,
+   216,
+   220
+  ],
+  "product_sections": [
+   8,
+   9,
+   10,
+   11,
+   12,
+   37,
+   42,
+   43,
+   45,
+   46,
+   47,
+   48,
+   49,
+   50
+  ],
+  "notes": "Excluded certification seals, before/after skin photos, infographics, reviews, paired products, bundles, recommendations, and footer text."
+ },
+ "tiles": 10,
+ "in": 35521,
+ "out": 1977,
+ "seconds": 35
+}

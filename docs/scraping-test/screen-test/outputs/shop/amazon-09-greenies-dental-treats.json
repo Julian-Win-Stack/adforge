@@ -1,0 +1,21 @@
+{
+ "shopify": null,
+ "amazon": {
+  "photos": [
+   "https://m.media-amazon.com/images/I/819MWUOFSQL._AC_SL1500_.jpg",
+   "https://m.media-amazon.com/images/I/81KsFtEX84L._AC_SL1500_.jpg",
+   "https://m.media-amazon.com/images/I/81lh4TodVAL._AC_SL1500_.jpg",
+   "https://m.media-amazon.com/images/I/91fOt4PPidL._AC_SL1500_.jpg",
+   "https://m.media-amazon.com/images/I/81X48lTac3L._AC_SL1500_.jpg",
+   "https://m.media-amazon.com/images/I/916zcajaYfL._AC_SL1500_.jpg",
+   "https://m.media-amazon.com/images/I/91E5YY63O6L._AC_SL1500_.jpg",
+   "https://m.media-amazon.com/images/I/81AYKpJmccL._AC_SL1500_.jpg",
+   "https://m.media-amazon.com/images/I/8140qhPXR6L._AC_SL1500_.jpg",
+   "https://m.media-amazon.com/images/I/61mQB48e1oL._AC_SL1500_.jpg"
+  ]
+ },
+ "json_ld": {
+  "photos": [],
+  "text": ""
+ }
+}

@@ -11,8 +11,12 @@ One chat thread, named and returned to. Holds the whole conversation and every a
 _Avoid_: Chat, thread, conversation, project
 
 **Message**:
-One turn in a session, from the user or the producer. The only way the user and AdForge communicate.
+One turn in a session, from the user or the producer, or a notice. The only way the user and AdForge communicate.
 _Avoid_: Comment, note, activity entry
+
+**Notice**:
+A message the code posts, not the producer, when a step fell back to a worse source or failed. It says what failed, what was used instead, and what that means for the ad. Shown red when it affects the ad, grey when it is only worth knowing. Kept with the job as one of its warnings, and never given to a model.
+_Avoid_: Alert, error message, system message
 
 **Attachment**:
 A file a message carries: a photo the user attached, or a picture, sound or video the producer made. Kept through the file store and shown in the chat.
@@ -55,7 +59,7 @@ A scene in which the person says the line to camera. Every scene is one unless t
 _Avoid_: A-roll, presenter scene
 
 **B-roll scene**:
-A scene that shows the product rather than the person talking, such as a pan sizzling, while the person's voice says the line over it. What it shows is written in plain words in the plan, and is fact checked like the line. Made with the same tools as a talking scene. The user is never told which scenes are which.
+A scene that shows the product rather than the person talking, such as a pan sizzling, while the person's voice says the line over it. What it shows is written in plain words in the plan, with its kind, who is in it, its usage, its result and the photos it needs (its B-roll details). What it shows, its usage and its result are fact checked like the line, and a scene that fails is rewritten whole, B-roll details included. Its clip is made by Boreal-H3 (on Creatify), one of two ways, picked by plain code: way 1 when the plan lists nothing it needs beyond its main photo, from a starting picture made from that photo; way 3 when the plan lists a need, from real shop photos sent as example pictures, each named in the clip's prompt ("Image 1 is the bottle; Image 2 is only the gel's colour"). Made with the same tools as a talking scene either way. The user is never told which scenes are which, except when a B-roll scene has to become a talking scene: a notice says so, with the reason.
 _Avoid_: Cutaway, product shot, insert
 
 **Scene step**:
@@ -63,7 +67,7 @@ One piece of a scene's work, run in the background: its starting picture, its li
 _Avoid_: Task, job, render
 
 **Starting picture**:
-A scene's first frame, made from the portrait and one product photo: the person holding the product, or, for a B-roll scene, what the scene shows, with the person only if it needs them. The clip is made from it.
+A scene's first frame, made from the portrait and one product photo: the person holding the product, or, for a B-roll scene made way 1, the "before" of what the scene shows, made from its main photo, with the portrait only when the presenter's face is shown. The clip is made from it. A B-roll scene that needs something its main photo can't show (way 3) has none: its picture step picks example pictures instead (the main photo, a photo for each need, then the portrait if its face is shown, at most 5), and its clip is made from those.
 _Avoid_: Start frame, keyframe, thumbnail
 
 **Line's audio**:
@@ -75,7 +79,7 @@ What was heard in a line's audio, word by word with when each was said, exactly 
 _Avoid_: Captions, subtitles
 
 **Caption**:
-A few of a line's words drawn along the bottom of the finished ad while they are said: the words as the line writes them, each timed from when the transcript heard it. Timed from where the scene plays in the ad.
+A few of a line's words drawn along the bottom of the finished ad while they are said: the words as the line writes them, each timed from when the transcript heard it. Timed from where the scene's line is said in the ad, which can be over the end of the scene before's picture.
 _Avoid_: Subtitle, lower third
 
 **Overlay**:
@@ -83,11 +87,11 @@ The on-screen text for one scene, such as the price, written by the producer whe
 _Avoid_: Caption, graphic, text layer, on-screen text
 
 **Clip**:
-A scene's starting picture animated to speak its line's audio: the same audio its transcript was heard in, so the clip lasts exactly as long. A B-roll scene's is made with no sound, then has the audio laid over it and is cut to the audio's length. Made only once the picture is made and the audio heard, for the line as it stands. A scene whose clip is made is finished. Not shown to the user on its own.
+A scene's moving picture, with its line's audio: the same audio its transcript was heard in. A talking scene's is its starting picture animated to speak that audio, so it lasts exactly as long. A B-roll scene's is made by Boreal-H3 with no sound, from its starting picture (way 1) or its example pictures (way 3), in the fewest whole seconds that cover the audio (at least 5, at most 15). It isn't cut to its line: the audio is laid over its start, and it is kept whole, silent after the line, so its motion plays out. A B-roll line whose audio is too long for any clip is shortened before a clip is paid for, or, after 3 shortenings, said to camera instead. Made only once the picture is made and the audio heard, for the line as it stands. A scene whose clip is made is finished. Not shown to the user on its own.
 _Avoid_: Video, render, shot
 
 **Finished ad**:
-Every scene's clip put together in order, each talking scene's cut to where its words are said so there is no silence between scenes, and each B-roll scene's kept whole so its motion plays out, with the captions, each scene's overlay and the music under the voice. Shown to the user in the chat. Made again as a new version when a clip, an overlay or the music changes; the old one is kept.
+Every scene's clip put together in order, with the captions, each scene's overlay and the music under the voice. The voice never stops: each line starts where the last one ends. A B-roll scene's clip plays whole, so the next line starts over its end (the early cut). A talking scene after it skips the start of its picture by as much, so its lips match its words; a second B-roll scene in a row plays from its own start, its picture a little behind its line; a B-roll scene that ends the ad plays its end over the music. The ad lasts as long as its picture. Shown to the user in the chat. Made again as a new version when a clip, an overlay or the music changes; the old one is kept.
 _Avoid_: Final video, render, output
 
 **Person**:
@@ -103,8 +107,12 @@ How the person is placed with the product in a talking scene: one fixed sentence
 _Avoid_: Framing, composition, blocking
 
 **Page text**:
-The words a visitor sees on the product page plus the structured product data the page declares for search engines. The only place facts about the product may come from. Models read this, never the HTML.
+The words on the product page about the product this page sells, plus the structured product data the page declares for search engines. A model copies this product's passages out of the page word for word, and code keeps only the copied sentences it finds on the page, so text about other products sold alongside it ("pairs well with", bundles) and anything the model made up never gets in. The only place facts about the product may come from. Models read this, never the HTML. The whole visible text is kept beside it, for looking things up, but no model writes from it.
 _Avoid_: Page content, scraped text, HTML
+
+**Product photo**:
+A photo of the product this page sells, kept with the job; scenes are made from them. A model picks them off a screenshot of the page with every picture numbered, comparing them with the shop's own record of the product and its official photos, so photos of other products on the page ("you may also like", bundles, line-ups) are left out. Each is fetched at its biggest size, copies of one photo are kept once, gallery first, up to 50. When the page can't be screenshotted or the picker fails, the photos the page declares for search engines are used instead, and a notice says so. The user can attach their own.
+_Avoid_: Image, picture (for these), asset
 
 **User-supplied fact**:
 Something the user states that the page does not, such as a promo code or a replacement line. Used as written and not fact checked, because the user is the source.

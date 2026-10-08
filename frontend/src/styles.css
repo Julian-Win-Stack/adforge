@@ -835,8 +835,23 @@ button:disabled {
   color: var(--danger);
 }
 
+.notice.info {
+  border-color: var(--border);
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+
 .notice.inline {
   margin: 0 12px 10px;
+}
+
+/* A notice in the thread: code's own line, neither the user's nor the agent's. */
+.message.notice-message {
+  align-items: center;
+}
+
+.message.notice-message .notice {
+  max-width: 78%;
 }
 
 .thread-notice {

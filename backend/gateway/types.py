@@ -1,8 +1,8 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import Annotated, Any, Literal, Protocol, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Handoff(BaseModel):
@@ -64,6 +64,11 @@ class UnusableReply(Exception):
         super().__init__(message)
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
+
+
+class BlockedBySafetyFilter(Exception):
+    """The provider's safety filter refused what it was sent, such as a product photo it
+    took for something it isn't. Asking again sends the same thing, so it isn't retried."""
 
 
 class ModelProvider(Protocol):
@@ -262,20 +267,51 @@ class TranscriptionProvider(Protocol):
         ...
 
 
-# The longest and shortest clips the video model makes.
+# The longest and shortest talking clips a handoff asks for.
 MOST_CLIP_SECONDS = 20
 LEAST_CLIP_SECONDS = 1
 
 
 class ClipHandoff(Handoff):
-    """A clip to make: the starting picture, by its key in the file store, how it should
-    move, and how long it is. A talking clip says `audio`, also by its key, and is as long
-    as it; a B-roll clip has no audio, and no sound."""
+    """A talking clip to make: the starting picture, by its key in the file store, how it
+    should move, and how long it is. It says `audio`, also by its key, and is as long as
+    it."""
 
     picture: str = Field(min_length=1)
     audio: str | None = Field(default=None, min_length=1)
     seconds: float = Field(ge=LEAST_CLIP_SECONDS, le=MOST_CLIP_SECONDS)
     motion_prompt: str = Field(min_length=1)
+
+
+# Boreal-H3 makes B-roll clips of 5 to 15 whole seconds, and takes up to 5 example pictures
+# for free (docs/broll-picture-logic.md, "What Boreal-H3 takes").
+LEAST_BROLL_SECONDS = 5
+MOST_BROLL_SECONDS = 15
+MOST_EXAMPLE_PICTURES = 5
+
+
+class BrollClipHandoff(Handoff):
+    """A B-roll clip to make, with no sound, each picture by its key in the file store: from
+    a starting picture, its exact first frame, or from example pictures that show how things
+    look, never both. How long it is, in whole seconds, and the prompt saying what happens."""
+
+    starting_picture: str | None = Field(default=None, min_length=1)
+    example_pictures: list[Annotated[str, Field(min_length=1)]] = Field(
+        default_factory=list, max_length=MOST_EXAMPLE_PICTURES
+    )
+    seconds: int = Field(ge=LEAST_BROLL_SECONDS, le=MOST_BROLL_SECONDS)
+    prompt: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _made_one_way(self) -> Self:
+        # The video service refuses both at once (docs/runs/second-run-review/check/).
+        if self.starting_picture is not None and self.example_pictures:
+            raise ValueError(
+                "a B-roll clip is made from a starting picture or from example pictures, never both"
+            )
+        if self.starting_picture is None and not self.example_pictures:
+            raise ValueError("a B-roll clip needs a starting picture or example pictures")
+        return self
 
 
 class ClipCollectHandoff(Handoff):
@@ -298,23 +334,43 @@ class ClipFailed(Exception):
     """The video service couldn't make a clip. Asking again would pay for it again."""
 
 
-class ClipProvider(Protocol):
-    """Makes clips from a picture: talking ones that say given audio, and B-roll ones with
-    no sound. Making one takes a while, so it is asked for, then waited for, then fetched.
-    Raises OutsideServiceDown for errors worth retrying."""
+class ClipCollector(Protocol):
+    """Waits for clips a video service was asked for, then fetches them. Making one takes a
+    while, so it is asked for, then waited for, then fetched. Raises OutsideServiceDown for
+    errors worth retrying."""
 
     name: str
+
+    def status(self, *, video_id: str) -> ClipStatus: ...
+
+    def download(self, *, url: str) -> bytes: ...
+
+
+class ClipProvider(ClipCollector, Protocol):
+    """Makes talking clips from a picture, saying given audio."""
 
     def submit(
         self, *, picture: bytes, audio: bytes | None, seconds: float, motion_prompt: str
     ) -> str:
         """Ask for a `seconds`-long clip of the picture moving as `motion_prompt` says,
-        speaking `audio`, a WAV file, or silent when there is none. Returns its id."""
+        speaking `audio`, a WAV file. Returns its id."""
         ...
 
-    def status(self, *, video_id: str) -> ClipStatus: ...
 
-    def download(self, *, url: str) -> bytes: ...
+class BrollClipProvider(ClipCollector, Protocol):
+    """Makes B-roll clips, with no sound."""
+
+    def submit_broll(
+        self,
+        *,
+        starting_picture: bytes | None,
+        example_pictures: Sequence[bytes],
+        seconds: int,
+        prompt: str,
+    ) -> str:
+        """Ask for a `seconds`-long clip as `prompt` says, starting on `starting_picture`, or
+        with things looking as in `example_pictures`. Returns its id."""
+        ...
 
 
 class MusicHandoff(Handoff):

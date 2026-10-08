@@ -7,10 +7,12 @@ export type Attachment = {
   url: string;
 };
 
-/** One turn in a session, from the user or the agent. */
+/** One turn in a session, from the user or the agent, or a notice the server posts when a
+ * step fell back or failed. Only a notice has a level: red for a problem, grey for info. */
 export type Message = {
   seq: number;
-  role: "user" | "agent";
+  role: "user" | "agent" | "notice";
+  level: "problem" | "info" | "";
   text: string;
   created_at: string;
   attachments: Attachment[];

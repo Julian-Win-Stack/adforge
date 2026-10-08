@@ -6,7 +6,15 @@ from django.utils.html import format_html
 from adforge import file_store
 from gateway.models import ModelCall
 
-from .models import Job, ProducedItem, ProductPhoto, Scene, SceneStep
+from .models import (
+    BROLL_FIELDS,
+    STEP_BROLL_FIELDS,
+    Job,
+    ProducedItem,
+    ProductPhoto,
+    Scene,
+    SceneStep,
+)
 
 _PICTURE_ENDINGS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 _AUDIO_ENDINGS = {".wav", ".mp3"}
@@ -37,16 +45,27 @@ class ShowsFile:
 
 class ProductPhotoInline(ShowsFile, admin.TabularInline[ProductPhoto, Job]):
     model = ProductPhoto
-    fields = ["position", "source_url", "file_preview", "shows_product_colour"]
-    readonly_fields = ["position", "source_url", "file_preview", "shows_product_colour"]
+    fields = ["position", "source_url", "file_preview", "shows_product_colour", "has_face"]
+    readonly_fields = ["position", "source_url", "file_preview", "shows_product_colour", "has_face"]
     extra = 0
     can_delete = False
 
 
+SCENE_FIELDS = (
+    "number",
+    "line",
+    "shows",
+    *BROLL_FIELDS,
+    "fact_checked",
+    "fact_problems",
+    "status",
+)
+
+
 class SceneInline(admin.TabularInline[Scene, Job]):
     model = Scene
-    fields = ["number", "line", "shows", "fact_checked", "fact_problems", "status"]
-    readonly_fields = ["number", "line", "shows", "fact_checked", "fact_problems", "status"]
+    fields = SCENE_FIELDS
+    readonly_fields = SCENE_FIELDS
     extra = 0
     can_delete = False
 
@@ -138,11 +157,15 @@ class SceneStepInline(admin.TabularInline[SceneStep, Scene]):
         "status",
         "reason",
         "shows",
+        *STEP_BROLL_FIELDS.values(),
+        "way",
+        "pictures_sent",
         "photo",
         "prompt",
         "motion_prompt",
         "made_from",
         "picture",
+        "picture_step",
         "started_at",
         "finished_at",
     ]
@@ -151,11 +174,15 @@ class SceneStepInline(admin.TabularInline[SceneStep, Scene]):
         "status",
         "reason",
         "shows",
+        *STEP_BROLL_FIELDS.values(),
+        "way",
+        "pictures_sent",
         "photo",
         "prompt",
         "motion_prompt",
         "made_from",
         "picture",
+        "picture_step",
         "started_at",
         "finished_at",
     ]
@@ -166,7 +193,16 @@ class SceneStepInline(admin.TabularInline[SceneStep, Scene]):
 
 @admin.register(Scene)
 class SceneAdmin(admin.ModelAdmin[Scene]):
-    list_display = ["job", "number", "line", "shows", "overlay", "fact_checked", "status"]
+    list_display = [
+        "job",
+        "number",
+        "line",
+        "shows",
+        *BROLL_FIELDS,
+        "overlay",
+        "fact_checked",
+        "status",
+    ]
     list_select_related = ["job"]
     list_filter = ["status"]
     search_fields = ["line"]
@@ -179,7 +215,7 @@ class SceneStepAdmin(admin.ModelAdmin[SceneStep]):
     list_select_related = ["scene__job"]
     list_filter = ["kind", "status"]
     readonly_fields = ["started_at"]
-    raw_id_fields = ["made_from", "picture"]
+    raw_id_fields = ["made_from", "picture", "picture_step"]
 
 
 @admin.register(ProducedItem)

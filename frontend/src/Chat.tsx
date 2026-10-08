@@ -116,7 +116,9 @@ export function Chat({
   }
 
   const empty = sessionId === null && messages.length === 0;
-  const producerHasTheFloor = sessionId !== null && messages.at(-1)?.role === "user";
+  // A notice posted while the producer works doesn't mean it has answered: look past them.
+  const lastSaid = [...messages].reverse().find((message) => message.role !== "notice");
+  const producerHasTheFloor = sessionId !== null && lastSaid?.role === "user";
 
   return (
     <section className="chat">
@@ -162,35 +164,46 @@ export function Chat({
           )}
 
           <ol aria-label="Conversation" className="messages">
-            {messages.map((message) => (
-              <li key={message.seq} className={`message ${message.role}`}>
-                <strong className="who">
-                  {message.role === "agent" && (
-                    <span className="who-mark">
-                      <SparkIcon size={11} />
-                    </span>
-                  )}
-                  {message.role === "user" ? "You" : "Agent"}
-                </strong>
-                {message.text &&
-                  (message.role === "user" ? (
-                    <p className="bubble">{message.text}</p>
-                  ) : (
-                    <p className="prose">{message.text}</p>
-                  ))}
-                {message.attachments.length > 0 && (
-                  <div className="attachments">
-                    {message.attachments.map((attachment) => (
-                      <AttachmentView
-                        key={attachment.position}
-                        attachment={attachment}
-                        role={message.role}
-                      />
+            {messages.map((message) =>
+              message.role === "notice" ? (
+                <li key={message.seq} className="message notice-message">
+                  <p
+                    role="status"
+                    className={`notice ${message.level === "problem" ? "error" : "info"}`}
+                  >
+                    {message.text}
+                  </p>
+                </li>
+              ) : (
+                <li key={message.seq} className={`message ${message.role}`}>
+                  <strong className="who">
+                    {message.role === "agent" && (
+                      <span className="who-mark">
+                        <SparkIcon size={11} />
+                      </span>
+                    )}
+                    {message.role === "user" ? "You" : "Agent"}
+                  </strong>
+                  {message.text &&
+                    (message.role === "user" ? (
+                      <p className="bubble">{message.text}</p>
+                    ) : (
+                      <p className="prose">{message.text}</p>
                     ))}
-                  </div>
-                )}
-              </li>
-            ))}
+                  {message.attachments.length > 0 && (
+                    <div className="attachments">
+                      {message.attachments.map((attachment) => (
+                        <AttachmentView
+                          key={attachment.position}
+                          attachment={attachment}
+                          role={message.role}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </li>
+              ),
+            )}
           </ol>
 
           {producerHasTheFloor && (

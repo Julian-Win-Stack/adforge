@@ -1,0 +1,14 @@
+[
+  {"label": "P1", "verdict": "no_product", "why": "Man drinking a cloudy drink with 'powdered hydration brand' text; no pouch or stick shown."},
+  {"label": "P2", "verdict": "product_other_variant", "why": "'Tropical Nojito' mocktail with a mango-art Hydration Multiplier stick lying beside it."},
+  {"label": "P3", "verdict": "other_product", "why": "Line-up of five different Liquid I.V. lines (Sugar-Free, Energy, Immune Support) with lemon lime only one of them."},
+  {"label": "P4", "verdict": "unclear", "why": "Customer photo of an older white/teal Hydration Multiplier stick by a tumbler; flavour text illegible even zoomed."},
+  {"label": "P5", "verdict": "other_product", "why": "Dark kitchen with a red Spider-Man-eyes Liquid I.V. pouch, not the lemon lime pack."},
+  {"label": "P6", "verdict": "product_other_variant", "why": "Mango Hydration Multiplier stick lying on mangoes."},
+  {"label": "P7", "verdict": "product", "why": "Lemon lime Hydration Multiplier stick on navy banner with benefit text."},
+  {"label": "P8", "verdict": "product", "why": "Lemon lime stick beside 'Our hydration works harder' electrolyte text."},
+  {"label": "P9", "verdict": "product", "why": "Lemon Lime 16-stick pouch with cut lemons and limes."},
+  {"label": "P10", "verdict": "product_other_variant", "why": "Hand holding a raspberry-art (Arctic Raspberry) Hydration Multiplier stick."},
+  {"label": "P11", "verdict": "product", "why": "Lemon Lime 16-stick pouch, front, on plain background."},
+  {"label": "P12", "verdict": "unclear", "why": "Powder pouring into a glass from a stick whose top corner only is visible; flavour can't be seen."}
+]

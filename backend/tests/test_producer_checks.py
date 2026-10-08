@@ -17,6 +17,9 @@ from .conftest import (
     NO_CHOICES,
     PLAN,
     READABLE,
+    a_plan_with,
+    broll,
+    broll_labels,
     facts_ok,
     handoffs,
     lines,
@@ -119,7 +122,9 @@ def test_a_line_that_fails_the_fact_check_is_rewritten_and_checked_again(
     assert first["product_colour"] == "sage green"
     assert [line["scene"] for line in first["lines"]] == [1, 2, 3]
     # Only the rewritten line is checked again.
-    assert second["lines"] == [{"scene": 3, "line": "Yours for $24.00.", "shows": None}]
+    assert second["lines"] == [
+        {"scene": 3, "line": "Yours for $24.00.", "shows": None, "usage": None, "result": None}
+    ]
     (sent,) = handoffs("rewrite_line")
     assert (sent["scene"], sent["problems"]) == (
         3,
@@ -296,7 +301,13 @@ def test_a_script_the_user_chooses_to_shorten_is_rewritten_and_its_new_lines_che
     assert (sent["target_seconds"], sent["most_words"]) == (5, 14)
     # The unchanged first line passed before, so only the new second line is checked.
     assert handoffs("fact_check")[1]["lines"] == [
-        {"scene": 2, "line": "Yours for $24.00, today.", "shows": None}
+        {
+            "scene": 2,
+            "line": "Yours for $24.00, today.",
+            "shows": None,
+            "usage": None,
+            "result": None,
+        }
     ]
 
 
@@ -365,13 +376,15 @@ def test_a_script_the_user_chooses_to_keep_longer_goes_on_unchanged(
 # --- Scenes that show something while the line is said ---------------------------------------
 
 POUR = "tea poured from a teapot into the mug"
+# Scene 2's line: its 8 words take the fake voice the 4 seconds a B-roll line takes at least.
+SAID_OVER = "Hand-thrown, holds 350 ml, and dishwasher safe too."
 
 
 def showing(shows: str) -> dict[str, Any]:
     """The mug plan, with its second scene showing `shows` while its line is said."""
     scenes = [
         {"line": "Meet the Stoneware Mug from Kiln & Co."},
-        {"line": "Hand-thrown, holds 350 ml.", "shows": shows},
+        broll({"line": SAID_OVER, "shows": shows}),
         {"line": "Yours for $24.00."},
     ]
     return {**PLAN, "plan": {**PLAN["plan"], "scenes": scenes}}
@@ -425,16 +438,29 @@ def rewrote_what_scene_2_shows(
         "fact_check", shows_wrong("The page doesn't mention tea.", passing=(1, 3)), facts_ok(2)
     )
     fake_model.respond(
-        "rewrite_line", {"line": "Hand-thrown, holds 350 ml.", "shows": "the mug turned in a hand"}
+        "rewrite_line",
+        broll({"line": SAID_OVER, "shows": "the mug turned in a hand"}),
     )
     say(f"Make an ad for {product_page_url}")
 
 
 def test_what_a_scene_shows_is_handed_to_the_fact_check(rewrote_what_scene_2_shows: None) -> None:
     assert handoffs("fact_check")[0]["lines"] == [
-        {"scene": 1, "line": "Meet the Stoneware Mug from Kiln & Co.", "shows": None},
-        {"scene": 2, "line": "Hand-thrown, holds 350 ml.", "shows": POUR},
-        {"scene": 3, "line": "Yours for $24.00.", "shows": None},
+        {
+            "scene": 1,
+            "line": "Meet the Stoneware Mug from Kiln & Co.",
+            "shows": None,
+            "usage": None,
+            "result": None,
+        },
+        {
+            "scene": 2,
+            "line": SAID_OVER,
+            "shows": POUR,
+            "usage": None,
+            "result": None,
+        },
+        {"scene": 3, "line": "Yours for $24.00.", "shows": None, "usage": None, "result": None},
     ]
 
 
@@ -449,7 +475,7 @@ def test_what_a_scene_shows_that_the_page_doesnt_support_is_rewritten(
     rewrote_what_scene_2_shows: None,
 ) -> None:
     scene = Job.objects.get().scenes.get(number=2)
-    assert (scene.line, scene.shows) == ("Hand-thrown, holds 350 ml.", "the mug turned in a hand")
+    assert (scene.line, scene.shows) == (SAID_OVER, "the mug turned in a hand")
 
 
 def test_the_rewrite_is_told_it_was_what_the_scene_shows_that_failed(
@@ -469,16 +495,36 @@ def test_the_rewrite_is_told_it_was_what_the_scene_shows_that_failed(
 def test_the_rewrite_is_handed_what_each_scene_shows(rewrote_what_scene_2_shows: None) -> None:
     assert [sent["script"] for sent in handoffs("rewrite_line")] == [
         [
-            {"scene": 1, "line": "Meet the Stoneware Mug from Kiln & Co.", "shows": None},
-            {"scene": 2, "line": "Hand-thrown, holds 350 ml.", "shows": POUR},
-            {"scene": 3, "line": "Yours for $24.00.", "shows": None},
+            {
+                "scene": 1,
+                "line": "Meet the Stoneware Mug from Kiln & Co.",
+                "shows": None,
+                "usage": None,
+                "result": None,
+            },
+            {
+                "scene": 2,
+                "line": SAID_OVER,
+                "shows": POUR,
+                "usage": None,
+                "result": None,
+            },
+            {"scene": 3, "line": "Yours for $24.00.", "shows": None, "usage": None, "result": None},
         ]
     ]
 
 
 def test_a_rewritten_shows_is_fact_checked_again(rewrote_what_scene_2_shows: None) -> None:
     assert rechecked() == [
-        [{"scene": 2, "line": "Hand-thrown, holds 350 ml.", "shows": "the mug turned in a hand"}]
+        [
+            {
+                "scene": 2,
+                "line": SAID_OVER,
+                "shows": "the mug turned in a hand",
+                "usage": None,
+                "result": None,
+            }
+        ]
     ]
 
 
@@ -552,7 +598,7 @@ def test_a_rewrite_never_turns_the_person_talking_into_a_scene_that_shows_someth
 ) -> None:
     checking(fake_model, product_page_url, PLAN)
     fake_model.respond("fact_check", failing(3, "The line says $19.99.", passing=(1, 2)))
-    fake_model.respond("rewrite_line", {"line": "Yours for $24.00.", "shows": "a price tag"})
+    fake_model.respond("rewrite_line", broll({"line": "Yours for $24.00.", "shows": "a price tag"}))
 
     say(f"Make an ad for {product_page_url}")
 
@@ -588,12 +634,14 @@ def test_a_scene_showing_something_unsupported_can_be_rewritten_for_the_person_t
     fake_model.respond(
         "fact_check", shows_wrong("The page doesn't mention tea.", passing=(1, 3)), facts_ok(2)
     )
-    fake_model.respond("rewrite_line", {"line": "Hand-thrown, holds 350 ml.", "shows": shows})
+    fake_model.respond("rewrite_line", {"line": SAID_OVER, "shows": shows})
 
     say(f"Make an ad for {product_page_url}")
 
     scene = Job.objects.get().scenes.get(number=2)
-    assert (scene.line, scene.shows) == ("Hand-thrown, holds 350 ml.", "")
+    assert (scene.line, scene.shows) == (SAID_OVER, "")
+    # A talking scene has no B-roll labels.
+    assert (scene.broll_kind, scene.person_shown) == ("", "")
 
 
 @pytest.fixture
@@ -616,8 +664,8 @@ def asked_about_what_scene_2_shows(
     )
     fake_model.respond(
         "rewrite_line",
-        {"line": "Hand-thrown, holds 350 ml.", "shows": "coffee poured into the mug"},
-        {"line": "Hand-thrown, holds 350 ml.", "shows": "cocoa poured into the mug"},
+        broll({"line": SAID_OVER, "shows": "coffee poured into the mug"}),
+        broll({"line": SAID_OVER, "shows": "cocoa poured into the mug"}),
     )
     say(f"Make an ad for {product_page_url}")
 
@@ -627,8 +675,8 @@ def test_a_scene_still_showing_the_unsupported_after_two_rewrites_is_asked_about
 ) -> None:
     (asked,) = results_of("run_planning_checks")
     assert asked.splitlines()[0] == (
-        "Scene 2's line still fails the fact check after 2 rewrites: \"Hand-thrown, holds 350 "
-        "ml.\" While it's said, the ad shows: cocoa poured into the mug. The page doesn't "
+        f'Scene 2\'s line still fails the fact check after 2 rewrites: "{SAID_OVER}" '
+        "While it's said, the ad shows: cocoa poured into the mug. The page doesn't "
         "mention cocoa. The page says: The page doesn't mention it. Why: The line was "
         "rewritten 2 times and still failed the fact check, so you decide: the check itself "
         "may be wrong. Ask the shop owner whether to keep this line and what the ad shows "
@@ -657,7 +705,20 @@ def test_a_scene_the_user_has_the_person_say_shows_the_person_talking(
     had_the_person_say_scene_2: None,
 ) -> None:
     scene = Job.objects.get().scenes.get(number=2)
-    assert (scene.line, scene.shows) == ("Hand-thrown, holds 350 ml.", "")
+    assert (scene.line, scene.shows) == (SAID_OVER, "")
+
+
+def test_a_scene_the_user_has_the_person_say_loses_its_broll_labels(
+    had_the_person_say_scene_2: None,
+) -> None:
+    scene = Job.objects.get().scenes.get(number=2)
+    assert (
+        scene.broll_kind,
+        scene.person_shown,
+        scene.usage,
+        scene.result,
+        scene.needs,
+    ) == ("", "", "", "", [])
 
 
 def test_a_scene_the_user_has_the_person_say_goes_on_without_another_fact_check(
@@ -668,6 +729,255 @@ def test_a_scene_the_user_has_the_person_say_goes_on_without_another_fact_check(
         results_of("run_planning_checks")[1].splitlines()[0],
         paid_for().count("fact_check"),
     ) == ("The checks passed. Every line matches the product page. The ad is ready to render.", 3)
+
+
+# --- A B-roll scene's details ----------------------------------------------------------------
+
+USAGE = "tea poured in from a teapot"
+RESULT = "the mug full of steaming tea"
+
+# Scene 2 of `doing_a_job()`: the mug doing a job, which needs photo 2 for its glaze.
+DOES_A_JOB: dict[str, Any] = {
+    "line": SAID_OVER,
+    "shows": POUR,
+    "broll_kind": "does a job",
+    "person_shown": "no face",
+    "usage": USAGE,
+    "result": RESULT,
+    "needs": [{"what": "the glaze up close", "photos": [2]}],
+}
+
+# What the rewrite gives back for scene 2: every B-roll detail is new.
+REWRITTEN: dict[str, Any] = {
+    "line": "Hand-thrown, holds 350 ml, and dishwasher safe.",
+    "shows": "the mug lifted out of a dishwasher rack",
+    "broll_kind": "showcase",
+    "person_shown": "has face",
+    "usage": "taken out of the dishwasher",
+    "result": None,
+    "needs": [],
+}
+
+
+def doing_a_job(**scene_2: Any) -> dict[str, Any]:
+    """The mug plan, with its second scene showing the mug doing a job."""
+    plan = showing(POUR)
+    scenes = list(plan["plan"]["scenes"])
+    scenes[1] = {**DOES_A_JOB, **scene_2}
+    return {**plan, "plan": {**plan["plan"], "scenes": scenes}}
+
+
+@pytest.fixture
+def rewrote_scene_2_whole(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    """A chat whose scene 2's usage the page doesn't state, rewritten whole, which passed."""
+    checking(fake_model, product_page_url, doing_a_job())
+    fake_model.respond(
+        "fact_check",
+        shows_wrong("The page doesn't say tea is poured in.", passing=(1, 3)),
+        facts_ok(2),
+    )
+    fake_model.respond("rewrite_line", REWRITTEN)
+    say(f"Make an ad for {product_page_url}")
+
+
+def test_a_scenes_usage_and_result_are_handed_to_the_fact_check(
+    rewrote_scene_2_whole: None,
+) -> None:
+    assert handoffs("fact_check")[0]["lines"][1] == {
+        "scene": 2,
+        "line": SAID_OVER,
+        "shows": POUR,
+        "usage": USAGE,
+        "result": RESULT,
+    }
+
+
+@pytest.mark.parametrize(
+    "problem",
+    ["The page doesn't say tea is poured in.", "The page doesn't say the mug keeps tea hot."],
+    ids=["usage", "result"],
+)
+def test_a_usage_or_result_the_page_doesnt_state_fails_the_scenes_fact_check(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None], problem: str
+) -> None:
+    checking(fake_model, product_page_url, doing_a_job())
+    fake_model.respond(
+        "fact_check", shows_wrong(problem, passing=(1, 3)), shows_wrong(problem), facts_ok(2)
+    )
+    fake_model.respond("rewrite_line", REWRITTEN, REWRITTEN)
+
+    say(f"Make an ad for {product_page_url}")
+
+    assert [sent["problems"][-1]["problem"] for sent in handoffs("rewrite_line")] == [
+        problem,
+        problem,
+    ]
+    assert Job.objects.get().scenes.get(number=2).fact_checked
+
+
+def test_the_fact_check_is_shown_each_broll_scenes_needed_photos(
+    rewrote_scene_2_whole: None,
+) -> None:
+    # Scene 2 first needed photo 2, besides photo 1 in the ad's colour; its rewrite needs
+    # none.
+    assert images_shown("fact_check") == [["Photo 1", "Photo 2"], ["Photo 1"]]
+
+
+def test_a_rewrite_gives_back_every_broll_detail_and_they_are_stored(
+    rewrote_scene_2_whole: None,
+) -> None:
+    scene = Job.objects.get().scenes.get(number=2)
+    assert (scene.line, scene.shows) == (REWRITTEN["line"], REWRITTEN["shows"])
+    assert broll_labels()[1] == ("showcase", "has face", "taken out of the dishwasher", "", [])
+
+
+def test_a_rewritten_scenes_broll_details_are_fact_checked_again(
+    rewrote_scene_2_whole: None,
+) -> None:
+    assert rechecked() == [
+        [
+            {
+                "scene": 2,
+                "line": REWRITTEN["line"],
+                "shows": REWRITTEN["shows"],
+                "usage": "taken out of the dishwasher",
+                "result": None,
+            }
+        ]
+    ]
+
+
+def test_the_rewrite_is_shown_the_jobs_photos_so_it_can_give_back_what_a_scene_needs(
+    rewrote_scene_2_whole: None,
+) -> None:
+    assert images_shown("rewrite_line") == [["Photo 1", "Photo 2"]]
+    (sent,) = handoffs("rewrite_line")
+    assert (sent["photo_count"], sent["colour_photos"]) == (2, [1])
+
+
+def test_a_rewrite_of_a_line_the_person_says_is_shown_no_photos(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    checking(fake_model, product_page_url, a_plan_with())
+    fake_model.respond(
+        "fact_check", failing(3, "The line says $19.99.", passing=(1, 2)), facts_ok(3)
+    )
+    fake_model.respond("rewrite_line", {"line": "Yours for $24.00.", "shows": None})
+
+    say(f"Make an ad for {product_page_url}")
+
+    assert images_shown("rewrite_line") == [[]]
+
+
+@pytest.mark.parametrize(
+    ("rewrite", "told"),
+    [
+        pytest.param(
+            {**DOES_A_JOB, "result": None},
+            'A "does a job" scene needs its result: what you can see at its end.',
+            id="a job without its result",
+        ),
+        pytest.param(
+            {**DOES_A_JOB, "needs": [{"what": "the glaze up close", "photos": [3]}]},
+            "There's no photo 3: the job has 2.",
+            id="a photo the job doesn't have",
+        ),
+        pytest.param(
+            {
+                **DOES_A_JOB,
+                "person_shown": "has face",
+                "needs": [{"what": f"detail {n}", "photos": [2]} for n in range(1, 5)],
+            },
+            "Scene 2 would send 6 pictures (the main photo, one for each of its 4 needs and "
+            "the presenter's portrait): 5 at most.",
+            id="too many pictures",
+        ),
+    ],
+)
+def test_a_rewrite_that_breaks_the_broll_rules_cant_be_used(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    rewrite: dict[str, Any],
+    told: str,
+) -> None:
+    checking(fake_model, product_page_url, doing_a_job())
+    fake_model.respond(
+        "fact_check", shows_wrong("The page doesn't say tea is poured in.", passing=(1, 3))
+    )
+    fake_model.respond("rewrite_line", rewrite)
+
+    say(f"Make an ad for {product_page_url}")
+
+    (failed,) = results_of("run_planning_checks")
+    assert failed.startswith("Failed: a model's answer couldn't be used")
+    assert told in failed
+    assert broll_labels()[1] == (
+        "does a job",
+        "no face",
+        USAGE,
+        RESULT,
+        [{"what": "the glaze up close", "photos": [2]}],
+    )
+
+
+def test_a_rewrite_with_a_blank_shows_clears_every_broll_detail(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    checking(fake_model, product_page_url, doing_a_job())
+    fake_model.respond(
+        "fact_check",
+        shows_wrong("The page doesn't say tea is poured in.", passing=(1, 3)),
+        facts_ok(2),
+    )
+    fake_model.respond("rewrite_line", {**DOES_A_JOB, "shows": " "})
+
+    say(f"Make an ad for {product_page_url}")
+
+    scene = Job.objects.get().scenes.get(number=2)
+    assert (scene.shows, scene.fact_checked) == ("", True)
+    assert broll_labels()[1] == ("", "", "", "", [])
+
+
+def test_a_scene_the_user_has_the_person_say_loses_its_usage_result_and_needs(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    checking(
+        fake_model,
+        product_page_url,
+        doing_a_job(),
+        reply="Keep scene 2, give your own line, or say it to camera?",
+    )
+    fake_model.respond(
+        "fact_check",
+        shows_wrong("The page doesn't say tea is poured in.", passing=(1, 3)),
+        shows_wrong("The page still doesn't say tea is poured in."),
+        shows_wrong("The page never says tea is poured in."),
+    )
+    fake_model.respond("rewrite_line", DOES_A_JOB, DOES_A_JOB)
+    say(f"Make an ad for {product_page_url}")
+    fake_model.respond(
+        "produce",
+        turn(
+            calls=[
+                (
+                    "run_planning_checks",
+                    {
+                        **NO_CHOICES,
+                        "line_choices": [{"scene": 2, "choice": "say_it", "own_line": None}],
+                    },
+                )
+            ]
+        ),
+        turn(says="The person will say it."),
+    )
+
+    say("Have her just say it")
+
+    assert Job.objects.get().scenes.get(number=2).shows == ""
+    assert broll_labels()[1] == ("", "", "", "", [])
 
 
 # --- A line too long for one scene -----------------------------------------------------------
@@ -681,10 +991,14 @@ LONGEST = " ".join(["Hand-thrown and dishwasher safe, it holds 350 ml."] * 4) + 
 )
 
 
+# 8 words: within the 4 to 14 seconds a B-roll line takes, and a talking line's 18.
+SHORTENED = "Hand-thrown and dishwasher safe, it holds 350 ml."
+
+
 def scene_2_saying(line: str, *, shows: str | None = None) -> dict[str, Any]:
     """The mug plan with scene 2 saying `line`, over what it `shows` if anything."""
     plan = plan_with("Meet the Stoneware Mug from Kiln & Co.", line, "Yours for $24.00.")
-    plan["plan"]["scenes"][1]["shows"] = shows
+    plan["plan"]["scenes"][1] = broll({**plan["plan"]["scenes"][1], "shows": shows})
     return plan
 
 
@@ -700,14 +1014,14 @@ def shortened_scene_2(
     shows: str | None = getattr(request, "param", None)
     checking(fake_model, product_page_url, scene_2_saying(TOO_LONG, shows=shows))
     fake_model.respond("fact_check", FACTS_OK, facts_ok(2))
-    fake_model.respond("shorten_line", {"line": "Hand-thrown and dishwasher safe."})
+    fake_model.respond("shorten_line", {"line": SHORTENED})
     say(f"Make an ad for {product_page_url}")
 
 
 def test_a_line_too_long_for_one_scene_is_shortened(shortened_scene_2: None) -> None:
     assert lines() == [
         "Meet the Stoneware Mug from Kiln & Co.",
-        "Hand-thrown and dishwasher safe.",
+        SHORTENED,
         "Yours for $24.00.",
     ]
 
@@ -723,9 +1037,15 @@ def test_a_line_is_shortened_to_the_most_words_the_voice_says_in_18_seconds(
 def test_the_line_shortener_is_handed_what_each_scene_shows(shortened_scene_2: None) -> None:
     assert [sent["script"] for sent in handoffs("shorten_line")] == [
         [
-            {"scene": 1, "line": "Meet the Stoneware Mug from Kiln & Co.", "shows": None},
-            {"scene": 2, "line": TOO_LONG, "shows": POUR},
-            {"scene": 3, "line": "Yours for $24.00.", "shows": None},
+            {
+                "scene": 1,
+                "line": "Meet the Stoneware Mug from Kiln & Co.",
+                "shows": None,
+                "usage": None,
+                "result": None,
+            },
+            {"scene": 2, "line": TOO_LONG, "shows": POUR, "usage": None, "result": None},
+            {"scene": 3, "line": "Yours for $24.00.", "shows": None, "usage": None, "result": None},
         ]
     ]
 
@@ -739,7 +1059,15 @@ def test_a_shortened_line_is_fact_checked_again_with_what_its_scene_shows(
     shortened_scene_2: None, shows: str | None
 ) -> None:
     assert rechecked() == [
-        [{"scene": 2, "line": "Hand-thrown and dishwasher safe.", "shows": shows}]
+        [
+            {
+                "scene": 2,
+                "line": SHORTENED,
+                "shows": shows,
+                "usage": None,
+                "result": None,
+            }
+        ]
     ]
 
 
@@ -753,6 +1081,9 @@ def test_a_line_said_in_exactly_18_seconds_isnt_shortened(
 
     assert paid_for() == [
         "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
         "plan_ad",
         "draw_person",
         "design_voice",
@@ -763,19 +1094,17 @@ def test_a_line_said_in_exactly_18_seconds_isnt_shortened(
 
 @pytest.fixture
 def asked_for_a_shorter_line(
-    request: pytest.FixtureRequest,
     fake_model: FakeModel,
     product_page_url: str,
     say: Callable[..., None],
 ) -> None:
-    """A chat whose scene 2's line was still too long after 2 shortenings, and whose
-    producer has asked the user for a shorter one. Parametrize it indirectly with what
-    scene 2 shows: nothing unless given."""
-    shows: str | None = getattr(request, "param", None)
+    """A chat whose scene 2's line, said to camera, was still too long after 2 shortenings,
+    and whose producer has asked the user for a shorter one. A B-roll line is never asked
+    about (tests/test_producer_broll_line_length.py)."""
     checking(
         fake_model,
         product_page_url,
-        scene_2_saying(TOO_LONG, shows=shows),
+        scene_2_saying(TOO_LONG),
         reply="Scene 2 is too long. What should it say?",
     )
     fake_model.respond("fact_check", FACTS_OK, facts_ok(2), facts_ok(2))
@@ -783,25 +1112,13 @@ def asked_for_a_shorter_line(
     say(f"Make an ad for {product_page_url}")
 
 
-@pytest.mark.parametrize(
-    ("asked_for_a_shorter_line", "while_its_said"),
-    [
-        pytest.param(None, "", id="said to camera"),
-        pytest.param(
-            POUR,
-            " While it's said, the ad shows: tea poured from a teapot into the mug.",
-            id="said over the pour",
-        ),
-    ],
-    indirect=["asked_for_a_shorter_line"],
-)
 def test_a_line_still_too_long_after_two_shortenings_is_asked_about(
-    asked_for_a_shorter_line: None, while_its_said: str
+    asked_for_a_shorter_line: None,
 ) -> None:
     (asked,) = results_of("run_planning_checks")
     assert asked.splitlines()[0] == (
         "Scene 2's line still takes about 20.5 seconds to say after 2 shortenings, and a scene "
-        f'can last at most 18 seconds: "{TOO_LONG} Really."{while_its_said} Why: The line was '
+        f'can last at most 18 seconds: "{TOO_LONG} Really." Why: The line was '
         "shortened 2 times and is still too long for one scene, so you choose a shorter line. "
         "Ask the shop owner for a shorter line of their own."
     )
@@ -938,9 +1255,21 @@ def test_the_shortening_model_is_handed_what_each_scene_shows(
 ) -> None:
     assert [sent["script"] for sent in handoffs("shorten_script")] == [
         [
-            {"scene": 1, "line": "Meet the Stoneware Mug from Kiln & Co.", "shows": None},
-            {"scene": 2, "line": "Hand-thrown, holds 350 ml.", "shows": POUR},
-            {"scene": 3, "line": "Yours for $24.00.", "shows": None},
+            {
+                "scene": 1,
+                "line": "Meet the Stoneware Mug from Kiln & Co.",
+                "shows": None,
+                "usage": None,
+                "result": None,
+            },
+            {
+                "scene": 2,
+                "line": SAID_OVER,
+                "shows": POUR,
+                "usage": None,
+                "result": None,
+            },
+            {"scene": 3, "line": "Yours for $24.00.", "shows": None, "usage": None, "result": None},
         ]
     ]
 
@@ -958,8 +1287,14 @@ def test_a_line_changed_in_shortening_is_fact_checked_with_what_its_scene_shows(
 ) -> None:
     assert rechecked() == [
         [
-            {"scene": 1, "line": "Meet the Stoneware Mug.", "shows": None},
-            {"scene": 2, "line": "Holds 350 ml.", "shows": POUR},
+            {
+                "scene": 1,
+                "line": "Meet the Stoneware Mug.",
+                "shows": None,
+                "usage": None,
+                "result": None,
+            },
+            {"scene": 2, "line": "Holds 350 ml.", "shows": POUR, "usage": None, "result": None},
         ]
     ]
 
@@ -986,6 +1321,63 @@ def test_a_scene_dropped_in_shortening_takes_what_it_shows_with_it(
     ]
 
 
+def test_a_scene_dropped_in_shortening_takes_its_broll_labels_with_it(
+    shortened_dropping_the_pour: None,
+) -> None:
+    assert broll_labels() == [("", "", "", "", []), ("", "", "", "", [])]
+
+
+# A scene where the mug does a job, with the presenter's face and a need of its own.
+POUR_DOES_A_JOB: dict[str, Any] = {
+    "line": "Pour in hot tea and it stays warm in your hands.",
+    "shows": POUR,
+    "broll_kind": "does a job",
+    "person_shown": "has face",
+    "usage": "Pour a hot drink into the mug.",
+    "result": "The mug full of steaming tea.",
+    "needs": [{"what": "the handle", "photos": [2]}],
+}
+
+
+def test_a_line_moved_up_in_shortening_takes_its_broll_labels_with_it(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    # Scene 2, said to camera, is dropped, so the pour's line plays second.
+    plan = a_plan_with(
+        scenes=[
+            {"line": "Meet the Stoneware Mug from Kiln & Co."},
+            {"line": "Hand-thrown, holds 350 ml, and dishwasher safe."},
+            POUR_DOES_A_JOB,
+        ]
+    )
+    checking(fake_model, product_page_url, plan, target_seconds=5)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3))
+    say(f"Make a 5 second ad for {product_page_url}")
+    shortening_to(
+        fake_model,
+        (1, "Meet the Stoneware Mug."),
+        (3, "Pour in hot tea and it stays warm."),
+    )
+    fake_model.respond("fact_check", facts_ok(1, 2))
+
+    say("Shorten it")
+
+    assert lines_and_shows() == [
+        ("Meet the Stoneware Mug.", ""),
+        ("Pour in hot tea and it stays warm.", POUR),
+    ]
+    assert broll_labels() == [
+        ("", "", "", "", []),
+        (
+            "does a job",
+            "has face",
+            "Pour a hot drink into the mug.",
+            "The mug full of steaming tea.",
+            [{"what": "the handle", "photos": [2]}],
+        ),
+    ]
+
+
 def test_a_scene_dropped_in_shortening_takes_its_overlay_with_it(
     shortened_dropping_the_pour: None,
 ) -> None:
@@ -998,6 +1390,9 @@ def test_a_line_that_moved_but_already_passed_the_fact_check_isnt_checked_again(
 ) -> None:
     assert paid_for() == [
         "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
         "plan_ad",
         "draw_person",
         "design_voice",
@@ -1018,7 +1413,9 @@ def test_a_checked_line_put_over_what_another_scene_shows_is_fact_checked_again(
 
     say("Shorten it")
 
-    assert rechecked() == [[{"scene": 2, "line": "Yours for $24.00.", "shows": POUR}]]
+    assert rechecked() == [
+        [{"scene": 2, "line": "Yours for $24.00.", "shows": POUR, "usage": None, "result": None}]
+    ]
 
 
 @pytest.mark.parametrize(
@@ -1088,8 +1485,8 @@ def test_a_script_is_shortened_to_the_words_said_within_the_target_and_2_seconds
 def test_a_finished_scene_is_planned_again_only_when_what_it_shows_changes(
     shows: str, status: str
 ) -> None:
-    scene = Scene(line="Hand-thrown, holds 350 ml.", shows=POUR, status=Scene.Status.FINISHED)
+    scene = Scene(line=SAID_OVER, shows=POUR, status=Scene.Status.FINISHED)
 
-    scene.change_line("Hand-thrown, holds 350 ml.", shows)
+    scene.change_line(SAID_OVER, shows)
 
     assert scene.status == status
