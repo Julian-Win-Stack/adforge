@@ -114,6 +114,13 @@ class Job(models.Model):
     person_voice = models.TextField(
         blank=True, help_text="The producer's description of the person's voice."
     )
+    script_format = models.CharField(
+        max_length=30,
+        blank=True,
+        help_text="The structure the ad's body plays in, between its hook and its call to "
+        'action, from the plan: such as "before and after" (jobs.planning.ScriptFormat). '
+        "Blank for an ad planned before it was given.",
+    )
     product_name = models.CharField(
         max_length=200,
         blank=True,
@@ -202,13 +209,6 @@ class Scene(models.Model):
         NO_FACE = "no face"
         HAS_FACE = "has face"
 
-    class Part(models.TextChoices):
-        HOOK = "hook"
-        PROBLEM = "problem"
-        PRODUCT_IN_ACTION = "product in action"
-        RESULT = "result"
-        CALL_TO_ACTION = "call to action"
-
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="scenes")
     number = models.PositiveSmallIntegerField(help_text="1, 2, 3... in the order they play.")
     line = models.TextField(help_text="What the person says in this scene.")
@@ -223,12 +223,11 @@ class Scene(models.Model):
         "such as the price. Blank for none. Not fact checked yet.",
     )
     part = models.CharField(
-        max_length=20,
-        choices=Part.choices,
+        max_length=30,
         blank=True,
-        help_text="The part of the script the scene plays, in this order: hook, problem, "
-        "product in action, result, call to action. Blank for a scene planned before it was "
-        "given.",
+        help_text='The part of the script the scene plays: "hook" first, "call to action" '
+        "last, and between them the parts of the job's script format, in their order. Blank "
+        "for a scene planned before it was given.",
     )
     broll_kind = models.CharField(
         max_length=20,

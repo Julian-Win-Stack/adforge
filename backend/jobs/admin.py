@@ -196,6 +196,7 @@ class SceneAdmin(admin.ModelAdmin[Scene]):
     list_display = [
         "job",
         "number",
+        "part",
         "line",
         "shows",
         *BROLL_FIELDS,

@@ -350,7 +350,7 @@ def test_a_shortened_scene_keeps_its_part_of_the_script(
 def test_shortening_is_told_to_keep_the_hook_and_the_call_to_action(
     fake_model: FakeModel, asked_about_length: None, say: Callable[..., None]
 ) -> None:
-    # Audit row 8: shortening could drop the hook or the call to action scene.
+    # Shortening could drop the hook or the call to action scene.
     told: list[str] = []
 
     def shorten(request: Any) -> dict[str, Any]:
@@ -542,7 +542,7 @@ def test_what_a_scene_shows_that_the_page_doesnt_support_is_rewritten(
 def test_a_rewrite_is_told_a_broll_scene_films_one_action_as_the_planner_is(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
-    # Audit row 2's gap: a rewrite that isn't told can pack the steps back into one scene.
+    # A rewrite that isn't told could pack the steps back into one scene.
     told: list[str] = []
 
     def rewrite(request: Any) -> dict[str, Any]:
@@ -560,6 +560,8 @@ def test_a_rewrite_is_told_a_broll_scene_films_one_action_as_the_planner_is(
     (instructions,) = told
     assert "A B-roll scene films one action" in instructions
     assert "film only the main step" in instructions
+    # A rewrite changes one scene: it can't add a talking scene for the other steps.
+    assert "name the other steps" not in instructions
 
 
 def test_the_rewrite_is_told_it_was_what_the_scene_shows_that_failed(

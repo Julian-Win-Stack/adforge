@@ -36,8 +36,7 @@ BROLL_ONE_ACTION_INSTRUCTIONS = """\
 A B-roll scene films one action: the one moment that proves what its line claims. When \
 the page lists steps for using the product, film only the main step, the one that shows it \
 working, such as the cloth wiping a stain away rather than spraying, waiting and rinsing, \
-and write that B-roll line about that step; the person can name the other steps in a \
-talking scene.
+and write that B-roll line about that step.
 """
 
 PLAN_INSTRUCTIONS = (
@@ -59,20 +58,34 @@ such as text on a label. Never infer, guess or make anything up: not a price, a 
 a material, a benefit or a colour.
 Decide "plan" when you can plan the whole ad from what you have. Give the scenes in the \
 order they play, with each scene's line exactly as the person will say it. The ad is \
-about one idea: the product's main benefit. Every ad plays five parts in this order: the \
-hook, the problem, the product in action, the result and the call to action; give each \
-scene the part it plays. The hook is the first scene, one line that makes the viewer stop \
-and watch. The problem is one the page names or its claims plainly answer, never one you \
-make up; leave it out when there is none. The call to action is the last scene, one line \
-telling the viewer to get it now, with a reason to act now only if the page or the shop \
-owner gives one; never "learn more". With a target \
+about one idea: the product's main benefit. It plays in three parts: the hook, the body \
+and the call to action; give each scene the part it plays. The hook is the first scene \
+alone: one line that makes the viewer stop and watch, starting with the problem or a \
+surprising claim, not the product's name. The call to action is the last scene alone: it \
+says the price and tells the viewer to get it now, with a reason to act now, such as a \
+discount, only if the page or the shop owner gives one; never "learn more". For the body, \
+choose the one format that suits the product and give it as the script's format; never \
+mix two. Its parts play in the order given, each in one scene or more:
+- "problem, agitate, solve": the problem, agitate, solve: the problem named clearly, \
+what it costs not to solve it, then the product as the answer. Best for products that fix \
+a pain, health and wellness, and productivity.
+- "feature cascade": the hero feature, a supporting feature, proof: the most impressive \
+thing the product does, one or two more, then a quick demo of a result. Best for tech \
+and products with many features.
+- "before and after": the before state, the transformation moment, the after state: the \
+problem shown, the product in action, then the better result. Best for beauty, fitness, \
+home improvement and cleaning products.
+- "day in the life": the routine, the key moment, the result: the product in everyday \
+life, its main use, then the payoff. Best for lifestyle products.
+A problem, a feature or a result is only one the page or the shop owner states: never \
+make one up. With a target \
 length, write only as many words as fit it when spoken at an easy pace. Say the \
 product's name, as the page states it (often the brand or a short name), in at least one \
 scene where the person talks to camera; it may be said in other scenes too. Give the \
 product's name exactly as the person says it in one of those scenes, copied word for \
 word from its line: not the page's full title, and nothing the person doesn't say, such \
 as a part in brackets or a symbol like ® or ™. One line says the product's price: the \
-price a buyer pays today, so on a sale, the sale price; best in the call to action. No \
+price a buyer pays today, so on a sale, the sale price. No \
 line names the product's colour: the ad shows the colour, never says it. Give a scene an \
 overlay, a few words drawn along the top of the picture while it plays, when there is \
 something worth showing as well as saying, such as the price or the product's name; \
@@ -109,11 +122,12 @@ what is shown. A B-roll line has at least about 10 words.
 """
     + BROLL_ONE_ACTION_INSTRUCTIONS
     + """\
-When a line claims the product can be used in two different ways that can't be seen at \
-once, such as a jacket worn on either side, give each way its own B-roll scene, back to \
-back, each with its own line and its one action. Never more than two scenes for one such \
-claim. Never show before and after pictures of bodies or skin, a screen whose content \
-you'd have to invent, a result the page doesn't state, or parts of the product no photo \
+The person can name the other steps in a talking scene. When a line claims the product \
+can be used in two different ways that can't be seen at once, such as a jacket worn on \
+either side, give each way its own B-roll scene, back to back, each with its own line \
+and its one action. Never more than two scenes for one such claim. Never show before \
+and after pictures of bodies or skin, a screen whose content you'd have to invent, a \
+result the page doesn't state, or parts of the product no photo \
 shows. How much of the ad is B-roll depends on the kind of product. As a guide (B-roll \
 share; what it can show; only if the page says; never):
 - Beauty and skincare: about 30%; a texture close-up (a dab on a fingertip), hands \
@@ -166,11 +180,12 @@ product isn't clearly seen, such as blush on a cheek, is enough.
 nor the shop owner says how it is used. Ask even if you could plan it only at its best: \
 an ad for such a product shows it doing its job. A product that doesn't do a job you can \
 see, such as a bag, needs no "how to use": never ask for one.
-- The scene ends on a result you can see, but what the thing looks like before and after \
-isn't common knowledge, and neither a photo nor the page or the shop owner's words show \
-it, so the video would have to guess, such as a coating that keeps a mirror from fogging. \
-A result anyone can picture, such as a greasy pan wiped clean or a muddy floor mopped, \
-needs nothing more: never ask about it.
+- The scene ends on a result you can see, but what the thing looks like before and \
+after isn't common knowledge and no photo shows it, so the video would have to guess, \
+such as a cleaner that removes a build-up most people never notice, or a coating that \
+keeps a mirror from fogging. The page naming the result isn't enough: the video would \
+still guess how it looks. A result anyone can picture, such as a greasy pan wiped clean \
+or a muddy floor mopped, needs nothing more: never ask about it.
 Then say in plain words what's missing and offer two answers: attach a photo of it (for \
 a missing "how to use", of the product being used; for a result, of it before and \
 after), or go ahead without one, and you'll \
@@ -347,15 +362,41 @@ def photo_missing(numbers: list[int], photo_count: int) -> str | None:
     return None
 
 
-# The part of the script a scene plays. Every ad plays them in this order.
-Part = Literal["hook", "problem", "product in action", "result", "call to action"]
+# The structure an ad's body plays in, between its hook and its call to action: Creatify's
+# ad generator's body structures, "Match the structure to your goal". Its Social Proof Stack
+# is left out: it needs customer quotes and numbers the page rarely states. Nothing in code
+# checks a plan's parts against its format: a refused plan is paid for again, so add a check
+# only if plans break it.
+ScriptFormat = Literal[
+    "problem, agitate, solve", "feature cascade", "before and after", "day in the life"
+]
+
+
+# The part of the script a scene plays: the hook first, the call to action last, and the
+# parts of the script's format between them.
+Part = Literal[
+    "hook",
+    "problem",
+    "agitate",
+    "solve",
+    "hero feature",
+    "supporting feature",
+    "proof",
+    "before state",
+    "transformation moment",
+    "after state",
+    "routine",
+    "key moment",
+    "result",
+    "call to action",
+]
 
 
 class PlannedScene(ScriptScene):
     part: Part | None = Field(
         default=None,
-        description='The part of the script this scene plays: "hook", "problem", "product in '
-        'action", "result" or "call to action", in that order through the ad.',
+        description='The part of the script this scene plays: "hook" for the first scene, '
+        '"call to action" for the last, and one of the parts of the script\'s format between.',
     )
     overlay: str | None = Field(
         default=None,
@@ -411,6 +452,11 @@ class Plan(BaseModel):
         )
     )
     person_voice: str = Field(description="How the person's voice sounds: age, accent, tone, pace.")
+    script_format: ScriptFormat | None = Field(
+        default=None,
+        description="The one format the ad's body plays in, between its hook and its call to "
+        "action.",
+    )
 
     @field_validator("product_name", "product_colour", "person_looks", "person_voice")
     @classmethod

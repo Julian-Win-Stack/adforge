@@ -639,6 +639,7 @@ def plan(job: Job) -> ProducerDecision:
         job.person_gender = planned.person_gender
         job.person_looks = planned.person_looks
         job.person_voice = planned.person_voice
+        job.script_format = planned.script_format or ""
         job.status = Job.Status.PLANNED
         job.save(
             update_fields=[
@@ -648,6 +649,7 @@ def plan(job: Job) -> ProducerDecision:
                 "person_gender",
                 "person_looks",
                 "person_voice",
+                "script_format",
                 "status",
             ]
         )

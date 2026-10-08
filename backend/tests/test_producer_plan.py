@@ -119,23 +119,29 @@ def test_the_plan_and_its_scenes_are_stored_with_the_job(
     )
 
 
-def test_each_scenes_part_of_the_script_is_stored(
+def test_the_scripts_format_and_each_scenes_part_are_stored(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
-    # Audit row 8: every ad plays hook, problem, product in action, result, call to action,
-    # and each scene keeps which part it plays.
+    # Creatify's ad generator: a hook, a body in the one structure that suits the product
+    # ("Match the structure to your goal"), then a call to action. Each scene keeps its part.
     scenes = [
         {"line": "Meet the Stoneware Mug from Kiln & Co.", "part": "hook"},
-        {"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "part": "result"},
+        {"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "part": "hero feature"},
         {"line": "Get yours now for $24.00.", "part": "call to action"},
     ]
-    planning(fake_model, product_page_url, a_plan_with(scenes=scenes))
+    planning(
+        fake_model,
+        product_page_url,
+        a_plan_with(scenes=scenes, script_format="feature cascade"),
+    )
 
     say(f"Make an ad for {product_page_url}")
 
-    assert list(Job.objects.get().scenes.values_list("number", "part")) == [
+    job = Job.objects.get()
+    assert job.script_format == "feature cascade"
+    assert list(job.scenes.values_list("number", "part")) == [
         (1, "hook"),
-        (2, "result"),
+        (2, "hero feature"),
         (3, "call to action"),
     ]
 
@@ -329,11 +335,12 @@ def test_the_planner_is_told_how_to_plan_each_broll_scene(
     # short sentence" disagrees.
     assert "A B-roll line has at least about 10 words." in instructions
     assert "short sentence" not in instructions
-    # One action per B-roll scene (audit row 2): graded #8 toilet (4 steps in one clip) and #5
+    # One action per B-roll scene: graded #8 toilet (4 steps in one clip) and #5
     # bag (strap on and off in one clip) failed; one step, and one scene per way of use, were
     # graded perfect.
     assert "A B-roll scene films one action" in instructions
     assert "give each way its own B-roll scene" in instructions
+    assert "The person can name the other steps in a talking scene." in instructions
     # The ad's colour, and the one photo a scene may never need: items 43 and 44 of
     # docs/broll-picture-logic.md.
     assert (
@@ -360,19 +367,27 @@ def test_the_planner_is_told_the_shape_of_every_script(
 
     request = the_plan_request(httpserver)
     instructions = request["instructions"]
-    # Audit rows 8, 15 and 16, from Creatify's own words in
-    # decisions/2026-10-08-script-shape-planner.md: "Problem visual -> Product introduction ->
-    # Demo sequence -> Result -> CTA", "One ad, one idea." and "'Learn more' is not a CTA."
-    assert (
-        "plays five parts in this order: the hook, the problem, the product in action, the "
-        "result and the call to action"
-    ) in instructions
+    # Creatify's own words, research/creatify-script-shape-originals.md in the project files:
+    # "The first 3 seconds determine whether someone watches your ad.", "Match the structure
+    # to your goal", "Pick one. Don't mix frameworks in the same video.", "One ad, one idea."
+    # and "'Learn more' is not a CTA."
+    assert "the hook, the body and the call to action" in instructions
+    assert "not the product's name" in instructions
+    assert "choose the one format that suits the product" in instructions
+    for script_format, parts in [
+        ("problem, agitate, solve", "the problem, agitate, solve"),
+        ("feature cascade", "the hero feature, a supporting feature, proof"),
+        ("before and after", "the before state, the transformation moment, the after state"),
+        ("day in the life", "the routine, the key moment, the result"),
+    ]:
+        assert f'- "{script_format}": {parts}' in instructions
     assert "The ad is about one idea: the product's main benefit." in instructions
-    assert "never one you make up" in instructions
+    assert "never make one up" in instructions
     assert "get it now" in instructions
     assert 'never "learn more"' in instructions
-    scene = request["text"]["format"]["schema"]["$defs"]["PlannedScene"]["properties"]
-    assert "part" in scene
+    schema = request["text"]["format"]["schema"]["$defs"]
+    assert "part" in schema["PlannedScene"]["properties"]
+    assert "script_format" in schema["Plan"]["properties"]
 
 
 def test_the_planner_is_told_to_ask_for_a_before_and_after_nobody_could_picture(
@@ -386,11 +401,14 @@ def test_the_planner_is_told_to_ask_for_a_before_and_after_nobody_could_picture(
     say(f"Make an ad for {product_page_url}")
 
     instructions = the_plan_request(httpserver)["instructions"]
-    # Audit row 19: N3's shower cleaner was planned with a result nobody could picture and
+    # N3's shower cleaner was planned with a result nobody could picture and
     # no photo of it, so the video guessed; a dirty toilet scrubbed clean needed no photo.
     assert "in only three cases" in instructions
     assert "isn't common knowledge" in instructions
     assert "of it before and after" in instructions
+    # Only a photo shows it: a page that says "removes the film" still leaves its look to a
+    # guess, which is how N3's result was invented.
+    assert "The page naming the result isn't enough" in instructions
 
 
 # --- What the planner is given --------------------------------------------------------------

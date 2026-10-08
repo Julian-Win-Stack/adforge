@@ -86,6 +86,14 @@ _Avoid_: Subtitle, lower third
 The on-screen text for one scene, such as the price, written by the producer when it plans the ad; a scene may have none. Drawn in a fixed band along the top while the scene plays, clear of the face and the product. Not fact checked yet.
 _Avoid_: Caption, graphic, text layer, on-screen text
 
+**Script format**:
+The structure an ad's body plays in, between its hook and its call to action, chosen by the producer when it plans the ad to suit the product: problem, agitate, solve; feature cascade; before and after; or day in the life (Creatify's body structures). An ad uses one, never two.
+_Avoid_: Template, framework, ad format
+
+**Part**:
+What a scene does in the script: the hook first, the call to action last, and the script format's parts between them, in their order, such as "before state". The hook is a line that makes the viewer stop and watch; the call to action says the price and tells the viewer to get it now. Each is one scene.
+_Avoid_: Beat, section, stage
+
 **Clip**:
 A scene's moving picture, with its line's audio: the same audio its transcript was heard in. A talking scene's is its starting picture animated to speak that audio, so it lasts exactly as long. A B-roll scene's is made by Boreal-H3 with no sound, from its starting picture (way 1) or its example pictures (way 3), in the fewest whole seconds that cover the audio (at least 5, at most 15). It isn't cut to its line: the audio is laid over its start, and it is kept whole, silent after the line, so its motion plays out. A B-roll line whose audio is too long for any clip is shortened before a clip is paid for, or, after 3 shortenings, said to camera instead. Made only once the picture is made and the audio heard, for the line as it stands. A scene whose clip is made is finished. Not shown to the user on its own.
 _Avoid_: Video, render, shot
@@ -175,5 +183,5 @@ An agent that would make one scene for the producer, seeing only that scene. Bui
 _Avoid_: Sub-agent, worker, renderer
 
 **End card**:
-A closing scene carrying the call to action, such as "Shop now".
+A closing card carrying the call to action, such as "Shop now", drawn after the last scene. Not the call to action the person says in the last scene (see Part).
 _Avoid_: CTA, outro, closing frame
