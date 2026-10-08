@@ -74,9 +74,13 @@ voice says the scene's line over it.
 
 # The rules every B-roll prompt follows, made either way.
 _BROLL_PROMPT_RULES = """\
-- One continuous shot, with no cuts. Do what "shows" says, in order, at a natural, \
-real-time pace. Never write seconds or timings, or words that slow it down, such as \
+- One continuous shot, with no cuts. Do what "shows" says, at a natural, real-time \
+pace. Never write seconds or timings, or words that slow it down, such as \
 "slowly" or "gently".
+- When "shows" lists separate steps, with a wait, a set-up or a change of state between \
+them, film only the main one: the step that proves the line. The voice carries the rest. \
+Two or three actions that flow as one, by one person, are fine. Never film the fiddly \
+change between two states, such as clipping, unclipping or folding: open with it done.
 - The product, or the tool used with it, does what the line claims, on screen, the way \
 "usage" says: something always acts. The product may stand in view, label to the camera, \
 when holding it would bend its shape, such as a bottle standing nearby while the tool used \
@@ -119,8 +123,8 @@ is the ad's choice: the setting is described in words.
 product ready to be used. The video prompt does the action.
 - The picture prompt opens: "An upright 9:16 photo taken on a phone in a real, ordinary \
 <place>, casual, not a studio shot." with the scene's setting as the place.
-- Anything that must be right goes in the starting picture, said plainly: where the camera \
-is and who holds it, its height and angle; each object the action happens to other than the \
+- Anything that must be right goes in the starting picture, said plainly: the camera is a \
+phone held by a person, so say where they hold it, its height and angle; each object the action happens to other than the \
 product, with every part named as a real, ordinary one, like one from a hardware store; the \
 problem the product fixes, as it looks before; exact counts, and left or right; and any hand \
 at the first moment of the action, already holding what it uses.
