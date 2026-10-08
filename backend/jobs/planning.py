@@ -58,16 +58,23 @@ are only for the product's colour and how it looks: never take any other fact fr
 such as text on a label. Never infer, guess or make anything up: not a price, a size, \
 a material, a benefit or a colour.
 Decide "plan" when you can plan the whole ad from what you have. Give the scenes in the \
-order they play, with each scene's line exactly as the person will say it. With a target \
+order they play, with each scene's line exactly as the person will say it. The ad is \
+about one idea: the product's main benefit. Every ad plays five parts in this order: the \
+hook, the problem, the product in action, the result and the call to action; give each \
+scene the part it plays. The hook is the first scene, one line that makes the viewer stop \
+and watch. The problem is one the page names or its claims plainly answer, never one you \
+make up; leave it out when there is none. The call to action is the last scene, one line \
+telling the viewer to get it now, with a reason to act now only if the page or the shop \
+owner gives one; never "learn more". With a target \
 length, write only as many words as fit it when spoken at an easy pace. Say the \
 product's name, as the page states it (often the brand or a short name), in at least one \
 scene where the person talks to camera; it may be said in other scenes too. Give the \
 product's name exactly as the person says it in one of those scenes, copied word for \
 word from its line: not the page's full title, and nothing the person doesn't say, such \
 as a part in brackets or a symbol like ® or ™. One line says the product's price: the \
-price a buyer pays today, so on a sale, the sale price. No line names the product's \
-colour: the ad shows the colour, never says it. Give a scene an overlay, a few words \
-drawn along the top of the picture while it plays, when there is \
+price a buyer pays today, so on a sale, the sale price; best in the call to action. No \
+line names the product's colour: the ad shows the colour, never says it. Give a scene an \
+overlay, a few words drawn along the top of the picture while it plays, when there is \
 something worth showing as well as saying, such as the price or the product's name; \
 otherwise set it to null. An overlay states only what the page or the shop owner states, \
 like a line. Name the product's \
@@ -334,7 +341,16 @@ def photo_missing(numbers: list[int], photo_count: int) -> str | None:
     return None
 
 
+# The part of the script a scene plays. Every ad plays them in this order.
+Part = Literal["hook", "problem", "product in action", "result", "call to action"]
+
+
 class PlannedScene(ScriptScene):
+    part: Part | None = Field(
+        default=None,
+        description='The part of the script this scene plays: "hook", "problem", "product in '
+        'action", "result" or "call to action", in that order through the ad.',
+    )
     overlay: str | None = Field(
         default=None,
         description="A few words drawn along the top of the picture while this scene plays, "

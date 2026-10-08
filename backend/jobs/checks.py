@@ -138,7 +138,8 @@ person talking.
 Rewrite the script to fit: trim lines, or drop a scene. Stay within the most words. \
 Give each line with the number of the scene it comes from: a scene keeps what it shows, \
 so a shortened line must still match it. Keep lines you don't need to change exactly as \
-they are. The first line must be one the person says to camera. One line must still say \
+they are. The first line must be one the person says to camera. Keep the first scene, \
+the hook, and the last, the call to action: never drop either. One line must still say \
 the price. Every claim must be stated by the page or by the shop owner's own words: your own \
 messages only show what was asked. Never name the product's colour. Never infer or \
 guess. Give the lines in the order they play."""

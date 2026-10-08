@@ -311,6 +311,67 @@ def test_a_script_the_user_chooses_to_shorten_is_rewritten_and_its_new_lines_che
     ]
 
 
+def test_a_shortened_scene_keeps_its_part_of_the_script(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    parts = ["hook", "result", "call to action"]
+    scenes = [
+        {**scene, "part": part} for scene, part in zip(PLAN["plan"]["scenes"], parts, strict=True)
+    ]
+    checking(
+        fake_model,
+        product_page_url,
+        a_plan_with(scenes=scenes),
+        target_seconds=5,
+        reply="Your script runs 4 seconds over. Shorten it, or keep it longer?",
+    )
+    fake_model.respond("fact_check", FACTS_OK)
+    say(f"Make a 5 second ad for {product_page_url}")
+    choosing_length(fake_model, "shorten")
+    fake_model.respond(
+        "shorten_script",
+        {
+            "lines": [
+                {"scene": 1, "line": "Meet the Stoneware Mug from Kiln & Co."},
+                {"scene": 3, "line": "Yours for $24.00, today."},
+            ]
+        },
+    )
+    fake_model.respond("fact_check", facts_ok(2))
+
+    say("Shorten it")
+
+    assert list(Job.objects.get().scenes.values_list("number", "part")) == [
+        (1, "hook"),
+        (2, "call to action"),
+    ]
+
+
+def test_shortening_is_told_to_keep_the_hook_and_the_call_to_action(
+    fake_model: FakeModel, asked_about_length: None, say: Callable[..., None]
+) -> None:
+    # Audit row 8: shortening could drop the hook or the call to action scene.
+    told: list[str] = []
+
+    def shorten(request: Any) -> dict[str, Any]:
+        told.append(request.instructions)
+        return {
+            "lines": [
+                {"scene": 1, "line": "Meet the Stoneware Mug from Kiln & Co."},
+                {"scene": 3, "line": "Yours for $24.00, today."},
+            ]
+        }
+
+    choosing_length(fake_model, "shorten")
+    fake_model.answer_unscripted("shorten_script", shorten)
+    fake_model.respond("fact_check", facts_ok(2))
+
+    say("Shorten it")
+
+    (instructions,) = told
+    assert "Keep the first scene, the hook, and the last, the call to action" in instructions
+
+
 def test_a_script_still_too_long_after_two_shortenings_is_asked_about_again(
     fake_model: FakeModel, asked_about_length: None, say: Callable[..., None]
 ) -> None:

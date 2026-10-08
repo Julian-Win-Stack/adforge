@@ -119,6 +119,27 @@ def test_the_plan_and_its_scenes_are_stored_with_the_job(
     )
 
 
+def test_each_scenes_part_of_the_script_is_stored(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    # Audit row 8: every ad plays hook, problem, product in action, result, call to action,
+    # and each scene keeps which part it plays.
+    scenes = [
+        {"line": "Meet the Stoneware Mug from Kiln & Co.", "part": "hook"},
+        {"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "part": "result"},
+        {"line": "Get yours now for $24.00.", "part": "call to action"},
+    ]
+    planning(fake_model, product_page_url, a_plan_with(scenes=scenes))
+
+    say(f"Make an ad for {product_page_url}")
+
+    assert list(Job.objects.get().scenes.values_list("number", "part")) == [
+        (1, "hook"),
+        (2, "result"),
+        (3, "call to action"),
+    ]
+
+
 def what_each_scene_shows() -> list[tuple[int, str]]:
     """Each stored scene's number and what it shows, in order."""
     return list(Job.objects.get().scenes.values_list("number", "shows"))
@@ -325,6 +346,33 @@ def test_the_planner_is_told_how_to_plan_each_broll_scene(
     assert "The only person ever shown is the presenter" in instructions
     scene = request["text"]["format"]["schema"]["$defs"]["PlannedScene"]["properties"]
     assert set(scene) >= {"broll_kind", "person_shown", "usage", "result", "needs"}
+
+
+def test_the_planner_is_told_the_shape_of_every_script(
+    httpserver: HTTPServer,
+    openai_server: Callable[..., None],
+    product_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    planning_through_openai(openai_server, product_page_url, PLAN)
+
+    say(f"Make an ad for {product_page_url}")
+
+    request = the_plan_request(httpserver)
+    instructions = request["instructions"]
+    # Audit rows 8, 15 and 16, from Creatify's own words in
+    # decisions/2026-10-08-script-shape-planner.md: "Problem visual -> Product introduction ->
+    # Demo sequence -> Result -> CTA", "One ad, one idea." and "'Learn more' is not a CTA."
+    assert (
+        "plays five parts in this order: the hook, the problem, the product in action, the "
+        "result and the call to action"
+    ) in instructions
+    assert "The ad is about one idea: the product's main benefit." in instructions
+    assert "never one you make up" in instructions
+    assert "get it now" in instructions
+    assert 'never "learn more"' in instructions
+    scene = request["text"]["format"]["schema"]["$defs"]["PlannedScene"]["properties"]
+    assert "part" in scene
 
 
 # --- What the planner is given --------------------------------------------------------------

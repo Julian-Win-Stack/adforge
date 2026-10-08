@@ -628,6 +628,7 @@ def plan(job: Job) -> ProducerDecision:
                 line=scene.line,
                 shows=scene.shows or "",
                 overlay=" ".join((scene.overlay or "").split()),
+                part=scene.part or "",
                 **scene.broll_details(),
             )
             for number, scene in enumerate(planned.scenes, start=1)
@@ -1190,7 +1191,7 @@ def _broll_fields(scene: Scene) -> dict[str, Any]:
 
 def _shorten(job: Job, words_per_second: float) -> None:
     """Have the script rewritten to fit its target. Each line comes back with the scene it
-    comes from, and takes that scene's "shows", overlay and B-roll fields with it, so a
+    comes from, and takes that scene's "shows", overlay, part and B-roll fields with it, so a
     dropped scene takes them away and a line never moves under another scene's picture."""
     assert job.target_seconds is not None
     script = [_to_check(scene) for scene in job.scenes.all()]
@@ -1210,22 +1211,27 @@ def _shorten(job: Job, words_per_second: float) -> None:
     )
     with transaction.atomic():
         scenes = list(job.scenes.all())
-        was = {scene.number: (scene.shows, scene.overlay, _broll_fields(scene)) for scene in scenes}
+        was = {
+            scene.number: (scene.shows, scene.overlay, scene.part, _broll_fields(scene))
+            for scene in scenes
+        }
         # A line that passed the fact check word for word, showing the same, still has;
         # anything else is new.
         checked = {(scene.line, scene.shows) for scene in scenes if scene.fact_checked}
         # A line the user chose stays theirs when it moves: it is never rewritten.
         problems = {scene.number: scene.fact_problems for scene in scenes}
         for scene, kept in zip(scenes, shortened.lines, strict=False):
-            shows, overlay, broll = was[kept.scene]
-            if (scene.line, scene.shows, scene.overlay, _broll_fields(scene)) != (
+            shows, overlay, part, broll = was[kept.scene]
+            if (scene.line, scene.shows, scene.overlay, scene.part, _broll_fields(scene)) != (
                 kept.line,
                 shows,
                 overlay,
+                part,
                 broll,
             ):
                 scene.change_line(kept.line, shows=shows)
                 scene.overlay = overlay
+                scene.part = part
                 for field, value in broll.items():
                     setattr(scene, field, value)
                 scene.fact_checked = (kept.line, shows) in checked
@@ -1236,6 +1242,7 @@ def _shorten(job: Job, words_per_second: float) -> None:
                         "shortened_from",
                         "shows",
                         "overlay",
+                        "part",
                         *BROLL_FIELDS,
                         "status",
                         "fact_checked",

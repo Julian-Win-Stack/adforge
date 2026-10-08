@@ -202,6 +202,13 @@ class Scene(models.Model):
         NO_FACE = "no face"
         HAS_FACE = "has face"
 
+    class Part(models.TextChoices):
+        HOOK = "hook"
+        PROBLEM = "problem"
+        PRODUCT_IN_ACTION = "product in action"
+        RESULT = "result"
+        CALL_TO_ACTION = "call to action"
+
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="scenes")
     number = models.PositiveSmallIntegerField(help_text="1, 2, 3... in the order they play.")
     line = models.TextField(help_text="What the person says in this scene.")
@@ -214,6 +221,14 @@ class Scene(models.Model):
         blank=True,
         help_text="A few words drawn along the top of the picture while the scene plays, "
         "such as the price. Blank for none. Not fact checked yet.",
+    )
+    part = models.CharField(
+        max_length=20,
+        choices=Part.choices,
+        blank=True,
+        help_text="The part of the script the scene plays, in this order: hook, problem, "
+        "product in action, result, call to action. Blank for a scene planned before it was "
+        "given.",
     )
     broll_kind = models.CharField(
         max_length=20,
