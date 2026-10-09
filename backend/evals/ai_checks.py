@@ -36,16 +36,19 @@ The rule:
 """
 
 # Each rule as the judge is told it: what keeps it and what breaks it, from Julian's grades.
+# Examples in a judge's question never come from the test products, so a judge that scores
+# well here isn't scoring well only on the products it was written against (Julian
+# 2026-10-09 23:13).
 RULES: dict[str, str] = {
-    "A2": "A claim that needs two end states, such as a bag worn two ways, is two B-roll "
+    "A2": "A claim that needs two end states, such as a jacket worn zipped and open, is two B-roll "
     "scenes back to back, each opening already in its state. Fail when one scene films the "
-    "change from one state to the other, such as putting a strap on or taking it off. Judge "
+    "change from one state to the other, such as zipping it up or unzipping it. Judge "
     "only this one scene: pass when it doesn't film a change from one way of using the "
     "product to another, even though the other way is in another scene or isn't filmed "
-    "here. The product working, such as dirt coming off, is not a change of state.",
+    "here. The product working, such as a scuff rubbing off, is not a change of state.",
     "A3": "A B-roll films only the main step of using the product, the one that shows it "
     "working; the voice carries the other steps. Fail when the video prompt films several "
-    "steps, such as spraying, waiting and then scrubbing.",
+    "steps, such as filling a watering can, carrying it and then watering a plant.",
     "A4c": "The prompts never ask for two things that can't both be true at once, of the "
     "product or the scene. Fail when two orders contradict each other.",
     "A5": "A result shows only where the product, or the tool used with it, touches, and it "
@@ -54,27 +57,27 @@ RULES: dict[str, str] = {
     "has no result.",
     "A6": "Every photo sent with a job other than the product's looks or the presenter is "
     "there only for how something looks: a texture, a colour, a print. Fail when a photo is "
-    "sent for an action, a movement or a pose, such as how a drop or a pour looks.",
+    "sent for an action, a movement or a pose, such as how a jump or a throw looks.",
     "A8": "What must be right in the clip, such as where the camera is, a height, the place, "
     "or how an object looks before the action, is said plainly in the picture prompt, not "
     "only in the video prompt. Fail when the video prompt needs something the picture "
     "prompt leaves out, and that detail decides whether the claim is proven, such as the "
-    'height of a drop that proves a drop claim. A style word such as "handheld", or where '
+    'height a ball bounces to that proves a bounce claim. A style word such as "handheld", or where '
     "the frame cuts a person off, is not such a detail. The picture prompt draws only the "
     "start: a result the action itself makes, such as things ending up inside, belongs in "
     "the video prompt alone.",
     "A9": "The product may stand still in view while a tool used with it does the work, such "
-    "as a bottle beside a toilet while a brush scrubs. Fail only when nothing in the clip "
+    "as a tin of polish beside a shoe while a cloth buffs it. Fail only when nothing in the clip "
     "acts at all.",
     # Julian 2026-10-09 23:08: a flip is wrong because the video model doesn't know the
     # other side; a turn to a side it can see in the starting picture is fine.
     "A11": "The video model can only show sides of the product it can see in the starting "
     "picture. Fail when the video prompt flips, spins or turns the product far enough to "
-    "show a side the starting picture doesn't show at all, such as the screen side of a "
-    "phone shown only from the back. Pass a turn that brings into view a side already "
-    "partly visible in the starting picture, such as the edge of a phone case.",
+    "show a side the starting picture doesn't show at all, such as the face of a "
+    "watch shown only from the back. Pass a turn that brings into view a side already "
+    "partly visible in the starting picture, such as the side of a shoe.",
     "A13": "The clip shows only the proof of what the line claims, the moment that proves "
-    "it. Fail when it adds damage, harm or anything going wrong, such as a crack line "
+    "it. Fail when it adds damage, harm or anything going wrong, such as a tear "
     "appearing, or shows more than the proof.",
     "A14": "The camera never moves: a hand or the product does. Fail when the camera pushes "
     "in, zooms, pans, tilts, follows, circles or moves in any way, or the camera's move is "
@@ -82,7 +85,7 @@ RULES: dict[str, str] = {
     "camera move: only a move the prompts write out counts. Pass when none is written.",
     "A15": "A claim in a line that a camera could see, something the product does, is shown "
     "in a B-roll scene, not only said by the talking person. Fail when a talking scene's "
-    "line claims something visible, such as a neck that reaches 360 degrees, and no B-roll "
+    "line claims something visible, such as a lid that seals with one click, and no B-roll "
     "scene shows it.",
     "A17": 'When "shows" names a person or a hand, they are in the video prompt, doing what '
     '"shows" says. Fail when the video prompt leaves them out.',
@@ -91,19 +94,19 @@ RULES: dict[str, str] = {
     "carries or rests the product, which means nothing to a viewer: a product set beside a "
     "result that is already there, or products lined up side by side, prove nothing. Pass "
     "when a tool used with the product does the work while the product stands by, such as "
-    "a brush scrubbing. Pass when holding or carrying is itself the claim: the line says the "
+    "a cloth buffing. Pass when holding or carrying is itself the claim: the line says the "
     "product can be held, carried or worn a certain way and the clip shows exactly that.",
-    "C2": "A scene about the result shows the result itself, such as a clean toilet bowl "
-    "after cleaning, so a viewer sees the product worked. Fail when a result line is shown "
+    "C2": "A scene about the result shows the result itself, such as a shoe shining "
+    "after polishing, so a viewer sees the product worked. Fail when a result line is shown "
     "only by the product next to something already clean, with no evidence it did it. "
     "Also fail when a scene shows the product cleaning or fixing something whose dirt or "
     "problem can't be seen at the start, such as when the picture prompt calls it faint, "
     "transparent or barely visible, or says there is no visible dirt: before and after "
     "would look the same. Pass when the scene isn't about a result.",
     "C3": "Any real-life size, height, distance or count the action needs to prove its claim, "
-    "such as how high a phone is dropped from, is stated in the prompts at its real value. "
-    'Fail when the action needs one and the prompts leave it vague, such as "above the '
-    'floor", so the clip may show it far smaller. A count in the claim, such as how many '
+    "such as how high a ball bounces, is stated in the prompts at its real value. "
+    'Fail when the action needs one and the prompts leave it vague, such as "off the '
+    'ground", so the clip may show it far smaller. A count in the claim, such as how many '
     "times something was done, needn't be filmed that many times: showing it once proves "
     "it. Pass when no such number matters, such as the size of an everyday object.",
     "C4": "When the app can't know how the result looks, such as a surface before and after "
@@ -112,7 +115,7 @@ RULES: dict[str, str] = {
     "didn't ask, or the owner had no photo and the plan still has B-roll that shows nothing. "
     "The app can't know the look only when the dirt or the result is a thin film, haze, "
     "cloudiness or water spots, which a drawn picture can't show honestly. Visible dirt, "
-    "such as a stain or a ring, can be drawn: pass a plan that films it without asking.",
+    "such as a stain or a scuff mark, can be drawn: pass a plan that films it without asking.",
 }
 
 
