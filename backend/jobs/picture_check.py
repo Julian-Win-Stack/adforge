@@ -43,7 +43,9 @@ or "squeezed" with "no gel", and "video_prompt" asks for nothing this picture co
 person would film it: for a drop, fall or throw, the product starts at the height \
 "picture_prompt" asks for, or a standing person's hand height when it asks for none, never \
 just above the floor; and the picture's pose, hand, background and camera angle come from \
-"picture_prompt", not copied from the shop photo."""
+"picture_prompt", not copied from the shop photo. Judge only what decides whether the clip \
+can prove the line, such as where the action starts: framing, crop and small differences \
+from "picture_prompt" never fail this check."""
 
 # Added to what the model writing a B-roll scene's prompts is told when the last picture
 # drawn for it failed its check.

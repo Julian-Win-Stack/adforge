@@ -200,6 +200,13 @@ def test_the_check_fails_a_picture_that_doesnt_make_sense_for_the_line() -> None
     ) in STARTING_PICTURE_CHECK
     assert "a standing person's hand height" in STARTING_PICTURE_CHECK
     assert "not copied from the shop photo" in STARTING_PICTURE_CHECK
+    # Tried on Julian's graded pictures: it failed #5's PERFECT crossbody walk for framing
+    # "past her knees", so framing and small differences from the prompt are not its job.
+    assert (
+        "Judge only what decides whether the clip can prove the line, such as where the action "
+        'starts: framing, crop and small differences from "picture_prompt" never fail this '
+        "check."
+    ) in STARTING_PICTURE_CHECK
 
 
 def test_a_picture_that_doesnt_make_sense_for_the_line_is_drawn_again(
