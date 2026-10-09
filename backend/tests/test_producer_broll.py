@@ -387,7 +387,9 @@ def test_the_model_planning_the_picture_is_given_only_its_kinds_rules(
     "rule",
     [
         "One continuous shot",
-        "The product, or the tool used with it, does what the line claims",
+        # Since 09 Oct "shows", not the line: a line that can't be filmed is said over
+        # another B-roll, never acted out (test ads, 08 Oct; Julian 23:40).
+        'The product, or the tool used with it, does what "shows" describes',
         'the way "usage" says',
         "in the middle of the frame",
         "Say nothing about the top or the bottom of the frame",
@@ -521,12 +523,9 @@ def test_a_does_a_job_scene_changes_only_where_it_is_touched(rule: str) -> None:
     assert rule in BROLL_KIND_RULES["does a job"]
 
 
-def test_a_showcase_scene_ends_on_what_its_line_proves() -> None:
+def test_a_showcase_scene_ends_on_what_it_shows() -> None:
     showcase = BROLL_KIND_RULES["showcase"]
-    assert (
-        "ends on the moment that shows the line's claim is true, done by a hand or the product"
-        in (showcase)
-    )
+    assert 'ends on the moment that shows what "shows" describes, done by a hand' in showcase
     # The forced ending made pointless zooms (#15, #4): "a lot better" without it.
     assert "at its best" not in showcase
     assert "camera move" not in showcase

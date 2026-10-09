@@ -84,7 +84,7 @@ pressing down while turning a cap, is part of that one movement: film it during 
 movement, never before it or in the starting picture. \
 Never film the fiddly change between two states, such as clipping, unclipping or folding: \
 open with it done.
-- The product, or the tool used with it, does what the line claims, on screen, held the way \
+- The product, or the tool used with it, does what "shows" describes, on screen, held the way \
 "usage" says; "usage" tells how it is held and used, not how many steps to film. Something \
 always acts. The product may stand in view, label to the camera, \
 when holding it would bend its shape, while the tool used with it does the work.
@@ -161,7 +161,7 @@ clip. The one movement is a hand or the product, such as the product set down be
     "showcase": """\
 This scene is a showcase: the real product shown clearly, in use the way the page says, with \
 one simple action a person really does with it, such as worn while walking, picked up or set \
-down. The video prompt ends on the moment that shows the line's claim is true, done by a \
+down. The video prompt ends on the moment that shows what "shows" describes, done by a \
 hand or the product. Show no result or change the page doesn't prove.""",
 }
 
