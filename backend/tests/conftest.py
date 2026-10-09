@@ -166,6 +166,7 @@ PICTURE_OK: dict[str, Any] = {
         "shows_the_before",
         "no_face",
         "prompts_agree",
+        "makes_sense_for_the_line",
     )
 }
 

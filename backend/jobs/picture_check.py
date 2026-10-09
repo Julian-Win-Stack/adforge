@@ -19,7 +19,7 @@ You check the starting picture of one B-roll scene of a short vertical video ad 
 video model animates it into a clip, which costs money. You are shown the shop photo of the \
 product, then the starting picture. The picture model was asked for the picture in \
 "picture_prompt"; the video model will then be asked for "video_prompt", starting from this \
-picture. The scene shows what "shows" describes.
+picture. The scene shows what "shows" describes while the person's voice says "line".
 Look at the picture closely, and judge each check on its own. A check passes only when \
 nothing in the picture breaks it. When it fails, say exactly what is wrong in one sentence, \
 naming the part and what it should look like.
@@ -38,7 +38,12 @@ visible.
 Passes whenever "person_shown" is anything else.
 - prompts_agree: "picture_prompt" and "video_prompt" never ask for two things the product \
 or the scene can't do at once, such as a bottle "upright" with its "nozzle pointing down", \
-or "squeezed" with "no gel", and "video_prompt" asks for nothing this picture contradicts."""
+or "squeezed" with "no gel", and "video_prompt" asks for nothing this picture contradicts.
+- makes_sense_for_the_line: the picture sets up what "shows" and "line" claim, as a real \
+person would film it: for a drop, fall or throw, the product starts at the height \
+"picture_prompt" asks for, or a standing person's hand height when it asks for none, never \
+just above the floor; and the picture's pose, hand, background and camera angle come from \
+"picture_prompt", not copied from the shop photo."""
 
 # Added to what the model writing a B-roll scene's prompts is told when the last picture
 # drawn for it failed its check.
@@ -69,6 +74,7 @@ class StartingPictureCheck(BaseModel):
     shows_the_before: CheckResult
     no_face: CheckResult
     prompts_agree: CheckResult
+    makes_sense_for_the_line: CheckResult
 
     def problems(self) -> list[str]:
         """What is wrong with the picture, one sentence for each check it fails."""
@@ -77,6 +83,7 @@ class StartingPictureCheck(BaseModel):
 
 
 class StartingPictureCheckHandoff(Handoff):
+    line: str
     shows: str
     broll_kind: str
     person_shown: str

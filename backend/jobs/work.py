@@ -1660,6 +1660,7 @@ def _check_broll_picture(step: SceneStep, choice: BrollPictureChoice, picture: s
             purpose="check_starting_picture",
             instructions=STARTING_PICTURE_CHECK,
             handoff=StartingPictureCheckHandoff(
+                line=step.line,
                 shows=step.shows,
                 broll_kind=step.broll_kind,
                 person_shown=step.person_shown,
