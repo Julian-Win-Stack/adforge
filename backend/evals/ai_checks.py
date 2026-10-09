@@ -66,9 +66,13 @@ RULES: dict[str, str] = {
     "A9": "The product may stand still in view while a tool used with it does the work, such "
     "as a bottle beside a toilet while a brush scrubs. Fail only when nothing in the clip "
     "acts at all.",
-    "A11": "The side of the product facing the camera at the start faces it at the end: the "
-    "product is never turned, flipped or spun to show another side. Fail when the video "
-    "prompt turns, flips or spins the product, or shows a side the picture doesn't show.",
+    # Julian 2026-10-09 23:08: a flip is wrong because the video model doesn't know the
+    # other side; a turn to a side it can see in the starting picture is fine.
+    "A11": "The video model can only show sides of the product it can see in the starting "
+    "picture. Fail when the video prompt flips, spins or turns the product far enough to "
+    "show a side the starting picture doesn't show at all, such as the screen side of a "
+    "phone shown only from the back. Pass a turn that brings into view a side already "
+    "partly visible in the starting picture, such as the edge of a phone case.",
     "A13": "The clip shows only the proof of what the line claims, the moment that proves "
     "it. Fail when it adds damage, harm or anything going wrong, such as a crack line "
     "appearing, or shows more than the proof.",
