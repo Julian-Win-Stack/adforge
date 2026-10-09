@@ -430,8 +430,9 @@ def test_the_planner_is_told_how_to_plan_each_broll_scene(
         "the colour of Photo 1"
     ) in instructions
     assert "Never name a photo that shows the product in another colour" in instructions
-    # The two kinds, "showcase" when unsure, and only the presenter's face: items 12 and 27.
-    assert '"showcase" when unsure' in instructions
+    # Only the presenter's face: item 27. "Showcase when unsure" made filler B-roll of a hand
+    # holding or setting down the product, and every one failed (round 2, #12 s2, #8 s4, N3).
+    assert '"showcase" when unsure' not in instructions
     assert "The only person ever shown is the presenter" in instructions
     scene = request["text"]["format"]["schema"]["$defs"]["PlannedScene"]["properties"]
     assert set(scene) >= {"broll_kind", "person_shown", "usage", "result", "needs"}
@@ -472,15 +473,18 @@ def test_the_planner_is_told_the_shape_of_every_script(
     assert "script_format" in schema["Plan"]["properties"]
 
 
-def test_the_planner_is_told_every_middle_scene_is_broll(
+def test_the_planner_is_told_every_middle_scene_is_broll_that_proves_its_line(
     httpserver: HTTPServer,
     openai_server: Callable[..., None],
     product_page_url: str,
     say: Callable[..., None],
 ) -> None:
     # Test ads (08 Oct): 7 talking scenes in the middle of 5 ads. Julian 23:45 "Yes": scene 1
-    # talking, the last talking or a hero B-roll, every middle scene a B-roll; a line that
-    # can't be filmed is said over another B-roll (23:40).
+    # talking, every middle scene a B-roll. Round 2 (09 Oct): middles with nothing to prove
+    # were filled with the product held or set down, and all failed. Julian 04:27: "it must
+    # ... prove something about the product ... If we don't have enough data to do that, ask
+    # from the shop owner. And if the shop owner cannot provide it, fall back to the talking
+    # scene."
     planning_through_openai(openai_server, product_page_url, PLAN)
 
     say(f"Make an ad for {product_page_url}")
@@ -489,12 +493,20 @@ def test_the_planner_is_told_every_middle_scene_is_broll(
     assert "Most scenes are the person talking to camera" not in instructions
     assert "The first scene is always the person talking to camera." in instructions
     assert (
-        "The last scene is the person talking to camera, or a B-roll scene of the product at "
-        "its best. Every scene between them is a B-roll scene, never the person talking"
+        "The last scene is the person talking to camera, or a B-roll scene that proves its "
+        "line. Every scene between them is a B-roll scene that proves its line"
+    ) in instructions
+    assert "never the person talking" not in instructions
+    assert "a B-roll scene of the product at its best" not in instructions
+    assert (
+        "When no B-roll kind could prove a middle scene's line, ask the shop owner for what "
+        "would show it, as below; if they can't give it, that scene is the person talking to "
+        "camera, never a B-roll of the product only held, placed or pointed at."
     ) in instructions
     assert (
         'A line that can\'t be filmed, such as "no bleach", is still kept: the voice says it '
-        "while the scene shows something else the page states, never acting the claim out."
+        "while the scene proves another claim the page states, never acting the claim out, "
+        "or, when no scene could, the person says it to camera."
     ) in instructions
     assert (
         "A claim about something the product, or a part of it, does that a camera could see "
@@ -503,6 +515,131 @@ def test_the_planner_is_told_every_middle_scene_is_broll(
     # No share of B-roll per kind of product: our own research, not Creatify's.
     assert "%" not in instructions
     assert "never skin before and after" in instructions
+
+
+def test_the_planner_asks_the_shop_owner_when_no_broll_could_prove_a_line(
+    httpserver: HTTPServer,
+    openai_server: Callable[..., None],
+    product_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    # Round 2 fixes 1 and 2 (Julian 04:27, 21:40 "we want [to merge] fix one and fix two"):
+    # prove it, else ask the shop owner, else the person says it to camera. N3's thin film,
+    # refused, became a filler B-roll ("over another B-roll"): now it is said to camera.
+    planning_through_openai(openai_server, product_page_url, PLAN)
+
+    say(f"Make an ad for {product_page_url}")
+
+    instructions = the_plan_request(httpserver)["instructions"]
+    assert "Ask because of a scene that shows the product in only four cases" in instructions
+    assert (
+        "- No B-roll kind could prove a middle scene's line: nothing the page, the photos or "
+        "the shop owner give shows it, and only a hand holding, placing or pointing at the "
+        "product would be left."
+    ) in instructions
+    assert "for a line nothing proves, of what would prove it" in instructions
+    assert (
+        "For a line nothing proves: if they go ahead without one, the person says that line "
+        "to camera."
+    ) in instructions
+    assert "the voice says the claim over another B-roll." not in instructions
+    assert (
+        "the voice says the claim over another B-roll that proves its own line, or, when none "
+        "does, the person says it to camera."
+    ) in instructions
+
+
+def test_the_planner_is_told_a_showcase_only_when_using_it_is_the_proof(
+    httpserver: HTTPServer,
+    openai_server: Callable[..., None],
+    product_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    # Round 2: every "showcase" (a hand holding, setting down or standing up the product)
+    # failed: #12 s2, #8 s4, N3 s2-5. Julian 02:15: "The B-roll must do something. It must
+    # sell the product." The bag carried as a clutch and worn crossbody was graded PERFECT
+    # (#5, decisions/2026-10-07-broll-prompts.md), so wearing it the way the line claims stays.
+    planning_through_openai(openai_server, product_page_url, PLAN)
+
+    say(f"Make an ad for {product_page_url}")
+
+    request = the_plan_request(httpserver)
+    instructions = request["instructions"]
+    assert '"showcase" for everything else' not in instructions
+    assert (
+        '"showcase" only when using or wearing the product the way the line claims is itself '
+        "the proof, such as a bag carried as a clutch or worn crossbody hands-free. A hand only "
+        "holding, placing, setting down, standing up or pointing at the product is never a "
+        "B-roll scene. When no kind fits, the scene is not B-roll."
+    ) in instructions
+    kind = request["text"]["format"]["schema"]["$defs"]["PlannedScene"]["properties"]["broll_kind"]
+    assert '"showcase" when unsure' not in kind["description"]
+    assert "such as a bag carried as a clutch" in kind["description"]
+
+
+def test_a_bag_carried_as_a_clutch_is_still_planned_as_a_showcase(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    # Guard: #5's clutch walk was graded PERFECT; "no filler" must not refuse it.
+    clutch: dict[str, Any] = {
+        "line": "Carry it as a clutch when you head out for the evening, no strap needed.",
+        "shows": "the presenter walks carrying the bag as a clutch",
+        "broll_kind": "showcase",
+        "person_shown": "no face",
+        "usage": "Carried in one hand as a clutch.",
+        "result": None,
+        "needs": [],
+    }
+    scenes = [{"line": "Meet the Stoneware Mug from Kiln & Co."}, clutch]
+    planning(fake_model, product_page_url, a_plan_with(scenes=scenes))
+
+    say(f"Make an ad for {product_page_url}")
+
+    assert broll_labels()[1][0] == "showcase"
+
+
+def test_the_planner_is_told_a_result_is_filmed_happening(
+    httpserver: HTTPServer,
+    openai_server: Callable[..., None],
+    product_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    # Round 2 #8 s4: the bottle beside a clean toilet. Julian: "there is no evidence that the
+    # toilet is so clean right now ... we have to show."
+    planning_through_openai(openai_server, product_page_url, PLAN)
+
+    say(f"Make an ad for {product_page_url}")
+
+    instructions = the_plan_request(httpserver)["instructions"]
+    assert (
+        "A result is filmed happening, from before to after in the same clip. A clean or "
+        "finished thing with the product beside it, with no change filmed, never shows a "
+        "result."
+    ) in instructions
+
+
+def test_the_planner_is_told_a_scene_needs_only_how_a_thing_looks(
+    httpserver: HTTPServer,
+    openai_server: Callable[..., None],
+    product_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    # Round 2 #12 s5: its need was "the edge-first drop", photo 2, the shop's drop photo; the
+    # start picture copied its low hand, shoe and camera height. Julian 03:58: the picture
+    # model copies the photo whatever its job says.
+    planning_through_openai(openai_server, product_page_url, PLAN)
+
+    say(f"Make an ad for {product_page_url}")
+
+    request = the_plan_request(httpserver)
+    instructions = request["instructions"]
+    assert (
+        "- Its needs: only how a thing looks that the main photo can't show, such as what a "
+        "gel looks like out of the tube. Never an action, a pose or a movement, such as a "
+        "drop or a hand holding it: the action is said in words only."
+    ) in instructions
+    needs = request["text"]["format"]["schema"]["$defs"]["PlannedScene"]["properties"]["needs"]
+    assert "only how a thing looks" in needs["description"]
 
 
 def test_the_planner_is_told_to_ask_for_a_before_and_after_nobody_could_picture(
@@ -518,7 +655,7 @@ def test_the_planner_is_told_to_ask_for_a_before_and_after_nobody_could_picture(
     instructions = the_plan_request(httpserver)["instructions"]
     # N3's shower cleaner was planned with a result nobody could picture and
     # no photo of it, so the video guessed; a dirty toilet scrubbed clean needed no photo.
-    assert "in only three cases" in instructions
+    assert "in only four cases" in instructions
     # N3's soap scum was judged common knowledge, so it never asked: what decides is whether
     # a camera can see it, not whether people know the word.
     assert "a thin film, haze, cloudiness or water spots" in instructions
@@ -532,11 +669,14 @@ def test_the_planner_is_told_to_ask_for_a_before_and_after_nobody_could_picture(
     # invented before view", and before looked the same as after. Julian: "the shop owner
     # must provide it."
     assert "without one, the ad shows no before and after of it" in instructions
+    # Round 2 fix 2: "over another B-roll" made N3's filler; with none that proves its own
+    # line, the person says the claim to camera.
     assert (
         "For a result: if they go ahead without one, no scene shows that film, before or "
-        "after, and the voice says the claim over another B-roll. Never offer another way to "
-        "show it."
+        "after, and the voice says the claim over another B-roll that proves its own line, or, "
+        "when none does, the person says it to camera."
     ) in instructions
+    assert "Never offer another way to show it." in instructions
     assert 'For a missing "how to use": if they go ahead without one, ask again' in instructions
 
 

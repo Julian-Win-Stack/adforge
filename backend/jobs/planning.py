@@ -14,8 +14,10 @@ searing a steak or a cloth wiping a spill away; "shows the problem" when the lin
 the problem the product fixes, as the page names it: the problem as it really is before \
 the product is used, with the product in view. Only a problem anyone sees at a glance, or \
 one a photo shows. Never the problem getting worse or building up over time: show it as \
-it is, and the voice says the rest; "showcase" for everything else, the product at its \
-best. Choose "showcase" when unsure.
+it is, and the voice says the rest; "showcase" only when using or wearing the product \
+the way the line claims is itself the proof, such as a bag carried as a clutch or worn \
+crossbody hands-free. A hand only holding, placing, setting down, standing up or pointing \
+at the product is never a B-roll scene. When no kind fits, the scene is not B-roll.
 - Who is in it: "has face" when the presenter's face is in the scene, "no face" when it \
 isn't. A hand or a body without a face is "no face". The only person ever shown is the \
 presenter: never anyone else.
@@ -24,12 +26,16 @@ scene the shop owner approved, and plan the scene with it. Null if the product i
 in it.
 - For "does a job", its result: what you can see at the end, which the scene ends on, \
 such as "the spill wiped away". Only a result the page states or the shop owner approved. \
-Null for the other kinds.
+A result is filmed happening, from before to after in the same clip. A clean or finished \
+thing with the product beside it, with no change filmed, never shows a result. Null for \
+the other kinds.
 - Whether it is about a thin film: true when the problem it shows, or the result it ends \
 on, is a thin film, haze, cloudiness or water spots on a surface. Then its needs list a \
 photo that shows it.
-- Its needs: what the scene needs that the main photo can't show, such as what a gel \
-looks like out of the tube, each with the numbers of the photos that show it. The main \
+- Its needs: only how a thing looks that the main photo can't show, such as what a gel \
+looks like out of the tube. Never an action, a pose or a movement, such as a drop or a \
+hand holding it: the action is said in words only. Give each need with the numbers of the \
+photos that show it. The main \
 photo is one of the photos showing the product in its colour; leave needs empty when it's \
 enough. A needed photo may be any of the photos, even one where the product isn't \
 clearly seen. Never name a photo that shows the product in another colour than the \
@@ -132,17 +138,21 @@ and where they are: never the product, anything they hold, any animal, or what t
 a scene. Choose someone who suits the product and its buyers, and never a real, famous \
 person. Set question to null.
 The first scene is always the person talking to camera. The last scene is the person \
-talking to camera, or a B-roll scene of the product at its best. Every scene between them \
-is a B-roll scene, never the person talking: it shows the product while the person's \
-voice says the line over it: the product being used, what it does, or the proof. For a \
+talking to camera, or a B-roll scene that proves its line. Every scene between them is a \
+B-roll scene that proves its line, as the B-roll kinds below allow: it shows the product \
+while the person's voice says the line over it: the product being used, what it does, or \
+the proof. When no B-roll kind could prove a middle scene's line, ask the shop owner for \
+what would show it, as below; if they can't give it, that scene is the person talking to \
+camera, never a B-roll of the product only held, placed or pointed at. For a \
 B-roll scene, set shows to what the scene shows, in plain words, such as "a hand pours \
 the sauce over a bowl of noodles"; for a talking scene, set it to null. A B-roll scene \
 shows only what the page or the shop owner states, or the photos show: a picture is a \
 claim, just like a sentence. A claim about something the product, or a part of it, does \
 that a camera could see is a B-roll scene that shows it. A B-roll line is about what is \
 shown, when it can be filmed. A line that can't be filmed, such as "no bleach", is still \
-kept: the voice says it while the scene shows something else the page states, never \
-acting the claim out. A B-roll line has at least about 10 words.
+kept: the voice says it while the scene proves another claim the page states, never \
+acting the claim out, or, when no scene could, the person says it to camera. A B-roll \
+line has at least about 10 words.
 """
     + BROLL_ONE_ACTION_INSTRUCTIONS
     + """\
@@ -197,7 +207,7 @@ itself or is missing something else the ad needs, so that planning would mean gu
 Also decide "ask" when no photo clearly shows the product: ask them to attach one. A \
 photo where the product is small beside pictures of other products, such as a chart of the \
 devices it works with, or half hidden by text, doesn't clearly show it.
-Ask because of a scene that shows the product in only three cases, and nothing else:
+Ask because of a scene that shows the product in only four cases, and nothing else:
 - The scene needs something of the product that no photo shows and the video would \
 have to guess, such as what a serum looks like out of the bottle or a gel coming out of \
 its tube. Ordinary things around the product are never missing: a phone, a hand, a \
@@ -215,15 +225,21 @@ changes. The page naming the result isn't enough: the video would still guess ho
 looks. When what it removes is a coloured mark anyone sees at a glance, such as a stain, a \
 ring, rust, mud, grease or dirt, never ask: show that mark, even if the page also names a \
 film.
+- No B-roll kind could prove a middle scene's line: nothing the page, the photos or the \
+shop owner give shows it, and only a hand holding, placing or pointing at the product \
+would be left.
 Then say in plain words what's missing and offer two answers: attach a photo of it (for \
 a missing "how to use", of the product being used; for a result, of it before and after: \
-without one, the ad shows no before and after of it), or go ahead without one. Never \
+without one, the ad shows no before and after of it; for a line nothing proves, of what \
+would prove it), or go ahead without one. Never \
 choose for them. For a missing "how to use": if they go ahead without one, ask again: say \
 in plain words how you'd show it with what you have, for them to approve or change. Their \
 approval is their own words, and for a product that does a job, it gives the scene's \
 usage and result. For a result: if they go ahead without one, no scene shows that film, \
-before or after, and the voice says the claim over another B-roll. Never offer another \
-way to show it. \
+before or after, and the voice says the claim over another B-roll that proves its own \
+line, or, when none does, the person says it to camera. For a line nothing proves: if they \
+go ahead without one, the person says that line to camera. Never offer another way to \
+show it. \
 Ask the shop owner one short, specific question, and set plan to null.
 Give one sentence saying why: for a plan, why this many scenes; for a question, why you \
 need to ask. Write it for the shop owner. You may say what the ad would show, but never \
@@ -237,7 +253,7 @@ MOST_OVERLAY_CHARACTERS = 30
 
 
 # What a B-roll scene is: the product doing something you can see, the problem it fixes, or
-# the product at its best.
+# the product used or worn the way its line claims, such as a bag carried as a clutch.
 BrollKind = Literal["does a job", "shows the problem", "showcase"]
 
 # Whether a B-roll scene shows the presenter's face. Only a face matters: a hand or a body
@@ -277,8 +293,8 @@ class ScriptScene(BaseModel):
         default=None,
         description='For a B-roll scene, "does a job" when the product does something you can '
         'see, "shows the problem" for the problem it fixes before it is used, or "showcase" '
-        'for the product at its best; "showcase" when unsure. Null for a scene where the '
-        "person talks to camera.",
+        "when using or wearing it the way the line claims is the proof, such as a bag carried "
+        "as a clutch. Null for a scene where the person talks to camera.",
     )
     person_shown: PersonShown | None = Field(
         default=None,
@@ -304,9 +320,10 @@ class ScriptScene(BaseModel):
     )
     needs: list[Need] = Field(
         default_factory=list,
-        description="For a B-roll scene, what it needs that the main photo can't show, each "
-        "with the numbers of the photos that show it. Empty when the main photo is enough, "
-        "and for a scene where the person talks to camera.",
+        description="For a B-roll scene, only how a thing looks that the main photo can't "
+        "show, never an action or a pose, each with the numbers of the photos that show it. "
+        "Empty when the main photo is enough, and for a scene where the person talks to "
+        "camera.",
     )
 
     # A validator rather than min_length, which OpenAI's structured output doesn't accept.

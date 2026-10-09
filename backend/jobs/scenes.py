@@ -135,7 +135,10 @@ camera is, its height and angle; each object the \
 action happens to, other than the product, with every part named as a real, ordinary one, \
 like one you'd buy in any shop; the problem the product fixes, as it looks before; exact \
 counts, and left or right; and any hand already in place for the action, holding what it \
-uses.
+uses. When the action is a drop, fall or throw, the starting picture shows the height it \
+starts from: the height the page or its photos state, such as 6 ft above the floor; when \
+none is stated, held in a standing person's hand. The camera is placed to see the whole \
+fall, from that height down to where it lands: never at knee height or close to the floor.
 - When the product is in an unusual pose, such as upside down, say the pose once and what \
 it does to the product's shape and to each part you see, such as its label turning with \
 it, even though the product is otherwise not described.
@@ -153,16 +156,19 @@ and nothing else changes. It happens as the touch passes, at a real-time pace: n
 once, sped up or time-compressed. When a tool does the work after the product is put on, \
 such as a brush after a gel, putting the product on is never filmed or drawn: the voice \
 carries it. A result on a screen is shown without numbers or words, such as a charging \
-light coming on.""",
+light coming on. A result is filmed happening, from before to after in the same clip. A \
+clean or finished thing with the product beside it, with no change filmed, never shows a \
+result.""",
     "shows the problem": """\
 This scene shows the problem the product fixes, before the product is used: plainly, in \
 the starting picture, with the product in view. Nothing about the problem changes in the \
-clip. The one movement is a hand or the product, such as the product set down beside it.""",
+clip. The one movement is a hand or the product.""",
     "showcase": """\
-This scene is a showcase: the real product shown clearly, in use the way the page says, with \
-one simple action a person really does with it, such as worn while walking, picked up or set \
-down. The video prompt ends on the moment that shows what "shows" describes, done by a \
-hand or the product. Show no result or change the page doesn't prove.""",
+This scene proves its line by the product being used or worn the way the line claims, such \
+as a bag carried as a clutch while walking. A hand only holding, placing, setting down or \
+pointing at the product never proves anything: never film that. The video prompt ends on \
+the moment that shows what "shows" describes, done by a hand or the product. Show no result \
+or change the page doesn't prove.""",
 }
 
 

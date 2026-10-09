@@ -613,10 +613,17 @@ def test_a_rewrite_is_told_a_broll_scene_films_one_action_as_the_planner_is(
     assert "never a camera move" in instructions
     # A rewrite changes one scene: it can't add a talking scene for the other steps.
     assert "name the other steps" not in instructions
-    # Test ads (08 Oct): every scene between the first and the last is B-roll, so a rewrite
-    # never makes a middle scene a talking one.
-    assert "every scene between the first and the last shows something" in instructions
-    assert "Only the last scene may instead give null" in instructions
+    # Round 2 (09 Oct): "show something else they support" filled middles with the product
+    # held or set down, and every one failed. Julian 04:27: prove it, else ask the shop owner,
+    # else the talking scene. The rewrite can't ask, so it gives the talking scene.
+    assert "every scene between the first and the last shows something" not in instructions
+    assert "Only the last scene may instead give null" not in instructions
+    assert (
+        "Keep a scene that shows something showing something only when what it shows proves "
+        "its line, as the B-roll kinds below allow. When nothing the page, the photos or the "
+        "shop owner support could prove what its line says, give null, and the person says "
+        "the line to camera: never show the product only held, placed or pointed at instead."
+    ) in instructions
 
 
 def test_the_rewrite_is_told_it_was_what_the_scene_shows_that_failed(
