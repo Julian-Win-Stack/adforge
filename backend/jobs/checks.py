@@ -31,8 +31,8 @@ LONGEST_LINE_SECONDS = 18
 SHORTEST_BROLL_LINE_SECONDS = 4
 LONGEST_BROLL_LINE_SECONDS = 14
 # Times a B-roll line is lengthened, before it is kept as it is, or shortened, over the job's
-# whole life, before its scene is said to camera instead. The shop owner is never asked about
-# a B-roll line's length.
+# whole life, before the last scene is said to camera instead, or the shop owner is asked
+# for a shorter line for any other.
 MOST_LENGTHENINGS = 2
 MOST_BROLL_SHORTENINGS = 3
 
@@ -91,9 +91,11 @@ with any change they asked for counts as their own words. Keep what the line is 
 ad and about the same length. If it says the price, it must still say the price. Never \
 name the product's colour. Never infer or guess.
 Give back the scene's "shows" too: unchanged if it wasn't wrong. Keep a scene that shows \
-something showing something, unless nothing the page, the photos or the shop owner \
-support could be shown: then give null, and the person says the line to camera. For a \
-scene where the person talks, always give null, and no B-roll details.
+something showing something: every scene between the first and the last shows something. \
+When nothing the page, the photos or the shop owner support could show what its line \
+says, show something else they support while the voice says it, never acting the claim \
+out. Only the last scene may instead give null, and the person says the line to camera. \
+For a scene where the person talks, always give null, and no B-roll details.
 A scene that shows something is a B-roll scene. Give back all its B-roll details with \
 its line and "shows", so they always match what it shows.
 """
@@ -294,6 +296,7 @@ class RewrittenScene(ScriptScene):
         if self.shows is None:
             self.broll_kind = self.person_shown = self.usage = self.result = None
             self.needs = []
+            self.thin_film = False
             return self
         return self.check_broll_details()
 

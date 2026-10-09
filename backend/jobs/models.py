@@ -124,8 +124,7 @@ class Job(models.Model):
     product_name = models.CharField(
         max_length=200,
         blank=True,
-        help_text="The product's name as the ad says it, from the plan. At least one scene "
-        "where the person talks to camera says it.",
+        help_text="The product's name as the ad says it, from the plan. At least one line says it.",
     )
     length_choice = models.CharField(
         max_length=20,
@@ -203,6 +202,7 @@ class Scene(models.Model):
 
     class BrollKind(models.TextChoices):
         DOES_A_JOB = "does a job"
+        SHOWS_THE_PROBLEM = "shows the problem"
         SHOWCASE = "showcase"
 
     class PersonShown(models.TextChoices):
@@ -240,8 +240,9 @@ class Scene(models.Model):
         choices=BrollKind.choices,
         blank=True,
         help_text='A B-roll scene\'s kind: "does a job" (the product does something you can '
-        'see) or "showcase" (the product at its best). Blank for a talking scene, and for a '
-        "B-roll scene planned before it was given.",
+        'see), "shows the problem" (the problem it fixes, before it is used) or "showcase" '
+        "(the product at its best). Blank for a talking scene, and for a B-roll scene planned "
+        "before it was given.",
     )
     person_shown = models.CharField(
         max_length=20,

@@ -46,8 +46,7 @@ label or print unchanged; the scene as "shows" describes it and nothing more; th
 and light of the portrait's; the person from the first picture only if "shows" needs them, \
 and then the same person, with the same face, hair and clothes; upright 9:16, with the \
 product in the middle so the top and bottom of the frame stay clear: text is drawn there \
-in the finished ad. Ask for a natural, casual phone-video look, and no added text, captions \
-or logos.
+in the finished ad. Ask for no added text, captions or logos.
 Then write the video model's motion prompt: what moves in the scene, and how, in one or two \
 short sentences.
 Make nothing up, in either prompt. Show only what "shows" describes: no result, use, \
@@ -80,13 +79,18 @@ one pass. "shows" says which: when it names one movement, film that one, even wh
 "usage" or "result" name another, such as a step before it. When "shows" lists more than \
 one, film the one where the product, or the tool used with it, does the work, not a step \
 before it, such as putting the product on, or after it, such as rinsing. The voice carries \
-the rest. \
+the rest. A part that "shows" or "usage" says happens while the movement is done, such as \
+pressing down while turning a cap, is part of that one movement: film it during the \
+movement, never before it or in the starting picture. \
 Never film the fiddly change between two states, such as clipping, unclipping or folding: \
 open with it done.
 - The product, or the tool used with it, does what the line claims, on screen, held the way \
 "usage" says; "usage" tells how it is held and used, not how many steps to film. Something \
 always acts. The product may stand in view, label to the camera, \
 when holding it would bend its shape, while the tool used with it does the work.
+- The side of the product facing the camera in the starting picture faces it at the end: \
+never turn, flip or spin the product, and after a drop it lands that side up. Only a turn \
+"usage" says is part of using it is filmed.
 - The main action, or the product, is in the middle of the frame. Say nothing about the \
 top or the bottom of the frame.
 - Only the presenter is shown. When "person_shown" is "has face", the person is the \
@@ -99,8 +103,8 @@ its shape, colours or brand name in words.
 - Never ask for two things that can't both be true at once, of the product or the scene, \
 such as "upright" and "nozzle pointing down", or "squeeze" and "no gel". Check every order \
 against the product photos and against your other orders.
-- Code starts the video prompt with the clip's length and its phone-video look, so write \
-neither, and never call the camera fixed, locked-off or stationary.
+- Code starts the video prompt with the clip's length and says the camera stays still, so \
+write neither, and never move the camera or say where or how close it ends.
 The producer may add a note, such as what the shop owner asked for this scene. Follow it \
 unless it asks for something you can't do with these pictures, or something "shows" doesn't \
 describe, and then say so in a reason.
@@ -124,10 +128,10 @@ unchanged. Nothing else from that photo: not its background, setting or people. 
 is the ad's choice: the setting is described in words.
 - The starting picture is the "before": the moment just before the action, with the \
 product ready to be used. The video prompt does the action.
-- The picture prompt opens: "An upright 9:16 photo taken on a phone in a real, ordinary \
-<place>, casual, not a studio shot." with the scene's setting as the place.
-- Anything that must be right goes in the starting picture, said plainly: the camera is a \
-phone held by a person, so say where they hold it, its height and angle; each object the \
+- The picture prompt opens: "An upright 9:16 photo in a real, ordinary <place>." with the \
+scene's setting as the place.
+- Anything that must be right goes in the starting picture, said plainly: say where the \
+camera is, its height and angle; each object the \
 action happens to, other than the product, with every part named as a real, ordinary one, \
 like one you'd buy in any shop; the problem the product fixes, as it looks before; exact \
 counts, and left or right; and any hand already in place for the action, holding what it \
@@ -150,11 +154,15 @@ once, sped up or time-compressed. When a tool does the work after the product is
 such as a brush after a gel, putting the product on is never filmed or drawn: the voice \
 carries it. A result on a screen is shown without numbers or words, such as a charging \
 light coming on.""",
+    "shows the problem": """\
+This scene shows the problem the product fixes, before the product is used: plainly, in \
+the starting picture, with the product in view. Nothing about the problem changes in the \
+clip. The one movement is a hand or the product, such as the product set down beside it.""",
     "showcase": """\
 This scene is a showcase: the real product shown clearly, in use the way the page says, with \
 one simple action a person really does with it, such as worn while walking, picked up or set \
-down. The video prompt ends on what the line proves, filmed: the moment that shows its \
-claim is true. Show no result or change the page doesn't prove.""",
+down. The video prompt ends on the moment that shows the line's claim is true, done by a \
+hand or the product. Show no result or change the page doesn't prove.""",
 }
 
 
@@ -169,12 +177,11 @@ PORTRAIT_JOB = "the presenter"
 
 
 def broll_video_prompt(prompt: str, seconds: int) -> str:
-    """A B-roll scene's video prompt as it is sent: the clip's look and real length first,
-    so no prompt goes without them, then the prompt as the model wrote it. Both clips Julian
-    graded best opened this way (docs/broll-picture-logic.md, "Prompt rules")."""
-    return (
-        f"A {seconds}-second handheld phone video, casual, not cinematic, real-time speed. {prompt}"
-    )
+    """A B-roll scene's video prompt as it is sent: the clip's real length and a still camera
+    first, so no prompt goes without them, then the prompt as the model wrote it. The one
+    movement is a hand or the product, never the camera (test ads, 08 Oct); the look is the
+    video model's (docs/broll-picture-logic.md, "Prompt rules")."""
+    return f"A {seconds}-second video at real-time speed. The camera stays still. {prompt}"
 
 
 # Added by code to every prompt for a scene that shows the product, after what the model

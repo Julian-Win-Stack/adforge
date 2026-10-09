@@ -32,7 +32,8 @@ the photo itself, not with the prompt's words.
 - label_turns_with_the_product: when the product is turned, tipped or upside down, its \
 label and print turn with it, as printing on a real object would.
 - shows_the_before: the picture shows the moment just before the action in "video_prompt", \
-not its result already there.
+not its result already there, and what the action will change, or the problem, is plainly \
+visible.
 - no_face: when "person_shown" is "no face", no face, mouth or chin is in the picture. \
 Passes whenever "person_shown" is anything else.
 - prompts_agree: "picture_prompt" and "video_prompt" never ask for two things the product \

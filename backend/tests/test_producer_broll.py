@@ -355,6 +355,12 @@ def test_the_model_planning_a_picture_is_told_what_the_scene_shows(
     [
         pytest.param(SHOWCASE, "showcase", "does a job", id="showcase"),
         pytest.param(DOES_A_JOB, "does a job", "showcase", id="does a job"),
+        pytest.param(
+            {**SHOWCASE, "broll_kind": "shows the problem"},
+            "shows the problem",
+            "does a job",
+            id="shows the problem",
+        ),
     ],
 )
 def test_the_model_planning_the_picture_is_given_only_its_kinds_rules(
@@ -421,9 +427,19 @@ def test_the_model_planning_the_picture_is_given_the_shared_prompt_rules(rule: s
         "with it, does the work",
         # The bag's "the presenter wears the bag" came back as the bag alone (5 s3, rounds 7-8).
         'When "shows" names a person or a hand, they are in the clip, doing what it says',
-        # "locked-off", "stationary camera" clashed with the handheld look code writes first.
-        "never call the camera fixed, locked-off or stationary",
+        # Test ads (08 Oct): #8's pointless zoom ended "close enough for the ring to be
+        # unmistakably visible"; Julian 23:57: "a hand or the product, never the camera".
+        "never move the camera or say where or how close it ends",
         "The voice carries the rest",
+        # Test ads (08 Oct), N5 Le Duo: the turn was moved before the glide, so the clip filmed
+        # the straightening how-to under a line about curls.
+        'A part that "shows" or "usage" says happens while the movement is done, such as '
+        "pressing down while turning a cap, is part of that one movement: film it during the "
+        "movement, never before it or in the starting picture.",
+        # Test ads (08 Oct), #12 phone case: turned and dropped from start pictures of one side,
+        # the clips drew the back on both sides.
+        "The side of the product facing the camera in the starting picture faces it at the "
+        "end: never turn, flip or spin the product, and after a drop it lands that side up.",
         # Filming the strap change failed; one clip per state was PERFECT (#5 bag).
         "Never film the fiddly change between two states",
         # Holding the bottle bent its neck; the PERFECT toilet clip had it standing in view.
@@ -447,6 +463,11 @@ def test_the_model_writing_the_prompts_is_told_the_proven_rules(rule: str) -> No
         # The API already sends the shape; the video prompt doesn't repeat it.
         "Upright 9:16",
         "flow as one",
+        # Test ads (08 Oct): every B-roll looked phone-filmed; Julian: "there is no extra
+        # benefit". A handheld look also moves the camera, against "never the camera".
+        "phone",
+        "casual",
+        "never call the camera fixed",
     ],
 )
 def test_the_model_writing_the_prompts_is_no_longer_told_the_rules_grades_rejected(
@@ -459,9 +480,8 @@ def test_the_model_writing_the_prompts_is_no_longer_told_the_rules_grades_reject
 @pytest.mark.parametrize(
     "rule",
     [
-        'The picture prompt opens: "An upright 9:16 photo taken on a phone in a real, '
-        'ordinary <place>, casual, not a studio shot."',
-        "the camera is a phone held by a person",
+        'The picture prompt opens: "An upright 9:16 photo in a real, ordinary <place>."',
+        "say where the camera is, its height and angle",
         "every part named as a real, ordinary one",
         "exact counts, and left or right",
         "any hand already in place for the action",
@@ -470,6 +490,15 @@ def test_the_model_writing_the_prompts_is_no_longer_told_the_rules_grades_reject
 )
 def test_the_picture_prompt_shows_what_must_be_right(rule: str) -> None:
     assert rule in BROLL_SHARED_RULES
+
+
+def test_a_scene_showing_the_problem_shows_it_plainly_and_never_changes_it() -> None:
+    # Test ads (08 Oct), N3: the shower's "builds up" line was talking; Julian: "As a B-roll
+    # scene." Clips are real-time, so the dirt is shown as it is, not building up.
+    rules = BROLL_KIND_RULES["shows the problem"]
+    assert "plainly, in the starting picture, with the product in view" in rules
+    assert "Nothing about the problem changes in the clip." in rules
+    assert "The one movement is a hand or the product" in rules
 
 
 def test_a_does_a_job_scene_ends_on_its_result() -> None:
@@ -494,7 +523,10 @@ def test_a_does_a_job_scene_changes_only_where_it_is_touched(rule: str) -> None:
 
 def test_a_showcase_scene_ends_on_what_its_line_proves() -> None:
     showcase = BROLL_KIND_RULES["showcase"]
-    assert "ends on what the line proves, filmed" in showcase
+    assert (
+        "ends on the moment that shows the line's claim is true, done by a hand or the product"
+        in (showcase)
+    )
     # The forced ending made pointless zooms (#15, #4): "a lot better" without it.
     assert "at its best" not in showcase
     assert "camera move" not in showcase
@@ -840,7 +872,7 @@ def test_the_talking_scenes_clips_are_still_asked_of_heygen(assembled: ProducedI
         pytest.param(6.3, 7, id="a 7-second clip"),
     ],
 )
-def test_the_clip_is_asked_to_move_as_planned_as_a_phone_video_of_its_length(
+def test_the_clip_is_asked_to_move_as_planned_with_a_still_camera_at_its_length(
     fake_model: FakeModel,
     checked: None,
     steps: HeldSteps,
@@ -853,11 +885,11 @@ def test_the_clip_is_asked_to_move_as_planned_as_a_phone_video_of_its_length(
 
     clip_of_scene_2(fake_model, steps, say)
 
-    # The look and the clip's real length come first, whatever the model wrote, then its
-    # prompt as written: Boreal-H3 is sent no sections.
+    # The clip's real length and a still camera come first, whatever the model wrote, then
+    # its prompt as written: Boreal-H3 is sent no sections. No look: the video model's choice
+    # (test ads, 08 Oct: every B-roll looked phone-filmed).
     assert clips_asked("prompt") == [
-        f"A {asked_for}-second handheld phone video, casual, not cinematic, real-time speed. "
-        f"{MOTION}"
+        f"A {asked_for}-second video at real-time speed. The camera stays still. {MOTION}"
     ]
 
 

@@ -205,6 +205,13 @@ def _audio_finished(step: SceneStep, audio: ProducedItem | None) -> str:
         return (
             f"{too_long}Scene {number}'s line was shortened to fit its clip. Make its audio again."
         )
+    if too_long_for_a_clip(step, audio) and step.line == scene.line:
+        # Every scene between the first and the last is B-roll, so it isn't said to camera.
+        return (
+            f"{too_long}Its line couldn't be shortened to fit, and scene {number} shows the "
+            "product, so it isn't said to camera. Ask the shop owner for a shorter line of "
+            "their own."
+        )
     return (
         f"Background step finished: scene {step.scene.number}'s line's audio is ready "
         f"(version {audio.version}, {audio.seconds:g} seconds). It isn't shown to the shop "

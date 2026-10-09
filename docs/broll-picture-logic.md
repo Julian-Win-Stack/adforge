@@ -350,6 +350,7 @@ small rule set, not a new agent.
 | Kind | Examples | Its own rules |
 |---|---|---|
 | Does a job you can see | toilet cleaner, blush, collagen powder, power bank, blender | The result comes from the product being used; end on it |
+| Shows the problem (added 2026-10-09) | a shower's soap scum, a stained mug, before the product is used | The problem shown plainly in the starting picture with the product in view; nothing about it changes; the one movement is a hand or the product |
 | Showcase (everything else) | bag, clothes, jewellery, decor | Shown in use; nothing invented; end at its best |
 
 When the planner isn't sure, it picks "showcase": it can't invent a result. First drafted
@@ -425,13 +426,17 @@ From the MiniMax H3 prompt guides (Boreal-H3 is built on H3) and the four mistak
   put in the gel at all"; the toilet clip's whole ring had vanished where nothing touched it).
 - Never two orders that can't both be true ("upright" + "nozzle pointing down" bent the
   bottle; "squeeze" + "no gel" put gel on the rim). Each order is checked against the photos.
-- Code starts every B-roll video prompt with "A {N}-second handheld phone video, casual, not
-  cinematic, real-time speed.", N the clip's real length, as both best-graded clips did; the
-  video prompt no longer says "9:16" (the API sends it), and never calls the camera fixed,
-  locked-off or stationary, which clashes with "handheld".
-- The starting picture's prompt opens "An upright 9:16 photo taken on a phone in a real,
-  ordinary <place>, casual, not a studio shot." and says plainly what must be right: camera
-  height and angle, every part of the object named as a real, ordinary one, the problem as it
+- Code starts every B-roll video prompt with "A {N}-second video at real-time speed. The
+  camera stays still.", N the clip's real length; the video prompt no longer says "9:16"
+  (the API sends it), and never moves the camera or says where or how close it ends. Until
+  2026-10-09 it opened "A {N}-second handheld phone video, casual, not cinematic, real-time
+  speed.", as both best-graded clips did; the test ads of 2026-10-08 all looked
+  phone-filmed (the user: "there is no extra benefit"), and "handheld" moves the camera,
+  against "the one movement in a B-roll is a hand or the product, never the camera" (the
+  user, 2026-10-08 23:57). No look words either way: the video model chooses.
+- The starting picture's prompt opens "An upright 9:16 photo in a real, ordinary <place>."
+  (no "taken on a phone", no "casual", since 2026-10-09) and says plainly what must be
+  right: where the camera is, its height and angle, every part of the object named as a real, ordinary one, the problem as it
   looks before, counts and left/right, the hand at the first moment. A product in an unusual
   pose gets the pose said once and what it does to each part (the label turns with it).
 - The product is held the way it is really used, taken from the page's "how to use"

@@ -14,6 +14,7 @@ from agents import tasks
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs.models import Job, SceneStep
+from jobs.picture_check import STARTING_PICTURE_CHECK
 
 from .conftest import PICTURE_OK, HeldSteps, WorkerStopped, handoffs, paid_for
 from .test_producer_broll import (
@@ -177,3 +178,12 @@ def test_with_quality_checks_switched_off_a_picture_is_kept_unchecked(
     assert step.status == "finished"
     assert paid_for()[-2:] == ["choose_broll_picture", "make_starting_picture"]
     assert "check_starting_picture" not in paid_for()
+
+
+def test_the_check_fails_a_before_that_doesnt_show_what_will_change() -> None:
+    # Test ads (08 Oct), N3: the start picture was asked for clean tile, so before looked the
+    # same as after, and the check passed it: it only checked the result wasn't there yet.
+    assert (
+        "not its result already there, and what the action will change, or the problem, is "
+        "plainly visible."
+    ) in STARTING_PICTURE_CHECK

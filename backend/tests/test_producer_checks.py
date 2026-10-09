@@ -606,8 +606,17 @@ def test_a_rewrite_is_told_a_broll_scene_films_one_action_as_the_planner_is(
     assert "even for steps that flow into each other" in instructions
     assert "is a movement of its own: a scene films it or what comes after it" in instructions
     assert "with one verb for what moves" in instructions
+    # The same fixes as the planner's (test ads, 08 Oct): N5's turn kept during its glide,
+    # #12's phone never turned to a side its start picture doesn't show, #8's camera still.
+    assert "If the page says something happens while doing it, keep that part." in instructions
+    assert "A hand never turns, flips or spins the product" in instructions
+    assert "never a camera move" in instructions
     # A rewrite changes one scene: it can't add a talking scene for the other steps.
     assert "name the other steps" not in instructions
+    # Test ads (08 Oct): every scene between the first and the last is B-roll, so a rewrite
+    # never makes a middle scene a talking one.
+    assert "every scene between the first and the last shows something" in instructions
+    assert "Only the last scene may instead give null" in instructions
 
 
 def test_the_rewrite_is_told_it_was_what_the_scene_shows_that_failed(

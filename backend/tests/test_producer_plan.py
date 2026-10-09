@@ -225,7 +225,7 @@ def test_a_first_scene_given_a_blank_shows_is_the_person_talking(
     assert what_each_scene_shows() == [(1, ""), (2, "hot tea poured into the mug")]
 
 
-def test_the_products_name_is_found_in_a_talking_line_whatever_its_capitals(
+def test_the_products_name_is_found_in_a_line_whatever_its_capitals(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
     scenes = [{"line": "Meet the stoneware MUG."}, {"line": "Yours for $24.00."}]
@@ -237,6 +237,22 @@ def test_the_products_name_is_found_in_a_talking_line_whatever_its_capitals(
         "Meet the stoneware MUG.",
         "Yours for $24.00.",
     ]
+
+
+def test_the_products_name_said_only_over_a_broll_scene_is_found(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    # Every middle scene is B-roll (test ads, 08 Oct: "Yes" to more B-roll), so the name may
+    # be said in any line, not only a talking one.
+    scenes = [
+        {"line": "Meet my favourite mug."},
+        broll({"line": "The Stoneware Mug, poured.", "shows": "tea poured into the mug"}),
+    ]
+    planning(fake_model, product_page_url, a_plan_with(scenes=scenes))
+
+    say(f"Make an ad for {product_page_url}")
+
+    assert Job.objects.get().product_name == "Stoneware Mug"
 
 
 def test_the_products_colour_and_the_photos_showing_it_are_stored(
@@ -374,16 +390,39 @@ def test_the_planner_is_told_how_to_plan_each_broll_scene(
     assert "When a claim needs two end states, give each its own B-roll scene" in instructions
     # Audit row 11: the second state's clip can be made from the first's once code knows it.
     assert "mark the second as the second state" in instructions
-    assert "The person can name the other steps in a talking scene." in instructions
+    # Test ads (08 Oct): the toilet's "360-degree coverage under the rim" was only said in a
+    # talking scene, never shown (point 3b).
+    assert "name the other steps" not in instructions
     # Left after the rule above (free check, 08 Oct): a strap clipped on then the bag carried
-    # (#5), a curler turned then glided (N5), straps slipped on then a walk (N4).
-    assert "is a movement of its own: a scene films it or what comes after it" in instructions
+    # (#5), straps slipped on then a walk (N4).
+    assert "attaching, fitting or adjusting it is a movement of its own" in instructions
+    # Test ads (08 Oct), N5 Le Duo: the turn was split off the glide ("already clamped and
+    # rotated"), so it filmed the page's straightening how-to under a line about curls.
+    assert "or turning it" not in instructions
+    assert (
+        "Still pick only ONE action. Write that one action the way the page words it. If the "
+        "page says something happens while doing it, keep that part."
+    ) in instructions
+    assert 'A part the page says happens while doing it stays, joined by "while".' in instructions
+    # Test ads (08 Oct), #8 toilet: the planner wrote "the camera pushes toward" itself, a
+    # pointless zoom (Julian 23:57: "a hand or the product, never the camera").
+    assert "The one verb is what a hand or the product does, never a camera move" in instructions
+    # Test ads (08 Oct), #12 phone case: turned, dropped and rotated from start pictures of
+    # one side, the clips drew the back on both sides.
+    assert "A hand never turns, flips or spins the product" in instructions
+    assert (
+        "the side facing the camera when the scene starts faces it when the scene ends, even "
+        "after a drop or fall"
+    ) in instructions
+    assert "give that side its own B-roll scene that starts on it" in instructions
     assert "with the product already set up that way" in instructions
     # Round 1 (08 Oct): N5 still wrote "twists and glides". One verb is checkable.
     assert "with one verb for what moves" in instructions
     # Two end states are two clips with a cut (graded #5 bag, PERFECT); #12's drop ended on
-    # the phone face down, its unharmed screen never seen.
-    assert "give what's seen after it its own B-roll scene right after" in instructions
+    # the phone face down, its unharmed screen never seen, and turning it over drew the back
+    # on both sides (test ads, 08 Oct).
+    assert "next B-roll scene starts on the other side, never turning it over" in instructions
+    assert "turned over to show" not in instructions
     # The ad's colour, and the one photo a scene may never need: items 43 and 44 of
     # docs/broll-picture-logic.md.
     assert (
@@ -433,6 +472,39 @@ def test_the_planner_is_told_the_shape_of_every_script(
     assert "script_format" in schema["Plan"]["properties"]
 
 
+def test_the_planner_is_told_every_middle_scene_is_broll(
+    httpserver: HTTPServer,
+    openai_server: Callable[..., None],
+    product_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    # Test ads (08 Oct): 7 talking scenes in the middle of 5 ads. Julian 23:45 "Yes": scene 1
+    # talking, the last talking or a hero B-roll, every middle scene a B-roll; a line that
+    # can't be filmed is said over another B-roll (23:40).
+    planning_through_openai(openai_server, product_page_url, PLAN)
+
+    say(f"Make an ad for {product_page_url}")
+
+    instructions = the_plan_request(httpserver)["instructions"]
+    assert "Most scenes are the person talking to camera" not in instructions
+    assert "The first scene is always the person talking to camera." in instructions
+    assert (
+        "The last scene is the person talking to camera, or a B-roll scene of the product at "
+        "its best. Every scene between them is a B-roll scene, never the person talking"
+    ) in instructions
+    assert (
+        'A line that can\'t be filmed, such as "no bleach", is still kept: the voice says it '
+        "while the scene shows something else the page states, never acting the claim out."
+    ) in instructions
+    assert (
+        "A claim about something the product, or a part of it, does that a camera could see "
+        "is a B-roll scene that shows it."
+    ) in instructions
+    # No share of B-roll per kind of product: our own research, not Creatify's.
+    assert "%" not in instructions
+    assert "never skin before and after" in instructions
+
+
 def test_the_planner_is_told_to_ask_for_a_before_and_after_nobody_could_picture(
     httpserver: HTTPServer,
     openai_server: Callable[..., None],
@@ -456,6 +528,75 @@ def test_the_planner_is_told_to_ask_for_a_before_and_after_nobody_could_picture(
     # Only a photo shows it: a page that says "removes the film" still leaves its look to a
     # guess, which is how N3's result was invented.
     assert "The page naming the result isn't enough" in instructions
+    # Test ads (08 Oct), N3: told no, the planner offered wiping clean tile "without an
+    # invented before view", and before looked the same as after. Julian: "the shop owner
+    # must provide it."
+    assert "without one, the ad shows no before and after of it" in instructions
+    assert (
+        "For a result: if they go ahead without one, no scene shows that film, before or "
+        "after, and the voice says the claim over another B-roll. Never offer another way to "
+        "show it."
+    ) in instructions
+    assert 'For a missing "how to use": if they go ahead without one, ask again' in instructions
+
+
+def test_the_planner_is_told_a_line_naming_the_problem_shows_the_problem(
+    httpserver: HTTPServer,
+    openai_server: Callable[..., None],
+    product_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    # Test ads (08 Oct), N3: the "builds up" line was talking; Julian: "showing like how the
+    # showers can get dirty over time. As a B-roll scene." Creatify: "Before state (3-5s):
+    # Show the problem visually".
+    planning_through_openai(openai_server, product_page_url, PLAN)
+
+    say(f"Make an ad for {product_page_url}")
+
+    request = the_plan_request(httpserver)
+    assert (
+        '"shows the problem" when the line names the problem the product fixes, as the page '
+        "names it: the problem as it really is before the product is used, with the product "
+        "in view. Only a problem anyone sees at a glance, or one a photo shows. Never the "
+        "problem getting worse or building up over time: show it as it is, and the voice says "
+        "the rest"
+    ) in request["instructions"]
+    scene = request["text"]["format"]["schema"]["$defs"]["PlannedScene"]["properties"]
+    assert "shows the problem" in json.dumps(scene["broll_kind"])
+    assert scene["thin_film"]["description"] == (
+        "True when the problem this scene shows, or the result it ends on, is a thin film, "
+        "haze, cloudiness or water spots on a surface."
+    )
+
+
+def test_a_scene_showing_the_problem_is_stored_with_its_kind(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    plan = broll_scene(
+        line="Tea rings stain every mug you own, and they never scrub out.",
+        shows="a tea-stained mug beside the Stoneware Mug",
+        broll_kind="shows the problem",
+    )
+    planning(fake_model, product_page_url, plan)
+
+    say(f"Make an ad for {product_page_url}")
+
+    assert broll_labels()[1] == ("shows the problem", "no face", "", "", [])
+
+
+def test_a_scene_about_a_thin_film_is_planned_with_a_photo_of_it(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    plan = broll_scene(
+        broll_kind="shows the problem",
+        thin_film=True,
+        needs=[{"what": "the cloudy film", "photos": [2]}],
+    )
+    planning(fake_model, product_page_url, plan)
+
+    say(f"Make an ad for {product_page_url}")
+
+    assert broll_labels()[1][0] == "shows the problem"
 
 
 # --- What the planner is given --------------------------------------------------------------
@@ -513,7 +654,7 @@ def test_the_planner_is_handed_the_page_text_the_target_the_photo_count_and_the_
     }
 
 
-def test_the_planner_is_told_to_copy_the_products_name_word_for_word_from_a_talking_line(
+def test_the_planner_is_told_to_copy_the_products_name_word_for_word_from_a_line(
     httpserver: HTTPServer,
     openai_server: Callable[..., None],
     product_page_url: str,
@@ -528,14 +669,14 @@ def test_the_planner_is_told_to_copy_the_products_name_word_for_word_from_a_talk
 
     request = the_plan_request(httpserver)
     assert (
-        "Give the product's name exactly as the person says it in one of those scenes, copied "
-        "word for word from its line: not the page's full title, and nothing the person "
-        "doesn't say, such as a part in brackets or a symbol like ® or ™."
+        "Give the product's name exactly as the person says it in one of those lines, copied "
+        "word for word from it: not the page's full title, and nothing the person doesn't say, "
+        "such as a part in brackets or a symbol like ® or ™."
     ) in request["instructions"]
     plan = request["text"]["format"]["schema"]["$defs"]["Plan"]
     assert plan["properties"]["product_name"]["description"] == (
-        "The product's name copied word for word from a line where the person talks to camera, "
-        "exactly as they say it there: not the page's full title."
+        "The product's name copied word for word from a line, exactly as the person says it "
+        "there: not the page's full title."
     )
 
 
@@ -649,17 +790,15 @@ def a_plan_with_ways(*kinds: str) -> dict[str, Any]:
             a_plan_with(
                 scenes=[
                     {"line": "Meet my favourite mug."},
-                    broll(
-                        {"line": "The Stoneware Mug, poured.", "shows": "tea poured into the mug"}
-                    ),
+                    broll({"line": "The mug, poured.", "shows": "tea poured into the mug"}),
                 ]
             ),
-            'No scene where the person talks to camera says "Stoneware Mug": at least one must.',
-            id="the name said only over the product",
+            'No line says "Stoneware Mug": at least one must.',
+            id="the name said in no line",
         ),
         pytest.param(
             broll_scene(broll_kind=None),
-            'A B-roll scene needs its kind: "does a job" or "showcase".',
+            'A B-roll scene needs its kind: "does a job", "shows the problem" or "showcase".',
             id="a B-roll scene with no kind",
         ),
         pytest.param(
@@ -669,8 +808,33 @@ def a_plan_with_ways(*kinds: str) -> dict[str, Any]:
         ),
         pytest.param(
             broll_scene(broll_kind="looks good"),
-            "Input should be 'does a job' or 'showcase'",
-            id="a kind that is neither",
+            "Input should be 'does a job', 'shows the problem' or 'showcase'",
+            id="a kind that is none of them",
+        ),
+        pytest.param(
+            broll_scene(broll_kind="shows the problem", result="A clean mug."),
+            'A "shows the problem" scene has no result.',
+            id="a problem shown with a result",
+        ),
+        pytest.param(
+            # Test ads (08 Oct), N3: wiping a film nobody could see looked the same before and
+            # after. Without a photo of it, no scene is about it.
+            broll_scene(broll_kind="shows the problem", thin_film=True),
+            "A scene about a thin film needs a photo that shows it among its needs. Without "
+            "one, make no scene about it: the voice says it over another B-roll.",
+            id="a thin film with no photo of it",
+        ),
+        pytest.param(
+            broll_scene(
+                broll_kind="does a job", usage="Wipe it.", result="No film.", thin_film=True
+            ),
+            "A scene about a thin film needs a photo that shows it among its needs.",
+            id="a thin film wiped away with no photo of it",
+        ),
+        pytest.param(
+            talking_scene(thin_film=True),
+            "A scene where the person talks to camera has no B-roll kind",
+            id="a talking scene about a thin film",
         ),
         pytest.param(
             talking_scene(broll_kind="showcase"),
