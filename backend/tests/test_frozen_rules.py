@@ -53,8 +53,7 @@ FROZEN = [
     ),
     pytest.param(
         BROLL_PROMPT,
-        'Never write seconds or timings, or words that slow it down, such as "slowly" or '
-        '"gently".',
+        'Never write seconds or timings, or words that slow it down, such as "slowly" or "gently".',
         id="A4 no timings (locked list)",
     ),
     pytest.param(
