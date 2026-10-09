@@ -62,8 +62,9 @@ RULES: dict[str, str] = {
     "or how an object looks before the action, is said plainly in the picture prompt, not "
     "only in the video prompt. Fail when the video prompt needs something the picture "
     "prompt leaves out, and that detail decides whether the claim is proven, such as the "
-    'height a ball bounces to that proves a bounce claim. A style word such as "handheld", or where '
-    "the frame cuts a person off, is not such a detail. The picture prompt draws only the "
+    "height a ball bounces to that proves a bounce claim. A style word such as "
+    '"handheld", or where the frame cuts a person off, is not such a detail. The picture '
+    "prompt draws only the "
     "start: a result the action itself makes, such as things ending up inside, belongs in "
     "the video prompt alone.",
     "A9": "The product may stand still in view while a tool used with it does the work, such "
