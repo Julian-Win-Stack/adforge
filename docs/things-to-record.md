@@ -102,3 +102,17 @@ Julian graded the 5 combined test ads (08 Oct). Each fix answers one of his grad
 7. Every B-roll looked phone-filmed. The "handheld phone video, casual, not cinematic" opener is gone; code now says "The camera stays still." and the video model picks the look.
 
 Full list with file:line: project files decisions/built-test-ad-fixes.md.
+
+----------------------------------------
+
+## Why we shipped the round 2 fixes (2026-10-09)
+
+Julian graded round 2. Every "showcase" B-roll, where a hand only held, set down or stood up the product, failed: #12 s2, #8 s4 and all of N3's B-roll. His rule (02:15): "The B-roll must do something. It must sell the product."
+
+1. No filler. A B-roll scene must prove its line. A "showcase" is now only the product used or worn the way the line claims, such as a bag carried as a clutch (#5, graded PERFECT). When nothing can prove a middle line, the app asks the shop owner. If the owner can't help, the person says that line to camera. The fact-check rewrite does the same.
+2. A result is filmed happening, before to after. #8 s4 showed a clean toilet with the bottle beside it and proved nothing.
+3. A drop starts at the height the page states, or from a standing person's hand, with the camera seeing the whole fall. #12 s5 was drawn from "the camera is at knee height" and dropped from just above the floor.
+4. A scene's photo needs say only how something looks, never an action. #12 s5 sent the shop's drop photo, and the picture copied its low pose.
+5. A 7th start-picture check, "makes sense for the line", runs before video is paid for. Its eval is in #111.
+
+Full list with file:line: project files decisions/built-round-2-fixes.md.
