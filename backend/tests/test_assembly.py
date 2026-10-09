@@ -571,3 +571,34 @@ def test_a_word_the_transcript_missed_with_no_gap_for_it_shares_a_neighbours_tim
     line: str, words: list[dict[str, Any]], timed: list[dict[str, Any]]
 ) -> None:
     assert assembly.timed_script(line, words) == timed
+
+
+def stream_seconds(video: Path, stream: str) -> float:
+    """How long a video's own `stream` ("a" or "v") lasts, as ffprobe reads it: the file's
+    length is the longer of the two, so it hides a sound track that stops early."""
+    probed = subprocess.run(
+        [settings.FFPROBE, "-v", "error", "-select_streams", stream, "-show_entries"]
+        + ["stream=duration", "-of", "json", str(video)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+    (found,) = json.loads(probed.stdout)["streams"]
+    return float(found["duration"])
+
+
+def test_the_last_line_is_heard_to_the_end_of_the_picture(tmp_path: Path) -> None:
+    # Graded test ads (08 Oct): in all 5, the sound track stopped about 1.2 s before the
+    # picture, cutting the last line off mid-word. ffmpeg's amix drops the voice it still holds
+    # once the voice, its first input, ends while the longer music lags behind it.
+    parts = [(clip(tmp_path, "scene-1", seconds=5), one_scene(5.0))]
+    ad = tmp_path / "ad.mp4"
+
+    assembly.join(parts, ad, music=music(tmp_path, seconds=20), drawn=[])
+
+    assert stream_seconds(ad, "a") == pytest.approx(stream_seconds(ad, "v"), abs=0.05)
+    heard = ad.read_bytes()
+    assert loudness(heard, "voice", between=(4.86, 4.98)) == pytest.approx(
+        loudness(heard, "voice", between=(0, 1)), abs=1
+    )
