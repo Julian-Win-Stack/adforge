@@ -94,7 +94,7 @@ Give back the scene's "shows" too: unchanged if it wasn't wrong. Keep a scene th
 something showing something only when what it shows proves its line, as the B-roll kinds \
 below allow. When nothing the page, the photos or the shop owner support could prove what \
 its line says, give null, and the person says the line to camera: never show the product \
-only held, placed or pointed at instead. \
+only held, placed, set down, stood up or pointed at instead. \
 For a scene where the person talks, always give null, and no B-roll details.
 A scene that shows something is a B-roll scene. Give back all its B-roll details with \
 its line and "shows", so they always match what it shows.

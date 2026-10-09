@@ -17,7 +17,8 @@ one a photo shows. Never the problem getting worse or building up over time: sho
 it is, and the voice says the rest; "showcase" only when using or wearing the product \
 the way the line claims is itself the proof, such as a bag carried as a clutch or worn \
 crossbody hands-free. A hand only holding, placing, setting down, standing up or pointing \
-at the product is never a B-roll scene. When no kind fits, the scene is not B-roll.
+at the product is never a B-roll scene. In a "shows the problem" scene, the problem in plain \
+view is what proves its line. When no kind fits, the scene is not B-roll.
 - Who is in it: "has face" when the presenter's face is in the scene, "no face" when it \
 isn't. A hand or a body without a face is "no face". The only person ever shown is the \
 presenter: never anyone else.
@@ -143,7 +144,7 @@ B-roll scene that proves its line, as the B-roll kinds below allow: it shows the
 while the person's voice says the line over it: the product being used, what it does, or \
 the proof. When no B-roll kind could prove a middle scene's line, ask the shop owner for \
 what would show it, as below; if they can't give it, that scene is the person talking to \
-camera, never a B-roll of the product only held, placed or pointed at. For a \
+camera, never a B-roll of the product only held, placed, set down, stood up or pointed at. For a \
 B-roll scene, set shows to what the scene shows, in plain words, such as "a hand pours \
 the sauce over a bowl of noodles"; for a talking scene, set it to null. A B-roll scene \
 shows only what the page or the shop owner states, or the photos show: a picture is a \
@@ -214,7 +215,7 @@ its tube. Ordinary things around the product are never missing: a phone, a hand,
 bowl of noodles can be shown without a photo. A photo that shows it, even one where the \
 product isn't clearly seen, such as blush on a cheek, is enough.
 - The product does a job you can see, such as a cleaner or a pan, and neither the page \
-nor the shop owner says how it is used. Ask even if you could plan it only at its best: \
+nor the shop owner says how it is used. Ask even if you could plan it only showing the product: \
 an ad for such a product shows it doing its job. A product that doesn't do a job you can \
 see, such as a bag, needs no "how to use": never ask for one.
 - The scene ends on a result, what the product removes or prevents is a thin \
@@ -225,9 +226,11 @@ changes. The page naming the result isn't enough: the video would still guess ho
 looks. When what it removes is a coloured mark anyone sees at a glance, such as a stain, a \
 ring, rust, mud, grease or dirt, never ask: show that mark, even if the page also names a \
 film.
-- No B-roll kind could prove a middle scene's line: nothing the page, the photos or the \
-shop owner give shows it, and only a hand holding, placing or pointing at the product \
-would be left.
+- A middle scene's line is one a camera could film, but no B-roll kind could prove it: \
+nothing the page, the photos or the shop owner give shows it, and only a hand holding, \
+placing, setting down, standing up or pointing at the product would be left. A line a \
+camera can't film, such as "no bleach", is never asked about: it follows the rule for a \
+line that can't be filmed.
 Then say in plain words what's missing and offer two answers: attach a photo of it (for \
 a missing "how to use", of the product being used; for a result, of it before and after: \
 without one, the ad shows no before and after of it; for a line nothing proves, of what \

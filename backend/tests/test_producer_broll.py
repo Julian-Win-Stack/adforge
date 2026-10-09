@@ -566,8 +566,8 @@ def test_a_showcase_scene_ends_on_what_it_shows() -> None:
     assert (
         "This scene proves its line by the product being used or worn the way the line "
         "claims, such as a bag carried as a clutch while walking. A hand only holding, "
-        "placing, setting down or pointing at the product never proves anything: never film "
-        "that."
+        "placing, setting down, standing up or pointing at the product never proves anything: "
+        "never film that."
     ) in showcase
     # The forced ending made pointless zooms (#15, #4): "a lot better" without it.
     assert "at its best" not in showcase

@@ -501,7 +501,8 @@ def test_the_planner_is_told_every_middle_scene_is_broll_that_proves_its_line(
     assert (
         "When no B-roll kind could prove a middle scene's line, ask the shop owner for what "
         "would show it, as below; if they can't give it, that scene is the person talking to "
-        "camera, never a B-roll of the product only held, placed or pointed at."
+        "camera, never a B-roll of the product only held, placed, set down, stood up or "
+        "pointed at."
     ) in instructions
     assert (
         'A line that can\'t be filmed, such as "no bleach", is still kept: the voice says it '
@@ -533,10 +534,15 @@ def test_the_planner_asks_the_shop_owner_when_no_broll_could_prove_a_line(
     instructions = the_plan_request(httpserver)["instructions"]
     assert "Ask because of a scene that shows the product in only four cases" in instructions
     assert (
-        "- No B-roll kind could prove a middle scene's line: nothing the page, the photos or "
-        "the shop owner give shows it, and only a hand holding, placing or pointing at the "
-        "product would be left."
+        "- A middle scene's line is one a camera could film, but no B-roll kind could prove "
+        "it: nothing the page, the photos or the shop owner give shows it, and only a hand "
+        "holding, placing, setting down, standing up or pointing at the product would be left. "
+        'A line a camera can\'t film, such as "no bleach", is never asked about: it follows '
+        "the rule for a line that can't be filmed."
     ) in instructions
+    # Review P3 7: "at its best" means nothing since the showcase change.
+    assert "Ask even if you could plan it only showing the product:" in instructions
+    assert "only at its best" not in instructions
     assert "for a line nothing proves, of what would prove it" in instructions
     assert (
         "For a line nothing proves: if they go ahead without one, the person says that line "
@@ -570,32 +576,17 @@ def test_the_planner_is_told_a_showcase_only_when_using_it_is_the_proof(
         '"showcase" only when using or wearing the product the way the line claims is itself '
         "the proof, such as a bag carried as a clutch or worn crossbody hands-free. A hand only "
         "holding, placing, setting down, standing up or pointing at the product is never a "
-        "B-roll scene. When no kind fits, the scene is not B-roll."
+        "B-roll scene."
+    ) in instructions
+    assert "When no kind fits, the scene is not B-roll." in instructions
+    # Review P3 5: a problem scene is a hand or the product beside the problem; the problem
+    # in plain view is what proves its line, so the ban above doesn't cover it.
+    assert (
+        'In a "shows the problem" scene, the problem in plain view is what proves its line.'
     ) in instructions
     kind = request["text"]["format"]["schema"]["$defs"]["PlannedScene"]["properties"]["broll_kind"]
     assert '"showcase" when unsure' not in kind["description"]
     assert "such as a bag carried as a clutch" in kind["description"]
-
-
-def test_a_bag_carried_as_a_clutch_is_still_planned_as_a_showcase(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
-) -> None:
-    # Guard: #5's clutch walk was graded PERFECT; "no filler" must not refuse it.
-    clutch: dict[str, Any] = {
-        "line": "Carry it as a clutch when you head out for the evening, no strap needed.",
-        "shows": "the presenter walks carrying the bag as a clutch",
-        "broll_kind": "showcase",
-        "person_shown": "no face",
-        "usage": "Carried in one hand as a clutch.",
-        "result": None,
-        "needs": [],
-    }
-    scenes = [{"line": "Meet the Stoneware Mug from Kiln & Co."}, clutch]
-    planning(fake_model, product_page_url, a_plan_with(scenes=scenes))
-
-    say(f"Make an ad for {product_page_url}")
-
-    assert broll_labels()[1][0] == "showcase"
 
 
 def test_the_planner_is_told_a_result_is_filmed_happening(

@@ -165,10 +165,10 @@ the starting picture, with the product in view. Nothing about the problem change
 clip. The one movement is a hand or the product.""",
     "showcase": """\
 This scene proves its line by the product being used or worn the way the line claims, such \
-as a bag carried as a clutch while walking. A hand only holding, placing, setting down or \
-pointing at the product never proves anything: never film that. The video prompt ends on \
-the moment that shows what "shows" describes, done by a hand or the product. Show no result \
-or change the page doesn't prove.""",
+as a bag carried as a clutch while walking. A hand only holding, placing, setting down, \
+standing up or pointing at the product never proves anything: never film that. The video \
+prompt ends on the moment that shows what "shows" describes, done by a hand or the product. \
+Show no result or change the page doesn't prove.""",
 }
 
 

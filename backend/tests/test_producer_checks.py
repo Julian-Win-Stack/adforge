@@ -622,7 +622,8 @@ def test_a_rewrite_is_told_a_broll_scene_films_one_action_as_the_planner_is(
         "Keep a scene that shows something showing something only when what it shows proves "
         "its line, as the B-roll kinds below allow. When nothing the page, the photos or the "
         "shop owner support could prove what its line says, give null, and the person says "
-        "the line to camera: never show the product only held, placed or pointed at instead."
+        "the line to camera: never show the product only held, placed, set down, stood up or "
+        "pointed at instead."
     ) in instructions
 
 
