@@ -40,8 +40,9 @@ RULES: dict[str, str] = {
     "A2": "A claim that needs two end states, such as a bag worn two ways, is two B-roll "
     "scenes back to back, each opening already in its state. Fail when one scene films the "
     "change from one state to the other, such as putting a strap on or taking it off. Judge "
-    "only this one scene: pass when it opens already in its state and stays in it, even "
-    "though the other state is in another scene or isn't filmed here.",
+    "only this one scene: pass when it doesn't film a change from one way of using the "
+    "product to another, even though the other way is in another scene or isn't filmed "
+    "here. The product working, such as dirt coming off, is not a change of state.",
     "A3": "A B-roll films only the main step of using the product, the one that shows it "
     "working; the voice carries the other steps. Fail when the video prompt films several "
     "steps, such as spraying, waiting and then scrubbing.",
@@ -59,7 +60,9 @@ RULES: dict[str, str] = {
     "only in the video prompt. Fail when the video prompt needs something the picture "
     "prompt leaves out, and that detail decides whether the claim is proven, such as the "
     'height of a drop that proves a drop claim. A style word such as "handheld", or where '
-    "the frame cuts a person off, is not such a detail.",
+    "the frame cuts a person off, is not such a detail. The picture prompt draws only the "
+    "start: a result the action itself makes, such as things ending up inside, belongs in "
+    "the video prompt alone.",
     "A9": "The product may stand still in view while a tool used with it does the work, such "
     "as a bottle beside a toilet while a brush scrubs. Fail only when nothing in the clip "
     "acts at all.",
@@ -80,10 +83,12 @@ RULES: dict[str, str] = {
     "A17": 'When "shows" names a person or a hand, they are in the video prompt, doing what '
     '"shows" says. Fail when the video prompt leaves them out.',
     "C1": "Every B-roll sells the product: it does something that shows a result, a benefit "
-    "or proof. Fail when its one action only holds, places, sets down, stands up, carries or "
-    "rests the product and that proves nothing the line says, which means nothing to a "
-    "viewer. Pass when the holding or carrying is itself what the line claims, such as "
-    "carrying the product the way the line says it can be carried.",
+    "or proof. Fail when its one action only holds, places, sets down, stands up, lines up, "
+    "carries or rests the product, which means nothing to a viewer: a product set beside a "
+    "result that is already there, or products lined up side by side, prove nothing. Pass "
+    "when a tool used with the product does the work while the product stands by, such as "
+    "a brush scrubbing. Pass when holding or carrying is itself the claim: the line says the "
+    "product can be held, carried or worn a certain way and the clip shows exactly that.",
     "C2": "A scene about the result shows the result itself, such as a clean toilet bowl "
     "after cleaning, so a viewer sees the product worked. Fail when a result line is shown "
     "only by the product next to something already clean, with no evidence it did it. "
