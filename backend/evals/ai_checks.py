@@ -25,11 +25,13 @@ JUDGE_INSTRUCTIONS = """\
 You check one rule on what an ad app wrote for a B-roll clip: a short silent video clip \
 played while a voice says the scene's line. A picture model draws the clip's starting \
 picture from "picture_prompt" and the photos whose jobs are in "photo_jobs", then a video \
-model animates it from "video_prompt". "plan" is every scene of the ad, when the rule is \
-about the plan. "shop_answers" is what the shop owner answered the app's questions.
-Decide "pass" when what the app wrote keeps the rule, "fail" when it breaks it. Judge only \
-this rule, and only from the text: nothing else about the clip counts. Give one sentence \
-saying why, quoting the words that decide it.
+model animates it from "video_prompt". When a picture is shown, it is the starting picture \
+the app really drew, or the photo it really started the clip from. "plan" is every scene of \
+the ad, when the rule is about the plan. "shop_answers" is what the shop owner answered the \
+app's questions.
+Decide "pass" when what the app wrote, and the picture when there is one, keep the rule, \
+"fail" when they break it. Judge only this rule, and only from what you are given: nothing \
+else about the clip counts. Give one sentence saying why, quoting the words that decide it.
 The rule:
 """
 
@@ -107,6 +109,9 @@ class Case:
     label: Literal["pass", "fail"]
     source: str
     handoff: CaseToJudge
+    # The picture the clip really started from, shown to a scene's judge (Julian 2026-10-09,
+    # decisions/checker-context.md); None for a plan's judge, or a clip that started from none.
+    start_picture: Path | None
     # Every other case of a rule's passes, and of its fails, by id: the judge's question is
     # never written against a held-out case, so its score there is a fair one.
     held_out: bool
@@ -129,6 +134,7 @@ def load_cases(path: Path = CASES) -> list[Case]:
                 plan=case.get("plan"),
                 shop_answers=case.get("shop_answers") or "",
             ),
+            start_picture=Path(case["start_picture"]) if case.get("start_picture") else None,
             held_out=case["id"] in held_out,
         )
         for case in raw
@@ -173,8 +179,13 @@ def ask_model(case: Case) -> RuleVerdict:
     """The judge for `case`'s rule, asked for real. Needs Django set up: it goes through the
     gateway's model provider, as the app's calls do, but is recorded nowhere."""
     from adforge.retry import OutsideServiceDown
-    from gateway.gateway import _provider
-    from gateway.types import ModelRequest
+    from gateway.gateway import _provider, shrunk_image
+    from gateway.types import Image, LoadedImage, ModelRequest
+
+    images: tuple[LoadedImage, ...] = ()
+    if case.start_picture is not None:
+        picture = Image(label="The starting picture", key=str(case.start_picture))
+        images = (shrunk_image(picture, case.start_picture.read_bytes()),)
 
     request = ModelRequest(
         purpose="rule_eval",
@@ -182,6 +193,7 @@ def ask_model(case: Case) -> RuleVerdict:
         instructions=JUDGE_INSTRUCTIONS + RULES[case.rule],
         handoff=case.handoff,
         output=RuleVerdict,
+        images=images,
     )
     for tries in range(TRIES):
         try:

@@ -47,3 +47,16 @@ def test_a_judge_is_scored_on_fails_caught_and_passes_kept(tmp_path: Path) -> No
 
     assert [s.line() for s in scores] == ["A14: caught 2/2 fails, kept 0/2 passes"]
     assert sorted(case.id for case, _ in wrong) == ["A14-2", "A14-3"]
+
+
+def test_a_scene_case_carries_the_start_picture_its_clip_started_from(tmp_path: Path) -> None:
+    path = cases_file(tmp_path, [("A14", "fail"), ("A15", "fail")])
+    raw = json.loads(path.read_text())
+    raw["cases"][0]["start_picture"] = "/runs/12/scene-5/start-picture.png"
+    raw["cases"][1]["scene"] = None
+    path.write_text(json.dumps(raw))
+
+    scene_case, plan_case = load_cases(path)
+
+    assert scene_case.start_picture == Path("/runs/12/scene-5/start-picture.png")
+    assert plan_case.start_picture is None
