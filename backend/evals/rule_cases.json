@@ -844,28 +844,6 @@
       "quote_exact": true
     },
     {
-      "id": "A9-syn-8-scrub5s-notool",
-      "rule": "A9",
-      "label": "fail",
-      "source": "synthetic",
-      "julian": "",
-      "scene": {
-        "line": "Point and squeeze under the rim, scrub, wait several minutes, then flush for a spotlessly clean bowl.",
-        "shows": "",
-        "kind": "",
-        "usage": "",
-        "result": "",
-        "photo_jobs": [],
-        "picture_prompt": "An upright 9:16 photo taken on a phone in a real, ordinary home bathroom, casual, not a studio shot. Soft daylight.\n\nThe camera is held by a standing adult in front of the toilet, a little above it, looking down into the bowl at a slight angle from the front, so the whole bowl, the rim and the tank are in frame.\n\nThe toilet is a normal, standard white two-piece toilet, exactly like one you would buy at a hardware store:\n- a rectangular tank against the wall, with its tank lid on;\n- the seat ring AND the lid are BOTH lifted up and lean back against the tank, joined to the back of the bowl by two small hinges. Standing upright, the seat ring is in front of the lid, so you can see the lid through the hole of the seat ring. Nothing lies on top of the bowl;\n- so the bare white porcelain rim of the bowl is fully visible: a smooth, thin oval edge, flat and level, the same height all the way round, the back of the rim exactly as high as the front. Under the rim there is a small dark lip all the way round, where the water comes out.\n\nInside the bowl it is dirty: a brown-orange hard-water ring at the waterline and brown limescale streaks running down from under the rim. The outside of the toilet is clean.\n\nThe bottle from Image 1 stands upright on top of the tank lid, at one side, label facing the camera, cap closed. Nobody is holding it.\n\nA person's hand and forearm come in from the right side of the frame and hold a white plastic toilet brush by its handle. The brush head is down inside the bowl, its bristles pressed against the brown ring at the waterline on the left side of the bowl, in the middle of scrubbing. Just behind the brush head, a short stretch of the ring has already been scrubbed off and the porcelain there is clean white; the rest of the ring is still brown. No face or body other than the hand and forearm.\n\nKeep the bottle exactly as in Image 1: same shape, same white neck rising from its top corner, cap, and every detail of the yellow and black label. Use only the bottle from Image 1, nothing else from that picture.",
-        "motion_prompt": "",
-        "video_prompt": "A 5-second handheld phone video, casual, not cinematic, real-time speed. A home bathroom, looking down into a white toilet with the seat and lid raised and the Molly's Suds bottle standing on the tank. The bottle stands still on the tank and nothing moves; the brown ring at the waterline stays as it is."
-      },
-      "plan": null,
-      "shop_answers": "",
-      "note": "edited from graded-broll-run/08-toilet-5s-scrub/clip-prompt.txt: replaced the scrubbing sentence with 'The bottle stands still on the tank and nothing moves; the brown ring at the waterline stays as it is.' (product stands still and no tool works)",
-      "quote_exact": null
-    },
-    {
       "id": "A11-gb-12-v2",
       "rule": "A11",
       "label": "pass",
@@ -1348,6 +1326,31 @@
       "shop_answers": "",
       "note": "video prompt = old_prompt in graded-broll-run/no-forced-ending/15-necessaire-body-kit-scene-2-request.json Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/batch-13/grading-sheet.csv:19",
+      "quote_exact": false
+    },
+    {
+      "id": "C1-b13-15-s2",
+      "rule": "C1",
+      "label": "fail",
+      "source": "Julian tap page 2026-10-09 (rule-match-answers.md)",
+      "julian": "",
+      "scene": {
+        "line": "It includes The Body Wash Eucalyptus, The Body Serum, and The Body Lotion Fragrance-Free.",
+        "shows": "the three trial-size products arranged side by side outside the box",
+        "kind": "",
+        "usage": "",
+        "result": "",
+        "photo_jobs": [
+          "the three trial-size products; keep their packaging and label print exactly unchanged"
+        ],
+        "picture_prompt": "",
+        "motion_prompt": "",
+        "video_prompt": "Image 1 is the three trial-size products; keep their packaging and label print exactly unchanged. One continuous upright 9:16 casual phone-video shot in a bright minimalist bathroom: open with the three products already arranged side by side on a pale stone vanity, ready for display, with all labels facing the camera and the group centered. Make a gentle, steady push-in toward the lineup, ending on a clear close showcase of all three products together."
+      },
+      "plan": null,
+      "shop_answers": "",
+      "note": "Julian added C1 on the tap page (card #15 scene 2, batch 13); no typed words, the tap is the grade.",
+      "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md",
       "quote_exact": false
     },
     {
@@ -2091,6 +2094,31 @@
       "note": ""
     },
     {
+      "id": "A8-r1-N3-s4",
+      "rule": "A8",
+      "label": "fail",
+      "source": "Julian tap page 2026-10-09 (rule-match-answers.md)",
+      "julian": "plus, the agent didn't ask any question to the shop owner for this scnene where we have to clearly show before and after effect and the agent didn't know how to do it and didn't ask the shop owner and just created a not clear before and after clip by itself",
+      "scene": {
+        "line": "After sixty seconds, wipe the sealed shower tile surface clean as directed.",
+        "shows": "a hand wipes sealed shower tile beside the bottle",
+        "kind": "does a job",
+        "usage": "wipe sealed tile after the cleaner sits for 60 seconds",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks"
+        ],
+        "picture_prompt": "An upright 9:16 photo taken on a phone in a real, ordinary home bathroom shower, casual, not a studio shot. Use only the product from Image 1, exactly as it looks, with all label and print unchanged. One bottle stands upright on a narrow built-in shower ledge to the right of one small square white glazed ceramic shower-wall tile, with its front label facing the camera. The central tile has a faint transparent cleaner film from the prior application but no visible soap scum, dirt or hard-water buildup; the surrounding ordinary white glazed ceramic tiles and light gray grout look unchanged. One left hand and forearm enter from the left, holding one ordinary white microfiber cloth folded into a palm-sized pad that spans the height of the central tile, pressed at the tile's left edge and ready to wipe. No face or other part of a person is visible. The phone is held by an unseen person at chest height just outside the shower, about an arm's length away, aimed nearly straight at the wall with a slight downward angle. Keep the central tile, cloth and bottle in the middle of the frame.",
+        "motion_prompt": "In one continuous shot with natural minor handheld movement, the left hand makes one firm horizontal wipe across the central sealed tile from left to right with the folded microfiber cloth. The transparent cleaner film disappears only as the cloth passes, leaving the entire touched tile clean and dry-looking while the surrounding tiles, grout and upright bottle remain unchanged. End with the cloth just beyond the tile's right edge and the clean tile visible beside the bottle, at a natural real-time pace.",
+        "video_prompt": "A 5-second handheld phone video, casual, not cinematic, real-time speed. In one continuous shot with natural minor handheld movement, the left hand makes one firm horizontal wipe across the central sealed tile from left to right with the folded microfiber cloth. The transparent cleaner film disappears only as the cloth passes, leaving the entire touched tile clean and dry-looking while the surrounding tiles, grout and upright bottle remain unchanged. End with the cloth just beyond the tile's right edge and the clean tile visible beside the bottle, at a natural real-time pace."
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md",
+      "quote_exact": true,
+      "note": "Julian added A8 on the tap page; his note also counts as C4 on the R1 N3 whole-ad card (his 19:06 yes)."
+    },
+    {
       "id": "C3-gb-12-v2",
       "rule": "C3",
       "label": "pass",
@@ -2138,6 +2166,32 @@
       "note": "Fail for drop height only: no drop height anywhere in the scene (start picture: camera 'at knee height', phone 'above the floor').",
       "quote_at": "/mnt/project-files/runs/round-2-test-ads/grading-sheet.md:22",
       "quote_exact": true
+    },
+    {
+      "id": "A8-r2-12-s5",
+      "rule": "A8",
+      "label": "fail",
+      "source": "Julian tap page 2026-10-09 (rule-match-answers.md)",
+      "julian": "",
+      "scene": {
+        "line": "Drop it edge-first, and the raised edges help keep your phone scratch-free and photo-ready.",
+        "shows": "the cased phone drops edge-first with its screen facing the camera",
+        "kind": "does a job",
+        "usage": "drop it edge-first",
+        "result": "the phone screen stays scratch-free after the edge-first drop",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "only how the edge-first drop looks"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary tiled apartment entryway. Use only the front-facing assembled cased phone from Image 1, exactly as it looks, with all print unchanged; exclude the separate case and rear-facing phone shown in that source photo. The camera is at knee height, angled down toward the hard tile floor. In the middle of the frame, one right hand holds the phone by its upper short edge above the floor, ready to release it. The phone is nearly horizontal with its screen facing the camera and its lower short edge angled slightly closer to the tile so that edge will strike first. The screen is pristine and unmarked before the drop. No face is visible.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the right hand releases the cased phone. It falls while keeping its screen facing the camera, strikes the tile with its lower short edge first, makes one small realistic impact bounce, and settles back-side-down with the screen still facing the camera. Only the contacted edge reacts at impact, and the visible screen ends pristine, unmarked, and scratch-free.",
+        "video_prompt": "A 5-second video at real-time speed. The camera stays still. In one continuous shot at a natural, real-time pace, the right hand releases the cased phone. It falls while keeping its screen facing the camera, strikes the tile with its lower short edge first, makes one small realistic impact bounce, and settles back-side-down with the screen still facing the camera. Only the contacted edge reacts at impact, and the visible screen ends pristine, unmarked, and scratch-free."
+      },
+      "plan": null,
+      "shop_answers": "",
+      "note": "Julian added A8 on the tap page (round 2 #12 scene 5); no typed words, the tap is the grade.",
+      "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md",
+      "quote_exact": false
     },
     {
       "id": "C4-r1-8-plan",
