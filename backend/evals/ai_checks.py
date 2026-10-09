@@ -96,7 +96,8 @@ RULES: dict[str, str] = {
     "result that is already there, or products lined up side by side, prove nothing. Pass "
     "when a tool used with the product does the work while the product stands by, such as "
     "a cloth buffing. Pass when holding or carrying is itself the claim: the line says the "
-    "product can be held, carried or worn a certain way and the clip shows exactly that.",
+    "product can be held, carried or worn a certain way and the clip shows exactly that. "
+    "Judge the action in the video prompt; the starting picture shows only the start.",
     "C2": "A scene about the result shows the result itself, such as a shoe shining "
     "after polishing, so a viewer sees the product worked. Fail when a result line is shown "
     "only by the product next to something already clean, with no evidence it did it. "
