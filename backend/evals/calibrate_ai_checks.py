@@ -18,7 +18,7 @@ django.setup()
 from evals.ai_checks import ask_model, load_cases, score  # noqa: E402
 
 # Azure text allows 150 requests a minute per model (reference/rate-limits.md).
-AT_ONCE = 8
+AT_ONCE = 4
 
 
 def main(rules: list[str]) -> None:

@@ -18,6 +18,8 @@ CASES = Path(__file__).resolve().parent / "rule_cases.json"
 
 # The model every judge uses: cheap, as the plan asks, and already deployed for the app.
 JUDGE_MODEL = "gpt-5-mini"
+# A judge asked again when Azure times out, as it does under load.
+TRIES = 3
 
 JUDGE_INSTRUCTIONS = """\
 You check one rule on what an ad app wrote for a B-roll clip: a short silent video clip \
@@ -171,6 +173,7 @@ def score(cases: list[Case], ask: Ask) -> tuple[list[Score], list[tuple[Case, Ru
 def ask_model(case: Case) -> RuleVerdict:
     """The judge for `case`'s rule, asked for real. Needs Django set up: it goes through the
     gateway's model provider, as the app's calls do, but is recorded nowhere."""
+    from adforge.retry import OutsideServiceDown
     from gateway.gateway import _provider
     from gateway.types import ModelRequest
 
@@ -181,4 +184,10 @@ def ask_model(case: Case) -> RuleVerdict:
         handoff=case.handoff,
         output=RuleVerdict,
     )
-    return _provider().complete(request).output
+    for tries in range(TRIES):
+        try:
+            return _provider().complete(request).output
+        except OutsideServiceDown:
+            if tries == TRIES - 1:
+                raise
+    raise AssertionError("unreachable")
