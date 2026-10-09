@@ -5,7 +5,11 @@ fails a judge catches and how many passes it lets through."""
 import json
 from pathlib import Path
 
-from evals.ai_checks import Case, RuleVerdict, load_cases, score
+import pytest
+
+from evals.ai_checks import Case, RuleVerdict, ask_model, load_cases, score
+from gateway.fake import FakeModel
+from gateway.types import UnusableReply
 
 
 def cases_file(tmp_path: Path, labels: list[tuple[str, str]]) -> Path:
@@ -60,3 +64,29 @@ def test_a_scene_case_carries_the_start_picture_its_clip_started_from(tmp_path: 
 
     assert scene_case.start_picture == Path("/runs/12/scene-5/start-picture.png")
     assert plan_case.start_picture is None
+
+
+REFUSED = "gpt-6-luna's turn for rule_eval can't be used: it refused: I'm sorry, I cannot assist"
+
+
+def test_a_judge_that_refuses_is_asked_once_more(fake_model: FakeModel, tmp_path: Path) -> None:
+    (case,) = load_cases(cases_file(tmp_path, [("A14", "pass")]))
+    fake_model.respond(
+        "rule_eval",
+        UnusableReply(REFUSED, input_tokens=900, output_tokens=10),
+        {"decision": "pass", "reason": "The camera stays still."},
+    )
+
+    assert ask_model(case).output.decision == "pass"
+
+
+def test_a_judge_that_refuses_twice_has_no_answer(fake_model: FakeModel, tmp_path: Path) -> None:
+    (case,) = load_cases(cases_file(tmp_path, [("A14", "pass")]))
+    fake_model.respond(
+        "rule_eval",
+        UnusableReply(REFUSED, input_tokens=900, output_tokens=10),
+        UnusableReply(REFUSED, input_tokens=900, output_tokens=10),
+    )
+
+    with pytest.raises(UnusableReply):
+        ask_model(case)

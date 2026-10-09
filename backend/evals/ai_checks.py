@@ -201,7 +201,7 @@ def ask_model(case: Case, model: str = JUDGE_MODEL) -> ModelReply[RuleVerdict]:
     do, but is recorded nowhere."""
     from adforge.retry import OutsideServiceDown
     from gateway.gateway import _provider, shrunk_image
-    from gateway.types import Image, LoadedImage, ModelRequest
+    from gateway.types import Image, LoadedImage, ModelRequest, UnusableReply
 
     images: tuple[LoadedImage, ...] = ()
     if case.start_picture is not None:
@@ -216,10 +216,18 @@ def ask_model(case: Case, model: str = JUDGE_MODEL) -> ModelReply[RuleVerdict]:
         output=RuleVerdict,
         images=images,
     )
-    for tries in range(TRIES):
+    refused_already = False
+    tries = 0
+    while True:
         try:
             return _provider().complete(request)
         except OutsideServiceDown:
-            if tries == TRIES - 1:
+            tries += 1
+            if tries == TRIES:
                 raise
-    raise AssertionError("unreachable")
+        except UnusableReply as error:
+            # Luna refuses about 2 checks a run ("I'm sorry, I cannot assist"), a different
+            # one each time, so a refusal is asked once more (Julian 2026-10-09 23:00).
+            if refused_already or "it refused:" not in str(error):
+                raise
+            refused_already = True
