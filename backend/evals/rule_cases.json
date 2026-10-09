@@ -21,7 +21,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/results.md:24",
       "quote_exact": false,
-      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at."
+      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/v2-starting-picture.png"
     },
     {
       "id": "A11-gb-8-scrub5s",
@@ -44,7 +45,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/decisions/2026-10-07-broll-prompts.md:92",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-5s-scrub/start-picture.png"
     },
     {
       "id": "A11-r1-8-s4",
@@ -69,7 +71,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:38",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-4/start-picture.png"
     },
     {
       "id": "A11-r1-5-s4",
@@ -95,7 +98,8 @@
       "shop_answers": "",
       "note": "torso turns with the bag; graded OK",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:11",
-      "quote_exact": true
+      "quote_exact": true,
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-4/start-picture.png"
     },
     {
       "id": "A11-gb-5-bag-clip2",
@@ -118,7 +122,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/README.md:28",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/clip-2/start-picture.png"
     },
     {
       "id": "A11-r1-12-s4",
@@ -145,7 +150,8 @@
       "note": "Julian's fail covers scenes 3, 4, 6, 7; only s4 turns the phone to a side its start picture doesn't show",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:21",
       "quote_exact": true,
-      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass."
+      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass.",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/12-gripmunk-case/scene-4/start-picture.png"
     },
     {
       "id": "A11-gb-5-bag-clip1",
@@ -168,7 +174,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip1)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip1).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/start-picture.png"
     },
     {
       "id": "A11-gb-8-full10s",
@@ -191,7 +198,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-8-full10s)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-8-full10s).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-10s-full/start-picture.png"
     },
     {
       "id": "A11-r1-5-s3",
@@ -217,7 +225,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s3)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s3).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-3/start-picture.png"
     },
     {
       "id": "A11-r1-8-s5",
@@ -242,7 +251,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A6-r1-8-s5)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A6-r1-8-s5).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-5/start-picture.png"
     },
     {
       "id": "A11-gb-12-v3",
@@ -265,7 +275,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/results.md:25",
       "quote_exact": false,
-      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at."
+      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
+      "start_picture": null
     },
     {
       "id": "A11-b13-12-s2",
@@ -290,7 +301,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/batch-13/grading-sheet.csv:12",
       "quote_exact": false,
-      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at."
+      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
+      "start_picture": null
     },
     {
       "id": "A13-gb-12-v2",
@@ -313,7 +325,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/results.md:24",
       "quote_exact": false,
-      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at."
+      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/v2-starting-picture.png"
     },
     {
       "id": "A13-gb-8-scrub5s",
@@ -336,7 +349,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/decisions/2026-10-07-broll-prompts.md:92",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-5s-scrub/start-picture.png"
     },
     {
       "id": "A13-r1-8-s4",
@@ -361,7 +375,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:38",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-4/start-picture.png"
     },
     {
       "id": "A13-gb-5-bag-clip1",
@@ -384,7 +399,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip1)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip1).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/start-picture.png"
     },
     {
       "id": "A13-gb-5-bag-clip2",
@@ -407,7 +423,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip2)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip2).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/clip-2/start-picture.png"
     },
     {
       "id": "A13-gb-8-full10s",
@@ -430,7 +447,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-8-full10s)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-8-full10s).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-10s-full/start-picture.png"
     },
     {
       "id": "A13-r1-5-s3",
@@ -456,7 +474,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s3)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s3).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-3/start-picture.png"
     },
     {
       "id": "A13-r1-5-s4",
@@ -482,7 +501,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s4)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s4).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-4/start-picture.png"
     },
     {
       "id": "A13-r1-8-s5",
@@ -507,7 +527,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A6-r1-8-s5)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A6-r1-8-s5).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-5/start-picture.png"
     },
     {
       "id": "A13-r1-12-s4",
@@ -534,7 +555,8 @@
       "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A11-r1-12-s4).",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass."
+      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass.",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/12-gripmunk-case/scene-4/start-picture.png"
     },
     {
       "id": "A13-gb-12-v3",
@@ -557,7 +579,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/results.md:25",
       "quote_exact": false,
-      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at."
+      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
+      "start_picture": null
     },
     {
       "id": "A14-gb-12-v2",
@@ -580,7 +603,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/results.md:24",
       "quote_exact": false,
-      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at."
+      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/v2-starting-picture.png"
     },
     {
       "id": "A14-gb-8-scrub5s",
@@ -603,7 +627,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/decisions/2026-10-07-broll-prompts.md:92",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-5s-scrub/start-picture.png"
     },
     {
       "id": "A14-gb-5-bag-clip1",
@@ -626,7 +651,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/README.md:28",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/start-picture.png"
     },
     {
       "id": "A14-r1-8-s4",
@@ -651,7 +677,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:38",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-4/start-picture.png"
     },
     {
       "id": "A14-r1-5-s3",
@@ -677,7 +704,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:11",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-3/start-picture.png"
     },
     {
       "id": "A14-r2-12-s5",
@@ -703,7 +731,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/round-2-test-ads/grading-sheet.md:22",
       "quote_exact": true,
-      "note": "Pass from 'it's good right now'; his only complaint is drop height (C3). He ends the sentence with \"It's doing nothing, bro.\" (to confirm it is not about s5)."
+      "note": "Pass from 'it's good right now'; his only complaint is drop height (C3). He ends the sentence with \"It's doing nothing, bro.\" (to confirm it is not about s5).",
+      "start_picture": "/mnt/project-files/runs/round-2-test-ads/12-gripmunk-case/scene-5/start-picture.png"
     },
     {
       "id": "A14-gb-5-bag-clip2",
@@ -726,7 +755,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip2)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip2).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/clip-2/start-picture.png"
     },
     {
       "id": "A14-gb-8-full10s",
@@ -749,7 +779,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-8-full10s)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-8-full10s).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-10s-full/start-picture.png"
     },
     {
       "id": "A14-r1-5-s4",
@@ -775,7 +806,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s4)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s4).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-4/start-picture.png"
     },
     {
       "id": "A14-r1-8-s5",
@@ -800,7 +832,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A6-r1-8-s5)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A6-r1-8-s5).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-5/start-picture.png"
     },
     {
       "id": "A14-r1-12-s4",
@@ -827,7 +860,8 @@
       "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A11-r1-12-s4).",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass."
+      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass.",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/12-gripmunk-case/scene-4/start-picture.png"
     },
     {
       "id": "A14-r1-8-s2",
@@ -852,7 +886,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:38",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-2/start-picture.png"
     },
     {
       "id": "A14-b13-15-s2",
@@ -877,7 +912,8 @@
       "shop_answers": "",
       "note": "video prompt = old_prompt in graded-broll-run/no-forced-ending/15-necessaire-body-kit-scene-2-request.json Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/batch-13/grading-sheet.csv:19",
-      "quote_exact": false
+      "quote_exact": false,
+      "start_picture": null
     },
     {
       "id": "A15-gb-5-bag-2clips",
@@ -915,7 +951,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/README.md:28",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/start-picture.png"
     },
     {
       "id": "A15-r1-8-plan",
@@ -1073,7 +1110,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:11",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-3/start-picture.png"
     },
     {
       "id": "A17-r1-5-s4",
@@ -1099,7 +1137,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:11",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-4/start-picture.png"
     },
     {
       "id": "A17-r1-8-s4",
@@ -1124,7 +1163,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:38",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-4/start-picture.png"
     },
     {
       "id": "A17-gb-5-bag-clip1",
@@ -1147,7 +1187,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip1)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip1).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/start-picture.png"
     },
     {
       "id": "A17-gb-5-bag-clip2",
@@ -1170,7 +1211,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip2)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip2).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/clip-2/start-picture.png"
     },
     {
       "id": "A17-gb-8-scrub5s",
@@ -1193,7 +1235,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-8-scrub5s)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-8-scrub5s).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-5s-scrub/start-picture.png"
     },
     {
       "id": "A17-gb-8-full10s",
@@ -1216,7 +1259,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-8-full10s)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-8-full10s).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-10s-full/start-picture.png"
     },
     {
       "id": "A17-gb-12-v2",
@@ -1239,7 +1283,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-12-v2)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-12-v2).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/v2-starting-picture.png"
     },
     {
       "id": "A17-r1-8-s5",
@@ -1264,7 +1309,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A6-r1-8-s5)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A6-r1-8-s5).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-5/start-picture.png"
     },
     {
       "id": "A17-r1-12-s4",
@@ -1291,7 +1337,8 @@
       "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A11-r1-12-s4).",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass."
+      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass.",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/12-gripmunk-case/scene-4/start-picture.png"
     },
     {
       "id": "A17-bm-5-s3",
@@ -1314,7 +1361,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/broll-main-action-clips/grading-sheet.md:17",
       "quote_exact": false,
-      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at."
+      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
+      "start_picture": null
     },
     {
       "id": "A2-gb-5-bag-2clips",
@@ -1352,7 +1400,8 @@
       "shop_answers": "",
       "note": "hand recipe: two clips joined with a cut; 'shows' is README wording (no planner shows field)",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/README.md:28",
-      "quote_exact": true
+      "quote_exact": true,
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/start-picture.png"
     },
     {
       "id": "A2-gb-5-bag-clip1",
@@ -1375,7 +1424,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip1)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip1).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/start-picture.png"
     },
     {
       "id": "A2-gb-5-bag-clip2",
@@ -1398,7 +1448,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip2)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip2).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/clip-2/start-picture.png"
     },
     {
       "id": "A2-gb-8-scrub5s",
@@ -1421,7 +1472,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-8-scrub5s)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-8-scrub5s).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-5s-scrub/start-picture.png"
     },
     {
       "id": "A2-gb-8-full10s",
@@ -1444,7 +1496,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-8-full10s)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-8-full10s).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-10s-full/start-picture.png"
     },
     {
       "id": "A2-gb-12-v2",
@@ -1467,7 +1520,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-12-v2)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-12-v2).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/v2-starting-picture.png"
     },
     {
       "id": "A2-r1-5-s3",
@@ -1493,7 +1547,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s3)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s3).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-3/start-picture.png"
     },
     {
       "id": "A2-r1-5-s4",
@@ -1519,7 +1574,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s4)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s4).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-4/start-picture.png"
     },
     {
       "id": "A2-r1-8-s4",
@@ -1544,7 +1600,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-8-s4)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-8-s4).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-4/start-picture.png"
     },
     {
       "id": "A2-r1-8-s5",
@@ -1569,7 +1626,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A6-r1-8-s5)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A6-r1-8-s5).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-5/start-picture.png"
     },
     {
       "id": "A2-r1-12-s4",
@@ -1596,7 +1654,8 @@
       "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A11-r1-12-s4).",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass."
+      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass.",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/12-gripmunk-case/scene-4/start-picture.png"
     },
     {
       "id": "A2-gb-5-sm-s2",
@@ -1629,7 +1688,8 @@
       "shop_answers": "",
       "note": "only scene 2 of this ad is saved Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/grading-sheet.csv:2",
-      "quote_exact": false
+      "quote_exact": false,
+      "start_picture": null
     },
     {
       "id": "A3-gb-8-scrub5s",
@@ -1652,7 +1712,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/decisions/2026-10-07-broll-prompts.md:92",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-5s-scrub/start-picture.png"
     },
     {
       "id": "A3-gb-5-bag-clip1",
@@ -1675,7 +1736,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/README.md:28",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/start-picture.png"
     },
     {
       "id": "A3-gb-5-bag-clip2",
@@ -1698,7 +1760,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/README.md:28",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/clip-2/start-picture.png"
     },
     {
       "id": "A3-r1-8-s4",
@@ -1723,7 +1786,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:38",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-4/start-picture.png"
     },
     {
       "id": "A3-r1-5-s3",
@@ -1749,7 +1813,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:11",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-3/start-picture.png"
     },
     {
       "id": "A3-r1-5-s4",
@@ -1775,7 +1840,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:11",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-4/start-picture.png"
     },
     {
       "id": "A3-gb-8-full10s",
@@ -1798,7 +1864,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-8-full10s)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-8-full10s).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-10s-full/start-picture.png"
     },
     {
       "id": "A3-gb-12-v2",
@@ -1821,7 +1888,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-12-v2)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-12-v2).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/v2-starting-picture.png"
     },
     {
       "id": "A3-r1-8-s5",
@@ -1846,7 +1914,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A6-r1-8-s5)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A6-r1-8-s5).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-5/start-picture.png"
     },
     {
       "id": "A3-r1-12-s4",
@@ -1873,7 +1942,8 @@
       "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A11-r1-12-s4).",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass."
+      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass.",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/12-gripmunk-case/scene-4/start-picture.png"
     },
     {
       "id": "A3-gb-5-sm-s2",
@@ -1898,7 +1968,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/grading-sheet.csv:2",
       "quote_exact": false,
-      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at."
+      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
+      "start_picture": null
     },
     {
       "id": "A4c-gb-8-scrub5s",
@@ -1921,7 +1992,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/decisions/2026-10-07-broll-prompts.md:92",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-5s-scrub/start-picture.png"
     },
     {
       "id": "A4c-gb-8-full10s",
@@ -1944,7 +2016,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/08-toilet-10s-full/README.md:9",
       "quote_exact": false,
-      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at."
+      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-10s-full/start-picture.png"
     },
     {
       "id": "A4c-gb-5-bag-clip1",
@@ -1967,7 +2040,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/README.md:28",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/start-picture.png"
     },
     {
       "id": "A4c-gb-5-bag-clip2",
@@ -1990,7 +2064,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/README.md:28",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/clip-2/start-picture.png"
     },
     {
       "id": "A4c-gb-12-v2",
@@ -2013,7 +2088,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/results.md:24",
       "quote_exact": false,
-      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at."
+      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/v2-starting-picture.png"
     },
     {
       "id": "A4c-r1-8-s4",
@@ -2038,7 +2114,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:38",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-4/start-picture.png"
     },
     {
       "id": "A4c-r1-5-s3",
@@ -2064,7 +2141,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:11",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-3/start-picture.png"
     },
     {
       "id": "A4c-r1-5-s4",
@@ -2090,7 +2168,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:11",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-4/start-picture.png"
     },
     {
       "id": "A4c-r1-8-s5",
@@ -2115,7 +2194,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A6-r1-8-s5)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A6-r1-8-s5).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-5/start-picture.png"
     },
     {
       "id": "A4c-r1-12-s4",
@@ -2142,7 +2222,8 @@
       "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A11-r1-12-s4).",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass."
+      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass.",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/12-gripmunk-case/scene-4/start-picture.png"
     },
     {
       "id": "A4c-gb-8-newtest-picture",
@@ -2165,7 +2246,8 @@
       "shop_answers": "",
       "note": "start-picture grade (caught before paying); picture prompt = graded-broll-run/08-new-toilet-test/start-picture-prompt.txt Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
       "quote_at": "/mnt/project-files/evals/judge-notes.md:20",
-      "quote_exact": false
+      "quote_exact": false,
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-new-toilet-test/start-picture.png"
     },
     {
       "id": "A5-gb-8-scrub5s",
@@ -2188,7 +2270,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/decisions/2026-10-07-broll-prompts.md:92",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-5s-scrub/start-picture.png"
     },
     {
       "id": "A5-r1-8-s4",
@@ -2213,7 +2296,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:38",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-4/start-picture.png"
     },
     {
       "id": "A5-gb-5-bag-clip1",
@@ -2236,7 +2320,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip1)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip1).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/start-picture.png"
     },
     {
       "id": "A5-gb-5-bag-clip2",
@@ -2259,7 +2344,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip2)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip2).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/clip-2/start-picture.png"
     },
     {
       "id": "A5-gb-8-full10s",
@@ -2282,7 +2368,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-8-full10s)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-8-full10s).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-10s-full/start-picture.png"
     },
     {
       "id": "A5-gb-12-v2",
@@ -2305,7 +2392,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-12-v2)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-12-v2).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/v2-starting-picture.png"
     },
     {
       "id": "A5-r1-5-s3",
@@ -2331,7 +2419,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s3)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s3).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-3/start-picture.png"
     },
     {
       "id": "A5-r1-5-s4",
@@ -2357,7 +2446,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s4)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s4).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-4/start-picture.png"
     },
     {
       "id": "A5-r1-8-s5",
@@ -2382,7 +2472,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A6-r1-8-s5)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A6-r1-8-s5).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-5/start-picture.png"
     },
     {
       "id": "A5-r1-12-s4",
@@ -2409,7 +2500,8 @@
       "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A11-r1-12-s4).",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass."
+      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass.",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/12-gripmunk-case/scene-4/start-picture.png"
     },
     {
       "id": "A5-bm-8-s2",
@@ -2432,7 +2524,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/broll-main-action-clips/grading-sheet.md:16",
       "quote_exact": false,
-      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at."
+      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
+      "start_picture": "/mnt/project-files/runs/broll-main-action-clips/8-scene-2/start-picture.png"
     },
     {
       "id": "A6-r1-5-s3",
@@ -2458,7 +2551,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:11",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-3/start-picture.png"
     },
     {
       "id": "A6-r1-5-s4",
@@ -2484,7 +2578,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:11",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-4/start-picture.png"
     },
     {
       "id": "A6-r1-8-s4",
@@ -2509,7 +2604,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:38",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-4/start-picture.png"
     },
     {
       "id": "A6-r1-8-s5",
@@ -2534,7 +2630,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:38",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-5/start-picture.png"
     },
     {
       "id": "A6-b13-12-s2",
@@ -2559,7 +2656,8 @@
       "shop_answers": "",
       "note": "The Oct 7 #12 drop-leak grade: photo job 'the case during a drop' leaked the photo's low drop. Video prompt = runs/graded-broll-run/12-photo-looks-only/old-request.json (batch-13 job). Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/batch-13/grading-sheet.csv:12",
-      "quote_exact": false
+      "quote_exact": false,
+      "start_picture": null
     },
     {
       "id": "A8-gb-12-v2",
@@ -2582,7 +2680,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/results.md:24",
       "quote_exact": false,
-      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at."
+      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/v2-starting-picture.png"
     },
     {
       "id": "A8-gb-8-scrub5s",
@@ -2605,7 +2704,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/decisions/2026-10-07-broll-prompts.md:92",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-5s-scrub/start-picture.png"
     },
     {
       "id": "A8-gb-8-full10s",
@@ -2628,7 +2728,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/08-toilet-10s-full/README.md:9",
       "quote_exact": false,
-      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at."
+      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-10s-full/start-picture.png"
     },
     {
       "id": "A8-gb-5-bag-clip1",
@@ -2651,7 +2752,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/README.md:28",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/start-picture.png"
     },
     {
       "id": "A8-gb-5-bag-clip2",
@@ -2674,7 +2776,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip2)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip2).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/clip-2/start-picture.png"
     },
     {
       "id": "A8-r1-5-s3",
@@ -2700,7 +2803,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s3)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s3).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-3/start-picture.png"
     },
     {
       "id": "A8-r1-5-s4",
@@ -2726,7 +2830,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s4)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s4).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-4/start-picture.png"
     },
     {
       "id": "A8-r1-8-s4",
@@ -2751,7 +2856,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-8-s4)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-8-s4).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-4/start-picture.png"
     },
     {
       "id": "A8-r1-8-s5",
@@ -2776,7 +2882,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A6-r1-8-s5)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A6-r1-8-s5).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-5/start-picture.png"
     },
     {
       "id": "A8-r1-12-s4",
@@ -2803,7 +2910,8 @@
       "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A11-r1-12-s4).",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass."
+      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass.",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/12-gripmunk-case/scene-4/start-picture.png"
     },
     {
       "id": "A8-gb-12-v1",
@@ -2826,7 +2934,8 @@
       "shop_answers": "",
       "note": "no start picture; clean shop photo sent as Image 1; height only in words Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/results.md:23",
-      "quote_exact": false
+      "quote_exact": false,
+      "start_picture": null
     },
     {
       "id": "A8-b13-12-s2",
@@ -2851,7 +2960,8 @@
       "shop_answers": "",
       "note": "no start picture; height only in words Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/batch-13/grading-sheet.csv:12",
-      "quote_exact": false
+      "quote_exact": false,
+      "start_picture": null
     },
     {
       "id": "A8-r1-N3-s4",
@@ -2876,7 +2986,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md",
       "quote_exact": true,
-      "note": "Julian added A8 on the tap page; his note also counts as C4 on the R1 N3 whole-ad card (his 19:06 yes)."
+      "note": "Julian added A8 on the tap page; his note also counts as C4 on the R1 N3 whole-ad card (his 19:06 yes).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/N3-shower-tile-cleaner/scene-4/start-picture.png"
     },
     {
       "id": "A8-r2-12-s5",
@@ -2902,7 +3013,8 @@
       "shop_answers": "",
       "note": "Julian added A8 on the tap page (round 2 #12 scene 5); no typed words, the tap is the grade.",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md",
-      "quote_exact": false
+      "quote_exact": false,
+      "start_picture": "/mnt/project-files/runs/round-2-test-ads/12-gripmunk-case/scene-5/start-picture.png"
     },
     {
       "id": "A9-gb-8-scrub5s",
@@ -2925,7 +3037,8 @@
       "shop_answers": "",
       "note": "bottle stands on the tank while the brush works",
       "quote_at": "/mnt/project-files/decisions/2026-10-07-broll-prompts.md:92",
-      "quote_exact": true
+      "quote_exact": true,
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-5s-scrub/start-picture.png"
     },
     {
       "id": "A9-r1-8-s4",
@@ -2950,7 +3063,8 @@
       "shop_answers": "",
       "note": "bottle stands beside the toilet while the brush works",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:38",
-      "quote_exact": true
+      "quote_exact": true,
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-4/start-picture.png"
     },
     {
       "id": "C1-gb-8-scrub5s",
@@ -2973,7 +3087,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/decisions/2026-10-07-broll-prompts.md:92",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-5s-scrub/start-picture.png"
     },
     {
       "id": "C1-gb-5-bag-clip1",
@@ -2996,7 +3111,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/README.md:28",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/start-picture.png"
     },
     {
       "id": "C1-r1-5-s3",
@@ -3022,7 +3138,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:11",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-3/start-picture.png"
     },
     {
       "id": "C1-r1-5-s4",
@@ -3048,7 +3165,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:11",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-4/start-picture.png"
     },
     {
       "id": "C1-r1-8-s4",
@@ -3073,7 +3191,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:38",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-4/start-picture.png"
     },
     {
       "id": "C1-r1-8-s5",
@@ -3098,7 +3217,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:38",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-5/start-picture.png"
     },
     {
       "id": "C1-r2-12-s5",
@@ -3124,7 +3244,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/round-2-test-ads/grading-sheet.md:22",
       "quote_exact": true,
-      "note": "Pass from 'it's good right now'; his only complaint is drop height (C3). He ends the sentence with \"It's doing nothing, bro.\" (to confirm it is not about s5)."
+      "note": "Pass from 'it's good right now'; his only complaint is drop height (C3). He ends the sentence with \"It's doing nothing, bro.\" (to confirm it is not about s5).",
+      "start_picture": "/mnt/project-files/runs/round-2-test-ads/12-gripmunk-case/scene-5/start-picture.png"
     },
     {
       "id": "C1-gb-5-bag-clip2",
@@ -3147,7 +3268,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip2)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip2).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/clip-2/start-picture.png"
     },
     {
       "id": "C1-gb-8-full10s",
@@ -3170,7 +3292,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-8-full10s)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-8-full10s).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-10s-full/start-picture.png"
     },
     {
       "id": "C1-gb-12-v2",
@@ -3193,7 +3316,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-12-v2)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-12-v2).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/v2-starting-picture.png"
     },
     {
       "id": "C1-r1-12-s4",
@@ -3220,7 +3344,8 @@
       "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A11-r1-12-s4).",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass."
+      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass.",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/12-gripmunk-case/scene-4/start-picture.png"
     },
     {
       "id": "C1-b13-15-s2",
@@ -3245,7 +3370,8 @@
       "shop_answers": "",
       "note": "Julian added C1 on the tap page (card #15 scene 2, batch 13); no typed words, the tap is the grade.",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md",
-      "quote_exact": false
+      "quote_exact": false,
+      "start_picture": null
     },
     {
       "id": "C1-r2-12-s2",
@@ -3270,7 +3396,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/round-2-test-ads/grading-sheet.md:22",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/round-2-test-ads/12-gripmunk-case/scene-2/start-picture.png"
     },
     {
       "id": "C1-r2-8-s4",
@@ -3295,7 +3422,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/round-2-test-ads/grading-sheet.md:18",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/round-2-test-ads/8-toilet-cleaner/scene-4/start-picture.png"
     },
     {
       "id": "C1-r2-N3-s2",
@@ -3320,7 +3448,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/round-2-test-ads/grading-sheet.md:26",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/round-2-test-ads/N3-shower-tile-cleaner/scene-2/start-picture.png"
     },
     {
       "id": "C1-r2-N3-s3",
@@ -3345,7 +3474,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/round-2-test-ads/grading-sheet.md:26",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/round-2-test-ads/N3-shower-tile-cleaner/scene-3/start-picture.png"
     },
     {
       "id": "C1-r2-N3-s4",
@@ -3370,7 +3500,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/round-2-test-ads/grading-sheet.md:26",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/round-2-test-ads/N3-shower-tile-cleaner/scene-4/start-picture.png"
     },
     {
       "id": "C1-r2-N3-s5",
@@ -3395,7 +3526,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/round-2-test-ads/grading-sheet.md:26",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/round-2-test-ads/N3-shower-tile-cleaner/scene-5/start-picture.png"
     },
     {
       "id": "C2-gb-8-scrub5s",
@@ -3418,7 +3550,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/decisions/2026-10-07-broll-prompts.md:92",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-5s-scrub/start-picture.png"
     },
     {
       "id": "C2-gb-8-full10s",
@@ -3441,7 +3574,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/08-toilet-10s-full/README.md:9",
       "quote_exact": false,
-      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at."
+      "note": "Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-10s-full/start-picture.png"
     },
     {
       "id": "C2-r1-8-s4",
@@ -3466,7 +3600,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:38",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-4/start-picture.png"
     },
     {
       "id": "C2-r1-8-s5",
@@ -3491,7 +3626,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:38",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-5/start-picture.png"
     },
     {
       "id": "C2-gb-5-bag-clip1",
@@ -3514,7 +3650,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip1)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip1).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/start-picture.png"
     },
     {
       "id": "C2-gb-5-bag-clip2",
@@ -3537,7 +3674,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip2)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip2).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/clip-2/start-picture.png"
     },
     {
       "id": "C2-gb-12-v2",
@@ -3560,7 +3698,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-12-v2)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-12-v2).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/v2-starting-picture.png"
     },
     {
       "id": "C2-r1-5-s3",
@@ -3586,7 +3725,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s3)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s3).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-3/start-picture.png"
     },
     {
       "id": "C2-r1-5-s4",
@@ -3612,7 +3752,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s4)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s4).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-4/start-picture.png"
     },
     {
       "id": "C2-r1-12-s4",
@@ -3639,7 +3780,8 @@
       "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A11-r1-12-s4).",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass."
+      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass.",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/12-gripmunk-case/scene-4/start-picture.png"
     },
     {
       "id": "C2-r2-8-s4",
@@ -3664,7 +3806,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/round-2-test-ads/grading-sheet.md:18",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/round-2-test-ads/8-toilet-cleaner/scene-4/start-picture.png"
     },
     {
       "id": "C2-r1-N3-s4",
@@ -3689,7 +3832,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/runs/combined-test-ads/grading-sheet.md:25",
       "quote_exact": true,
-      "note": ""
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/N3-shower-tile-cleaner/scene-4/start-picture.png"
     },
     {
       "id": "C3-gb-12-v2",
@@ -3712,7 +3856,8 @@
       "shop_answers": "",
       "note": "six feet stated in picture and video prompt Julian's own message is not saved in the project files; quote is his grade as recorded at quote_at.",
       "quote_at": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/results.md:24",
-      "quote_exact": false
+      "quote_exact": false,
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/12-hand-crafted/v2-starting-picture.png"
     },
     {
       "id": "C3-gb-5-bag-clip1",
@@ -3735,7 +3880,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip1)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip1).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/start-picture.png"
     },
     {
       "id": "C3-gb-5-bag-clip2",
@@ -3758,7 +3904,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip2)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-5-bag-clip2).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/05-bag-strap/clip-2/start-picture.png"
     },
     {
       "id": "C3-gb-8-scrub5s",
@@ -3781,7 +3928,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-8-scrub5s)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-gb-8-scrub5s).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-5s-scrub/start-picture.png"
     },
     {
       "id": "C3-gb-8-full10s",
@@ -3804,7 +3952,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-8-full10s)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A4c-gb-8-full10s).",
+      "start_picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-10s-full/start-picture.png"
     },
     {
       "id": "C3-r1-5-s3",
@@ -3830,7 +3979,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s3)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s3).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-3/start-picture.png"
     },
     {
       "id": "C3-r1-5-s4",
@@ -3856,7 +4006,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s4)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-5-s4).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-4/start-picture.png"
     },
     {
       "id": "C3-r1-8-s4",
@@ -3881,7 +4032,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-8-s4)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A3-r1-8-s4).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-4/start-picture.png"
     },
     {
       "id": "C3-r1-8-s5",
@@ -3906,7 +4058,8 @@
       "shop_answers": "",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A6-r1-8-s5)."
+      "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A6-r1-8-s5).",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-5/start-picture.png"
     },
     {
       "id": "C3-r1-12-s4",
@@ -3933,7 +4086,8 @@
       "note": "Passed clip: Julian left every video-visible rule unticked on its card, so it breaks none (scene copied from A11-r1-12-s4).",
       "quote_at": "/mnt/project-files/evals/rule-evals/rule-match-answers.md:3",
       "quote_exact": true,
-      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass."
+      "regrade": "Julian re-graded 2026-10-09 17:01 on the B-roll Grade Check page (#18): old FAIL wrong, it's a pass.",
+      "start_picture": "/mnt/project-files/runs/combined-test-ads/12-gripmunk-case/scene-4/start-picture.png"
     },
     {
       "id": "C3-r2-12-s5",
@@ -3959,7 +4113,8 @@
       "shop_answers": "",
       "note": "Fail for drop height only: no drop height anywhere in the scene (start picture: camera 'at knee height', phone 'above the floor').",
       "quote_at": "/mnt/project-files/runs/round-2-test-ads/grading-sheet.md:22",
-      "quote_exact": true
+      "quote_exact": true,
+      "start_picture": "/mnt/project-files/runs/round-2-test-ads/12-gripmunk-case/scene-5/start-picture.png"
     },
     {
       "id": "C4-r1-8-plan",

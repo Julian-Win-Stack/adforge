@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from gateway.types import Handoff, Judgement
+from gateway.types import Handoff, Judgement, ModelReply
 
 CASES = Path(__file__).resolve().parent / "rule_cases.json"
 
@@ -175,9 +175,10 @@ def score(cases: list[Case], ask: Ask) -> tuple[list[Score], list[tuple[Case, Ru
     return [Score(rule, *counts) for rule, counts in sorted(tally.items())], wrong
 
 
-def ask_model(case: Case) -> RuleVerdict:
-    """The judge for `case`'s rule, asked for real. Needs Django set up: it goes through the
-    gateway's model provider, as the app's calls do, but is recorded nowhere."""
+def ask_model(case: Case, model: str = JUDGE_MODEL) -> ModelReply[RuleVerdict]:
+    """The judge for `case`'s rule, asked of `model` for real, with what it cost in tokens.
+    Needs Django set up: it goes through the gateway's model provider, as the app's calls
+    do, but is recorded nowhere."""
     from adforge.retry import OutsideServiceDown
     from gateway.gateway import _provider, shrunk_image
     from gateway.types import Image, LoadedImage, ModelRequest
@@ -189,7 +190,7 @@ def ask_model(case: Case) -> RuleVerdict:
 
     request = ModelRequest(
         purpose="rule_eval",
-        model=JUDGE_MODEL,
+        model=model,
         instructions=JUDGE_INSTRUCTIONS + RULES[case.rule],
         handoff=case.handoff,
         output=RuleVerdict,
@@ -197,7 +198,7 @@ def ask_model(case: Case) -> RuleVerdict:
     )
     for tries in range(TRIES):
         try:
-            return _provider().complete(request).output
+            return _provider().complete(request)
         except OutsideServiceDown:
             if tries == TRIES - 1:
                 raise
