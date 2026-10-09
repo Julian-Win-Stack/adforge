@@ -20,6 +20,9 @@ CASES = Path(__file__).resolve().parent / "rule_cases.json"
 JUDGE_MODEL = "gpt-5-mini"
 # A judge asked again when Azure times out, as it does under load.
 TRIES = 3
+# A judge's answer is what most of 3 asks say, since the same question flips 3-4 of ~155
+# verdicts from one run to the next (Julian 2026-10-09 23:20: "ok. i approve").
+VOTES = 3
 
 JUDGE_INSTRUCTIONS = """\
 You check one rule on what an ad app wrote for a B-roll clip: a short silent video clip \
@@ -240,3 +243,20 @@ def ask_model(case: Case, model: str = JUDGE_MODEL) -> ModelReply[RuleVerdict]:
             if refused_already or "it refused:" not in str(error):
                 raise
             refused_already = True
+
+
+def ask_majority(case: Case, model: str = JUDGE_MODEL) -> ModelReply[RuleVerdict]:
+    """The judge for `case`'s rule, asked of `model` until one answer has most of VOTES asks,
+    so asked twice when the first two agree. Its reason is the first that gave that answer,
+    and the tokens are every ask's."""
+    replies: list[ModelReply[RuleVerdict]] = []
+    while True:
+        replies.append(ask_model(case, model))
+        for decision in ("pass", "fail"):
+            agreeing = [r for r in replies if r.output.decision == decision]
+            if len(agreeing) > VOTES // 2:
+                return ModelReply(
+                    output=agreeing[0].output,
+                    input_tokens=sum(r.input_tokens for r in replies),
+                    output_tokens=sum(r.output_tokens for r in replies),
+                )

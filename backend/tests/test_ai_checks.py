@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from evals.ai_checks import Case, RuleVerdict, ask_model, load_cases, score
+from evals.ai_checks import Case, RuleVerdict, ask_majority, ask_model, load_cases, score
+from evals.break_passes import broken
 from gateway.fake import FakeModel
 from gateway.types import UnusableReply
 
@@ -90,3 +91,46 @@ def test_a_judge_that_refuses_twice_has_no_answer(fake_model: FakeModel, tmp_pat
 
     with pytest.raises(UnusableReply):
         ask_model(case)
+
+
+def test_a_judge_s_answer_is_the_one_most_of_three_asks_give(
+    fake_model: FakeModel, tmp_path: Path
+) -> None:
+    (case,) = load_cases(cases_file(tmp_path, [("A14", "pass")]))
+    fake_model.respond(
+        "rule_eval",
+        {"decision": "fail", "reason": "The camera pans."},
+        {"decision": "pass", "reason": "The camera stays still."},
+        {"decision": "pass", "reason": "Only the hand moves."},
+    )
+
+    verdict = ask_majority(case).output
+
+    assert (verdict.decision, verdict.reason) == ("pass", "The camera stays still.")
+
+
+def test_a_judge_whose_first_two_answers_agree_is_not_asked_a_third_time(
+    fake_model: FakeModel, tmp_path: Path
+) -> None:
+    (case,) = load_cases(cases_file(tmp_path, [("A14", "pass")]))
+    fake_model.respond(
+        "rule_eval",
+        {"decision": "fail", "reason": "The camera pans."},
+        {"decision": "fail", "reason": "The camera zooms."},
+        {"decision": "pass", "reason": "Never asked."},
+    )
+
+    assert ask_majority(case).output.reason == "The camera pans."
+    assert ask_model(case).output.reason == "Never asked."
+
+
+def test_a_broken_copy_can_start_from_another_real_picture(tmp_path: Path) -> None:
+    path = cases_file(tmp_path, [("A8", "pass")])
+    raw = json.loads(path.read_text())
+    raw["cases"][0]["start_picture"] = "/runs/8/dirty-bowl.png"
+    path.write_text(json.dumps(raw))
+    (case,) = load_cases(path)
+
+    copy = broken(case, [{"field": "start_picture", "value": "/runs/8/clean-bowl.png"}])
+
+    assert (copy.start_picture, copy.label) == (Path("/runs/8/clean-bowl.png"), "fail")

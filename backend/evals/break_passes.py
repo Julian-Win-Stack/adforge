@@ -8,7 +8,9 @@ Julian's grades: they live in their own file, never in rule_cases.json. From bac
 
 Each entry in the edits file is {"id": <a passing case>, "breaks": <why the edit breaks the
 rule>, "edits": [{"field": <scene field, or plan.<index>.<field>>, "find": <exact text>,
-"replace": <text>} or {"field": ..., "value": <the field's new value>}]}.
+"replace": <text>} or {"field": ..., "value": <the field's new value>}]}. The field
+"start_picture" takes the path of another picture the app really drew, for a copy whose
+broken text the case's own picture would still contradict.
 """
 
 import argparse
@@ -25,7 +27,7 @@ import django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "adforge.settings")
 django.setup()
 
-from evals.ai_checks import Case, RuleVerdict, ask_model, load_cases  # noqa: E402
+from evals.ai_checks import Case, RuleVerdict, ask_majority, load_cases  # noqa: E402
 from gateway.types import UnusableReply  # noqa: E402
 
 # As in calibrate_ai_checks: far under Azure's per-model text limits.
@@ -37,7 +39,11 @@ def broken(case: Case, edits: list[dict[str, Any]]) -> Case:
     so a copy never silently goes to the judge unbroken."""
     scene = deepcopy(case.handoff.scene)
     plan = deepcopy(case.handoff.plan)
+    start_picture = case.start_picture
     for edit in edits:
+        if edit["field"] == "start_picture":
+            start_picture = Path(edit["value"])
+            continue
         path = edit["field"].split(".")
         if path[0] == "plan":
             assert plan is not None, f"{case.id} has no plan"
@@ -51,7 +57,7 @@ def broken(case: Case, edits: list[dict[str, Any]]) -> Case:
             assert edit["find"] in holder[key], f"{case.id}: {edit['find']!r} not in {key}"
             holder[key] = holder[key].replace(edit["find"], edit["replace"], 1)
     handoff = case.handoff.model_copy(update={"scene": scene, "plan": plan})
-    return replace(case, handoff=handoff, label="fail")
+    return replace(case, handoff=handoff, label="fail", start_picture=start_picture)
 
 
 def main(model: str, edits_file: Path, out: Path | None) -> None:
@@ -65,7 +71,7 @@ def main(model: str, edits_file: Path, out: Path | None) -> None:
 
     def ask(copy: Case) -> RuleVerdict:
         try:
-            return ask_model(copy, model).output
+            return ask_majority(copy, model).output
         except UnusableReply as error:
             return RuleVerdict(decision="pass", reason=f"NO USABLE ANSWER: {error}"[:300])
 

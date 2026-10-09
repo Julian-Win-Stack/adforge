@@ -18,7 +18,7 @@ import django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "adforge.settings")
 django.setup()
 
-from evals.ai_checks import Case, RuleVerdict, ask_model, load_cases, score  # noqa: E402
+from evals.ai_checks import Case, RuleVerdict, ask_majority, load_cases, score  # noqa: E402
 from gateway.types import ModelReply, UnusableReply  # noqa: E402
 
 # Azure text allows 1,000 requests and 1M tokens a minute per model
@@ -31,7 +31,7 @@ def main(model: str, out: Path | None, rules: list[str]) -> None:
 
     def ask(case: Case) -> ModelReply[RuleVerdict]:
         try:
-            return ask_model(case, model)
+            return ask_majority(case, model)
         except UnusableReply as error:
             # A refusal or unreadable answer counts as the judge getting the case wrong.
             wrong = "fail" if case.label == "pass" else "pass"
