@@ -39,7 +39,9 @@ The rule:
 RULES: dict[str, str] = {
     "A2": "A claim that needs two end states, such as a bag worn two ways, is two B-roll "
     "scenes back to back, each opening already in its state. Fail when one scene films the "
-    "change from one state to the other, such as putting a strap on or taking it off.",
+    "change from one state to the other, such as putting a strap on or taking it off. Judge "
+    "only this one scene: pass when it opens already in its state and stays in it, even "
+    "though the other state is in another scene or isn't filmed here.",
     "A3": "A B-roll films only the main step of using the product, the one that shows it "
     "working; the voice carries the other steps. Fail when the video prompt films several "
     "steps, such as spraying, waiting and then scrubbing.",
@@ -55,7 +57,9 @@ RULES: dict[str, str] = {
     "A8": "What must be right in the clip, such as where the camera is, a height, the place, "
     "or how an object looks before the action, is said plainly in the picture prompt, not "
     "only in the video prompt. Fail when the video prompt needs something the picture "
-    "prompt leaves out.",
+    "prompt leaves out, and that detail decides whether the claim is proven, such as the "
+    'height of a drop that proves a drop claim. A style word such as "handheld", or where '
+    "the frame cuts a person off, is not such a detail.",
     "A9": "The product may stand still in view while a tool used with it does the work, such "
     "as a bottle beside a toilet while a brush scrubs. Fail only when nothing in the clip "
     "acts at all.",
@@ -67,7 +71,8 @@ RULES: dict[str, str] = {
     "appearing, or shows more than the proof.",
     "A14": "The camera never moves: a hand or the product does. Fail when the camera pushes "
     "in, zooms, pans, tilts, follows, circles or moves in any way, or the camera's move is "
-    "the scene's only action.",
+    'the scene\'s only action. A style word such as "handheld" or "phone video" is not a '
+    "camera move: only a move the prompts write out counts. Pass when none is written.",
     "A15": "A claim in a line that a camera could see, something the product does, is shown "
     "in a B-roll scene, not only said by the talking person. Fail when a talking scene's "
     "line claims something visible, such as a neck that reaches 360 degrees, and no B-roll "
@@ -76,19 +81,29 @@ RULES: dict[str, str] = {
     '"shows" says. Fail when the video prompt leaves them out.',
     "C1": "Every B-roll sells the product: it does something that shows a result, a benefit "
     "or proof. Fail when its one action only holds, places, sets down, stands up, carries or "
-    "rests the product, which means nothing to a viewer.",
+    "rests the product and that proves nothing the line says, which means nothing to a "
+    "viewer. Pass when the holding or carrying is itself what the line claims, such as "
+    "carrying the product the way the line says it can be carried.",
     "C2": "A scene about the result shows the result itself, such as a clean toilet bowl "
     "after cleaning, so a viewer sees the product worked. Fail when a result line is shown "
-    "only by the product next to something already clean, with no evidence it did it. Pass "
-    "when the scene isn't about a result.",
+    "only by the product next to something already clean, with no evidence it did it. "
+    "Also fail when a scene shows the product cleaning or fixing something whose dirt or "
+    "problem can't be seen at the start, such as when the picture prompt calls it faint, "
+    "transparent or barely visible, or says there is no visible dirt: before and after "
+    "would look the same. Pass when the scene isn't about a result.",
     "C3": "Any real-life size, height, distance or count the action needs to prove its claim, "
     "such as how high a phone is dropped from, is stated in the prompts at its real value. "
     'Fail when the action needs one and the prompts leave it vague, such as "above the '
-    'floor", so the clip may show it far smaller. Pass when no such number matters.',
+    'floor", so the clip may show it far smaller. A count in the claim, such as how many '
+    "times something was done, needn't be filmed that many times: showing it once proves "
+    "it. Pass when no such number matters, such as the size of an everyday object.",
     "C4": "When the app can't know how the result looks, such as a surface before and after "
     "cleaning, it asks the shop owner for a photo, and if they have none, the middle scenes "
     "are talking scenes, not B-roll filler. Fail when a result look is needed and the app "
-    "didn't ask, or the owner had no photo and the plan still has B-roll that shows nothing.",
+    "didn't ask, or the owner had no photo and the plan still has B-roll that shows nothing. "
+    "The app can't know the look only when the dirt or the result is a thin film, haze, "
+    "cloudiness or water spots, which a drawn picture can't show honestly. Visible dirt, "
+    "such as a stain or a ring, can be drawn: pass a plan that films it without asking.",
 }
 
 
