@@ -950,9 +950,23 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
     )
     scene.fact_problems[-1]["rewritten"] = True
     scene.change_line(rewrite.line, rewrite.shows or "", broll=rewrite.broll_details())
-    scene.save(
-        update_fields=["line", "shortened_from", "shows", *BROLL_FIELDS, "status", "fact_problems"]
-    )
+    with transaction.atomic():
+        if rewrite.shows is None:
+            # A talking scene shows no second state, and the scene after it no longer follows
+            # the first state it was made from, as in _say_it_to_camera.
+            scene.second_state = False
+            job.scenes.filter(number=scene.number + 1).update(second_state=False)
+        scene.save(
+            update_fields=[
+                "line",
+                "shortened_from",
+                "shows",
+                *BROLL_FIELDS,
+                "status",
+                "fact_problems",
+                "second_state",
+            ]
+        )
 
 
 def _about_line(scene: Scene) -> Asking:
@@ -1050,10 +1064,10 @@ def _fit_for(job: Job, scene: Scene, words_per_second: float) -> Fit | None:
     MOST_REWRITES times since the user last spoke, then they are asked. A B-roll line must
     take SHORTEST_BROLL_LINE_SECONDS to LONGEST_BROLL_LINE_SECONDS: too short, it is
     lengthened MOST_LENGTHENINGS times, then kept; too long, it is shortened
-    MOST_BROLL_SHORTENINGS times, then the last scene becomes a talking scene, and the user
-    is asked for a shorter line for any other, as every scene between the first and the last
-    is B-roll. A B-roll line the user chose is never rewritten: too long, it is the same, at
-    once. Tries are counted per scene, ever."""
+    MOST_BROLL_SHORTENINGS times, then its scene becomes a talking scene, whichever scene it
+    is: a middle scene may fall back to the person talking (round 2 fixes). A B-roll line the
+    user chose is never rewritten: too long, it is the same, at once. Tries are counted per
+    scene, ever."""
     seconds = line_seconds(scene.line, words_per_second)
     if not scene.shows:
         if seconds <= LONGEST_LINE_SECONDS:
@@ -1063,7 +1077,7 @@ def _fit_for(job: Job, scene: Scene, words_per_second: float) -> Fit | None:
     chosen = _chosen_by_the_user(scene)
     if seconds > LONGEST_BROLL_LINE_SECONDS:
         if chosen or _shortenings(job, scene, of_broll=True) >= MOST_BROLL_SHORTENINGS:
-            return "say_to_camera" if _is_last(scene) else "ask"
+            return "say_to_camera"
         return "shorten_broll"
     if seconds < SHORTEST_BROLL_LINE_SECONDS and not chosen:
         lengthened = job.model_calls.filter(
@@ -1074,12 +1088,6 @@ def _fit_for(job: Job, scene: Scene, words_per_second: float) -> Fit | None:
         if lengthened < MOST_LENGTHENINGS:
             return "lengthen"
     return None
-
-
-def _is_last(scene: Scene) -> bool:
-    """Whether the scene is the job's last: the only B-roll scene that may be said to camera
-    instead, as every scene between the first and the last is B-roll (test ads, 08 Oct)."""
-    return not scene.job.scenes.filter(number__gt=scene.number).exists()
 
 
 def _chosen_by_the_user(scene: Scene) -> bool:
@@ -1111,39 +1119,21 @@ def _showed_something(handoff: dict[str, Any], number: int) -> bool:
 
 
 def _ask_for_a_shorter_line(scene: Scene, words_per_second: float) -> Asking:
-    """Ask the user for a shorter line, once it was shortened as often as its kind of scene
-    allows and is still too long for its clip, or, for a B-roll line, once they chose it."""
+    """Ask the user for a shorter talking line, once it was shortened as often as allowed and
+    is still too long for its clip. A B-roll line too long is said to camera instead."""
+    assert not scene.shows, "a B-roll line too long for its clip is said to camera instead"
     seconds = line_seconds(scene.line, words_per_second)
-    if not scene.shows:
-        return Asking(
-            about="line_length",
-            question=(
-                f"Scene {scene.number}'s line still takes about {seconds:.1f} seconds to say "
-                f"after {MOST_REWRITES} shortenings, and a scene can last at most "
-                f'{LONGEST_LINE_SECONDS} seconds: "{scene.line}"'
-            ),
-            reason=(
-                f"The line was shortened {MOST_REWRITES} times and is still too long for one "
-                "scene, so you choose a shorter line."
-            ),
-            scene=scene,
-        )
-    if _chosen_by_the_user(scene):
-        said, why = "", "The line you chose is too long for its scene"
-    else:
-        said = f" after {MOST_BROLL_SHORTENINGS} shortenings"
-        why = (
-            f"The line was shortened {MOST_BROLL_SHORTENINGS} times and is still too long for "
-            "its scene"
-        )
     return Asking(
         about="line_length",
         question=(
-            f"Scene {scene.number}'s line still takes about {seconds:.1f} seconds to say{said}, "
-            f"and this scene can last at most {LONGEST_BROLL_LINE_SECONDS} seconds: "
-            f'"{scene.line}"{_while_its_said(scene)}'
+            f"Scene {scene.number}'s line still takes about {seconds:.1f} seconds to say "
+            f"after {MOST_REWRITES} shortenings, and a scene can last at most "
+            f'{LONGEST_LINE_SECONDS} seconds: "{scene.line}"'
         ),
-        reason=f"{why}, so you choose a shorter line.",
+        reason=(
+            f"The line was shortened {MOST_REWRITES} times and is still too long for one "
+            "scene, so you choose a shorter line."
+        ),
         scene=scene,
     )
 
@@ -1736,9 +1726,7 @@ def _fit_its_clip(step: SceneStep, audio: ProducedItem) -> None:
     """For a B-roll line whose audio is too long for any clip, before any clip is paid for:
     shorten the line and fact check it again, so its audio is made again. Once it was
     shortened MOST_BROLL_SHORTENINGS times, or if the shorter line fails the fact check, the
-    last scene is said to camera instead, and the chat says why. Any other scene is kept as
-    B-roll, as every scene between the first and the last is, so its clip fails saying its
-    line is too long. Nobody is asked.
+    scene is said to camera instead, and the chat says why. Nobody is asked.
 
     Run again, as after a worker stopped, it pays for nothing already paid for, and does
     nothing once the scene has changed since the step started."""
@@ -1761,7 +1749,7 @@ def _fit_its_clip(step: SceneStep, audio: ProducedItem) -> None:
         .count()
     )
     if shortened >= MOST_BROLL_SHORTENINGS:
-        _say_the_last_to_camera(scene)
+        _say_it_to_camera(scene)
         return
     conversation = _conversation(job, until=step.started_at)
     # At the pace this line was really said.
@@ -1774,19 +1762,12 @@ def _fit_its_clip(step: SceneStep, audio: ProducedItem) -> None:
         pay_once=True,
     )
     if check.decision == "unclear" or check.lines[0].verdict != "ok":
-        _say_the_last_to_camera(scene)
+        _say_it_to_camera(scene)
         return
     was = [*scene.shortened_from, scene.line]
     scene.change_line(line)
     scene.shortened_from = was
     scene.save(update_fields=["line", "shortened_from", "status"])
-
-
-def _say_the_last_to_camera(scene: Scene) -> None:
-    """Have the person say the last scene's B-roll line to camera. Any other scene stays
-    B-roll."""
-    if _is_last(scene):
-        _say_it_to_camera(scene)
 
 
 def _say_it_to_camera(scene: Scene) -> None:

@@ -1,8 +1,8 @@
 """A B-roll scene's line must take 4 to 14 seconds to say, as its clip lasts 5 to 15 whole
 seconds; a talking scene's line may take up to 18. Driven through the chat with the models
 faked: a B-roll line out of range is lengthened or shortened and checked again, and the
-shop owner is asked about it only once it can't be shortened and its scene isn't the last:
-every scene between the first and the last is B-roll. The fake voice speaks 2 words a
+scene becomes a talking scene once it can't be shortened, whichever scene it is (round 2
+fixes: prove it, else ask, else the talking scene). The fake voice speaks 2 words a
 second."""
 
 from collections.abc import Callable
@@ -226,29 +226,24 @@ def test_a_talking_line_of_16_seconds_is_left_alone(
     assert (scene_2().line, Job.objects.get().status) == (LONG, "ready_to_render")
 
 
-def test_a_middle_broll_line_still_too_long_after_three_shortenings_is_asked_about(
+def test_a_middle_broll_line_still_too_long_after_three_shortenings_becomes_a_talking_scene(
     fake_model: FakeModel,
     product_page_url: str,
     say: Callable[..., None],
     notices: Callable[[], list[str]],
 ) -> None:
-    # Every scene between the first and the last is B-roll (test ads, 08 Oct): a middle
-    # line is never said to camera, so the shop owner gives a shorter one.
-    checking(fake_model, product_page_url, scene_2_saying(LONG), reply="A shorter line?")
+    # Round 2 fixes (spec: "The talking fallback must be allowed for any middle scene"):
+    # nobody is asked for a shorter line; the person says it to camera.
+    checking(fake_model, product_page_url, scene_2_saying(LONG))
     fake_model.respond("fact_check", FACTS_OK, facts_ok(2), facts_ok(2), facts_ok(2))
     fake_model.respond("shorten_line", {"line": LONG}, {"line": LONG}, {"line": LONG})
 
     say(f"Make an ad for {product_page_url}")
 
     assert paid_for().count("shorten_line") == 3
-    assert (scene_2().line, scene_2().shows) == (LONG, POUR)
-    assert results_of("run_planning_checks")[0].splitlines()[0] == (
-        "Scene 2's line still takes about 16.0 seconds to say after 3 shortenings, and this "
-        f'scene can last at most 14 seconds: "{LONG}" While it\'s said, the ad shows: {POUR}. '
-        "Why: The line was shortened 3 times and is still too long for its scene, so you choose "
-        "a shorter line. Ask the shop owner for a shorter line of their own."
-    )
-    assert notices() == []
+    assert (scene_2().line, scene_2().shows) == (LONG, "")
+    assert results_of("run_planning_checks")[0].splitlines()[0] == PASSED
+    assert notices() == [SWITCHED.replace("Scene 3", "Scene 2")]
 
 
 @pytest.fixture
@@ -341,7 +336,7 @@ def choosing(fake_model: FakeModel, say: Callable[..., None], choice: dict[str, 
         pytest.param({"scene": 2, "choice": "own", "own_line": LONG}, id="their own"),
     ],
 )
-def test_a_middle_broll_line_the_shop_owner_chose_too_long_for_its_clip_is_asked_about(
+def test_a_middle_broll_line_the_shop_owner_chose_too_long_for_its_clip_is_said_to_camera(
     fake_model: FakeModel,
     asked_about_scene_2: None,
     say: Callable[..., None],
@@ -350,18 +345,10 @@ def test_a_middle_broll_line_the_shop_owner_chose_too_long_for_its_clip_is_asked
 ) -> None:
     choosing(fake_model, say, choice)
 
-    # Their line is never shortened, and the scene stays B-roll: they give a shorter one.
+    # Their line is never shortened, and the person says it to camera.
     assert "shorten_line" not in paid_for()
-    assert (scene_2().line, scene_2().shows) == (LONG, POUR)
-    assert notices() == []
-    assert (
-        results_of("run_planning_checks")[1]
-        .splitlines()[0]
-        .startswith(
-            "Scene 2's line still takes about 16.0 seconds to say, and this scene can last at most "
-            "14 seconds"
-        )
-    )
+    assert (scene_2().line, scene_2().shows) == (LONG, "")
+    assert notices() == [SWITCHED.replace("Scene 3", "Scene 2")]
 
 
 @pytest.mark.parametrize("asked_about_scene_2", [SHORT], indirect=True)

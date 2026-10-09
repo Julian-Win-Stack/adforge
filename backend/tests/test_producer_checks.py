@@ -1638,3 +1638,33 @@ def test_a_finished_scene_is_planned_again_only_when_what_it_shows_changes(
     scene.change_line(SAID_OVER, shows)
 
     assert scene.status == status
+
+
+def test_a_first_state_rewritten_for_the_person_to_say_leaves_no_second_state(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    # Round 2 fixes: a rewrite may now make a middle scene talking. A talking scene shows no
+    # second state, and the scene after it no longer follows the first state it was made from,
+    # as when a too-long line is said to camera.
+    scenes = [
+        {"line": "Meet the Stoneware Mug from Kiln & Co."},
+        broll({"line": SAID_OVER, "shows": POUR}),
+        broll({"line": SAID_OVER, "shows": "the full mug on a shelf", "second_state": True}),
+        {"line": "Yours for $24.00."},
+    ]
+    checking(fake_model, product_page_url, {**PLAN, "plan": {**PLAN["plan"], "scenes": scenes}})
+    fake_model.respond(
+        "fact_check",
+        shows_wrong("The page doesn't mention tea.", passing=(1, 3, 4)),
+        facts_ok(2),
+    )
+    fake_model.respond("rewrite_line", {"line": SAID_OVER, "shows": None})
+
+    say(f"Make an ad for {product_page_url}")
+
+    states = dict(Job.objects.get().scenes.values_list("number", "second_state"))
+    assert (Job.objects.get().scenes.get(number=2).shows, states[2], states[3]) == (
+        "",
+        False,
+        False,
+    )

@@ -206,7 +206,7 @@ def _audio_finished(step: SceneStep, audio: ProducedItem | None) -> str:
             f"{too_long}Scene {number}'s line was shortened to fit its clip. Make its audio again."
         )
     if too_long_for_a_clip(step, audio) and step.line == scene.line:
-        # Every scene between the first and the last is B-roll, so it isn't said to camera.
+        # Only when the scene changed while its audio was made, so it wasn't said to camera.
         return (
             f"{too_long}Its line couldn't be shortened to fit, and scene {number} shows the "
             "product, so it isn't said to camera. Ask the shop owner for a shorter line of "
