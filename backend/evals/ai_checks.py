@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from gateway.types import Handoff, Judgement, ModelReply
+from gateway.types import Handoff, Judgement, ModelReply, UnusableReply
 
 CASES = Path(__file__).resolve().parent / "rule_cases.json"
 
@@ -69,7 +69,8 @@ RULES: dict[str, str] = {
     '"handheld", or where the frame cuts a person off, is not such a detail. The picture '
     "prompt draws only the "
     "start: a result the action itself makes, such as things ending up inside, belongs in "
-    "the video prompt alone.",
+    "the video prompt alone. Judge only what the picture prompt says: not whether the line "
+    "matches the action, and not whether the drawn picture follows its prompt.",
     "A9": "The product may stand still in view while a tool used with it does the work, such "
     "as a tin of polish beside a shoe while a cloth buffs it. Fail only when nothing in the clip "
     "acts at all.",
@@ -79,14 +80,18 @@ RULES: dict[str, str] = {
     "picture. Fail when the video prompt flips, spins or turns the product far enough to "
     "show a side the starting picture doesn't show at all, such as the face of a "
     "watch shown only from the back. Pass a turn that brings into view a side already "
-    "partly visible in the starting picture, such as the side of a shoe.",
+    "partly visible in the starting picture, such as the side of a shoe, or a small turn "
+    "that ends on such a side.",
     "A13": "The clip shows only the proof of what the line claims, the moment that proves "
     "it. Fail when it adds damage, harm or anything going wrong, such as a tear "
-    "appearing, or shows more than the proof.",
+    "appearing, or shows more than the proof. Judge what the clip does; the starting picture "
+    "shows only the start.",
     "A14": "The camera never moves: a hand or the product does. Fail when the camera pushes "
     "in, zooms, pans, tilts, follows, circles or moves in any way, or the camera's move is "
-    'the scene\'s only action. A style word such as "handheld" or "phone video" is not a '
-    "camera move: only a move the prompts write out counts. Pass when none is written.",
+    'the scene\'s only action. A style word such as "handheld" or "phone video", or the '
+    "slight shake of a camera held in a hand, is not a camera move: only a move with a "
+    "direction or a path counts, such as a push-in, a pan or a glide past. Pass when none "
+    "is written.",
     "A15": "A claim in a line that a camera could see, something the product does, is shown "
     "in a B-roll scene, not only said by the talking person. Fail when a talking scene's "
     "line claims something visible, such as a lid that seals with one click, and no B-roll "
@@ -113,7 +118,8 @@ RULES: dict[str, str] = {
     'Fail when the action needs one and the prompts leave it vague, such as "off the '
     'ground", so the clip may show it far smaller. A count in the claim, such as how many '
     "times something was done, needn't be filmed that many times: showing it once proves "
-    "it. Pass when no such number matters, such as the size of an everyday object.",
+    "it. Pass when no such number matters, such as the size of an everyday object. How long "
+    "something takes or waits is not part of this rule.",
     "C4": "When the app can't know how the result looks, such as a surface before and after "
     "cleaning, it asks the shop owner for a photo, and if they have none, the middle scenes "
     "are talking scenes, not B-roll filler. Fail when a result look is needed and the app "
@@ -213,7 +219,7 @@ def ask_model(case: Case, model: str = JUDGE_MODEL) -> ModelReply[RuleVerdict]:
     do, but is recorded nowhere."""
     from adforge.retry import OutsideServiceDown
     from gateway.gateway import _provider, shrunk_image
-    from gateway.types import Image, LoadedImage, ModelRequest, UnusableReply
+    from gateway.types import Image, LoadedImage, ModelRequest
 
     images: tuple[LoadedImage, ...] = ()
     if case.start_picture is not None:
@@ -248,10 +254,18 @@ def ask_model(case: Case, model: str = JUDGE_MODEL) -> ModelReply[RuleVerdict]:
 def ask_majority(case: Case, model: str = JUDGE_MODEL) -> ModelReply[RuleVerdict]:
     """The judge for `case`'s rule, asked of `model` until one answer has most of VOTES asks,
     so asked twice when the first two agree. Its reason is the first that gave that answer,
-    and the tokens are every ask's."""
+    and the tokens are every ask's. An ask that still refuses after its own second try isn't
+    a vote: the judge is asked again, up to VOTES more times, before it has no answer."""
     replies: list[ModelReply[RuleVerdict]] = []
+    unusable = 0
     while True:
-        replies.append(ask_model(case, model))
+        try:
+            replies.append(ask_model(case, model))
+        except UnusableReply:
+            unusable += 1
+            if unusable > VOTES:
+                raise
+            continue
         for decision in ("pass", "fail"):
             agreeing = [r for r in replies if r.output.decision == decision]
             if len(agreeing) > VOTES // 2:

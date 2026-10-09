@@ -134,3 +134,18 @@ def test_a_broken_copy_can_start_from_another_real_picture(tmp_path: Path) -> No
     copy = broken(case, [{"field": "start_picture", "value": "/runs/8/clean-bowl.png"}])
 
     assert (copy.start_picture, copy.label) == (Path("/runs/8/clean-bowl.png"), "fail")
+
+
+def test_a_judge_that_refuses_twice_in_one_ask_is_asked_again(
+    fake_model: FakeModel, tmp_path: Path
+) -> None:
+    (case,) = load_cases(cases_file(tmp_path, [("A14", "pass")]))
+    fake_model.respond(
+        "rule_eval",
+        UnusableReply(REFUSED, input_tokens=900, output_tokens=10),
+        UnusableReply(REFUSED, input_tokens=900, output_tokens=10),
+        {"decision": "pass", "reason": "The camera stays still."},
+        {"decision": "pass", "reason": "Only the hand moves."},
+    )
+
+    assert ask_majority(case).output.decision == "pass"
