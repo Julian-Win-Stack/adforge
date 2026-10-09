@@ -108,14 +108,6 @@ def _drawn_start_picture(scene: SavedScene) -> str | None:
     return None
 
 
-# A12: never ask for several shots (#12 3-shot FAIL). "One continuous shot" isn't required.
-_SHOTS = r"\bcuts? to\b|\bshot \d|\b(second|next|another|new|third) shot\b|\bsplit[- ]screen\b"
-
-
-def _one_shot(scene: SavedScene) -> str | None:
-    return _found(_SHOTS, scene.video_prompt)
-
-
 # A14: a hand or the product moves, never the camera (round 1 #8 s2, batch-13 #15 FAIL).
 _CAMERA_MOVE = (
     r"\bzoom\w*|\bpush\w* (the camera )?(in|forward|toward)\w*|\bpull\w* (back|out)\b|"
@@ -180,7 +172,6 @@ SCENE_CHECKS = {
     "A4 no timings": _no_timings,
     "A6 photo jobs are looks only": _photo_jobs_looks_only,
     "A7 drawn start picture, no shop photos": _drawn_start_picture,
-    "A12 never several shots": _one_shot,
     "A14 the camera never moves": _camera_still,
     "C1 the B-roll does more than handle the product": _more_than_handling,
     "C3 a number in the scene is in its prompts": _numbers_carried,

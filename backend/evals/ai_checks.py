@@ -60,7 +60,6 @@ RULES: dict[str, str] = {
     "A11": "The side of the product facing the camera at the start faces it at the end: the "
     "product is never turned, flipped or spun to show another side. Fail when the video "
     "prompt turns, flips or spins the product, or shows a side the picture doesn't show.",
-    "A12": "The clip is one shot. Fail when the prompts ask for several shots, cuts or angles.",
     "A13": "The clip shows only the proof of what the line claims, the moment that proves "
     "it. Fail when it adds damage, harm or anything going wrong, such as a crack line "
     "appearing, or shows more than the proof.",

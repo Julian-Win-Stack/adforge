@@ -128,14 +128,6 @@ def test_a_scene_that_keeps_every_rule_passes_every_check(tmp_path: Path) -> Non
             id="shop photos sent to the video model",
         ),
         pytest.param(
-            {
-                "VIDEO PROMPT SENT": "A 5-second video at real-time speed. Shot 1: a brush. Cut to "
-                "the bottle."
-            },
-            "A12 never several shots",
-            id="several shots",
-        ),
-        pytest.param(
             # Round 1 #8 s2: the camera pushed toward the ring.
             {
                 "MOTION PROMPT": "The person holding the phone pushes the camera forward toward "
