@@ -507,9 +507,9 @@
     {
       "id": "A13-r1-8-s5",
       "rule": "A13",
-      "label": "pass",
-      "source": "Julian tap page 2026-10-09 (rule-match-answers.md), passed clip",
-      "julian": "Everything that I didn't change, it means I agree with what is being said.",
+      "label": "fail",
+      "source": "Julian 2026-10-09 23:04, rule-evals fishy walkthrough clip 1 (was a pass)",
+      "julian": "23:02 \"tbh, this clip is not that good. it moved to the right for no reason. the checker is correct\"; 23:04 \"yes\" (all 5 other checker fails are fails)",
       "scene": {
         "line": "The result is a spotlessly clean toilet bowl that shines bright again.",
         "shows": "the camera glides past the spotlessly clean toilet bowl with the cleaner bottle beside it",
@@ -1822,9 +1822,9 @@
     {
       "id": "A3-r1-8-s5",
       "rule": "A3",
-      "label": "pass",
-      "source": "Julian tap page 2026-10-09 (rule-match-answers.md), passed clip",
-      "julian": "Everything that I didn't change, it means I agree with what is being said.",
+      "label": "fail",
+      "source": "Julian 2026-10-09 23:04, rule-evals fishy walkthrough clip 1 (was a pass)",
+      "julian": "23:02 \"tbh, this clip is not that good. it moved to the right for no reason. the checker is correct\"; 23:04 \"yes\" (all 5 other checker fails are fails)",
       "scene": {
         "line": "The result is a spotlessly clean toilet bowl that shines bright again.",
         "shows": "the camera glides past the spotlessly clean toilet bowl with the cleaner bottle beside it",
@@ -2356,9 +2356,9 @@
     {
       "id": "A5-r1-8-s5",
       "rule": "A5",
-      "label": "pass",
-      "source": "Julian tap page 2026-10-09 (rule-match-answers.md), passed clip",
-      "julian": "Everything that I didn't change, it means I agree with what is being said.",
+      "label": "fail",
+      "source": "Julian 2026-10-09 23:04, rule-evals fishy walkthrough clip 1 (was a pass)",
+      "julian": "23:02 \"tbh, this clip is not that good. it moved to the right for no reason. the checker is correct\"; 23:04 \"yes\" (all 5 other checker fails are fails)",
       "scene": {
         "line": "The result is a spotlessly clean toilet bowl that shines bright again.",
         "shows": "the camera glides past the spotlessly clean toilet bowl with the cleaner bottle beside it",
@@ -3101,9 +3101,9 @@
     {
       "id": "C1-r1-8-s5",
       "rule": "C1",
-      "label": "pass",
-      "source": "round 1 grading-sheet.md #5",
-      "julian": "for the toilet cleaner, everything looks fine, except for the second scene.",
+      "label": "fail",
+      "source": "Julian 2026-10-09 23:04, rule-evals fishy walkthrough clip 1 (was a pass)",
+      "julian": "23:02 \"tbh, this clip is not that good. it moved to the right for no reason. the checker is correct\"; 23:04 \"yes\" (all 5 other checker fails are fails)",
       "scene": {
         "line": "The result is a spotlessly clean toilet bowl that shines bright again.",
         "shows": "the camera glides past the spotlessly clean toilet bowl with the cleaner bottle beside it",
@@ -3510,9 +3510,9 @@
     {
       "id": "C2-r1-8-s5",
       "rule": "C2",
-      "label": "pass",
-      "source": "round 1 grading-sheet.md #5",
-      "julian": "for the toilet cleaner, everything looks fine, except for the second scene.",
+      "label": "fail",
+      "source": "Julian 2026-10-09 23:04, rule-evals fishy walkthrough clip 1 (was a pass)",
+      "julian": "23:02 \"tbh, this clip is not that good. it moved to the right for no reason. the checker is correct\"; 23:04 \"yes\" (all 5 other checker fails are fails)",
       "scene": {
         "line": "The result is a spotlessly clean toilet bowl that shines bright again.",
         "shows": "the camera glides past the spotlessly clean toilet bowl with the cleaner bottle beside it",
