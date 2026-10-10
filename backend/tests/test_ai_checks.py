@@ -174,7 +174,8 @@ def test_a_judge_that_refuses_twice_in_one_ask_is_asked_again(
 
 def test_a_judge_that_never_answers_has_no_answer(fake_model: FakeModel, tmp_path: Path) -> None:
     (case,) = load_cases(cases_file(tmp_path, [("A14", "pass")]))
-    # Each ask tries twice, and 4 asks without an answer is one more than VOTES: 8 refusals each time it is asked.
+    # Each ask tries twice, and 4 asks without an answer is one more than VOTES: 8 refusals
+    # each time the judge is asked.
     fake_model.respond(
         "rule_eval", *[UnusableReply(REFUSED, input_tokens=900, output_tokens=10)] * 16
     )
