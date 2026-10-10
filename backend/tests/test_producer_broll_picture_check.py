@@ -25,7 +25,26 @@ from .test_producer_broll import (
     picture_of_scene_2,
 )
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("checked")]
+pytestmark = [
+    pytest.mark.django_db(transaction=True),
+    pytest.mark.usefixtures("checked", "quality_checks_on"),
+]
+
+
+@pytest.fixture
+def quality_checks_on(settings: Any) -> None:
+    """The check is off unless switched on; these tests are about the check itself."""
+    settings.QUALITY_CHECKS = True
+
+
+def test_quality_checks_are_off_unless_switched_on() -> None:
+    # Julian 10 Oct 03:10: all 12 fails on the round 2 fixes free check were wrong, and the
+    # check never blocks (the third try is kept anyway). Off until the #111 eval shows it
+    # agrees with his grades.
+    import adforge.settings
+
+    assert adforge.settings.QUALITY_CHECKS is False
+
 
 BENT_NECK = "The bottle's neck bends down; in the shop photo it rises straight from the top."
 

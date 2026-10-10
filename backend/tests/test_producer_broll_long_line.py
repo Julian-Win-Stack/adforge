@@ -197,8 +197,6 @@ def test_no_clip_is_paid_for_until_the_audio_fits(
     assert since_planning() == [
         "choose_broll_picture",
         "make_starting_picture",
-        # Checked before any clip is paid for.
-        "check_starting_picture",
         "speak_line",
         "shorten_line",
         "fact_check",
