@@ -132,9 +132,10 @@ product ready to be used. The video prompt does the action.
 of the ad happens in, before any of them starts, as "before_picture" describes it. You are \
 shown it last. Draw this scene in that place: the same light, and each thing in it with every \
 stain, mark and part exactly as it is, even what "shows" doesn't name. Describe them in \
-"before_picture"'s words, never in new ones. Keep its camera unless this scene's action \
-can't be seen from there; then move it only as far as the action needs. Add only what this \
-scene's "before" needs, such as the product, a tool, a hand or the presenter.
+"before_picture"'s words, never in new ones. Put the camera where this scene's action is \
+seen clearly, as close or as far as the action needs, in the same place: a hand at a table \
+is seen from beside the table, not from across the room. Add only what this scene's \
+"before" needs, such as the product, a tool, a hand or the presenter.
 - The picture prompt opens: "An upright 9:16 photo in a real, ordinary <place>." with the \
 scene's setting as the place.
 - Anything that must be right goes in the starting picture, said plainly: say where the \
