@@ -12,14 +12,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from adforge.retry import OutsideServiceDown
 from gateway.types import Handoff, Judgement, ModelReply, UnusableReply
 
 CASES = Path(__file__).resolve().parent / "rule_cases.json"
 
 # The model every judge uses: cheap, as the plan asks, and already deployed for the app.
 JUDGE_MODEL = "gpt-5-mini"
-# A judge asked again when Azure times out, as it does under load.
-TRIES = 3
 # A judge's answer is what most of 3 asks say, since the same question flips 3-4 of ~155
 # verdicts from one run to the next (Julian 2026-10-09 23:20: "ok. i approve").
 VOTES = 3
@@ -150,17 +149,13 @@ class Case:
     # The picture the clip really started from, shown to a scene's judge (Julian 2026-10-09,
     # decisions/checker-context.md); None for a plan's judge, or a clip that started from none.
     start_picture: Path | None
-    # Every other case of a rule's passes, and of its fails, by id: the judge's question is
-    # never written against a held-out case, so its score there is a fair one.
+    # Named in the case file, fixed so adding a case moves no other between halves: the
+    # judge's question is never written against a held-out case, so its score there is fair.
     held_out: bool
 
 
 def load_cases(path: Path = CASES) -> list[Case]:
     raw = json.loads(path.read_text())["cases"]
-    held_out: set[str] = set()
-    for group in {(case["rule"], case["label"]) for case in raw}:
-        same = sorted(case["id"] for case in raw if (case["rule"], case["label"]) == group)
-        held_out.update(same[1::2])
     return [
         Case(
             id=case["id"],
@@ -173,7 +168,7 @@ def load_cases(path: Path = CASES) -> list[Case]:
                 shop_answers=case.get("shop_answers") or "",
             ),
             start_picture=Path(case["start_picture"]) if case.get("start_picture") else None,
-            held_out=case["id"] in held_out,
+            held_out={"tune": False, "held out": True}[case["split"]],
         )
         for case in raw
     ]
@@ -191,10 +186,9 @@ class Score:
     passes_kept: int
 
     def line(self) -> str:
-        return (
-            f"{self.rule}: caught {self.fails_caught}/{self.fails} fails, "
-            f"kept {self.passes_kept}/{self.passes} passes"
-        )
+        fails = f"caught {self.fails_caught}/{self.fails} fails" if self.fails else "no fails"
+        passes = f"kept {self.passes_kept}/{self.passes} passes" if self.passes else "no passes"
+        return f"{self.rule}: {fails}, {passes}"
 
 
 def score(cases: list[Case], ask: Ask) -> tuple[list[Score], list[tuple[Case, RuleVerdict]]]:
@@ -215,9 +209,9 @@ def score(cases: list[Case], ask: Ask) -> tuple[list[Score], list[tuple[Case, Ru
 
 def ask_model(case: Case, model: str = JUDGE_MODEL) -> ModelReply[RuleVerdict]:
     """The judge for `case`'s rule, asked of `model` for real, with what it cost in tokens.
-    Needs Django set up: it goes through the gateway's model provider, as the app's calls
-    do, but is recorded nowhere."""
-    from adforge.retry import OutsideServiceDown
+    Needs Django set up: it goes through the gateway's model provider, asked again with the
+    app's own waits while it is down, as the app's calls are, but is recorded nowhere."""
+    from adforge.retry import with_retries
     from gateway.gateway import _provider, shrunk_image
     from gateway.types import Image, LoadedImage, ModelRequest
 
@@ -235,14 +229,9 @@ def ask_model(case: Case, model: str = JUDGE_MODEL) -> ModelReply[RuleVerdict]:
         images=images,
     )
     refused_already = False
-    tries = 0
     while True:
         try:
-            return _provider().complete(request)
-        except OutsideServiceDown:
-            tries += 1
-            if tries == TRIES:
-                raise
+            return with_retries(lambda: _provider().complete(request))
         except UnusableReply as error:
             # Luna refuses about 2 checks a run ("I'm sorry, I cannot assist"), a different
             # one each time, so a refusal is asked once more (Julian 2026-10-09 23:00).
@@ -274,3 +263,15 @@ def ask_majority(case: Case, model: str = JUDGE_MODEL) -> ModelReply[RuleVerdict
                     input_tokens=sum(r.input_tokens for r in replies),
                     output_tokens=sum(r.output_tokens for r in replies),
                 )
+
+
+def ask_or_count_as(
+    case: Case, model: str, no_answer: Literal["pass", "fail"]
+) -> ModelReply[RuleVerdict]:
+    """`ask_majority`, but a judge that has no answer, because it kept refusing or the
+    provider stayed down, counts as `no_answer`, so one case never stops a whole run."""
+    try:
+        return ask_majority(case, model)
+    except (UnusableReply, OutsideServiceDown) as error:
+        verdict = RuleVerdict(decision=no_answer, reason=f"NO USABLE ANSWER: {error}"[:300])
+        return ModelReply(output=verdict, input_tokens=0, output_tokens=0)

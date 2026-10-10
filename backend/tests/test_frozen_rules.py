@@ -41,7 +41,8 @@ FROZEN = [
     pytest.param(
         PLANNER,
         "When the page or the line lists steps for using the product, film only the main step, "
-        "the one that shows it working,",
+        "the one that shows it working, such as the cloth wiping a stain away rather than "
+        "spraying, waiting and rinsing, and write that B-roll line about that step.",
         id="A3 main step only (#8 toilet PERFECT)",
     ),
     pytest.param(
@@ -63,7 +64,9 @@ FROZEN = [
     ),
     pytest.param(
         BROLL_PROMPT,
-        "Never ask for two things that can't both be true at once, of the product or the scene,",
+        "Never ask for two things that can't both be true at once, of the product or the scene, "
+        'such as "upright" and "nozzle pointing down", or "squeeze" and "no gel". Check every '
+        "order against the product photos and against your other orders.",
         id="A4 no contradictions (locked list)",
     ),
     pytest.param(
@@ -76,7 +79,10 @@ FROZEN = [
     pytest.param(
         BROLL_PROMPT,
         "Anything that must be right goes in the starting picture, said plainly: say where the "
-        "camera is, its height and angle;",
+        "camera is, its height and angle; each object the action happens to, other than the "
+        "product, with every part named as a real, ordinary one, like one you'd buy in any "
+        "shop; the problem the product fixes, as it looks before; exact counts, and left or "
+        "right; and any hand already in place for the action, holding what it uses.",
         id="A8 what must be right is in the start picture (#12 V1 FAIL, V2 GOOD)",
     ),
     pytest.param(

@@ -13,6 +13,9 @@ from evals.rule_checks import check_run
 def main(runs: list[str]) -> None:
     for run in runs:
         results = check_run(Path(run))
+        if not results:
+            print(f"# {Path(run).name}: NO SCENES FOUND: not a saved run, nothing checked")
+            continue
         failed = [result for result in results if not result.passed]
         print(f"# {Path(run).name}: {len(results) - len(failed)}/{len(results)} checks pass")
         for result in failed:

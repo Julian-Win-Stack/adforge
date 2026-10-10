@@ -18,8 +18,8 @@ import django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "adforge.settings")
 django.setup()
 
-from evals.ai_checks import Case, RuleVerdict, ask_majority, load_cases, score  # noqa: E402
-from gateway.types import ModelReply, UnusableReply  # noqa: E402
+from evals.ai_checks import Case, RuleVerdict, ask_or_count_as, load_cases, score  # noqa: E402
+from gateway.types import ModelReply  # noqa: E402
 
 # Azure text allows 1,000 requests and 1M tokens a minute per model
 # (reference/rate-limits.md, 2026-10-09); 8 at once stays far under both.
@@ -30,13 +30,8 @@ def main(model: str, out: Path | None, rules: list[str]) -> None:
     cases = [case for case in load_cases() if not rules or case.rule in rules]
 
     def ask(case: Case) -> ModelReply[RuleVerdict]:
-        try:
-            return ask_majority(case, model)
-        except UnusableReply as error:
-            # A refusal or unreadable answer counts as the judge getting the case wrong.
-            wrong = "fail" if case.label == "pass" else "pass"
-            verdict = RuleVerdict(decision=wrong, reason=f"NO USABLE ANSWER: {error}"[:300])
-            return ModelReply(output=verdict, input_tokens=0, output_tokens=0)
+        # No answer counts as the judge getting the case wrong.
+        return ask_or_count_as(case, model, "fail" if case.label == "pass" else "pass")
 
     with ThreadPoolExecutor(AT_ONCE) as pool:
         replies = dict(zip((case.id for case in cases), pool.map(ask, cases), strict=True))

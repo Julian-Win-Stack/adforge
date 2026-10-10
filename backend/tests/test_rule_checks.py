@@ -137,6 +137,29 @@ def test_a_scene_that_keeps_every_rule_passes_every_check(tmp_path: Path) -> Non
             id="camera moves",
         ),
         pytest.param(
+            {"MOTION PROMPT": "After two seconds the hand scrubs the ring."},
+            "A4 no timings",
+            id="a timing in words",
+        ),
+        pytest.param(
+            {"MOTION PROMPT": "The camera push-in toward the ring as the hand scrubs."},
+            "A14 the camera never moves",
+            id="camera push-in",
+        ),
+        pytest.param(
+            {"MOTION PROMPT": "A slow pan across the bowl as the hand scrubs the ring."},
+            "A14 the camera never moves",
+            id="camera pan",
+        ),
+        pytest.param(
+            {
+                "LINE": "Dropped from 6 feet and still fine.",
+                "START-PICTURE PROMPT": "A hand holds the phone 6 inches above a tile floor.",
+            },
+            "C3 a number in the scene is in its prompts",
+            id="a number carried in the wrong unit",
+        ),
+        pytest.param(
             # Round 2 #12 s2: a hand just stands the phone up.
             {
                 "SHOWS": "a hand sets the fitted case upright",
@@ -228,3 +251,13 @@ def test_a_before_and_after_photo_the_owner_gave_keeps_the_b_roll(tmp_path: Path
     run = saved_run(tmp_path, [GOOD], ad="N3-shower-tile-cleaner", shop_answers=answers)
 
     assert failed(run) == set()
+
+
+def test_an_ad_folder_with_scene_files_but_no_scene_folders_is_skipped(tmp_path: Path) -> None:
+    # runs/graded-broll-run/08-planner-a-vs-b keeps scene-2-*.txt files, not scene folders.
+    run = saved_run(tmp_path, [GOOD])
+    loose = tmp_path / "8-planner-a-vs-b"
+    loose.mkdir()
+    (loose / "scene-2-plan.txt").write_text("a plan")
+
+    assert {result.ad for result in check_run(run)} == {"8-toilet-cleaner"}

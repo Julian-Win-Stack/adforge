@@ -27,8 +27,7 @@ import django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "adforge.settings")
 django.setup()
 
-from evals.ai_checks import Case, RuleVerdict, ask_majority, load_cases  # noqa: E402
-from gateway.types import UnusableReply  # noqa: E402
+from evals.ai_checks import Case, RuleVerdict, ask_or_count_as, load_cases  # noqa: E402
 
 # As in calibrate_ai_checks: far under Azure's per-model text limits.
 AT_ONCE = 8
@@ -70,10 +69,8 @@ def main(model: str, edits_file: Path, out: Path | None) -> None:
         copies.append((entry, broken(case, entry["edits"])))
 
     def ask(copy: Case) -> RuleVerdict:
-        try:
-            return ask_majority(copy, model).output
-        except UnusableReply as error:
-            return RuleVerdict(decision="pass", reason=f"NO USABLE ANSWER: {error}"[:300])
+        # No answer counts as the copy still passing: the safe side.
+        return ask_or_count_as(copy, model, "pass").output
 
     with ThreadPoolExecutor(AT_ONCE) as pool:
         verdicts = list(pool.map(ask, (copy for _, copy in copies)))

@@ -75,8 +75,17 @@ def _real_time_speed(scene: SavedScene) -> str | None:
     return None if "real-time speed" in scene.video_prompt else 'no "real-time speed"'
 
 
+# Numbers as the app writes them, in digits or in words.
+_NUMBER_WORDS = {
+    word: str(value)
+    for value, word in enumerate(
+        "zero one two three four five six seven eight nine ten eleven twelve".split()
+    )
+} | {"twenty": "20", "thirty": "30", "fifty": "50", "hundred": "100"}
+_COUNT = rf"(\d+(\.\d+)?|{'|'.join(_NUMBER_WORDS)})"
+
 # A4: no seconds or timings, nothing that slows it down. The opener's clip length is code's.
-_TIMING = r"\b\d+(\.\d+)?\s*-?\s*(s|secs?|seconds?)\b|\bslow(ly|-motion| motion)\b|\bgently\b"
+_TIMING = rf"\b{_COUNT}\s*-?\s*(s|secs?|seconds?)\b|\bslow(ly|-motion| motion)\b|\bgently\b"
 
 
 def _no_timings(scene: SavedScene) -> str | None:
@@ -111,8 +120,9 @@ def _drawn_start_picture(scene: SavedScene) -> str | None:
 # A14: a hand or the product moves, never the camera (round 1 #8 s2, batch-13 #15 FAIL).
 _CAMERA_MOVE = (
     r"\bzoom\w*|\bpush\w* (the camera )?(in|forward|toward)\w*|\bpull\w* (back|out)\b|"
-    r"\bdoll(y|ies)\b|\borbit\w*|\bcamera (pans|moves|tilts|tracks|circles|follows|rises|"
-    r"lowers|pushes|pulls)\b|\b(pans|panning) (across|to|over|left|right|up|down)\b"
+    r"\bpush-?ins?\b|\bdoll(y|ies)\b|\borbit\w*|\bcamera (pans|moves|tilts|tracks|circles|"
+    r"follows|rises|lowers|pushes|pulls)\b|\b(pan|pans|panning) (across|to|over|left|right|up|"
+    r"down)\b"
 )
 
 
@@ -141,24 +151,33 @@ def _more_than_handling(scene: SavedScene) -> str | None:
 # C3, code side: a number the scene states for what it shows is in its prompts (round 2 #12
 # s5: dropped "really close to the floor"). Whether the page's number reached the scene at all
 # is the AI-read side.
-_NUMBER_WORDS = {
-    word: str(value)
-    for value, word in enumerate(
-        "zero one two three four five six seven eight nine ten eleven twelve".split()
-    )
-} | {"twenty": "20", "thirty": "30", "fifty": "50", "hundred": "100"}
 _UNIT = (
     r"(feet|foot|ft|inch(es)?|in\.|cm|mm|meters?|metres?|m|lbs?|pounds?|kg|times|drops|"
     r"degrees|°|%)"
 )
-_MEASURE = rf"\b(\d+(\.\d+)?|{'|'.join(_NUMBER_WORDS)})[\s-]*{_UNIT}(?!\w)"
+_MEASURE = rf"\b{_COUNT}[\s-]*{_UNIT}(?!\w)"
+# Each unit as one name, so "6 feet" is carried by "6 ft" but not by "6 inches".
+_SAME_UNIT = {"foot": "ft", "feet": "ft", "inch": "in", "inches": "in", "in.": "in"} | {
+    "meter": "m",
+    "meters": "m",
+    "metre": "m",
+    "metres": "m",
+    "lb": "lb",
+    "lbs": "lb",
+    "pound": "lb",
+    "pounds": "lb",
+    "drops": "times",
+    "degrees": "°",
+}
 
 
 def _numbers(text: str) -> set[str]:
-    return {
-        _NUMBER_WORDS.get(found.group(1).lower(), found.group(1))
-        for found in re.finditer(_MEASURE, text, re.IGNORECASE)
-    }
+    numbers = set()
+    for found in re.finditer(_MEASURE, text, re.IGNORECASE):
+        number = _NUMBER_WORDS.get(found.group(1).lower(), found.group(1))
+        unit = found.group(3).lower()
+        numbers.add(f"{number} {_SAME_UNIT.get(unit, unit)}")
+    return numbers
 
 
 def _numbers_carried(scene: SavedScene) -> str | None:
@@ -197,13 +216,18 @@ def _scene_number(folder: Path) -> int:
     return int(folder.name.split("-")[1])
 
 
-def check_ad(folder: Path, answers: str) -> list[Result]:
-    """Every code check on one saved ad."""
-    ad = folder.name
-    scenes = sorted(
+def _scene_folders(folder: Path) -> list[Path]:
+    """An ad's scene folders in scene order; a run may also keep loose scene-* files."""
+    return sorted(
         (path for path in folder.iterdir() if path.is_dir() and path.name.startswith("scene-")),
         key=_scene_number,
     )
+
+
+def check_ad(folder: Path, answers: str) -> list[Result]:
+    """Every code check on one saved ad."""
+    ad = folder.name
+    scenes = _scene_folders(folder)
     results = []
     first = scenes[0]
     results.append(Result(ad, 1, FIRST_TALKING, first.name.endswith("-talking"), "opens on B-roll"))
@@ -228,6 +252,6 @@ def check_run(run: Path) -> list[Result]:
     return [
         result
         for folder in sorted(run.iterdir())
-        if folder.is_dir() and any(folder.glob("scene-*"))
+        if folder.is_dir() and _scene_folders(folder)
         for result in check_ad(folder, answers)
     ]

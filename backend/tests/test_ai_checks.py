@@ -7,14 +7,26 @@ from pathlib import Path
 
 import pytest
 
-from evals.ai_checks import Case, RuleVerdict, ask_majority, ask_model, load_cases, score
+from adforge.retry import OutsideServiceDown
+from evals.ai_checks import (
+    Case,
+    RuleVerdict,
+    ask_majority,
+    ask_model,
+    ask_or_count_as,
+    load_cases,
+    score,
+)
 from evals.break_passes import broken
 from gateway.fake import FakeModel
 from gateway.types import UnusableReply
 
 
-def cases_file(tmp_path: Path, labels: list[tuple[str, str]]) -> Path:
-    """A case file with one case per (rule, label), numbered in order."""
+def cases_file(
+    tmp_path: Path, labels: list[tuple[str, str]], splits: list[str] | None = None
+) -> Path:
+    """A case file with one case per (rule, label), numbered in order, each in the half
+    `splits` names, or tuned on."""
     path = tmp_path / "cases.json"
     cases = [
         {
@@ -25,6 +37,7 @@ def cases_file(tmp_path: Path, labels: list[tuple[str, str]]) -> Path:
             "scene": {"shows": f"case {number}"},
             "plan": None,
             "shop_answers": "",
+            "split": splits[number] if splits else "tune",
         }
         for number, (rule, label) in enumerate(labels)
     ]
@@ -32,13 +45,19 @@ def cases_file(tmp_path: Path, labels: list[tuple[str, str]]) -> Path:
     return path
 
 
-def test_half_of_each_rule_s_passes_and_fails_is_held_out(tmp_path: Path) -> None:
-    labels = [("A14", "fail")] * 4 + [("A14", "pass")] * 2 + [("C1", "fail")]
-    cases = load_cases(cases_file(tmp_path, labels))
+def test_a_case_is_held_out_when_its_file_says_so(tmp_path: Path) -> None:
+    labels = [("A14", "fail"), ("A14", "fail"), ("A14", "pass")]
+    cases = load_cases(cases_file(tmp_path, labels, ["tune", "held out", "held out"]))
 
-    held = [(case.rule, case.label) for case in cases if case.held_out]
+    assert [case.id for case in cases if case.held_out] == ["A14-1", "A14-2"]
 
-    assert sorted(held) == [("A14", "fail"), ("A14", "fail"), ("A14", "pass")]
+
+def test_a_half_with_no_fails_says_so_rather_than_scoring_them(tmp_path: Path) -> None:
+    cases = load_cases(cases_file(tmp_path, [("A9", "pass")]))
+
+    scores, _ = score(cases, lambda case: RuleVerdict(decision="pass", reason="It stands."))
+
+    assert [s.line() for s in scores] == ["A9: no fails, kept 1/1 passes"]
 
 
 def test_a_judge_is_scored_on_fails_caught_and_passes_kept(tmp_path: Path) -> None:
@@ -144,8 +163,66 @@ def test_a_judge_that_refuses_twice_in_one_ask_is_asked_again(
         "rule_eval",
         UnusableReply(REFUSED, input_tokens=900, output_tokens=10),
         UnusableReply(REFUSED, input_tokens=900, output_tokens=10),
+        {"decision": "fail", "reason": "The camera pans."},
         {"decision": "pass", "reason": "The camera stays still."},
         {"decision": "pass", "reason": "Only the hand moves."},
     )
 
+    # Counted as a vote, the refusal would have made it fail.
     assert ask_majority(case).output.decision == "pass"
+
+
+def test_a_judge_that_never_answers_has_no_answer(fake_model: FakeModel, tmp_path: Path) -> None:
+    (case,) = load_cases(cases_file(tmp_path, [("A14", "pass")]))
+    # Each ask tries twice, and 4 asks without an answer is one more than VOTES: 8 refusals each time it is asked.
+    fake_model.respond(
+        "rule_eval", *[UnusableReply(REFUSED, input_tokens=900, output_tokens=10)] * 16
+    )
+
+    with pytest.raises(UnusableReply):
+        ask_majority(case)
+    assert ask_or_count_as(case, "gpt-5-mini", "fail").output.decision == "fail"
+
+
+def test_a_judge_is_asked_again_while_the_provider_is_down(
+    fake_model: FakeModel, tmp_path: Path
+) -> None:
+    (case,) = load_cases(cases_file(tmp_path, [("A14", "pass")]))
+    fake_model.respond(
+        "rule_eval",
+        OutsideServiceDown("Azure timed out"),
+        {"decision": "pass", "reason": "The camera stays still."},
+    )
+
+    assert ask_model(case).output.decision == "pass"
+
+
+def test_a_judge_whose_provider_stays_down_counts_as_no_answer(
+    fake_model: FakeModel, tmp_path: Path
+) -> None:
+    (case,) = load_cases(cases_file(tmp_path, [("A14", "pass")]))
+    fake_model.respond("rule_eval", *[OutsideServiceDown("Azure timed out")] * 3)
+
+    verdict = ask_or_count_as(case, "gpt-5-mini", "pass").output
+
+    assert (verdict.decision, verdict.reason[:17]) == ("pass", "NO USABLE ANSWER:")
+
+
+def test_a_broken_copy_edits_a_plan_scene(tmp_path: Path) -> None:
+    path = cases_file(tmp_path, [("A15", "pass")])
+    raw = json.loads(path.read_text())
+    raw["cases"][0]["scene"] = None
+    raw["cases"][0]["plan"] = [{"line": "Hi."}, {"line": "It seals with one click."}]
+    path.write_text(json.dumps(raw))
+    (case,) = load_cases(path)
+
+    copy = broken(case, [{"field": "plan.1.line", "find": "one click", "replace": "a twist"}])
+
+    assert copy.handoff.plan == [{"line": "Hi."}, {"line": "It seals with a twist."}]
+
+
+def test_a_broken_copy_whose_text_is_missing_is_never_judged(tmp_path: Path) -> None:
+    (case,) = load_cases(cases_file(tmp_path, [("A14", "pass")]))
+
+    with pytest.raises(AssertionError, match="not in shows"):
+        broken(case, [{"field": "shows", "find": "the camera pans", "replace": "x"}])
