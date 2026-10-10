@@ -117,4 +117,12 @@ Julian graded round 2. Every "showcase" B-roll, where a hand only held, set down
 6. A finishing step that isn't the product doing its job, such as rinsing or flushing, never gets its own B-roll scene; the voice says it. The free check of these fixes gave #8's flush its own clip, with stains still in the bowl and a different toilet from the scrub's (Julian, 10 Oct).
 7. The start-picture check is off by default (QUALITY_CHECKS=1 turns it on). Julian judged all 12 of its fails on the round 2 fixes free check wrong, and it never blocked a picture anyway. It comes back only once the #111 eval shows it agrees with his grades (Julian, 10 Oct).
 
+## Start-picture judge (10 Oct, branch picture-judge)
+
+The old 7-check start-picture check is replaced by one judge that sees only the picture and looks for objects that can't exist, such as #12 round 3 scene 4's phone showing its screen and rear camera on one face. Tested on 92 pictures Julian graded: 1 wrong fail in 273 checks on good pictures, the phone caught 9 of 11 times (project files research/picture-judge-results.md, reference/vision-judges.md).
+
+1. It runs on every B-roll start picture by default (QUALITY_CHECKS=0 turns it off), on gpt-6-luna, asked up to 3 times; 2 fails fail the picture.
+2. A failed picture is drawn again from prompts rewritten with the judge's reasons and the picture shown, at most twice.
+3. When the third picture fails too, the run stops and the chat shows the three pictures and why each failed. Julian: "the best to crash the run" (21:48), so a judge too strict or prompts it can't fix are seen, not kept quietly.
+
 Full list with file:line: project files decisions/built-round-2-fixes.md.

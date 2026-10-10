@@ -1,9 +1,10 @@
-"""The check of a B-roll scene's starting picture, made before any clip is paid for: what the
-model checking it is told, handed and answers, and what the model writing the scene's
-prompts is told when a picture failed it (evals/judge-notes.md, "judge the start picture
-too", Julian 2026-10-07)."""
+"""The check of a B-roll scene's starting picture, made before any clip is paid for: a judge
+shown the picture alone looks for objects that can't exist, and what the model writing the
+scene's prompts is told when a picture failed it. Tested on 92 pictures Julian graded
+(/mnt/project-files/evals/picture-judge/, research/picture-judge-results.md); Julian agreed
+the build 2026-10-10 21:55."""
 
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -11,41 +12,85 @@ from gateway.types import Handoff
 
 from .scenes import BrollPromptHandoff
 
-# A picture that fails is drawn again at most this many times; the last one drawn is kept.
+# A picture that fails is drawn again at most this many times; when the last one drawn fails
+# too, the run stops (Julian 2026-10-10 21:48: "the best to crash the run").
 MOST_REDRAWS = 2
 
+# The judge is asked about each picture up to this many times, each time on its own, and the
+# picture fails when this many of its answers fail it: one answer missed the impossible phone
+# about 1 run in 5 (reference/vision-judges.md, rule 6).
+ASKS = 3
+FAILS_TO_FAIL = 2
+
+# Its examples are made up, never from a test product (vision-judges.md, rule 7). Kept word
+# for word as tested; don't reword it for one case.
 STARTING_PICTURE_CHECK = """\
-You check the starting picture of one B-roll scene of a short vertical video ad before a \
-video model animates it into a clip, which costs money. You are shown the shop photo of the \
-product, then the starting picture. The picture model was asked for the picture in \
-"picture_prompt"; the video model will then be asked for "video_prompt", starting from this \
-picture. The scene shows what "shows" describes while the person's voice says "line".
-Look at the picture closely, and judge each check on its own. A check passes only when \
-nothing in the picture breaks it. When it fails, say exactly what is wrong in one sentence, \
-naming the part and what it should look like.
-- real_objects: every object is a real, ordinary version of itself, with the shape, parts \
-and proportions it has in real life, such as a toilet whose rim is level and whose seat \
-fits its bowl. Dirt or mess the scene asks for is fine; a made-up shape is not.
-- matches_the_shop_photo: the product looks exactly as in the shop photo: its shape, neck, \
-cap, nozzle, label and print, and the colour of each small part. Compare the picture with \
-the photo itself, not with the prompt's words.
-- label_turns_with_the_product: when the product is turned, tipped or upside down, its \
-label and print turn with it, as printing on a real object would.
-- shows_the_before: the picture shows the moment just before the action in "video_prompt", \
-not its result already there, and what the action will change, or the problem, is plainly \
-visible.
-- no_face: when "person_shown" is "no face", no face, mouth or chin is in the picture. \
-Passes whenever "person_shown" is anything else.
-- prompts_agree: "picture_prompt" and "video_prompt" never ask for two things the product \
-or the scene can't do at once, such as a bottle "upright" with its "nozzle pointing down", \
-or "squeezed" with "no gel", and "video_prompt" asks for nothing this picture contradicts.
-- makes_sense_for_the_line: the picture sets up what "shows" and "line" claim, as a real \
-person would film it: for a drop, fall or throw, the product starts at the height \
-"picture_prompt" asks for, or a standing person's hand height when it asks for none, never \
-just above the floor; and the picture's pose, hand, background and camera angle come from \
-"picture_prompt", not copied from the shop photo. Always judge the camera's height and angle \
-and where the action starts. Only the crop, how much of a body is in frame, and other small \
-differences from "picture_prompt" never fail this check."""
+You check an AI-drawn photo before it is animated into a video ad. Picture models sometimes \
+draw objects that cannot exist, such as a car with headlights on its back, a door hinged on \
+both sides, or a hand with six fingers. Find those, and only those.
+
+Work in two steps.
+1. Look before you judge. For each main object in the picture (the products, devices, \
+furniture and tools, and any hands holding them), write down which side of it faces the \
+camera and every part you can see on that side, and where. Describe what is actually drawn, \
+not what such an object usually has. Look closely at small parts: lenses, buttons, screens, \
+spouts, caps, hinges, handles, fingers.
+2. Then judge each object: could a real one of that object, seen from that side, show \
+exactly those parts in exactly those places? Compare with how the real object is built: which \
+parts sit on which side, and what you could and could not see from one viewpoint at once.
+
+Decide "fail" only when you are sure something is physically impossible: a part on a side \
+where the real object can't have it, two sides of one object seen at once, a part fused \
+into another, a body part that can't be. Decide "pass" for everything else, including small \
+differences in shape, size or proportion, odd but possible poses, blurry or unreadable \
+print, dirt or mess, lighting, and anything merely unusual or unlikely."""
+
+
+class ObjectLook(BaseModel):
+    name: str
+    side_facing_camera: str = Field(description="Which side or face of the object the camera sees.")
+    parts_seen: str = Field(description="The parts visible on that side, and where they are.")
+    a_real_one_could_look_like_this: bool
+    why: str = Field(description="One short sentence.")
+
+
+class StartingPictureVerdict(BaseModel):
+    """The judge's answer, filled in from the top: it looks at each object before it decides,
+    so the verdict is built on what it wrote down (vision-judges.md, rule 1)."""
+
+    objects: list[ObjectLook]
+    verdict: Literal["pass", "fail"]
+    problem: str | None = Field(
+        description="When it fails: what is impossible, in one sentence. Null when it passes."
+    )
+
+    @model_validator(mode="after")
+    def _a_failure_says_why(self) -> Self:
+        if self.verdict == "fail" and not (self.problem or "").strip():
+            raise ValueError("A picture that fails must say what is wrong.")
+        return self
+
+
+class StartingPictureCheckHandoff(Handoff):
+    """Which of the judge's asks about one picture this is, from 1. The judge is shown the
+    picture and nothing else; the number only keeps each ask's answer apart, so one asked
+    again after the worker stopped isn't paid for twice."""
+
+    ask: int
+
+
+class PictureKeptFailing(Exception):
+    """A B-roll scene's starting picture failed its check every time it was drawn, so the run
+    stops. Holds each picture drawn, oldest first, with what the judge found in it."""
+
+    def __init__(self, scene: int, failed: list[tuple[str, list[str]]]) -> None:
+        self.scene = scene
+        self.failed = failed
+        super().__init__(
+            f"scene {scene}'s starting picture failed its check all {len(failed)} times it "
+            "was drawn"
+        )
+
 
 # Added to what the model writing a B-roll scene's prompts is told when the last picture
 # drawn for it failed its check.
@@ -54,45 +99,6 @@ The last picture drawn for this scene failed its check: "redo" holds the prompts
 drawn from and each problem found, and the picture is shown last. Write new prompts that fix \
 every problem: change what made it go wrong, such as two orders that can't both be true, or \
 words too vague to draw a real object from. Keep what was right."""
-
-
-class CheckResult(BaseModel):
-    passes: bool
-    problem: str | None = Field(
-        description="When it fails, what is wrong, in one sentence. Null when it passes."
-    )
-
-    @model_validator(mode="after")
-    def _a_failure_says_why(self) -> Self:
-        if not self.passes and not (self.problem or "").strip():
-            raise ValueError("A check that fails must say what is wrong.")
-        return self
-
-
-class StartingPictureCheck(BaseModel):
-    real_objects: CheckResult
-    matches_the_shop_photo: CheckResult
-    label_turns_with_the_product: CheckResult
-    shows_the_before: CheckResult
-    no_face: CheckResult
-    prompts_agree: CheckResult
-    makes_sense_for_the_line: CheckResult
-
-    def problems(self) -> list[str]:
-        """What is wrong with the picture, one sentence for each check it fails."""
-        checks = (getattr(self, name) for name in type(self).model_fields)
-        return [check.problem for check in checks if not check.passes and check.problem]
-
-
-class StartingPictureCheckHandoff(Handoff):
-    line: str
-    shows: str
-    broll_kind: str
-    person_shown: str
-    usage: str
-    result: str
-    picture_prompt: str
-    video_prompt: str
 
 
 class Redo(Handoff):

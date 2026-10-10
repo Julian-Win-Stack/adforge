@@ -5,6 +5,7 @@ finished ad."""
 import contextvars
 import io
 import json
+import logging
 import math
 import mimetypes
 import tempfile
@@ -23,7 +24,7 @@ from django.db.models import Max, Q, QuerySet
 from adforge import file_store
 from adforge.retry import OutsideServiceDown, with_retries
 from chat import messages
-from chat.models import Message
+from chat.models import Attachment, Message
 from gateway import catalog
 from gateway.gateway import (
     IMAGE_TYPE_NAMES,
@@ -47,6 +48,7 @@ from gateway.types import (
     LEAST_BROLL_SECONDS,
     LEAST_CLIP_SECONDS,
     MOST_BROLL_SECONDS,
+    BlockedBySafetyFilter,
     BrollClipHandoff,
     ClipFailed,
     ClipHandoff,
@@ -95,13 +97,16 @@ from .checks import (
 from .models import BROLL_FIELDS, Job, ProducedItem, ProductPhoto, Scene, SceneStep
 from .notices import post_notice
 from .picture_check import (
+    ASKS,
+    FAILS_TO_FAIL,
     MOST_REDRAWS,
     REDO_RULES,
     STARTING_PICTURE_CHECK,
     BrollRedoHandoff,
+    PictureKeptFailing,
     Redo,
-    StartingPictureCheck,
     StartingPictureCheckHandoff,
+    StartingPictureVerdict,
 )
 from .planning import (
     PLAN_INSTRUCTIONS,
@@ -147,6 +152,8 @@ cookie wall, a bot check or an error page, or if it lists many products (a categ
 collection or search page) instead of showing one. The link may have redirected: page_url \
 is the page actually read.
 Give one sentence saying why, written for the shop owner."""
+
+logger = logging.getLogger(__name__)
 
 
 class PageCheckHandoff(Handoff):
@@ -1500,9 +1507,10 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
     shared rules and its kind's, picks the main photo from the photos in the ad's colour and
     writes the picture's prompt and the clip's. The picture is made from the main photo, then
     a photo for each of the scene's needs, then the presenter's portrait when the scene shows
-    their face. It is checked beside the main photo before any clip is paid for; one that
-    fails is drawn again from prompts written to fix what the check found, at most
-    MOST_REDRAWS times, and the last one drawn is kept.
+    their face. It is checked before any clip is paid for; one that fails is drawn again from
+    prompts written to fix what the check found, at most MOST_REDRAWS times. When the last
+    one drawn fails too, the chat is shown each picture and why it failed, and
+    PictureKeptFailing is raised to stop the run.
 
     Run again, as after a worker stopped, it pays for nothing already paid for: each model's
     answer for the same handoff is answered from its record, and each picture drawn is
@@ -1550,6 +1558,7 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
     # again pays for none of them twice.
     drawn = _pictures_drawn(step)
     redo: tuple[Redo, str] | None = None
+    failed: list[tuple[str, list[str]]] = []
     for tries in range(MOST_REDRAWS + 1):
         instructions = broll_prompt_instructions(step.broll_kind)
         asked: BrollPromptHandoff = handoff
@@ -1581,16 +1590,38 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
                 job=job, purpose="make_starting_picture", prompt=choice.prompt, pictures=sent
             )
         )
-        problems = _check_broll_picture(step, choice, file)
+        problems = _check_broll_picture(step, file)
         if not problems:
-            break
+            return _keep_picture(step, file)
+        failed.append((file, problems))
         redo = (
             Redo(
                 picture_prompt=choice.prompt, video_prompt=choice.motion_prompt, problems=problems
             ),
             file,
         )
-    return _keep_picture(step, file)
+    _say_the_pictures_kept_failing(job, scene.number, failed)
+    raise PictureKeptFailing(scene.number, failed)
+
+
+def _say_the_pictures_kept_failing(
+    job: Job, scene: int, failed: list[tuple[str, list[str]]]
+) -> None:
+    """Show the chat each starting picture drawn for `scene`, and what its check found in
+    it, as the run stops: so a judge too strict, or prompts it can't fix, are seen rather
+    than kept quietly (Julian 2026-10-10 21:48)."""
+    found = "\n".join(
+        f"Picture {number}: {' '.join(problems)}" for number, (_, problems) in enumerate(failed, 1)
+    )
+    logger.error("Scene %s's starting picture kept failing its check:\n%s", scene, found)
+    post_notice(
+        job,
+        f"Scene {scene}'s starting picture failed its check all {len(failed)} times it was "
+        "drawn, so I stopped. This is a problem in the app, not with your product. What the "
+        f"check found in each picture:\n{found}",
+        Message.Level.PROBLEM,
+        carrying=[messages.AttachedFile(Attachment.Kind.PICTURE, file) for file, _ in failed],
+    )
 
 
 def _plan_broll_picture(
@@ -1637,40 +1668,47 @@ def _pictures_drawn(step: SceneStep) -> list[str]:
     return [call.output["file"] for call in calls if call.output is not None]
 
 
-def _check_broll_picture(step: SceneStep, choice: BrollPictureChoice, picture: str) -> list[str]:
-    """What is wrong with a B-roll scene's starting picture, drawn as `choice` says, checked
-    beside its shop photo before any clip is paid for: nothing, when it passes or its check
-    can't be had, or quality checks are switched off."""
-    assert step.photo is not None, "a B-roll picture is drawn from its main photo"
+def _check_broll_picture(step: SceneStep, picture: str) -> list[str]:
+    """What is wrong with a B-roll scene's starting picture: see `judge_starting_picture`.
+    Nothing when quality checks are switched off."""
     if not settings.QUALITY_CHECKS:
         return []
-    try:
-        check = call_model(
-            job=step.scene.job,
-            purpose="check_starting_picture",
-            instructions=STARTING_PICTURE_CHECK,
-            handoff=StartingPictureCheckHandoff(
-                line=step.line,
-                shows=step.shows,
-                broll_kind=step.broll_kind,
-                person_shown=step.person_shown,
-                usage=step.usage,
-                result=step.broll_result,
-                picture_prompt=choice.prompt,
-                video_prompt=choice.motion_prompt,
-            ),
-            output=StartingPictureCheck,
-            images=[
-                Image(label="The shop photo", key=step.photo.file),
-                Image(label="The starting picture", key=picture),
-            ],
-            pay_once=True,
-        )
-    except UnusableReply, OutsideServiceDown:
-        # The picture is paid for, and the check is only advice: a check that can't be had
-        # keeps the picture rather than failing the step and paying for it again.
-        return []
-    return check.problems()
+    return judge_starting_picture(step.scene.job, picture, about=f"scene {step.scene.number}")
+
+
+def judge_starting_picture(job: Job | None, picture: str, *, about: str) -> list[str]:
+    """What is wrong with the starting picture at `picture`, from a judge shown the picture
+    alone: each problem its failing answers found, when FAILS_TO_FAIL of its ASKS answers
+    fail it; nothing when it passes. An ask the safety filter blocks, or whose answer can't
+    be had, counts as not checked: the picture is paid for, and failing it would pay for it
+    again. `about` names the picture in the log."""
+    passes = 0
+    problems: list[str] = []
+    # Asked until the answers settle it, so a picture two answers pass isn't asked a third.
+    for ask in range(1, ASKS + 1):
+        if passes > ASKS - FAILS_TO_FAIL or len(problems) >= FAILS_TO_FAIL:
+            break
+        try:
+            verdict = call_model(
+                job=job,
+                purpose="check_starting_picture",
+                instructions=STARTING_PICTURE_CHECK,
+                handoff=StartingPictureCheckHandoff(ask=ask),
+                output=StartingPictureVerdict,
+                images=[Image(label="The starting picture", key=picture)],
+                pay_once=True,
+            )
+        except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
+            logger.warning(
+                "Ask %s about %s's starting picture went unchecked: %s", ask, about, error
+            )
+            continue
+        if verdict.verdict == "pass":
+            passes += 1
+        else:
+            assert verdict.problem is not None, "a failing answer says why"
+            problems.append(verdict.problem)
+    return problems if len(problems) >= FAILS_TO_FAIL else []
 
 
 def _keep_starting_picture(step: SceneStep, prompt: str, pictures: list[str]) -> ProducedItem:

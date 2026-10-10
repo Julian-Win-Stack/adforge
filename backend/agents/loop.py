@@ -65,6 +65,11 @@ BLOCKED = (
 )
 
 
+class RunStopped(Exception):
+    """A scene step stopped the run, saying why. The producer takes no turn until the user
+    speaks again."""
+
+
 class Refused(Exception):
     """A tool won't do what it was asked, and has done nothing: it would break one of the
     rules, or what it works on doesn't exist yet. Says why, for the agent."""
@@ -131,6 +136,19 @@ def _work(agent: Agent, session: Session) -> int:
         _settle(agent, call)
     while True:
         conversation, read_up_to, steps = _conversation(agent, session)
+        if _stopped_since_the_user_spoke(session):
+            stopping = [
+                step
+                for step in steps
+                if step.status == SceneStep.Status.STOPPED and step.producer_read_at is None
+            ]
+            _read(steps)
+            if stopping:
+                raise RunStopped(
+                    f"{stopping[0].reason}. The pictures and why each failed are above"
+                )
+            # Said once already: a step finishing since doesn't start the run again.
+            return read_up_to
         if _nothing_to_answer_since_its_last_turn(agent, session, conversation):
             # Its last turn was given all of them, before a worker stopped past its reply.
             _read(steps)
@@ -337,6 +355,15 @@ def _conversation(agent: Agent, session: Session) -> tuple[list[Happened], int, 
     in_order = [each for _, each in sorted(happened, key=lambda each: each[0])] + unread
     conversation = [_as_given(each) for each in in_order]
     return conversation, max((message.seq for message in said), default=0), read + unread
+
+
+def _stopped_since_the_user_spoke(session: Session) -> bool:
+    """Whether a scene step stopped the run since the user's last message."""
+    stopped = SceneStep.objects.filter(tool_call__session=session, status=SceneStep.Status.STOPPED)
+    spoke = session.messages.filter(role=Message.Role.USER).order_by("seq").last()
+    if spoke is not None:
+        stopped = stopped.filter(finished_at__gt=spoke.created_at)
+    return stopped.exists()
 
 
 def unread_steps(agent: Agent, session: Session) -> QuerySet[SceneStep]:
