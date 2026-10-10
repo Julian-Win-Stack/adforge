@@ -118,3 +118,15 @@ Julian graded round 2. Every "showcase" B-roll, where a hand only held, set down
 7. The start-picture check is off by default (QUALITY_CHECKS=1 turns it on). Julian judged all 12 of its fails on the round 2 fixes free check wrong, and it never blocked a picture anyway. It comes back only once the #111 eval shows it agrees with his grades (Julian, 10 Oct).
 
 Full list with file:line: project files decisions/built-round-2-fixes.md.
+
+----------------------------------------
+
+## Why we shipped one shared before-picture per ad (2026-10-10)
+
+Julian graded round 3. #8 s3 failed: "a different toilet means the different dirt." Each B-roll start picture was drawn on its own, from the shop photo and words alone, and each scene described only the dirt its own line named. Drawn alone, the toilet came out different in 3 of 3 runs.
+
+1. Every ad now draws one before-picture first: the place, each thing the scenes act on, and every problem any scene shows, with no product or person in it. It is planned from all the ad's B-roll scenes, so the dirt one scene names is there for all of them.
+2. Every B-roll start picture is drawn from it (sent last to the picture model), and the prompt writer is handed its exact words: same place, same light, same stains, camera as close as the action needs. This applies to every product, not only before-and-after ones (Julian, 10 Oct: "we should just do this for all the products instead of picking").
+3. Cost: about 6 cents more per ad.
+
+Full list with file:line: project files decisions/built-shared-before-picture.md.
