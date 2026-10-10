@@ -17,6 +17,7 @@ from gateway.types import ModelReply, ModelRequest
 from jobs import work
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 from jobs.scenes import (
+    BEFORE_PICTURE_JOB,
     BROLL_KIND_RULES,
     BROLL_PICTURE_INSTRUCTIONS,
     BROLL_SHARED_RULES,
@@ -28,6 +29,7 @@ from .conftest import (
     PLAN,
     HeldSteps,
     WorkerStopped,
+    before_picture_file,
     broll,
     colour_at,
     drawn_in,
@@ -308,7 +310,10 @@ def test_the_picture_is_planned_from_the_scenes_broll_labels(
     told = ("broll_kind", "person_shown", "usage", "result")
     assert {field: planned[field] for field in told} == {field: DOES_A_JOB[field] for field in told}
     # What each picture the picture model gets is for, in the order it gets them.
-    assert planned["pictures"] == [{"image": 1, "job": "the product, only how it looks"}]
+    assert planned["pictures"] == [
+        {"image": 1, "job": "the product, only how it looks"},
+        {"image": 2, "job": BEFORE_PICTURE_JOB},
+    ]
 
 
 @pytest.mark.parametrize(
@@ -592,12 +597,16 @@ def test_a_scene_with_no_face_is_planned_from_the_photos_alone(ready: None) -> N
     # Photo 2 shows the mug in cream, and the ad's colour is sage green.
     assert ModelCall.objects.get(purpose="choose_broll_picture").images == [
         {"label": "Photo 1", "key": job.photos.get(position=1).file},
+        {"label": "The before-picture", "key": before_picture_file()},
     ]
 
 
 def test_a_scene_with_no_face_sends_the_image_maker_the_main_photo_alone(ready: None) -> None:
     (asked,) = handoffs("make_starting_picture")
-    assert asked["pictures"] == [Job.objects.get().photos.get(position=1).file]
+    assert asked["pictures"] == [
+        Job.objects.get().photos.get(position=1).file,
+        before_picture_file(),
+    ]
 
 
 @pytest.fixture
@@ -618,6 +627,7 @@ def test_a_scene_with_a_face_sends_the_image_maker_the_main_photo_then_the_portr
     assert asked["pictures"] == [
         job.photos.get(position=1).file,
         job.produced.get(kind="portrait").file,
+        before_picture_file(),
     ]
 
 
@@ -628,11 +638,13 @@ def test_a_scene_with_a_face_is_planned_from_the_photos_and_the_portrait(
     assert ModelCall.objects.get(purpose="choose_broll_picture").images == [
         {"label": "Photo 1", "key": job.photos.get(position=1).file},
         {"label": "The portrait", "key": job.produced.get(kind="portrait").file},
+        {"label": "The before-picture", "key": before_picture_file()},
     ]
     (planned,) = handoffs("choose_broll_picture")
     assert planned["pictures"] == [
         {"image": 1, "job": "the product, only how it looks"},
         {"image": 2, "job": "the presenter"},
+        {"image": 3, "job": BEFORE_PICTURE_JOB},
     ]
 
 
@@ -647,7 +659,7 @@ def test_the_main_photo_is_the_one_the_picture_chooser_picks(
     run(fake_model, steps)
 
     (asked,) = handoffs("make_starting_picture")
-    assert asked["pictures"] == [job.photos.get(position=2).file]
+    assert asked["pictures"] == [job.photos.get(position=2).file, before_picture_file()]
     assert SceneStep.objects.get(kind="starting_picture").photo == job.photos.get(position=2)
 
 
@@ -660,6 +672,7 @@ def test_the_picture_step_stores_its_way_its_pictures_and_both_prompts(
         [
             {"image": 1, "photo": 1, "job": "the product, only how it looks"},
             {"image": 2, "portrait": True, "job": "the presenter"},
+            {"image": 3, "before_picture": True, "job": BEFORE_PICTURE_JOB},
         ],
         BROLL_CHOICE["prompt"],
         MOTION,

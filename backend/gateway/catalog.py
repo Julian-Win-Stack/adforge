@@ -24,6 +24,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "choose_starting_picture": "gpt-5.6-sol",
     "choose_broll_picture": "gpt-5.6-sol",
     "make_starting_picture": "gpt-image-2.5-sunburst",
+    # The ad's before-picture: planned from every B-roll scene, then drawn.
+    "plan_before_picture": "gpt-5.6-sol",
+    "make_before_picture": "gpt-image-2.5-sunburst",
     # Reads the starting picture beside the shop photo, as the picker reads photos.
     "check_starting_picture": "gpt-5.6-sol",
     "design_voice": "inworld-tts-2",

@@ -67,8 +67,12 @@ One piece of a scene's work, run in the background: its starting picture, its li
 _Avoid_: Task, job, render
 
 **Starting picture**:
-A scene's first frame, made from the portrait and one product photo: the person holding the product, or, for a B-roll scene, the "before" of what the scene shows, made from its main photo, then a photo for each thing it needs that the main photo can't show (at most 3), then the portrait only when the presenter's face is shown. A B-roll scene's picture has a quality check beside its main photo before its clip is paid for, and is drawn again, at most twice, when it fails. Quality checks are off unless switched on, until the check agrees with graded pictures. The clip is made from it.
+A scene's first frame, made from the portrait and one product photo: the person holding the product, or, for a B-roll scene, the "before" of what the scene shows, made from its main photo, then a photo for each thing it needs that the main photo can't show (at most 3), then the portrait only when the presenter's face is shown, then the ad's before-picture. A B-roll scene's picture has a quality check beside its main photo before its clip is paid for, and is drawn again, at most twice, when it fails. Quality checks are off unless switched on, until the check agrees with graded pictures. The clip is made from it.
 _Avoid_: Start frame, keyframe, thumbnail
+
+**Before-picture**:
+One picture per ad of the place its B-roll scenes happen in, before any of them starts: each thing the scenes act on, with every problem any of them shows, and no product or person. Drawn once, when the first B-roll starting picture needs it, and every B-roll starting picture is drawn from it, so the scenes match.
+_Avoid_: Base picture, background, set
 
 **Line's audio**:
 The person's voice saying a scene's line, exactly as the line stands. Never shown to the user. A new line needs new audio.

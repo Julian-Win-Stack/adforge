@@ -244,9 +244,12 @@ def test_nothing_in_the_whole_flow_is_paid_for_twice(ad_made_through_the_chat: N
         "shorten_script",
         "fact_check",
         "make_music",
-        # Scene 2's starting picture is planned from what it shows.
+        # Scene 2's starting picture is planned from what it shows, and drawn from the ad's
+        # before-picture.
         "choose_starting_picture",
         "make_starting_picture",
+        "plan_before_picture",
+        "make_before_picture",
         "choose_broll_picture",
         "make_starting_picture",
         # Not checked: quality checks are off unless switched on (Julian, 10 Oct).
@@ -384,6 +387,7 @@ def test_every_b_roll_clip_is_sent_its_starting_picture_and_no_shop_photo(
     assert handoffs("make_starting_picture")[2]["pictures"] == [
         job.photos.get(position=1).file,
         job.photos.get(position=2).file,
+        job.produced.get(kind="before_picture").file,
     ]
 
 
@@ -429,6 +433,9 @@ def test_the_ad_with_a_scene_needing_a_photo_pays_for_each_thing_once(
         "make_music",
         "choose_starting_picture",
         "make_starting_picture",
+        # One before-picture for both B-roll scenes.
+        "plan_before_picture",
+        "make_before_picture",
         "choose_broll_picture",
         "make_starting_picture",
         # Not checked: quality checks are off unless switched on (Julian, 10 Oct).
