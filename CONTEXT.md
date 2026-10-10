@@ -167,7 +167,7 @@ Comparing every price, number, product name and claim in a line against the page
 _Avoid_: Verification, accuracy check
 
 **Quality check**:
-A check on something already produced, such as a picture or a clip. On unless switched off as a whole. Built so far: the B-roll starting picture check, which looks at the picture alone for objects that can't exist (a part on the wrong side, two sides of one object seen at once) before a clip is paid for.
+A check on something already produced, such as a picture or a clip. On unless switched off as a whole. Built so far: the B-roll starting picture check, which looks at the picture, beside the shop photo it was drawn from, for objects that can't exist (a part on the wrong side, two sides of one object seen at once) before a clip is paid for.
 _Avoid_: QA, review, gate
 
 ### Not yet built

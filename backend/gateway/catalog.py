@@ -24,9 +24,10 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "choose_starting_picture": "gpt-5.6-sol",
     "choose_broll_picture": "gpt-5.6-sol",
     "make_starting_picture": "gpt-image-2.5-sunburst",
-    # Judges the starting picture alone. The cheap model caught the impossible phone 9 of 11
-    # times, sol 3 of 5, astra 2 of 5 (/mnt/project-files/research/picture-judge-results.md).
-    "check_starting_picture": "gpt-6-luna",
+    # Judges the starting picture beside its shop photo. With the photo, sol caught 7 of Julian's
+    # 10 wrong pictures and failed none of 88 good ones; luna missed the bent neck, the bag clasp
+    # and the logo (evals/picture-judge/wrong-pictures-and-photo-test.md; Julian 10 Oct 23:05).
+    "check_starting_picture": "gpt-6.1-sol",
     "design_voice": "inworld-tts-2",
     "measure_voice": "inworld-tts-2",
     "speak_line": "inworld-tts-2",
@@ -45,6 +46,7 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
 PRICE_PER_MILLION_TOKENS: dict[str, tuple[Decimal, Decimal]] = {
     "gpt-5-mini": (Decimal("0.25"), Decimal("2.00")),
     "gpt-6-luna": (Decimal("0.10"), Decimal("0.50")),
+    "gpt-6.1-sol": (Decimal("2.00"), Decimal("10.00")),
     "gpt-5.6-sol": (Decimal("4.00"), Decimal("20.00")),
     "gpt-5.6-terra": (Decimal("2.00"), Decimal("12.00")),
 }

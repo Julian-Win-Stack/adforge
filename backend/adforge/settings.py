@@ -88,8 +88,8 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 # Quality checks (CONTEXT.md) look at something already produced, such as a starting
 # picture. On unless QUALITY_CHECKS=0; planning checks always run. Julian 10 Oct 03:10 turned
 # the old starting picture check off (all 12 of its fails in the round 2 fixes free check were
-# wrong); on 10 Oct 21:55 he agreed its replacement, a judge of the picture alone that made 1
-# wrong fail in 273 checks of his graded pictures, runs on every B-roll picture.
+# wrong); on 10 Oct 21:55 he agreed its replacement, a judge of impossible objects that failed
+# none of his good graded pictures, runs on every B-roll picture.
 QUALITY_CHECKS = os.environ.get("QUALITY_CHECKS", "1") == "1"
 
 PRODUCER_HEARTBEAT_SECONDS = 30.0

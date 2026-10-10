@@ -18,7 +18,7 @@ from chat.models import Attachment, Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter
-from jobs.models import SceneStep
+from jobs.models import Job, SceneStep
 
 from .conftest import PICTURE_OK, HeldSteps, WorkerStopped, chat, handoffs, paid_for
 from .test_producer_broll import (
@@ -73,7 +73,7 @@ def test_the_judge_runs_unless_quality_checks_are_switched_off() -> None:
     assert adforge.settings.QUALITY_CHECKS is True
 
 
-def test_a_picture_that_passes_is_judged_on_the_picture_alone(
+def test_a_picture_that_passes_is_judged_beside_the_shop_photo_it_was_drawn_from(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     step = picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE)
@@ -86,10 +86,16 @@ def test_a_picture_that_passes_is_judged_on_the_picture_alone(
         "check_starting_picture",
         "check_starting_picture",
     ]
-    # No shop photo, prompt or line: a judge told what to expect tends to see it.
+    # The picture first, then the one shop photo it was drawn from, for how the product is
+    # built (Julian 23:05: the phone was caught 5 of 5 with it, 3 of 5 without). No prompt
+    # or line: a judge told what to expect tends to see it.
+    photo = Job.objects.get().photos.get(position=BROLL_CHOICE["photo"])
     for check in ModelCall.objects.filter(purpose="check_starting_picture"):
-        assert check.images == [{"label": "The starting picture", "key": picture.file}]
-    assert handoffs("check_starting_picture") == [{"ask": 1}, {"ask": 2}]
+        assert check.images == [
+            {"label": "The picture to judge:", "key": picture.file},
+            {"label": "The shop photo:", "key": photo.file},
+        ]
+    assert [ask["ask"] for ask in handoffs("check_starting_picture")] == [1, 2]
     assert step.status == "finished"
 
 

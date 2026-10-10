@@ -1671,12 +1671,16 @@ def _check_broll_picture(step: SceneStep, picture: str) -> list[str]:
     Nothing when quality checks are switched off."""
     if not settings.QUALITY_CHECKS:
         return []
-    return judge_starting_picture(step.scene.job, picture, about=f"scene {step.scene.number}")
+    assert step.photo is not None, "a B-roll picture is drawn from its main photo"
+    return judge_starting_picture(
+        step.scene.job, picture, step.photo.file, about=f"scene {step.scene.number}"
+    )
 
 
-def judge_starting_picture(job: Job | None, picture: str, *, about: str) -> list[str]:
-    """What is wrong with the starting picture at `picture`, from a judge shown the picture
-    alone: each problem its failing answers found, when FAILS_TO_FAIL of its ASKS answers
+def judge_starting_picture(job: Job | None, picture: str, photo: str, *, about: str) -> list[str]:
+    """What is wrong with the starting picture at `picture`, from a judge shown the picture,
+    then the shop photo at `photo` it was drawn from, for how the product is built: each
+    problem its failing answers found, when FAILS_TO_FAIL of its ASKS answers
     fail it; nothing when it passes. An ask the safety filter blocks, or whose answer can't
     be had, counts as not checked: the picture is paid for, and failing it would pay for it
     again. `about` names the picture in the log."""
@@ -1693,7 +1697,10 @@ def judge_starting_picture(job: Job | None, picture: str, *, about: str) -> list
                 instructions=STARTING_PICTURE_CHECK,
                 handoff=StartingPictureCheckHandoff(ask=ask),
                 output=StartingPictureVerdict,
-                images=[Image(label="The starting picture", key=picture)],
+                images=[
+                    Image(label="The picture to judge:", key=picture),
+                    Image(label="The shop photo:", key=photo),
+                ],
                 pay_once=True,
             )
         except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
