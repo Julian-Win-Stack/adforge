@@ -15,3 +15,7 @@ Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/age
 ## Testing
 
 Focus on integration tests of the main end-to-end flows; unit tests only in support.
+
+## Limitations
+
+Known app limitations (don't build without Julian's go): `docs/limitations.md`.

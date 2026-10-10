@@ -10,8 +10,15 @@ from gateway.types import Handoff, Judgement
 BROLL_DETAILS_INSTRUCTIONS = """\
 For each B-roll scene, also give:
 - Its kind: "does a job" when the product does something you can see, such as a pan \
-searing a steak or a cloth wiping a spill away; "showcase" for everything else, the \
-product at its best. Choose "showcase" when unsure.
+searing a steak or a cloth wiping a spill away; "shows the problem" when the line names \
+the problem the product fixes, as the page names it: the problem as it really is before \
+the product is used, with the product in view. Only a problem anyone sees at a glance, or \
+one a photo shows. Never the problem getting worse or building up over time: show it as \
+it is, and the voice says the rest; "showcase" only when using or wearing the product \
+the way the line claims is itself the proof, such as a bag carried as a clutch or worn \
+crossbody hands-free. A hand only holding, placing, setting down, standing up or pointing \
+at the product is never a B-roll scene. In a "shows the problem" scene, the problem in plain \
+view is what proves its line. When no kind fits, the scene is not B-roll.
 - Who is in it: "has face" when the presenter's face is in the scene, "no face" when it \
 isn't. A hand or a body without a face is "no face". The only person ever shown is the \
 presenter: never anyone else.
@@ -20,14 +27,50 @@ scene the shop owner approved, and plan the scene with it. Null if the product i
 in it.
 - For "does a job", its result: what you can see at the end, which the scene ends on, \
 such as "the spill wiped away". Only a result the page states or the shop owner approved. \
-Null for "showcase".
-- Its needs: what the scene needs that the main photo can't show, such as what a gel \
-looks like out of the tube, each with the numbers of the photos that show it. The main \
+A result is filmed happening, from before to after in the same clip. A clean or finished \
+thing with the product beside it, with no change filmed, never shows a result. Null for \
+the other kinds.
+- Whether it is about a thin film: true when the problem it shows, or the result it ends \
+on, is a thin film, haze, cloudiness or water spots on a surface. Then its needs list a \
+photo that shows it.
+- Its needs: only how a thing looks that the main photo can't show, such as what a gel \
+looks like out of the tube. Never an action, a pose or a movement, such as a drop or a \
+hand holding it: the action is said in words only. Give each need with the numbers of the \
+photos that show it. The main \
 photo is one of the photos showing the product in its colour; leave needs empty when it's \
 enough. A needed photo may be any of the photos, even one where the product isn't \
 clearly seen. Never name a photo that shows the product in another colour than the \
 ad's. A scene's clip is sent at most 5 pictures: the main photo, one for each need, \
 and the presenter's portrait when it "has face".
+"""
+
+# What a B-roll scene films, for the planner and a rewrite alike. Graded #8 toilet (4
+# steps in one clip) and #5 bag (strap on and off in one clip) failed; one step was perfect.
+# No exception for steps that flow together: N5's clip jumped where Boreal skipped the middle.
+# Round 2 fixes free check (10 Oct): #8's flush got a B-roll scene of its own, with stains
+# still in the bowl and another toilet than the scrub's. Julian 02:59: never for a finishing step.
+BROLL_ONE_ACTION_INSTRUCTIONS = """\
+A B-roll scene films one action: one movement, the one moment that proves what its line \
+claims. When the page or the line lists steps for using the product, film only the main \
+step, the one that shows it working, such as the cloth wiping a stain away rather than \
+spraying, waiting and rinsing, and write that B-roll line about that step. This holds \
+even for steps that flow into each other with no pause: the video skips the middle of a \
+chain of movements, so film only the main one. A finishing step that isn't the product \
+doing its job, such as rinsing, flushing, drying or putting it away, never gets a B-roll \
+scene of its own: the voice says it over the main step's scene, or the person says it to \
+camera. Putting the product on or taking it off, \
+attaching, fitting or adjusting it is a movement of its own: a scene films it or what comes \
+after it, never both. A hand never turns, flips or spins the product, and it never spins by \
+itself, to show it or another side of it: the side facing the camera when the scene starts \
+faces it when the scene ends, even after a drop or fall. The only turn filmed is one the \
+page says is part of using it. To show another side, such as the front and the back, give \
+that side its own B-roll scene that starts on it, and only a side a photo shows. Write what \
+the scene shows with one verb for what moves, such as "a hand pours the sauce", never two \
+joined by "and" or "then", such as "lifts and pours". A part the page says happens while \
+doing it stays, joined by "while". The one verb is what a hand or the product does, never a \
+camera move, such as the camera pushing in. Still pick only ONE action. Write that one \
+action the way the page words it. If the page says something happens while doing it, keep \
+that part.
 """
 
 PLAN_INSTRUCTIONS = (
@@ -48,16 +91,36 @@ are only for the product's colour and how it looks: never take any other fact fr
 such as text on a label. Never infer, guess or make anything up: not a price, a size, \
 a material, a benefit or a colour.
 Decide "plan" when you can plan the whole ad from what you have. Give the scenes in the \
-order they play, with each scene's line exactly as the person will say it. With a target \
+order they play, with each scene's line exactly as the person will say it. The ad is \
+about one idea: the product's main benefit. It plays in three parts: the hook, the body \
+and the call to action; give each scene the part it plays. The hook is the first scene \
+alone: one line that makes the viewer stop and watch, starting with the problem or a \
+surprising claim, not the product's name. The call to action is the last scene alone: it \
+says the price and tells the viewer to get it now, with a reason to act now, such as a \
+discount, only if the page or the shop owner gives one; never "learn more". For the body, \
+choose the one format that suits the product and give it as the script's format; never \
+mix two. Its parts play in the order given, each in one scene or more:
+- "problem, agitate, solve": the problem, agitate, solve: the problem named clearly, \
+what it costs not to solve it, then the product as the answer. Best for products that fix \
+a pain, health and wellness, and productivity.
+- "feature cascade": the hero feature, a supporting feature, proof: the most impressive \
+thing the product does, one or two more, then a quick demo of a result. Best for tech \
+and products with many features.
+- "before and after": the before state, the transformation moment, the after state: the \
+problem shown, the product in action, then the better result. Best for beauty, fitness, \
+home improvement and cleaning products.
+- "day in the life": the routine, the key moment, the result: the product in everyday \
+life, its main use, then the payoff. Best for lifestyle products.
+A problem, a feature or a result is only one the page or the shop owner states: never \
+make one up. With a target \
 length, write only as many words as fit it when spoken at an easy pace. Say the \
 product's name, as the page states it (often the brand or a short name), in at least one \
-scene where the person talks to camera; it may be said in other scenes too. Give the \
-product's name exactly as the person says it in one of those scenes, copied word for \
-word from its line: not the page's full title, and nothing the person doesn't say, such \
+line. Give the product's name exactly as the person says it in one of those lines, copied \
+word for word from it: not the page's full title, and nothing the person doesn't say, such \
 as a part in brackets or a symbol like ® or ™. One line says the product's price: the \
-price a buyer pays today, so on a sale, the sale price. No line names the product's \
-colour: the ad shows the colour, never says it. Give a scene an overlay, a few words \
-drawn along the top of the picture while it plays, when there is \
+price a buyer pays today, so on a sale, the sale price. No \
+line names the product's colour: the ad shows the colour, never says it. Give a scene an \
+overlay, a few words drawn along the top of the picture while it plays, when there is \
 something worth showing as well as saying, such as the price or the product's name; \
 otherwise set it to null. An overlay states only what the page or the shop owner states, \
 like a line. Name the product's \
@@ -80,48 +143,65 @@ voice must agree with the gender you set and with each other. Describe only the 
 and where they are: never the product, anything they hold, any animal, or what they do in \
 a scene. Choose someone who suits the product and its buyers, and never a real, famous \
 person. Set question to null.
-Most scenes are the person talking to camera. A B-roll scene instead shows the product \
-while the person's voice says the line over it: the product being used, what it does, \
-or the proof. For a B-roll scene, set shows to what the scene shows, in plain words, such \
-as "a hand pours the sauce over a bowl of noodles"; for a talking scene, set it to null. \
-The first scene is always the person talking to camera. Use B-roll for lines about how \
-the product is used, what it does, or proof, and only to show what the page or the shop \
-owner states, or the photos show: a picture is a claim, just like a sentence. What a \
-scene shows must match what its line says while it says it, so a B-roll line is about \
-what is shown. A B-roll line has at least about 10 words. Never show before and after \
-pictures of bodies or skin, a screen whose content you'd have to invent, a result the \
-page doesn't state, or parts of the product no photo shows. How much of the ad is B-roll \
-depends on the kind of product. As a guide (B-roll share; what it can show; only if the \
-page says; never):
-- Beauty and skincare: about 30%; a texture close-up (a dab on a fingertip), hands \
-applying it, the pack; only if the page gives the texture and how it's applied; never \
-skin before and after, skin problems or a visible result on skin.
-- Food, drink and kitchen: about 50%; a pour, sizzle and steam, a cooking step, the \
-finished dish; only foods or recipes the page names and what the cookware does; never \
-other foods, half-eaten food or chewing.
-- Fashion: about 40%; fabric close-up, the garment moving, a detail, worn and turning; \
-only the material, fit and features the page gives; never fit or stretch it doesn't \
-claim.
-- Home and cleaning: about 50%; the product in a room, hands using it, setup, a surface \
-before and after; only the result the page states; never a stronger result.
-- Tech and gadgets: 50 to 60%; design close-up, the feature working in hands, an \
-everyday setting, unboxing; only features and box contents the page lists; never \
-invented screens or readable small print.
-- Fitness equipment: about 40%; in use, folding and storing; only the exercise and size \
-claims the page makes; never body changes.
-- Supplements and health: about 20%, mostly talking; the routine, such as a scoop into a \
-shaker; only how it's taken; never any body, weight or health outcome.
-- Cars: about 50%; driving on a road, design details, the interior; only a car the page \
-names; never performance it doesn't claim or other brands' cars.
-- Car accessories: about 50%; fitted in a car, in use, an installation step; only cars \
-and installing the page describes.
-- Apps, software and services: none, unless the shop owner supplies the screens.
-- Pets: about 50%; the pet using the product; only the animal and use the page names; \
-never health outcomes.
-- Kids, baby and toys: 40 to 50%; a toy mid-play with hands only, the gear's features on \
-the product alone; only claims the page makes; never children.
-- Jewelry: about 40%; an extreme close-up, worn on a hand or neck; only the material and \
-stones the page gives; never detail the photos don't show.
+The first scene is always the person talking to camera. The last scene is the person \
+talking to camera, or a B-roll scene that proves its line. Every scene between them is a \
+B-roll scene that proves its line, as the B-roll kinds below allow: it shows the product \
+while the person's voice says the line over it: the product being used, what it does, or \
+the proof. When no B-roll kind could prove a middle scene's line, ask the shop owner for \
+what would show it, as below; if they can't give it, that scene is the person talking to \
+camera, never a B-roll of the product only held, placed, set down, stood up or pointed at. For a \
+B-roll scene, set shows to what the scene shows, in plain words, such as "a hand pours \
+the sauce over a bowl of noodles"; for a talking scene, set it to null. A B-roll scene \
+shows only what the page or the shop owner states, or the photos show: a picture is a \
+claim, just like a sentence. A claim about something the product, or a part of it, does \
+that a camera could see is a B-roll scene that shows it. A B-roll line is about what is \
+shown, when it can be filmed. A line that can't be filmed, such as "no bleach", is still \
+kept: the voice says it while the scene proves another claim the page states, never \
+acting the claim out, or, when no scene could, the person says it to camera. A B-roll \
+line has at least about 10 words.
+"""
+    + BROLL_ONE_ACTION_INSTRUCTIONS
+    + """\
+A scene's result is what the camera sees when its one action ends. When a claim needs two \
+end states, give each its own B-roll scene, back to back, each with its own line and its \
+one action, and mark the second as the second state. A claim needs two end states in two \
+cases. The product can be used in two different ways that can't be seen at once, such as a \
+jacket worn on either side: film each way with the product already set up that way, never \
+the change from one way to the other. Or the proof is seen only after the action ends, \
+such as a dropped item's unharmed other side: the drop scene ends with it lying the same \
+side up, and the next B-roll scene starts on the other side, never turning it over. Never \
+more than two scenes for one claim. Never show before and after pictures of bodies or \
+skin, a screen whose content you'd have to invent, a result the page doesn't state, or \
+parts of the product no photo shows. What B-roll can show depends on the kind of product. \
+As a guide (what it can show; only if the page says; never):
+- Beauty and skincare: a texture close-up (a dab on a fingertip), hands applying it, the \
+pack; only if the page gives the texture and how it's applied; never skin before and \
+after, skin problems or a visible result on skin.
+- Food, drink and kitchen: a pour, sizzle and steam, a cooking step, the finished dish; \
+only foods or recipes the page names and what the cookware does; never other foods, \
+half-eaten food or chewing.
+- Fashion: fabric close-up, the garment moving, a detail, worn and turning; only the \
+material, fit and features the page gives; never fit or stretch it doesn't claim.
+- Home and cleaning: the product in a room, hands using it, setup, a surface before and \
+after; only the result the page states; never a stronger result.
+- Tech and gadgets: design close-up, the feature working in hands, an everyday setting, \
+unboxing; only features and box contents the page lists; never invented screens or \
+readable small print.
+- Fitness equipment: in use, folded away; only the exercise and size claims the page \
+makes; never body changes.
+- Supplements and health: the routine, such as a scoop into a shaker; only how it's \
+taken; never any body, weight or health outcome.
+- Cars: driving on a road, design details, the interior; only a car the page names; never \
+performance it doesn't claim or other brands' cars.
+- Car accessories: fitted in a car, in use, an installation step; only cars and \
+installing the page describes.
+- Apps, software and services: only screens the shop owner supplies.
+- Pets: the pet using the product; only the animal and use the page names; never health \
+outcomes.
+- Kids, baby and toys: a toy mid-play with hands only, the gear's features on the product \
+alone; only claims the page makes; never children.
+- Jewelry: an extreme close-up, worn on a hand or neck; only the material and stones the \
+page gives; never detail the photos don't show.
 You may go against the guide for an unusual product if your reason says why.
 """
     + BROLL_DETAILS_INSTRUCTIONS
@@ -133,22 +213,41 @@ itself or is missing something else the ad needs, so that planning would mean gu
 Also decide "ask" when no photo clearly shows the product: ask them to attach one. A \
 photo where the product is small beside pictures of other products, such as a chart of the \
 devices it works with, or half hidden by text, doesn't clearly show it.
-Ask because of a scene that shows the product in only two cases, and nothing else:
+Ask because of a scene that shows the product in only four cases, and nothing else:
 - The scene needs something of the product that no photo shows and the video would \
 have to guess, such as what a serum looks like out of the bottle or a gel coming out of \
 its tube. Ordinary things around the product are never missing: a phone, a hand, a \
 bowl of noodles can be shown without a photo. A photo that shows it, even one where the \
 product isn't clearly seen, such as blush on a cheek, is enough.
 - The product does a job you can see, such as a cleaner or a pan, and neither the page \
-nor the shop owner says how it is used. Ask even if you could plan it only at its best: \
+nor the shop owner says how it is used. Ask even if you could plan it only showing the product: \
 an ad for such a product shows it doing its job. A product that doesn't do a job you can \
 see, such as a bag, needs no "how to use": never ask for one.
+- The scene ends on a result, what the product removes or prevents is a thin \
+film, haze, cloudiness or water spots on a surface such as glass, tile, a mirror or \
+chrome, and no photo shows that surface before and after. Ask even when everyone knows the \
+word: a camera barely sees a thin film, so the video would guess how it looks and how much \
+changes. The page naming the result isn't enough: the video would still guess how it \
+looks. When what it removes is a coloured mark anyone sees at a glance, such as a stain, a \
+ring, rust, mud, grease or dirt, never ask: show that mark, even if the page also names a \
+film.
+- A middle scene's line is one a camera could film, but no B-roll kind could prove it: \
+nothing the page, the photos or the shop owner give shows it, and only a hand holding, \
+placing, setting down, standing up or pointing at the product would be left. A line a \
+camera can't film, such as "no bleach", is never asked about: it follows the rule for a \
+line that can't be filmed.
 Then say in plain words what's missing and offer two answers: attach a photo of it (for \
-a missing "how to use", of the product being used), or go ahead without one, and you'll \
-say how you'd show it instead. Never choose for them. If they go ahead without one, ask \
-again: say in plain words how you'd show it with what you have, for them to approve or \
-change. Their approval is their own words, and for a product that does a job, it gives \
-the scene's usage and result. \
+a missing "how to use", of the product being used; for a result, of it before and after: \
+without one, the ad shows no before and after of it; for a line nothing proves, of what \
+would prove it), or go ahead without one. Never \
+choose for them. For a missing "how to use": if they go ahead without one, ask again: say \
+in plain words how you'd show it with what you have, for them to approve or change. Their \
+approval is their own words, and for a product that does a job, it gives the scene's \
+usage and result. For a result: if they go ahead without one, no scene shows that film, \
+before or after, and the voice says the claim over another B-roll that proves its own \
+line, or, when none does, the person says it to camera. For a line nothing proves: if they \
+go ahead without one, the person says that line to camera. Never offer another way to \
+show it. \
 Ask the shop owner one short, specific question, and set plan to null.
 Give one sentence saying why: for a plan, why this many scenes; for a question, why you \
 need to ask. Write it for the shop owner. You may say what the ad would show, but never \
@@ -161,8 +260,9 @@ two kinds of scene."""
 MOST_OVERLAY_CHARACTERS = 30
 
 
-# What a B-roll scene is: the product doing something you can see, or at its best.
-BrollKind = Literal["does a job", "showcase"]
+# What a B-roll scene is: the product doing something you can see, the problem it fixes, or
+# the product used or worn the way its line claims, such as a bag carried as a clutch.
+BrollKind = Literal["does a job", "shows the problem", "showcase"]
 
 # Whether a B-roll scene shows the presenter's face. Only a face matters: a hand or a body
 # never does, and the only face ever shown is the presenter's, from their portrait.
@@ -200,8 +300,9 @@ class ScriptScene(BaseModel):
     broll_kind: BrollKind | None = Field(
         default=None,
         description='For a B-roll scene, "does a job" when the product does something you can '
-        'see, or "showcase" for the product at its best; "showcase" when unsure. Null for a '
-        "scene where the person talks to camera.",
+        'see, "shows the problem" for the problem it fixes before it is used, or "showcase" '
+        "when using or wearing it the way the line claims is the proof, such as a bag carried "
+        "as a clutch. Null for a scene where the person talks to camera.",
     )
     person_shown: PersonShown | None = Field(
         default=None,
@@ -218,13 +319,19 @@ class ScriptScene(BaseModel):
     result: str | None = Field(
         default=None,
         description='For a "does a job" scene, the result you can see, which the scene ends '
-        'on. Null for a "showcase" scene or a scene where the person talks to camera.',
+        "on. Null for the other kinds and for a scene where the person talks to camera.",
+    )
+    thin_film: bool = Field(
+        default=False,
+        description="True when the problem this scene shows, or the result it ends on, is a "
+        "thin film, haze, cloudiness or water spots on a surface.",
     )
     needs: list[Need] = Field(
         default_factory=list,
-        description="For a B-roll scene, what it needs that the main photo can't show, each "
-        "with the numbers of the photos that show it. Empty when the main photo is enough, "
-        "and for a scene where the person talks to camera.",
+        description="For a B-roll scene, only how a thing looks that the main photo can't "
+        "show, never an action or a pose, each with the numbers of the photos that show it. "
+        "Empty when the main photo is enough, and for a scene where the person talks to "
+        "camera.",
     )
 
     # A validator rather than min_length, which OpenAI's structured output doesn't accept.
@@ -259,7 +366,9 @@ class ScriptScene(BaseModel):
                 )
             return self
         if self.broll_kind is None:
-            raise ValueError('A B-roll scene needs its kind: "does a job" or "showcase".')
+            raise ValueError(
+                'A B-roll scene needs its kind: "does a job", "shows the problem" or "showcase".'
+            )
         if self.person_shown is None:
             raise ValueError('A B-roll scene needs who is in it: "no face" or "has face".')
         if self.broll_kind == "does a job":
@@ -272,12 +381,28 @@ class ScriptScene(BaseModel):
                     'A "does a job" scene needs its result: what you can see at its end.'
                 )
         elif self.result is not None:
-            raise ValueError('A "showcase" scene has no result.')
+            raise ValueError(f'A "{self.broll_kind}" scene has no result.')
+        # A camera barely sees a thin film: without a photo of it the video guesses, and
+        # before looked the same as after (test ads, 08 Oct, N3).
+        if self.thin_film and not self.needs:
+            raise ValueError(
+                "A scene about a thin film needs a photo that shows it among its needs. "
+                "Without one, make no scene about it: the voice says it over another B-roll."
+            )
         return self
 
     def has_broll_details(self) -> bool:
         """Whether any of the B-roll details is given."""
-        return any((self.broll_kind, self.person_shown, self.usage, self.result, self.needs))
+        return any(
+            (
+                self.broll_kind,
+                self.person_shown,
+                self.usage,
+                self.result,
+                self.needs,
+                self.thin_film,
+            )
+        )
 
     def broll_details(self) -> dict[str, Any]:
         """The B-roll details as a Scene stores them: blank for a talking scene."""
@@ -318,7 +443,47 @@ def photo_missing(numbers: list[int], photo_count: int) -> str | None:
     return None
 
 
+# The structure an ad's body plays in, between its hook and its call to action: Creatify's
+# ad generator's body structures, "Match the structure to your goal". Its Social Proof Stack
+# is left out: it needs customer quotes and numbers the page rarely states. Nothing in code
+# checks a plan's parts against its format: a refused plan is paid for again, so add a check
+# only if plans break it.
+ScriptFormat = Literal[
+    "problem, agitate, solve", "feature cascade", "before and after", "day in the life"
+]
+
+
+# The part of the script a scene plays: the hook first, the call to action last, and the
+# parts of the script's format between them.
+Part = Literal[
+    "hook",
+    "problem",
+    "agitate",
+    "solve",
+    "hero feature",
+    "supporting feature",
+    "proof",
+    "before state",
+    "transformation moment",
+    "after state",
+    "routine",
+    "key moment",
+    "result",
+    "call to action",
+]
+
+
 class PlannedScene(ScriptScene):
+    part: Part | None = Field(
+        default=None,
+        description='The part of the script this scene plays: "hook" for the first scene, '
+        '"call to action" for the last, and one of the parts of the script\'s format between.',
+    )
+    second_state: bool = Field(
+        default=False,
+        description="True for a B-roll scene showing the second of two end states one claim "
+        "needs, the first being the B-roll scene just before it; otherwise false.",
+    )
     overlay: str | None = Field(
         default=None,
         description="A few words drawn along the top of the picture while this scene plays, "
@@ -349,8 +514,8 @@ PersonGender = Literal["man", "woman"]
 class Plan(BaseModel):
     scenes: list[PlannedScene] = Field(min_length=1)
     product_name: str = Field(
-        description="The product's name copied word for word from a line where the person "
-        "talks to camera, exactly as they say it there: not the page's full title."
+        description="The product's name copied word for word from a line, exactly as the "
+        "person says it there: not the page's full title."
     )
     product_colour: str = Field(
         description='The product\'s colour as the photos show it, such as "sage green".'
@@ -373,6 +538,11 @@ class Plan(BaseModel):
         )
     )
     person_voice: str = Field(description="How the person's voice sounds: age, accent, tone, pace.")
+    script_format: ScriptFormat | None = Field(
+        default=None,
+        description="The one format the ad's body plays in, between its hook and its call to "
+        "action.",
+    )
 
     @field_validator("product_name", "product_colour", "person_looks", "person_voice")
     @classmethod
@@ -395,16 +565,33 @@ class Plan(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _name_said_on_camera(self) -> Self:
+    def _second_state_after_the_first(self) -> Self:
+        # The two end states of one claim play back to back, so the second's clip can be made
+        # from the first's (audit row 11).
+        for number, scene in enumerate(self.scenes, start=1):
+            if not scene.second_state:
+                continue
+            if scene.shows is None or number == 1:
+                raise ValueError(
+                    f"Scene {number} is said to camera: only a B-roll scene shows a second state."
+                )
+            first = self.scenes[number - 2]
+            if first.shows is None:
+                raise ValueError(
+                    f"Scene {number} shows a second state, so scene {number - 1} must be "
+                    "B-roll showing the first."
+                )
+            if first.second_state:
+                raise ValueError(
+                    f"Scene {number} shows a third state: one claim has two B-roll scenes at most."
+                )
+        return self
+
+    @model_validator(mode="after")
+    def _name_said(self) -> Self:
         name = " ".join(self.product_name.split()).casefold()
-        if not any(
-            scene.shows is None and name in " ".join(scene.line.split()).casefold()
-            for scene in self.scenes
-        ):
-            raise ValueError(
-                f'No scene where the person talks to camera says "{self.product_name}": at '
-                "least one must."
-            )
+        if not any(name in " ".join(scene.line.split()).casefold() for scene in self.scenes):
+            raise ValueError(f'No line says "{self.product_name}": at least one must.')
         return self
 
 

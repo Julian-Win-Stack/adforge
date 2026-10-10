@@ -1,9 +1,11 @@
 """A B-roll line whose real audio is too long for any clip, driven through the chat: the
 audio step shortens it, fact checks it again and has the producer make its audio again,
 before any clip is paid for, without telling the shop owner. A line still too long after 3
-shortenings, or whose shorter line fails the fact check, becomes a talking scene, and the
-chat says why. The producer's model and the scene models are faked at the gateway, but the
-clips are real tiny videos and ffmpeg runs for real."""
+shortenings, or whose shorter line fails the fact check, becomes a talking scene in the last
+scene, and the chat says why; any other scene stays B-roll, as every scene between the first
+and the last is, and the producer is told to ask the shop owner for a shorter line. The
+producer's model and the scene models are faked at the gateway, but the clips are real tiny
+videos and ffmpeg runs for real."""
 
 from collections.abc import Callable
 
@@ -46,6 +48,10 @@ STILL_LONG = [
 SHORTENED = "Scene 2's line was shortened to fit its clip. Make its audio again."
 NOW_TALKING = (
     "Scene 2 is now a talking scene. Make its starting picture again, then its audio and its clip."
+)
+STILL_TOO_LONG = (
+    "Its line couldn't be shortened to fit, and scene 2 shows the product, so it isn't said "
+    "to camera. Ask the shop owner for a shorter line of their own."
 )
 NOTICE = (
     "Scene 2 couldn't be made as a product shot because its line is too long for a clip, so "
@@ -95,6 +101,13 @@ def since_planning() -> list[str]:
 def too_long(fake_model: FakeModel, checked: None) -> None:  # noqa: F811
     """Scene 2's line, checked, takes the voice 15.5 seconds to say."""
     fake_model.words_per_second = TOO_SLOW
+
+
+@pytest.fixture
+def last(too_long: None) -> None:
+    """The ad cut to its first two scenes, so B-roll scene 2 is its last: the only B-roll
+    scene that may be said to camera."""
+    Scene.objects.filter(number=3).delete()
 
 
 # --- Shortened, then made again ----------------------------------------------------------------
@@ -222,9 +235,32 @@ def test_a_line_shortened_before_the_worker_stopped_isnt_paid_for_again(
 # --- Becoming a talking scene ------------------------------------------------------------------
 
 
+def test_a_middle_scene_still_too_long_after_three_shortenings_becomes_a_talking_scene(
+    fake_model: FakeModel,
+    too_long: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    # Round 2 fixes: the talking fallback is allowed for any middle scene, not only the last.
+    for line in STILL_LONG:
+        fake_model.respond("shorten_line", {"line": line})
+        fake_model.respond("fact_check", facts_ok(2))
+    for _ in STILL_LONG:
+        audio_of_scene_2(fake_model, steps, say)
+
+    told = audio_of_scene_2(fake_model, steps, say)
+
+    assert told == (
+        "Background step finished: scene 2's line's audio takes 15.5 seconds to say, too long "
+        f"for any clip. {NOW_TALKING}"
+    )
+    scene = Scene.objects.get(number=2)
+    assert (scene.line, scene.shows) == (STILL_LONG[-1], "")
+
+
 @pytest.fixture
 def shortened_three_times(
-    fake_model: FakeModel, too_long: None, steps: HeldSteps, say: Callable[..., None]
+    fake_model: FakeModel, last: None, steps: HeldSteps, say: Callable[..., None]
 ) -> str:
     """Scene 2's audio made four times, its line shortened three times and still too long.
     Gives what the producer was told the last time."""
@@ -249,6 +285,25 @@ def test_a_line_still_too_long_after_three_shortenings_becomes_a_talking_scene(
     assert (scene.line, scene.shows) == (STILL_LONG[-1], "")
 
 
+def test_a_scene_that_becomes_a_talking_scene_shows_no_second_state(
+    fake_model: FakeModel, last: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    # A second state plays right after the B-roll scene showing the first, and is made from
+    # it: once scene 2 is said to camera, it is no second state.
+    Scene.objects.filter(number=2).update(second_state=True)
+    for line in STILL_LONG:
+        fake_model.respond("shorten_line", {"line": line})
+        fake_model.respond("fact_check", facts_ok(2))
+    for _ in [*STILL_LONG, "talking"]:
+        audio_of_scene_2(fake_model, steps, say)
+
+    assert Scene.objects.get(number=2).shows == ""
+    assert list(Scene.objects.order_by("number").values_list("second_state", flat=True)) == [
+        False,
+        False,
+    ]
+
+
 def test_the_chat_says_why_a_scene_became_a_talking_scene(
     shortened_three_times: str, api: APIClient, session_id: str
 ) -> None:
@@ -258,7 +313,7 @@ def test_the_chat_says_why_a_scene_became_a_talking_scene(
 
 def test_a_shorter_line_that_fails_the_fact_check_becomes_a_talking_scene(
     fake_model: FakeModel,
-    too_long: None,
+    last: None,
     steps: HeldSteps,
     say: Callable[..., None],
     api: APIClient,
@@ -303,20 +358,20 @@ def test_the_producer_remakes_a_scene_that_became_talking_and_the_ad_finishes(
     calling(
         fake_model,
         say,
-        *[("make_starting_picture", {"scene": scene, "note": None}) for scene in (1, 2, 3)],
-        *[("make_line_audio", {"scene": scene}) for scene in (1, 2, 3)],
+        *[("make_starting_picture", {"scene": scene, "note": None}) for scene in (1, 2)],
+        *[("make_line_audio", {"scene": scene}) for scene in (1, 2)],
     )
-    fake_model.respond("choose_starting_picture", *[TALKING_CHOICE] * 3)
+    fake_model.respond("choose_starting_picture", *[TALKING_CHOICE] * 2)
     run(fake_model, steps)
     # Scene 2's last audio was made for its line as it stands, so it is kept, not made again.
-    calling(fake_model, say, *[("transcribe_line_audio", {"scene": scene}) for scene in (1, 2, 3)])
+    calling(fake_model, say, *[("transcribe_line_audio", {"scene": scene}) for scene in (1, 2)])
     run(fake_model, steps)
-    calling(fake_model, say, *[("make_clip", {"scene": scene}) for scene in (1, 2, 3)])
+    calling(fake_model, say, *[("make_clip", {"scene": scene}) for scene in (1, 2)])
     run(fake_model, steps)
     calling(fake_model, say, ("assemble_ad", {}))
 
     ad = Job.objects.get().produced.get(kind="finished_ad")
-    assert [cut["scene"] for cut in ad.cuts] == [1, 2, 3]
+    assert [cut["scene"] for cut in ad.cuts] == [1, 2]
     # Scene 2 was made as the person talking: no clip was asked of the B-roll video model.
     assert "make_broll_clip" not in paid_for()
     assert ProducedItem.objects.filter(kind="clip", scene__number=2).count() == 1

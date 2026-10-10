@@ -158,7 +158,7 @@ class OpenAIProvider:
                 model=model,
                 image=[
                     (f"picture-{number}", data, _picture_type(data))
-                    for number, data in enumerate(pictures, 1)
+                    for number, data in enumerate(map(_editable, pictures), 1)
                 ],
                 prompt=prompt,
                 size=_STARTING_PICTURE_SIZE,
@@ -169,6 +169,17 @@ class OpenAIProvider:
         except openai.BadRequestError as error:
             raise _blocked_or(error) from error
         return _picture(model, reply)
+
+
+def _editable(data: bytes) -> bytes:
+    """A picture as the picture model takes it: a GIF, which it refuses, as a PNG of its
+    first frame; any other picture as it is."""
+    with PIL.Image.open(io.BytesIO(data)) as picture:
+        if picture.format != "GIF":
+            return data
+        png = io.BytesIO()
+        picture.convert("RGBA").save(png, format="PNG")
+        return png.getvalue()
 
 
 def _picture_type(data: bytes) -> str:

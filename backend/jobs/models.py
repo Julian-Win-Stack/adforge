@@ -114,11 +114,17 @@ class Job(models.Model):
     person_voice = models.TextField(
         blank=True, help_text="The producer's description of the person's voice."
     )
+    script_format = models.CharField(
+        max_length=30,
+        blank=True,
+        help_text="The structure the ad's body plays in, between its hook and its call to "
+        'action, from the plan: such as "before and after" (jobs.planning.ScriptFormat). '
+        "Blank for an ad planned before it was given.",
+    )
     product_name = models.CharField(
         max_length=200,
         blank=True,
-        help_text="The product's name as the ad says it, from the plan. At least one scene "
-        "where the person talks to camera says it.",
+        help_text="The product's name as the ad says it, from the plan. At least one line says it.",
     )
     length_choice = models.CharField(
         max_length=20,
@@ -196,6 +202,7 @@ class Scene(models.Model):
 
     class BrollKind(models.TextChoices):
         DOES_A_JOB = "does a job"
+        SHOWS_THE_PROBLEM = "shows the problem"
         SHOWCASE = "showcase"
 
     class PersonShown(models.TextChoices):
@@ -215,13 +222,27 @@ class Scene(models.Model):
         help_text="A few words drawn along the top of the picture while the scene plays, "
         "such as the price. Blank for none. Not fact checked yet.",
     )
+    part = models.CharField(
+        max_length=30,
+        blank=True,
+        help_text='The part of the script the scene plays: "hook" first, "call to action" '
+        "last, and between them the parts of the job's script format, in their order. Blank "
+        "for a scene planned before it was given.",
+    )
+    second_state = models.BooleanField(
+        default=False,
+        help_text="For a B-roll scene, whether it shows the second of two end states one claim "
+        "needs, such as the second way a bag is carried, the first being the B-roll scene just "
+        "before it.",
+    )
     broll_kind = models.CharField(
         max_length=20,
         choices=BrollKind.choices,
         blank=True,
         help_text='A B-roll scene\'s kind: "does a job" (the product does something you can '
-        'see) or "showcase" (the product at its best). Blank for a talking scene, and for a '
-        "B-roll scene planned before it was given.",
+        'see), "shows the problem" (the problem it fixes, before it is used) or "showcase" '
+        "(the product at its best). Blank for a talking scene, and for a B-roll scene planned "
+        "before it was given.",
     )
     person_shown = models.CharField(
         max_length=20,

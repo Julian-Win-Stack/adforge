@@ -177,13 +177,7 @@ def another_session_is_busy(session: Session) -> bool:
 
 def _picture_finished(step: SceneStep, picture: ProducedItem | None) -> str:
     assert step.photo is not None, "a starting picture is made from a photo"
-    # A B-roll scene made way 3 has no picture: its clip is made from photos, and the
-    # producer isn't told which way a scene is made.
-    if picture is None:
-        return (
-            f"Background step finished: Scene {step.scene.number} is ready for its clip. "
-            f"Photo {step.photo.position} was used: {step.photo_reason}"
-        )
+    assert picture is not None, "a starting picture step makes its picture"
     return (
         f"Background step finished: scene {step.scene.number}'s starting picture is ready "
         f"(version {picture.version}), and is shown to the shop owner in the chat. "
@@ -211,6 +205,13 @@ def _audio_finished(step: SceneStep, audio: ProducedItem | None) -> str:
         return (
             f"{too_long}Scene {number}'s line was shortened to fit its clip. Make its audio again."
         )
+    if too_long_for_a_clip(step, audio) and step.line == scene.line:
+        # Only when the scene changed while its audio was made, so it wasn't said to camera.
+        return (
+            f"{too_long}Its line couldn't be shortened to fit, and scene {number} shows the "
+            "product, so it isn't said to camera. Ask the shop owner for a shorter line of "
+            "their own."
+        )
     return (
         f"Background step finished: scene {step.scene.number}'s line's audio is ready "
         f"(version {audio.version}, {audio.seconds:g} seconds). It isn't shown to the shop "
@@ -232,7 +233,7 @@ def _transcript_finished(step: SceneStep, transcript: ProducedItem | None) -> st
 def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
     assert clip is not None and clip.made_from is not None, "a clip is made from its audio"
     number = step.scene.number
-    # A B-roll scene made way 3 has no starting picture.
+    # A B-roll clip made before every B-roll scene got a picture may have none.
     picture = f"starting picture version {clip.picture.version} and " if clip.picture else ""
     return (
         f"Background step finished: scene {number}'s clip is ready (version {clip.version}, "
@@ -247,7 +248,7 @@ class StepWork:
     itself, what the producer is told when it finishes, and what the chat shows then."""
 
     name: str
-    # Gives what it made: nothing, for a B-roll scene's starting picture made way 3.
+    # Gives what it made.
     make: Callable[[SceneStep], ProducedItem | None]
     finished: Callable[[SceneStep, ProducedItem | None], str]
     shown: Callable[[ProducedItem | None], list[messages.AttachedFile]]

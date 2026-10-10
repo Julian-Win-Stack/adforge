@@ -37,7 +37,9 @@
     the action and ends on the result, described in words. No end picture.
 12. **Two kinds of scene,** one prompt-writing agent with a rule set per kind: "does a job
     you can see" (the result comes from the product being used) and "showcase"
-    (everything else, the default when unsure).
+    (using or wearing it the way the line claims is the proof; since 2026-10-09 no longer
+    the default when unsure: a middle scene no kind fits asks the shop owner, else is
+    said to camera).
 13. **The clip isn't cut where the spoken line ends.** It plays to its end.
 14. **Only the presenter is shown.** Any hand is fine. Tested after building; the production
     prompts carry the rule from the start.
@@ -233,6 +235,13 @@
     made as a product shot because its line is too long for a clip, so it will be said to
     camera instead."). The one exception to "the user is never told which scenes are which".
     Only that scene changes; the rest of the plan stays.
+57. **Every B-roll scene gets a drawn starting picture; way 3 is gone (2026-10-08).** Shop
+    photos are no longer sent to the video model as example pictures: their own scene
+    leaked into the clip (#12), and a wrong "need" that skipped the starting picture let
+    the video model invent a dirty tile (N3 Lemi Shine). A scene's needs photos now go to
+    the picture model with its main photo, and the drawn picture is checked beside the shop
+    photo before the clip is paid for. Items 7, 40 and 55, and "references" in "The logic"
+    below, describe the old way 3 and are kept as history.
 
 ## What Boreal-H3 takes
 
@@ -265,6 +274,9 @@ From Creatify's API page (Create a Boreal task) and the scene #16 check.
     has to be made for references. Kept in `docs/runs/second-run-review/check/shape-check/`.
 
 ## The logic: which way for which scene
+
+Since item 57 (2026-10-08), step 1's "references" is no longer built: every B-roll scene is
+made from its starting picture.
 
 1. **Does the scene show something the pack photo can't?** Such as gel coming out, blush on
    a cheek, powder in a drink: a texture, a colour, the inside, a result.
@@ -340,9 +352,14 @@ small rule set, not a new agent.
 | Kind | Examples | Its own rules |
 |---|---|---|
 | Does a job you can see | toilet cleaner, blush, collagen powder, power bank, blender | The result comes from the product being used; end on it |
-| Showcase (everything else) | bag, clothes, jewellery, decor | Shown in use; nothing invented; end at its best |
+| Shows the problem (added 2026-10-09) | a shower's soap scum, a stained mug, before the product is used | The problem shown plainly in the starting picture with the product in view; nothing about it changes; the one movement is a hand or the product |
+| Showcase (used or worn as the line claims) | a bag carried as a clutch, clothes worn | Used or worn the way the line claims; never only held, placed or pointed at |
 
-When the planner isn't sure, it picks "showcase": it can't invent a result. First drafted
+Until 2026-10-09, when the planner wasn't sure, it picked "showcase": it can't invent a
+result. Round 2's showcases (a hand holding, setting down or standing up the product) all
+failed (#12 s2, #8 s4, N3), so now a middle scene that no kind fits asks the shop owner for
+what would show it, and is said to camera if they can't give it. A result is filmed
+happening, never a finished thing with the product beside it (#8 s4). First drafted
 as three kinds (changes something, worn or carried, other); "worn or carried" and "other"
 were merged because their rules were the same, and gadgets moved to "does a job", because a
 gadget shown only looking nice never proves it works.
@@ -354,10 +371,11 @@ gadget shown only looking nice never proves it works.
   A result shown on
   a screen is shown without numbers or words (the charging light comes on, not "80%"): video
   makers garble them.
-- **Showcase.** The real product shown clearly, in use the way the page says; one simple
-  action (worn and turning, picked up, set down, or a slow camera move); ending on the moment
-  the product looks its best, such as the bag catching the light as she turns; no result or
-  change the page doesn't prove.
+- **Showcase.** The product used or worn the way the line claims, such as a bag carried as
+  a clutch (#5, graded PERFECT); never a hand only holding, placing, setting down or
+  pointing at it (round 2, 2026-10-09); ending on what the line proves, filmed; no result or change the page doesn't prove. (Until
+  2026-10-08 it ended "at its best" with "a slow camera move" allowed: the forced ending made
+  pointless zooms in #15 and #4, and the user graded the retest without it "a lot better".)
 
 The checker's questions come from templates, not written by hand:
 1. Is the promised result visible by the end, coming from the product being used? (does a
@@ -389,7 +407,44 @@ From the MiniMax H3 prompt guides (Boreal-H3 is built on H3) and the four mistak
   cleaner's first test showed the bottle standing idle while a hand scrubbed: it showed
   nothing the line says ("the clinging gel fights rings and stains") and was graded useless.
   Its redo shows the gel coming out over a hard-water ring.
-- One continuous shot. One action per 2 to 3 seconds, so a 5 s clip holds one or two.
+- One continuous shot, doing what "shows" says in order at a natural, real-time pace. No
+  seconds, timings, "slowly" or "gently" (2026-10-08): "one action per 2 to 3 seconds" gave
+  stopwatch timings, #5 "3 actions in 6 s" and #7 "far too slow", both failed by the user.
+- One movement per clip, no exceptions (the user's decision, 2026-10-08): the plan's "shows"
+  says which movement (a hold-up "shows" was turned back into the drop its line claims,
+  #12, 4 runs of 4). When it lists several, the one where the product or its tool does the
+  work is filmed, not putting the product on before it or rinsing after it ("the one that
+  proves the line" picked the toilet's flush over the scrub graded perfect). A person or hand
+  "shows" names is in the clip (the bag scene's wearer was left out). The
+  voice carries the rest. The fiddly change between two
+  states (clipping, unclipping, folding) is never filmed. Why: the toilet scrub-only clip was
+  graded perfect; the bag clip that filmed the strap change failed, one clip per state
+  passed; "two or three actions that flow as one" let clamp + rotate + glide through on a
+  curling iron and the video model skipped the middle. The planner owns splitting such
+  lines; this is the prompt writer's backstop.
+- The product, or the tool used with it, acts; the product may stand in view when holding it
+  would bend its shape (2026-10-08: the toilet clip the user graded perfect had the bottle
+  standing on the tank; holding it bent its neck).
+- A job's result shows only where the product or its tool touches, and nothing else
+  changes; it happens as the touch passes, never all at once or time-compressed. When a
+  tool works after the product is put on, putting it on is never filmed or drawn (the user,
+  2026-10-08: "just scrub it and then that scrub area become clean", "you don't need to even
+  put in the gel at all"; the toilet clip's whole ring had vanished where nothing touched it).
+- Never two orders that can't both be true ("upright" + "nozzle pointing down" bent the
+  bottle; "squeeze" + "no gel" put gel on the rim). Each order is checked against the photos.
+- Code starts every B-roll video prompt with "A {N}-second video at real-time speed. The
+  camera stays still.", N the clip's real length; the video prompt no longer says "9:16"
+  (the API sends it), and never moves the camera or says where or how close it ends. Until
+  2026-10-09 it opened "A {N}-second handheld phone video, casual, not cinematic, real-time
+  speed.", as both best-graded clips did; the test ads of 2026-10-08 all looked
+  phone-filmed (the user: "there is no extra benefit"), and "handheld" moves the camera,
+  against "the one movement in a B-roll is a hand or the product, never the camera" (the
+  user, 2026-10-08 23:57). No look words either way: the video model chooses.
+- The starting picture's prompt opens "An upright 9:16 photo in a real, ordinary <place>."
+  (no "taken on a phone", no "casual", since 2026-10-09) and says plainly what must be
+  right: where the camera is, its height and angle, every part of the object named as a real, ordinary one, the problem as it
+  looks before, counts and left/right, the hand at the first moment. A product in an unusual
+  pose gets the pose said once and what it does to each part (the label turns with it).
 - The product is held the way it is really used, taken from the page's "how to use"
   (the toilet cleaner's bottle is used upside down, not with the nozzle pointing up).
 - The prompt says only that the main action or product is in the middle of the frame, and

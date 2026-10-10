@@ -6,7 +6,7 @@ from typing import Literal
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.db import IntegrityError, transaction
-from django.db.models import Max, Q, Sum
+from django.db.models import Max, Sum
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from adforge.retry import OutsideServiceDown
@@ -546,18 +546,9 @@ class MakeStartingPicture(Tool):
         steps = scene.steps.filter(kind=SceneStep.Kind.STARTING_PICTURE)
         made = (
             steps.filter(status=SceneStep.Status.FINISHED, note=note, **SceneStep.made_for(scene))
-            .filter(Q(way=SceneStep.Way.FROM_EXAMPLES) | Q(produced__isnull=False))
+            .filter(produced__isnull=False)
             .last()
         )
-        if made is not None and made.way == SceneStep.Way.FROM_EXAMPLES:
-            # A B-roll scene made way 3 has no picture, and the shop owner is shown none.
-            assert made.photo is not None, "a way 3 step picks its main photo"
-            return (
-                f"Scene {scene.number} is already ready for its clip from this line "
-                f"{'with this note' if note else 'with no note'}, so nothing was made or paid "
-                f"for again. Making it cost {_dollars(made.tool_call.cost_usd())}. Photo "
-                f"{made.photo.position} was used: {made.photo_reason}"
-            )
         if made is not None:
             picture = made.produced.get()
             assert made.photo is not None, "a finished starting picture was made from a photo"
@@ -704,11 +695,13 @@ class MakeClip(Tool):
                     f"scene {scene.number}'s {what} is still being made. You'll be told when "
                     "it's ready; make the clip then."
                 )
-        # A picture step is finished with its picture made, or, for a B-roll scene made way
-        # 3, with the example pictures picked and no picture.
+        # A picture step is finished with its picture made. One made before every B-roll
+        # scene got a picture may have none: its scene's picture is made again.
         picture_steps = scene.steps.filter(
-            kind=SceneStep.Kind.STARTING_PICTURE, status=SceneStep.Status.FINISHED
-        ).filter(Q(way=SceneStep.Way.FROM_EXAMPLES) | Q(produced__isnull=False))
+            kind=SceneStep.Kind.STARTING_PICTURE,
+            status=SceneStep.Status.FINISHED,
+            produced__isnull=False,
+        )
         if not picture_steps.exists():
             raise Refused(
                 f"scene {scene.number} has no starting picture yet. Make its starting picture "

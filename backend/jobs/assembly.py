@@ -410,10 +410,15 @@ def join(
     inputs += ["-i", str(music)]
     ad_seconds = parts[-1][1].end
     filters.append(f"[{len(parts)}:a]{music_filters(seconds_of(music), ad_seconds)}[music]")
-    # A picture that plays on past the last line plays over the music only.
-    filters.append(f"[said]apad=whole_dur={ad_seconds}[voice]")
+    # A picture that plays on past the last line plays over the music only. The voice is
+    # padded without end and the mix cut at the ad's end: amix drops the voice it still holds
+    # when the voice, its first input, ends while the longer music lags behind, which cut the
+    # last line off about 1.2 s early in every graded test ad (08 Oct).
+    filters.append("[said]apad[voice]")
     # The ad lasts as long as its picture; the levels set above are kept, not evened out.
-    filters.append("[voice][music]amix=inputs=2:duration=first:normalize=0[a]")
+    filters.append(
+        f"[voice][music]amix=inputs=2:duration=first:normalize=0,atrim=end={ad_seconds}[a]"
+    )
     _ffmpeg(
         *inputs,
         "-filter_complex",

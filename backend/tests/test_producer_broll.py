@@ -16,7 +16,11 @@ from gateway.models import ModelCall
 from gateway.types import ModelReply, ModelRequest
 from jobs import work
 from jobs.models import Job, ProducedItem, Scene, SceneStep
-from jobs.scenes import BROLL_KIND_RULES, BROLL_PICTURE_INSTRUCTIONS, BROLL_SHARED_RULES
+from jobs.scenes import (
+    BROLL_KIND_RULES,
+    BROLL_PICTURE_INSTRUCTIONS,
+    BROLL_SHARED_RULES,
+)
 
 from .conftest import (
     FACTS_OK,
@@ -181,6 +185,17 @@ def clip_of_scene_2(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., 
     run(fake_model, steps)
 
 
+def picture_of_scene_2(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], *choices: dict[str, Any]
+) -> SceneStep:
+    """Scene 2's latest starting picture step, made with the prompts in `choices`, one for each
+    draw (the usual prompts when none are given)."""
+    calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": None}))
+    fake_model.respond("choose_broll_picture", *(choices or (BROLL_CHOICE,)))
+    run(fake_model, steps)
+    return SceneStep.objects.filter(kind="starting_picture", scene__number=2).last()  # type: ignore[return-value]
+
+
 def clips_asked(field: str) -> list[Any]:
     """`field` of what the video model was asked for, for each clip, oldest first."""
     return [handoff[field] for handoff in handoffs("make_broll_clip")]
@@ -340,6 +355,12 @@ def test_the_model_planning_a_picture_is_told_what_the_scene_shows(
     [
         pytest.param(SHOWCASE, "showcase", "does a job", id="showcase"),
         pytest.param(DOES_A_JOB, "does a job", "showcase", id="does a job"),
+        pytest.param(
+            {**SHOWCASE, "broll_kind": "shows the problem"},
+            "shows the problem",
+            "does a job",
+            id="shows the problem",
+        ),
     ],
 )
 def test_the_model_planning_the_picture_is_given_only_its_kinds_rules(
@@ -366,8 +387,10 @@ def test_the_model_planning_the_picture_is_given_only_its_kinds_rules(
     "rule",
     [
         "One continuous shot",
-        "The product does what the line claims",
-        'held and used the way "usage" says',
+        # Since 09 Oct "shows", not the line: a line that can't be filmed is said over
+        # another B-roll, never acted out (test ads, 08 Oct; Julian 23:40).
+        'The product, or the tool used with it, does what "shows" describes',
+        'the way "usage" says',
         "in the middle of the frame",
         "Say nothing about the top or the bottom of the frame",
         "Only the presenter is shown",
@@ -383,12 +406,172 @@ def test_the_model_planning_the_picture_is_given_the_shared_prompt_rules(rule: s
     assert rule in BROLL_SHARED_RULES
 
 
+# Rules Julian's grades proved
+# (decisions/agreed-vs-built-2026-10-08.md rows 1, 5, 7, 10, 17).
+@pytest.mark.parametrize(
+    "rule",
+    [
+        # Timings made clips stopwatch-like (#5) or far too slow (#7).
+        "Never write seconds or timings",
+        '"slowly" or "gently"',
+        # Only the scrub, with the voice carrying squeeze and flush, was PERFECT (#8 5 s);
+        # "flows as one" let clamp + rotate + glide through and Boreal skipped the middle
+        # (N5 s2), so Julian made it one movement, no exceptions.
+        "Film one movement only",
+        '"usage" tells how it is held and used, not how many steps to film',
+        # A plan "shows" of holding up the phone after its drop was overridden back to the
+        # drop by the line's claim, 4 runs of 4 (#12, compare.md cause check), so "shows"
+        # decides which movement.
+        '"shows" says which: when it names one movement, film that one, even when the line',
+        # "The one that makes the line's claim happen" picked the flush over the scrub Julian
+        # graded PERFECT (#8 5 s, round 8): the movement is the product's or its tool's.
+        'When "shows" lists more than one, film the one where the product, or the tool used '
+        "with it, does the work",
+        # The bag's "the presenter wears the bag" came back as the bag alone (5 s3, rounds 7-8).
+        'When "shows" names a person or a hand, they are in the clip, doing what it says',
+        # Test ads (08 Oct): #8's pointless zoom ended "close enough for the ring to be
+        # unmistakably visible"; Julian 23:57: "a hand or the product, never the camera".
+        "never move the camera or say where or how close it ends",
+        "The voice carries the rest",
+        # Test ads (08 Oct), N5 Le Duo: the turn was moved before the glide, so the clip filmed
+        # the straightening how-to under a line about curls.
+        'A part that "shows" or "usage" says happens while the movement is done, such as '
+        "pressing down while turning a cap, is part of that one movement: film it during the "
+        "movement, never before it or in the starting picture.",
+        # Test ads (08 Oct), #12 phone case: turned and dropped from start pictures of one side,
+        # the clips drew the back on both sides.
+        "The side of the product facing the camera in the starting picture faces it at the "
+        "end: never turn, flip or spin the product, and after a drop it lands that side up.",
+        # Filming the strap change failed; one clip per state was PERFECT (#5 bag).
+        "Never film the fiddly change between two states",
+        # Holding the bottle bent its neck; the PERFECT toilet clip had it standing in view.
+        "The product may stand in view",
+        # "upright" + "nozzle pointing down" bent the bottle; "squeeze" + "no gel" put gel on.
+        "Never ask for two things that can't both be true at once",
+        "Check every order against the product photos",
+        # Code writes the clip's look and length first (broll_video_prompt).
+        "Code starts the video prompt with the clip's length",
+    ],
+)
+def test_the_model_writing_the_prompts_is_told_the_proven_rules(rule: str) -> None:
+    assert rule in BROLL_SHARED_RULES
+
+
+@pytest.mark.parametrize(
+    "dropped",
+    [
+        "One action every 2 to 3 seconds",
+        "not standing idle beside the action",
+        # The API already sends the shape; the video prompt doesn't repeat it.
+        "Upright 9:16",
+        "flow as one",
+        # Test ads (08 Oct): every B-roll looked phone-filmed; Julian: "there is no extra
+        # benefit". A handheld look also moves the camera, against "never the camera".
+        "phone",
+        "casual",
+        "never call the camera fixed",
+    ],
+)
+def test_the_model_writing_the_prompts_is_no_longer_told_the_rules_grades_rejected(
+    dropped: str,
+) -> None:
+    assert dropped not in BROLL_SHARED_RULES
+
+
+# What both best start pictures did (#8 toilet 5 s, #12 V2): rows 9, 18, 31.
+@pytest.mark.parametrize(
+    "rule",
+    [
+        'The picture prompt opens: "An upright 9:16 photo in a real, ordinary <place>."',
+        "say where the camera is, its height and angle",
+        "every part named as a real, ordinary one",
+        "exact counts, and left or right",
+        "any hand already in place for the action",
+        "say the pose once and what it does to the product's shape",
+    ],
+)
+def test_the_picture_prompt_shows_what_must_be_right(rule: str) -> None:
+    assert rule in BROLL_SHARED_RULES
+
+
+def test_a_scene_showing_the_problem_shows_it_plainly_and_never_changes_it() -> None:
+    # Test ads (08 Oct), N3: the shower's "builds up" line was talking; Julian: "As a B-roll
+    # scene." Clips are real-time, so the dirt is shown as it is, not building up.
+    rules = BROLL_KIND_RULES["shows the problem"]
+    assert "plainly, in the starting picture, with the product in view" in rules
+    assert "Nothing about the problem changes in the clip." in rules
+    assert "The one movement is a hand or the product" in rules
+    # Round 2 (Julian 21:22 "yes"): the example was a filler action.
+    assert "set down beside it" not in rules
+
+
 def test_a_does_a_job_scene_ends_on_its_result() -> None:
     assert "ends on the result" in BROLL_KIND_RULES["does a job"]
 
 
-def test_a_showcase_scene_ends_on_the_product_at_its_best() -> None:
-    assert "ends on the product at its best" in BROLL_KIND_RULES["showcase"]
+def test_a_does_a_job_scene_films_its_result_happening() -> None:
+    # Round 2 #8 s4: the bottle beside a clean toilet. Julian: "there is no evidence that the
+    # toilet is so clean right now ... we have to show."
+    assert (
+        "A result is filmed happening, from before to after in the same clip. A clean or "
+        "finished thing with the product beside it, with no change filmed, never shows a "
+        "result."
+    ) in BROLL_KIND_RULES["does a job"]
+
+
+def test_a_drop_starts_at_the_height_the_page_states() -> None:
+    # Round 2 #12 s5: dropped from just above the floor; Julian: "dropping at a really close
+    # position from the floor". The shop's photo says "6 ft. drop tested". No hardcoding:
+    # with no height stated, a standing person's hand.
+    assert (
+        "When the action is a drop, fall or throw, the starting picture shows the height it "
+        "starts from: the height the page or its photos state, such as 6 ft above the floor; "
+        "when none is stated, held in a standing person's hand."
+    ) in BROLL_SHARED_RULES
+    # Round 2 #12 s5's own picture prompt put "the camera at knee height", so the hand was
+    # drawn just above the floor; 15 redraws without that never copied the low drop photo.
+    assert (
+        "The camera is placed to see the whole fall, from that height down to where it lands: "
+        "never at knee height or close to the floor."
+    ) in BROLL_SHARED_RULES
+    # The proven rule this sits under stays word for word (A8, #12 V1 FAIL, V2 GOOD).
+    assert (
+        "Anything that must be right goes in the starting picture, said plainly: say where the "
+        "camera is, its height and angle;"
+    ) in BROLL_SHARED_RULES
+
+
+# The toilet clip's whole ring vanished where nothing touched it, "time-compressed", after
+# filming the gel go on; Julian: "just scrub it and then that scrub area become clean", "you
+# don't need to even put in the gel at all" (decisions/2026-10-08-result-only-where-scrubbed.md).
+@pytest.mark.parametrize(
+    "rule",
+    [
+        "The result shows only where the product, or the tool used with it, touches",
+        "nothing else changes",
+        "never all at once, sped up or time-compressed",
+        "putting the product on is never filmed or drawn",
+    ],
+)
+def test_a_does_a_job_scene_changes_only_where_it_is_touched(rule: str) -> None:
+    assert rule in BROLL_KIND_RULES["does a job"]
+
+
+def test_a_showcase_scene_ends_on_what_it_shows() -> None:
+    showcase = BROLL_KIND_RULES["showcase"]
+    assert 'ends on the moment that shows what "shows" describes, done by a hand' in showcase
+    # Round 2: "picked up or set down" made filler B-roll, and every one failed (#12 s2, #8
+    # s4, N3). The clutch carry was graded PERFECT (#5), so wearing it as claimed stays.
+    assert "picked up or set down" not in showcase
+    assert (
+        "This scene proves its line by the product being used or worn the way the line "
+        "claims, such as a bag carried as a clutch while walking. A hand only holding, "
+        "placing, setting down, standing up or pointing at the product never proves anything: "
+        "never film that."
+    ) in showcase
+    # The forced ending made pointless zooms (#15, #4): "a lot better" without it.
+    assert "at its best" not in showcase
+    assert "camera move" not in showcase
 
 
 def test_the_model_planning_the_picture_is_no_longer_told_only_what_shows_describes(
@@ -724,13 +907,32 @@ def test_the_talking_scenes_clips_are_still_asked_of_heygen(assembled: ProducedI
     ] * 2
 
 
-def test_the_clip_is_asked_to_move_as_planned(
-    fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
+@pytest.mark.parametrize(
+    ("said_in", "asked_for"),
+    [
+        pytest.param(4.2, 5, id="a 5-second clip"),
+        pytest.param(6.3, 7, id="a 7-second clip"),
+    ],
+)
+def test_the_clip_is_asked_to_move_as_planned_with_a_still_camera_at_its_length(
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    said_in: float,
+    asked_for: int,
 ) -> None:
+    fake_model.words_per_second = 8 / said_in
+    made_ready(fake_model, steps, say, (2,))
+
     clip_of_scene_2(fake_model, steps, say)
 
-    # As the model wrote it: Boreal-H3 is sent no sections, and nothing is added.
-    assert clips_asked("prompt") == [MOTION]
+    # The clip's real length and a still camera come first, whatever the model wrote, then
+    # its prompt as written: Boreal-H3 is sent no sections. No look: the video model's choice
+    # (test ads, 08 Oct: every B-roll looked phone-filmed).
+    assert clips_asked("prompt") == [
+        f"A {asked_for}-second video at real-time speed. The camera stays still. {MOTION}"
+    ]
 
 
 @pytest.mark.parametrize(

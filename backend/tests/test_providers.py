@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import PIL.Image
 import pytest
 from pytest_django import Settings
 from pytest_httpserver import HTTPServer
@@ -715,6 +716,40 @@ def too_busy(request: Request) -> Response:
 
 def broken(request: Request) -> Response:
     return Response("Internal Server Error", status=500)
+
+
+def test_a_gif_photo_is_sent_to_the_picture_model_as_a_png_of_its_first_frame(
+    httpserver: HTTPServer, settings: Settings
+) -> None:
+    # The picture model refuses a GIF: a shop's GIF photo failed every starting picture
+    # (BrüMate can cooler, small run 2026-10-08).
+    settings.OPENAI_API_KEY = "sk-test"
+    settings.OPENAI_BASE_URL = httpserver.url_for("/v1")
+    gif = file_store.save("photo.gif", picture(40, 30, (200, 20, 20), format="GIF"))
+    made = picture(1152, 2048, (200, 180, 160))
+    sent: list[Request] = []
+
+    def reply(request: Request) -> Response:
+        sent.append(request)
+        return Response(
+            json.dumps({"created": 1, "data": [{"b64_json": base64.b64encode(made).decode()}]}),
+            content_type="application/json",
+        )
+
+    httpserver.expect_oneshot_request("/v1/images/edits", method="POST").respond_with_handler(reply)
+
+    with use_model(OpenAIProvider()):
+        edit_picture(job=None, purpose="make_starting_picture", prompt="A can.", pictures=[gif])
+
+    (request,) = sent
+    (image,) = request.files.getlist("image[]")
+    assert image.content_type == "image/png"
+    with PIL.Image.open(image.stream) as png:
+        assert (png.format, png.size, png.convert("RGB").getpixel((0, 0))) == (
+            "PNG",
+            (40, 30),
+            (200, 20, 20),
+        )
 
 
 def test_a_b_roll_clip_from_a_starting_picture_is_asked_of_boreal_h3_at_768p(

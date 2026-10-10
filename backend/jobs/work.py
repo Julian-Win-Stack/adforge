@@ -47,7 +47,6 @@ from gateway.types import (
     LEAST_BROLL_SECONDS,
     LEAST_CLIP_SECONDS,
     MOST_BROLL_SECONDS,
-    MOST_EXAMPLE_PICTURES,
     BrollClipHandoff,
     ClipFailed,
     ClipHandoff,
@@ -95,6 +94,15 @@ from .checks import (
 )
 from .models import BROLL_FIELDS, Job, ProducedItem, ProductPhoto, Scene, SceneStep
 from .notices import post_notice
+from .picture_check import (
+    MOST_REDRAWS,
+    REDO_RULES,
+    STARTING_PICTURE_CHECK,
+    BrollRedoHandoff,
+    Redo,
+    StartingPictureCheck,
+    StartingPictureCheckHandoff,
+)
 from .planning import (
     PLAN_INSTRUCTIONS,
     ChatMessage,
@@ -105,19 +113,19 @@ from .planning import (
 from .scenes import (
     BROLL_PICTURE_INSTRUCTIONS,
     MAIN_PHOTO_JOB,
+    MOST_NEEDS_PHOTOS,
     PORTRAIT_JOB,
     STARTING_PICTURE_INSTRUCTIONS,
-    BrollExamplesHandoff,
     BrollPictureChoice,
     BrollPictureHandoff,
     BrollPromptHandoff,
-    ExamplePicture,
+    NeedPhoto,
     PictureJob,
     StartingPictureChoice,
     StartingPictureHandoff,
-    broll_examples_choice_for,
     broll_prompt_instructions,
-    example_pictures,
+    broll_video_prompt,
+    need_job,
     photos_for_needs,
     pose_for,
     starting_picture_choice_for,
@@ -628,6 +636,8 @@ def plan(job: Job) -> ProducerDecision:
                 line=scene.line,
                 shows=scene.shows or "",
                 overlay=" ".join((scene.overlay or "").split()),
+                part=scene.part or "",
+                second_state=scene.second_state,
                 **scene.broll_details(),
             )
             for number, scene in enumerate(planned.scenes, start=1)
@@ -638,6 +648,7 @@ def plan(job: Job) -> ProducerDecision:
         job.person_gender = planned.person_gender
         job.person_looks = planned.person_looks
         job.person_voice = planned.person_voice
+        job.script_format = planned.script_format or ""
         job.status = Job.Status.PLANNED
         job.save(
             update_fields=[
@@ -647,6 +658,7 @@ def plan(job: Job) -> ProducerDecision:
                 "person_gender",
                 "person_looks",
                 "person_voice",
+                "script_format",
                 "status",
             ]
         )
@@ -728,11 +740,19 @@ def _paid_for_before(
     """What a call for `purpose` made before the worker stopped, if it was paid for but not
     kept: for the job, or for the tool call it was `charged_to`. Every call is recorded as
     soon as it succeeds, so a restart reuses what it made."""
+    call = _paid_calls(job, purpose, charged_to=charged_to).last()
+    return call.output if call else None
+
+
+def _paid_calls(
+    job: Job, purpose: str, *, charged_to: ToolCall | None = None
+) -> QuerySet[ModelCall]:
+    """Every call for `purpose` that succeeded, oldest first: for the job, or for the tool
+    call it was `charged_to`."""
     calls = job.model_calls.filter(purpose=purpose, outcome=ModelCall.Outcome.SUCCEEDED)
     if charged_to is not None:
         calls = calls.filter(tool_call=charged_to)
-    call = calls.last()
-    return call.output if call else None
+    return calls
 
 
 def _measure_voice(job: Job, voice: ProducedItem) -> None:
@@ -930,9 +950,23 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
     )
     scene.fact_problems[-1]["rewritten"] = True
     scene.change_line(rewrite.line, rewrite.shows or "", broll=rewrite.broll_details())
-    scene.save(
-        update_fields=["line", "shortened_from", "shows", *BROLL_FIELDS, "status", "fact_problems"]
-    )
+    with transaction.atomic():
+        if rewrite.shows is None:
+            # A talking scene shows no second state, and the scene after it no longer follows
+            # the first state it was made from, as in _say_it_to_camera.
+            scene.second_state = False
+            job.scenes.filter(number=scene.number + 1).update(second_state=False)
+        scene.save(
+            update_fields=[
+                "line",
+                "shortened_from",
+                "shows",
+                *BROLL_FIELDS,
+                "status",
+                "fact_problems",
+                "second_state",
+            ]
+        )
 
 
 def _about_line(scene: Scene) -> Asking:
@@ -1028,11 +1062,12 @@ def _fit_for(job: Job, scene: Scene, words_per_second: float) -> Fit | None:
 
     A talking line may take up to LONGEST_LINE_SECONDS to say: longer, it is shortened
     MOST_REWRITES times since the user last spoke, then they are asked. A B-roll line must
-    take SHORTEST_BROLL_LINE_SECONDS to LONGEST_BROLL_LINE_SECONDS, and the user is never
-    asked about it: too short, it is lengthened MOST_LENGTHENINGS times, then kept; too long,
-    it is shortened MOST_BROLL_SHORTENINGS times, then its scene becomes a talking scene. A
-    B-roll line the user chose is never rewritten: too long, its scene becomes a talking
-    scene at once. Tries are counted per scene, ever."""
+    take SHORTEST_BROLL_LINE_SECONDS to LONGEST_BROLL_LINE_SECONDS: too short, it is
+    lengthened MOST_LENGTHENINGS times, then kept; too long, it is shortened
+    MOST_BROLL_SHORTENINGS times, then its scene becomes a talking scene, whichever scene it
+    is: a middle scene may fall back to the person talking (round 2 fixes). A B-roll line the
+    user chose is never rewritten: too long, it is the same, at once. Tries are counted per
+    scene, ever."""
     seconds = line_seconds(scene.line, words_per_second)
     if not scene.shows:
         if seconds <= LONGEST_LINE_SECONDS:
@@ -1084,15 +1119,16 @@ def _showed_something(handoff: dict[str, Any], number: int) -> bool:
 
 
 def _ask_for_a_shorter_line(scene: Scene, words_per_second: float) -> Asking:
-    """Ask the user for a shorter talking line, once it was shortened MOST_REWRITES times
-    since they last spoke and is still too long for its clip."""
+    """Ask the user for a shorter talking line, once it was shortened as often as allowed and
+    is still too long for its clip. A B-roll line too long is said to camera instead."""
+    assert not scene.shows, "a B-roll line too long for its clip is said to camera instead"
     seconds = line_seconds(scene.line, words_per_second)
     return Asking(
         about="line_length",
         question=(
-            f"Scene {scene.number}'s line still takes about {seconds:.1f} seconds to say after "
-            f"{MOST_REWRITES} shortenings, and a scene can last at most {LONGEST_LINE_SECONDS} "
-            f'seconds: "{scene.line}"{_while_its_said(scene)}'
+            f"Scene {scene.number}'s line still takes about {seconds:.1f} seconds to say "
+            f"after {MOST_REWRITES} shortenings, and a scene can last at most "
+            f'{LONGEST_LINE_SECONDS} seconds: "{scene.line}"'
         ),
         reason=(
             f"The line was shortened {MOST_REWRITES} times and is still too long for one "
@@ -1190,8 +1226,9 @@ def _broll_fields(scene: Scene) -> dict[str, Any]:
 
 def _shorten(job: Job, words_per_second: float) -> None:
     """Have the script rewritten to fit its target. Each line comes back with the scene it
-    comes from, and takes that scene's "shows", overlay and B-roll fields with it, so a
-    dropped scene takes them away and a line never moves under another scene's picture."""
+    comes from, and takes that scene's "shows", overlay, part and B-roll fields with it, so a
+    dropped scene takes them away and a line never moves under another scene's picture. A
+    second state stays one only while the first is still kept just before it."""
     assert job.target_seconds is not None
     script = [_to_check(scene) for scene in job.scenes.all()]
     shortened = call_model(
@@ -1210,22 +1247,34 @@ def _shorten(job: Job, words_per_second: float) -> None:
     )
     with transaction.atomic():
         scenes = list(job.scenes.all())
-        was = {scene.number: (scene.shows, scene.overlay, _broll_fields(scene)) for scene in scenes}
+        was = {
+            scene.number: (scene.shows, scene.overlay, scene.part, _broll_fields(scene))
+            for scene in scenes
+        }
         # A line that passed the fact check word for word, showing the same, still has;
         # anything else is new.
         checked = {(scene.line, scene.shows) for scene in scenes if scene.fact_checked}
         # A line the user chose stays theirs when it moves: it is never rewritten.
         problems = {scene.number: scene.fact_problems for scene in scenes}
+        # A second state stays one only while the first still plays just before it.
+        second_states = {scene.number for scene in scenes if scene.second_state}
+        previous_kept = None
         for scene, kept in zip(scenes, shortened.lines, strict=False):
-            shows, overlay, broll = was[kept.scene]
-            if (scene.line, scene.shows, scene.overlay, _broll_fields(scene)) != (
-                kept.line,
-                shows,
-                overlay,
-                broll,
-            ):
+            shows, overlay, part, broll = was[kept.scene]
+            second_state = kept.scene in second_states and previous_kept == kept.scene - 1
+            previous_kept = kept.scene
+            if (
+                scene.line,
+                scene.shows,
+                scene.overlay,
+                scene.part,
+                scene.second_state,
+                _broll_fields(scene),
+            ) != (kept.line, shows, overlay, part, second_state, broll):
                 scene.change_line(kept.line, shows=shows)
                 scene.overlay = overlay
+                scene.part = part
+                scene.second_state = second_state
                 for field, value in broll.items():
                     setattr(scene, field, value)
                 scene.fact_checked = (kept.line, shows) in checked
@@ -1236,6 +1285,8 @@ def _shorten(job: Job, words_per_second: float) -> None:
                         "shortened_from",
                         "shows",
                         "overlay",
+                        "part",
+                        "second_state",
                         *BROLL_FIELDS,
                         "status",
                         "fact_checked",
@@ -1374,7 +1425,7 @@ def _keep_music(job: Job, file: str, prompt: str, seconds: int) -> ProducedItem:
     )
 
 
-def make_starting_picture(step: SceneStep) -> ProducedItem | None:
+def make_starting_picture(step: SceneStep) -> ProducedItem:
     """Make the scene's starting picture: a model picks the product photo that suits the
     line best and writes the prompt, then the picture is made from the portrait and that
     photo. For a scene that shows the product rather than the person talking, the picture
@@ -1387,9 +1438,6 @@ def make_starting_picture(step: SceneStep) -> ProducedItem | None:
     made = step.produced.first()
     if made is not None:
         return made
-    if step.broll_kind and step.needs:
-        _pick_example_pictures(step)
-        return None
     if step.broll_kind:
         return _make_broll_picture(step)
     # A talking scene, or a B-roll one planned before the plan gave B-roll scenes their
@@ -1448,148 +1496,127 @@ def make_starting_picture(step: SceneStep) -> ProducedItem | None:
 
 
 def _make_broll_picture(step: SceneStep) -> ProducedItem:
-    """Make a B-roll scene's starting picture, way 1: the model writing the scene's prompts,
-    told the shared rules and its kind's, picks the main photo from the photos in the ad's
-    colour and writes the picture's prompt and the clip's. The picture is made from the main
-    photo, and from the presenter's portrait after it when the scene shows their face."""
+    """Make a B-roll scene's starting picture: the model writing the scene's prompts, told the
+    shared rules and its kind's, picks the main photo from the photos in the ad's colour and
+    writes the picture's prompt and the clip's. The picture is made from the main photo, then
+    a photo for each of the scene's needs, then the presenter's portrait when the scene shows
+    their face. It is checked beside the main photo before any clip is paid for; one that
+    fails is drawn again from prompts written to fix what the check found, at most
+    MOST_REDRAWS times, and the last one drawn is kept.
+
+    Run again, as after a worker stopped, it pays for nothing already paid for: each model's
+    answer for the same handoff is answered from its record, and each picture drawn is
+    reused in turn."""
     scene = step.scene
     job = scene.job
     photos = list(job.photos.filter(shows_product_colour=True))
     numbers = [photo.position for photo in photos]
     images = [Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos]
     pictures = [PictureJob(image=1, job=MAIN_PHOTO_JOB)]
+    # What the scene needs that the main photo can't show comes from a photo of its own,
+    # sent to the picture model after the main photo, never to the video model: sent to it,
+    # a shop photo's own scene leaked into the clip (graded #12).
+    faces = {photo.position: photo.has_face for photo in job.photos.all()}
+    # Picked before the main photo is, so a need's photo the model then picks as the main
+    # photo is sent twice, each time with its own job.
+    needs = photos_for_needs(step.needs, faces, MOST_NEEDS_PHOTOS)
+    for need in needs:
+        need_photo = job.photos.get(position=need.photo)
+        images.append(Image(label=f"Photo {need.photo}", key=need_photo.file))
+        pictures.append(PictureJob(image=len(pictures) + 1, job=need_job(need)))
     portrait = None
     if step.person_shown == Scene.PersonShown.HAS_FACE:
         portrait = latest(job, ProducedItem.Kind.PORTRAIT)
         assert portrait is not None, "the tool refuses a scene whose person isn't made"
         images.append(Image(label="The portrait", key=portrait.file))
-        pictures.append(PictureJob(image=2, job=PORTRAIT_JOB))
-    choice = call_model(
-        job=job,
-        purpose="choose_broll_picture",
-        instructions=broll_prompt_instructions(step.broll_kind),
-        handoff=BrollPromptHandoff(
-            scene=scene.number,
-            line=step.line,
-            script=list(job.scenes.values_list("line", flat=True)),
-            shows=step.shows,
-            broll_kind=step.broll_kind,
-            person_shown=step.person_shown,
-            usage=step.usage,
-            result=step.broll_result,
-            pictures=pictures,
-            product_colour=job.product_colour,
-            colour_photos=numbers,
-            person_looks=job.person_looks,
-            note=step.note or None,
-            conversation=_conversation(job, until=step.started_at),
-        ),
-        output=starting_picture_choice_for(numbers, BrollPictureChoice),
-        images=images,
-        pay_once=True,
+        pictures.append(PictureJob(image=len(pictures) + 1, job=PORTRAIT_JOB))
+    handoff = BrollPromptHandoff(
+        scene=scene.number,
+        line=step.line,
+        script=list(job.scenes.values_list("line", flat=True)),
+        shows=step.shows,
+        broll_kind=step.broll_kind,
+        person_shown=step.person_shown,
+        usage=step.usage,
+        result=step.broll_result,
+        pictures=pictures,
+        product_colour=job.product_colour,
+        colour_photos=numbers,
+        person_looks=job.person_looks,
+        note=step.note or None,
+        conversation=_conversation(job, until=step.started_at),
     )
-    step.photo = job.photos.get(position=choice.photo)
+    # Pictures drawn for the step before the worker stopped, oldest first, so a step run
+    # again pays for none of them twice.
+    drawn = _pictures_drawn(step)
+    redo: tuple[Redo, str] | None = None
+    for tries in range(MOST_REDRAWS + 1):
+        instructions = broll_prompt_instructions(step.broll_kind)
+        asked: BrollPromptHandoff = handoff
+        shown = images
+        if redo is not None:
+            # Told what was wrong with the last picture, and shown it.
+            instructions = f"{instructions}\n{REDO_RULES}"
+            asked = BrollRedoHandoff(**dict(handoff), redo=redo[0])
+            shown = [*images, Image(label="The last picture", key=redo[1])]
+        choice = call_model(
+            job=job,
+            purpose="choose_broll_picture",
+            instructions=instructions,
+            handoff=asked,
+            output=starting_picture_choice_for(numbers, BrollPictureChoice),
+            images=shown,
+            pay_once=True,
+        )
+        _plan_broll_picture(step, choice, pictures, needs, portrait is not None)
+        sent = [
+            job.photos.get(position=choice.photo).file,
+            *(job.photos.get(position=need.photo).file for need in needs),
+            *([portrait.file] if portrait else []),
+        ]
+        file = (
+            drawn[tries]
+            if tries < len(drawn)
+            else edit_picture(
+                job=job, purpose="make_starting_picture", prompt=choice.prompt, pictures=sent
+            )
+        )
+        problems = _check_broll_picture(step, choice, file)
+        if not problems:
+            break
+        redo = (
+            Redo(
+                picture_prompt=choice.prompt, video_prompt=choice.motion_prompt, problems=problems
+            ),
+            file,
+        )
+    return _keep_picture(step, file)
+
+
+def _plan_broll_picture(
+    step: SceneStep,
+    choice: BrollPictureChoice,
+    pictures: list[PictureJob],
+    needs: list[NeedPhoto],
+    portrait: bool,
+) -> None:
+    """Keep what the model writing a B-roll scene's prompts chose with the step: the main
+    photo, both prompts and each picture sent with its job."""
+    step.photo = step.scene.job.photos.get(position=choice.photo)
     step.photo_reason = choice.photo_reason
     step.prompt = choice.prompt
     step.prompt_reason = choice.prompt_reason
     step.motion_prompt = choice.motion_prompt
     step.way = SceneStep.Way.FROM_PICTURE
-    main_photo, *rest = (picture.model_dump() for picture in pictures)
+    main_photo, *need_photos = (picture.model_dump() for picture in pictures)
+    portrait_sent = [need_photos.pop()] if portrait else []
     step.pictures_sent = [
         {**main_photo, "photo": choice.photo},
-        *({**picture, "portrait": True} for picture in rest),
-    ]
-    step.save(
-        update_fields=[
-            "photo",
-            "photo_reason",
-            "prompt",
-            "prompt_reason",
-            "motion_prompt",
-            "way",
-            "pictures_sent",
-        ]
-    )
-    sent = [step.photo.file, *([portrait.file] if portrait else [])]
-    return _keep_starting_picture(step, choice.prompt, sent)
-
-
-def _pick_example_pictures(step: SceneStep) -> None:
-    """Plan a B-roll scene with needs, way 3: no picture is made. The model writing the
-    scene's prompts, told the shared rules and its kind's, picks the main photo from the
-    photos in the ad's colour; code adds a photo for each need, then the presenter's portrait
-    when the scene shows their face, at most MOST_EXAMPLE_PICTURES in all. The model gives
-    each picture sent its job in a slot of its own, and the action, which code joins into
-    the video prompt the clip is asked for with."""
-    scene = step.scene
-    job = scene.job
-    portrait = None
-    if step.person_shown == Scene.PersonShown.HAS_FACE:
-        portrait = latest(job, ProducedItem.Kind.PORTRAIT)
-        assert portrait is not None, "the tool refuses a scene whose person isn't made"
-    photos = {photo.position: photo for photo in job.photos.all()}
-    colour_photos = {
-        number: photo.has_face for number, photo in photos.items() if photo.shows_product_colour
-    }
-    # Room for the main photo and the portrait, if it is sent.
-    room = MOST_EXAMPLE_PICTURES - 1 - (1 if portrait else 0)
-    needs = photos_for_needs(
-        step.needs, {number: photo.has_face for number, photo in photos.items()}, room
-    )
-    shown = [*colour_photos, *(need.photo for need in needs if need.photo not in colour_photos)]
-    images = [Image(label=f"Photo {number}", key=photos[number].file) for number in shown]
-    if portrait:
-        images.append(Image(label="The portrait", key=portrait.file))
-    choice = call_model(
-        job=job,
-        purpose="choose_broll_picture",
-        instructions=broll_prompt_instructions(step.broll_kind, SceneStep.Way.FROM_EXAMPLES),
-        handoff=BrollExamplesHandoff(
-            scene=scene.number,
-            line=step.line,
-            script=list(job.scenes.values_list("line", flat=True)),
-            shows=step.shows,
-            broll_kind=step.broll_kind,
-            person_shown=step.person_shown,
-            usage=step.usage,
-            result=step.broll_result,
-            needs=needs,
-            portrait=portrait is not None,
-            product_colour=job.product_colour,
-            colour_photos=list(colour_photos),
-            person_looks=job.person_looks,
-            note=step.note or None,
-            conversation=_conversation(job, until=step.started_at),
+        *(
+            {**picture, "photo": need.photo}
+            for picture, need in zip(need_photos, needs, strict=True)
         ),
-        output=broll_examples_choice_for(colour_photos, needs, portrait is not None),
-        images=images,
-        pay_once=True,
-    )
-    main = ExamplePicture(choice.photo, colour_photos[choice.photo])
-    sent = example_pictures(main, needs, portrait is not None)
-    step.photo = photos[choice.photo]
-    step.photo_reason = choice.photo_reason
-    step.prompt = ""
-    step.prompt_reason = choice.action_reason()
-    step.motion_prompt = choice.video_prompt()
-    step.way = SceneStep.Way.FROM_EXAMPLES
-
-    def file_of(picture: ExamplePicture) -> str:
-        if picture.photo is not None:
-            return photos[picture.photo].file
-        assert portrait is not None, "the portrait is sent only when it is made"
-        return portrait.file
-
-    # Each with its file, so the clip is sent the pictures picked, though the portrait is
-    # made again or the page's photos read again before it is made.
-    step.pictures_sent = [
-        {
-            "image": n,
-            **({"portrait": True} if picture.portrait else {"photo": picture.photo}),
-            "job": slot.said(),
-            "file": file_of(picture),
-        }
-        for n, (picture, slot) in enumerate(zip(sent, choice.slots(), strict=True), start=1)
+        *({**picture, "portrait": True} for picture in portrait_sent),
     ]
     step.save(
         update_fields=[
@@ -1602,14 +1629,55 @@ def _pick_example_pictures(step: SceneStep) -> None:
             "pictures_sent",
         ]
     )
+
+
+def _pictures_drawn(step: SceneStep) -> list[str]:
+    """Each starting picture paid for for `step`, oldest first."""
+    calls = _paid_calls(step.scene.job, "make_starting_picture", charged_to=step.tool_call)
+    return [call.output["file"] for call in calls if call.output is not None]
+
+
+def _check_broll_picture(step: SceneStep, choice: BrollPictureChoice, picture: str) -> list[str]:
+    """What is wrong with a B-roll scene's starting picture, drawn as `choice` says, checked
+    beside its shop photo before any clip is paid for: nothing, when it passes or its check
+    can't be had, or quality checks are switched off."""
+    assert step.photo is not None, "a B-roll picture is drawn from its main photo"
+    if not settings.QUALITY_CHECKS:
+        return []
+    try:
+        check = call_model(
+            job=step.scene.job,
+            purpose="check_starting_picture",
+            instructions=STARTING_PICTURE_CHECK,
+            handoff=StartingPictureCheckHandoff(
+                line=step.line,
+                shows=step.shows,
+                broll_kind=step.broll_kind,
+                person_shown=step.person_shown,
+                usage=step.usage,
+                result=step.broll_result,
+                picture_prompt=choice.prompt,
+                video_prompt=choice.motion_prompt,
+            ),
+            output=StartingPictureCheck,
+            images=[
+                Image(label="The shop photo", key=step.photo.file),
+                Image(label="The starting picture", key=picture),
+            ],
+            pay_once=True,
+        )
+    except UnusableReply, OutsideServiceDown:
+        # The picture is paid for, and the check is only advice: a check that can't be had
+        # keeps the picture rather than failing the step and paying for it again.
+        return []
+    return check.problems()
 
 
 def _keep_starting_picture(step: SceneStep, prompt: str, pictures: list[str]) -> ProducedItem:
     """Have the picture model make the step's starting picture from `pictures`, as `prompt`
     says, unless it was made before the worker stopped, and keep it as the scene's next
     version."""
-    scene = step.scene
-    job = scene.job
+    job = step.scene.job
     paid_for = _paid_for_before(job, "make_starting_picture", charged_to=step.tool_call)
     file = (
         paid_for["file"]
@@ -1618,8 +1686,15 @@ def _keep_starting_picture(step: SceneStep, prompt: str, pictures: list[str]) ->
             job=job, purpose="make_starting_picture", prompt=prompt, pictures=pictures
         )
     )
+    return _keep_picture(step, file)
+
+
+def _keep_picture(step: SceneStep, file: str) -> ProducedItem:
+    """Keep the picture in the file store at `file` as the step's scene's next version of
+    its starting picture."""
+    scene = step.scene
     return ProducedItem.objects.create(
-        job=job,
+        job=scene.job,
         scene=scene,
         step=step,
         kind=ProducedItem.Kind.STARTING_PICTURE,
@@ -1650,8 +1725,8 @@ def too_long_for_a_clip(step: SceneStep, audio: ProducedItem) -> bool:
 def _fit_its_clip(step: SceneStep, audio: ProducedItem) -> None:
     """For a B-roll line whose audio is too long for any clip, before any clip is paid for:
     shorten the line and fact check it again, so its audio is made again. Once it was
-    shortened MOST_BROLL_SHORTENINGS times, or if the shorter line fails the fact check,
-    the scene is said to camera instead, and the chat says why. Nobody is asked.
+    shortened MOST_BROLL_SHORTENINGS times, or if the shorter line fails the fact check, the
+    scene is said to camera instead, and the chat says why. Nobody is asked.
 
     Run again, as after a worker stopped, it pays for nothing already paid for, and does
     nothing once the scene has changed since the step started."""
@@ -1697,11 +1772,16 @@ def _fit_its_clip(step: SceneStep, audio: ProducedItem) -> None:
 
 def _say_it_to_camera(scene: Scene) -> None:
     """Have the person say a B-roll scene's line to camera, as it stands, and tell the user
-    why: its line is too long for a B-roll clip."""
+    why: its line is too long for a B-roll clip. A talking scene shows no second state, and
+    the scene after it no longer follows the first state it was made from."""
     with transaction.atomic():
         scene.change_line(scene.line, shows="")
         scene.shortened_from = []
-        scene.save(update_fields=["shows", *BROLL_FIELDS, "shortened_from", "status"])
+        scene.second_state = False
+        scene.save(
+            update_fields=["shows", *BROLL_FIELDS, "shortened_from", "second_state", "status"]
+        )
+        scene.job.scenes.filter(number=scene.number + 1).update(second_state=False)
         post_notice(
             scene.job,
             f"Scene {scene.number} couldn't be made as a product shot because its line is too "
@@ -1862,8 +1942,7 @@ def _clip_handoff(
 ) -> ClipHandoff | BrollClipHandoff:
     """What the video model is asked for: a clip speaking the audio, or, for a scene that
     shows the product, a silent one that moves as the picture's step planned, in the fewest
-    whole seconds that cover the audio: from its starting picture, or, for a scene made way
-    3, from the example pictures its picture step picked. Raises ClipFailed for a line
+    whole seconds that cover the audio, from its starting picture. Raises ClipFailed for a line
     longer than the longest B-roll clip, before anything is paid for."""
     assert audio.seconds is not None, "a line's audio is measured when it's made"
     if not step.shows:
@@ -1885,20 +1964,16 @@ def _clip_handoff(
             f"its line takes {round(audio.seconds, 1):g} seconds to say, and the B-roll video "
             f"model makes clips of at most {MOST_BROLL_SECONDS} seconds"
         )
-    if planned.way == SceneStep.Way.FROM_EXAMPLES:
-        return BrollClipHandoff(
-            example_pictures=[picture["file"] for picture in planned.pictures_sent],
-            seconds=_broll_clip_seconds(audio.seconds),
-            prompt=planned.motion_prompt,
-        )
-    assert picture is not None, "a scene made way 1 has its starting picture"
+    seconds = _broll_clip_seconds(audio.seconds)
+    assert picture is not None, "a B-roll scene's clip is made from its starting picture"
     motion = planned.motion_prompt
     return BrollClipHandoff(
         starting_picture=picture.file,
-        seconds=_broll_clip_seconds(audio.seconds),
+        seconds=seconds,
         # A scene planned before it had its B-roll labels is moved as before. A labelled
-        # scene's prompt is sent as written: the real photo of the product keeps it true.
-        prompt=motion if planned.way else with_nothing_made_up(motion),
+        # scene's prompt is sent as written, after its look and length: the real photo of
+        # the product keeps it true.
+        prompt=broll_video_prompt(motion, seconds) if planned.way else with_nothing_made_up(motion),
     )
 
 

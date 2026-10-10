@@ -76,3 +76,45 @@ The pattern: you started with a simple download, moved to a real browser (Firecr
 ----------------------------------------
 
 
+
+
+----------------------------------------
+
+Every B-roll scene now gets a drawn start picture, and the picture is checked before we pay for video (2026-10-08).
+
+Before, a scene that "needed" something the main photo couldn't show skipped the start picture and sent the shop photos straight to the video model. The photos' own scenes leaked into the clip (#12 failed that way; drawn, it passed), and a wrong "need" on Lemi Shine dropped the picture and the video model invented a dirty tile.
+Now the extra photos go to the picture model instead, each with one job ("only how the tea's colour looks").
+The check looks at the start picture beside the shop photo: real object shapes, product matches the photo, label turns with the product, the "before" is shown, no face when there should be none, and no clashing orders in the prompts. A picture that fails is redrawn from fixed prompts, at most twice. A redraw costs cents; a bad clip costs about $0.40.
+GIF shop photos are turned into PNG before drawing, because the picture model refuses GIFs (BrüMate can cooler).
+
+----------------------------------------
+
+## Why we shipped the test-ad fixes (2026-10-09)
+
+Julian graded the 5 combined test ads (08 Oct). Each fix answers one of his grades:
+
+1. Voice cut off at the end of every ad. ffmpeg's amix threw away the last ~1.2 s of voice when the voice ended while the music was still longer. The voice is now padded and the mix cut at the ad's end.
+2. Too much talking. 7 talking scenes sat in the middle of 5 ads. Now scene 1 talks, the last talks or shows the product at its best, and every middle scene is B-roll. A line nobody can film ("no bleach") is said over another B-roll.
+3. Pointless zoom on the toilet. The planner wrote "the camera pushes toward" itself. Now the one movement is a hand or the product, never the camera.
+4. Le Duo pulled straight while the line promised curls. The planner was told to split "turning" off as its own step. Now it keeps what the page says happens during the action ("twist while sliding down").
+5. Phone case showed the back camera on both sides. The clips turned and flipped the phone from a start picture of one side, so the model invented the other side. Now the product is never turned to show another side; another side gets its own scene.
+6. Shower cleaner: the "builds up" line was talking, and before looked the same as after. New B-roll kind "shows the problem"; a scene about a thin film needs a real photo of it, or the voice says it over another B-roll; the picture check needs the problem plainly visible.
+7. Every B-roll looked phone-filmed. The "handheld phone video, casual, not cinematic" opener is gone; code now says "The camera stays still." and the video model picks the look.
+
+Full list with file:line: project files decisions/built-test-ad-fixes.md.
+
+----------------------------------------
+
+## Why we shipped the round 2 fixes (2026-10-09)
+
+Julian graded round 2. Every "showcase" B-roll, where a hand only held, set down or stood up the product, failed: #12 s2, #8 s4 and all of N3's B-roll. His rule (02:15): "The B-roll must do something. It must sell the product."
+
+1. No filler. A B-roll scene must prove its line. A "showcase" is now only the product used or worn the way the line claims, such as a bag carried as a clutch (#5, graded PERFECT). When nothing can prove a middle line, the app asks the shop owner. If the owner can't help, the person says that line to camera. The fact-check rewrite does the same.
+2. A result is filmed happening, before to after. #8 s4 showed a clean toilet with the bottle beside it and proved nothing.
+3. A drop starts at the height the page states, or from a standing person's hand, with the camera seeing the whole fall. #12 s5 was drawn from "the camera is at knee height" and dropped from just above the floor.
+4. A scene's photo needs say only how something looks, never an action. #12 s5 sent the shop's drop photo, and the picture copied its low pose.
+5. A 7th start-picture check, "makes sense for the line", runs before video is paid for. Its eval is in #111.
+6. A finishing step that isn't the product doing its job, such as rinsing or flushing, never gets its own B-roll scene; the voice says it. The free check of these fixes gave #8's flush its own clip, with stains still in the bowl and a different toilet from the scrub's (Julian, 10 Oct).
+7. The start-picture check is off by default (QUALITY_CHECKS=1 turns it on). Julian judged all 12 of its fails on the round 2 fixes free check wrong, and it never blocked a picture anyway. It comes back only once the #111 eval shows it agrees with his grades (Julian, 10 Oct).
+
+Full list with file:line: project files decisions/built-round-2-fixes.md.
