@@ -182,9 +182,9 @@ MAIN_PHOTO_JOB = "the product, only how it looks"
 PORTRAIT_JOB = "the presenter"
 
 
-# Added by code to every B-roll video prompt: the video model sees only the starting
-# picture, so a side it can't see is made up (round 3, 10 Oct: the #12 phone case flipped
-# mid-clip; Julian "Yes", decisions/2026-10-10-phone-flip.md).
+# Added by code to every labelled B-roll scene's video prompt: the video model sees only the
+# starting picture, so a side it can't see is made up (round 3, 10 Oct: the #12 phone case
+# flipped mid-clip; docs/broll-picture-logic.md, "Prompt rules").
 SAME_SIDE = "Whatever side faces the camera at the start stays toward the camera the whole time."
 
 
