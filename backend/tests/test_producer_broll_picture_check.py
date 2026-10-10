@@ -190,6 +190,27 @@ def test_a_step_finishing_after_the_run_stopped_doesnt_start_it_again(
     assert Message.objects.filter(role="agent", text__startswith="I had to stop").count() == 1
 
 
+def test_a_stop_during_the_producers_turn_refuses_the_rest_of_its_calls(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], monkeypatch: Any
+) -> None:
+    # Scene 2's picture runs as soon as it is started, so the run stops while the producer
+    # is still settling the calls of the same turn: scene 1's picture is then not paid for.
+    monkeypatch.setattr(tasks.run_scene_step, "delay", tasks.run_scene_step)
+    fake_model.respond("check_starting_picture", *[impossible(FUSED_HANDLE)] * 6)
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE, FIXED_CHOICE, FIXED_CHOICE)
+
+    calling(
+        fake_model,
+        say,
+        ("make_starting_picture", {"scene": 2, "note": None}),
+        ("make_starting_picture", {"scene": 1, "note": None}),
+    )
+
+    assert "choose_starting_picture" not in paid_for()
+    assert not SceneStep.objects.filter(scene__number=1).exists()
+    assert Message.objects.filter(role="agent", text__startswith="I had to stop").count() == 1
+
+
 def test_after_the_run_stopped_a_message_from_the_user_carries_on(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
@@ -250,7 +271,10 @@ def test_a_judge_answer_that_cant_be_read_counts_as_not_checked(
 ) -> None:
     # A fail that doesn't say why can't be read, but the picture is paid for.
     fake_model.respond(
-        "check_starting_picture", {**impossible(FUSED_HANDLE), "problem": " "}, *[PICTURE_OK] * 2
+        "check_starting_picture",
+        {**impossible(FUSED_HANDLE), "problem": " "},
+        impossible(FUSED_HANDLE),
+        PICTURE_OK,
     )
 
     step = picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE)

@@ -54,10 +54,10 @@ class ObjectLook(BaseModel):
     why: str = Field(description="One short sentence.")
 
 
+# The judge's answer, filled in from the top: it looks at each object before it decides, so
+# the verdict is built on what it wrote down (vision-judges.md, rule 1). A comment, not a
+# docstring: a docstring would be sent to the judge in the answer's schema.
 class StartingPictureVerdict(BaseModel):
-    """The judge's answer, filled in from the top: it looks at each object before it decides,
-    so the verdict is built on what it wrote down (vision-judges.md, rule 1)."""
-
     objects: list[ObjectLook]
     verdict: Literal["pass", "fail"]
     problem: str | None = Field(

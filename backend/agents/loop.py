@@ -194,7 +194,18 @@ def _work(agent: Agent, session: Session) -> int:
             if not calls:
                 return read_up_to
             for call in calls:
-                _settle(agent, call)
+                if _stopped_since_the_user_spoke(session):
+                    _refuse_as_stopped(call)
+                else:
+                    _settle(agent, call)
+
+
+def _refuse_as_stopped(call: ToolCall) -> None:
+    """Keep a call the agent asked for before a scene step stopped the run as refused,
+    without running it, so nothing is paid for once the run has stopped."""
+    call.result = "Refused: a scene step stopped the run. Nothing was done."
+    call.finished_at = timezone.now()
+    call.save(update_fields=["result", "finished_at"])
 
 
 def _settle(agent: Agent, call: ToolCall) -> None:

@@ -23,6 +23,7 @@ from jobs.work import (
     make_clip,
     make_line_audio,
     make_starting_picture,
+    say_the_pictures_kept_failing,
     too_long_for_a_clip,
     transcribe_line_audio,
 )
@@ -335,9 +336,11 @@ def run_scene_step(step_id: int) -> None:
             step.save(update_fields=["status", "result", "finished_at"])
             wake_producer(str(session.pk))
     except PictureKeptFailing as error:
-        # It stops the whole run: the chat was shown why as it was raised.
+        # It stops the whole run. The chat is shown why in the same transaction, so a step
+        # run again after a crash never shows it twice.
         tracing.flush()
         with transaction.atomic():
+            say_the_pictures_kept_failing(step.scene.job, error)
             _stop(step, str(error))
             wake_producer(str(session.pk))
     # Whatever stops the step, it isn't left running: the producer is told why.

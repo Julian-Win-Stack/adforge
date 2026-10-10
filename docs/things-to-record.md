@@ -113,9 +113,9 @@ Julian graded round 2. Every "showcase" B-roll, where a hand only held, set down
 2. A result is filmed happening, before to after. #8 s4 showed a clean toilet with the bottle beside it and proved nothing.
 3. A drop starts at the height the page states, or from a standing person's hand, with the camera seeing the whole fall. #12 s5 was drawn from "the camera is at knee height" and dropped from just above the floor.
 4. A scene's photo needs say only how something looks, never an action. #12 s5 sent the shop's drop photo, and the picture copied its low pose.
-5. A 7th start-picture check, "makes sense for the line", runs before video is paid for. Its eval is in #111.
+5. ~~A 7th start-picture check, "makes sense for the line", runs before video is paid for. Its eval is in #111.~~ Replaced by the start-picture judge below.
 6. A finishing step that isn't the product doing its job, such as rinsing or flushing, never gets its own B-roll scene; the voice says it. The free check of these fixes gave #8's flush its own clip, with stains still in the bowl and a different toilet from the scrub's (Julian, 10 Oct).
-7. The start-picture check is off by default (QUALITY_CHECKS=1 turns it on). Julian judged all 12 of its fails on the round 2 fixes free check wrong, and it never blocked a picture anyway. It comes back only once the #111 eval shows it agrees with his grades (Julian, 10 Oct).
+7. ~~The start-picture check is off by default (QUALITY_CHECKS=1 turns it on). Julian judged all 12 of its fails on the round 2 fixes free check wrong, and it never blocked a picture anyway. It comes back only once the #111 eval shows it agrees with his grades (Julian, 10 Oct).~~ Replaced by the start-picture judge below, which runs by default.
 
 ## Start-picture judge (10 Oct, branch picture-judge)
 

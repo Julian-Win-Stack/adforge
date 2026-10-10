@@ -1600,16 +1600,14 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
             ),
             file,
         )
-    _say_the_pictures_kept_failing(job, scene.number, failed)
     raise PictureKeptFailing(scene.number, failed)
 
 
-def _say_the_pictures_kept_failing(
-    job: Job, scene: int, failed: list[tuple[str, list[str]]]
-) -> None:
-    """Show the chat each starting picture drawn for `scene`, and what its check found in
+def say_the_pictures_kept_failing(job: Job, failing: PictureKeptFailing) -> None:
+    """Show the chat each starting picture drawn for the scene, and what its check found in
     it, as the run stops: so a judge too strict, or prompts it can't fix, are seen rather
     than kept quietly (Julian 2026-10-10 21:48)."""
+    scene, failed = failing.scene, failing.failed
     found = "\n".join(
         f"Picture {number}: {' '.join(problems)}" for number, (_, problems) in enumerate(failed, 1)
     )
