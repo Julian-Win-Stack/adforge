@@ -21,6 +21,7 @@ from jobs.work import keep_photo
 
 from .conftest import (
     COPIED,
+    FINISHING_STEP,
     MUG_FRONT,
     MUG_SIDE,
     NO_FACE,
@@ -607,6 +608,22 @@ def test_the_planner_is_told_a_result_is_filmed_happening(
         "finished thing with the product beside it, with no change filmed, never shows a "
         "result."
     ) in instructions
+
+
+def test_the_planner_is_told_a_finishing_step_gets_no_broll_scene(
+    httpserver: HTTPServer,
+    openai_server: Callable[..., None],
+    product_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    # Round 2 fixes free check (10 Oct): #8 got a B-roll scene of the flush alone, with
+    # stains still in the bowl and a different toilet from the scrub. Julian 02:59: add it.
+    planning_through_openai(openai_server, product_page_url, PLAN)
+
+    say(f"Make an ad for {product_page_url}")
+
+    instructions = the_plan_request(httpserver)["instructions"]
+    assert FINISHING_STEP in instructions
 
 
 def test_the_planner_is_told_a_scene_needs_only_how_a_thing_looks(

@@ -14,6 +14,7 @@ from jobs.models import Job, Scene
 
 from .conftest import (
     FACTS_OK,
+    FINISHING_STEP,
     NO_CHOICES,
     PLAN,
     READABLE,
@@ -611,6 +612,8 @@ def test_a_rewrite_is_told_a_broll_scene_films_one_action_as_the_planner_is(
     assert "If the page says something happens while doing it, keep that part." in instructions
     assert "A hand never turns, flips or spins the product" in instructions
     assert "never a camera move" in instructions
+    # Round 2 fixes free check (10 Oct): #8's flush got a B-roll scene of its own.
+    assert FINISHING_STEP in instructions
     # A rewrite changes one scene: it can't add a talking scene for the other steps.
     assert "name the other steps" not in instructions
     # Round 2 (09 Oct): "show something else they support" filled middles with the product

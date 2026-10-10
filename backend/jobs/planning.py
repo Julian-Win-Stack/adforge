@@ -47,13 +47,18 @@ and the presenter's portrait when it "has face".
 # What a B-roll scene films, for the planner and a rewrite alike. Graded #8 toilet (4
 # steps in one clip) and #5 bag (strap on and off in one clip) failed; one step was perfect.
 # No exception for steps that flow together: N5's clip jumped where Boreal skipped the middle.
+# Round 2 fixes free check (10 Oct): #8's flush got a B-roll scene of its own, with stains
+# still in the bowl and another toilet than the scrub's. Julian 02:59: never for a finishing step.
 BROLL_ONE_ACTION_INSTRUCTIONS = """\
 A B-roll scene films one action: one movement, the one moment that proves what its line \
 claims. When the page or the line lists steps for using the product, film only the main \
 step, the one that shows it working, such as the cloth wiping a stain away rather than \
 spraying, waiting and rinsing, and write that B-roll line about that step. This holds \
 even for steps that flow into each other with no pause: the video skips the middle of a \
-chain of movements, so film only the main one. Putting the product on or taking it off, \
+chain of movements, so film only the main one. A finishing step that isn't the product \
+doing its job, such as rinsing, flushing, drying or putting it away, never gets a B-roll \
+scene of its own: the voice says it over the main step's scene, or the person says it to \
+camera. Putting the product on or taking it off, \
 attaching, fitting or adjusting it is a movement of its own: a scene films it or what comes \
 after it, never both. A hand never turns, flips or spins the product, and it never spins by \
 itself, to show it or another side of it: the side facing the camera when the scene starts \
