@@ -114,5 +114,6 @@ Julian graded round 2. Every "showcase" B-roll, where a hand only held, set down
 3. A drop starts at the height the page states, or from a standing person's hand, with the camera seeing the whole fall. #12 s5 was drawn from "the camera is at knee height" and dropped from just above the floor.
 4. A scene's photo needs say only how something looks, never an action. #12 s5 sent the shop's drop photo, and the picture copied its low pose.
 5. A 7th start-picture check, "makes sense for the line", runs before video is paid for. Its eval is in #111.
+6. A finishing step that isn't the product doing its job, such as rinsing or flushing, never gets its own B-roll scene; the voice says it. The free check of these fixes gave #8's flush its own clip, with stains still in the bowl and a different toilet from the scrub's (Julian, 10 Oct).
 
 Full list with file:line: project files decisions/built-round-2-fixes.md.
