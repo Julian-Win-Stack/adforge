@@ -1,0 +1,277 @@
+"""The AI-read checks of the rule evals (decisions/rule-evals-plan.md): one yes/no judge per
+rule, each a cheap text model reading what the app wrote for one B-roll scene, or for the
+whole plan. A judge counts only once it agrees with Julian's grades on cases it wasn't tuned
+on (decisions/2026-10-09-rule-evals-best-practice-check.md): the graded cases in
+rule_cases.json are split in two, "tune" to write the judge's question against and "held
+out" to measure it, and each rule is reported with how many fails it caught and how many
+passes it let through, out of how many labels."""
+
+import json
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Literal
+
+from adforge.retry import OutsideServiceDown
+from gateway.types import Handoff, Judgement, ModelReply, UnusableReply
+
+CASES = Path(__file__).resolve().parent / "rule_cases.json"
+
+# The model every judge uses: cheap, as the plan asks, and already deployed for the app.
+JUDGE_MODEL = "gpt-5-mini"
+# A judge's answer is what most of 3 asks say, since the same question flips 3-4 of ~155
+# verdicts from one run to the next (Julian 2026-10-09 23:20: "ok. i approve").
+VOTES = 3
+
+JUDGE_INSTRUCTIONS = """\
+You check one rule on what an ad app wrote for a B-roll clip: a short silent video clip \
+played while a voice says the scene's line. A picture model draws the clip's starting \
+picture from "picture_prompt" and the photos whose jobs are in "photo_jobs", then a video \
+model animates it from "video_prompt". When a picture is shown, it is the starting picture \
+the app really drew, or the photo it really started the clip from. "plan" is every scene of \
+the ad, when the rule is about the plan. "shop_answers" is what the shop owner answered the \
+app's questions.
+Decide "pass" when what the app wrote, and the picture when there is one, keep the rule, \
+"fail" when they break it. Judge only this rule, and only from what you are given: nothing \
+else about the clip counts. Give one sentence saying why, quoting the words that decide it.
+The rule:
+"""
+
+# Each rule as the judge is told it: what keeps it and what breaks it, from Julian's grades.
+# Examples in a judge's question never come from the test products, so a judge that scores
+# well here isn't scoring well only on the products it was written against (Julian
+# 2026-10-09 23:13).
+RULES: dict[str, str] = {
+    "A2": "A claim that needs two end states, such as a jacket worn zipped and open, is two B-roll "
+    "scenes back to back, each opening already in its state. Fail when one scene films the "
+    "change from one state to the other, such as zipping it up or unzipping it. Judge "
+    "only this one scene: pass when it doesn't film a change from one way of using the "
+    "product to another, even though the other way is in another scene or isn't filmed "
+    "here. The product working, such as a scuff rubbing off, is not a change of state.",
+    "A3": "A B-roll films only the main step of using the product, the one that shows it "
+    "working; the voice carries the other steps. Fail when the video prompt films several "
+    "steps, such as filling a watering can, carrying it and then watering a plant.",
+    "A4c": "The prompts never ask for two things that can't both be true at once, of the "
+    "product or the scene. Fail when two orders contradict each other.",
+    "A5": "A result shows only where the product, or the tool used with it, touches, and it "
+    "happens as the touch passes, at a real-time pace. Fail when the result spreads beyond "
+    "where it touched, or appears all at once, by itself, or sped up. Pass when the scene "
+    "has no result.",
+    "A6": "Every photo sent with a job other than the product's looks or the presenter is "
+    "there only for how something looks: a texture, a colour, a print. Fail when a photo is "
+    "sent for an action, a movement or a pose, such as how a jump or a throw looks.",
+    "A8": "What must be right in the clip, such as where the camera is, a height, the place, "
+    "or how an object looks before the action, is said plainly in the picture prompt, not "
+    "only in the video prompt. Fail when the video prompt needs something the picture "
+    "prompt leaves out, and that detail decides whether the claim is proven, such as the "
+    "height a ball bounces to that proves a bounce claim. A style word such as "
+    '"handheld", or where the frame cuts a person off, is not such a detail. The picture '
+    "prompt draws only the "
+    "start: a result the action itself makes, such as things ending up inside, belongs in "
+    "the video prompt alone. Judge only what the picture prompt says: not whether the line "
+    "matches the action, and not whether the drawn picture follows its prompt.",
+    "A9": "The product may stand still in view while a tool used with it does the work, such "
+    "as a tin of polish beside a shoe while a cloth buffs it. Fail only when nothing in the clip "
+    "acts at all.",
+    # Julian 2026-10-09 23:08: a flip is wrong because the video model doesn't know the
+    # other side; a turn to a side it can see in the starting picture is fine.
+    "A11": "The video model can only show sides of the product it can see in the starting "
+    "picture. Fail when the video prompt flips, spins or turns the product far enough to "
+    "show a side the starting picture doesn't show at all, such as the face of a "
+    "watch shown only from the back. Pass a turn that brings into view a side already "
+    "partly visible in the starting picture, such as the side of a shoe, or a small turn "
+    "that ends on such a side.",
+    "A13": "The clip shows only the proof of what the line claims, the moment that proves "
+    "it. Fail when it adds damage, harm or anything going wrong, such as a tear "
+    "appearing, or shows more than the proof. Judge what the clip does; the starting picture "
+    "shows only the start.",
+    "A14": "The camera never moves: a hand or the product does. Fail when the camera pushes "
+    "in, zooms, pans, tilts, follows, circles or moves in any way, or the camera's move is "
+    'the scene\'s only action. A style word such as "handheld" or "phone video", or the '
+    "slight shake of a camera held in a hand, is not a camera move: only a move with a "
+    "direction or a path counts, such as a push-in, a pan or a glide past. Pass when none "
+    "is written.",
+    "A15": "A claim in a line that a camera could see, something the product does, is shown "
+    "in a B-roll scene, not only said by the talking person. Fail when a talking scene's "
+    "line claims something visible, such as a lid that seals with one click, and no B-roll "
+    "scene shows it.",
+    "A17": 'When "shows" names a person or a hand, they are in the video prompt, doing what '
+    '"shows" says. Fail when the video prompt leaves them out.',
+    "C1": "Every B-roll sells the product: it does something that shows a result, a benefit "
+    "or proof. Fail when its one action only holds, places, sets down, stands up, lines up, "
+    "carries or rests the product, which means nothing to a viewer: a product set beside a "
+    "result that is already there, or products lined up side by side, prove nothing. Pass "
+    "when a tool used with the product does the work while the product stands by, such as "
+    "a cloth buffing. Pass when holding or carrying is itself the claim: the line says the "
+    "product can be held, carried or worn a certain way and the clip shows exactly that. "
+    "Judge the action in the video prompt; the starting picture shows only the start.",
+    "C2": "A scene about the result shows the result itself, such as a shoe shining "
+    "after polishing, so a viewer sees the product worked. Fail when a result line is shown "
+    "only by the product next to something already clean, with no evidence it did it. "
+    "Also fail when a scene shows the product cleaning or fixing something whose dirt or "
+    "problem can't be seen at the start, such as when the picture prompt calls it faint, "
+    "transparent or barely visible, or says there is no visible dirt: before and after "
+    "would look the same. Pass when the scene isn't about a result.",
+    "C3": "Any real-life size, height, distance or count the action needs to prove its claim, "
+    "such as how high a ball bounces, is stated in the prompts at its real value. "
+    'Fail when the action needs one and the prompts leave it vague, such as "off the '
+    'ground", so the clip may show it far smaller. A count in the claim, such as how many '
+    "times something was done, needn't be filmed that many times: showing it once proves "
+    "it. Pass when no such number matters, such as the size of an everyday object. How long "
+    "something takes or waits is not part of this rule.",
+    "C4": "When the app can't know how the result looks, such as a surface before and after "
+    "cleaning, it asks the shop owner for a photo, and if they have none, the middle scenes "
+    "are talking scenes, not B-roll filler. Fail when a result look is needed and the app "
+    "didn't ask, or the owner had no photo and the plan still has B-roll that shows nothing. "
+    "The app can't know the look only when the dirt or the result is a thin film, haze, "
+    "cloudiness or water spots, which a drawn picture can't show honestly. Visible dirt, "
+    "such as a stain or a scuff mark, can be drawn: pass a plan that films it without asking.",
+}
+
+
+class RuleVerdict(Judgement):
+    decision: Literal["pass", "fail"]
+
+
+class CaseToJudge(Handoff):
+    scene: dict[str, Any] | None
+    plan: list[dict[str, Any]] | None
+    shop_answers: str
+
+
+@dataclass(frozen=True)
+class Case:
+    id: str
+    rule: str
+    label: Literal["pass", "fail"]
+    source: str
+    handoff: CaseToJudge
+    # The picture the clip really started from, shown to a scene's judge (Julian 2026-10-09,
+    # decisions/checker-context.md); None for a plan's judge, or a clip that started from none.
+    start_picture: Path | None
+    # Named in the case file, fixed so adding a case moves no other between halves: the
+    # judge's question is never written against a held-out case, so its score there is fair.
+    held_out: bool
+
+
+def load_cases(path: Path = CASES) -> list[Case]:
+    raw = json.loads(path.read_text())["cases"]
+    return [
+        Case(
+            id=case["id"],
+            rule=case["rule"],
+            label=case["label"],
+            source=case["source"],
+            handoff=CaseToJudge(
+                scene=case.get("scene"),
+                plan=case.get("plan"),
+                shop_answers=case.get("shop_answers") or "",
+            ),
+            start_picture=Path(case["start_picture"]) if case.get("start_picture") else None,
+            held_out={"tune": False, "held out": True}[case["split"]],
+        )
+        for case in raw
+    ]
+
+
+Ask = Callable[[Case], RuleVerdict]
+
+
+@dataclass(frozen=True)
+class Score:
+    rule: str
+    fails: int
+    fails_caught: int
+    passes: int
+    passes_kept: int
+
+    def line(self) -> str:
+        fails = f"caught {self.fails_caught}/{self.fails} fails" if self.fails else "no fails"
+        passes = f"kept {self.passes_kept}/{self.passes} passes" if self.passes else "no passes"
+        return f"{self.rule}: {fails}, {passes}"
+
+
+def score(cases: list[Case], ask: Ask) -> tuple[list[Score], list[tuple[Case, RuleVerdict]]]:
+    """Each rule's score on `cases`, and every case its judge got wrong, with what it said."""
+    wrong = []
+    tally: dict[str, list[int]] = {}
+    for case in cases:
+        verdict = ask(case)
+        counts = tally.setdefault(case.rule, [0, 0, 0, 0])
+        index = 0 if case.label == "fail" else 2
+        counts[index] += 1
+        if verdict.decision == case.label:
+            counts[index + 1] += 1
+        else:
+            wrong.append((case, verdict))
+    return [Score(rule, *counts) for rule, counts in sorted(tally.items())], wrong
+
+
+def ask_model(case: Case, model: str = JUDGE_MODEL) -> ModelReply[RuleVerdict]:
+    """The judge for `case`'s rule, asked of `model` for real, with what it cost in tokens.
+    Needs Django set up: it goes through the gateway's model provider, asked again with the
+    app's own waits while it is down, as the app's calls are, but is recorded nowhere."""
+    from adforge.retry import with_retries
+    from gateway.gateway import _provider, shrunk_image
+    from gateway.types import Image, LoadedImage, ModelRequest
+
+    images: tuple[LoadedImage, ...] = ()
+    if case.start_picture is not None:
+        picture = Image(label="The starting picture", key=str(case.start_picture))
+        images = (shrunk_image(picture, case.start_picture.read_bytes()),)
+
+    request = ModelRequest(
+        purpose="rule_eval",
+        model=model,
+        instructions=JUDGE_INSTRUCTIONS + RULES[case.rule],
+        handoff=case.handoff,
+        output=RuleVerdict,
+        images=images,
+    )
+    refused_already = False
+    while True:
+        try:
+            return with_retries(lambda: _provider().complete(request))
+        except UnusableReply as error:
+            # Luna refuses about 2 checks a run ("I'm sorry, I cannot assist"), a different
+            # one each time, so a refusal is asked once more (Julian 2026-10-09 23:00).
+            if refused_already or "it refused:" not in str(error):
+                raise
+            refused_already = True
+
+
+def ask_majority(case: Case, model: str = JUDGE_MODEL) -> ModelReply[RuleVerdict]:
+    """The judge for `case`'s rule, asked of `model` until one answer has most of VOTES asks,
+    so asked twice when the first two agree. Its reason is the first that gave that answer,
+    and the tokens are every ask's. An ask that still refuses after its own second try isn't
+    a vote: the judge is asked again, up to VOTES more times, before it has no answer."""
+    replies: list[ModelReply[RuleVerdict]] = []
+    unusable = 0
+    while True:
+        try:
+            replies.append(ask_model(case, model))
+        except UnusableReply:
+            unusable += 1
+            if unusable > VOTES:
+                raise
+            continue
+        for decision in ("pass", "fail"):
+            agreeing = [r for r in replies if r.output.decision == decision]
+            if len(agreeing) > VOTES // 2:
+                return ModelReply(
+                    output=agreeing[0].output,
+                    input_tokens=sum(r.input_tokens for r in replies),
+                    output_tokens=sum(r.output_tokens for r in replies),
+                )
+
+
+def ask_or_count_as(
+    case: Case, model: str, no_answer: Literal["pass", "fail"]
+) -> ModelReply[RuleVerdict]:
+    """`ask_majority`, but a judge that has no answer, because it kept refusing or the
+    provider stayed down, counts as `no_answer`, so one case never stops a whole run."""
+    try:
+        return ask_majority(case, model)
+    except (UnusableReply, OutsideServiceDown) as error:
+        verdict = RuleVerdict(decision=no_answer, reason=f"NO USABLE ANSWER: {error}"[:300])
+        return ModelReply(output=verdict, input_tokens=0, output_tokens=0)

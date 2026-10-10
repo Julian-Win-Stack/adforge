@@ -788,7 +788,11 @@ def _picture_extension(data: bytes) -> str:
 
 def _load(image: Image) -> LoadedImage:
     """Read an image, shrunk to fit what the model looks at. The stored file is unchanged."""
-    content = file_store.read(image.key)
+    return shrunk_image(image, file_store.read(image.key))
+
+
+def shrunk_image(image: Image, content: bytes) -> LoadedImage:
+    """`content`, the bytes of `image`, shrunk to fit what the model looks at."""
     try:
         with PIL.Image.open(io.BytesIO(content)) as picture:
             # Judged by what the file holds, not by its name.
