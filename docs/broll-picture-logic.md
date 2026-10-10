@@ -37,7 +37,9 @@
     the action and ends on the result, described in words. No end picture.
 12. **Two kinds of scene,** one prompt-writing agent with a rule set per kind: "does a job
     you can see" (the result comes from the product being used) and "showcase"
-    (everything else, the default when unsure).
+    (using or wearing it the way the line claims is the proof; since 2026-10-09 no longer
+    the default when unsure: a middle scene no kind fits asks the shop owner, else is
+    said to camera).
 13. **The clip isn't cut where the spoken line ends.** It plays to its end.
 14. **Only the presenter is shown.** Any hand is fine. Tested after building; the production
     prompts carry the rule from the start.
@@ -351,9 +353,13 @@ small rule set, not a new agent.
 |---|---|---|
 | Does a job you can see | toilet cleaner, blush, collagen powder, power bank, blender | The result comes from the product being used; end on it |
 | Shows the problem (added 2026-10-09) | a shower's soap scum, a stained mug, before the product is used | The problem shown plainly in the starting picture with the product in view; nothing about it changes; the one movement is a hand or the product |
-| Showcase (everything else) | bag, clothes, jewellery, decor | Shown in use; nothing invented; end at its best |
+| Showcase (used or worn as the line claims) | a bag carried as a clutch, clothes worn | Used or worn the way the line claims; never only held, placed or pointed at |
 
-When the planner isn't sure, it picks "showcase": it can't invent a result. First drafted
+Until 2026-10-09, when the planner wasn't sure, it picked "showcase": it can't invent a
+result. Round 2's showcases (a hand holding, setting down or standing up the product) all
+failed (#12 s2, #8 s4, N3), so now a middle scene that no kind fits asks the shop owner for
+what would show it, and is said to camera if they can't give it. A result is filmed
+happening, never a finished thing with the product beside it (#8 s4). First drafted
 as three kinds (changes something, worn or carried, other); "worn or carried" and "other"
 were merged because their rules were the same, and gadgets moved to "does a job", because a
 gadget shown only looking nice never proves it works.
@@ -365,9 +371,9 @@ gadget shown only looking nice never proves it works.
   A result shown on
   a screen is shown without numbers or words (the charging light comes on, not "80%"): video
   makers garble them.
-- **Showcase.** The real product shown clearly, in use the way the page says; one simple
-  action a person really does with it (worn while walking, picked up, set down); ending on
-  what the line proves, filmed; no result or change the page doesn't prove. (Until
+- **Showcase.** The product used or worn the way the line claims, such as a bag carried as
+  a clutch (#5, graded PERFECT); never a hand only holding, placing, setting down or
+  pointing at it (round 2, 2026-10-09); ending on what the line proves, filmed; no result or change the page doesn't prove. (Until
   2026-10-08 it ended "at its best" with "a slow camera move" allowed: the forced ending made
   pointless zooms in #15 and #4, and the user graded the retest without it "a lot better".)
 

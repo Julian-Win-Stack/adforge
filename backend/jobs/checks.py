@@ -91,10 +91,10 @@ with any change they asked for counts as their own words. Keep what the line is 
 ad and about the same length. If it says the price, it must still say the price. Never \
 name the product's colour. Never infer or guess.
 Give back the scene's "shows" too: unchanged if it wasn't wrong. Keep a scene that shows \
-something showing something: every scene between the first and the last shows something. \
-When nothing the page, the photos or the shop owner support could show what its line \
-says, show something else they support while the voice says it, never acting the claim \
-out. Only the last scene may instead give null, and the person says the line to camera. \
+something showing something only when what it shows proves its line, as the B-roll kinds \
+below allow. When nothing the page, the photos or the shop owner support could prove what \
+its line says, give null, and the person says the line to camera: never show the product \
+only held, placed, set down, stood up or pointed at instead. \
 For a scene where the person talks, always give null, and no B-roll details.
 A scene that shows something is a B-roll scene. Give back all its B-roll details with \
 its line and "shows", so they always match what it shows.

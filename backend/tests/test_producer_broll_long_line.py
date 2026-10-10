@@ -197,8 +197,6 @@ def test_no_clip_is_paid_for_until_the_audio_fits(
     assert since_planning() == [
         "choose_broll_picture",
         "make_starting_picture",
-        # Checked before any clip is paid for.
-        "check_starting_picture",
         "speak_line",
         "shorten_line",
         "fact_check",
@@ -237,15 +235,13 @@ def test_a_line_shortened_before_the_worker_stopped_isnt_paid_for_again(
 # --- Becoming a talking scene ------------------------------------------------------------------
 
 
-def test_a_middle_scene_still_too_long_after_three_shortenings_stays_broll_and_is_asked_about(
+def test_a_middle_scene_still_too_long_after_three_shortenings_becomes_a_talking_scene(
     fake_model: FakeModel,
     too_long: None,
     steps: HeldSteps,
     say: Callable[..., None],
-    api: APIClient,
-    session_id: str,
 ) -> None:
-    # Test ads (08 Oct): every scene between the first and the last is B-roll.
+    # Round 2 fixes: the talking fallback is allowed for any middle scene, not only the last.
     for line in STILL_LONG:
         fake_model.respond("shorten_line", {"line": line})
         fake_model.respond("fact_check", facts_ok(2))
@@ -256,11 +252,10 @@ def test_a_middle_scene_still_too_long_after_three_shortenings_stays_broll_and_i
 
     assert told == (
         "Background step finished: scene 2's line's audio takes 15.5 seconds to say, too long "
-        f"for any clip. {STILL_TOO_LONG}"
+        f"for any clip. {NOW_TALKING}"
     )
     scene = Scene.objects.get(number=2)
-    assert (scene.line, scene.shows) == (STILL_LONG[-1], SHOWS)
-    assert notices(api, session_id) == []
+    assert (scene.line, scene.shows) == (STILL_LONG[-1], "")
 
 
 @pytest.fixture

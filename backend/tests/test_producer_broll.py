@@ -501,10 +501,44 @@ def test_a_scene_showing_the_problem_shows_it_plainly_and_never_changes_it() -> 
     assert "plainly, in the starting picture, with the product in view" in rules
     assert "Nothing about the problem changes in the clip." in rules
     assert "The one movement is a hand or the product" in rules
+    # Round 2 (Julian 21:22 "yes"): the example was a filler action.
+    assert "set down beside it" not in rules
 
 
 def test_a_does_a_job_scene_ends_on_its_result() -> None:
     assert "ends on the result" in BROLL_KIND_RULES["does a job"]
+
+
+def test_a_does_a_job_scene_films_its_result_happening() -> None:
+    # Round 2 #8 s4: the bottle beside a clean toilet. Julian: "there is no evidence that the
+    # toilet is so clean right now ... we have to show."
+    assert (
+        "A result is filmed happening, from before to after in the same clip. A clean or "
+        "finished thing with the product beside it, with no change filmed, never shows a "
+        "result."
+    ) in BROLL_KIND_RULES["does a job"]
+
+
+def test_a_drop_starts_at_the_height_the_page_states() -> None:
+    # Round 2 #12 s5: dropped from just above the floor; Julian: "dropping at a really close
+    # position from the floor". The shop's photo says "6 ft. drop tested". No hardcoding:
+    # with no height stated, a standing person's hand.
+    assert (
+        "When the action is a drop, fall or throw, the starting picture shows the height it "
+        "starts from: the height the page or its photos state, such as 6 ft above the floor; "
+        "when none is stated, held in a standing person's hand."
+    ) in BROLL_SHARED_RULES
+    # Round 2 #12 s5's own picture prompt put "the camera at knee height", so the hand was
+    # drawn just above the floor; 15 redraws without that never copied the low drop photo.
+    assert (
+        "The camera is placed to see the whole fall, from that height down to where it lands: "
+        "never at knee height or close to the floor."
+    ) in BROLL_SHARED_RULES
+    # The proven rule this sits under stays word for word (A8, #12 V1 FAIL, V2 GOOD).
+    assert (
+        "Anything that must be right goes in the starting picture, said plainly: say where the "
+        "camera is, its height and angle;"
+    ) in BROLL_SHARED_RULES
 
 
 # The toilet clip's whole ring vanished where nothing touched it, "time-compressed", after
@@ -526,6 +560,15 @@ def test_a_does_a_job_scene_changes_only_where_it_is_touched(rule: str) -> None:
 def test_a_showcase_scene_ends_on_what_it_shows() -> None:
     showcase = BROLL_KIND_RULES["showcase"]
     assert 'ends on the moment that shows what "shows" describes, done by a hand' in showcase
+    # Round 2: "picked up or set down" made filler B-roll, and every one failed (#12 s2, #8
+    # s4, N3). The clutch carry was graded PERFECT (#5), so wearing it as claimed stays.
+    assert "picked up or set down" not in showcase
+    assert (
+        "This scene proves its line by the product being used or worn the way the line "
+        "claims, such as a bag carried as a clutch while walking. A hand only holding, "
+        "placing, setting down, standing up or pointing at the product never proves anything: "
+        "never film that."
+    ) in showcase
     # The forced ending made pointless zooms (#15, #4): "a lot better" without it.
     assert "at its best" not in showcase
     assert "camera move" not in showcase

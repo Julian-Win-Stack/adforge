@@ -14,6 +14,7 @@ from jobs.models import Job, Scene
 
 from .conftest import (
     FACTS_OK,
+    FINISHING_STEP,
     NO_CHOICES,
     PLAN,
     READABLE,
@@ -611,12 +612,22 @@ def test_a_rewrite_is_told_a_broll_scene_films_one_action_as_the_planner_is(
     assert "If the page says something happens while doing it, keep that part." in instructions
     assert "A hand never turns, flips or spins the product" in instructions
     assert "never a camera move" in instructions
+    # Round 2 fixes free check (10 Oct): #8's flush got a B-roll scene of its own.
+    assert FINISHING_STEP in instructions
     # A rewrite changes one scene: it can't add a talking scene for the other steps.
     assert "name the other steps" not in instructions
-    # Test ads (08 Oct): every scene between the first and the last is B-roll, so a rewrite
-    # never makes a middle scene a talking one.
-    assert "every scene between the first and the last shows something" in instructions
-    assert "Only the last scene may instead give null" in instructions
+    # Round 2 (09 Oct): "show something else they support" filled middles with the product
+    # held or set down, and every one failed. Julian 04:27: prove it, else ask the shop owner,
+    # else the talking scene. The rewrite can't ask, so it gives the talking scene.
+    assert "every scene between the first and the last shows something" not in instructions
+    assert "Only the last scene may instead give null" not in instructions
+    assert (
+        "Keep a scene that shows something showing something only when what it shows proves "
+        "its line, as the B-roll kinds below allow. When nothing the page, the photos or the "
+        "shop owner support could prove what its line says, give null, and the person says "
+        "the line to camera: never show the product only held, placed, set down, stood up or "
+        "pointed at instead."
+    ) in instructions
 
 
 def test_the_rewrite_is_told_it_was_what_the_scene_shows_that_failed(
@@ -1631,3 +1642,33 @@ def test_a_finished_scene_is_planned_again_only_when_what_it_shows_changes(
     scene.change_line(SAID_OVER, shows)
 
     assert scene.status == status
+
+
+def test_a_first_state_rewritten_for_the_person_to_say_leaves_no_second_state(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    # Round 2 fixes: a rewrite may now make a middle scene talking. A talking scene shows no
+    # second state, and the scene after it no longer follows the first state it was made from,
+    # as when a too-long line is said to camera.
+    scenes = [
+        {"line": "Meet the Stoneware Mug from Kiln & Co."},
+        broll({"line": SAID_OVER, "shows": POUR}),
+        broll({"line": SAID_OVER, "shows": "the full mug on a shelf", "second_state": True}),
+        {"line": "Yours for $24.00."},
+    ]
+    checking(fake_model, product_page_url, {**PLAN, "plan": {**PLAN["plan"], "scenes": scenes}})
+    fake_model.respond(
+        "fact_check",
+        shows_wrong("The page doesn't mention tea.", passing=(1, 3, 4)),
+        facts_ok(2),
+    )
+    fake_model.respond("rewrite_line", {"line": SAID_OVER, "shows": None})
+
+    say(f"Make an ad for {product_page_url}")
+
+    states = dict(Job.objects.get().scenes.values_list("number", "second_state"))
+    assert (Job.objects.get().scenes.get(number=2).shows, states[2], states[3]) == (
+        "",
+        False,
+        False,
+    )

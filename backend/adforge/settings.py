@@ -86,8 +86,10 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 # How often a working producer says it is still alive, and how long it can go unseen before
 # it is taken for dead and started again.
 # Quality checks (CONTEXT.md) look at something already produced, such as a starting
-# picture. Switched off as a whole with QUALITY_CHECKS=0; planning checks always run.
-QUALITY_CHECKS = os.environ.get("QUALITY_CHECKS", "1") == "1"
+# picture. Off unless QUALITY_CHECKS=1; planning checks always run. Julian 10 Oct 03:10: the
+# starting picture check was wrong on all 12 of its fails in the round 2 fixes free check,
+# so it stays off until the #111 eval shows it agrees with his grades.
+QUALITY_CHECKS = os.environ.get("QUALITY_CHECKS", "0") == "1"
 
 PRODUCER_HEARTBEAT_SECONDS = 30.0
 PRODUCER_DEAD_AFTER_SECONDS = 120.0

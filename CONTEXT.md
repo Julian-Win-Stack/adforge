@@ -67,7 +67,7 @@ One piece of a scene's work, run in the background: its starting picture, its li
 _Avoid_: Task, job, render
 
 **Starting picture**:
-A scene's first frame, made from the portrait and one product photo: the person holding the product, or, for a B-roll scene, the "before" of what the scene shows, made from its main photo, then a photo for each thing it needs that the main photo can't show (at most 3), then the portrait only when the presenter's face is shown. A B-roll scene's picture has a quality check beside its main photo before its clip is paid for, and is drawn again, at most twice, when it fails. The clip is made from it.
+A scene's first frame, made from the portrait and one product photo: the person holding the product, or, for a B-roll scene, the "before" of what the scene shows, made from its main photo, then a photo for each thing it needs that the main photo can't show (at most 3), then the portrait only when the presenter's face is shown. A B-roll scene's picture has a quality check beside its main photo before its clip is paid for, and is drawn again, at most twice, when it fails. Quality checks are off unless switched on, until the check agrees with graded pictures. The clip is made from it.
 _Avoid_: Start frame, keyframe, thumbnail
 
 **Line's audio**:

@@ -249,8 +249,7 @@ def test_nothing_in_the_whole_flow_is_paid_for_twice(ad_made_through_the_chat: N
         "make_starting_picture",
         "choose_broll_picture",
         "make_starting_picture",
-        # Checked before any clip is paid for.
-        "check_starting_picture",
+        # Not checked: quality checks are off unless switched on (Julian, 10 Oct).
         "choose_starting_picture",
         "make_starting_picture",
         "speak_line",
@@ -432,11 +431,9 @@ def test_the_ad_with_a_scene_needing_a_photo_pays_for_each_thing_once(
         "make_starting_picture",
         "choose_broll_picture",
         "make_starting_picture",
-        # Each B-roll picture is checked before any clip is paid for.
-        "check_starting_picture",
+        # Not checked: quality checks are off unless switched on (Julian, 10 Oct).
         "choose_broll_picture",
         "make_starting_picture",
-        "check_starting_picture",
         "choose_starting_picture",
         "make_starting_picture",
         "speak_line",

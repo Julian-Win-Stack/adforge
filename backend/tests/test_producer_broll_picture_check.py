@@ -25,7 +25,26 @@ from .test_producer_broll import (
     picture_of_scene_2,
 )
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("checked")]
+pytestmark = [
+    pytest.mark.django_db(transaction=True),
+    pytest.mark.usefixtures("checked", "quality_checks_on"),
+]
+
+
+@pytest.fixture
+def quality_checks_on(settings: Any) -> None:
+    """The check is off unless switched on; these tests are about the check itself."""
+    settings.QUALITY_CHECKS = True
+
+
+def test_quality_checks_are_off_unless_switched_on() -> None:
+    # Julian 10 Oct 03:10: all 12 fails on the round 2 fixes free check were wrong, and the
+    # check never blocks (the third try is kept anyway). Off until the #111 eval shows it
+    # agrees with his grades.
+    import adforge.settings
+
+    assert adforge.settings.QUALITY_CHECKS is False
+
 
 BENT_NECK = "The bottle's neck bends down; in the shop photo it rises straight from the top."
 
@@ -65,7 +84,8 @@ def test_a_picture_that_passes_is_checked_once_beside_the_shop_photo(
         {"label": "The starting picture", "key": picture.file},
     ]
     (check,) = handoffs("check_starting_picture")
-    assert (check["shows"], check["picture_prompt"], check["video_prompt"]) == (
+    assert (check["line"], check["shows"], check["picture_prompt"], check["video_prompt"]) == (
+        step.line,
         step.shows,
         BROLL_CHOICE["prompt"],
         BROLL_CHOICE["motion_prompt"],
@@ -187,3 +207,41 @@ def test_the_check_fails_a_before_that_doesnt_show_what_will_change() -> None:
         "not its result already there, and what the action will change, or the problem, is "
         "plainly visible."
     ) in STARTING_PICTURE_CHECK
+
+
+def test_the_check_fails_a_picture_that_doesnt_make_sense_for_the_line() -> None:
+    # Round 2 #12 s5: the drop started just above the floor, copied from the shop's drop
+    # photo (low hand, shoe, knee-height camera), and the six checks passed it. Julian 22:25:
+    # "We'll add another check".
+    assert (
+        '- makes_sense_for_the_line: the picture sets up what "shows" and "line" claim, as '
+        "a real person would film it"
+    ) in STARTING_PICTURE_CHECK
+    assert "a standing person's hand height" in STARTING_PICTURE_CHECK
+    assert "not copied from the shop photo" in STARTING_PICTURE_CHECK
+    # Tried on Julian's graded pictures: it failed #5's PERFECT crossbody walk for framing
+    # "past her knees", so crop is not its job. Review P2 2: excusing all "framing" also
+    # excused #12 s5's knee-height camera, caught 2/3; the camera is always judged.
+    assert (
+        "Always judge the camera's height and angle and where the action starts. Only the crop, "
+        'how much of a body is in frame, and other small differences from "picture_prompt" '
+        "never fail this check."
+    ) in STARTING_PICTURE_CHECK
+    assert "framing, crop and small differences" not in STARTING_PICTURE_CHECK
+
+
+def test_a_picture_that_doesnt_make_sense_for_the_line_is_drawn_again(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    too_low = "The phone starts an inch above the floor; the page says it survives 6 ft drops."
+    fake_model.respond(
+        "check_starting_picture",
+        {**PICTURE_OK, "makes_sense_for_the_line": {"passes": False, "problem": too_low}},
+        PICTURE_OK,
+    )
+
+    picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE, FIXED_CHOICE)
+
+    assert len(pictures_drawn()) == 2
+    _, rewrite = handoffs("choose_broll_picture")
+    assert rewrite["redo"]["problems"] == [too_low]
