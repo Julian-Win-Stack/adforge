@@ -18,16 +18,18 @@ from chat.models import Attachment, Message, Session
 from gateway.gateway import charged_to
 from gateway.types import BlockedBySafetyFilter, UnusableReply
 from jobs.models import ProducedItem, Scene, SceneStep
+from jobs.picture_check import PictureKeptFailing
 from jobs.work import (
     make_clip,
     make_line_audio,
     make_starting_picture,
+    say_the_pictures_kept_failing,
     too_long_for_a_clip,
     transcribe_line_audio,
 )
 
 from . import loop
-from .loop import BLOCKED, EXPECTED_FAILURES, why_it_failed
+from .loop import BLOCKED, EXPECTED_FAILURES, RunStopped, why_it_failed
 from .producer import PRODUCER
 
 logger = logging.getLogger(__name__)
@@ -58,6 +60,8 @@ def run_producer(session_id: str) -> None:
     except BlockedBySafetyFilter:
         why = BLOCKED
         try_again = ""
+    except RunStopped as error:
+        why = str(error)
     except UnusableReply as error:
         why = f"my AI model's answer couldn't be used ({error})"
     except OutsideServiceDown as error:
@@ -331,6 +335,14 @@ def run_scene_step(step_id: int) -> None:
             step.finished_at = timezone.now()
             step.save(update_fields=["status", "result", "finished_at"])
             wake_producer(str(session.pk))
+    except PictureKeptFailing as error:
+        # It stops the whole run. The chat is shown why in the same transaction, so a step
+        # run again after a crash never shows it twice.
+        tracing.flush()
+        with transaction.atomic():
+            say_the_pictures_kept_failing(step.scene.job, error)
+            _stop(step, str(error))
+            wake_producer(str(session.pk))
     # Whatever stops the step, it isn't left running: the producer is told why.
     except Exception as error:
         if not isinstance(error, EXPECTED_FAILURES):
@@ -348,6 +360,19 @@ def _fail(step: SceneStep, reason: str) -> None:
     step.result = (
         f"Background step failed: {_step_name(step)} couldn't be made: {reason} "
         "Tell the shop owner what went wrong."
+    )
+    step.finished_at = timezone.now()
+    step.save(update_fields=["status", "reason", "result", "finished_at"])
+
+
+def _stop(step: SceneStep, reason: str) -> None:
+    """Mark the step stopped for `reason`, stopping the run with it: the producer takes no
+    turn until the user speaks again (see loop.RunStopped)."""
+    step.status = SceneStep.Status.STOPPED
+    step.reason = reason
+    step.result = (
+        f"Background step stopped the run: {_step_name(step)} couldn't be made: {reason}. "
+        "The chat showed the shop owner why."
     )
     step.finished_at = timezone.now()
     step.save(update_fields=["status", "reason", "result", "finished_at"])

@@ -199,6 +199,8 @@ def test_no_clip_is_paid_for_until_the_audio_fits(
         "make_before_picture",
         "choose_broll_picture",
         "make_starting_picture",
+        "check_starting_picture",
+        "check_starting_picture",
         "speak_line",
         "shorten_line",
         "fact_check",

@@ -252,7 +252,9 @@ def test_nothing_in_the_whole_flow_is_paid_for_twice(ad_made_through_the_chat: N
         "make_before_picture",
         "choose_broll_picture",
         "make_starting_picture",
-        # Not checked: quality checks are off unless switched on (Julian, 10 Oct).
+        # Two passes from the judge settle it (Julian, 10 Oct 21:55).
+        "check_starting_picture",
+        "check_starting_picture",
         "choose_starting_picture",
         "make_starting_picture",
         "speak_line",
@@ -381,7 +383,8 @@ def test_every_b_roll_clip_is_sent_its_starting_picture_and_no_shop_photo(
     assert asked == [(pictures[2], [], 5), (pictures[3], [], 6)]
     # The clip's real length and a still camera first, then the prompt as written.
     assert handoffs("make_broll_clip")[1]["prompt"] == (
-        "A 6-second video at real-time speed. The camera stays still. " + HANDLE_PROMPT
+        "A 6-second video at real-time speed. The camera stays still. Whatever side faces the "
+        "camera at the start stays toward the camera the whole time. " + HANDLE_PROMPT
     )
     # The handle's photo went to the picture model, after the main photo.
     assert handoffs("make_starting_picture")[2]["pictures"] == [
@@ -438,9 +441,13 @@ def test_the_ad_with_a_scene_needing_a_photo_pays_for_each_thing_once(
         "make_before_picture",
         "choose_broll_picture",
         "make_starting_picture",
-        # Not checked: quality checks are off unless switched on (Julian, 10 Oct).
+        # Two passes from the judge settle each (Julian, 10 Oct 21:55).
+        "check_starting_picture",
+        "check_starting_picture",
         "choose_broll_picture",
         "make_starting_picture",
+        "check_starting_picture",
+        "check_starting_picture",
         "choose_starting_picture",
         "make_starting_picture",
         "speak_line",

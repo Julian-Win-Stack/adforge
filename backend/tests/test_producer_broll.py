@@ -942,9 +942,12 @@ def test_the_clip_is_asked_to_move_as_planned_with_a_still_camera_at_its_length(
 
     # The clip's real length and a still camera come first, whatever the model wrote, then
     # its prompt as written: Boreal-H3 is sent no sections. No look: the video model's choice
-    # (test ads, 08 Oct: every B-roll looked phone-filmed).
+    # (test ads, 08 Oct: every B-roll looked phone-filmed). The side facing the camera stays
+    # toward it (round 3, 10 Oct: the phone case flipped mid-clip).
     assert clips_asked("prompt") == [
-        f"A {asked_for}-second video at real-time speed. The camera stays still. {MOTION}"
+        f"A {asked_for}-second video at real-time speed. The camera stays still. "
+        "Whatever side faces the camera at the start stays toward the camera the whole time. "
+        f"{MOTION}"
     ]
 
 

@@ -67,7 +67,7 @@ One piece of a scene's work, run in the background: its starting picture, its li
 _Avoid_: Task, job, render
 
 **Starting picture**:
-A scene's first frame, made from the portrait and one product photo: the person holding the product, or, for a B-roll scene, the "before" of what the scene shows, made from its main photo, then a photo for each thing it needs that the main photo can't show (at most 3), then the portrait only when the presenter's face is shown, then the ad's before-picture. A B-roll scene's picture has a quality check beside its main photo before its clip is paid for, and is drawn again, at most twice, when it fails. Quality checks are off unless switched on, until the check agrees with graded pictures. The clip is made from it.
+A scene's first frame, made from the portrait and one product photo: the person holding the product, or, for a B-roll scene, the "before" of what the scene shows, made from its main photo, then a photo for each thing it needs that the main photo can't show (at most 3), then the portrait only when the presenter's face is shown, then the ad's before-picture. A B-roll scene's picture has a quality check before its clip is paid for, and is drawn again, at most twice, when it fails; when the third fails too, the run stops and the chat shows the three pictures and why each failed. The clip is made from it.
 _Avoid_: Start frame, keyframe, thumbnail
 
 **Before-picture**:
@@ -171,7 +171,7 @@ Comparing every price, number, product name and claim in a line against the page
 _Avoid_: Verification, accuracy check
 
 **Quality check**:
-A check on something already produced, such as a picture or a clip. Can be switched off as a whole; the first full run happens with them off. Built so far: the B-roll starting picture check (real object shapes, the product as in its shop photo, its label turning with it, the "before" shown, no face when none is wanted, and prompts that don't clash), which runs before a clip is paid for.
+A check on something already produced, such as a picture or a clip. On unless switched off as a whole. Built so far: the B-roll starting picture check, which looks at the picture, beside the shop photo it was drawn from, for objects that can't exist (a part on the wrong side, two sides of one object seen at once) before a clip is paid for.
 _Avoid_: QA, review, gate
 
 ### Not yet built

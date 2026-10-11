@@ -433,7 +433,10 @@ From the MiniMax H3 prompt guides (Boreal-H3 is built on H3) and the four mistak
 - Never two orders that can't both be true ("upright" + "nozzle pointing down" bent the
   bottle; "squeeze" + "no gel" put gel on the rim). Each order is checked against the photos.
 - Code starts every B-roll video prompt with "A {N}-second video at real-time speed. The
-  camera stays still.", N the clip's real length; the video prompt no longer says "9:16"
+  camera stays still. Whatever side faces the camera at the start stays toward the camera
+  the whole time.", N the clip's real length (the second sentence since 2026-10-10: in round 3
+  the phone case flipped mid-clip and the video model made up the side it couldn't see;
+  the user's yes, 2026-10-10 19:15); the video prompt no longer says "9:16"
   (the API sends it), and never moves the camera or says where or how close it ends. Until
   2026-10-09 it opened "A {N}-second handheld phone video, casual, not cinematic, real-time
   speed.", as both best-graded clips did; the test ads of 2026-10-08 all looked
