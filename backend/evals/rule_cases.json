@@ -4356,6 +4356,1726 @@
       "split": "held out"
     },
     {
+      "id": "A19-r3-8",
+      "rule": "A19",
+      "label": "fail",
+      "source": "runs/round-3-test-ads/grades.md (Julian 2026-10-10)",
+      "julian": "\"And we are using a different toilet here. A different toilet means the different dirt.\" (round 3 #8 s3 FAIL, complaint 1)",
+      "scene": null,
+      "plan": [
+        {
+          "number": 2,
+          "talking": false,
+          "line": "Toilet bowl rings and rust stains are exactly what this cleaner fights.",
+          "shows": "toilet water ripples beneath a visible bowl ring and rust stains, with the cleaner bottle in view",
+          "kind": "shows the problem"
+        },
+        {
+          "number": 3,
+          "talking": false,
+          "line": "Add mildew and odors, and the toilet is far from looking and smelling as good as new.",
+          "shows": "toilet water ripples beside visible mildew inside the bowl, with the cleaner bottle in view",
+          "kind": "shows the problem"
+        },
+        {
+          "number": 4,
+          "talking": false,
+          "line": "Scrub with a toilet brush, and Molly’s Suds Toilet Bowl Cleaner fights rings and removes stains, mildew, and odors.",
+          "shows": "a toilet brush scrubs the visible bowl ring, rust stains, and mildew away, with the cleaner bottle in view",
+          "kind": "does a job"
+        }
+      ],
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/round-3-test-ads/grades.md",
+      "quote_exact": false,
+      "note": "Ad-level: s3 is the different toilet; s2 and s4 passed, s4 'look similar' is enough.",
+      "start_picture": null,
+      "split": "tune",
+      "ad_pictures": [
+        {
+          "scene": 2,
+          "path": "/mnt/project-files/runs/round-3-test-ads/8-toilet-cleaner/scene-2/start-picture.png"
+        },
+        {
+          "scene": 3,
+          "path": "/mnt/project-files/runs/round-3-test-ads/8-toilet-cleaner/scene-3/start-picture.png"
+        },
+        {
+          "scene": 4,
+          "path": "/mnt/project-files/runs/round-3-test-ads/8-toilet-cleaner/scene-4/start-picture.png"
+        }
+      ]
+    },
+    {
+      "id": "A19-r3-5",
+      "rule": "A19",
+      "label": "pass",
+      "source": "runs/round-3-test-ads/grades.md (Julian 2026-10-10)",
+      "julian": "#5 whole ad PASS; s2-s5 PASS (no words)",
+      "scene": null,
+      "plan": [
+        {
+          "number": 2,
+          "talking": false,
+          "line": "Carry it as a sophisticated clutch for evening occasions or everyday elegance.",
+          "shows": "the presenter walks with the bag carried as a clutch",
+          "kind": "showcase"
+        },
+        {
+          "number": 3,
+          "talking": false,
+          "line": "Wear the removable 23-to-24-inch strap crossbody when you want to go hands-free.",
+          "shows": "the presenter walks with the bag worn crossbody",
+          "kind": "showcase"
+        },
+        {
+          "number": 4,
+          "talking": false,
+          "line": "Its sleek metal frame adds structure, with an elegant stone kiss-lock detail.",
+          "shows": "a hand closes the stone kiss-lock on the bag",
+          "kind": "does a job"
+        },
+        {
+          "number": 5,
+          "talking": false,
+          "line": "Its compact design fits a phone, small wallet, keys, small headphones, and compact makeup.",
+          "shows": "a hand places a phone inside the open bag beside the other listed essentials",
+          "kind": "does a job"
+        }
+      ],
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/round-3-test-ads/grades.md",
+      "quote_exact": false,
+      "note": "Drawn without a before-picture, yet passed: scenes need only look like the same place.",
+      "start_picture": null,
+      "split": "tune",
+      "ad_pictures": [
+        {
+          "scene": 2,
+          "path": "/mnt/project-files/runs/round-3-test-ads/5-bkenzo-bag/scene-2/start-picture.png"
+        },
+        {
+          "scene": 3,
+          "path": "/mnt/project-files/runs/round-3-test-ads/5-bkenzo-bag/scene-3/start-picture.png"
+        },
+        {
+          "scene": 4,
+          "path": "/mnt/project-files/runs/round-3-test-ads/5-bkenzo-bag/scene-4/start-picture.png"
+        },
+        {
+          "scene": 5,
+          "path": "/mnt/project-files/runs/round-3-test-ads/5-bkenzo-bag/scene-5/start-picture.png"
+        }
+      ]
+    },
+    {
+      "id": "A19-sbp1-8",
+      "rule": "A19",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md round 1 (Julian 2026-10-10 22:42)",
+      "julian": "yes. all pass",
+      "scene": null,
+      "plan": [
+        {
+          "number": 2,
+          "talking": false,
+          "line": "Toilet bowl rings and stains from hard water, limescale, and rust need attention.",
+          "shows": "a toilet bowl ring and rust stain are visible, with the bottle in view",
+          "kind": "shows the problem"
+        },
+        {
+          "number": 3,
+          "talking": false,
+          "line": "Scrub with a toilet brush as the cleaner removes the rust stain.",
+          "shows": "a toilet brush scrubs a rust stain, with the bottle in view",
+          "kind": "does a job"
+        },
+        {
+          "number": 4,
+          "talking": false,
+          "line": "For a spotlessly clean toilet bowl, scrub with a toilet brush.",
+          "shows": "a toilet brush scrubs the toilet bowl, with the bottle in view",
+          "kind": "showcase"
+        }
+      ],
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "Asked: same toilet and stains on #8. #5 left out: Julian corrected its s4 (too far).",
+      "start_picture": null,
+      "split": "tune",
+      "ad_pictures": [
+        {
+          "scene": 2,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/round-1/8-toilet-cleaner/scene-2/start-picture.png"
+        },
+        {
+          "scene": 3,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/round-1/8-toilet-cleaner/scene-3/start-picture.png"
+        },
+        {
+          "scene": 4,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/round-1/8-toilet-cleaner/scene-4/start-picture.png"
+        }
+      ]
+    },
+    {
+      "id": "A19-sbp1-12",
+      "rule": "A19",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md round 1 (Julian 2026-10-10 22:42)",
+      "julian": "yes. all pass",
+      "scene": null,
+      "plan": [
+        {
+          "number": 3,
+          "talking": false,
+          "line": "Textured sides and finger grooves keep your grip solid and comfortable while you scroll.",
+          "shows": "a thumb scrolls on the cased phone held by its textured sides",
+          "kind": "showcase"
+        },
+        {
+          "number": 4,
+          "talking": false,
+          "line": "Raised edges form a safety buffer around the screen when it slides face-down across a desk.",
+          "shows": "a hand slides the cased phone face-down across a desk",
+          "kind": "does a job"
+        }
+      ],
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "Asked: same toilet and stains on #8. #5 left out: Julian corrected its s4 (too far).",
+      "start_picture": null,
+      "split": "tune",
+      "ad_pictures": [
+        {
+          "scene": 3,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/round-1/12-gripmunk-case/scene-3/start-picture.png"
+        },
+        {
+          "scene": 4,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/round-1/12-gripmunk-case/scene-4/start-picture.png"
+        }
+      ]
+    },
+    {
+      "id": "A19-sbp2-10",
+      "rule": "A19",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": null,
+      "plan": [
+        {
+          "number": 2,
+          "talking": false,
+          "line": "The Enrichment Tether Toy is a durable chew toy for supervised indoor play.",
+          "shows": "a dog chews the toy beside the seated presenter",
+          "kind": "showcase"
+        },
+        {
+          "number": 3,
+          "talking": false,
+          "line": "Add a treat inside to make the toy even more irresistible.",
+          "shows": "a hand adds a treat inside the toy",
+          "kind": "showcase"
+        },
+        {
+          "number": 4,
+          "talking": false,
+          "line": "Then use it as a fetch toy for fun, interactive outdoor play.",
+          "shows": "a dog retrieves the toy outdoors",
+          "kind": "showcase"
+        }
+      ],
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": null,
+      "split": "held out",
+      "ad_pictures": [
+        {
+          "scene": 2,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/10-dog-toy/scene-2/start-picture.png"
+        },
+        {
+          "scene": 3,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/10-dog-toy/scene-3/start-picture.png"
+        },
+        {
+          "scene": 4,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/10-dog-toy/scene-4/start-picture.png"
+        }
+      ]
+    },
+    {
+      "id": "A19-sbp2-12",
+      "rule": "A19",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": null,
+      "plan": [
+        {
+          "number": 2,
+          "talking": false,
+          "line": "Built-in air-pocket corners act like mini shock absorbers for daily use.",
+          "shows": "the cased iPhone drops edge-first onto concrete",
+          "kind": "does a job"
+        },
+        {
+          "number": 3,
+          "talking": false,
+          "line": "Textured sides and natural finger grooves make scrolling comfortable and secure.",
+          "shows": "a thumb scrolls on an iPhone fitted with the case",
+          "kind": "showcase"
+        },
+        {
+          "number": 4,
+          "talking": false,
+          "line": "It was drop-tested fifty times from six feet and shrugged it off.",
+          "shows": "the cased iPhone drops from six feet onto concrete",
+          "kind": "does a job"
+        }
+      ],
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": null,
+      "split": "held out",
+      "ad_pictures": [
+        {
+          "scene": 2,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/12-gripmunk-case/scene-2/start-picture.png"
+        },
+        {
+          "scene": 3,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/12-gripmunk-case/scene-3/start-picture.png"
+        },
+        {
+          "scene": 4,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/12-gripmunk-case/scene-4/start-picture.png"
+        }
+      ]
+    },
+    {
+      "id": "A19-sbp2-14",
+      "rule": "A19",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": null,
+      "plan": [
+        {
+          "number": 2,
+          "talking": false,
+          "line": "The Swivel Chair’s compact frame fits easily at a small desk.",
+          "shows": "The presenter sits in the chair at a small desk.",
+          "kind": "showcase"
+        },
+        {
+          "number": 3,
+          "talking": false,
+          "line": "Its smooth rotation makes it easy to turn and join the conversation.",
+          "shows": "The presenter swivels in the chair to join an off-screen conversation.",
+          "kind": "showcase"
+        },
+        {
+          "number": 4,
+          "talking": false,
+          "line": "For brief work sprints, it delivers everyday function with refined, design-forward style.",
+          "shows": "The presenter works while seated in the chair at a home-office desk.",
+          "kind": "showcase"
+        }
+      ],
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": null,
+      "split": "held out",
+      "ad_pictures": [
+        {
+          "scene": 2,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/14-chair/scene-2/start-picture.png"
+        },
+        {
+          "scene": 3,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/14-chair/scene-3/start-picture.png"
+        },
+        {
+          "scene": 4,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/14-chair/scene-4/start-picture.png"
+        }
+      ]
+    },
+    {
+      "id": "A19-sbp2-3",
+      "rule": "A19",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": null,
+      "plan": [
+        {
+          "number": 2,
+          "talking": false,
+          "line": "Simply add one serving to eight fluid ounces of your favorite beverage.",
+          "shows": "a hand adds one serving to a hot beverage beside the tub",
+          "kind": "showcase"
+        },
+        {
+          "number": 3,
+          "talking": false,
+          "line": "It dissolves in hot liquid, so mix thoroughly and enjoy.",
+          "shows": "a hand mixes the serving into a hot beverage beside the tub",
+          "kind": "does a job"
+        },
+        {
+          "number": 4,
+          "talking": false,
+          "line": "Enjoy that caramel-y, creamy, slightly salty twist in your daily routine.",
+          "shows": "the presenter sips the prepared beverage beside the tub",
+          "kind": "showcase"
+        }
+      ],
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": null,
+      "split": "held out",
+      "ad_pictures": [
+        {
+          "scene": 2,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/3-collagen/scene-2/start-picture.png"
+        },
+        {
+          "scene": 3,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/3-collagen/scene-3/start-picture.png"
+        },
+        {
+          "scene": 4,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/3-collagen/scene-4/start-picture.png"
+        }
+      ]
+    },
+    {
+      "id": "A19-sbp2-4",
+      "rule": "A19",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": null,
+      "plan": [
+        {
+          "number": 2,
+          "talking": false,
+          "line": "Wear it with chinos to the office for substantial French terry comfort.",
+          "shows": "the presenter walks through an office wearing the sweatshirt with chinos",
+          "kind": "showcase"
+        },
+        {
+          "number": 3,
+          "talking": false,
+          "line": "Raglan sleeves give you greater freedom of movement without feeling tight across the shoulders.",
+          "shows": "the presenter reaches overhead while wearing the sweatshirt",
+          "kind": "showcase"
+        },
+        {
+          "number": 4,
+          "talking": false,
+          "line": "Its classic fit stays roomy but never slouchy, with a polished look.",
+          "shows": "the presenter walks outside a bar wearing the sweatshirt with jeans",
+          "kind": "showcase"
+        }
+      ],
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": null,
+      "split": "held out",
+      "ad_pictures": [
+        {
+          "scene": 2,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/4-sweatshirt/scene-2/start-picture.png"
+        },
+        {
+          "scene": 3,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/4-sweatshirt/scene-3/start-picture.png"
+        },
+        {
+          "scene": 4,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/4-sweatshirt/scene-4/start-picture.png"
+        }
+      ]
+    },
+    {
+      "id": "A19-sbp2-5",
+      "rule": "A19",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": null,
+      "plan": [
+        {
+          "number": 2,
+          "talking": false,
+          "line": "For everyday elegance, wear it crossbody and keep your hands free.",
+          "shows": "the presenter walks with the bag already worn crossbody",
+          "kind": "showcase"
+        },
+        {
+          "number": 3,
+          "talking": false,
+          "line": "For evening occasions, carry the Kenzo Bag as a sophisticated clutch.",
+          "shows": "the presenter carries the bag as a clutch at an evening occasion",
+          "kind": "showcase"
+        },
+        {
+          "number": 4,
+          "talking": false,
+          "line": "Its compact design still fits your phone, small wallet, keys, and compact makeup.",
+          "shows": "a hand packs a phone, small wallet, keys, and compact makeup into the open bag",
+          "kind": "does a job"
+        }
+      ],
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": null,
+      "split": "held out",
+      "ad_pictures": [
+        {
+          "scene": 2,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/5-bkenzo-bag/scene-2/start-picture.png"
+        },
+        {
+          "scene": 3,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/5-bkenzo-bag/scene-3/start-picture.png"
+        },
+        {
+          "scene": 4,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/5-bkenzo-bag/scene-4/start-picture.png"
+        }
+      ]
+    },
+    {
+      "id": "A19-sbp2-8",
+      "rule": "A19",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": null,
+      "plan": [
+        {
+          "number": 2,
+          "talking": false,
+          "line": "Toilet bowl rings and hard-water stains keep the bowl from looking spotlessly clean.",
+          "shows": "a visible toilet bowl ring inside a toilet bowl with the bottle in view",
+          "kind": "shows the problem"
+        },
+        {
+          "number": 3,
+          "talking": false,
+          "line": "Then there’s rust staining the bowl, right where you do your business.",
+          "shows": "a visible rust stain inside a toilet bowl with the bottle in view",
+          "kind": "shows the problem"
+        },
+        {
+          "number": 4,
+          "talking": false,
+          "line": "Molly’s Suds Toilet Bowl Cleaner scrubs away stains for a spotlessly clean bowl.",
+          "shows": "a toilet brush scrubs a visible rust stain away with the bottle in view",
+          "kind": "does a job"
+        }
+      ],
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": null,
+      "split": "held out",
+      "ad_pictures": [
+        {
+          "scene": 2,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/8-toilet-cleaner/scene-2/start-picture.png"
+        },
+        {
+          "scene": 3,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/8-toilet-cleaner/scene-3/start-picture.png"
+        },
+        {
+          "scene": 4,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/8-toilet-cleaner/scene-4/start-picture.png"
+        }
+      ]
+    },
+    {
+      "id": "A19-sbp2-9",
+      "rule": "A19",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": null,
+      "plan": [
+        {
+          "number": 2,
+          "talking": false,
+          "line": "Its rich, smooth, squeezable format makes it an easy everyday sandwich spread.",
+          "shows": "A hand spreads the sauce across a sandwich, with the bottle in view.",
+          "kind": "does a job"
+        },
+        {
+          "number": 3,
+          "talking": false,
+          "line": "Glaze a protein with it for chili-forward, deeply savory flavor and balanced heat.",
+          "shows": "A hand glazes a protein with the sauce, with the bottle in view.",
+          "kind": "does a job"
+        },
+        {
+          "number": 4,
+          "talking": false,
+          "line": "Or drizzle it over a bowl for balanced heat that adds flavor.",
+          "shows": "A hand squeezes the sauce over a bowl, with the bottle in view.",
+          "kind": "does a job"
+        }
+      ],
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": null,
+      "split": "held out",
+      "ad_pictures": [
+        {
+          "scene": 2,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/9-chili-crunch/scene-2/start-picture.png"
+        },
+        {
+          "scene": 3,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/9-chili-crunch/scene-3/start-picture.png"
+        },
+        {
+          "scene": 4,
+          "path": "/mnt/project-files/runs/shared-before-picture-test/9-chili-crunch/scene-4/start-picture.png"
+        }
+      ]
+    },
+    {
+      "id": "A20-sbp1-5-s4",
+      "rule": "A20",
+      "label": "fail",
+      "source": "runs/shared-before-picture-test/README.md round 1 (Julian 2026-10-10 22:42)",
+      "julian": "\"the back is being too far away. It is being filmed too far away.\" (Julian 22:45 correction)",
+      "scene": {
+        "line": "Its compact design fits daily essentials, including a phone and small wallet.",
+        "shows": "a hand slides a phone into the open bag",
+        "kind": "does a job",
+        "usage": "holding a phone inside",
+        "result": "the phone fits inside the bag",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "only how the bag's interior looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary apartment entryway. Reproduce Image 3’s place, light and every existing thing exactly as shown, with every mark and part unchanged. Take only the product from Image 1, exactly as it looks, with every detail and any print unchanged, and use Image 2 only to match the bag’s interior exactly; take no background or setting from either product reference. The open bag stands in the middle of the ordinary waist-high console table with the same side facing the camera throughout. A single black standard-size smartphone is fully visible directly above the open bag, held vertically by one hand at its side edges, ready to slide straight inside; no face or other part of a person is visible. The open floor area in front of the table is unobstructed. The camera is positioned across the entryway at about chest height, facing the table and floor at a slight downward angle so the entire smartphone, open bag, whole tabletop and open walking area are visible. Everything is still, with no action taking place. No added text, captions or logos.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the hand slides the single smartphone straight down into the open bag while holding it by its side edges. The phone passes through the opening and ends fully inside the bag, visibly fitting within the interior, with the hand still holding it inside. Keep the same side of the bag facing the camera, and keep every other part of the entryway unchanged.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/round-1/5-bkenzo-bag/scene-4/start-picture.png",
+      "split": "tune"
+    },
+    {
+      "id": "A20-sbp1-8-s2",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md round 1 (Julian 2026-10-10 22:42)",
+      "julian": "yes. all pass",
+      "scene": {
+        "line": "Toilet bowl rings and stains from hard water, limescale, and rust need attention.",
+        "shows": "a toilet bowl ring and rust stain are visible, with the bottle in view",
+        "kind": "shows the problem",
+        "usage": "",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary bathroom. Recreate Image 2’s place with the same light and each thing in it with every stain, mark and part exactly as shown. Show one standard white ceramic toilet with its lid and seat raised so the entire bowl and rim are visible, plus one ordinary white-handled toilet brush standing fully visible in its plain holder beside the toilet. Inside the bowl, show exactly one thin pale gray ring around the full inner waterline, one dull yellow hard-water stain about 8 cm wide on the inner right side, one chalky white limescale patch about 6 cm wide on the inner left side, and one orange-brown rust streak about 10 cm long on the lower right interior. One unpleasant odor comes from inside the bowl but is naturally invisible, with no color or visible size and no graphic odor effects. Take only the product from Image 1, exactly as it looks, with its label and print unchanged, and place it upright and fully visible on the floor immediately left of the toilet with the front label facing the camera. Place the camera directly in front of the toilet at about rim height, angled slightly downward, far enough back to show the whole toilet, the whole brush and holder, and the product. Static, natural photographic realism. No person or hand. No added text, captions, or logos beyond the product’s unchanged label.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, a bare hand enters from the left and makes one clear pointing gesture toward the stained toilet bowl, then remains still. The hand touches nothing; the ring, hard-water stain, limescale patch, and rust streak remain completely unchanged, while the product stays upright with the same side and label facing the camera.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/round-1/8-toilet-cleaner/scene-2/start-picture.png",
+      "split": "tune"
+    },
+    {
+      "id": "A20-sbp1-8-s3",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md round 1 (Julian 2026-10-10 22:42)",
+      "julian": "yes. all pass",
+      "scene": {
+        "line": "Scrub with a toilet brush as the cleaner removes the rust stain.",
+        "shows": "a toilet brush scrubs a rust stain, with the bottle in view",
+        "kind": "does a job",
+        "usage": "Scrub with a toilet brush.",
+        "result": "the rust stain removed",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary bathroom. Use the same light as the before-picture. Show one standard white ceramic toilet with its lid and seat raised so the entire bowl and rim are visible. Inside the bowl, show exactly one thin pale gray ring around the full inner waterline, one dull yellow hard-water stain about 8 cm wide on the inner right side, one chalky white limescale patch about 6 cm wide on the inner left side, and one orange-brown rust streak about 10 cm long on the lower right interior. One unpleasant odor comes from inside the bowl but is naturally invisible, with no color or visible size and no graphic odor effects. Show the plain toilet-brush holder fully visible beside the toilet, now empty. A hand with no face or person visible holds the ordinary white-handled toilet brush, with its bristles poised at one end of the orange-brown rust streak, ready to scrub. Take only the product from Image 1, exactly as it looks, with its label and print unchanged, and place it standing fully visible beside the toilet with its label facing the camera. Keep each tile, fixture, floor area, stain, mark and part exactly as it is in the before-picture. Place the camera directly in front of the toilet at about rim height, angled slightly downward, far enough back to show the whole toilet, the whole brush and holder, the product and the hand. The brush and rust streak are in the middle of the frame. Static, natural photographic realism.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the hand makes one firm scrub pass with the toilet brush along the full orange-brown rust streak. The rust stain is removed exactly where the bristles pass, progressively revealing clean white ceramic while the pale gray ring, dull yellow hard-water stain and chalky white limescale patch remain unchanged. Keep the bottle standing fully visible with the same side and unchanged label facing the camera, and end as the brush completes the pass and the rust streak is gone.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/round-1/8-toilet-cleaner/scene-3/start-picture.png",
+      "split": "tune"
+    },
+    {
+      "id": "A20-sbp1-8-s4",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md round 1 (Julian 2026-10-10 22:42)",
+      "julian": "yes. all pass",
+      "scene": {
+        "line": "For a spotlessly clean toilet bowl, scrub with a toilet brush.",
+        "shows": "a toilet brush scrubs the toilet bowl, with the bottle in view",
+        "kind": "showcase",
+        "usage": "Scrub with a toilet brush.",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary bathroom. Show one standard white ceramic toilet with its lid and seat raised so the entire bowl and rim are visible. Inside the bowl, show exactly one thin pale gray ring around the full inner waterline, one dull yellow hard-water stain about 8 cm wide on the inner right side, one chalky white limescale patch about 6 cm wide on the inner left side, and one orange-brown rust streak about 10 cm long on the lower right interior. One unpleasant odor comes from inside the bowl but is naturally invisible, with no color or visible size and no graphic odor effects. The ordinary white-handled toilet brush is out of its plain holder beside the toilet; a hand and forearm enter from the right, holding the brush with its bristles against the lower right interior beside the rust streak, ready to scrub. Place the product from Image 1 upright beside the toilet, fully visible with the label and print unchanged and facing the camera. Place the camera directly in front of the toilet at about rim height, angled slightly downward, far enough back to show the whole toilet, the whole brush and holder, the hand and forearm, and the whole product. Use the same light and keep every stain, mark and part exactly as it is. Static, natural photographic realism.",
+        "motion_prompt": "One continuous shot at a natural, real-time pace. The hand makes one firm scrubbing stroke with the toilet brush along the lower right interior of the bowl over the orange-brown rust streak, keeping the bristles in clear contact with the ceramic. The product remains upright and fully visible with the same side facing the camera. End with the brush still pressed against the bowl at the end of the scrubbing stroke, without showing an unproven change to the stains.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/round-1/8-toilet-cleaner/scene-4/start-picture.png",
+      "split": "tune"
+    },
+    {
+      "id": "A20-sbp1-12-s3",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md round 1 (Julian 2026-10-10 22:42)",
+      "julian": "yes. all pass",
+      "scene": {
+        "line": "Textured sides and finger grooves keep your grip solid and comfortable while you scroll.",
+        "shows": "a thumb scrolls on the cased phone held by its textured sides",
+        "kind": "showcase",
+        "usage": "held by its textured sides and finger grooves while scrolling",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary home office. Recreate the place from Image 2 exactly, with the same light and every stain, mark and part unchanged. A plain, standard rectangular desk is shown whole, with its entire top and all four edges visible; the desktop is clear and has no scratches, debris or other objects. The camera is directly in front of the desk at standing chest height, far enough back to include the whole desk, angled downward about 35 degrees toward the desktop. In the middle of the frame, one hand holds a real, ordinary compatible smartphone upright in portrait orientation above the desk. Take only the product from Image 1, exactly as it looks, with any label or print unchanged, and fit it around the smartphone. The screen side faces the camera and remains clearly visible. The fingers are firmly seated along the textured sides and finger grooves, while the same hand’s thumb rests on the lower half of the screen, ready to swipe upward. The screen shows a generic image-based feed without readable text or logos. No face is visible. Nothing is moving or happening. No added text, captions or logos.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the thumb makes one upward swipe across the screen and the generic image feed scrolls upward beneath it. The fingers remain firmly seated along the textured sides and finger grooves without slipping, and the screen side of the cased phone continues facing the camera. End as the thumb completes the swipe with the phone still held securely.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/round-1/12-gripmunk-case/scene-3/start-picture.png",
+      "split": "tune"
+    },
+    {
+      "id": "A20-sbp1-12-s4",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md round 1 (Julian 2026-10-10 22:42)",
+      "julian": "yes. all pass",
+      "scene": {
+        "line": "Raised edges form a safety buffer around the screen when it slides face-down across a desk.",
+        "shows": "a hand slides the cased phone face-down across a desk",
+        "kind": "does a job",
+        "usage": "slid face-down across a desk",
+        "result": "the raised edge remains between the screen and desk",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary home office. Use the same light as Image 2. A plain, standard rectangular desk is shown whole, with its entire top and all four edges visible; the desktop is clear and has no scratches, debris or other objects. The camera is directly in front of the desk at standing chest height, far enough back to include the whole desk, angled downward about 35 degrees toward the desktop. Take only the product from Image 1, exactly as it looks, with any label or print unchanged, fitted around a real, ordinary smartphone. Place the cased phone face-down near the middle of the desktop with its rear side facing the camera and its raised perimeter resting on the desk so the screen has a narrow, physically realistic separation from the desktop. A hand enters from the left, with two fingertips against the phone’s trailing left edge, ready to slide it toward the right. Show no face or other part of a person. No added text, captions or logos.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the hand slides the cased phone face-down across the desk from left to right in one straight pass. Keep the rear side facing the camera without turning, flipping or spinning the phone. As it travels, only the case’s raised perimeter contacts the desktop along the moving path, visibly maintaining a narrow separation between the screen and the desk; the screen never touches the surface, and nothing else changes. End with the phone resting face-down after the pass and the raised edge still between the screen and desk.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/round-1/12-gripmunk-case/scene-4/start-picture.png",
+      "split": "tune"
+    },
+    {
+      "id": "A20-sbp1-5-s2",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md round 1 (Julian 2026-10-10 22:42)",
+      "julian": "yes. all pass",
+      "scene": {
+        "line": "Wear the KENZO BAG hands-free with its removable 23-to-24-inch crossbody strap.",
+        "shows": "the presenter walks with the bag worn crossbody",
+        "kind": "showcase",
+        "usage": "worn crossbody hands-free",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "only how the removable crossbody strap looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary apartment entryway. Use only the product from Image 1 exactly as it looks and only the removable crossbody strap from Image 2 exactly as it looks, with the strap already attached and adjusted to its 23-to-24-inch crossbody length. Preserve the place from Image 3 exactly, with the same light and each thing in it with every stain, mark and part exactly as it is. A single black standard-size smartphone lies flat and fully visible on the right side of an ordinary waist-high console table. The open floor area in front of the table is unobstructed. The camera is positioned across the entryway at about chest height, facing the table and floor at a slight downward angle so the entire smartphone, the whole tabletop and the open walking area are visible. In the middle of the open walking area, show the presenter only from the shoulders down, with no face visible, wearing an elegant black outfit. She stands at the start of a walking stride with the product worn crossbody and resting at her opposite hip, its front side facing the camera; both hands are free and clear of the product and strap. Everything is still, with no action taking place. No added text, captions or logos.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the presenter walks across the open floor area in one fluid pass with both hands free while the product remains worn crossbody at her opposite hip. Her face stays outside the frame. The product’s front side continues facing the camera without turning or flipping, and the attached strap and product move naturally with her steps. End as she completes the walking pass with the product still clearly worn crossbody and both hands free.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/round-1/5-bkenzo-bag/scene-2/start-picture.png",
+      "split": "tune"
+    },
+    {
+      "id": "A20-sbp1-5-s3",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md round 1 (Julian 2026-10-10 22:42)",
+      "julian": "yes. all pass",
+      "scene": {
+        "line": "Carry it as a sophisticated clutch for evening occasions or everyday elegance.",
+        "shows": "the presenter walks carrying the bag as a clutch",
+        "kind": "showcase",
+        "usage": "carried as a clutch",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary apartment entryway. Reproduce Image 2 as the place exactly, with the same light and each thing in it with every stain, mark and part exactly as it is. A single black standard-size smartphone lies flat and fully visible on the right side of the ordinary waist-high console table. The open floor area in front of the table is unobstructed. The camera is positioned across the entryway at about chest height, facing the table and floor at a slight downward angle so the entire smartphone, the whole tabletop and the open walking area are visible. Add the presenter, shown only from the shoulders down with no face visible, wearing an elegant black outfit and standing paused before her first step in the open walking area. She holds the product from Image 1 in her right hand at hip height as a clutch, with the side shown in Image 1 facing the camera and the product in the middle of the frame. Take only the product from Image 1 exactly as it looks, with any label or print unchanged; take nothing else from that image. Everything is still, with no action taking place. No added text, captions or logos.",
+        "motion_prompt": "One continuous shot with no cuts at a natural, real-time pace. The presenter walks across the open floor area carrying the product in her right hand as a clutch at hip height, with natural steps and restrained arm movement while the side initially facing the camera continues to face it. End with her mid-stride, still visibly carrying it as a clutch.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/round-1/5-bkenzo-bag/scene-3/start-picture.png",
+      "split": "tune"
+    },
+    {
+      "id": "A20-r3-5-s2",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/round-3-test-ads/grades.md (Julian 2026-10-10)",
+      "julian": "PASS (no words)",
+      "scene": {
+        "line": "Carry it as a sophisticated clutch for evening occasions or everyday elegance.",
+        "shows": "the presenter walks with the bag carried as a clutch",
+        "kind": "showcase",
+        "usage": "carried as a clutch",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the presenter"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary upscale hotel lobby. A full-body fashion shot from a camera at chest height, facing the presenter straight on. Show only the presenter from Image 2, with the same face, softly styled dark hair, polished makeup, earrings, and elegant black one-shoulder outfit. She stands poised at the start of a clear lobby walkway, ready to walk toward the camera. Her right hand already carries the closed bag from Image 1 as a clutch in front of her hip, with its front side facing the camera and centered in the frame; the removable strap is absent. Take only the product from Image 1 exactly as it looks, with every detail unchanged, and take nothing else from its source photo. Warm evening lighting, refined but realistic contemporary decor, and no other people.",
+        "motion_prompt": "The presenter walks forward with confident, natural steps while carrying the bag as a clutch in her right hand, keeping its front side facing the camera. Her free arm moves naturally and the bag has a subtle realistic movement with her stride. One continuous shot at a natural, real-time pace, ending while she is clearly walking with the bag carried as a clutch.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/round-3-test-ads/grades.md",
+      "quote_exact": false,
+      "note": "The clip's grade; no complaint about the camera's distance.",
+      "start_picture": "/mnt/project-files/runs/round-3-test-ads/5-bkenzo-bag/scene-2/start-picture.png",
+      "split": "tune"
+    },
+    {
+      "id": "A20-r3-5-s3",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/round-3-test-ads/grades.md (Julian 2026-10-10)",
+      "julian": "PASS (no words)",
+      "scene": {
+        "line": "Wear the removable 23-to-24-inch strap crossbody when you want to go hands-free.",
+        "shows": "the presenter walks with the bag worn crossbody",
+        "kind": "showcase",
+        "usage": "worn crossbody with the removable strap",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "only how the removable crossbody strap and tassel charm looks",
+          "the presenter"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary upscale hotel lobby. Use only the product from Image 1, exactly as it looks, with its front side facing the camera, and use Image 2 only for the exact appearance of the attached removable crossbody strap and tassel charm. The presenter from Image 3 has the same face, softly styled dark hair, polished makeup, jewelry, and elegant black outfit. She stands at the beginning of a clear indoor walkway with the strap worn diagonally across her torso and the bag resting at her opposite hip, leaving both hands free. She faces the camera with one foot poised to step forward and her arms relaxed. The camera is at chest height, straight-on, in a full-body view, with the presenter and bag in the middle of the frame.",
+        "motion_prompt": "In one continuous shot with no cuts at a natural, real-time pace, the presenter walks forward with confident, natural steps while wearing the bag crossbody, her empty hands swinging naturally at her sides. The bag remains at her opposite hip with its front side facing the camera, and the strap and tassel charm move naturally with her stride. End while she is still walking confidently with both hands free.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/round-3-test-ads/grades.md",
+      "quote_exact": false,
+      "note": "The clip's grade; no complaint about the camera's distance.",
+      "start_picture": "/mnt/project-files/runs/round-3-test-ads/5-bkenzo-bag/scene-3/start-picture.png",
+      "split": "tune"
+    },
+    {
+      "id": "A20-r3-5-s4",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/round-3-test-ads/grades.md (Julian 2026-10-10)",
+      "julian": "PASS (no words)",
+      "scene": {
+        "line": "Its sleek metal frame adds structure, with an elegant stone kiss-lock detail.",
+        "shows": "a hand closes the stone kiss-lock on the bag",
+        "kind": "does a job",
+        "usage": "closed with the stone kiss-lock",
+        "result": "the bag closed with the stone kiss-lock",
+        "photo_jobs": [
+          "the product, only how it looks"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary bedroom dressing area. Use only the product from Image 1, exactly as it looks, with its open metal frame and interior visible; do not use anything else from Image 1. The bag sits centered on a plain dressing table with its front facing the camera. The camera is at seated chest height, looking slightly down toward the open frame so the bag and both stone kiss-lock knobs are clearly visible. A right hand enters from the right, with thumb and forefinger already resting around the two separated stone knobs, ready to draw them together, while the rest of the person and their face remain outside the frame. Soft upscale evening lighting and a natural contemporary interior.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the right hand draws the two stone kiss-lock knobs together in one firm closing movement, bringing the metal frame shut until the kiss-lock clicks closed. The bag stays centered with the same front side facing the camera, and the clip ends with the bag fully closed by the stone kiss-lock.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/round-3-test-ads/grades.md",
+      "quote_exact": false,
+      "note": "The clip's grade; no complaint about the camera's distance.",
+      "start_picture": "/mnt/project-files/runs/round-3-test-ads/5-bkenzo-bag/scene-4/start-picture.png",
+      "split": "tune"
+    },
+    {
+      "id": "A20-r3-5-s5",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/round-3-test-ads/grades.md (Julian 2026-10-10)",
+      "julian": "PASS (no words)",
+      "scene": {
+        "line": "Its compact design fits a phone, small wallet, keys, small headphones, and compact makeup.",
+        "shows": "a hand places a phone inside the open bag beside the other listed essentials",
+        "kind": "does a job",
+        "usage": "used to carry daily essentials",
+        "result": "the listed daily essentials fitting inside the bag",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "only how the open interior of the bag looks"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary bedroom dressing area. Use only the product from Image 1, exactly as it looks, with its open interior matching Image 2 and every label or print unchanged; do not use the source photos’ backgrounds or settings. The open bag rests in the middle of a simple wooden dressing table, with its front side facing the camera. The camera is at standing chest height, looking down into the bag from a three-quarter front angle so the entire opening and contents are clearly visible. Inside are exactly one small wallet on the left, one set of ordinary house keys beside it, one small pair of wireless headphones in a plain charging case on the right, and one round compact makeup case beside the headphones, leaving one phone-sized space in the middle. One hand enters from the right holding exactly one ordinary smartphone directly above that empty space, ready to place it inside. Only the hand is visible; no face or other person appears.",
+        "motion_prompt": "One continuous shot at a natural, real-time pace. The hand lowers the smartphone straight into the remaining space in the open bag and releases it beside the wallet, keys, headphones, and compact makeup. End with all five daily essentials visibly fitting inside the open bag while the bag and every other item remain unchanged.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/round-3-test-ads/grades.md",
+      "quote_exact": false,
+      "note": "The clip's grade; no complaint about the camera's distance.",
+      "start_picture": "/mnt/project-files/runs/round-3-test-ads/5-bkenzo-bag/scene-5/start-picture.png",
+      "split": "tune"
+    },
+    {
+      "id": "A20-r3-8-s2",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/round-3-test-ads/grades.md (Julian 2026-10-10)",
+      "julian": "PASS",
+      "scene": {
+        "line": "Toilet bowl rings and rust stains are exactly what this cleaner fights.",
+        "shows": "toilet water ripples beneath a visible bowl ring and rust stains, with the cleaner bottle in view",
+        "kind": "shows the problem",
+        "usage": "",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary home bathroom. The camera is at a standing adult’s chest height, directly in front of and slightly to the right of one white porcelain toilet, angled downward to clearly see the tank, bowl, and water. The toilet lid and seat are raised. A continuous dark gray-brown bowl ring circles the porcelain at the waterline, and three distinct orange-brown rust streaks mark the inner bowl beneath the rim. The toilet water is still. Take only the product from Image 1, exactly as it looks, with its label and print unchanged, and place it upright on the right side of the toilet tank with the same front side facing the camera. Bright, natural bathroom lighting and realistic household detail.",
+        "motion_prompt": "One continuous shot with no cuts at a natural, real-time pace. The toilet water makes one small ripple that spreads outward beneath the visible bowl ring and rust stains. The ring and all three rust streaks remain completely unchanged, and the product remains upright and motionless with the same side facing the camera.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/round-3-test-ads/grades.md",
+      "quote_exact": false,
+      "note": "The clip's grade; no complaint about the camera's distance.",
+      "start_picture": "/mnt/project-files/runs/round-3-test-ads/8-toilet-cleaner/scene-2/start-picture.png",
+      "split": "tune"
+    },
+    {
+      "id": "A20-r3-8-s4",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/round-3-test-ads/grades.md (Julian 2026-10-10)",
+      "julian": "PASS",
+      "scene": {
+        "line": "Scrub with a toilet brush, and Molly’s Suds Toilet Bowl Cleaner fights rings and removes stains, mildew, and odors.",
+        "shows": "a toilet brush scrubs the visible bowl ring, rust stains, and mildew away, with the cleaner bottle in view",
+        "kind": "does a job",
+        "usage": "Scrub with a toilet brush.",
+        "result": "the visible bowl ring, rust stains, and mildew are gone, leaving a spotlessly clean toilet bowl",
+        "photo_jobs": [
+          "the product, only how it looks"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary bright, tidy bathroom. Take only the product from Image 1, exactly as it looks, with its label and print unchanged, and place it upright on the right side of a white ceramic toilet tank with the label facing the camera. A real, ordinary white ceramic toilet is centered, with its lid and seat raised and the inside of the bowl clearly visible. A dark bowl ring circles the visible waterline, with several brown rust stains and patches of black mildew across the inner ceramic around that ring. One ordinary toilet brush with a plastic handle and round bristle head is inside the bowl, its bristles poised against the left end of the stained ring, held by one hand entering from the left; only the hand and forearm are visible. The camera is at a standing person's waist height in front of the toilet, angled downward in a three-quarter view so the hand, entire visible inner bowl, stained ring, brush, and bottle can all be seen, with the cleaning action in the middle of the frame.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the hand makes one firm, continuous scrubbing pass with the toilet brush around the visible waterline and across the rust stains and mildew. Exactly where the bristles pass, the dark ring, brown rust stains, and black mildew disappear, revealing spotless white ceramic, while untouched areas remain stained until the brush reaches them. Keep the bottle upright and facing the camera throughout, and end after the brush has completed the pass with the entire visible toilet bowl spotlessly clean.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/round-3-test-ads/grades.md",
+      "quote_exact": false,
+      "note": "The clip's grade; no complaint about the camera's distance.",
+      "start_picture": "/mnt/project-files/runs/round-3-test-ads/8-toilet-cleaner/scene-4/start-picture.png",
+      "split": "tune"
+    },
+    {
+      "id": "A20-r3-N5-s3",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/round-3-test-ads/grades.md (Julian 2026-10-10)",
+      "julian": "PASS (no words)",
+      "scene": {
+        "line": "Glide Le Duo Classic slowly from roots to ends for a smooth, sleek finish.",
+        "shows": "the presenter glides Le Duo Classic slowly down a one-inch hair section",
+        "kind": "does a job",
+        "usage": "Hold the tool parallel with the floor and slide it downward over a one-inch section with consistent pressure.",
+        "result": "a smooth, sleek hair section",
+        "photo_jobs": [
+          "the product, only how it looks"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary bright modern dressing room. The camera is at shoulder height, straight-on from behind, in a medium view that includes the back of the presenter from the crown of her head to below the ends of her long dark brown hair; her face is not visible, and she wears a pastel camisole. A single one-inch section of hair hangs separately in the middle of the frame and is lightly textured and unsmoothed from roots to ends; the rest of her hair is held aside with one ordinary salon sectioning clip. Her right hand holds the product from Image 1 closed around that section at the roots, ready to glide downward with consistent pressure. The product is horizontal and parallel with the floor; its shape is unchanged, and its visible controls, vents, label, and printed markings rotate together with it and face the camera exactly as shown in Image 1. Preserve the product exactly as it looks in Image 1, with all label and print unchanged, and use nothing else from that image. Natural bright dressing-room light and realistic hair texture.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the presenter’s right hand makes one steady downward glide, sliding the closed tool from the roots to the ends of the one-inch hair section while keeping it horizontal, parallel with the floor, and under consistent pressure. Keep the same side of the product and all visible markings facing the camera throughout. As the tool passes over the hair, only the area it touches changes from lightly textured to smooth and sleek; the rest of the hair and scene remain unchanged. End as the tool clears the ends and the entire treated section hangs smooth and sleek.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/round-3-test-ads/grades.md",
+      "quote_exact": false,
+      "note": "The clip's grade; no complaint about the camera's distance.",
+      "start_picture": "/mnt/project-files/runs/round-3-test-ads/N5-le-duo/scene-3/start-picture.png",
+      "split": "tune"
+    },
+    {
+      "id": "A20-sbp2-10-s2",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "The Enrichment Tether Toy is a durable chew toy for supervised indoor play.",
+        "shows": "a dog chews the toy beside the seated presenter",
+        "kind": "showcase",
+        "usage": "let your dog chew under your supervision",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the presenter",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary ground-floor living room opening directly onto a small fenced back garden. Use the place and light from Image 3 exactly, with each thing in it and every stain, mark and part exactly as it is. On the left is one ordinary upholstered chair with the presenter from Image 2 seated in it, with the same face, hair, cream T-shirt and relaxed jeans, watching the dog attentively. In the clear floor space beside the chair, the same one real, ordinary pet dog is standing with its head lowered and muzzle poised immediately above the product, ready to chew but not yet biting. Take only the product from Image 1, exactly as it looks, with any label or print unchanged; place it on the indoor floor between the dog's front paws, with the same side facing the camera and the label visible. On the right is a low side table holding one small plain brown dog treat. The open doorway, indoor floor and outdoor lawn are clearly visible, with the small fenced back garden beyond. The camera is at waist height in the far indoor corner, angled slightly downward toward the chair and clear floor space so the dog, seated presenter, product, side table, treat, indoor play area and outdoor fetch area are all in frame, with the dog and product in the middle of the frame.",
+        "motion_prompt": "In one continuous natural real-time shot, the dog lowers its muzzle and closes its jaws firmly around the product's knotted end for one clear chew, making the rubber compress naturally while the tether remains on the floor with the same side and label facing the camera; the seated presenter stays beside the dog and watches attentively. End with the dog actively gripping and chewing the product under her supervision.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/10-dog-toy/scene-2/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-10-s3",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "Add a treat inside to make the toy even more irresistible.",
+        "shows": "a hand adds a treat inside the toy",
+        "kind": "showcase",
+        "usage": "add a treat inside",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "only how the treat opening looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary ground-floor living room opening directly onto a small fenced back garden. Preserve the same light and each thing from Image 3 with every stain, mark and part exactly as it is: on the left is one ordinary upholstered chair for the seated presenter, with clear floor space beside it; on the right is a low side table; one real, ordinary pet dog is standing still near the open doorway, fully visible, with the indoor floor behind it and the outdoor lawn clearly visible beyond it. Take only the product from Image 1 exactly as it looks, with any label or print unchanged, and use Image 2 only to reproduce the treat opening correctly. Rest the product securely in the middle of the low side table with its treat opening empty, facing upward and toward the camera, and keep the same side facing the camera. One hand with no face or person visible holds the one small plain brown dog treat between finger and thumb directly above the opening, ready to insert it. The camera is at waist height beside the low side table, angled downward so the hand, treat and opening are clear while the whole dog, chair, side table, indoor play area and outdoor fetch area remain in frame. No other dog toy, person or hand. No added text, captions or logos.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the hand moves the one small plain brown dog treat straight down and presses it through the toy’s opening until the treat is inside, ending on the completed insertion. The product remains resting securely in place with the same side facing the camera, while the dog stands still and everything else remains unchanged.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/10-dog-toy/scene-3/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-10-s4",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "Then use it as a fetch toy for fun, interactive outdoor play.",
+        "shows": "a dog retrieves the toy outdoors",
+        "kind": "showcase",
+        "usage": "use it as a fetch toy",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary ground-floor living room opening directly onto a small fenced back garden. Use only the product from Image 1, exactly as it looks, with any label or print unchanged. Use the place from Image 2 with the same light and each thing in it with every stain, mark and part exactly as it is. On the left is one ordinary upholstered chair for the seated presenter, with clear floor space beside it; on the right is a low side table holding one small plain brown dog treat. One real, ordinary pet dog is standing still on the outdoor lawn, fully visible and facing the open doorway, holding the toy securely by its knotted part in its mouth, with the strap hanging naturally and the same printed side facing the camera. The indoor floor is behind the open doorway and the outdoor lawn is clearly visible. The camera is at waist height in the far indoor corner, angled slightly downward toward the doorway so the whole dog, chair, side table, treat, indoor play area and outdoor fetch area are all in frame, with the dog and toy in the middle of the frame. This is a still before-state with no action. No person and no hand. No added text, captions or logos.",
+        "motion_prompt": "In one continuous natural real-time movement, the dog trots from the outdoor lawn toward the open doorway while carrying the toy securely by its knotted part, keeping the same printed side of the hanging strap facing the camera, and ends arriving at the doorway with the toy still held in its mouth.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/10-dog-toy/scene-4/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-12-s2",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "Built-in air-pocket corners act like mini shock absorbers for daily use.",
+        "shows": "the cased iPhone drops edge-first onto concrete",
+        "kind": "does a job",
+        "usage": "the case is fitted on an iPhone 17e during an edge-first drop",
+        "result": "the phone remains scratch-free",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary garage. Use Image 2 for the garage itself, preserving the same light and every visible thing, stain, mark and part exactly as shown. The garage has a bare gray concrete floor and a clear concrete impact area. Take only the cased iPhone 17e from Image 1, exactly as it looks, with every visible part and any label or print unchanged; take nothing else from Image 1. One standard-size iPhone 17e is fitted securely in the case and has zero scratches or impact damage anywhere. A single hand holds it six feet above the concrete, ready to release it edge-first, with one lower edge and its nearest corner aimed at the impact area. It is held in this tilted edge-first pose so the phone and fitted case keep their normal fitted shape while the side shown in Image 1, every visible part and any label all share the same tilt and face the camera. The phone is fully visible in the middle of the frame. The camera is about three feet above the floor at a wide, slightly downward side angle, framing the entire hand-held phone, the concrete landing area and at least six feet of vertical drop space. No face is visible. No other phone is on the floor. Nothing is moving yet. No added text, captions or logos.",
+        "motion_prompt": "One continuous shot at a natural, real-time pace. The hand releases the cased iPhone 17e, and it falls once through the open space and strikes the concrete edge-first at the aimed corner. At contact, only the touching case corner and edge flex and rebound like a shock absorber while everything else remains unchanged. The phone makes a natural small bounce and settles with the same side shown in Image 1 facing the camera, the case still fitted, and the impact edge and corner visibly intact and scratch-free. Preserve the garage, lighting and every surrounding object and mark exactly throughout.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/12-gripmunk-case/scene-2/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-12-s3",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "Textured sides and natural finger grooves make scrolling comfortable and secure.",
+        "shows": "a thumb scrolls on an iPhone fitted with the case",
+        "kind": "showcase",
+        "usage": "the cased phone is held by its textured sides for scrolling",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary garage. Use only the product from Image 1, exactly as it looks, with any label or print unchanged, fitted to one standard-size iPhone 17e. The garage has a bare gray concrete floor and the same light, with every stain, mark and part exactly as in Image 2. A hand holds the cased phone securely by its textured sides in the middle of the frame, with no face visible; the screen faces the camera and shows an ordinary active scrollable page, while the holding hand’s thumb rests near the lower-middle of the touchscreen, ready to scroll. The camera is beside the hand at phone height in a close, slightly downward side angle that clearly shows the touchscreen, the thumb, the textured sides and natural finger placement. The phone, concrete impact area and garage remain fully visible as the framing allows.",
+        "motion_prompt": "In one continuous natural real-time movement, the thumb makes one upward scrolling swipe across the touchscreen while the same hand keeps the cased phone securely held by its textured sides; the page moves with the swipe, ending with the phone still secure and the thumb at the end of the scroll.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/12-gripmunk-case/scene-3/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-12-s4",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "It was drop-tested fifty times from six feet and shrugged it off.",
+        "shows": "the cased iPhone drops from six feet onto concrete",
+        "kind": "does a job",
+        "usage": "the case is fitted on an iPhone 17e during a six-foot drop test",
+        "result": "the case remains unharmed",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary garage. Use Image 2 as the place, with the same light and each thing in it with every stain, mark and part exactly as it is, including the bare gray concrete floor and concrete impact area. The phone that rested flat on the left side is now the one standard-size iPhone 17e held exactly six feet above the concrete impact area, fitted with only the product from Image 1 exactly as it looks, with all print unchanged. One hand holds the phone flat and level by one edge, ready to release it, with its rear side facing upward and toward the camera; the phone and case have zero scratches or impact damage. Show no face or other part of a person. Place the camera above six feet at a wide, downward side angle that clearly frames the hand, the centered cased phone, the full six-foot path and the concrete landing area.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the hand releases the cased iPhone for one straight six-foot drop onto the concrete. The phone keeps its rear side facing the camera without turning, flipping or spinning, strikes the concrete and comes to rest rear-side-up. End with the case visibly unharmed where it contacted the floor, with no cracks, scratches, separation or other damage, while nothing else changes.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/12-gripmunk-case/scene-4/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-14-s2",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "The Swivel Chair’s compact frame fits easily at a small desk.",
+        "shows": "The presenter sits in the chair at a small desk.",
+        "kind": "showcase",
+        "usage": "seated in the chair at a small desk",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the presenter",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary home office. Use Image 3 for the place, preserving the same light and each thing in it with every stain, mark and part exactly as shown. One small, light natural-wood writing desk stands on the left side of the compact work area, with the entire desk visible and a clear, limited chair-sized space in front of it; the right side remains open so a seated person could later turn toward an off-screen conversation. The camera is at standing chest height in a front three-quarter view, angled slightly downward so the whole desk, the limited floor space in front of it and the open area to its right are visible. Take only the chair from Image 1, exactly as it looks, and place it in the middle of the frame within the limited chair-sized space directly in front of the desk, ready to be used, with its camera-facing side unchanged. Add the presenter from Image 2 with exactly the same face, hair and clothes, standing immediately in front of the chair and facing the desk, her body poised to sit while her face remains visible in three-quarter view. The room is still, with no action. No added text, captions or logos.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the presenter lowers herself directly into the chair in one natural sitting movement while facing the small desk. The chair remains fixed in the limited space without rolling or turning, and its camera-facing side stays unchanged. End as she is fully seated at the desk, with her face visible and the entire compact chair-and-desk arrangement clear.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/14-chair/scene-2/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-14-s3",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "Its smooth rotation makes it easy to turn and join the conversation.",
+        "shows": "The presenter swivels in the chair to join an off-screen conversation.",
+        "kind": "showcase",
+        "usage": "turning in the chair to join the conversation",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the presenter",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary home office. One small, light natural-wood writing desk stands on the left side of the compact work area, with the entire desk visible and a clear, limited chair-sized space in front of it; the right side remains open so a seated person could later turn toward an off-screen conversation. The camera is at standing chest height in a front three-quarter view, angled slightly downward so the whole desk, the limited floor space in front of it and the open area to its right are visible. The room is still and unchanged, with no action. Take only the product from Image 1, exactly as it looks, and place it in the middle of the frame in the chair-sized space facing the desk. The presenter from Image 2 sits naturally in the chair facing the desk, with the same face, hair and clothes, ready to turn toward the open area on her right. Preserve the room, its light and each thing in it with every stain, mark and part exactly as shown in the before-picture. No added text, captions or logos.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the seated presenter swivels smoothly to her right in the chair to face an off-screen conversation, turning her head and torso with the seat while the wheeled base stays planted. She ends facing right with an attentive, friendly expression, visibly engaged in the off-screen conversation.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/14-chair/scene-3/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-14-s4",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "For brief work sprints, it delivers everyday function with refined, design-forward style.",
+        "shows": "The presenter works while seated in the chair at a home-office desk.",
+        "kind": "showcase",
+        "usage": "seated in the chair for a brief work sprint",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the presenter",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary home office. Use Image 3 as the place, with the same light and each thing in it with every stain, mark and part exactly as it is. One small, light natural-wood writing desk stands on the left side of the compact work area, with the entire desk visible and a clear, limited chair-sized space in front of it; the right side remains open so a seated person could later turn toward an off-screen conversation. The camera is at standing chest height in a front three-quarter view, angled slightly downward so the whole desk, the limited floor space in front of it and the open area to its right are visible. Take only the chair from Image 1, exactly as it looks, and place it at working distance in front of the desk, oriented toward a real, ordinary open laptop on the desk, with the same side of the chair facing the camera as in Image 1. The presenter from Image 2 is seated in the chair, with exactly the same face, hair and clothes, looking at the laptop screen with both hands poised just above its keyboard, ready to type. Keep the chair and the presenter's working position in the middle of the frame. No added text, captions or logos.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the presenter types on the laptop keyboard with both hands while remaining seated in the chair and focused on the screen. Keep the chair oriented toward the desk with the same side facing the camera throughout. End while she is actively typing in the chair.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/14-chair/scene-4/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-3-s2",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "Simply add one serving to eight fluid ounces of your favorite beverage.",
+        "shows": "a hand adds one serving to a hot beverage beside the tub",
+        "kind": "showcase",
+        "usage": "add one serving to 8 fluid ounces of a favorite beverage",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "only how the collagen peptide powder looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary kitchen. Use Image 3 for the kitchen countertop, the same light, and each thing in it with every stain, mark and part exactly as it is. The camera is directly in front of the countertop at chest height, angled slightly downward. On the left side of the kitchen countertop is one real, ordinary ceramic mug with a body, rim, base and handle, containing exactly eight fluid ounces of a hot beverage; the entire mug, handle and beverage surface are visible. On the right, place only the product tub from Image 1 beside the mug, exactly as it looks, upright with its label and print unchanged and facing the camera. In the middle of the frame, a hand with no face or person visible holds a small real, ordinary measuring cup directly above the beverage, containing exactly one serving of the collagen peptide powder shown in Image 2, ready to be tipped into the mug. Nothing is being poured or mixed yet. No added text, captions or logos beyond the product's unchanged print.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the hand tips the measuring cup once and pours the entire one serving of collagen peptide powder into the hot beverage. Keep the tub upright and still beside the mug with the same side facing the camera. End as the last of the serving enters the beverage, without stirring, sipping or showing it dissolve.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/3-collagen/scene-2/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-3-s3",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "It dissolves in hot liquid, so mix thoroughly and enjoy.",
+        "shows": "a hand mixes the serving into a hot beverage beside the tub",
+        "kind": "does a job",
+        "usage": "mix one serving into hot liquid",
+        "result": "the serving dissolved in the hot beverage",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "only how the collagen peptide powder looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary kitchen. Use the last image as the exact place, preserving the same light and each thing in it with every stain, mark and part exactly as it is. The camera is directly in front of the kitchen countertop at chest height, angled slightly downward. On the left side of the kitchen countertop is one real, ordinary ceramic mug with a body, rim, base and handle, containing exactly eight fluid ounces of a hot beverage; the entire mug, handle and beverage surface are visible. One serving of the collagen peptide powder from Image 2 is visibly undissolved on the beverage surface. A hand enters from the right and holds one real, ordinary metal teaspoon in the hot beverage, ready to mix, with no face visible. Take only the product tub from Image 1, exactly as it looks, with its label and print unchanged, and stand it on the open countertop space to the right of the mug with the label facing the camera. Keep the mug, hand, spoon and tub around the middle of the frame. No added text, captions or logos.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the hand makes one continuous thorough circular stirring movement with the metal teaspoon through the hot beverage. The undissolved serving progressively dissolves only along the spoon’s path as it passes through the liquid, ending fully dissolved and evenly mixed in the beverage. The tub remains stationary beside the mug with the same side and label facing the camera, and nothing else changes.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/3-collagen/scene-3/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-3-s4",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "Enjoy that caramel-y, creamy, slightly salty twist in your daily routine.",
+        "shows": "the presenter sips the prepared beverage beside the tub",
+        "kind": "showcase",
+        "usage": "enjoy after mixing one serving into a beverage",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the presenter",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary kitchen. Recreate Image 3 with the same light and each thing in it with every stain, mark and part exactly as it is. On the left side of the kitchen countertop is one real, ordinary ceramic mug with a body, rim, base and handle, containing exactly eight fluid ounces of a hot prepared beverage; the entire mug and the beverage surface are visible. On the right, add only the product tub from Image 1, exactly as it looks, upright with its label facing the camera and unchanged; use nothing else from Image 1. The presenter from Image 2 stands behind the countertop with the same face, hair and clothes. She holds the mug by its handle with one hand, with the rim immediately in front of her lips, ready to sip, while her face remains visible. The mug and impending sip are central to the composition, with the tub clearly visible beside her. The camera is directly in front of the countertop at chest height, angled slightly downward so the whole mug, its handle and the beverage surface remain in frame. No added text, captions or logos.",
+        "motion_prompt": "In one continuous natural real-time shot, the presenter tips the mug just enough and takes one sip from its rim, ending while she is drinking; her other hand stays away from the tub, and the upright tub remains stationary with the same side facing the camera.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/3-collagen/scene-4/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-4-s2",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "Wear it with chinos to the office for substantial French terry comfort.",
+        "shows": "the presenter walks through an office wearing the sweatshirt with chinos",
+        "kind": "showcase",
+        "usage": "worn with chinos for the office",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the presenter",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary mixed-use office courtyard beside a ground-floor neighborhood bar. Use only the sweatshirt from Image 1, exactly as it looks, with every visible detail unchanged; use nothing else from Image 1. The presenter from the portrait has exactly the same face and neatly styled dark hair. He stands full-length in the middle of the courtyard facing the camera, ready to walk forward, wearing the sweatshirt with one plain pair of chinos and ordinary black office shoes, his arms resting naturally at his sides. On the left, a glass-fronted office area is recognizable by ordinary desks and office chairs; on the right, the paved area outside the bar entrance is recognizable by simple bar tables and stools visible through the glass. One plain pair of chinos hangs full-length on the left, with its waistband, button, zip fly, belt loops, two front pockets, two legs and hems all visible. One plain pair of jeans hangs full-length on the right, with its waistband, button, zip fly, belt loops, five pockets, two legs and hems all visible. Keep each thing in the place with every stain, mark and part exactly as it is in the before-picture and use the same light. The camera is at chest height in the courtyard, facing straight toward both areas with a wide angle that keeps the presenter's complete outfit, the complete office area, bar entrance, hanging chinos and hanging jeans in frame. Real natural commercial photography. No added text, captions or logos.",
+        "motion_prompt": "The presenter walks forward through the office-side courtyard in one natural, confident movement, keeping his chest and the front of the sweatshirt facing the camera as his arms swing naturally. One continuous real-time shot with no cuts. End with him mid-stride in the middle of the frame, clearly wearing the sweatshirt with chinos in the office setting.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/4-sweatshirt/scene-2/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-4-s3",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "Raglan sleeves give you greater freedom of movement without feeling tight across the shoulders.",
+        "shows": "the presenter reaches overhead while wearing the sweatshirt",
+        "kind": "showcase",
+        "usage": "worn for greater freedom of movement",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary mixed-use office courtyard beside a ground-floor neighborhood bar. Recreate Image 2 with the same light and preserve each thing in it with every stain, mark and part exactly as it is. On the left, a glass-fronted office area is recognizable by ordinary desks and office chairs; on the right, the paved area outside the bar entrance is recognizable by simple bar tables and stools visible through the glass. One plain pair of chinos hangs full-length on the left, with its waistband, button, zip fly, belt loops, two front pockets, two legs and hems all visible. One plain pair of jeans hangs full-length on the right, with its waistband, button, zip fly, belt loops, five pockets, two legs and hems all visible. The presenter stands centered in the clear standing room behind the hanging clothes, shown from behind with his face completely unseen, wearing ordinary plain office trousers and the sweatshirt taken from Image 1 exactly as it looks, with every label or print unchanged; take nothing else from Image 1. His arms rest straight at his sides, ready to reach overhead, and the back of the sweatshirt faces the camera. The camera is at chest height in the courtyard, facing straight toward both areas with a wide angle that keeps the complete office area, bar entrance, chinos and jeans in frame while showing the presenter from his hips through ample overhead reach space. The sweatshirt and shoulder area are in the middle of the frame. The presenter is the only person. Static natural commercial photography; nothing is moving or being used. No added text, captions or logos.",
+        "motion_prompt": "In one continuous natural real-time movement, the presenter raises both arms together from his sides into a full overhead reach, extending both elbows until his hands are directly overhead. The sweatshirt remains worn with its back facing the camera as the sleeves and shoulder fabric move freely with his arms, and his torso does not turn. End at the full overhead reach.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/4-sweatshirt/scene-3/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-4-s4",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "Its classic fit stays roomy but never slouchy, with a polished look.",
+        "shows": "the presenter walks outside a bar wearing the sweatshirt with jeans",
+        "kind": "showcase",
+        "usage": "worn with jeans to the bar",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the presenter",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary mixed-use office courtyard beside a ground-floor neighborhood bar. Use only the sweatshirt from Image 1, exactly as it looks, with every detail unchanged; do not use its model or background. The presenter from Image 2 has exactly the same face and neatly styled dark hair and wears the sweatshirt with ordinary five-pocket jeans and dark casual shoes. He stands in the middle of the paved area outside the bar entrance in a natural walking-ready stance, facing the camera with his full body visible and the front of the sweatshirt clearly shown. The camera is at chest height in the courtyard beside the paved area outside the bar entrance, facing him straight-on with a wide angle that clearly shows his complete outfit and the surrounding place. On the left, a glass-fronted office area is recognizable by ordinary desks and office chairs; on the right, the paved area outside the bar entrance is recognizable by simple bar tables and stools visible through the glass. One plain pair of chinos hangs full-length on the left, with its waistband, button, zip fly, belt loops, two front pockets, two legs and hems all visible. One plain pair of jeans hangs full-length on the right, with its waistband, button, zip fly, belt loops, five pockets, two legs and hems all visible. Keep the same light and every thing, stain, mark and part exactly as they are in Image 3. Realistic polished commercial photography.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the presenter walks toward the camera through the paved courtyard outside the bar, taking a confident relaxed stride with natural arm movement. He keeps facing forward so the same front side of the sweatshirt remains visible throughout, and its fit moves naturally without becoming slouchy. End on his confident forward stride with the polished sweatshirt-and-jeans look clearly visible.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/4-sweatshirt/scene-4/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-5-s2",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "For everyday elegance, wear it crossbody and keep your hands free.",
+        "shows": "the presenter walks with the bag already worn crossbody",
+        "kind": "showcase",
+        "usage": "wear the bag crossbody with its removable strap",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "only how the removable crossbody strap and tassel charm looks",
+          "the presenter",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary hotel lobby lounge. Reproduce the place and its light from Image 4 exactly, with each thing in it and every stain, mark and part exactly as it is. A small side table holds one ordinary smartphone and one small wallet on the left, plus one keyring with ordinary keys and one compact makeup case on the right, each item separate and fully visible. Leave a clear open floor area through the lounge for the walking and carrying scenes. The camera is beside the open floor area at waist height in a wide, slightly downward-angled view that shows the presenter's full body, the entire table, every item on it, and the open floor area. The presenter from Image 3 stands ready to walk in the open floor area, with exactly the same face, sleek dark hair, refined makeup and polished black cocktail dress. Take only the bag from Image 1, exactly as it looks, with any label or print unchanged, and use the removable crossbody strap and tassel charm exactly as shown in Image 2. The bag is already worn crossbody with the strap running across her torso and the bag resting at her opposite front hip in the middle of the frame, its visible side facing the camera. Both of her hands are empty and free at her sides. No added text, captions or logos.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the presenter walks forward through the open floor area with the bag already worn crossbody on its removable strap. Her empty hands remain free and move naturally with her stride; the bag stays at her front hip with the same visible side facing the camera, and the tassel charm and strap respond naturally to her steps. End while she is still walking with both hands visibly free and the crossbody bag clearly displayed.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/5-bkenzo-bag/scene-2/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-5-s3",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "For evening occasions, carry the Kenzo Bag as a sophisticated clutch.",
+        "shows": "the presenter carries the bag as a clutch at an evening occasion",
+        "kind": "showcase",
+        "usage": "carry the bag as a clutch",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the presenter",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary hotel lobby lounge. Keep the same light and each thing in Image 3 with every stain, mark and part exactly as it is. A small side table holds one ordinary smartphone and one small wallet on the left, plus one keyring with ordinary keys and one compact makeup case on the right, each item separate and fully visible. Leave a clear open floor area through the lounge. The camera is at waist height in a wide, slightly downward-angled view that shows the entire table, every item on it, and the open floor area. In the middle of the frame, add only the presenter from Image 2 with exactly the same face, sleek dark hair, refined makeup and polished black cocktail dress. Show her full body and visible face as she stands in the open floor area at the instant before taking a step. Her right arm is naturally lowered at her side, and her right hand already carries the product from Image 1 as a clutch, securely held at hip height with fingers supporting its lower edge and thumb resting along its frame. Take only the product from Image 1, exactly as it looks, with any label or print unchanged and no chain strap attached; use nothing else from Image 1. Its broad front side faces the camera and it is clearly visible near the middle of the frame. No other person and no added text, captions or logos.",
+        "motion_prompt": "One continuous shot with no cuts, at a natural, real-time pace. The presenter walks with poised, confident steps through the clear open floor area while carrying the bag as a clutch in her lowered right hand at hip height. She keeps her face visible and maintains the same secure clutch grip; the bag remains clearly visible near the middle of the frame, with its original camera-facing side facing the camera throughout and without turning, flipping or spinning. End while she is still walking and visibly carrying it as a sophisticated clutch.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/5-bkenzo-bag/scene-3/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-5-s4",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "Its compact design still fits your phone, small wallet, keys, and compact makeup.",
+        "shows": "a hand packs a phone, small wallet, keys, and compact makeup into the open bag",
+        "kind": "does a job",
+        "usage": "hold daily essentials including a phone, small wallet, keys, and compact makeup",
+        "result": "the phone, small wallet, keys, and compact makeup fitted inside the bag",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "only how the open bag and its interior looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary hotel lobby lounge. Use only the product from Image 1, exactly as it looks, and use Image 2 only to reproduce how the open bag and its interior look. Place the open bag upright in the middle of the small side table with its opening and the same side facing the camera; do not add a strap. A small side table holds one ordinary smartphone and one small wallet on the left, plus one keyring with ordinary keys and one compact makeup case on the right, each item separate and fully visible beside the open bag. One hand is poised over the four items, ready to pack them. Leave a clear open floor area through the lounge. Draw the place from Image 3 in the same light, with each thing in it and every stain, mark and part exactly as it is. The camera is beside the table at waist height in a slightly downward-angled view that clearly shows the entire table, every item on it, the open bag and its interior, and the open floor area. No face or person is visible beyond the hand. No added text, captions or logos.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the hand makes one coordinated packing sweep, gathering the smartphone, small wallet, keyring with keys, and compact makeup case and placing them together through the opening into the bag. Keep the bag upright with the same side facing the camera and its interior visible. End with all four essentials visibly fitted inside the open bag; only the hand and the four touched items move, and everything else remains unchanged.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/5-bkenzo-bag/scene-4/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-8-s2",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "Toilet bowl rings and hard-water stains keep the bowl from looking spotlessly clean.",
+        "shows": "a visible toilet bowl ring inside a toilet bowl with the bottle in view",
+        "kind": "shows the problem",
+        "usage": "",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary bathroom. Use Image 2 as the place, preserving the same light and each thing in it with every stain, mark and part exactly as it is. A standard white vitreous-ceramic two-piece toilet is shown whole, including its tank, flush handle, oval bowl, raised seat and raised lid, with the entire inside of the bowl visible. A standard toilet brush with white nylon bristles and a plain plastic handle rests fully visible in its holder on the floor to the right of the toilet. Inside the bowl are one dull tan toilet-bowl ring about 1 cm wide around the left and right waterline, three chalky light-gray hard-water patches about 3–5 cm across on the left inner bowl above the waterline, one orange-brown rust stain about 8 cm long and 3 cm wide on the lower right inner bowl, and one dark green-black mildew patch about 4 cm long and 2 cm wide beneath the left side of the rim. Odor has no visible form and is not represented with graphics. Take only the product from Image 1, exactly as it looks, with its label and print unchanged, and stand it upright on the clear floor space beside the toilet without blocking the complete brush and holder, with its front label facing the camera. One hand is poised beside the bowl with its index finger ready to point toward the visible toilet-bowl ring and hard-water patches; no face is visible. The camera is about 1.4 metres high, positioned in front of and slightly left of the toilet, angled downward about 35 degrees so the whole toilet, complete brush and holder, bowl interior, every stain and the product are clearly visible, with the bowl and stains in the middle of the frame.",
+        "motion_prompt": "One continuous shot at a natural, real-time pace. The poised hand makes one pointing movement toward the dull tan toilet-bowl ring and the three chalky light-gray hard-water patches without touching the bowl. The toilet, ring, hard-water patches, rust stain and mildew patch remain completely unchanged. The product stays upright and stationary with the same side facing the camera, and the complete brush and holder remain visible.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/8-toilet-cleaner/scene-2/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-8-s3",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "Then there’s rust staining the bowl, right where you do your business.",
+        "shows": "a visible rust stain inside a toilet bowl with the bottle in view",
+        "kind": "shows the problem",
+        "usage": "",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary bathroom. Recreate Image 2 as the same unchanged bathroom with the same light and every thing, stain, mark and part exactly as shown. A standard white vitreous-ceramic two-piece toilet is shown whole, including its tank, flush handle, oval bowl, raised seat and raised lid, with the entire inside of the bowl visible. A standard toilet brush with white nylon bristles and a plain plastic handle rests fully visible in its holder on the floor to the right of the toilet. Inside the bowl are one dull tan toilet-bowl ring about 1 cm wide around the left and right waterline, three chalky light-gray hard-water patches about 3–5 cm across on the left inner bowl above the waterline, one orange-brown rust stain about 8 cm long and 3 cm wide on the lower right inner bowl, and one dark green-black mildew patch about 4 cm long and 2 cm wide beneath the left side of the rim. Odor has no visible form and is not represented with graphics. Take only the product from Image 1, exactly as it looks with all label print unchanged, and place it upright on the clear floor space beside the toilet with its front label facing the camera. A hand with no face or person visible is poised beside the right side of the bowl, index finger ready to point toward the orange-brown rust stain without touching it. The camera is about 1.4 metres high, positioned in front of and slightly left of the toilet, angled downward about 35 degrees so the whole toilet, complete brush and holder, bowl interior, every stain, product and hand are clearly visible, with the bowl and rust stain in the middle of the frame. Do not add captions, logos, graphics or stylized odor lines beyond the product’s existing unchanged print.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the poised hand makes one direct pointing movement toward the orange-brown rust stain on the lower right inner bowl and then holds the pointing position without touching anything. The product remains upright with its front label facing the camera, and every stain and bathroom object remains completely unchanged.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/8-toilet-cleaner/scene-3/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-8-s4",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "Molly’s Suds Toilet Bowl Cleaner scrubs away stains for a spotlessly clean bowl.",
+        "shows": "a toilet brush scrubs a visible rust stain away with the bottle in view",
+        "kind": "does a job",
+        "usage": "Scrub with a toilet brush.",
+        "result": "the rust stain removed and the toilet bowl spotlessly clean",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary bathroom. Use the same light and unchanged place from the before-picture. A standard white vitreous-ceramic two-piece toilet is shown whole, including its tank, flush handle, oval bowl, raised seat and raised lid, with the entire inside of the bowl visible. Inside the bowl are one dull tan toilet-bowl ring about 1 cm wide around the left and right waterline, three chalky light-gray hard-water patches about 3–5 cm across on the left inner bowl above the waterline, one orange-brown rust stain about 8 cm long and 3 cm wide on the lower right inner bowl, and one dark green-black mildew patch about 4 cm long and 2 cm wide beneath the left side of the rim. Odor has no visible form and is not represented with graphics. A standard toilet brush with white nylon bristles and a plain plastic handle has been lifted from its holder on the floor to the right of the toilet. A hand and forearm enter from the right, holding the brush handle with its bristles resting against one end of the orange-brown rust stain, ready to scrub; no face is visible. The holder remains fully visible on the floor to the right. Take only the product from Image 1, exactly as it looks, with its label and print unchanged, and place it upright on the clear floor space beside the toilet with its label facing the camera. Take nothing else from Image 1. The camera is about 1.4 metres high, positioned in front of and slightly left of the toilet, angled downward about 35 degrees so the whole toilet, complete brush and holder, bowl interior, product and every stain are clearly visible, with the rust stain and brush action in the middle of the frame. No added text, captions, logos or stylized odor lines.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the hand makes one firm, continuous scrubbing sweep with the toilet brush, beginning across the orange-brown rust stain and following one unbroken path over the dull tan toilet-bowl ring, the three chalky light-gray hard-water patches and the dark green-black mildew patch. Each stain disappears only as the bristles directly pass over it, leaving the touched ceramic spotlessly clean; nothing ahead of the brush changes. End with every named stain removed and the bowl interior spotlessly clean. The product remains upright and stationary with the same side and unchanged label facing the camera, and everything else remains unchanged.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/8-toilet-cleaner/scene-4/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-9-s2",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "Its rich, smooth, squeezable format makes it an easy everyday sandwich spread.",
+        "shows": "A hand spreads the sauce across a sandwich, with the bottle in view.",
+        "kind": "does a job",
+        "usage": "use it as a sandwich spread",
+        "result": "the sandwich spread with sauce",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "only how the rich, smooth sauce outside the bottle looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary home kitchen. Recreate Image 3 as the exact place, with the same light and each thing in it with every stain, mark and part exactly as it is. On a plain kitchen countertop, arrange three separate foods in one row: on the left, one regular-size open ham-and-cheese sandwich on an ordinary dinner plate, made from two tan slices of white sandwich bread, one pink slice of ham and one pale-yellow slice of cheese, with the large bare top surface of the upper bread slice completely free of sauce; in the centre, one medium cooked golden-brown chicken breast on an ordinary dinner plate, with its whole bare upper surface completely free of glaze; on the right, one medium ordinary ceramic bowl filled with plain white rice, with the whole bare top of the rice completely free of drizzle. Show each food and its plate or bowl whole, with clear space around it. The camera is directly in front of the countertop at chest height, angled slightly downward in a wide vertical composition shifted toward the sandwich so its upper bread surface is in the middle of the frame while the sandwich, chicken breast and rice bowl remain fully visible. Take only the product from Image 1, exactly as it looks, with its label and print unchanged, and stand it upright just behind the sandwich plate with its front label facing the camera. One hand enters from beside the countertop holding one ordinary dinner knife over the near edge of the sandwich; a portion of the rich, smooth sauce shown in Image 2 coats the flat underside of the knife blade, ready to spread, but the knife and sauce do not yet touch the completely bare bread. No face or other part of a person is visible. No added text, captions or logos.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the hand makes one firm spreading pass with the dinner knife across the upper bread slice from the near edge to the far edge. As the blade touches and passes over the bread, it leaves a rich, smooth, even layer of sauce only along its path, ending with the sandwich visibly spread with sauce. The bottle remains upright and fixed in view with the same front label facing the camera; the chicken breast, rice bowl and everything else remain unchanged.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/9-chili-crunch/scene-2/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-9-s3",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "Glaze a protein with it for chili-forward, deeply savory flavor and balanced heat.",
+        "shows": "A hand glazes a protein with the sauce, with the bottle in view.",
+        "kind": "does a job",
+        "usage": "glaze a protein",
+        "result": "the protein glazed with sauce",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "only how the sauce outside the bottle looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary home kitchen. Use the place and light from Image 3, with each thing in it and every stain, mark and part exactly as shown. On a plain kitchen countertop, arrange three separate foods in one row: on the left, one regular-size open ham-and-cheese sandwich on an ordinary dinner plate, made from two tan slices of white sandwich bread, one pink slice of ham and one pale-yellow slice of cheese, with the large bare top surface of the upper bread slice completely free of sauce; in the centre, one medium cooked golden-brown chicken breast on an ordinary dinner plate, with its whole bare upper surface completely free of glaze; on the right, one medium ordinary ceramic bowl filled with plain white rice, with the whole bare top of the rice completely free of drizzle. Show each food and its plate or bowl whole. Take only the product from Image 1, exactly as it looks, with its label and print unchanged, and stand it behind and just to the right of the chicken plate with its front facing the camera. A hand with no face or person visible holds a real, ordinary silicone pastry brush, its bristles carrying sauce that looks exactly like Image 2, just above the left edge of the chicken breast and ready to make one pass across it; the brush does not yet touch the chicken. The camera is directly in front of the countertop at chest height, angled slightly downward in a wide vertical composition, with the chicken and brush action in the middle and the sandwich, chicken breast, rice bowl, plates, bowl and bottle all fully visible. Nothing else is added. No added text, captions or logos.",
+        "motion_prompt": "In one continuous shot at a natural, real-time pace, the hand makes one firm, smooth pass with the silicone pastry brush from left to right across the upper surface of the chicken breast. The reddish-brown sauce appears as an even glossy glaze only along the exact path touched by the bristles as they pass, while every untouched area and everything else remains unchanged. End with the brushed path visibly glazed and the bottle remaining upright in view with the same front side facing the camera.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/9-chili-crunch/scene-3/start-picture.png",
+      "split": "held out"
+    },
+    {
+      "id": "A20-sbp2-9-s4",
+      "rule": "A20",
+      "label": "pass",
+      "source": "runs/shared-before-picture-test/README.md (Julian 2026-10-11 00:53)",
+      "julian": "all good. all pass",
+      "scene": {
+        "line": "Or drizzle it over a bowl for balanced heat that adds flavor.",
+        "shows": "A hand squeezes the sauce over a bowl, with the bottle in view.",
+        "kind": "does a job",
+        "usage": "use it as a finishing drizzle over a bowl",
+        "result": "the bowl finished with a sauce drizzle",
+        "photo_jobs": [
+          "the product, only how it looks",
+          "only how the sauce stream outside the bottle looks",
+          "the place, its light and each thing in it, with every mark, exactly as they are"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary home kitchen. Use only the product from Image 1, exactly as it looks, with its label and print unchanged; use nothing else from that image. Recreate the place from Image 3 with the same light and each thing in it, including every stain, mark and part, exactly as it is. On the plain kitchen countertop, keep three separate foods in one row: on the left, one regular-size open ham-and-cheese sandwich on an ordinary dinner plate, made from two tan slices of white sandwich bread, one pink slice of ham and one pale-yellow slice of cheese, with the large bare top surface of the upper bread slice completely free of sauce; in the centre, one medium cooked golden-brown chicken breast on an ordinary dinner plate, with its whole bare upper surface completely free of glaze; on the right, one medium ordinary ceramic bowl filled with plain white rice, with the whole bare top of the rice completely free of drizzle. Show each food and its plate or bowl whole. The camera is directly in front of the countertop at chest height, angled slightly downward in a wide vertical composition, framed around the rice bowl so the poised product and bowl are in the middle while all three foods remain fully visible. One hand holds the product upside down directly above the rice, ready to squeeze, with its front side facing the camera; the bottle keeps its natural unsqueezed shape, its label turns upside down with it, its open cap is below it, and its nozzle points down toward the bare rice. No sauce has emerged yet. No face is visible. Do not add text, captions or logos beyond the product's unchanged print.",
+        "motion_prompt": "One continuous shot at a natural, real-time pace. In one continuous movement, the hand squeezes the inverted bottle and passes its downward-pointing nozzle once across the rice, producing a sauce stream that looks like Image 2. The stream lands only along the path beneath the nozzle, leaving a visible finishing drizzle across the rice as the touch passes while the rest of the bowl and every other item remain unchanged. Keep the same side of the bottle facing the camera throughout, with no turning, flipping or spinning, and end with the bowl finished with the sauce drizzle and the bottle still fully in view. No face appears.",
+        "video_prompt": ""
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/shared-before-picture-test/README.md",
+      "quote_exact": true,
+      "note": "",
+      "start_picture": "/mnt/project-files/runs/shared-before-picture-test/9-chili-crunch/scene-4/start-picture.png",
+      "split": "held out"
+    },
+    {
       "id": "C5-r3-8-s3",
       "rule": "C5",
       "label": "fail",

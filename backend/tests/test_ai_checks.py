@@ -4,6 +4,7 @@ fails a judge catches and how many passes it lets through."""
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -19,7 +20,9 @@ from evals.ai_checks import (
 )
 from evals.break_passes import broken
 from gateway.fake import FakeModel
-from gateway.types import UnusableReply
+from gateway.types import ModelRequest, UnusableReply
+
+from .conftest import picture
 
 
 def cases_file(
@@ -227,3 +230,72 @@ def test_a_broken_copy_whose_text_is_missing_is_never_judged(tmp_path: Path) -> 
 
     with pytest.raises(AssertionError, match="not in shows"):
         broken(case, [{"field": "shows", "find": "the camera pans", "replace": "x"}])
+
+
+def test_a_whole_ad_case_shows_its_judge_each_scene_s_picture_by_number(
+    fake_model: FakeModel, tmp_path: Path
+) -> None:
+    path = cases_file(tmp_path, [("A19", "pass")])
+    raw = json.loads(path.read_text())
+    for number in (2, 3):
+        (tmp_path / f"scene-{number}.png").write_bytes(picture(8, 8, (number, 0, 0)))
+    raw["cases"][0]["scene"] = None
+    raw["cases"][0]["ad_pictures"] = [
+        {"scene": number, "path": str(tmp_path / f"scene-{number}.png")} for number in (2, 3)
+    ]
+    path.write_text(json.dumps(raw))
+    (case,) = load_cases(path)
+    shown: list[list[str]] = []
+
+    def answer(request: ModelRequest[Any]) -> dict[str, Any]:
+        shown.append([image.label for image in request.images])
+        return {"decision": "pass", "reason": "The same room."}
+
+    fake_model.answer_unscripted("rule_eval", answer)
+
+    ask_model(case)
+
+    assert shown == [["Scene 2's starting picture", "Scene 3's starting picture"]]
+
+
+def test_a_broken_copy_can_swap_one_scene_s_picture_for_another_real_one(
+    tmp_path: Path,
+) -> None:
+    path = cases_file(tmp_path, [("A19", "pass")])
+    raw = json.loads(path.read_text())
+    raw["cases"][0]["ad_pictures"] = [
+        {"scene": 2, "path": "/runs/8/scene-2.png"},
+        {"scene": 3, "path": "/runs/8/scene-3.png"},
+    ]
+    path.write_text(json.dumps(raw))
+    (case,) = load_cases(path)
+
+    copy = broken(case, [{"field": "ad_pictures.1", "value": "/runs/other-8/scene-3.png"}])
+
+    assert copy.ad_pictures == (
+        (2, Path("/runs/8/scene-2.png")),
+        (3, Path("/runs/other-8/scene-3.png")),
+    )
+    assert case.ad_pictures[1] == (3, Path("/runs/8/scene-3.png"))
+
+
+def test_a_scene_case_shows_its_judge_the_picture_its_clip_started_from(
+    fake_model: FakeModel, tmp_path: Path
+) -> None:
+    path = cases_file(tmp_path, [("A20", "pass")])
+    raw = json.loads(path.read_text())
+    (tmp_path / "start.png").write_bytes(picture(8, 8, (1, 0, 0)))
+    raw["cases"][0]["start_picture"] = str(tmp_path / "start.png")
+    path.write_text(json.dumps(raw))
+    (case,) = load_cases(path)
+    shown: list[list[str]] = []
+
+    def answer(request: ModelRequest[Any]) -> dict[str, Any]:
+        shown.append([image.label for image in request.images])
+        return {"decision": "pass", "reason": "Close enough."}
+
+    fake_model.answer_unscripted("rule_eval", answer)
+
+    ask_model(case)
+
+    assert shown == [["The starting picture"]]
