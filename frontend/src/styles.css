@@ -815,6 +815,265 @@ button:disabled {
   color: var(--text-3);
 }
 
+/* ---------- Scene cards ---------- */
+
+/* The chat and the scene cards side by side on a wide screen; on a narrower one the cards
+   sit in a strip above the thread (see the media query below). */
+.chat-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.chat-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.scene-panel {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 340px;
+  min-height: 0;
+  margin: 0 16px 16px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  background: var(--bg-sidebar);
+  overflow: hidden;
+}
+
+.scene-panel.closed {
+  width: auto;
+  align-self: flex-start;
+}
+
+.scene-panel-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 14px;
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-align: left;
+}
+
+.scene-panel-toggle:hover {
+  color: var(--text);
+}
+
+.scene-panel-toggle svg {
+  margin-left: auto;
+  color: var(--text-3);
+  transition: transform 180ms;
+}
+
+.scene-panel.closed .scene-panel-toggle svg {
+  transform: rotate(-90deg);
+}
+
+.scene-panel-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 20px;
+  text-align: center;
+}
+
+.scene-panel-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--accent-2);
+  white-space: nowrap;
+}
+
+.pulse {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: blink 1.2s infinite ease-in-out;
+}
+
+.scene-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0 12px 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 12px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-3) transparent;
+}
+
+.scene-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: rise 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Clips are portrait, so every card keeps the 9:16 frame, filled or not. */
+.scene-media {
+  position: relative;
+  aspect-ratio: 9 / 16;
+  border-radius: var(--radius-m);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.scene-card.busy .scene-media {
+  border-color: rgba(200, 240, 74, 0.35);
+}
+
+.scene-media video,
+.scene-media img,
+.scene-media a {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: black;
+}
+
+.scene-empty {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(110deg, var(--surface) 30%, var(--surface-2) 50%, var(--surface) 70%);
+  background-size: 250% 100%;
+}
+
+.scene-card.busy .scene-empty {
+  animation: shimmer 1.6s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+/* Marks laid over the picture or clip: what is being made, and which version shows. */
+.scene-status,
+.scene-version {
+  position: absolute;
+  left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 12px);
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  background: rgba(10, 10, 14, 0.78);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
+.scene-status {
+  top: 6px;
+  color: var(--accent-2);
+}
+
+.scene-status.failed {
+  color: var(--danger);
+}
+
+.scene-version {
+  bottom: 44px;
+  color: var(--text);
+}
+
+.scene-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  padding: 0 2px;
+}
+
+.scene-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.scene-swap {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--text-3);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.scene-swap:hover,
+.scene-swap[aria-pressed="true"] {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+/* Not enough room beside the chat: the cards become a strip above the thread that scrolls
+   sideways, and folds away to one line. */
+@media (max-width: 1180px) {
+  .chat-body {
+    flex-direction: column;
+  }
+
+  .scene-panel,
+  .scene-panel.closed {
+    order: -1;
+    width: auto;
+    align-self: stretch;
+    margin: 0 16px 8px;
+    border-radius: var(--radius-m);
+  }
+
+  .scene-panel-toggle {
+    padding: 8px 12px;
+  }
+
+  .scene-cards {
+    display: flex;
+    gap: 10px;
+    padding: 0 12px 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .scene-cards > li {
+    flex: 0 0 104px;
+  }
+
+  .scene-version {
+    bottom: 36px;
+  }
+}
+
 /* ---------- Notices ---------- */
 
 .notice {
@@ -911,5 +1170,32 @@ button:disabled {
 
   .composer-hint {
     display: none;
+  }
+
+  .scene-panel,
+  .scene-panel.closed {
+    margin: 0 12px 8px;
+  }
+
+  .scene-cards > li {
+    flex-basis: 88px;
+  }
+
+  .scene-swap {
+    padding: 2px 6px;
+  }
+
+  .scene-status,
+  .scene-version {
+    top: 4px;
+    left: 4px;
+    max-width: calc(100% - 8px);
+    padding: 2px 6px;
+    font-size: 10px;
+  }
+
+  .scene-version {
+    top: auto;
+    bottom: 30px;
   }
 }

@@ -8,6 +8,7 @@ import {
   type Message,
   type Sent,
 } from "./api";
+import { ScenePanel } from "./ScenePanel";
 import { ArrowUpIcon, CloseIcon, ImageIcon, SidebarIcon, SoundIcon, SparkIcon } from "./icons";
 
 const POLL_EVERY_MS = 2000;
@@ -96,6 +97,9 @@ export function Chat({
     };
     const watcher = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(grew);
     if (el.firstElementChild) watcher?.observe(el.firstElementChild);
+    // The thread itself gets shorter when something opens beside it, like the scene cards
+    // above it on a phone; the newest message must stay in view then too.
+    watcher?.observe(el);
     return () => {
       el.removeEventListener("scroll", onScroll);
       watcher?.disconnect();
@@ -134,99 +138,106 @@ export function Chat({
         <span className="chat-title">{title ?? (sessionId ? "Untitled" : "New session")}</span>
       </header>
 
-      <div className="thread" ref={thread}>
-        <div className="thread-inner">
-          {pollError && (
-            <p role="status" className="notice error thread-notice">
-              {pollError}
-            </p>
-          )}
+      <div className="chat-body">
+        <div className="chat-main">
+          <div className="thread" ref={thread}>
+            <div className="thread-inner">
+              {pollError && (
+                <p role="status" className="notice error thread-notice">
+                  {pollError}
+                </p>
+              )}
 
-          {empty && (
-            <div className="hero">
-              <span className="hero-mark">
-                <SparkIcon size={26} />
-              </span>
-              <h1>What are we making today?</h1>
-              <p>
-                Paste a product link and say what the ad should do. The producer reads the page,
-                plans the scenes and hands you a finished video.
-              </p>
-              <div className="suggestions">
-                {SUGGESTIONS.map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    className="suggestion"
-                    onClick={() => setDraft((was) => (was ? `${was} ${suggestion}` : suggestion))}
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <ol aria-label="Conversation" className="messages">
-            {messages.map((message) =>
-              message.role === "notice" ? (
-                <li key={message.seq} className="message notice-message">
-                  <p
-                    role="status"
-                    className={`notice ${message.level === "problem" ? "error" : "info"}`}
-                  >
-                    {message.text}
+              {empty && (
+                <div className="hero">
+                  <span className="hero-mark">
+                    <SparkIcon size={26} />
+                  </span>
+                  <h1>What are we making today?</h1>
+                  <p>
+                    Paste a product link and say what the ad should do. The producer reads the page,
+                    plans the scenes and hands you a finished video.
                   </p>
-                </li>
-              ) : (
-                <li key={message.seq} className={`message ${message.role}`}>
-                  <strong className="who">
-                    {message.role === "agent" && (
-                      <span className="who-mark">
-                        <SparkIcon size={11} />
-                      </span>
-                    )}
-                    {message.role === "user" ? "You" : "Agent"}
-                  </strong>
-                  {message.text &&
-                    (message.role === "user" ? (
-                      <p className="bubble">{message.text}</p>
-                    ) : (
-                      <p className="prose">{message.text}</p>
+                  <div className="suggestions">
+                    {SUGGESTIONS.map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        className="suggestion"
+                        onClick={() =>
+                          setDraft((was) => (was ? `${was} ${suggestion}` : suggestion))
+                        }
+                      >
+                        {suggestion}
+                      </button>
                     ))}
-                  {message.attachments.length > 0 && (
-                    <div className="attachments">
-                      {message.attachments.map((attachment) => (
-                        <AttachmentView
-                          key={attachment.position}
-                          attachment={attachment}
-                          role={message.role}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </li>
-              ),
-            )}
-          </ol>
+                  </div>
+                </div>
+              )}
 
-          {producerHasTheFloor && (
-            <div className="working" aria-live="polite">
-              <span className="dots">
-                <i />
-                <i />
-                <i />
-              </span>
-              The producer is working
+              <ol aria-label="Conversation" className="messages">
+                {messages.map((message) =>
+                  message.role === "notice" ? (
+                    <li key={message.seq} className="message notice-message">
+                      <p
+                        role="status"
+                        className={`notice ${message.level === "problem" ? "error" : "info"}`}
+                      >
+                        {message.text}
+                      </p>
+                    </li>
+                  ) : (
+                    <li key={message.seq} className={`message ${message.role}`}>
+                      <strong className="who">
+                        {message.role === "agent" && (
+                          <span className="who-mark">
+                            <SparkIcon size={11} />
+                          </span>
+                        )}
+                        {message.role === "user" ? "You" : "Agent"}
+                      </strong>
+                      {message.text &&
+                        (message.role === "user" ? (
+                          <p className="bubble">{message.text}</p>
+                        ) : (
+                          <p className="prose">{message.text}</p>
+                        ))}
+                      {message.attachments.length > 0 && (
+                        <div className="attachments">
+                          {message.attachments.map((attachment) => (
+                            <AttachmentView
+                              key={attachment.position}
+                              attachment={attachment}
+                              role={message.role}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </li>
+                  ),
+                )}
+              </ol>
+
+              {producerHasTheFloor && (
+                <div className="working" aria-live="polite">
+                  <span className="dots">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                  The producer is working
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      </div>
+          </div>
 
-      <div className="composer-wrap">
-        <Composer text={draft} onChange={setDraft} onSend={send} />
-        <p className="composer-foot">
-          The producer only states what the page says, plus what you tell it.
-        </p>
+          <div className="composer-wrap">
+            <Composer text={draft} onChange={setDraft} onSend={send} />
+            <p className="composer-foot">
+              The producer only states what the page says, plus what you tell it.
+            </p>
+          </div>
+        </div>
+        <ScenePanel messages={messages} />
       </div>
     </section>
   );
