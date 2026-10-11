@@ -30,7 +30,7 @@ from jobs.work import (
 
 from . import loop
 from .loop import BLOCKED, EXPECTED_FAILURES, RunStopped, why_it_failed
-from .producer import PRODUCER
+from .producer import PRODUCER, _dollars, assemble_after_fix
 
 logger = logging.getLogger(__name__)
 
@@ -240,10 +240,16 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
     # A B-roll clip made before every B-roll scene got a picture may have none.
     picture = f"starting picture version {clip.picture.version} and " if clip.picture else ""
     note = f', with its movement rewritten from the note "{step.note}"' if step.note else ""
+    fixed = (
+        f" Scene {number}'s fix has cost {_dollars(step.fix.cost_usd())} so far."
+        if step.fix is not None
+        else ""
+    )
     return (
         f"Background step finished: scene {number}'s clip is ready (version {clip.version}, "
         f"{clip.seconds:g} seconds), made from {picture}audio version "
-        f"{clip.made_from.version}{note}. Scene {number} is finished. Tell the shop owner."
+        f"{clip.made_from.version}{note}. Scene {number} is finished.{fixed} Tell the shop "
+        "owner."
     )
 
 
@@ -335,6 +341,11 @@ def run_scene_step(step_id: int) -> None:
             step.result = work.finished(step, made)
             step.finished_at = timezone.now()
             step.save(update_fields=["status", "result", "finished_at"])
+            # A fix's clip has the new ad assembled by code, in the same transaction, so a
+            # step run again after a crash assembles and shows it once.
+            if step.kind == SceneStep.Kind.CLIP and step.fix_id is not None:
+                step.result = f"{step.result} {_assembled_after_fix(step)}"
+                step.save(update_fields=["result"])
             wake_producer(str(session.pk))
     except PictureKeptFailing as error:
         # It stops the whole run. The chat is shown why in the same transaction, so a step
@@ -352,6 +363,21 @@ def run_scene_step(step_id: int) -> None:
         with transaction.atomic():
             _fail(step, why_it_failed(error, "the step"))
             wake_producer(str(session.pk))
+
+
+def _assembled_after_fix(step: SceneStep) -> str:
+    """What assembling the ad after a fix's clip landed did, for the producer. Assembly
+    failing for a reason nobody expected doesn't fail the step: its clip is made and paid
+    for."""
+    try:
+        with transaction.atomic():
+            return assemble_after_fix(step)
+    except Exception as error:
+        logger.exception("Assembling the ad after scene step %s failed", step.pk)
+        return (
+            f"The ad couldn't be assembled again: {why_it_failed(error, 'it')} Assemble it "
+            "with assemble_ad."
+        )
 
 
 def _fail(step: SceneStep, reason: str) -> None:

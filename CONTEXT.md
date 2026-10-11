@@ -134,6 +134,16 @@ _Avoid_: Image, picture (for these), asset
 Something the user states that the page does not, such as a promo code or a replacement line. Used as written and not fact checked, because the user is the source.
 _Avoid_: Override, manual input
 
+### Fixing a scene
+
+**Note**:
+The shop owner's own words about a scene of the ad they were shown, such as "the tea should actually pour". Kept verbatim with the fix restated from it, as the record of what they asked. Not a scene step's note, which is the producer's instruction to the model making the step.
+_Avoid_: Feedback, comment, complaint
+
+**Fix**:
+The producer's restatement of what it will change about a finished scene, which the shop owner said yes to: one self-contained line carrying everything from every note on that scene. Recorded with what it will cost and which step is made again (the clip, or the starting picture and then the clip), which the shop owner isn't told. A scene that already has a clip is made again only for a fix, passed word for word as the redo's note, once the shop owner has answered its restatement: nothing is paid for before their yes. A correction is restated as a new fix, which replaces the old. When a fix's clip lands and every scene is finished, the ad is assembled again by code.
+_Avoid_: Change request, edit, revision
+
 ### Machinery
 
 **Tool**:

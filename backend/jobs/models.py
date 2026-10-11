@@ -1,7 +1,9 @@
 import uuid
+from decimal import Decimal
 from typing import Any
 
 from django.db import models
+from django.db.models import Sum
 from django.utils import timezone
 
 
@@ -320,6 +322,78 @@ class Scene(models.Model):
             self.needs = []
 
 
+class Fix(models.Model):
+    """The producer's restatement of what it will change about a finished scene, from the
+    shop owner's notes on it (route B, #135). Recorded when the producer restates it, and
+    confirmed by the shop owner's answer: until then, nothing is redone or paid for. It is
+    the note its redo is made with, word for word."""
+
+    class Redo(models.TextChoices):
+        CLIP = "clip"
+        PICTURE = "picture"
+        LINE = "line"
+
+    job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="fixes")
+    scene = models.ForeignKey(Scene, on_delete=models.CASCADE, related_name="fixes")
+    fix = models.TextField(
+        help_text="The restatement, in one self-contained line, carrying everything the shop "
+        "owner's notes on the scene ask for."
+    )
+    redo = models.CharField(
+        max_length=10,
+        choices=Redo.choices,
+        help_text="Which step is made again for it: the clip, the starting picture (and then "
+        "the clip), or the line. The shop owner isn't told.",
+    )
+    notes = models.JSONField(
+        default=list,
+        help_text="The shop owner's own words it was restated from, verbatim: each of their "
+        "messages since the ad was last shown, or since they confirmed the scene's last Fix, "
+        'as [{"seq", "text"}, ...].',
+    )
+    estimate_usd = models.DecimalField(
+        max_digits=10, decimal_places=6, help_text="What its redo was estimated to cost."
+    )
+    asked = models.ForeignKey(
+        "agents.ToolCall",
+        on_delete=models.CASCADE,
+        related_name="fixes",
+        help_text="The restate_fix call that recorded it, after which the shop owner answers.",
+    )
+    confirmed_by = models.ForeignKey(
+        "chat.Message",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The shop owner's answer the yes guard accepted. Blank until a redo is "
+        "asked for with it after they answered.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        constraints = [
+            # A restate_fix run again after a restart records the same Fix, not another.
+            models.UniqueConstraint(fields=["asked", "scene"], name="one_fix_per_call_and_scene")
+        ]
+
+    def __str__(self) -> str:
+        return f"Scene {self.scene.number} fix: {self.fix}"
+
+    def cost_usd(self) -> Decimal:
+        """What its redo has cost so far: every model call of the tool calls that started its
+        steps, failed ones included, as they were paid for."""
+        from gateway.models import ModelCall
+
+        cost: Decimal | None = (
+            ModelCall.objects.filter(tool_call__scene_steps__fix=self)
+            .distinct()
+            .aggregate(cost=Sum("cost_usd"))["cost"]
+        )
+        return cost or Decimal(0)
+
+
 class SceneStep(models.Model):
     """One piece of a scene's work, run in the background: its starting picture, and later
     its audio, transcript and clip. A scene tool starts it and returns at once; when it
@@ -384,6 +458,15 @@ class SceneStep(models.Model):
     )
     note = models.TextField(
         blank=True, help_text="What the producer asked for, beyond the line. Blank for nothing."
+    )
+    fix = models.ForeignKey(
+        Fix,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="steps",
+        help_text="The confirmed Fix the step was made for, if it fixes a finished scene. Blank "
+        "for the ad's first making.",
     )
     photo = models.ForeignKey(
         ProductPhoto,

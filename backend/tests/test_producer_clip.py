@@ -13,10 +13,11 @@ from rest_framework.test import APIClient
 from adforge.file_store import read
 from adforge.retry import OutsideServiceDown
 from agents import tasks
+from agents.producer import _dollars
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import work
-from jobs.models import Job, ProducedItem, Scene, SceneStep
+from jobs.models import Fix, Job, ProducedItem, Scene, SceneStep
 
 from .conftest import (
     NO_CHOICES,
@@ -30,6 +31,7 @@ from .conftest import (
     paid_for,
     producer_turns,
     results_of,
+    said_yes_to_a_fix,
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
@@ -408,6 +410,7 @@ def test_a_new_starting_picture_gets_a_new_clip_and_the_old_clip_is_kept(
     first = ProducedItem.objects.get(kind="clip")
     # Made twice more, so the picture, the clip and the audio each have their own version.
     for note in ["Smiling more.", "Smiling even more."]:
+        said_yes_to_a_fix(1, note, "picture")
         calling(fake_model, "make_starting_picture", {"scene": 1, "note": note})
         say(f"Make scene 1's picture again: {note}")
         fake_model.respond("choose_starting_picture", CHOICE)
@@ -428,8 +431,10 @@ def test_a_new_starting_picture_gets_a_new_clip_and_the_old_clip_is_kept(
     assert paid_for().count("make_talking_clip") == 2
     assert told() == (
         "Background step finished: scene 1's clip is ready (version 2, 4 seconds), made from "
-        "starting picture version 3 and audio version 1. Scene 1 is finished. Tell the shop "
-        "owner."
+        "starting picture version 3 and audio version 1. Scene 1 is finished. Scene 1's fix "
+        f"has cost {_dollars(Fix.objects.last().cost_usd())} so far. Tell the shop owner. The "  # type: ignore[union-attr]
+        "ad will be assembled again, and shown to the shop owner, once scenes 2 and 3 are "
+        "finished."
     )
 
 
@@ -613,6 +618,7 @@ def test_a_clip_given_up_on_is_waited_for_again_though_an_earlier_clip_was_fetch
     fake_model: FakeModel, clipped: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     # The first clip, video-1, was fetched. The clip of a new picture is then given up on.
+    said_yes_to_a_fix(1, "Smiling more.", "picture")
     calling(fake_model, "make_starting_picture", {"scene": 1, "note": "Smiling more."})
     say("Make scene 1's picture again, smiling more")
     fake_model.respond("choose_starting_picture", CHOICE)

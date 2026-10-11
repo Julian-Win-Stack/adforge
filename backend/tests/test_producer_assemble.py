@@ -21,6 +21,7 @@ from .conftest import (
     loudness,
     paid_for,
     results_of,
+    said_yes_to_a_fix,
     served,
     silences,
     video,
@@ -246,6 +247,7 @@ def test_the_ad_isnt_assembled_while_a_clip_is_being_made(
     fake_model: FakeModel, finished: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     # Scene 1 gets a new starting picture, and its new clip is started but not made yet.
+    said_yes_to_a_fix(1, "Hold it higher.", "picture")
     fake_model.respond(
         "produce",
         turn(calls=[("make_starting_picture", {"scene": 1, "note": "Hold it higher."})]),
@@ -312,6 +314,7 @@ def test_a_scene_made_again_gets_a_new_version_of_the_ad_and_the_old_one_is_kept
 ) -> None:
     assemble(fake_model, say)
     first_clip = ProducedItem.objects.get(kind="clip", scene__number=1)
+    said_yes_to_a_fix(1, "Hold it higher.", "picture")
     fake_model.respond(
         "produce",
         turn(calls=[("make_starting_picture", {"scene": 1, "note": "Hold it higher."})]),
