@@ -170,7 +170,10 @@ result.""",
     "shows the problem": """\
 This scene shows the problem the product fixes, before the product is used: plainly, in \
 the starting picture, with the product in view. Nothing about the problem changes in the \
-clip. The one movement is a hand or the product.""",
+clip. Nobody touches the product: no hand holds it in the starting picture or the clip, and \
+it stands still, label to the camera, the whole time. The one movement is something natural \
+already in the scene, such as water rippling, steam rising or a drip falling, and it never \
+comes from the product or does anything to the problem.""",
     "showcase": """\
 This scene proves its line by the product being used or worn the way the line claims, such \
 as a bag carried as a clutch while walking. A hand only holding, placing, setting down, \

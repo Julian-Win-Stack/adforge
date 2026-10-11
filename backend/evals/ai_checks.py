@@ -126,6 +126,14 @@ RULES: dict[str, str] = {
     "The app can't know the look only when the dirt or the result is a thin film, haze, "
     "cloudiness or water spots, which a drawn picture can't show honestly. Visible dirt, "
     "such as a stain or a scuff mark, can be drawn: pass a plan that films it without asking.",
+    # Round 3 #8 s3: a hand held the product with nothing real to do, and the video model
+    # invented using it. The problem scene's rule now keeps every hand off the product.
+    "C5": 'In a scene whose kind is "shows the problem", the product stands still in view and '
+    "nobody touches it: no hand holds, moves, sets down or uses it, in the picture prompt or "
+    "the video prompt, and the one movement is something natural already in the scene, such "
+    "as steam rising off a mirror or a drip falling from a tap. Fail when a hand holds or "
+    "moves the product, or the product does anything to the problem. Pass every scene of "
+    "another kind.",
 }
 
 
