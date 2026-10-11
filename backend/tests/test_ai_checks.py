@@ -277,3 +277,25 @@ def test_a_broken_copy_can_swap_one_scene_s_picture_for_another_real_one(
         (3, Path("/runs/other-8/scene-3.png")),
     )
     assert case.ad_pictures[1] == (3, Path("/runs/8/scene-3.png"))
+
+
+def test_a_scene_case_shows_its_judge_the_picture_its_clip_started_from(
+    fake_model: FakeModel, tmp_path: Path
+) -> None:
+    path = cases_file(tmp_path, [("A20", "pass")])
+    raw = json.loads(path.read_text())
+    (tmp_path / "start.png").write_bytes(picture(8, 8, (1, 0, 0)))
+    raw["cases"][0]["start_picture"] = str(tmp_path / "start.png")
+    path.write_text(json.dumps(raw))
+    (case,) = load_cases(path)
+    shown: list[list[str]] = []
+
+    def answer(request: ModelRequest[Any]) -> dict[str, Any]:
+        shown.append([image.label for image in request.images])
+        return {"decision": "pass", "reason": "Close enough."}
+
+    fake_model.answer_unscripted("rule_eval", answer)
+
+    ask_model(case)
+
+    assert shown == [["The starting picture"]]
