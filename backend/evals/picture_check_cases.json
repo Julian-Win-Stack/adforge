@@ -1,0 +1,439 @@
+{
+  "source": "/mnt/project-files/evals/picture-judge/test_set.json, the pictures with a shop photo on record; Julian's grades in bad-candidates/grades.md and wrong-pictures-and-photo-test.md",
+  "cases": [
+    {
+      "id": "round-3-test-ads/12-gripmunk-case/scene-2",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-3-test-ads/12-gripmunk-case/scene-2/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/12-gripmunk-case/scene-3/shop-photo-3.jpg"
+    },
+    {
+      "id": "round-3-test-ads/12-gripmunk-case/scene-3",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-3-test-ads/12-gripmunk-case/scene-3/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/12-gripmunk-case/scene-5/shop-photo-1.jpg"
+    },
+    {
+      "id": "round-3-test-ads/12-gripmunk-case/scene-4",
+      "label": "fail",
+      "graded_as": "must_fail",
+      "picture": "/mnt/project-files/runs/round-3-test-ads/12-gripmunk-case/scene-4/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/12-gripmunk-case/scene-3/shop-photo-3.jpg"
+    },
+    {
+      "id": "round-3-test-ads/5-bkenzo-bag/scene-3",
+      "label": "pass",
+      "graded_as": "passed",
+      "picture": "/mnt/project-files/runs/round-3-test-ads/5-bkenzo-bag/scene-3/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/5-bkenzo-bag/scene-2/shop-photo-3.jpg"
+    },
+    {
+      "id": "round-3-test-ads/5-bkenzo-bag/scene-4",
+      "label": "fail",
+      "graded_as": "must_fail",
+      "picture": "/mnt/project-files/runs/round-3-test-ads/5-bkenzo-bag/scene-4/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/5-bkenzo-bag/scene-4/shop-photo-4.jpg"
+    },
+    {
+      "id": "round-3-test-ads/5-bkenzo-bag/scene-5",
+      "label": "pass",
+      "graded_as": "passed",
+      "picture": "/mnt/project-files/runs/round-3-test-ads/5-bkenzo-bag/scene-5/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/5-bkenzo-bag/scene-4/shop-photo-4.jpg"
+    },
+    {
+      "id": "round-3-test-ads/8-toilet-cleaner/scene-2",
+      "label": "pass",
+      "graded_as": "passed",
+      "picture": "/mnt/project-files/runs/round-3-test-ads/8-toilet-cleaner/scene-2/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/8-toilet-cleaner/scene-2/shop-photo-1.png"
+    },
+    {
+      "id": "round-3-test-ads/8-toilet-cleaner/scene-3",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-3-test-ads/8-toilet-cleaner/scene-3/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/8-toilet-cleaner/scene-2/shop-photo-1.png"
+    },
+    {
+      "id": "round-3-test-ads/8-toilet-cleaner/scene-4",
+      "label": "pass",
+      "graded_as": "passed",
+      "picture": "/mnt/project-files/runs/round-3-test-ads/8-toilet-cleaner/scene-4/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/8-toilet-cleaner/scene-2/shop-photo-1.png"
+    },
+    {
+      "id": "round-3-test-ads/N5-le-duo/scene-2",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-3-test-ads/N5-le-duo/scene-2/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/N5-le-duo/scene-2/shop-photo-1.png"
+    },
+    {
+      "id": "round-3-test-ads/N5-le-duo/scene-3",
+      "label": "fail",
+      "graded_as": "must_fail",
+      "picture": "/mnt/project-files/runs/round-3-test-ads/N5-le-duo/scene-3/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/N5-le-duo/scene-2/shop-photo-1.png"
+    },
+    {
+      "id": "round-3-test-ads/N5-le-duo/scene-4",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-3-test-ads/N5-le-duo/scene-4/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/N5-le-duo/scene-2/shop-photo-1.png"
+    },
+    {
+      "id": "combined-test-ads/12-gripmunk-case/scene-3",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/combined-test-ads/12-gripmunk-case/scene-3/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/combined-test-ads/12-gripmunk-case/scene-3/shop-photo-1.jpg"
+    },
+    {
+      "id": "combined-test-ads/12-gripmunk-case/scene-4",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/combined-test-ads/12-gripmunk-case/scene-4/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/combined-test-ads/12-gripmunk-case/scene-4/shop-photo-3.jpg"
+    },
+    {
+      "id": "combined-test-ads/12-gripmunk-case/scene-6",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/combined-test-ads/12-gripmunk-case/scene-6/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/combined-test-ads/12-gripmunk-case/scene-6/shop-photo-2.jpg"
+    },
+    {
+      "id": "combined-test-ads/12-gripmunk-case/scene-7",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/combined-test-ads/12-gripmunk-case/scene-7/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/combined-test-ads/12-gripmunk-case/scene-7/shop-photo-2.jpg"
+    },
+    {
+      "id": "combined-test-ads/5-bkenzo-bag/scene-3",
+      "label": "pass",
+      "graded_as": "passed",
+      "picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-3/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-3/shop-photo-4.jpg"
+    },
+    {
+      "id": "combined-test-ads/5-bkenzo-bag/scene-4",
+      "label": "pass",
+      "graded_as": "passed",
+      "picture": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-4/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/combined-test-ads/5-bkenzo-bag/scene-4/shop-photo-3.jpg"
+    },
+    {
+      "id": "combined-test-ads/8-toilet-cleaner/scene-2",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-2/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-2/shop-photo-1.png"
+    },
+    {
+      "id": "combined-test-ads/8-toilet-cleaner/scene-4",
+      "label": "pass",
+      "graded_as": "passed",
+      "picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-4/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-4/shop-photo-1.png"
+    },
+    {
+      "id": "combined-test-ads/8-toilet-cleaner/scene-5",
+      "label": "pass",
+      "graded_as": "passed",
+      "picture": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-5/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/combined-test-ads/8-toilet-cleaner/scene-5/shop-photo-1.png"
+    },
+    {
+      "id": "combined-test-ads/N3-shower-tile-cleaner/scene-4",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/combined-test-ads/N3-shower-tile-cleaner/scene-4/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/combined-test-ads/N3-shower-tile-cleaner/scene-4/shop-photo-5.jpg"
+    },
+    {
+      "id": "combined-test-ads/N3-shower-tile-cleaner/scene-5",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/combined-test-ads/N3-shower-tile-cleaner/scene-5/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/combined-test-ads/N3-shower-tile-cleaner/scene-5/shop-photo-3.jpg"
+    },
+    {
+      "id": "combined-test-ads/N5-le-duo/scene-3",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/combined-test-ads/N5-le-duo/scene-3/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/combined-test-ads/N5-le-duo/scene-3/shop-photo-1.png"
+    },
+    {
+      "id": "combined-test-ads/N5-le-duo/scene-4",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/combined-test-ads/N5-le-duo/scene-4/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/combined-test-ads/N5-le-duo/scene-4/shop-photo-1.png"
+    },
+    {
+      "id": "round-2-test-ads/12-gripmunk-case/scene-2",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-2-test-ads/12-gripmunk-case/scene-2/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/12-gripmunk-case/scene-2/shop-photo-2.jpg"
+    },
+    {
+      "id": "round-2-test-ads/12-gripmunk-case/scene-3",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-2-test-ads/12-gripmunk-case/scene-3/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/12-gripmunk-case/scene-3/shop-photo-3.jpg"
+    },
+    {
+      "id": "round-2-test-ads/12-gripmunk-case/scene-4",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-2-test-ads/12-gripmunk-case/scene-4/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/12-gripmunk-case/scene-4/shop-photo-3.jpg"
+    },
+    {
+      "id": "round-2-test-ads/12-gripmunk-case/scene-5",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-2-test-ads/12-gripmunk-case/scene-5/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/12-gripmunk-case/scene-5/shop-photo-1.jpg"
+    },
+    {
+      "id": "round-2-test-ads/5-bkenzo-bag/scene-2",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-2-test-ads/5-bkenzo-bag/scene-2/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/5-bkenzo-bag/scene-2/shop-photo-3.jpg"
+    },
+    {
+      "id": "round-2-test-ads/5-bkenzo-bag/scene-3",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-2-test-ads/5-bkenzo-bag/scene-3/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/5-bkenzo-bag/scene-3/shop-photo-1.jpg"
+    },
+    {
+      "id": "round-2-test-ads/5-bkenzo-bag/scene-4",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-2-test-ads/5-bkenzo-bag/scene-4/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/5-bkenzo-bag/scene-4/shop-photo-4.jpg"
+    },
+    {
+      "id": "round-2-test-ads/8-toilet-cleaner/scene-2",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-2-test-ads/8-toilet-cleaner/scene-2/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/8-toilet-cleaner/scene-2/shop-photo-1.png"
+    },
+    {
+      "id": "round-2-test-ads/8-toilet-cleaner/scene-3",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-2-test-ads/8-toilet-cleaner/scene-3/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/8-toilet-cleaner/scene-3/shop-photo-1.png"
+    },
+    {
+      "id": "round-2-test-ads/8-toilet-cleaner/scene-4",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-2-test-ads/8-toilet-cleaner/scene-4/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/8-toilet-cleaner/scene-4/shop-photo-1.png"
+    },
+    {
+      "id": "round-2-test-ads/N3-shower-tile-cleaner/scene-2",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-2-test-ads/N3-shower-tile-cleaner/scene-2/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/N3-shower-tile-cleaner/scene-2/shop-photo-5.jpg"
+    },
+    {
+      "id": "round-2-test-ads/N3-shower-tile-cleaner/scene-3",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-2-test-ads/N3-shower-tile-cleaner/scene-3/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/N3-shower-tile-cleaner/scene-3/shop-photo-5.jpg"
+    },
+    {
+      "id": "round-2-test-ads/N3-shower-tile-cleaner/scene-4",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-2-test-ads/N3-shower-tile-cleaner/scene-4/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/N3-shower-tile-cleaner/scene-4/shop-photo-5.jpg"
+    },
+    {
+      "id": "round-2-test-ads/N3-shower-tile-cleaner/scene-5",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-2-test-ads/N3-shower-tile-cleaner/scene-5/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/N3-shower-tile-cleaner/scene-5/shop-photo-5.jpg"
+    },
+    {
+      "id": "round-2-test-ads/N5-le-duo/scene-2",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-2-test-ads/N5-le-duo/scene-2/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/N5-le-duo/scene-2/shop-photo-1.png"
+    },
+    {
+      "id": "round-2-test-ads/N5-le-duo/scene-3",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-2-test-ads/N5-le-duo/scene-3/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/N5-le-duo/scene-3/shop-photo-1.png"
+    },
+    {
+      "id": "round-2-test-ads/N5-le-duo/scene-4",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-2-test-ads/N5-le-duo/scene-4/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/N5-le-duo/scene-4/shop-photo-1.png"
+    },
+    {
+      "id": "round-2-test-ads/N5-le-duo/scene-5",
+      "label": "pass",
+      "graded_as": "no_picture_complaint",
+      "picture": "/mnt/project-files/runs/round-2-test-ads/N5-le-duo/scene-5/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/N5-le-duo/scene-5/shop-photo-1.png"
+    },
+    {
+      "id": "round-2-fixes-free-check/12-scene-2.png",
+      "label": "pass",
+      "graded_as": "rejected_old_judge_fails",
+      "picture": "/mnt/project-files/runs/round-2-fixes-free-check/12-scene-2.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/12-gripmunk-case/scene-3/shop-photo-3.jpg"
+    },
+    {
+      "id": "round-2-fixes-free-check/12-scene-3.png",
+      "label": "pass",
+      "graded_as": "rejected_old_judge_fails",
+      "picture": "/mnt/project-files/runs/round-2-fixes-free-check/12-scene-3.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/12-gripmunk-case/scene-3/shop-photo-3.jpg"
+    },
+    {
+      "id": "round-2-fixes-free-check/12-scene-4.png",
+      "label": "pass",
+      "graded_as": "rejected_old_judge_fails",
+      "picture": "/mnt/project-files/runs/round-2-fixes-free-check/12-scene-4.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/12-gripmunk-case/scene-3/shop-photo-3.jpg"
+    },
+    {
+      "id": "round-2-fixes-free-check/5-scene-2.png",
+      "label": "pass",
+      "graded_as": "rejected_old_judge_fails",
+      "picture": "/mnt/project-files/runs/round-2-fixes-free-check/5-scene-2.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/5-bkenzo-bag/scene-2/shop-photo-3.jpg"
+    },
+    {
+      "id": "round-2-fixes-free-check/5-scene-3.png",
+      "label": "pass",
+      "graded_as": "rejected_old_judge_fails",
+      "picture": "/mnt/project-files/runs/round-2-fixes-free-check/5-scene-3.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/5-bkenzo-bag/scene-2/shop-photo-3.jpg"
+    },
+    {
+      "id": "round-2-fixes-free-check/5-scene-4.png",
+      "label": "fail",
+      "graded_as": "must_fail",
+      "picture": "/mnt/project-files/runs/round-2-fixes-free-check/5-scene-4.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/5-bkenzo-bag/scene-2/shop-photo-3.jpg"
+    },
+    {
+      "id": "round-2-fixes-free-check/5-scene-5.png",
+      "label": "pass",
+      "graded_as": "rejected_old_judge_fails",
+      "picture": "/mnt/project-files/runs/round-2-fixes-free-check/5-scene-5.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/5-bkenzo-bag/scene-2/shop-photo-3.jpg"
+    },
+    {
+      "id": "round-2-fixes-free-check/8-scene-2.png",
+      "label": "pass",
+      "graded_as": "rejected_old_judge_fails",
+      "picture": "/mnt/project-files/runs/round-2-fixes-free-check/8-scene-2.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/8-toilet-cleaner/scene-2/shop-photo-1.png"
+    },
+    {
+      "id": "round-2-fixes-free-check/8-scene-3.png",
+      "label": "pass",
+      "graded_as": "rejected_old_judge_fails",
+      "picture": "/mnt/project-files/runs/round-2-fixes-free-check/8-scene-3.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/8-toilet-cleaner/scene-2/shop-photo-1.png"
+    },
+    {
+      "id": "round-2-fixes-free-check/8-scene-4.png",
+      "label": "pass",
+      "graded_as": "rejected_old_judge_fails",
+      "picture": "/mnt/project-files/runs/round-2-fixes-free-check/8-scene-4.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/8-toilet-cleaner/scene-2/shop-photo-1.png"
+    },
+    {
+      "id": "round-2-fixes-free-check/N5-scene-2.png",
+      "label": "pass",
+      "graded_as": "rejected_old_judge_fails",
+      "picture": "/mnt/project-files/runs/round-2-fixes-free-check/N5-scene-2.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/N5-le-duo/scene-2/shop-photo-1.png"
+    },
+    {
+      "id": "round-2-fixes-free-check/N5-scene-3.png",
+      "label": "pass",
+      "graded_as": "rejected_old_judge_fails",
+      "picture": "/mnt/project-files/runs/round-2-fixes-free-check/N5-scene-3.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/N5-le-duo/scene-2/shop-photo-1.png"
+    },
+    {
+      "id": "round-2-fixes-free-check/N5-scene-4.png",
+      "label": "pass",
+      "graded_as": "rejected_old_judge_fails",
+      "picture": "/mnt/project-files/runs/round-2-fixes-free-check/N5-scene-4.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/N5-le-duo/scene-2/shop-photo-1.png"
+    },
+    {
+      "id": "bad-A",
+      "label": "fail",
+      "graded_as": "must_fail",
+      "picture": "/mnt/project-files/runs/graded-broll-run/08-new-toilet-test/start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/graded-broll-run/08-new-toilet-test/product-photo.png"
+    },
+    {
+      "id": "bad-B1",
+      "label": "fail",
+      "graded_as": "must_fail",
+      "picture": "/mnt/project-files/runs/graded-broll-run/08-what-went-wrong/pictures/latest-scene-2-start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/graded-broll-run/08-what-went-wrong/pictures/shop-photo-1-used.png"
+    },
+    {
+      "id": "bad-B2",
+      "label": "fail",
+      "graded_as": "must_fail",
+      "picture": "/mnt/project-files/runs/graded-broll-run/08-what-went-wrong/pictures/latest-scene-4-start-picture.png",
+      "shop_photo": "/mnt/project-files/runs/graded-broll-run/08-what-went-wrong/pictures/shop-photo-1-used.png"
+    },
+    {
+      "id": "bad-C1",
+      "label": "fail",
+      "graded_as": "must_fail",
+      "picture": "/mnt/project-files/runs/graded-broll-run/08-toilet-10s-full/other-tries/try-2.png",
+      "shop_photo": "/mnt/project-files/runs/graded-broll-run/08-toilet-10s-full/product-photo.png"
+    },
+    {
+      "id": "bad-C2",
+      "label": "fail",
+      "graded_as": "must_fail",
+      "picture": "/mnt/project-files/runs/graded-broll-run/08-new-toilet-test/other-tries/try-1.png",
+      "shop_photo": "/mnt/project-files/runs/graded-broll-run/08-new-toilet-test/product-photo.png"
+    },
+    {
+      "id": "bad-C3",
+      "label": "fail",
+      "graded_as": "must_fail",
+      "picture": "/mnt/project-files/runs/round-2-fixes-free-check/8-rerun/8-scene-2-v1.png",
+      "shop_photo": "/mnt/project-files/runs/round-2-test-ads/8-toilet-cleaner/scene-2/shop-photo-1.png"
+    }
+  ]
+}

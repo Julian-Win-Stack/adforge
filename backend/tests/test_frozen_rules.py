@@ -7,8 +7,18 @@ not graded yet)."""
 
 import pytest
 
+from gateway.catalog import MODEL_FOR_PURPOSE
+from jobs.picture_check import (
+    ASKS,
+    FAILS_TO_FAIL,
+    MOST_REDRAWS,
+    PICTURES_SHOWN,
+    STARTING_PICTURE_CHECK,
+)
 from jobs.planning import PLAN_INSTRUCTIONS
 from jobs.scenes import (
+    BEFORE_PICTURE_INSTRUCTIONS,
+    BEFORE_PICTURE_JOB,
     BROLL_KIND_RULES,
     MAIN_PHOTO_JOB,
     broll_prompt_instructions,
@@ -110,6 +120,34 @@ FROZEN = [
         id="A14 a hand or the product moves, never the camera (round 1 #8 s2 FAIL)",
     ),
     pytest.param(
+        BROLL_PROMPT,
+        "Draw this scene in that place: the same light, and each thing in it with every "
+        'stain, mark and part exactly as it is, even what "shows" doesn\'t name.',
+        id="A19 every scene is drawn in the before-picture's place (round 3 #8 s3 FAIL, "
+        "before-picture test round 2 all 8 PASS)",
+    ),
+    pytest.param(
+        BROLL_PROMPT,
+        "Put the camera where this scene's action is seen clearly, as close or as far as the "
+        "action needs, in the same place: a hand at a table is seen from beside the table, not "
+        "from across the room.",
+        id="A20 the camera is as close as the action needs (before-picture test round 1 #5 s4 "
+        "FAIL, round 2 all 8 PASS)",
+    ),
+    pytest.param(
+        BEFORE_PICTURE_INSTRUCTIONS,
+        "Every problem any scene shows or the product fixes, on those things, as it looks "
+        "before: all of them, even those only one scene names,",
+        id="A19 the before-picture holds every scene's problem (round 3 #8 s3 FAIL)",
+    ),
+    pytest.param(
+        BEFORE_PICTURE_INSTRUCTIONS,
+        "No product, no person and no hand: each scene's own picture adds them, the product "
+        "from its shop photo and the presenter from the portrait.",
+        id="A19 the before-picture has no product or person (before-picture test round 2 all 8 "
+        "PASS)",
+    ),
+    pytest.param(
         PLANNER,
         "A claim about something the product, or a part of it, does that a camera could see "
         "is a B-roll scene that shows it.",
@@ -148,3 +186,66 @@ def test_the_main_photo_is_sent_for_its_looks_only() -> None:
     # A6: Oct 7 #12 drop leak: a photo's pose is copied whatever its job says, so the main
     # photo's job is only how the product looks.
     assert MAIN_PHOTO_JOB == "the product, only how it looks"
+
+
+def test_the_video_prompt_keeps_the_side_facing_the_camera() -> None:
+    # A18: round 3 #12 s2 and s3 FAIL, the phone flipped mid-clip; with this sentence in
+    # every video prompt, 9 clips Julian saw were all fine (decisions/built-phone-flip-fix.md).
+    assert (
+        "The camera stays still. Whatever side faces the camera at the start stays toward the "
+        "camera the whole time. A hand pours the sauce."
+    ) in broll_video_prompt("A hand pours the sauce.", 5)
+
+
+def test_every_scene_picture_is_sent_the_before_picture_for_the_place_only() -> None:
+    # A19: round 3 #8 s3 FAIL, "a different toilet means the different dirt"; drawn from one
+    # before-picture, all 8 ads' scenes matched (Julian 2026-10-11 00:53, "all good. all pass").
+    assert BEFORE_PICTURE_JOB == (
+        "the place, its light and each thing in it, with every mark, exactly as they are"
+    )
+
+
+# A21: the start-picture judge, word for word as tested on 98 pictures Julian graded
+# (PARTS_WITH_PHOTO in /mnt/project-files/evals/picture-judge/prompts.py): with the shop photo
+# on gpt-6.1-sol, 3 asks failing on 2, it caught 6 of his 10 wrong pictures 5 runs of 5 and
+# failed none of 52 good ones (Julian's yes 2026-10-10 23:05, decisions/built-picture-judge.md).
+THE_JUDGE_AS_TESTED = """\
+You check an AI-drawn photo before it is animated into a video ad. Picture models sometimes \
+draw objects that cannot exist, such as a car with headlights on its back, a door hinged on \
+both sides, or a hand with six fingers. Find those, and only those.
+
+Work in two steps.
+1. Look before you judge. For each main object in the picture (the products, devices, \
+furniture and tools, and any hands holding them), write down which side of it faces the \
+camera and every part you can see on that side, and where. Describe what is actually drawn, \
+not what such an object usually has. Look closely at small parts: lenses, buttons, screens, \
+spouts, caps, hinges, handles, fingers.
+2. Then judge each object: could a real one of that object, seen from that side, show \
+exactly those parts in exactly those places? Compare with how the real object is built: which \
+parts sit on which side, and what you could and could not see from one viewpoint at once.
+
+Decide "fail" only when you are sure something is physically impossible: a part on a side \
+where the real object can't have it, two sides of one object seen at once, a part fused \
+into another, a body part that can't be. Decide "pass" for everything else, including small \
+differences in shape, size or proportion, odd but possible poses, blurry or unreadable \
+print, dirt or mess, lighting, and anything merely unusual or unlikely.
+
+You may also be shown one shop photo of the product. It tells you what the product is and \
+how it is built: which parts it has and where they sit. Use it only for that. Ignore the \
+photo's background, setting and anything being done with the product; only the product \
+itself matters. Never compare the two pictures: differences in size, shape, angle, distance, \
+colour, label or print are not a fail, and the product may be held, turned, upside down or \
+partly hidden. Fail the product only if it shows a part a real one can't have there, two \
+sides at once, or a label that didn't turn with it."""
+
+
+def test_the_start_picture_judge_is_unchanged_from_the_one_tested() -> None:
+    assert STARTING_PICTURE_CHECK == THE_JUDGE_AS_TESTED
+    assert PICTURES_SHOWN == "The picture to judge is first; the shop photo, when shown, is second."
+
+
+def test_the_start_picture_judge_runs_as_tested() -> None:
+    assert MODEL_FOR_PURPOSE["check_starting_picture"] == "gpt-6.1-sol"
+    assert (ASKS, FAILS_TO_FAIL) == (3, 2)
+    # Julian 2026-10-10 21:48: two redraws, then the run stops.
+    assert MOST_REDRAWS == 2

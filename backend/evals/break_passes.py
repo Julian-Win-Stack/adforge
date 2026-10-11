@@ -10,7 +10,8 @@ Each entry in the edits file is {"id": <a passing case>, "breaks": <why the edit
 rule>, "edits": [{"field": <scene field, or plan.<index>.<field>>, "find": <exact text>,
 "replace": <text>} or {"field": ..., "value": <the field's new value>}]}. The field
 "start_picture" takes the path of another picture the app really drew, for a copy whose
-broken text the case's own picture would still contradict.
+broken text the case's own picture would still contradict; "ad_pictures.<index>" swaps one
+scene's picture of a whole ad's case for another the app really drew.
 """
 
 import argparse
@@ -39,9 +40,14 @@ def broken(case: Case, edits: list[dict[str, Any]]) -> Case:
     scene = deepcopy(case.handoff.scene)
     plan = deepcopy(case.handoff.plan)
     start_picture = case.start_picture
+    ad_pictures = list(case.ad_pictures)
     for edit in edits:
         if edit["field"] == "start_picture":
             start_picture = Path(edit["value"])
+            continue
+        if edit["field"].startswith("ad_pictures."):
+            index = int(edit["field"].split(".")[1])
+            ad_pictures[index] = (ad_pictures[index][0], Path(edit["value"]))
             continue
         path = edit["field"].split(".")
         if path[0] == "plan":
@@ -56,7 +62,13 @@ def broken(case: Case, edits: list[dict[str, Any]]) -> Case:
             assert edit["find"] in holder[key], f"{case.id}: {edit['find']!r} not in {key}"
             holder[key] = holder[key].replace(edit["find"], edit["replace"], 1)
     handoff = case.handoff.model_copy(update={"scene": scene, "plan": plan})
-    return replace(case, handoff=handoff, label="fail", start_picture=start_picture)
+    return replace(
+        case,
+        handoff=handoff,
+        label="fail",
+        start_picture=start_picture,
+        ad_pictures=tuple(ad_pictures),
+    )
 
 
 def main(model: str, edits_file: Path, out: Path | None) -> None:

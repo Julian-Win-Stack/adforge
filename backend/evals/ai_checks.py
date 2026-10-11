@@ -97,6 +97,27 @@ RULES: dict[str, str] = {
     "scene shows it.",
     "A17": 'When "shows" names a person or a hand, they are in the video prompt, doing what '
     '"shows" says. Fail when the video prompt leaves them out.',
+    # Julian, round 3 #8 s3 FAIL: "A different toilet means the different dirt", and s4 PASS:
+    # "They are not exactly the same, but they look similar. As long as they look similar, it
+    # is alright." Drawn from one before-picture, all 8 ads passed (2026-10-11 00:53).
+    "A19": "Each thing the ad's B-roll scenes act on looks the same in every scene: each "
+    "B-roll scene's starting picture is shown, named by its scene number. Fail when a thing "
+    "two or more scenes act on, other than the product, is plainly a different one in one "
+    "scene, such as a different sink, or the same kind of sink with the problem the product "
+    "fixes, such as its stains, looking different from the other scenes'. Pass when it looks "
+    "like the same one, even if not exactly alike. Scenes that act on different things may "
+    "happen in different places, such as a person walking in a street and a hand at a table "
+    "indoors; the camera may be closer, further or at another angle; a scene may add the "
+    "product, a hand, a tool or a person; and a person may wear different clothes. Marks on "
+    "things no scene acts on, such as a wall or a floor in the background, don't count. "
+    "Judge the pictures, not the prompts' words.",
+    # Julian, before-picture test round 1 #5 s4 FAIL: "It is being filmed too far away."
+    "A20": "The starting picture puts the camera as close as the scene's action needs: what "
+    "the action is done to, and any hand doing it, are big enough in the frame for a viewer "
+    "on a phone to see the action plainly. Fail when they are small in a wide view of the "
+    "room, such as a hand at a workbench filmed from across the room. Pass a wide view when "
+    "the action needs one, such as a person walking or a whole car being washed. Judge the "
+    "picture's framing only.",
     "C1": "Every B-roll sells the product: it does something that shows a result, a benefit "
     "or proof. Fail when its one action only holds, places, sets down, stands up, lines up, "
     "carries or rests the product, which means nothing to a viewer: a product set beside a "
@@ -149,6 +170,8 @@ class Case:
     # The picture the clip really started from, shown to a scene's judge (Julian 2026-10-09,
     # decisions/checker-context.md); None for a plan's judge, or a clip that started from none.
     start_picture: Path | None
+    # For a whole ad's judge, each B-roll scene's starting picture, by scene number, in order.
+    ad_pictures: tuple[tuple[int, Path], ...]
     # Named in the case file, fixed so adding a case moves no other between halves: the
     # judge's question is never written against a held-out case, so its score there is fair.
     held_out: bool
@@ -168,6 +191,9 @@ def load_cases(path: Path = CASES) -> list[Case]:
                 shop_answers=case.get("shop_answers") or "",
             ),
             start_picture=Path(case["start_picture"]) if case.get("start_picture") else None,
+            ad_pictures=tuple(
+                (shown["scene"], Path(shown["path"])) for shown in case.get("ad_pictures") or []
+            ),
             held_out={"tune": False, "held out": True}[case["split"]],
         )
         for case in raw
@@ -213,12 +239,13 @@ def ask_model(case: Case, model: str = JUDGE_MODEL) -> ModelReply[RuleVerdict]:
     app's own waits while it is down, as the app's calls are, but is recorded nowhere."""
     from adforge.retry import with_retries
     from gateway.gateway import _provider, shrunk_image
-    from gateway.types import Image, LoadedImage, ModelRequest
+    from gateway.types import Image, ModelRequest
 
-    images: tuple[LoadedImage, ...] = ()
-    if case.start_picture is not None:
-        picture = Image(label="The starting picture", key=str(case.start_picture))
-        images = (shrunk_image(picture, case.start_picture.read_bytes()),)
+    shown = [("The starting picture", case.start_picture)] if case.start_picture else []
+    shown += [(f"Scene {number}'s starting picture", path) for number, path in case.ad_pictures]
+    images = tuple(
+        shrunk_image(Image(label=label, key=str(path)), path.read_bytes()) for label, path in shown
+    )
 
     request = ModelRequest(
         purpose="rule_eval",
