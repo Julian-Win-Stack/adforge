@@ -505,9 +505,27 @@ def test_a_scene_showing_the_problem_shows_it_plainly_and_never_changes_it() -> 
     rules = BROLL_KIND_RULES["shows the problem"]
     assert "plainly, in the starting picture, with the product in view" in rules
     assert "Nothing about the problem changes in the clip." in rules
-    assert "The one movement is a hand or the product" in rules
     # Round 2 (Julian 21:22 "yes"): the example was a filler action.
     assert "set down beside it" not in rules
+
+
+def test_a_scene_showing_the_problem_has_nobody_touching_the_product() -> None:
+    # Round 3 #8 s3 (Julian 2026-10-10 05:30, FAIL): "the one movement is a hand or the
+    # product" put a hand on the bottle with nothing real to do, and the prompt asked the
+    # lid contact to ripple the bowl water, so the video model invented a pour ("It looks
+    # like water ... the lip is not being opened"). s2 (PASS) had nobody touching the bottle
+    # and only the water moving.
+    rules = BROLL_KIND_RULES["shows the problem"]
+    assert (
+        "Nobody touches the product: no hand holds it in the starting picture or the clip, "
+        "and it stands still, label to the camera, the whole time."
+    ) in rules
+    assert (
+        "The one movement is something natural already in the scene, such as water rippling, "
+        "steam rising or a drip falling, and it never comes from the product or does anything "
+        "to the problem."
+    ) in rules
+    assert "The one movement is a hand or the product" not in rules
 
 
 def test_a_does_a_job_scene_ends_on_its_result() -> None:

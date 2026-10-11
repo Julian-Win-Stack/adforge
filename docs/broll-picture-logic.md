@@ -352,7 +352,7 @@ small rule set, not a new agent.
 | Kind | Examples | Its own rules |
 |---|---|---|
 | Does a job you can see | toilet cleaner, blush, collagen powder, power bank, blender | The result comes from the product being used; end on it |
-| Shows the problem (added 2026-10-09) | a shower's soap scum, a stained mug, before the product is used | The problem shown plainly in the starting picture with the product in view; nothing about it changes; the one movement is a hand or the product |
+| Shows the problem (added 2026-10-09) | a shower's soap scum, a stained mug, before the product is used | The problem shown plainly in the starting picture with the product in view; nothing about it changes; nobody touches the product; the one movement is something natural in the scene (water rippling, steam rising), never the product (since 2026-10-11: a hand holding the product with nothing to do made the video model invent using it, round 3 #8 s3) |
 | Showcase (used or worn as the line claims) | a bag carried as a clutch, clothes worn | Used or worn the way the line claims; never only held, placed or pointed at |
 
 Until 2026-10-09, when the planner wasn't sure, it picked "showcase": it can't invent a

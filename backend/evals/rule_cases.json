@@ -6074,6 +6074,60 @@
       "note": "",
       "start_picture": "/mnt/project-files/runs/shared-before-picture-test/9-chili-crunch/scene-4/start-picture.png",
       "split": "held out"
+    },
+    {
+      "id": "C5-r3-8-s3",
+      "rule": "C5",
+      "label": "fail",
+      "source": "round 3 grades.md #8 s3 (Julian 2026-10-10 05:30)",
+      "julian": "And we are using a different toilet here. A different toilet means the different dirt. If you look at the picture, like the the stains and the dirt in the sink too, it's not the same at the sink. It's not the same as the scene. It's not the same as the truck in this scene. And and the way like this is supposed to be a jolt, isn't it? And the way that this was this was poured. What's really unnatural? Yeah. It looks like water, but the page says it's a gel, isn't it? I I sent this in the chat. And also, if you look at it, the lip, the the direction that the water. Fall off from the portal is the is from the opposite direction of the lip, and the lip is not being opened. So this is very unnatural.",
+      "scene": {
+        "line": "Add mildew and odors, and the toilet is far from looking and smelling as good as new.",
+        "shows": "toilet water ripples beside visible mildew inside the bowl, with the cleaner bottle in view",
+        "kind": "shows the problem",
+        "usage": "",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary bright, tidy bathroom. Take only the cleaner bottle from Image 1 exactly as it looks, with its label and print unchanged, and take nothing else from that image. A single ordinary white ceramic floor-mounted toilet is centered, with its lid and seat raised. Green-black mildew patches are plainly visible along the left inner side of the bowl beside still toilet water, and nothing has been cleaned. The camera is at an adult’s chest height at a high three-quarter angle aimed down, clearly showing the tank lid, the full bowl interior, the mildew, and the water. One right hand enters from the right and holds the bottle upright just above the right half of the toilet tank lid, ready to set it down, with the same side of the bottle shown in Image 1 facing the camera. The bottle and open bowl are in the middle of the frame. No face is visible.",
+        "motion_prompt": "One continuous shot at a natural, real-time pace. The right hand sets the bottle upright on the right half of the toilet tank lid in one direct movement, keeping the same side facing the camera. The contact makes small natural ripples spread across the toilet water beside the visible mildew; the mildew remains completely unchanged.",
+        "video_prompt": "A 6-second video at real-time speed. The camera stays still. One continuous shot at a natural, real-time pace. The right hand sets the bottle upright on the right half of the toilet tank lid in one direct movement, keeping the same side facing the camera. The contact makes small natural ripples spread across the toilet water beside the visible mildew; the mildew remains completely unchanged."
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/round-3-test-ads/grades.md:42",
+      "quote_exact": true,
+      "note": "a hand held the bottle with nothing real to do; the clip poured the cleaner like water from the wrong side with the cap closed",
+      "start_picture": "/mnt/project-files/runs/round-3-test-ads/8-toilet-cleaner/scene-3/start-picture.png",
+      "split": "tune"
+    },
+    {
+      "id": "C5-r3-8-s2",
+      "rule": "C5",
+      "label": "pass",
+      "source": "round 3 grades.md #8 s2 (Julian 2026-10-10 05:28)",
+      "julian": "This passes but, how do I say? okay. This passes. But this is supposed to be. This will fail because the camera got too got closer like instead of The product or the person moving, the camera moved. But for this one, it is fine. I think, I think we can even remove this rule. Like, so man, remove this rule from our Evol Shacks. Because this, the Evol Shack will definitely. Fill this one. But for this one, this is all right.",
+      "scene": {
+        "line": "Toilet bowl rings and rust stains are exactly what this cleaner fights.",
+        "shows": "toilet water ripples beneath a visible bowl ring and rust stains, with the cleaner bottle in view",
+        "kind": "shows the problem",
+        "usage": "",
+        "result": "",
+        "photo_jobs": [
+          "the product, only how it looks"
+        ],
+        "picture_prompt": "An upright 9:16 photo in a real, ordinary home bathroom. The camera is at a standing adult’s chest height, directly in front of and slightly to the right of one white porcelain toilet, angled downward to clearly see the tank, bowl, and water. The toilet lid and seat are raised. A continuous dark gray-brown bowl ring circles the porcelain at the waterline, and three distinct orange-brown rust streaks mark the inner bowl beneath the rim. The toilet water is still. Take only the product from Image 1, exactly as it looks, with its label and print unchanged, and place it upright on the right side of the toilet tank with the same front side facing the camera. Bright, natural bathroom lighting and realistic household detail.",
+        "motion_prompt": "One continuous shot with no cuts at a natural, real-time pace. The toilet water makes one small ripple that spreads outward beneath the visible bowl ring and rust stains. The ring and all three rust streaks remain completely unchanged, and the product remains upright and motionless with the same side facing the camera.",
+        "video_prompt": "A 5-second video at real-time speed. The camera stays still. One continuous shot with no cuts at a natural, real-time pace. The toilet water makes one small ripple that spreads outward beneath the visible bowl ring and rust stains. The ring and all three rust streaks remain completely unchanged, and the product remains upright and motionless with the same side facing the camera."
+      },
+      "plan": null,
+      "shop_answers": "",
+      "quote_at": "/mnt/project-files/runs/round-3-test-ads/grades.md:35",
+      "quote_exact": true,
+      "note": "nobody touched the bottle; only the water rippled; passed (he also noted the camera moved closer and let it pass)",
+      "start_picture": "/mnt/project-files/runs/round-3-test-ads/8-toilet-cleaner/scene-2/start-picture.png",
+      "split": "held out"
     }
   ]
 }
