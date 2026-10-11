@@ -989,6 +989,7 @@ button:disabled {
   background: rgba(10, 10, 14, 0.78);
   backdrop-filter: blur(6px);
   pointer-events: none;
+  z-index: 1;
 }
 
 .scene-status {
@@ -998,6 +999,25 @@ button:disabled {
 
 .scene-status.failed {
   color: var(--danger);
+}
+
+.scene-status.waiting {
+  color: var(--text);
+}
+
+/* The new starting picture the out-of-date clip will be made again from. */
+.scene-media .scene-inset {
+  position: absolute;
+  right: 6px;
+  bottom: 44px;
+  width: 34%;
+  height: auto;
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1.5px solid var(--accent);
+  box-shadow: var(--shadow);
+  pointer-events: none;
 }
 
 .scene-version {
@@ -1196,6 +1216,11 @@ button:disabled {
 
   .scene-version {
     top: auto;
+    bottom: 30px;
+  }
+
+  .scene-media .scene-inset {
+    right: 4px;
     bottom: 30px;
   }
 }

@@ -33,7 +33,8 @@ export function ScenePanel({ messages }: { messages: Message[] }) {
         <ol className="scene-cards">
           {cards.map((card) => (
             <li key={card.scene}>
-              <SceneCardView card={card} />
+              {/* A new clip starts the card afresh on it, even when the previous one was showing. */}
+              <SceneCardView key={card.clips.length} card={card} />
             </li>
           ))}
         </ol>
@@ -42,7 +43,7 @@ export function ScenePanel({ messages }: { messages: Message[] }) {
   );
 }
 
-const THING = { clip: "clip", starting_picture: "picture" } as const;
+const STEP_NOUN = { clip: "clip", starting_picture: "picture" } as const;
 
 /** One scene: the newest clip plays here, the one before it is a tap away, and while a
  * new one is being made the old one stays, marked. */
@@ -55,10 +56,15 @@ function SceneCardView({ card }: { card: SceneCard }) {
   const name = `Scene ${card.scene}`;
 
   let status: string | null = null;
+  let tone = "";
   if (card.making) {
-    status = `${card.making.remaking ? "Remaking" : "Making"} the ${THING[card.making.kind]}`;
+    status = `${card.making.remaking ? "Remaking" : "Making"} the ${STEP_NOUN[card.making.kind]}`;
   } else if (card.failed) {
-    status = `Couldn't make the ${THING[card.failed]}`;
+    status = `Couldn't make the ${STEP_NOUN[card.failed]}`;
+    tone = " failed";
+  } else if (card.clipOutOfDate) {
+    status = "New picture, clip next";
+    tone = " waiting";
   }
 
   return (
@@ -82,12 +88,19 @@ function SceneCardView({ card }: { card: SceneCard }) {
           <div className="scene-empty" />
         )}
         {status && (
-          <span className={`scene-status${card.making ? "" : " failed"}`}>
+          <span className={`scene-status${tone}`}>
             {card.making && <i className="pulse" />}
             {status}
           </span>
         )}
         {onPrevious && <span className="scene-version">Previous clip</span>}
+        {clip && card.clipOutOfDate && card.picture && (
+          <img
+            className="scene-inset"
+            src={card.picture.url}
+            alt={`${name}'s new starting picture`}
+          />
+        )}
       </div>
       <div className="scene-foot">
         <span className="scene-name">{name}</span>

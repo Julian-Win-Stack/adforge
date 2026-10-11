@@ -492,7 +492,7 @@ function scene(n: number, kind: Attachment["kind"], url: string): Attachment[] {
   return [{ position: 1, kind, url, scene: n }];
 }
 
-/** Opens the newest session the fake backend has, as the owner would from the sidebar. */
+/** Opens the session called `name`, as the owner would from the sidebar. */
 async function openSession(name: string) {
   const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
   render(<App />);
@@ -573,6 +573,17 @@ test("a later clip for a scene replaces the card's clip, and the old one stays o
   expect(within(sceneCard(2)).getByText("Previous clip")).toBeDefined();
   await user.click(within(sceneCard(2)).getByRole("button", { name: "Latest" }));
   expect(sceneCardsShown()).toEqual([["Scene 2", "/media/c2-b.mp4"]]);
+
+  // Looking at the previous clip when a newer one lands goes back to the newest.
+  await user.click(within(sceneCard(2)).getByRole("button", { name: "Previous" }));
+  backend.agentSays("", scene(2, "video", "/media/c2-c.mp4"), {
+    scene: 2,
+    kind: "clip",
+    state: "made",
+  });
+  await nextPoll();
+  await waitFor(() => expect(sceneCardsShown()).toEqual([["Scene 2", "/media/c2-c.mp4"]]));
+  expect(within(sceneCard(2)).queryByText("Previous clip")).toBeNull();
 });
 
 test("a scene with a picture and no clip yet shows the picture, and its clip once made", async () => {
@@ -614,7 +625,21 @@ test("a scene with a picture and no clip yet shows the picture, and its clip onc
   expect(sceneCardsShown()).toEqual([["Scene 1", "/media/c1.mp4"]]);
   expect(within(sceneCard(1)).getByLabelText("Scene 1's clip").getAttribute("poster")).toBe(
     "/media/p1.png",
-  );
+  ); // The clip is now out of date: the card says so and shows the new picture beside it.
+  expect(within(sceneCard(1)).getByText("New picture, clip next")).toBeDefined();
+  expect(
+    within(sceneCard(1)).getByAltText("Scene 1's new starting picture").getAttribute("src"),
+  ).toBe("/media/p1-b.png");
+
+  backend.agentSays("", scene(1, "video", "/media/c1-b.mp4"), {
+    scene: 1,
+    kind: "clip",
+    state: "made",
+  });
+  await nextPoll();
+  await waitFor(() => expect(sceneCardsShown()).toEqual([["Scene 1", "/media/c1-b.mp4"]]));
+  expect(within(sceneCard(1)).queryByText("New picture, clip next")).toBeNull();
+  expect(within(sceneCard(1)).queryByAltText("Scene 1's new starting picture")).toBeNull();
 });
 
 test("a clip that arrives before any picture for its scene still shows", async () => {
@@ -648,6 +673,7 @@ test("a card says while its picture or clip is being made, until it is made or f
     ["Scene 1", "nothing"],
     ["Scene 2", "nothing"],
   ]);
+  expect(screen.getByRole("button", { name: /Scenes/ }).textContent).toContain("2 being made");
 
   backend.agentSays("", scene(1, "picture", "/media/p1.png"), {
     scene: 1,
@@ -663,6 +689,7 @@ test("a card says while its picture or clip is being made, until it is made or f
   await within(sceneCard(2)).findByText("Couldn't make the clip");
   expect(within(sceneCard(1)).queryByText("Making the picture")).toBeNull();
   expect(within(sceneCard(2)).queryByText("Making the clip")).toBeNull();
+  expect(screen.getByRole("button", { name: /Scenes/ }).textContent).not.toContain("being made");
 });
 
 function findCard(scene: number) {

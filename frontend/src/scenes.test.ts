@@ -141,3 +141,22 @@ test("a scene whose last try ended with nothing made says which, until it starts
   ]);
   expect(madeAfter[0].failed).toBeNull();
 });
+
+test("a starting picture newer than the scene's clip leaves the clip out of date until the next clip", () => {
+  const [stale] = sceneCards([
+    message([picture(1, "/p1-a.png")]),
+    message([clip(1, "/c1-a.mp4")]),
+    message([picture(1, "/p1-b.png")]),
+  ]);
+  expect(stale.clipOutOfDate).toBe(true);
+
+  const [fresh] = sceneCards([
+    message([clip(1, "/c1-a.mp4")]),
+    message([picture(1, "/p1-b.png")]),
+    message([clip(1, "/c1-b.mp4")]),
+  ]);
+  expect(fresh.clipOutOfDate).toBe(false);
+
+  const [noClip] = sceneCards([message([picture(1, "/p1-a.png")])]);
+  expect(noClip.clipOutOfDate).toBe(false);
+});

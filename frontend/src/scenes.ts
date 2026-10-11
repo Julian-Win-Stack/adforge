@@ -10,6 +10,9 @@ export type SceneCard = {
   scene: number;
   clips: SceneClip[];
   picture: Attachment | null;
+  /** A starting picture landed after the latest clip, so that clip will be made again from
+   * it (a new picture always means a new clip). Until it is, the card keeps the old clip. */
+  clipOutOfDate: boolean;
   /** What is being made for the scene now, and whether it replaces one already made. */
   making: { kind: SceneStep["kind"]; remaking: boolean } | null;
   /** What the scene's last try ended with nothing made for, until something starts again. */
@@ -25,7 +28,7 @@ export function sceneCards(messages: Message[]): SceneCard[] {
   const card = (scene: number) => {
     let found = cards.get(scene);
     if (found === undefined) {
-      found = { scene, clips: [], picture: null, making: null, failed: null };
+      found = { scene, clips: [], picture: null, clipOutOfDate: false, making: null, failed: null };
       cards.set(scene, found);
     }
     return found;
@@ -35,8 +38,13 @@ export function sceneCards(messages: Message[]): SceneCard[] {
     for (const attachment of message.attachments) {
       if (attachment.scene === null) continue;
       const scene = card(attachment.scene);
-      if (attachment.kind === "picture") scene.picture = attachment;
-      else scene.clips.push({ file: attachment, picture: scene.picture });
+      if (attachment.kind === "picture") {
+        scene.picture = attachment;
+        scene.clipOutOfDate = scene.clips.length > 0;
+      } else {
+        scene.clips.push({ file: attachment, picture: scene.picture });
+        scene.clipOutOfDate = false;
+      }
     }
 
     const step = message.step;
