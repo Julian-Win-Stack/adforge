@@ -40,7 +40,8 @@ CLIP_STARTED = "Started scene 1's clip. It isn't made yet: you'll be told when i
 # The fake voice says scene 1's 8 words at 2 a second, so its clip lasts as long.
 CLIP_READY = (
     "Background step finished: scene 1's clip is ready (version 1, 4 seconds), made from "
-    "starting picture version 1 and audio version 1. Scene 1 is finished. Tell the shop owner."
+    "starting picture version 1 and audio version 1. It cost $0.20. Scene 1 is finished. Tell "
+    "the shop owner."
 )
 
 CHOICE: dict[str, Any] = {
@@ -433,8 +434,8 @@ def test_a_new_starting_picture_gets_a_new_clip_and_the_old_clip_is_kept(
     assert paid_for().count("make_talking_clip") == 2
     assert told() == (
         "Background step finished: scene 1's clip is ready (version 2, 4 seconds), made from "
-        "starting picture version 3 and audio version 1. Scene 1 is finished. Tell the shop "
-        "owner."
+        "starting picture version 3 and audio version 1. It cost $0.20. Scene 1 is finished. "
+        "Tell the shop owner."
     )
 
 
