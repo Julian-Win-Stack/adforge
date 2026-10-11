@@ -233,7 +233,8 @@ SAME_SIDE = "Whatever side faces the camera at the start stays toward the camera
 def broll_video_prompt(prompt: str, seconds: int) -> str:
     """A B-roll scene's video prompt as it is sent: the clip's real length and a still camera
     first, so no prompt goes without them, then the prompt as the model wrote it. The one
-    movement is a hand or the product, never the camera (test ads, 08 Oct); the look is the
+    movement is a hand or the product, never the camera (test ads, 08 Oct), and in a problem
+    scene something natural in it, such as water (round 3, 11 Oct); the look is the
     video model's (docs/broll-picture-logic.md, "Prompt rules"). SAME_SIDE follows the still
     camera."""
     return (
