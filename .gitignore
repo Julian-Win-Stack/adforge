@@ -81,3 +81,6 @@ docs/runs/second-run-review/check/**/*.jpg
 
 # Local Claude Code settings
 .claude/settings.json
+
+# Redis snapshots a local redis-server writes
+dump.rdb

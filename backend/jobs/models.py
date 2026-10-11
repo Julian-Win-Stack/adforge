@@ -415,7 +415,8 @@ class SceneStep(models.Model):
         blank=True,
         help_text="For a B-roll scene's starting picture, the pictures sent, in order, each "
         'with its job, such as [{"image": 1, "photo": 3, "job": "the product, only how it looks"}, '
-        '{"image": 2, "portrait": true, "job": "the presenter"}]. Empty otherwise.',
+        '{"image": 2, "portrait": true, "job": "the presenter"}], the ad\'s before-picture last '
+        'with "before_picture": true. Empty otherwise.',
     )
     made_from = models.ForeignKey(
         "ProducedItem",
@@ -506,6 +507,9 @@ class ProducedItem(models.Model):
         CLIP = "clip"
         FINISHED_AD = "finished_ad"
         MUSIC = "music"
+        # The place the ad's B-roll scenes happen in, before any starts: every B-roll
+        # starting picture is drawn from it.
+        BEFORE_PICTURE = "before_picture"
 
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="produced")
     scene = models.ForeignKey(
@@ -562,8 +566,8 @@ class ProducedItem(models.Model):
     )
     text = models.TextField(
         blank=True,
-        help_text="The transcript, exactly as it was heard, or what the music was asked to "
-        "sound like.",
+        help_text="The transcript, exactly as it was heard, what the music was asked to "
+        "sound like, or what the before-picture was asked to show.",
     )
     words = models.JSONField(
         default=list,

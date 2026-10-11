@@ -128,6 +128,14 @@ unchanged. Nothing else from that photo: not its background, setting or people. 
 is the ad's choice: the setting is described in words.
 - The starting picture is the "before": the moment just before the action, with the \
 product ready to be used. The video prompt does the action.
+- The last picture in "pictures" is the ad's before-picture: the place every B-roll scene \
+of the ad happens in, before any of them starts, as "before_picture" describes it. You are \
+shown it last. Draw this scene in that place: the same light, and each thing in it with every \
+stain, mark and part exactly as it is, even what "shows" doesn't name. Describe them in \
+"before_picture"'s words, never in new ones. Put the camera where this scene's action is \
+seen clearly, as close or as far as the action needs, in the same place: a hand at a table \
+is seen from beside the table, not from across the room. Add only what this scene's \
+"before" needs, such as the product, a tool, a hand or the presenter.
 - The picture prompt opens: "An upright 9:16 photo in a real, ordinary <place>." with the \
 scene's setting as the place.
 - Anything that must be right goes in the starting picture, said plainly: say where the \
@@ -180,6 +188,37 @@ def broll_prompt_instructions(broll_kind: str) -> str:
 # The job of each picture the picture model gets for a B-roll scene's starting picture.
 MAIN_PHOTO_JOB = "the product, only how it looks"
 PORTRAIT_JOB = "the presenter"
+BEFORE_PICTURE_JOB = (
+    "the place, its light and each thing in it, with every mark, exactly as they are"
+)
+
+# What the model planning the ad's before-picture is told. One picture of the place the
+# B-roll scenes happen in, before any starts, and every B-roll starting picture is drawn from
+# it: drawn alone, each scene got its own toilet and its own stains (round 3 #8 s3 FAIL,
+# research/scenes-match/README.md). No product or person in it: the product's looks come only
+# from its shop photo, and the presenter's from the portrait.
+BEFORE_PICTURE_INSTRUCTIONS = """\
+You plan the before-picture of a short vertical video ad. The ad's B-roll scenes don't show \
+the person talking to camera: each shows what its "shows" describes, while the presenter's \
+voice says its line over it. Each B-roll scene's starting picture is drawn from the \
+before-picture, so the place, and each thing the scenes act on, look the same in every scene.
+Write the picture model's prompt for the before-picture: the place as it is before any \
+scene starts.
+- It opens: "An upright 9:16 photo in a real, ordinary <place>." with one place every scene \
+can happen in.
+- Each thing the scenes act on, other than the product, with every part named as a real, \
+ordinary one, like one you'd buy in any shop.
+- Every problem any scene shows or the product fixes, on those things, as it looks before: \
+all of them, even those only one scene names, each said once, with its colour, size, count \
+and where it is, left or right.
+- Where the camera is, its height and angle, so each of those things is seen whole.
+- No product, no person and no hand: each scene's own picture adds them, the product from \
+its shop photo and the presenter from the portrait. Nothing happens in it: it shows how \
+things look, never an action.
+Make nothing up: no thing, problem or detail the scenes don't need. Ask for no added text, \
+captions or logos. Use the conversation with the shop owner for their wishes about how the \
+ad looks.
+Give a one-sentence reason for the prompt, written for the shop owner."""
 
 
 # Added by code to every labelled B-roll scene's video prompt: the video model sees only the
@@ -286,11 +325,41 @@ class BrollPromptHandoff(Handoff):
     usage: str
     result: str
     pictures: list[PictureJob]
+    before_picture: str
     product_colour: str
     colour_photos: list[int]
     person_looks: str
     note: str | None
     conversation: list[ChatMessage]
+
+
+class BrollSceneToDraw(Handoff):
+    """A B-roll scene, as the model planning the ad's before-picture is handed it."""
+
+    scene: int
+    line: str
+    shows: str
+    broll_kind: str
+    usage: str
+    result: str
+
+
+class BeforePictureHandoff(Handoff):
+    script: list[str]
+    broll_scenes: list[BrollSceneToDraw]
+    conversation: list[ChatMessage]
+
+
+class BeforePicturePlan(BaseModel):
+    prompt: str = Field(description="The prompt for the picture model.")
+    prompt_reason: str = Field(description="One sentence saying why the prompt asks for that.")
+
+    @field_validator("prompt", "prompt_reason")
+    @classmethod
+    def _not_empty(cls, text: str) -> str:
+        if not text.strip():
+            raise ValueError("This can't be empty.")
+        return text
 
 
 class NeedPhoto(Handoff):
@@ -321,7 +390,7 @@ def photos_for_needs(
 
 
 # At most this many photos of what a B-roll scene needs go to the picture model, after the
-# main photo: with the portrait, five pictures in all, as the video model was once sent.
+# main photo: with the portrait and the before-picture, six pictures in all.
 MOST_NEEDS_PHOTOS = 3
 
 

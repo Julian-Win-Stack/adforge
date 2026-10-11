@@ -14,8 +14,9 @@ from adforge import file_store
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
 from jobs.models import Job, ProductPhoto, Scene, SceneStep
+from jobs.scenes import BEFORE_PICTURE_JOB
 
-from .conftest import HeldSteps, handoffs, photo, results_of
+from .conftest import HeldSteps, before_picture_file, handoffs, photo, results_of
 from .test_producer_broll import (
     calling,
     checked,  # noqa: F401 (a fixture)
@@ -74,7 +75,7 @@ def test_a_scene_with_needs_gets_a_starting_picture_made_from_its_needs_photos_t
     assert step.produced.get().kind == "starting_picture"
     # The need's photo without a face, after the main photo.
     (asked,) = handoffs("make_starting_picture")
-    assert asked["pictures"] == [photo_file(1), photo_file(4)]
+    assert asked["pictures"] == [photo_file(1), photo_file(4), before_picture_file()]
 
 
 def test_the_model_writing_the_prompts_is_told_each_pictures_job_the_portrait_last(
@@ -93,6 +94,7 @@ def test_the_model_writing_the_prompts_is_told_each_pictures_job_the_portrait_la
         {"label": "Photo 1", "key": photo_file(1)},
         {"label": "Photo 4", "key": photo_file(4)},
         {"label": "The portrait", "key": portrait_file()},
+        {"label": "The before-picture", "key": before_picture_file()},
     ]
     (told,) = instructed["choose_broll_picture"]
     assert "then a photo of what the scene needs" in told
@@ -101,14 +103,21 @@ def test_the_model_writing_the_prompts_is_told_each_pictures_job_the_portrait_la
         {"image": 1, "job": "the product, only how it looks"},
         {"image": 2, "job": "only how the tea's colour looks"},
         {"image": 3, "job": "the presenter"},
+        {"image": 4, "job": BEFORE_PICTURE_JOB},
     ]
     assert step.pictures_sent == [
         {"image": 1, "photo": 1, "job": "the product, only how it looks"},
         {"image": 2, "photo": 4, "job": "only how the tea's colour looks"},
         {"image": 3, "portrait": True, "job": "the presenter"},
+        {"image": 4, "before_picture": True, "job": BEFORE_PICTURE_JOB},
     ]
     (asked,) = handoffs("make_starting_picture")
-    assert asked["pictures"] == [photo_file(1), photo_file(4), portrait_file()]
+    assert asked["pictures"] == [
+        photo_file(1),
+        photo_file(4),
+        portrait_file(),
+        before_picture_file(),
+    ]
 
 
 def test_a_needs_photo_with_a_strangers_face_is_sent_with_the_person_ignored(

@@ -10,8 +10,9 @@ import math
 import mimetypes
 import tempfile
 import wave
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -116,14 +117,19 @@ from .planning import (
     producer_decision_for,
 )
 from .scenes import (
+    BEFORE_PICTURE_INSTRUCTIONS,
+    BEFORE_PICTURE_JOB,
     BROLL_PICTURE_INSTRUCTIONS,
     MAIN_PHOTO_JOB,
     MOST_NEEDS_PHOTOS,
     PORTRAIT_JOB,
     STARTING_PICTURE_INSTRUCTIONS,
+    BeforePictureHandoff,
+    BeforePicturePlan,
     BrollPictureChoice,
     BrollPictureHandoff,
     BrollPromptHandoff,
+    BrollSceneToDraw,
     NeedPhoto,
     PictureJob,
     StartingPictureChoice,
@@ -1517,6 +1523,7 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
     reused in turn."""
     scene = step.scene
     job = scene.job
+    before = _before_picture(step)
     photos = list(job.photos.filter(shows_product_colour=True))
     numbers = [photo.position for photo in photos]
     images = [Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos]
@@ -1538,6 +1545,9 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
         assert portrait is not None, "the tool refuses a scene whose person isn't made"
         images.append(Image(label="The portrait", key=portrait.file))
         pictures.append(PictureJob(image=len(pictures) + 1, job=PORTRAIT_JOB))
+    # Last, so every other picture keeps its number: the place the scene is drawn in.
+    images.append(Image(label="The before-picture", key=before.file))
+    pictures.append(PictureJob(image=len(pictures) + 1, job=BEFORE_PICTURE_JOB))
     handoff = BrollPromptHandoff(
         scene=scene.number,
         line=step.line,
@@ -1548,6 +1558,7 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
         usage=step.usage,
         result=step.broll_result,
         pictures=pictures,
+        before_picture=before.text,
         product_colour=job.product_colour,
         colour_photos=numbers,
         person_looks=job.person_looks,
@@ -1582,6 +1593,7 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
             job.photos.get(position=choice.photo).file,
             *(job.photos.get(position=need.photo).file for need in needs),
             *([portrait.file] if portrait else []),
+            before.file,
         ]
         file = (
             drawn[tries]
@@ -1622,6 +1634,76 @@ def say_the_pictures_kept_failing(job: Job, failing: PictureKeptFailing) -> None
     )
 
 
+# Which Postgres advisory locks stand for "one before-picture per ad": this number with the
+# job's. Any number will do, as long as nothing else takes the same one.
+BEFORE_PICTURE_LOCK = 2
+
+
+def _before_picture(step: SceneStep) -> ProducedItem:
+    """The ad's before-picture: the place every B-roll scene happens in, with each thing the
+    scenes act on and every problem any of them shows, as it is before any starts, and no
+    product or person. Every B-roll starting picture is drawn from it, so the scenes match:
+    drawn alone, each got its own toilet and its own stains (round 3 #8 s3 FAIL,
+    research/scenes-match/README.md).
+
+    Drawn once per ad, by the first B-roll starting picture that needs it, from the plan's
+    B-roll scenes as they stand then. Starting pictures made at the same time wait for it,
+    and every one made later uses it too, so they all match. Run again, as after a worker
+    stopped, it pays for nothing already paid for."""
+    job = step.scene.job
+    with _one_job_at_a_time(BEFORE_PICTURE_LOCK, job):
+        made = latest(job, ProducedItem.Kind.BEFORE_PICTURE)
+        if made is not None:
+            return made
+        plan = call_model(
+            job=job,
+            purpose="plan_before_picture",
+            instructions=BEFORE_PICTURE_INSTRUCTIONS,
+            handoff=BeforePictureHandoff(
+                script=list(job.scenes.values_list("line", flat=True)),
+                broll_scenes=[
+                    BrollSceneToDraw(
+                        scene=scene.number,
+                        line=scene.line,
+                        shows=scene.shows,
+                        broll_kind=scene.broll_kind,
+                        usage=scene.usage,
+                        result=scene.result,
+                    )
+                    for scene in job.scenes.exclude(broll_kind="")
+                ],
+                conversation=_conversation(job, until=step.started_at),
+            ),
+            output=BeforePicturePlan,
+            pay_once=True,
+        )
+        paid_for = (
+            _paid_calls(job, "make_before_picture").filter(handoff={"prompt": plan.prompt}).last()
+        )
+        file = (
+            paid_for.output["file"]
+            if paid_for is not None and paid_for.output is not None
+            else draw_picture(job=job, purpose="make_before_picture", prompt=plan.prompt)
+        )
+        return ProducedItem.objects.create(
+            job=job, kind=ProducedItem.Kind.BEFORE_PICTURE, file=file, text=plan.prompt
+        )
+
+
+@contextmanager
+def _one_job_at_a_time(lock: int, job: Job) -> Iterator[None]:
+    """Wait for, then hold while the block runs, the Postgres advisory lock `lock` for `job`,
+    so work done under it for the same job runs one at a time. It is held by the database
+    connection, not a transaction, so what is done under it is kept as it happens."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_lock(%s, hashtext(%s))", [lock, str(job.pk)])
+    try:
+        yield
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_unlock(%s, hashtext(%s))", [lock, str(job.pk)])
+
+
 def _plan_broll_picture(
     step: SceneStep,
     choice: BrollPictureChoice,
@@ -1638,6 +1720,7 @@ def _plan_broll_picture(
     step.motion_prompt = choice.motion_prompt
     step.way = SceneStep.Way.FROM_PICTURE
     main_photo, *need_photos = (picture.model_dump() for picture in pictures)
+    before_sent = need_photos.pop()
     portrait_sent = [need_photos.pop()] if portrait else []
     step.pictures_sent = [
         {**main_photo, "photo": choice.photo},
@@ -1646,6 +1729,7 @@ def _plan_broll_picture(
             for picture, need in zip(need_photos, needs, strict=True)
         ),
         *({**picture, "portrait": True} for picture in portrait_sent),
+        {**before_sent, "before_picture": True},
     ]
     step.save(
         update_fields=[

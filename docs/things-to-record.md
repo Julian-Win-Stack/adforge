@@ -125,3 +125,15 @@ The old 7-check start-picture check is replaced by one judge that looks for obje
 2. A failed picture is drawn again from prompts rewritten with the judge's reasons and the picture shown, at most twice.
 3. When the third picture fails too, the run stops and the chat shows the three pictures and why each failed. Julian: "the best to crash the run" (21:48), so a judge too strict or prompts it can't fix are seen, not kept quietly.
 4. It misses wrong background objects, such as the 4 wrong toilets (docs/limitations.md).
+
+----------------------------------------
+
+## Why we shipped one shared before-picture per ad (2026-10-10)
+
+Julian graded round 3. #8 s3 failed: "a different toilet means the different dirt." Each B-roll start picture was drawn on its own, from the shop photo and words alone, and each scene described only the dirt its own line named. Drawn alone, the toilet came out different in 3 of 3 runs.
+
+1. Every ad now draws one before-picture first: the place, each thing the scenes act on, and every problem any scene shows, with no product or person in it. It is planned from all the ad's B-roll scenes, so the dirt one scene names is there for all of them.
+2. Every B-roll start picture is drawn from it (sent last to the picture model), and the prompt writer is handed its exact words: same place, same light, same stains, camera as close as the action needs. This applies to every product, not only before-and-after ones (Julian, 10 Oct: "we should just do this for all the products instead of picking").
+3. Cost: about 6 cents more per ad.
+
+Full list with file:line: project files decisions/built-shared-before-picture.md.

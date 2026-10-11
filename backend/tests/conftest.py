@@ -156,6 +156,12 @@ def facts_ok(*scenes: int) -> dict[str, Any]:
 # The mug plan's fact check, when all three lines match the page.
 FACTS_OK = facts_ok(1, 2, 3)
 
+# What the model planning the ad's before-picture answers when a test doesn't say.
+BEFORE_PICTURE_PLAN: dict[str, Any] = {
+    "prompt": "An upright 9:16 photo in a real, ordinary pottery workshop. A wooden workbench.",
+    "prompt_reason": "Every B-roll scene happens on the workbench.",
+}
+
 # The B-roll starting picture judge's answer, when it finds nothing that can't exist.
 PICTURE_OK: dict[str, Any] = {
     "objects": [
@@ -215,6 +221,7 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("pick_photos", lambda _: SHAMPOO_PICKED)
     fake.answer_unscripted("note_face", lambda _: NO_FACE)
     fake.answer_unscripted("check_starting_picture", lambda _: PICTURE_OK)
+    fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
     with use_model(fake):
         yield fake
 
@@ -466,6 +473,11 @@ def paid_for() -> list[str]:
         .order_by("created_at", "id")
         .values_list("purpose", flat=True)
     )
+
+
+def before_picture_file() -> str:
+    """The ad's before-picture, in the file store."""
+    return Job.objects.get().produced.get(kind="before_picture").file
 
 
 def handoffs(purpose: str) -> list[dict[str, Any]]:
