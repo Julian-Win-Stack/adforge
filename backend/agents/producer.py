@@ -22,6 +22,7 @@ from jobs.work import (
     DECLARED_INSTEAD,
     SkippedPhoto,
     assemble_ad,
+    bring_back_clip,
     check_page,
     copy_and_pick,
     create_music,
@@ -705,7 +706,7 @@ class MakeClip(Tool):
         if note and not scene.broll_kind:
             raise Refused(
                 f"scene {scene.number} was planned before scenes had their B-roll labels, so "
-                "its clip can't be made again from a note. Make its starting picture again "
+                "its movement can't be rewritten from a note. Make its starting picture again "
                 "with the note instead."
             )
         for kind, what in [
@@ -772,11 +773,26 @@ class MakeClip(Tool):
             assert made.step is not None, "a clip is made by a scene step"
             made_from = "from this starting picture" if picture else "for this scene"
             with_note = " with this note" if note else ""
+            # A clip being made will be the scene's newest, whichever this one is.
+            if scene.steps.filter(
+                kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING
+            ).exists():
+                raise Refused(
+                    f"scene {scene.number}'s clip is already being made. You'll be told when "
+                    "it's ready."
+                )
+            # Gone back to an earlier clip, such as an earlier note's, after another was
+            # made: it is brought back as the newest version, so the ad uses it, with no
+            # video paid again (Julian 2026-10-11, "Reuse A's clip").
+            back = ""
+            if made != _latest_clip(scene):
+                again = bring_back_clip(made)
+                back = f" It is the scene's clip again, as version {again.version}."
             return (
                 f"Scene {scene.number}'s clip was already made {made_from} and audio"
                 f"{with_note} (version {made.version}), so nothing was made or paid for "
-                f"again. Making it cost {_dollars(made.step.tool_call.cost_usd())}. Scene "
-                f"{scene.number} is finished."
+                f"again.{back} Making it cost {_dollars(made.step.tool_call.cost_usd())}. "
+                f"Scene {scene.number} is finished."
             )
         _start_step(
             call,
@@ -915,6 +931,15 @@ def _scenes(numbers: list[int]) -> str:
 def _listed(items: list[str]) -> str:
     """ "a", "a and b", or "a, b and c"."""
     return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
+
+
+def _latest_clip(scene: Scene) -> ProducedItem | None:
+    """The scene's newest finished clip, if it has one."""
+    return (
+        scene.produced.filter(kind=ProducedItem.Kind.CLIP, step__status=SceneStep.Status.FINISHED)
+        .order_by("version")
+        .last()
+    )
 
 
 def normalised_note(note: str | None) -> str:

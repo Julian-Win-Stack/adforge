@@ -194,12 +194,12 @@ def broll_prompt_instructions(broll_kind: str) -> str:
 CLIP_FROM_NOTE_RULES = """\
 The scene's starting picture is already made, and it stays as it is: you are shown it, and \
 "picture_prompt" is the prompt it was drawn from. Pick no photo and write no picture prompt. \
-Write only a new video prompt: "motion_prompt" is the one the last clip was made from, and \
-"note" says what the shop owner wants changed about how it moves. Change the movement as the \
-note asks, starting from what the picture shows, and keep what was right. Follow the note \
-unless it asks for something that can't start from this picture, or something "shows" \
-doesn't describe, and then say so in the reason. Give a one-sentence reason for the video \
-prompt, written for the shop owner."""
+Write only a new video prompt: "motion_prompt" is the one the scene's first clip from this \
+picture was made from, before any note, and "note" says what the shop owner wants changed \
+about how it moves. Change the movement as the note asks, starting from what the picture \
+shows, and keep what was right. Follow the note unless it asks for something that can't start \
+from this picture, or something "shows" doesn't describe, and then say so in the reason. Give \
+a one-sentence reason for the video prompt, written for the shop owner."""
 
 
 def clip_from_note_instructions(broll_kind: str) -> str:

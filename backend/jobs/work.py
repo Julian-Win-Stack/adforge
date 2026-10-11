@@ -2040,6 +2040,28 @@ def make_clip(step: SceneStep) -> ProducedItem:
     return clip
 
 
+def bring_back_clip(clip: ProducedItem) -> ProducedItem:
+    """Make an earlier clip the scene's clip again, as its next version: the same file, step,
+    picture and audio, with nothing made or paid for again (#132 review, M1). The scene is
+    finished, as it was when the clip was made."""
+    scene = clip.scene
+    assert scene is not None, "a clip belongs to a scene"
+    with transaction.atomic():
+        again = ProducedItem.objects.create(
+            job=clip.job,
+            scene=scene,
+            step=clip.step,
+            kind=ProducedItem.Kind.CLIP,
+            version=_next_version(scene, ProducedItem.Kind.CLIP),
+            file=clip.file,
+            seconds=clip.seconds,
+            made_from=clip.made_from,
+            picture=clip.picture,
+        )
+        Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
+    return again
+
+
 def _rewrite_motion_prompt(step: SceneStep) -> None:
     """Write a B-roll clip step's video prompt again from its note, keeping it on the step: a
     model told the same rules as the one that wrote the scene's prompts, and that the starting

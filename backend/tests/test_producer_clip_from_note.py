@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from agents import tasks
-from agents.producer import MakeClip, normalised_note
+from agents.producer import MakeClip, _clip_and_transcript, normalised_note
 from gateway.catalog import MODEL_FOR_PURPOSE
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
@@ -232,6 +232,56 @@ def test_a_different_note_makes_a_new_clip(
     ]
 
 
+def test_going_back_to_an_earlier_note_brings_its_clip_back_without_paying_again(
+    fake_model: FakeModel, clipped: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    clip_with_note(fake_model, steps, say, HOVERS, REWRITE)
+    clip_with_note(
+        fake_model,
+        steps,
+        say,
+        "The tea should pour from the left.",
+        {**REWRITE, "motion_prompt": "Tea pours from the left into the mug."},
+    )
+    paid = paid_for()
+
+    calling(fake_model, say, ("make_clip", {"scene": 2, "note": HOVERS}))
+
+    assert paid_for() == paid
+    assert steps.held == []
+    assert clips() == [(2, 1), (2, 2), (2, 3), (2, 4)]
+    second, back = (ProducedItem.objects.get(kind="clip", version=v) for v in (2, 4))
+    assert (back.file, back.step, back.seconds, back.made_from, back.picture) == (
+        second.file,
+        second.step,
+        second.seconds,
+        second.made_from,
+        second.picture,
+    )
+    assert results_of("make_clip")[-1].startswith(
+        "Scene 2's clip was already made from this starting picture and audio with this note "
+        "(version 2), so nothing was made or paid for again. It is the scene's clip again, as "
+        "version 4. Making it cost "
+    )
+    # The ad is assembled from the note's clip, not the last one made.
+    assert _clip_and_transcript(Scene.objects.get(number=2))[0] == back
+
+
+def test_going_back_to_an_earlier_note_while_a_clip_is_being_made_is_refused_as_busy(
+    fake_model: FakeModel, clipped: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    clip_with_note(fake_model, steps, say, HOVERS, REWRITE)
+    calling(fake_model, say, ("make_clip", {"scene": 2, "note": "The tea should pour faster."}))
+
+    calling(fake_model, say, ("make_clip", {"scene": 2, "note": HOVERS}))
+
+    assert results_of("make_clip")[-1] == (
+        "Refused: scene 2's clip is already being made. You'll be told when it's ready. "
+        "Nothing was done."
+    )
+    assert clips() == [(2, 1), (2, 2)]
+
+
 def test_no_note_after_a_clip_was_made_is_already_made_as_before(
     fake_model: FakeModel, clipped: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
@@ -312,9 +362,9 @@ def test_a_scene_planned_before_its_broll_labels_with_a_note_is_refused(
     assert paid_for() == paid
     assert not SceneStep.objects.filter(kind="clip").exists()
     assert results_of("make_clip")[-1] == (
-        "Refused: scene 2 was planned before scenes had their B-roll labels, so its clip can't "
-        "be made again from a note. Make its starting picture again with the note instead. "
-        "Nothing was done."
+        "Refused: scene 2 was planned before scenes had their B-roll labels, so its movement "
+        "can't be rewritten from a note. Make its starting picture again with the note "
+        "instead. Nothing was done."
     )
 
 
@@ -401,11 +451,11 @@ def test_the_clip_only_block_says_the_picture_is_fixed_and_only_the_movement_cha
     assert CLIP_FROM_NOTE_RULES == (
         "The scene's starting picture is already made, and it stays as it is: you are shown "
         'it, and "picture_prompt" is the prompt it was drawn from. Pick no photo and write no '
-        'picture prompt. Write only a new video prompt: "motion_prompt" is the one the last '
-        'clip was made from, and "note" says what the shop owner wants changed about how it '
-        "moves. Change the movement as the note asks, starting from what the picture shows, "
-        "and keep what was right. Follow the note unless it asks for something that can't "
-        'start from this picture, or something "shows" doesn\'t describe, and then say so in '
-        "the reason. Give a one-sentence reason for the video prompt, written for the shop "
-        "owner."
+        'picture prompt. Write only a new video prompt: "motion_prompt" is the one the '
+        'scene\'s first clip from this picture was made from, before any note, and "note" '
+        "says what the shop owner wants changed about how it moves. Change the movement as the "
+        "note asks, starting from what the picture shows, and keep what was right. Follow the "
+        "note unless it asks for something that can't start from this picture, or something "
+        '"shows" doesn\'t describe, and then say so in the reason. Give a one-sentence reason '
+        "for the video prompt, written for the shop owner."
     )
