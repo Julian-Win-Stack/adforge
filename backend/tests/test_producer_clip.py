@@ -250,7 +250,7 @@ def test_a_talking_clips_motion_prompt_carries_the_pose_its_picture_was_planned_
 
 
 def test_the_tool_takes_only_the_scene_so_the_clip_is_made_from_what_was_checked() -> None:
-    assert list(MakeClip.model_json_schema()["properties"]) == ["scene"]
+    assert list(MakeClip.model_json_schema()["properties"]) == ["scene", "note"]
 
 
 # --- What the tool refuses -------------------------------------------------------------------

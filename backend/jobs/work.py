@@ -130,12 +130,15 @@ from .scenes import (
     BrollPictureHandoff,
     BrollPromptHandoff,
     BrollSceneToDraw,
+    ClipFromNoteChoice,
+    ClipFromNoteHandoff,
     NeedPhoto,
     PictureJob,
     StartingPictureChoice,
     StartingPictureHandoff,
     broll_prompt_instructions,
     broll_video_prompt,
+    clip_from_note_instructions,
     need_job,
     photos_for_needs,
     pose_for,
@@ -1992,6 +1995,8 @@ def make_clip(step: SceneStep) -> ProducedItem:
     assert audio is not None, "a clip step starts with its audio"
     assert picture is not None or step.picture_step is not None, "and its picture, or its plan"
     assert audio.seconds is not None, "a line's audio is measured when it's made"
+    if step.note and not step.motion_prompt:
+        _rewrite_motion_prompt(step)
     handoff = _clip_handoff(step, picture, audio)
     making, collecting = _clip_purposes(step)
 
@@ -2033,6 +2038,44 @@ def make_clip(step: SceneStep) -> ProducedItem:
         )
         Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
     return clip
+
+
+def _rewrite_motion_prompt(step: SceneStep) -> None:
+    """Write a B-roll clip step's video prompt again from its note, keeping it on the step: a
+    model told the same rules as the one that wrote the scene's prompts, and that the starting
+    picture stays, is handed the picture's prompts, the scene and the note, and shown the
+    picture. The producer never writes a prompt (Julian 2026-10-11 21:00).
+
+    Run again, as after a worker stopped, it pays for nothing already paid for: the answer for
+    the same handoff is answered from its record."""
+    job = step.scene.job
+    planned = step.picture_step
+    assert step.picture is not None and planned is not None, (
+        "the tool makes a B-roll clip from a note only from its starting picture's step"
+    )
+    rewrite = call_model(
+        job=job,
+        purpose="rewrite_clip_prompt",
+        instructions=clip_from_note_instructions(step.broll_kind),
+        handoff=ClipFromNoteHandoff(
+            scene=step.scene.number,
+            line=step.line,
+            shows=step.shows,
+            broll_kind=step.broll_kind,
+            person_shown=step.person_shown,
+            usage=step.usage,
+            result=step.broll_result,
+            picture_prompt=planned.prompt,
+            motion_prompt=planned.motion_prompt,
+            note=step.note,
+            conversation=_conversation(job, until=step.started_at),
+        ),
+        output=ClipFromNoteChoice,
+        images=[Image(label="The starting picture", key=step.picture.file)],
+        pay_once=True,
+    )
+    step.motion_prompt = rewrite.motion_prompt
+    step.save(update_fields=["motion_prompt"])
 
 
 def _ask_for_clip(job: Job, making: str, handoff: ClipHandoff | BrollClipHandoff) -> str:
@@ -2093,7 +2136,8 @@ def _clip_handoff(
         )
     seconds = _broll_clip_seconds(audio.seconds)
     assert picture is not None, "a B-roll scene's clip is made from its starting picture"
-    motion = planned.motion_prompt
+    # A clip made from a note has its own prompt, written again from the picture's.
+    motion = step.motion_prompt or planned.motion_prompt
     return BrollClipHandoff(
         starting_picture=picture.file,
         seconds=seconds,
