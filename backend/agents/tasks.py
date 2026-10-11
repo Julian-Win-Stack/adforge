@@ -184,10 +184,11 @@ def _picture_finished(step: SceneStep, picture: ProducedItem | None) -> str:
     assert step.photo is not None, "a starting picture is made from a photo"
     assert picture is not None, "a starting picture step makes its picture"
     number = step.scene.number
-    # Keeping the picture planned a finished scene again: see work.py _keep_picture.
+    # A finished scene is planned again here, in the transaction that finishes the step and
+    # tells the producer, so a worker that stops first leaves the scene with its old clip.
     unfinished = (
         f"Scene {number} is no longer finished: make its clip from this picture. "
-        if _unfinished_by(step, picture)
+        if Scene.objects.get(pk=step.scene_id).plan_again()
         else ""
     )
     return (
@@ -195,22 +196,6 @@ def _picture_finished(step: SceneStep, picture: ProducedItem | None) -> str:
         f"(version {picture.version}), and is shown to the shop owner in the chat. "
         f"Photo {step.photo.position} was used: "
         f"{step.photo_reason}{_cost(step)} {unfinished}Tell the shop owner."
-    )
-
-
-def _unfinished_by(step: SceneStep, picture: ProducedItem) -> bool:
-    """Whether the scene has a clip of its line as it stands, from an older picture, so it was
-    finished before `picture` was kept."""
-    scene = Scene.objects.get(pk=step.scene_id)
-    return (
-        scene.status == Scene.Status.PLANNED
-        and scene.produced.filter(
-            kind=ProducedItem.Kind.CLIP,
-            step__status=SceneStep.Status.FINISHED,
-            **SceneStep.made_for(scene, through="step__"),
-        )
-        .exclude(picture=picture)
-        .exists()
     )
 
 
@@ -361,6 +346,7 @@ def run_scene_step(step_id: int) -> None:
             if shown:
                 messages.add(session, role=Message.Role.AGENT, carrying=shown)
             step.status = SceneStep.Status.FINISHED
+            # Inside the transaction: a picture's message plans its scene again.
             step.result = work.finished(step, made)
             step.finished_at = timezone.now()
             step.save(update_fields=["status", "result", "finished_at"])

@@ -297,6 +297,17 @@ class Scene(models.Model):
     def __str__(self) -> str:
         return f"Scene {self.number}: {self.line}"
 
+    def plan_again(self) -> bool:
+        """Plan the scene again if it is finished, as when it gets a new starting picture: its
+        clip shows the old one, so the ad isn't assembled until a clip is made from the new
+        one (#133). Saved at once. Gives whether it was finished."""
+        planned = Scene.objects.filter(pk=self.pk, status=self.Status.FINISHED).update(
+            status=self.Status.PLANNED
+        )
+        if planned:
+            self.status = self.Status.PLANNED
+        return bool(planned)
+
     def change_line(
         self, line: str, shows: str | None = None, *, broll: dict[str, Any] | None = None
     ) -> None:

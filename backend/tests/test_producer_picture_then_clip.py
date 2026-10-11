@@ -161,10 +161,13 @@ def test_two_new_pictures_in_a_row_leave_the_scene_unfinished_and_its_clip_uses_
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], assembled: ProducedItem
 ) -> None:
     new_picture(fake_model, steps, say, 2, HIGHER)
+    first = picture_step(2)
     new_picture(fake_model, steps, say, 2, "Pour the tea slower.")
 
     assert status(2) == "planned"
-    assert "Scene 2 is no longer finished" in picture_step(2).result
+    assert "Scene 2 is no longer finished" in first.result
+    # It was already planned again by the first.
+    assert "no longer finished" not in picture_step(2).result
     calling(fake_model, say, ("make_clip", {"scene": 2}))
     run(fake_model, steps)
 
@@ -193,7 +196,7 @@ def test_no_new_picture_is_started_while_the_scenes_clip_is_being_made(
     assert picture(2).version == 2
 
 
-def test_a_worker_stopping_as_the_picture_is_kept_keeps_neither_it_nor_the_unfinishing(
+def test_a_worker_stopping_as_the_picture_is_kept_leaves_the_scene_finished(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], assembled: ProducedItem
 ) -> None:
     calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": HIGHER}))
@@ -204,14 +207,19 @@ def test_a_worker_stopping_as_the_picture_is_kept_keeps_neither_it_nor_the_unfin
         pytest.raises(WorkerStopped),
     ):
         steps.run_next()
+    run(fake_model, steps)
+    tasks.carry_on_after_the_worker_starts()
 
-    assert picture(2).version == 1
+    assert picture_step(2).status == "failed"
     assert status(2) == "finished"
 
 
-def test_a_worker_stopping_after_the_picture_is_kept_leaves_the_scene_unfinished(
+def test_a_worker_stopping_before_the_picture_step_finishes_leaves_the_scene_finished(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], assembled: ProducedItem
 ) -> None:
+    # The scene is planned again only as the step finishes and the producer is told, so a
+    # picture kept on a step that then failed changes nothing, as if it couldn't be made.
+    old = clip(2)
     calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": HIGHER}))
     fake_model.respond("choose_broll_picture", BROLL_CHOICE)
 
@@ -223,9 +231,22 @@ def test_a_worker_stopping_after_the_picture_is_kept_leaves_the_scene_unfinished
     run(fake_model, steps)
     tasks.carry_on_after_the_worker_starts()
 
-    assert picture(2).version == 2
+    assert picture_step(2).status == "failed"
+    assert status(2) == "finished"
+    assert clip(2) == old
+    assert assemble(fake_model, say).startswith("The ad was already assembled")
+
+
+def test_a_scene_already_planned_again_isnt_said_to_be_no_longer_finished(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], assembled: ProducedItem
+) -> None:
+    # As when its line was changed and changed back before the new picture.
+    Scene.objects.filter(number=2).update(status="planned")
+
+    new_picture(fake_model, steps, say, 2)
+
     assert status(2) == "planned"
-    assert assemble(fake_model, say).startswith("Refused: scene 2 isn't finished")
+    assert "no longer finished" not in picture_step(2).result
 
 
 def test_a_scenes_first_picture_leaves_it_planned_and_says_nothing_of_unfinishing(
@@ -241,16 +262,17 @@ def test_a_scenes_first_picture_leaves_it_planned_and_says_nothing_of_unfinishin
 
 
 def test_every_finished_step_tells_the_producer_what_it_cost(assembled: ProducedItem) -> None:
-    finished = SceneStep.objects.filter(status="finished")
-    assert {step.kind for step in finished} == {
-        "starting_picture",
-        "line_audio",
-        "transcript",
-        "clip",
+    # Scene 1 is a talking scene of 8 words: what the fake's model calls cost for it.
+    told = {
+        step.kind: step.result
+        for step in SceneStep.objects.filter(scene__number=1, status="finished")
     }
-    for step in finished:
-        cost = dollars(step.tool_call.cost_usd())
-        assert f" It cost {cost}." in step.result, step.result
+    assert {kind: said.split(" It cost ")[1].split(" ")[0] for kind, said in told.items()} == {
+        "starting_picture": "$0.0155.",
+        "line_audio": "$0.00095.",
+        "transcript": "$0.000244.",
+        "clip": "$0.20.",
+    }
 
 
 @pytest.mark.parametrize(

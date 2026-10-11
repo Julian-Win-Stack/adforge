@@ -1818,22 +1818,16 @@ def _keep_starting_picture(step: SceneStep, prompt: str, pictures: list[str]) ->
 
 def _keep_picture(step: SceneStep, file: str) -> ProducedItem:
     """Keep the picture in the file store at `file` as the step's scene's next version of
-    its starting picture. A finished scene is planned again: its clip shows the old picture,
-    so the ad can't be assembled until a clip is made from this one (#133). Both happen
-    together, so a worker that stops leaves both or neither."""
+    its starting picture."""
     scene = step.scene
-    with transaction.atomic():
-        Scene.objects.filter(pk=scene.pk, status=Scene.Status.FINISHED).update(
-            status=Scene.Status.PLANNED
-        )
-        return ProducedItem.objects.create(
-            job=scene.job,
-            scene=scene,
-            step=step,
-            kind=ProducedItem.Kind.STARTING_PICTURE,
-            version=_next_version(scene, ProducedItem.Kind.STARTING_PICTURE),
-            file=file,
-        )
+    return ProducedItem.objects.create(
+        job=scene.job,
+        scene=scene,
+        step=step,
+        kind=ProducedItem.Kind.STARTING_PICTURE,
+        version=_next_version(scene, ProducedItem.Kind.STARTING_PICTURE),
+        file=file,
+    )
 
 
 def make_line_audio(step: SceneStep) -> ProducedItem:
