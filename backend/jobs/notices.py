@@ -2,6 +2,8 @@
 so nothing fails quietly. The producer may leave a failure out of its reply or soften it;
 a notice is written by code and says exactly what happened."""
 
+from collections.abc import Sequence
+
 from django.db import transaction
 from django.utils import timezone
 
@@ -11,11 +13,14 @@ from chat.models import Message
 from .models import Job
 
 
-def post_notice(job: Job, text: str, level: Message.Level) -> None:
-    """Tell the user, in the chat, that something fell back or failed. `text` says three
-    things: what failed, what was used instead, and what that means for the ad. The notice
-    is also kept in `job.warnings`, so the ad can be found later. No model is ever given a
-    notice: the producer learns of the failure from the tool's result."""
+def post_notice(
+    job: Job, text: str, level: Message.Level, carrying: Sequence[messages.AttachedFile] = ()
+) -> None:
+    """Tell the user, in the chat, that something fell back or failed, with any files that
+    show it. `text` says three things: what failed, what was used instead, and what that
+    means for the ad. The notice is also kept in `job.warnings`, so the ad can be found
+    later. No model is ever given a notice: the producer learns of the failure from the
+    tool's result."""
     warning = {"level": level, "text": text, "at": timezone.now().isoformat()}
     # The job is read again under a lock, so a notice posted through another copy of the job
     # in the meantime isn't overwritten; the warning and the message are kept together.
@@ -25,5 +30,11 @@ def post_notice(job: Job, text: str, level: Message.Level) -> None:
         locked.save(update_fields=["warnings"])
         # A job started before sessions existed has no chat to post in.
         if locked.session is not None:
-            messages.add(locked.session, role=Message.Role.NOTICE, text=text, level=level)
+            messages.add(
+                locked.session,
+                role=Message.Role.NOTICE,
+                text=text,
+                level=level,
+                carrying=carrying,
+            )
     job.warnings = locked.warnings

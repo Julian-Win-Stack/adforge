@@ -1,58 +1,57 @@
-"""A B-roll scene's starting picture is checked before any clip is paid for, driven through
-the chat: side by side with the shop photo, and against the scene's prompts. One that fails
-is drawn again from prompts rewritten to fix what the check found, at most twice (Julian,
-2026-10-07: a made-up toilet and a bent bottle neck were only seen after the clip was paid
-for). The producer's model and the scene models are faked at the gateway."""
+"""A B-roll scene's starting picture is judged before any clip is paid for, driven through
+the chat: a judge shown the picture alone looks for objects that can't exist, asked up to
+3 times and failing it on 2 fails. One that fails is drawn again from prompts rewritten to
+fix what the judge found, at most twice; when the third picture fails too, the run stops
+and the chat shows the three pictures and why each failed (Julian, 2026-10-10 21:48: "the
+best to crash the run"; the judge tested in /mnt/project-files/evals/picture-judge/). The
+producer's model and the scene models are faked at the gateway."""
 
 from collections.abc import Callable
 from typing import Any
 
 import pytest
+from rest_framework.test import APIClient
 
 from adforge.retry import OutsideServiceDown
 from agents import tasks
+from chat.models import Attachment, Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
+from gateway.types import BlockedBySafetyFilter
 from jobs.models import Job, SceneStep
-from jobs.picture_check import STARTING_PICTURE_CHECK
 
-from .conftest import PICTURE_OK, HeldSteps, WorkerStopped, handoffs, paid_for
+from .conftest import PICTURE_OK, HeldSteps, WorkerStopped, chat, handoffs, paid_for
 from .test_producer_broll import (
     BROLL_CHOICE,
+    TALKING_CHOICE,
     calling,
     checked,  # noqa: F401 (a fixture)
     instructed,  # noqa: F401 (a fixture)
     picture_of_scene_2,
 )
 
-pytestmark = [
-    pytest.mark.django_db(transaction=True),
-    pytest.mark.usefixtures("checked", "quality_checks_on"),
-]
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("checked")]
 
 
-@pytest.fixture
-def quality_checks_on(settings: Any) -> None:
-    """The check is off unless switched on; these tests are about the check itself."""
-    settings.QUALITY_CHECKS = True
+def impossible(problem: str) -> dict[str, Any]:
+    """The judge's answer for a picture with an object that can't exist."""
+    return {
+        "objects": [
+            {
+                "name": "mug",
+                "side_facing_camera": "the front",
+                "parts_seen": "a handle on each side, one fused into the rim",
+                "a_real_one_could_look_like_this": False,
+                "why": "A handle can't grow out of the rim.",
+            }
+        ],
+        "verdict": "fail",
+        "problem": problem,
+    }
 
 
-def test_quality_checks_are_off_unless_switched_on() -> None:
-    # Julian 10 Oct 03:10: all 12 fails on the round 2 fixes free check were wrong, and the
-    # check never blocks (the third try is kept anyway). Off until the #111 eval shows it
-    # agrees with his grades.
-    import adforge.settings
-
-    assert adforge.settings.QUALITY_CHECKS is False
-
-
-BENT_NECK = "The bottle's neck bends down; in the shop photo it rises straight from the top."
-
-# A check that finds the product doesn't match its shop photo.
-NOT_THE_PRODUCT: dict[str, Any] = {
-    **PICTURE_OK,
-    "matches_the_shop_photo": {"passes": False, "problem": BENT_NECK},
-}
+FUSED_HANDLE = "The mug's handle is fused into its rim; a real handle joins the side."
+TWO_SPOUTS = "The mug has a spout on both sides; a real mug has none."
 
 # The prompts written again to fix it.
 FIXED_CHOICE: dict[str, Any] = {
@@ -67,76 +66,185 @@ def pictures_drawn() -> list[str]:
     return [call.output["file"] for call in calls if call.output is not None]
 
 
-def test_a_picture_that_passes_is_checked_once_beside_the_shop_photo(
+def test_the_judge_runs_unless_quality_checks_are_switched_off() -> None:
+    # Julian 2026-10-10 21:55 agreed the new judge runs on every B-roll picture.
+    import adforge.settings
+
+    assert adforge.settings.QUALITY_CHECKS is True
+
+
+def test_a_picture_that_passes_is_judged_beside_the_shop_photo_it_was_drawn_from(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     step = picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE)
 
-    job = Job.objects.get()
     picture = step.produced.get()
-    assert paid_for()[-3:] == [
+    # Two passes settle it, so the third ask isn't made.
+    assert paid_for()[-4:] == [
         "choose_broll_picture",
         "make_starting_picture",
         "check_starting_picture",
+        "check_starting_picture",
     ]
-    assert ModelCall.objects.get(purpose="check_starting_picture").images == [
-        {"label": "The shop photo", "key": job.photos.get(position=1).file},
-        {"label": "The starting picture", "key": picture.file},
-    ]
-    (check,) = handoffs("check_starting_picture")
-    assert (check["line"], check["shows"], check["picture_prompt"], check["video_prompt"]) == (
-        step.line,
-        step.shows,
-        BROLL_CHOICE["prompt"],
-        BROLL_CHOICE["motion_prompt"],
-    )
+    # The picture first, then the one shop photo it was drawn from, for how the product is
+    # built (Julian 23:05: the phone was caught 5 of 5 with it, 3 of 5 without). No prompt
+    # or line: a judge told what to expect tends to see it.
+    photo = Job.objects.get().photos.get(position=BROLL_CHOICE["photo"])
+    for check in ModelCall.objects.filter(purpose="check_starting_picture"):
+        assert check.images == [
+            {"label": "The picture to judge:", "key": picture.file},
+            {"label": "The shop photo:", "key": photo.file},
+        ]
+    assert [ask["ask"] for ask in handoffs("check_starting_picture")] == [1, 2]
+    assert step.status == "finished"
 
 
-def test_a_picture_that_fails_is_drawn_again_from_prompts_written_to_fix_it(
+def test_one_fail_in_three_asks_passes_the_picture(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    fake_model.respond("check_starting_picture", impossible(FUSED_HANDLE), PICTURE_OK, PICTURE_OK)
+
+    step = picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE)
+
+    assert len(pictures_drawn()) == 1
+    assert paid_for().count("check_starting_picture") == 3
+    assert step.status == "finished"
+
+
+def test_a_picture_that_fails_twice_is_drawn_again_from_prompts_written_to_fix_it(
     fake_model: FakeModel,
     instructed: dict[str, list[str]],  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
-    fake_model.respond("check_starting_picture", NOT_THE_PRODUCT, PICTURE_OK)
+    fake_model.respond(
+        "check_starting_picture", impossible(FUSED_HANDLE), PICTURE_OK, impossible(TWO_SPOUTS)
+    )
 
     step = picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE, FIXED_CHOICE)
 
     first, second = handoffs("make_starting_picture")
     assert (first["prompt"], second["prompt"]) == (BROLL_CHOICE["prompt"], FIXED_CHOICE["prompt"])
-    # The model writing the prompts again is told what was wrong, and shown the picture.
+    # The model writing the prompts again is told each problem found, and shown the picture.
     _, rewrite = handoffs("choose_broll_picture")
     assert rewrite["redo"] == {
         "picture_prompt": BROLL_CHOICE["prompt"],
         "video_prompt": BROLL_CHOICE["motion_prompt"],
-        "problems": [BENT_NECK],
+        "problems": [FUSED_HANDLE, TWO_SPOUTS],
     }
-    first_picture = ModelCall.objects.filter(purpose="make_starting_picture").first()
-    assert first_picture is not None and first_picture.output is not None
+    first_picture = pictures_drawn()[0]
     rewritten = ModelCall.objects.filter(purpose="choose_broll_picture").last()
-    assert rewritten is not None and rewritten.images[-1] == {
-        "label": "The last picture",
-        "key": first_picture.output["file"],
-    }
+    assert rewritten is not None
+    assert rewritten.images[-1] == {"label": "The last picture", "key": first_picture}
     told_first, told_again = instructed["choose_broll_picture"]
     assert "failed its check" in told_again and "failed its check" not in told_first
     # The picture kept is the one that passed, with the prompts it was drawn from.
-    assert step.produced.get().file != first_picture.output["file"]
+    assert step.produced.get().file == pictures_drawn()[1]
     assert step.prompt == FIXED_CHOICE["prompt"]
 
 
-def test_a_picture_that_keeps_failing_is_drawn_three_times_and_the_last_kept(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+def test_a_picture_that_fails_three_times_stops_the_run_and_shows_each_picture_and_why(
+    fake_model: FakeModel,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
 ) -> None:
-    fake_model.respond("check_starting_picture", *[NOT_THE_PRODUCT] * 3)
+    fake_model.respond("check_starting_picture", *[impossible(FUSED_HANDLE)] * 6)
+    calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": None}))
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE, FIXED_CHOICE, FIXED_CHOICE)
+    turns_before = paid_for().count("produce")
 
-    step = picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE, FIXED_CHOICE, FIXED_CHOICE)
+    steps.run_held()
 
+    step = SceneStep.objects.get(kind="starting_picture", scene__number=2)
+    assert step.status == "stopped"
+    assert not step.produced.exists()
     drawn = pictures_drawn()
     assert len(drawn) == 3
-    assert step.produced.get().file == drawn[-1]
-    assert paid_for().count("check_starting_picture") == 3
+    # The chat shows the three pictures and what the judge found in each.
+    notice = Message.objects.get(role="notice", text__startswith="Scene 2")
+    assert [a.file for a in notice.attachments.all()] == drawn
+    assert all(a.kind == Attachment.Kind.PICTURE for a in notice.attachments.all())
+    for number in (1, 2, 3):
+        assert f"Picture {number}: {FUSED_HANDLE}" in notice.text
+    # The producer takes no turn to carry on: the run is stopped and the chat says so.
+    assert paid_for().count("produce") == turns_before
+    role, said = chat(api, session_id)[-1]
+    assert role == "agent" and said.startswith("I had to stop: scene 2's starting picture")
+
+
+def test_a_step_finishing_after_the_run_stopped_doesnt_start_it_again(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    fake_model.respond("check_starting_picture", *[impossible(FUSED_HANDLE)] * 6)
+    calling(
+        fake_model,
+        say,
+        ("make_starting_picture", {"scene": 2, "note": None}),
+        ("make_starting_picture", {"scene": 1, "note": None}),
+    )
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE, FIXED_CHOICE, FIXED_CHOICE)
+    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
+    turns_before = paid_for().count("produce")
+
+    steps.run_held()
+
+    # Scene 1's picture was made after scene 2's stopped the run; nobody spoke since.
+    assert SceneStep.objects.get(kind="starting_picture", scene__number=1).status == "finished"
+    assert paid_for().count("produce") == turns_before
+    assert Message.objects.filter(role="agent", text__startswith="I had to stop").count() == 1
+
+
+def test_a_stop_during_the_producers_turn_refuses_the_rest_of_its_calls(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], monkeypatch: Any
+) -> None:
+    # Scene 2's picture runs as soon as it is started, so the run stops while the producer
+    # is still settling the calls of the same turn: scene 1's picture is then not paid for.
+    monkeypatch.setattr(tasks.run_scene_step, "delay", tasks.run_scene_step)
+    fake_model.respond("check_starting_picture", *[impossible(FUSED_HANDLE)] * 6)
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE, FIXED_CHOICE, FIXED_CHOICE)
+
+    calling(
+        fake_model,
+        say,
+        ("make_starting_picture", {"scene": 2, "note": None}),
+        ("make_starting_picture", {"scene": 1, "note": None}),
+    )
+
+    assert "choose_starting_picture" not in paid_for()
+    assert not SceneStep.objects.filter(scene__number=1).exists()
+    assert Message.objects.filter(role="agent", text__startswith="I had to stop").count() == 1
+
+
+def test_after_the_run_stopped_a_message_from_the_user_carries_on(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    fake_model.respond("check_starting_picture", *[impossible(FUSED_HANDLE)] * 6)
+    calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": None}))
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE, FIXED_CHOICE, FIXED_CHOICE)
+    steps.run_held()
+    fake_model.respond("produce", turn(says="Let's try again."))
+
+    say("Try again")
+
+    assert Message.objects.filter(role="agent").last().text == "Let's try again."  # type: ignore[union-attr]
+
+
+def test_a_judge_blocked_by_the_safety_filter_counts_as_not_checked(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    fake_model.respond(
+        "check_starting_picture",
+        BlockedBySafetyFilter("content_filter"),
+        impossible(FUSED_HANDLE),
+        PICTURE_OK,
+    )
+
+    step = picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE)
+
     assert step.status == "finished"
+    assert len(pictures_drawn()) == 1
 
 
 def test_a_picture_step_run_again_after_the_worker_stopped_pays_for_no_picture_twice(
@@ -146,10 +254,14 @@ def test_a_picture_step_run_again_after_the_worker_stopped_pays_for_no_picture_t
     (step_id,) = steps.held
     fake_model.respond("choose_broll_picture", BROLL_CHOICE, FIXED_CHOICE)
     # The first picture fails its check; the worker stops as the second is checked.
-    fake_model.respond("check_starting_picture", NOT_THE_PRODUCT, WorkerStopped())
+    fake_model.respond(
+        "check_starting_picture",
+        impossible(FUSED_HANDLE),
+        impossible(FUSED_HANDLE),
+        WorkerStopped(),
+    )
     with pytest.raises(WorkerStopped):
         steps.run_next()
-    fake_model.respond("check_starting_picture", PICTURE_OK)
     fake_model.respond("produce", turn(says="Ready!"))
 
     tasks.run_scene_step(step_id)
@@ -160,23 +272,24 @@ def test_a_picture_step_run_again_after_the_worker_stopped_pays_for_no_picture_t
     assert step.produced.get().file == pictures_drawn()[1]
 
 
-def test_a_picture_whose_check_cant_be_read_is_kept_and_not_paid_for_again(
+def test_a_judge_answer_that_cant_be_read_counts_as_not_checked(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    # A check that fails without saying why can't be read, but the picture is paid for.
+    # A fail that doesn't say why can't be read, but the picture is paid for.
     fake_model.respond(
         "check_starting_picture",
-        {**PICTURE_OK, "real_objects": {"passes": False, "problem": ""}},
+        {**impossible(FUSED_HANDLE), "problem": " "},
+        impossible(FUSED_HANDLE),
+        PICTURE_OK,
     )
 
     step = picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE)
 
     assert step.status == "finished"
-    assert step.produced.get().file == pictures_drawn()[0]
-    assert paid_for().count("make_starting_picture") == 1
+    assert len(pictures_drawn()) == 1
 
 
-def test_a_picture_whose_check_service_is_down_is_kept_and_not_paid_for_again(
+def test_a_picture_whose_judge_service_is_down_is_kept_and_not_paid_for_again(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     fake_model.respond("check_starting_picture", *[OutsideServiceDown("azure answered 503")] * 3)
@@ -198,50 +311,3 @@ def test_with_quality_checks_switched_off_a_picture_is_kept_unchecked(
     assert step.status == "finished"
     assert paid_for()[-2:] == ["choose_broll_picture", "make_starting_picture"]
     assert "check_starting_picture" not in paid_for()
-
-
-def test_the_check_fails_a_before_that_doesnt_show_what_will_change() -> None:
-    # Test ads (08 Oct), N3: the start picture was asked for clean tile, so before looked the
-    # same as after, and the check passed it: it only checked the result wasn't there yet.
-    assert (
-        "not its result already there, and what the action will change, or the problem, is "
-        "plainly visible."
-    ) in STARTING_PICTURE_CHECK
-
-
-def test_the_check_fails_a_picture_that_doesnt_make_sense_for_the_line() -> None:
-    # Round 2 #12 s5: the drop started just above the floor, copied from the shop's drop
-    # photo (low hand, shoe, knee-height camera), and the six checks passed it. Julian 22:25:
-    # "We'll add another check".
-    assert (
-        '- makes_sense_for_the_line: the picture sets up what "shows" and "line" claim, as '
-        "a real person would film it"
-    ) in STARTING_PICTURE_CHECK
-    assert "a standing person's hand height" in STARTING_PICTURE_CHECK
-    assert "not copied from the shop photo" in STARTING_PICTURE_CHECK
-    # Tried on Julian's graded pictures: it failed #5's PERFECT crossbody walk for framing
-    # "past her knees", so crop is not its job. Review P2 2: excusing all "framing" also
-    # excused #12 s5's knee-height camera, caught 2/3; the camera is always judged.
-    assert (
-        "Always judge the camera's height and angle and where the action starts. Only the crop, "
-        'how much of a body is in frame, and other small differences from "picture_prompt" '
-        "never fail this check."
-    ) in STARTING_PICTURE_CHECK
-    assert "framing, crop and small differences" not in STARTING_PICTURE_CHECK
-
-
-def test_a_picture_that_doesnt_make_sense_for_the_line_is_drawn_again(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    too_low = "The phone starts an inch above the floor; the page says it survives 6 ft drops."
-    fake_model.respond(
-        "check_starting_picture",
-        {**PICTURE_OK, "makes_sense_for_the_line": {"passes": False, "problem": too_low}},
-        PICTURE_OK,
-    )
-
-    picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE, FIXED_CHOICE)
-
-    assert len(pictures_drawn()) == 2
-    _, rewrite = handoffs("choose_broll_picture")
-    assert rewrite["redo"]["problems"] == [too_low]

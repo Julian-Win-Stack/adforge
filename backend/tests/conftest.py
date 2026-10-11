@@ -156,18 +156,19 @@ def facts_ok(*scenes: int) -> dict[str, Any]:
 # The mug plan's fact check, when all three lines match the page.
 FACTS_OK = facts_ok(1, 2, 3)
 
-# A B-roll starting picture's check, when it finds nothing wrong.
+# The B-roll starting picture judge's answer, when it finds nothing that can't exist.
 PICTURE_OK: dict[str, Any] = {
-    check: {"passes": True, "problem": None}
-    for check in (
-        "real_objects",
-        "matches_the_shop_photo",
-        "label_turns_with_the_product",
-        "shows_the_before",
-        "no_face",
-        "prompts_agree",
-        "makes_sense_for_the_line",
-    )
+    "objects": [
+        {
+            "name": "mug",
+            "side_facing_camera": "the front",
+            "parts_seen": "a handle on the right side",
+            "a_real_one_could_look_like_this": True,
+            "why": "A real mug has its handle on its side.",
+        }
+    ],
+    "verdict": "pass",
+    "problem": None,
 }
 
 
