@@ -182,12 +182,21 @@ MAIN_PHOTO_JOB = "the product, only how it looks"
 PORTRAIT_JOB = "the presenter"
 
 
+# Added by code to every labelled B-roll scene's video prompt: the video model sees only the
+# starting picture, so a side it can't see is made up (round 3, 10 Oct: the #12 phone case
+# flipped mid-clip; docs/broll-picture-logic.md, "Prompt rules").
+SAME_SIDE = "Whatever side faces the camera at the start stays toward the camera the whole time."
+
+
 def broll_video_prompt(prompt: str, seconds: int) -> str:
     """A B-roll scene's video prompt as it is sent: the clip's real length and a still camera
     first, so no prompt goes without them, then the prompt as the model wrote it. The one
     movement is a hand or the product, never the camera (test ads, 08 Oct); the look is the
-    video model's (docs/broll-picture-logic.md, "Prompt rules")."""
-    return f"A {seconds}-second video at real-time speed. The camera stays still. {prompt}"
+    video model's (docs/broll-picture-logic.md, "Prompt rules"). SAME_SIDE follows the still
+    camera."""
+    return (
+        f"A {seconds}-second video at real-time speed. The camera stays still. {SAME_SIDE} {prompt}"
+    )
 
 
 # Added by code to every prompt for a scene that shows the product, after what the model
