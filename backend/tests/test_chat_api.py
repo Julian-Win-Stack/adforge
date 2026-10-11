@@ -80,6 +80,7 @@ def test_a_new_session_is_named_from_the_users_first_message(
         "text": "Make me a 15 second ad for https://shop.example/products/mug",
         "created_at": sent.json()["message"]["created_at"],
         "attachments": [],
+        "step": None,
     }
 
 
@@ -183,9 +184,10 @@ def test_a_photo_attached_to_a_message_is_kept_through_the_file_store(
 
     assert sent.status_code == 201, sent.json()
     attachments = sent.json()["message"]["attachments"]
-    assert [(one["position"], one["kind"]) for one in attachments] == [
-        (1, "picture"),
-        (2, "picture"),
+    # The shop owner's own photos belong to no scene.
+    assert [(one["position"], one["kind"], one["scene"]) for one in attachments] == [
+        (1, "picture", None),
+        (2, "picture", None),
     ]
     kept = Attachment.objects.order_by("position")
     assert [file_store.read(one.file) for one in kept] == [MUG_FRONT, MUG_SIDE]
@@ -316,9 +318,42 @@ def test_an_agent_message_can_carry_a_picture_a_sound_and_a_video(
 
     assert polled[0]["role"] == "agent"
     assert polled[0]["attachments"] == [
-        {"position": 1, "kind": "picture", "url": "/media/portrait.png"},
-        {"position": 2, "kind": "sound", "url": "/media/voice.mp3"},
-        {"position": 3, "kind": "video", "url": "/media/ad.mp4"},
+        {"position": 1, "kind": "picture", "url": "/media/portrait.png", "scene": None},
+        {"position": 2, "kind": "sound", "url": "/media/voice.mp3", "scene": None},
+        {"position": 3, "kind": "video", "url": "/media/ad.mp4", "scene": None},
+    ]
+
+
+def test_a_reopened_session_says_which_scene_each_file_and_step_message_is_about(
+    api: APIClient, start_session: Callable[..., str], send: Callable[..., Any]
+) -> None:
+    session_id = start_session()
+    send(session_id, "Make me an ad for my mug")
+    session = Session.objects.get(pk=session_id)
+    clip = file_store.save("clip.mp4", b"scene 2's clip")
+    messages.add(
+        session,
+        role=Message.Role.NOTICE,
+        level=Message.Level.INFO,
+        text="Making scene 2's clip.",
+        step=messages.StepSignal(2, Message.StepKind.CLIP, Message.StepState.STARTED),
+    )
+    messages.add(
+        session,
+        role=Message.Role.AGENT,
+        carrying=[messages.AttachedFile(Attachment.Kind.VIDEO, clip, scene=2)],
+        step=messages.StepSignal(2, Message.StepKind.CLIP, Message.StepState.MADE),
+    )
+
+    reopened = api.get(f"/api/sessions/{session_id}/").json()["messages"]
+
+    assert [(message["step"], message["attachments"]) for message in reopened] == [
+        (None, []),
+        ({"scene": 2, "kind": "clip", "state": "started"}, []),
+        (
+            {"scene": 2, "kind": "clip", "state": "made"},
+            [{"position": 1, "kind": "video", "url": "/media/clip.mp4", "scene": 2}],
+        ),
     ]
 
 

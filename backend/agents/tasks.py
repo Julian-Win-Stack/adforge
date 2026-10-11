@@ -28,7 +28,7 @@ from jobs.work import (
     transcribe_line_audio,
 )
 
-from . import loop
+from . import loop, step_signals
 from .loop import BLOCKED, EXPECTED_FAILURES, RunStopped, why_it_failed
 from .producer import PRODUCER
 
@@ -255,7 +255,7 @@ class StepWork:
     # Gives what it made.
     make: Callable[[SceneStep], ProducedItem | None]
     finished: Callable[[SceneStep, ProducedItem | None], str]
-    shown: Callable[[ProducedItem | None], list[messages.AttachedFile]]
+    shown: Callable[[SceneStep, ProducedItem | None], list[messages.AttachedFile]]
 
 
 STEP_WORK = {
@@ -263,8 +263,10 @@ STEP_WORK = {
         name="starting picture",
         make=make_starting_picture,
         finished=_picture_finished,
-        shown=lambda picture: (
-            [messages.AttachedFile(Attachment.Kind.PICTURE, picture.file)] if picture else []
+        shown=lambda step, picture: (
+            [messages.AttachedFile(Attachment.Kind.PICTURE, picture.file, step.scene.number)]
+            if picture
+            else []
         ),
     ),
     # The line's audio and its transcript are the producer's to judge, not the shop owner's.
@@ -272,20 +274,25 @@ STEP_WORK = {
         name="line's audio",
         make=make_line_audio,
         finished=_audio_finished,
-        shown=lambda _: [],
+        shown=lambda _step, _audio: [],
     ),
     SceneStep.Kind.TRANSCRIPT: StepWork(
         name="transcript",
         make=transcribe_line_audio,
         finished=_transcript_finished,
-        shown=lambda _: [],
+        shown=lambda _step, _transcript: [],
     ),
-    # Clips are shown once the whole ad is put together from them.
+    # Each clip is shown with its scene number as it is made, so the shop owner sees each
+    # scene on its own before the whole ad is put together from them.
     SceneStep.Kind.CLIP: StepWork(
         name="clip",
         make=make_clip,
         finished=_clip_finished,
-        shown=lambda _: [],
+        shown=lambda step, clip: (
+            [messages.AttachedFile(Attachment.Kind.VIDEO, clip.file, step.scene.number)]
+            if clip
+            else []
+        ),
     ),
 }
 
@@ -327,9 +334,14 @@ def run_scene_step(step_id: int) -> None:
         # producer is woken in the same transaction, so its session never looks idle
         # between the two, when another session could start.
         with transaction.atomic():
-            shown = work.shown(made)
+            shown = work.shown(step, made)
             if shown:
-                messages.add(session, role=Message.Role.AGENT, carrying=shown)
+                messages.add(
+                    session,
+                    role=Message.Role.AGENT,
+                    carrying=shown,
+                    step=step_signals.signal(step, Message.StepState.MADE),
+                )
             step.status = SceneStep.Status.FINISHED
             step.result = work.finished(step, made)
             step.finished_at = timezone.now()
@@ -363,6 +375,7 @@ def _fail(step: SceneStep, reason: str) -> None:
     )
     step.finished_at = timezone.now()
     step.save(update_fields=["status", "reason", "result", "finished_at"])
+    step_signals.say_not_made(step, reason)
 
 
 def _stop(step: SceneStep, reason: str) -> None:

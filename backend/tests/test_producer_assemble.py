@@ -125,6 +125,15 @@ def videos_shown(api: APIClient, session_id: str) -> list[dict[str, Any]]:
     ]
 
 
+def ads_shown(api: APIClient, session_id: str) -> list[dict[str, Any]]:
+    """Every message in the chat that carries a finished ad: a video of no one scene."""
+    return [
+        message
+        for message in videos_shown(api, session_id)
+        if any(attached["scene"] is None for attached in message["attachments"])
+    ]
+
+
 def test_the_scenes_are_assembled_into_one_ad_that_plays_in_the_chat(
     api: APIClient,
     fake_model: FakeModel,
@@ -147,10 +156,13 @@ def test_the_scenes_are_assembled_into_one_ad_that_plays_in_the_chat(
     shows = [colour_at(read(ad.file), middle) for middle in (2.0, 5.75, 8.25)]
     assert shows == ["red", "lime", "blue"]
     # Shown by the producer, with no words of its own: its next message talks about it.
-    (shown,) = videos_shown(api, session_id)
+    # Each scene's clip was shown with its number as it was made; the ad with none.
+    *clips, shown = videos_shown(api, session_id)
+    assert [[each["scene"] for each in clip["attachments"]] for clip in clips] == [[1], [2], [3]]
     assert (shown["role"], shown["text"]) == ("agent", "")
     (attached,) = shown["attachments"]
     assert served(attached["url"], settings) == read(ad.file)
+    assert attached["scene"] is None
     last = api.get(f"/api/sessions/{session_id}/messages/").json()[-1]
     assert (last["role"], last["text"]) == ("agent", "Here's your ad!")
 
@@ -239,7 +251,7 @@ def test_the_ad_isnt_assembled_while_a_scene_is_unfinished(
         "Finish them, then assemble the ad. Nothing was done."
     ]
     assert ads() == []
-    assert videos_shown(api, session_id) == []
+    assert ads_shown(api, session_id) == []
 
 
 def test_the_ad_isnt_assembled_while_a_clip_is_being_made(
@@ -294,7 +306,7 @@ def test_an_ad_already_assembled_is_handed_back_and_charges_nothing(
 
     assert paid_for() == paid
     assert [ad.version for ad in ads()] == [1]
-    assert len(videos_shown(api, session_id)) == 1
+    assert len(ads_shown(api, session_id)) == 1
     assert results_of("assemble_ad")[-1] == (
         "The ad was already assembled from these clips, overlays and this music (version 1, "
         "9 seconds) and shown to the shop owner, so nothing was made again. Assembling costs "
@@ -334,7 +346,7 @@ def test_a_scene_made_again_gets_a_new_version_of_the_ad_and_the_old_one_is_kept
     assert first.cuts[0]["clip"] == first_clip.pk
     new_clip = ProducedItem.objects.filter(kind="clip", scene__number=1).latest("version")
     assert second.cuts[0]["clip"] == new_clip.pk != first_clip.pk
-    assert len(videos_shown(api, session_id)) == 2
+    assert len(ads_shown(api, session_id)) == 2
 
 
 def test_the_music_plays_under_the_voice_and_is_cut_to_the_ads_length(
@@ -391,7 +403,7 @@ def test_new_music_gets_a_new_version_of_the_ad_and_the_old_one_is_kept(
     # The same clips, cut the same way: only the music changed.
     assert second.cuts == first.cuts
     assert first.file != second.file
-    assert len(videos_shown(api, session_id)) == 2
+    assert len(ads_shown(api, session_id)) == 2
     assert results_of("assemble_ad")[-1].startswith("Assembled the ad (version 2, 9 seconds)")
 
 

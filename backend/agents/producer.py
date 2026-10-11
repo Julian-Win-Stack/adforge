@@ -41,6 +41,7 @@ from jobs.work import (
     why_the_checks_passed,
 )
 
+from . import step_signals
 from .loop import Agent, Refused, Tool
 from .models import ToolCall
 
@@ -940,6 +941,8 @@ def _start_step(
                 picture=picture,
                 picture_step=picture_step,
             )
+            # Together with the step, so the chat is told once whatever happens to it.
+            step_signals.say_started(step)
     except IntegrityError:
         # Another started it since the look above.
         raise Refused(busy) from None

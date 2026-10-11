@@ -1631,6 +1631,10 @@ def say_the_pictures_kept_failing(job: Job, failing: PictureKeptFailing) -> None
         f"check found in each picture:\n{found}",
         Message.Level.PROBLEM,
         carrying=[messages.AttachedFile(Attachment.Kind.PICTURE, file) for file, _ in failed],
+        # The chat can tell from it that the scene's picture is no longer being made.
+        step=messages.StepSignal(
+            scene, Message.StepKind.STARTING_PICTURE, Message.StepState.NOT_MADE
+        ),
     )
 
 

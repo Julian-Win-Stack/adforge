@@ -29,7 +29,7 @@ class AttachmentSerializer(serializers.ModelSerializer[Attachment]):
 
     class Meta:
         model = Attachment
-        fields = ["position", "kind", "url"]
+        fields = ["position", "kind", "url", "scene"]
 
     def get_url(self, attachment: Attachment) -> str:
         return file_store.url(attachment.file)
@@ -37,10 +37,21 @@ class AttachmentSerializer(serializers.ModelSerializer[Attachment]):
 
 class MessageSerializer(serializers.ModelSerializer[Message]):
     attachments = AttachmentSerializer(many=True, read_only=True)
+    step = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
-        fields = ["seq", "role", "level", "text", "created_at", "attachments"]
+        fields = ["seq", "role", "level", "text", "created_at", "attachments", "step"]
+
+    def get_step(self, message: Message) -> dict[str, object] | None:
+        """The scene step the message is about, and how it stands, or null."""
+        if message.step_scene is None:
+            return None
+        return {
+            "scene": message.step_scene,
+            "kind": message.step_kind,
+            "state": message.step_state,
+        }
 
 
 class SessionSerializer(serializers.ModelSerializer[Session]):

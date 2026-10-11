@@ -12,12 +12,14 @@ from rest_framework.test import APIClient
 
 from adforge.file_store import read
 from adforge.retry import OutsideServiceDown
-from agents import tasks
-from agents.producer import MakeClip
+from agents import loop, tasks
+from agents.producer import PRODUCER, MakeClip
+from chat.models import Message, Session
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import work
 from jobs.models import Job, ProducedItem, Scene, SceneStep
+from jobs.planning import ChatMessage
 
 from .conftest import (
     NO_CHOICES,
@@ -203,9 +205,13 @@ def test_the_clip_is_made_in_the_background_from_the_picture_and_the_audio_heard
     assert read(clip.file) == fake_model.clips["video-1"]
     assert Scene.objects.get(number=1).status == "finished"
     assert told() == CLIP_READY
-    # The clip isn't shown: the shop owner sees only the producer's replies.
+    # The clip is shown in the chat with its scene number, on a message with no words.
     after = api.get(f"/api/sessions/{session_id}/messages/").json()[messages_before:]
-    assert [m["attachments"] for m in after] == [[], [], []]
+    shown = [m for m in after if m["attachments"]]
+    assert [(m["role"], m["text"]) for m in shown] == [("agent", "")]
+    assert shown[0]["attachments"] == [
+        {"position": 1, "kind": "video", "url": f"/media/{clip.file}", "scene": 1}
+    ]
     # The video model was asked once, and its records are charged to the tool call.
     submitted = ModelCall.objects.get(purpose="make_talking_clip")
     assert submitted.handoff == {
@@ -408,7 +414,12 @@ def test_a_clip_already_made_is_handed_back_and_charges_nothing(
 
 
 def test_a_new_starting_picture_gets_a_new_clip_and_the_old_clip_is_kept(
-    fake_model: FakeModel, clipped: None, steps: HeldSteps, say: Callable[..., None]
+    api: APIClient,
+    fake_model: FakeModel,
+    clipped: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
 ) -> None:
     first = ProducedItem.objects.get(kind="clip")
     # Made twice more, so the picture, the clip and the audio each have their own version.
@@ -431,6 +442,18 @@ def test_a_new_starting_picture_gets_a_new_clip_and_the_old_clip_is_kept(
         fake_model.clips["video-2"],
     )
     assert paid_for().count("make_talking_clip") == 2
+    # Both versions were shown, the newer later, each with its scene number.
+    shown = [
+        (message["seq"], attached["url"], attached["scene"])
+        for message in api.get(f"/api/sessions/{session_id}/messages/").json()
+        for attached in message["attachments"]
+        if attached["kind"] == "video"
+    ]
+    assert [(url, scene) for _, url, scene in shown] == [
+        (f"/media/{first.file}", 1),
+        (f"/media/{second.file}", 1),
+    ]
+    assert shown[0][0] < shown[1][0]
     assert told() == (
         "Background step finished: scene 1's clip is ready (version 2, 4 seconds), made from "
         "starting picture version 3 and audio version 1. Scene 1 is finished. Tell the shop "
@@ -522,6 +545,84 @@ def test_a_clip_the_video_service_is_down_for_fails_its_step_and_the_producer_is
     assert [(t.attempt, t.outcome) for t in tries] == [(1, "failed"), (2, "failed"), (3, "failed")]
 
 
+def clip_signals(api: APIClient, session_id: str) -> list[tuple[str, str, str, Any]]:
+    """Each message in the chat that says a scene's clip started or ended, as (role, level,
+    text, step)."""
+    return [
+        (message["role"], message["level"], message["text"], message["step"])
+        for message in api.get(f"/api/sessions/{session_id}/messages/").json()
+        if message["step"] is not None and message["step"]["kind"] == "clip"
+    ]
+
+
+def test_the_chat_can_tell_a_scenes_clip_is_being_made_until_it_is_shown(
+    api: APIClient,
+    fake_model: FakeModel,
+    ready: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    calling(fake_model, "make_clip")
+
+    say("Make scene 1's clip")
+
+    started = {"scene": 1, "kind": "clip", "state": "started"}
+    assert clip_signals(api, session_id) == [("notice", "info", "Making scene 1's clip.", started)]
+    run(fake_model, steps)
+    assert clip_signals(api, session_id)[1:] == [
+        ("agent", "", "", {"scene": 1, "kind": "clip", "state": "made"})
+    ]
+
+
+def test_the_chat_can_tell_a_scenes_clip_is_no_longer_being_made_when_it_fails(
+    api: APIClient,
+    fake_model: FakeModel,
+    ready: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    calling(fake_model, "make_clip")
+    say("Make scene 1's clip")
+    fake_model.respond("make_clip", *[OutsideServiceDown("fal answered 503")] * 3)
+
+    run(fake_model, steps)
+
+    step = clip_step_failed()
+    assert clip_signals(api, session_id)[1:] == [
+        (
+            "notice",
+            "problem",
+            f"Scene 1's clip couldn't be made: {step.reason}",
+            {"scene": 1, "kind": "clip", "state": "not_made"},
+        )
+    ]
+
+
+def test_what_the_chat_is_shown_of_each_scene_is_never_given_to_a_model(
+    api: APIClient, fake_model: FakeModel, clipped: None, session_id: str
+) -> None:
+    session = Session.objects.get(pk=session_id)
+    job = Job.objects.get()
+    given_to_the_producer_now, _, _ = loop._conversation(PRODUCER, session)
+    given_to_the_planners_now = work._conversation(job)
+    # The chat was told of scene 1's picture and clip as each started and was made.
+    shown = Message.objects.filter(step_scene__isnull=False)
+    assert shown.count() == 4
+
+    shown.delete()
+
+    # The producer is given exactly what it was given without them.
+    assert loop._conversation(PRODUCER, session)[0] == given_to_the_producer_now
+    # The models that plan the ad read the picture and the clip as the producer's own
+    # message with a file, as they read the portrait and the voice, and no notice.
+    assert [each for each in given_to_the_planners_now if each not in work._conversation(job)] == [
+        ChatMessage(by="producer", text="[Attached 1 picture]"),
+        ChatMessage(by="producer", text="[Attached 1 video]"),
+    ]
+
+
 def test_a_clip_the_video_model_couldnt_make_isnt_asked_for_again(
     fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
@@ -555,13 +656,15 @@ def test_a_slow_clip_is_waited_for_and_the_shop_owner_told_it_is_still_being_mad
 
     run(fake_model, steps)
 
-    assert chat(api, session_id)[-3:] == [
+    assert chat(api, session_id)[-4:] == [
         ("agent", "On it."),
         (
             "agent",
             "Scene 1's clip is taking longer than usual. It's still being made, and I'll "
             "tell you when it's ready.",
         ),
+        # The clip itself, shown with no words.
+        ("agent", ""),
         ("agent", "Done."),
     ]
     assert told() == CLIP_READY

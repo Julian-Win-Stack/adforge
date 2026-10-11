@@ -2,7 +2,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App";
-import type { Attachment, Message, Session } from "./api";
+import type { Attachment, Message, SceneStep, Session } from "./api";
 
 const NOW = "2026-09-20T10:00:00Z";
 
@@ -31,6 +31,7 @@ function fakeBackend() {
     text: string,
     attachments: Attachment[] = [],
     level?: Message["level"],
+    step: SceneStep | null = null,
   ) {
     const message = {
       seq: session.messages.length + 1,
@@ -39,6 +40,7 @@ function fakeBackend() {
       text,
       created_at: NOW,
       attachments,
+      step,
     };
     session.messages.push(message);
     if (message.seq === 1 && session.name === "" && text) session.name = text.slice(0, 80);
@@ -82,6 +84,7 @@ function fakeBackend() {
           position: i + 1,
           kind: "picture" as const,
           url: `/media/${name}`,
+          scene: null,
         }));
         const message = add(session, "user", text, carried);
         return Response.json({ session: summary(session), message }, { status: 201 });
@@ -110,13 +113,15 @@ function fakeBackend() {
       for (const [role, text] of said) add(session, role, text);
       return session.id;
     },
-    /** The agent says something in the newest session, as it would while the page polls. */
-    agentSays(text: string, attachments: Attachment[] = []) {
-      add(sessions[0], "agent", text, attachments);
+    /** The agent says something in the newest session, as it would while the page polls. A
+     * scene's picture or clip comes with what it says of that scene's step. */
+    agentSays(text: string, attachments: Attachment[] = [], step: SceneStep | null = null) {
+      add(sessions[0], "agent", text, attachments, undefined, step);
     },
-    /** Code posts a notice in the newest session: a step fell back or failed. */
-    notice(text: string, level: "problem" | "info") {
-      add(sessions[0], "notice", text, [], level);
+    /** Code posts a notice in the newest session: a step fell back or failed, or a scene's
+     * picture or clip started. */
+    notice(text: string, level: "problem" | "info", step: SceneStep | null = null) {
+      add(sessions[0], "notice", text, [], level, step);
     },
     /** The next message sent is refused with these reasons, as Django answers a 400. */
     refuseNextSend(reasons: Record<string, string[]>) {
@@ -213,11 +218,11 @@ test("shows a picture, plays a sound and plays a video the agent made", async ()
   await findSaid("Make me an ad for my mug");
 
   backend.agentSays("Here's who will present it, and how they sound.", [
-    { position: 1, kind: "picture", url: "/media/jobs/1/person.png" },
-    { position: 2, kind: "sound", url: "/media/jobs/1/voice.mp3" },
+    { position: 1, kind: "picture", url: "/media/jobs/1/person.png", scene: null },
+    { position: 2, kind: "sound", url: "/media/jobs/1/voice.mp3", scene: null },
   ]);
   backend.agentSays("Here's the ad.", [
-    { position: 1, kind: "video", url: "/media/jobs/1/ad.mp4" },
+    { position: 1, kind: "video", url: "/media/jobs/1/ad.mp4", scene: null },
   ]);
   await act(() => vi.advanceTimersByTimeAsync(2000));
   await findSaid("Here's the ad.");
@@ -233,6 +238,31 @@ test("shows a picture, plays a sound and plays a video the agent made", async ()
   expect(video.tagName).toBe("VIDEO");
   expect(video.hasAttribute("controls")).toBe(true);
   expect(video.getAttribute("src")).toBe("/media/jobs/1/ad.mp4");
+});
+
+test("shows a scene's clip as it is made, after the notice that it started", async () => {
+  const backend = fakeBackend();
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await user.type(screen.getByLabelText("Message"), "Make scene 1's clip");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  await findSaid("Make scene 1's clip");
+
+  backend.notice("Making scene 1's clip.", "info", { scene: 1, kind: "clip", state: "started" });
+  backend.agentSays("I've started scene 1's clip.");
+  backend.agentSays(
+    "",
+    [{ position: 1, kind: "video", url: "/media/jobs/1/clip-1.mp4", scene: 1 }],
+    { scene: 1, kind: "clip", state: "made" },
+  );
+  backend.agentSays("Scene 1's clip is ready.");
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await findSaid("Scene 1's clip is ready.");
+
+  expect(screen.getByText("Making scene 1's clip.")).toBeTruthy();
+  expect(screen.getByLabelText("Video the agent made").getAttribute("src")).toBe(
+    "/media/jobs/1/clip-1.mp4",
+  );
 });
 
 test("attaches photos to a message", async () => {

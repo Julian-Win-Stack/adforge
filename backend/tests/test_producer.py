@@ -362,9 +362,10 @@ def test_the_producer_takes_a_brief_to_a_checked_plan_that_is_ready_to_render(
     ]
     person = api.get(f"/api/sessions/{session_id}/messages/").json()[5]["attachments"]
     portrait, voice = job.produced.get(kind="portrait"), job.produced.get(kind="voice")
-    assert [each["url"] for each in person] == [
-        file_store.url(portrait.file),
-        file_store.url(voice.file),
+    # Neither belongs to a scene.
+    assert [(each["url"], each["scene"]) for each in person] == [
+        (file_store.url(portrait.file), None),
+        (file_store.url(voice.file), None),
     ]
     # The producer learns the person was shown from its tool, not from that message.
     person_made = given_to_the_producer(4)[-1]
