@@ -4,14 +4,19 @@ picture drawn from it, so the place and what the scenes act on look the same in 
 (round 3 #8 s3 FAIL: "a different toilet means the different dirt"). The producer's model and
 the scene models are faked at the gateway."""
 
+import threading
+import time
 from collections.abc import Callable
+from typing import Any
 
 import pytest
+from django.db import connection
 
 from agents import tasks
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs.models import Job, Scene, SceneStep
+from jobs.work import BEFORE_PICTURE_LOCK
 
 from .conftest import (
     BEFORE_PICTURE_PLAN,
@@ -150,3 +155,70 @@ def test_a_before_picture_drawn_before_the_worker_stopped_is_not_paid_for_again(
     ]
     (asked,) = handoffs("make_starting_picture")
     assert asked["pictures"][-1] == before_picture_file()
+
+
+def test_two_starting_pictures_made_at_the_same_time_share_one_before_picture(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    scene_3_shows_the_mug_too()
+    calling(
+        fake_model,
+        say,
+        *[("make_starting_picture", {"scene": scene, "note": None}) for scene in (2, 3)],
+    )
+    first, second = steps.held
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE, BROLL_CHOICE)
+    fake_model.respond("produce", turn(says="Done."), turn(says="Done."))
+    running: list[threading.Thread] = []
+
+    def plan_while_scene_3_starts() -> dict[str, Any]:
+        """Plan scene 2's before-picture only once scene 3's step is waiting for it."""
+        running.append(threading.Thread(target=run_and_close, args=(second,)))
+        running[0].start()
+        waiting_for_the_lock()
+        return BEFORE_PICTURE_PLAN
+
+    fake_model.respond("plan_before_picture", plan_while_scene_3_starts)
+
+    run_in_its_own_connection(first)
+    running[0].join(timeout=30)
+
+    assert SceneStep.objects.filter(status="finished").count() == 2
+    assert [p for p in paid_for() if "before_picture" in p] == [
+        "plan_before_picture",
+        "make_before_picture",
+    ]
+    assert [asked["pictures"][-1] for asked in handoffs("make_starting_picture")] == [
+        before_picture_file()
+    ] * 2
+
+
+def run_in_its_own_connection(step_id: int) -> None:
+    """Run a step as its own worker does, on a database connection of its own."""
+    thread = threading.Thread(target=run_and_close, args=(step_id,))
+    thread.start()
+    thread.join(timeout=30)
+
+
+def run_and_close(step_id: int) -> None:
+    """Run a step, then close the connection its thread opened."""
+    try:
+        tasks.run_scene_step(step_id)
+    finally:
+        connection.close()
+
+
+def waiting_for_the_lock() -> None:
+    """Wait until a step is waiting for the ad's before-picture lock."""
+    for _ in range(300):
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted"
+                " AND classid = %s AND objsubid = 2",
+                [BEFORE_PICTURE_LOCK],
+            )
+            (waiting,) = cursor.fetchone()
+        if waiting:
+            return
+        time.sleep(0.05)
+    raise AssertionError("No step waited for the before-picture")
