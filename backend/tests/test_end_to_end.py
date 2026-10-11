@@ -380,7 +380,8 @@ def test_every_b_roll_clip_is_sent_its_starting_picture_and_no_shop_photo(
     assert asked == [(pictures[2], [], 5), (pictures[3], [], 6)]
     # The clip's real length and a still camera first, then the prompt as written.
     assert handoffs("make_broll_clip")[1]["prompt"] == (
-        "A 6-second video at real-time speed. The camera stays still. " + HANDLE_PROMPT
+        "A 6-second video at real-time speed. The camera stays still. Whatever side faces the "
+        "camera at the start stays toward the camera the whole time. " + HANDLE_PROMPT
     )
     # The handle's photo went to the picture model, after the main photo.
     assert handoffs("make_starting_picture")[2]["pictures"] == [
