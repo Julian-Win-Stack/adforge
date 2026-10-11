@@ -116,8 +116,11 @@ export function Chat({
   }
 
   const empty = sessionId === null && messages.length === 0;
-  // A notice posted while the producer works doesn't mean it has answered: look past them.
-  const lastSaid = [...messages].reverse().find((message) => message.role !== "notice");
+  // A notice posted while the producer works doesn't mean it has answered, nor does a scene's
+  // picture or clip shown as it is made: look past them.
+  const lastSaid = [...messages]
+    .reverse()
+    .find((message) => message.role !== "notice" && message.step?.state !== "made");
   const producerHasTheFloor = sessionId !== null && lastSaid?.role === "user";
 
   return (

@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import IntegrityError
+from django.db import IntegrityError, connection
 from django.utils import timezone
 from pytest_django import Settings
 from rest_framework.test import APIClient
@@ -355,6 +355,23 @@ def test_a_reopened_session_says_which_scene_each_file_and_step_message_is_about
             [{"position": 1, "kind": "video", "url": "/media/clip.mp4", "scene": 2}],
         ),
     ]
+
+
+def test_a_worker_on_code_from_before_scene_steps_can_still_add_a_message(
+    api: APIClient, start_session: Callable[..., str]
+) -> None:
+    session_id = start_session()
+
+    # As the code from before saves a message: without the step's columns.
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO chat_message (session_id, seq, role, level, text, trace_id, created_at)"
+            " VALUES (%s, 1, 'agent', '', 'Still here.', '', now())",
+            [session_id],
+        )
+
+    (said,) = api.get(f"/api/sessions/{session_id}/messages/").json()
+    assert (said["text"], said["step"]) == ("Still here.", None)
 
 
 def test_a_message_sent_while_the_work_is_in_flight_is_taken_straight_away(

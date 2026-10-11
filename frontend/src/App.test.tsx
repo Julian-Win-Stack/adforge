@@ -265,6 +265,26 @@ test("shows a scene's clip as it is made, after the notice that it started", asy
   );
 });
 
+test("keeps the working dots going when a scene's clip lands before the agent answers", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Is scene 1 done yet?"]]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: "Mug ad" }));
+  await findSaid("Is scene 1 done yet?");
+
+  backend.agentSays(
+    "",
+    [{ position: 1, kind: "video", url: "/media/jobs/1/clip-1.mp4", scene: 1 }],
+    { scene: 1, kind: "clip", state: "made" },
+  );
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await screen.findByLabelText("Video the agent made");
+
+  // The clip isn't the agent's answer to what the user asked, so it is still working.
+  expect(screen.getByText("The producer is working")).toBeDefined();
+});
+
 test("attaches photos to a message", async () => {
   const backend = fakeBackend();
   const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });

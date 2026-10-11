@@ -82,8 +82,12 @@ class Message(models.Model):
         help_text="The number of the scene whose step this message is about. Null when it "
         "is about no step.",
     )
-    step_kind = models.CharField(max_length=20, choices=StepKind.choices, blank=True)
-    step_state = models.CharField(max_length=10, choices=StepState.choices, blank=True)
+    # A default in the database too, so a worker still running code from before these
+    # fields can add a message while the new code is being rolled out.
+    step_kind = models.CharField(max_length=20, choices=StepKind.choices, blank=True, db_default="")
+    step_state = models.CharField(
+        max_length=10, choices=StepState.choices, blank=True, db_default=""
+    )
     trace_id = models.CharField(
         max_length=32,
         blank=True,

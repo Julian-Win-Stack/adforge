@@ -124,7 +124,7 @@ def test_a_starting_picture_shown_in_the_chat_isnt_given_to_the_producer_as_its_
     }
 
 
-def step_signals(api: APIClient, session_id: str) -> list[tuple[str, str, str, Any]]:
+def step_messages(api: APIClient, session_id: str) -> list[tuple[str, str, str, Any]]:
     """Each message in the chat that says a scene's step started or ended, as (role,
     level, text, step)."""
     return [
@@ -150,7 +150,7 @@ def test_the_chat_can_tell_a_scenes_starting_picture_is_being_made_until_it_is_s
 
     say("Make scene 1's starting picture")
 
-    assert step_signals(api, session_id) == [
+    assert step_messages(api, session_id) == [
         ("notice", "info", "Making scene 1's starting picture.", picture_step("started"))
     ]
 
@@ -159,7 +159,7 @@ def test_the_chat_can_tell_a_scenes_starting_picture_is_being_made_until_it_is_s
     steps.run_held()
 
     # The picture's own message says the step that started has ended with it.
-    assert step_signals(api, session_id)[1:] == [("agent", "", "", picture_step("made"))]
+    assert step_messages(api, session_id)[1:] == [("agent", "", "", picture_step("made"))]
 
 
 def test_the_chat_can_tell_a_scenes_starting_picture_is_being_made_again(
@@ -179,7 +179,7 @@ def test_the_chat_can_tell_a_scenes_starting_picture_is_being_made_again(
 
     say("Make it again, smiling more")
 
-    assert step_signals(api, session_id)[-1] == (
+    assert step_messages(api, session_id)[-1] == (
         "notice",
         "info",
         "Remaking scene 1's starting picture.",
@@ -307,13 +307,15 @@ def test_a_starting_picture_that_cant_be_made_fails_its_step_and_the_producer_is
         f"{step.reason} Tell the shop owner what went wrong.",
     }
     assert chat(api, session_id)[-1] == ("agent", "Sorry, the picture service is down.")
-    # The chat can tell the picture is no longer being made, and why.
-    assert step_signals(api, session_id)[-1] == (
+    # The chat can tell the picture is no longer being made. Why is the producer's to say:
+    # the error, worded for a model, isn't shown to the shop owner.
+    assert step_messages(api, session_id)[-1] == (
         "notice",
         "problem",
-        f"Scene 1's starting picture couldn't be made: {step.reason}",
+        "Scene 1's starting picture couldn't be made.",
         picture_step("not_made"),
     )
+    assert "503" not in str(chat(api, session_id))
 
 
 def test_a_step_that_breaks_while_showing_its_picture_isnt_left_running(
@@ -577,7 +579,7 @@ def test_a_step_run_again_after_its_worker_stopped_pays_for_nothing_twice(
     assert paid_for().count("make_starting_picture") == 1
     assert starting_pictures() == [(1, 1)]
     # Run twice, it was told of once: started, then made.
-    assert [step for _, _, _, step in step_signals(api, session_id)] == [
+    assert [step for _, _, _, step in step_messages(api, session_id)] == [
         picture_step("started"),
         picture_step("made"),
     ]
@@ -614,13 +616,9 @@ def test_a_step_working_when_the_worker_stopped_fails_as_the_worker_starts_and_t
         "Scene 1's picture was interrupted. Shall I retry?",
     )
     # Told once that it started and once that it ended with nothing made.
-    assert [(text, step) for _, _, text, step in step_signals(api, session_id)] == [
+    assert [(text, step) for _, _, text, step in step_messages(api, session_id)] == [
         ("Making scene 1's starting picture.", picture_step("started")),
-        (
-            "Scene 1's starting picture couldn't be made: The worker restarted while it was "
-            "being made.",
-            picture_step("not_made"),
-        ),
+        ("Scene 1's starting picture couldn't be made.", picture_step("not_made")),
     ]
 
 

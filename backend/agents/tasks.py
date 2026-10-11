@@ -375,7 +375,7 @@ def _fail(step: SceneStep, reason: str) -> None:
     )
     step.finished_at = timezone.now()
     step.save(update_fields=["status", "reason", "result", "finished_at"])
-    step_signals.say_not_made(step, reason)
+    step_signals.say_not_made(step)
 
 
 def _stop(step: SceneStep, reason: str) -> None:

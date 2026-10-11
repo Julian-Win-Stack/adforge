@@ -15,11 +15,11 @@ One turn in a session, from the user or the producer, or a notice. The only way 
 _Avoid_: Comment, note, activity entry
 
 **Notice**:
-A message the code posts, not the producer, when a step fell back to a worse source or failed. It says what failed, what was used instead, and what that means for the ad. Shown red when it affects the ad, grey when it is only worth knowing. Kept with the job as one of its warnings, and never given to a model.
+A message the code posts, not the producer, when a step fell back to a worse source or failed. It says what failed, what was used instead, and what that means for the ad. Shown red when it affects the ad, grey when it is only worth knowing. Kept with the job as one of its warnings, and never given to a model. A scene's starting picture or clip also gets a notice when it starts being made ("Making scene 2's clip.") and when it ends with nothing made: these only tell the chat which scene is being made, and aren't warnings.
 _Avoid_: Alert, error message, system message
 
 **Attachment**:
-A file a message carries: a photo the user attached, or a picture, sound or video the producer made. Kept through the file store and shown in the chat.
+A file a message carries: a photo the user attached, or a picture, sound or video the producer made. Kept through the file store and shown in the chat. A scene's starting picture or clip carries its scene's number.
 _Avoid_: Media, upload, asset
 
 **Brief**:
@@ -103,7 +103,7 @@ A B-roll scene showing the second of two end states one claim needs: the second 
 _Avoid_: Pair, variant, alternate use
 
 **Clip**:
-A scene's moving picture, with its line's audio: the same audio its transcript was heard in. A talking scene's is its starting picture animated to speak that audio, so it lasts exactly as long. A B-roll scene's is made by Boreal-H3 with no sound, from its starting picture, in the fewest whole seconds that cover the audio (at least 5, at most 15). It isn't cut to its line: the audio is laid over its start, and it is kept whole, silent after the line, so its motion plays out. A B-roll line whose audio is too long for any clip is shortened before a clip is paid for, or, after 3 shortenings, said to camera instead. Made only once the picture is made and the audio heard, for the line as it stands. A scene whose clip is made is finished. Not shown to the user on its own.
+A scene's moving picture, with its line's audio: the same audio its transcript was heard in. A talking scene's is its starting picture animated to speak that audio, so it lasts exactly as long. A B-roll scene's is made by Boreal-H3 with no sound, from its starting picture, in the fewest whole seconds that cover the audio (at least 5, at most 15). It isn't cut to its line: the audio is laid over its start, and it is kept whole, silent after the line, so its motion plays out. A B-roll line whose audio is too long for any clip is shortened before a clip is paid for, or, after 3 shortenings, said to camera instead. Made only once the picture is made and the audio heard, for the line as it stands. A scene whose clip is made is finished. Shown to the user in the chat as soon as it is made, with its scene's number.
 _Avoid_: Video, render, shot
 
 **Finished ad**:

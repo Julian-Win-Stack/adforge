@@ -44,9 +44,9 @@ def say_started(step: SceneStep) -> None:
     )
 
 
-def say_not_made(step: SceneStep, why: str) -> None:
-    """Tell the chat the step ended with nothing made, if it follows it. `why` is a sentence
-    saying why."""
+def say_not_made(step: SceneStep) -> None:
+    """Tell the chat the step ended with nothing made, if it follows it. Not why: that is
+    worded for the producer, which tells the shop owner in its own words."""
     ended = signal(step, Message.StepState.NOT_MADE)
     if ended is None:
         return
@@ -55,6 +55,6 @@ def say_not_made(step: SceneStep, why: str) -> None:
         step.tool_call.session,
         role=Message.Role.NOTICE,
         level=Message.Level.PROBLEM,
-        text=f"Scene {ended.scene}'s {name} couldn't be made: {why}",
+        text=f"Scene {ended.scene}'s {name} couldn't be made.",
         step=ended,
     )

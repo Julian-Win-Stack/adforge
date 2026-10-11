@@ -589,12 +589,12 @@ def test_the_chat_can_tell_a_scenes_clip_is_no_longer_being_made_when_it_fails(
 
     run(fake_model, steps)
 
-    step = clip_step_failed()
+    clip_step_failed()
     assert clip_signals(api, session_id)[1:] == [
         (
             "notice",
             "problem",
-            f"Scene 1's clip couldn't be made: {step.reason}",
+            "Scene 1's clip couldn't be made.",
             {"scene": 1, "kind": "clip", "state": "not_made"},
         )
     ]
