@@ -459,8 +459,7 @@ def test_a_new_starting_picture_gets_a_new_clip_and_the_old_clip_is_kept(
         "starting picture version 3 and audio version 1. It cost $0.20. Scene 1 is finished. "
         "Scene 1's fix "
         f"has cost {dollars(Fix.objects.last().cost_usd())} so far. Tell the shop owner. The "  # type: ignore[union-attr]
-        "ad will be assembled again, and shown to the shop owner, once scenes 2 and 3 are "
-        "finished."
+        "ad will be assembled, and shown to the shop owner, once scenes 2 and 3 are finished."
     )
 
 

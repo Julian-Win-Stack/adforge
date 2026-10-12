@@ -939,9 +939,9 @@ def assemble_the_ad(session: Session, job: Job) -> tuple[ProducedItem, bool]:
 
 
 def assemble_after_fix(step: SceneStep) -> str:
-    """For a fix's clip that has just landed, its step marked finished: assemble the new ad
-    and show it once every scene is finished, so a producer that forgets can't leave the
-    shop owner without it (Julian, 2026-10-11 22:24, on #135). Says what was done, for the
+    """For a clip `assembles_after` that has just landed, its step marked finished: assemble
+    the new ad and show it once every scene is finished, so a producer that forgets can't
+    leave the shop owner without it (Julian, 2026-10-11 22:24, on #135). Says what was done, for the
     producer: the ad assembled, what it waits for, or why it couldn't be. Costs nothing."""
     job = step.scene.job
     # Two fixes' clips landing at once: the second waits here for the first's transaction,
@@ -956,20 +956,38 @@ def assemble_after_fix(step: SceneStep) -> str:
         or scene.steps.filter(status=SceneStep.Status.RUNNING).exists()
         or _fix_still_to_land(scene)
     ]
+    again = " again" if job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).exists() else ""
     if waiting:
         is_ = "is" if len(waiting) == 1 else "are"
         return (
-            "The ad will be assembled again, and shown to the shop owner, once "
+            f"The ad will be assembled{again}, and shown to the shop owner, once "
             f"{_scenes(waiting)} {is_} finished."
         )
     try:
         ad, _ = assemble_the_ad(step.tool_call.session, job)
     except Refused as refused:
-        return f"The ad couldn't be assembled again: {refused}"
+        return f"The ad couldn't be assembled{again}: {refused}"
     return (
-        f"Every scene is finished, so the ad was assembled again with it (version {ad.version}, "
+        f"Every scene is finished, so the ad was assembled{again} with it (version {ad.version}, "
         f"{ad.seconds:g} seconds) and shown to the shop owner in the chat. Ask them to tell you "
         "if it's fixed."
+    )
+
+
+def assembles_after(step: SceneStep) -> bool:
+    """Whether code assembles the ad once this step has finished: it is a fix's clip, or the
+    clip of a scene still being made for the first time while a scene the shop owner has
+    already said yes to fixing waits for the ad. A scene can be fixed before the whole ad is
+    first made (#135 question 5), and its clip was told the ad would be assembled once the
+    others are finished, so the last of their clips keeps that promise."""
+    if step.kind != SceneStep.Kind.CLIP:
+        return False
+    if step.fix_id is not None:
+        return True
+    job = step.scene.job
+    return (
+        job.fixes.filter(confirmed_by__isnull=False).exists()
+        and not job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).exists()
     )
 
 
@@ -1053,12 +1071,43 @@ class RestateFix(Tool):
             f"Scene {fix.scene.number}: about {dollars(fix.estimate_usd)}." for fix in recorded
         )
         total = sum((fix.estimate_usd for fix in recorded), Decimal(0))
+        waits = "".join(_waits_for(fix.scene) for fix in recorded)
         return (
             f"Recorded the fix{'es' if len(recorded) != 1 else ''}. {each} About "
             f"{dollars(total)} in all. Tell the shop owner this restatement and what it will "
             "cost, and wait for their answer: nothing is made until they say yes. Once they "
-            "have, pass each scene's fix word for word as the note of its redo."
+            f"have, pass each scene's fix word for word as the note of its redo.{waits}"
         )
+
+
+# What the producer calls each step being made, in what it is told.
+_STEP_NAMES = {
+    SceneStep.Kind.STARTING_PICTURE: "starting picture",
+    SceneStep.Kind.LINE_AUDIO: "audio",
+    SceneStep.Kind.TRANSCRIPT: "transcript",
+    SceneStep.Kind.CLIP: "clip",
+}
+
+
+def _waits_for(scene: Scene) -> str:
+    """For a fix restated while something of its scene is still being made, as when the shop
+    owner sends a second note while the first fix's clip is being made: that its redo waits
+    for it, since a redo then is refused as busy, so the producer tells the shop owner (#137
+    review). Empty when nothing of the scene is being made."""
+    running = [
+        _STEP_NAMES[SceneStep.Kind(kind)]
+        for kind in scene.steps.filter(status=SceneStep.Status.RUNNING)
+        .order_by("started_at", "id")
+        .values_list("kind", flat=True)
+    ]
+    if not running:
+        return ""
+    is_ = "is" if len(running) == 1 else "are"
+    return (
+        f" Scene {scene.number}'s {' and '.join(running)} {is_} still being made, so its fix "
+        "can only be made once that's ready: tell the shop owner that too, and make the fix "
+        "when you're told it is."
+    )
 
 
 def _fixable_scene(job: Job, asked: FixAsked) -> Scene:

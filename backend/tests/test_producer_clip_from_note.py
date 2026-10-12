@@ -196,7 +196,7 @@ def test_the_producer_is_told_the_clip_was_made_from_the_note(
         f'note "{HOVERS}". It cost {dollars(step.tool_call.cost_usd())}. '
         "Scene 2 is finished. Scene 2's fix has cost "
         f"{dollars(Fix.objects.get().cost_usd())} so far. Tell the shop owner. The ad will be "
-        "assembled again, and shown to the shop owner, once scenes 1 and 3 are finished."
+        "assembled, and shown to the shop owner, once scenes 1 and 3 are finished."
     )
 
 
