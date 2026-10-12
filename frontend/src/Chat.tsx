@@ -9,6 +9,7 @@ import {
   type Sent,
 } from "./api";
 import { ScenePanel } from "./ScenePanel";
+import { nextFollowing } from "./follow";
 import { waitsForYes } from "./scenes";
 import { ArrowUpIcon, CloseIcon, ImageIcon, SidebarIcon, SoundIcon, SparkIcon } from "./icons";
 
@@ -85,9 +86,9 @@ export function Chat({
   // something; then it stays put until they come back down. Pictures and videos that
   // finish loading make the thread taller, so growth is watched, not just new messages.
   const following = useRef(true);
-  // Where the code last put the thread. Its own scrolling is told apart from the reader's by
-  // this: a scroll event can land after more has loaded below, which isn't the reader
-  // leaving the bottom; only scrolling up from here is.
+  // Where the thread was at the last scroll event, or where the code last put it. Its own
+  // scrolling is told apart from the reader's by this: a scroll event can land after more
+  // has loaded below, which isn't the reader leaving the bottom; only scrolling up is.
   const placedAt = useRef(0);
   const toBottom = (el: HTMLElement) => {
     el.scrollTop = el.scrollHeight;
@@ -98,7 +99,13 @@ export function Chat({
     if (!el) return;
     const nearBottom = () => el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     const onScroll = () => {
-      if (el.scrollTop < placedAt.current - 1 || nearBottom()) following.current = nearBottom();
+      following.current = nextFollowing({
+        top: el.scrollTop,
+        placedAt: placedAt.current,
+        nearBottom: nearBottom(),
+        following: following.current,
+      });
+      placedAt.current = el.scrollTop;
     };
     el.addEventListener("scroll", onScroll);
     const grew = () => {

@@ -236,6 +236,12 @@ test.each([
     ],
     true,
   ],
+  [
+    "a note typed in the chat box",
+    [said("user", "Scene 1: make it red"), said("agent", "Red?")],
+    true,
+  ],
+  ["a note on a two-digit scene", [said("user", "Scene 12: slower"), said("agent", "Ok?")], true],
   ["the word Scene mid-message", [said("user", "About Scene 2: hmm"), said("agent", "Ok")], false],
   ["notes from the agent", [said("agent", "Scene 2: planned"), said("agent", "Ok")], false],
 ] as const)("waits for a yes: %s", (_, messages, expected) => {

@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { ApiError } from "./api";
 import type { Message } from "./api";
 import { ChevronIcon } from "./icons";
-import { notesMessage, sceneCards, written, type SceneCard } from "./scenes";
+import { notesMessage, sceneCards, nonBlankNotes, type SceneCard } from "./scenes";
 
 /** Every scene of the ad so far, one card each: its latest clip, or its starting picture
  * until the clip is made, and what is being made for it now. Built from the messages the
@@ -21,9 +21,9 @@ export function ScenePanel({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (cards.length === 0) return null;
-  const busy = cards.filter((card) => card.making !== null || card.beingRemade).length;
+  const busy = cards.filter((card) => card.busy).length;
   const message = notesMessage(notes);
-  const noted = written(notes).length;
+  const noted = nonBlankNotes(notes).length;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -62,9 +62,7 @@ export function ScenePanel({
           <ol className="scene-cards">
             {cards.map((card) => (
               <li key={card.scene}>
-                {/* A new clip starts the card afresh on it, even when the previous one was showing. */}
                 <SceneCardView
-                  key={card.clips.length}
                   card={card}
                   note={notes.get(card.scene) ?? ""}
                   onNote={(note) => setNotes((had) => new Map(had).set(card.scene, note))}
@@ -104,7 +102,10 @@ function SceneCardView({
   note: string;
   onNote: (note: string) => void;
 }) {
-  const [showPrevious, setShowPrevious] = useState(false);
+  // Which clip count the owner tapped "Previous" at: a new clip landing brings the card
+  // back to the newest one, without remounting the card and losing a note being typed.
+  const [previousAt, setPreviousAt] = useState<number | null>(null);
+  const showPrevious = previousAt === card.clips.length;
   const latest = card.clips.at(-1) ?? null;
   const previous = card.clips.at(-2) ?? null;
   const onPrevious = showPrevious && previous !== null;
@@ -120,11 +121,13 @@ function SceneCardView({
   } else if (card.failed) {
     status = `Couldn't make the ${STEP_NOUN[card.failed]}`;
     tone = " failed";
+  } else if (card.clipOutOfDate) {
+    status = "Waiting to finish";
+    tone = " waiting";
   }
-  const busy = card.making !== null || card.beingRemade;
 
   return (
-    <article className={`scene-card${busy ? " busy" : ""}`} aria-label={name}>
+    <article className={`scene-card${card.busy ? " busy" : ""}`} aria-label={name}>
       <div className="scene-media">
         {clip ? (
           <video
@@ -145,7 +148,7 @@ function SceneCardView({
         )}
         {status && (
           <span className={`scene-status${tone}`}>
-            {busy && <i className="pulse" />}
+            {card.busy && <i className="pulse" />}
             {status}
           </span>
         )}
@@ -164,7 +167,7 @@ function SceneCardView({
           <button
             className="scene-swap"
             aria-pressed={onPrevious}
-            onClick={() => setShowPrevious((was) => !was)}
+            onClick={() => setPreviousAt(onPrevious ? null : card.clips.length)}
           >
             {onPrevious ? "Latest" : "Previous"}
           </button>

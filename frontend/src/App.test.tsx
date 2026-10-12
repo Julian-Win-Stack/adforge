@@ -641,7 +641,7 @@ test("a scene with a picture and no clip yet shows the picture, and its clip onc
   expect(within(sceneCard(1)).getByLabelText("Scene 1's clip").getAttribute("poster")).toBe(
     "/media/p1.png",
   ); // The clip is now out of date: the card says so and shows the new picture beside it.
-  expect(within(sceneCard(1)).getByText("Being remade")).toBeDefined();
+  expect(within(sceneCard(1)).getByText("Waiting to finish")).toBeDefined();
   expect(
     within(sceneCard(1)).getByAltText("Scene 1's new starting picture").getAttribute("src"),
   ).toBe("/media/p1-b.png");
@@ -653,7 +653,7 @@ test("a scene with a picture and no clip yet shows the picture, and its clip onc
   });
   await nextPoll();
   await waitFor(() => expect(sceneCardsShown()).toEqual([["Scene 1", "/media/c1-b.mp4"]]));
-  expect(within(sceneCard(1)).queryByText("Being remade")).toBeNull();
+  expect(within(sceneCard(1)).queryByText("Waiting to finish")).toBeNull();
   expect(within(sceneCard(1)).queryByAltText("Scene 1's new starting picture")).toBeNull();
 });
 
@@ -1101,4 +1101,45 @@ test("reopening mid-way rebuilds the beat: the yes on offer, then the scenes bei
   await waitFor(() => expect(statusOf(2)).toBe("Being remade"));
   expect(statusOf(1)).toBeNull();
   expect(yesButton()).toBeNull();
+});
+
+test("a clip that lands while the owner writes on its scene keeps the note and the cursor", async () => {
+  const { backend, user } = await openFinishedAd();
+  await user.type(noteBox(2), "Scrub");
+
+  backend.agentSays("", scene(2, "video", "/media/c2-b.mp4"), {
+    scene: 2,
+    kind: "clip",
+    state: "made",
+  });
+  await nextPoll();
+  await waitFor(() => expect(sceneCardsShown()).toContainEqual(["Scene 2", "/media/c2-b.mp4"]));
+  expect(document.activeElement).toBe(noteBox(2));
+  await user.keyboard(" the tile");
+
+  expect((noteBox(2) as HTMLTextAreaElement).value).toBe("Scrub the tile");
+});
+
+test("a new picture whose clip isn't being made says it's waiting, without claiming work", async () => {
+  const { backend } = await noteAndSayYes();
+  backend.notice("Remaking scene 2's starting picture.", "info", {
+    scene: 2,
+    kind: "starting_picture",
+    state: "started",
+  });
+  backend.agentSays("", scene(2, "picture", "/media/p2-b.png"), {
+    scene: 2,
+    kind: "starting_picture",
+    state: "made",
+  });
+  // The run stops before scene 2's clip starts: nothing is running any more.
+  backend.notice("Scene 3's picture kept failing its check.", "problem");
+  await nextPoll();
+  await waitFor(() => expect(statusOf(2)).toBe("Waiting to finish"));
+  expect(sceneCard(2).classList.contains("busy")).toBe(false);
+  expect(screen.getByRole("button", { name: /Scenes/ }).textContent).not.toContain("being made");
+
+  backend.notice("Remaking scene 2's clip.", "info", { scene: 2, kind: "clip", state: "started" });
+  await nextPoll();
+  await waitFor(() => expect(statusOf(2)).toBe("Being remade"));
 });

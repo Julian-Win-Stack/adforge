@@ -1055,6 +1055,10 @@ button:disabled {
   color: var(--danger);
 }
 
+.scene-status.waiting {
+  color: var(--text);
+}
+
 /* The new starting picture the out-of-date clip will be made again from. */
 .scene-media .scene-inset {
   position: absolute;
