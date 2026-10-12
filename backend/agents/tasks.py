@@ -206,8 +206,16 @@ def _audio_finished(step: SceneStep, audio: ProducedItem | None) -> str:
             "again, then its audio and its clip."
         )
     if too_long_for_a_clip(step, audio) and step.line in scene.shortened_from:
+        # A line the shop owner said yes to in a fix was theirs, so they're told it changed.
+        theirs = (
+            f'It isn\'t the line the shop owner said yes to: it is now "{scene.line}" Tell the '
+            "shop owner. "
+            if step.fix is not None
+            else ""
+        )
         return (
-            f"{too_long}Scene {number}'s line was shortened to fit its clip. Make its audio again."
+            f"{too_long}Scene {number}'s line was shortened to fit its clip. {theirs}Make its "
+            "audio again."
         )
     if too_long_for_a_clip(step, audio) and step.line == scene.line:
         # Only when the scene changed while its audio was made, so it wasn't said to camera.

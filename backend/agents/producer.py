@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Attachment, Message, Session
+from gateway import catalog
 from gateway.models import ModelCall
 from gateway.types import MusicHandoff, UnusableReply
 from jobs import page
@@ -77,7 +78,8 @@ Once a scene has a clip, changing it is a fix. When the shop owner writes about 
 scene, pick the smallest thing to make again that fixes it: how a scene that shows the \
 product moves, or what happens in it, is a new clip; what a scene's picture shows, such as \
 the wrong side, an object that couldn't be real or the wrong thing on screen, is a new \
-starting picture, then its clip. "Zoom in" means a new starting picture, closer: the camera \
+starting picture, then its clip; what a scene says is a new line, with the new line in the \
+fix word for word, in quotes. "Zoom in" means a new starting picture, closer: the camera \
 never moves.
 Before you reply, call restate_fix once, with a fix for every scene they wrote about that \
 you can fix. Then tell them in their own words what you'll change in each scene, what it \
@@ -85,11 +87,12 @@ will cost, and anything you can't do, and wait for their answer. If a scene they
 about is still being made, tell them its fix starts as soon as that's finished. Never tell \
 them which step is made again. If they correct you, restate it again. Make nothing until \
 they say yes.
-When they say yes, pass each scene's fix word for word as the note of its redo, for every \
-scene at the same time: make_clip for a new clip, or make_starting_picture for a new \
-starting picture, then make_clip with no note once the picture is ready. When you're told \
-something of a scene is ready and a fix they said yes to for it isn't made yet, make it \
-then.
+When they say yes, make every scene's fix at the same time. For a new clip, pass its fix \
+word for word as the note of make_clip; for a new starting picture, as the note of \
+make_starting_picture, then make_clip with no note once the picture is ready; for a new \
+line, call change_line with the new line exactly as it is in the fix, then make the scene \
+again in the usual order, with no note. When you're told something of a scene is ready and \
+a fix they said yes to for it isn't made yet, make it then.
 When a fix's clip is ready and every scene is finished, the ad is assembled and shown \
 to them on its own. Tell them what the fix cost, and ask them to tell you if it's \
 fixed. Never say it is: you can't see pictures or videos. If they say it still isn't \
@@ -97,9 +100,9 @@ right, restate a new fix for that scene the same way, making the same thing agai
 What you can't do, said plainly the same way each time: see pictures or videos; use new \
 product photos once the ad is planned; give the video model a photo, as it only starts from \
 the starting picture; or change what the person does in a scene where they talk, only how \
-it looks or what they hold, through a new starting picture. Not yet: changing a scene's \
-words, the music, the text shown over a scene, the voice, the person, the number of scenes \
-or the ad's length. Slower can't be done: every clip plays at real-time speed.
+it looks or what they hold, through a new starting picture. Not yet: changing the music, \
+the text shown over a scene, the voice, the person, the number of scenes or the ad's \
+length. Slower can't be done: every clip plays at real-time speed.
 Keep your messages short and friendly, written for someone who isn't technical."""
 
 
@@ -574,6 +577,8 @@ class MakeStartingPicture(Tool):
             )
         note = normalised_note(self.note)
         fix = _confirmed_fix(call, scene, note, Fix.Redo.PICTURE)
+        if not note:
+            fix = _line_fix(scene)
         steps = scene.steps.filter(kind=SceneStep.Kind.STARTING_PICTURE)
         made = (
             steps.filter(status=SceneStep.Status.FINISHED, note=note, **SceneStep.made_for(scene))
@@ -647,6 +652,7 @@ class MakeLineAudio(Tool):
             busy=f"scene {scene.number}'s audio is already being made. You'll be told when "
             "it's ready.",
             made_from=voice,
+            fix=_line_fix(scene),
         )
         return (
             f"Started scene {scene.number}'s audio. It isn't made yet: you'll be told when "
@@ -697,6 +703,7 @@ class TranscribeLineAudio(Tool):
             busy=f"scene {scene.number}'s audio is already being transcribed. You'll be told "
             "what was heard.",
             made_from=audio,
+            fix=_line_fix(scene),
         )
         return (
             f"Started transcribing scene {scene.number}'s audio. It isn't done yet: you'll be "
@@ -983,6 +990,17 @@ def assembles_after(step: SceneStep) -> bool:
     )
 
 
+def _line_fix(scene: Scene) -> Fix | None:
+    """The scene's fix for a new line, once the shop owner has said yes to it and the line is
+    changed: the scene is made again for it with no note, so each step is part of the fix and
+    paid for under it. Once its clip has landed, each is already made and handed back free. A
+    fix is confirmed only as change_line changes the line, so a confirmed one has changed it."""
+    fix = scene.fixes.last()
+    if fix is None or fix.redo != Fix.Redo.LINE or fix.confirmed_by_id is None:
+        return None
+    return fix
+
+
 def _fix_still_to_land(scene: Scene) -> bool:
     """Whether the scene's latest fix is confirmed but its clip isn't the scene's clip yet.
     A clip brought back for it, made earlier with the same fix as its note, counts."""
@@ -1009,7 +1027,8 @@ class FixAsked(BaseModel):
         description='What is made again: "clip" to change only how a scene that shows the '
         'product moves, from its starting picture as it is; "picture" to change what the '
         'scene shows, with a new starting picture and then its clip; "line" to change what is '
-        "said. The shop owner isn't told which."
+        "said, with the new line in the fix word for word, in quotes. The shop owner isn't "
+        "told which."
     )
 
 
@@ -1068,7 +1087,8 @@ class RestateFix(Tool):
             f"Recorded the fix{'es' if len(recorded) != 1 else ''}. {each} About "
             f"{_dollars(total)} in all. Tell the shop owner this restatement and what it will "
             "cost, and wait for their answer: nothing is made until they say yes. Once they "
-            f"have, pass each scene's fix word for word as the note of its redo.{waits}"
+            "have, pass each scene's fix word for word as the note of its redo, or, for a new "
+            f"line, the new line to change_line.{waits}"
         )
 
 
@@ -1102,6 +1122,76 @@ def _waits_for(scene: Scene) -> str:
     )
 
 
+class ChangeLine(Tool):
+    """Give a scene that has its clip a new line, for its fix restated as a new line once the
+    shop owner has answered: the new line exactly as it is in the fix. Its starting picture,
+    audio, transcript and clip were made for the old line, so they are then made again, with
+    no note, and its clip assembles the new ad. Costs nothing itself."""
+
+    name = "change_line"
+
+    scene: int = Field(description="The number of the scene.")
+    line: str = Field(description="The new line, word for word as it is in the scene's fix.")
+
+    def run(self, call: ToolCall) -> str:
+        scene = _a_checked_scene(call, self.scene)
+        number = scene.number
+        line = normalised_note(self.line)
+        fix = scene.fixes.last()
+        if fix is None or fix.redo != Fix.Redo.LINE:
+            raise Refused(
+                f"scene {number}'s line changes only for a fix restated as a new line, and "
+                + (
+                    "no fix was restated for it."
+                    if fix is None
+                    else f"its fix was restated as a new {fix.get_redo_display().lower()}."
+                )
+                + " Call restate_fix first and wait for the shop owner's answer."
+            )
+        if not line or line not in fix.fix:
+            raise Refused(
+                f"the line isn't word for word in scene {number}'s fix as it was restated to "
+                f'the shop owner: "{fix.fix}" Pass the new line exactly as it is there, or '
+                "restate the fix."
+            )
+        if line in [scene.line, *scene.shortened_from]:
+            return (
+                f'Scene {number}\'s line is already "{scene.line}", so nothing was changed. '
+                + _MAKE_IT_AGAIN
+            )
+        if scene.steps.filter(status=SceneStep.Status.RUNNING).exists():
+            raise Refused(
+                f"scene {number} is still being made. You'll be told when it's ready; change "
+                "its line then."
+            )
+        voice = _measured_voice(scene.job)
+        assert voice is not None and voice.words_per_second is not None, (
+            "a scene with a clip was made in a measured voice"
+        )
+        if line_seconds(line, voice.words_per_second) > LONGEST_LINE_SECONDS:
+            raise Refused(
+                f"the new line takes longer to say than a scene can last ({LONGEST_LINE_SECONDS} "
+                "seconds at the voice's speed), so it can't be used. Ask the shop owner for a "
+                "shorter line."
+            )
+        with transaction.atomic():
+            if fix.confirmed_by is None:
+                fix.confirmed_by = _yes_to(call.session, fix)
+                fix.save(update_fields=["confirmed_by"])
+            # The shop owner read the line and said yes: they know their product, so it isn't
+            # fact checked, and the scene stays checked (Julian, 2026-10-11 22:13, #138).
+            scene.change_line(line)
+            scene.save(update_fields=["line", "shortened_from", "status"])
+        return f'Scene {number}\'s line is now "{line}". ' + _MAKE_IT_AGAIN
+
+
+_MAKE_IT_AGAIN = (
+    "Its starting picture, audio, transcript and clip were made for the old line, so make "
+    "them again with no note: its starting picture and its line's audio, then transcribe the "
+    "audio, then make its clip. The ad is assembled again when its clip is ready."
+)
+
+
 def _fixable_scene(job: Job, asked: FixAsked) -> Scene:
     """The scene a fix is restated for, once it can be fixed that way: it exists, has a clip
     to fix, and its redo can be made. Refuses, saying why, otherwise."""
@@ -1118,10 +1208,6 @@ def _fixable_scene(job: Job, asked: FixAsked) -> Scene:
     if not normalised_note(asked.fix):
         raise Refused(f"scene {scene.number}'s fix is blank. Restate it in one line.")
     redo = Fix.Redo(asked.redo)
-    if redo == Fix.Redo.LINE:
-        raise Refused(
-            "changing a scene's line isn't built yet. Tell the shop owner it can't be done yet."
-        )
     if redo == Fix.Redo.CLIP and not scene.shows:
         # make_clip refuses a note on a talking scene for the same reason (#132).
         raise Refused(
@@ -1152,7 +1238,22 @@ def _estimate_usd(scene: Scene, redo: Fix.Redo) -> Decimal:
     """What making `redo` again for the scene is estimated to cost."""
     if redo == Fix.Redo.PICTURE:
         return picture_estimate_usd(scene)
+    if redo == Fix.Redo.LINE:
+        return picture_estimate_usd(scene) + _audio_estimate_usd(scene)
     return _scene_clip_estimate_usd(scene)
+
+
+def _audio_estimate_usd(scene: Scene) -> Decimal:
+    """What new audio of the scene's line, and its transcript, are estimated to cost: the
+    line as it stands, said and heard as long as its clip's audio was. A new line costs about
+    the same."""
+    clip = _latest_clip(scene)
+    assert clip is not None and clip.made_from is not None, "a fix is for a scene with a clip"
+    seconds = clip.made_from.seconds
+    assert seconds is not None, "a line's audio is measured when it's made"
+    return catalog.speech_cost_usd(
+        catalog.MODEL_FOR_PURPOSE["speak_line"], len(scene.line)
+    ) + catalog.transcription_cost_usd(catalog.MODEL_FOR_PURPOSE["transcribe_line"], seconds)
 
 
 def picture_estimate_usd(scene: Scene) -> Decimal:
@@ -1244,6 +1345,9 @@ def _confirmed_fix(call: ToolCall, scene: Scene, note: str, redo: Fix.Redo) -> F
             "clip. Make its starting picture with the fix as the note, then its clip with no "
             "note."
             if fix.redo == Fix.Redo.PICTURE
+            else f"scene {scene.number}'s fix was restated as a new line. Change its line with "
+            "change_line, then make the scene again with no note."
+            if fix.redo == Fix.Redo.LINE
             else f"scene {scene.number}'s fix was restated as a new clip, not a new starting "
             "picture. Make its clip with the fix as the note."
         )
@@ -1596,5 +1700,6 @@ PRODUCER = Agent(
         MakeClip,
         AssembleAd,
         RestateFix,
+        ChangeLine,
     ],
 )
