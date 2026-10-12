@@ -475,15 +475,16 @@ def test_a_line_fix_with_no_earlier_picture_or_clip_fix_said_yes_to_says_nothing
     assert "earlier fix" not in results_of("restate_fix")[-1]
 
 
-def test_a_new_broll_line_too_long_for_its_clip_is_shortened_and_the_owner_told(
+def test_a_new_broll_line_whose_real_audio_runs_too_long_is_shortened_and_the_owner_told(
     fake_model: FakeModel,
     shown: ProducedItem,  # noqa: F811
     steps: HeldSteps,
     say: Say,
 ) -> None:
+    # The line fits at the voice's measured speed, so restate_fix accepts it; a line too long
+    # at that speed is refused there instead. Only audio said slower than measured reaches the
+    # shortening: here its 8 words take 15.5 seconds, too long for any clip.
     restated_and_yes(fake_model, say, 2, FIX_2, LINE_2_NEW)
-    # Said slower than the voice was measured: its 8 words take 15.5 seconds, too long for
-    # any clip.
     fake_model.words_per_second = 8 / 15.5
     fake_model.respond("shorten_line", {"line": "Hand-thrown, oven and dishwasher safe."})
     fake_model.respond("fact_check", facts_ok(2))
