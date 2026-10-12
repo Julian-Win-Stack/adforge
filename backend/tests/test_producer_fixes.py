@@ -939,7 +939,7 @@ def test_a_sibling_fixs_picture_landing_first_doesnt_let_a_clip_assemble_a_half_
 
     assert ads() == [1]
     assert last_step().result.endswith(
-        "The ad will be assembled again, and shown to the shop owner, once scene 1 is finished."
+        "The ad will be assembled again, and shown to the shop owner, once scene 1's fix is made."
     )
     owner_says(fake_model, say, "Nice", clip_with(1, None))
     run(fake_model, steps)
@@ -950,6 +950,103 @@ def test_a_sibling_fixs_picture_landing_first_doesnt_let_a_clip_assemble_a_half_
         ProducedItem.objects.get(kind="clip", scene__number=1, version=2).pk,
         ProducedItem.objects.get(kind="clip", scene__number=2, version=2).pk,
     ]
+
+
+STEAM_NOTE = "Also, the steam should be thicker."
+STEAM_FIX = f"{FIX_2} The steam is thick."
+
+
+def a_newer_fix_restated_while_the_first_redo_runs(
+    fake_model: FakeModel, steps: HeldSteps, say: Say, answer: str | None
+) -> SceneStep:
+    """The shop owner says yes to scene 2's fix, whose redo starts; while it is being made
+    they send another note, restated as a newer fix, and give `answer`, if any. The producer
+    makes nothing more, as it is told to wait for the clip being made. Gives the first
+    redo's step, still held."""
+    owner_says(fake_model, say, "Yes, do that.", clip_with(2, FIX_2))
+    fake_model.respond("rewrite_clip_prompt", REWRITE)
+    first = last_step()
+    owner_says(fake_model, say, STEAM_NOTE, restating((2, STEAM_FIX, "clip")))
+    if answer is not None:
+        owner_says(fake_model, say, answer)
+    assert steps.held == [first.pk]
+    return first
+
+
+def test_an_older_fixs_clip_landing_after_the_owner_said_yes_to_a_newer_one_shows_no_ad(
+    fake_model: FakeModel, restated_2: Fix, steps: HeldSteps, say: Say
+) -> None:
+    first = a_newer_fix_restated_while_the_first_redo_runs(fake_model, steps, say, "Yes")
+    # Told the first redo has landed, the producer makes the newer fix.
+    fake_model.respond(
+        "produce", turn(calls=[clip_with(2, STEAM_FIX)]), turn(says="Making it thicker.")
+    )
+    steps.run_next()
+
+    first.refresh_from_db()
+    # The ad the owner already corrected isn't assembled, and the producer isn't told a
+    # scene that is finished isn't.
+    assert ads() == [1]
+    assert first.result.endswith(
+        "Scene 2 is finished. Scene 2's fix has cost "
+        f"{_dollars(restated_2.cost_usd())} so far. Tell the shop owner. The ad will be "
+        "assembled again, and shown to the shop owner, once scene 2's newer fix is made. If the "
+        "shop owner said no to scene 2's fix, assemble the ad with assemble_ad instead."
+    )
+    newer = Fix.objects.last()
+    assert newer is not None and newer.confirmed_by == Message.objects.get(text="Yes")
+
+    # Only the newer fix's clip assembles the ad: one new ad, with both notes in it.
+    fake_model.respond("rewrite_clip_prompt", REWRITE)
+    run(fake_model, steps)
+
+    assert ads() == [1, 2]
+    ad = ProducedItem.objects.get(kind="finished_ad", version=2)
+    assert [cut["clip"] for cut in ad.cuts][1] == clip_of(last_step()).pk
+    assert last_step().fix == newer
+    assert times_shown(ad) == 1
+    assert last_step().result.endswith(
+        f"Every scene is finished, so the ad was assembled again with it (version 2, "
+        f"{ad.seconds:g} seconds) and shown to the shop owner in the chat. Ask them to tell "
+        "you if it's fixed."
+    )
+
+
+def test_an_older_fixs_clip_landing_before_the_owner_answers_the_newer_one_assembles_it(
+    fake_model: FakeModel, restated_2: Fix, steps: HeldSteps, say: Say
+) -> None:
+    first = a_newer_fix_restated_while_the_first_redo_runs(fake_model, steps, say, None)
+
+    run(fake_model, steps)
+
+    # They haven't said yes to the newer fix, so the first one's ad is theirs to see.
+    first.refresh_from_db()
+    assert ads() == [1, 2]
+    assert [cut["clip"] for cut in ProducedItem.objects.get(version=2, kind="finished_ad").cuts][
+        1
+    ] == clip_of(first).pk
+    assert "assembled again with it (version 2" in first.result
+
+
+def test_after_a_no_to_the_newer_fix_the_producer_assembles_the_older_fixs_ad(
+    fake_model: FakeModel, restated_2: Fix, steps: HeldSteps, say: Say
+) -> None:
+    first = a_newer_fix_restated_while_the_first_redo_runs(
+        fake_model, steps, say, "No, leave the steam."
+    )
+    run(fake_model, steps)
+    first.refresh_from_db()
+    assert ads() == [1]
+    assert first.result.endswith(
+        "If the shop owner said no to scene 2's fix, assemble the ad with assemble_ad instead."
+    )
+
+    calling(fake_model, say, ("assemble_ad", {}))
+
+    assert ads() == [1, 2]
+    ad = ProducedItem.objects.get(kind="finished_ad", version=2)
+    assert [cut["clip"] for cut in ad.cuts][1] == clip_of(first).pk
+    assert times_shown(ad) == 1
 
 
 def test_a_fix_brought_back_free_doesnt_hold_up_another_fixs_assembly(
