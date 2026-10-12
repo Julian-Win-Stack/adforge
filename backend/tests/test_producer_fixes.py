@@ -833,10 +833,12 @@ def test_the_fixs_clip_finishing_names_its_running_cost(
 ) -> None:
     confirm_and_redo_2(fake_model, steps, say)
 
-    assert last_step().result.startswith(
+    step = last_step()
+    assert step.result.startswith(
         "Background step finished: scene 2's clip is ready (version 2, 5 seconds), made from "
         "starting picture version 1 and audio version 1, with its movement rewritten from the "
-        f'note "{FIX_2}". Scene 2 is finished. Scene 2\'s fix has cost '
+        f'note "{FIX_2}". It cost {dollars(step.tool_call.cost_usd())}. '
+        "Scene 2 is finished. Scene 2's fix has cost "
         f"{dollars(restated_2.cost_usd())} so far."
     )
 

@@ -262,8 +262,8 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
     return (
         f"Background step finished: scene {number}'s clip is ready (version {clip.version}, "
         f"{clip.seconds:g} seconds), made from {picture}audio version "
-        f"{clip.made_from.version}{note}.{_cost(step)} Scene {number} is finished.{fixed} Tell the shop "
-        "owner."
+        f"{clip.made_from.version}{note}.{_cost(step)} Scene {number} is finished.{fixed} "
+        "Tell the shop owner."
     )
 
 

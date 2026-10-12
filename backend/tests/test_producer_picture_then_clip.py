@@ -16,7 +16,7 @@ from agents.money import dollars
 from gateway.fake import FakeModel
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 
-from .conftest import HeldSteps, results_of
+from .conftest import HeldSteps, results_of, said_yes_to_a_fix
 from .test_producer_broll import (
     BROLL_CHOICE,
     TALKING_CHOICE,
@@ -66,7 +66,9 @@ def new_picture(
     number: int,
     note: str = HIGHER,
 ) -> None:
-    """Make scene `number`'s starting picture again, as the shop owner's note asks."""
+    """Make scene `number`'s starting picture again, as the shop owner's note asks, once
+    they said yes to it restated as the scene's fix (#135)."""
+    said_yes_to_a_fix(number, note, "picture")
     calling(fake_model, say, ("make_starting_picture", {"scene": number, "note": note}))
     fake_model.respond(
         "choose_broll_picture" if number == 2 else "choose_starting_picture",
@@ -131,6 +133,7 @@ def test_a_picture_that_cant_be_made_leaves_the_scene_finished_with_its_old_clip
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], assembled: ProducedItem
 ) -> None:
     old = clip(2)
+    said_yes_to_a_fix(2, HIGHER, "picture")
     calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": HIGHER}))
     fake_model.respond("choose_broll_picture", BROLL_CHOICE)
     fake_model.respond("make_starting_picture", *[OutsideServiceDown("503 from OpenAI")] * 3)
@@ -148,6 +151,7 @@ def test_a_picture_that_keeps_failing_its_check_leaves_the_scene_finished(
 ) -> None:
     old = clip(2)
     fake_model.respond("check_starting_picture", *[impossible(FUSED_HANDLE)] * 6)
+    said_yes_to_a_fix(2, HIGHER, "picture")
     calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": HIGHER}))
     fake_model.respond("choose_broll_picture", BROLL_CHOICE, FIXED_CHOICE, FIXED_CHOICE)
     steps.run_held()
@@ -184,6 +188,7 @@ def test_no_new_picture_is_started_while_the_scenes_clip_is_being_made(
     calling(fake_model, say, ("make_clip", {"scene": 2}))
     assert len(steps.held) == 1
 
+    said_yes_to_a_fix(2, "Pour slower.", "picture")
     calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": "Pour slower."}))
 
     assert results_of("make_starting_picture")[-1] == (
@@ -199,6 +204,7 @@ def test_no_new_picture_is_started_while_the_scenes_clip_is_being_made(
 def test_a_worker_stopping_as_the_picture_is_kept_leaves_the_scene_finished(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], assembled: ProducedItem
 ) -> None:
+    said_yes_to_a_fix(2, HIGHER, "picture")
     calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": HIGHER}))
     fake_model.respond("choose_broll_picture", BROLL_CHOICE)
 
@@ -220,6 +226,7 @@ def test_a_worker_stopping_before_the_picture_step_finishes_leaves_the_scene_fin
     # The scene is planned again only as the step finishes and the producer is told, so a
     # picture kept on a step that then failed changes nothing, as if it couldn't be made.
     old = clip(2)
+    said_yes_to_a_fix(2, HIGHER, "picture")
     calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": HIGHER}))
     fake_model.respond("choose_broll_picture", BROLL_CHOICE)
 

@@ -14,7 +14,7 @@ from adforge.file_store import read
 from adforge.retry import OutsideServiceDown
 from agents import loop, tasks
 from agents.money import dollars
-from agents.producer import PRODUCER, MakeClip
+from agents.producer import PRODUCER
 from chat.models import Message, Session
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
@@ -456,7 +456,8 @@ def test_a_new_starting_picture_gets_a_new_clip_and_the_old_clip_is_kept(
     assert shown[0][0] < shown[1][0]
     assert told() == (
         "Background step finished: scene 1's clip is ready (version 2, 4 seconds), made from "
-        "starting picture version 3 and audio version 1. It cost $0.20. Scene 1 is finished. Scene 1's fix "
+        "starting picture version 3 and audio version 1. It cost $0.20. Scene 1 is finished. "
+        "Scene 1's fix "
         f"has cost {dollars(Fix.objects.last().cost_usd())} so far. Tell the shop owner. The "  # type: ignore[union-attr]
         "ad will be assembled again, and shown to the shop owner, once scenes 2 and 3 are "
         "finished."
