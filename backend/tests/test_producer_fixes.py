@@ -15,9 +15,9 @@ from django.db.models.signals import pre_save
 
 from agents import tasks
 from agents.models import ToolCall
+from agents.money import dollars
 from agents.producer import (
     PICTURE_FALLBACK_USD,
-    _dollars,
     picture_estimate_usd,
 )
 from agents.tasks import restart_dead_producers
@@ -624,8 +624,8 @@ def test_restate_fix_hands_back_each_estimate_the_total_and_to_wait(
     total = fix_1.estimate_usd + fix_2.estimate_usd
     assert results_of("restate_fix") == [
         "Recorded the fixes. Scene 1: about "
-        f"{_dollars(fix_1.estimate_usd)}. Scene 2: about {_dollars(fix_2.estimate_usd)}. "
-        f"About {_dollars(total)} in all. Tell the shop owner this restatement and what it "
+        f"{dollars(fix_1.estimate_usd)}. Scene 2: about {dollars(fix_2.estimate_usd)}. "
+        f"About {dollars(total)} in all. Tell the shop owner this restatement and what it "
         "will cost, and wait for their answer: nothing is made until they say yes. Once they "
         "have, pass each scene's fix word for word as the note of its redo."
     ]
@@ -822,7 +822,7 @@ def test_a_failed_redos_cost_is_counted(
     [("0.396", "$0.396"), ("0.4", "$0.40"), ("1.5", "$1.50"), ("0", "$0.00"), ("2.05", "$2.05")],
 )
 def test_estimates_are_in_dollars_to_the_cent_or_their_last_digit(amount: str, said: str) -> None:
-    assert _dollars(Decimal(amount)) == said
+    assert dollars(Decimal(amount)) == said
 
 
 # --- Messages, and the ad assembled by code ---------------------------------------------------
@@ -837,7 +837,7 @@ def test_the_fixs_clip_finishing_names_its_running_cost(
         "Background step finished: scene 2's clip is ready (version 2, 5 seconds), made from "
         "starting picture version 1 and audio version 1, with its movement rewritten from the "
         f'note "{FIX_2}". Scene 2 is finished. Scene 2\'s fix has cost '
-        f"{_dollars(restated_2.cost_usd())} so far."
+        f"{dollars(restated_2.cost_usd())} so far."
     )
 
 
@@ -870,7 +870,7 @@ def test_a_fixs_clip_landing_assembles_the_new_ad_and_shows_it(
     assert [cut["clip"] for cut in ad.cuts] == [old[1].pk, new_2.pk, old[3].pk]
     assert times_shown(ad) == 1
     assert last_step().result.endswith(
-        f"Scene 2's fix has cost {_dollars(restated_2.cost_usd())} so far. Tell the shop owner. "
+        f"Scene 2's fix has cost {dollars(restated_2.cost_usd())} so far. Tell the shop owner. "
         f"Every scene is finished, so the ad was assembled again with it (version 2, "
         f"{ad.seconds:g} seconds) and shown to the shop owner in the chat. Ask them to tell "
         "you if it's fixed."

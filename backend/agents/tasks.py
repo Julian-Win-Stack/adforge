@@ -30,7 +30,8 @@ from jobs.work import (
 
 from . import loop
 from .loop import BLOCKED, EXPECTED_FAILURES, RunStopped, why_it_failed
-from .producer import PRODUCER, _dollars, assemble_after_fix
+from .money import dollars
+from .producer import PRODUCER, assemble_after_fix
 
 logger = logging.getLogger(__name__)
 
@@ -182,12 +183,25 @@ def another_session_is_busy(session: Session) -> bool:
 def _picture_finished(step: SceneStep, picture: ProducedItem | None) -> str:
     assert step.photo is not None, "a starting picture is made from a photo"
     assert picture is not None, "a starting picture step makes its picture"
+    number = step.scene.number
+    # A finished scene is planned again here, in the transaction that finishes the step and
+    # tells the producer, so a worker that stops first leaves the scene with its old clip.
+    unfinished = (
+        f"Scene {number} is no longer finished: make its clip from this picture. "
+        if Scene.objects.get(pk=step.scene_id).plan_again()
+        else ""
+    )
     return (
-        f"Background step finished: scene {step.scene.number}'s starting picture is ready "
+        f"Background step finished: scene {number}'s starting picture is ready "
         f"(version {picture.version}), and is shown to the shop owner in the chat. "
         f"Photo {step.photo.position} was used: "
-        f"{step.photo_reason} Tell the shop owner."
+        f"{step.photo_reason}{_cost(step)} {unfinished}Tell the shop owner."
     )
+
+
+def _cost(step: SceneStep) -> str:
+    """What the step's work cost, as a sentence to follow another."""
+    return f" It cost {dollars(step.tool_call.cost_usd())}."
 
 
 def _audio_finished(step: SceneStep, audio: ProducedItem | None) -> str:
@@ -198,7 +212,7 @@ def _audio_finished(step: SceneStep, audio: ProducedItem | None) -> str:
     scene = Scene.objects.get(pk=step.scene_id)
     too_long = (
         f"Background step finished: scene {number}'s line's audio takes {audio.seconds:g} "
-        "seconds to say, too long for any clip. "
+        f"seconds to say, too long for any clip.{_cost(step)} "
     )
     if too_long_for_a_clip(step, audio) and not scene.shows:
         return (
@@ -218,8 +232,8 @@ def _audio_finished(step: SceneStep, audio: ProducedItem | None) -> str:
         )
     return (
         f"Background step finished: scene {step.scene.number}'s line's audio is ready "
-        f"(version {audio.version}, {audio.seconds:g} seconds). It isn't shown to the shop "
-        "owner. Transcribe it next. Tell the shop owner."
+        f"(version {audio.version}, {audio.seconds:g} seconds).{_cost(step)} It isn't shown "
+        "to the shop owner. Transcribe it next. Tell the shop owner."
     )
 
 
@@ -230,7 +244,7 @@ def _transcript_finished(step: SceneStep, transcript: ProducedItem | None) -> st
     return (
         f"Background step finished: scene {step.scene.number}'s audio (version "
         f"{transcript.made_from.version}) was transcribed (version {transcript.version}). It "
-        f'was heard as: "{transcript.text}" Tell the shop owner.'
+        f'was heard as: "{transcript.text}"{_cost(step)} Tell the shop owner.'
     )
 
 
@@ -241,14 +255,14 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
     picture = f"starting picture version {clip.picture.version} and " if clip.picture else ""
     note = f', with its movement rewritten from the note "{step.note}"' if step.note else ""
     fixed = (
-        f" Scene {number}'s fix has cost {_dollars(step.fix.cost_usd())} so far."
+        f" Scene {number}'s fix has cost {dollars(step.fix.cost_usd())} so far."
         if step.fix is not None
         else ""
     )
     return (
         f"Background step finished: scene {number}'s clip is ready (version {clip.version}, "
         f"{clip.seconds:g} seconds), made from {picture}audio version "
-        f"{clip.made_from.version}{note}. Scene {number} is finished.{fixed} Tell the shop "
+        f"{clip.made_from.version}{note}.{_cost(step)} Scene {number} is finished.{fixed} Tell the shop "
         "owner."
     )
 
@@ -338,6 +352,7 @@ def run_scene_step(step_id: int) -> None:
             if shown:
                 messages.add(session, role=Message.Role.AGENT, carrying=shown)
             step.status = SceneStep.Status.FINISHED
+            # Inside the transaction: a picture's message plans its scene again.
             step.result = work.finished(step, made)
             step.finished_at = timezone.now()
             step.save(update_fields=["status", "result", "finished_at"])

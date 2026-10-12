@@ -13,7 +13,7 @@ from rest_framework.test import APIClient
 from adforge.file_store import read
 from adforge.retry import OutsideServiceDown
 from agents import tasks
-from agents.producer import _dollars
+from agents.money import dollars
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import work
@@ -41,7 +41,8 @@ CLIP_STARTED = "Started scene 1's clip. It isn't made yet: you'll be told when i
 # The fake voice says scene 1's 8 words at 2 a second, so its clip lasts as long.
 CLIP_READY = (
     "Background step finished: scene 1's clip is ready (version 1, 4 seconds), made from "
-    "starting picture version 1 and audio version 1. Scene 1 is finished. Tell the shop owner."
+    "starting picture version 1 and audio version 1. It cost $0.20. Scene 1 is finished. Tell "
+    "the shop owner."
 )
 
 CHOICE: dict[str, Any] = {
@@ -431,8 +432,8 @@ def test_a_new_starting_picture_gets_a_new_clip_and_the_old_clip_is_kept(
     assert paid_for().count("make_talking_clip") == 2
     assert told() == (
         "Background step finished: scene 1's clip is ready (version 2, 4 seconds), made from "
-        "starting picture version 3 and audio version 1. Scene 1 is finished. Scene 1's fix "
-        f"has cost {_dollars(Fix.objects.last().cost_usd())} so far. Tell the shop owner. The "  # type: ignore[union-attr]
+        "starting picture version 3 and audio version 1. It cost $0.20. Scene 1 is finished. Scene 1's fix "
+        f"has cost {dollars(Fix.objects.last().cost_usd())} so far. Tell the shop owner. The "  # type: ignore[union-attr]
         "ad will be assembled again, and shown to the shop owner, once scenes 2 and 3 are "
         "finished."
     )

@@ -45,6 +45,7 @@ from jobs.work import (
 
 from .loop import Agent, Refused, Tool
 from .models import ToolCall
+from .money import dollars
 
 INSTRUCTIONS = """\
 You are the producer at AdForge. You make short vertical video ads for one product at a \
@@ -151,7 +152,7 @@ class ReadPage(Tool):
                 )
             return (
                 f"{self.link} was already read for this ad, so nothing was read or paid for "
-                f"again. Reading it cost {_dollars(_spent(job, self.name))}. The ad has "
+                f"again. Reading it cost {dollars(_spent(job, self.name))}. The ad has "
                 f"{_photos(job.photos.count())}."
             )
         else:
@@ -288,7 +289,7 @@ class PlanAd(Tool):
             assert planned is not None
             return (
                 "The ad was already planned, so nothing was planned or paid for again. "
-                f"Planning it cost {_dollars(_spent(job, self.name))}.\n"
+                f"Planning it cost {dollars(_spent(job, self.name))}.\n"
                 f"{_the_plan(job, planned.reason)}"
             )
         if not job.photos.exists():
@@ -326,7 +327,7 @@ class CreatePerson(Tool):
         if voice is not None and latest(job, ProducedItem.Kind.PORTRAIT) is not None:
             return (
                 "The person was already made and shown to the shop owner, so nothing was made "
-                f"or paid for again. Making them cost {_dollars(_spent(job, self.name))}. "
+                f"or paid for again. Making them cost {dollars(_spent(job, self.name))}. "
                 f"{_speed(voice)}"
             )
         portrait, voice = create_person(job)
@@ -527,7 +528,7 @@ class CreateMusic(Tool):
         prompt, seconds = music_prompt(mood), music_seconds(job, voice)
         made = job.produced.filter(kind=ProducedItem.Kind.MUSIC, text=prompt, seconds=seconds)
         music = made.order_by("version").last()
-        cost = _dollars(_spent_on_music(job, prompt, seconds))
+        cost = dollars(_spent_on_music(job, prompt, seconds))
         if music is not None and music == latest(job, ProducedItem.Kind.MUSIC):
             return (
                 "The music was already made in this mood for this script (version "
@@ -586,8 +587,15 @@ class MakeStartingPicture(Tool):
                 f"Scene {scene.number}'s starting picture was already made for this line "
                 f"{'with this note' if note else 'with no note'} (version {picture.version}), "
                 "and the shop owner has seen it, so nothing was made or paid for again. Making "
-                f"it cost {_dollars(made.tool_call.cost_usd())}. Photo {made.photo.position} "
+                f"it cost {dollars(made.tool_call.cost_usd())}. Photo {made.photo.position} "
                 f"was used: {made.photo_reason}"
+            )
+        # A clip being made of the scene's picture would finish the scene once a newer
+        # picture had un-finished it (#133).
+        if scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING).exists():
+            raise Refused(
+                f"scene {scene.number}'s clip is still being made. You'll be told when it's "
+                "ready; make its starting picture again then."
             )
         _a_fix_unless_first_making(scene, fix)
         _start_step(
@@ -637,7 +645,7 @@ class MakeLineAudio(Tool):
             return (
                 f"Scene {scene.number}'s audio was already made for this line in this voice "
                 f"(version {made.version}), so nothing was made or paid for again. Making it "
-                f"cost {_dollars(made.step.tool_call.cost_usd())}."
+                f"cost {dollars(made.step.tool_call.cost_usd())}."
             )
         _start_step(
             call,
@@ -686,7 +694,7 @@ class TranscribeLineAudio(Tool):
             return (
                 f"Scene {scene.number}'s audio (version {audio.version}) was already "
                 f"transcribed (version {heard.version}), so nothing was made or paid for "
-                f"again. Transcribing it cost {_dollars(heard.step.tool_call.cost_usd())}. It "
+                f"again. Transcribing it cost {dollars(heard.step.tool_call.cost_usd())}. It "
                 f'was heard as: "{heard.text}"'
             )
         _start_step(
@@ -829,7 +837,7 @@ class MakeClip(Tool):
             return (
                 f"Scene {scene.number}'s clip was already made {made_from} and audio"
                 f"{with_note} (version {made.version}), so nothing was made or paid for "
-                f"again.{back} Making it cost {_dollars(made.step.tool_call.cost_usd())}. "
+                f"again.{back} Making it cost {dollars(made.step.tool_call.cost_usd())}. "
                 f"Scene {scene.number} is finished."
             )
         _a_fix_unless_first_making(scene, fix)
@@ -1041,12 +1049,12 @@ class RestateFix(Tool):
                 recorded.append(fix)
         call.asked_about = "fixes"
         each = " ".join(
-            f"Scene {fix.scene.number}: about {_dollars(fix.estimate_usd)}." for fix in recorded
+            f"Scene {fix.scene.number}: about {dollars(fix.estimate_usd)}." for fix in recorded
         )
         total = sum((fix.estimate_usd for fix in recorded), Decimal(0))
         return (
             f"Recorded the fix{'es' if len(recorded) != 1 else ''}. {each} About "
-            f"{_dollars(total)} in all. Tell the shop owner this restatement and what it will "
+            f"{dollars(total)} in all. Tell the shop owner this restatement and what it will "
             "cost, and wait for their answer: nothing is made until they say yes. Once they "
             "have, pass each scene's fix word for word as the note of its redo."
         )
@@ -1479,13 +1487,6 @@ def _spent_on_music(job: Job, prompt: str, seconds: int) -> Decimal:
         purpose="make_music", handoff=MusicHandoff(prompt=prompt, seconds=seconds).model_dump()
     ).aggregate(cost=Sum("cost_usd"))["cost"]
     return spent or Decimal(0)
-
-
-def _dollars(amount: Decimal) -> str:
-    """An amount in dollars, to the cent, or to its last digit when that is smaller."""
-    exact = f"{amount.normalize():f}"
-    cents = f"{amount:.2f}"
-    return f"${exact if len(exact) > len(cents) else cents}"
 
 
 def _not_downloaded(skipped: list[SkippedPhoto]) -> str:

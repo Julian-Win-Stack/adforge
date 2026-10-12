@@ -10,7 +10,8 @@ from typing import Any
 import pytest
 
 from agents import tasks
-from agents.producer import MakeClip, _clip_and_transcript, _dollars, normalised_note
+from agents.money import dollars
+from agents.producer import MakeClip, _clip_and_transcript, normalised_note
 from gateway.catalog import MODEL_FOR_PURPOSE
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
@@ -191,7 +192,7 @@ def test_the_producer_is_told_the_clip_was_made_from_the_note(
         "Background step finished: scene 2's clip is ready (version 2, 5 seconds), made from "
         "starting picture version 1 and audio version 1, with its movement rewritten from the "
         f'note "{HOVERS}". Scene 2 is finished. Scene 2\'s fix has cost '
-        f"{_dollars(Fix.objects.get().cost_usd())} so far. Tell the shop owner. The ad will be "
+        f"{dollars(Fix.objects.get().cost_usd())} so far. Tell the shop owner. The ad will be "
         "assembled again, and shown to the shop owner, once scenes 1 and 3 are finished."
     )
 
