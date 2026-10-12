@@ -45,7 +45,7 @@ MODEL = os.environ.get("EVAL_PRODUCER_MODEL", "")
 RUNS = int(os.environ.get("EVAL_RUNS", "1"))
 OUT = Path(os.environ.get("EVAL_OUT") or Path(tempfile.gettempdir()) / "eval-producer-fixes.jsonl")
 MOST_TURNS = 4
-REDOS = {"make_clip", "make_starting_picture"}
+REDOS = {"make_clip", "make_starting_picture", "change_line"}
 
 pytestmark = [
     pytest.mark.django_db(transaction=True),
@@ -79,7 +79,7 @@ CASES = [
         {2: "picture"},
     ),
     Case("zoom in", "Can you zoom in on the mug in scene 2?", {2: "picture"}),
-    Case("words", "In the last scene she should say it's 20% off this week.", {}),
+    Case("words", "In the last scene she should say it's 20% off this week.", {3: "line"}),
     Case("talking-scene action", "In the first scene she should wave at the camera.", {}),
     Case("talking-scene hold", NOTE_1, {1: "picture"}),
     Case("two scenes at once", f"{NOTE_1} {NOTE_2}", {1: "picture", 2: "clip"}),

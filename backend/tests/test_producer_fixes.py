@@ -432,9 +432,10 @@ def test_a_fix_restated_while_the_scenes_clip_is_being_made_says_it_waits_for_it
     owner_says(fake_model, say, "And make the steam thicker.", restating((2, steam, "clip")))
 
     assert results_of("restate_fix")[-1].endswith(
-        "pass each scene's fix word for word as the note of its redo. Scene 2's clip is still "
-        "being made, so its fix can only be made once that's ready: tell the shop owner that "
-        "too, and make the fix when you're told it is."
+        "pass each scene's fix word for word as the note of its redo, or, for a new line, the new "
+        "line to change_line. Scene 2's clip is still being made, so its fix can only be made "
+        "once that's ready: tell the shop owner that too, and make the fix when you're told it "
+        "is."
     )
     assert Fix.objects.last().fix == steam  # type: ignore[union-attr]
 
@@ -452,8 +453,9 @@ def test_a_fix_restated_while_another_scene_is_being_made_names_only_that_scene(
 
     result = results_of("restate_fix")[-1]
     assert result.endswith(
-        "redo. Scene 1's starting picture is still being made, so its fix can only be made once "
-        "that's ready: tell the shop owner that too, and make the fix when you're told it is."
+        "line to change_line. Scene 1's starting picture is still being made, so its fix can "
+        "only be made once that's ready: tell the shop owner that too, and make the fix when "
+        "you're told it is."
     )
     assert "Scene 2's" not in result
 
@@ -555,10 +557,6 @@ def test_restating_before_the_ad_is_planned_is_refused(
             "the video model ignores what it's asked about movement in a talking clip. Restate "
             "it as a new starting picture instead.",
         ),
-        (
-            [(2, FIX_2, "line")],
-            "changing a scene's line isn't built yet. Tell the shop owner it can't be done yet.",
-        ),
         ([(2, "  \n", "clip")], "scene 2's fix is blank. Restate it in one line."),
         (
             [(2, FIX_2, "clip"), (2, FIX_2, "picture")],
@@ -640,7 +638,8 @@ def test_restate_fix_hands_back_each_estimate_the_total_and_to_wait(
         f"{dollars(fix_1.estimate_usd)}. Scene 2: about {dollars(fix_2.estimate_usd)}. "
         f"About {dollars(total)} in all. Tell the shop owner this restatement and what it "
         "will cost, and wait for their answer: nothing is made until they say yes. Once they "
-        "have, pass each scene's fix word for word as the note of its redo."
+        "have, pass each scene's fix word for word as the note of its redo, or, for a new "
+        "line, the new line to change_line."
     ]
 
 
