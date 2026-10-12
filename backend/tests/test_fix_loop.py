@@ -376,40 +376,56 @@ def test_a_note_while_the_scenes_redo_runs_is_made_once_that_redo_lands(
     owner_says(fake_model, say, "Yes", clip_of(2, TURN_FIX))
     assert held_kinds(steps) == [(2, "clip")]
 
-    # While it runs, the shop owner writes again about scene 2; restated and confirmed.
+    # While it runs, the shop owner writes again about scene 2: restated, and they say yes.
+    # As instructed, the producer tells them the fix starts once the redo is finished, and
+    # makes nothing yet.
     owner_says(
         fake_model,
         say,
         "Actually, lift it off the bench first.",
         restating((2, LIFT_FIX, "clip")),
     )
-    # A model that doesn't wait, as the instructions tell it to, is refused as busy.
+    owner_says(fake_model, say, "Yes")
+    assert held_kinds(steps) == [(2, "clip")]
+
+    # The first redo lands. The shop owner already corrected it, so it isn't assembled into
+    # an ad; told, the producer makes the corrected fix.
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
+    step_lands(fake_model, steps, clip_of(2, LIFT_FIX))
+    assert [ad.version for ad in ads()] == [1]
+    assert held_kinds(steps) == [(2, "clip")]
+    assert SceneStep.objects.get(pk=steps.held[0]).note == LIFT_FIX
+    fake_model.respond("rewrite_clip_prompt", LIFT_REWRITE)
+    step_lands(fake_model, steps)
+
+    # One new ad, with the corrected fix's clip.
+    assert latest("clip", 2).version == 3
+    assert [ad.version for ad in ads()] == [1, 2]
+    assert [cut["clip"] for cut in ads()[1].cuts][1] == latest("clip", 2).pk
+    assert paid_for()[len(shown) :].count("make_broll_clip") == 2
+
+
+def test_a_redo_asked_for_while_the_scenes_redo_runs_is_refused_as_busy(
+    fake_model: FakeModel, say: Say, steps: HeldSteps, shown: list[str]
+) -> None:
+    owner_says(fake_model, say, HOVERS, restating((2, TURN_FIX, "clip")))
+    owner_says(fake_model, say, "Yes", clip_of(2, TURN_FIX))
+    owner_says(
+        fake_model,
+        say,
+        "Actually, lift it off the bench first.",
+        restating((2, LIFT_FIX, "clip")),
+    )
+
+    # A model that doesn't wait, as the instructions tell it to.
     owner_says(fake_model, say, "Yes", clip_of(2, LIFT_FIX))
+
     assert results_of("make_clip")[-1] == (
         "Refused: scene 2's clip is already being made. You'll be told when it's ready. "
         "Nothing was done."
     )
     assert held_kinds(steps) == [(2, "clip")]
-
-    # The first redo lands; told, the producer makes the confirmed second fix then.
-    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
-    step_lands(fake_model, steps, clip_of(2, LIFT_FIX))
-    assert held_kinds(steps) == [(2, "clip")]
-    second = SceneStep.objects.get(pk=steps.held[0])
-    assert second.note == LIFT_FIX
-    fake_model.respond("rewrite_clip_prompt", LIFT_REWRITE)
-    step_lands(fake_model, steps)
-
-    assert latest("clip", 2).version == 3
-    # The first fix's clip, already corrected, was never assembled into an ad: the one new
-    # ad is assembled once the corrected fix's clip lands.
-    first_redo = SceneStep.objects.filter(kind="clip", scene__number=2).order_by("id")[1]
-    assert first_redo.result.endswith(
-        "The ad will be assembled again, and shown to the shop owner, once scene 2 is finished."
-    )
-    assert [ad.version for ad in ads()] == [1, 2]
-    assert [cut["clip"] for cut in ads()[1].cuts][1] == latest("clip", 2).pk
-    assert paid_for()[len(shown) :].count("make_broll_clip") == 2
+    assert paid_for() == shown
 
 
 # --- 7. A second note on the same scene after its fix ------------------------------------------
