@@ -1,14 +1,26 @@
 // The shapes Django's /api/sessions/ endpoints send back (backend/chat/api.py).
 
-/** A file a message carries: a photo the user attached, or something the agent made. */
+/** A file a message carries: a photo the user attached, or something the agent made. A
+ * scene's starting picture or clip carries the scene's number; every other file, null. */
 export type Attachment = {
   position: number;
   kind: "picture" | "sound" | "video";
   url: string;
+  scene: number | null;
+};
+
+/** What a message says of a scene's starting picture or clip: a notice that it started, the
+ * message showing what it made, or a notice that it ended with nothing made. A scene's
+ * picture or clip is being made from its "started" until the next message about it. */
+export type SceneStep = {
+  scene: number;
+  kind: "starting_picture" | "clip";
+  state: "started" | "made" | "not_made";
 };
 
 /** One turn in a session, from the user or the agent, or a notice the server posts when a
- * step fell back or failed. Only a notice has a level: red for a problem, grey for info. */
+ * step fell back or failed, or a scene's picture or clip started. Only a notice has a level:
+ * red for a problem, grey for info. A message about a scene's picture or clip has its step. */
 export type Message = {
   seq: number;
   role: "user" | "agent" | "notice";
@@ -16,6 +28,7 @@ export type Message = {
   text: string;
   created_at: string;
   attachments: Attachment[];
+  step: SceneStep | null;
 };
 
 /** One session, as the sidebar lists it. The name is blank until the first message names it. */

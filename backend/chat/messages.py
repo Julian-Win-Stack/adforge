@@ -15,10 +15,21 @@ NAME_LENGTH = 80
 
 
 class AttachedFile(NamedTuple):
-    """A file for a message to carry. It is already in the file store."""
+    """A file for a message to carry. It is already in the file store. `scene` is the
+    number of the scene it is the starting picture or clip of, if any."""
 
     kind: Attachment.Kind
     file: str
+    scene: int | None = None
+
+
+class StepSignal(NamedTuple):
+    """What a message says of a scene's starting picture or clip: that it started, was
+    made, or ended with nothing made."""
+
+    scene: int
+    kind: Message.StepKind
+    state: Message.StepState
 
 
 def add(
@@ -28,9 +39,11 @@ def add(
     text: str = "",
     level: Message.Level | None = None,
     carrying: Sequence[AttachedFile] = (),
+    step: StepSignal | None = None,
 ) -> Message:
     """Say something in a session, with any files it carries, and name the session from
-    the first thing the user types. A notice carries its `level`; nothing else does.
+    the first thing the user types. A notice carries its `level`; nothing else does. A
+    message about a scene's starting picture or clip carries its `step`.
 
     Messages are numbered 1, 2, 3... per session. The session row is locked while
     numbering, so messages always become visible in number order. Without that, a poll
@@ -42,10 +55,23 @@ def add(
         locked = Session.objects.select_for_update().get(pk=session.pk)
         last = locked.messages.aggregate(last=Max("seq"))["last"] or 0
         message = Message.objects.create(
-            session=locked, seq=last + 1, role=role, level=level or "", text=text
+            session=locked,
+            seq=last + 1,
+            role=role,
+            level=level or "",
+            text=text,
+            step_scene=step.scene if step else None,
+            step_kind=step.kind if step else "",
+            step_state=step.state if step else "",
         )
         Attachment.objects.bulk_create(
-            Attachment(message=message, position=position, kind=attached.kind, file=attached.file)
+            Attachment(
+                message=message,
+                position=position,
+                kind=attached.kind,
+                file=attached.file,
+                scene=attached.scene,
+            )
             for position, attached in enumerate(carrying, start=1)
         )
         # A user who started with only photos gets the name from the first words they type.
