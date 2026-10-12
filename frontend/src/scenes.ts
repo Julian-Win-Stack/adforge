@@ -17,6 +17,10 @@ export type SceneCard = {
   making: { kind: SceneStep["kind"]; remaking: boolean } | null;
   /** What the scene's last try ended with nothing made for, until something starts again. */
   failed: SceneStep["kind"] | null;
+  /** The scene has a clip and a new one is on its way: its picture or clip is being made
+   * again, or a new picture means a new clip, and nothing has failed. Until the new clip
+   * lands, the card keeps the old one. Which step is redone isn't the owner's concern. */
+  beingRemade: boolean;
 };
 
 /** One card per scene that has a starting picture or a clip, or one being made, in scene
@@ -28,7 +32,15 @@ export function sceneCards(messages: Message[]): SceneCard[] {
   const card = (scene: number) => {
     let found = cards.get(scene);
     if (found === undefined) {
-      found = { scene, clips: [], picture: null, clipOutOfDate: false, making: null, failed: null };
+      found = {
+        scene,
+        clips: [],
+        picture: null,
+        clipOutOfDate: false,
+        making: null,
+        failed: null,
+        beingRemade: false,
+      };
       cards.set(scene, found);
     }
     return found;
@@ -60,5 +72,44 @@ export function sceneCards(messages: Message[]): SceneCard[] {
     scene.failed = step.state === "not_made" ? step.kind : null;
   }
 
+  for (const scene of cards.values()) {
+    scene.beingRemade =
+      scene.clips.length > 0 &&
+      scene.failed === null &&
+      (scene.making !== null || scene.clipOutOfDate);
+  }
   return [...cards.values()].sort((a, b) => a.scene - b.scene);
+}
+
+/** The owner's notes as the one message that carries them: a "Scene N: ..." entry per scene
+ * with a note, in scene order, each note kept whole (its line breaks too). Blank notes are
+ * left out; no notes at all is an empty message. */
+export function notesMessage(notes: ReadonlyMap<number, string>): string {
+  return written(notes)
+    .sort(([a], [b]) => a - b)
+    .map(([scene, note]) => `Scene ${scene}: ${note.trim()}`)
+    .join("\n");
+}
+
+/** The notes that say something: blank ones don't count. */
+export function written(notes: ReadonlyMap<number, string>): [number, string][] {
+  return [...notes].filter(([, note]) => note.trim() !== "");
+}
+
+const NOTES = /^Scene \d+: /;
+
+/** Whether the producer is waiting on the owner's yes: the owner sent notes, the producer's
+ * latest words answer them (its restatement, or a new one after a correction), and no redo
+ * has started since, which would mean the yes was already given. */
+export function waitsForYes(messages: Message[]): boolean {
+  const notes = [...messages]
+    .reverse()
+    .findIndex((one) => one.role === "user" && NOTES.test(one.text));
+  if (notes === -1) return false;
+  const since = messages.slice(messages.length - notes);
+  if (since.some((one) => one.step?.state === "started")) return false;
+  const lastSaid = since
+    .reverse()
+    .find((one) => one.role !== "notice" && one.step?.state !== "made");
+  return lastSaid?.role === "agent";
 }

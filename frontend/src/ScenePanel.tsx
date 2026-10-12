@@ -1,16 +1,44 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent } from "react";
+import { ApiError } from "./api";
 import type { Message } from "./api";
 import { ChevronIcon } from "./icons";
-import { sceneCards, type SceneCard } from "./scenes";
+import { notesMessage, sceneCards, written, type SceneCard } from "./scenes";
 
 /** Every scene of the ad so far, one card each: its latest clip, or its starting picture
  * until the clip is made, and what is being made for it now. Built from the messages the
  * chat already has, so it shows nothing until a scene has something. */
-export function ScenePanel({ messages }: { messages: Message[] }) {
+export function ScenePanel({
+  messages,
+  onSend,
+}: {
+  messages: Message[];
+  onSend: (text: string) => Promise<void>;
+}) {
   const cards = useMemo(() => sceneCards(messages), [messages]);
   const [open, setOpen] = useState(true);
+  // The notes live here, not in the cards, so folding the cards away keeps them.
+  const [notes, setNotes] = useState<ReadonlyMap<number, string>>(new Map());
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   if (cards.length === 0) return null;
-  const busy = cards.filter((card) => card.making !== null).length;
+  const busy = cards.filter((card) => card.making !== null || card.beingRemade).length;
+  const message = notesMessage(notes);
+  const noted = written(notes).length;
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (sending) return;
+    setSending(true);
+    setError(null);
+    try {
+      await onSend(message);
+      setNotes(new Map());
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
+    } finally {
+      setSending(false);
+    }
+  }
 
   return (
     <section className={`scene-panel ${open ? "open" : "closed"}`} aria-label="Scenes">
@@ -30,14 +58,34 @@ export function ScenePanel({ messages }: { messages: Message[] }) {
         <ChevronIcon />
       </button>
       {open && (
-        <ol className="scene-cards">
-          {cards.map((card) => (
-            <li key={card.scene}>
-              {/* A new clip starts the card afresh on it, even when the previous one was showing. */}
-              <SceneCardView key={card.clips.length} card={card} />
-            </li>
-          ))}
-        </ol>
+        <form className="scene-form" onSubmit={submit}>
+          <ol className="scene-cards">
+            {cards.map((card) => (
+              <li key={card.scene}>
+                {/* A new clip starts the card afresh on it, even when the previous one was showing. */}
+                <SceneCardView
+                  key={card.clips.length}
+                  card={card}
+                  note={notes.get(card.scene) ?? ""}
+                  onNote={(note) => setNotes((had) => new Map(had).set(card.scene, note))}
+                />
+              </li>
+            ))}
+          </ol>
+          <div className="scene-send">
+            {error && (
+              <p role="alert" className="notice error inline">
+                {error}
+              </p>
+            )}
+            {noted === 0 && (
+              <p className="scene-send-hint">Write a note on any scene, then send them together.</p>
+            )}
+            <button type="submit" className="scene-send-button" disabled={sending || noted === 0}>
+              {noted === 0 ? "Send notes" : `Send ${noted} note${noted === 1 ? "" : "s"}`}
+            </button>
+          </div>
+        </form>
       )}
     </section>
   );
@@ -47,7 +95,15 @@ const STEP_NOUN = { clip: "clip", starting_picture: "picture" } as const;
 
 /** One scene: the newest clip plays here, the one before it is a tap away, and while a
  * new one is being made the old one stays, marked. */
-function SceneCardView({ card }: { card: SceneCard }) {
+function SceneCardView({
+  card,
+  note,
+  onNote,
+}: {
+  card: SceneCard;
+  note: string;
+  onNote: (note: string) => void;
+}) {
   const [showPrevious, setShowPrevious] = useState(false);
   const latest = card.clips.at(-1) ?? null;
   const previous = card.clips.at(-2) ?? null;
@@ -57,18 +113,18 @@ function SceneCardView({ card }: { card: SceneCard }) {
 
   let status: string | null = null;
   let tone = "";
-  if (card.making) {
+  if (card.beingRemade) {
+    status = "Being remade";
+  } else if (card.making) {
     status = `${card.making.remaking ? "Remaking" : "Making"} the ${STEP_NOUN[card.making.kind]}`;
   } else if (card.failed) {
     status = `Couldn't make the ${STEP_NOUN[card.failed]}`;
     tone = " failed";
-  } else if (card.clipOutOfDate) {
-    status = "New picture, clip next";
-    tone = " waiting";
   }
+  const busy = card.making !== null || card.beingRemade;
 
   return (
-    <article className={`scene-card${card.making ? " busy" : ""}`} aria-label={name}>
+    <article className={`scene-card${busy ? " busy" : ""}`} aria-label={name}>
       <div className="scene-media">
         {clip ? (
           <video
@@ -89,7 +145,7 @@ function SceneCardView({ card }: { card: SceneCard }) {
         )}
         {status && (
           <span className={`scene-status${tone}`}>
-            {card.making && <i className="pulse" />}
+            {busy && <i className="pulse" />}
             {status}
           </span>
         )}
@@ -114,6 +170,14 @@ function SceneCardView({ card }: { card: SceneCard }) {
           </button>
         )}
       </div>
+      <textarea
+        className="scene-note"
+        aria-label={`Note for ${name.toLowerCase()}`}
+        placeholder="Add a note"
+        value={note}
+        onChange={(event) => onNote(event.target.value)}
+        rows={2}
+      />
     </article>
   );
 }

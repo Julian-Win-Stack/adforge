@@ -639,6 +639,60 @@ button:disabled {
   background: linear-gradient(to top, var(--bg) 70%, transparent);
 }
 
+/* The producer said back what it will change: one tap to say yes, or type a correction. */
+.yes-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  width: min(820px, 100%);
+  margin: 0 auto 10px;
+  padding: 10px 10px 10px 16px;
+  border-radius: var(--radius-l);
+  border: 1px solid rgba(200, 240, 74, 0.35);
+  background: rgba(200, 240, 74, 0.06);
+  animation: rise 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.yes-ask {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.yes-ask span {
+  font-weight: 400;
+  color: var(--text-2);
+}
+
+.yes-bar .notice {
+  flex-basis: 100%;
+  order: 3;
+  margin: 0;
+}
+
+.yes-button {
+  padding: 8px 22px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #0b0b0e;
+  font-size: 14px;
+  font-weight: 700;
+  transition: transform 150ms;
+}
+
+.yes-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.yes-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .composer {
   width: min(820px, 100%);
   margin: 0 auto;
@@ -1001,10 +1055,6 @@ button:disabled {
   color: var(--danger);
 }
 
-.scene-status.waiting {
-  color: var(--text);
-}
-
 /* The new starting picture the out-of-date clip will be made again from. */
 .scene-media .scene-inset {
   position: absolute;
@@ -1057,6 +1107,95 @@ button:disabled {
   border-color: var(--border-strong);
 }
 
+/* The owner's note on a scene. Every note is sent together from the bar under the cards. */
+.scene-form {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.scene-note {
+  width: 100%;
+  min-height: 52px;
+  padding: 7px 9px;
+  resize: none;
+  border-radius: var(--radius-m);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.4;
+  transition:
+    border-color 150ms,
+    background 150ms,
+    min-height 180ms;
+}
+
+.scene-note::placeholder {
+  color: var(--text-3);
+}
+
+.scene-note:focus {
+  outline: none;
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+  min-height: 92px;
+}
+
+/* A scene with a note says so, so it's clear what will be sent. */
+.scene-note:not(:placeholder-shown) {
+  border-color: rgba(200, 240, 74, 0.45);
+}
+
+.scene-send {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 10px;
+  flex-shrink: 0;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.scene-send .notice {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.scene-send-hint {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.scene-send-button {
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #0b0b0e;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    opacity 150ms,
+    transform 150ms;
+}
+
+.scene-send-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.scene-send-button:disabled {
+  background: var(--surface-3);
+  color: var(--text-3);
+  cursor: default;
+}
+
 /* Not enough room beside the chat: the cards become a strip above the thread that scrolls
    sideways, and folds away to one line. */
 @media (max-width: 1180px) {
@@ -1087,6 +1226,54 @@ button:disabled {
 
   .scene-cards > li {
     flex: 0 0 104px;
+  }
+
+  /* The clip keeps the strip's width whatever the card's, so a card opening or closing
+     never makes the strip taller. */
+  .scene-cards .scene-media {
+    width: 104px;
+  }
+
+  /* The cards are too narrow to write in, so the one being written on opens wider, its
+     note beside the clip, so the strip doesn't grow taller. */
+  .scene-cards > li:focus-within {
+    flex-basis: 300px;
+  }
+
+  .scene-cards > li:focus-within .scene-card {
+    display: grid;
+    grid-template-columns: 104px minmax(0, 1fr);
+    /* The third row holds the room the note took under the clip, so the card keeps its
+       height and the send button below doesn't move. */
+    grid-template-rows: auto auto 40px;
+    gap: 6px 10px;
+  }
+
+  .scene-cards > li:focus-within .scene-media,
+  .scene-cards > li:focus-within .scene-foot {
+    grid-column: 1;
+  }
+
+  .scene-cards > li:focus-within .scene-note {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    height: 100%;
+  }
+
+  .scene-note {
+    min-height: 40px;
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+
+  /* The strip keeps its height while a note is written, so the send button below it
+     doesn't move away from the tap that leaves the box. */
+  .scene-note:focus {
+    min-height: 40px;
+  }
+
+  .scene-send {
+    padding: 8px 12px 10px;
   }
 
   .scene-version {
@@ -1199,6 +1386,18 @@ button:disabled {
 
   .scene-cards > li {
     flex-basis: 88px;
+  }
+
+  .scene-cards > li:focus-within {
+    flex-basis: 270px;
+  }
+
+  .scene-cards > li:focus-within .scene-card {
+    grid-template-columns: 88px minmax(0, 1fr);
+  }
+
+  .scene-cards .scene-media {
+    width: 88px;
   }
 
   .scene-swap {
