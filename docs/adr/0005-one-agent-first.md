@@ -22,6 +22,9 @@ compared on cost, time and errors. The thresholds are set after that run.
   already running for that scene.
 - A note about a scene in flight stops that scene's running step, and the producer redoes what the note
   affects. No record is passed on, because the producer never lost the context.
+  _Note, 2026-10-12 (route B step 1, #137): nothing stops a running step yet. A note about a scene
+  whose redo is running waits for it to finish, then the producer starts the new fix (Julian
+  2026-10-11: no stop button in step 1). The stop comes later; see `docs/limitations.md`._
 - Each scene step is kept separate so the critic can say which one to redo, and so the tools stay the
   same if directors are built: only who calls them changes.
 - The producer's context grows with every scene. That is the cost being watched, not ignored.
