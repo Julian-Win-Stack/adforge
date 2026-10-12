@@ -942,27 +942,46 @@ def assemble_the_ad(session: Session, job: Job) -> tuple[ProducedItem, bool]:
 def assemble_after_fix(step: SceneStep) -> str:
     """For a clip `assembles_after` that has just landed, its step marked finished: assemble
     the new ad and show it once every scene is finished, so a producer that forgets can't
-    leave the shop owner without it (Julian, 2026-10-11 22:24, on #135). Says what was done, for the
-    producer: the ad assembled, what it waits for, or why it couldn't be. Costs nothing."""
+    leave the shop owner without it (Julian, 2026-10-11 22:24, on #135). Says what was done,
+    for the producer: the ad assembled, what it waits for, or why it couldn't be. Costs nothing."""
     job = step.scene.job
     # Two fixes' clips landing at once: the second waits here for the first's transaction,
     # then sees that clip landed, so the last to land assembles.
     Job.objects.select_for_update().get(pk=job.pk)
-    # A scene with any step running is being fixed, and so is one whose confirmed fix has
-    # no clip yet, as when its new starting picture has landed but its clip isn't started.
-    waiting = [
-        scene.number
+    # A scene with any step running is being made or fixed.
+    unfinished = [
+        scene
         for scene in job.scenes.all()
         if scene.status != Scene.Status.FINISHED
         or scene.steps.filter(status=SceneStep.Status.RUNNING).exists()
-        or _fix_still_to_land(scene)
+    ]
+    # A finished scene whose latest fix the shop owner has answered but whose clip isn't made
+    # yet, as when its new starting picture has landed but its clip isn't started, or when
+    # this clip is an older fix's and they said yes to a newer one while it was being made:
+    # the ad they already corrected isn't shown (#140 review, must-fix 1).
+    unfixed = [
+        scene for scene in job.scenes.all() if scene not in unfinished and _fix_still_to_land(scene)
     ]
     again = " again" if job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).exists() else ""
-    if waiting:
-        is_ = "is" if len(waiting) == 1 else "are"
+    if unfinished or unfixed:
+        waits = []
+        if unfinished:
+            is_ = "is" if len(unfinished) == 1 else "are"
+            waits.append(f"{_scenes([scene.number for scene in unfinished])} {is_} finished")
+        for scene in unfixed:
+            newer = " newer" if scene == step.scene else ""
+            waits.append(f"scene {scene.number}'s{newer} fix is made")
+        # An answer no redo has followed yet may have been no, which code can't tell from a yes.
+        unmade = [scene for scene in unfixed if scene.fixes.last().confirmed_by_id is None]  # type: ignore[union-attr]
+        no = (
+            f" If the shop owner said no to {_scenes([scene.number for scene in unmade])}'s "
+            "fix, assemble the ad with assemble_ad instead."
+            if unmade
+            else ""
+        )
         return (
             f"The ad will be assembled{again}, and shown to the shop owner, once "
-            f"{_scenes(waiting)} {is_} finished."
+            f"{_listed(waits)}.{no}"
         )
     try:
         ad, _ = assemble_the_ad(step.tool_call.session, job)
@@ -993,10 +1012,13 @@ def assembles_after(step: SceneStep) -> bool:
 
 
 def _fix_still_to_land(scene: Scene) -> bool:
-    """Whether the scene's latest fix is confirmed but its clip isn't the scene's clip yet.
-    A clip brought back for it, made earlier with the same fix as its note, counts."""
+    """Whether the shop owner has answered the scene's latest fix but its clip isn't the
+    scene's clip yet. Answered, not only confirmed by a redo: the producer waits for a
+    scene's clip still being made before making its newer fix (`_waits_for`), and the clip
+    landing meanwhile mustn't show an ad the owner already corrected (#140 review, must-fix
+    1). A clip brought back for it, made earlier with the same fix as its note, counts."""
     fix = scene.fixes.last()
-    if fix is None or fix.confirmed_by_id is None:
+    if fix is None or not _owner_answered(fix):
         return False
     clip = _latest_clip(scene)
     step = clip.step if clip is not None else None
@@ -1260,6 +1282,21 @@ def _confirmed_fix(call: ToolCall, scene: Scene, note: str, redo: Fix.Redo) -> F
         fix.confirmed_by = _yes_to(call.session, fix)
         fix.save(update_fields=["confirmed_by"])
     return fix
+
+
+def _owner_answered(fix: Fix) -> bool:
+    """Whether the shop owner has answered the fix's restatement: a redo confirmed it, or
+    there is an answer `_yes_to` would take as their yes. If their answer was no, the
+    producer's assemble_ad still assembles the ad."""
+    if fix.confirmed_by_id is not None:
+        return True
+    if fix.asked.finished_at is None:
+        return False
+    try:
+        _yes_to(fix.asked.session, fix)
+    except Refused:
+        return False
+    return True
 
 
 def _yes_to(session: Session, fix: Fix) -> Message:
