@@ -192,7 +192,7 @@ def test_the_producer_is_told_the_clip_was_made_from_the_note(
         "starting picture version 1 and audio version 1, with its movement rewritten from the "
         f'note "{HOVERS}". Scene 2 is finished. Scene 2\'s fix has cost '
         f"{_dollars(Fix.objects.get().cost_usd())} so far. Tell the shop owner. The ad will be "
-        "assembled again, and shown to the shop owner, once scenes 1 and 3 are finished."
+        "assembled, and shown to the shop owner, once scenes 1 and 3 are finished."
     )
 
 

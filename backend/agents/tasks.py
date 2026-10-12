@@ -30,7 +30,7 @@ from jobs.work import (
 
 from . import loop
 from .loop import BLOCKED, EXPECTED_FAILURES, RunStopped, why_it_failed
-from .producer import PRODUCER, _dollars, assemble_after_fix
+from .producer import PRODUCER, _dollars, assemble_after_fix, assembles_after
 
 logger = logging.getLogger(__name__)
 
@@ -343,7 +343,7 @@ def run_scene_step(step_id: int) -> None:
             step.save(update_fields=["status", "result", "finished_at"])
             # A fix's clip has the new ad assembled by code, in the same transaction, so a
             # step run again after a crash assembles and shows it once.
-            if step.kind == SceneStep.Kind.CLIP and step.fix_id is not None:
+            if assembles_after(step):
                 step.result = f"{step.result} {_assembled_after_fix(step)}"
                 step.save(update_fields=["result"])
             wake_producer(str(session.pk))
