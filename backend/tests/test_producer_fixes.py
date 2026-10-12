@@ -6,37 +6,44 @@ Fix's clip lands and every scene is finished, code assembles the new ad. The pro
 and the scene models are faked at the gateway; the clips are real tiny videos."""
 
 from collections.abc import Callable
-from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 import pytest
+from django.db.models.signals import pre_save
 
 from agents import tasks
-from agents.loop import Refused
 from agents.models import ToolCall
 from agents.producer import (
     PICTURE_FALLBACK_USD,
-    MakeClip,
-    RestateFix,
     _dollars,
     picture_estimate_usd,
 )
-from chat.models import Attachment, Message, Session
+from agents.tasks import restart_dead_producers
+from chat.models import Attachment, Message
 from gateway.catalog import MODEL_FOR_PURPOSE, PRICE_PER_SECOND_OF_VIDEO
-from gateway.fake import FakeModel, turn
+from gateway.fake import FakeModel, meanwhile, turn
 from gateway.models import ModelCall
 from jobs import work
 from jobs.models import Fix, Job, ProducedItem, Scene, SceneStep
 
-from .conftest import HeldSteps, WorkerStopped, given_to_the_producer, paid_for, results_of
+from .conftest import (
+    HeldSteps,
+    WorkerStopped,
+    given_to_the_producer,
+    paid_for,
+    results_of,
+    said_yes_to_a_fix,
+)
 from .test_producer_broll import (
     TALKING_CHOICE,
     assemble_through_the_chat,
     checked,  # noqa: F401 (a fixture)
     run,
 )
+from .test_producer_restarts import WorkerStopped as ProducerStopped
+from .test_producer_restarts import the_producer_died, the_worker_stops
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -98,17 +105,6 @@ def last_step(kind: str = "clip", scene: int = 2) -> SceneStep:
     return step
 
 
-def a_call(tool: str) -> ToolCall:
-    """A producer's call of `tool`, as the loop records it before the tool runs."""
-    return ToolCall.objects.create(
-        session=Session.objects.get(),
-        agent="producer",
-        tool=tool,
-        call_id=f"direct_{ToolCall.objects.count()}",
-        arguments={},
-    )
-
-
 @pytest.fixture
 def shown(
     fake_model: FakeModel,
@@ -154,7 +150,7 @@ def test_a_note_on_a_scene_with_a_clip_and_no_fix_is_refused_and_nothing_is_paid
     )
 
 
-def test_a_redo_before_the_shop_owner_answers_is_refused(
+def test_a_redo_before_the_fix_is_restated_to_the_shop_owner_is_refused(
     fake_model: FakeModel, restated_2: Fix, steps: HeldSteps, say: Say
 ) -> None:
     paid = paid_for()
@@ -171,8 +167,27 @@ def test_a_redo_before_the_shop_owner_answers_is_refused(
     assert paid_for() == paid
     assert steps.held == []
     assert results_of("make_clip")[-1] == (
+        "Refused: scene 2's fix hasn't been restated to the shop owner yet. Tell them the "
+        "restatement and its cost, and wait for their answer. Nothing was done."
+    )
+
+
+def test_a_redo_after_the_restatement_but_before_an_answer_is_refused(
+    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
+) -> None:
+    # The producer tells the shop owner the restatement and goes straight on to the redo.
+    fake_model.respond(
+        "produce",
+        turn(calls=[restating((2, FIX_2, "clip"))]),
+        turn(says="I'll make the tea pour, for about $0.40.", calls=[clip_with(2, FIX_2)]),
+        turn(says="Doing it."),
+    )
+    say(NOTE_2)
+
+    assert steps.held == []
+    assert results_of("make_clip")[-1] == (
         "Refused: the shop owner hasn't answered since scene 2's fix was restated to them. "
-        "Ask them, and wait for their answer. Nothing was done."
+        "Wait for their answer. Nothing was done."
     )
 
 
@@ -188,19 +203,26 @@ def test_after_the_shop_owners_answer_the_redo_is_made_for_the_fix(
     assert paid_for().count("make_broll_clip") == 2
 
 
-def test_an_answer_sent_before_the_restatement_finished_doesnt_count(
-    restated_2: Fix,
+def test_a_message_sent_before_the_restatement_was_shown_isnt_the_yes(
+    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
 ) -> None:
-    session = Session.objects.get()
-    asked = restated_2.asked
-    assert asked.finished_at is not None
-    # Every message the shop owner sent is from before the restate_fix call finished.
-    Message.objects.filter(session=session, role="user").update(
-        created_at=asked.finished_at - timedelta(milliseconds=1)
+    # The shop owner writes again while the producer is still working on restate_fix's turn,
+    # before it has told them the restatement or the cost.
+    fake_model.respond(
+        "produce",
+        turn(calls=[restating((2, FIX_2, "clip"))]),
+        meanwhile(lambda: say("Oh and make the mug blue."), turn(calls=[clip_with(2, FIX_2)])),
+        turn(says="Here's what I'll change."),
+        turn(says="Noted."),
     )
+    say(NOTE_2)
 
-    with pytest.raises(Refused, match="hasn't answered since scene 2's fix was restated"):
-        MakeClip(scene=2, note=FIX_2).run(a_call("make_clip"))
+    assert steps.held == []
+    assert results_of("make_clip")[3:] == [
+        "Refused: scene 2's fix hasn't been restated to the shop owner yet. Tell them the "
+        "restatement and its cost, and wait for their answer. Nothing was done."
+    ]
+    assert Fix.objects.get().confirmed_by is None
 
 
 def test_a_note_that_isnt_the_fix_word_for_word_is_refused_quoting_the_fix(
@@ -269,7 +291,7 @@ def test_a_correction_before_any_answer_isnt_unlocked_by_the_first_note(
 
     assert steps.held == []
     assert results_of("make_clip")[-1].startswith(
-        "Refused: the shop owner hasn't answered since scene 2's fix was restated"
+        "Refused: scene 2's fix hasn't been restated to the shop owner yet."
     )
 
 
@@ -394,6 +416,75 @@ def test_a_redo_while_the_scenes_clip_is_being_made_is_refused_as_busy(
         "Nothing was done."
     )
     assert len(steps.held) == 1
+
+
+def test_a_redo_with_no_note_on_a_finished_scene_is_refused_and_nothing_is_paid(
+    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
+) -> None:
+    # Scene 1's first picture was made with the producer's own note, so a picture with none
+    # isn't already made.
+    SceneStep.objects.filter(kind="starting_picture", scene__number=1).update(
+        note="She holds the mug in warm morning light."
+    )
+    paid = paid_for()
+
+    owner_says(fake_model, say, "Scene 1 looks off to me.", picture_with(1, None))
+
+    assert paid_for() == paid
+    assert steps.held == []
+    assert results_of("make_starting_picture")[-1] == (
+        "Refused: scene 1 already has a clip, so changing it is a fix. Call restate_fix first, "
+        "wait for the shop owner's answer, then pass the fix word for word as the note. Nothing "
+        "was done."
+    )
+
+
+def test_a_clip_with_no_note_isnt_made_for_a_picture_fix_the_owner_has_since_corrected(
+    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
+) -> None:
+    owner_says(fake_model, say, NOTE_1, restating((1, FIX_1, "picture")))
+    owner_says(fake_model, say, "Yes", picture_with(1, FIX_1))
+    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
+    run(fake_model, steps)
+    # Seeing the new picture, the shop owner corrects the fix: restated, not yet confirmed.
+    owner_says(
+        fake_model,
+        say,
+        "No, one hand.",
+        restating((1, "In scene 1, she holds it in one hand.", "picture")),
+    )
+    paid = paid_for()
+
+    owner_says(fake_model, say, "Hmm", clip_with(1, None))
+
+    assert paid_for() == paid
+    assert steps.held == []
+    assert results_of("make_clip")[-1].startswith(
+        "Refused: scene 1 already has a clip, so changing it is a fix."
+    )
+
+
+def test_a_free_clip_with_no_note_on_a_finished_scene_is_still_handed_back(
+    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
+) -> None:
+    paid = paid_for()
+
+    owner_says(fake_model, say, "Is scene 2 done?", clip_with(2, None))
+
+    assert paid_for() == paid
+    assert results_of("make_clip")[-1].startswith("Scene 2's clip was already made")
+
+
+def test_a_clip_fix_isnt_a_note_for_the_picture(
+    fake_model: FakeModel, restated_2: Fix, steps: HeldSteps, say: Say
+) -> None:
+    owner_says(fake_model, say, "Yes", picture_with(2, FIX_2))
+
+    assert steps.held == []
+    assert results_of("make_starting_picture")[-1] == (
+        "Refused: scene 2's fix was restated as a new clip, not a new starting picture. Make "
+        "its clip with the fix as the note. Nothing was done."
+    )
 
 
 # --- restate_fix ------------------------------------------------------------------------------
@@ -565,12 +656,30 @@ def test_another_scenes_fix_holds_everything_since_the_ad_was_shown(
     ]
 
 
-def test_restate_fix_run_again_after_a_restart_records_each_fix_once(restated_2: Fix) -> None:
-    call = ToolCall.objects.get(tool="restate_fix")
+def test_restate_fix_run_again_after_a_restart_records_each_fix_once(
+    fake_model: FakeModel, shown: ProducedItem, say: Say, session_id: str
+) -> None:
+    owner_says(fake_model, say, NOTE_2)
+    fake_model.respond("produce", turn(calls=[restating((2, FIX_2, "clip"))]))
 
-    RestateFix.model_validate(call.arguments).run(call)
+    # The worker stops once the fix is recorded, before the call is kept as finished.
+    with (
+        the_worker_stops(
+            pre_save,
+            ToolCall,
+            when=lambda call: call.tool == "restate_fix" and call.finished_at is not None,
+        ),
+        pytest.raises(ProducerStopped),
+    ):
+        say("Please fix scene 2.")
+    assert Fix.objects.count() == 1
+    the_producer_died(session_id)
+    fake_model.respond("produce", turn(says="Here's what I'll change."))
+    restart_dead_producers()
 
     assert Fix.objects.count() == 1
+    assert ToolCall.objects.get(tool="restate_fix").finished
+    assert results_of("restate_fix")[0].startswith("Recorded the fix. Scene 2: about ")
 
 
 def test_the_producer_is_given_only_the_restate_fix_call_and_its_result(
@@ -775,6 +884,85 @@ def test_two_fixes_assemble_once_when_the_last_lands(
         ProducedItem.objects.get(kind="clip", scene__number=2, version=2).pk,
     ]
     assert times_shown(ad) == 1
+
+
+def test_a_sibling_fixs_picture_landing_first_doesnt_let_a_clip_assemble_a_half_fixed_ad(
+    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
+) -> None:
+    owner_says(
+        fake_model, say, f"{NOTE_1} {NOTE_2}", restating((1, FIX_1, "picture"), (2, FIX_2, "clip"))
+    )
+    owner_says(fake_model, say, "Yes", picture_with(1, FIX_1), clip_with(2, FIX_2))
+    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
+    fake_model.respond("rewrite_clip_prompt", REWRITE)
+    fake_model.respond("produce", turn(says="Done."), turn(says="Done."))
+    steps.run_next()  # scene 1's new picture lands; its clip isn't started yet
+    steps.run_next()  # scene 2's clip lands
+
+    assert ads() == [1]
+    assert last_step().result.endswith(
+        "The ad will be assembled again, and shown to the shop owner, once scene 1 is finished."
+    )
+    owner_says(fake_model, say, "Nice", clip_with(1, None))
+    run(fake_model, steps)
+
+    assert ads() == [1, 2]
+    ad = ProducedItem.objects.get(kind="finished_ad", version=2)
+    assert [cut["clip"] for cut in ad.cuts][:2] == [
+        ProducedItem.objects.get(kind="clip", scene__number=1, version=2).pk,
+        ProducedItem.objects.get(kind="clip", scene__number=2, version=2).pk,
+    ]
+
+
+def test_a_fix_brought_back_free_doesnt_hold_up_another_fixs_assembly(
+    fake_model: FakeModel, restated_2: Fix, steps: HeldSteps, say: Say
+) -> None:
+    confirm_and_redo_2(fake_model, steps, say)
+    # Scene 2's clip is changed again, then the shop owner goes back to the first fix, whose
+    # clip is brought back for nothing.
+    said_yes_to_a_fix(2, "In scene 2, the tea pours from the left.", "clip")
+    owner_says(
+        fake_model,
+        say,
+        "Try from the left",
+        clip_with(2, "In scene 2, the tea pours from the left."),
+    )
+    fake_model.respond("rewrite_clip_prompt", REWRITE)
+    run(fake_model, steps)
+    said_yes_to_a_fix(2, FIX_2, "clip")
+    owner_says(fake_model, say, "Go back", clip_with(2, FIX_2))
+    # Then a picture fix on scene 1 lands its clip.
+    said_yes_to_a_fix(1, FIX_1, "picture")
+    owner_says(fake_model, say, "And scene 1", picture_with(1, FIX_1))
+    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
+    run(fake_model, steps)
+    owner_says(fake_model, say, "Its clip", clip_with(1, None))
+    run(fake_model, steps)
+
+    assert last_step("clip", 1).result.endswith("Ask them to tell you if it's fixed.")
+
+
+def test_assembly_failing_unexpectedly_leaves_the_fixs_clip_made(
+    fake_model: FakeModel,
+    restated_2: Fix,
+    steps: HeldSteps,
+    say: Say,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken(*_: Any, **__: Any) -> ProducedItem:
+        raise RuntimeError("ffmpeg crashed")
+
+    monkeypatch.setattr("agents.producer.assemble_ad", broken)
+
+    confirm_and_redo_2(fake_model, steps, say)
+
+    step = last_step()
+    assert step.status == "finished"
+    assert ads() == [1]
+    assert step.result.endswith(
+        "The ad couldn't be assembled again: an unexpected error stopped it. The details are "
+        "in the server log. Assemble it with assemble_ad."
+    )
 
 
 def test_a_picture_fix_assembles_once_its_clip_lands(

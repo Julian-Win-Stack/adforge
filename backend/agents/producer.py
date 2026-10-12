@@ -562,6 +562,7 @@ class MakeStartingPicture(Tool):
                 f"it cost {_dollars(made.tool_call.cost_usd())}. Photo {made.photo.position} "
                 f"was used: {made.photo_reason}"
             )
+        _a_fix_unless_first_making(scene, fix)
         _start_step(
             call,
             scene,
@@ -802,6 +803,7 @@ class MakeClip(Tool):
                 f"again.{back} Making it cost {_dollars(made.step.tool_call.cost_usd())}. "
                 f"Scene {scene.number} is finished."
             )
+        _a_fix_unless_first_making(scene, fix)
         _start_step(
             call,
             scene,
@@ -907,13 +909,14 @@ def assemble_after_fix(step: SceneStep) -> str:
     # Two fixes' clips landing at once: the second waits here for the first's transaction,
     # then sees that clip landed, so the last to land assembles.
     Job.objects.select_for_update().get(pk=job.pk)
-    # A scene with any step running is being fixed, as by a new starting picture whose clip
-    # is still to come.
+    # A scene with any step running is being fixed, and so is one whose confirmed fix has
+    # no clip yet, as when its new starting picture has landed but its clip isn't started.
     waiting = [
         scene.number
         for scene in job.scenes.all()
         if scene.status != Scene.Status.FINISHED
         or scene.steps.filter(status=SceneStep.Status.RUNNING).exists()
+        or _fix_still_to_land(scene)
     ]
     if waiting:
         is_ = "is" if len(waiting) == 1 else "are"
@@ -930,6 +933,17 @@ def assemble_after_fix(step: SceneStep) -> str:
         f"{ad.seconds:g} seconds) and shown to the shop owner in the chat. Ask them to tell you "
         "if it's fixed."
     )
+
+
+def _fix_still_to_land(scene: Scene) -> bool:
+    """Whether the scene's latest fix is confirmed but its clip isn't the scene's clip yet.
+    A clip brought back for it, made earlier with the same fix as its note, counts."""
+    fix = scene.fixes.last()
+    if fix is None or fix.confirmed_by_id is None:
+        return False
+    clip = _latest_clip(scene)
+    step = clip.step if clip is not None else None
+    return step is None or (step.fix_id != fix.pk and step.note != fix.fix)
 
 
 class FixAsked(BaseModel):
@@ -1060,7 +1074,7 @@ def _estimate_usd(scene: Scene, redo: Fix.Redo) -> Decimal:
     """What making `redo` again for the scene is estimated to cost."""
     if redo == Fix.Redo.PICTURE:
         return picture_estimate_usd(scene)
-    return _clip_estimate_usd(scene)
+    return _scene_clip_estimate_usd(scene)
 
 
 def picture_estimate_usd(scene: Scene) -> Decimal:
@@ -1075,10 +1089,10 @@ def picture_estimate_usd(scene: Scene) -> Decimal:
         paid = last.tool_call.model_calls.exclude(purpose__in=_BEFORE_PICTURE_PURPOSES).aggregate(
             cost=Sum("cost_usd")
         )["cost"]
-    return (paid or PICTURE_FALLBACK_USD) + _clip_estimate_usd(scene)
+    return (paid or PICTURE_FALLBACK_USD) + _scene_clip_estimate_usd(scene)
 
 
-def _clip_estimate_usd(scene: Scene) -> Decimal:
+def _scene_clip_estimate_usd(scene: Scene) -> Decimal:
     """What a new clip of the scene, speaking the audio its clip speaks, is estimated to
     cost."""
     clip = _latest_clip(scene)
@@ -1106,6 +1120,19 @@ def fix_notes(scene: Scene) -> list[dict[str, object]]:
         role=Message.Role.USER, seq__gt=max(shown or 0, confirmed or 0)
     ).order_by("seq")
     return [{"seq": seq, "text": text} for seq, text in said.values_list("seq", "text")]
+
+
+def _a_fix_unless_first_making(scene: Scene, fix: Fix | None) -> None:
+    """Refuse to pay for a new picture or clip of a scene that already has a clip unless it is
+    made for a confirmed fix: with no note, too, nothing is paid before the shop owner's
+    yes (#135 review, must-fix 1). Checked once nothing already made can be handed back, so
+    what is free stays free."""
+    if fix is None and scene.produced.filter(kind=ProducedItem.Kind.CLIP).exists():
+        raise Refused(
+            f"scene {scene.number} already has a clip, so changing it is a fix. Call "
+            "restate_fix first, wait for the shop owner's answer, then pass the fix word for "
+            "word as the note."
+        )
 
 
 def _confirmed_fix(call: ToolCall, scene: Scene, note: str, redo: Fix.Redo) -> Fix | None:
@@ -1138,17 +1165,39 @@ def _confirmed_fix(call: ToolCall, scene: Scene, note: str, redo: Fix.Redo) -> F
             "picture. Make its clip with the fix as the note."
         )
     if fix.confirmed_by is None:
-        asked = fix.asked
-        _answered(
-            call.session, since=asked, who_asked=f"scene {scene.number}'s fix was restated to them"
-        )
-        fix.confirmed_by = (
-            call.session.messages.filter(role=Message.Role.USER, created_at__gt=asked.finished_at)
-            .order_by("seq")
-            .first()
-        )
+        fix.confirmed_by = _yes_to(call.session, fix)
         fix.save(update_fields=["confirmed_by"])
     return fix
+
+
+def _yes_to(session: Session, fix: Fix) -> Message:
+    """The shop owner's answer to the fix's restatement: their first message after the
+    producer's first words since restate_fix recorded it, which are the restatement and its
+    cost. A message they sent before seeing it isn't their answer (#135 review, should-fix
+    2). Refuses, saying why, when there is none."""
+    number = fix.scene.number
+    restated = (
+        session.messages.filter(role=Message.Role.AGENT, created_at__gt=fix.asked.finished_at)
+        .exclude(text="")
+        .order_by("seq")
+        .first()
+    )
+    if restated is None:
+        raise Refused(
+            f"scene {number}'s fix hasn't been restated to the shop owner yet. Tell them the "
+            "restatement and its cost, and wait for their answer."
+        )
+    answer = (
+        session.messages.filter(role=Message.Role.USER, seq__gt=restated.seq)
+        .order_by("seq")
+        .first()
+    )
+    if answer is None:
+        raise Refused(
+            f"the shop owner hasn't answered since scene {number}'s fix was restated to them. "
+            "Wait for their answer."
+        )
+    return answer
 
 
 def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem]:
