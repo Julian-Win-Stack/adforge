@@ -88,9 +88,9 @@ scene at the same time: make_clip for a new clip, or make_starting_picture for a
 starting picture, then make_clip with no note once the picture is ready. If that scene is \
 still being made, say you'll start as soon as it's finished, and start it when you're told \
 it is.
-When a fix's clip is ready, the ad is assembled again and shown to them on its own. Tell \
-them what the fix cost, and ask them to tell you if it's fixed. Never say it is: you can't \
-see pictures or videos. If they say it still isn't right, restate a new fix for that scene \
+When a fix's clip is ready and every scene is finished, the ad is assembled again and \
+shown to them on its own. Tell them what the fix cost, and ask them to tell you if it's \
+fixed. Never say it is: you can't see pictures or videos. If they say it still isn't right, restate a new fix for that scene \
 the same way, making the same thing again.
 What you can't do, said plainly the same way each time: see pictures or videos; use new \
 product photos once the ad is planned; give the video maker a photo, as it only starts from \

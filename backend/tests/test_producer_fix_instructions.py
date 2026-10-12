@@ -72,7 +72,10 @@ STILL_BEING_MADE = (
     "it when you're told it is."
 )
 # The ad is assembled by code when a fix's clip lands (Julian 22:24, #135).
-ASSEMBLED = "When a fix's clip is ready, the ad is assembled again and shown to them on its own."
+ASSEMBLED = (
+    "When a fix's clip is ready and every scene is finished, the ad is assembled again and "
+    "shown to them on its own."
+)
 COST_AND_ASK = "Tell them what the fix cost, and ask them to tell you if it's fixed."
 NEVER_FIXED = "Never say it is: you can't see pictures or videos."
 # No escalation on a second note (Julian 21:53, "option B ... at least for now").
