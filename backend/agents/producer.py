@@ -966,7 +966,7 @@ class FixAsked(BaseModel):
 
 
 class RestateFix(Tool):
-    """Record what you will change about scenes of the ad the shop owner has seen, from their
+    """Record what you will change about scenes that have their clip, from the shop owner's
     notes on them, before anything is made again, and work out what each fix will cost. A
     scene that already has a clip is only made again for a fix restated here, once the shop
     owner has answered: tell them your restatement and the cost, and wait for their answer.
@@ -978,11 +978,10 @@ class RestateFix(Tool):
 
     def run(self, call: ToolCall) -> str:
         job = _the_job(call)
-        if job is None or not job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).exists():
-            raise Refused(
-                "the ad hasn't been assembled and shown to the shop owner yet, and a fix "
-                "changes a finished ad."
-            )
+        # A scene can be fixed as soon as it has a clip, while the others are still being
+        # made (Julian 2026-10-12 00:26, #135 review question 5).
+        if job is None or not job.scenes.exists():
+            raise Refused("the ad hasn't been planned yet, and a fix changes one of its scenes.")
         if not self.fixes:
             raise Refused("no fix was given. Restate at least one scene's fix.")
         numbers = [asked.scene for asked in self.fixes]
@@ -1104,9 +1103,10 @@ def _scene_clip_estimate_usd(scene: Scene) -> Decimal:
 
 def fix_notes(scene: Scene) -> list[dict[str, object]]:
     """The shop owner's messages a fix for the scene is restated from, verbatim, as
-    {"seq", "text"}: each one since the ad was last shown or since they confirmed the scene's
-    last fix, whichever came later. A correction to a fix they haven't confirmed keeps the
-    notes before it, so the new fix holds every note it carries."""
+    {"seq", "text"}: each one since the latest of the scene's first clip being made, the ad
+    last being shown, and their yes to the scene's last fix. A correction to a fix they
+    haven't confirmed keeps the notes before it, so the new fix holds every note it
+    carries."""
     session = scene.job.session
     assert session is not None, "a fix is restated in the job's chat"
     ads = scene.job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).values_list(
@@ -1116,8 +1116,12 @@ def fix_notes(scene: Scene) -> list[dict[str, object]]:
         seq=Max("seq")
     )["seq"]
     confirmed: int | None = scene.fixes.aggregate(seq=Max("confirmed_by__seq"))["seq"]
+    first_clip = scene.produced.filter(kind=ProducedItem.Kind.CLIP).order_by("created_at").first()
+    assert first_clip is not None, "a fix is for a scene with a clip"
     said = session.messages.filter(
-        role=Message.Role.USER, seq__gt=max(shown or 0, confirmed or 0)
+        role=Message.Role.USER,
+        seq__gt=max(shown or 0, confirmed or 0),
+        created_at__gt=first_clip.created_at,
     ).order_by("seq")
     return [{"seq": seq, "text": text} for seq, text in said.values_list("seq", "text")]
 

@@ -40,6 +40,8 @@ from .test_producer_broll import (
     TALKING_CHOICE,
     assemble_through_the_chat,
     checked,  # noqa: F401 (a fixture)
+    clip_of_scene_2,
+    made_ready,
     run,
 )
 from .test_producer_restarts import WorkerStopped as ProducerStopped
@@ -490,18 +492,41 @@ def test_a_clip_fix_isnt_a_note_for_the_picture(
 # --- restate_fix ------------------------------------------------------------------------------
 
 
-def test_restating_before_the_ad_is_shown_is_refused(
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    say: Say,
+def test_restating_before_the_ad_is_planned_is_refused(
+    fake_model: FakeModel, page_read: str, say: Say
 ) -> None:
     owner_says(fake_model, say, NOTE_2, restating((2, FIX_2, "clip")))
 
     assert results_of("restate_fix") == [
-        "Refused: the ad hasn't been assembled and shown to the shop owner yet, and a fix "
-        "changes a finished ad. Nothing was done."
+        "Refused: the ad hasn't been planned yet, and a fix changes one of its scenes. Nothing "
+        "was done."
     ]
     assert not Fix.objects.exists()
+
+
+def test_a_scene_with_its_clip_is_fixed_while_the_others_are_still_being_made(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Say,
+) -> None:
+    # Only scene 2 has its clip; scenes 1 and 3 aren't made, and there is no ad yet.
+    made_ready(fake_model, steps, say, (2,))
+    clip_of_scene_2(fake_model, steps, say)
+    owner_says(fake_model, say, NOTE_2, restating((2, FIX_2, "clip")))
+    fix = Fix.objects.get()
+    assert [note["text"] for note in fix.notes] == [NOTE_2]
+
+    confirm_and_redo_2(fake_model, steps, say)
+
+    fix.refresh_from_db()
+    assert fix.confirmed_by == Message.objects.get(text="Yes, do that.")
+    assert last_step().fix == fix
+    assert ads() == []
+    assert last_step().result.endswith(
+        "The ad will be assembled again, and shown to the shop owner, once scenes 1 and 3 are "
+        "finished."
+    )
 
 
 @pytest.mark.parametrize(
