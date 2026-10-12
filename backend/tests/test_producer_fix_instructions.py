@@ -72,13 +72,13 @@ STILL_BEING_MADE = (
     "that's finished."
 )
 START_THE_WAITING_FIX = (
-    "When you're told a scene's clip is ready and a fix they said yes to for it isn't made "
-    "yet, make it then."
+    "When you're told something of a scene is ready and a fix they said yes to for it isn't "
+    "made yet, make it then."
 )
 # The ad is assembled by code when a fix's clip lands (Julian 22:24, #135).
 ASSEMBLED = (
-    "When a fix's clip is ready and every scene is finished, the ad is assembled again and "
-    "shown to them on its own."
+    "When a fix's clip is ready and every scene is finished, the ad is assembled and shown "
+    "to them on its own."
 )
 COST_AND_ASK = "Tell them what the fix cost, and ask them to tell you if it's fixed."
 NEVER_FIXED = "Never say it is: you can't see pictures or videos."
