@@ -54,6 +54,8 @@ HANDLE_SHOWING: dict[str, Any] = {
 }
 WAVE = "In scene 1 she should wave at the camera."
 WAVE_FIX = "In scene 1, she waves at the camera."
+SALE = "On sale now for $19.00."
+SALE_FIX = f'In scene 3, she says "{SALE}"'
 BOTH_HANDS = "In scene 1, she holds the mug up beside her face with both hands."
 
 
@@ -592,3 +594,60 @@ def test_a_fixs_redo_run_again_after_the_worker_stopped_pays_and_shows_everythin
     messages = api.get(f"/api/sessions/{session_id}/messages/").json()
     texts = [message["text"] for message in messages]
     assert texts.count("Remaking scene 2's clip.") == 1
+
+
+# --- 9. A line note: the scene's picture, audio, transcript and clip are made again ----------
+
+
+def test_a_line_note_remakes_that_scene_for_its_new_line_and_captions_the_new_ad(
+    fake_model: FakeModel, say: Say, steps: HeldSteps, shown: list[str]
+) -> None:
+    untouched = made_for(1, 2)
+    owner_says(
+        fake_model,
+        say,
+        "The last scene should say it's on sale, not just the price.",
+        restating((3, SALE_FIX, "line")),
+    )
+    assert "about $" in results_of("restate_fix")[-1]
+    assert paid_for() == shown
+
+    owner_says(fake_model, say, "Yes", ("change_line", {"scene": 3, "line": SALE}))
+    scene = Scene.objects.get(number=3)
+    assert (scene.line, scene.status) == (SALE, "planned")
+
+    # As the change tells it: the picture and audio, then the transcript, then the clip.
+    owner_says(fake_model, say, "Go on", picture_of(3, None), ("make_line_audio", {"scene": 3}))
+    fake_model.respond("choose_starting_picture", TALKING)
+    step_lands(fake_model, steps)
+    step_lands(fake_model, steps, ("transcribe_line_audio", {"scene": 3}))
+    step_lands(fake_model, steps, clip_of(3))
+    assert [ad.version for ad in ads()] == [1]
+    step_lands(fake_model, steps)
+
+    assert {
+        kind: latest(kind, 3).version
+        for kind in ("starting_picture", "line_audio", "transcript", "clip")
+    } == {"starting_picture": 2, "line_audio": 2, "transcript": 2, "clip": 2}
+    assert made_for(1, 2) == untouched
+    fix = Fix.objects.get()
+    assert {step.kind for step in fix.steps.all()} == {
+        "starting_picture",
+        "line_audio",
+        "transcript",
+        "clip",
+    }
+    # The fix's clip assembled the new ad, captioned with the new words.
+    assert [ad.version for ad in ads()] == [1, 2]
+    captioned = " ".join(caption["text"] for caption in ads()[1].captions)
+    assert "On sale now" in captioned
+    assert "Just $24.00" not in captioned
+    # Only that scene's steps were paid for: no fact check, no judge.
+    assert paid_for()[len(shown) :] == [
+        "choose_starting_picture",
+        "make_starting_picture",
+        "speak_line",
+        "transcribe_line",
+        "make_talking_clip",
+        "collect_talking_clip",
+    ]
