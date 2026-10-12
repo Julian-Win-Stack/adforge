@@ -5,8 +5,9 @@ Not part of the test suite (pytest collects only test_*.py). Each case builds a 
 with fake providers, as the tests do, then hands the producer's turns after the owner's note
 to a real model, up to MOST_TURNS. Its tools run for real against the fakes, so nothing is
 paid but the model's turns (pennies on luna). A case passes when restate_fix records exactly
-the expected step per scene and nothing is made before the owner's yes. Each run's calls
-and reply are written to EVAL_OUT, one JSON line each, for reading the replies.
+the expected step per scene, nothing is made before the owner's yes, and the producer
+replies. Each run's calls and reply are written to EVAL_OUT (a temp file by default), one
+JSON line each, for reading the replies.
 
     EVAL_PRODUCER_MODEL=gpt-6-luna EVAL_RUNS=3 EVAL_OUT=/tmp/luna.jsonl \\
         uv run pytest -q tests/eval_producer_fixes.py
@@ -14,6 +15,7 @@ and reply are written to EVAL_OUT, one JSON line each, for reading the replies.
 
 import json
 import os
+import tempfile
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -41,7 +43,7 @@ from .test_producer_fixes import (
 
 MODEL = os.environ.get("EVAL_PRODUCER_MODEL", "")
 RUNS = int(os.environ.get("EVAL_RUNS", "1"))
-OUT = Path(os.environ.get("EVAL_OUT", "eval-producer-fixes.jsonl"))
+OUT = Path(os.environ.get("EVAL_OUT") or Path(tempfile.gettempdir()) / "eval-producer-fixes.jsonl")
 MOST_TURNS = 4
 REDOS = {"make_clip", "make_starting_picture"}
 
@@ -122,7 +124,10 @@ def test_the_producer_restates_the_step_that_fixes_the_note(
         role=Message.Role.AGENT, seq__gt=since_message.seq if since_message else 0
     ).exclude(text="")
     redone = [tool for tool, _ in made if tool in REDOS]
-    passed = restated == case.expect and not redone
+    reply = "\n".join(replies.values_list("text", flat=True))
+    # A real reply, not one cut off at the turn limit: a can't passes only once it is said.
+    answered = bool(reply) and real.turns <= MOST_TURNS
+    passed = restated == case.expect and not redone and answered
     with OUT.open("a") as out:
         record = {
             "model": MODEL,
@@ -134,13 +139,14 @@ def test_the_producer_restates_the_step_that_fixes_the_note(
             "fixes": [fix.fix for fix in Fix.objects.order_by("pk")[fixes_before:]],
             "calls": made,
             "results": [call.result for call in calls],
-            "reply": "\n".join(replies.values_list("text", flat=True)),
+            "reply": reply,
             "turns": real.turns,
             "passed": passed,
         }
         out.write(json.dumps(record) + "\n")
     assert restated == case.expect
     assert not redone, f"made {redone} before the owner's yes"
+    assert answered, "the producer didn't reply to the shop owner"
 
 
 class RealTurns:

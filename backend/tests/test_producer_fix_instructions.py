@@ -58,7 +58,7 @@ TELL_THEM = (
     "Then tell them in their own words what you'll change in each scene, what it will cost, "
     "and anything you can't do, and wait for their answer."
 )
-NEVER_THE_STEP = "Never tell them what is made again."
+NEVER_THE_STEP = "Never tell them which step is made again."
 CORRECTED = "If they correct you, restate it again."
 NOTHING_BEFORE_THE_YES = "Make nothing until they say yes."
 AFTER_THE_YES = (
@@ -68,8 +68,12 @@ AFTER_THE_YES = (
 )
 # No stop button in step 1: a note on a scene being made waits for it (Julian 21:44).
 STILL_BEING_MADE = (
-    "If that scene is still being made, say you'll start as soon as it's finished, and start "
-    "it when you're told it is."
+    "If a scene they wrote about is still being made, tell them its fix starts as soon as "
+    "that's finished."
+)
+START_THE_WAITING_FIX = (
+    "When you're told a scene's clip is ready and a fix they said yes to for it isn't made "
+    "yet, make it then."
 )
 # The ad is assembled by code when a fix's clip lands (Julian 22:24, #135).
 ASSEMBLED = (
@@ -86,7 +90,7 @@ STILL_WRONG = (
 # The "I can't" list (#137): each item is a refusal or a limit in code or docs/limitations.md.
 CANT = (
     "What you can't do, said plainly the same way each time: see pictures or videos; use new "
-    "product photos once the ad is planned; give the video maker a photo, as it only starts "
+    "product photos once the ad is planned; give the video model a photo, as it only starts "
     "from the starting picture; or change what the person does in a scene where they talk, "
     "only how it looks or what they hold, through a new starting picture."
 )
@@ -106,6 +110,7 @@ PINNED = [
     NOTHING_BEFORE_THE_YES,
     AFTER_THE_YES,
     STILL_BEING_MADE,
+    START_THE_WAITING_FIX,
     ASSEMBLED,
     COST_AND_ASK,
     NEVER_FIXED,
