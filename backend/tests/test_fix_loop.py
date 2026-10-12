@@ -393,6 +393,12 @@ def test_a_note_while_the_scenes_redo_runs_is_made_once_that_redo_lands(
     fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
     step_lands(fake_model, steps, clip_of(2, LIFT_FIX))
     assert [ad.version for ad in ads()] == [1]
+    first_redo = SceneStep.objects.filter(kind="clip", scene__number=2).order_by("id")[1]
+    assert first_redo.result.endswith(
+        "Tell the shop owner. The ad will be assembled again, and shown to the shop owner, "
+        "once scene 2's newer fix is made. If the shop owner said no to "
+        "scene 2's fix, assemble the ad with assemble_ad instead."
+    )
     assert held_kinds(steps) == [(2, "clip")]
     assert SceneStep.objects.get(pk=steps.held[0]).note == LIFT_FIX
     fake_model.respond("rewrite_clip_prompt", LIFT_REWRITE)

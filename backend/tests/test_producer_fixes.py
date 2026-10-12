@@ -940,8 +940,9 @@ def test_a_sibling_fixs_picture_landing_first_doesnt_let_a_clip_assemble_a_half_
     steps.run_next()  # scene 2's clip lands
 
     assert ads() == [1]
+    # Scene 1's new picture planned it again (#133), so it waits for scene 1 to be finished.
     assert last_step().result.endswith(
-        "The ad will be assembled again, and shown to the shop owner, once scene 1's fix is made."
+        "The ad will be assembled again, and shown to the shop owner, once scene 1 is finished."
     )
     owner_says(fake_model, say, "Nice", clip_with(1, None))
     run(fake_model, steps)
@@ -991,7 +992,7 @@ def test_an_older_fixs_clip_landing_after_the_owner_said_yes_to_a_newer_one_show
     assert ads() == [1]
     assert first.result.endswith(
         "Scene 2 is finished. Scene 2's fix has cost "
-        f"{_dollars(restated_2.cost_usd())} so far. Tell the shop owner. The ad will be "
+        f"{dollars(restated_2.cost_usd())} so far. Tell the shop owner. The ad will be "
         "assembled again, and shown to the shop owner, once scene 2's newer fix is made. If the "
         "shop owner said no to scene 2's fix, assemble the ad with assemble_ad instead."
     )
