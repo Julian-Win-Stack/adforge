@@ -117,7 +117,9 @@ def test_a_new_picture_unfinishes_its_scene_until_its_clip_is_made_from_it(
     assert remade.version == 2
     assert remade.picture == picture(number) == step.produced.get()
     assert status(number) == "finished"
-    assemble(fake_model, say)
+    # The new clip carries the picture's fix, so code assembled the ad as it landed (#135):
+    # the producer's own assemble_ad finds it already made.
+    assert assemble(fake_model, say).startswith("The ad was already assembled")
     first, second = ads()
     assert first == assembled
     expected = [remade if scene == number else old_clips[scene] for scene in (1, 2, 3)]

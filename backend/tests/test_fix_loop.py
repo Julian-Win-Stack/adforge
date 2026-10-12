@@ -12,8 +12,10 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from django.db.models.signals import post_save
 from rest_framework.test import APIClient
 
+from agents import tasks
 from agents.producer import INSTRUCTIONS
 from chat.models import Message
 from gateway.fake import FakeModel, turn
@@ -21,6 +23,7 @@ from jobs.models import Fix, Job, ProducedItem, Scene, SceneStep
 
 from .conftest import HeldSteps, given_to_the_producer, paid_for, producer_turns, results_of
 from .test_end_to_end import TALKING, ad_made_through_the_chat  # noqa: F401 (a fixture)
+from .test_producer_restarts import WorkerStopped, the_worker_stops
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -34,7 +37,7 @@ TURN_REWRITE: dict[str, Any] = {
     "motion_prompt": "The hand turns the mug all the way round; the camera holds still.",
     "motion_prompt_reason": "The note asks for a full turn.",
 }
-SLOWER_SPIN = "In scene 2, the hand lifts the mug off the workbench, then turns it."
+LIFT_FIX = "In scene 2, the hand lifts the mug off the workbench, then turns it."
 LIFT_REWRITE: dict[str, Any] = {
     "motion_prompt": "The hand lifts the mug off the workbench, then turns it.",
     "motion_prompt_reason": "The second note asks for the lift.",
@@ -291,8 +294,10 @@ def test_a_redo_in_the_same_turn_as_the_restatement_is_refused_and_nothing_is_pa
 ) -> None:
     owner_says(fake_model, say, HOVERS, restating((2, TURN_FIX, "clip")), clip_of(2, TURN_FIX))
 
-    assert results_of("make_clip")[-1].startswith("Refused: ")
-    assert "answer" in results_of("make_clip")[-1]
+    assert results_of("make_clip")[-1] == (
+        "Refused: scene 2's fix hasn't been restated to the shop owner yet. Tell them the "
+        "restatement and its cost, and wait for their answer. Nothing was done."
+    )
     assert steps.held == []
     assert paid_for() == shown
     assert Fix.objects.get().confirmed_by is None
@@ -376,10 +381,10 @@ def test_a_note_while_the_scenes_redo_runs_is_made_once_that_redo_lands(
         fake_model,
         say,
         "Actually, lift it off the bench first.",
-        restating((2, SLOWER_SPIN, "clip")),
+        restating((2, LIFT_FIX, "clip")),
     )
     # A model that doesn't wait, as the instructions tell it to, is refused as busy.
-    owner_says(fake_model, say, "Yes", clip_of(2, SLOWER_SPIN))
+    owner_says(fake_model, say, "Yes", clip_of(2, LIFT_FIX))
     assert results_of("make_clip")[-1] == (
         "Refused: scene 2's clip is already being made. You'll be told when it's ready. "
         "Nothing was done."
@@ -388,10 +393,10 @@ def test_a_note_while_the_scenes_redo_runs_is_made_once_that_redo_lands(
 
     # The first redo lands; told, the producer makes the confirmed second fix then.
     fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
-    step_lands(fake_model, steps, clip_of(2, SLOWER_SPIN))
+    step_lands(fake_model, steps, clip_of(2, LIFT_FIX))
     assert held_kinds(steps) == [(2, "clip")]
     second = SceneStep.objects.get(pk=steps.held[0])
-    assert second.note == SLOWER_SPIN
+    assert second.note == LIFT_FIX
     fake_model.respond("rewrite_clip_prompt", LIFT_REWRITE)
     step_lands(fake_model, steps)
 
@@ -420,13 +425,13 @@ def test_a_second_note_after_the_fix_makes_the_same_step_again(
         fake_model,
         say,
         "Still not right: lift it off the bench first.",
-        restating((2, SLOWER_SPIN, "clip")),
+        restating((2, LIFT_FIX, "clip")),
     )
     second = Fix.objects.latest("id")
     assert [note["text"] for note in second.notes] == [
         "Still not right: lift it off the bench first."
     ]
-    clip_fixed(fake_model, say, steps, SLOWER_SPIN, LIFT_REWRITE)
+    clip_fixed(fake_model, say, steps, LIFT_FIX, LIFT_REWRITE)
 
     assert latest("clip", 2).version == 3
     assert latest("clip", 2).step.fix == second  # type: ignore[union-attr]
@@ -522,3 +527,46 @@ def test_a_fixs_redo_that_fails_is_tried_again_without_a_new_yes(
 
     assert latest("clip", 2).version == 2
     assert [ad.version for ad in ads()] == [1, 2]
+
+
+# --- A worker restart in the middle of a fix's redo ---------------------------------------------
+
+
+def test_a_fixs_redo_run_again_after_the_worker_stopped_pays_and_shows_everything_once(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    owner_says(fake_model, say, HOVERS, restating((2, TURN_FIX, "clip")))
+    owner_says(fake_model, say, "Yes", clip_of(2, TURN_FIX))
+    (step_id,) = steps.held
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
+
+    # The worker stops just after the new clip is kept, before the step finishes.
+    with (
+        the_worker_stops(
+            post_save, ProducedItem, when=lambda item: item.kind == "clip" and item.version == 2
+        ),
+        pytest.raises(WorkerStopped),
+    ):
+        steps.run_next()
+    assert SceneStep.objects.get(pk=step_id).status == "running"
+    # The step is handed out again, as Celery does with a task its worker never finished.
+    fake_model.respond("produce", turn(says="That part's ready."))
+    tasks.run_scene_step(step_id)
+
+    assert SceneStep.objects.get(pk=step_id).status == "finished"
+    assert latest("clip", 2).version == 2
+    assert paid_for()[len(shown) :] == [
+        "rewrite_clip_prompt",
+        "make_broll_clip",
+        "collect_broll_clip",
+    ]
+    assert [ad.version for ad in ads()] == [1, 2]
+    assert Message.objects.filter(attachments__file=ads()[1].file).count() == 1
+    messages = api.get(f"/api/sessions/{session_id}/messages/").json()
+    texts = [message["text"] for message in messages]
+    assert texts.count("Remaking scene 2's clip.") == 1
