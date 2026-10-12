@@ -1,5 +1,6 @@
 """The producer: the agent the user talks to. What it is told to do, and its tools."""
 
+import re
 from decimal import Decimal
 from typing import Literal
 
@@ -16,7 +17,7 @@ from gateway import catalog
 from gateway.models import ModelCall
 from gateway.types import MusicHandoff, UnusableReply
 from jobs import page
-from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
+from jobs.checks import LONGEST_BROLL_LINE_SECONDS, LONGEST_LINE_SECONDS, line_seconds
 from jobs.models import BROLL_FIELDS, Fix, Job, ProducedItem, ProductPhoto, Scene, SceneStep
 from jobs.notices import post_notice
 from jobs.work import (
@@ -1073,7 +1074,7 @@ class RestateFix(Tool):
                         "fix": normalised_note(asked.fix),
                         "redo": redo,
                         "notes": fix_notes(scene),
-                        "estimate_usd": _estimate_usd(scene, redo),
+                        "estimate_usd": _estimate_usd(scene, redo, normalised_note(asked.fix)),
                     },
                 )
                 recorded.append(fix)
@@ -1082,7 +1083,7 @@ class RestateFix(Tool):
             f"Scene {fix.scene.number}: about {_dollars(fix.estimate_usd)}." for fix in recorded
         )
         total = sum((fix.estimate_usd for fix in recorded), Decimal(0))
-        waits = "".join(_waits_for(fix.scene) for fix in recorded)
+        waits = "".join(_waits_for(fix.scene) + _earlier_fix_lost(fix) for fix in recorded)
         return (
             f"Recorded the fix{'es' if len(recorded) != 1 else ''}. {each} About "
             f"{_dollars(total)} in all. Tell the shop owner this restatement and what it will "
@@ -1099,6 +1100,23 @@ _STEP_NAMES = {
     SceneStep.Kind.TRANSCRIPT: "transcript",
     SceneStep.Kind.CLIP: "clip",
 }
+
+
+def _earlier_fix_lost(fix: Fix) -> str:
+    """For a fix for a new line on a scene whose last fix the shop owner said yes to changed its
+    picture or clip: that the new line makes them again from scratch, with no note, so the
+    earlier change may not stay, and the shop owner is told before their answer (#138
+    review). Empty otherwise."""
+    if fix.redo != Fix.Redo.LINE:
+        return ""
+    earlier = fix.scene.fixes.exclude(pk=fix.pk).filter(confirmed_by__isnull=False).last()
+    if earlier is None or earlier.redo == Fix.Redo.LINE:
+        return ""
+    return (
+        f" Scene {fix.scene.number} had an earlier fix the shop owner said yes to "
+        f'("{earlier.fix}"), and a new line makes its picture and clip again from scratch, so '
+        "that change may not stay: tell the shop owner that too, before their answer."
+    )
 
 
 def _waits_for(scene: Scene) -> str:
@@ -1148,31 +1166,29 @@ class ChangeLine(Tool):
                 )
                 + " Call restate_fix first and wait for the shop owner's answer."
             )
-        if not line or line not in fix.fix:
+        if line != quoted_line(fix.fix):
             raise Refused(
-                f"the line isn't word for word in scene {number}'s fix as it was restated to "
-                f'the shop owner: "{fix.fix}" Pass the new line exactly as it is there, or '
-                "restate the fix."
+                f"the line isn't the new line in quotes in scene {number}'s fix as it was "
+                f'restated to the shop owner: "{fix.fix}" Pass the words inside the quotes '
+                "exactly, or restate the fix."
             )
-        if line in [scene.line, *scene.shortened_from]:
+        # Changed already, as when run again after a restart, maybe shortened since to fit
+        # its clip.
+        if line == scene.line or (fix.confirmed_by is not None and line in scene.shortened_from):
             return (
                 f'Scene {number}\'s line is already "{scene.line}", so nothing was changed. '
                 + _MAKE_IT_AGAIN
+            )
+        if line in scene.shortened_from:
+            raise Refused(
+                f"scene {number}'s line was shortened from this line because its audio was too "
+                "long for its clip, so it can't be used as it stands. Ask the shop owner for a "
+                "shorter line."
             )
         if scene.steps.filter(status=SceneStep.Status.RUNNING).exists():
             raise Refused(
                 f"scene {number} is still being made. You'll be told when it's ready; change "
                 "its line then."
-            )
-        voice = _measured_voice(scene.job)
-        assert voice is not None and voice.words_per_second is not None, (
-            "a scene with a clip was made in a measured voice"
-        )
-        if line_seconds(line, voice.words_per_second) > LONGEST_LINE_SECONDS:
-            raise Refused(
-                f"the new line takes longer to say than a scene can last ({LONGEST_LINE_SECONDS} "
-                "seconds at the voice's speed), so it can't be used. Ask the shop owner for a "
-                "shorter line."
             )
         with transaction.atomic():
             if fix.confirmed_by is None:
@@ -1183,6 +1199,22 @@ class ChangeLine(Tool):
             scene.change_line(line)
             scene.save(update_fields=["line", "shortened_from", "status"])
         return f'Scene {number}\'s line is now "{line}". ' + _MAKE_IT_AGAIN
+
+
+def quoted_line(fix: str) -> str | None:
+    """The new line a fix for a new line holds: the one span of it in straight or curly
+    quotes, its spacing tidied. None when it holds no such span, or more than one."""
+    spans = re.findall(r'["\u201c]([^"\u201c\u201d]*)["\u201d]', fix)
+    return normalised_note(spans[0]) or None if len(spans) == 1 else None
+
+
+def _seconds_to_say(scene: Scene, line: str) -> float:
+    """How long the person's voice takes to say `line`, at its measured speed."""
+    voice = _measured_voice(scene.job)
+    assert voice is not None and voice.words_per_second is not None, (
+        "a scene with a clip was made in a measured voice"
+    )
+    return line_seconds(line, voice.words_per_second)
 
 
 _MAKE_IT_AGAIN = (
@@ -1221,6 +1253,23 @@ def _fixable_scene(job: Job, asked: FixAsked) -> Scene:
             "movement can't be rewritten from a note. Restate it as a new starting picture "
             "instead."
         )
+    if redo == Fix.Redo.LINE:
+        line = quoted_line(normalised_note(asked.fix))
+        if line is None:
+            raise Refused(
+                f"scene {scene.number}'s fix is a new line, but it doesn't hold exactly one line "
+                "in quotes. Restate it with the new line word for word, in quotes."
+            )
+        # A line the shop owner confirmed is theirs, so it is never shortened for them: one
+        # too long is refused before they are asked (Julian's card, 2026-10-12).
+        longest = LONGEST_BROLL_LINE_SECONDS if scene.shows else LONGEST_LINE_SECONDS
+        seconds = _seconds_to_say(scene, line)
+        if seconds > longest:
+            raise Refused(
+                f"scene {scene.number}'s new line takes about {round(seconds)} seconds to say at "
+                f"the voice's speed, longer than the scene can last ({longest} seconds). Ask the "
+                "shop owner for a shorter line, and restate the fix with it."
+            )
     return scene
 
 
@@ -1234,32 +1283,38 @@ PICTURE_FALLBACK_USD = Decimal("0.10")
 _BEFORE_PICTURE_PURPOSES = ["plan_before_picture", "make_before_picture"]
 
 
-def _estimate_usd(scene: Scene, redo: Fix.Redo) -> Decimal:
-    """What making `redo` again for the scene is estimated to cost."""
+def _estimate_usd(scene: Scene, redo: Fix.Redo, fix: str) -> Decimal:
+    """What making `redo` again for the scene, for `fix`, is estimated to cost."""
     if redo == Fix.Redo.PICTURE:
         return picture_estimate_usd(scene)
     if redo == Fix.Redo.LINE:
-        return picture_estimate_usd(scene) + _audio_estimate_usd(scene)
+        return _line_estimate_usd(scene, fix)
     return _scene_clip_estimate_usd(scene)
 
 
-def _audio_estimate_usd(scene: Scene) -> Decimal:
-    """What new audio of the scene's line, and its transcript, are estimated to cost: the
-    line as it stands, said and heard as long as its clip's audio was. A new line costs about
-    the same."""
-    clip = _latest_clip(scene)
-    assert clip is not None and clip.made_from is not None, "a fix is for a scene with a clip"
-    seconds = clip.made_from.seconds
-    assert seconds is not None, "a line's audio is measured when it's made"
-    return catalog.speech_cost_usd(
-        catalog.MODEL_FOR_PURPOSE["speak_line"], len(scene.line)
-    ) + catalog.transcription_cost_usd(catalog.MODEL_FOR_PURPOSE["transcribe_line"], seconds)
+def _line_estimate_usd(scene: Scene, fix: str) -> Decimal:
+    """What a new line for the scene, then its starting picture, audio, transcript and clip,
+    is estimated to cost: the picture as for a picture fix, and the rest sized from the new
+    line in `fix`, as long as the voice takes to say it."""
+    line = quoted_line(fix)
+    assert line is not None, "a fix for a new line holds it in quotes"
+    seconds = _seconds_to_say(scene, line)
+    return (
+        _picture_only_estimate_usd(scene)
+        + catalog.speech_cost_usd(catalog.MODEL_FOR_PURPOSE["speak_line"], len(line))
+        + catalog.transcription_cost_usd(catalog.MODEL_FOR_PURPOSE["transcribe_line"], seconds)
+        + clip_estimate_usd(seconds, broll=bool(scene.shows))
+    )
 
 
 def picture_estimate_usd(scene: Scene) -> Decimal:
-    """What a new starting picture for the scene, then its clip, is estimated to cost: what
-    its last starting picture cost, its judge's looks included, or the fallback when that
-    isn't recorded, and the clip."""
+    """What a new starting picture for the scene, then its clip, is estimated to cost."""
+    return _picture_only_estimate_usd(scene) + _scene_clip_estimate_usd(scene)
+
+
+def _picture_only_estimate_usd(scene: Scene) -> Decimal:
+    """What a new starting picture for the scene is estimated to cost: what its last one cost,
+    its judge's looks included, or the fallback when that isn't recorded."""
     last = scene.steps.filter(
         kind=SceneStep.Kind.STARTING_PICTURE, status=SceneStep.Status.FINISHED
     ).last()
@@ -1268,7 +1323,7 @@ def picture_estimate_usd(scene: Scene) -> Decimal:
         paid = last.tool_call.model_calls.exclude(purpose__in=_BEFORE_PICTURE_PURPOSES).aggregate(
             cost=Sum("cost_usd")
         )["cost"]
-    return (paid or PICTURE_FALLBACK_USD) + _scene_clip_estimate_usd(scene)
+    return paid or PICTURE_FALLBACK_USD
 
 
 def _scene_clip_estimate_usd(scene: Scene) -> Decimal:

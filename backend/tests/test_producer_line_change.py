@@ -10,11 +10,11 @@ from typing import Any
 
 import pytest
 
-from agents.producer import picture_estimate_usd
 from gateway.fake import FakeModel, turn
-from jobs.models import Fix, ProducedItem, Scene
+from gateway.models import ModelCall
+from jobs.models import Fix, ProducedItem, Scene, SceneStep
 
-from .conftest import HeldSteps, facts_ok, paid_for, results_of
+from .conftest import HeldSteps, facts_ok, paid_for, results_of, said_yes_to_a_fix
 from .test_producer_broll import (
     BROLL_CHOICE,
     SHOWS,
@@ -39,6 +39,12 @@ FIX_3 = f'In scene 3, she says "{LINE_3}"'
 NOTE_2 = "Scene 2 should say it's oven safe too."
 LINE_2_NEW = "Hand-thrown, holds 350 ml, oven and dishwasher safe."
 FIX_2 = f'In scene 2, the voice says "{LINE_2_NEW}"'
+
+
+MISMATCH = (
+    "the line isn't the new line in quotes in scene 3's fix as it was restated to the shop "
+    f'owner: "{FIX_3}" Pass the words inside the quotes exactly, or restate the fix.'
+)
 
 
 def changing(scene: int, line: str) -> tuple[str, dict[str, Any]]:
@@ -207,20 +213,30 @@ def test_a_broll_scenes_new_line_keeps_what_it_shows_and_its_labels(
             "restated as a new picture. Call restate_fix first and wait for the shop owner's "
             "answer.",
         ),
-        (
-            (FIX_3, "line"),
-            "On sale now for $9.00.",
-            f"the line isn't word for word in scene 3's fix as it was restated to the shop "
-            f'owner: "{FIX_3}" Pass the new line exactly as it is there, or restate the fix.',
-        ),
-        (
-            (FIX_3, "line"),
-            "   ",
-            f"the line isn't word for word in scene 3's fix as it was restated to the shop "
-            f'owner: "{FIX_3}" Pass the new line exactly as it is there, or restate the fix.',
-        ),
+        *[
+            ((FIX_3, "line"), line, MISMATCH)
+            for line in [
+                "On sale now for $9.00.",
+                "   ",
+                "she says",
+                f'"{LINE_3}"',
+                "In scene 3, she says",
+                "3",
+                "On sale now",
+            ]
+        ],
     ],
-    ids=["no fix", "a picture fix", "not in the fix", "blank"],
+    ids=[
+        "no fix",
+        "a picture fix",
+        "not in the fix",
+        "blank",
+        "a piece of the lead-in",
+        "with its quote marks",
+        "the lead-in",
+        "the scene number",
+        "part of the line",
+    ],
 )
 def test_a_line_change_the_shop_owner_didnt_say_yes_to_is_refused_and_nothing_changes(
     fake_model: FakeModel,
@@ -265,26 +281,86 @@ def test_a_line_change_before_the_shop_owner_answers_is_refused(
     assert Fix.objects.get().confirmed_by is None
 
 
-def test_a_line_too_long_to_say_is_refused_with_the_reason(
+@pytest.mark.parametrize(
+    ("scene", "words", "refused"),
+    [
+        # 38 words: 19 seconds at the fake voice's 2 words a second, over the 18 a scene lasts.
+        (
+            3,
+            38,
+            "scene 3's new line takes about 19 seconds to say at the voice's speed, longer than "
+            "the scene can last (18 seconds). Ask the shop owner for a shorter line, and restate "
+            "the fix with it.",
+        ),
+        # 30 words: 15 seconds, over the 14 a scene showing the product can say.
+        (
+            2,
+            30,
+            "scene 2's new line takes about 15 seconds to say at the voice's speed, longer than "
+            "the scene can last (14 seconds). Ask the shop owner for a shorter line, and restate "
+            "the fix with it.",
+        ),
+    ],
+    ids=["talking", "showing the product"],
+)
+def test_a_new_line_too_long_to_say_is_refused_before_the_owner_is_asked(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+    scene: int,
+    words: int,
+    refused: str,
+) -> None:
+    long_line = " ".join(["Really"] * (words - 1) + ["great."])
+
+    owner_says(
+        fake_model,
+        say,
+        "Make it longer",
+        restating((scene, f'In scene {scene}, the line is "{long_line}"', "line")),
+    )
+
+    assert results_of("restate_fix") == [f"Refused: {refused} Nothing was done."]
+    assert not Fix.objects.exists()
+
+
+@pytest.mark.parametrize(
+    ("fix", "refused"),
+    [
+        (
+            "In scene 3, she says it's on sale.",
+            "scene 3's fix is a new line, but it doesn't hold exactly one line in quotes. Restate "
+            "it with the new line word for word, in quotes.",
+        ),
+        (
+            'In scene 3, she says "On sale" and then "now".',
+            "scene 3's fix is a new line, but it doesn't hold exactly one line in quotes. Restate "
+            "it with the new line word for word, in quotes.",
+        ),
+    ],
+    ids=["no quotes", "two quoted pieces"],
+)
+def test_a_line_fix_without_one_quoted_line_is_refused(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+    fix: str,
+    refused: str,
+) -> None:
+    owner_says(fake_model, say, NOTE_3, restating((3, fix, "line")))
+
+    assert results_of("restate_fix") == [f"Refused: {refused} Nothing was done."]
+    assert not Fix.objects.exists()
+
+
+def test_a_line_fix_with_curly_quotes_changes_the_line(
     fake_model: FakeModel,
     shown: ProducedItem,  # noqa: F811
     say: Say,
 ) -> None:
-    # 38 words: 19 seconds at the fake voice's 2 words a second, over the 18 a scene lasts.
-    long_line = " ".join(["Really"] * 37 + ["great."])
-    owner_says(
-        fake_model, say, NOTE_3, restating((3, f'In scene 3, she says "{long_line}"', "line"))
-    )
+    restated_and_yes(fake_model, say, 3, f"In scene 3, she says \u201c{LINE_3}\u201d", LINE_3)
 
-    owner_says(fake_model, say, "Yes", changing(3, long_line))
-
-    assert results_of("change_line") == [
-        "Refused: the new line takes longer to say than a scene can last (18 seconds at the "
-        "voice's speed), so it can't be used. Ask the shop owner for a shorter line. Nothing was "
-        "done."
-    ]
-    assert Scene.objects.get(number=3).line == "Yours for $24.00."
-    assert Fix.objects.get().confirmed_by is None
+    assert Scene.objects.get(number=3).line == LINE_3
 
 
 def test_a_line_change_while_the_scene_is_being_made_is_refused_as_busy(
@@ -332,28 +408,71 @@ def test_the_same_line_again_changes_nothing_and_pays_for_nothing(
 # --- The estimate -----------------------------------------------------------------------------
 
 
-def test_a_line_fix_is_estimated_as_a_picture_its_audio_and_a_clip(
+def test_a_line_fix_is_estimated_from_the_new_line(
     fake_model: FakeModel,
     shown: ProducedItem,  # noqa: F811
     say: Say,
 ) -> None:
-    scene = Scene.objects.get(number=3)
-    audio = ProducedItem.objects.get(kind="line_audio", scene=scene)
-    assert audio.seconds is not None
-    # The line's 17 characters at Inworld's $25 a million, and its audio heard at Scribe's
-    # $0.22 an hour, on top of a picture and a clip.
+    picture = SceneStep.objects.get(kind="starting_picture", scene__number=3)
+    picture_paid = sum(
+        (
+            call.cost_usd or Decimal(0)
+            for call in ModelCall.objects.filter(tool_call=picture.tool_call)
+        ),
+        Decimal(0),
+    )
+    # The new line's 23 characters at Inworld's $25 a million; its 5 words, 2.5 seconds at the
+    # fake voice's speed, heard at Scribe's $0.22 an hour and spoken by HeyGen at $0.05 a
+    # second; on top of what the scene's picture cost.
     expected = (
-        picture_estimate_usd(scene)
-        + Decimal("0.000425")
-        + Decimal(str(audio.seconds)) * Decimal("0.22") / 3600
+        picture_paid
+        + Decimal("0.000575")
+        + Decimal("2.5") * Decimal("0.22") / 3600
+        + Decimal("2.5") * Decimal("0.05")
     ).quantize(Decimal("0.000001"))
 
     owner_says(fake_model, say, NOTE_3, restating((3, FIX_3, "line")))
 
-    fix = Fix.objects.get()
-    assert fix.estimate_usd == expected
-    assert fix.estimate_usd > picture_estimate_usd(scene)
+    assert Fix.objects.get().estimate_usd == expected
     assert results_of("restate_fix")[-1].startswith("Recorded the fix. Scene 3: about $")
+
+
+def test_a_line_fix_on_a_scene_with_an_earlier_fix_says_the_owner_is_told_it_may_not_stay(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+) -> None:
+    said_yes_to_a_fix(3, "In scene 3, she holds the mug up beside her face.", "picture")
+
+    owner_says(fake_model, say, NOTE_3, restating((3, FIX_3, "line")))
+
+    assert results_of("restate_fix")[-1].endswith(
+        ' Scene 3 had an earlier fix the shop owner said yes to ("In scene 3, she holds the mug '
+        'up beside her face."), and a new line makes its picture and clip again from scratch, '
+        "so that change may not stay: tell the shop owner that too, before their answer."
+    )
+
+
+@pytest.mark.parametrize("earlier", [None, "a line said yes to", "a picture not said yes to"])
+def test_a_line_fix_with_no_earlier_picture_or_clip_fix_said_yes_to_says_nothing_of_one(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+    earlier: str | None,
+) -> None:
+    if earlier == "a line said yes to":
+        said_yes_to_a_fix(3, 'In scene 3, she says "Only $24."', "line")  # type: ignore[arg-type]
+    if earlier == "a picture not said yes to":
+        owner_says(
+            fake_model,
+            say,
+            "Hold it up?",
+            restating((3, "In scene 3, she holds the mug up beside her face.", "picture")),
+        )
+
+    owner_says(fake_model, say, NOTE_3, restating((3, FIX_3, "line")))
+
+    assert "earlier fix" not in results_of("restate_fix")[-1]
 
 
 def test_a_new_broll_line_too_long_for_its_clip_is_shortened_and_the_owner_told(
@@ -385,6 +504,17 @@ def test_a_new_broll_line_too_long_for_its_clip_is_shortened_and_the_owner_told(
     # Run again, as after a restart, the change doesn't undo the shortening.
     owner_says(fake_model, say, "Go on", changing(2, LINE_2_NEW))
     assert Scene.objects.get(number=2).line == "Hand-thrown, oven and dishwasher safe."
+
+    # Asked for again in a new fix, the long line can't be used as it stands.
+    fake_model.words_per_second = 2.0
+    restated_and_yes(fake_model, say, 2, FIX_2, LINE_2_NEW)
+    assert results_of("change_line")[-1] == (
+        "Refused: scene 2's line was shortened from this line because its audio was too long "
+        "for its clip, so it can't be used as it stands. Ask the shop owner for a shorter line. "
+        "Nothing was done."
+    )
+    assert Scene.objects.get(number=2).line == "Hand-thrown, oven and dishwasher safe."
+    assert Fix.objects.last().confirmed_by is None  # type: ignore[union-attr]
 
 
 @pytest.mark.parametrize("tool", ["make_starting_picture", "make_clip"])
