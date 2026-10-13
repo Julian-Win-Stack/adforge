@@ -263,6 +263,7 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("note_face", lambda _: NO_FACE)
     fake.answer_unscripted("check_starting_picture", lambda _: PICTURE_OK)
     fake.answer_unscripted("check_fix", lambda _: FIX_MADE)
+    fake.answer_unscripted("check_fix_clip", lambda _: FIX_MADE)
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
     fake.answer_unscripted("check_clip_sides", lambda _: CLIP_SIDES_OK)
     fake.answer_unscripted("check_clip_motion", lambda _: CLIP_MOTION_OK)

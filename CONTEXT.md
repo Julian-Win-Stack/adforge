@@ -145,7 +145,7 @@ The producer's restatement of what it will change about a finished scene, which 
 _Avoid_: Change request, edit, revision
 
 **Fix check**:
-A judge asking a fix's complaint back about the new version it made, shown beside the old one: a new starting picture before its clip is paid for, or a new clip once the clip judge is in the app; a new line is never checked. A pass carries on as before. A fail makes nothing more for the scene: the chat shows the old and new versions and why, with the reason as the note the scene's card is filled with, and the producer waits for the shop owner's word. An answer that can't be had leaves it unchecked, and the fix carries on. Kept with its fix and both versions.
+A judge asking a fix's complaint back about the new version it made, shown beside the old one: a new starting picture before its clip is paid for, or a new clip once, after the clip judge's redos have kept it; a new line is never checked. A pass carries on as before. A fail makes nothing more for the scene and assembles no ad: the chat shows the old and new versions and why, with anything the clip judge still sees, with the reason as the note the scene's card is filled with, and the producer waits for the shop owner's word. An answer that can't be had leaves it unchecked, and the fix carries on. Kept with its fix and both versions.
 _Avoid_: Fix judge, verification, QA
 
 ### Machinery

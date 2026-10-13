@@ -1,24 +1,21 @@
 """The check of a fix (route B step 6, #131): after a scene is made again for a fix the shop
 owner said yes to, a judge is asked the complaint back about the new version, shown beside
 the old one, before anything more is made or shown as fixed. A new starting picture is
-judged here; a new clip by the clip judge, once it is in the app (#109). A new line is
-never judged: its words are the proof (Julian 2026-10-11 21:51).
+judged here, and a new clip, after the clip judge (#109) and its redos (#155) have kept it.
+A new line is never judged: its words are the proof (Julian 2026-10-11 21:51).
 
 Agreed by Julian (2026-10-13 05:18, "yes"): the judge's question below, showing the old
 version beside the new, and stopping before a failed picture's clip is paid for."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
 from gateway.types import Handoff
 
 from .picture_check import ASKS, FAILS_TO_FAIL
-
-if TYPE_CHECKING:
-    from .models import Job
 
 # Asked 3 times, failing on 2, as the picture judge is (reference/vision-judges.md, rule 6).
 FIX_CHECK = """\
@@ -79,6 +76,11 @@ class Settled:
     answers: list[dict[str, Any]]
 
 
+def settle_all(answers: Sequence[dict[str, Any] | None]) -> Settled:
+    """`settle` over answers all asked at once, in ask order."""
+    return settle(lambda number: answers[number - 1])
+
+
 def settle(ask: Callable[[int], dict[str, Any] | None]) -> Settled:
     """Ask the judge with `ask`, from ask 1, until FAILS_TO_FAIL of its answers agree, at most
     ASKS times. An ask gives the judge's answer, or None when none could be had: the safety
@@ -98,8 +100,48 @@ def settle(ask: Callable[[int], dict[str, Any] | None]) -> Settled:
     return Settled("unchecked", "", answers)
 
 
-# How the clip judge checks a fix's new clip: given the job, the old clip's file, the new
-# clip's and the fix word for word, it settles the verdict. None until the clip judge is in
-# the app (#109, route B step 5): until then a clip fix isn't checked.
-ClipJudge = Callable[["Job", str, str, str], Settled]
-clip_judge: ClipJudge | None = None
+# The picture question in clip words (decision thread for Julian, 2026-10-13 05:47, call 4).
+# Shown frames of the old clip and the new one, 5 a second, each labelled with its time.
+FIX_CHECK_CLIP = """\
+You check whether a change a shop owner asked for was made to a clip in their video ad. You \
+are shown frames of the old clip first, then frames of the new clip, each labelled with its \
+time, and told the change. Judge only that change: nothing else in the clip matters, and \
+other differences between the two clips are not a fail.
+
+Work in two steps.
+1. Look before you judge. Write what the old clip does about the thing the change is about, \
+then what the new clip does about it. Describe what actually happens in the frames, not what \
+the change asks for.
+2. Then decide: is the change clearly there in the new clip? Answer "fixed" only if it is. \
+Answer "not fixed" if what the shop owner complained about is still there, or the change is \
+only partly made, and say in one sentence what is still wrong."""
+
+CLIPS_SHOWN = "The old clip's frames are first; the new clip's frames follow."
+
+# Each clip is shown in at most this many pictures, so both fit in one ask under the
+# 50-picture limit (reference/rate-limits.md).
+MOST_PICTURES_PER_CLIP = 24
+
+
+class FixClipVerdict(FixVerdict):
+    old_shows: str = Field(description="What the old clip does about the change.")
+    new_shows: str = Field(description="What the new clip does about the change.")
+
+
+class FixClipCheckHandoff(Handoff):
+    """As FixCheckHandoff, for a fix's new clip."""
+
+    fix: str
+    ask: int
+    clips: str = CLIPS_SHOWN
+
+
+def thinned[Item](pictures: list[Item], most: int = MOST_PICTURES_PER_CLIP) -> list[Item]:
+    """At most `most` of `pictures`, spread evenly from the first to the last: an owner's
+    change often shows at the end, so the end is never cut off."""
+    if len(pictures) <= most:
+        return pictures
+    if most == 1:
+        return pictures[-1:]
+    step = (len(pictures) - 1) / (most - 1)
+    return [pictures[round(n * step)] for n in range(most)]

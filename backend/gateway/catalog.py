@@ -41,6 +41,8 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # (Claude Doc "Clip judge discussion", Results).
     "check_clip_sides": "gpt-6.1-sol",
     "check_clip_motion": "gpt-6.1-sol",
+    # The same about a fix's new clip, beside the old one (decision thread, 2026-10-13 call 4).
+    "check_fix_clip": "gpt-6.1-sol",
     "design_voice": "inworld-tts-2",
     "measure_voice": "inworld-tts-2",
     "speak_line": "inworld-tts-2",
