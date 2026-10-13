@@ -1903,7 +1903,12 @@ def _clip_frames(clip: ProducedItem, heading: str) -> list[Image]:
     """The clip's frames, 5 a second, as the clip judge was shown them, or cut now for a clip
     it never judged, thinned evenly to fit beside another clip's in one ask, each picture
     labelled with its frames' times."""
-    pictures = ((clip.ruling or {}).get("pictures") or clip_judge.cut_pictures(clip.file))["frames"]
+    pictures = (
+        (clip.ruling or {}).get("pictures")
+        or clip_judge.cut_pictures(
+            clip.file, beside=clip_judge.MOST_PICTURES - fix_check.MOST_PICTURES_PER_CLIP
+        )
+    )["frames"]
     shown = []
     for n, picture in enumerate(fix_check.thinned(pictures)):
         times = picture["times"]
