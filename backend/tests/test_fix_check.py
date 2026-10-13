@@ -9,6 +9,7 @@ kept with its fix and both versions.
 The mug's first ad is made through the chat, then fixed, as in test_fix_loop.py; the
 producer's turns are scripted, and every outside service is faked at the gateway."""
 
+import dataclasses
 from typing import Any
 
 import pytest
@@ -19,10 +20,18 @@ from agents import tasks
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter
-from jobs import fix_check
-from jobs.models import Fix, FixCheck, Scene, SceneStep
+from jobs import clip_judge, fix_check, work
+from jobs.models import Fix, FixCheck, ProducedItem, Scene, SceneStep
 
-from .conftest import CLIP_MOTION_OK, FIX_MADE, HeldSteps, handoffs, paid_for, results_of
+from .conftest import (
+    CLIP_MOTION_OK,
+    CLIP_SIDES_OK,
+    FIX_MADE,
+    HeldSteps,
+    handoffs,
+    paid_for,
+    results_of,
+)
 from .test_end_to_end import ad_made_through_the_chat  # noqa: F401 (a fixture)
 from .test_fix_loop import (
     HANDLE_FIX,
@@ -437,6 +446,108 @@ def test_a_failed_clip_check_also_says_what_the_clip_judge_still_sees(
     )
 
 
+def test_a_failed_clip_check_never_passes_on_a_problem_the_clip_judge_outvoted(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+    api: APIClient,
+    session_id: str,
+) -> None:
+    flips = "The mug's handle flips sides at 0.4 s."
+    floats = "The mug rises at 1.2 s with no hand on it; a real one stays put."
+    # One ask of three sees the handle flip, so the sides check passes; the motion check fails.
+    fake_model.answer_unscripted(
+        "check_clip_sides",
+        lambda request: (
+            {**CLIP_SIDES_OK, "verdict": "fail", "problem": flips, "back_to_normal_at": "never"}
+            if request.handoff.model_dump()["ask"] == 1
+            else CLIP_SIDES_OK
+        ),
+    )
+    fake_model.answer_unscripted(
+        "check_clip_motion",
+        lambda _: {
+            **CLIP_MOTION_OK,
+            "real_motion": {"verdict": "fail", "problem": floats, "back_to_normal_at": "never"},
+        },
+    )
+    fake_model.answer_unscripted("check_fix_clip", lambda _: not_made(HOVERING))
+
+    a_clip_redone(fake_model, say, steps)
+
+    assert messages_of(api, session_id)[-2]["text"].endswith(
+        f"or tell me what to change. The clip's own check also still sees: {floats}"
+    )
+
+
+def test_a_clip_check_that_cant_be_had_shows_the_ad_and_says_so(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+) -> None:
+    blocked = BlockedBySafetyFilter("blocked")
+    fake_model.respond("check_fix_clip", blocked, blocked, blocked)
+
+    a_clip_redone(fake_model, say, steps)
+
+    check = FixCheck.objects.get()
+    assert (check.verdict, check.answers) == ("unchecked", [])
+    assert "Scene 2's fix couldn't be checked, so tell the shop owner it wasn't checked." in told(2)
+    assert [ad.version for ad in ads()] == [1, 2]
+
+
+def test_a_clip_whose_frames_cant_be_cut_is_kept_and_its_fix_left_unchecked(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def cant_cut(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("ffmpeg couldn't read the clip")
+
+    # Neither the clip judge nor the fix check can cut the new clip's frames.
+    monkeypatch.setattr(clip_judge, "cut_pictures", cant_cut)
+
+    a_clip_redone(fake_model, say, steps)
+
+    assert FixCheck.objects.get().verdict == "unchecked"
+    assert "check_fix_clip" not in paid_for()
+    assert "Scene 2's fix couldn't be checked, so tell the shop owner it wasn't checked." in told(2)
+    assert [ad.version for ad in ads()] == [1, 2]
+
+
+def test_a_clip_brought_back_in_the_fixs_step_is_never_the_old_one(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    old_clip = latest("clip", 2)
+    making = tasks.STEP_WORK[SceneStep.Kind.CLIP]
+
+    def made_then_brought_back(step: SceneStep) -> ProducedItem:
+        # As the clip judge's redos do (#155): the clip kept comes back as the newest.
+        made = making.make(step)
+        assert made is not None
+        return work.bring_back_clip(made)
+
+    monkeypatch.setitem(
+        tasks.STEP_WORK,
+        SceneStep.Kind.CLIP,
+        dataclasses.replace(making, make=made_then_brought_back),
+    )
+
+    a_clip_redone(fake_model, say, steps)
+
+    check = FixCheck.objects.get()
+    assert (check.old, check.new) == (old_clip, latest("clip", 2))
+    assert check.new.version == old_clip.version + 2
+
+
 # --- A line fix asks no judge ------------------------------------------------------------------
 
 
@@ -503,7 +614,36 @@ def test_a_not_fixed_answer_must_say_what_is_still_wrong() -> None:
         (24, 24, list(range(24))),
         (5, 3, [0, 2, 4]),
         (10, 4, [0, 3, 6, 9]),
-        (38, 24, [round(n * 37 / 23) for n in range(24)]),
+        (
+            38,
+            24,
+            [
+                0,
+                2,
+                3,
+                5,
+                6,
+                8,
+                10,
+                11,
+                13,
+                14,
+                16,
+                18,
+                19,
+                21,
+                23,
+                24,
+                26,
+                27,
+                29,
+                31,
+                32,
+                34,
+                35,
+                37,
+            ],
+        ),
     ],
 )
 def test_a_clips_pictures_are_thinned_evenly_keeping_the_first_and_the_last(

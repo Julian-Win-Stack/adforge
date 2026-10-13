@@ -62,7 +62,12 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
 # looks at up to 50 pictures and reasons over them (the harness waited up to 600), and the
 # clip step waits on it.
 ANSWER_SECONDS = 120
-SLOW_ANSWER_SECONDS: dict[str, float] = {"check_clip_sides": 600, "check_clip_motion": 600}
+SLOW_ANSWER_SECONDS: dict[str, float] = {
+    "check_clip_sides": 600,
+    "check_clip_motion": 600,
+    # Up to 48 frames of two clips in one ask, as many as the clip judge's (#131).
+    "check_fix_clip": 600,
+}
 
 # US dollars per million tokens: (input, output). From OpenAI's pricing page.
 PRICE_PER_MILLION_TOKENS: dict[str, tuple[Decimal, Decimal]] = {

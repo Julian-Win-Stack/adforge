@@ -50,6 +50,7 @@ from gateway.types import (
     LEAST_BROLL_SECONDS,
     LEAST_CLIP_SECONDS,
     MOST_BROLL_SECONDS,
+    AnswerTookTooLong,
     BlockedBySafetyFilter,
     BrollClipHandoff,
     ClipFailed,
@@ -1869,11 +1870,16 @@ def _check_the_clip_fix(
 ) -> fix_check.Settled:
     """Ask the judge FixCheck's ASKS times at once whether the clip `new` has the change
     `fix` asks for, shown frames of the clip `old` first, 5 a second, each clip thinned
-    evenly to fit one ask. The frames already cut for the clip judge are reused."""
-    images = [
-        *_clip_frames(old, "The old clip's frames, in order:"),
-        *_clip_frames(new, "The new clip's frames, in order:"),
-    ]
+    evenly to fit one ask. The frames already cut for the clip judge are reused. Frames that
+    can't be cut leave the fix unchecked rather than failing the clip already paid for."""
+    try:
+        images = [
+            *_clip_frames(old, "The old clip's frames, in order:"),
+            *_clip_frames(new, "The new clip's frames, in order:"),
+        ]
+    except Exception:
+        logger.warning("The clip fix %r went unchecked: no frames to show", fix, exc_info=True)
+        return fix_check.Settled("unchecked", "", [])
 
     def ask(number: int) -> dict[str, Any] | None:
         try:
@@ -1886,7 +1892,12 @@ def _check_the_clip_fix(
                 images=images,
                 pay_once=True,
             )
-        except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
+        except (
+            UnusableReply,
+            OutsideServiceDown,
+            BlockedBySafetyFilter,
+            AnswerTookTooLong,
+        ) as error:
             logger.warning("Ask %s about the clip fix %r went unchecked: %s", number, fix, error)
             return None
         return verdict.model_dump()
@@ -1977,9 +1988,7 @@ def _judge_still_sees(clip: ProducedItem) -> str:
     ruling = clip.ruling or {}
     if ruling.get("verdict") != "fail":
         return ""
-    problems = [
-        problem for failure in ruling.get("failures", []) for problem in failure["problems"]
-    ]
+    problems = clip_judge.still_failing(ruling)
     return f" The clip's own check also still sees: {problems[0]}" if problems else ""
 
 
