@@ -2004,7 +2004,9 @@ def _judge_clip(step: SceneStep, clip: ProducedItem) -> None:
     failing for a reason nobody expected doesn't fail the step: its clip is made and paid for,
     and is kept as not checked."""
     try:
-        clip_judge.judge_clip(step, clip)
+        clip_judge.judge_clip(
+            step, clip, conversation=_conversation(step.scene.job, until=step.started_at)
+        )
     except Exception as error:
         logger.exception("Judging scene %s's clip failed", step.scene.number)
         clip.ruling = {**(clip.ruling or {}), "verdict": "not_checked", "error": str(error)}

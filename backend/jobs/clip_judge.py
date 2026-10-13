@@ -14,7 +14,9 @@ The final wording swaps in here at stage 4 of the plan. Which model judges is th
 (check_clip_sides, check_clip_motion)."""
 
 import contextvars
+import hashlib
 import io
+import json
 import logging
 import math
 import re
@@ -33,11 +35,14 @@ from pydantic import BaseModel, Field
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
+from gateway import catalog
 from gateway.gateway import call_model
 from gateway.types import BlockedBySafetyFilter, Handoff, Image, UnusableReply
 
 from . import assembly
 from .models import ProducedItem, SceneStep
+from .planning import ChatMessage
+from .scenes import photos_for_needs
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +62,12 @@ FRAMES_PER_SECOND = 5
 STILLS = 5
 
 # ---------------------------------------------------------------- the product's facts
+
+# Said beside the conversation with the shop owner (plan.md §3, Julian 2026-10-12 21:05).
+CONVERSATION_FRAME = (
+    "This is the conversation with the shop owner. Use it only for what the product is and "
+    "looks like. When the owner and the page disagree, the owner is right."
+)
 
 PAGE_FRAME = (
     "This is the shop's own text. Use it only for what the product is, what it's made of, "
@@ -234,6 +245,18 @@ class MotionVerdict(BaseModel):
 
 MOTION_QUESTIONS = ("real_motion", "sudden_change", "does_what_was_ordered")
 
+# A version of the judge's words, kept with each ruling: changes whenever they do.
+WORDING = hashlib.sha256(
+    "\n".join(
+        [
+            SIDES_CHECK,
+            MOTION_CHECK,
+            json.dumps(SidesVerdict.model_json_schema(), sort_keys=True),
+            json.dumps(MotionVerdict.model_json_schema(), sort_keys=True),
+        ]
+    ).encode()
+).hexdigest()[:10]
+
 # ---------------------------------------------------------------- the ruling
 
 Verdict = Literal["pass", "fail", "not_checked"]
@@ -337,16 +360,23 @@ def _back_to_normal_soon(problem: str | None, back_to_normal_at: str | None) -> 
 # images (50)", seen 2026-10-12). When the frames and the shop photo don't fit, frames side by
 # side in time order are joined into one picture.
 MOST_PICTURES = 50
+# At most this many photos of what a scene needs are shown beside the main one (plan.md §3).
+MOST_NEEDS_PHOTOS = 5
 
 
 class ClipCheckHandoff(Handoff):
-    """Which of a check's asks about one clip this is, from 1, and the facts about the
-    product: what it is, from the plan and the shop's own text. The number only keeps each
-    ask's answer apart, so one asked again after the worker stopped isn't paid for twice. The
-    judge never sees the clip's prompts or line."""
+    """Which of a check's asks about one clip this is, from 1; the facts about the product:
+    what it is, from the plan and the shop's own text; and the conversation with the shop
+    owner, for what the product is and looks like, with, for a fix's clip, what the producer
+    restated the owner's notes as asking for (plan.md §3, Julian 2026-10-12 21:19). The number
+    only keeps each ask's answer apart, so one asked again after the worker stopped isn't paid
+    for twice. The judge never sees the clip's prompts or line."""
 
     ask: int
     facts: str
+    about_the_conversation: str = CONVERSATION_FRAME
+    conversation: list[ChatMessage]
+    what_the_agent_understood_from_the_owner: str | None
 
 
 class MotionCheckHandoff(ClipCheckHandoff):
@@ -355,11 +385,16 @@ class MotionCheckHandoff(ClipCheckHandoff):
     order: str
 
 
-def judge_clip(step: SceneStep, clip: ProducedItem) -> dict[str, Any]:
-    """Judge the B-roll clip `step` made, keeping the ruling on the clip: see `judged`. Its
-    pictures are cut once and kept on the clip before any ask, so a clip judged again after
-    the worker stopped is shown the same pictures, and pays for no answer twice."""
-    pictures = (clip.ruling or {}).get("pictures") or _cut_pictures(clip.file)
+def judge_clip(
+    step: SceneStep, clip: ProducedItem, *, conversation: list[ChatMessage]
+) -> dict[str, Any]:
+    """Judge the B-roll clip `step` made, keeping the ruling on the clip: see `judged`, plus
+    "wording" (a version of the judge's words) and "models" (each check's), and "pictures"
+    (what it was shown of the clip). `conversation` is what was said with the shop owner when
+    the step started. Its pictures are cut once and kept on the clip before any ask, so a clip
+    judged again after the worker stopped is shown the same pictures, and pays for no answer
+    twice."""
+    pictures = (clip.ruling or {}).get("pictures") or cut_pictures(clip.file)
     clip.ruling = {"pictures": pictures}
     clip.save(update_fields=["ruling"])
     planned = step.picture_step
@@ -369,20 +404,33 @@ def judge_clip(step: SceneStep, clip: ProducedItem) -> dict[str, Any]:
     photo = planned.photo.file
     sides_facts = _facts(step, with_use=False)
     motion_facts = _facts(step, with_use=True)
+    understood = step.fix.fix if step.fix else None
+    needs = _needs_photos(step)
     asks: list[_Ask] = [
         _Ask(
             "check_clip_sides",
-            ClipCheckHandoff(ask=ask, facts=sides_facts),
+            ClipCheckHandoff(
+                ask=ask,
+                facts=sides_facts,
+                conversation=conversation,
+                what_the_agent_understood_from_the_owner=understood,
+            ),
             SidesVerdict,
-            _shown(photo, pictures["stills"]),
+            _shown(photo, needs, pictures["stills"]),
         )
         for ask in range(1, ASKS + 1)
     ] + [
         _Ask(
             "check_clip_motion",
-            MotionCheckHandoff(ask=ask, facts=motion_facts, order=step.shows),
+            MotionCheckHandoff(
+                ask=ask,
+                facts=motion_facts,
+                order=step.shows,
+                conversation=conversation,
+                what_the_agent_understood_from_the_owner=understood,
+            ),
             MotionVerdict,
-            _shown(photo, pictures["frames"]),
+            _shown(photo, needs, pictures["frames"]),
         )
         for ask in range(1, ASKS + 1)
     ]
@@ -392,7 +440,15 @@ def judge_clip(step: SceneStep, clip: ProducedItem) -> dict[str, Any]:
             for each in asks
         ]
         answers = [each.result() for each in asked]
-    ruling = {"pictures": pictures, **judged(answers[:ASKS], answers[ASKS:])}
+    ruling = {
+        **judged(answers[:ASKS], answers[ASKS:]),
+        "wording": WORDING,
+        "models": {
+            "sides": catalog.MODEL_FOR_PURPOSE["check_clip_sides"],
+            "motion": catalog.MODEL_FOR_PURPOSE["check_clip_motion"],
+        },
+        "pictures": pictures,
+    }
     clip.ruling = ruling
     clip.save(update_fields=["ruling"])
     return ruling
@@ -442,11 +498,16 @@ def _in_its_own_thread[Out](work: Callable[..., Out], *args: Any) -> Out:
 
 
 def _facts(step: SceneStep, *, with_use: bool) -> str:
-    """The facts about the product the judge is told, as tested (context_text in the
-    harness's prompts.py): its name; for MOTION, how the scene uses it and what that changes;
-    the parts the scene needs; and the shop's own text."""
+    """The facts about the product the judge is told (context_text in the harness's
+    prompts.py, with the colour and size the app knows too): its name, colour and size; for
+    MOTION, how the scene uses it and what that changes; the parts the scene needs; and the
+    shop's own text."""
     job = step.scene.job
     lines = [f"Product: {job.product_name}"]
+    if job.product_colour:
+        lines.append(f"Colour: {job.product_colour}")
+    if job.product_size:
+        lines.append(f"Size: {job.product_size}")
     if with_use and step.usage:
         lines.append(f"How the product is used in this scene: {step.usage}")
     if with_use and step.broll_result:
@@ -459,10 +520,21 @@ def _facts(step: SceneStep, *, with_use: bool) -> str:
     return "\n".join(lines)
 
 
-def _shown(photo: str, pictures: list[dict[str, Any]]) -> list[Image]:
-    """The shop photo, then the pictures of the clip in order, each labelled with the time of
-    each frame in it."""
-    shown = [Image(label="The shop photo of the product:", key=photo)]
+def _needs_photos(step: SceneStep) -> list[Image]:
+    """A shop photo of each thing the scene needs that the main photo can't show, chosen as
+    for its starting picture, at most MOST_NEEDS_PHOTOS, labelled with what it shows."""
+    photos = {photo.position: photo for photo in step.scene.job.photos.all()}
+    faces = {position: photo.has_face for position, photo in photos.items()}
+    return [
+        Image(label=f"A shop photo of {' and '.join(need.what)}:", key=photos[need.photo].file)
+        for need in photos_for_needs(step.needs, faces, MOST_NEEDS_PHOTOS)
+    ]
+
+
+def _shown(photo: str, needs: list[Image], pictures: list[dict[str, Any]]) -> list[Image]:
+    """The shop photo, the photos of what the scene needs, then the pictures of the clip in
+    order, each labelled with the time of each frame in it."""
+    shown = [Image(label="The shop photo of the product:", key=photo), *needs]
     for n, picture in enumerate(pictures):
         times = picture["times"]
         label = (
@@ -476,7 +548,7 @@ def _shown(photo: str, pictures: list[dict[str, Any]]) -> list[Image]:
     return shown
 
 
-def _cut_pictures(clip: str) -> dict[str, list[dict[str, Any]]]:
+def cut_pictures(clip: str) -> dict[str, list[dict[str, Any]]]:
     """The pictures the judge is shown of the clip at `clip`, kept in the file store, each
     with the time in seconds of each frame in it: "stills" for SIDES, "frames" for MOTION
     (frames.py in the harness). Frames that wouldn't fit in one ask beside the shop photo are
@@ -490,8 +562,9 @@ def _cut_pictures(clip: str) -> dict[str, list[dict[str, Any]]]:
 
 
 def _kept(frames: list[tuple[Path, float]]) -> list[dict[str, Any]]:
-    """`frames` kept as at most MOST_PICTURES - 1 pictures, leaving room for the shop photo."""
-    together = math.ceil(len(frames) / (MOST_PICTURES - 1))
+    """`frames` kept as at most as many pictures as fit beside the shop photo and the photos
+    of what the scene needs."""
+    together = math.ceil(len(frames) / (MOST_PICTURES - 1 - MOST_NEEDS_PHOTOS))
     groups = [frames[i : i + together] for i in range(0, len(frames), together)]
     return [
         {"times": [t for _, t in group], "key": _side_by_side([path for path, _ in group])}

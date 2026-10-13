@@ -12,9 +12,11 @@ import pytest
 
 from agents import tasks
 from agents.money import dollars
+from gateway.catalog import MODEL_FOR_PURPOSE
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import UnusableReply
+from jobs.clip_judge import ASKS, WORDING
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 
 from .conftest import (
@@ -24,6 +26,7 @@ from .conftest import (
     WorkerStopped,
     handoffs,
     paid_for,
+    said_yes_to_a_fix,
 )
 from .test_producer_broll import (
     BROLL_CHOICE,
@@ -34,6 +37,7 @@ from .test_producer_broll import (
     made_ready,
     run,
 )
+from .test_producer_clip_from_note import REWRITE
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -281,3 +285,58 @@ def test_a_judge_failing_for_a_reason_nobody_expected_keeps_the_clip_as_not_chec
     assert ruling(clip)["verdict"] == "not_checked"
     assert "the judge broke" in ruling(clip)["error"]
     assert SceneStep.objects.get(kind="clip", scene__number=2).status == "finished"
+
+
+def test_both_checks_are_told_the_products_colour_and_size_and_the_conversation(
+    judged: ProducedItem,
+) -> None:
+    for asked in handoffs("check_clip_sides") + handoffs("check_clip_motion"):
+        assert "Colour: sage green" in asked["facts"]
+        assert "Size: handheld" in asked["facts"]
+        # Only for what the product is and looks like; the owner beats the page (plan §3).
+        assert "the owner is right" in asked["about_the_conversation"]
+        said = [message["text"] for message in asked["conversation"]]
+        assert "Make the person and check the script" in said
+        # Not a fix's clip: nothing the agent restated.
+        assert asked["what_the_agent_understood_from_the_owner"] is None
+
+
+def test_both_checks_see_a_photo_of_what_the_scene_needs_labelled_with_what_it_shows(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    needs = [{"what": "the mug's handle", "photos": [2]}]
+    Scene.objects.filter(number=2).update(**DOES_A_JOB | {"needs": needs})
+
+    clip_of(fake_model, steps, say, 2)
+
+    handle = Job.objects.get().photos.get(position=2)
+    for call in ModelCall.objects.filter(purpose__startswith="check_clip_"):
+        assert call.images[1] == {"label": "A shop photo of the mug's handle:", "key": handle.file}
+        assert call.images[2]["label"].startswith("Frames from the clip, in order:")
+
+
+def test_a_fixs_clip_is_judged_with_what_the_agent_understood_from_the_owner(
+    fake_model: FakeModel, judged: ProducedItem, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    fix = said_yes_to_a_fix(2, "The tea pours into the mug, not beside it.", "clip")
+    calling(fake_model, say, ("make_clip", {"scene": 2, "note": fix.fix}))
+    fake_model.respond("rewrite_clip_prompt", REWRITE)
+    run(fake_model, steps)
+
+    new = ProducedItem.objects.get(kind="clip", scene__number=2, version=2)
+    assert ruling(new)["verdict"] == "pass"
+    for asked in handoffs("check_clip_motion")[ASKS:] + handoffs("check_clip_sides")[ASKS:]:
+        assert asked["what_the_agent_understood_from_the_owner"] == fix.fix
+
+
+def test_the_ruling_says_which_words_and_models_judged_it(judged: ProducedItem) -> None:
+    assert ruling(judged)["wording"] == WORDING
+    assert ruling(judged)["models"] == {
+        "sides": MODEL_FOR_PURPOSE["check_clip_sides"],
+        "motion": MODEL_FOR_PURPOSE["check_clip_motion"],
+    }
+    for call in ModelCall.objects.filter(purpose__startswith="check_clip_"):
+        assert call.model == MODEL_FOR_PURPOSE[call.purpose]
