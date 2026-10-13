@@ -112,16 +112,25 @@ function notePrefix(scene: number | string) {
 
 const NOTES = new RegExp(`^${notePrefix("\\d+")}`);
 
+/** The scenes a notes message is about: one per line that starts a note. */
+function notedScenes(text: string): Set<number> {
+  const starts = text.matchAll(new RegExp(`^${notePrefix("(\\d+)")}`, "gm"));
+  return new Set([...starts].map(([, scene]) => Number(scene)));
+}
+
 /** Whether the producer is waiting on the owner's yes: the owner sent notes, the producer's
  * latest words answer them (its restatement, or a new one after a correction), and no redo
- * has started since, which would mean the yes was already given. */
+ * of a noted scene has started since, which would mean the yes was already given. Another
+ * scene's step starting, as while it is still being made for the first time, says nothing
+ * about the yes. */
 export function waitsForYes(messages: Message[]): boolean {
   const notesAgo = [...messages]
     .reverse()
     .findIndex((one) => one.role === "user" && NOTES.test(one.text));
   if (notesAgo === -1) return false;
+  const noted = notedScenes(messages[messages.length - 1 - notesAgo].text);
   const since = messages.slice(messages.length - notesAgo);
-  if (since.some((one) => one.step?.state === "started")) return false;
+  if (since.some(({ step }) => step?.state === "started" && noted.has(step.scene))) return false;
   const lastSaid = since
     .reverse()
     .find((one) => one.role !== "notice" && one.step?.state !== "made");

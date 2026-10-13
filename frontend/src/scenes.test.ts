@@ -227,6 +227,34 @@ test.each([
     false,
   ],
   [
+    "another scene's picture started since the restatement",
+    [
+      said("user", "Scene 2: Scrub"),
+      said("agent", "Shall I?"),
+      said("notice", "Making scene 3's picture.", {
+        scene: 3,
+        kind: "starting_picture",
+        state: "started",
+      }),
+    ],
+    true,
+  ],
+  [
+    "a redo of the second noted scene started since",
+    [
+      said("user", "Scene 2: Scrub\nthe tile\nScene 4: Brighter"),
+      said("agent", "Shall I?"),
+      said("user", "Yes"),
+      said("notice", "Remaking scene 4's picture.", {
+        scene: 4,
+        kind: "starting_picture",
+        state: "started",
+      }),
+      said("agent", "On it."),
+    ],
+    false,
+  ],
+  [
     "new notes after an earlier redo",
     [
       said("user", "Scene 2: Scrub"),
