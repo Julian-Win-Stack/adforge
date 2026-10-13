@@ -82,7 +82,7 @@ never moves.
 Before you reply, call restate_fix once, with a fix for every scene they wrote about that \
 you can fix. Then tell them in their own words what you'll change in each scene, what it \
 will cost, and anything you can't do, and wait for their answer. If a scene they wrote \
-about is still being made, tell them its fix starts as soon as that's finished. Never tell \
+about is still being made, tell them its fix waits until that's finished. Never tell \
 them which step is made again. If they correct you, restate it again. Make nothing until \
 they say yes.
 When they say yes, pass each scene's fix word for word as the note of its redo, for every \
