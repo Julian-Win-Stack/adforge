@@ -17,9 +17,10 @@ from agents import tasks
 from agents.models import ToolCall
 from agents.money import dollars
 from agents.producer import (
+    CALL_FALLBACK_USD,
     PICTURE_FALLBACK_USD,
     fix_notes,
-    picture_estimate_usd,
+    picture_estimate,
 )
 from agents.tasks import restart_dead_producers
 from chat.models import Attachment, Message
@@ -63,6 +64,27 @@ BOREAL = PRICE_PER_SECOND_OF_VIDEO[MODEL_FOR_PURPOSE["make_broll_clip"]]
 HEYGEN = PRICE_PER_SECOND_OF_VIDEO[MODEL_FOR_PURPOSE["make_talking_clip"]]
 
 Say = Callable[..., None]
+
+
+def judge_ask_usd(scene: int) -> Decimal:
+    """What one of the clip judge's asks cost on average for the scene's last clip."""
+    calls = ModelCall.objects.filter(
+        tool_call=last_step("clip", scene).tool_call,
+        purpose__in=["check_clip_sides", "check_clip_motion"],
+    )
+    costs = [call.cost_usd for call in calls if call.cost_usd]
+    assert len(costs) == 6, "the clip judge asked 6 times, each paid for"
+    return sum(costs, Decimal(0)) / len(costs)
+
+
+def broll_clip_usd(seconds: int, *, from_note: bool) -> tuple[Decimal, Decimal]:
+    """Scene 2's new B-roll clip, about and up to: its video and the judge's 6 asks, the
+    writer's call and the fix check's 3 asks for a clip made from a note (neither recorded
+    yet, so at the fallback), and up to 2 remakes, each a video, the judge and the writer."""
+    video = seconds * BOREAL
+    judge = 6 * judge_ask_usd(2)
+    about = video + judge + (4 * CALL_FALLBACK_USD if from_note else 0)
+    return about, about + 2 * (video + judge + CALL_FALLBACK_USD)
 
 
 def owner_says(fake_model: FakeModel, say: Say, text: str, *calls: tuple[str, Any]) -> None:
@@ -620,7 +642,7 @@ def test_a_fix_is_recorded_with_its_redo_estimate_and_the_call_that_asked(
         None,
     )
     assert fix.job == Job.objects.get()
-    assert fix.estimate_usd == 5 * BOREAL
+    assert fix.estimate_usd == broll_clip_usd(5, from_note=True)[0]
     assert call.asked_about == "fixes"
 
 
@@ -632,11 +654,15 @@ def test_restate_fix_hands_back_each_estimate_the_total_and_to_wait(
     )
 
     fix_1, fix_2 = Fix.objects.order_by("scene__number")
-    total = fix_1.estimate_usd + fix_2.estimate_usd
+    about, up_to = broll_clip_usd(5, from_note=True)
+    assert fix_2.estimate_usd == about
+    total = fix_1.estimate_usd + about
+    # Only scene 2's B-roll clip can be made again by the clip judge.
     assert results_of("restate_fix") == [
-        "Recorded the fixes. Scene 1: about "
-        f"{dollars(fix_1.estimate_usd)}. Scene 2: about {dollars(fix_2.estimate_usd)}. "
-        f"About {dollars(total)} in all. Tell the shop owner this restatement and what it "
+        f"Recorded the fixes. Scene 1: about {dollars(fix_1.estimate_usd)}. Scene 2: about "
+        f"{dollars(about)}, up to {dollars(up_to)} if the judge has it made again. About "
+        f"{dollars(total)} in all, up to {dollars(fix_1.estimate_usd + up_to)} if the judge "
+        "has a clip made again. Tell the shop owner this restatement and what it "
         "will cost, and wait for their answer: nothing is made until they say yes. Once they "
         "have, pass each scene's fix word for word as the note of its redo, or, for a new "
         "line, the new line to change_line."
@@ -766,7 +792,8 @@ def test_a_picture_fix_is_estimated_at_the_last_pictures_cost_and_a_clip(
     assert paid > 0
 
     # The fake voice says scene 1's 8 words in 4 seconds.
-    assert picture_estimate_usd(scene) == paid + 4 * HEYGEN
+    # Scene 1's talking clip isn't judged, so it can't be made again.
+    assert picture_estimate(scene) == (paid + 4 * HEYGEN, paid + 4 * HEYGEN)
 
 
 def test_a_broll_picture_fix_leaves_out_the_shared_before_picture(shown: ProducedItem) -> None:
@@ -777,9 +804,9 @@ def test_a_broll_picture_fix_leaves_out_the_shared_before_picture(shown: Produce
         purpose__in=["plan_before_picture", "make_before_picture"]
     )
 
-    assert picture_estimate_usd(Scene.objects.get(number=2)) == (
-        sum((call.cost_usd or Decimal(0) for call in kept), Decimal(0)) + 5 * BOREAL
-    )
+    cost = sum((call.cost_usd or Decimal(0) for call in kept), Decimal(0))
+    about, up_to = broll_clip_usd(5, from_note=False)
+    assert picture_estimate(Scene.objects.get(number=2)) == (cost + about, cost + up_to)
 
 
 def test_a_picture_with_no_recorded_cost_is_estimated_at_the_fallback(
@@ -789,7 +816,27 @@ def test_a_picture_with_no_recorded_cost_is_estimated_at_the_fallback(
         cost_usd=0
     )
 
-    assert picture_estimate_usd(Scene.objects.get(number=1)) == (PICTURE_FALLBACK_USD + 4 * HEYGEN)
+    assert picture_estimate(Scene.objects.get(number=1)).about == (
+        PICTURE_FALLBACK_USD + 4 * HEYGEN
+    )
+
+
+def test_a_clip_fix_is_estimated_from_the_ads_last_recorded_writer_and_fix_check(
+    fake_model: FakeModel, restated_2: Fix, steps: HeldSteps, say: Say
+) -> None:
+    confirm_and_redo_2(fake_model, steps, say)
+    owner_says(fake_model, say, NOTE_2, restating((2, FIX_2, "clip")))
+
+    paid = {
+        purpose: [call.cost_usd or 0 for call in ModelCall.objects.filter(purpose=purpose)]
+        for purpose in ("rewrite_clip_prompt", "check_fix_clip")
+    }
+    (writer,) = paid["rewrite_clip_prompt"]
+    assert writer > 0 and len(paid["check_fix_clip"]) == 3 and all(paid["check_fix_clip"])
+    fix_check = sum(paid["check_fix_clip"], Decimal(0))
+    assert Fix.objects.order_by("id").last().estimate_usd == (  # type: ignore[union-attr]
+        5 * BOREAL + 6 * judge_ask_usd(2) + writer + fix_check
+    )
 
 
 def test_a_fixs_cost_is_what_its_own_steps_cost(
