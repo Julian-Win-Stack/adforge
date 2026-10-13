@@ -194,13 +194,6 @@ CLIP_MOTION_OK: dict[str, Any] = {
         "moments": [{"time": 1.0, "what_happens": "Tea pours into the mug."}],
         "end": "The mug is full.",
     },
-    "changed_thing": {
-        "name": "the tea in the mug",
-        "state_at_start": "empty",
-        "state_at_end": "full",
-        "when_it_changed_and_what_touched_it": "From 1 s, as the pour reached it.",
-        "both_states_at_once_or_untouched_or_all_at_once": "No.",
-    },
     "ordered_action": "Pour tea into the mug.",
     "seen_action": "Tea is poured into the mug.",
     **{

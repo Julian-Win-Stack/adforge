@@ -33,13 +33,6 @@ def motion(**failing: tuple[str, str | None] | str) -> dict[str, Any]:
     the second it is back to normal."""
     answer: dict[str, Any] = {
         "look": {"in_the_clip": "a mug", "start": "upright", "moments": [], "end": "upright"},
-        "changed_thing": {
-            "name": "the tea",
-            "state_at_start": "empty",
-            "state_at_end": "full",
-            "when_it_changed_and_what_touched_it": "1 s, the pour",
-            "both_states_at_once_or_untouched_or_all_at_once": "no",
-        },
         "ordered_action": "pour tea",
         "seen_action": "pours tea",
     }
