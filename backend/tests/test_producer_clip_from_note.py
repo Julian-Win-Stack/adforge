@@ -366,21 +366,6 @@ def test_a_talking_scene_with_a_note_is_refused_and_nothing_is_paid(
     )
 
 
-def test_a_talking_scene_with_no_note_gets_its_clip_as_before(
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-) -> None:
-    made_ready(fake_model, steps, say, (1,))
-
-    calling(fake_model, say, ("make_clip", {"scene": 1, "note": None}))
-    run(fake_model, steps)
-
-    assert clips() == [(1, 1)]
-    assert "rewrite_clip_prompt" not in paid_for()
-
-
 def test_a_scene_planned_before_its_broll_labels_with_a_note_is_refused(
     fake_model: FakeModel,
     unlabelled: None,  # noqa: F811

@@ -380,6 +380,8 @@ def test_a_talking_scene_is_left_as_it_is(
     assert handoffs("remake_clip_prompt") == []
     step = SceneStep.objects.get(kind="clip", scene__number=1)
     assert (step.status, "judge" in step.result) == ("finished", False)
+    # Never judged, the clip carries no ruling.
+    assert ProducedItem.objects.get(kind="clip", scene__number=1).ruling is None
 
 
 # --- A clip made from the shop owner's note -----------------------------------------------

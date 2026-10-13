@@ -207,16 +207,8 @@ def test_the_judges_cost_is_the_clip_steps(judged: ProducedItem) -> None:
     assert f"It cost {dollars(step.tool_call.cost_usd())}." in step.result
 
 
-def test_a_talking_clip_isnt_judged(
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],  # noqa: F811
-) -> None:
-    clip = clip_of(fake_model, steps, say, 1)
-
-    assert not ModelCall.objects.filter(purpose__startswith="check_clip_").exists()
-    assert clip.ruling is None
+# That a talking clip isn't judged, and so carries no ruling, is proved in
+# test_producer_auto_fix.py::test_a_talking_scene_is_left_as_it_is.
 
 
 def test_no_clip_is_judged_with_quality_checks_switched_off(
@@ -250,22 +242,35 @@ def test_an_ask_with_no_usable_answer_goes_unchecked(
     assert SceneStep.objects.get(kind="clip", scene__number=2).status == "finished"
 
 
-def test_a_long_clips_frames_are_shown_two_to_a_picture_to_fit_one_ask(
+@pytest.mark.parametrize(
+    ("words_per_second", "pictures", "first", "last"),
+    [
+        # A 10-second clip has 50 frames at 5 a second: with the shop photo, more than the 50
+        # pictures a model takes in one ask, so they are shown two to a picture.
+        (0.8, 26, "Frames at 0 s, 0.2 s, left to right", "Frames at 9.6 s, 9.8 s, left to right"),
+        # 45 frames and the shop photo fit in one ask, as in the tested setup: each on its own.
+        (0.95, 46, "Frame at 0 s", "Frame at 8.8 s"),
+    ],
+    ids=["a 10-second clip, two to a picture", "a 9-second clip, one each"],
+)
+def test_a_clips_frames_are_shown_two_to_a_picture_only_when_they_dont_fit_one_ask(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],  # noqa: F811
+    words_per_second: float,
+    pictures: int,
+    first: str,
+    last: str,
 ) -> None:
-    # A 10-second clip has 50 frames at 5 a second: with the shop photo, more than the 50
-    # pictures a model takes in one ask.
-    fake_model.words_per_second = 0.8
+    fake_model.words_per_second = words_per_second
 
     clip_of(fake_model, steps, say, 2)
 
     for shown in labels("check_clip_motion"):
-        assert len(shown) == 26
-        assert shown[1].endswith("Frames at 0 s, 0.2 s, left to right")
-        assert shown[-1] == "Frames at 9.6 s, 9.8 s, left to right"
+        assert len(shown) == pictures
+        assert shown[1].endswith(first)
+        assert shown[-1] == last
 
 
 def test_a_clip_judged_again_after_the_worker_stopped_pays_for_no_answer_twice(
@@ -329,22 +334,6 @@ def test_a_clip_that_cant_be_judged_at_all_is_kept_as_not_checked_with_a_whole_r
         ("sides", "real_motion", "sudden_change", "does_what_was_ordered"), "not_checked"
     )
     assert SceneStep.objects.get(kind="clip", scene__number=2).status == "finished"
-
-
-def test_a_9_second_clips_frames_are_each_shown_on_their_own(
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-) -> None:
-    # 45 frames and the shop photo fit in one ask, as in the tested setup.
-    fake_model.words_per_second = 0.95
-
-    clip_of(fake_model, steps, say, 2)
-
-    for shown in labels("check_clip_motion"):
-        assert len(shown) == 46
-        assert shown[-1] == "Frame at 8.8 s"
 
 
 def test_both_checks_are_told_the_products_colour_and_size_and_the_conversation(
