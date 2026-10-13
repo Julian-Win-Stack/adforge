@@ -30,17 +30,17 @@ def failed_answers(ruling: dict[str, Any]) -> int:
 
 
 def faults(ruling: dict[str, Any]) -> list[str]:
-    """Every problem behind the judge's failed checks of a clip, each once, SIDES first, in
-    the order asked: never one from an answer outvoted on its check, or let go (Julian's yes,
-    2026-10-13 19:42)."""
+    """Every problem behind the judge's failed checks of a clip, each once: SIDES first, then
+    each MOTION question, each check's asks in order. Never one from an answer outvoted on its
+    check, or let go (Julian's yes, 2026-10-13 19:42)."""
     return list(dict.fromkeys(still_failing(ruling)))
 
 
 def judge_saw(ruling: dict[str, Any]) -> list[dict[str, Any]]:
     """Each of the judge's answers about a clip that failed one of its failed checks, each the
     same answer once: what it saw happen in the clip. A MOTION answer's question failed on its
-    own, outvoted on its check or let go, is left out of it, so no problem the clip wasn't
-    failed for is handed over."""
+    own, outvoted on its check or let go, is left out of it, so no failed verdict the clip
+    wasn't failed for is handed over. What the answer saw happen stays whole."""
     failed = {name for name, verdict in ruling["checks"].items() if verdict == "fail"}
     let_go = {(each["check"], each["ask"]) for each in ruling.get("let_go", [])}
     seen: list[dict[str, Any]] = []
@@ -50,11 +50,12 @@ def judge_saw(ruling: dict[str, Any]) -> list[dict[str, Any]]:
             if "sides" not in failed:
                 continue
         else:
-            fails = {q for q in MOTION_QUESTIONS if answer[q]["verdict"] == "fail"}
-            counted = {q for q in fails if q in failed and (q, failure["ask"]) not in let_go}
+            said_fail = {q for q in MOTION_QUESTIONS if answer[q]["verdict"] == "fail"}
+            counted = {q for q in said_fail if q in failed and (q, failure["ask"]) not in let_go}
             if not counted:
                 continue
-            answer = {key: said for key, said in answer.items() if key not in fails - counted}
+            not_counted = said_fail - counted
+            answer = {key: said for key, said in answer.items() if key not in not_counted}
         if answer not in seen:
             seen.append(answer)
     return seen
