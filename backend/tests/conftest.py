@@ -34,6 +34,8 @@ from gateway.openai_adapter import OpenAIProvider
 from gateway.types import ModelReply, ModelRequest, TurnReply, TurnRequest
 from jobs.models import BROLL_FIELDS, Fix, Job, Scene
 
+from . import ffmpeg_replay
+
 celery_app.conf.update(task_always_eager=True, task_eager_propagates=True)
 
 
@@ -241,6 +243,14 @@ def _isolated_outside_world(settings: Settings, tmp_path: Path) -> None:
     # Pages are read with the plain download, never by the real Firecrawl. A test that reads
     # through Firecrawl uses the `firecrawl` fixture's stand-in.
     settings.FIRECRAWL_API_KEY = ""
+
+
+@pytest.fixture(autouse=True)
+def _ffmpeg_replayed(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """ffmpeg runs seen before with the same inputs are replayed (see ffmpeg_replay), but
+    in the tests of ffmpeg and of assembly themselves, which run it every time."""
+    if request.node.get_closest_marker("real_ffmpeg") is None:
+        monkeypatch.setattr(subprocess, "run", ffmpeg_replay.run)
 
 
 @pytest.fixture

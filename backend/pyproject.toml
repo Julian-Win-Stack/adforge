@@ -66,5 +66,6 @@ django_settings_module = "adforge.settings"
 DJANGO_SETTINGS_MODULE = "adforge.settings"
 testpaths = ["tests"]
 addopts = "-p no:cacheprovider"
+markers = ["real_ffmpeg: run ffmpeg every time, never replaying an earlier run"]
 # Langfuse's retry library, not our code.
 filterwarnings = ["ignore:'asyncio.iscoroutinefunction' is deprecated:DeprecationWarning:backoff"]
