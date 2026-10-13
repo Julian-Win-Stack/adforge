@@ -71,8 +71,8 @@ AFTER_THE_YES = (
 )
 # No stop button in step 1: a note on a scene being made waits for it (Julian 21:44).
 STILL_BEING_MADE = (
-    "If a scene they wrote about is still being made, tell them its fix starts as soon as "
-    "that's finished."
+    "If a scene they wrote about is still being made, tell them its fix waits until that's "
+    "finished."
 )
 START_THE_WAITING_FIX = (
     "When you're told something of a scene is ready and a fix they said yes to for it isn't "
