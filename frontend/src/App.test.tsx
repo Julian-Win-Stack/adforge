@@ -1167,6 +1167,13 @@ test("a failed fix check fills its scene's note box with the reason, ready to se
 
   await nextPoll();
   await waitFor(() => expect((noteBox(2) as HTMLTextAreaElement).value).toBe(reason));
+  // The notice shows the old picture and the new one.
+  const notice = screen.getByText(/may not have your change/).closest("li") as HTMLElement;
+  expect(
+    within(notice)
+      .getAllByRole("img")
+      .map((shown) => shown.getAttribute("src")),
+  ).toEqual(["/media/old.png", "/media/new.png"]);
   expect((noteBox(1) as HTMLTextAreaElement).value).toBe("");
   expect(sendNotesButton().textContent).toBe("Send 1 note");
 
