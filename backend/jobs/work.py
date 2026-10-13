@@ -61,7 +61,7 @@ from gateway.types import (
     UnusableReply,
 )
 
-from . import assembly, firecrawl, page, page_text, photos
+from . import assembly, firecrawl, fix_check, page, page_text, photos
 from .checks import (
     FACT_CHECK_INSTRUCTIONS,
     LENGTH_ALLOWANCE_SECONDS,
@@ -96,7 +96,16 @@ from .checks import (
     script_seconds,
     shortened_script_for,
 )
-from .models import BROLL_FIELDS, Job, ProducedItem, ProductPhoto, Scene, SceneStep
+from .models import (
+    BROLL_FIELDS,
+    Fix,
+    FixCheck,
+    Job,
+    ProducedItem,
+    ProductPhoto,
+    Scene,
+    SceneStep,
+)
 from .notices import post_notice
 from .picture_check import (
     ASKS,
@@ -1806,6 +1815,99 @@ def judge_starting_picture(job: Job | None, picture: str, photo: str, *, about: 
             assert verdict.problem is not None, "a failing answer says why"
             problems.append(verdict.problem)
     return problems if len(problems) >= FAILS_TO_FAIL else []
+
+
+def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
+    """Check a fix (#131): for a step that made a scene's new starting picture for a picture
+    fix, or its new clip for a clip fix, ask a judge the complaint back about `made`, shown
+    beside the scene's version before it, and keep the verdict. A new line isn't checked,
+    nor a picture fix's clip: the complaint was about the picture. Nor a clip until the clip
+    judge is in the app, nor anything when quality checks are switched off.
+
+    Run again, as after a worker stopped, it gives the verdict kept, or asks the judge
+    again with each ask answered from its record, so nothing is paid for twice."""
+    fix = step.fix
+    if fix is None or made is None or not settings.QUALITY_CHECKS:
+        return None
+    picture = fix.redo == Fix.Redo.PICTURE and step.kind == SceneStep.Kind.STARTING_PICTURE
+    clip = fix.redo == Fix.Redo.CLIP and step.kind == SceneStep.Kind.CLIP
+    if not (picture or (clip and fix_check.clip_judge is not None)):
+        return None
+    kept = FixCheck.objects.filter(step=step).first()
+    if kept is not None:
+        return kept
+    # What the shop owner saw last: the scene's version before this one.
+    old = (
+        made.scene.produced.filter(kind=made.kind, version__lt=made.version)  # type: ignore[union-attr]
+        .order_by("-version")
+        .first()
+    )
+    if old is None:
+        return None
+    job = fix.job
+    if picture:
+        settled = fix_check.settle(
+            lambda ask: _ask_about_the_fix(job, fix.fix, ask, old.file, made.file)
+        )
+    else:
+        assert fix_check.clip_judge is not None
+        settled = fix_check.clip_judge(job, old.file, made.file, fix.fix)
+    return FixCheck.objects.create(
+        fix=fix,
+        step=step,
+        old=old,
+        new=made,
+        verdict=settled.verdict,
+        reason=settled.reason,
+        answers=settled.answers,
+    )
+
+
+def _ask_about_the_fix(job: Job, fix: str, ask: int, old: str, new: str) -> dict[str, Any] | None:
+    """Ask the judge once whether the new picture at `new` has the change `fix` asks for,
+    shown the old picture at `old` first. Gives its answer, or None when none could be had:
+    the picture is paid for, and failing it on no answer would hold up its clip."""
+    try:
+        verdict = call_model(
+            job=job,
+            purpose="check_fix",
+            instructions=fix_check.FIX_CHECK,
+            handoff=fix_check.FixCheckHandoff(fix=fix, ask=ask),
+            output=fix_check.FixVerdict,
+            images=[
+                Image(label="The old picture:", key=old),
+                Image(label="The new picture:", key=new),
+            ],
+            pay_once=True,
+        )
+    except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
+        logger.warning("Ask %s about the fix %r went unchecked: %s", ask, fix, error)
+        return None
+    return verdict.model_dump()
+
+
+def say_the_fix_check_failed(check: FixCheck) -> None:
+    """Show the chat the old version and the new one a fix made, and why its check found the
+    change missing, with the reason as the note the scene's card is filled with: the shop
+    owner decides what happens next (#131)."""
+    number = check.step.scene.number
+    what = "picture" if check.step.kind == SceneStep.Kind.STARTING_PICTURE else "clip"
+    then = "make its clip anyway" if what == "picture" else "use the new clip in the ad anyway"
+    kind = Attachment.Kind.PICTURE if what == "picture" else Attachment.Kind.VIDEO
+    assert check.old is not None, "a fix is checked against the version before it"
+    post_notice(
+        check.fix.job,
+        f"Scene {number}'s new {'starting picture' if what == 'picture' else 'clip'} may not "
+        f"have your change: {check.reason} Here are the old {what} and the new one. Say go "
+        f"ahead to {then}, or tell me what to change.",
+        Message.Level.PROBLEM,
+        # Without their scene's number, so the scene's card keeps showing its newest.
+        carrying=[
+            messages.AttachedFile(kind, check.old.file),
+            messages.AttachedFile(kind, check.new.file),
+        ],
+        suggested=messages.SuggestedNote(number, check.reason),
+    )
 
 
 def _keep_starting_picture(step: SceneStep, prompt: str, pictures: list[str]) -> ProducedItem:

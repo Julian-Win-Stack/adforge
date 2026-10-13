@@ -81,6 +81,7 @@ def test_a_new_session_is_named_from_the_users_first_message(
         "created_at": sent.json()["message"]["created_at"],
         "attachments": [],
         "step": None,
+        "suggested_note": None,
     }
 
 

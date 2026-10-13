@@ -696,3 +696,49 @@ class ProducedItem(models.Model):
 
     def __str__(self) -> str:
         return f"{self.kind} v{self.version}"
+
+
+class FixCheck(models.Model):
+    """The check of a fix (route B step 6, #131): what a judge, asked the complaint back,
+    found in the new starting picture or clip a fix made, shown beside the old one. Kept
+    with the fix and both versions, as a case for the complaint log."""
+
+    class Verdict(models.TextChoices):
+        PASSED = "passed"
+        FAILED = "failed"
+        # Too few of the judge's asks were answered to agree.
+        UNCHECKED = "unchecked"
+
+    fix = models.ForeignKey(Fix, on_delete=models.CASCADE, related_name="checks")
+    step = models.OneToOneField(
+        SceneStep,
+        on_delete=models.CASCADE,
+        related_name="fix_check",
+        help_text="The step that made the new version for the fix.",
+    )
+    old = models.ForeignKey(
+        ProducedItem,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The scene's version before the fix, which the shop owner noted.",
+    )
+    new = models.ForeignKey(
+        ProducedItem,
+        on_delete=models.PROTECT,
+        related_name="+",
+        help_text="The version the fix made.",
+    )
+    verdict = models.CharField(max_length=10, choices=Verdict.choices)
+    reason = models.TextField(blank=True, help_text="When it failed: what is still wrong.")
+    answers = models.JSONField(
+        default=list, blank=True, help_text="Each answer the judge gave, as it gave it."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self) -> str:
+        return f"Scene {self.step.scene.number} fix check: {self.verdict}"

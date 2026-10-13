@@ -17,12 +17,14 @@ from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.gateway import charged_to
 from gateway.types import BlockedBySafetyFilter, UnusableReply
-from jobs.models import ProducedItem, Scene, SceneStep
+from jobs.models import FixCheck, ProducedItem, Scene, SceneStep
 from jobs.picture_check import PictureKeptFailing
 from jobs.work import (
+    check_fix,
     make_clip,
     make_line_audio,
     make_starting_picture,
+    say_the_fix_check_failed,
     say_the_pictures_kept_failing,
     too_long_for_a_clip,
     transcribe_line_audio,
@@ -186,8 +188,10 @@ def _picture_finished(step: SceneStep, picture: ProducedItem | None) -> str:
     number = step.scene.number
     # A finished scene is planned again here, in the transaction that finishes the step and
     # tells the producer, so a worker that stops first leaves the scene with its old clip.
+    failed = FixCheck.objects.filter(step=step, verdict=FixCheck.Verdict.FAILED).exists()
     unfinished = (
-        f"Scene {number} is no longer finished: make its clip from this picture. "
+        f"Scene {number} is no longer finished"
+        + (". " if failed else ": make its clip from this picture. ")
         if Scene.objects.get(pk=step.scene_id).plan_again()
         else ""
     )
@@ -358,6 +362,7 @@ def run_scene_step(step_id: int) -> None:
             ),
         ):
             made = work.make(step)
+            checked = check_fix(step, made)
         tracing.flush()
         # Shown and finished together, so a step run again never shows anything twice. The
         # producer is woken in the same transaction, so its session never looks idle
@@ -371,14 +376,18 @@ def run_scene_step(step_id: int) -> None:
                     carrying=shown,
                     step=step_signals.signal(step, Message.StepState.MADE),
                 )
+            failed = checked is not None and checked.verdict == FixCheck.Verdict.FAILED
+            if checked is not None and failed:
+                say_the_fix_check_failed(checked)
             step.status = SceneStep.Status.FINISHED
             # Inside the transaction: a picture's message plans its scene again.
-            step.result = work.finished(step, made)
+            step.result = work.finished(step, made) + _fix_checked(checked)
             step.finished_at = timezone.now()
             step.save(update_fields=["status", "result", "finished_at"])
             # A fix's clip has the new ad assembled by code, in the same transaction, so a
-            # step run again after a crash assembles and shows it once.
-            if assembles_after(step):
+            # step run again after a crash assembles and shows it once. Not when its check
+            # failed: the shop owner decides first.
+            if assembles_after(step) and not failed:
                 step.result = f"{step.result} {_assembled_after_fix(step)}"
                 step.save(update_fields=["result"])
             wake_producer(str(session.pk))
@@ -398,6 +407,32 @@ def run_scene_step(step_id: int) -> None:
         with transaction.atomic():
             _fail(step, why_it_failed(error, "the step"))
             wake_producer(str(session.pk))
+
+
+def _fix_checked(check: FixCheck | None) -> str:
+    """What the check of a fix found, for the producer, as a sentence to follow another."""
+    if check is None:
+        return ""
+    number = check.step.scene.number
+    picture = check.step.kind == SceneStep.Kind.STARTING_PICTURE
+    what = "picture" if picture else "clip"
+    if check.verdict == FixCheck.Verdict.PASSED:
+        return f" The check of scene {number}'s fix found the change in the new {what}."
+    if check.verdict == FixCheck.Verdict.UNCHECKED:
+        return (
+            f" Scene {number}'s fix couldn't be checked, so tell the shop owner it wasn't checked."
+        )
+    dont, go_ahead = (
+        ("make its clip", "make its clip with no note")
+        if picture
+        else ("assemble the ad", "assemble the ad with assemble_ad")
+    )
+    return (
+        f" The check of scene {number}'s fix found the change isn't in the new {what}: "
+        f"{check.reason} The chat shows the shop owner the old {what} and the new one, and "
+        f"why. Don't {dont} or say it's fixed: wait for their answer. If they say go ahead, "
+        f"{go_ahead}; if they say what to change, restate a new fix."
+    )
 
 
 def _assembled_after_fix(step: SceneStep) -> str:

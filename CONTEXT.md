@@ -144,6 +144,10 @@ _Avoid_: Feedback, comment, complaint
 The producer's restatement of what it will change about a finished scene, which the shop owner said yes to: one self-contained line carrying everything from every note on that scene. Recorded with what it will cost and which step is made again (the clip, the starting picture and then the clip, or the line and then the whole scene), which the shop owner isn't told. A scene that already has a clip is made again only for a fix, passed word for word as the redo's note, once the shop owner has answered its restatement: nothing is paid for before their yes. A fix for a new line carries the line word for word, in quotes, and is refused if the line is too long for the scene; once it is changed, the scene's picture, audio, transcript and clip are made again for the fix with no note, and the new line counts as the shop owner's own fact, so it isn't fact checked unless its audio still runs too long for its clip and it is shortened. A correction is restated as a new fix, which replaces the old. When a fix's clip lands and every scene is finished, the ad is assembled again by code.
 _Avoid_: Change request, edit, revision
 
+**Fix check**:
+A judge asking a fix's complaint back about the new version it made, shown beside the old one: a new starting picture before its clip is paid for, or a new clip once the clip judge is in the app; a new line is never checked. A pass carries on as before. A fail makes nothing more for the scene: the chat shows the old and new versions and why, with the reason as the note the scene's card is filled with, and the producer waits for the shop owner's word. An answer that can't be had leaves it unchecked, and the fix carries on. Kept with its fix and both versions.
+_Avoid_: Fix judge, verification, QA
+
 ### Machinery
 
 **Tool**:

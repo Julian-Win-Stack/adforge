@@ -19,12 +19,14 @@ def post_notice(
     level: Message.Level,
     carrying: Sequence[messages.AttachedFile] = (),
     step: messages.StepSignal | None = None,
+    suggested: messages.SuggestedNote | None = None,
 ) -> None:
     """Tell the user, in the chat, that something fell back or failed, with any files that
     show it. `text` says three things: what failed, what was used instead, and what that
     means for the ad. The notice is also kept in `job.warnings`, so the ad can be found
     later. No model is ever given a notice: the producer learns of the failure from the
-    tool's result. A notice about a scene's starting picture or clip carries its `step`."""
+    tool's result. A notice about a scene's starting picture or clip carries its `step`, and one
+    may suggest a note on a scene."""
     warning = {"level": level, "text": text, "at": timezone.now().isoformat()}
     # The job is read again under a lock, so a notice posted through another copy of the job
     # in the meantime isn't overwritten; the warning and the message are kept together.
@@ -41,5 +43,6 @@ def post_notice(
                 level=level,
                 carrying=carrying,
                 step=step,
+                suggested=suggested,
             )
     job.warnings = locked.warnings
