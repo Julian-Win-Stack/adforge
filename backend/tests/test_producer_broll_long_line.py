@@ -16,7 +16,7 @@ from agents import tasks
 from gateway.fake import FakeModel, turn
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 
-from .conftest import HeldSteps, WorkerStopped, facts_ok, handoffs, paid_for
+from .conftest import JUDGED_CLIP, HeldSteps, WorkerStopped, facts_ok, handoffs, paid_for
 from .test_producer_broll import (
     BROLL_CHOICE,
     LINE_2,
@@ -208,6 +208,7 @@ def test_no_clip_is_paid_for_until_the_audio_fits(
         "transcribe_line",
         "make_broll_clip",
         "collect_broll_clip",
+        *JUDGED_CLIP,
     ]
     # The shorter line takes 7.75 seconds to say.
     assert clips_asked("seconds") == [8]
