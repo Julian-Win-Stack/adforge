@@ -685,8 +685,8 @@ class TranscribeLineAudio(Tool):
             kind=SceneStep.Kind.LINE_AUDIO, status=SceneStep.Status.RUNNING
         ).exists():
             raise Refused(
-                f"scene {scene.number}'s audio is still being made. You'll be told when it's "
-                "ready; transcribe it then."
+                f"scene {scene.number}'s {STEP_NAMES[SceneStep.Kind.LINE_AUDIO]} is still being "
+                "made. You'll be told when it's ready; transcribe it then."
             )
         audio = _current_audio(scene)
         heard = (
@@ -746,7 +746,7 @@ class MakeClip(Tool):
         scene = _a_checked_scene(call, self.scene)
         note = normalised_note(self.note)
         if note:
-            _movement_can_change(
+            _refuse_unless_movement_can_change(
                 scene,
                 talking="Its starting picture or its line can change instead.",
                 unlabelled="Make its starting picture again with the note instead.",
@@ -1259,18 +1259,24 @@ def _fixable_scene(job: Job, asked: FixAsked) -> Scene:
             f"scene {scene.number} has no clip yet, so it isn't finished and there is nothing "
             "to fix."
         )
-    # Its first clip is kept before its step finishes, as while the clip is judged.
+    # A clip is kept before its step finishes, so a scene's first clip can be saved while
+    # its step is still running, or one that then failed.
     if _latest_clip(scene) is None:
+        if scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING).exists():
+            raise Refused(
+                f"scene {scene.number}'s clip is still being made, so there is nothing to fix "
+                "yet. You'll be told when it's ready."
+            )
         raise Refused(
-            f"scene {scene.number}'s clip is still being made, so there is nothing to fix yet. "
-            "You'll be told when it's ready."
+            f"scene {scene.number}'s clip couldn't be finished, so there is nothing to fix. "
+            "Make its clip again first."
         )
     if not normalised_note(asked.fix):
         raise Refused(f"scene {scene.number}'s fix is blank. Restate it in one line.")
     redo = Fix.Redo(asked.redo)
     if redo == Fix.Redo.CLIP:
         instead = "Restate it as a new starting picture instead."
-        _movement_can_change(scene, talking=instead, unlabelled=instead)
+        _refuse_unless_movement_can_change(scene, talking=instead, unlabelled=instead)
     if redo == Fix.Redo.LINE:
         line = quoted_line(normalised_note(asked.fix))
         if line is None:
@@ -1291,9 +1297,10 @@ def _fixable_scene(job: Job, asked: FixAsked) -> Scene:
     return scene
 
 
-def _movement_can_change(scene: Scene, *, talking: str, unlabelled: str) -> None:
-    """Refuses, ending with what can be done `instead`, when the scene's clip movement can't
-    be rewritten from a note: a talking scene's, or one planned before its B-roll labels."""
+def _refuse_unless_movement_can_change(scene: Scene, *, talking: str, unlabelled: str) -> None:
+    """Refuses when the scene's clip movement can't be rewritten from a note, ending with what
+    can be done instead: `talking` for a talking scene, `unlabelled` for one planned before
+    its B-roll labels."""
     if not scene.shows:
         # HeyGen ignored the motion prompt in a talking clip (2026-10-11 test, Julian's
         # grade "no"; runs/heygen-motion-test/ in the project files).
