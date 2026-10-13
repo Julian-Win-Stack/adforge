@@ -8,6 +8,9 @@ import {
   type Message,
   type Sent,
 } from "./api";
+import { ScenePanel } from "./ScenePanel";
+import { nextFollowing } from "./follow";
+import { waitsForYes } from "./scenes";
 import { ArrowUpIcon, CloseIcon, ImageIcon, SidebarIcon, SoundIcon, SparkIcon } from "./icons";
 
 const POLL_EVERY_MS = 2000;
@@ -83,19 +86,36 @@ export function Chat({
   // something; then it stays put until they come back down. Pictures and videos that
   // finish loading make the thread taller, so growth is watched, not just new messages.
   const following = useRef(true);
+  // Where the thread was at the last scroll event, or where the code last put it. Its own
+  // scrolling is told apart from the reader's by this: a scroll event can land after more
+  // has loaded below, which isn't the reader leaving the bottom; only scrolling up is.
+  const placedAt = useRef(0);
+  const toBottom = (el: HTMLElement) => {
+    el.scrollTop = el.scrollHeight;
+    placedAt.current = el.scrollTop;
+  };
   useEffect(() => {
     const el = thread.current;
     if (!el) return;
     const nearBottom = () => el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     const onScroll = () => {
-      following.current = nearBottom();
+      following.current = nextFollowing({
+        top: el.scrollTop,
+        placedAt: placedAt.current,
+        nearBottom: nearBottom(),
+        following: following.current,
+      });
+      placedAt.current = el.scrollTop;
     };
     el.addEventListener("scroll", onScroll);
     const grew = () => {
-      if (following.current) el.scrollTop = el.scrollHeight;
+      if (following.current) toBottom(el);
     };
     const watcher = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(grew);
     if (el.firstElementChild) watcher?.observe(el.firstElementChild);
+    // The thread itself gets shorter when something opens beside it, like the scene cards
+    // above it on a phone; the newest message must stay in view then too.
+    watcher?.observe(el);
     return () => {
       el.removeEventListener("scroll", onScroll);
       watcher?.disconnect();
@@ -103,7 +123,7 @@ export function Chat({
   }, []);
   useEffect(() => {
     const el = thread.current;
-    if (el && following.current) el.scrollTop = el.scrollHeight;
+    if (el && following.current) toBottom(el);
   }, [messages.length]);
 
   /** Says something. The first message of a new session is what creates the session. */
@@ -134,101 +154,144 @@ export function Chat({
         <span className="chat-title">{title ?? (sessionId ? "Untitled" : "New session")}</span>
       </header>
 
-      <div className="thread" ref={thread}>
-        <div className="thread-inner">
-          {pollError && (
-            <p role="status" className="notice error thread-notice">
-              {pollError}
-            </p>
-          )}
+      <div className="chat-body">
+        <div className="chat-main">
+          <div className="thread" ref={thread}>
+            <div className="thread-inner">
+              {pollError && (
+                <p role="status" className="notice error thread-notice">
+                  {pollError}
+                </p>
+              )}
 
-          {empty && (
-            <div className="hero">
-              <span className="hero-mark">
-                <SparkIcon size={26} />
-              </span>
-              <h1>What are we making today?</h1>
-              <p>
-                Paste a product link and say what the ad should do. The producer reads the page,
-                plans the scenes and hands you a finished video.
-              </p>
-              <div className="suggestions">
-                {SUGGESTIONS.map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    className="suggestion"
-                    onClick={() => setDraft((was) => (was ? `${was} ${suggestion}` : suggestion))}
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <ol aria-label="Conversation" className="messages">
-            {messages.map((message) =>
-              message.role === "notice" ? (
-                <li key={message.seq} className="message notice-message">
-                  <p
-                    role="status"
-                    className={`notice ${message.level === "problem" ? "error" : "info"}`}
-                  >
-                    {message.text}
+              {empty && (
+                <div className="hero">
+                  <span className="hero-mark">
+                    <SparkIcon size={26} />
+                  </span>
+                  <h1>What are we making today?</h1>
+                  <p>
+                    Paste a product link and say what the ad should do. The producer reads the page,
+                    plans the scenes and hands you a finished video.
                   </p>
-                </li>
-              ) : (
-                <li key={message.seq} className={`message ${message.role}`}>
-                  <strong className="who">
-                    {message.role === "agent" && (
-                      <span className="who-mark">
-                        <SparkIcon size={11} />
-                      </span>
-                    )}
-                    {message.role === "user" ? "You" : "Agent"}
-                  </strong>
-                  {message.text &&
-                    (message.role === "user" ? (
-                      <p className="bubble">{message.text}</p>
-                    ) : (
-                      <p className="prose">{message.text}</p>
+                  <div className="suggestions">
+                    {SUGGESTIONS.map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        className="suggestion"
+                        onClick={() =>
+                          setDraft((was) => (was ? `${was} ${suggestion}` : suggestion))
+                        }
+                      >
+                        {suggestion}
+                      </button>
                     ))}
-                  {message.attachments.length > 0 && (
-                    <div className="attachments">
-                      {message.attachments.map((attachment) => (
-                        <AttachmentView
-                          key={attachment.position}
-                          attachment={attachment}
-                          role={message.role}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </li>
-              ),
-            )}
-          </ol>
+                  </div>
+                </div>
+              )}
 
-          {producerHasTheFloor && (
-            <div className="working" aria-live="polite">
-              <span className="dots">
-                <i />
-                <i />
-                <i />
-              </span>
-              The producer is working
+              <ol aria-label="Conversation" className="messages">
+                {messages.map((message) =>
+                  message.role === "notice" ? (
+                    <li key={message.seq} className="message notice-message">
+                      <p
+                        role="status"
+                        className={`notice ${message.level === "problem" ? "error" : "info"}`}
+                      >
+                        {message.text}
+                      </p>
+                    </li>
+                  ) : (
+                    <li key={message.seq} className={`message ${message.role}`}>
+                      <strong className="who">
+                        {message.role === "agent" && (
+                          <span className="who-mark">
+                            <SparkIcon size={11} />
+                          </span>
+                        )}
+                        {message.role === "user" ? "You" : "Agent"}
+                      </strong>
+                      {message.text &&
+                        (message.role === "user" ? (
+                          <p className="bubble">{message.text}</p>
+                        ) : (
+                          <p className="prose">{message.text}</p>
+                        ))}
+                      {message.attachments.length > 0 && (
+                        <div className="attachments">
+                          {message.attachments.map((attachment) => (
+                            <AttachmentView
+                              key={attachment.position}
+                              attachment={attachment}
+                              role={message.role}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </li>
+                  ),
+                )}
+              </ol>
+
+              {producerHasTheFloor && (
+                <div className="working" aria-live="polite">
+                  <span className="dots">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                  The producer is working
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      </div>
+          </div>
 
-      <div className="composer-wrap">
-        <Composer text={draft} onChange={setDraft} onSend={send} />
-        <p className="composer-foot">
-          The producer only states what the page says, plus what you tell it.
-        </p>
+          <div className="composer-wrap">
+            {waitsForYes(messages) && <YesBar onYes={() => send("Yes", [])} />}
+            <Composer text={draft} onChange={setDraft} onSend={send} />
+            <p className="composer-foot">
+              The producer only states what the page says, plus what you tell it.
+            </p>
+          </div>
+        </div>
+        <ScenePanel messages={messages} onSend={(text) => send(text, [])} />
       </div>
     </section>
+  );
+}
+
+/** Offered when the producer has said back what it understood from the owner's notes: one
+ * tap says yes, the same as typing it. A correction is typed in the box below. */
+function YesBar({ onYes }: { onYes: () => Promise<void> }) {
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function yes() {
+    setSending(true);
+    setError(null);
+    try {
+      await onYes();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="yes-bar" role="group" aria-label="Confirm the fix">
+      <p className="yes-ask">
+        Is that right? <span>Or type what to change below.</span>
+      </p>
+      {error && (
+        <p role="alert" className="notice error inline">
+          {error}
+        </p>
+      )}
+      <button type="button" className="yes-button" disabled={sending} onClick={yes}>
+        Yes
+      </button>
+    </div>
   );
 }
 

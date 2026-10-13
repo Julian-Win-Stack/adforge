@@ -82,3 +82,11 @@ export function SoundIcon({ size = 16 }: IconProps) {
     </svg>
   );
 }
+
+export function ChevronIcon({ size = 16 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
