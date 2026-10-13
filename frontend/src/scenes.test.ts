@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { Attachment, Message, SceneStep } from "./api";
-import { notesMessage, sceneCards, waitsForYes } from "./scenes";
+import { notesMessage, sceneCards, suggestedNotes, waitsForYes } from "./scenes";
 
 let seq = 0;
 
@@ -14,6 +14,7 @@ function message(attachments: Attachment[], step: SceneStep | null = null): Mess
     created_at: "2026-10-11T10:00:00Z",
     attachments,
     step,
+    suggested_note: null,
   };
 }
 
@@ -246,4 +247,26 @@ test.each([
   ["notes from the agent", [said("agent", "Scene 2: planned"), said("agent", "Ok")], false],
 ] as const)("waits for a yes: %s", (_, messages, expected) => {
   expect(waitsForYes([...messages])).toBe(expected);
+});
+
+function suggesting(scene: number, text: string): Message {
+  return { ...message([]), role: "notice", suggested_note: { scene, text } };
+}
+
+function owner(text: string): Message {
+  return { ...message([]), role: "user", text };
+}
+
+test("each scene's newest suggested note fills its box until the owner sends anything", () => {
+  expect(suggestedNotes([])).toEqual(new Map());
+  expect(suggestedNotes([suggesting(2, "a"), suggesting(3, "b"), suggesting(2, "c")])).toEqual(
+    new Map([
+      [2, "c"],
+      [3, "b"],
+    ]),
+  );
+  expect(suggestedNotes([suggesting(2, "a"), owner("go ahead")])).toEqual(new Map());
+  expect(suggestedNotes([suggesting(2, "a"), owner("go ahead"), suggesting(3, "b")])).toEqual(
+    new Map([[3, "b"]]),
+  );
 });

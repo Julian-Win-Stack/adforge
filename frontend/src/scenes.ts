@@ -127,3 +127,16 @@ export function waitsForYes(messages: Message[]): boolean {
     .find((one) => one.role !== "notice" && one.step?.state !== "made");
   return lastSaid?.role === "agent";
 }
+
+/** The note each scene's card is filled with until the owner writes their own: the newest
+ * one a message suggests for it, as when the check of a fix found the change missing. Once
+ * the owner has sent anything since, it was answered and fills nothing. */
+export function suggestedNotes(messages: Message[]): Map<number, string> {
+  const suggested = new Map<number, string>();
+  for (const message of messages) {
+    if (message.role === "user") suggested.clear();
+    if (message.suggested_note)
+      suggested.set(message.suggested_note.scene, message.suggested_note.text);
+  }
+  return suggested;
+}

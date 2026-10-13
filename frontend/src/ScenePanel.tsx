@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { ApiError } from "./api";
 import type { Message } from "./api";
 import { ChevronIcon } from "./icons";
-import { notesMessage, sceneCards, nonBlankNotes, type SceneCard } from "./scenes";
+import { notesMessage, sceneCards, nonBlankNotes, suggestedNotes, type SceneCard } from "./scenes";
 
 /** Every scene of the ad so far, one card each: its latest clip, or its starting picture
  * until the clip is made, and what is being made for it now. Built from the messages the
@@ -17,7 +17,10 @@ export function ScenePanel({
   const cards = useMemo(() => sceneCards(messages), [messages]);
   const [open, setOpen] = useState(true);
   // The notes live here, not in the cards, so folding the cards away keeps them.
-  const [notes, setNotes] = useState<ReadonlyMap<number, string>>(new Map());
+  const [typed, setNotes] = useState<ReadonlyMap<number, string>>(new Map());
+  // A suggested note fills a scene's box until the owner types in it, clearing it included.
+  const suggested = useMemo(() => suggestedNotes(messages), [messages]);
+  const notes = new Map([...suggested, ...typed]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (cards.length === 0) return null;

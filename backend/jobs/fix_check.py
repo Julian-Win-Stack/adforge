@@ -4,7 +4,7 @@ the old one, before anything more is made or shown as fixed. A new starting pict
 judged here; a new clip by the clip judge, once it is in the app (#109). A new line is
 never judged: its words are the proof (Julian 2026-10-11 21:51).
 
-PROPOSED, waiting for Julian's yes (2026-10-13): the judge's question below, showing the old
+Agreed by Julian (2026-10-13 05:18, "yes"): the judge's question below, showing the old
 version beside the new, and stopping before a failed picture's clip is paid for."""
 
 from collections.abc import Callable
