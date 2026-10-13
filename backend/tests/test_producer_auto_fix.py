@@ -177,6 +177,30 @@ def test_the_remake_the_judge_passed_is_kept_shown_and_the_producer_told_once(
     ) in remade_once.result
 
 
+def test_the_producer_is_never_told_a_fault_the_judge_outvoted(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    # Two asks of three see the teapot float, so that question fails; only one sees the mug
+    # spin, so that one passes 2 to 1, and its fault isn't one the clip was failed for.
+    fake_model.respond(
+        "check_clip_motion",
+        {**failing(FLOATS), "sudden_change": failing(SPINS, "sudden_change")["sudden_change"]},
+        failing(FLOATS),
+    )
+    fake_model.respond("remake_clip_prompt", rewrite(REMADE))
+
+    step = clip_of_scene_2(fake_model, steps, say)
+
+    assert f'failed the first clip it made ("{FLOATS}")' in step.result
+    assert SPINS not in step.result
+    # The writer is still handed every failed answer.
+    (handoff,) = handoffs("remake_clip_prompt")
+    assert handoff["faults"] == [FLOATS, SPINS]
+
+
 # --- Fail, then 2 remakes the judge fails too ----------------------------------------------
 
 

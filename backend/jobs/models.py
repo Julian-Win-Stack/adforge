@@ -698,6 +698,7 @@ class ProducedItem(models.Model):
     )
     motion_prompt = models.TextField(
         blank=True,
+        db_default="",
         help_text="For a remade clip, the video prompt written for it from what the judge saw "
         "wrong.",
     )

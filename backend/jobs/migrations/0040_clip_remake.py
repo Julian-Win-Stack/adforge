@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("jobs", "0038_clip_ruling"),
+        ("jobs", "0039_merge_0038_clip_ruling_0038_fix_checks"),
     ]
 
     operations = [
@@ -15,6 +15,7 @@ class Migration(migrations.Migration):
             name="motion_prompt",
             field=models.TextField(
                 blank=True,
+                db_default="",
                 help_text="For a remade clip, the video prompt written for it from what the judge saw wrong.",
             ),
         ),

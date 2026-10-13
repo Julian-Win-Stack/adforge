@@ -2,12 +2,13 @@
 
 import re
 from decimal import Decimal
-from typing import Literal
+from typing import Literal, NamedTuple
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.db import IntegrityError, transaction
-from django.db.models import Max, Sum
+from django.db.models import Avg, Max, Sum
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from adforge.retry import OutsideServiceDown
@@ -16,7 +17,7 @@ from chat.models import Attachment, Message, Session
 from gateway import catalog
 from gateway.models import ModelCall
 from gateway.types import MusicHandoff, UnusableReply
-from jobs import page
+from jobs import auto_fix, clip_judge, page, picture_check
 from jobs.checks import LONGEST_BROLL_LINE_SECONDS, LONGEST_LINE_SECONDS, line_seconds
 from jobs.models import (
     BROLL_FIELDS,
@@ -1118,6 +1119,10 @@ class RestateFix(Tool):
             )
         # Every fix is checked before any is recorded, so a refusal records nothing.
         fixable = [(_fixable_scene(job, asked), asked) for asked in self.fixes]
+        estimates = {
+            scene.pk: _estimate(scene, Fix.Redo(asked.redo), normalised_note(asked.fix))
+            for scene, asked in fixable
+        }
         recorded = []
         with transaction.atomic():
             for scene, asked in fixable:
@@ -1131,23 +1136,36 @@ class RestateFix(Tool):
                         "fix": normalised_note(asked.fix),
                         "redo": redo,
                         "notes": fix_notes(scene),
-                        "estimate_usd": _estimate_usd(scene, redo, normalised_note(asked.fix)),
+                        "estimate_usd": estimates[scene.pk].about,
                     },
                 )
                 recorded.append(fix)
         call.asked_about = "fixes"
         each = " ".join(
-            f"Scene {fix.scene.number}: about {dollars(fix.estimate_usd)}." for fix in recorded
+            f"Scene {fix.scene.number}: {_about(estimates[fix.scene.pk])}." for fix in recorded
         )
-        total = sum((fix.estimate_usd for fix in recorded), Decimal(0))
+        about = sum((estimates[fix.scene.pk].about for fix in recorded), Decimal(0))
+        up_to = sum((estimates[fix.scene.pk].up_to for fix in recorded), Decimal(0))
+        total = f"About {dollars(about)} in all" + (
+            f", up to {dollars(up_to)} if the judge has a clip made again" if up_to != about else ""
+        )
         waits = "".join(_waits_for(fix.scene) + _earlier_fix_lost(fix) for fix in recorded)
         return (
-            f"Recorded the fix{'es' if len(recorded) != 1 else ''}. {each} About "
-            f"{dollars(total)} in all. Tell the shop owner this restatement and what it will "
+            f"Recorded the fix{'es' if len(recorded) != 1 else ''}. {each} {total}. "
+            "Tell the shop owner this restatement and what it will "
             "cost, and wait for their answer: nothing is made until they say yes. Once they "
             "have, pass each scene's fix word for word as the note of its redo, or, for a new "
             f"line, the new line to change_line.{waits}"
         )
+
+
+def _about(estimate: Estimate) -> str:
+    """An estimate as the shop owner is told it: about what it will cost, and, when the clip
+    judge can have a clip made again, the most it can cost."""
+    about = f"about {dollars(estimate.about)}"
+    if estimate.up_to == estimate.about:
+        return about
+    return f"{about}, up to {dollars(estimate.up_to)} if the judge has it made again"
 
 
 # What the producer calls each step being made, in what it is told.
@@ -1340,33 +1358,52 @@ PICTURE_FALLBACK_USD = Decimal("0.10")
 _BEFORE_PICTURE_PURPOSES = ["plan_before_picture", "make_before_picture"]
 
 
-def _estimate_usd(scene: Scene, redo: Fix.Redo, fix: str) -> Decimal:
+class Estimate(NamedTuple):
+    """What a fix is estimated to cost, and the most it can cost: the same, unless the clip
+    judge can have its clip made again."""
+
+    about: Decimal
+    up_to: Decimal
+
+
+# What one call to the clip judge, the fix check or the writer of a clip's video prompt is
+# estimated to cost when the ad has none recorded: about $0.07, the proof's average for an
+# ask of the clip judge on gpt-6.1-sol (decider call 13, 2026-10-13).
+CALL_FALLBACK_USD = Decimal("0.07")
+_JUDGE_PURPOSES = ["check_clip_sides", "check_clip_motion"]
+_WRITER_PURPOSES = ["rewrite_clip_prompt", "remake_clip_prompt"]
+
+
+def _estimate(scene: Scene, redo: Fix.Redo, fix: str) -> Estimate:
     """What making `redo` again for the scene, for `fix`, is estimated to cost."""
     if redo == Fix.Redo.PICTURE:
-        return picture_estimate_usd(scene)
+        return picture_estimate(scene)
     if redo == Fix.Redo.LINE:
-        return _line_estimate_usd(scene, fix)
-    return _scene_clip_estimate_usd(scene)
+        return _line_estimate(scene, fix)
+    return _clip_estimate(scene, _clip_seconds(scene), from_note=True)
 
 
-def _line_estimate_usd(scene: Scene, fix: str) -> Decimal:
+def _line_estimate(scene: Scene, fix: str) -> Estimate:
     """What a new line for the scene, then its starting picture, audio, transcript and clip,
     is estimated to cost: the picture as for a picture fix, and the rest sized from the new
     line in `fix`, as long as the voice takes to say it."""
     line = quoted_line(fix)
     assert line is not None, "a fix for a new line holds it in quotes"
     seconds = _seconds_to_say(scene, line)
-    return (
+    rest = (
         _picture_only_estimate_usd(scene)
         + catalog.speech_cost_usd(catalog.MODEL_FOR_PURPOSE["speak_line"], len(line))
         + catalog.transcription_cost_usd(catalog.MODEL_FOR_PURPOSE["transcribe_line"], seconds)
-        + clip_estimate_usd(seconds, broll=bool(scene.shows))
     )
+    clip = _clip_estimate(scene, seconds, from_note=False)
+    return Estimate(rest + clip.about, rest + clip.up_to)
 
 
-def picture_estimate_usd(scene: Scene) -> Decimal:
+def picture_estimate(scene: Scene) -> Estimate:
     """What a new starting picture for the scene, then its clip, is estimated to cost."""
-    return _picture_only_estimate_usd(scene) + _scene_clip_estimate_usd(scene)
+    picture = _picture_only_estimate_usd(scene)
+    clip = _clip_estimate(scene, _clip_seconds(scene), from_note=False)
+    return Estimate(picture + clip.about, picture + clip.up_to)
 
 
 def _picture_only_estimate_usd(scene: Scene) -> Decimal:
@@ -1383,14 +1420,47 @@ def _picture_only_estimate_usd(scene: Scene) -> Decimal:
     return paid or PICTURE_FALLBACK_USD
 
 
-def _scene_clip_estimate_usd(scene: Scene) -> Decimal:
-    """What a new clip of the scene, speaking the audio its clip speaks, is estimated to
-    cost."""
+def _clip_seconds(scene: Scene) -> float:
+    """How long the audio the scene's clip speaks lasts."""
     clip = _latest_clip(scene)
     assert clip is not None and clip.made_from is not None, "a fix is for a scene with a clip"
     seconds = clip.made_from.seconds
     assert seconds is not None, "a line's audio is measured when it's made"
-    return clip_estimate_usd(seconds, broll=bool(scene.shows))
+    return seconds
+
+
+def _clip_estimate(scene: Scene, audio_seconds: float, *, from_note: bool) -> Estimate:
+    """What a new clip of the scene covering `audio_seconds` of its line is estimated to
+    cost: its video and, for a B-roll clip with quality checks on, the clip judge's asks; for
+    a clip made from the shop owner's note, also the call writing its video prompt and,
+    with quality checks on, the fix check's asks. It can cost up to that plus, for each
+    remake the clip judge can have made, its video, the judge's asks and the call writing
+    its prompt (decider call 13, 2026-10-13)."""
+    video = clip_estimate_usd(audio_seconds, broll=bool(scene.shows))
+    judged = bool(scene.shows) and settings.QUALITY_CHECKS
+    judge = 2 * clip_judge.ASKS * _each_call_usd(scene, _JUDGE_PURPOSES) if judged else 0
+    writer = _each_call_usd(scene, _WRITER_PURPOSES)
+    about = video + judge
+    if from_note:
+        about += writer
+        if settings.QUALITY_CHECKS:
+            # The fix check asks as many times as the picture check (jobs.fix_check).
+            about += picture_check.ASKS * _each_call_usd(scene, ["check_fix_clip"])
+    remakes = auto_fix.MOST_REMAKES * (video + judge + writer) if judged else Decimal(0)
+    return Estimate(about, about + remakes)
+
+
+def _each_call_usd(scene: Scene, purposes: list[str]) -> Decimal:
+    """What one call for one of `purposes` is estimated to cost: the average of those made
+    for the scene's last clip, or else of those made for the ad, or the fallback when none
+    is recorded."""
+    paid = ModelCall.objects.filter(job=scene.job, purpose__in=purposes, cost_usd__gt=0)
+    last = scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.FINISHED).last()
+    for calls in (paid.filter(tool_call=last.tool_call) if last else paid.none(), paid):
+        average: Decimal | None = calls.aggregate(cost=Avg("cost_usd"))["cost"]
+        if average:
+            return average
+    return CALL_FALLBACK_USD
 
 
 def fix_notes(scene: Scene) -> list[dict[str, object]]:
