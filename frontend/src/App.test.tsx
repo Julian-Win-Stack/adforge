@@ -929,6 +929,21 @@ test("the yes button comes with the producer's answer to the notes and sends a p
   expect(yesButton()).toBeNull();
 });
 
+test("another scene's step starting doesn't take away the yes for the noted scene", async () => {
+  const { backend, user } = await openFinishedAd();
+  await user.type(noteBox(2), "Scrub the tile");
+  await user.click(sendNotesButton());
+  backend.agentSays("I'll make scene 2's hand scrub the tile. Shall I?");
+  backend.notice("Remaking scene 3's clip.", "info", { scene: 3, kind: "clip", state: "started" });
+  await nextPoll();
+  await findSaid("I'll make scene 2's hand scrub the tile. Shall I?");
+
+  await waitFor(() => expect(yesButton()).not.toBeNull());
+  await user.click(yesButton()!);
+  await findSaid("Yes");
+  expect(backend.sent.map((one) => one.text)).toEqual(["Scene 2: Scrub the tile", "Yes"]);
+});
+
 test("a correction typed in the chat gets a new answer, and the yes button comes back for it", async () => {
   const { backend, user } = await openFinishedAd();
   await user.type(noteBox(2), "Scrub the tile");
