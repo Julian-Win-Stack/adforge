@@ -14,6 +14,7 @@ from agents import tasks
 from chat.models import Attachment, Message
 from gateway.fake import FakeModel, turn
 from gateway.types import UnusableReply
+from jobs import work
 from jobs.models import ProducedItem, SceneStep
 from jobs.scenes import (
     BROLL_KIND_RULES,
@@ -466,19 +467,18 @@ def test_a_clip_brought_back_before_the_worker_stopped_isnt_brought_back_again(
     fake_model.respond("remake_clip_prompt", rewrite(REMADE), rewrite(REMADE_AGAIN))
     made_ready(fake_model, steps, say, (2,))
     calling(fake_model, say, ("make_clip", {"scene": 2}))
-    # The worker stops once the first clip is brought back, before the step finishes.
-    told = tasks.what_the_judge_did
 
+    # The worker stops once the first clip is brought back, before the step finishes.
     def stopped(*_: object) -> str:
         raise WorkerStopped
 
-    monkeypatch.setattr(tasks, "what_the_judge_did", stopped)
+    monkeypatch.setattr("agents.tasks.what_the_judge_did", stopped)
     with pytest.raises(WorkerStopped):
         steps.run_next()
     assert clips() == [1, 2, 3, 4]
 
     # The step is handed out again, as after a restart.
-    monkeypatch.setattr(tasks, "what_the_judge_did", told)
+    monkeypatch.setattr("agents.tasks.what_the_judge_did", work.what_the_judge_did)
     fake_model.respond("produce", turn(says="Done."))
     tasks.run_scene_step(SceneStep.objects.get(kind="clip", scene__number=2).pk)
 
