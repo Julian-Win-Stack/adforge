@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { expect, test } from "vitest";
 import type { Attachment, Message, SceneStep } from "./api";
 import { notesMessage, sceneCards, sceneNotes, suggestedNotes, waitsForYes } from "./scenes";
@@ -141,6 +142,15 @@ test("a scene whose last try ended with nothing made says which, until it starts
     message([clip(1, "/c1.mp4")], { scene: 1, kind: "clip", state: "made" }),
   ]);
   expect(madeAfter[0].failed).toBeNull();
+});
+
+test("a picture and its clip landing together leave the card on the clip, made from that picture", () => {
+  const [card] = sceneCards([message([picture(3, "/p3.png")]), message([clip(3, "/c3.mp4")])]);
+  expect(card).toMatchObject({
+    scene: 3,
+    clipOutOfDate: false,
+    clips: [{ file: { url: "/c3.mp4" }, picture: { url: "/p3.png" } }],
+  });
 });
 
 test("a starting picture newer than the scene's clip leaves the clip out of date until the next clip", () => {

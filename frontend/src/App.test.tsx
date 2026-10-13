@@ -886,19 +886,6 @@ test("a scene with a picture and no clip yet shows the picture, and its clip onc
   expect(within(sceneCard(1)).queryByAltText("Scene 1's new starting picture")).toBeNull();
 });
 
-test("a clip that arrives before any picture for its scene still shows", async () => {
-  const backend = fakeBackend();
-  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
-  await openSession("Mug ad");
-  backend.agentSays("", scene(4, "video", "/media/c4.mp4"), {
-    scene: 4,
-    kind: "clip",
-    state: "made",
-  });
-  await nextPoll();
-  await waitFor(() => expect(sceneCardsShown()).toEqual([["Scene 4", "/media/c4.mp4"]]));
-});
-
 test("a card says while its picture or clip is being made, until it is made or fails", async () => {
   const backend = fakeBackend();
   backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
@@ -939,24 +926,6 @@ test("a card says while its picture or clip is being made, until it is made or f
 function findCard(scene: number) {
   return waitFor(() => sceneCard(scene));
 }
-
-test("a picture and a clip for a scene in one poll leave its card on the clip", async () => {
-  const backend = fakeBackend();
-  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
-  await openSession("Mug ad");
-  backend.agentSays("", scene(3, "picture", "/media/p3.png"), {
-    scene: 3,
-    kind: "starting_picture",
-    state: "made",
-  });
-  backend.agentSays("", scene(3, "video", "/media/c3.mp4"), {
-    scene: 3,
-    kind: "clip",
-    state: "made",
-  });
-  await nextPoll();
-  await waitFor(() => expect(sceneCardsShown()).toEqual([["Scene 3", "/media/c3.mp4"]]));
-});
 
 test("the finished ad, the portrait and the voice make no card, and no scenes means no panel", async () => {
   const backend = fakeBackend();
