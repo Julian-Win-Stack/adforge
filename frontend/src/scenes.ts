@@ -78,12 +78,14 @@ export function sceneCards(messages: Message[]): SceneCard[] {
 
   // A new picture only promises a new clip while something is still being made: a run that
   // stopped in between leaves the scene waiting, not busy.
+  // A scene whose new picture failed its fix check waits for the owner's answer, not the run.
   const working = [...cards.values()].some((scene) => scene.making !== null);
+  const waiting = suggestedNotes(messages);
   for (const scene of cards.values()) {
     scene.beingRemade =
       scene.clips.length > 0 &&
       scene.failed === null &&
-      (scene.making !== null || (scene.clipOutOfDate && working));
+      (scene.making !== null || (scene.clipOutOfDate && working && !waiting.has(scene.scene)));
     scene.busy = scene.making !== null || scene.beingRemade;
   }
   return [...cards.values()].sort((a, b) => a.scene - b.scene);

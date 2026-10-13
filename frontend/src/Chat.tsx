@@ -200,6 +200,17 @@ export function Chat({
                       >
                         {message.text}
                       </p>
+                      {message.attachments.length > 0 && (
+                        <div className="attachments">
+                          {message.attachments.map((attachment) => (
+                            <AttachmentView
+                              key={attachment.position}
+                              attachment={attachment}
+                              role={message.role}
+                            />
+                          ))}
+                        </div>
+                      )}
                     </li>
                   ) : (
                     <li key={message.seq} className={`message ${message.role}`}>
