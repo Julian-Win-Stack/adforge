@@ -2011,13 +2011,11 @@ def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
 
     Run again, as after a worker stopped, it pays for nothing already paid for: a clip made or
     judged is kept, and the remake under way is waited for."""
-    made = list(step.produced.filter(remake__isnull=False).order_by("remake"))
+    made = _clip_tries(step)
     tries: list[ProducedItem] = []
     for remake in range(auto_fix.MOST_REMAKES + 1):
-        if remake == 0:
-            clip = first
-        elif remake <= len(made):
-            clip = made[remake - 1]
+        if remake < len(made):
+            clip = made[remake]
         else:
             # A remake that can't be made doesn't fail the step: its clips are made and paid
             # for, and the best of them is kept.
@@ -2034,17 +2032,24 @@ def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
     kept = tries[auto_fix.clip_to_keep([auto_fix.failed_answers(_ruling(clip)) for clip in tries])]
     if kept == tries[-1]:
         return kept
-    again = step.produced.filter(remake__isnull=True).exclude(pk=first.pk).first()
-    return again or bring_back_clip(kept)
+    brought_back = step.produced.filter(remake__isnull=True).exclude(pk=first.pk).first()
+    return brought_back or bring_back_clip(kept)
+
+
+def _clip_tries(step: SceneStep) -> list[ProducedItem]:
+    """A B-roll clip step's clips made so far, oldest first: its first, then each remake. A
+    clip brought back as the one kept isn't another."""
+    first = step.produced.order_by("id").first()
+    assert first is not None, "the step made its clip"
+    return [first, *step.produced.filter(remake__isnull=False).order_by("remake")]
 
 
 def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
     """What the auto-fix did before `clip` was kept as a B-roll clip step's clip, as a sentence
     to follow another, for the producer to tell the shop owner: nothing when the judge passed
     its first clip or didn't judge it."""
-    first = step.produced.order_by("id").first()
-    assert first is not None, "the step made its clip"
-    tries = [first, *step.produced.filter(remake__isnull=False).order_by("remake")]
+    tries = _clip_tries(step)
+    first = tries[0]
     if (first.ruling or {}).get("verdict") != "fail":
         return ""
     kept = next(made for made in tries if made.file == clip.file)

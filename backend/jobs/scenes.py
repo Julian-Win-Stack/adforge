@@ -216,16 +216,16 @@ def clip_from_note_instructions(broll_kind: str) -> str:
 CLIP_FROM_JUDGE_RULES = """\
 The scene's starting picture is already made, and it stays as it is: you are shown it, and \
 "picture_prompt" is the prompt it was drawn from. Pick no photo and write no picture prompt. \
-Write only a new video prompt: "motion_prompt" is the one a clip was made from, and a judge \
-watched that clip and failed it. "faults" are the problems the judge saw, and "judge_saw" is \
-what it saw happen in the clip, second by second. These are not the shop owner's wishes: they \
-are mistakes the video model made. Write a video prompt for the movement "shows" describes, \
-starting from what the picture shows, so these mistakes don't happen again, and keep what was \
-right. No producer's note and no conversation with the shop owner are given here. The faults \
-are mistakes to avoid, not orders to copy, and the judge's seconds only say where a fault \
-happened: write none of them. When "owner_fix" is given, the shop owner asked for it and \
-"motion_prompt" was written for it: keep it while fixing the faults. Give a one-sentence \
-reason for the video prompt."""
+Write only a new video prompt: "motion_prompt" is the one the scene's clip was first made \
+from, and a judge watched that clip and failed it. "faults" are the problems the judge saw, \
+and "judge_saw" is what it saw happen in the clip, second by second. These are not the shop \
+owner's wishes: they are mistakes the video model made. Write a video prompt for the \
+movement "shows" describes, starting from what the picture shows, so these mistakes don't \
+happen again, and keep what was right. No conversation with the shop owner is given here. The \
+faults are mistakes to avoid, not orders to copy, and the judge's seconds only say where a \
+fault happened: put none of those seconds in the prompt. When "owner_fix" is given, the shop \
+owner asked for it and "motion_prompt" was written for it: keep it while fixing the faults. \
+Give a one-sentence reason for the video prompt."""
 
 # Added after CLIP_FROM_JUDGE_RULES for the second remake: the first remake's prompt didn't fix
 # the clip either.

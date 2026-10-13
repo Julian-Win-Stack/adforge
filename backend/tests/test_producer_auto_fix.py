@@ -272,6 +272,34 @@ def test_of_tied_clips_the_newest_is_kept(
     assert "The clip kept is remake 2, the one with the fewest faults" in step.result
 
 
+def test_a_remake_the_judge_passes_is_kept_even_with_more_failed_answers(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    # The remake's 3 answers each fail a different question, so no question fails on 2 of 3
+    # and the judge passes it, with 3 failed answers to the first clip's 2.
+    fake_model.respond(
+        "check_clip_motion",
+        *[failing(FLOATS)] * 2,
+        CLIP_MOTION_OK,
+        failing(FLOATS, "real_motion"),
+        failing(SPINS, "sudden_change"),
+        failing("The tea never reaches the mug.", "does_what_was_ordered"),
+    )
+    fake_model.respond("remake_clip_prompt", rewrite(REMADE))
+
+    step = clip_of_scene_2(fake_model, steps, say)
+
+    remake = ProducedItem.objects.get(kind="clip", remake=1)
+    assert remake.ruling is not None
+    assert (remake.ruling["verdict"], remake.ruling["failed_answers"]) == ("pass", 3)
+    assert clips() == [1, 2]
+    assert shown_clips() == [remake.file]
+    assert "so it was made again once, and the judge passed the new one." in step.result
+
+
 # --- No remake --------------------------------------------------------------------------
 
 
@@ -423,3 +451,40 @@ def test_a_remake_the_judge_couldnt_check_isnt_made_again_and_is_kept_as_uncheck
         "so it was made again once, and the judge couldn't check the new one, so it is kept "
         "unchecked. Scene 2 is finished."
     ) in step.result
+
+
+def test_a_clip_brought_back_before_the_worker_stopped_isnt_brought_back_again(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_model.respond(
+        "check_clip_motion", *[failing(FLOATS)] * 2, CLIP_MOTION_OK, *[failing(SPINS)] * 6
+    )
+    fake_model.respond("remake_clip_prompt", rewrite(REMADE), rewrite(REMADE_AGAIN))
+    made_ready(fake_model, steps, say, (2,))
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    # The worker stops once the first clip is brought back, before the step finishes.
+    told = tasks.what_the_judge_did
+
+    def stopped(*_: object) -> str:
+        raise WorkerStopped
+
+    monkeypatch.setattr(tasks, "what_the_judge_did", stopped)
+    with pytest.raises(WorkerStopped):
+        steps.run_next()
+    assert clips() == [1, 2, 3, 4]
+
+    # The step is handed out again, as after a restart.
+    monkeypatch.setattr(tasks, "what_the_judge_did", told)
+    fake_model.respond("produce", turn(says="Done."))
+    tasks.run_scene_step(SceneStep.objects.get(kind="clip", scene__number=2).pk)
+
+    assert clips() == [1, 2, 3, 4]
+    assert paid_for().count("make_broll_clip") == 3
+    step = SceneStep.objects.get(kind="clip", scene__number=2)
+    assert step.result.startswith(
+        "Background step finished: scene 2's clip is ready (version 4, 5 seconds)"
+    )
