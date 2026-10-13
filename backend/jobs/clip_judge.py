@@ -555,16 +555,18 @@ def _shown(photo: str, needs: list[Image], pictures: list[dict[str, Any]]) -> li
     order, each labelled with the time of each frame in it."""
     shown = [Image(label=SHOP_PHOTO_LABEL, key=photo), *needs]
     for n, picture in enumerate(pictures):
-        times = picture["times"]
-        label = (
-            f"Frame at {times[0]:g} s"
-            if len(times) == 1
-            else f"Frames at {', '.join(f'{t:g} s' for t in times)}, left to right"
-        )
+        label = frame_label(picture["times"])
         if n == 0:
             label = f"{FRAMES_LABEL}\n{label}"
         shown.append(Image(label=label, key=picture["key"]))
     return shown
+
+
+def frame_label(times: list[float]) -> str:
+    """How a picture of a clip is labelled for a judge: the time of each frame in it."""
+    if len(times) == 1:
+        return f"Frame at {times[0]:g} s"
+    return f"Frames at {', '.join(f'{t:g} s' for t in times)}, left to right"
 
 
 def cut_pictures(clip: str, *, beside: int) -> dict[str, list[dict[str, Any]]]:
