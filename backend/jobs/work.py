@@ -2014,13 +2014,18 @@ def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
     made = list(step.produced.filter(remake__isnull=False).order_by("remake"))
     tries: list[ProducedItem] = []
     for remake in range(auto_fix.MOST_REMAKES + 1):
-        clip = (
-            first
-            if remake == 0
-            else made[remake - 1]
-            if remake <= len(made)
-            else _remake_clip(step, tries)
-        )
+        if remake == 0:
+            clip = first
+        elif remake <= len(made):
+            clip = made[remake - 1]
+        else:
+            # A remake that can't be made doesn't fail the step: its clips are made and paid
+            # for, and the best of them is kept.
+            try:
+                clip = _remake_clip(step, tries)
+            except Exception:
+                logger.exception("Making scene %s's clip again failed", step.scene.number)
+                break
         if "verdict" not in (clip.ruling or {}):
             _judge_clip(step, clip)
         tries.append(clip)
@@ -2049,11 +2054,12 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
         return ""
     kept = next(made for made in tries if made.file == clip.file)
     remade = len(tries) - 1
-    times = "once" if remade == 1 else f"{remade} times"
     faults = " ".join(auto_fix.faults(_ruling(first)))
-    said = (
-        f' The clip judge failed the first clip it made ("{faults}"), so it was made again {times}'
-    )
+    failed = f' The clip judge failed the first clip it made ("{faults}")'
+    if not remade:
+        return f"{failed}, and it couldn't be made again, so it is kept as it is."
+    times = "once" if remade == 1 else f"{remade} times"
+    said = f"{failed}, so it was made again {times}"
     verdict = _ruling(kept)["verdict"]
     if verdict == "pass":
         return f"{said}, and the judge passed the new one."
@@ -2061,7 +2067,8 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
     if verdict == "fail":
         still = " ".join(auto_fix.faults(_ruling(kept)))
         return (
-            f"{said}, and it failed each remake too. The clip kept is {which}, the one with "
+            f"{said}, and it failed {'the remake' if remade == 1 else 'each remake'} too. The "
+            f"clip kept is {which}, the one with "
             f'the fewest faults, and the judge still sees: "{still}"'
         )
     return f"{said}, and the judge couldn't check the last one. The clip kept is {which}."

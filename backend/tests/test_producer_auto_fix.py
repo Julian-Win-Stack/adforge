@@ -13,6 +13,7 @@ import pytest
 from agents import tasks
 from chat.models import Attachment, Message
 from gateway.fake import FakeModel, turn
+from gateway.types import UnusableReply
 from jobs.models import ProducedItem, SceneStep
 from jobs.scenes import (
     BROLL_KIND_RULES,
@@ -370,3 +371,29 @@ def test_a_remake_under_way_when_the_worker_stopped_is_waited_for_not_paid_again
     assert clips() == [1, 2]
     step = SceneStep.objects.get(kind="clip", scene__number=2)
     assert "the judge passed the new one" in step.result
+
+
+# --- A remake that can't be made ----------------------------------------------------------
+
+
+def test_a_remake_that_cant_be_written_keeps_the_clip_made_and_finishes_the_step(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond("check_clip_motion", failing(FLOATS), failing(FLOATS))
+    fake_model.respond(
+        "remake_clip_prompt", UnusableReply("no prompt came back", input_tokens=10, output_tokens=0)
+    )
+
+    step = clip_of_scene_2(fake_model, steps, say)
+
+    # The clip is made and paid for: the step isn't failed for the remake.
+    assert step.status == "finished"
+    assert clips() == [1]
+    assert paid_for().count("make_broll_clip") == 1
+    assert (
+        f'The clip judge failed the first clip it made ("{FLOATS}"), and it couldn\'t be made '
+        "again, so it is kept as it is. Scene 2 is finished."
+    ) in step.result
