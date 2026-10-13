@@ -1,7 +1,7 @@
 """The check of a fix (route B step 6, #131): after a scene is made again for a fix the shop
 owner said yes to, a judge is asked the complaint back about the new version, shown beside
 the old one, before anything more is made or shown as fixed. A new starting picture is
-judged here, and a new clip, after the clip judge (#109) and its redos (#155) have kept it.
+judged here, and a new clip, after the clip judge (#109) and its remakes (#155) have kept it.
 A new line is never judged: its words are the proof (Julian 2026-10-11 21:51).
 
 Agreed by Julian (2026-10-13 05:18, "yes"): the judge's question below, showing the old
@@ -77,8 +77,12 @@ class Settled:
 
 
 def settle_all(answers: Sequence[dict[str, Any] | None]) -> Settled:
-    """`settle` over answers all asked at once, in ask order."""
-    return settle(lambda number: answers[number - 1])
+    """`settle` over answers all asked at once, in ask order, keeping every answer had: each
+    was paid for."""
+    settled = settle(lambda number: answers[number - 1])
+    return Settled(
+        settled.verdict, settled.reason, [answer for answer in answers if answer is not None]
+    )
 
 
 def settle(ask: Callable[[int], dict[str, Any] | None]) -> Settled:

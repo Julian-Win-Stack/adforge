@@ -985,8 +985,18 @@ def assemble_after_fix(step: SceneStep) -> str:
     unfixed = [
         scene for scene in job.scenes.all() if scene not in unfinished and _fix_still_to_land(scene)
     ]
+    # A scene whose fix's clip failed its check waits for the shop owner's word: no ad is
+    # shown with it until they answer (#131), whichever scene's clip lands last.
+    session = step.tool_call.session
+    unchecked = [
+        scene
+        for scene in job.scenes.all()
+        if scene not in unfinished
+        and scene not in unfixed
+        and _waits_on_a_failed_check(session, _latest_clip(scene))
+    ]
     again = " again" if job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).exists() else ""
-    if unfinished or unfixed:
+    if unfinished or unfixed or unchecked:
         waits = []
         if unfinished:
             is_ = "is" if len(unfinished) == 1 else "are"
@@ -994,6 +1004,8 @@ def assemble_after_fix(step: SceneStep) -> str:
         for scene in unfixed:
             newer = " newer" if scene == step.scene else ""
             waits.append(f"scene {scene.number}'s{newer} fix is made")
+        for scene in unchecked:
+            waits.append(f"the shop owner answers scene {scene.number}'s failed fix check")
         # An answer no redo has followed yet may have been no, which code can't tell from a yes.
         unmade = [scene for scene in unfixed if scene.fixes.last().confirmed_by_id is None]  # type: ignore[union-attr]
         no = (
@@ -1532,21 +1544,27 @@ def _answered_a_failed_check(call: ToolCall, picture_step: SceneStep) -> None:
     until the shop owner has answered since they were shown it (#131): its clip is paid for
     only on their word. Code can't tell their go ahead from a new note, so any answer will
     do: a new note is restated as a new fix, which this clip's picture isn't made for."""
-    check = FixCheck.objects.filter(step=picture_step, verdict=FixCheck.Verdict.FAILED).first()
-    if check is None:
-        return
-    # Until its notice is posted the shop owner hasn't been shown it, whatever they wrote.
-    if (
-        check.notice is None
-        or not call.session.messages.filter(
-            role=Message.Role.USER, seq__gt=check.notice.seq
-        ).exists()
-    ):
+    picture = picture_step.produced.first()
+    if _waits_on_a_failed_check(call.session, picture):
         raise Refused(
             f"scene {picture_step.scene.number}'s new starting picture failed the check of its "
             "fix, and the shop owner hasn't answered since they were shown it. Wait for their "
             "answer."
         )
+
+
+def _waits_on_a_failed_check(session: Session, made: ProducedItem | None) -> bool:
+    """Whether `made` failed the check of its fix and the shop owner hasn't answered since
+    they were shown it: until its notice is posted they haven't been, whatever they wrote."""
+    if made is None:
+        return False
+    check = FixCheck.objects.filter(new=made, verdict=FixCheck.Verdict.FAILED).first()
+    if check is None:
+        return False
+    return (
+        check.notice is None
+        or not session.messages.filter(role=Message.Role.USER, seq__gt=check.notice.seq).exists()
+    )
 
 
 def _owner_answered(fix: Fix) -> bool:
