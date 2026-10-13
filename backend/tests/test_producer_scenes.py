@@ -20,6 +20,7 @@ from chat.models import Message
 from gateway.fake import FakeModel, meanwhile, turn
 from gateway.models import ModelCall
 from jobs.models import Job, Scene, SceneStep
+from jobs.scenes import pose_for
 
 from .conftest import (
     HeldSteps,
@@ -101,29 +102,6 @@ def test_a_starting_picture_is_made_in_the_background_and_the_producer_tells_the
     assert (told["role"], told["text"]) == ("agent", "Scene 1's starting picture is ready!")
 
 
-def test_a_starting_picture_shown_in_the_chat_isnt_given_to_the_producer_as_its_own_words(
-    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    fake_model.respond(
-        "produce",
-        turn(calls=[("make_starting_picture", {"scene": 1, "note": None})]),
-        turn(says="I've started scene 1's picture."),
-    )
-    say("Make scene 1's starting picture")
-    fake_model.respond("choose_starting_picture", CHOICE)
-    fake_model.respond("produce", turn(says="Scene 1's starting picture is ready!"))
-
-    steps.run_held()
-
-    # The picture's message came between the producer's reply and the step: it is left out,
-    # as a producer given it as "[Attached 1 picture]" copied that as a reply.
-    assert given_to_the_producer(producer_turns())[-2] == {
-        "kind": "said",
-        "by": "agent",
-        "text": "I've started scene 1's picture.",
-    }
-
-
 def step_messages(api: APIClient, session_id: str) -> list[tuple[str, str, str, Any]]:
     """Each message in the chat that says a scene's step started or ended, as (role,
     level, text, step)."""
@@ -138,7 +116,7 @@ def picture_step(state: str, scene: int = 1) -> dict[str, Any]:
     return {"scene": scene, "kind": "starting_picture", "state": state}
 
 
-def test_the_chat_can_tell_a_scenes_starting_picture_is_being_made_until_it_is_shown(
+def test_the_chat_can_tell_a_picture_is_being_made_until_shown_and_the_producer_isnt_given_it(
     api: APIClient,
     fake_model: FakeModel,
     checked: None,
@@ -146,7 +124,7 @@ def test_the_chat_can_tell_a_scenes_starting_picture_is_being_made_until_it_is_s
     session_id: str,
     say: Callable[..., None],
 ) -> None:
-    making(fake_model, (1, None))
+    making(fake_model, (1, None), reply="I've started scene 1's picture.")
 
     say("Make scene 1's starting picture")
 
@@ -155,11 +133,19 @@ def test_the_chat_can_tell_a_scenes_starting_picture_is_being_made_until_it_is_s
     ]
 
     fake_model.respond("choose_starting_picture", CHOICE)
-    fake_model.respond("produce", turn(says="Ready!"))
+    fake_model.respond("produce", turn(says="Scene 1's starting picture is ready!"))
     steps.run_held()
 
     # The picture's own message says the step that started has ended with it.
     assert step_messages(api, session_id)[1:] == [("agent", "", "", picture_step("made"))]
+    # That message came between the producer's reply and the step: it is left out of what
+    # the producer is given, as a producer given it as "[Attached 1 picture]" copied that as
+    # a reply.
+    assert given_to_the_producer(producer_turns())[-2] == {
+        "kind": "said",
+        "by": "agent",
+        "text": "I've started scene 1's picture.",
+    }
 
 
 def test_the_chat_can_tell_a_scenes_starting_picture_is_being_made_again(
@@ -201,33 +187,8 @@ def making(fake_model: FakeModel, *scenes: tuple[int, str | None], reply: str = 
 
 
 # --- What the tool refuses ------------------------------------------------------------------
-
-
-def test_a_line_that_hasnt_passed_the_fact_check_gets_no_starting_picture(
-    fake_model: FakeModel, planned: None, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    fake_model.respond("produce", turn(calls=[("create_person", {})]), turn(says="Meet her!"))
-    say("Make the person")
-    making(fake_model, (1, None))
-
-    say("Make scene 1's starting picture")
-
-    assert results_of("make_starting_picture") == [
-        "Refused: scene 1's line hasn't passed the fact check, and nothing is made for a line "
-        "until it has. Run the planning checks first. Nothing was done."
-    ]
-    assert not SceneStep.objects.exists()
-    assert steps.held == []
-    assert paid_for() == [
-        "check_page",
-        "copy_page_text",
-        "note_face",
-        "note_face",
-        "plan_ad",
-        "draw_person",
-        "design_voice",
-        "measure_voice",
-    ]
+# A line that hasn't passed the fact check is refused by every scene tool alike: see
+# test_producer_line_audio.py.
 
 
 def test_a_starting_picture_already_being_made_isnt_started_again(
@@ -437,35 +398,50 @@ def test_the_photo_and_prompt_are_chosen_from_the_line_and_the_picture_made_from
     assert [attached["url"] for attached in shown["attachments"]] == [f"/media/{picture.file}"]
 
 
+LARGE_POSE = (
+    "The product stands on the floor at its real size, and the person stands beside it with "
+    "one hand resting on it, framed so both fit, with space above the head and below the "
+    "product, so the top and bottom of the frame stay clear."
+)
+HANDHELD_POSE = (
+    "The person holds the product at chest height, beside their face, with any label facing "
+    "the camera, so the top and bottom of the frame stay clear."
+)
+
+
 @pytest.mark.parametrize(
-    ("the_plan", "pose"),
+    ("product_size", "pose"),
     [
+        pytest.param("large", LARGE_POSE, id="large"),
         pytest.param(
-            a_plan_with(product_size="large"),
-            "The product stands on the floor at its real size, and the person stands beside "
-            "it with one hand resting on it, framed so both fit, with space above the head "
-            "and below the product, so the top and bottom of the frame stay clear.",
-            id="large",
-        ),
-        pytest.param(
-            a_plan_with(product_size="tiny"),
+            "tiny",
             "The person holds the product up close to the camera between finger and thumb, "
             "so it fills a good part of the frame, with any label facing the camera, and "
             "the top and bottom of the frame stay clear.",
             id="tiny",
         ),
+        pytest.param("handheld", HANDHELD_POSE, id="handheld"),
+        # A job planned before the plan said the size: posed as handheld, as every job was.
+        pytest.param("", HANDHELD_POSE, id="no size stored"),
     ],
-    indirect=["the_plan"],
 )
 def test_the_pose_the_picture_is_planned_around_comes_from_the_products_size(
+    product_size: str, pose: str
+) -> None:
+    """The plan says how big the product is; code, not the model, turns that into the pose
+    the picture is planned around, so a chair is never shrunk to fit a chest."""
+    assert pose_for(product_size) == pose
+
+
+@pytest.mark.parametrize(
+    "the_plan", [a_plan_with(product_size="large")], indirect=True, ids=["large"]
+)
+def test_the_picture_is_planned_around_the_pose_for_the_plans_product_size(
     fake_model: FakeModel,
     checked: None,
     steps: HeldSteps,
     say: Callable[..., None],
-    pose: str,
 ) -> None:
-    """The plan says how big the product is; code, not the model, turns that into the pose
-    the picture is planned around, so a chair is never shrunk to fit a chest."""
     making(fake_model, (1, None))
     say("Make scene 1's starting picture")
     fake_model.respond("choose_starting_picture", CHOICE)
@@ -474,8 +450,7 @@ def test_the_pose_the_picture_is_planned_around_comes_from_the_products_size(
     steps.run_held()
 
     (chose,) = handoffs("choose_starting_picture")
-    assert chose["pose"] == pose
-    assert "chest height" not in chose["pose"]
+    assert chose["pose"] == LARGE_POSE
 
 
 def test_the_chosen_photo_and_prompt_are_kept_with_why_and_the_photos_are_never_changed(
@@ -681,6 +656,23 @@ def test_a_picture_paid_for_before_the_worker_stopped_is_kept_rather_than_made_a
     assert len(shown) == 2  # The person, then the picture, once.
 
 
+HEARTBEAT_SECONDS = 0.05
+
+
+def seen_at() -> datetime:
+    """When the one step was last seen alive."""
+    return SceneStep.objects.get().seen_at
+
+
+def seen_at_after(seen: datetime) -> datetime:
+    """When the step is next seen alive after `seen`, waited for up to forty heartbeats;
+    `seen` again if it never is."""
+    waited_until = time.monotonic() + 40 * HEARTBEAT_SECONDS
+    while (now := seen_at()) <= seen and time.monotonic() < waited_until:
+        time.sleep(HEARTBEAT_SECONDS / 5)
+    return now
+
+
 def test_a_step_beats_while_it_works(
     fake_model: FakeModel,
     checked: None,
@@ -688,26 +680,27 @@ def test_a_step_beats_while_it_works(
     say: Callable[..., None],
     settings: Settings,
 ) -> None:
-    settings.STEP_HEARTBEAT_SECONDS = 0.05
+    settings.STEP_HEARTBEAT_SECONDS = HEARTBEAT_SECONDS
     making(fake_model, (1, None))
     say("Make scene 1's starting picture")
     beats: list[datetime] = []
 
     def choosing_takes_a_while() -> dict[str, Any]:
-        beats.append(SceneStep.objects.get().seen_at)
-        time.sleep(0.3)
-        beats.append(SceneStep.objects.get().seen_at)
+        beats.append(seen_at())
+        beats.append(seen_at_after(beats[0]))
         return CHOICE
 
     fake_model.respond("choose_starting_picture", choosing_takes_a_while)
     fake_model.respond("produce", turn(says="Ready!"))
     steps.run_held()
-    ended = SceneStep.objects.get().seen_at
-    time.sleep(0.3)
+    ended = seen_at()
 
     assert beats[1] > beats[0]
-    # It stops beating once the step is done.
-    assert SceneStep.objects.get().seen_at == ended
+    # It stops beating once the step is done: three heartbeats later, none has landed.
+    waited_until = time.monotonic() + 3 * HEARTBEAT_SECONDS
+    while time.monotonic() < waited_until:
+        assert seen_at() == ended
+        time.sleep(HEARTBEAT_SECONDS / 5)
 
 
 # --- Several scenes at the same time --------------------------------------------------------

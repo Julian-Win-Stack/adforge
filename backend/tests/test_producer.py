@@ -136,10 +136,6 @@ def test_the_producer_is_told_every_photo_the_page_had_that_was_skipped_and_why(
     )
 
 
-def _serve_missing_page(httpserver: HTTPServer, fake_model: FakeModel) -> None:
-    httpserver.expect_request("/products/mug").respond_with_data("not found", status=404)
-
-
 def _serve_cookie_wall(httpserver: HTTPServer, fake_model: FakeModel) -> None:
     httpserver.expect_request("/products/mug").respond_with_data(
         "<html><body>Accept our cookies to continue</body></html>", content_type="text/html"
@@ -157,15 +153,11 @@ def _serve_page_without_photos(httpserver: HTTPServer, fake_model: FakeModel) ->
     fake_model.respond("check_page", READABLE)
 
 
+# A link that can't be read at all: test_producer_page.py
+# ::test_a_link_that_cant_be_read_says_why_and_pays_for_nothing.
 @pytest.mark.parametrize(
     ("serve_page", "told"),
     [
-        pytest.param(
-            _serve_missing_page,
-            "The page couldn't be read: {url} answered 404 NOT FOUND, so trying again won't "
-            "help. Ask the shop owner for a working link to the product's own page.",
-            id="the link is broken",
-        ),
         pytest.param(
             _serve_cookie_wall,
             "The page was read but can't be used: The page is only a cookie banner. Ask the "

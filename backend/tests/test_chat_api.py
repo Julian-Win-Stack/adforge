@@ -395,38 +395,9 @@ def test_a_worker_on_code_from_before_scene_steps_can_still_add_a_message(
     assert (said["text"], said["step"]) == ("Still here.", None)
 
 
-def test_a_message_sent_while_the_work_is_in_flight_is_taken_straight_away(
-    api: APIClient, start_session: Callable[..., str], send: Callable[..., Any]
-) -> None:
-    session_id = start_session()
-    send(session_id, "Make me an ad for my mug")
-    session = Session.objects.get(pk=session_id)
-    Job.objects.create(
-        session=session, product_url="https://shop.example/products/mug", status=Job.Status.PLANNED
-    )
-
-    interrupting = send(session_id, "Actually, make it 20 seconds")
-
-    # Taken and given its place in the conversation, not refused because work is running.
-    assert interrupting.status_code == 201, interrupting.json()
-    assert interrupting.json()["message"]["seq"] == 2
-    assert api.get(f"/api/sessions/{session_id}/messages/?after=1").json()[0]["text"] == (
-        "Actually, make it 20 seconds"
-    )
-
-
-def test_a_session_holds_its_jobs_and_a_job_points_at_the_one_it_varies() -> None:
-    session = Session.objects.create()
-    first = Job.objects.create(session=session, product_url="https://shop.example/products/mug")
-    variant = Job.objects.create(
-        session=session, product_url="https://shop.example/products/mug", variant_of=first
-    )
-
-    assert list(session.jobs.order_by("created_at")) == [first, variant]
-    assert list(first.variants.all()) == [variant]
-    assert variant.variant_of == first
-
-
+# A message sent to the session whose producer is working is taken straight away, as an
+# interrupt: test_producer_messages.py
+# ::test_an_interrupt_is_taken_and_read_by_the_producer_already_working.
 def test_talking_to_a_session_that_isnt_there_says_so(api: APIClient) -> None:
     missing = "00000000-0000-0000-0000-000000000000"
 
@@ -454,20 +425,6 @@ def test_a_message_is_refused_while_another_sessions_producer_is_working(
     # Not kept, and nothing started.
     assert api.get(f"/api/sessions/{waiting}/messages/").json() == []
     assert not Session.objects.get(pk=waiting).producer_running
-
-
-def test_the_busy_session_itself_can_always_be_talked_to(
-    api: APIClient, start_session: Callable[..., str], send: Callable[..., Any]
-) -> None:
-    working = start_session()
-    Session.objects.filter(pk=working).update(producer_running=True)
-
-    interrupting = send(working, "Actually, make it 20 seconds")
-
-    assert interrupting.status_code == 201, interrupting.json()
-    assert [m["text"] for m in api.get(f"/api/sessions/{working}/messages/").json()] == [
-        "Actually, make it 20 seconds"
-    ]
 
 
 def _running_step(session_id: str, seen_ago: timedelta) -> None:

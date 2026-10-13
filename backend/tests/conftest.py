@@ -327,6 +327,11 @@ def screenshot(width: int, height: int) -> bytes:
     return file.getvalue()
 
 
+# Firecrawl's screenshot of the shampoo's page, 2,600 px tall: three parts of 1,200 px. Drawn
+# once: it takes about 50 ms, and no test changes it.
+FIRECRAWL_SCREENSHOT = screenshot(480, 2_600)
+
+
 def photo(seed: int, width: int = 64, height: int = 80) -> bytes:
     """A photo of its own: random dots, so no two seeds look alike to the copy check, and
     one seed looks the same at every size."""
@@ -380,8 +385,7 @@ class FakeFirecrawl:
         self.marked: dict[str, Any] = json.loads(re.sub(shop_links, self.shop, FIRECRAWL_MARKED))
         self.marked["data"]["actions"]["screenshots"] = [f"{self.shop}/firecrawl/screenshot.png"]
         self.product: dict[str, Any] = json.loads(re.sub(shop_links, self.shop, FIRECRAWL_PRODUCT))
-        # 2,600 px tall: three parts of 1,200 px.
-        self.screenshot = screenshot(480, 2_600)
+        self.screenshot = FIRECRAWL_SCREENSHOT
         httpserver.expect_request("/v2/scrape", method="POST").respond_with_handler(self._answer)
         httpserver.expect_request("/firecrawl/screenshot.png").respond_with_handler(
             lambda _: Response(self.screenshot, content_type="image/png")

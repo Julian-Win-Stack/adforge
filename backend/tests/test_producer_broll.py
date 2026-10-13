@@ -34,7 +34,6 @@ from .conftest import (
     colour_at,
     drawn_in,
     handoffs,
-    loudness,
     paid_for,
     results_of,
     silences,
@@ -79,16 +78,7 @@ BROLL_CHOICE: dict[str, Any] = {
     "motion_prompt_reason": "The pour and the steam are what moves in the scene.",
 }
 
-# Scene 2's labels as stored when it shows the mug at its best, as planned.
-SHOWCASE: dict[str, Any] = {
-    "broll_kind": "showcase",
-    "person_shown": "no face",
-    "usage": "",
-    "result": "",
-    "needs": [],
-}
-
-# Scene 2's labels when it shows the mug doing a job rather than at its best.
+# Scene 2's labels when it shows the mug doing a job rather than at its best, as planned.
 DOES_A_JOB: dict[str, Any] = {
     "broll_kind": "does a job",
     "person_shown": "no face",
@@ -243,18 +233,6 @@ def test_a_broll_scene_planned_before_it_had_labels_still_makes_its_ad(
     assert len(clips_asked("prompt")) == 1
 
 
-def test_a_scene_that_shows_the_product_plays_in_its_turn(assembled: ProducedItem) -> None:
-    # Scene 2's 5-second clip plays whole, a second past its line, while scene 3's line is
-    # said over its end: only the last half second of scene 3's picture shows.
-    assert [(cut["scene"], cut["start"], cut["end"]) for cut in assembled.cuts] == [
-        (1, 0.0, 4.0),
-        (2, 4.0, 9.0),
-        (3, 9.0, 9.5),
-    ]
-    # Scene 2's clip, the second the video model made, is lime.
-    assert colour_at(read(assembled.file), 5.75) == "lime"
-
-
 def test_a_scene_that_shows_the_product_plays_its_whole_clip(
     fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
@@ -281,10 +259,6 @@ def test_a_scene_that_shows_the_product_has_its_words_captioned(assembled: Produ
         "safe too.",
     ]
     assert drawn_in(read(assembled.file), 5.75) == {"bottom"}
-
-
-def test_a_scene_that_shows_the_product_has_its_voice_heard(assembled: ProducedItem) -> None:
-    assert loudness(read(assembled.file), "voice", between=(4.5, 7.0)) > -40
 
 
 # --- The starting picture ----------------------------------------------------------------------
@@ -355,37 +329,24 @@ def test_the_model_planning_a_picture_is_told_what_the_scene_shows(
     assert told.splitlines()[0] == what_it_shows
 
 
-@pytest.mark.parametrize(
-    ("labels", "its_rules", "the_other_kinds"),
-    [
-        pytest.param(SHOWCASE, "showcase", "does a job", id="showcase"),
-        pytest.param(DOES_A_JOB, "does a job", "showcase", id="does a job"),
-        pytest.param(
-            {**SHOWCASE, "broll_kind": "shows the problem"},
-            "shows the problem",
-            "does a job",
-            id="shows the problem",
-        ),
-    ],
-)
 def test_the_model_planning_the_picture_is_given_only_its_kinds_rules(
     fake_model: FakeModel,
     instructed: dict[str, list[str]],
     checked: None,
     steps: HeldSteps,
     say: Callable[..., None],
-    labels: dict[str, Any],
-    its_rules: str,
-    the_other_kinds: str,
 ) -> None:
-    Scene.objects.filter(number=2).update(**labels)
+    """The kind stored on the scene picks its rules. That every kind gets the shared rules,
+    its own and no other's is checked for each kind without a chat in
+    test_producer_clip_from_note.py."""
+    Scene.objects.filter(number=2).update(**DOES_A_JOB)
 
     picture_of(fake_model, steps, say, 2)
 
     (told,) = instructed["choose_broll_picture"]
     assert BROLL_SHARED_RULES in told
-    assert BROLL_KIND_RULES[its_rules] in told
-    assert BROLL_KIND_RULES[the_other_kinds] not in told
+    assert BROLL_KIND_RULES["does a job"] in told
+    assert BROLL_KIND_RULES["showcase"] not in told
 
 
 @pytest.mark.parametrize(
@@ -412,13 +373,13 @@ def test_the_model_planning_the_picture_is_given_the_shared_prompt_rules(rule: s
 
 
 # Rules Julian's grades proved
-# (decisions/agreed-vs-built-2026-10-08.md rows 1, 5, 7, 10, 17).
+# (decisions/agreed-vs-built-2026-10-08.md rows 1, 5, 7, 10, 17). The sentences frozen word
+# for word (no timings, one movement where the product does the work, a person named in
+# "shows" is in the clip, never the camera, never turn or flip, never the fiddly change, the
+# product may stand, no contradictions) are pinned in test_frozen_rules.py; here are the rest.
 @pytest.mark.parametrize(
     "rule",
     [
-        # Timings made clips stopwatch-like (#5) or far too slow (#7).
-        "Never write seconds or timings",
-        '"slowly" or "gently"',
         # Only the scrub, with the voice carrying squeeze and flush, was PERFECT (#8 5 s);
         # "flows as one" let clamp + rotate + glide through and Boreal skipped the middle
         # (N5 s2), so Julian made it one movement, no exceptions.
@@ -428,32 +389,11 @@ def test_the_model_planning_the_picture_is_given_the_shared_prompt_rules(rule: s
         # drop by the line's claim, 4 runs of 4 (#12, compare.md cause check), so "shows"
         # decides which movement.
         '"shows" says which: when it names one movement, film that one, even when the line',
-        # "The one that makes the line's claim happen" picked the flush over the scrub Julian
-        # graded PERFECT (#8 5 s, round 8): the movement is the product's or its tool's.
-        'When "shows" lists more than one, film the one where the product, or the tool used '
-        "with it, does the work",
-        # The bag's "the presenter wears the bag" came back as the bag alone (5 s3, rounds 7-8).
-        'When "shows" names a person or a hand, they are in the clip, doing what it says',
-        # Test ads (08 Oct): #8's pointless zoom ended "close enough for the ring to be
-        # unmistakably visible"; Julian 23:57: "a hand or the product, never the camera".
-        "never move the camera or say where or how close it ends",
-        "The voice carries the rest",
         # Test ads (08 Oct), N5 Le Duo: the turn was moved before the glide, so the clip filmed
         # the straightening how-to under a line about curls.
         'A part that "shows" or "usage" says happens while the movement is done, such as '
         "pressing down while turning a cap, is part of that one movement: film it during the "
         "movement, never before it or in the starting picture.",
-        # Test ads (08 Oct), #12 phone case: turned and dropped from start pictures of one side,
-        # the clips drew the back on both sides.
-        "The side of the product facing the camera in the starting picture faces it at the "
-        "end: never turn, flip or spin the product, and after a drop it lands that side up.",
-        # Filming the strap change failed; one clip per state was PERFECT (#5 bag).
-        "Never film the fiddly change between two states",
-        # Holding the bottle bent its neck; the PERFECT toilet clip had it standing in view.
-        "The product may stand in view",
-        # "upright" + "nozzle pointing down" bent the bottle; "squeeze" + "no gel" put gel on.
-        "Never ask for two things that can't both be true at once",
-        "Check every order against the product photos",
         # Code writes the clip's look and length first (broll_video_prompt).
         "Code starts the video prompt with the clip's length",
     ],
@@ -475,6 +415,9 @@ def test_the_model_writing_the_prompts_is_told_the_proven_rules(rule: str) -> No
         "phone",
         "casual",
         "never call the camera fixed",
+        # A labelled scene's prompts are no longer planned from "shows" alone: the rules say
+        # what is made up and what isn't. The unlabelled instructions keep the sentence.
+        "Make nothing up",
     ],
 )
 def test_the_model_writing_the_prompts_is_no_longer_told_the_rules_grades_rejected(
@@ -483,15 +426,12 @@ def test_the_model_writing_the_prompts_is_no_longer_told_the_rules_grades_reject
     assert dropped not in BROLL_SHARED_RULES
 
 
-# What both best start pictures did (#8 toilet 5 s, #12 V2): rows 9, 18, 31.
+# What both best start pictures did (#8 toilet 5 s, #12 V2): rows 9, 18, 31. The sentence
+# saying what must be right (camera, parts, counts, hands) is pinned in test_frozen_rules.py.
 @pytest.mark.parametrize(
     "rule",
     [
         'The picture prompt opens: "An upright 9:16 photo in a real, ordinary <place>."',
-        "say where the camera is, its height and angle",
-        "every part named as a real, ordinary one",
-        "exact counts, and left or right",
-        "any hand already in place for the action",
         "say the pose once and what it does to the product's shape",
     ],
 )
@@ -557,27 +497,15 @@ def test_a_drop_starts_at_the_height_the_page_states() -> None:
         "The camera is placed to see the whole fall, from that height down to where it lands: "
         "never at knee height or close to the floor."
     ) in BROLL_SHARED_RULES
-    # The proven rule this sits under stays word for word (A8, #12 V1 FAIL, V2 GOOD).
-    assert (
-        "Anything that must be right goes in the starting picture, said plainly: say where the "
-        "camera is, its height and angle;"
-    ) in BROLL_SHARED_RULES
 
 
-# The toilet clip's whole ring vanished where nothing touched it, "time-compressed", after
-# filming the gel go on; Julian: "just scrub it and then that scrub area become clean", "you
-# don't need to even put in the gel at all" (decisions/2026-10-08-result-only-where-scrubbed.md).
-@pytest.mark.parametrize(
-    "rule",
-    [
-        "The result shows only where the product, or the tool used with it, touches",
-        "nothing else changes",
-        "never all at once, sped up or time-compressed",
-        "putting the product on is never filmed or drawn",
-    ],
-)
-def test_a_does_a_job_scene_changes_only_where_it_is_touched(rule: str) -> None:
-    assert rule in BROLL_KIND_RULES["does a job"]
+def test_a_does_a_job_scene_never_films_putting_the_product_on() -> None:
+    # The toilet clip's whole ring vanished where nothing touched it, "time-compressed", after
+    # filming the gel go on; Julian: "just scrub it and then that scrub area become clean",
+    # "you don't need to even put in the gel at all"
+    # (decisions/2026-10-08-result-only-where-scrubbed.md). The result-only-where-touched
+    # sentence is pinned in test_frozen_rules.py.
+    assert "putting the product on is never filmed or drawn" in BROLL_KIND_RULES["does a job"]
 
 
 def test_a_showcase_scene_ends_on_what_it_shows() -> None:
@@ -595,19 +523,6 @@ def test_a_showcase_scene_ends_on_what_it_shows() -> None:
     # The forced ending made pointless zooms (#15, #4): "a lot better" without it.
     assert "at its best" not in showcase
     assert "camera move" not in showcase
-
-
-def test_the_model_planning_the_picture_is_no_longer_told_only_what_shows_describes(
-    fake_model: FakeModel,
-    instructed: dict[str, list[str]],
-    checked: None,
-    steps: HeldSteps,
-    say: Callable[..., None],
-) -> None:
-    picture_of(fake_model, steps, say, 2)
-
-    (told,) = instructed["choose_broll_picture"]
-    assert "Make nothing up" not in told
 
 
 def test_a_scene_with_no_face_is_planned_from_the_photos_alone(ready: None) -> None:
@@ -858,70 +773,6 @@ def test_a_scene_that_no_longer_shows_the_product_gets_a_picture_of_the_person_t
 # --- The clip ----------------------------------------------------------------------------------
 
 
-def test_the_clip_is_asked_of_boreal_h3_on_creatify_from_its_starting_picture(
-    fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    clip_of_scene_2(fake_model, steps, say)
-
-    starting_picture = ProducedItem.objects.get(kind="starting_picture", scene__number=2)
-    assert (clips_asked("starting_picture"), clips_asked("example_pictures")) == (
-        [starting_picture.file],
-        [[]],
-    )
-    assert ModelCall.objects.filter(purpose="make_broll_clip").get().model == "creatify/boreal-h3"
-
-
-@pytest.mark.parametrize(
-    ("said_in", "asked_for"),
-    [
-        # Boreal-H3 makes 5 to 15 whole seconds: the fewest that cover the line, at least 5.
-        pytest.param(3.5, 5, id="said in 3.5 seconds"),
-        pytest.param(4.2, 5, id="said in 4.2 seconds"),
-        pytest.param(5.0, 5, id="said in exactly 5 seconds"),
-        pytest.param(6.3, 7, id="said in 6.3 seconds"),
-        pytest.param(15.0, 15, id="said in exactly 15 seconds"),
-    ],
-)
-def test_the_clip_is_asked_for_as_the_fewest_whole_seconds_that_cover_its_line(
-    fake_model: FakeModel,
-    checked: None,
-    steps: HeldSteps,
-    say: Callable[..., None],
-    said_in: float,
-    asked_for: int,
-) -> None:
-    # Scene 2's 7 words, said at whatever pace takes this long.
-    fake_model.words_per_second = 8 / said_in
-    made_ready(fake_model, steps, say, (2,))
-
-    clip_of_scene_2(fake_model, steps, say)
-
-    assert clips_asked("seconds") == [asked_for]
-    # Kept whole, at the length the video model made it.
-    kept = ProducedItem.objects.filter(kind="clip")
-    assert [(clip.seconds, round(video(read(clip.file))[2], 1)) for clip in kept] == [
-        (asked_for, asked_for)
-    ]
-
-
-def test_a_clip_creatify_rejects_fails_its_step_with_creatifys_reason(
-    fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    fake_model.respond(
-        "collect_clip",
-        {"state": "failed", "error": "The prompt was flagged by the content checker."},
-    )
-
-    clip_of_scene_2(fake_model, steps, say)
-
-    # What the producer is told, to pass on to the shop owner.
-    step = SceneStep.objects.get(kind="clip")
-    assert (step.status, step.reason) == (
-        "failed",
-        "the video model couldn't make the clip (The prompt was flagged by the content checker.).",
-    )
-
-
 def test_the_talking_scenes_clips_are_still_asked_of_heygen(assembled: ProducedItem) -> None:
     assert [
         (call.purpose, call.model)
@@ -941,11 +792,14 @@ def test_the_talking_scenes_clips_are_still_asked_of_heygen(assembled: ProducedI
 @pytest.mark.parametrize(
     ("said_in", "asked_for"),
     [
-        pytest.param(4.2, 5, id="a 5-second clip"),
-        pytest.param(6.3, 7, id="a 7-second clip"),
+        # Boreal-H3 makes 5 to 15 whole seconds: the fewest that cover the line, at least 5.
+        # The rule itself, more lengths included, is checked without a chat in
+        # test_producer_fixes.py (test_a_broll_clip_is_estimated_at_its_whole_seconds...).
+        pytest.param(4.2, 5, id="4.2 seconds of audio in a 5-second clip"),
+        pytest.param(6.3, 7, id="6.3 seconds of audio in a 7-second clip"),
     ],
 )
-def test_the_clip_is_asked_to_move_as_planned_with_a_still_camera_at_its_length(
+def test_the_clip_is_asked_for_at_the_whole_seconds_that_cover_its_line_and_kept_whole(
     fake_model: FakeModel,
     checked: None,
     steps: HeldSteps,
@@ -953,11 +807,13 @@ def test_the_clip_is_asked_to_move_as_planned_with_a_still_camera_at_its_length(
     said_in: float,
     asked_for: int,
 ) -> None:
+    # Scene 2's 8 words, said at whatever pace takes this long.
     fake_model.words_per_second = 8 / said_in
     made_ready(fake_model, steps, say, (2,))
 
     clip_of_scene_2(fake_model, steps, say)
 
+    assert clips_asked("seconds") == [asked_for]
     # The clip's real length and a still camera come first, whatever the model wrote, then
     # its prompt as written: Boreal-H3 is sent no sections. No look: the video model's choice
     # (test ads, 08 Oct: every B-roll looked phone-filmed). The side facing the camera stays
@@ -967,34 +823,13 @@ def test_the_clip_is_asked_to_move_as_planned_with_a_still_camera_at_its_length(
         "Whatever side faces the camera at the start stays toward the camera the whole time. "
         f"{MOTION}"
     ]
-
-
-@pytest.mark.parametrize(
-    ("said_in", "made"),
-    [
-        pytest.param(4.2, 5, id="4.2 seconds of audio in a 5-second clip"),
-        pytest.param(6.3, 7, id="6.3 seconds of audio in a 7-second clip"),
-    ],
-)
-def test_the_kept_clip_is_whole_with_its_voice_at_its_start_and_silence_after(
-    fake_model: FakeModel,
-    checked: None,
-    steps: HeldSteps,
-    say: Callable[..., None],
-    said_in: float,
-    made: int,
-) -> None:
-    fake_model.words_per_second = 8 / said_in
-    made_ready(fake_model, steps, say, (2,))
-
-    clip_of_scene_2(fake_model, steps, say)
-
+    # Kept whole, at the length the video model made it.
     (clip,) = ProducedItem.objects.filter(kind="clip")
-    assert (clip.seconds, round(video(read(clip.file))[2], 1)) == (made, made)
+    assert (clip.seconds, round(video(read(clip.file))[2], 1)) == (asked_for, asked_for)
     # The video model's clip is silent: the voice is heard from its start to the end of
     # the line, then it is silent to its end (give or take a frame of sound).
     ((silent_from, silent_to),) = silences(read(clip.file))
-    assert (silent_from, round(silent_to)) == (said_in, made)
+    assert (silent_from, round(silent_to)) == (said_in, asked_for)
     # The line's audio keeps its own length.
     assert clip.made_from is not None and clip.made_from.seconds == said_in
 

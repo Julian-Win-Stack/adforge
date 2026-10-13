@@ -1,11 +1,9 @@
 """A B-roll line whose real audio is too long for any clip, driven through the chat: the
 audio step shortens it, fact checks it again and has the producer make its audio again,
 before any clip is paid for, without telling the shop owner. A line still too long after 3
-shortenings, or whose shorter line fails the fact check, becomes a talking scene in the last
-scene, and the chat says why; any other scene stays B-roll, as every scene between the first
-and the last is, and the producer is told to ask the shop owner for a shorter line. The
-producer's model and the scene models are faked at the gateway, but the clips are real tiny
-videos and ffmpeg runs for real."""
+shortenings, or whose shorter line fails the fact check, becomes a talking scene, whichever
+scene it is (round 2 fixes), and the chat says why. The producer's model and the scene models
+are faked at the gateway, but the clips are real tiny videos and ffmpeg runs for real."""
 
 from collections.abc import Callable
 
@@ -48,10 +46,6 @@ STILL_LONG = [
 SHORTENED = "Scene 2's line was shortened to fit its clip. Make its audio again."
 NOW_TALKING = (
     "Scene 2 is now a talking scene. Make its starting picture again, then its audio and its clip."
-)
-STILL_TOO_LONG = (
-    "Its line couldn't be shortened to fit, and scene 2 shows the product, so it isn't said "
-    "to camera. Ask the shop owner for a shorter line of their own."
 )
 NOTICE = (
     "Scene 2 couldn't be made as a product shot because its line is too long for a clip, so "
@@ -105,9 +99,21 @@ def too_long(fake_model: FakeModel, checked: None) -> None:  # noqa: F811
 
 @pytest.fixture
 def last(too_long: None) -> None:
-    """The ad cut to its first two scenes, so B-roll scene 2 is its last: the only B-roll
-    scene that may be said to camera."""
+    """The ad cut to its first two scenes, so B-roll scene 2 is its last."""
     Scene.objects.filter(number=3).delete()
+
+
+def shortened_three_times_over(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+) -> str:
+    """Scene 2's audio made four times, its line shortened three times and still too long.
+    Gives what the producer was told the last time."""
+    for line in STILL_LONG:
+        fake_model.respond("shorten_line", {"line": line})
+        fake_model.respond("fact_check", facts_ok(2))
+    for _ in STILL_LONG:
+        assert audio_of_scene_2(fake_model, steps, say).endswith(SHORTENED)
+    return audio_of_scene_2(fake_model, steps, say)
 
 
 # --- Shortened, then made again ----------------------------------------------------------------
@@ -240,47 +246,16 @@ def test_a_line_shortened_before_the_worker_stopped_isnt_paid_for_again(
 # --- Becoming a talking scene ------------------------------------------------------------------
 
 
-def test_a_middle_scene_still_too_long_after_three_shortenings_becomes_a_talking_scene(
-    fake_model: FakeModel,
-    too_long: None,
-    steps: HeldSteps,
-    say: Callable[..., None],
+@pytest.mark.parametrize("scenes", [3, 2], ids=["a middle scene", "the last scene"])
+def test_a_line_still_too_long_after_three_shortenings_becomes_a_talking_scene(
+    fake_model: FakeModel, too_long: None, steps: HeldSteps, say: Callable[..., None], scenes: int
 ) -> None:
     # Round 2 fixes: the talking fallback is allowed for any middle scene, not only the last.
-    for line in STILL_LONG:
-        fake_model.respond("shorten_line", {"line": line})
-        fake_model.respond("fact_check", facts_ok(2))
-    for _ in STILL_LONG:
-        audio_of_scene_2(fake_model, steps, say)
+    Scene.objects.filter(number__gt=scenes).delete()
 
-    told = audio_of_scene_2(fake_model, steps, say)
+    told = shortened_three_times_over(fake_model, steps, say)
 
     assert told == (
-        "Background step finished: scene 2's line's audio takes 15.5 seconds to say, too long "
-        f"for any clip. It cost $0.001175. {NOW_TALKING}"
-    )
-    scene = Scene.objects.get(number=2)
-    assert (scene.line, scene.shows) == (STILL_LONG[-1], "")
-
-
-@pytest.fixture
-def shortened_three_times(
-    fake_model: FakeModel, last: None, steps: HeldSteps, say: Callable[..., None]
-) -> str:
-    """Scene 2's audio made four times, its line shortened three times and still too long.
-    Gives what the producer was told the last time."""
-    for line in STILL_LONG:
-        fake_model.respond("shorten_line", {"line": line})
-        fake_model.respond("fact_check", facts_ok(2))
-    for _ in STILL_LONG:
-        assert audio_of_scene_2(fake_model, steps, say).endswith(SHORTENED)
-    return audio_of_scene_2(fake_model, steps, say)
-
-
-def test_a_line_still_too_long_after_three_shortenings_becomes_a_talking_scene(
-    shortened_three_times: str,
-) -> None:
-    assert shortened_three_times == (
         "Background step finished: scene 2's line's audio takes 15.5 seconds to say, too long "
         f"for any clip. It cost $0.001175. {NOW_TALKING}"
     )
@@ -288,6 +263,15 @@ def test_a_line_still_too_long_after_three_shortenings_becomes_a_talking_scene(
     scene = Scene.objects.get(number=2)
     # Its last line, which passed the fact check, said to camera.
     assert (scene.line, scene.shows) == (STILL_LONG[-1], "")
+
+
+@pytest.fixture
+def shortened_three_times(
+    fake_model: FakeModel, last: None, steps: HeldSteps, say: Callable[..., None]
+) -> str:
+    """Scene 2, the last scene, with its audio made four times, its line shortened three times
+    and still too long. Gives what the producer was told the last time."""
+    return shortened_three_times_over(fake_model, steps, say)
 
 
 def test_a_scene_that_becomes_a_talking_scene_shows_no_second_state(
