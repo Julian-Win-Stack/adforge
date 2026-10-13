@@ -444,6 +444,10 @@ def test_a_failed_clip_check_also_says_what_the_clip_judge_still_sees(
     assert messages_of(api, session_id)[-2]["text"].endswith(
         f"or tell me what to change. The clip's own check also still sees: {floats}"
     )
+    assert told(2).endswith(
+        "restate a new fix. The chat also told them what the clip's own check still sees, so "
+        "don't say it again."
+    )
 
 
 def test_a_failed_clip_check_never_passes_on_a_problem_the_clip_judge_outvoted(

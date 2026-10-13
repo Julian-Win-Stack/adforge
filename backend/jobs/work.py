@@ -1878,7 +1878,7 @@ def _check_the_clip_fix(
             *_clip_frames(new, "The new clip's frames, in order:"),
         ]
     except Exception:
-        logger.warning("The clip fix %r went unchecked: no frames to show", fix, exc_info=True)
+        logger.warning("No frames to check the clip fix %r with", fix, exc_info=True)
         return fix_check.Settled("unchecked", "", [])
 
     def ask(number: int) -> dict[str, Any] | None:
@@ -1969,7 +1969,7 @@ def say_the_fix_check_failed(check: FixCheck) -> None:
         check.fix.job,
         f"Scene {number}'s new {'starting picture' if picture else 'clip'} may not have your "
         f"change: {check.reason} Here are the old {check.what} and the new one. Say go ahead "
-        f"to {then}, or tell me what to change.{_judge_still_sees(check.new)}",
+        f"to {then}, or tell me what to change.{judge_still_sees(check.new)}",
         Message.Level.PROBLEM,
         # Without their scene's number, so the scene's card keeps showing its newest.
         carrying=[
@@ -1981,7 +1981,7 @@ def say_the_fix_check_failed(check: FixCheck) -> None:
     check.save(update_fields=["notice"])
 
 
-def _judge_still_sees(clip: ProducedItem) -> str:
+def judge_still_sees(clip: ProducedItem) -> str:
     """For a clip the clip judge failed even after its redos, what it still found, as a
     sentence to follow another, so the shop owner hears both in one notice. Nothing
     otherwise."""

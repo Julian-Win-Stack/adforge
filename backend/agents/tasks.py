@@ -21,6 +21,7 @@ from jobs.models import FixCheck, ProducedItem, Scene, SceneStep
 from jobs.picture_check import PictureKeptFailing
 from jobs.work import (
     check_fix,
+    judge_still_sees,
     make_clip,
     make_line_audio,
     make_starting_picture,
@@ -430,6 +431,12 @@ def _fix_checked(check: FixCheck | None) -> str:
         f"{check.reason} The chat shows the shop owner the old {check.what} and the new one, "
         f"and why. Don't {dont} or say it's fixed: wait for their answer. If they say go "
         f"ahead, {go_ahead}; if they say what to change, restate a new fix."
+        # One notice says both (decision thread, call 4): the producer doesn't say it again.
+        + (
+            " The chat also told them what the clip's own check still sees, so don't say it again."
+            if judge_still_sees(check.new)
+            else ""
+        )
     )
 
 
