@@ -1263,9 +1263,11 @@ def _fixable_scene(job: Job, asked: FixAsked) -> Scene:
     # its step is still running, or one that then failed.
     if _latest_clip(scene) is None:
         if scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING).exists():
+            # Decider call 14, 2026-10-13.
             raise Refused(
                 f"scene {scene.number}'s clip is still being made, so there is nothing to fix "
-                "yet. You'll be told when it's ready."
+                "yet. Restate its fix when you're told it's ready, and restate the other "
+                "scenes' fixes now without it."
             )
         raise Refused(
             f"scene {scene.number}'s clip couldn't be finished, so there is nothing to fix. "
