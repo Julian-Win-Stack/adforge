@@ -2,15 +2,15 @@
 ASKS times, each failing on FAILS_TO_FAIL of its answers. SIDES looks at 5 stills for objects
 that can't exist and sides that aren't real; MOTION looks at FRAMES_PER_SECOND frames for
 movement and change no real camera could film. Ported from the eval harness the judge was
-tested in (/mnt/project-files/evals/clip-judge-v2: prompts.py arms sides5 and motion5plain,
-with change 7's back-to-normal field; judge.py; score.py). The plan: Claude Doc "Clip judge
-discussion", "Plan: what runs when" and changes 7 and 9 (Julian, 2026-10-13).
+tested in (/mnt/project-files/evals/clip-judge-v2: prompts.py proof arms PS and PM, the final
+wording that passed stage 4 on gpt-6.1-sol, 2026-10-13; judge.py; score.py). The plan: Claude
+Doc "Clip judge discussion", "Plan: what runs when" and changes 7 and 9.
 
 The judge's words are Julian's to decide (project rule, 2026-10-12): SIDES_CHECK,
-MOTION_CHECK and the answer forms below are kept word for word as tested, but for the problem:
-up to 3 sentences, not one, for the auto-redo's prompt writer (change 9; the words decided
-2026-10-13 05:31 by the stand-in for Julian, decisions/julian-away-judgment-calls.md call 2).
-The final wording swaps in here at stage 4 of the plan. Which model judges is the catalog's
+MOTION_CHECK and the answer forms below are kept word for word as tested in the proof: SIDES
+without its pass list, MOTION without the changed-thing step, both still failing only when
+sure, and the problem in up to 3 sentences for the auto-redo's prompt writer (change 9;
+decisions/julian-away-judgment-calls.md call 2). Which model judges is the catalog's
 (check_clip_sides, check_clip_motion)."""
 
 import contextvars
@@ -80,7 +80,7 @@ PAGE_FRAME = (
     "what's inside and which parts it has. Ignore what it claims the product does."
 )
 
-# ---------------------------------------------------------------- SIDES (arm sides5, as tested)
+# ---------------------------------------------------------------- SIDES (proof arm PS, as tested)
 
 SIDES_CHECK = """\
 You check frames cut from an AI-made video clip before it is used in a product ad. Video models \
@@ -106,10 +106,7 @@ on a side that kept facing the camera?
 Decide "fail" only when you are sure something is physically impossible: a part on a side where \
 the real object can't have it, two sides of one object seen at once, a part fused into another, \
 a body part that can't be, two opposite sides that look the same where a real one's differ. \
-Decide "pass" for everything else, including an object that turns and shows its other side drawn \
-as a real one would look, small differences in shape, size or proportion, odd but possible \
-poses, blurry or unreadable print, dirt or mess, lighting, and anything merely unusual or \
-unlikely.
+Decide "pass" for everything else.
 
 You may also be shown one shop photo of the product, and facts about it from the shop. They tell \
 you what the product is and how it is built: which parts it has and where they sit. Use them \
@@ -153,7 +150,7 @@ class SidesVerdict(BaseModel):
     back_to_normal_at: str | None = Field(description=BACK_TO_NORMAL)
 
 
-# ---------------------------------------------------------------- MOTION (arm motion5plain)
+# ---------------------------------------------------------------- MOTION (proof arm PM, as tested)
 
 MOTION_CHECK = """\
 You check a short video clip for a product ad before it is shown to the shop owner. You decide \
@@ -164,24 +161,17 @@ You get frames from the clip, in order, each labelled with its time in seconds, 
 follow what moves between them. You also get the scene's order: one sentence saying what the \
 clip should show.
 
-Work in three steps.
+Work in two steps.
 1. Look before you judge. Fill in the look form from the frames: what is in the clip; how \
 everything is at the first frame; then every movement and change of the product, of the hands \
 touching it, and of the one thing the action changes (a surface, a liquid, a level, hair, a \
 shape), step by step, with the time of the frame where you see it; and how everything is at the \
 last frame. Describe what is on the frames, not what the product is for or what usually happens. \
-Leave out background, clothing, jewellery, cords and the camera.
-2. The changed thing. Name the thing the action changes. Write its state at the first frame and \
-at the last frame, the time it changed and what was touching it then, and whether it ever showed \
-both states at once, changed where nothing touched it, or changed all at once between two \
-frames.
-3. Then answer three questions, each "pass" or "fail".
-- real_motion: does every hand, object and liquid move the way a real one would? Use the facts \
-about the product: a thick gel must move like a thick gel, a hard object must stay rigid. Fail, \
-for example, when a liquid flows from the wrong place or with the wrong thickness, comes out of \
-a closed container, or flows against gravity; when an object moves with nothing moving it; when \
-fingers pass through an object; when an object bends, melts or fuses in a way it can't; when a \
-hand moves in a way no real hand can.
+Write only about the product, the hands that touch it, and the things the product is used on or \
+changes (a surface, a liquid, a level, hair, a shape). Nothing else in the frame is your concern.
+2. Then answer three questions, each "pass" or "fail".
+- real_motion: does every object and liquid move the way a real one would? Use the facts about \
+the product: a thick gel must move like a thick gel, a hard object must stay rigid.
 - sudden_change: does the changed thing change only while something acts on it, and only where \
 it acts, step by step? Fail when it changes before the action reaches it, where nothing touched \
 it, or all at once between two frames; or when the product itself switches shape or state \
@@ -219,14 +209,6 @@ class ClipLook(BaseModel):
     end: str = Field(description="How everything is at the last frame.")
 
 
-class ChangedThing(BaseModel):
-    name: str
-    state_at_start: str
-    state_at_end: str
-    when_it_changed_and_what_touched_it: str
-    both_states_at_once_or_untouched_or_all_at_once: str
-
-
 class Check(BaseModel):
     verdict: Literal["pass", "fail"]
     problem: str | None = Field(
@@ -238,7 +220,6 @@ class Check(BaseModel):
 
 class MotionVerdict(BaseModel):
     look: ClipLook
-    changed_thing: ChangedThing
     ordered_action: str = Field(
         description="The main action the order asks for, in your words, without camera or "
         "framing words."
