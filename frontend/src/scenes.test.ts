@@ -291,3 +291,27 @@ test("what the owner typed wins over the suggestion it was typed over, not a new
     ]),
   );
 });
+
+test("a scene whose new picture failed its fix check waits for the owner, not being remade", () => {
+  const before = [
+    message([picture(1, "/p1-a.png")]),
+    message([clip(1, "/c1-a.mp4")]),
+    message([picture(2, "/p2-a.png")]),
+    message([clip(2, "/c2-a.mp4")]),
+    // Scene 2's new picture lands; scene 1's fix is still being made.
+    message([], { scene: 1, kind: "clip", state: "started" }),
+    message([picture(2, "/p2-b.png")]),
+  ];
+  expect(sceneCards(before)[1].beingRemade).toBe(true);
+
+  // Its fix check failed: the owner is asked, so it isn't on its way.
+  const [, waiting] = sceneCards([...before, suggesting(2, "The handle still faces away.")]);
+  expect(waiting).toMatchObject({ beingRemade: false, busy: false, clipOutOfDate: true });
+
+  const [, answered] = sceneCards([
+    ...before,
+    suggesting(2, "The handle still faces away."),
+    owner("Go ahead"),
+  ]);
+  expect(answered.beingRemade).toBe(true);
+});

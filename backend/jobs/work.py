@@ -1827,7 +1827,7 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
     beside the scene's version before the step, and keep the verdict. A new line isn't
     checked, nor a picture fix's clip: the complaint was about the picture. Nothing is
     checked when quality checks are switched off. A clip is checked once, on the clip the
-    clip judge's redos kept (#155), which is the step's newest.
+    clip judge's remakes kept (#155), which is the step's newest.
 
     Run again, as after a worker stopped, it gives the verdict kept, or asks the judge
     again with each ask answered from its record, so nothing is paid for twice."""
@@ -1842,7 +1842,7 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
     if kept is not None:
         return kept
     # What the shop owner saw last: the scene's newest version before the step started, so a
-    # clip the judge's redos made, or brought back, in this step is never the old one.
+    # clip the judge's remakes made, or brought back, in this step is never the old one.
     old = (
         made.scene.produced.filter(kind=made.kind, created_at__lt=step.started_at)  # type: ignore[union-attr]
         .order_by("-version")
@@ -1885,25 +1885,14 @@ def _check_the_clip_fix(
         return fix_check.Settled("unchecked", "", [])
 
     def ask(number: int) -> dict[str, Any] | None:
-        try:
-            verdict = call_model(
-                job=job,
-                purpose="check_fix_clip",
-                instructions=fix_check.FIX_CHECK_CLIP,
-                handoff=fix_check.FixClipCheckHandoff(fix=fix, ask=number),
-                output=fix_check.FixClipVerdict,
-                images=images,
-                pay_once=True,
-            )
-        except (
-            UnusableReply,
-            OutsideServiceDown,
-            BlockedBySafetyFilter,
-            AnswerTookTooLong,
-        ) as error:
-            logger.warning("Ask %s about the clip fix %r went unchecked: %s", number, fix, error)
-            return None
-        return verdict.model_dump()
+        return _fix_answer(
+            job,
+            purpose="check_fix_clip",
+            instructions=fix_check.FIX_CHECK_CLIP,
+            handoff=fix_check.FixClipCheckHandoff(fix=fix, ask=number),
+            output=fix_check.FixClipVerdict,
+            images=images,
+        )
 
     with ThreadPoolExecutor(max_workers=ASKS) as pool:
         asked = [
@@ -1914,23 +1903,20 @@ def _check_the_clip_fix(
 
 
 def _clip_frames(clip: ProducedItem, heading: str) -> list[Image]:
-    """The clip's frames, 5 a second, as the clip judge was shown them, or cut now for a clip
-    it never judged, thinned evenly to fit beside another clip's in one ask, each picture
-    labelled with its frames' times."""
-    pictures = (
-        (clip.ruling or {}).get("pictures")
-        or clip_judge.cut_pictures(
+    """The clip's frames, 5 a second, as the clip judge was shown them, thinned evenly to fit
+    beside another clip's in one ask, each picture labelled with its frames' times. A clip
+    the judge never cut is cut now, and its pictures kept on its ruling, so a check asked
+    again after the worker stopped shows the same pictures and pays nothing twice."""
+    pictures = (clip.ruling or {}).get("pictures")
+    if not pictures:
+        pictures = clip_judge.cut_pictures(
             clip.file, beside=clip_judge.MOST_PICTURES - fix_check.MOST_PICTURES_PER_CLIP
         )
-    )["frames"]
+        clip.ruling = {**(clip.ruling or {}), "pictures": pictures}
+        clip.save(update_fields=["ruling"])
     shown = []
-    for n, picture in enumerate(fix_check.thinned(pictures)):
-        times = picture["times"]
-        label = (
-            f"Frame at {times[0]:g} s"
-            if len(times) == 1
-            else f"Frames at {', '.join(f'{t:g} s' for t in times)}, left to right"
-        )
+    for n, picture in enumerate(fix_check.thinned(pictures["frames"])):
+        label = clip_judge.frame_label(picture["times"])
         shown.append(Image(label=f"{heading}\n{label}" if n == 0 else label, key=picture["key"]))
     return shown
 
@@ -1939,21 +1925,52 @@ def _ask_about_the_fix(job: Job, fix: str, ask: int, old: str, new: str) -> dict
     """Ask the judge once whether the new picture at `new` has the change `fix` asks for,
     shown the old picture at `old` first. Gives its answer, or None when none could be had:
     the picture is paid for, and failing it on no answer would hold up its clip."""
+    return _fix_answer(
+        job,
+        purpose="check_fix",
+        instructions=fix_check.FIX_CHECK,
+        handoff=fix_check.FixCheckHandoff(fix=fix, ask=ask),
+        output=fix_check.FixVerdict,
+        images=[
+            Image(label="The old picture:", key=old),
+            Image(label="The new picture:", key=new),
+        ],
+    )
+
+
+def _fix_answer(
+    job: Job,
+    *,
+    purpose: str,
+    instructions: str,
+    handoff: fix_check.FixCheckHandoff | fix_check.FixClipCheckHandoff,
+    output: type[fix_check.FixVerdict],
+    images: list[Image],
+) -> dict[str, Any] | None:
+    """One answer of the judge checking a fix, or None when none could be had, whatever went
+    wrong, as the clip judge's asks: what it checks is already paid for, and failing it on
+    no answer would fail that too."""
     try:
         verdict = call_model(
             job=job,
-            purpose="check_fix",
-            instructions=fix_check.FIX_CHECK,
-            handoff=fix_check.FixCheckHandoff(fix=fix, ask=ask),
-            output=fix_check.FixVerdict,
-            images=[
-                Image(label="The old picture:", key=old),
-                Image(label="The new picture:", key=new),
-            ],
+            purpose=purpose,
+            instructions=instructions,
+            handoff=handoff,
+            output=output,
+            images=images,
             pay_once=True,
         )
-    except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
-        logger.warning("Ask %s about the fix %r went unchecked: %s", ask, fix, error)
+    except Exception as error:
+        logger.warning(
+            "Ask %s about the fix %r went unchecked: %s",
+            handoff.ask,
+            handoff.fix,
+            error,
+            # Expected when a model or the service misbehaves; anything else is a bug to see.
+            exc_info=not isinstance(
+                error, (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter, AnswerTookTooLong)
+            ),
+        )
         return None
     return verdict.model_dump()
 
@@ -1985,7 +2002,7 @@ def say_the_fix_check_failed(check: FixCheck) -> None:
 
 
 def judge_still_sees(clip: ProducedItem) -> str:
-    """For a clip the clip judge failed even after its redos, what it still found, as a
+    """For a clip the clip judge failed even after its remakes, what it still found, as a
     sentence to follow another, so the shop owner hears both in one notice. Nothing
     otherwise."""
     ruling = clip.ruling or {}
