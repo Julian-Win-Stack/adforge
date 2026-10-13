@@ -9,6 +9,7 @@ prove the tools, the yes guard and the messages, not the model's judgement. Ever
 service is faked at the gateway; ffmpeg runs for real on tiny clips."""
 
 from collections.abc import Callable
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -17,10 +18,10 @@ from rest_framework.test import APIClient
 
 from adforge.retry import OutsideServiceDown
 from agents import tasks
-from agents.money import dollars
 from agents.producer import INSTRUCTIONS
-from chat.models import Attachment, Message
+from chat.models import Message
 from gateway.fake import FakeModel, turn
+from gateway.models import ModelCall
 from jobs.models import Fix, Job, ProducedItem, Scene, SceneStep
 
 from .conftest import (
@@ -34,6 +35,7 @@ from .conftest import (
     results_of,
 )
 from .test_end_to_end import TALKING, ad_made_through_the_chat  # noqa: F401 (a fixture)
+from .test_producer_auto_fix import shown_clips
 from .test_producer_restarts import WorkerStopped, the_worker_stops
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -146,15 +148,6 @@ def half_turn() -> dict[str, Any]:
         **CLIP_MOTION_OK,
         "real_motion": {"verdict": "fail", "problem": HALF_TURN, "back_to_normal_at": "never"},
     }
-
-
-def clips_shown() -> list[str]:
-    """The file of each clip and ad shown in the chat, oldest first."""
-    return list(
-        Attachment.objects.filter(kind="video", message__role=Message.Role.AGENT)
-        .order_by("id")
-        .values_list("file", flat=True)
-    )
 
 
 @pytest.fixture
@@ -727,8 +720,8 @@ def test_a_fixs_redo_the_judge_fails_is_made_again_by_code_and_the_remake_makes_
     assert [ad.version for ad in ads()] == [1, 2]
     assert [cut["clip"] for cut in ads()[1].cuts][1] == remake.pk
     assert Message.objects.filter(attachments__file=ads()[1].file).count() == 1
-    assert clips_shown().count(remake.file) == 1
-    assert redo.file not in clips_shown()
+    assert shown_clips().count(remake.file) == 1
+    assert redo.file not in shown_clips()
     # The producer is told what the judge did, the fix's check passed, and the cost of it
     # all: the remake is the step's, so the fix's cost is the step's.
     assert (
@@ -740,10 +733,13 @@ def test_a_fixs_redo_the_judge_fails_is_made_again_by_code_and_the_remake_makes_
         f"the ad was assembled again with it (version 2, {ads()[1].seconds:g} seconds) and shown "
         "to the shop owner in the chat. Ask them to tell you if it's fixed."
     )
-    cost = step.tool_call.cost_usd()
-    assert cost == fix.cost_usd() > 0
-    assert f" It cost {dollars(cost)}." in told(2)
-    assert f"Scene 2's fix has cost {dollars(cost)} so far." in told(2)
+    # Two prompts written at $0.006, two 5-second clips at Boreal's $0.0792 a second, the
+    # judge's 6 asks on each at $0.003 and the fix check's 3: all the step's, so the fix's.
+    assert " It cost $0.849." in told(2)
+    assert "Scene 2's fix has cost $0.849 so far." in told(2)
+    assert fix.cost_usd() == Decimal("0.849")
+    charged = ModelCall.objects.filter(created_at__gte=step.started_at).exclude(purpose="produce")
+    assert {call.tool_call_id for call in charged} == {step.tool_call_id}
     assert paid_for()[len(shown) :] == [
         "rewrite_clip_prompt",
         "make_broll_clip",

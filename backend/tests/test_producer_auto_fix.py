@@ -9,7 +9,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, pre_save
 
 from adforge.retry import OutsideServiceDown
 from agents import tasks
@@ -669,7 +669,6 @@ def test_a_remake_with_the_fewest_failed_answers_is_brought_back_as_the_scenes_c
     checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The first clip fails 3 answers, remake 1 fails 2 and remake 2 fails 3: remake 1 is kept.
     fake_model.respond(
@@ -683,17 +682,16 @@ def test_a_remake_with_the_fewest_failed_answers_is_brought_back_as_the_scenes_c
     made_ready(fake_model, steps, say, (2,))
     calling(fake_model, say, ("make_clip", {"scene": 2}))
 
-    # The worker stops once remake 1 is brought back, before the step finishes.
-    def stopped(*_: object) -> str:
-        raise WorkerStopped
-
-    monkeypatch.setattr("agents.tasks.what_the_judge_did", stopped)
-    with pytest.raises(WorkerStopped):
+    # The worker stops once remake 1 is brought back, just before the step is finished.
+    finishing = lambda step: step.status == SceneStep.Status.FINISHED  # noqa: E731
+    with (
+        the_worker_stops(pre_save, SceneStep, when=finishing),
+        pytest.raises(StoppedBySignal),
+    ):
         steps.run_next()
     assert clips() == [1, 2, 3, 4]
 
     # The step is handed out again, as after a restart.
-    monkeypatch.setattr("agents.tasks.what_the_judge_did", work.what_the_judge_did)
     fake_model.respond("produce", turn(says="Done."))
     tasks.run_scene_step(SceneStep.objects.get(kind="clip", scene__number=2).pk)
 

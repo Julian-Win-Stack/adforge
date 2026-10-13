@@ -10,6 +10,7 @@ The mug's first ad is made through the chat, then fixed, as in test_fix_loop.py;
 producer's turns are scripted, and every outside service is faked at the gateway."""
 
 import dataclasses
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -17,7 +18,6 @@ from django.db.models.signals import post_save, pre_save
 from rest_framework.test import APIClient
 
 from agents import tasks
-from agents.money import dollars
 from gateway import catalog
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
@@ -310,8 +310,8 @@ def test_a_not_fixed_answer_with_no_reason_is_no_answer_but_is_still_paid_for(
         (2, "succeeded"),
         (3, "succeeded"),
     ]
-    # An unusable answer was still billed.
-    assert asked[0].cost_usd is not None and "could not be read" in asked[0].error
+    # An unusable answer was still billed: the fake's 1,000 tokens in and 100 out at sol's.
+    assert asked[0].cost_usd == Decimal("0.003") and "could not be read" in asked[0].error
     assert paid_for()[len(shown) :].count("check_fix") == 3
 
 
@@ -483,7 +483,9 @@ def test_the_clip_checks_cost_is_the_clip_steps(
     assert asked.count() == 3
     for check in asked:
         assert check.tool_call_id == step.tool_call_id
-    assert f"It cost {dollars(step.tool_call.cost_usd())}." in step.result
+    # The prompt written at $0.006, the 5-second clip at Boreal's $0.0792 a second, the
+    # judge's 6 asks and the check's 3 at $0.003 each.
+    assert "It cost $0.429." in step.result
 
 
 def test_a_fixs_new_clip_that_fails_its_check_shows_both_clips_and_no_new_ad(

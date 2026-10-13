@@ -12,7 +12,7 @@ import pytest
 from django.db.models.signals import post_save
 
 from agents.money import dollars
-from gateway.catalog import MODEL_FOR_PURPOSE, speech_cost_usd, transcription_cost_usd
+from gateway.catalog import MODEL_FOR_PURPOSE, transcription_cost_usd
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs.models import Fix, ProducedItem, Scene, SceneStep
@@ -28,7 +28,6 @@ from .test_producer_broll import (
 from .test_producer_fixes import (
     Say,
     ads,
-    broll_clip_usd,
     last_step,
     owner_says,
     restating,
@@ -519,6 +518,24 @@ def test_a_line_fix_is_estimated_from_the_new_line(
     assert results_of("restate_fix")[-1].startswith("Recorded the fix. Scene 3: about $")
 
 
+def test_a_line_fix_at_an_uneven_voice_speed_is_estimated_to_the_millionth_of_a_dollar(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+) -> None:
+    # The voice was measured at 2.2 words a second, so the new line's 5 words take 2.2727...
+    # seconds: HeyGen's $0.05 a second and Scribe's $0.22 an hour times that never end. On
+    # top of the scene's picture at $0.0155 and the line's 23 characters at $0.000575.
+    ProducedItem.objects.filter(kind="voice").update(words_per_second=2.2)
+
+    owner_says(fake_model, say, NOTE_3, restating((3, FIX_3, "line")))
+
+    assert Fix.objects.get().estimate_usd == Decimal("0.129850")
+    assert results_of("restate_fix")[-1].startswith(
+        "Recorded the fix. Scene 3: about $0.12985. About $0.12985 in all. Tell the shop owner"
+    )
+
+
 @pytest.mark.parametrize(
     ("seconds", "cost"),
     [
@@ -526,6 +543,8 @@ def test_a_line_fix_is_estimated_from_the_new_line(
         # An hour's price divided into seconds never ends: the estimate is said to the
         # millionth of a dollar a bill is recorded to, never on and on.
         (4.1, Decimal("0.000251")),
+        # Half a millionth rounds up, as the bill's database column rounds it.
+        (4.23, Decimal("0.000259")),
         (0, Decimal("0")),
     ],
 )
@@ -543,33 +562,18 @@ def test_a_broll_line_fix_is_estimated_with_the_judges_asks_and_up_to_two_remake
     shown: ProducedItem,  # noqa: F811
     say: Say,
 ) -> None:
-    picture = last_step("starting_picture", 2)
-    picture_paid = sum(
-        (
-            call.cost_usd or Decimal(0)
-            for call in picture.tool_call.model_calls.exclude(
-                purpose__in=["plan_before_picture", "make_before_picture"]
-            )
-        ),
-        Decimal(0),
-    )
-    # The new line's 8 words take the fake voice 4 seconds, heard at Scribe's price and made
-    # as a 5-second B-roll clip, judged, with up to 2 remakes (decider call 13).
-    rest = (
-        picture_paid
-        + speech_cost_usd(MODEL_FOR_PURPOSE["speak_line"], len(LINE_2_NEW))
-        + transcription_cost_usd(MODEL_FOR_PURPOSE["transcribe_line"], 4.0)
-    )
-    clip_about, clip_up_to = broll_clip_usd(5, from_note=False)
-    about, up_to = rest + clip_about, rest + clip_up_to
-
+    # The scene's picture cost $0.0215 without the shared before-picture; the new line's 52
+    # characters at Inworld's $25 a million are $0.0013; its 8 words take the fake voice 4
+    # seconds, $0.000244 at Scribe's $0.22 an hour; a 5-second clip at Boreal's $0.0792 a
+    # second with the judge's 6 asks at $0.003 is $0.414, and up to 2 remakes with a prompt
+    # written at $0.07 (decider call 13) bring it up to $1.382.
     owner_says(fake_model, say, NOTE_2, restating((2, FIX_2, "line")))
 
-    assert Fix.objects.get().estimate_usd == about.quantize(Decimal("0.000001"))
+    assert Fix.objects.get().estimate_usd == Decimal("0.437044")
     assert results_of("restate_fix")[-1].startswith(
-        f"Recorded the fix. Scene 2: about {dollars(about)}, up to {dollars(up_to)} if the "
-        f"judge has it made again. About {dollars(about)} in all, up to {dollars(up_to)} if "
-        "the judge has a clip made again. Tell the shop owner"
+        "Recorded the fix. Scene 2: about $0.437044, up to $1.405044 if the judge has it made "
+        "again. About $0.437044 in all, up to $1.405044 if the judge has a clip made again. "
+        "Tell the shop owner"
     )
 
 
