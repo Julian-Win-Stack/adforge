@@ -29,6 +29,9 @@ export type Message = {
   created_at: string;
   attachments: Attachment[];
   step: SceneStep | null;
+  /** A note the message suggests for a scene's card, as when the check of a fix found the
+   * change missing; null for none. */
+  suggested_note: { scene: number; text: string } | null;
 };
 
 /** One session, as the sidebar lists it. The name is blank until the first message names it. */

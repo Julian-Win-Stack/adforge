@@ -311,6 +311,22 @@ def judged(
     }
 
 
+def still_failing(ruling: dict[str, Any]) -> list[str]:
+    """The problems behind a ruling's failed checks, SIDES first, each check's in the order
+    asked: never one from an answer outvoted on its check, or let go."""
+    let_go = {(each["check"], each["ask"]) for each in ruling.get("let_go", [])}
+    answers = ruling.get("answers", {})
+    problems = []
+    for name in ["sides", *MOTION_QUESTIONS]:
+        if ruling.get("checks", {}).get(name) != "fail":
+            continue
+        for ask, answer in enumerate(answers.get("sides" if name == "sides" else "motion", []), 1):
+            said = answer and (answer if name == "sides" else answer[name])
+            if said and said["verdict"] == "fail" and (name, ask) not in let_go:
+                problems.append(said["problem"])
+    return problems
+
+
 # Where a problem starts: the first number of the first time it names, as "at 8.0 s",
 # "from 1.2-1.4 s", "from 1.2 to about 3.4 s" or "3 seconds".
 _STARTS = re.compile(

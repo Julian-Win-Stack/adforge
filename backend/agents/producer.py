@@ -18,7 +18,16 @@ from gateway.models import ModelCall
 from gateway.types import MusicHandoff, UnusableReply
 from jobs import page
 from jobs.checks import LONGEST_BROLL_LINE_SECONDS, LONGEST_LINE_SECONDS, line_seconds
-from jobs.models import BROLL_FIELDS, Fix, Job, ProducedItem, ProductPhoto, Scene, SceneStep
+from jobs.models import (
+    BROLL_FIELDS,
+    Fix,
+    FixCheck,
+    Job,
+    ProducedItem,
+    ProductPhoto,
+    Scene,
+    SceneStep,
+)
 from jobs.notices import post_notice
 from jobs.work import (
     DECLARED_INSTEAD,
@@ -100,6 +109,10 @@ When a fix's clip is ready and every scene is finished, the ad is assembled and 
 to them on its own. Tell them what the fix cost, and ask them to tell you if it's \
 fixed. Never say it is: you can't see pictures or videos. If they say it still isn't \
 right, restate a new fix for that scene the same way, making the same thing again.
+A new starting picture or clip made for a fix is checked for the change. When the check \
+finds it missing, the chat shows them the old one and the new one and why: make nothing \
+more for that scene, and don't assemble the ad, until they answer. If they say go ahead, \
+carry on; if they say what to change, restate a new fix.
 What you can't do, said plainly the same way each time: see pictures or videos; use new \
 product photos once the ad is planned; give the video model a photo, as it only starts from \
 the starting picture; or change what the person does in a scene where they talk, only how \
@@ -810,6 +823,7 @@ class MakeClip(Tool):
         # covered the clip too, so it needs no note of its own.
         if not note and picture_step.fix_id is not None and picture_step.fix == scene.fixes.last():
             fix = picture_step.fix
+            _answered_a_failed_check(call, picture_step)
         picture = picture_step.produced.first()
         made = (
             scene.produced.filter(
@@ -1441,6 +1455,28 @@ def _confirmed_fix(call: ToolCall, scene: Scene, note: str, redo: Fix.Redo) -> F
         fix.confirmed_by = _yes_to(call.session, fix)
         fix.save(update_fields=["confirmed_by"])
     return fix
+
+
+def _answered_a_failed_check(call: ToolCall, picture_step: SceneStep) -> None:
+    """Refuses a clip of a fix's new starting picture whose check found the change missing
+    until the shop owner has answered since they were shown it (#131): its clip is paid for
+    only on their word. Code can't tell their go ahead from a new note, so any answer will
+    do: a new note is restated as a new fix, which this clip's picture isn't made for."""
+    check = FixCheck.objects.filter(step=picture_step, verdict=FixCheck.Verdict.FAILED).first()
+    if check is None:
+        return
+    # Until its notice is posted the shop owner hasn't been shown it, whatever they wrote.
+    if (
+        check.notice is None
+        or not call.session.messages.filter(
+            role=Message.Role.USER, seq__gt=check.notice.seq
+        ).exists()
+    ):
+        raise Refused(
+            f"scene {picture_step.scene.number}'s new starting picture failed the check of its "
+            "fix, and the shop owner hasn't answered since they were shown it. Wait for their "
+            "answer."
+        )
 
 
 def _owner_answered(fix: Fix) -> bool:

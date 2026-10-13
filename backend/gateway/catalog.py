@@ -35,11 +35,16 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # 10 wrong pictures and failed none of 88 good ones; luna missed the bent neck, the bag clasp
     # and the logo (evals/picture-judge/wrong-pictures-and-photo-test.md; Julian 10 Oct 23:05).
     "check_starting_picture": "gpt-6.1-sol",
+    # Asks the complaint back about a fix's new starting picture, beside the old one (#131):
+    # the starting picture's judge, as Julian chose it for picture judges.
+    "check_fix": "gpt-6.1-sol",
     # The B-roll clip judge's two checks (jobs/clip_judge.py). Tested on sol; the model check
     # of 2026-10-13 found luna matches it, at the edge, so stage 4 may move both to luna
     # (Claude Doc "Clip judge discussion", Results).
     "check_clip_sides": "gpt-6.1-sol",
     "check_clip_motion": "gpt-6.1-sol",
+    # The same about a fix's new clip, beside the old one (decision thread, 2026-10-13 call 4).
+    "check_fix_clip": "gpt-6.1-sol",
     "design_voice": "inworld-tts-2",
     "measure_voice": "inworld-tts-2",
     "speak_line": "inworld-tts-2",
@@ -59,7 +64,12 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
 # looks at up to 50 pictures and reasons over them (the harness waited up to 600), and the
 # clip step waits on it.
 ANSWER_SECONDS = 120
-SLOW_ANSWER_SECONDS: dict[str, float] = {"check_clip_sides": 600, "check_clip_motion": 600}
+SLOW_ANSWER_SECONDS: dict[str, float] = {
+    "check_clip_sides": 600,
+    "check_clip_motion": 600,
+    # Up to 48 frames of two clips in one ask, as many as the clip judge's (#131).
+    "check_fix_clip": 600,
+}
 
 # US dollars per million tokens: (input, output). From OpenAI's pricing page.
 PRICE_PER_MILLION_TOKENS: dict[str, tuple[Decimal, Decimal]] = {

@@ -38,10 +38,20 @@ class AttachmentSerializer(serializers.ModelSerializer[Attachment]):
 class MessageSerializer(serializers.ModelSerializer[Message]):
     attachments = AttachmentSerializer(many=True, read_only=True)
     step = serializers.SerializerMethodField()
+    suggested_note = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
-        fields = ["seq", "role", "level", "text", "created_at", "attachments", "step"]
+        fields = [
+            "seq",
+            "role",
+            "level",
+            "text",
+            "created_at",
+            "attachments",
+            "step",
+            "suggested_note",
+        ]
 
     def get_step(self, message: Message) -> dict[str, object] | None:
         """The scene step the message is about, and how it stands, or null."""
@@ -52,6 +62,12 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
             "kind": message.step_kind,
             "state": message.step_state,
         }
+
+    def get_suggested_note(self, message: Message) -> dict[str, object] | None:
+        """The note the message suggests for a scene's card, and its scene, or null."""
+        if message.suggested_note_scene is None:
+            return None
+        return {"scene": message.suggested_note_scene, "text": message.suggested_note}
 
 
 class SessionSerializer(serializers.ModelSerializer[Session]):

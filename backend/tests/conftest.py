@@ -179,6 +179,15 @@ PICTURE_OK: dict[str, Any] = {
 }
 
 
+# The fix check's answer, when the change a fix asks for is in the new picture (#131).
+FIX_MADE: dict[str, Any] = {
+    "old_shows": "The mug's handle faces away from the camera.",
+    "new_shows": "The mug's handle faces the camera.",
+    "verdict": "fixed",
+    "still_wrong": None,
+}
+
+
 # The B-roll clip judge's answers, when SIDES and MOTION find nothing wrong.
 CLIP_SIDES_OK: dict[str, Any] = {
     "frames": [{"time": 0.0, "objects": [PICTURE_OK["objects"][0] | {"name": "mug"}]}],
@@ -246,6 +255,8 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("pick_photos", lambda _: SHAMPOO_PICKED)
     fake.answer_unscripted("note_face", lambda _: NO_FACE)
     fake.answer_unscripted("check_starting_picture", lambda _: PICTURE_OK)
+    fake.answer_unscripted("check_fix", lambda _: FIX_MADE)
+    fake.answer_unscripted("check_fix_clip", lambda _: FIX_MADE)
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
     fake.answer_unscripted("check_clip_sides", lambda _: CLIP_SIDES_OK)
     fake.answer_unscripted("check_clip_motion", lambda _: CLIP_MOTION_OK)

@@ -127,3 +127,40 @@ export function waitsForYes(messages: Message[]): boolean {
     .find((one) => one.role !== "notice" && one.step?.state !== "made");
   return lastSaid?.role === "agent";
 }
+
+/** A note suggested for a scene's card, and the message that suggested it. */
+export type SuggestedNote = { text: string; seq: number };
+
+/** The note each scene's card is filled with until the owner writes their own: the newest
+ * one a message suggests for it, as when the check of a fix found the change missing. Once
+ * the owner has sent anything since, it was answered and fills nothing. */
+export function suggestedNotes(messages: Message[]): Map<number, SuggestedNote> {
+  const suggested = new Map<number, SuggestedNote>();
+  for (const message of messages) {
+    if (message.role === "user") suggested.clear();
+    if (message.suggested_note)
+      suggested.set(message.suggested_note.scene, {
+        text: message.suggested_note.text,
+        seq: message.seq,
+      });
+  }
+  return suggested;
+}
+
+/** What the owner typed in a scene's box, and the suggestion it was there when they did, if
+ * any: a newer suggestion replaces it. */
+export type TypedNote = { text: string; over: number | null };
+
+/** Each scene's note: what the owner typed, unless a suggestion came after it, then the
+ * suggestion. */
+export function sceneNotes(
+  suggested: ReadonlyMap<number, SuggestedNote>,
+  typed: ReadonlyMap<number, TypedNote>,
+): Map<number, string> {
+  const notes = new Map<number, string>();
+  for (const [scene, note] of typed) notes.set(scene, note.text);
+  for (const [scene, suggestion] of suggested) {
+    if (typed.get(scene)?.over !== suggestion.seq) notes.set(scene, suggestion.text);
+  }
+  return notes;
+}
