@@ -315,8 +315,8 @@ def test_an_action_in_a_talking_scene_is_refused_and_the_instructions_say_it_can
 
     assert results_of("restate_fix")[-1] == (
         "Refused: scene 1 shows the person talking, and a talking clip's movement can't be "
-        "changed: the video model ignores what it's asked about movement in a talking clip. "
-        "Restate it as a new starting picture instead. Nothing was done."
+        "changed from a note: the video model ignores what it's asked about movement in a "
+        "talking clip. Restate it as a new starting picture instead. Nothing was done."
     )
     assert not Fix.objects.exists()
     assert paid_for() == shown

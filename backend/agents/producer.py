@@ -745,31 +745,22 @@ class MakeClip(Tool):
     def run(self, call: ToolCall) -> str:
         scene = _a_checked_scene(call, self.scene)
         note = normalised_note(self.note)
-        if note and not scene.shows:
-            # HeyGen ignored the motion prompt in a talking clip (2026-10-11 test, Julian's
-            # grade "no"; runs/heygen-motion-test/ in the project files).
-            raise Refused(
-                f"scene {scene.number} shows the person talking, and a talking clip's movement "
-                "can't be changed from a note: the video model ignores what it's asked about "
-                "movement in a talking clip. Its starting picture or its line can change "
-                "instead."
-            )
-        if note and not scene.broll_kind:
-            raise Refused(
-                f"scene {scene.number} was planned before scenes had their B-roll labels, so "
-                "its movement can't be rewritten from a note. Make its starting picture again "
-                "with the note instead."
+        if note:
+            _movement_can_change(
+                scene,
+                talking="Its starting picture or its line can change instead.",
+                unlabelled="Make its starting picture again with the note instead.",
             )
         fix = _confirmed_fix(call, scene, note, Fix.Redo.CLIP)
-        for kind, what in [
-            (SceneStep.Kind.STARTING_PICTURE, "starting picture"),
-            (SceneStep.Kind.LINE_AUDIO, "audio"),
-            (SceneStep.Kind.TRANSCRIPT, "transcript"),
+        for kind in [
+            SceneStep.Kind.STARTING_PICTURE,
+            SceneStep.Kind.LINE_AUDIO,
+            SceneStep.Kind.TRANSCRIPT,
         ]:
             if scene.steps.filter(kind=kind, status=SceneStep.Status.RUNNING).exists():
                 raise Refused(
-                    f"scene {scene.number}'s {what} is still being made. You'll be told when "
-                    "it's ready; make the clip then."
+                    f"scene {scene.number}'s {STEP_NAMES[kind]} is still being made. You'll be "
+                    "told when it's ready; make the clip then."
                 )
         # A picture step is finished with its picture made. One made before every B-roll
         # scene got a picture may have none: its scene's picture is made again.
@@ -1124,10 +1115,10 @@ class RestateFix(Tool):
         )
 
 
-# What the producer calls each step being made, in what it is told.
-_STEP_NAMES = {
+# What the producer calls each kind of step, in what it is told.
+STEP_NAMES = {
     SceneStep.Kind.STARTING_PICTURE: "starting picture",
-    SceneStep.Kind.LINE_AUDIO: "audio",
+    SceneStep.Kind.LINE_AUDIO: "line's audio",
     SceneStep.Kind.TRANSCRIPT: "transcript",
     SceneStep.Kind.CLIP: "clip",
 }
@@ -1156,7 +1147,7 @@ def _waits_for(scene: Scene) -> str:
     for it, since a redo then is refused as busy, so the producer tells the shop owner (#137
     review). Empty when nothing of the scene is being made."""
     running = [
-        _STEP_NAMES[SceneStep.Kind(kind)]
+        STEP_NAMES[SceneStep.Kind(kind)]
         for kind in scene.steps.filter(status=SceneStep.Status.RUNNING)
         .order_by("started_at", "id")
         .values_list("kind", flat=True)
@@ -1268,22 +1259,18 @@ def _fixable_scene(job: Job, asked: FixAsked) -> Scene:
             f"scene {scene.number} has no clip yet, so it isn't finished and there is nothing "
             "to fix."
         )
+    # Its first clip is kept before its step finishes, as while the clip is judged.
+    if _latest_clip(scene) is None:
+        raise Refused(
+            f"scene {scene.number}'s clip is still being made, so there is nothing to fix yet. "
+            "You'll be told when it's ready."
+        )
     if not normalised_note(asked.fix):
         raise Refused(f"scene {scene.number}'s fix is blank. Restate it in one line.")
     redo = Fix.Redo(asked.redo)
-    if redo == Fix.Redo.CLIP and not scene.shows:
-        # make_clip refuses a note on a talking scene for the same reason (#132).
-        raise Refused(
-            f"scene {scene.number} shows the person talking, and a talking clip's movement "
-            "can't be changed: the video model ignores what it's asked about movement in a "
-            "talking clip. Restate it as a new starting picture instead."
-        )
-    if redo == Fix.Redo.CLIP and not scene.broll_kind:
-        raise Refused(
-            f"scene {scene.number} was planned before scenes had their B-roll labels, so its "
-            "movement can't be rewritten from a note. Restate it as a new starting picture "
-            "instead."
-        )
+    if redo == Fix.Redo.CLIP:
+        instead = "Restate it as a new starting picture instead."
+        _movement_can_change(scene, talking=instead, unlabelled=instead)
     if redo == Fix.Redo.LINE:
         line = quoted_line(normalised_note(asked.fix))
         if line is None:
@@ -1302,6 +1289,24 @@ def _fixable_scene(job: Job, asked: FixAsked) -> Scene:
                 "shop owner for a shorter line, and restate the fix with it."
             )
     return scene
+
+
+def _movement_can_change(scene: Scene, *, talking: str, unlabelled: str) -> None:
+    """Refuses, ending with what can be done `instead`, when the scene's clip movement can't
+    be rewritten from a note: a talking scene's, or one planned before its B-roll labels."""
+    if not scene.shows:
+        # HeyGen ignored the motion prompt in a talking clip (2026-10-11 test, Julian's
+        # grade "no"; runs/heygen-motion-test/ in the project files).
+        raise Refused(
+            f"scene {scene.number} shows the person talking, and a talking clip's movement "
+            "can't be changed from a note: the video model ignores what it's asked about "
+            f"movement in a talking clip. {talking}"
+        )
+    if not scene.broll_kind:
+        raise Refused(
+            f"scene {scene.number} was planned before scenes had their B-roll labels, so its "
+            f"movement can't be rewritten from a note. {unlabelled}"
+        )
 
 
 # What a starting picture is estimated to cost when the scene's last one has no cost

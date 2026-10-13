@@ -553,9 +553,9 @@ def test_restating_before_the_ad_is_planned_is_refused(
         ),
         (
             [(1, FIX_1, "clip")],
-            "scene 1 shows the person talking, and a talking clip's movement can't be changed: "
-            "the video model ignores what it's asked about movement in a talking clip. Restate "
-            "it as a new starting picture instead.",
+            "scene 1 shows the person talking, and a talking clip's movement can't be changed "
+            "from a note: the video model ignores what it's asked about movement in a talking "
+            "clip. Restate it as a new starting picture instead.",
         ),
         ([(2, "  \n", "clip")], "scene 2's fix is blank. Restate it in one line."),
         (
@@ -589,6 +589,33 @@ def test_restating_a_scene_with_no_clip_is_refused(
     assert results_of("restate_fix") == [
         "Refused: scene 3 has no clip yet, so it isn't finished and there is nothing to fix. "
         "Nothing was done."
+    ]
+    assert not Fix.objects.exists()
+
+
+def test_restating_a_scene_whose_first_clip_is_still_being_made_is_refused(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Say,
+) -> None:
+    made_ready(fake_model, steps, say, (2,))
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    # The clip is kept, but its step isn't finished yet (as while the clip judge looks at it).
+    with (
+        the_worker_stops(
+            pre_save, SceneStep, when=lambda step: step.kind == "clip" and step.status == "finished"
+        ),
+        pytest.raises(ProducerStopped),
+    ):
+        steps.run_next()
+    assert ProducedItem.objects.filter(kind="clip", scene__number=2).exists()
+
+    owner_says(fake_model, say, NOTE_2, restating((2, FIX_2, "picture")))
+
+    assert results_of("restate_fix") == [
+        "Refused: scene 2's clip is still being made, so there is nothing to fix yet. You'll "
+        "be told when it's ready. Nothing was done."
     ]
     assert not Fix.objects.exists()
 
