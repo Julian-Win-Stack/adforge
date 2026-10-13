@@ -21,7 +21,14 @@ from chat.models import Message
 from gateway.fake import FakeModel, turn
 from jobs.models import Fix, Job, ProducedItem, Scene, SceneStep
 
-from .conftest import HeldSteps, given_to_the_producer, paid_for, producer_turns, results_of
+from .conftest import (
+    JUDGED_CLIP,
+    HeldSteps,
+    given_to_the_producer,
+    paid_for,
+    producer_turns,
+    results_of,
+)
 from .test_end_to_end import TALKING, ad_made_through_the_chat  # noqa: F401 (a fixture)
 from .test_producer_restarts import WorkerStopped, the_worker_stops
 
@@ -195,6 +202,7 @@ def test_a_clip_note_makes_only_that_scenes_clip_again_and_a_new_ad(
         "rewrite_clip_prompt",
         "make_broll_clip",
         "collect_broll_clip",
+        *JUDGED_CLIP,
     ]
 
 
@@ -588,6 +596,7 @@ def test_a_fixs_redo_run_again_after_the_worker_stopped_pays_and_shows_everythin
         "rewrite_clip_prompt",
         "make_broll_clip",
         "collect_broll_clip",
+        *JUDGED_CLIP,
     ]
     assert [ad.version for ad in ads()] == [1, 2]
     assert Message.objects.filter(attachments__file=ads()[1].file).count() == 1

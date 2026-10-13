@@ -682,6 +682,14 @@ class ProducedItem(models.Model):
         help_text="For a finished ad, the words drawn along its bottom as they were spoken, "
         'a few at a time, and when each shows, in seconds: [{"text", "start", "end"}, ...].',
     )
+    ruling = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="For a B-roll clip, the clip judge's ruling (jobs.clip_judge.judged): its "
+        "verdict, each check's, how many answers failed, each failed answer's problems and "
+        "whole answer, the problems let go, every answer, and the pictures it was shown. "
+        "Blank for a clip not judged.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

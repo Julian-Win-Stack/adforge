@@ -61,7 +61,7 @@ from gateway.types import (
     UnusableReply,
 )
 
-from . import assembly, firecrawl, page, page_text, photos
+from . import assembly, clip_judge, firecrawl, page, page_text, photos
 from .checks import (
     FACT_CHECK_INSTRUCTIONS,
     LENGTH_ALLOWANCE_SECONDS,
@@ -1992,8 +1992,27 @@ def make_clip(step: SceneStep) -> ProducedItem:
     asked for is waited for rather than asked for again, and one fetched is kept rather
     than fetched again."""
     made = step.produced.first()
-    if made is not None:
-        return made
+    if made is None:
+        made = _make_clip(step)
+    if step.shows and settings.QUALITY_CHECKS:
+        _judge_clip(step, made)
+    return made
+
+
+def _judge_clip(step: SceneStep, clip: ProducedItem) -> None:
+    """Have the clip judge rule on a B-roll clip, keeping its ruling on the clip. A judge
+    failing for a reason nobody expected doesn't fail the step: its clip is made and paid for,
+    and is kept as not checked."""
+    try:
+        clip_judge.judge_clip(step, clip)
+    except Exception as error:
+        logger.exception("Judging scene %s's clip failed", step.scene.number)
+        clip.ruling = {**(clip.ruling or {}), "verdict": "not_checked", "error": str(error)}
+        clip.save(update_fields=["ruling"])
+
+
+def _make_clip(step: SceneStep) -> ProducedItem:
+    """make_clip's clip, made and kept."""
     scene = step.scene
     job = scene.job
     picture, audio = step.picture, step.made_from

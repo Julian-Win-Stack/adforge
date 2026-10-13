@@ -26,6 +26,7 @@ from jobs.scenes import (
 )
 
 from .conftest import (
+    JUDGED_CLIP,
     HeldSteps,
     WorkerStopped,
     handoffs,
@@ -167,7 +168,12 @@ def test_only_the_clip_is_made_again_and_paid_for(
 
     clip_with_note(fake_model, steps, say, HOVERS, REWRITE)
 
-    assert paid_for()[paid:] == ["rewrite_clip_prompt", "make_broll_clip", "collect_broll_clip"]
+    assert paid_for()[paid:] == [
+        "rewrite_clip_prompt",
+        "make_broll_clip",
+        "collect_broll_clip",
+        *JUDGED_CLIP,
+    ]
     assert clips() == [(2, 1), (2, 2)]
     second = ProducedItem.objects.get(kind="clip", version=2)
     assert (second.picture, second.made_from) == (first.picture, first.made_from)
