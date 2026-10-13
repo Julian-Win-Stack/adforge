@@ -159,6 +159,7 @@ def test_a_fixs_new_picture_that_fails_its_check_shows_both_and_waits_for_the_ow
         new_picture.file.rsplit("/", 1)[-1],
     ]
     assert notice["suggested_note"] == {"scene": 2, "text": HANDLE_HIDDEN}
+    assert "make its clip from this picture" not in told(2, "starting_picture")
     assert told(2, "starting_picture").endswith(
         f"The check of scene 2's fix found the change isn't in the new picture: {HANDLE_HIDDEN} "
         "The chat shows the shop owner the old picture and the new one, and why. Don't make "
@@ -278,6 +279,51 @@ def test_a_check_run_again_after_the_worker_stopped_pays_and_shows_everything_on
     assert paid_for()[len(shown) :].count("check_fix") == 2
     texts = [message["text"] for message in messages_of(api, session_id)]
     assert sum(text.startswith("Scene 2's new starting picture may not") for text in texts) == 1
+
+
+def test_an_owner_message_before_the_failed_checks_notice_doesnt_unlock_its_clip(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+) -> None:
+    # Found by the review: the verdict is kept before the notice is posted. A message the
+    # shop owner sends in between was sent before they saw it, so it isn't their answer.
+    owner_says(fake_model, say, WRONG_SIDE, restating((2, HANDLE_FIX, "picture")))
+    owner_says(fake_model, say, "Yes", picture_of(2, HANDLE_FIX))
+    (step_id,) = steps.held
+    fake_model.respond("choose_broll_picture", HANDLE_SHOWING)
+    fake_model.respond("check_fix", not_made(HANDLE_HIDDEN), not_made(HANDLE_HIDDEN))
+    with the_worker_stops(post_save, FixCheck, when=lambda _: True), pytest.raises(WorkerStopped):
+        steps.run_next()
+
+    owner_says(fake_model, say, "How's it going?")
+    # The step is handed out again; told the picture is ready, the producer makes its clip.
+    fake_model.respond("produce", turn(calls=[clip_of(2)]))
+    fake_model.respond("produce", turn(says="That part's ready."))
+    tasks.run_scene_step(step_id)
+
+    assert results_of("make_clip")[-1].startswith(
+        "Refused: scene 2's new starting picture failed the check of its fix"
+    )
+    assert steps.held == []
+
+
+def test_a_fix_isnt_checked_when_quality_checks_are_switched_off(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+    settings: Any,
+) -> None:
+    settings.QUALITY_CHECKS = False
+
+    picture_redone(fake_model, say, steps)
+
+    assert not FixCheck.objects.exists()
+    assert "check_fix" not in paid_for()
+    owner_says(fake_model, say, "Go on", clip_of(2))
+    assert held_kinds(steps) == [(2, "clip")]
 
 
 # --- A new clip is checked once the clip judge is in the app ------------------------------------
@@ -427,3 +473,8 @@ def test_the_verdict_is_settled_by_two_answers_of_three(
 
     assert (settled.verdict, settled.reason) == (verdict, reason)
     assert settled.answers == [answer for answer in answers if answer is not None]
+
+
+def test_a_not_fixed_answer_must_say_what_is_still_wrong() -> None:
+    with pytest.raises(ValueError, match="must say what is still wrong"):
+        fix_check.FixVerdict(old_shows="a", new_shows="b", verdict="not fixed", still_wrong=" ")

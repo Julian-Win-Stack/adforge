@@ -1197,3 +1197,19 @@ test("the owner can clear a suggested note and send nothing for that scene", asy
   expect((noteBox(3) as HTMLTextAreaElement).value).toBe("");
   expect(sendNotesButton().hasAttribute("disabled")).toBe(true);
 });
+
+test("a newer failed check fills a box the owner cleared for an earlier one", async () => {
+  const { backend, user } = await openFinishedAd();
+  backend.suggestNote("Scene 2's new starting picture may not have your change: a", [], 2, "a");
+  await nextPoll();
+  await waitFor(() => expect((noteBox(2) as HTMLTextAreaElement).value).toBe("a"));
+  await user.clear(noteBox(2));
+
+  // The owner answers in the chat, not the cards; the next fix fails its check too.
+  await user.type(screen.getByRole("textbox", { name: "Message" }), "Go ahead{Enter}");
+  await findSaid("Go ahead");
+  backend.suggestNote("Scene 2's new starting picture may not have your change: b", [], 2, "b");
+  await nextPoll();
+
+  await waitFor(() => expect((noteBox(2) as HTMLTextAreaElement).value).toBe("b"));
+});

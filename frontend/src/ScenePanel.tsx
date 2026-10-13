@@ -2,7 +2,15 @@ import { useMemo, useState, type FormEvent } from "react";
 import { ApiError } from "./api";
 import type { Message } from "./api";
 import { ChevronIcon } from "./icons";
-import { notesMessage, sceneCards, nonBlankNotes, suggestedNotes, type SceneCard } from "./scenes";
+import {
+  notesMessage,
+  sceneCards,
+  sceneNotes,
+  nonBlankNotes,
+  suggestedNotes,
+  type SceneCard,
+  type TypedNote,
+} from "./scenes";
 
 /** Every scene of the ad so far, one card each: its latest clip, or its starting picture
  * until the clip is made, and what is being made for it now. Built from the messages the
@@ -17,10 +25,10 @@ export function ScenePanel({
   const cards = useMemo(() => sceneCards(messages), [messages]);
   const [open, setOpen] = useState(true);
   // The notes live here, not in the cards, so folding the cards away keeps them.
-  const [typed, setNotes] = useState<ReadonlyMap<number, string>>(new Map());
+  const [typed, setTyped] = useState<ReadonlyMap<number, TypedNote>>(new Map());
   // A suggested note fills a scene's box until the owner types in it, clearing it included.
   const suggested = useMemo(() => suggestedNotes(messages), [messages]);
-  const notes = new Map([...suggested, ...typed]);
+  const notes = sceneNotes(suggested, typed);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (cards.length === 0) return null;
@@ -35,7 +43,7 @@ export function ScenePanel({
     setError(null);
     try {
       await onSend(message);
-      setNotes(new Map());
+      setTyped(new Map());
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
     } finally {
@@ -68,7 +76,14 @@ export function ScenePanel({
                 <SceneCardView
                   card={card}
                   note={notes.get(card.scene) ?? ""}
-                  onNote={(note) => setNotes((had) => new Map(had).set(card.scene, note))}
+                  onNote={(note) =>
+                    setTyped((had) =>
+                      new Map(had).set(card.scene, {
+                        text: note,
+                        over: suggested.get(card.scene)?.seq ?? null,
+                      }),
+                    )
+                  }
                 />
               </li>
             ))}

@@ -414,24 +414,22 @@ def _fix_checked(check: FixCheck | None) -> str:
     if check is None:
         return ""
     number = check.step.scene.number
-    picture = check.step.kind == SceneStep.Kind.STARTING_PICTURE
-    what = "picture" if picture else "clip"
     if check.verdict == FixCheck.Verdict.PASSED:
-        return f" The check of scene {number}'s fix found the change in the new {what}."
+        return f" The check of scene {number}'s fix found the change in the new {check.what}."
     if check.verdict == FixCheck.Verdict.UNCHECKED:
         return (
             f" Scene {number}'s fix couldn't be checked, so tell the shop owner it wasn't checked."
         )
     dont, go_ahead = (
         ("make its clip", "make its clip with no note")
-        if picture
+        if check.what == "picture"
         else ("assemble the ad", "assemble the ad with assemble_ad")
     )
     return (
-        f" The check of scene {number}'s fix found the change isn't in the new {what}: "
-        f"{check.reason} The chat shows the shop owner the old {what} and the new one, and "
-        f"why. Don't {dont} or say it's fixed: wait for their answer. If they say go ahead, "
-        f"{go_ahead}; if they say what to change, restate a new fix."
+        f" The check of scene {number}'s fix found the change isn't in the new {check.what}: "
+        f"{check.reason} The chat shows the shop owner the old {check.what} and the new one, "
+        f"and why. Don't {dont} or say it's fixed: wait for their answer. If they say go "
+        f"ahead, {go_ahead}; if they say what to change, restate a new fix."
     )
 
 

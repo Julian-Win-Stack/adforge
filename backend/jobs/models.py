@@ -735,6 +735,15 @@ class FixCheck(models.Model):
     answers = models.JSONField(
         default=list, blank=True, help_text="Each answer the judge gave, as it gave it."
     )
+    notice = models.ForeignKey(
+        "chat.Message",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="For a failed check, the notice that showed the shop owner both versions and "
+        "why: what they answer after it decides what happens next. Blank until it is posted.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -742,3 +751,8 @@ class FixCheck(models.Model):
 
     def __str__(self) -> str:
         return f"Scene {self.step.scene.number} fix check: {self.verdict}"
+
+    @property
+    def what(self) -> str:
+        """What the fix made again: "picture" or "clip"."""
+        return "picture" if self.step.kind == SceneStep.Kind.STARTING_PICTURE else "clip"

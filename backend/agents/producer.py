@@ -1465,9 +1465,13 @@ def _answered_a_failed_check(call: ToolCall, picture_step: SceneStep) -> None:
     check = FixCheck.objects.filter(step=picture_step, verdict=FixCheck.Verdict.FAILED).first()
     if check is None:
         return
-    if not call.session.messages.filter(
-        role=Message.Role.USER, created_at__gt=check.created_at
-    ).exists():
+    # Until its notice is posted the shop owner hasn't been shown it, whatever they wrote.
+    if (
+        check.notice is None
+        or not call.session.messages.filter(
+            role=Message.Role.USER, seq__gt=check.notice.seq
+        ).exists()
+    ):
         raise Refused(
             f"scene {picture_step.scene.number}'s new starting picture failed the check of its "
             "fix, and the shop owner hasn't answered since they were shown it. Wait for their "

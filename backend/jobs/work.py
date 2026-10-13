@@ -1889,17 +1889,18 @@ def _ask_about_the_fix(job: Job, fix: str, ask: int, old: str, new: str) -> dict
 def say_the_fix_check_failed(check: FixCheck) -> None:
     """Show the chat the old version and the new one a fix made, and why its check found the
     change missing, with the reason as the note the scene's card is filled with: the shop
-    owner decides what happens next (#131)."""
+    owner decides what happens next (#131). The notice is kept on the check, as what their
+    answer comes after."""
     number = check.step.scene.number
-    what = "picture" if check.step.kind == SceneStep.Kind.STARTING_PICTURE else "clip"
-    then = "make its clip anyway" if what == "picture" else "use the new clip in the ad anyway"
-    kind = Attachment.Kind.PICTURE if what == "picture" else Attachment.Kind.VIDEO
+    picture = check.what == "picture"
+    then = "make its clip anyway" if picture else "use the new clip in the ad anyway"
+    kind = Attachment.Kind.PICTURE if picture else Attachment.Kind.VIDEO
     assert check.old is not None, "a fix is checked against the version before it"
-    post_notice(
+    check.notice = post_notice(
         check.fix.job,
-        f"Scene {number}'s new {'starting picture' if what == 'picture' else 'clip'} may not "
-        f"have your change: {check.reason} Here are the old {what} and the new one. Say go "
-        f"ahead to {then}, or tell me what to change.",
+        f"Scene {number}'s new {'starting picture' if picture else 'clip'} may not have your "
+        f"change: {check.reason} Here are the old {check.what} and the new one. Say go ahead "
+        f"to {then}, or tell me what to change.",
         Message.Level.PROBLEM,
         # Without their scene's number, so the scene's card keeps showing its newest.
         carrying=[
@@ -1908,6 +1909,7 @@ def say_the_fix_check_failed(check: FixCheck) -> None:
         ],
         suggested=messages.SuggestedNote(number, check.reason),
     )
+    check.save(update_fields=["notice"])
 
 
 def _keep_starting_picture(step: SceneStep, prompt: str, pictures: list[str]) -> ProducedItem:
