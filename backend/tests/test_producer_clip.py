@@ -27,6 +27,7 @@ from .conftest import (
     NO_CHOICES,
     HeldSteps,
     WorkerStopped,
+    a_plan_with,
     chat,
     facts_ok,
     given_to_the_producer,
@@ -280,13 +281,39 @@ def test_the_clip_is_made_in_the_background_from_the_picture_and_the_audio_heard
         ),
     ],
 )
-def test_a_talking_clips_motion_prompt_carries_the_pose_its_picture_was_planned_around(
+def test_each_product_size_gives_the_talking_clip_the_pose_its_picture_was_made_in(
     product_size: str, pose: str
 ) -> None:
     """The video model is told the same pose the picture was made in, so it doesn't invent
-    limbs to hold a chair beside a face that the picture shows standing on the floor. That
-    the handoff carries this prompt for the job's size is checked above, through the chat."""
+    limbs to hold a chair beside a face that the picture shows standing on the floor. The
+    chat test above uses the handheld mug, whose prompt is the one a job with no size gets:
+    the test below proves the handoff carries the prompt for the job's own size."""
     assert talking_motion_prompt(product_size) == (
+        f"The person talks to the camera naturally, like a casual phone video. {pose} "
+        "Minimal hand movement."
+    )
+
+
+@pytest.mark.parametrize(
+    "the_plan", [a_plan_with(product_size="large")], indirect=True, ids=["large"]
+)
+def test_a_talking_clips_motion_prompt_carries_the_pose_its_picture_was_planned_around(
+    fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    calling(fake_model, "make_clip")
+    say("Make scene 1's clip")
+
+    run(fake_model, steps)
+
+    pose = (
+        "The product stands on the floor at its real size, and the person stands beside it "
+        "with one hand resting on it, framed so both fit, with space above the head and "
+        "below the product, so the top and bottom of the frame stay clear."
+    )
+    (chose,) = handoffs("choose_starting_picture")
+    assert chose["pose"] == pose
+    submitted = ModelCall.objects.get(purpose="make_talking_clip")
+    assert submitted.handoff["motion_prompt"] == (
         f"The person talks to the camera naturally, like a casual phone video. {pose} "
         "Minimal hand movement."
     )

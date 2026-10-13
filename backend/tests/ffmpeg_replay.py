@@ -12,6 +12,7 @@ import hashlib
 import os
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -33,15 +34,15 @@ class _Replay:
 
 
 _replays: dict[str, _Replay] = {}
-_hashes: dict[tuple[str, int, int], str] = {}
+# Shared by every test worker, which add and remove files there as they please: a run that
+# reads from it is never replayed.
+_SHARED = Path(tempfile.gettempdir()).resolve()
 
 
 def _hash(file: Path) -> str:
-    stat = file.stat()
-    known = (str(file), stat.st_mtime_ns, stat.st_size)
-    if known not in _hashes:
-        _hashes[known] = hashlib.sha256(file.read_bytes()).hexdigest()
-    return _hashes[known]
+    # Hashed every time, never remembered by its time and size: a file rewritten within one
+    # tick of a coarse clock keeps both.
+    return hashlib.sha256(file.read_bytes()).hexdigest()
 
 
 def _files_named_in(text: str) -> list[Path]:
@@ -64,7 +65,20 @@ def _files_read(arguments: list[str]) -> list[Path]:
 
 
 def _folder_files(folders: list[Path]) -> dict[Path, str]:
-    return {file: _hash(file) for folder in folders for file in folder.iterdir() if file.is_file()}
+    files = {}
+    for folder in folders:
+        for file in folder.iterdir():
+            try:
+                if file.is_file():
+                    files[file] = _hash(file)
+            except FileNotFoundError:
+                # Gone while the folder was read: a file nothing here can still be reading.
+                pass
+    return files
+
+
+def _shared(folder: Path) -> bool:
+    return folder.resolve() == _SHARED
 
 
 def run(arguments: Any, *args: Any, **kwargs: Any) -> Any:
@@ -80,6 +94,8 @@ def run(arguments: Any, *args: Any, **kwargs: Any) -> Any:
     if arguments[-1].startswith("/"):
         folders.add(Path(arguments[-1]).parent)
     in_order = sorted((folder for folder in folders if folder.is_dir()), key=str)
+    if any(_shared(folder) for folder in in_order):
+        return _run(arguments, *args, **kwargs)
     # Each folder by its place, so runs in two tests' own temporary folders match.
     places = {str(folder): f"<folder {i}>" for i, folder in enumerate(in_order)}
 
@@ -94,14 +110,12 @@ def run(arguments: Any, *args: Any, **kwargs: Any) -> Any:
         return Path(text)
 
     before = _folder_files(in_order)
-    elsewhere = sorted((placed(str(file)), _hash(file)) for file in set(read) - before.keys())
     key = hashlib.sha256(
         repr(
             (
                 [placed(argument) for argument in arguments],
                 bool(kwargs.get("text")),
                 sorted((placed(str(file)), digest) for file, digest in before.items()),
-                elsewhere,
             )
         ).encode()
     ).hexdigest()

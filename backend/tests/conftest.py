@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import time
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import timedelta
 from itertools import groupby
 from pathlib import Path
@@ -557,14 +558,22 @@ def served(link: str, settings: Settings) -> bytes:
     return (Path(settings.MEDIA_ROOT) / link.removeprefix("/media/")).read_bytes()
 
 
+@contextmanager
+def _written(data: bytes) -> Iterator[str]:
+    """`data` in a file of its own folder, under a name that is the same every time, so a
+    look at the same video twice is an ffmpeg run the replay knows (see ffmpeg_replay)."""
+    with tempfile.TemporaryDirectory() as folder:
+        file = Path(folder) / "media.mp4"
+        file.write_bytes(data)
+        yield str(file)
+
+
 def video(data: bytes) -> tuple[int, int, float]:
     """A video's width, height and length in seconds, as ffprobe reads it."""
-    with tempfile.NamedTemporaryFile(suffix=".mp4") as file:
-        file.write(data)
-        file.flush()
+    with _written(data) as file:
         probed = subprocess.run(
             [settings.FFPROBE, "-v", "error", "-show_streams", "-show_format", "-of", "json"]
-            + [file.name],
+            + [file],
             capture_output=True,
             text=True,
             timeout=60,
@@ -577,11 +586,9 @@ def video(data: bytes) -> tuple[int, int, float]:
 
 def colour_at(data: bytes, seconds: float) -> str:
     """Which of the fake's clip colours a video shows `seconds` in, read from its middle."""
-    with tempfile.NamedTemporaryFile(suffix=".mp4") as file:
-        file.write(data)
-        file.flush()
+    with _written(data) as file:
         frame = subprocess.run(
-            [settings.FFMPEG, "-v", "error", "-ss", str(seconds), "-i", file.name]
+            [settings.FFMPEG, "-v", "error", "-ss", str(seconds), "-i", file]
             + ["-frames:v", "1", "-f", "image2pipe", "-c:v", "png", "-"],
             capture_output=True,
             timeout=60,
@@ -606,11 +613,9 @@ def colour_at(data: bytes, seconds: float) -> str:
 def drawn_in(data: bytes, seconds: float) -> set[str]:
     """Which bands of the picture, "top" or "bottom", have something drawn over the clip
     `seconds` in: pixels that differ from the clip's own colour, read from its middle."""
-    with tempfile.NamedTemporaryFile(suffix=".mp4") as file:
-        file.write(data)
-        file.flush()
+    with _written(data) as file:
         frame = subprocess.run(
-            [settings.FFMPEG, "-v", "error", "-ss", str(seconds), "-i", file.name]
+            [settings.FFMPEG, "-v", "error", "-ss", str(seconds), "-i", file]
             + ["-frames:v", "1", "-f", "image2pipe", "-c:v", "png", "-"],
             capture_output=True,
             timeout=60,
@@ -640,11 +645,9 @@ def _rgb(image: PIL.Image.Image, x: int, y: int) -> tuple[int, int, int]:
 
 def silences(data: bytes) -> list[tuple[float, float]]:
     """Where a video's sound is silent for more than a quarter of a second, in seconds."""
-    with tempfile.NamedTemporaryFile(suffix=".mp4") as file:
-        file.write(data)
-        file.flush()
+    with _written(data) as file:
         heard = subprocess.run(
-            [settings.FFMPEG, "-i", file.name, "-af", "silencedetect=noise=-40dB:d=0.25"]
+            [settings.FFMPEG, "-i", file, "-af", "silencedetect=noise=-40dB:d=0.25"]
             + ["-f", "null", "-"],
             capture_output=True,
             text=True,
@@ -669,11 +672,9 @@ def loudness(
     }[band]
     if between is not None:
         heard = f"atrim={between[0]}:{between[1]}," + heard
-    with tempfile.NamedTemporaryFile(suffix=".mp4") as file:
-        file.write(data)
-        file.flush()
+    with _written(data) as file:
         measured = subprocess.run(
-            [settings.FFMPEG, "-i", file.name, "-af", f"{heard},volumedetect", "-f", "null", "-"],
+            [settings.FFMPEG, "-i", file, "-af", f"{heard},volumedetect", "-f", "null", "-"],
             capture_output=True,
             text=True,
             timeout=60,

@@ -27,7 +27,6 @@ from .conftest import (
     NO_FACE,
     PLAN,
     READABLE,
-    SHOWCASE,
     a_plan_with,
     broll,
     broll_labels,
@@ -37,6 +36,7 @@ from .conftest import (
     picture,
     results_of,
 )
+from .test_planning import broll_scene
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -70,13 +70,6 @@ def planning_through_openai(
         openai_answer(reply),
         openai_turn("Here's the plan."),
     )
-
-
-def broll_scene(**labels: Any) -> dict[str, Any]:
-    """PLAN with a second scene showing the mug while its line is said, labelled as a
-    showcase with no face but for `labels`."""
-    scene = {"line": "Holds 350 ml.", "shows": "the mug on a shelf", **SHOWCASE, **labels}
-    return a_plan_with(scenes=[{"line": "Meet the Stoneware Mug."}, scene])
 
 
 def plan_ad_result() -> str:
@@ -493,7 +486,9 @@ def test_the_planner_is_shown_each_photo_shrunk_to_fit_2048_pixels_and_the_kept_
 
 
 # Every rule a plan can break is tried in test_planning.py. One of pydantic's own and one of
-# ours prove the chat hands a broken plan back the same way, whichever check refused it.
+# ours prove the chat hands a broken plan back the same way, whichever check refused it. The
+# photo count is the one rule test_planning.py can't pin: it hard-codes the mug's 2 photos,
+# so the chat proves the planner's decision is asked for with the job's own count.
 @pytest.mark.parametrize(
     ("reply", "broken_rule"),
     [
@@ -507,6 +502,11 @@ def test_the_planner_is_shown_each_photo_shrunk_to_fit_2048_pixels_and_the_kept_
             ),
             'No line says "Stoneware Mug": at least one must.',
             id="the name said in no line",
+        ),
+        pytest.param(
+            a_plan_with(colour_photos=[1, 3]),
+            "There's no photo 3: the job has 2.",
+            id="a photo after the last one",
         ),
     ],
 )

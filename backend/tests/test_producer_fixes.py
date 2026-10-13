@@ -1038,6 +1038,35 @@ def test_two_fixes_assemble_once_when_the_last_lands(
     assert times_shown(ad) == 1
 
 
+def test_a_sibling_fixs_picture_landing_first_doesnt_let_a_clip_assemble_a_half_fixed_ad(
+    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
+) -> None:
+    owner_says(
+        fake_model, say, f"{NOTE_1} {NOTE_2}", restating((1, FIX_1, "picture"), (2, FIX_2, "clip"))
+    )
+    owner_says(fake_model, say, "Yes", picture_with(1, FIX_1), clip_with(2, FIX_2))
+    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
+    fake_model.respond("rewrite_clip_prompt", REWRITE)
+    fake_model.respond("produce", turn(says="Done."), turn(says="Done."))
+    steps.run_next()  # scene 1's new picture lands; its clip isn't started yet
+    steps.run_next()  # scene 2's clip lands
+
+    assert ads() == [1]
+    # Scene 1's new picture planned it again (#133), so it waits for scene 1 to be finished.
+    assert last_step().result.endswith(
+        "The ad will be assembled again, and shown to the shop owner, once scene 1 is finished."
+    )
+    owner_says(fake_model, say, "Nice", clip_with(1, None))
+    run(fake_model, steps)
+
+    assert ads() == [1, 2]
+    ad = ProducedItem.objects.get(kind="finished_ad", version=2)
+    assert [cut["clip"] for cut in ad.cuts][:2] == [
+        ProducedItem.objects.get(kind="clip", scene__number=1, version=2).pk,
+        ProducedItem.objects.get(kind="clip", scene__number=2, version=2).pk,
+    ]
+
+
 STEAM_NOTE = "Also, the steam should be thicker."
 STEAM_FIX = f"{FIX_2} The steam is thick."
 

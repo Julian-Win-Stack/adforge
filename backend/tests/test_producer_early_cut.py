@@ -5,10 +5,11 @@ for real.
 
 A B-roll clip is kept whole: its voice at its start and silence after. The fake video
 model makes each as long as it is asked for, the fewest whole seconds that cover its line,
-at least 5. This is the one whole ad rendered for the early cut; where each part plays in
-the other shapes (two B-roll scenes in a row, a line said entirely over a B-roll clip, an ad
-ending on B-roll) is checked on `assembly.cuts` in test_assembly.py, and the overlay's timing
-on `assembly.write_text_to_draw`."""
+at least 5. Two whole ads are rendered for the early cut: one with a talking scene after the
+B-roll, and one ending on B-roll, whose length is the end of its last picture. Where each part
+plays in the other shapes (two B-roll scenes in a row, a line said entirely over a B-roll
+clip) is checked on `assembly.cuts` in test_assembly.py, and the overlay's timing on
+`assembly.write_text_to_draw`."""
 
 from collections.abc import Callable
 from typing import Any
@@ -43,6 +44,13 @@ SAID_OVER_2 = {**SCENE_2, "line": "Hand-thrown, holds 350 ml, and dishwasher saf
 
 # Showing the mug in scene 2: lines of 8, 8 and 3 words take 4, 4 and 1.5 seconds to say.
 SHOWING_2 = [SCENE_1, SAID_OVER_2, SCENE_3]
+
+# Ending on the mug: lines of 8, 7 and 8 words take 4, 3.5 and 4 seconds to say.
+ENDING_ON_IT = [
+    SCENE_1,
+    SCENE_2,
+    {**SCENE_3, "line": "Get yours today for just $24.00 from Kiln."},
+]
 
 
 def a_plan_showing(*shown: int, scenes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -203,3 +211,27 @@ def test_talking_then_broll_then_talking(
     # Scene 3's overlay shows while its picture plays, not while its line is said over
     # scene 2's picture, which has none.
     assert [drawn_in(heard, at) for at in (8.75, 9.25)] == [{"bottom"}, {"top", "bottom"}]
+
+
+@pytest.mark.parametrize("the_plan", [a_plan_showing(3, scenes=ENDING_ON_IT)], indirect=True)
+def test_ending_on_broll(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    # Scene 3's 4 seconds of line are covered by a 5-second clip, the shortest made.
+    ad = assembled_with(fake_model, steps, say, {3})
+
+    assert placed(ad)[-1] == ((0.0, 5.0, 7.5, 12.5), (0.0, 4.0, 7.5, 11.5))
+    # The ad runs to the end of its last picture.
+    assert ad.seconds == 12.5
+    heard = file_store.read(ad.file)
+    assert video(heard)[2] == pytest.approx(12.5, abs=0.1)
+    assert colour_at(heard, 12.0) == "blue"
+    voice_has_no_gap(ad, said_for=11.5)
+    captions_follow_the_voice(ad)
+    # After the last line, the end of the clip plays over the music only, with its overlay.
+    assert loudness(heard, "music", between=(11.6, 12.4)) > -40
+    assert (
+        loudness(heard, "voice", between=(11.6, 12.4))
+        < loudness(heard, "voice", between=(7.6, 11.4)) - 30
+    )
+    assert drawn_in(heard, 12.0) == {"top"}

@@ -206,6 +206,15 @@ def test_a_message_sent_to_a_dead_producer_starts_it_again(
 HEARTBEAT_SECONDS = 0.05
 
 
+def beat_after[Beat](seen: Beat, last_beat: Callable[[], Beat]) -> Beat:
+    """The next `last_beat` after `seen`, waited for up to forty heartbeats; `seen` again if
+    nothing beats. Shared with test_producer_scenes.py, whose steps beat the same way."""
+    waited_until = time.monotonic() + 40 * HEARTBEAT_SECONDS
+    while (now := last_beat()) == seen and time.monotonic() < waited_until:
+        time.sleep(HEARTBEAT_SECONDS / 5)
+    return now
+
+
 def test_the_producer_beats_while_it_works_and_stops_beating_when_it_ends(
     fake_model: FakeModel, session_id: str, say: Callable[..., None], settings: Settings
 ) -> None:
@@ -214,19 +223,11 @@ def test_the_producer_beats_while_it_works_and_stops_beating_when_it_ends(
     def last_beat() -> datetime | None:
         return Session.objects.get(pk=session_id).producer_seen_at
 
-    def last_beat_after(seen: datetime | None) -> datetime | None:
-        """The producer's next beat after `seen`, waited for up to forty heartbeats; `seen`
-        again if it never beats."""
-        waited_until = time.monotonic() + 40 * HEARTBEAT_SECONDS
-        while (now := last_beat()) == seen and time.monotonic() < waited_until:
-            time.sleep(HEARTBEAT_SECONDS / 5)
-        return now
-
     beats: list[datetime | None] = []
 
     def the_producer_thinks_for_a_while() -> None:
         beats.append(last_beat())
-        beats.append(last_beat_after(beats[0]))
+        beats.append(beat_after(beats[0], last_beat))
 
     fake_model.respond("produce", meanwhile(the_producer_thinks_for_a_while, turn(says="Hello!")))
 

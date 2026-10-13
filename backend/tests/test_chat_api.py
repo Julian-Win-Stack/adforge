@@ -395,6 +395,18 @@ def test_a_worker_on_code_from_before_scene_steps_can_still_add_a_message(
     assert (said["text"], said["step"]) == ("Still here.", None)
 
 
+def test_a_session_holds_its_jobs_and_a_job_points_at_the_one_it_varies() -> None:
+    session = Session.objects.create()
+    first = Job.objects.create(session=session, product_url="https://shop.example/products/mug")
+    variant = Job.objects.create(
+        session=session, product_url="https://shop.example/products/mug", variant_of=first
+    )
+
+    assert list(session.jobs.order_by("created_at")) == [first, variant]
+    assert list(first.variants.all()) == [variant]
+    assert variant.variant_of == first
+
+
 # A message sent to the session whose producer is working is taken straight away, as an
 # interrupt: test_producer_messages.py
 # ::test_an_interrupt_is_taken_and_read_by_the_producer_already_working.

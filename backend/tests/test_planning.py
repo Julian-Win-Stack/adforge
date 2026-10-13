@@ -332,7 +332,7 @@ def test_a_first_scene_given_a_blank_shows_is_the_person_talking() -> None:
     assert [scene.shows for scene in decision.plan.scenes] == [None, "hot tea poured into the mug"]
 
 
-def test_a_broll_scenes_blank_usage_and_result_are_read_as_none() -> None:
+def test_a_broll_scenes_blank_usage_and_result_are_read_as_empty() -> None:
     decision = DECISION.model_validate(broll_scene(usage="  ", result=""))
 
     assert decision.plan is not None

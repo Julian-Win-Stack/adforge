@@ -33,6 +33,7 @@ from .conftest import (
     producer_turns,
     results_of,
 )
+from .test_producer_messages import HEARTBEAT_SECONDS, beat_after
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -656,21 +657,9 @@ def test_a_picture_paid_for_before_the_worker_stopped_is_kept_rather_than_made_a
     assert len(shown) == 2  # The person, then the picture, once.
 
 
-HEARTBEAT_SECONDS = 0.05
-
-
 def seen_at() -> datetime:
     """When the one step was last seen alive."""
     return SceneStep.objects.get().seen_at
-
-
-def seen_at_after(seen: datetime) -> datetime:
-    """When the step is next seen alive after `seen`, waited for up to forty heartbeats;
-    `seen` again if it never is."""
-    waited_until = time.monotonic() + 40 * HEARTBEAT_SECONDS
-    while (now := seen_at()) <= seen and time.monotonic() < waited_until:
-        time.sleep(HEARTBEAT_SECONDS / 5)
-    return now
 
 
 def test_a_step_beats_while_it_works(
@@ -687,7 +676,7 @@ def test_a_step_beats_while_it_works(
 
     def choosing_takes_a_while() -> dict[str, Any]:
         beats.append(seen_at())
-        beats.append(seen_at_after(beats[0]))
+        beats.append(beat_after(beats[0], seen_at))
         return CHOICE
 
     fake_model.respond("choose_starting_picture", choosing_takes_a_while)

@@ -21,6 +21,7 @@ from jobs.scenes import (
     BROLL_KIND_RULES,
     BROLL_PICTURE_INSTRUCTIONS,
     BROLL_SHARED_RULES,
+    broll_prompt_instructions,
 )
 
 from .conftest import (
@@ -39,6 +40,8 @@ from .conftest import (
     silences,
     video,
 )
+from .test_frozen_rules import BROLL_PROMPT as FROZEN_BROLL_PROMPT
+from .test_frozen_rules import FROZEN
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -423,7 +426,28 @@ def test_the_model_writing_the_prompts_is_told_the_proven_rules(rule: str) -> No
 def test_the_model_writing_the_prompts_is_no_longer_told_the_rules_grades_rejected(
     dropped: str,
 ) -> None:
-    assert dropped not in BROLL_SHARED_RULES
+    # Absent from the whole text the model is told, whichever kind the scene is: a rejected
+    # rule can't come back through a kind's own rules.
+    for kind in BROLL_KIND_RULES:
+        assert dropped not in broll_prompt_instructions(kind), kind
+
+
+# The frozen sentences of the B-roll prompt (test_frozen_rules.py) are shared rules, so each
+# is told for every kind, not only the "does a job" kind that file reads.
+FROZEN_SHARED_RULES = [
+    pytest.param(str(sentence), id=frozen.id)
+    for frozen in FROZEN
+    for prompt, sentence in [frozen.values]
+    if prompt == FROZEN_BROLL_PROMPT
+]
+
+
+@pytest.mark.parametrize("sentence", FROZEN_SHARED_RULES)
+@pytest.mark.parametrize("kind", BROLL_KIND_RULES)
+def test_every_kind_of_b_roll_scene_is_told_each_frozen_shared_rule(
+    kind: str, sentence: str
+) -> None:
+    assert sentence in broll_prompt_instructions(kind)
 
 
 # What both best start pictures did (#8 toilet 5 s, #12 V2): rows 9, 18, 31. The sentence
