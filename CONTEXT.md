@@ -184,6 +184,10 @@ _Avoid_: Verification, accuracy check
 A check on something already produced, such as a picture or a clip. On unless switched off as a whole. Built so far: the B-roll starting picture check, which looks at the picture, beside the shop photo it was drawn from, for objects that can't exist (a part on the wrong side, two sides of one object seen at once) before a clip is paid for; and the B-roll clip check, which looks at the clip right after it is made for objects that can't exist (5 stills) and for movement or change no real camera could film (5 frames a second), and keeps its ruling on the clip.
 _Avoid_: QA, review, gate
 
+**Auto-fix**:
+What code does when the B-roll clip check fails a clip: the clip is made again from the same starting picture, its video prompt written again from what the check saw wrong (keeping the shop owner's fix, when the clip was made for one), at most twice. Each remake is checked too; the clip with the fewest failed answers is kept, the newest of those tied, and the producer is told once, when it's done. The shop owner isn't asked: no yes is needed for it.
+_Avoid_: Retry, redo (a redo is made for a fix)
+
 ### Not yet built
 
 Named so the words mean one thing when these are built. Nothing implements them today.
