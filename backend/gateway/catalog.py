@@ -52,10 +52,12 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "make_music": "sonilo/v1.1/text-to-music",
 }
 
-# How long a model may take to answer, in seconds, for purposes slower than ANSWER_SECONDS: the
-# clip judge looks at up to 50 pictures and reasons over them (the harness waited up to 600).
+# How long a model may take to answer, in seconds. A slow purpose has its own time, and once it
+# has taken that long it isn't asked again (gateway.types.AnswerTookTooLong): the clip judge
+# looks at up to 50 pictures and reasons over them (the harness waited up to 600), and the
+# clip step waits on it.
 ANSWER_SECONDS = 120
-SLOW_ANSWER_SECONDS: dict[str, int] = {"check_clip_sides": 600, "check_clip_motion": 600}
+SLOW_ANSWER_SECONDS: dict[str, float] = {"check_clip_sides": 600, "check_clip_motion": 600}
 
 # US dollars per million tokens: (input, output). From OpenAI's pricing page.
 PRICE_PER_MILLION_TOKENS: dict[str, tuple[Decimal, Decimal]] = {

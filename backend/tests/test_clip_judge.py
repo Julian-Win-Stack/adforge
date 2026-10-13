@@ -5,7 +5,10 @@ many of the 6 answers failed, and each failed answer's problem and everything it
 
 from typing import Any
 
-from jobs.clip_judge import judged
+import pytest
+
+from jobs import clip_judge
+from jobs.clip_judge import judged, wording_version
 
 SEEN = [{"time": 0.0, "objects": []}]
 
@@ -182,5 +185,42 @@ def test_a_thing_never_back_to_normal_isnt_let_go_whatever_seconds_it_names() ->
 
 def test_two_answers_settle_a_check_when_its_third_went_unchecked() -> None:
     ruling = judged([sides(), None, sides()], [motion()] * 3)
+
+    assert ruling["verdict"] == "pass"
+
+
+@pytest.mark.parametrize(
+    "told", ["MOTION_CHECK", "SIDES_CHECK", "PAGE_FRAME", "CONVERSATION_FRAME", "FRAMES_LABEL"]
+)
+def test_the_wording_version_changes_whenever_what_the_judge_is_told_does(
+    told: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before = wording_version()
+    monkeypatch.setattr(clip_judge, told, getattr(clip_judge, told) + " Changed.")
+
+    assert wording_version() != before
+
+
+def test_a_time_span_with_an_about_is_measured_from_where_it_starts() -> None:
+    # Back 2.3 s after it started at 1.2: read from 3.4, it would look like 0.1 s.
+    span = "The handle melts into the side from 1.2 to about 3.4 s; a real one stays put."
+    ruling = judged([sides(span, "3.5")] * 2 + [sides()], [motion()] * 3)
+
+    assert ruling["verdict"] == "fail"
+
+
+@pytest.mark.parametrize(
+    "back",
+    ["Not back to normal; still fused at the last frame, 2.6 s", "about 2.6", "2.6 or so"],
+)
+def test_only_a_bare_time_counts_as_back_to_normal(back: str) -> None:
+    ruling = judged([sides(HANDLE, back)] * 2 + [sides()], [motion()] * 3)
+
+    assert ruling["verdict"] == "fail"
+
+
+@pytest.mark.parametrize("back", ["2.6", "2.6 s", " 2.6s ", "2.6 seconds"])
+def test_a_bare_time_with_or_without_its_unit_counts_as_back_to_normal(back: str) -> None:
+    ruling = judged([sides(HANDLE, back)] * 2 + [sides()], [motion()] * 3)
 
     assert ruling["verdict"] == "pass"

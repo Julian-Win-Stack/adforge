@@ -21,6 +21,7 @@ from adforge.retry import OutsideServiceDown
 
 from . import catalog
 from .types import (
+    AnswerTookTooLong,
     BlockedBySafetyFilter,
     LoadedImage,
     ModelReply,
@@ -69,6 +70,10 @@ class OpenAIProvider:
                 input=_input(request),
                 text_format=request.output,
             )
+        except openai.APITimeoutError as error:
+            if request.purpose in catalog.SLOW_ANSWER_SECONDS:
+                raise AnswerTookTooLong(str(error)) from error
+            raise OutsideServiceDown(str(error)) from error
         except _WORTH_RETRYING as error:
             raise OutsideServiceDown(str(error)) from error
         except openai.BadRequestError as error:

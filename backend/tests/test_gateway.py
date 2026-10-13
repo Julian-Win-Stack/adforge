@@ -1,5 +1,6 @@
 import base64
 import io
+import json
 import time
 from collections.abc import Callable, Sequence
 from decimal import Decimal
@@ -10,9 +11,11 @@ import pytest
 from pydantic import ValidationError
 from pytest_django import Settings
 from pytest_httpserver import HTTPServer
+from werkzeug import Request, Response
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
+from gateway import catalog
 from gateway.fake import FakeModel
 from gateway.gateway import (
     UnreadableImage,
@@ -23,7 +26,7 @@ from gateway.gateway import (
     submit_clip,
 )
 from gateway.models import ModelCall
-from gateway.types import Image, UnusableReply
+from gateway.types import AnswerTookTooLong, Image, UnusableReply
 from jobs.work import PageCheck, PageCheckHandoff
 
 from .conftest import READABLE, openai_answer, openai_reply, picture
@@ -444,3 +447,41 @@ def test_a_slow_clip_is_told_of_once_counted_from_the_first_look_even_if_the_ser
         (2, ModelCall.Outcome.FAILED),
         (3, ModelCall.Outcome.SUCCEEDED),
     ]
+
+
+def _answers_after(httpserver: HTTPServer, seconds: float) -> None:
+    """The stand-in OpenAI server answers its next request only after `seconds`."""
+
+    def slowly(_: Request) -> Response:
+        time.sleep(seconds)
+        return Response(json.dumps(openai_answer(READABLE)), content_type="application/json")
+
+    httpserver.expect_oneshot_request("/v1/responses", method="POST").respond_with_handler(slowly)
+
+
+def test_a_slow_purpose_that_takes_too_long_is_given_up_on_and_not_asked_again(
+    httpserver: HTTPServer,
+    openai_server: Callable[..., None],
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Such as the clip judge: asked again, a stalled ask would hold the clip step for each try.
+    settings.RETRY_DELAYS_SECONDS = [0, 0]
+    monkeypatch.setattr(catalog, "SLOW_ANSWER_SECONDS", {"check_page": 0.3})
+    _answers_after(httpserver, 1)
+
+    with pytest.raises(AnswerTookTooLong):
+        _check_page([])
+
+    assert ModelCall.objects.get().outcome == "failed"
+
+
+def test_only_the_purposes_named_slow_get_their_own_time_to_answer(
+    httpserver: HTTPServer, openai_server: Callable[..., None], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(catalog, "SLOW_ANSWER_SECONDS", {"check_clip_sides": 0.3})
+    _answers_after(httpserver, 1)
+
+    _check_page([])
+
+    assert ModelCall.objects.get().outcome == "succeeded"

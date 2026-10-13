@@ -279,12 +279,13 @@ def test_going_back_to_an_earlier_note_brings_its_clip_back_without_paying_again
     assert steps.held == []
     assert clips() == [(2, 1), (2, 2), (2, 3), (2, 4)]
     second, back = (ProducedItem.objects.get(kind="clip", version=v) for v in (2, 4))
-    assert (back.file, back.step, back.seconds, back.made_from, back.picture) == (
+    assert (back.file, back.step, back.seconds, back.made_from, back.picture, back.ruling) == (
         second.file,
         second.step,
         second.seconds,
         second.made_from,
         second.picture,
+        second.ruling,
     )
     assert results_of("make_clip")[-1].startswith(
         "Scene 2's clip was already made from this starting picture and audio with this note "

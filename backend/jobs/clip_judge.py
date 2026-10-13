@@ -37,7 +37,13 @@ from adforge import file_store
 from adforge.retry import OutsideServiceDown
 from gateway import catalog
 from gateway.gateway import call_model
-from gateway.types import BlockedBySafetyFilter, Handoff, Image, UnusableReply
+from gateway.types import (
+    AnswerTookTooLong,
+    BlockedBySafetyFilter,
+    Handoff,
+    Image,
+    UnusableReply,
+)
 
 from . import assembly
 from .models import ProducedItem, SceneStep
@@ -245,18 +251,6 @@ class MotionVerdict(BaseModel):
 
 MOTION_QUESTIONS = ("real_motion", "sudden_change", "does_what_was_ordered")
 
-# A version of the judge's words, kept with each ruling: changes whenever they do.
-WORDING = hashlib.sha256(
-    "\n".join(
-        [
-            SIDES_CHECK,
-            MOTION_CHECK,
-            json.dumps(SidesVerdict.model_json_schema(), sort_keys=True),
-            json.dumps(MotionVerdict.model_json_schema(), sort_keys=True),
-        ]
-    ).encode()
-).hexdigest()[:10]
-
 # ---------------------------------------------------------------- the ruling
 
 Verdict = Literal["pass", "fail", "not_checked"]
@@ -336,22 +330,27 @@ def judged(
     }
 
 
-# The first second a problem names, where it starts: "at 8.0 s", "from 1.2-1.4 s", "3 seconds".
-_SECONDS = re.compile(
-    r"(\d+(?:\.\d+)?)\s*(?:(?:[-–—]|to|and)\s*\d+(?:\.\d+)?\s*)?(?:s\b|sec|second)"
+# Where a problem starts: the first number of the first time it names, as "at 8.0 s",
+# "from 1.2-1.4 s", "from 1.2 to about 3.4 s" or "3 seconds".
+_STARTS = re.compile(
+    r"(\d+(?:\.\d+)?)\s*(?:(?:[-\u2013\u2014]|to|and)\s*(?:about|around|roughly|~)?\s*"
+    r"\d+(?:\.\d+)?\s*)?(?:s\b|sec|second)"
 )
+# When the thing is back to normal, only as a bare time: "4.9", "4.9 s", "4.9 seconds".
+_BACK_AT = re.compile(r"\s*(\d+(?:\.\d+)?)\s*(?:s|secs?|seconds?)?\s*\.?\s*", re.IGNORECASE)
 
 
 def _back_to_normal_soon(problem: str | None, back_to_normal_at: str | None) -> bool:
     """Whether the thing `problem` is about is back to normal, at `back_to_normal_at`, within
-    BACK_TO_NORMAL_WITHIN_SECONDS of when the problem starts. Never, when the problem names no
-    second or the thing is never back (as score.py's `forgiven`)."""
-    back = (back_to_normal_at or "").strip().lower()
-    starts = _SECONDS.search(problem or "")
-    back_at = re.search(r"\d+(?:\.\d+)?", back)
-    if not back or "never" in back or starts is None or back_at is None:
+    BACK_TO_NORMAL_WITHIN_SECONDS of when the problem starts. Only a bare time counts as back
+    to normal: anything else, "never" included, is not back; and a problem that names no
+    second is never let go (decided 2026-10-13, decisions/review-clip-judge-in-app.md item 5;
+    the harness's score.py reads them the same way)."""
+    starts = _STARTS.search(problem or "")
+    back = _BACK_AT.fullmatch(back_to_normal_at or "")
+    if starts is None or back is None:
         return False
-    return 0 <= float(back_at.group(0)) - float(starts.group(1)) <= BACK_TO_NORMAL_WITHIN_SECONDS
+    return 0 <= float(back.group(1)) - float(starts.group(1)) <= BACK_TO_NORMAL_WITHIN_SECONDS
 
 
 # ---------------------------------------------------------------- judging a clip
@@ -360,8 +359,12 @@ def _back_to_normal_soon(problem: str | None, back_to_normal_at: str | None) -> 
 # images (50)", seen 2026-10-12). When the frames and the shop photo don't fit, frames side by
 # side in time order are joined into one picture.
 MOST_PICTURES = 50
+# How the pictures are labelled for the judge.
+SHOP_PHOTO_LABEL = "The shop photo of the product:"
+NEEDS_PHOTO_LABEL = "A shop photo of {}:"
+FRAMES_LABEL = "Frames from the clip, in order:"
 # At most this many photos of what a scene needs are shown beside the main one (plan.md §3).
-MOST_NEEDS_PHOTOS = 5
+NEEDS_PHOTOS_SHOWN = 5
 
 
 class ClipCheckHandoff(Handoff):
@@ -388,33 +391,60 @@ class MotionCheckHandoff(ClipCheckHandoff):
 def judge_clip(
     step: SceneStep, clip: ProducedItem, *, conversation: list[ChatMessage]
 ) -> dict[str, Any]:
-    """Judge the B-roll clip `step` made, keeping the ruling on the clip: see `judged`, plus
-    "wording" (a version of the judge's words) and "models" (each check's), and "pictures"
-    (what it was shown of the clip). `conversation` is what was said with the shop owner when
-    the step started. Its pictures are cut once and kept on the clip before any ask, so a clip
+    """Judge the B-roll clip `step` made, keeping the ruling on the clip and giving it: see
+    `judged`, plus "wording" (wording_version()), "models" (each check's) and "pictures" (what
+    it was shown of the clip). `conversation` is what was said with the shop owner when the
+    step started. Its pictures are cut once and kept on the clip before any ask, so a clip
     judged again after the worker stopped is shown the same pictures, and pays for no answer
-    twice."""
-    pictures = (clip.ruling or {}).get("pictures") or cut_pictures(clip.file)
-    clip.ruling = {"pictures": pictures}
+    twice. A clip that can't be judged at all, for a reason nobody expected, is kept as not
+    checked, with "error" saying why, in a ruling of the same shape: the clip is paid for."""
+    try:
+        sides, motion = _asked(step, clip, conversation)
+        ruling = _ruling(sides, motion, clip)
+    except Exception as error:
+        logger.exception("Scene %s's clip couldn't be judged", step.scene.number)
+        ruling = {**_ruling([None] * ASKS, [None] * ASKS, clip), "error": str(error)}
+    clip.ruling = ruling
     clip.save(update_fields=["ruling"])
+    return ruling
+
+
+def _ruling(
+    sides: list[dict[str, Any] | None], motion: list[dict[str, Any] | None], clip: ProducedItem
+) -> dict[str, Any]:
+    return {
+        **judged(sides, motion),
+        "wording": wording_version(),
+        "models": {
+            "sides": catalog.MODEL_FOR_PURPOSE["check_clip_sides"],
+            "motion": catalog.MODEL_FOR_PURPOSE["check_clip_motion"],
+        },
+        "pictures": (clip.ruling or {}).get("pictures"),
+    }
+
+
+def _asked(
+    step: SceneStep, clip: ProducedItem, conversation: list[ChatMessage]
+) -> tuple[list[dict[str, Any] | None], list[dict[str, Any] | None]]:
+    """Each check's answers about `clip`, in the order asked, all asked at once."""
     planned = step.picture_step
     assert planned is not None and planned.photo is not None, (
         "a B-roll clip is made from a starting picture drawn from its main photo"
     )
     photo = planned.photo.file
-    sides_facts = _facts(step, with_use=False)
-    motion_facts = _facts(step, with_use=True)
-    understood = step.fix.fix if step.fix else None
     needs = _needs_photos(step)
-    asks: list[_Ask] = [
+    pictures = (clip.ruling or {}).get("pictures") or cut_pictures(clip.file, beside=1 + len(needs))
+    clip.ruling = {"pictures": pictures}
+    clip.save(update_fields=["ruling"])
+    owner: dict[str, Any] = {
+        "conversation": conversation,
+        "what_the_agent_understood_from_the_owner": step.fix.fix if step.fix else None,
+    }
+    asks = [
         _Ask(
             "check_clip_sides",
-            ClipCheckHandoff(
-                ask=ask,
-                facts=sides_facts,
-                conversation=conversation,
-                what_the_agent_understood_from_the_owner=understood,
-            ),
+            SIDES_CHECK,
+            ClipCheckHandoff(ask=ask, facts=_facts(step, with_use=False), **owner),
             SidesVerdict,
             _shown(photo, needs, pictures["stills"]),
         )
@@ -422,12 +452,9 @@ def judge_clip(
     ] + [
         _Ask(
             "check_clip_motion",
+            MOTION_CHECK,
             MotionCheckHandoff(
-                ask=ask,
-                facts=motion_facts,
-                order=step.shows,
-                conversation=conversation,
-                what_the_agent_understood_from_the_owner=understood,
+                ask=ask, facts=_facts(step, with_use=True), order=step.shows, **owner
             ),
             MotionVerdict,
             _shown(photo, needs, pictures["frames"]),
@@ -440,57 +467,52 @@ def judge_clip(
             for each in asks
         ]
         answers = [each.result() for each in asked]
-    ruling = {
-        **judged(answers[:ASKS], answers[ASKS:]),
-        "wording": WORDING,
-        "models": {
-            "sides": catalog.MODEL_FOR_PURPOSE["check_clip_sides"],
-            "motion": catalog.MODEL_FOR_PURPOSE["check_clip_motion"],
-        },
-        "pictures": pictures,
-    }
-    clip.ruling = ruling
-    clip.save(update_fields=["ruling"])
-    return ruling
+    return answers[:ASKS], answers[ASKS:]
 
 
 @dataclass(frozen=True)
 class _Ask:
-    """One ask of one check: what it is asked for, as, and shown."""
+    """One ask of one check: what it is asked for, told, handed and shown, and answers as."""
 
     purpose: str
+    instructions: str
     handoff: ClipCheckHandoff
     output: type[SidesVerdict] | type[MotionVerdict]
     images: list[Image]
 
 
 def _answer(step: SceneStep, ask: _Ask) -> dict[str, Any] | None:
-    """One ask's answer, or None when it can't be had: the clip is paid for, and failing it
-    for that would pay for it again."""
+    """One ask's answer, or None when it can't be had, for any reason: the clip is paid for,
+    and the other asks' answers still count."""
     try:
         answer: BaseModel = call_model(
             job=step.scene.job,
             purpose=ask.purpose,
-            instructions=SIDES_CHECK if ask.output is SidesVerdict else MOTION_CHECK,
+            instructions=ask.instructions,
             handoff=ask.handoff,
             output=ask.output,
             images=ask.images,
             pay_once=True,
         )
         return answer.model_dump(mode="json")
-    except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
+    except Exception as error:
         logger.warning(
             "%s ask %s about scene %s's clip went unchecked: %s",
             ask.purpose,
             ask.handoff.ask,
             step.scene.number,
             error,
+            # Expected when a model or the service misbehaves; anything else is a bug to see.
+            exc_info=not isinstance(
+                error, (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter, AnswerTookTooLong)
+            ),
         )
         return None
 
 
 def _in_its_own_thread[Out](work: Callable[..., Out], *args: Any) -> Out:
-    """Run `work` in a thread of its own, then close the database connection it opened."""
+    """Run `work` in a thread of its own, then close the database connection it opened (as
+    work._closing_its_connection, which this module can't import: work imports it)."""
     try:
         return work(*args)
     finally:
@@ -522,19 +544,19 @@ def _facts(step: SceneStep, *, with_use: bool) -> str:
 
 def _needs_photos(step: SceneStep) -> list[Image]:
     """A shop photo of each thing the scene needs that the main photo can't show, chosen as
-    for its starting picture, at most MOST_NEEDS_PHOTOS, labelled with what it shows."""
+    for its starting picture, at most NEEDS_PHOTOS_SHOWN, labelled with what it shows."""
     photos = {photo.position: photo for photo in step.scene.job.photos.all()}
     faces = {position: photo.has_face for position, photo in photos.items()}
     return [
-        Image(label=f"A shop photo of {' and '.join(need.what)}:", key=photos[need.photo].file)
-        for need in photos_for_needs(step.needs, faces, MOST_NEEDS_PHOTOS)
+        Image(label=NEEDS_PHOTO_LABEL.format(" and ".join(need.what)), key=photos[need.photo].file)
+        for need in photos_for_needs(step.needs, faces, NEEDS_PHOTOS_SHOWN)
     ]
 
 
 def _shown(photo: str, needs: list[Image], pictures: list[dict[str, Any]]) -> list[Image]:
     """The shop photo, the photos of what the scene needs, then the pictures of the clip in
     order, each labelled with the time of each frame in it."""
-    shown = [Image(label="The shop photo of the product:", key=photo), *needs]
+    shown = [Image(label=SHOP_PHOTO_LABEL, key=photo), *needs]
     for n, picture in enumerate(pictures):
         times = picture["times"]
         label = (
@@ -543,28 +565,28 @@ def _shown(photo: str, needs: list[Image], pictures: list[dict[str, Any]]) -> li
             else f"Frames at {', '.join(f'{t:g} s' for t in times)}, left to right"
         )
         if n == 0:
-            label = f"Frames from the clip, in order:\n{label}"
+            label = f"{FRAMES_LABEL}\n{label}"
         shown.append(Image(label=label, key=picture["key"]))
     return shown
 
 
-def cut_pictures(clip: str) -> dict[str, list[dict[str, Any]]]:
+def cut_pictures(clip: str, *, beside: int) -> dict[str, list[dict[str, Any]]]:
     """The pictures the judge is shown of the clip at `clip`, kept in the file store, each
     with the time in seconds of each frame in it: "stills" for SIDES, "frames" for MOTION
-    (frames.py in the harness). Frames that wouldn't fit in one ask beside the shop photo are
-    joined side by side, as few in a row as fit."""
+    (frames.py in the harness). Frames that wouldn't fit in one ask beside `beside` other
+    pictures are joined side by side, as few in a row as fit."""
     with tempfile.TemporaryDirectory() as folder:
         video = Path(folder) / "clip.mp4"
         video.write_bytes(file_store.read(clip))
         frames = _every_frame(video, Path(folder) / "frames")
         stills = _stills(video, Path(folder) / "stills")
-        return {"stills": _kept(stills), "frames": _kept(frames)}
+        room = MOST_PICTURES - beside
+        return {"stills": _kept(stills, room), "frames": _kept(frames, room)}
 
 
-def _kept(frames: list[tuple[Path, float]]) -> list[dict[str, Any]]:
-    """`frames` kept as at most as many pictures as fit beside the shop photo and the photos
-    of what the scene needs."""
-    together = math.ceil(len(frames) / (MOST_PICTURES - 1 - MOST_NEEDS_PHOTOS))
+def _kept(frames: list[tuple[Path, float]], room: int) -> list[dict[str, Any]]:
+    """`frames` kept as at most `room` pictures."""
+    together = math.ceil(len(frames) / room)
     groups = [frames[i : i + together] for i in range(0, len(frames), together)]
     return [
         {"times": [t for _, t in group], "key": _side_by_side([path for path, _ in group])}
@@ -593,13 +615,15 @@ def _side_by_side(paths: list[Path]) -> str:
 def _ffmpeg(*arguments: str) -> bytes:
     """What ffmpeg gives with `arguments`. Never reads stdin: an ffmpeg that does eats the
     input of whatever runs it."""
-    return subprocess.run(
+    ran = subprocess.run(
         [settings.FFMPEG, "-nostdin", "-hide_banner", "-loglevel", "error", *arguments],
         stdin=subprocess.DEVNULL,
         capture_output=True,
-        check=True,
         timeout=assembly.TIMEOUT_SECONDS,
-    ).stdout
+    )
+    if ran.returncode != 0:
+        raise RuntimeError(f"ffmpeg failed: {ran.stderr.decode(errors='replace')[-2000:]}")
+    return ran.stdout
 
 
 def _every_frame(video: Path, folder: Path) -> list[tuple[Path, float]]:
@@ -668,3 +692,23 @@ def _biggest_change(video: Path) -> float:
     ]
     rate = len(frames) / assembly.seconds_of(video)
     return (changes.index(max(changes)) + 1) / rate
+
+
+def wording_version() -> str:
+    """A version of everything the judge is told, kept with each ruling: its instructions,
+    the frames around the shop's text and the conversation, what it is handed, how the
+    pictures are labelled, and its answer forms. It changes whenever any of them does."""
+    told = [
+        SIDES_CHECK,
+        MOTION_CHECK,
+        PAGE_FRAME,
+        CONVERSATION_FRAME,
+        SHOP_PHOTO_LABEL,
+        NEEDS_PHOTO_LABEL,
+        FRAMES_LABEL,
+        *(
+            json.dumps(form.model_json_schema(), sort_keys=True)
+            for form in (ClipCheckHandoff, MotionCheckHandoff, SidesVerdict, MotionVerdict)
+        ),
+    ]
+    return hashlib.sha256("\n".join(told).encode()).hexdigest()[:10]

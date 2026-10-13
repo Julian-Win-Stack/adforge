@@ -66,6 +66,11 @@ class UnusableReply(Exception):
         self.output_tokens = output_tokens
 
 
+class AnswerTookTooLong(Exception):
+    """A model took longer to answer than its purpose allows (catalog.SLOW_ANSWER_SECONDS).
+    Not asked again: a stalled ask would hold up whatever waits on it for every try."""
+
+
 class BlockedBySafetyFilter(Exception):
     """The provider's safety filter refused what it was sent, such as a product photo it
     took for something it isn't. Asking again sends the same thing, so it isn't retried."""

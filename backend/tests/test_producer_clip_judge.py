@@ -16,7 +16,7 @@ from gateway.catalog import MODEL_FOR_PURPOSE
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import UnusableReply
-from jobs.clip_judge import ASKS, WORDING
+from jobs.clip_judge import ASKS, wording_version
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 
 from .conftest import (
@@ -42,6 +42,11 @@ from .test_producer_clip_from_note import REWRITE
 pytestmark = pytest.mark.django_db(transaction=True)
 
 FLOATS = "The teapot rises at 1.2 s with no hand on it; a real one stays put."
+
+
+def sideways() -> dict[str, Any]:
+    """SIDES' answer when the mug shows a second handle."""
+    return {**CLIP_SIDES_OK, "verdict": "fail", "problem": "A second handle at 2 s."}
 
 
 def floating(question: str = "real_motion") -> dict[str, Any]:
@@ -272,19 +277,60 @@ def test_a_clip_judged_again_after_the_worker_stopped_pays_for_no_answer_twice(
     assert ruling(clip)["verdict"] == "pass"
 
 
-def test_a_judge_failing_for_a_reason_nobody_expected_keeps_the_clip_as_not_checked(
+def test_an_ask_failing_for_a_reason_nobody_expected_goes_unchecked_and_the_rest_still_count(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
+    fake_model.respond("check_clip_sides", *[sideways()] * 3)
     fake_model.respond("check_clip_motion", RuntimeError("the judge broke"))
 
     clip = clip_of(fake_model, steps, say, 2)
 
+    assert ruling(clip)["verdict"] == "fail"
+    assert ruling(clip)["checks"]["sides"] == "fail"
+    assert None in ruling(clip)["answers"]["motion"]
+
+
+def test_a_clip_that_cant_be_judged_at_all_is_kept_as_not_checked_with_a_whole_ruling(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    made_ready(fake_model, steps, say, (2,))
+    # A clip step whose starting picture lost the photo it was drawn from: nothing to judge by.
+    SceneStep.objects.filter(kind="starting_picture", scene__number=2).update(photo=None)
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    run(fake_model, steps)
+
+    clip = ProducedItem.objects.get(kind="clip", scene__number=2)
     assert ruling(clip)["verdict"] == "not_checked"
-    assert "the judge broke" in ruling(clip)["error"]
+    assert "photo" in ruling(clip)["error"]
+    # The same shape as any ruling, so whatever reads it finds every part.
+    assert ruling(clip)["failed_answers"] == 0
+    assert ruling(clip)["failures"] == []
+    assert ruling(clip)["checks"] == dict.fromkeys(
+        ("sides", "real_motion", "sudden_change", "does_what_was_ordered"), "not_checked"
+    )
     assert SceneStep.objects.get(kind="clip", scene__number=2).status == "finished"
+
+
+def test_a_9_second_clips_frames_are_each_shown_on_their_own(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    # 45 frames and the shop photo fit in one ask, as in the tested setup.
+    fake_model.words_per_second = 0.95
+
+    clip_of(fake_model, steps, say, 2)
+
+    for shown in labels("check_clip_motion"):
+        assert len(shown) == 46
+        assert shown[-1] == "Frame at 8.8 s"
 
 
 def test_both_checks_are_told_the_products_colour_and_size_and_the_conversation(
@@ -333,7 +379,7 @@ def test_a_fixs_clip_is_judged_with_what_the_agent_understood_from_the_owner(
 
 
 def test_the_ruling_says_which_words_and_models_judged_it(judged: ProducedItem) -> None:
-    assert ruling(judged)["wording"] == WORDING
+    assert ruling(judged)["wording"] == wording_version()
     assert ruling(judged)["models"] == {
         "sides": MODEL_FOR_PURPOSE["check_clip_sides"],
         "motion": MODEL_FOR_PURPOSE["check_clip_motion"],

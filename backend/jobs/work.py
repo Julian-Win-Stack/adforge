@@ -2000,17 +2000,11 @@ def make_clip(step: SceneStep) -> ProducedItem:
 
 
 def _judge_clip(step: SceneStep, clip: ProducedItem) -> None:
-    """Have the clip judge rule on a B-roll clip, keeping its ruling on the clip. A judge
-    failing for a reason nobody expected doesn't fail the step: its clip is made and paid for,
-    and is kept as not checked."""
-    try:
-        clip_judge.judge_clip(
-            step, clip, conversation=_conversation(step.scene.job, until=step.started_at)
-        )
-    except Exception as error:
-        logger.exception("Judging scene %s's clip failed", step.scene.number)
-        clip.ruling = {**(clip.ruling or {}), "verdict": "not_checked", "error": str(error)}
-        clip.save(update_fields=["ruling"])
+    """Have the clip judge rule on a B-roll clip, keeping its ruling on the clip, with what was
+    said with the shop owner when the step started."""
+    clip_judge.judge_clip(
+        step, clip, conversation=_conversation(step.scene.job, until=step.started_at)
+    )
 
 
 def _make_clip(step: SceneStep) -> ProducedItem:
@@ -2068,8 +2062,8 @@ def _make_clip(step: SceneStep) -> ProducedItem:
 
 def bring_back_clip(clip: ProducedItem) -> ProducedItem:
     """Make an earlier clip the scene's clip again, as its next version: the same file, step,
-    picture and audio, with nothing made or paid for again (#132 review, M1). The scene is
-    finished, as it was when the clip was made."""
+    picture, audio and judge's ruling, with nothing made or paid for again (#132 review, M1).
+    The scene is finished, as it was when the clip was made."""
     scene = clip.scene
     assert scene is not None, "a clip belongs to a scene"
     with transaction.atomic():
@@ -2083,6 +2077,7 @@ def bring_back_clip(clip: ProducedItem) -> ProducedItem:
             seconds=clip.seconds,
             made_from=clip.made_from,
             picture=clip.picture,
+            ruling=clip.ruling,
         )
         Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
     return again
