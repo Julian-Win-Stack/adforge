@@ -26,6 +26,7 @@ from jobs.work import (
     say_the_pictures_kept_failing,
     too_long_for_a_clip,
     transcribe_line_audio,
+    what_the_judge_did,
 )
 
 from . import loop, step_signals
@@ -270,7 +271,8 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
     return (
         f"Background step finished: scene {number}'s clip is ready (version {clip.version}, "
         f"{clip.seconds:g} seconds), made from {picture}audio version "
-        f"{clip.made_from.version}{note}.{_cost(step)} Scene {number} is finished.{fixed} "
+        f"{clip.made_from.version}{note}.{_cost(step)}{what_the_judge_did(step, clip)} "
+        f"Scene {number} is finished.{fixed} "
         "Tell the shop owner."
     )
 

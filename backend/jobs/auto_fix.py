@@ -1,0 +1,42 @@
+"""The auto-fix (#155): a B-roll clip the clip judge fails is made again by code, up to
+MOST_REMAKES times, and the best of the clips made is kept (change 9, Clip judge
+discussion; Julian's yes 2026-10-13 05:03)."""
+
+from typing import Any
+
+from .clip_judge import ASKS
+
+# How many times a clip the judge fails is made again.
+MOST_REMAKES = 2
+
+
+def clip_to_keep(failed_answers: list[int]) -> int:
+    """Which of the clips made for a scene, in the order they were made, is kept, given how
+    many of the judge's answers each failed: the fewest, and the newest of those tied
+    (change 9, Clip judge discussion)."""
+    fewest = min(failed_answers)
+    return max(i for i, failed in enumerate(failed_answers) if failed == fewest)
+
+
+def failed_answers(ruling: dict[str, Any]) -> int:
+    """How many of the judge's answers about a clip failed. A clip the judge couldn't check
+    counts as failing every one, so a clip it checked is kept over it."""
+    return int(ruling.get("failed_answers", 2 * ASKS))
+
+
+def faults(ruling: dict[str, Any]) -> list[str]:
+    """Every problem the judge's failed answers about a clip name, each once, in their
+    order."""
+    return list(
+        dict.fromkeys(problem for failed in ruling["failures"] for problem in failed["problems"])
+    )
+
+
+def judge_saw(ruling: dict[str, Any]) -> list[dict[str, Any]]:
+    """Each of the judge's failed answers about a clip whole, each the same answer once: what
+    it saw happen in the clip."""
+    seen: list[dict[str, Any]] = []
+    for failed in ruling["failures"]:
+        if failed["answer"] not in seen:
+            seen.append(failed["answer"])
+    return seen
