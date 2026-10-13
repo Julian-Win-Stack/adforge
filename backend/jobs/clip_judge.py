@@ -22,7 +22,7 @@ import math
 import re
 import subprocess
 import tempfile
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,7 +30,6 @@ from typing import Any, Literal
 
 import PIL.Image
 from django.conf import settings
-from django.db import connection
 from pydantic import BaseModel, Field
 
 from adforge import file_store
@@ -47,15 +46,16 @@ from gateway.types import (
 
 from . import assembly
 from .models import ProducedItem, SceneStep
+from .picture_check import ASKS as ASKS
+from .picture_check import FAILS_TO_FAIL as FAILS_TO_FAIL
 from .planning import ChatMessage
 from .scenes import photos_for_needs
+from .threads import closing_its_connection
 
 logger = logging.getLogger(__name__)
 
-# Each check is asked this many times, each time on its own, and fails when this many of its
-# answers fail it: one answer alone misses or invents too often (as the picture judge).
-ASKS = 3
-FAILS_TO_FAIL = 2
+# Each check is asked ASKS times, each time on its own, and fails when FAILS_TO_FAIL of its
+# answers fail it, as the picture judge: one answer alone misses or invents too often.
 
 # Change 7 (Julian 2026-10-13 04:11): a thing back to normal within this many seconds of when
 # the problem starts is a glitch nobody notices, so the answer passes, its note kept. A
@@ -444,7 +444,7 @@ def _asked(
     ]
     with ThreadPoolExecutor(max_workers=len(asks)) as pool:
         asked = [
-            pool.submit(contextvars.copy_context().run, _in_its_own_thread, _answer, step, each)
+            pool.submit(contextvars.copy_context().run, closing_its_connection, _answer, step, each)
             for each in asks
         ]
         answers = [each.result() for each in asked]
@@ -489,15 +489,6 @@ def _answer(step: SceneStep, ask: _Ask) -> dict[str, Any] | None:
             ),
         )
         return None
-
-
-def _in_its_own_thread[Out](work: Callable[..., Out], *args: Any) -> Out:
-    """Run `work` in a thread of its own, then close the database connection it opened (as
-    work._closing_its_connection, which this module can't import: work imports it)."""
-    try:
-        return work(*args)
-    finally:
-        connection.close()
 
 
 def _facts(step: SceneStep, *, with_use: bool) -> str:
