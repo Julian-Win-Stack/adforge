@@ -2057,17 +2057,13 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
     said = f"{failed}, so it was made again {times}"
     if _ruling(kept)["verdict"] == "pass":
         return f"{said}, and the judge passed the new one."
-    # The first clip failed, so the clip kept, with the fewest faults, was judged and failed.
+    if _ruling(kept)["verdict"] == "not_checked":
+        return f"{said}, and the judge couldn't check the new one, so it is kept unchecked."
     which = "the first clip" if kept.remake is None else f"remake {kept.remake}"
     still = " ".join(auto_fix.faults(_ruling(kept)))
-    last = (
-        f"it failed {'the remake' if remade == 1 else 'each remake'} too"
-        if _ruling(tries[-1])["verdict"] == "fail"
-        else "the judge couldn't check the last one"
-    )
     return (
-        f"{said}, and {last}. The clip kept is {which}, the one with the fewest faults, and "
-        f'the judge still sees: "{still}"'
+        f"{said}, and it failed {'the remake' if remade == 1 else 'each remake'} too. The clip "
+        f'kept is {which}, the one with the fewest faults, and the judge still sees: "{still}"'
     )
 
 

@@ -4,8 +4,6 @@ discussion; Julian's yes 2026-10-13 05:03)."""
 
 from typing import Any
 
-from .clip_judge import ASKS
-
 # How many times a clip the judge fails is made again.
 MOST_REMAKES = 2
 
@@ -20,10 +18,10 @@ def clip_to_keep(failed_answers: list[int]) -> int:
 
 def failed_answers(ruling: dict[str, Any]) -> int:
     """How many of the judge's answers about a clip failed. A clip the judge couldn't check
-    counts as failing more than every one, so a clip it checked is kept over it: nothing says
-    it is better."""
+    counts as failing none: it goes on as if it passed, and the shop owner is told it wasn't
+    checked (stand-in call 7, as Julian chose for #131 at 05:18)."""
     if ruling["verdict"] == "not_checked":
-        return 2 * ASKS + 1
+        return 0
     return int(ruling["failed_answers"])
 
 

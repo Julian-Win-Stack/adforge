@@ -400,7 +400,7 @@ def test_a_remake_that_cant_be_written_keeps_the_clip_made_and_finishes_the_step
     ) in step.result
 
 
-def test_a_remake_the_judge_couldnt_check_isnt_made_again_or_kept_over_a_checked_clip(
+def test_a_remake_the_judge_couldnt_check_isnt_made_again_and_is_kept_as_unchecked(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
@@ -415,13 +415,11 @@ def test_a_remake_the_judge_couldnt_check_isnt_made_again_or_kept_over_a_checked
 
     remake = ProducedItem.objects.get(kind="clip", remake=1)
     assert remake.ruling is not None and remake.ruling["verdict"] == "not_checked"
-    # Nothing the judge said about it to remake it from, and nothing to say it's better.
+    # No more is paid for without a verdict; it goes on as if it passed (stand-in call 7).
     assert paid_for().count("make_broll_clip") == 2
-    first = ProducedItem.objects.filter(kind="clip").order_by("id").first()
-    assert first is not None
-    assert clips() == [1, 2, 3]
-    assert ProducedItem.objects.get(kind="clip", version=3).file == first.file
+    assert clips() == [1, 2]
+    assert shown_clips() == [remake.file]
     assert (
-        "so it was made again once, and the judge couldn't check the last one. The clip kept "
-        "is the first clip"
+        "so it was made again once, and the judge couldn't check the new one, so it is kept "
+        "unchecked. Scene 2 is finished."
     ) in step.result
