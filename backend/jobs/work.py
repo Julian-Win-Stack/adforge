@@ -62,7 +62,7 @@ from gateway.types import (
     UnusableReply,
 )
 
-from . import assembly, clip_judge, firecrawl, fix_check, page, page_text, photos
+from . import assembly, auto_fix, clip_judge, firecrawl, fix_check, page, page_text, photos
 from .checks import (
     FACT_CHECK_INSTRUCTIONS,
     LENGTH_ALLOWANCE_SECONDS,
@@ -141,14 +141,17 @@ from .scenes import (
     BrollPictureHandoff,
     BrollPromptHandoff,
     BrollSceneToDraw,
+    ClipFromJudgeHandoff,
     ClipFromNoteChoice,
     ClipFromNoteHandoff,
+    JudgedTry,
     NeedPhoto,
     PictureJob,
     StartingPictureChoice,
     StartingPictureHandoff,
     broll_prompt_instructions,
     broll_video_prompt,
+    clip_from_judge_instructions,
     clip_from_note_instructions,
     need_job,
     photos_for_needs,
@@ -2175,12 +2178,138 @@ def make_clip(step: SceneStep) -> ProducedItem:
     Run again, as after a worker stopped, it pays for nothing already paid for: a clip
     asked for is waited for rather than asked for again, and one fetched is kept rather
     than fetched again."""
-    made = step.produced.first()
+    made = step.produced.order_by("id").first()
     if made is None:
         made = _make_clip(step)
     if step.shows and settings.QUALITY_CHECKS:
-        _judge_clip(step, made)
+        return _auto_fixed(step, made)
     return made
+
+
+def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
+    """The clip kept of a B-roll clip step's `first` clip and its remakes: each is judged,
+    and one the judge fails is made again from the same starting picture, up to
+    auto_fix.MOST_REMAKES times, its video prompt written again from what the judge saw
+    wrong. The one with the fewest failed answers is kept, the newest of those tied; one kept
+    from before the last is the scene's clip again, as its next version (the auto-fix, #155).
+
+    Run again, as after a worker stopped, it pays for nothing already paid for: a clip made or
+    judged is kept, and the remake under way is waited for."""
+    made = _clip_tries(step)
+    tries: list[ProducedItem] = []
+    for remake in range(auto_fix.MOST_REMAKES + 1):
+        if remake < len(made):
+            clip = made[remake]
+        else:
+            # A remake that can't be made doesn't fail the step: its clips are made and paid
+            # for, and the best of them is kept.
+            try:
+                clip = _remake_clip(step, tries)
+            except Exception:
+                logger.exception("Making scene %s's clip again failed", step.scene.number)
+                break
+        if "verdict" not in (clip.ruling or {}):
+            _judge_clip(step, clip)
+        tries.append(clip)
+        if _ruling(clip)["verdict"] != "fail":
+            break
+    kept = tries[auto_fix.clip_to_keep([auto_fix.failed_answers(_ruling(clip)) for clip in tries])]
+    if kept == tries[-1]:
+        return kept
+    brought_back = step.produced.filter(remake__isnull=True).exclude(pk=first.pk).first()
+    return brought_back or bring_back_clip(kept)
+
+
+def _clip_tries(step: SceneStep) -> list[ProducedItem]:
+    """A B-roll clip step's clips made so far, oldest first: its first, then each remake. A
+    clip brought back as the one kept isn't another."""
+    first = step.produced.order_by("id").first()
+    assert first is not None, "the step made its clip"
+    return [first, *step.produced.filter(remake__isnull=False).order_by("remake")]
+
+
+def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
+    """What the auto-fix did before `clip` was kept as a B-roll clip step's clip, as a sentence
+    to follow another, for the producer to tell the shop owner: nothing when the judge passed
+    its first clip or didn't judge it."""
+    tries = _clip_tries(step)
+    first = tries[0]
+    if (first.ruling or {}).get("verdict") != "fail":
+        return ""
+    kept = next(made for made in tries if made.file == clip.file)
+    remade = len(tries) - 1
+    faults = " ".join(auto_fix.faults(_ruling(first)))
+    failed = f' The clip judge failed the first clip it made ("{faults}")'
+    if not remade:
+        return f"{failed}, and it couldn't be made again, so it is kept as it is."
+    times = "once" if remade == 1 else f"{remade} times"
+    said = f"{failed}, so it was made again {times}"
+    if _ruling(kept)["verdict"] == "pass":
+        return f"{said}, and the judge passed the new one."
+    if _ruling(kept)["verdict"] == "not_checked":
+        return f"{said}, and the judge couldn't check the new one, so it is kept unchecked."
+    which = "the first clip" if kept.remake is None else f"remake {kept.remake}"
+    still = " ".join(auto_fix.faults(_ruling(kept)))
+    return (
+        f"{said}, and it failed {'the remake' if remade == 1 else 'each remake'} too. The clip "
+        f'kept is {which}, the one with the fewest faults, and the judge still sees: "{still}"'
+    )
+
+
+def _ruling(clip: ProducedItem) -> dict[str, Any]:
+    """The clip judge's ruling on `clip`, judged."""
+    ruling: dict[str, Any] | None = clip.ruling
+    assert ruling is not None, "the clip was judged"
+    return ruling
+
+
+def _remake_clip(step: SceneStep, tries: list[ProducedItem]) -> ProducedItem:
+    """Make a B-roll clip step's clip again after the judge failed each of `tries`, its clips
+    so far, oldest first: a model told the same rules as the one that wrote the scene's
+    prompts writes the video prompt again, handed what the judge saw wrong in the first clip
+    and, for a second remake, the first remake's prompt and what it saw wrong in that, and
+    shown the starting picture. The shop owner's fix the clip was made for, if any, is kept.
+    No conversation is handed over, and no "already made" or yes guard is asked: the judge,
+    not the shop owner, asked for it (change 9, Julian 2026-10-13)."""
+    job = step.scene.job
+    planned = step.picture_step
+    assert step.picture is not None and planned is not None, (
+        "a B-roll clip is made again only from its starting picture's step"
+    )
+    first, *remade = tries
+    earlier = remade[-1] if remade else None
+    written = call_model(
+        job=job,
+        purpose="remake_clip_prompt",
+        instructions=clip_from_judge_instructions(step.broll_kind, again=earlier is not None),
+        handoff=ClipFromJudgeHandoff(
+            scene=step.scene.number,
+            line=step.line,
+            shows=step.shows,
+            broll_kind=step.broll_kind,
+            person_shown=step.person_shown,
+            usage=step.usage,
+            result=step.broll_result,
+            picture_prompt=planned.prompt,
+            motion_prompt=step.motion_prompt or planned.motion_prompt,
+            faults=auto_fix.faults(_ruling(first)),
+            judge_saw=auto_fix.judge_saw(_ruling(first)),
+            owner_fix=step.note or None,
+            earlier_try=(
+                JudgedTry(
+                    motion_prompt=earlier.motion_prompt,
+                    faults=auto_fix.faults(_ruling(earlier)),
+                    judge_saw=auto_fix.judge_saw(_ruling(earlier)),
+                )
+                if earlier is not None
+                else None
+            ),
+        ),
+        output=ClipFromNoteChoice,
+        images=[Image(label="The starting picture", key=step.picture.file)],
+        pay_once=True,
+    )
+    return _make_clip(step, remake=len(tries), motion=written.motion_prompt)
 
 
 def _judge_clip(step: SceneStep, clip: ProducedItem) -> None:
@@ -2191,17 +2320,18 @@ def _judge_clip(step: SceneStep, clip: ProducedItem) -> None:
     )
 
 
-def _make_clip(step: SceneStep) -> ProducedItem:
-    """make_clip's clip, made and kept."""
+def _make_clip(step: SceneStep, *, remake: int = 0, motion: str = "") -> ProducedItem:
+    """make_clip's clip, made and kept: its first, or its `remake`th remake, moving as `motion`
+    says."""
     scene = step.scene
     job = scene.job
     picture, audio = step.picture, step.made_from
     assert audio is not None, "a clip step starts with its audio"
     assert picture is not None or step.picture_step is not None, "and its picture, or its plan"
     assert audio.seconds is not None, "a line's audio is measured when it's made"
-    if step.note and not step.motion_prompt:
+    if step.note and not step.motion_prompt and not remake:
         _rewrite_motion_prompt(step)
-    handoff = _clip_handoff(step, picture, audio)
+    handoff = _clip_handoff(step, picture, audio, motion=motion)
     making, collecting = _clip_purposes(step)
 
     def tell_its_slow() -> None:
@@ -2215,13 +2345,14 @@ def _make_clip(step: SceneStep) -> ProducedItem:
         )
 
     # A clip fetched before the worker stopped is kept, whichever video model made it.
-    fetched = _paid_for_before(job, collecting, charged_to=step.tool_call)
-    if fetched:
-        file = fetched["file"]
+    # The step's first clip is the first fetched for it, and each remake the next.
+    fetched = _paid_calls(job, collecting, charged_to=step.tool_call).order_by("id")[remake:]
+    if fetched and fetched[0].output is not None:
+        file = fetched[0].output["file"]
     else:
-        video_id = _clip_asked_for(step, handoff, making, collecting) or _ask_for_clip(
-            job, making, handoff
-        )
+        video_id = _clip_asked_for(
+            step, handoff, making, collecting, remake=remake
+        ) or _ask_for_clip(job, making, handoff)
         file = collect_clip(job=job, purpose=collecting, video_id=video_id, when_slow=tell_its_slow)
     # The talking video model makes a clip as long as the audio it speaks. A B-roll clip is
     # kept whole, as long as it was made, with the audio laid over its start.
@@ -2239,6 +2370,8 @@ def _make_clip(step: SceneStep) -> ProducedItem:
             seconds=seconds,
             made_from=audio,
             picture=picture,
+            remake=remake or None,
+            motion_prompt=motion,
         )
         Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
     return clip
@@ -2335,7 +2468,7 @@ def _clip_purposes(step: SceneStep) -> tuple[str, str]:
 
 
 def _clip_handoff(
-    step: SceneStep, picture: ProducedItem | None, audio: ProducedItem
+    step: SceneStep, picture: ProducedItem | None, audio: ProducedItem, *, motion: str = ""
 ) -> ClipHandoff | BrollClipHandoff:
     """What the video model is asked for: a clip speaking the audio, or, for a scene that
     shows the product, a silent one that moves as the picture's step planned, in the fewest
@@ -2364,7 +2497,8 @@ def _clip_handoff(
     seconds = _broll_clip_seconds(audio.seconds)
     assert picture is not None, "a B-roll scene's clip is made from its starting picture"
     # A clip made from a note has its own prompt, written again from the picture's.
-    motion = step.motion_prompt or planned.motion_prompt
+    # A remade clip has its own, written again from what the judge saw wrong.
+    motion = motion or step.motion_prompt or planned.motion_prompt
     return BrollClipHandoff(
         starting_picture=picture.file,
         seconds=seconds,
@@ -2415,7 +2549,12 @@ def _with_the_voice(file: str, audio: ProducedItem) -> tuple[str, float]:
 
 
 def _clip_asked_for(
-    step: SceneStep, handoff: ClipHandoff | BrollClipHandoff, making: str, collecting: str
+    step: SceneStep,
+    handoff: ClipHandoff | BrollClipHandoff,
+    making: str,
+    collecting: str,
+    *,
+    remake: int = 0,
 ) -> str | None:
     """The id of a clip already paid for with this same handoff that may still be made, so
     it is waited for rather than paid for again: asked for by this step before the worker
@@ -2424,9 +2563,14 @@ def _clip_asked_for(
     then it was kept, or it was refused. `making` and `collecting` are the purposes this kind
     of clip is asked for and collected as."""
     job = step.scene.job
-    asked_by_this_step = job.model_calls.filter(
-        purpose=making, outcome=ModelCall.Outcome.SUCCEEDED, tool_call=step.tool_call
-    ).last()
+    # The step's first clip is the first asked for by it, and each remake the next.
+    asked_by_this_step = (
+        job.model_calls.filter(
+            purpose=making, outcome=ModelCall.Outcome.SUCCEEDED, tool_call=step.tool_call
+        )
+        .order_by("id")[remake:]
+        .first()
+    )
     if asked_by_this_step is not None and asked_by_this_step.output is not None:
         # Such as one asked of the old Boreal before Boreal-H3 replaced it: no service here
         # can wait for it, and asking again might pay twice.

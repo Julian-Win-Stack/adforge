@@ -690,6 +690,17 @@ class ProducedItem(models.Model):
         "whole answer, the problems let go, every answer, and the pictures it was shown. "
         "Blank for a clip not judged.",
     )
+    remake = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="For a B-roll clip made again by code because the clip judge failed the one "
+        "before it (the auto-fix, #155): which remake of its step's clip it is, 1 or 2.",
+    )
+    motion_prompt = models.TextField(
+        blank=True,
+        help_text="For a remade clip, the video prompt written for it from what the judge saw "
+        "wrong.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

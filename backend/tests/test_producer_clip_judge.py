@@ -164,8 +164,14 @@ def test_a_clip_the_judge_fails_keeps_each_failed_answers_problem_and_what_it_sa
     say: Callable[..., None],  # noqa: F811
 ) -> None:
     fake_model.respond("check_clip_motion", floating(), CLIP_MOTION_OK, floating())
-
-    clip = clip_of(fake_model, steps, say, 2)
+    # The auto-fix (#155) makes it again, and the judge passes the remake.
+    fake_model.respond(
+        "remake_clip_prompt", {"motion_prompt": "Tea pours.", "motion_prompt_reason": "Pour."}
+    )
+    made_ready(fake_model, steps, say, (2,))
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    run(fake_model, steps)
+    clip = ProducedItem.objects.get(kind="clip", scene__number=2, version=1)
 
     assert ruling(clip)["verdict"] == "fail"
     assert ruling(clip)["failed_answers"] == 2
@@ -182,7 +188,6 @@ def test_a_clip_the_judge_fails_keeps_each_failed_answers_problem_and_what_it_sa
         CLIP_MOTION_OK,
     ]
     assert ruling(clip)["answers"]["sides"] == [CLIP_SIDES_OK] * 3
-    # The clip is kept and the scene finished: what to do about it is the auto-redo's.
     assert Scene.objects.get(number=2).status == "finished"
 
 
