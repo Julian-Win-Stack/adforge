@@ -616,8 +616,9 @@ def test_restating_a_scene_whose_first_clip_is_still_being_made_is_refused(
     owner_says(fake_model, say, NOTE_2, restating((2, FIX_2, "picture")))
 
     assert results_of("restate_fix") == [
-        "Refused: scene 2's clip is still being made, so there is nothing to fix yet. You'll "
-        "be told when it's ready. Nothing was done."
+        "Refused: scene 2's clip is still being made, so there is nothing to fix yet. Restate "
+        "its fix when you're told it's ready, and restate the other scenes' fixes now without "
+        "it. Nothing was done."
     ]
     assert not Fix.objects.exists()
 
