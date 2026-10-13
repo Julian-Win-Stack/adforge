@@ -20,8 +20,11 @@ def clip_to_keep(failed_answers: list[int]) -> int:
 
 def failed_answers(ruling: dict[str, Any]) -> int:
     """How many of the judge's answers about a clip failed. A clip the judge couldn't check
-    counts as failing every one, so a clip it checked is kept over it."""
-    return int(ruling.get("failed_answers", 2 * ASKS))
+    counts as failing more than every one, so a clip it checked is kept over it: nothing says
+    it is better."""
+    if ruling["verdict"] == "not_checked":
+        return 2 * ASKS + 1
+    return int(ruling["failed_answers"])
 
 
 def faults(ruling: dict[str, Any]) -> list[str]:

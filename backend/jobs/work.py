@@ -2035,12 +2035,7 @@ def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
     if kept == tries[-1]:
         return kept
     again = step.produced.filter(remake__isnull=True).exclude(pk=first.pk).first()
-    if again is None:
-        again = bring_back_clip(kept)
-        # The judge's ruling comes with it, for whatever reads the scene's clip next.
-        again.ruling = kept.ruling
-        again.save(update_fields=["ruling"])
-    return again
+    return again or bring_back_clip(kept)
 
 
 def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
@@ -2060,18 +2055,20 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
         return f"{failed}, and it couldn't be made again, so it is kept as it is."
     times = "once" if remade == 1 else f"{remade} times"
     said = f"{failed}, so it was made again {times}"
-    verdict = _ruling(kept)["verdict"]
-    if verdict == "pass":
+    if _ruling(kept)["verdict"] == "pass":
         return f"{said}, and the judge passed the new one."
+    # The first clip failed, so the clip kept, with the fewest faults, was judged and failed.
     which = "the first clip" if kept.remake is None else f"remake {kept.remake}"
-    if verdict == "fail":
-        still = " ".join(auto_fix.faults(_ruling(kept)))
-        return (
-            f"{said}, and it failed {'the remake' if remade == 1 else 'each remake'} too. The "
-            f"clip kept is {which}, the one with "
-            f'the fewest faults, and the judge still sees: "{still}"'
-        )
-    return f"{said}, and the judge couldn't check the last one. The clip kept is {which}."
+    still = " ".join(auto_fix.faults(_ruling(kept)))
+    last = (
+        f"it failed {'the remake' if remade == 1 else 'each remake'} too"
+        if _ruling(tries[-1])["verdict"] == "fail"
+        else "the judge couldn't check the last one"
+    )
+    return (
+        f"{said}, and {last}. The clip kept is {which}, the one with the fewest faults, and "
+        f'the judge still sees: "{still}"'
+    )
 
 
 def _ruling(clip: ProducedItem) -> dict[str, Any]:
