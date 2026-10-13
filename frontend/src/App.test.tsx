@@ -15,6 +15,10 @@ function fakeBackend() {
   const requests: string[] = [];
   const sent: { text: string; photos: string[] }[] = [];
   let heldPolls: Promise<void> | null = null;
+  let heldSends: Promise<void> | null = null;
+  let pollsFail = false;
+  let nextSendDrops = false;
+  let listingFails = false;
   let refusal: { status: number; body: Record<string, unknown> } | null = null;
 
   const summary = ({ id, name, created_at }: StoredSession): Session => ({ id, name, created_at });
@@ -61,6 +65,7 @@ function fakeBackend() {
 
     if (url === "/api/sessions/") {
       if (method === "POST") return Response.json(summary(start()), { status: 201 });
+      if (listingFails) throw new TypeError("Failed to fetch");
       return Response.json(sessions.map(summary));
     }
 
@@ -68,6 +73,11 @@ function fakeBackend() {
     if (messages) {
       const session = find(messages[1]);
       if (method === "POST") {
+        if (heldSends) await heldSends;
+        if (nextSendDrops) {
+          nextSendDrops = false;
+          throw new TypeError("Failed to fetch");
+        }
         if (refusal !== null) {
           const { status, body } = refusal;
           refusal = null;
@@ -92,6 +102,7 @@ function fakeBackend() {
         return Response.json({ session: summary(session), message }, { status: 201 });
       }
       if (heldPolls) await heldPolls;
+      if (pollsFail) throw new TypeError("Failed to fetch");
       const after = Number(messages[2] ?? 0);
       return Response.json(session.messages.filter((message) => message.seq > after));
     }
@@ -164,6 +175,34 @@ function fakeBackend() {
         };
       });
       return release;
+    },
+    /** Keeps every message sent waiting, as if the server were slow, until the returned
+     * function runs; the message lands then. */
+    holdSends() {
+      let release = () => {};
+      heldSends = new Promise((resolve) => {
+        release = () => {
+          heldSends = null;
+          resolve();
+        };
+      });
+      return release;
+    },
+    /** Every poll fails to reach the server, as when the network drops, until the returned
+     * function runs. */
+    failPolls() {
+      pollsFail = true;
+      return () => {
+        pollsFail = false;
+      };
+    },
+    /** The next message sent never reaches the server, as when the network drops. */
+    dropNextSend() {
+      nextSendDrops = true;
+    },
+    /** The sessions can't be listed, as when the server is down while the page loads. */
+    cantListSessions() {
+      listingFails = true;
     },
   };
 }
@@ -489,6 +528,189 @@ test("says so when another session is making an ad, and keeps what was typed", a
   expect(await screen.findByText(busy)).toBeDefined();
   expect(backend.sent).toEqual([]);
   expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("This is my mug");
+});
+
+test("says so when a message can't reach the server, keeps it, and sends it on the next try", async () => {
+  const backend = fakeBackend();
+  backend.dropNextSend();
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+
+  await user.type(screen.getByLabelText("Message"), "This is my mug");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  const told = await screen.findByText("Couldn't reach the server. Try again.");
+  expect(told.getAttribute("role")).toBe("alert");
+  expect(backend.sent).toEqual([]);
+  expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("This is my mug");
+
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  await findSaid("This is my mug");
+  expect(backend.sent).toEqual([{ text: "This is my mug", photos: [] }]);
+  expect(screen.queryByText("Couldn't reach the server. Try again.")).toBeNull();
+  expect(backend.requests.filter((request) => request === "POST /api/sessions/")).toHaveLength(1);
+});
+
+test("the send button is off while a message is on its way, so a second tap sends nothing", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: "Mug ad" }));
+  await findSaid("Make me an ad for my mug");
+  await user.type(screen.getByLabelText("Message"), "Faster");
+
+  const release = backend.holdSends();
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  expect(screen.getByRole("button", { name: "Send" }).hasAttribute("disabled")).toBe(true);
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  await user.type(screen.getByLabelText("Message"), "{Enter}");
+  expect(backend.requests.filter((request) => request.startsWith("POST"))).toHaveLength(1);
+
+  release();
+  await findSaid("Faster");
+  await waitFor(() =>
+    expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe(""),
+  );
+  expect(backend.sent).toEqual([{ text: "Faster", photos: [] }]);
+  // Sent, the box takes the next message.
+  await user.type(screen.getByLabelText("Message"), "Slower");
+  expect(screen.getByRole("button", { name: "Send" }).hasAttribute("disabled")).toBe(false);
+});
+
+test("says when polling loses the server, and stops saying so once it answers again", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: "Mug ad" }));
+  await findSaid("Make me an ad for my mug");
+
+  const recover = backend.failPolls();
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  const told = await screen.findByText("Lost contact with the server. Still trying...");
+  expect(told.getAttribute("role")).toBe("status");
+  expect(conversation()).toEqual(["YouMake me an ad for my mug"]);
+
+  // Still trying: the next poll gets through, with what was said meanwhile.
+  backend.agentSays("I read your mug's page.");
+  recover();
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await findSaid("I read your mug's page.");
+  expect(screen.queryByText("Lost contact with the server. Still trying...")).toBeNull();
+});
+
+test("a poll still on its way when another session is opened doesn't land in it", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  backend.existing("Kettle ad", [["user", "Make me an ad for my kettle"]]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: "Mug ad" }));
+  await findSaid("Make me an ad for my mug");
+
+  // The mug session's poll is held; the agent speaks there meanwhile.
+  const release = backend.holdPolls();
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  backend.say(backend.sessionNamed("Mug ad"), "agent", "Planning the mug ad");
+  await user.click(screen.getByRole("button", { name: "Kettle ad" }));
+  release();
+
+  await findSaid("Make me an ad for my kettle");
+  expect(conversation()).toEqual(["YouMake me an ad for my kettle"]);
+  backend.say(backend.sessionNamed("Kettle ad"), "agent", "Planning the kettle ad");
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await findSaid("Planning the kettle ad");
+  expect(conversation()).toEqual(["YouMake me an ad for my kettle", "AgentPlanning the kettle ad"]);
+  expect(screen.queryByText("Planning the mug ad")).toBeNull();
+});
+
+test("shift and enter start a new line without sending; enter alone sends", async () => {
+  const backend = fakeBackend();
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+
+  await user.type(
+    screen.getByLabelText("Message"),
+    "Make me an ad{Shift>}{Enter}{/Shift}for my mug",
+  );
+  expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe(
+    "Make me an ad\nfor my mug",
+  );
+  expect(backend.sent).toEqual([]);
+
+  await user.type(screen.getByLabelText("Message"), "{Enter}");
+  await findSaid("Make me an ad for my mug");
+  expect(backend.sent).toEqual([{ text: "Make me an ad\nfor my mug", photos: [] }]);
+});
+
+test("a photo taken off its chip isn't sent", async () => {
+  const backend = fakeBackend();
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+
+  await user.type(screen.getByLabelText("Message"), "This is my mug");
+  await user.upload(screen.getByLabelText("Photos"), [
+    new File(["front"], "front.png", { type: "image/png" }),
+    new File(["side"], "side.png", { type: "image/png" }),
+  ]);
+  await user.click(screen.getByRole("button", { name: "Remove side.png" }));
+  expect(screen.queryByText("side.png")).toBeNull();
+  expect(screen.getByText("front.png")).toBeDefined();
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await screen.findByAltText("Photo you attached (1)");
+  expect(backend.sent).toEqual([{ text: "This is my mug", photos: ["front.png"] }]);
+  expect(screen.queryByAltText("Photo you attached (2)")).toBeNull();
+});
+
+test("a suggestion fills the box, and a second one goes after it", async () => {
+  fakeBackend();
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+
+  await user.click(
+    screen.getByRole("button", { name: "Make a 15-second TikTok ad for a product page" }),
+  );
+  expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe(
+    "Make a 15-second TikTok ad for a product page",
+  );
+  await user.click(screen.getByRole("button", { name: "End with “Shop now”" }));
+  expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe(
+    "Make a 15-second TikTok ad for a product page End with “Shop now”",
+  );
+});
+
+function chatTitle() {
+  return document.querySelector(".chat-title")?.textContent;
+}
+
+test("the chat is titled with the open session's name, Untitled without one, or New session before there is one", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  backend.existing("", []);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  expect(chatTitle()).toBe("New session");
+
+  await user.click(await screen.findByRole("button", { name: "Mug ad" }));
+  expect(chatTitle()).toBe("Mug ad");
+  await user.click(screen.getByRole("button", { name: "Untitled" }));
+  expect(chatTitle()).toBe("Untitled");
+  await user.click(screen.getByRole("button", { name: "New session" }));
+  expect(chatTitle()).toBe("New session");
+});
+
+test("says so when the sessions can't be listed", async () => {
+  const backend = fakeBackend();
+  backend.cantListSessions();
+  render(<App />);
+
+  const told = await screen.findByRole("alert");
+  expect(told.textContent).toBe("Couldn't load your sessions.");
+  expect(
+    within(screen.getByRole("navigation", { name: "Sessions" })).queryAllByRole("listitem"),
+  ).toEqual([]);
 });
 
 /** The scene cards, as the owner sees them: each card's name and the clip or picture it
@@ -1234,4 +1456,229 @@ test("a newer failed check fills a box the owner cleared for an earlier one", as
   await nextPoll();
 
   await waitFor(() => expect((noteBox(2) as HTMLTextAreaElement).value).toBe("b"));
+});
+
+type Backend = ReturnType<typeof fakeBackend>;
+
+function scenesRegion() {
+  return within(screen.getByRole("region", { name: "Scenes" }));
+}
+
+test.each([
+  {
+    why: "about what was written",
+    reason: "Ensure this field has no more than 10000 characters.",
+    refuse: (backend: Backend) =>
+      backend.refuseNextSend({ text: ["Ensure this field has no more than 10000 characters."] }),
+  },
+  {
+    why: "because another ad is being made",
+    reason: "Another ad is being made right now. Please try again once it's finished.",
+    refuse: (backend: Backend) =>
+      backend.refuseNextSendAsBusy(
+        "Another ad is being made right now. Please try again once it's finished.",
+      ),
+  },
+])(
+  "notes the server refused $why stay in their boxes, with the reason, to send again",
+  async ({ reason, refuse }) => {
+    const { backend, user } = await openFinishedAd();
+    refuse(backend);
+
+    await user.type(noteBox(2), "Scrub the tile");
+    await user.click(sendNotesButton());
+
+    const told = await scenesRegion().findByText(reason);
+    expect(told.getAttribute("role")).toBe("alert");
+    expect(backend.sent).toEqual([]);
+    expect((noteBox(2) as HTMLTextAreaElement).value).toBe("Scrub the tile");
+    expect(sendNotesButton().hasAttribute("disabled")).toBe(false);
+
+    await user.click(sendNotesButton());
+    await findSaid("Scene 2: Scrub the tile");
+    expect(backend.sent.map((one) => one.text)).toEqual(["Scene 2: Scrub the tile"]);
+    expect(scenesRegion().queryByText(reason)).toBeNull();
+    expect((noteBox(2) as HTMLTextAreaElement).value).toBe("");
+  },
+);
+
+/** The owner sends a note on scene 2 and the producer says back what it understood. */
+async function noteAndHearBack() {
+  const ad = await openFinishedAd();
+  await ad.user.type(noteBox(2), "Scrub the tile");
+  await ad.user.click(sendNotesButton());
+  ad.backend.agentSays("I'll make scene 2's hand scrub the tile. Shall I?");
+  await nextPoll();
+  await waitFor(() => expect(yesButton()).not.toBeNull());
+  return ad;
+}
+
+function yesBar() {
+  return within(screen.getByRole("group", { name: "Confirm the fix" }));
+}
+
+test.each([
+  {
+    why: "another ad is being made",
+    reason: "Another ad is being made right now. Please try again once it's finished.",
+    refuse: (backend: Backend) =>
+      backend.refuseNextSendAsBusy(
+        "Another ad is being made right now. Please try again once it's finished.",
+      ),
+  },
+  {
+    why: "the server can't be reached",
+    reason: "Couldn't reach the server. Try again.",
+    refuse: (backend: Backend) => backend.dropNextSend(),
+  },
+])(
+  "a yes that doesn't go through because $why says so and stays on offer",
+  async ({ reason, refuse }) => {
+    const { backend, user } = await noteAndHearBack();
+    refuse(backend);
+
+    await user.click(yesButton()!);
+
+    const told = await yesBar().findByRole("alert");
+    expect(told.textContent).toBe(reason);
+    expect(yesBar().getByRole("button", { name: "Yes" }).hasAttribute("disabled")).toBe(false);
+    expect(backend.sent.map((one) => one.text)).toEqual(["Scene 2: Scrub the tile"]);
+
+    await user.click(yesButton()!);
+    await findSaid("Yes");
+    expect(backend.sent.map((one) => one.text)).toEqual(["Scene 2: Scrub the tile", "Yes"]);
+  },
+);
+
+function postsTo(backend: Backend, session: string) {
+  return backend.requests.filter(
+    (request) => request === `POST /api/sessions/${session}/messages/`,
+  );
+}
+
+test("the send-notes button is off while the notes are on their way, so a second tap sends nothing", async () => {
+  const { backend, user } = await openFinishedAd();
+  await user.type(noteBox(2), "Scrub the tile");
+
+  const release = backend.holdSends();
+  await user.click(sendNotesButton());
+  expect(sendNotesButton().hasAttribute("disabled")).toBe(true);
+  await user.click(sendNotesButton());
+  expect(postsTo(backend, "session-1")).toHaveLength(1);
+
+  release();
+  await findSaid("Scene 2: Scrub the tile");
+  await waitFor(() => expect((noteBox(2) as HTMLTextAreaElement).value).toBe(""));
+  expect(backend.sent.map((one) => one.text)).toEqual(["Scene 2: Scrub the tile"]);
+  // Sent, the form takes the next notes.
+  await user.type(noteBox(4), "Show the handle");
+  expect(sendNotesButton().hasAttribute("disabled")).toBe(false);
+});
+
+test("the yes button is off while the yes is on its way, so a second tap sends nothing", async () => {
+  const { backend, user } = await noteAndHearBack();
+
+  const release = backend.holdSends();
+  await user.click(yesButton()!);
+  expect(yesButton()!.hasAttribute("disabled")).toBe(true);
+  await user.click(yesButton()!);
+  expect(postsTo(backend, "session-1")).toHaveLength(2);
+
+  release();
+  await findSaid("Yes");
+  expect(backend.sent.map((one) => one.text)).toEqual(["Scene 2: Scrub the tile", "Yes"]);
+  expect(yesButton()).toBeNull();
+});
+
+test("folding the cards away keeps the notes being written", async () => {
+  const { user } = await openFinishedAd();
+  await user.type(noteBox(2), "Scrub the tile");
+  const toggle = screen.getByRole("button", { name: /Scenes/ });
+
+  await user.click(toggle);
+  expect(sceneCardsShown()).toEqual([]);
+  await user.click(toggle);
+
+  expect((noteBox(2) as HTMLTextAreaElement).value).toBe("Scrub the tile");
+  expect(sendNotesButton().textContent).toBe("Send 1 note");
+});
+
+test("a scene whose new picture failed its check waits for the owner while another scene is still being made", async () => {
+  const { backend } = await noteAndSayYes();
+  backend.notice("Remaking scene 2's starting picture.", "info", {
+    scene: 2,
+    kind: "starting_picture",
+    state: "started",
+  });
+  backend.agentSays("", scene(2, "picture", "/media/p2-b.png"), {
+    scene: 2,
+    kind: "starting_picture",
+    state: "made",
+  });
+  backend.notice("Remaking scene 4's clip.", "info", { scene: 4, kind: "clip", state: "started" });
+  backend.suggestNote(
+    "Scene 2's new starting picture may not have your change: still hovers",
+    [],
+    2,
+    "still hovers",
+  );
+  await nextPoll();
+
+  await waitFor(() => expect(statusOf(2)).toBe("Waiting to finish"));
+  expect(sceneCard(2).classList.contains("busy")).toBe(false);
+  expect(statusOf(4)).toBe("Being remade");
+  expect(sceneCard(4).classList.contains("busy")).toBe(true);
+  expect(screen.getByRole("button", { name: /Scenes/ }).textContent).toContain("1 being made");
+  expect((noteBox(2) as HTMLTextAreaElement).value).toBe("still hovers");
+});
+
+test("a scene with only a picture says its picture is being remade when it starts again", async () => {
+  const { backend } = await openFinishedAd();
+  backend.agentSays("", scene(5, "picture", "/media/p5.png"), {
+    scene: 5,
+    kind: "starting_picture",
+    state: "made",
+  });
+  await nextPoll();
+  await waitFor(() => expect(sceneCardsShown()).toContainEqual(["Scene 5", "/media/p5.png"]));
+
+  backend.notice("Remaking scene 5's starting picture.", "info", {
+    scene: 5,
+    kind: "starting_picture",
+    state: "started",
+  });
+  await nextPoll();
+  await waitFor(() => expect(statusOf(5)).toBe("Remaking the picture"));
+  expect(sceneCard(5).classList.contains("busy")).toBe(true);
+  expect(sceneCardsShown()).toContainEqual(["Scene 5", "/media/p5.png"]);
+});
+
+test("a failed clip check shows both clips in its notice, and the card keeps the scene's newest clip", async () => {
+  const { backend } = await openFinishedAd();
+  backend.agentSays("", scene(3, "video", "/media/c3-b.mp4"), {
+    scene: 3,
+    kind: "clip",
+    state: "made",
+  });
+  backend.suggestNote(
+    "Scene 3's new clip may not have your change: the hand still hovers",
+    [
+      { position: 1, kind: "video", url: "/media/old.mp4", scene: null },
+      { position: 2, kind: "video", url: "/media/new.mp4", scene: null },
+    ],
+    3,
+    "the hand still hovers",
+  );
+  await nextPoll();
+
+  const notice = (await screen.findByText(/may not have your change/)).closest("li") as HTMLElement;
+  expect(
+    within(notice)
+      .getAllByLabelText("Video the agent made")
+      .map((shown) => shown.getAttribute("src")),
+  ).toEqual(["/media/old.mp4", "/media/new.mp4"]);
+  expect(sceneCardsShown()).toContainEqual(["Scene 3", "/media/c3-b.mp4"]);
+  // The clips in the notice don't become the scene's: its previous clip is still c3.
+  expect(within(sceneCard(3)).getByRole("button", { name: "Previous" })).toBeDefined();
+  expect((noteBox(3) as HTMLTextAreaElement).value).toBe("the hand still hovers");
 });

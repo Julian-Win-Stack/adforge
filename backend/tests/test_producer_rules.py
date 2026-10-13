@@ -17,7 +17,9 @@ from agents.models import ToolCall
 from agents.producer import PRODUCER
 from chat import messages
 from chat.models import Message, Session
+from gateway.catalog import MODEL_FOR_PURPOSE
 from gateway.fake import FakeModel, meanwhile, turn
+from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, UnusableReply
 from jobs.models import Job
 
@@ -31,6 +33,7 @@ from .conftest import (
     given_to_the_producer,
     handoffs,
     lines,
+    openai_reply,
     paid_for,
     picture,
     plan_with,
@@ -135,7 +138,101 @@ def test_an_unexpected_error_in_a_tool_is_logged_and_handed_back_without_its_det
     assert ToolCall.objects.get(tool="plan_ad").finished
 
 
+@pytest.mark.parametrize(
+    ("call", "told"),
+    [
+        pytest.param(
+            ("make_clips", {"scene": 2}),
+            "Failed: an unexpected error stopped the tool. The details are in the server log.",
+            id="a tool there isn't",
+        ),
+        pytest.param(
+            ("make_clip", {"scene": 2, "note": None, "take": 3}),
+            "Refused: it was called with arguments it can't use (take: Extra inputs are not "
+            "permitted). Nothing was done.",
+            id="an argument the tool doesn't have",
+        ),
+    ],
+)
+def test_a_tool_the_producer_makes_up_or_an_argument_it_adds_is_handed_back_and_it_carries_on(
+    api: APIClient,
+    fake_model: FakeModel,
+    page_read: str,
+    session_id: str,
+    say: Callable[..., None],
+    call: tuple[str, dict[str, Any]],
+    told: str,
+) -> None:
+    fake_model.respond("produce", turn(calls=[call]), turn(says="Let me do that properly."))
+
+    say("Make scene 2's clip")
+
+    tool, _ = call
+    assert results_of(tool) == [told]
+    assert ToolCall.objects.get(tool=tool).finished
+    # Its next turn was given the result, and it carried on to reply.
+    assert given_to_the_producer(4)[-1]["result"] == told
+    assert chat(api, session_id)[-1] == ("agent", "Let me do that properly.")
+    assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face"]
+
+
 # --- The producer itself can't carry on -----------------------------------------------------
+
+
+def openai_turn_calling(tool: str, arguments: str) -> dict[str, Any]:
+    """The producer's turn as OpenAI sends it, calling `tool` with `arguments` as the model
+    wrote them, right or not."""
+    reply = openai_reply({"type": "output_text", "text": "", "annotations": []})
+    reply["output"] = [
+        {
+            "type": "function_call",
+            "id": "fc_1",
+            "call_id": "call_1",
+            "name": tool,
+            "arguments": arguments,
+            "status": "completed",
+        }
+    ]
+    return reply
+
+
+@pytest.mark.parametrize(
+    ("arguments", "why"),
+    [
+        pytest.param('{"link": ', "aren't JSON", id="arguments that aren't JSON"),
+        pytest.param(
+            '["https://shop.example/products/mug"]',
+            "aren't a JSON object",
+            id="arguments that are a JSON list",
+        ),
+    ],
+)
+def test_a_tool_call_whose_arguments_cant_be_read_stops_the_producer_and_the_chat_is_told(
+    api: APIClient,
+    openai_server: Callable[..., None],
+    session_id: str,
+    say: Callable[..., None],
+    arguments: str,
+    why: str,
+) -> None:
+    openai_server(openai_turn_calling("read_page", arguments))
+
+    say("Make me an ad")
+
+    model = MODEL_FOR_PURPOSE["produce"]
+    assert chat(api, session_id) == [
+        ("user", "Make me an ad"),
+        (
+            "agent",
+            f"I had to stop: my AI model's answer couldn't be used ({model}'s turn for produce "
+            f"can't be used: its arguments for read_page {why}). Send a message to try again.",
+        ),
+    ]
+    # The turn is paid for and recorded as failed; no tool was called with it.
+    call = ModelCall.objects.get()
+    assert (call.purpose, call.outcome) == ("produce", "failed")
+    assert (call.input_tokens, call.output_tokens) == (1_200, 300)
+    assert not ToolCall.objects.exists()
 
 
 @pytest.mark.parametrize(

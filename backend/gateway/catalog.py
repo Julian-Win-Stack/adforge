@@ -140,7 +140,10 @@ def speech_cost_usd(model: str, characters: int) -> Decimal:
 
 
 def transcription_cost_usd(model: str, seconds: float) -> Decimal:
-    return Decimal(str(seconds)) * PRICE_PER_HOUR_OF_AUDIO[model] / 3_600
+    """What transcribing `seconds` of audio costs, to the millionth of a dollar a bill is
+    recorded to: an hour's price divided into seconds never ends."""
+    cost = Decimal(str(seconds)) * PRICE_PER_HOUR_OF_AUDIO[model] / 3_600
+    return cost.quantize(Decimal("0.000001"))
 
 
 def video_cost_usd(model: str, seconds: float) -> Decimal:

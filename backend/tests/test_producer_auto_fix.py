@@ -9,12 +9,15 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from django.db.models.signals import post_save
 
+from adforge.retry import OutsideServiceDown
 from agents import tasks
 from chat.models import Attachment, Message
 from gateway.fake import FakeModel, turn
-from gateway.types import UnusableReply
-from jobs import work
+from gateway.models import ModelCall
+from gateway.types import BlockedBySafetyFilter, UnusableReply
+from jobs import auto_fix, work
 from jobs.models import ProducedItem, SceneStep
 from jobs.scenes import (
     BROLL_KIND_RULES,
@@ -47,6 +50,10 @@ from .test_producer_broll import (
     run,
 )
 
+# Its own WorkerStopped, raised by the signal it hooks, not the one the fake's script raises.
+from .test_producer_restarts import WorkerStopped as StoppedBySignal
+from .test_producer_restarts import the_worker_stops
+
 pytestmark = pytest.mark.django_db(transaction=True)
 
 FLOATS = "The teapot rises at 1.2 s with no hand on it. A real one stays on the bench."
@@ -65,6 +72,20 @@ def failing(problem: str, question: str = "real_motion") -> dict[str, Any]:
 
 def rewrite(prompt: str) -> dict[str, Any]:
     return {"motion_prompt": prompt, "motion_prompt_reason": "It keeps the teapot in the hand."}
+
+
+def once_the_remake_is_written(
+    fake_model: FakeModel, purpose: str, *outcomes: Any
+) -> Callable[[], dict[str, Any]]:
+    """The remake's prompt, REMADE, written: `outcomes` are scripted for `purpose` only then,
+    once the first clip is made and judged, so they meet the remake's video and not the
+    first's."""
+
+    def written() -> dict[str, Any]:
+        fake_model.respond(purpose, *outcomes)
+        return rewrite(REMADE)
+
+    return written
 
 
 def clip_of_scene_2(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> SceneStep:
@@ -427,7 +448,99 @@ def test_a_remake_under_way_when_the_worker_stopped_is_waited_for_not_paid_again
     assert "the judge passed the new one" in step.result
 
 
+def test_a_remake_asked_for_when_the_worker_stopped_is_collected_not_asked_for_again(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    made_ready(fake_model, steps, say, (2,))
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    fake_model.respond("check_clip_motion", failing(FLOATS), failing(FLOATS))
+    fake_model.respond("remake_clip_prompt", rewrite(REMADE))
+    # The worker stops once the remake is asked for, and paid for, before it is collected.
+    remake_asked_for = the_worker_stops(
+        post_save,
+        ModelCall,
+        when=lambda call: (
+            call.purpose == "make_broll_clip"
+            and ModelCall.objects.filter(purpose="make_broll_clip").count() == 2
+        ),
+    )
+    with remake_asked_for, pytest.raises(StoppedBySignal):
+        steps.run_next()
+    assert fake_model.clips_submitted == ["video-1", "video-2"]
+    assert fake_model.clips_downloaded == ["video-1"]
+    assert clips() == [1]
+
+    # The step is handed out again, as after a restart.
+    fake_model.respond("produce", turn(says="Done."))
+    tasks.run_scene_step(SceneStep.objects.get(kind="clip", scene__number=2).pk)
+
+    # The remake paid for is waited for and collected, never asked for again.
+    assert fake_model.clips_submitted == ["video-1", "video-2"]
+    assert fake_model.clips_downloaded == ["video-1", "video-2"]
+    assert paid_for()[-(5 + 2 * len(JUDGED_CLIP)) :] == [
+        "make_broll_clip",
+        "collect_broll_clip",
+        *JUDGED_CLIP,
+        "remake_clip_prompt",
+        "make_broll_clip",
+        "collect_broll_clip",
+        *JUDGED_CLIP,
+    ]
+    assert clips() == [1, 2]
+    step = SceneStep.objects.get(kind="clip", scene__number=2)
+    assert step.status == "finished"
+    assert "so it was made again once, and the judge passed the new one." in step.result
+
+
 # --- A remake that can't be made ----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("purpose", "outcomes", "asked"),
+    [
+        # The video model says it couldn't make it: the one remake asked for is never waited on.
+        ("collect_clip", [{"state": "failed", "error": "The picture was too dark."}], 2),
+        # Its safety filter refuses: asking again would send the same thing.
+        ("make_clip", [BlockedBySafetyFilter("the prompt was blocked")], 2),
+        # The service is down: asked 3 times, as any clip is, then given up on.
+        ("make_clip", [OutsideServiceDown("fal answered 503")] * 3, 4),
+    ],
+    ids=["clip_failed", "blocked", "outage"],
+)
+def test_a_remake_the_video_service_cant_make_keeps_the_first_clip_and_finishes_the_step(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    purpose: str,
+    outcomes: list[Any],
+    asked: int,
+) -> None:
+    fake_model.respond("check_clip_motion", failing(FLOATS), failing(FLOATS))
+    fake_model.respond(
+        "remake_clip_prompt", once_the_remake_is_written(fake_model, purpose, *outcomes)
+    )
+
+    step = clip_of_scene_2(fake_model, steps, say)
+
+    # The first clip is made and paid for: the step isn't failed for the remake.
+    assert step.status == "finished"
+    assert clips() == [1]
+    first = ProducedItem.objects.get(kind="clip")
+    assert shown_clips() == [first.file]
+    assert paid_for().count("remake_clip_prompt") == 1
+    # Every ask of the video model, the ones that failed too.
+    assert paid_for().count("make_broll_clip") == asked
+    assert ModelCall.objects.filter(purpose="make_broll_clip", outcome="succeeded").count() == 2 - (
+        purpose == "make_clip"
+    )
+    assert (
+        f'The clip judge failed the first clip it made ("{FLOATS}"), and it couldn\'t be made '
+        "again, so it is kept as it is. Scene 2 is finished."
+    ) in step.result
 
 
 def test_a_remake_that_cant_be_written_keeps_the_clip_made_and_finishes_the_step(
@@ -450,6 +563,43 @@ def test_a_remake_that_cant_be_written_keeps_the_clip_made_and_finishes_the_step
     assert (
         f'The clip judge failed the first clip it made ("{FLOATS}"), and it couldn\'t be made '
         "again, so it is kept as it is. Scene 2 is finished."
+    ) in step.result
+
+
+def test_a_failed_remake_whose_own_remake_cant_be_written_is_kept_as_the_newest_tied(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    # The first clip and remake 1 each fail 2 answers, and remake 2 can't be written: of the
+    # two tied, the newest is kept, and nothing is brought back.
+    fake_model.respond(
+        "check_clip_motion",
+        *[failing(FLOATS)] * 2,
+        CLIP_MOTION_OK,
+        *[failing(SPINS)] * 2,
+        CLIP_MOTION_OK,
+    )
+    fake_model.respond(
+        "remake_clip_prompt",
+        rewrite(REMADE),
+        UnusableReply("no prompt came back", input_tokens=10, output_tokens=0),
+    )
+
+    step = clip_of_scene_2(fake_model, steps, say)
+
+    assert step.status == "finished"
+    assert clips() == [1, 2]
+    remake = ProducedItem.objects.get(kind="clip", remake=1)
+    assert remake.ruling is not None and remake.ruling["verdict"] == "fail"
+    assert shown_clips() == [remake.file]
+    assert paid_for().count("make_broll_clip") == 2
+    assert paid_for().count("remake_clip_prompt") == 2
+    assert (
+        f'The clip judge failed the first clip it made ("{FLOATS}"), so it was made again once, '
+        "and it failed the remake too. The clip kept is remake 1, the one with the fewest "
+        f'faults, and the judge still sees: "{SPINS}" Scene 2 is finished.'
     ) in step.result
 
 
@@ -512,3 +662,60 @@ def test_a_clip_brought_back_before_the_worker_stopped_isnt_brought_back_again(
     assert step.result.startswith(
         "Background step finished: scene 2's clip is ready (version 4, 5 seconds)"
     )
+
+
+def test_a_remake_with_the_fewest_failed_answers_is_brought_back_as_the_scenes_clip_once(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The first clip fails 3 answers, remake 1 fails 2 and remake 2 fails 3: remake 1 is kept.
+    fake_model.respond(
+        "check_clip_motion",
+        *[failing(FLOATS)] * 3,
+        *[failing(SPINS)] * 2,
+        CLIP_MOTION_OK,
+        *[failing(SPINS)] * 3,
+    )
+    fake_model.respond("remake_clip_prompt", rewrite(REMADE), rewrite(REMADE_AGAIN))
+    made_ready(fake_model, steps, say, (2,))
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+
+    # The worker stops once remake 1 is brought back, before the step finishes.
+    def stopped(*_: object) -> str:
+        raise WorkerStopped
+
+    monkeypatch.setattr("agents.tasks.what_the_judge_did", stopped)
+    with pytest.raises(WorkerStopped):
+        steps.run_next()
+    assert clips() == [1, 2, 3, 4]
+
+    # The step is handed out again, as after a restart.
+    monkeypatch.setattr("agents.tasks.what_the_judge_did", work.what_the_judge_did)
+    fake_model.respond("produce", turn(says="Done."))
+    tasks.run_scene_step(SceneStep.objects.get(kind="clip", scene__number=2).pk)
+
+    # Brought back as the newest version, once, with nothing paid for again.
+    assert clips() == [1, 2, 3, 4]
+    first, remake_1, remake_2, kept = ProducedItem.objects.filter(kind="clip").order_by("id")
+    assert [auto_fix.failed_answers(clip.ruling or {}) for clip in (first, remake_1, remake_2)] == [
+        3,
+        2,
+        3,
+    ]
+    assert (remake_1.remake, kept.remake) == (1, None)
+    assert (kept.file, kept.ruling) == (remake_1.file, remake_1.ruling)
+    assert shown_clips() == [remake_1.file]
+    assert paid_for().count("make_broll_clip") == 3
+    step = SceneStep.objects.get(kind="clip", scene__number=2)
+    assert step.status == "finished"
+    assert step.result.startswith(
+        "Background step finished: scene 2's clip is ready (version 4, 5 seconds)"
+    )
+    assert (
+        f'The clip judge failed the first clip it made ("{FLOATS}"), so it was made again 2 '
+        "times, and it failed each remake too. The clip kept is remake 1, the one with the "
+        f'fewest faults, and the judge still sees: "{SPINS}" Scene 2 is finished.'
+    ) in step.result

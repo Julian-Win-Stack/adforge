@@ -15,6 +15,7 @@ from rest_framework.test import APIClient
 from adforge import file_store
 from agents.models import ToolCall
 from chat import messages
+from chat.api import MAX_TEXT_CHARACTERS
 from chat.models import Attachment, Message, Session
 from gateway.fake import FakeModel, turn
 from jobs.models import Job, Scene, SceneStep
@@ -206,6 +207,25 @@ def test_a_message_has_to_say_or_carry_something(
     assert sent.status_code == 400
     assert sent.json() == {"text": ["Type something, or attach a photo."]}
     assert Message.objects.count() == 0
+
+
+def test_a_message_longer_than_the_chat_takes_is_refused_and_one_exactly_as_long_is_taken(
+    start_session: Callable[..., str], send: Callable[..., Any]
+) -> None:
+    session_id = start_session()
+
+    refused = send(session_id, "m" * (MAX_TEXT_CHARACTERS + 1))
+
+    assert refused.status_code == 400
+    assert refused.json() == {
+        "text": [f"Ensure this field has no more than {MAX_TEXT_CHARACTERS} characters."]
+    }
+    assert Message.objects.count() == 0
+
+    taken = send(session_id, "m" * MAX_TEXT_CHARACTERS)
+
+    assert taken.status_code == 201, taken.json()
+    assert Message.objects.get().text == "m" * MAX_TEXT_CHARACTERS
 
 
 @pytest.mark.parametrize(

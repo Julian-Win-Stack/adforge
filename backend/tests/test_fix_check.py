@@ -17,6 +17,8 @@ from django.db.models.signals import post_save, pre_save
 from rest_framework.test import APIClient
 
 from agents import tasks
+from agents.money import dollars
+from gateway import catalog
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter
@@ -38,6 +40,8 @@ from .test_fix_loop import (
     HANDLE_FIX,
     HANDLE_SHOWING,
     HOVERS,
+    LIFT_FIX,
+    LIFT_REWRITE,
     SALE,
     SALE_FIX,
     TURN_FIX,
@@ -170,6 +174,8 @@ def test_a_fixs_new_picture_that_fails_its_check_shows_both_and_waits_for_the_ow
         new_picture.file.rsplit("/", 1)[-1],
     ]
     assert notice["suggested_note"] == {"scene": 2, "text": HANDLE_HIDDEN}
+    # The scene is planned again, but the producer isn't told to make its clip.
+    assert "Scene 2 is no longer finished. Tell the shop owner." in told(2, "starting_picture")
     assert "make its clip from this picture" not in told(2, "starting_picture")
     assert told(2, "starting_picture").endswith(
         f"The check of scene 2's fix found the change isn't in the new picture: {HANDLE_HIDDEN} "
@@ -264,6 +270,51 @@ def test_a_picture_check_that_cant_be_had_carries_on_and_says_so(
     assert held_kinds(steps) == [(2, "clip")]
 
 
+def test_a_picture_check_whose_asks_fail_unexpectedly_carries_on_and_says_so(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+) -> None:
+    broken = RuntimeError("the picture couldn't be read")
+    fake_model.respond("check_fix", broken, broken, broken)
+
+    picture_redone(fake_model, say, steps)
+
+    check = FixCheck.objects.get()
+    assert (check.verdict, check.answers) == ("unchecked", [])
+    assert "Scene 2's fix couldn't be checked, so tell the shop owner it wasn't checked." in told(
+        2, "starting_picture"
+    )
+    owner_says(fake_model, say, "Go on", clip_of(2))
+    assert held_kinds(steps) == [(2, "clip")]
+
+
+def test_a_not_fixed_answer_with_no_reason_is_no_answer_but_is_still_paid_for(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+) -> None:
+    # The judge's first answer breaks the answer's rules, so it can't be read; the gateway
+    # doesn't ask again for one, and the next two asks settle it.
+    fake_model.respond("check_fix", not_made(""), FIX_MADE, FIX_MADE)
+
+    picture_redone(fake_model, say, steps)
+
+    check = FixCheck.objects.get()
+    assert (check.verdict, check.answers) == ("passed", [FIX_MADE, FIX_MADE])
+    asked = ModelCall.objects.filter(purpose="check_fix").order_by("id")
+    assert [(call.handoff["ask"], call.outcome) for call in asked] == [
+        (1, "failed"),
+        (2, "succeeded"),
+        (3, "succeeded"),
+    ]
+    # An unusable answer was still billed.
+    assert asked[0].cost_usd is not None and "could not be read" in asked[0].error
+    assert paid_for()[len(shown) :].count("check_fix") == 3
+
+
 def test_a_check_run_again_after_the_worker_stopped_pays_and_shows_everything_once(
     fake_model: FakeModel,
     say: Say,
@@ -337,6 +388,41 @@ def test_a_fix_isnt_checked_when_quality_checks_are_switched_off(
     assert held_kinds(steps) == [(2, "clip")]
 
 
+def test_a_talking_scenes_picture_fix_is_checked_too(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+) -> None:
+    old_picture = latest("starting_picture", 1)
+
+    owner_says(
+        fake_model,
+        say,
+        "In the first scene she should hold the mug with both hands.",
+        restating((1, BOTH_HANDS, "picture")),
+    )
+    owner_says(fake_model, say, "Yes", picture_of(1, BOTH_HANDS))
+    assert held_kinds(steps) == [(1, "starting_picture")]
+    fake_model.respond("choose_starting_picture", TALKING)
+    step_lands(fake_model, steps)
+
+    check = FixCheck.objects.get()
+    assert (check.step.scene.number, check.old, check.new, check.verdict) == (
+        1,
+        old_picture,
+        latest("starting_picture", 1),
+        "passed",
+    )
+    assert [(ask["fix"], ask["ask"]) for ask in handoffs("check_fix")] == [
+        (BOTH_HANDS, 1),
+        (BOTH_HANDS, 2),
+    ]
+    assert "The check of scene 1's fix found the change in the new picture." in told(
+        1, "starting_picture"
+    )
+
+
 # --- A new clip is checked once, on the clip the clip judge kept -------------------------------
 
 HOVERING = "The hand still only hovers beside the mug; it never turns it."
@@ -384,6 +470,22 @@ def test_a_fixs_new_clip_is_checked_beside_the_old_one_and_passing_shows_the_ad(
     assert "The check of scene 2's fix found the change in the new clip." in told(2)
 
 
+def test_the_clip_checks_cost_is_the_clip_steps(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+) -> None:
+    a_clip_redone(fake_model, say, steps)
+
+    step = SceneStep.objects.filter(kind="clip", scene__number=2).latest("id")
+    asked = ModelCall.objects.filter(purpose="check_fix_clip")
+    assert asked.count() == 3
+    for check in asked:
+        assert check.tool_call_id == step.tool_call_id
+    assert f"It cost {dollars(step.tool_call.cost_usd())}." in step.result
+
+
 def test_a_fixs_new_clip_that_fails_its_check_shows_both_clips_and_no_new_ad(
     fake_model: FakeModel,
     say: Say,
@@ -421,6 +523,39 @@ def test_a_fixs_new_clip_that_fails_its_check_shows_both_clips_and_no_new_ad(
 
     owner_says(fake_model, say, "Go ahead", ("assemble_ad", {}))
     assert [ad.version for ad in ads()] == [1, 2]
+    # The new ad plays the new clip, as they said to, not the old one.
+    assert {cut["scene"]: cut["clip"] for cut in ads()[1].cuts}[2] == new_clip.pk
+
+
+def test_a_new_note_after_a_failed_clip_check_remakes_the_clip_and_checks_again(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+) -> None:
+    fake_model.answer_unscripted("check_fix_clip", lambda _: not_made(HOVERING))
+    a_clip_redone(fake_model, say, steps)
+    failed = latest("clip", 2)
+    assert [ad.version for ad in ads()] == [1]
+
+    # The new fix's clip has the change.
+    fake_model.respond("check_fix_clip", FIX_MADE, FIX_MADE, FIX_MADE)
+    owner_says(fake_model, say, HOVERING, restating((2, LIFT_FIX, "clip")))
+    owner_says(fake_model, say, "Yes", clip_of(2, LIFT_FIX))
+    assert held_kinds(steps) == [(2, "clip")]
+    fake_model.respond("rewrite_clip_prompt", LIFT_REWRITE)
+    step_lands(fake_model, steps)
+
+    # The new fix's clip is judged against the one the shop owner just saw.
+    second = FixCheck.objects.latest("id")
+    assert (second.fix.fix, second.old, second.new, second.verdict) == (
+        LIFT_FIX,
+        failed,
+        latest("clip", 2),
+        "passed",
+    )
+    assert [check.verdict for check in FixCheck.objects.order_by("id")] == ["failed", "passed"]
+    assert [ad.version for ad in ads()] == [1, 2]
 
 
 def test_a_failed_clip_check_also_says_what_the_clip_judge_still_sees(
@@ -432,6 +567,8 @@ def test_a_failed_clip_check_also_says_what_the_clip_judge_still_sees(
     session_id: str,
 ) -> None:
     floats = "The mug rises at 1.2 s with no hand on it; a real one stays put."
+    # The clip judge fails the fix's clip and both remakes alike, so the last remake is kept
+    # and checked, and the judge's problem is still seen in it.
     fake_model.answer_unscripted(
         "check_clip_motion",
         lambda _: {
@@ -439,10 +576,14 @@ def test_a_failed_clip_check_also_says_what_the_clip_judge_still_sees(
             "real_motion": {"verdict": "fail", "problem": floats, "back_to_normal_at": "never"},
         },
     )
+    fake_model.respond("remake_clip_prompt", TURN_REWRITE, TURN_REWRITE)
     fake_model.answer_unscripted("check_fix_clip", lambda _: not_made(HOVERING))
 
     a_clip_redone(fake_model, say, steps)
 
+    check = FixCheck.objects.get()
+    assert (check.new, check.new.remake) == (latest("clip", 2), 2)
+    assert paid_for().count("remake_clip_prompt") == 2
     # One notice says both.
     assert messages_of(api, session_id)[-2]["text"].endswith(
         f"or tell me what to change. The clip's own check also still sees: {floats}"
@@ -631,6 +772,52 @@ def test_a_clip_check_whose_asks_fail_unexpectedly_shows_the_ad_and_says_so(
     assert [ad.version for ad in ads()] == [1, 2]
 
 
+def test_a_clip_fix_isnt_checked_when_quality_checks_are_switched_off(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+    settings: Any,
+) -> None:
+    settings.QUALITY_CHECKS = False
+
+    a_clip_redone(fake_model, say, steps)
+
+    assert not FixCheck.objects.exists()
+    assert "check_fix_clip" not in paid_for()
+    assert [ad.version for ad in ads()] == [1, 2]
+
+
+def test_a_clip_check_run_again_after_the_worker_stopped_keeps_its_verdict_and_shows_it_once(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+    api: APIClient,
+    session_id: str,
+) -> None:
+    fake_model.answer_unscripted("check_fix_clip", lambda _: not_made(HOVERING))
+    owner_says(fake_model, say, HOVERS, restating((2, TURN_FIX, "clip")))
+    owner_says(fake_model, say, "Yes", clip_of(2, TURN_FIX))
+    (step_id,) = steps.held
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
+
+    # The worker stops just after the verdict is kept, before the step finishes.
+    with the_worker_stops(post_save, FixCheck, when=lambda _: True), pytest.raises(WorkerStopped):
+        steps.run_next()
+    assert SceneStep.objects.get(pk=step_id).status == "running"
+    fake_model.respond("produce", turn(says="That part's ready."))
+    tasks.run_scene_step(step_id)
+
+    assert SceneStep.objects.get(pk=step_id).status == "finished"
+    assert FixCheck.objects.get().verdict == "failed"
+    paid = paid_for()[len(shown) :]
+    assert (paid.count("make_broll_clip"), paid.count("check_fix_clip")) == (1, 3)
+    texts = [message["text"] for message in messages_of(api, session_id)]
+    assert sum(text.startswith("Scene 2's new clip may not") for text in texts) == 1
+    assert [ad.version for ad in ads()] == [1]
+
+
 def test_a_clip_check_run_again_after_the_worker_stopped_pays_once_for_a_clip_never_judged(
     fake_model: FakeModel,
     say: Say,
@@ -713,6 +900,14 @@ def test_the_verdict_is_settled_by_two_answers_of_three(
 def test_a_not_fixed_answer_must_say_what_is_still_wrong() -> None:
     with pytest.raises(ValueError, match="must say what is still wrong"):
         fix_check.FixVerdict(old_shows="a", new_shows="b", verdict="not fixed", still_wrong=" ")
+
+
+def test_a_fix_is_checked_by_the_picture_judges_model_given_the_clip_judges_time() -> None:
+    assert catalog.MODEL_FOR_PURPOSE["check_fix"] == "gpt-6.1-sol"
+    assert catalog.MODEL_FOR_PURPOSE["check_fix_clip"] == "gpt-6.1-sol"
+    # Up to 48 frames of two clips in one ask: as long as the clip judge's asks.
+    assert catalog.SLOW_ANSWER_SECONDS["check_fix_clip"] == 600
+    assert "check_fix" not in catalog.SLOW_ANSWER_SECONDS
 
 
 @pytest.mark.parametrize(

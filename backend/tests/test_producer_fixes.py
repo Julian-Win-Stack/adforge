@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 from django.db.models.signals import pre_save
+from pytest_django import Settings
 
 from agents import tasks
 from agents.models import ToolCall
@@ -352,6 +353,24 @@ def test_one_answer_unlocks_two_scenes_restated_together_and_no_other(
     assert [fix.confirmed_by for fix in Fix.objects.order_by("scene__number")] == [yes, yes]
 
 
+def test_a_bare_yes_to_notes_on_two_scenes_sent_as_the_panel_sends_them_confirms_both(
+    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
+) -> None:
+    # The scene panel sends every scene's note in one message, one line each (#139).
+    notes = f"Scene 2: {NOTE_2}\nScene 1: {NOTE_1}"
+    owner_says(fake_model, say, notes, restating((1, FIX_1, "picture"), (2, FIX_2, "clip")))
+
+    owner_says(fake_model, say, "Yes", picture_with(1, FIX_1), clip_with(2, FIX_2))
+
+    yes = Message.objects.get(text="Yes")
+    fix_1, fix_2 = Fix.objects.order_by("scene__number")
+    assert (fix_1.confirmed_by, fix_2.confirmed_by) == (yes, yes)
+    sent = Message.objects.get(text=notes)
+    assert fix_1.notes == fix_2.notes == [{"seq": sent.seq, "text": notes}]
+    assert len(steps.held) == 2
+    assert (last_step("starting_picture", 1).fix, last_step("clip", 2).fix) == (fix_1, fix_2)
+
+
 def test_a_redo_doesnt_accept_another_scenes_fix(
     fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
 ) -> None:
@@ -411,6 +430,25 @@ def test_the_same_confirmed_fix_again_is_already_made_and_charges_nothing(
     )
 
 
+def test_the_same_confirmed_picture_fix_again_is_already_made_and_charges_nothing(
+    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
+) -> None:
+    owner_says(fake_model, say, NOTE_1, restating((1, FIX_1, "picture")))
+    owner_says(fake_model, say, "Yes", picture_with(1, FIX_1))
+    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
+    run(fake_model, steps)
+    paid = paid_for()
+
+    owner_says(fake_model, say, "Did it work?", picture_with(1, FIX_1))
+
+    assert paid_for() == paid
+    assert steps.held == []
+    assert results_of("make_starting_picture")[-1].startswith(
+        "Scene 1's starting picture was already made for this line with this note (version 2), "
+        "and the shop owner has seen it, so nothing was made or paid for again."
+    )
+
+
 def test_a_redo_that_failed_can_be_tried_again_without_a_new_answer(
     fake_model: FakeModel, restated_2: Fix, steps: HeldSteps, say: Say
 ) -> None:
@@ -427,6 +465,27 @@ def test_a_redo_that_failed_can_be_tried_again_without_a_new_answer(
     failed, made = SceneStep.objects.filter(kind="clip", scene__number=2, fix__isnull=False)
     fix = Fix.objects.get()
     assert (failed.status, failed.fix, made.status, made.fix) == ("failed", fix, "finished", fix)
+    assert fix.confirmed_by == Message.objects.get(text="Yes")
+
+
+def test_a_picture_redo_that_failed_can_be_tried_again_without_a_new_answer(
+    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
+) -> None:
+    owner_says(fake_model, say, NOTE_1, restating((1, FIX_1, "picture")))
+    owner_says(fake_model, say, "Yes", picture_with(1, FIX_1))
+    # The choice of photo and prompt can't be read, so the step fails; told so, the producer
+    # tries again straight away, with no new message from the shop owner.
+    fake_model.respond("choose_starting_picture", {"prompt": " ", "nonsense": 1})
+    fake_model.respond("produce", turn(calls=[picture_with(1, FIX_1)]), turn(says="Trying again."))
+    steps.run_next()
+
+    failed, again = SceneStep.objects.filter(
+        kind="starting_picture", scene__number=1, fix__isnull=False
+    )
+    fix = Fix.objects.get()
+    assert (failed.status, failed.fix) == ("failed", fix)
+    assert (again.status, again.fix, again.note) == ("running", fix, FIX_1)
+    assert steps.held == [again.pk]
     assert fix.confirmed_by == Message.objects.get(text="Yes")
 
 
@@ -480,6 +539,36 @@ def test_a_fix_restated_while_another_scene_is_being_made_names_only_that_scene(
         "you're told it is."
     )
     assert "Scene 2's" not in result
+
+
+def test_a_fix_restated_while_two_of_the_scenes_steps_are_being_made_names_both(
+    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
+) -> None:
+    # A new line has scene 3's starting picture and audio made again at once.
+    owner_says(
+        fake_model,
+        say,
+        "Say it's on sale.",
+        restating((3, 'In scene 3, she says "On sale now for $19.00."', "line")),
+    )
+    owner_says(
+        fake_model, say, "Yes", ("change_line", {"scene": 3, "line": "On sale now for $19.00."})
+    )
+    owner_says(fake_model, say, "Go on", picture_with(3, None), ("make_line_audio", {"scene": 3}))
+    assert len(steps.held) == 2
+
+    owner_says(
+        fake_model,
+        say,
+        "And hold the mug up.",
+        restating((3, "In scene 3, she holds the mug up beside her face.", "picture")),
+    )
+
+    assert results_of("restate_fix")[-1].endswith(
+        "line to change_line. Scene 3's starting picture and line's audio are still being made, "
+        "so its fix can only be made once that's ready: tell the shop owner that too, and make "
+        "the fix when you're told it is."
+    )
 
 
 def test_a_redo_with_no_note_on_a_finished_scene_is_refused_and_nothing_is_paid(
@@ -892,6 +981,44 @@ def test_a_clip_fix_is_estimated_from_the_ads_last_recorded_writer_and_fix_check
     fix_check = sum(paid["check_fix_clip"], Decimal(0))
     assert Fix.objects.order_by("id").last().estimate_usd == (  # type: ignore[union-attr]
         5 * BOREAL + 6 * judge_ask_usd(2) + writer + fix_check
+    )
+
+
+def test_with_quality_checks_off_a_clip_fix_is_estimated_without_the_judge_or_the_fix_check(
+    fake_model: FakeModel, shown: ProducedItem, say: Say, settings: Settings
+) -> None:
+    settings.QUALITY_CHECKS = False
+
+    owner_says(fake_model, say, NOTE_2, restating((2, FIX_2, "clip")))
+
+    # The clip's video and the writer's call, at the fallback, and no remake: nothing judges it.
+    about = 5 * BOREAL + CALL_FALLBACK_USD
+    assert Fix.objects.get().estimate_usd == about
+    assert results_of("restate_fix") == [
+        f"Recorded the fix. Scene 2: about {dollars(about)}. About {dollars(about)} in all. "
+        "Tell the shop owner this restatement and what it will cost, and wait for their "
+        "answer: nothing is made until they say yes. Once they have, pass each scene's fix "
+        "word for word as the note of its redo, or, for a new line, the new line to "
+        "change_line."
+    ]
+
+
+def test_a_clip_fix_with_no_judge_ask_recorded_is_estimated_at_the_fallback_an_ask(
+    fake_model: FakeModel, shown: ProducedItem, say: Say
+) -> None:
+    ModelCall.objects.filter(purpose__in=["check_clip_sides", "check_clip_motion"]).delete()
+
+    owner_says(fake_model, say, NOTE_2, restating((2, FIX_2, "clip")))
+
+    # The judge's 6 asks, the writer's call and the fix check's 3 asks, each at the fallback,
+    # and up to 2 remakes, each a video, the judge's 6 asks and the writer's call.
+    video = 5 * BOREAL
+    about = video + 10 * CALL_FALLBACK_USD
+    up_to = about + 2 * (video + 7 * CALL_FALLBACK_USD)
+    assert Fix.objects.get().estimate_usd == about
+    assert results_of("restate_fix")[-1].startswith(
+        f"Recorded the fix. Scene 2: about {dollars(about)}, up to {dollars(up_to)} if the "
+        "judge has it made again."
     )
 
 

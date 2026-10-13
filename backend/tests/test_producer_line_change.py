@@ -9,13 +9,15 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from django.db.models.signals import post_save
 
 from agents.money import dollars
+from gateway.catalog import MODEL_FOR_PURPOSE, speech_cost_usd, transcription_cost_usd
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs.models import Fix, ProducedItem, Scene, SceneStep
 
-from .conftest import HeldSteps, facts_ok, paid_for, results_of, said_yes_to_a_fix
+from .conftest import JUDGED_CLIP, HeldSteps, facts_ok, paid_for, results_of, said_yes_to_a_fix
 from .test_producer_broll import (
     BROLL_CHOICE,
     SHOWS,
@@ -26,11 +28,13 @@ from .test_producer_broll import (
 from .test_producer_fixes import (
     Say,
     ads,
+    broll_clip_usd,
     last_step,
     owner_says,
     restating,
     shown,  # noqa: F401 (a fixture)
 )
+from .test_producer_restarts import WorkerStopped, the_worker_stops
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -195,6 +199,32 @@ def test_a_broll_scenes_new_line_keeps_what_it_shows_and_its_labels(
     assert ads() == [1, 2]
 
 
+def test_a_broll_scenes_new_line_pays_for_its_steps_the_judge_and_no_before_picture_or_fix_check(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    steps: HeldSteps,
+    say: Say,
+) -> None:
+    paid = len(paid_for())
+
+    restated_and_yes(fake_model, say, 2, FIX_2, LINE_2_NEW)
+    made_again(fake_model, steps, say, 2)
+
+    # The ad's before-picture is drawn once and reused; the new clip is judged as any B-roll
+    # clip is, and a new line isn't checked against the fix (#131).
+    assert paid_for()[paid:] == [
+        "choose_broll_picture",
+        "make_starting_picture",
+        "check_starting_picture",
+        "check_starting_picture",
+        "speak_line",
+        "transcribe_line",
+        "make_broll_clip",
+        "collect_broll_clip",
+        *JUDGED_CLIP,
+    ]
+
+
 # --- What is refused --------------------------------------------------------------------------
 
 
@@ -279,6 +309,26 @@ def test_a_line_change_before_the_shop_owner_answers_is_refused(
         "for their answer. Nothing was done."
     ]
     assert Scene.objects.get(number=3).line == "Yours for $24.00."
+    assert Fix.objects.get().confirmed_by is None
+
+
+def test_the_yes_and_the_new_line_are_kept_together_or_not_at_all(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+) -> None:
+    owner_says(fake_model, say, NOTE_3, restating((3, FIX_3, "line")))
+    fake_model.respond("produce", turn(calls=[changing(3, LINE_3)]))
+
+    # The worker stops once the yes is kept, before the line is changed.
+    with (
+        the_worker_stops(post_save, Fix, when=lambda fix: fix.confirmed_by_id is not None),
+        pytest.raises(WorkerStopped),
+    ):
+        say("Yes, do that.")
+
+    scene = Scene.objects.get(number=3)
+    assert (scene.line, scene.status) == ("Yours for $24.00.", "finished")
     assert Fix.objects.get().confirmed_by is None
 
 
@@ -384,6 +434,37 @@ def test_a_line_change_while_the_scene_is_being_made_is_refused_as_busy(
     assert Scene.objects.get(number=3).line == LINE_3
 
 
+def test_after_a_newer_note_on_the_scene_its_remake_with_no_note_is_refused_and_nothing_is_paid(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    steps: HeldSteps,
+    say: Say,
+) -> None:
+    restated_and_yes(fake_model, say, 3, FIX_3, LINE_3)
+    # Before the remake starts, the shop owner sends another note on the scene: restated, and
+    # not yet answered, it is the scene's latest fix, so the line's isn't what a step with no
+    # note is made for.
+    owner_says(
+        fake_model,
+        say,
+        "And she should hold the mug up.",
+        restating((3, "In scene 3, she holds the mug up beside her face.", "picture")),
+    )
+    paid = paid_for()
+
+    owner_says(fake_model, say, "Hmm", ("make_starting_picture", {"scene": 3, "note": None}))
+
+    assert paid_for() == paid
+    assert steps.held == []
+    assert results_of("make_starting_picture")[-1] == (
+        "Refused: scene 3 already has a clip, so changing it is a fix. Call restate_fix first, "
+        "wait for the shop owner's answer, then pass the fix word for word as the note. Nothing "
+        "was done."
+    )
+    scene = Scene.objects.get(number=3)
+    assert (scene.line, scene.status) == (LINE_3, "planned")
+
+
 # --- Run again --------------------------------------------------------------------------------
 
 
@@ -436,6 +517,60 @@ def test_a_line_fix_is_estimated_from_the_new_line(
 
     assert Fix.objects.get().estimate_usd == expected
     assert results_of("restate_fix")[-1].startswith("Recorded the fix. Scene 3: about $")
+
+
+@pytest.mark.parametrize(
+    ("seconds", "cost"),
+    [
+        (4, Decimal("0.000244")),
+        # An hour's price divided into seconds never ends: the estimate is said to the
+        # millionth of a dollar a bill is recorded to, never on and on.
+        (4.1, Decimal("0.000251")),
+        (0, Decimal("0")),
+    ],
+)
+def test_a_transcription_is_estimated_to_the_millionth_of_a_dollar(
+    seconds: float, cost: Decimal
+) -> None:
+    estimated = transcription_cost_usd(MODEL_FOR_PURPOSE["transcribe_line"], seconds)
+    assert estimated == cost
+    assert dollars(estimated) == dollars(cost)
+    assert len(f"{estimated:f}") <= len("0.000000")
+
+
+def test_a_broll_line_fix_is_estimated_with_the_judges_asks_and_up_to_two_remakes(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+) -> None:
+    picture = last_step("starting_picture", 2)
+    picture_paid = sum(
+        (
+            call.cost_usd or Decimal(0)
+            for call in picture.tool_call.model_calls.exclude(
+                purpose__in=["plan_before_picture", "make_before_picture"]
+            )
+        ),
+        Decimal(0),
+    )
+    # The new line's 8 words take the fake voice 4 seconds, heard at Scribe's price and made
+    # as a 5-second B-roll clip, judged, with up to 2 remakes (decider call 13).
+    rest = (
+        picture_paid
+        + speech_cost_usd(MODEL_FOR_PURPOSE["speak_line"], len(LINE_2_NEW))
+        + transcription_cost_usd(MODEL_FOR_PURPOSE["transcribe_line"], 4.0)
+    )
+    clip_about, clip_up_to = broll_clip_usd(5, from_note=False)
+    about, up_to = rest + clip_about, rest + clip_up_to
+
+    owner_says(fake_model, say, NOTE_2, restating((2, FIX_2, "line")))
+
+    assert Fix.objects.get().estimate_usd == about.quantize(Decimal("0.000001"))
+    assert results_of("restate_fix")[-1].startswith(
+        f"Recorded the fix. Scene 2: about {dollars(about)}, up to {dollars(up_to)} if the "
+        f"judge has it made again. About {dollars(about)} in all, up to {dollars(up_to)} if "
+        "the judge has a clip made again. Tell the shop owner"
+    )
 
 
 def test_a_line_fix_on_a_scene_with_an_earlier_fix_says_the_owner_is_told_it_may_not_stay(

@@ -7,7 +7,17 @@ not graded yet)."""
 
 import pytest
 
-from gateway.catalog import MODEL_FOR_PURPOSE
+from gateway.catalog import MODEL_FOR_PURPOSE, SLOW_ANSWER_SECONDS
+from jobs import clip_judge
+from jobs.clip_judge import (
+    BACK_TO_NORMAL_WITHIN_SECONDS,
+    FRAMES_PER_SECOND,
+    MOTION_CHECK,
+    SIDES_CHECK,
+    STILLS,
+    Check,
+    SidesVerdict,
+)
 from jobs.picture_check import (
     ASKS,
     FAILS_TO_FAIL,
@@ -249,3 +259,118 @@ def test_the_start_picture_judge_runs_as_tested() -> None:
     assert (ASKS, FAILS_TO_FAIL) == (3, 2)
     # Julian 2026-10-10 21:48: two redraws, then the run stops.
     assert MOST_REDRAWS == 2
+
+
+# A22: the B-roll clip judge, word for word as proved on the 45 graded clips (SIDES_PROOF and
+# MOTION_PROOF in /mnt/project-files/evals/clip-judge-v2/prompts.py, the proof arms PS and PM):
+# on gpt-6.1-sol, 3 asks failing on 2, it wrongly failed 2 of 29 good clips and caught 6 of 12
+# faults, the bar met (decisions/julian-away-judgment-calls.md calls 10 and 12;
+# decisions/built-clip-judge-in-app.md). The wording is Julian's to change.
+CLIP_SIDES_AS_PROVED = """\
+You check frames cut from an AI-made video clip before it is used in a product ad. Video models \
+sometimes draw objects that cannot exist, such as a car with headlights on its back, a door \
+hinged on both sides, or a hand with six fingers, and sometimes an object that turns shows a \
+side that is not a real side of it, such as a mug that turns and shows a second handle where the \
+plain side should be. Find those, and only those.
+
+You get a few frames from one clip, in order, each labelled with its time in seconds.
+
+Work in two steps.
+1. Look before you judge. For each frame, and for each main object in it (the products, devices, \
+furniture and tools, and any hands holding them), write down which side of it faces the camera \
+and every part you can see on that side, and where. Describe what is actually drawn, not what \
+such an object usually has. Look closely at small parts: lenses, buttons, screens, spouts, caps, \
+hinges, handles, fingers.
+2. Then judge. For each object in each frame: could a real one of that object, seen from that \
+side, show exactly those parts in exactly those places? Then across the frames: when the object \
+turns, is the side that comes into view a real side of it? Do two frames show opposite sides of \
+it that look the same, although a real one's opposite sides differ? Does a part appear or vanish \
+on a side that kept facing the camera?
+
+Decide "fail" only when you are sure something is physically impossible: a part on a side where \
+the real object can't have it, two sides of one object seen at once, a part fused into another, \
+a body part that can't be, two opposite sides that look the same where a real one's differ. \
+Decide "pass" for everything else.
+
+You may also be shown one shop photo of the product, and facts about it from the shop. They tell \
+you what the product is and how it is built: which parts it has and where they sit. Use them \
+only for that. Ignore the photo's background, setting and anything being done with the product; \
+only the product itself matters. Never compare the frames with the photo: differences in size, \
+shape, angle, distance, colour, label or print are not a fail, and the product may be held, \
+turned, upside down or partly hidden. Fail the product only if it shows a part a real one can't \
+have there, two sides at once, or a label that didn't turn with it."""
+
+CLIP_MOTION_AS_PROVED = """\
+You check a short video clip for a product ad before it is shown to the shop owner. You decide \
+whether everything in it moves and changes the way it would in real life, and whether it shows \
+what the scene was meant to show.
+
+You get frames from the clip, in order, each labelled with its time in seconds, so you can \
+follow what moves between them. You also get the scene's order: one sentence saying what the \
+clip should show.
+
+Work in two steps.
+1. Look before you judge. Fill in the look form from the frames: what is in the clip; how \
+everything is at the first frame; then every movement and change of the product, of the hands \
+touching it, and of the one thing the action changes (a surface, a liquid, a level, hair, a \
+shape), step by step, with the time of the frame where you see it; and how everything is at the \
+last frame. Describe what is on the frames, not what the product is for or what usually happens. \
+Write only about the product, the hands that touch it, and the things the product is used on or \
+changes (a surface, a liquid, a level, hair, a shape). Nothing else in the frame is your concern.
+2. Then answer three questions, each "pass" or "fail".
+- real_motion: does every object and liquid move the way a real one would? Use the facts about \
+the product: a thick gel must move like a thick gel, a hard object must stay rigid.
+- sudden_change: does the changed thing change only while something acts on it, and only where \
+it acts, step by step? Fail when it changes before the action reaches it, where nothing touched \
+it, or all at once between two frames; or when the product itself switches shape or state \
+between frames.
+- does_what_was_ordered: does the clip do the main action of the order with the product? Fail \
+only when that main action is missing, a different main action is done with the product, or the \
+person, hand or object the order names is not in the clip. A camera move, a close-up, the \
+framing, the pace, or something the order says should be "in view" or "emphasized" is never a \
+fail. Small extra movements around the main action, walking, posing or holding are not a fail.
+
+Decide "fail" only when you are sure from the frames. When a question passes, its problem is \
+null. When it fails, write up to 3 sentences: what went wrong and with which part, the second it \
+starts, and what a real one would do.
+
+You may also be shown one shop photo of the product, and facts about it from the shop. They tell \
+you what the product is, what it is made of, what is inside and how it is built. Use them only \
+for that. Never compare the frames with the photo: differences in size, angle, colour, label or \
+print are not a fail."""
+
+
+def test_the_clip_judge_is_unchanged_from_the_one_proved() -> None:
+    assert SIDES_CHECK == CLIP_SIDES_AS_PROVED
+    assert MOTION_CHECK == CLIP_MOTION_AS_PROVED
+
+
+def test_the_clip_judge_asks_for_each_problem_in_up_to_3_sentences() -> None:
+    # Decider call 2 (2026-10-13 05:33): the auto-redo's prompt writer needs what went wrong,
+    # when, and what a real one would do; the proof ran with these words.
+    assert SidesVerdict.model_fields["problem"].description == (
+        "When it fails: up to 3 sentences: the object and what is impossible about it, the "
+        "frame time, and what a real one would look like. Null when it passes."
+    )
+    assert Check.model_fields["problem"].description == (
+        "When it fails: up to 3 sentences: what went wrong and with which part, the second it "
+        "starts, and what a real one would do. Null when it passes."
+    )
+
+
+def test_the_clip_judge_runs_as_proved() -> None:
+    # Decider call 10: the proof's wrong fails pick the model, sol for both checks.
+    assert MODEL_FOR_PURPOSE["check_clip_sides"] == "gpt-6.1-sol"
+    assert MODEL_FOR_PURPOSE["check_clip_motion"] == "gpt-6.1-sol"
+    # Each ask may take as long as the harness waited.
+    assert SLOW_ANSWER_SECONDS["check_clip_sides"] == 600
+    assert SLOW_ANSWER_SECONDS["check_clip_motion"] == 600
+    # SIDES on 5 stills (call 9: not 5 a second), MOTION at 5 frames a second, change 7's
+    # half second, 3 asks failing on 2.
+    assert (
+        STILLS,
+        FRAMES_PER_SECOND,
+        BACK_TO_NORMAL_WITHIN_SECONDS,
+        clip_judge.ASKS,
+        clip_judge.FAILS_TO_FAIL,
+    ) == (5, 5, 0.5, 3, 2)
