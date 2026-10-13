@@ -603,7 +603,7 @@ def test_restating_a_scene_whose_first_clip_is_still_being_made_is_refused(
 ) -> None:
     made_ready(fake_model, steps, say, (2,))
     calling(fake_model, say, ("make_clip", {"scene": 2}))
-    # The clip is kept, but its step isn't finished yet (as while the clip judge looks at it).
+    # Stopped between the clip being saved and its step finishing.
     with (
         the_worker_stops(
             pre_save, SceneStep, when=lambda step: step.kind == "clip" and step.status == "finished"
@@ -618,6 +618,34 @@ def test_restating_a_scene_whose_first_clip_is_still_being_made_is_refused(
     assert results_of("restate_fix") == [
         "Refused: scene 2's clip is still being made, so there is nothing to fix yet. You'll "
         "be told when it's ready. Nothing was done."
+    ]
+    assert not Fix.objects.exists()
+
+
+def test_restating_a_scene_whose_first_clip_failed_after_it_was_saved_is_refused(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Say,
+) -> None:
+    made_ready(fake_model, steps, say, (2,))
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    # Stopped between the clip being saved and its step finishing.
+    with (
+        the_worker_stops(
+            pre_save, SceneStep, when=lambda step: step.kind == "clip" and step.status == "finished"
+        ),
+        pytest.raises(ProducerStopped),
+    ):
+        steps.run_next()
+    assert ProducedItem.objects.filter(kind="clip", scene__number=2).exists()
+    SceneStep.objects.filter(kind="clip", scene__number=2).update(status="failed")
+
+    owner_says(fake_model, say, NOTE_2, restating((2, FIX_2, "picture")))
+
+    assert results_of("restate_fix") == [
+        "Refused: scene 2's clip couldn't be finished, so there is nothing to fix. Make its "
+        "clip again first. Nothing was done."
     ]
     assert not Fix.objects.exists()
 
