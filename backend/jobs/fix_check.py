@@ -1,7 +1,8 @@
 """The check of a fix (route B step 6, #131): after a scene is made again for a fix the shop
 owner said yes to, a judge is asked the complaint back about the new version, shown beside
 the old one, before anything more is made or shown as fixed. A new starting picture is
-judged here, and a new clip, after the clip judge (#109) and its remakes (#155) have kept it.
+judged here. A new clip is judged by the clip judge itself (#109), asked one more question
+beside the old clip (jobs.clip_judge, Julian 2026-10-14), and its answers are settled here.
 A new line is never judged: its words are the proof (Julian 2026-10-11 21:51).
 
 Agreed by Julian (2026-10-13 05:18, "yes"): the judge's question below, showing the old
@@ -102,50 +103,3 @@ def settle(ask: Callable[[int], dict[str, Any] | None]) -> Settled:
         if len(answers) - len(fails) >= FAILS_TO_FAIL:
             return Settled("passed", "", answers)
     return Settled("unchecked", "", answers)
-
-
-# The picture question in clip words (decision thread for Julian, 2026-10-13 05:47, call 4).
-# Shown frames of the old clip and the new one, 5 a second, each labelled with its time.
-FIX_CHECK_CLIP = """\
-You check whether a change a shop owner asked for was made to a clip in their video ad. You \
-are shown frames of the old clip first, then frames of the new clip, each labelled with its \
-time, and told the change. Judge only that change: nothing else in the clip matters, and \
-other differences between the two clips are not a fail.
-
-Work in two steps.
-1. Look before you judge. Write what the old clip does about the thing the change is about, \
-then what the new clip does about it. Describe what actually happens in the frames, not what \
-the change asks for.
-2. Then decide: is the change clearly there in the new clip? Answer "fixed" only if it is. \
-Answer "not fixed" if what the shop owner complained about is still there, or the change is \
-only partly made, and say in one sentence what is still wrong."""
-
-CLIPS_SHOWN = "The old clip's frames are first; the new clip's frames follow."
-
-# Each clip is shown in at most this many pictures, so both fit in one ask under the
-# 50-picture limit (reference/rate-limits.md).
-MOST_PICTURES_PER_CLIP = 24
-
-
-class FixClipVerdict(FixVerdict):
-    old_shows: str = Field(description="What the old clip does about the change.")
-    new_shows: str = Field(description="What the new clip does about the change.")
-
-
-class FixClipCheckHandoff(Handoff):
-    """As FixCheckHandoff, for a fix's new clip."""
-
-    fix: str
-    ask: int
-    clips: str = CLIPS_SHOWN
-
-
-def thinned[Item](pictures: list[Item], most: int = MOST_PICTURES_PER_CLIP) -> list[Item]:
-    """At most `most` of `pictures`, spread evenly from the first to the last: an owner's
-    change often shows at the end, so the end is never cut off."""
-    if len(pictures) <= most:
-        return pictures
-    if most == 1:
-        return pictures[-1:]
-    step = (len(pictures) - 1) / (most - 1)
-    return [pictures[round(n * step)] for n in range(most)]

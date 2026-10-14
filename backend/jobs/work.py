@@ -1815,11 +1815,14 @@ def judge_starting_picture(job: Job | None, picture: str, photo: str, *, about: 
 
 def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
     """Check a fix (#131): for a step that made a scene's new starting picture for a picture
-    fix, or its new clip for a clip fix, ask a judge the complaint back about `made`, shown
-    beside the scene's version before the step, and keep the verdict. A new line isn't
-    checked, nor a picture fix's clip: the complaint was about the picture. Nothing is
-    checked when quality checks are switched off. A clip is checked once, on the clip the
-    clip judge's remakes kept (#155), which is the step's newest.
+    fix, or its new clip for a clip fix, keep whether a judge found the change in `made`,
+    shown beside the scene's version before the step. A new starting picture is checked here,
+    by asking a judge the complaint back. A new clip was already asked, by the clip judge
+    itself, beside the clip the shop owner complained about (Julian 2026-10-14, one judge for
+    both): its answers are read from the ruling of the clip its remakes kept (#155), which is
+    the step's newest, and nothing is asked here. A new line isn't checked, nor a picture
+    fix's clip: the complaint was about the picture. Nothing is checked when quality checks
+    are switched off.
 
     Run again, as after a worker stopped, it gives the verdict kept, or asks the judge
     again with each ask answered from its record, so nothing is paid for twice."""
@@ -1833,22 +1836,16 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
     kept = FixCheck.objects.filter(step=step).first()
     if kept is not None:
         return kept
-    # What the shop owner saw last: the scene's newest version before the step started, so a
-    # clip the judge's remakes made, or brought back, in this step is never the old one.
-    old = (
-        made.scene.produced.filter(kind=made.kind, created_at__lt=step.started_at)  # type: ignore[union-attr]
-        .order_by("-version")
-        .first()
-    )
+    old = step.shown_before(made.kind)
     if old is None:
         return None
-    job = fix.job
     if picture:
+        job = fix.job
         settled = fix_check.settle(
             lambda ask: _ask_about_the_fix(job, fix.fix, ask, old.file, made.file)
         )
     else:
-        settled = _check_the_clip_fix(job, fix.fix, old, made)
+        settled = _the_clip_judges_answer(made)
     return FixCheck.objects.create(
         fix=fix,
         step=step,
@@ -1860,59 +1857,17 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
     )
 
 
-def _check_the_clip_fix(
-    job: Job, fix: str, old: ProducedItem, new: ProducedItem
-) -> fix_check.Settled:
-    """Ask the judge FixCheck's ASKS times at once whether the clip `new` has the change
-    `fix` asks for, shown frames of the clip `old` first, 5 a second, each clip thinned
-    evenly to fit one ask. The frames already cut for the clip judge are reused. Frames that
-    can't be cut leave the fix unchecked rather than failing the clip already paid for."""
-    try:
-        images = [
-            *_clip_frames(old, "The old clip's frames, in order:"),
-            *_clip_frames(new, "The new clip's frames, in order:"),
-        ]
-    except Exception:
-        logger.warning("No frames to check the clip fix %r with", fix, exc_info=True)
+def _the_clip_judges_answer(new: ProducedItem) -> fix_check.Settled:
+    """What the clip judge's answers about `new` settled on the shop owner's change, asked
+    beside the clip the step's fix was for (clip_judge.complained_about, the same `old`):
+    unchecked when it was judged without it, as when its frames couldn't be cut, or not
+    judged at all."""
+    ruling = new.ruling or {}
+    if "compared_with" not in ruling:
         return fix_check.Settled("unchecked", "", [])
-
-    def ask(number: int) -> dict[str, Any] | None:
-        return _fix_answer(
-            job,
-            purpose="check_fix_clip",
-            instructions=fix_check.FIX_CHECK_CLIP,
-            handoff=fix_check.FixClipCheckHandoff(fix=fix, ask=number),
-            output=fix_check.FixClipVerdict,
-            images=images,
-        )
-
-    with ThreadPoolExecutor(max_workers=ASKS) as pool:
-        asked = [
-            pool.submit(contextvars.copy_context().run, _closing_its_connection, ask, number)
-            for number in range(1, ASKS + 1)
-        ]
-        return fix_check.settle_all([each.result() for each in asked])
-
-
-def _clip_frames(clip: ProducedItem, heading: str) -> list[Image]:
-    """The clip's frames, 5 a second, as the clip judge was shown them, thinned evenly to fit
-    beside another clip's in one ask, each picture labelled with its frames' times. A clip
-    the judge never cut is cut now, and its pictures kept on its ruling, so a check asked
-    again after the worker stopped shows the same pictures and pays nothing twice."""
-    pictures = (clip.ruling or {}).get("pictures")
-    if not pictures:
-        pictures = clip_judge.cut_pictures(
-            clip.file,
-            beside=clip_judge.MOST_PICTURES - fix_check.MOST_PICTURES_PER_CLIP,
-            sets=("frames",),
-        )
-        clip.ruling = {**(clip.ruling or {}), "pictures": pictures}
-        clip.save(update_fields=["ruling"])
-    shown = []
-    for n, picture in enumerate(fix_check.thinned(pictures["frames"])):
-        label = clip_judge.frame_label(picture["times"])
-        shown.append(Image(label=f"{heading}\n{label}" if n == 0 else label, key=picture["key"]))
-    return shown
+    return fix_check.settle_all(
+        [answer and answer["owner_change"] for answer in ruling["answers"]["motion"]]
+    )
 
 
 def _ask_about_the_fix(job: Job, fix: str, ask: int, old: str, new: str) -> dict[str, Any] | None:
@@ -1937,7 +1892,7 @@ def _fix_answer(
     *,
     purpose: str,
     instructions: str,
-    handoff: fix_check.FixCheckHandoff | fix_check.FixClipCheckHandoff,
+    handoff: fix_check.FixCheckHandoff,
     output: type[fix_check.FixVerdict],
     images: list[Image],
 ) -> dict[str, Any] | None:

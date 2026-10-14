@@ -18,14 +18,17 @@ from gateway.catalog import MODEL_FOR_PURPOSE
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import UnusableReply
+from jobs import clip_judge
 from jobs.clip_judge import ASKS, wording_version
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 
 from .conftest import (
+    CLIP_FIXED,
     CLIP_MOTION_OK,
     CLIP_SIDES_OK,
     HeldSteps,
     WorkerStopped,
+    asked_with,
     handoffs,
     paid_for,
     said_yes_to_a_fix,
@@ -420,6 +423,44 @@ def test_a_fixs_clip_is_judged_with_what_the_agent_understood_from_the_owner(
     assert ruling(new)["verdict"] == "pass"
     for asked in handoffs("check_clip_motion")[ASKS:] + handoffs("check_clip_sides")[ASKS:]:
         assert asked["what_the_agent_understood_from_the_owner"] == fix.fix
+    # Beside the old clip: the ruling says which, and that the fix's words judged it.
+    assert ruling(new)["compared_with"] == judged.pk
+    assert ruling(new)["wording"] == wording_version(fix=True) != wording_version()
+    assert "compared_with" not in ruling(judged)
+
+
+def test_a_fixs_clip_and_the_old_one_each_get_half_the_room_in_one_ask(
+    fake_model: FakeModel, judged: ProducedItem, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    fix = said_yes_to_a_fix(2, "The tea pours into the mug, not beside it.", "clip")
+    calling(fake_model, say, ("make_clip", {"scene": 2, "note": fix.fix}))
+    fake_model.respond("rewrite_clip_prompt", REWRITE)
+    run(fake_model, steps)
+
+    # Each 5-second clip is 25 frames: alone, each is shown on its own; beside the other clip,
+    # each gets 24 pictures' room of the 49 left by the shop photo, so its frames are joined
+    # two to a picture.
+    for shown in [
+        [image["label"] for image in call.images]
+        for call in ModelCall.objects.filter(purpose="check_clip_motion").order_by("id")[ASKS:]
+    ]:
+        old = next(n for n, label in enumerate(shown) if "old clip" in label)
+        new = next(n for n, label in enumerate(shown) if "new clip" in label)
+        assert (old, new - old, len(shown) - new) == (1, 13, 13)
+        assert shown[-1] == "Frame at 4.8 s"
+    # The old clip's frames, kept on it, then the new one's.
+    remade = ProducedItem.objects.get(kind="clip", scene__number=2, version=2)
+    complained = ProducedItem.objects.get(pk=judged.pk)
+    old_keys = [p["key"] for p in ruling(complained)["pictures_beside"]["frames"]]
+    new_keys = [p["key"] for p in ruling(remade)["pictures"]["frames"]]
+    for call in ModelCall.objects.filter(purpose="check_clip_motion").order_by("id")[ASKS:]:
+        assert [image["key"] for image in call.images[1:]] == old_keys + new_keys
+    # SIDES is shown the new clip as for any clip.
+    for shown in [
+        [image["label"] for image in call.images]
+        for call in ModelCall.objects.filter(purpose="check_clip_sides").order_by("id")[ASKS:]
+    ]:
+        assert not any("old clip" in label for label in shown)
 
 
 def test_the_ruling_says_which_words_and_models_judged_it(judged: ProducedItem) -> None:
@@ -430,3 +471,85 @@ def test_the_ruling_says_which_words_and_models_judged_it(judged: ProducedItem) 
     }
     for call in ModelCall.objects.filter(purpose__startswith="check_clip_"):
         assert call.model == MODEL_FOR_PURPOSE[call.purpose]
+
+
+def a_fixs_clip_judged_until_the_worker_stops(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+) -> SceneStep:
+    """Scene 2's clip made again for a clip fix, the worker stopping before the judge's last
+    MOTION answer; gives the step, as handed out again."""
+    fix = said_yes_to_a_fix(2, "The tea pours into the mug, not beside it.", "clip")
+    calling(fake_model, say, ("make_clip", {"scene": 2, "note": fix.fix}))
+    fake_model.respond("rewrite_clip_prompt", REWRITE)
+    answered = {**CLIP_MOTION_OK, "owner_change": CLIP_FIXED}
+    fake_model.respond("check_clip_motion", answered, answered, WorkerStopped())
+    with pytest.raises(WorkerStopped):
+        steps.run_next()
+    return SceneStep.objects.filter(kind="clip", scene__number=2).last()  # type: ignore[return-value]
+
+
+def test_a_fixs_clip_judged_again_after_the_worker_stopped_shows_the_old_clip_cut_once(
+    fake_model: FakeModel,
+    judged: ProducedItem,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cutting = clip_judge.cut_pictures
+    cut: list[str] = []
+
+    def counted(clip: str, **kwargs: Any) -> Any:
+        cut.append(clip)
+        return cutting(clip, **kwargs)
+
+    monkeypatch.setattr(clip_judge, "cut_pictures", counted)
+    step = a_fixs_clip_judged_until_the_worker_stops(fake_model, steps, say)
+    requests = asked_with(fake_model, "check_clip_motion")
+
+    fake_model.respond("produce", turn(says="Done."))
+    tasks.run_scene_step(step.pk)
+
+    assert cut.count(judged.file) == 1
+    # Only the ask the worker stopped in is asked again, shown the old clip as before.
+    (again,) = requests
+    first = ModelCall.objects.filter(purpose="check_clip_motion").order_by("id")[ASKS]
+    assert [image.key for image in again.images] == [image["key"] for image in first.images]
+    assert paid_for().count("check_clip_motion") == 2 * ASKS
+    new = ProducedItem.objects.get(kind="clip", scene__number=2, version=2)
+    assert ruling(new)["compared_with"] == judged.pk
+
+
+def test_a_fixs_clip_whose_old_frames_couldnt_be_cut_stays_judged_alone_when_asked_again(
+    fake_model: FakeModel,
+    judged: ProducedItem,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cutting = clip_judge.cut_pictures
+    failed: list[str] = []
+
+    def fails_once_on_the_old_clip(clip: str, **kwargs: Any) -> Any:
+        if clip == judged.file and not failed:
+            failed.append(clip)
+            raise RuntimeError("ffmpeg couldn't read the clip")
+        return cutting(clip, **kwargs)
+
+    monkeypatch.setattr(clip_judge, "cut_pictures", fails_once_on_the_old_clip)
+    fix = said_yes_to_a_fix(2, "The tea pours into the mug, not beside it.", "clip")
+    calling(fake_model, say, ("make_clip", {"scene": 2, "note": fix.fix}))
+    fake_model.respond("rewrite_clip_prompt", REWRITE)
+    fake_model.respond("check_clip_motion", CLIP_MOTION_OK, CLIP_MOTION_OK, WorkerStopped())
+    with pytest.raises(WorkerStopped):
+        steps.run_next()
+    requests = asked_with(fake_model, "check_clip_motion")
+
+    fake_model.respond("produce", turn(says="Done."))
+    tasks.run_scene_step(SceneStep.objects.filter(kind="clip", scene__number=2).last().pk)  # type: ignore[union-attr]
+
+    # Its frames were cut to fit alone: the old clip's can't join them now.
+    (again,) = requests
+    assert again.instructions == clip_judge.MOTION_CHECK
+    assert not any("old clip" in image.label for image in again.images)
+    new = ProducedItem.objects.get(kind="clip", scene__number=2, version=2)
+    assert "compared_with" not in ruling(new)

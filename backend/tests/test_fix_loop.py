@@ -203,8 +203,6 @@ def test_a_clip_note_makes_only_that_scenes_clip_again_and_a_new_ad(
         "make_broll_clip",
         "collect_broll_clip",
         *JUDGED_CLIP,
-        # The fix's check, asked 3 times at once (#131).
-        *["check_fix_clip"] * 3,
     ]
 
 
@@ -600,8 +598,6 @@ def test_a_fixs_redo_run_again_after_the_worker_stopped_pays_and_shows_everythin
         "make_broll_clip",
         "collect_broll_clip",
         *JUDGED_CLIP,
-        # The fix's check, asked 3 times at once (#131).
-        *["check_fix_clip"] * 3,
     ]
     assert [ad.version for ad in ads()] == [1, 2]
     assert Message.objects.filter(attachments__file=ads()[1].file).count() == 1

@@ -44,7 +44,6 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "check_clip_sides": "gpt-6.1-sol",
     "check_clip_motion": "gpt-6.1-sol",
     # The same about a fix's new clip, beside the old one (decision thread, 2026-10-13 call 4).
-    "check_fix_clip": "gpt-6.1-sol",
     "design_voice": "inworld-tts-2",
     "measure_voice": "inworld-tts-2",
     "speak_line": "inworld-tts-2",
@@ -68,7 +67,6 @@ SLOW_ANSWER_SECONDS: dict[str, float] = {
     "check_clip_sides": 600,
     "check_clip_motion": 600,
     # Up to 48 frames of two clips in one ask, as many as the clip judge's (#131).
-    "check_fix_clip": 600,
 }
 
 # US dollars per million tokens: (input, output). From OpenAI's pricing page.
