@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { Attachment, Message, SceneStep } from "./api";
-import { sceneCards } from "./scenes";
+import { notesMessage, sceneCards, waitsForYes } from "./scenes";
 
 let seq = 0;
 
@@ -159,4 +159,136 @@ test("a starting picture newer than the scene's clip leaves the clip out of date
 
   const [noClip] = sceneCards([message([picture(1, "/p1-a.png")])]);
   expect(noClip.clipOutOfDate).toBe(false);
+});
+
+const madeClip: SceneStep = { scene: 2, kind: "clip", state: "made" };
+
+function said(role: Message["role"], text: string, step: SceneStep | null = null): Message {
+  return { ...message([], step), role, text, level: role === "notice" ? "info" : "" };
+}
+
+test("the notes message: one entry per scene with a note, in scene order, trimmed", () => {
+  expect(notesMessage(new Map())).toBe("");
+  expect(notesMessage(new Map([[2, "  "]]))).toBe("");
+  expect(
+    notesMessage(
+      new Map([
+        [10, "Last"],
+        [2, " Scrub\nthe tile \n"],
+        [3, ""],
+      ]),
+    ),
+  ).toBe("Scene 2: Scrub\nthe tile\nScene 10: Last");
+});
+
+test.each([
+  ["nothing said", [], false],
+  ["no notes, the agent talking", [said("agent", "Here's the ad.")], false],
+  ["notes, no answer yet", [said("user", "Scene 2: Scrub")], false],
+  [
+    "notes, then the restatement",
+    [said("user", "Scene 2: Scrub"), said("agent", "Shall I?")],
+    true,
+  ],
+  [
+    "the restatement, then a notice",
+    [said("user", "Scene 2: Scrub"), said("agent", "Shall I?"), said("notice", "Saved.")],
+    true,
+  ],
+  [
+    "only a scene's clip shown since the notes",
+    [said("user", "Scene 2: Scrub"), { ...said("agent", ""), step: madeClip }],
+    false,
+  ],
+  [
+    "the restatement, then a correction",
+    [said("user", "Scene 2: Scrub"), said("agent", "Shall I?"), said("user", "No, the tile")],
+    false,
+  ],
+  [
+    "a correction answered",
+    [
+      said("user", "Scene 2: Scrub"),
+      said("agent", "Shall I?"),
+      said("user", "No, the tile"),
+      said("agent", "The tile then?"),
+    ],
+    true,
+  ],
+  [
+    "a redo started since",
+    [
+      said("user", "Scene 2: Scrub"),
+      said("agent", "Shall I?"),
+      said("user", "ok"),
+      said("notice", "Remaking scene 2's clip.", { scene: 2, kind: "clip", state: "started" }),
+      said("agent", "On it."),
+    ],
+    false,
+  ],
+  [
+    "another scene's picture started since the restatement",
+    [
+      said("user", "Scene 2: Scrub"),
+      said("agent", "Shall I?"),
+      said("notice", "Making scene 3's picture.", {
+        scene: 3,
+        kind: "starting_picture",
+        state: "started",
+      }),
+    ],
+    true,
+  ],
+  [
+    "a redo of the second noted scene started since",
+    [
+      said("user", "Scene 2: Scrub\nthe tile\nScene 4: Brighter"),
+      said("agent", "Shall I?"),
+      said("user", "Yes"),
+      said("notice", "Remaking scene 4's picture.", {
+        scene: 4,
+        kind: "starting_picture",
+        state: "started",
+      }),
+      said("agent", "On it."),
+    ],
+    false,
+  ],
+  [
+    "a correction moves the fix to another scene, said yes to and started",
+    [
+      said("user", "Scene 2: Scrub"),
+      said("agent", "Shall I?"),
+      said("user", "Actually leave scene 2, make scene 4 brighter instead"),
+      said("agent", "Scene 4 brighter, shall I?"),
+      said("user", "Yes"),
+      said("notice", "Remaking scene 4's picture.", {
+        scene: 4,
+        kind: "starting_picture",
+        state: "started",
+      }),
+      said("agent", "On it."),
+    ],
+    false,
+  ],
+  [
+    "new notes after an earlier redo",
+    [
+      said("user", "Scene 2: Scrub"),
+      said("notice", "Remaking.", { scene: 2, kind: "clip", state: "started" }),
+      said("user", "Scene 3: Brighter"),
+      said("agent", "Brighter, shall I?"),
+    ],
+    true,
+  ],
+  [
+    "a note typed in the chat box",
+    [said("user", "Scene 1: make it red"), said("agent", "Red?")],
+    true,
+  ],
+  ["a note on a two-digit scene", [said("user", "Scene 12: slower"), said("agent", "Ok?")], true],
+  ["the word Scene mid-message", [said("user", "About Scene 2: hmm"), said("agent", "Ok")], false],
+  ["notes from the agent", [said("agent", "Scene 2: planned"), said("agent", "Ok")], false],
+] as const)("waits for a yes: %s", (_, messages, expected) => {
+  expect(waitsForYes([...messages])).toBe(expected);
 });

@@ -17,6 +17,13 @@ export type SceneCard = {
   making: { kind: SceneStep["kind"]; remaking: boolean } | null;
   /** What the scene's last try ended with nothing made for, until something starts again. */
   failed: SceneStep["kind"] | null;
+  /** The scene has a clip and a new one is on its way: its picture or clip is being made
+   * again, or a new picture means a new clip while the ad is still being worked on, and
+   * nothing has failed. Until the new clip lands, the card keeps the old one. Which step is
+   * redone isn't the owner's concern. */
+  beingRemade: boolean;
+  /** Something is being made for the scene now: first time or again. */
+  busy: boolean;
 };
 
 /** One card per scene that has a starting picture or a clip, or one being made, in scene
@@ -28,7 +35,16 @@ export function sceneCards(messages: Message[]): SceneCard[] {
   const card = (scene: number) => {
     let found = cards.get(scene);
     if (found === undefined) {
-      found = { scene, clips: [], picture: null, clipOutOfDate: false, making: null, failed: null };
+      found = {
+        scene,
+        clips: [],
+        picture: null,
+        clipOutOfDate: false,
+        making: null,
+        failed: null,
+        beingRemade: false,
+        busy: false,
+      };
       cards.set(scene, found);
     }
     return found;
@@ -60,5 +76,72 @@ export function sceneCards(messages: Message[]): SceneCard[] {
     scene.failed = step.state === "not_made" ? step.kind : null;
   }
 
+  // A new picture only promises a new clip while something is still being made: a run that
+  // stopped in between leaves the scene waiting, not busy.
+  const working = [...cards.values()].some((scene) => scene.making !== null);
+  for (const scene of cards.values()) {
+    scene.beingRemade =
+      scene.clips.length > 0 &&
+      scene.failed === null &&
+      (scene.making !== null || (scene.clipOutOfDate && working));
+    scene.busy = scene.making !== null || scene.beingRemade;
+  }
   return [...cards.values()].sort((a, b) => a.scene - b.scene);
+}
+
+/** The owner's notes as the one message that carries them: a "Scene N: ..." entry per scene
+ * with a note, in scene order, each note kept whole (its line breaks too). Blank notes are
+ * left out; no notes at all is an empty message. */
+export function notesMessage(notes: ReadonlyMap<number, string>): string {
+  return nonBlankNotes(notes)
+    .sort(([a], [b]) => a - b)
+    .map(([scene, note]) => `${notePrefix(scene)}${note.trim()}`)
+    .join("\n");
+}
+
+/** The notes that say something: blank ones are dropped. */
+export function nonBlankNotes(notes: ReadonlyMap<number, string>): [number, string][] {
+  return [...notes].filter(([, note]) => note.trim() !== "");
+}
+
+/** How a note on a scene starts in the notes message. A message the owner types the same
+ * way counts as a note too: it is one. */
+function notePrefix(scene: number | string) {
+  return `Scene ${scene}: `;
+}
+
+const NOTES = new RegExp(`^${notePrefix("\\d+")}`);
+
+/** The scenes a notes message is about: one per line that starts a note. */
+function notedScenes(text: string): number[] {
+  const starts = text.matchAll(new RegExp(`^${notePrefix("(\\d+)")}`, "gm"));
+  return [...starts].map(([, scene]) => Number(scene));
+}
+
+/** The scenes a message names anywhere, as "scene 4" or "Scene 4". */
+function namedScenes(text: string): number[] {
+  return [...text.matchAll(/\bscene (\d+)\b/gi)].map(([, scene]) => Number(scene));
+}
+
+/** Whether the producer is waiting on the owner's yes: the owner sent notes, the producer's
+ * latest words answer them (its restatement, or a new one after a correction), and no redo
+ * of a scene the fix is about has started since, which would mean the yes was already given:
+ * a noted scene, or one the owner or the producer named since, as when a correction moves
+ * the fix. Another scene's step starting, as while it is still being made for the first
+ * time, says nothing about the yes. */
+export function waitsForYes(messages: Message[]): boolean {
+  const notesAgo = [...messages]
+    .reverse()
+    .findIndex((one) => one.role === "user" && NOTES.test(one.text));
+  if (notesAgo === -1) return false;
+  const since = messages.slice(messages.length - notesAgo);
+  const noted = new Set([
+    ...notedScenes(messages[messages.length - 1 - notesAgo].text),
+    ...since.filter((one) => one.role !== "notice").flatMap((one) => namedScenes(one.text)),
+  ]);
+  if (since.some(({ step }) => step?.state === "started" && noted.has(step.scene))) return false;
+  const lastSaid = since
+    .reverse()
+    .find((one) => one.role !== "notice" && one.step?.state !== "made");
+  return lastSaid?.role === "agent";
 }
