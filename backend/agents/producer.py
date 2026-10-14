@@ -35,6 +35,7 @@ from jobs.work import (
     SkippedPhoto,
     assemble_ad,
     bring_back_clip,
+    bring_back_picture,
     check_page,
     clip_estimate_usd,
     copy_and_pick,
@@ -603,22 +604,8 @@ class MakeStartingPicture(Tool):
             .last()
         )
         if made is not None:
-            picture = made.produced.get()
-            assert made.photo is not None, "a finished starting picture was made from a photo"
-            return (
-                f"Scene {scene.number}'s starting picture was already made for this line "
-                f"{'with this note' if note else 'with no note'} (version {picture.version}), "
-                "and the shop owner has seen it, so nothing was made or paid for again. Making "
-                f"it cost {dollars(made.tool_call.cost_usd())}. Photo {made.photo.position} "
-                f"was used: {made.photo_reason}"
-            )
-        # A clip being made of the scene's picture would finish the scene once a newer
-        # picture had un-finished it (#133).
-        if scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING).exists():
-            raise Refused(
-                f"scene {scene.number}'s clip is still being made. You'll be told when it's "
-                "ready; make its starting picture again then."
-            )
+            return _already_made_picture(call, scene, made, fix)
+        _no_clip_being_made(scene)
         _a_fix_unless_first_making(scene, fix)
         _start_step(
             call,
@@ -633,6 +620,93 @@ class MakeStartingPicture(Tool):
             f"Started scene {scene.number}'s starting picture. It isn't made yet: you'll be "
             "told when it's ready."
         )
+
+
+def _already_made_picture(call: ToolCall, scene: Scene, made: SceneStep, fix: Fix | None) -> str:
+    """For a starting picture already made for the scene's line with the same note: say so
+    if it is the scene's picture, or bring it back as the scene's picture if a newer one was
+    made since, with nothing paid again (#143, Julian 2026-10-11, "same inputs, never pay
+    twice"). Bringing it back changes the ad, so it is a fix like any new picture."""
+    # A newer picture being made would land on top of it.
+    if scene.steps.filter(
+        kind=SceneStep.Kind.STARTING_PICTURE, status=SceneStep.Status.RUNNING
+    ).exists():
+        raise Refused(
+            f"scene {scene.number}'s starting picture is already being made. You'll be told "
+            "when it's ready."
+        )
+    assert made.photo is not None, "a finished starting picture was made from a photo"
+    earlier = made.produced.order_by("version").last()
+    assert earlier is not None, "a finished starting picture step made its picture"
+    current = _current_picture(scene)
+    with_note = "with this note" if made.note else "with no note"
+    cost = dollars(made.tool_call.cost_usd())
+    photo = f"Photo {made.photo.position} was used: {made.photo_reason}"
+    if current is not None and current.step == made:
+        # Brought back before a worker stopped, its scene still waits for its clip.
+        clip = _latest_clip(scene)
+        unclipped = (
+            f" Scene {scene.number} is no longer finished: make its clip from this picture."
+            if scene.status != Scene.Status.FINISHED
+            and clip is not None
+            and (clip.picture is None or clip.picture.step != made)
+            else ""
+        )
+        return (
+            f"Scene {scene.number}'s starting picture was already made for this line "
+            f"{with_note} (version {current.version}), and the shop owner has seen it, so "
+            f"nothing was made or paid for again. Making it cost {cost}. {photo}{unclipped}"
+        )
+    _no_clip_being_made(scene)
+    _a_fix_unless_first_making(scene, fix)
+    # Shown again together, so the scene's card shows the picture its clip is made from.
+    with transaction.atomic():
+        again, was_finished = bring_back_picture(earlier)
+        messages.add(
+            call.session,
+            role=Message.Role.AGENT,
+            carrying=[messages.AttachedFile(Attachment.Kind.PICTURE, again.file, scene.number)],
+        )
+    unfinished = (
+        f" Scene {scene.number} is no longer finished: make its clip from this picture."
+        if was_finished
+        else ""
+    )
+    return (
+        f"Scene {scene.number}'s starting picture was already made for this line {with_note} "
+        f"(version {earlier.version}), so it is the scene's starting picture again, as version "
+        f"{again.version}, and nothing was made or paid for again. Making it cost {cost}. "
+        f"{photo}{unfinished}"
+    )
+
+
+def _no_clip_being_made(scene: Scene) -> None:
+    """Refuse a new starting picture while the scene's clip is being made: that clip, of the
+    picture before, would finish the scene once the new picture had un-finished it (#133)."""
+    if scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING).exists():
+        raise Refused(
+            f"scene {scene.number}'s clip is still being made. You'll be told when it's "
+            "ready; make its starting picture again then."
+        )
+
+
+def _current_picture(scene: Scene) -> ProducedItem | None:
+    """The starting picture the scene's clip is made from: the newest version made for what
+    the scene shows as it stands, or brought back (#143). A line shortened to fit its clip
+    still shows what its picture was made for."""
+    made_for = SceneStep.made_for(scene, through="step__")
+    del made_for["step__line"]
+    return (
+        scene.produced.filter(
+            kind=ProducedItem.Kind.STARTING_PICTURE,
+            step__kind=SceneStep.Kind.STARTING_PICTURE,
+            step__status=SceneStep.Status.FINISHED,
+            step__line__in=[scene.line, *scene.shortened_from],
+            **made_for,
+        )
+        .order_by("version")
+        .last()
+    )
 
 
 class MakeLineAudio(Tool):
@@ -788,13 +862,8 @@ class MakeClip(Tool):
                 f"scene {scene.number} has no starting picture yet. Make its starting picture "
                 "first."
             )
-        # A line shortened to fit its clip still shows what its picture was made for.
-        made_for = SceneStep.made_for(scene)
-        del made_for["line"]
-        picture_step = picture_steps.filter(
-            line__in=[scene.line, *scene.shortened_from], **made_for
-        ).last()
-        if picture_step is None:
+        picture = _current_picture(scene)
+        if picture is None:
             raise Refused(
                 f"scene {scene.number}'s starting picture was made for an earlier line, or for "
                 "what the scene showed before, and the scene has changed since. Make its "
@@ -811,19 +880,23 @@ class MakeClip(Tool):
                 "transcribed yet, and a clip is only made from audio that was heard saying the "
                 "line. Transcribe it first."
             )
+        picture_step = picture.step
+        assert picture_step is not None, "a starting picture is made by a scene step"
         # A clip of a picture made for a fix is part of that fix: the shop owner's yes to it
-        # covered the clip too, so it needs no note of its own.
-        if not note and picture_step.fix_id is not None and picture_step.fix == scene.fixes.last():
-            fix = picture_step.fix
+        # covered the clip too, so it needs no note of its own. So is a clip of a picture
+        # brought back for a fix, made earlier with the same fix as its note (#143).
+        latest_fix = scene.fixes.last()
+        if not note and latest_fix is not None and _picture_answers_fix(picture_step, latest_fix):
+            fix = latest_fix
             _answered_a_failed_check(call, picture_step)
-        picture = picture_step.produced.first()
         made = (
             scene.produced.filter(
                 kind=ProducedItem.Kind.CLIP,
                 step__status=SceneStep.Status.FINISHED,
                 made_from=audio,
-                # A clip made before clips kept their picture step has only its picture.
-                **({"picture": picture} if picture else {"step__picture_step": picture_step}),
+                # Any version of the picture: one brought back is the same picture (#143). A
+                # clip made before clips kept their picture step has only its picture.
+                picture__step=picture_step,
                 # With no note, any clip of the same picture and audio is already made, as
                 # before notes; a different note is a new clip.
                 **({"step__note": note} if note else {}),
@@ -833,7 +906,7 @@ class MakeClip(Tool):
         )
         if made is not None:
             assert made.step is not None, "a clip is made by a scene step"
-            made_from = "from this starting picture" if picture else "for this scene"
+            made_from = "from this starting picture"
             with_note = " with this note" if note else ""
             # A clip being made will be the scene's newest, whichever this one is.
             if scene.steps.filter(
@@ -848,7 +921,16 @@ class MakeClip(Tool):
             # video paid again (Julian 2026-10-11, "Reuse A's clip").
             back = ""
             if made != _latest_clip(scene):
-                again = bring_back_clip(made)
+                # Shown again together, so the scene's card shows the clip the ad now uses.
+                with transaction.atomic():
+                    again = bring_back_clip(made)
+                    messages.add(
+                        call.session,
+                        role=Message.Role.AGENT,
+                        carrying=[
+                            messages.AttachedFile(Attachment.Kind.VIDEO, again.file, scene.number)
+                        ],
+                    )
                 back = f" It is the scene's clip again, as version {again.version}."
             return (
                 f"Scene {scene.number}'s clip was already made {made_from} and audio"
@@ -1059,7 +1141,22 @@ def _fix_still_to_land(scene: Scene) -> bool:
         return False
     clip = _latest_clip(scene)
     step = clip.step if clip is not None else None
-    return step is None or (step.fix_id != fix.pk and step.note != fix.fix)
+    return step is None or (
+        step.fix_id != fix.pk
+        and step.note != fix.fix
+        and (step.picture_step is None or not _picture_answers_fix(step.picture_step, fix))
+    )
+
+
+def _picture_answers_fix(picture_step: SceneStep, fix: Fix) -> bool:
+    """Whether the starting picture `picture_step` made is the one `fix` asks for: made for
+    it, or, once the shop owner said yes to it, made earlier with the same fix as its note and
+    brought back for it (#143)."""
+    return picture_step.fix_id == fix.pk or (
+        fix.redo == Fix.Redo.PICTURE
+        and fix.confirmed_by_id is not None
+        and picture_step.note == fix.fix
+    )
 
 
 class FixAsked(BaseModel):
