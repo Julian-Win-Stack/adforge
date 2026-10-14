@@ -30,11 +30,11 @@ from collections.abc import Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Self
+from typing import Any, Literal
 
 import PIL.Image
 from django.conf import settings
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
@@ -281,7 +281,7 @@ MOTION_QUESTIONS = ("real_motion", "sudden_change", "does_what_was_ordered")
 # decisions/spec-fix-check-shares-judge.md): a clip made again for the shop owner's clip fix
 # is judged as any clip, and each MOTION ask is also shown the clip they complained about,
 # told their change and asked this question. Its answer never fails the clip: it is the fix
-# check's verdict alone (jobs.work.check_fix). The draft wording awaits Julian's yes.
+# check's verdict alone (jobs.work.check_fix). Wording: Julian's yes, 2026-10-14 21:44.
 MOTION_FIX_QUESTION = """\
 This clip was made again because the shop owner asked for a change, given to you word for \
 word as the owner's change. Before the new clip's frames you are shown frames of the old \
@@ -294,7 +294,10 @@ sentence what is still wrong."""
 
 
 # The answer to that question, filled in from the top: it looks at both clips before it
-# decides (vision-judges.md, rule 1).
+# decides (vision-judges.md, rule 1). The picture check's FixVerdict in clip words, kept apart
+# on purpose: it has no rule that a "not fixed" says why, since a form that breaks a rule
+# loses the whole MOTION answer, the clip's own checks with it (review F1). owner_change_answers
+# drops such an answer instead.
 class FixAnswer(BaseModel):
     old_shows: str = Field(description="What the old clip does about the owner's change.")
     new_shows: str = Field(description="What the new clip does about the owner's change.")
@@ -302,12 +305,6 @@ class FixAnswer(BaseModel):
     still_wrong: str | None = Field(
         description="When it isn't fixed: what is still wrong, in one sentence. Null when it is."
     )
-
-    @model_validator(mode="after")
-    def _a_failure_says_why(self) -> Self:
-        if self.verdict == "not fixed" and not (self.still_wrong or "").strip():
-            raise ValueError("A change that isn't made must say what is still wrong.")
-        return self
 
 
 class MotionFixVerdict(MotionVerdict):
@@ -392,6 +389,20 @@ def judged(
         "let_go": let_go,
         "answers": {"sides": sides, "motion": motion},
     }
+
+
+def owner_change_answers(ruling: dict[str, Any]) -> list[dict[str, Any] | None]:
+    """Each MOTION answer's answer about the shop owner's change, in the order asked, for the
+    fix check to settle: None for an ask that went unchecked, or a "not fixed" that doesn't
+    say what is still wrong."""
+    said = [answer and answer["owner_change"] for answer in ruling["answers"]["motion"]]
+    return [
+        None
+        if answer is None
+        or (answer["verdict"] == "not fixed" and not (answer["still_wrong"] or "").strip())
+        else answer
+        for answer in said
+    ]
 
 
 def _without_owner_change(answer: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -552,17 +563,22 @@ def _asked(
     beside = 1 + len(needs)
     pictures = (clip.ruling or {}).get("pictures")
     old = complained_about(step)
-    # MOTION shows a fix's clip beside the old one: each gets half the room.
-    shared = MOST_PICTURES - (MOST_PICTURES - beside) // 2
+    # MOTION shows a fix's clip beside the old one: each gets half the room, so each clip's
+    # frames have this many other pictures beside them.
+    beside_each_clip = MOST_PICTURES - (MOST_PICTURES - beside) // 2
     # None yet, cut before SIDES went to SIDES_FRAMES_PER_SECOND (then "stills"), or cut by
     # the old fix check, which kept only "frames".
     fresh = not pictures or pictures.keys() != {"sides", "frames"}
     # The old clip's frames are cut only with the new clip's, so both are cut to share.
-    old_frames = _frames_beside(old, beside=shared, cut=fresh) if old is not None else None
-    if fresh:
+    old_frames = (
+        _frames_beside(old, beside=beside_each_clip, cut=fresh) if old is not None else None
+    )
+    if fresh and old_frames is None:
         pictures = cut_pictures(clip.file, beside=beside)
-        if old_frames is not None:
-            pictures |= cut_pictures(clip.file, beside=shared, sets=("frames",))
+    elif fresh:
+        pictures = cut_pictures(clip.file, beside=beside, sets=("sides",)) | cut_pictures(
+            clip.file, beside=beside_each_clip, sets=("frames",)
+        )
     assert pictures is not None
     if old is not None and old_frames is None:
         logger.warning("Scene %s's fix is judged without the old clip", step.scene.number)
@@ -572,37 +588,22 @@ def _asked(
         "conversation": conversation,
         "what_the_agent_understood_from_the_owner": step.fix.fix if step.fix else None,
     }
-    motion = (
-        [
-            _Ask(
-                "check_clip_motion",
-                f"{MOTION_CHECK}\n\n{MOTION_FIX_QUESTION}",
-                MotionFixCheckHandoff(
-                    ask=ask,
-                    facts=_facts(step, with_use=True),
-                    order=step.shows,
-                    owner_change=step.fix.fix,  # type: ignore[union-attr]
-                    **owner,
-                ),
-                MotionFixVerdict,
-                _shown(photo, needs, pictures["frames"], old=old_frames),
-            )
+    fixing = old_frames is not None
+    motion = [
+        _Ask(
+            "check_clip_motion",
+            f"{MOTION_CHECK}\n\n{MOTION_FIX_QUESTION}" if fixing else MOTION_CHECK,
+            MotionFixCheckHandoff(**told, owner_change=step.fix.fix)  # type: ignore[union-attr]
+            if fixing
+            else MotionCheckHandoff(**told),
+            MotionFixVerdict if fixing else MotionVerdict,
+            _shown(photo, needs, pictures["frames"], old=old_frames),
+        )
+        for told in (
+            {"ask": ask, "facts": _facts(step, with_use=True), "order": step.shows, **owner}
             for ask in range(1, ASKS + 1)
-        ]
-        if old_frames is not None
-        else [
-            _Ask(
-                "check_clip_motion",
-                MOTION_CHECK,
-                MotionCheckHandoff(
-                    ask=ask, facts=_facts(step, with_use=True), order=step.shows, **owner
-                ),
-                MotionVerdict,
-                _shown(photo, needs, pictures["frames"]),
-            )
-            for ask in range(1, ASKS + 1)
-        ]
-    )
+        )
+    ]
     asks = [
         _Ask(
             "check_clip_sides",
@@ -619,7 +620,7 @@ def _asked(
             for each in asks
         ]
         answers = [each.result() for each in asked]
-    return answers[:ASKS], answers[ASKS:], old if old_frames is not None else None
+    return answers[:ASKS], answers[ASKS:], old if fixing else None
 
 
 def _frames_beside(old: ProducedItem, *, beside: int, cut: bool) -> list[dict[str, Any]] | None:

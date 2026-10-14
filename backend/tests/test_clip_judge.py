@@ -316,9 +316,21 @@ def test_a_fixs_wording_version_changes_with_its_answer_form(
     assert wording_version(fix=True) != fix
 
 
-def test_a_change_not_made_must_say_what_is_still_wrong() -> None:
-    with pytest.raises(ValueError, match="must say what is still wrong"):
-        clip_judge.FixAnswer(old_shows="a", new_shows="b", verdict="not fixed", still_wrong=" ")
+def test_a_change_not_made_that_doesnt_say_why_goes_unchecked_and_the_clips_checks_stay() -> None:
+    blank = {**NOT_MADE, "still_wrong": " "}
+    # The form takes it, so the clip's own MOTION answers aren't lost with it (review F1).
+    clip_judge.MotionFixVerdict.model_validate({**motion(), "owner_change": blank})
+    ruling = judged(
+        [sides()] * 3,
+        [
+            {**motion(real_motion=FLOATS), "owner_change": blank},
+            None,
+            {**motion(real_motion=FLOATS), "owner_change": NOT_MADE},
+        ],
+    )
+
+    assert ruling["checks"]["real_motion"] == "fail"
+    assert clip_judge.owner_change_answers(ruling) == [None, None, NOT_MADE]
 
 
 # --- The pin: the clip fix check has no settings of its own (spec, part 5) -------------------

@@ -1865,9 +1865,7 @@ def _the_clip_judges_answer(new: ProducedItem) -> fix_check.Settled:
     ruling = new.ruling or {}
     if "compared_with" not in ruling:
         return fix_check.Settled("unchecked", "", [])
-    return fix_check.settle_all(
-        [answer and answer["owner_change"] for answer in ruling["answers"]["motion"]]
-    )
+    return fix_check.settle_all(clip_judge.owner_change_answers(ruling))
 
 
 def _ask_about_the_fix(job: Job, fix: str, ask: int, old: str, new: str) -> dict[str, Any] | None:

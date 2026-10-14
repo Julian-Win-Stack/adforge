@@ -509,6 +509,35 @@ def test_a_remake_the_judge_asks_for_is_asked_the_owners_change_again_and_its_an
     assert check.answers == [CLIP_FIXED] * ASKS
 
 
+def test_a_change_not_made_with_no_reason_never_costs_the_clip_its_own_checks(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+) -> None:
+    floats = "The mug rises at 1.2 s with no hand on it; a real one stays put."
+    # Found by the review: a "not fixed" that forgets to say why.
+    no_reason = {**not_made(HOVERING), "still_wrong": None}
+    failing = {
+        **CLIP_MOTION_OK,
+        "real_motion": {"verdict": "fail", "problem": floats, "back_to_normal_at": "never"},
+        "owner_change": no_reason,
+    }
+    passing = {**CLIP_MOTION_OK, "owner_change": CLIP_FIXED}
+    fake_model.respond("check_clip_motion", failing, failing, failing, *[passing] * 3)
+    fake_model.respond("remake_clip_prompt", TURN_REWRITE)
+
+    a_clip_redone(fake_model, say, steps)
+
+    # The clip's own fault still fails it, and it is remade.
+    first = ProducedItem.objects.get(
+        scene__number=2, step__isnull=False, remake__isnull=True, version__gt=1
+    )
+    assert (first.ruling or {})["verdict"] == "fail"
+    (remake,) = ProducedItem.objects.filter(scene__number=2, remake__isnull=False)
+    assert FixCheck.objects.get().new == remake
+
+
 def test_a_failed_clip_check_also_says_what_the_clip_judge_still_sees(
     fake_model: FakeModel,
     say: Say,
