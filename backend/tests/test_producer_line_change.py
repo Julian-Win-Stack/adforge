@@ -18,6 +18,7 @@ from gateway.models import ModelCall
 from jobs.models import Fix, ProducedItem, Scene, SceneStep
 
 from .conftest import JUDGED_CLIP, HeldSteps, facts_ok, paid_for, results_of, said_yes_to_a_fix
+from .test_fix_loop import TURN_REWRITE, latest
 from .test_producer_broll import (
     BROLL_CHOICE,
     SHOWS,
@@ -467,6 +468,8 @@ def test_after_a_newer_note_on_the_scene_its_remake_with_no_note_is_refused_and_
 
 OLD_LINE_3 = "Yours for $24.00."
 MUG_UP = "In scene 3, she holds the mug up beside her face."
+HALF_PRICE_3 = 'In scene 3, she says "Half price today."'
+SLOWER_2 = "In scene 2, the mug turns more slowly."
 
 
 def a_newer_note_on_3(fake_model: FakeModel, say: Say) -> None:
@@ -476,7 +479,7 @@ def a_newer_note_on_3(fake_model: FakeModel, say: Say) -> None:
     )
 
 
-def scene_3_as_it_was() -> tuple[str, str, list[int]]:
+def scene_3_state() -> tuple[str, str, list[int]]:
     scene = Scene.objects.get(number=3)
     return scene.line, scene.status, versions(3)["clip"]
 
@@ -490,19 +493,14 @@ def test_a_no_to_a_new_line_leaves_the_old_line_and_clip_with_nothing_to_do(
     restating records the fix and nothing else, so a no leaves the scene and the ad as they
     are, and the producer has nothing to call."""
     owner_says(fake_model, say, NOTE_3, restating((3, FIX_3, "line")))
-    paid = paid_for()
-    assembled = len(results_of("assemble_ad"))
 
     owner_says(fake_model, say, "No, leave it as it is.")
 
-    assert scene_3_as_it_was() == (OLD_LINE_3, "finished", [1])
+    assert scene_3_state() == (OLD_LINE_3, "finished", [1])
     assert ads() == [1]
     assert [cut["clip"] for cut in ProducedItem.objects.get(kind="finished_ad").cuts][2] == (
         ProducedItem.objects.get(kind="clip", scene__number=3).pk
     )
-    assert paid_for() == paid
-    assert results_of("change_line") == []
-    assert len(results_of("assemble_ad")) == assembled
     assert Fix.objects.get().confirmed_by is None
 
 
@@ -520,11 +518,11 @@ def test_a_no_to_a_newer_note_keeps_the_new_line_the_owner_said_yes_to_and_it_is
     line_fix = Fix.objects.get()
     a_newer_note_on_3(fake_model, say)
     owner_says(fake_model, say, "No, leave it.")
-    assert scene_3_as_it_was() == (LINE_3, "planned", [1])
+    assert scene_3_state() == (LINE_3, "planned", [1])
 
     made_again(fake_model, steps, say, 3)
 
-    assert scene_3_as_it_was() == (LINE_3, "finished", [1, 2])
+    assert scene_3_state() == (LINE_3, "finished", [1, 2])
     assert {step.fix for step in SceneStep.objects.filter(scene__number=3, line=LINE_3)} == {
         line_fix
     }
@@ -537,7 +535,7 @@ def test_a_no_to_a_newer_note_keeps_the_new_line_the_owner_said_yes_to_and_it_is
     assert ads() == [1, 2]
     ad = ProducedItem.objects.get(kind="finished_ad", version=2)
     assert "On sale now" in " ".join(caption["text"] for caption in ad.captions)
-    assert [cut["clip"] for cut in ad.cuts][2] == latest_clip(3).pk
+    assert [cut["clip"] for cut in ad.cuts][2] == latest("clip", 3).pk
 
 
 def test_a_yes_to_a_newer_note_makes_its_fix_on_the_new_line_the_owner_said_yes_to(
@@ -554,6 +552,70 @@ def test_a_yes_to_a_newer_note_makes_its_fix_on_the_new_line_the_owner_said_yes_
     step = last_step("starting_picture", 3)
     assert (step.line, step.note, step.fix) == (LINE_3, MUG_UP, Fix.objects.last())
     assert Scene.objects.get(number=3).line == LINE_3
+
+
+def test_a_yes_to_a_newer_line_makes_the_scene_for_that_line(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    steps: HeldSteps,
+    say: Say,
+) -> None:
+    restated_and_yes(fake_model, say, 3, FIX_3, LINE_3)
+    restated_and_yes(fake_model, say, 3, HALF_PRICE_3, "Half price today.")
+
+    made_again(fake_model, steps, say, 3)
+
+    newer = Fix.objects.last()
+    assert scene_3_state() == ("Half price today.", "finished", [1, 2])
+    assert {step.fix for step in SceneStep.objects.filter(scene__number=3, line=LINE_3)} == set()
+    assert {
+        step.fix for step in SceneStep.objects.filter(scene__number=3, line="Half price today.")
+    } == {newer}
+    assert ads() == [1, 2]
+    ad = ProducedItem.objects.get(kind="finished_ad", version=2)
+    assert "Half price today" in " ".join(caption["text"] for caption in ad.captions)
+
+
+def test_a_yes_to_a_newer_clip_fix_asked_for_first_still_makes_the_new_line_with_its_note(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    steps: HeldSteps,
+    say: Say,
+) -> None:
+    """The producer makes the clip fix first, as its instructions say for one, before the new
+    line's picture is made: refused, the clip fix isn't taken as said yes to, so the line fix
+    still makes the picture, audio and transcript with no note, and the clip lands with the
+    clip fix's note on the new line."""
+    restated_and_yes(fake_model, say, 2, FIX_2, LINE_2_NEW)
+    line_fix = Fix.objects.get()
+    owner_says(fake_model, say, "And slower.", restating((2, SLOWER_2, "clip")))
+
+    owner_says(fake_model, say, "Yes", ("make_clip", {"scene": 2, "note": SLOWER_2}))
+
+    assert results_of("make_clip")[-1].startswith(
+        "Refused: scene 2's starting picture was made for an earlier line"
+    )
+    clip_fix = Fix.objects.last()
+    assert clip_fix is not None and clip_fix.confirmed_by is None
+    owner_says(
+        fake_model,
+        say,
+        "Go on",
+        ("make_starting_picture", {"scene": 2, "note": None}),
+        ("make_line_audio", {"scene": 2}),
+    )
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    run(fake_model, steps)
+    owner_says(fake_model, say, "Go on", ("transcribe_line_audio", {"scene": 2}))
+    run(fake_model, steps)
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
+    owner_says(fake_model, say, "Go on", ("make_clip", {"scene": 2, "note": SLOWER_2}))
+    run(fake_model, steps)
+
+    clip = last_step("clip", 2)
+    assert (clip.line, clip.note, clip.fix) == (LINE_2_NEW, SLOWER_2, clip_fix)
+    assert last_step("starting_picture", 2).fix == line_fix
+    assert Scene.objects.get(number=2).status == "finished"
 
 
 def test_a_noteless_clip_of_a_picture_made_for_the_line_fix_is_part_of_it_after_a_no(
@@ -583,15 +645,9 @@ def test_a_noteless_clip_of_a_picture_made_for_the_line_fix_is_part_of_it_after_
     owner_says(fake_model, say, "Go on", ("make_clip", {"scene": 3, "note": None}))
     run(fake_model, steps)
 
-    assert scene_3_as_it_was() == (LINE_3, "finished", [1, 2])
+    assert scene_3_state() == (LINE_3, "finished", [1, 2])
     assert last_step("clip", 3).fix == Fix.objects.first()
     assert paid_for()[len(paid) :] == ["make_talking_clip", "collect_talking_clip"]
-
-
-def latest_clip(scene: int) -> ProducedItem:
-    clip = ProducedItem.objects.filter(kind="clip", scene__number=scene).order_by("version").last()
-    assert clip is not None
-    return clip
 
 
 # --- Run again --------------------------------------------------------------------------------

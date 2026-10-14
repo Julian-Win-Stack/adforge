@@ -765,7 +765,6 @@ class MakeClip(Tool):
                 talking="Its starting picture or its line can change instead.",
                 unlabelled="Make its starting picture again with the note instead.",
             )
-        fix = _confirmed_fix(call, scene, note, Fix.Redo.CLIP)
         for kind in [
             SceneStep.Kind.STARTING_PICTURE,
             SceneStep.Kind.LINE_AUDIO,
@@ -811,6 +810,10 @@ class MakeClip(Tool):
                 "transcribed yet, and a clip is only made from audio that was heard saying the "
                 "line. Transcribe it first."
             )
+        # Only once nothing above is refused: a clip fix confirmed by a refused call would
+        # drop a line fix the shop owner said yes to before it was made (_line_fix), and the
+        # scene couldn't be made for either.
+        fix = _confirmed_fix(call, scene, note, Fix.Redo.CLIP)
         # A clip of a picture made for a fix is part of that fix: the shop owner's yes to it
         # covered the clip too, so it needs no note of its own.
         if (
