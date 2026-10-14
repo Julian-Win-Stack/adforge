@@ -26,6 +26,7 @@ from jobs.scenes import (
 )
 
 from .conftest import (
+    JUDGED_CLIP,
     HeldSteps,
     WorkerStopped,
     handoffs,
@@ -167,7 +168,14 @@ def test_only_the_clip_is_made_again_and_paid_for(
 
     clip_with_note(fake_model, steps, say, HOVERS, REWRITE)
 
-    assert paid_for()[paid:] == ["rewrite_clip_prompt", "make_broll_clip", "collect_broll_clip"]
+    assert paid_for()[paid:] == [
+        "rewrite_clip_prompt",
+        "make_broll_clip",
+        "collect_broll_clip",
+        *JUDGED_CLIP,
+        # The fix's check, asked 3 times at once (#131).
+        *["check_fix_clip"] * 3,
+    ]
     assert clips() == [(2, 1), (2, 2)]
     second = ProducedItem.objects.get(kind="clip", version=2)
     assert (second.picture, second.made_from) == (first.picture, first.made_from)
@@ -195,7 +203,8 @@ def test_the_producer_is_told_the_clip_was_made_from_the_note(
         "starting picture version 1 and audio version 1, with its movement rewritten from the "
         f'note "{HOVERS}". It cost {dollars(step.tool_call.cost_usd())}. '
         "Scene 2 is finished. Scene 2's fix has cost "
-        f"{dollars(Fix.objects.get().cost_usd())} so far. Tell the shop owner. The ad will be "
+        f"{dollars(Fix.objects.get().cost_usd())} so far. Tell the shop owner. "
+        "The check of scene 2's fix found the change in the new clip. The ad will be "
         "assembled, and shown to the shop owner, once scenes 1 and 3 are finished."
     )
 
@@ -273,12 +282,13 @@ def test_going_back_to_an_earlier_note_brings_its_clip_back_without_paying_again
     assert steps.held == []
     assert clips() == [(2, 1), (2, 2), (2, 3), (2, 4)]
     second, back = (ProducedItem.objects.get(kind="clip", version=v) for v in (2, 4))
-    assert (back.file, back.step, back.seconds, back.made_from, back.picture) == (
+    assert (back.file, back.step, back.seconds, back.made_from, back.picture, back.ruling) == (
         second.file,
         second.step,
         second.seconds,
         second.made_from,
         second.picture,
+        second.ruling,
     )
     assert results_of("make_clip")[-1].startswith(
         "Scene 2's clip was already made from this starting picture and audio with this note "

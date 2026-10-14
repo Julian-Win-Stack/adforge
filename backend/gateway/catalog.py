@@ -36,6 +36,13 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # Asks the complaint back about a fix's new starting picture, beside the old one (#131):
     # the starting picture's judge, as Julian chose it for picture judges.
     "check_fix": "gpt-6.1-sol",
+    # The B-roll clip judge's two checks (jobs/clip_judge.py). Tested on sol; the model check
+    # of 2026-10-13 found luna matches it, at the edge, so stage 4 may move both to luna
+    # (Claude Doc "Clip judge discussion", Results).
+    "check_clip_sides": "gpt-6.1-sol",
+    "check_clip_motion": "gpt-6.1-sol",
+    # The same about a fix's new clip, beside the old one (decision thread, 2026-10-13 call 4).
+    "check_fix_clip": "gpt-6.1-sol",
     "design_voice": "inworld-tts-2",
     "measure_voice": "inworld-tts-2",
     "speak_line": "inworld-tts-2",
@@ -48,6 +55,18 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "make_broll_clip": "creatify/boreal-h3",
     "collect_broll_clip": "creatify/boreal-h3",
     "make_music": "sonilo/v1.1/text-to-music",
+}
+
+# How long a model may take to answer, in seconds. A slow purpose has its own time, and once it
+# has taken that long it isn't asked again (gateway.types.AnswerTookTooLong): the clip judge
+# looks at up to 50 pictures and reasons over them (the harness waited up to 600), and the
+# clip step waits on it.
+ANSWER_SECONDS = 120
+SLOW_ANSWER_SECONDS: dict[str, float] = {
+    "check_clip_sides": 600,
+    "check_clip_motion": 600,
+    # Up to 48 frames of two clips in one ask, as many as the clip judge's (#131).
+    "check_fix_clip": 600,
 }
 
 # US dollars per million tokens: (input, output). From OpenAI's pricing page.

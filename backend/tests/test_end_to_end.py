@@ -19,6 +19,7 @@ from gateway.types import Turn
 from jobs.models import Job
 
 from .conftest import (
+    JUDGED_CLIP,
     NO_CHOICES,
     PLAN,
     READABLE,
@@ -268,6 +269,7 @@ def test_nothing_in_the_whole_flow_is_paid_for_twice(ad_made_through_the_chat: N
         "collect_talking_clip",
         "make_broll_clip",
         "collect_broll_clip",
+        *JUDGED_CLIP,
         "make_talking_clip",
         "collect_talking_clip",
     ]
@@ -462,8 +464,10 @@ def test_the_ad_with_a_scene_needing_a_photo_pays_for_each_thing_once(
         "collect_talking_clip",
         "make_broll_clip",
         "collect_broll_clip",
+        *JUDGED_CLIP,
         "make_broll_clip",
         "collect_broll_clip",
+        *JUDGED_CLIP,
         "make_talking_clip",
         "collect_talking_clip",
     ]

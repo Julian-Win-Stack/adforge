@@ -941,6 +941,7 @@ def test_a_fixs_clip_landing_assembles_the_new_ad_and_shows_it(
     assert times_shown(ad) == 1
     assert last_step().result.endswith(
         f"Scene 2's fix has cost {dollars(restated_2.cost_usd())} so far. Tell the shop owner. "
+        "The check of scene 2's fix found the change in the new clip. "
         f"Every scene is finished, so the ad was assembled again with it (version 2, "
         f"{ad.seconds:g} seconds) and shown to the shop owner in the chat. Ask them to tell "
         "you if it's fixed."
@@ -1047,7 +1048,8 @@ def test_an_older_fixs_clip_landing_after_the_owner_said_yes_to_a_newer_one_show
     assert ads() == [1]
     assert first.result.endswith(
         "Scene 2 is finished. Scene 2's fix has cost "
-        f"{dollars(restated_2.cost_usd())} so far. Tell the shop owner. The ad will be "
+        f"{dollars(restated_2.cost_usd())} so far. Tell the shop owner. The check of scene "
+        "2's fix found the change in the new clip. The ad will be "
         "assembled again, and shown to the shop owner, once scene 2's newer fix is made. If the "
         "shop owner said no to scene 2's fix, assemble the ad with assemble_ad instead."
     )

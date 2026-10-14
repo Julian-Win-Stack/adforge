@@ -8,6 +8,7 @@ import tempfile
 import time
 from collections.abc import Callable, Iterator
 from datetime import timedelta
+from itertools import groupby
 from pathlib import Path
 from typing import Any, Literal
 
@@ -187,6 +188,30 @@ FIX_MADE: dict[str, Any] = {
 }
 
 
+# The B-roll clip judge's answers, when SIDES and MOTION find nothing wrong.
+CLIP_SIDES_OK: dict[str, Any] = {
+    "frames": [{"time": 0.0, "objects": [PICTURE_OK["objects"][0] | {"name": "mug"}]}],
+    "across_frames": "The mug keeps its front to the camera.",
+    "verdict": "pass",
+    "problem": None,
+    "back_to_normal_at": None,
+}
+CLIP_MOTION_OK: dict[str, Any] = {
+    "look": {
+        "in_the_clip": "A mug on a workbench, tea pouring into it.",
+        "start": "The mug is empty.",
+        "moments": [{"time": 1.0, "what_happens": "Tea pours into the mug."}],
+        "end": "The mug is full.",
+    },
+    "ordered_action": "Pour tea into the mug.",
+    "seen_action": "Tea is poured into the mug.",
+    **{
+        question: {"verdict": "pass", "problem": None, "back_to_normal_at": None}
+        for question in ("real_motion", "sudden_change", "does_what_was_ordered")
+    },
+}
+
+
 def a_plan_with(**changes: Any) -> dict[str, Any]:
     """PLAN with some of its plan's fields replaced."""
     return {**PLAN, "plan": {**PLAN["plan"], **changes}}
@@ -231,7 +256,10 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("note_face", lambda _: NO_FACE)
     fake.answer_unscripted("check_starting_picture", lambda _: PICTURE_OK)
     fake.answer_unscripted("check_fix", lambda _: FIX_MADE)
+    fake.answer_unscripted("check_fix_clip", lambda _: FIX_MADE)
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
+    fake.answer_unscripted("check_clip_sides", lambda _: CLIP_SIDES_OK)
+    fake.answer_unscripted("check_clip_motion", lambda _: CLIP_MOTION_OK)
     with use_model(fake):
         yield fake
 
@@ -475,14 +503,24 @@ def results_of(tool: str) -> list[str]:
     return list(ToolCall.objects.filter(tool=tool).values_list("result", flat=True))
 
 
+# What judging one B-roll clip pays for (jobs/clip_judge.py), as paid_for lists it.
+JUDGED_CLIP = ["check_clip_sides"] * 3 + ["check_clip_motion"] * 3
+
+
 def paid_for() -> list[str]:
     """The purpose of every model call the tools made, oldest first: the producer's own
-    turns aside."""
-    return list(
+    turns aside. A clip judge's asks are made all at once, so the ones made together are
+    listed as JUDGED_CLIP lists them, whichever answered first."""
+    paid = list(
         ModelCall.objects.exclude(purpose="produce")
         .order_by("created_at", "id")
         .values_list("purpose", flat=True)
     )
+    listed: list[str] = []
+    for judging, together in groupby(paid, key=lambda purpose: purpose.startswith("check_clip_")):
+        run = list(together)
+        listed += sorted(run, key=JUDGED_CLIP.index) if judging else run
+    return listed
 
 
 def before_picture_file() -> str:

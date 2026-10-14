@@ -21,7 +21,14 @@ from chat.models import Message
 from gateway.fake import FakeModel, turn
 from jobs.models import Fix, Job, ProducedItem, Scene, SceneStep
 
-from .conftest import HeldSteps, given_to_the_producer, paid_for, producer_turns, results_of
+from .conftest import (
+    JUDGED_CLIP,
+    HeldSteps,
+    given_to_the_producer,
+    paid_for,
+    producer_turns,
+    results_of,
+)
 from .test_end_to_end import TALKING, ad_made_through_the_chat  # noqa: F401 (a fixture)
 from .test_producer_restarts import WorkerStopped, the_worker_stops
 
@@ -195,6 +202,9 @@ def test_a_clip_note_makes_only_that_scenes_clip_again_and_a_new_ad(
         "rewrite_clip_prompt",
         "make_broll_clip",
         "collect_broll_clip",
+        *JUDGED_CLIP,
+        # The fix's check, asked 3 times at once (#131).
+        *["check_fix_clip"] * 3,
     ]
 
 
@@ -397,7 +407,8 @@ def test_a_note_while_the_scenes_redo_runs_is_made_once_that_redo_lands(
     assert [ad.version for ad in ads()] == [1]
     first_redo = SceneStep.objects.filter(kind="clip", scene__number=2).order_by("id")[1]
     assert first_redo.result.endswith(
-        "Tell the shop owner. The ad will be assembled again, and shown to the shop owner, "
+        "Tell the shop owner. The check of scene 2's fix found the change in the new clip. "
+        "The ad will be assembled again, and shown to the shop owner, "
         "once scene 2's newer fix is made. If the shop owner said no to "
         "scene 2's fix, assemble the ad with assemble_ad instead."
     )
@@ -588,6 +599,9 @@ def test_a_fixs_redo_run_again_after_the_worker_stopped_pays_and_shows_everythin
         "rewrite_clip_prompt",
         "make_broll_clip",
         "collect_broll_clip",
+        *JUDGED_CLIP,
+        # The fix's check, asked 3 times at once (#131).
+        *["check_fix_clip"] * 3,
     ]
     assert [ad.version for ad in ads()] == [1, 2]
     assert Message.objects.filter(attachments__file=ads()[1].file).count() == 1

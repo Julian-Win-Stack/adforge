@@ -145,7 +145,7 @@ The producer's restatement of what it will change about a finished scene, which 
 _Avoid_: Change request, edit, revision
 
 **Fix check**:
-A judge asking a fix's complaint back about the new version it made, shown beside the old one: a new starting picture before its clip is paid for, or a new clip once the clip judge is in the app; a new line is never checked. A pass carries on as before. A fail makes nothing more for the scene: the chat shows the old and new versions and why, with the reason as the note the scene's card is filled with, and the producer waits for the shop owner's word. An answer that can't be had leaves it unchecked, and the fix carries on. Kept with its fix and both versions.
+A judge asking a fix's complaint back about the new version it made, shown beside the old one: a new starting picture before its clip is paid for, or a new clip once, after the clip judge's remakes have kept it; a new line is never checked. A pass carries on as before. A fail makes nothing more for the scene and assembles no ad: the chat shows the old and new versions and why, with anything the clip judge still sees, with the reason as the note the scene's card is filled with, and the producer waits for the shop owner's word. An answer that can't be had leaves it unchecked, and the fix carries on. Kept with its fix and both versions.
 _Avoid_: Fix judge, verification, QA
 
 ### Machinery
@@ -185,7 +185,7 @@ Comparing every price, number, product name and claim in a line against the page
 _Avoid_: Verification, accuracy check
 
 **Quality check**:
-A check on something already produced, such as a picture or a clip. On unless switched off as a whole. Built so far: the B-roll starting picture check, which looks at the picture, beside the shop photo it was drawn from, for objects that can't exist (a part on the wrong side, two sides of one object seen at once) before a clip is paid for.
+A check on something already produced, such as a picture or a clip. On unless switched off as a whole. Built so far: the B-roll starting picture check, which looks at the picture, beside the shop photo it was drawn from, for objects that can't exist (a part on the wrong side, two sides of one object seen at once) before a clip is paid for; and the B-roll clip check, which looks at the clip right after it is made for objects that can't exist (5 stills) and for movement or change no real camera could film (5 frames a second), and keeps its ruling on the clip.
 _Avoid_: QA, review, gate
 
 ### Not yet built

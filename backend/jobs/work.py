@@ -50,6 +50,7 @@ from gateway.types import (
     LEAST_BROLL_SECONDS,
     LEAST_CLIP_SECONDS,
     MOST_BROLL_SECONDS,
+    AnswerTookTooLong,
     BlockedBySafetyFilter,
     BrollClipHandoff,
     ClipFailed,
@@ -61,7 +62,7 @@ from gateway.types import (
     UnusableReply,
 )
 
-from . import assembly, firecrawl, fix_check, page, page_text, photos
+from . import assembly, clip_judge, firecrawl, fix_check, page, page_text, photos
 from .checks import (
     FACT_CHECK_INSTRUCTIONS,
     LENGTH_ALLOWANCE_SECONDS,
@@ -1820,9 +1821,10 @@ def judge_starting_picture(job: Job | None, picture: str, photo: str, *, about: 
 def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
     """Check a fix (#131): for a step that made a scene's new starting picture for a picture
     fix, or its new clip for a clip fix, ask a judge the complaint back about `made`, shown
-    beside the scene's version before it, and keep the verdict. A new line isn't checked,
-    nor a picture fix's clip: the complaint was about the picture. Nor a clip until the clip
-    judge is in the app, nor anything when quality checks are switched off.
+    beside the scene's version before the step, and keep the verdict. A new line isn't
+    checked, nor a picture fix's clip: the complaint was about the picture. Nothing is
+    checked when quality checks are switched off. A clip is checked once, on the clip the
+    clip judge's remakes kept (#155), which is the step's newest.
 
     Run again, as after a worker stopped, it gives the verdict kept, or asks the judge
     again with each ask answered from its record, so nothing is paid for twice."""
@@ -1831,14 +1833,15 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
         return None
     picture = fix.redo == Fix.Redo.PICTURE and step.kind == SceneStep.Kind.STARTING_PICTURE
     clip = fix.redo == Fix.Redo.CLIP and step.kind == SceneStep.Kind.CLIP
-    if not (picture or (clip and fix_check.clip_judge is not None)):
+    if not (picture or clip):
         return None
     kept = FixCheck.objects.filter(step=step).first()
     if kept is not None:
         return kept
-    # What the shop owner saw last: the scene's version before this one.
+    # What the shop owner saw last: the scene's newest version before the step started, so a
+    # clip the judge's remakes made, or brought back, in this step is never the old one.
     old = (
-        made.scene.produced.filter(kind=made.kind, version__lt=made.version)  # type: ignore[union-attr]
+        made.scene.produced.filter(kind=made.kind, created_at__lt=step.started_at)  # type: ignore[union-attr]
         .order_by("-version")
         .first()
     )
@@ -1850,8 +1853,7 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
             lambda ask: _ask_about_the_fix(job, fix.fix, ask, old.file, made.file)
         )
     else:
-        assert fix_check.clip_judge is not None
-        settled = fix_check.clip_judge(job, old.file, made.file, fix.fix)
+        settled = _check_the_clip_fix(job, fix.fix, old, made)
     return FixCheck.objects.create(
         fix=fix,
         step=step,
@@ -1863,25 +1865,109 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
     )
 
 
+def _check_the_clip_fix(
+    job: Job, fix: str, old: ProducedItem, new: ProducedItem
+) -> fix_check.Settled:
+    """Ask the judge FixCheck's ASKS times at once whether the clip `new` has the change
+    `fix` asks for, shown frames of the clip `old` first, 5 a second, each clip thinned
+    evenly to fit one ask. The frames already cut for the clip judge are reused. Frames that
+    can't be cut leave the fix unchecked rather than failing the clip already paid for."""
+    try:
+        images = [
+            *_clip_frames(old, "The old clip's frames, in order:"),
+            *_clip_frames(new, "The new clip's frames, in order:"),
+        ]
+    except Exception:
+        logger.warning("No frames to check the clip fix %r with", fix, exc_info=True)
+        return fix_check.Settled("unchecked", "", [])
+
+    def ask(number: int) -> dict[str, Any] | None:
+        return _fix_answer(
+            job,
+            purpose="check_fix_clip",
+            instructions=fix_check.FIX_CHECK_CLIP,
+            handoff=fix_check.FixClipCheckHandoff(fix=fix, ask=number),
+            output=fix_check.FixClipVerdict,
+            images=images,
+        )
+
+    with ThreadPoolExecutor(max_workers=ASKS) as pool:
+        asked = [
+            pool.submit(contextvars.copy_context().run, _closing_its_connection, ask, number)
+            for number in range(1, ASKS + 1)
+        ]
+        return fix_check.settle_all([each.result() for each in asked])
+
+
+def _clip_frames(clip: ProducedItem, heading: str) -> list[Image]:
+    """The clip's frames, 5 a second, as the clip judge was shown them, thinned evenly to fit
+    beside another clip's in one ask, each picture labelled with its frames' times. A clip
+    the judge never cut is cut now, and its pictures kept on its ruling, so a check asked
+    again after the worker stopped shows the same pictures and pays nothing twice."""
+    pictures = (clip.ruling or {}).get("pictures")
+    if not pictures:
+        pictures = clip_judge.cut_pictures(
+            clip.file, beside=clip_judge.MOST_PICTURES - fix_check.MOST_PICTURES_PER_CLIP
+        )
+        clip.ruling = {**(clip.ruling or {}), "pictures": pictures}
+        clip.save(update_fields=["ruling"])
+    shown = []
+    for n, picture in enumerate(fix_check.thinned(pictures["frames"])):
+        label = clip_judge.frame_label(picture["times"])
+        shown.append(Image(label=f"{heading}\n{label}" if n == 0 else label, key=picture["key"]))
+    return shown
+
+
 def _ask_about_the_fix(job: Job, fix: str, ask: int, old: str, new: str) -> dict[str, Any] | None:
     """Ask the judge once whether the new picture at `new` has the change `fix` asks for,
     shown the old picture at `old` first. Gives its answer, or None when none could be had:
     the picture is paid for, and failing it on no answer would hold up its clip."""
+    return _fix_answer(
+        job,
+        purpose="check_fix",
+        instructions=fix_check.FIX_CHECK,
+        handoff=fix_check.FixCheckHandoff(fix=fix, ask=ask),
+        output=fix_check.FixVerdict,
+        images=[
+            Image(label="The old picture:", key=old),
+            Image(label="The new picture:", key=new),
+        ],
+    )
+
+
+def _fix_answer(
+    job: Job,
+    *,
+    purpose: str,
+    instructions: str,
+    handoff: fix_check.FixCheckHandoff | fix_check.FixClipCheckHandoff,
+    output: type[fix_check.FixVerdict],
+    images: list[Image],
+) -> dict[str, Any] | None:
+    """One answer of the judge checking a fix, or None when none could be had, whatever went
+    wrong, as the clip judge's asks: what it checks is already paid for, and failing it on
+    no answer would fail that too."""
     try:
         verdict = call_model(
             job=job,
-            purpose="check_fix",
-            instructions=fix_check.FIX_CHECK,
-            handoff=fix_check.FixCheckHandoff(fix=fix, ask=ask),
-            output=fix_check.FixVerdict,
-            images=[
-                Image(label="The old picture:", key=old),
-                Image(label="The new picture:", key=new),
-            ],
+            purpose=purpose,
+            instructions=instructions,
+            handoff=handoff,
+            output=output,
+            images=images,
             pay_once=True,
         )
-    except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
-        logger.warning("Ask %s about the fix %r went unchecked: %s", ask, fix, error)
+    except Exception as error:
+        logger.warning(
+            "Ask %s about the fix %r went unchecked: %s",
+            handoff.ask,
+            handoff.fix,
+            error,
+            # Expected when a model or the service misbehaves; anything else is a bug to see.
+            exc_info=not isinstance(
+                error, (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter, AnswerTookTooLong)
+            ),
+        )
         return None
     return verdict.model_dump()
 
@@ -1900,7 +1986,7 @@ def say_the_fix_check_failed(check: FixCheck) -> None:
         check.fix.job,
         f"Scene {number}'s new {'starting picture' if picture else 'clip'} may not have your "
         f"change: {check.reason} Here are the old {check.what} and the new one. Say go ahead "
-        f"to {then}, or tell me what to change.",
+        f"to {then}, or tell me what to change.{judge_still_sees(check.new)}",
         Message.Level.PROBLEM,
         # Without their scene's number, so the scene's card keeps showing its newest.
         carrying=[
@@ -1910,6 +1996,17 @@ def say_the_fix_check_failed(check: FixCheck) -> None:
         suggested=messages.SuggestedNote(number, check.reason),
     )
     check.save(update_fields=["notice"])
+
+
+def judge_still_sees(clip: ProducedItem) -> str:
+    """For a clip the clip judge failed even after its remakes, what it still found, as a
+    sentence to follow another, so the shop owner hears both in one notice. Nothing
+    otherwise."""
+    ruling = clip.ruling or {}
+    if ruling.get("verdict") != "fail":
+        return ""
+    problems = clip_judge.still_failing(ruling)
+    return f" The clip's own check also still sees: {problems[0]}" if problems else ""
 
 
 def _keep_starting_picture(step: SceneStep, prompt: str, pictures: list[str]) -> ProducedItem:
@@ -2096,8 +2193,23 @@ def make_clip(step: SceneStep) -> ProducedItem:
     asked for is waited for rather than asked for again, and one fetched is kept rather
     than fetched again."""
     made = step.produced.first()
-    if made is not None:
-        return made
+    if made is None:
+        made = _make_clip(step)
+    if step.shows and settings.QUALITY_CHECKS:
+        _judge_clip(step, made)
+    return made
+
+
+def _judge_clip(step: SceneStep, clip: ProducedItem) -> None:
+    """Have the clip judge rule on a B-roll clip, keeping its ruling on the clip, with what was
+    said with the shop owner when the step started."""
+    clip_judge.judge_clip(
+        step, clip, conversation=_conversation(step.scene.job, until=step.started_at)
+    )
+
+
+def _make_clip(step: SceneStep) -> ProducedItem:
+    """make_clip's clip, made and kept."""
     scene = step.scene
     job = scene.job
     picture, audio = step.picture, step.made_from
@@ -2151,8 +2263,8 @@ def make_clip(step: SceneStep) -> ProducedItem:
 
 def bring_back_clip(clip: ProducedItem) -> ProducedItem:
     """Make an earlier clip the scene's clip again, as its next version: the same file, step,
-    picture and audio, with nothing made or paid for again (#132 review, M1). The scene is
-    finished, as it was when the clip was made."""
+    picture, audio and judge's ruling, with nothing made or paid for again (#132 review, M1).
+    The scene is finished, as it was when the clip was made."""
     scene = clip.scene
     assert scene is not None, "a clip belongs to a scene"
     with transaction.atomic():
@@ -2166,6 +2278,7 @@ def bring_back_clip(clip: ProducedItem) -> ProducedItem:
             seconds=clip.seconds,
             made_from=clip.made_from,
             picture=clip.picture,
+            ruling=clip.ruling,
         )
         Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
     return again

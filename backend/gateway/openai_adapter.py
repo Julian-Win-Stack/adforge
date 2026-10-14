@@ -19,7 +19,9 @@ from pydantic import BaseModel
 
 from adforge.retry import OutsideServiceDown
 
+from . import catalog
 from .types import (
+    AnswerTookTooLong,
     BlockedBySafetyFilter,
     LoadedImage,
     ModelReply,
@@ -55,17 +57,23 @@ class OpenAIProvider:
             api_key=settings.OPENAI_API_KEY,
             base_url=settings.OPENAI_BASE_URL or None,
             max_retries=0,
-            timeout=120,
+            timeout=catalog.ANSWER_SECONDS,
         )
 
     def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]:
         try:
-            raw = self._client.responses.with_raw_response.parse(
+            raw = self._client.with_options(
+                timeout=catalog.SLOW_ANSWER_SECONDS.get(request.purpose, catalog.ANSWER_SECONDS)
+            ).responses.with_raw_response.parse(
                 model=request.model,
                 instructions=request.instructions,
                 input=_input(request),
                 text_format=request.output,
             )
+        except openai.APITimeoutError as error:
+            if request.purpose in catalog.SLOW_ANSWER_SECONDS:
+                raise AnswerTookTooLong(str(error)) from error
+            raise OutsideServiceDown(str(error)) from error
         except _WORTH_RETRYING as error:
             raise OutsideServiceDown(str(error)) from error
         except openai.BadRequestError as error:

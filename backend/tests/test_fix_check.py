@@ -9,21 +9,32 @@ kept with its fix and both versions.
 The mug's first ad is made through the chat, then fixed, as in test_fix_loop.py; the
 producer's turns are scripted, and every outside service is faked at the gateway."""
 
+import dataclasses
 from typing import Any
 
 import pytest
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, pre_save
 from rest_framework.test import APIClient
 
 from agents import tasks
 from gateway.fake import FakeModel, turn
+from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter
-from jobs import fix_check
-from jobs.models import Fix, FixCheck, Scene, SceneStep
+from jobs import clip_judge, fix_check, work
+from jobs.models import Fix, FixCheck, ProducedItem, Scene, SceneStep
 
-from .conftest import FIX_MADE, HeldSteps, handoffs, paid_for, results_of
-from .test_end_to_end import ad_made_through_the_chat  # noqa: F401 (a fixture)
+from .conftest import (
+    CLIP_MOTION_OK,
+    CLIP_SIDES_OK,
+    FIX_MADE,
+    HeldSteps,
+    handoffs,
+    paid_for,
+    results_of,
+)
+from .test_end_to_end import TALKING, ad_made_through_the_chat  # noqa: F401 (a fixture)
 from .test_fix_loop import (
+    BOTH_HANDS,
     HANDLE_FIX,
     HANDLE_SHOWING,
     HOVERS,
@@ -326,7 +337,9 @@ def test_a_fix_isnt_checked_when_quality_checks_are_switched_off(
     assert held_kinds(steps) == [(2, "clip")]
 
 
-# --- A new clip is checked once the clip judge is in the app ------------------------------------
+# --- A new clip is checked once, on the clip the clip judge kept -------------------------------
+
+HOVERING = "The hand still only hovers beside the mug; it never turns it."
 
 
 def a_clip_redone(fake_model: FakeModel, say: Say, steps: HeldSteps) -> None:
@@ -336,62 +349,50 @@ def a_clip_redone(fake_model: FakeModel, say: Say, steps: HeldSteps) -> None:
     step_lands(fake_model, steps)
 
 
-def test_a_clip_fix_isnt_checked_until_the_clip_judge_is_in_the_app(
+def labels(purpose: str) -> list[list[str]]:
+    """The labels of the pictures each call for `purpose` was shown."""
+    calls = ModelCall.objects.filter(purpose=purpose).order_by("id")
+    return [[image["label"] for image in call.images] for call in calls]
+
+
+def test_a_fixs_new_clip_is_checked_beside_the_old_one_and_passing_shows_the_ad(
     fake_model: FakeModel,
     say: Say,
     steps: HeldSteps,
     shown: list[str],  # noqa: F811
 ) -> None:
-    assert fix_check.clip_judge is None
-
-    a_clip_redone(fake_model, say, steps)
-
-    assert not FixCheck.objects.exists()
-    assert "check_fix" not in paid_for()
-    assert [ad.version for ad in ads()] == [1, 2]
-
-
-def test_a_clip_fix_that_passes_the_clip_judge_shows_the_new_ad(
-    fake_model: FakeModel,
-    say: Say,
-    steps: HeldSteps,
-    shown: list[str],  # noqa: F811
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    asked: list[tuple[str, str, str]] = []
-
-    def judge(_job: Any, old: str, new: str, fix: str) -> fix_check.Settled:
-        asked.append((old, new, fix))
-        return fix_check.Settled("passed", "", [{"verdict": "fixed"}])
-
-    monkeypatch.setattr(fix_check, "clip_judge", judge)
     old_clip = latest("clip", 2)
 
     a_clip_redone(fake_model, say, steps)
 
     new_clip = latest("clip", 2)
-    assert asked == [(old_clip.file, new_clip.file, TURN_FIX)]
+    # Asked 3 times at once, after the clip judge, told the fix word for word.
+    asked = paid_for()[len(shown) :]
+    assert asked.count("check_fix_clip") == 3
+    assert asked.index("check_fix_clip") > asked.index("check_clip_motion")
+    assert {ask["fix"] for ask in handoffs("check_fix_clip")} == {TURN_FIX}
+    # The old clip's frames first, then the new one's, each labelled with its time.
+    shown_to = labels("check_fix_clip")[0]
+    assert shown_to[0].startswith("The old clip's frames, in order:\nFrame")
+    new_first = next(n for n, label in enumerate(shown_to) if label.startswith("The new clip"))
+    assert 0 < new_first < len(shown_to) <= 48
     check = FixCheck.objects.get()
     assert (check.old, check.new, check.verdict) == (old_clip, new_clip, "passed")
+    # Every answer paid for is kept, though two already agreed.
+    assert len(check.answers) == 3
     assert [ad.version for ad in ads()] == [1, 2]
     assert "The check of scene 2's fix found the change in the new clip." in told(2)
 
 
-def test_a_clip_fix_that_fails_the_clip_judge_shows_both_clips_and_no_new_ad(
+def test_a_fixs_new_clip_that_fails_its_check_shows_both_clips_and_no_new_ad(
     fake_model: FakeModel,
     say: Say,
     steps: HeldSteps,
     shown: list[str],  # noqa: F811
-    monkeypatch: pytest.MonkeyPatch,
     api: APIClient,
     session_id: str,
 ) -> None:
-    hovering = "The hand still only hovers beside the mug; it never turns it."
-    monkeypatch.setattr(
-        fix_check,
-        "clip_judge",
-        lambda *_: fix_check.Settled("failed", hovering, [{"verdict": "not fixed"}]),
-    )
+    fake_model.answer_unscripted("check_fix_clip", lambda _: not_made(HOVERING))
     old_clip = latest("clip", 2)
 
     a_clip_redone(fake_model, say, steps)
@@ -402,7 +403,7 @@ def test_a_clip_fix_that_fails_the_clip_judge_shows_both_clips_and_no_new_ad(
     assert [ad.version for ad in ads()] == [1]
     notice = messages_of(api, session_id)[-2]
     assert notice["text"] == (
-        f"Scene 2's new clip may not have your change: {hovering} Here are the old clip and "
+        f"Scene 2's new clip may not have your change: {HOVERING} Here are the old clip and "
         "the new one. Say go ahead to use the new clip in the ad anyway, or tell me what to "
         "change."
     )
@@ -410,8 +411,9 @@ def test_a_clip_fix_that_fails_the_clip_judge_shows_both_clips_and_no_new_ad(
         old_clip.file.rsplit("/", 1)[-1],
         new_clip.file.rsplit("/", 1)[-1],
     ]
+    assert notice["suggested_note"] == {"scene": 2, "text": HOVERING}
     assert told(2).endswith(
-        f"The check of scene 2's fix found the change isn't in the new clip: {hovering} The "
+        f"The check of scene 2's fix found the change isn't in the new clip: {HOVERING} The "
         "chat shows the shop owner the old clip and the new one, and why. Don't assemble the "
         "ad or say it's fixed: wait for their answer. If they say go ahead, assemble the ad "
         "with assemble_ad; if they say what to change, restate a new fix."
@@ -419,6 +421,211 @@ def test_a_clip_fix_that_fails_the_clip_judge_shows_both_clips_and_no_new_ad(
 
     owner_says(fake_model, say, "Go ahead", ("assemble_ad", {}))
     assert [ad.version for ad in ads()] == [1, 2]
+
+
+def test_a_failed_clip_check_also_says_what_the_clip_judge_still_sees(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+    api: APIClient,
+    session_id: str,
+) -> None:
+    floats = "The mug rises at 1.2 s with no hand on it; a real one stays put."
+    fake_model.answer_unscripted(
+        "check_clip_motion",
+        lambda _: {
+            **CLIP_MOTION_OK,
+            "real_motion": {"verdict": "fail", "problem": floats, "back_to_normal_at": "never"},
+        },
+    )
+    fake_model.answer_unscripted("check_fix_clip", lambda _: not_made(HOVERING))
+
+    a_clip_redone(fake_model, say, steps)
+
+    # One notice says both.
+    assert messages_of(api, session_id)[-2]["text"].endswith(
+        f"or tell me what to change. The clip's own check also still sees: {floats}"
+    )
+    assert told(2).endswith(
+        "restate a new fix. The chat also told them what the clip's own check still sees, so "
+        "don't say it again."
+    )
+
+
+def test_a_failed_clip_check_never_passes_on_a_problem_the_clip_judge_outvoted(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+    api: APIClient,
+    session_id: str,
+) -> None:
+    flips = "The mug's handle flips sides at 0.4 s."
+    floats = "The mug rises at 1.2 s with no hand on it; a real one stays put."
+    # One ask of three sees the handle flip, so the sides check passes; the motion check fails.
+    fake_model.answer_unscripted(
+        "check_clip_sides",
+        lambda request: (
+            {**CLIP_SIDES_OK, "verdict": "fail", "problem": flips, "back_to_normal_at": "never"}
+            if request.handoff.model_dump()["ask"] == 1
+            else CLIP_SIDES_OK
+        ),
+    )
+    fake_model.answer_unscripted(
+        "check_clip_motion",
+        lambda _: {
+            **CLIP_MOTION_OK,
+            "real_motion": {"verdict": "fail", "problem": floats, "back_to_normal_at": "never"},
+        },
+    )
+    fake_model.answer_unscripted("check_fix_clip", lambda _: not_made(HOVERING))
+
+    a_clip_redone(fake_model, say, steps)
+
+    assert messages_of(api, session_id)[-2]["text"].endswith(
+        f"or tell me what to change. The clip's own check also still sees: {floats}"
+    )
+
+
+def test_a_clip_check_that_cant_be_had_shows_the_ad_and_says_so(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+) -> None:
+    blocked = BlockedBySafetyFilter("blocked")
+    fake_model.respond("check_fix_clip", blocked, blocked, blocked)
+
+    a_clip_redone(fake_model, say, steps)
+
+    check = FixCheck.objects.get()
+    assert (check.verdict, check.answers) == ("unchecked", [])
+    assert "Scene 2's fix couldn't be checked, so tell the shop owner it wasn't checked." in told(2)
+    assert [ad.version for ad in ads()] == [1, 2]
+
+
+def test_a_clip_whose_frames_cant_be_cut_is_kept_and_its_fix_left_unchecked(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def cant_cut(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("ffmpeg couldn't read the clip")
+
+    # Neither the clip judge nor the fix check can cut the new clip's frames.
+    monkeypatch.setattr(clip_judge, "cut_pictures", cant_cut)
+
+    a_clip_redone(fake_model, say, steps)
+
+    assert FixCheck.objects.get().verdict == "unchecked"
+    assert "check_fix_clip" not in paid_for()
+    assert "Scene 2's fix couldn't be checked, so tell the shop owner it wasn't checked." in told(2)
+    assert [ad.version for ad in ads()] == [1, 2]
+
+
+def test_a_clip_brought_back_in_the_fixs_step_is_never_the_old_one(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    old_clip = latest("clip", 2)
+    making = tasks.STEP_WORK[SceneStep.Kind.CLIP]
+
+    def made_then_brought_back(step: SceneStep) -> ProducedItem:
+        # As the clip judge's redos do (#155): the clip kept comes back as the newest.
+        made = making.make(step)
+        assert made is not None
+        return work.bring_back_clip(made)
+
+    monkeypatch.setitem(
+        tasks.STEP_WORK,
+        SceneStep.Kind.CLIP,
+        dataclasses.replace(making, make=made_then_brought_back),
+    )
+
+    a_clip_redone(fake_model, say, steps)
+
+    check = FixCheck.objects.get()
+    assert (check.old, check.new) == (old_clip, latest("clip", 2))
+    assert check.new.version == old_clip.version + 2
+
+
+def test_another_scenes_fix_landing_shows_no_ad_over_a_clip_that_failed_its_check(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+) -> None:
+    fake_model.answer_unscripted("check_fix_clip", lambda _: not_made(HOVERING))
+    owner_says(
+        fake_model,
+        say,
+        f"{HOVERS} And in the first scene she should hold the mug with both hands.",
+        restating((1, BOTH_HANDS, "picture"), (2, TURN_FIX, "clip")),
+    )
+    owner_says(fake_model, say, "Yes to both", picture_of(1, BOTH_HANDS), clip_of(2, TURN_FIX))
+    fake_model.respond("choose_starting_picture", TALKING)
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
+    step_lands(fake_model, steps, clip_of(1))
+    # Scene 2's clip fails its check, then scene 1's clip lands last.
+    step_lands(fake_model, steps)
+    assert FixCheck.objects.get(step__scene__number=2).verdict == "failed"
+    step_lands(fake_model, steps)
+
+    # The shop owner decides on scene 2's clip before any ad shows it.
+    assert [ad.version for ad in ads()] == [1]
+    assert told(1).endswith(
+        "The ad will be assembled again, and shown to the shop owner, once the shop owner "
+        "answers scene 2's failed fix check."
+    )
+    owner_says(fake_model, say, "Go ahead", ("assemble_ad", {}))
+    assert [ad.version for ad in ads()] == [1, 2]
+
+
+def test_a_clip_check_whose_asks_fail_unexpectedly_shows_the_ad_and_says_so(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+) -> None:
+    broken = RuntimeError("the picture couldn't be read")
+    fake_model.respond("check_fix_clip", broken, broken, broken)
+
+    a_clip_redone(fake_model, say, steps)
+
+    assert FixCheck.objects.get().verdict == "unchecked"
+    assert "Scene 2's fix couldn't be checked, so tell the shop owner it wasn't checked." in told(2)
+    assert [ad.version for ad in ads()] == [1, 2]
+
+
+def test_a_clip_check_run_again_after_the_worker_stopped_pays_once_for_a_clip_never_judged(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+) -> None:
+    # Scene 2's clip was made before the clip judge was in the app.
+    old_clip = latest("clip", 2)
+    ProducedItem.objects.filter(pk=old_clip.pk).update(ruling=None)
+    owner_says(fake_model, say, HOVERS, restating((2, TURN_FIX, "clip")))
+    owner_says(fake_model, say, "Yes", clip_of(2, TURN_FIX))
+    (step_id,) = steps.held
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
+
+    # The worker stops once the judge has answered, before the verdict is kept.
+    with the_worker_stops(pre_save, FixCheck, when=lambda _: True), pytest.raises(WorkerStopped):
+        steps.run_next()
+    assert not FixCheck.objects.exists()
+    fake_model.respond("produce", turn(says="That part's ready."))
+    tasks.run_scene_step(step_id)
+
+    assert SceneStep.objects.get(pk=step_id).status == "finished"
+    assert paid_for()[len(shown) :].count("check_fix_clip") == 3
 
 
 # --- A line fix asks no judge ------------------------------------------------------------------
@@ -478,3 +685,51 @@ def test_the_verdict_is_settled_by_two_answers_of_three(
 def test_a_not_fixed_answer_must_say_what_is_still_wrong() -> None:
     with pytest.raises(ValueError, match="must say what is still wrong"):
         fix_check.FixVerdict(old_shows="a", new_shows="b", verdict="not fixed", still_wrong=" ")
+
+
+@pytest.mark.parametrize(
+    ("count", "most", "kept"),
+    [
+        (3, 24, [0, 1, 2]),
+        (24, 24, list(range(24))),
+        (5, 3, [0, 2, 4]),
+        (10, 4, [0, 3, 6, 9]),
+        (
+            38,
+            24,
+            [
+                0,
+                2,
+                3,
+                5,
+                6,
+                8,
+                10,
+                11,
+                13,
+                14,
+                16,
+                18,
+                19,
+                21,
+                23,
+                24,
+                26,
+                27,
+                29,
+                31,
+                32,
+                34,
+                35,
+                37,
+            ],
+        ),
+    ],
+)
+def test_a_clips_pictures_are_thinned_evenly_keeping_the_first_and_the_last(
+    count: int, most: int, kept: list[int]
+) -> None:
+    thinned = fix_check.thinned(list(range(count)), most)
+
+    assert thinned == kept
+    assert thinned[0] == 0 and thinned[-1] == count - 1
