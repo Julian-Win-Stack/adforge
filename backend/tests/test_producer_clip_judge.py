@@ -7,20 +7,25 @@ judged. The producer's model, the scene models and the judge are faked at the ga
 plan: Claude Doc "Clip judge discussion", Julian 2026-10-13; the phone-flip SIDES check,
 Julian 2026-10-14)."""
 
+import json
 from collections.abc import Callable
 from typing import Any
 
 import pytest
 
+from adforge import file_store
 from agents import tasks
 from agents.money import dollars
+from chat import messages
+from chat.models import Message, Session
 from gateway.catalog import MODEL_FOR_PURPOSE
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import UnusableReply
 from jobs import clip_judge
-from jobs.clip_judge import ASKS, wording_version
-from jobs.models import Job, ProducedItem, Scene, SceneStep
+from jobs.clip_judge import ASKS, NEEDS_PHOTOS_SHOWN, PAGE_FRAME, wording_version
+from jobs.models import Job, ProducedItem, ProductPhoto, Scene, SceneStep
+from jobs.notices import post_notice
 
 from .conftest import (
     CLIP_FIXED,
@@ -31,11 +36,15 @@ from .conftest import (
     asked_with,
     handoffs,
     paid_for,
+    photo,
     said_yes_to_a_fix,
 )
+from .test_fix_loop import HOVERS, TURN_FIX, TURN_REWRITE, owner_says, restating
 from .test_producer_broll import (
     BROLL_CHOICE,
     DOES_A_JOB,
+    LINE_2,
+    MOTION,
     SHOWS,
     calling,
     checked,  # noqa: F401 (a fixture)
@@ -204,16 +213,8 @@ def test_the_judges_cost_is_the_clip_steps(judged: ProducedItem) -> None:
     assert f"It cost {dollars(step.tool_call.cost_usd())}." in step.result
 
 
-def test_a_talking_clip_isnt_judged(
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],  # noqa: F811
-) -> None:
-    clip = clip_of(fake_model, steps, say, 1)
-
-    assert not ModelCall.objects.filter(purpose__startswith="check_clip_").exists()
-    assert clip.ruling is None
+# That a talking clip isn't judged, and so carries no ruling, is proved in
+# test_producer_auto_fix.py::test_a_talking_scene_is_left_as_it_is.
 
 
 def test_no_clip_is_judged_with_quality_checks_switched_off(
@@ -247,27 +248,68 @@ def test_an_ask_with_no_usable_answer_goes_unchecked(
     assert SceneStep.objects.get(kind="clip", scene__number=2).status == "finished"
 
 
-def test_a_long_clips_frames_are_shown_two_to_a_picture_to_fit_one_ask(
+@pytest.mark.parametrize(
+    (
+        "words_per_second",
+        "pictures",
+        "first",
+        "last",
+        "sides_pictures",
+        "sides_first",
+        "sides_last",
+    ),
+    [
+        # A 10-second clip has 50 frames at 5 a second: with the shop photo, more than the 50
+        # pictures a model takes in one ask, so they are shown two to a picture. SIDES' 100
+        # frames at 10 a second go three to a picture.
+        (
+            0.8,
+            26,
+            "Frames at 0 s, 0.2 s, left to right",
+            "Frames at 9.6 s, 9.8 s, left to right",
+            35,
+            "Frames at 0 s, 0.1 s, 0.2 s, left to right",
+            "Frame at 9.9 s",
+        ),
+        # 45 frames and the shop photo fit in one ask, as in the tested setup: each on its own.
+        # SIDES' 90 don't, so they go two to a picture.
+        (
+            0.95,
+            46,
+            "Frame at 0 s",
+            "Frame at 8.8 s",
+            46,
+            "Frames at 0 s, 0.1 s, left to right",
+            "Frames at 8.8 s, 8.9 s, left to right",
+        ),
+    ],
+    ids=["a 10-second clip, two to a picture", "a 9-second clip, one each"],
+)
+def test_a_clips_frames_are_shown_two_to_a_picture_only_when_they_dont_fit_one_ask(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],  # noqa: F811
+    words_per_second: float,
+    pictures: int,
+    first: str,
+    last: str,
+    sides_pictures: int,
+    sides_first: str,
+    sides_last: str,
 ) -> None:
-    # A 10-second clip has 50 frames at 5 a second: with the shop photo, more than the 50
-    # pictures a model takes in one ask.
-    fake_model.words_per_second = 0.8
+    fake_model.words_per_second = words_per_second
 
     clip_of(fake_model, steps, say, 2)
 
     for shown in labels("check_clip_motion"):
-        assert len(shown) == 26
-        assert shown[1].endswith("Frames at 0 s, 0.2 s, left to right")
-        assert shown[-1] == "Frames at 9.6 s, 9.8 s, left to right"
-    # SIDES' 100 frames at 10 a second go three to a picture.
+        assert len(shown) == pictures
+        assert shown[1].endswith(first)
+        assert shown[-1] == last
     for shown in labels("check_clip_sides"):
-        assert len(shown) == 35
-        assert shown[1].endswith("Frames at 0 s, 0.1 s, 0.2 s, left to right")
-        assert shown[-1] == "Frame at 9.9 s"
+        assert len(shown) == sides_pictures
+        assert shown[1].endswith(sides_first)
+        assert shown[-1] == sides_last
 
 
 def test_a_clip_judged_again_after_the_worker_stopped_pays_for_no_answer_twice(
@@ -364,22 +406,6 @@ def test_a_clip_that_cant_be_judged_at_all_is_kept_as_not_checked_with_a_whole_r
     assert SceneStep.objects.get(kind="clip", scene__number=2).status == "finished"
 
 
-def test_a_9_second_clips_frames_are_each_shown_on_their_own(
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-) -> None:
-    # 45 frames and the shop photo fit in one ask, as in the tested setup.
-    fake_model.words_per_second = 0.95
-
-    clip_of(fake_model, steps, say, 2)
-
-    for shown in labels("check_clip_motion"):
-        assert len(shown) == 46
-        assert shown[-1] == "Frame at 8.8 s"
-
-
 def test_both_checks_are_told_the_products_colour_and_size_and_the_conversation(
     judged: ProducedItem,
 ) -> None:
@@ -429,6 +455,117 @@ def test_a_fixs_clip_is_judged_with_what_the_agent_understood_from_the_owner(
     assert "compared_with" not in ruling(judged)
 
 
+def test_the_ruling_says_which_words_and_models_judged_it(judged: ProducedItem) -> None:
+    assert ruling(judged)["wording"] == wording_version()
+    assert ruling(judged)["models"] == {
+        "sides": MODEL_FOR_PURPOSE["check_clip_sides"],
+        "motion": MODEL_FOR_PURPOSE["check_clip_motion"],
+    }
+    for call in ModelCall.objects.filter(purpose__startswith="check_clip_"):
+        assert call.model == MODEL_FOR_PURPOSE[call.purpose]
+
+
+def test_a_fixs_clip_is_judged_with_the_owners_note_and_the_restatement_but_no_notice_or_later_word(
+    fake_model: FakeModel,
+    judged: ProducedItem,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    # The owner's note, restated by the producer, and their yes; the fix's clip is started.
+    restated = f"Scene 2 would be made again so that {TURN_FIX[:-1]}, for about $1. Shall I?"
+    fake_model.respond(
+        "produce", turn(calls=[restating((2, TURN_FIX, "clip"))]), turn(says=restated)
+    )
+    say(HOVERS)
+    owner_says(fake_model, say, "Yes, do that.", ("make_clip", {"scene": 2, "note": TURN_FIX}))
+    assert [SceneStep.objects.get(pk=pk).kind for pk in steps.held] == ["clip"]
+    # While it is being made, code posts a notice and the owner writes again.
+    notice = "Scene 2's clip is taking longer than usual."
+    post_notice(Job.objects.get(), notice, Message.Level.INFO)
+    later = "Also, could the tea be green?"
+    messages.add(Session.objects.get(pk=session_id), role=Message.Role.USER, text=later)
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
+
+    run(fake_model, steps)
+
+    for asked in handoffs("check_clip_sides")[ASKS:] + handoffs("check_clip_motion")[ASKS:]:
+        said = [(message["by"], message["text"]) for message in asked["conversation"]]
+        assert ("user", HOVERS) in said
+        assert ("producer", restated) in said
+        assert said[-1] == ("user", "Yes, do that.")
+        assert notice not in str(said)
+        assert later not in str(said)
+        assert asked["what_the_agent_understood_from_the_owner"] == TURN_FIX
+
+
+def test_at_most_5_needs_photos_are_shown_one_per_photo_and_the_frames_fit_beside_them(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    # Six more photos, 3 to 8, none with a face; photo 3 shows two things the scene needs.
+    job = Job.objects.get()
+    for number in range(3, 9):
+        ProductPhoto.objects.create(
+            job=job,
+            position=number,
+            file=file_store.save(f"photo-{number}.png", photo(number)),
+        )
+    needs = [
+        {"what": "the mug's handle", "photos": [3]},
+        {"what": "the mug's rim", "photos": [3]},
+        *({"what": f"part {number}", "photos": [number]} for number in range(4, 9)),
+    ]
+    Scene.objects.filter(number=2).update(**DOES_A_JOB | {"needs": needs})
+    # A 9-second clip: 45 frames at 5 a second, which fit one to a picture beside the shop
+    # photo alone, but not beside 5 needs photos too (50 pictures an ask).
+    fake_model.words_per_second = 0.95
+
+    clip_of(fake_model, steps, say, 2)
+
+    assert NEEDS_PHOTOS_SHOWN == 5
+    handle = job.photos.get(position=3)
+    for call in ModelCall.objects.filter(purpose__startswith="check_clip_"):
+        assert call.images[1] == {
+            "label": "A shop photo of the mug's handle and the mug's rim:",
+            "key": handle.file,
+        }
+        assert [image["label"] for image in call.images[2:6]] == [
+            f"A shop photo of part {number}:" for number in range(4, 8)
+        ]
+        assert "part 8" not in json.dumps(call.images)
+        assert call.images[6]["label"].startswith("Frames from the clip, in order:")
+    # SIDES' 90 frames at 10 a second go three to a picture beside the 6 photos.
+    for shown in labels("check_clip_sides"):
+        assert len(shown) == 6 + 30
+    for shown in labels("check_clip_motion"):
+        assert len(shown) == 6 + 23
+        assert shown[6].endswith("Frames at 0 s, 0.2 s, left to right")
+        assert shown[-1] == "Frame at 8.8 s"
+
+
+def test_neither_check_is_handed_the_clips_prompt_or_line_and_blank_colour_and_size_are_left_out(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    Job.objects.update(product_colour="", product_size="")
+
+    clip_of(fake_model, steps, say, 2)
+
+    for asked in handoffs("check_clip_sides") + handoffs("check_clip_motion"):
+        handed = json.dumps(asked)
+        assert MOTION not in handed
+        assert LINE_2 not in handed
+        assert asked["facts"].startswith("Product: Stoneware Mug\n")
+        assert "Colour:" not in asked["facts"]
+        assert "Size:" not in asked["facts"]
+        assert PAGE_FRAME in asked["facts"]
+
+
 def test_a_fixs_clip_and_the_old_one_each_get_half_the_room_in_one_ask(
     fake_model: FakeModel, judged: ProducedItem, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
@@ -461,16 +598,6 @@ def test_a_fixs_clip_and_the_old_one_each_get_half_the_room_in_one_ask(
         for call in ModelCall.objects.filter(purpose="check_clip_sides").order_by("id")[ASKS:]
     ]:
         assert not any("old clip" in label for label in shown)
-
-
-def test_the_ruling_says_which_words_and_models_judged_it(judged: ProducedItem) -> None:
-    assert ruling(judged)["wording"] == wording_version()
-    assert ruling(judged)["models"] == {
-        "sides": MODEL_FOR_PURPOSE["check_clip_sides"],
-        "motion": MODEL_FOR_PURPOSE["check_clip_motion"],
-    }
-    for call in ModelCall.objects.filter(purpose__startswith="check_clip_"):
-        assert call.model == MODEL_FOR_PURPOSE[call.purpose]
 
 
 def a_fixs_clip_judged_until_the_worker_stops(

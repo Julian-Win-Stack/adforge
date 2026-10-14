@@ -21,6 +21,7 @@ from gateway.models import ModelCall
 from jobs import work
 from jobs.models import Fix, Job, ProducedItem, Scene, SceneStep
 from jobs.planning import ChatMessage
+from jobs.scenes import talking_motion_prompt
 
 from .conftest import (
     NO_CHOICES,
@@ -93,6 +94,16 @@ def run(fake_model: FakeModel, steps: HeldSteps) -> None:
     """Run the held steps, the producer replying once to each."""
     fake_model.respond("produce", *[turn(says="Done.") for _ in steps.held])
     steps.run_held()
+
+
+def clip_signals(api: APIClient, session_id: str) -> list[tuple[str, str, str, Any]]:
+    """Each message in the chat that says a scene's clip started or ended, as (role, level,
+    text, step)."""
+    return [
+        (message["role"], message["level"], message["text"], message["step"])
+        for message in api.get(f"/api/sessions/{session_id}/messages/").json()
+        if message["step"] is not None and message["step"]["kind"] == "clip"
+    ]
 
 
 @pytest.fixture
@@ -197,6 +208,9 @@ def test_the_clip_is_made_in_the_background_from_the_picture_and_the_audio_heard
     assert results_of("make_clip") == [CLIP_STARTED]
     assert made("clip") == []
     assert Scene.objects.get(number=1).status == "planned"
+    # The chat can tell the clip is being made.
+    started = {"scene": 1, "kind": "clip", "state": "started"}
+    assert clip_signals(api, session_id) == [("notice", "info", "Making scene 1's clip.", started)]
 
     run(fake_model, steps)
 
@@ -215,6 +229,10 @@ def test_the_clip_is_made_in_the_background_from_the_picture_and_the_audio_heard
     assert shown[0]["attachments"] == [
         {"position": 1, "kind": "video", "url": f"/media/{clip.file}", "scene": 1}
     ]
+    # The clip's own message says the step that started has ended with it.
+    assert clip_signals(api, session_id)[1:] == [
+        ("agent", "", "", {"scene": 1, "kind": "clip", "state": "made"})
+    ]
     # The video model was asked once, and its records are charged to the tool call.
     submitted = ModelCall.objects.get(purpose="make_talking_clip")
     assert submitted.handoff == {
@@ -232,13 +250,56 @@ def test_the_clip_is_made_in_the_background_from_the_picture_and_the_audio_heard
 
 
 @pytest.mark.parametrize(
+    ("product_size", "pose"),
+    [
+        pytest.param(
+            "large",
+            "The product stands on the floor at its real size, and the person stands beside "
+            "it with one hand resting on it, framed so both fit, with space above the head "
+            "and below the product, so the top and bottom of the frame stay clear.",
+            id="large",
+        ),
+        pytest.param(
+            "tiny",
+            "The person holds the product up close to the camera between finger and thumb, "
+            "so it fills a good part of the frame, with any label facing the camera, and "
+            "the top and bottom of the frame stay clear.",
+            id="tiny",
+        ),
+        pytest.param(
+            "handheld",
+            "The person holds the product at chest height, beside their face, with any label "
+            "facing the camera, so the top and bottom of the frame stay clear.",
+            id="handheld",
+        ),
+        # A job planned before the plan said the size: posed as handheld, as every job was.
+        pytest.param(
+            "",
+            "The person holds the product at chest height, beside their face, with any label "
+            "facing the camera, so the top and bottom of the frame stay clear.",
+            id="no size stored",
+        ),
+    ],
+)
+def test_each_product_size_gives_the_talking_clip_the_pose_its_picture_was_made_in(
+    product_size: str, pose: str
+) -> None:
+    """The video model is told the same pose the picture was made in, so it doesn't invent
+    limbs to hold a chair beside a face that the picture shows standing on the floor. The
+    chat test above uses the handheld mug, whose prompt is the one a job with no size gets:
+    the test below proves the handoff carries the prompt for the job's own size."""
+    assert talking_motion_prompt(product_size) == (
+        f"The person talks to the camera naturally, like a casual phone video. {pose} "
+        "Minimal hand movement."
+    )
+
+
+@pytest.mark.parametrize(
     "the_plan", [a_plan_with(product_size="large")], indirect=True, ids=["large"]
 )
 def test_a_talking_clips_motion_prompt_carries_the_pose_its_picture_was_planned_around(
     fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    """The video model is told the same pose the picture was made in, so it doesn't invent
-    limbs to hold a chair beside a face that the picture shows standing on the floor."""
     calling(fake_model, "make_clip")
     say("Make scene 1's clip")
 
@@ -259,22 +320,8 @@ def test_a_talking_clips_motion_prompt_carries_the_pose_its_picture_was_planned_
 
 
 # --- What the tool refuses -------------------------------------------------------------------
-
-
-def test_a_line_that_hasnt_passed_the_fact_check_gets_no_clip(
-    fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    Scene.objects.filter(number=1).update(fact_checked=False)
-    calling(fake_model, "make_clip")
-
-    say("Make scene 1's clip")
-
-    assert results_of("make_clip") == [
-        refused(
-            "scene 1's line hasn't passed the fact check, and nothing is made for a line "
-            "until it has. Run the planning checks first."
-        )
-    ]
+# A line that hasn't passed the fact check is refused by every scene tool alike: see
+# test_producer_line_audio.py.
 
 
 def test_a_clip_isnt_made_before_its_picture(
@@ -553,7 +600,12 @@ def clip_step_failed() -> SceneStep:
 
 
 def test_a_clip_the_video_service_is_down_for_fails_its_step_and_the_producer_is_told(
-    fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
+    api: APIClient,
+    fake_model: FakeModel,
+    ready: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
 ) -> None:
     calling(fake_model, "make_clip")
     say("Make scene 1's clip")
@@ -565,53 +617,7 @@ def test_a_clip_the_video_service_is_down_for_fails_its_step_and_the_producer_is
     assert step.reason.startswith("an outside service stayed down after several tries")
     tries = ModelCall.objects.filter(purpose="make_talking_clip")
     assert [(t.attempt, t.outcome) for t in tries] == [(1, "failed"), (2, "failed"), (3, "failed")]
-
-
-def clip_signals(api: APIClient, session_id: str) -> list[tuple[str, str, str, Any]]:
-    """Each message in the chat that says a scene's clip started or ended, as (role, level,
-    text, step)."""
-    return [
-        (message["role"], message["level"], message["text"], message["step"])
-        for message in api.get(f"/api/sessions/{session_id}/messages/").json()
-        if message["step"] is not None and message["step"]["kind"] == "clip"
-    ]
-
-
-def test_the_chat_can_tell_a_scenes_clip_is_being_made_until_it_is_shown(
-    api: APIClient,
-    fake_model: FakeModel,
-    ready: None,
-    steps: HeldSteps,
-    session_id: str,
-    say: Callable[..., None],
-) -> None:
-    calling(fake_model, "make_clip")
-
-    say("Make scene 1's clip")
-
-    started = {"scene": 1, "kind": "clip", "state": "started"}
-    assert clip_signals(api, session_id) == [("notice", "info", "Making scene 1's clip.", started)]
-    run(fake_model, steps)
-    assert clip_signals(api, session_id)[1:] == [
-        ("agent", "", "", {"scene": 1, "kind": "clip", "state": "made"})
-    ]
-
-
-def test_the_chat_can_tell_a_scenes_clip_is_no_longer_being_made_when_it_fails(
-    api: APIClient,
-    fake_model: FakeModel,
-    ready: None,
-    steps: HeldSteps,
-    session_id: str,
-    say: Callable[..., None],
-) -> None:
-    calling(fake_model, "make_clip")
-    say("Make scene 1's clip")
-    fake_model.respond("make_clip", *[OutsideServiceDown("fal answered 503")] * 3)
-
-    run(fake_model, steps)
-
-    clip_step_failed()
+    # The chat can tell the clip is no longer being made.
     assert clip_signals(api, session_id)[1:] == [
         (
             "notice",

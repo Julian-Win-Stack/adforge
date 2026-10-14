@@ -554,8 +554,8 @@ def _the_shop_is_down_for_firecrawl(
 
 def _firecrawl_times_out(firecrawl: FakeFirecrawl, monkeypatch: pytest.MonkeyPatch) -> str:
     # Waiting the real 330 seconds would make the test too slow.
-    monkeypatch.setattr("jobs.firecrawl.HTTP_TIMEOUT_SECONDS", 0.2)
-    firecrawl.takes_seconds = 0.5
+    monkeypatch.setattr("jobs.firecrawl.HTTP_TIMEOUT_SECONDS", 0.1)
+    firecrawl.takes_seconds = 0.3
     return "timed out after 5 min"
 
 
@@ -901,7 +901,28 @@ def test_a_picker_that_fails_or_picks_nothing_falls_back_to_the_declared_photos(
     assert notices(api, session_id) == [("problem", why + DECLARED_INSTEAD)]
 
 
-def test_photos_that_wont_download_are_named_and_the_rest_kept(
+@pytest.mark.parametrize(
+    ("picked", "kept", "kept_paths", "notice"),
+    [
+        pytest.param(
+            {"gallery_images": [8, 10], "more_images": [15]},
+            "Kept 1 product photo.",
+            [f"{SHAMPOO_PHOTO_PATH}?v=1783623478"],
+            "2 product photos picked off the page couldn't be kept, so the ad is made without "
+            "them; the rest were kept:",
+            id="the rest are kept",
+        ),
+        pytest.param(
+            {"gallery_images": [10, 15]},
+            "Kept 2 product photos.",
+            # The page declares the shampoo's photo twice: at full size, and 1,920 px wide.
+            [f"{SHAMPOO_PHOTO_PATH}?v=1783623478&width=1920", f"{SHAMPOO_PHOTO_PATH}?v=1783623478"],
+            "None of the 2 product photos picked off the page could be kept. " + DECLARED_INSTEAD,
+            id="all fail, so the declared photos are used instead",
+        ),
+    ],
+)
+def test_picked_photos_that_wont_download_are_named_and_the_rest_or_the_declared_ones_kept(
     api: APIClient,
     fake_model: FakeModel,
     httpserver: HTTPServer,
@@ -909,6 +930,10 @@ def test_photos_that_wont_download_are_named_and_the_rest_kept(
     shampoo_page_url: str,
     session_id: str,
     say: Callable[..., None],
+    picked: dict[str, list[int]],
+    kept: str,
+    kept_paths: list[str],
+    notice: str,
 ) -> None:
     httpserver.expect_request(SPLASH_PATH).respond_with_data("Not here", status=404)
     httpserver.expect_request(LATHER_PATH).respond_with_data(
@@ -916,62 +941,22 @@ def test_photos_that_wont_download_are_named_and_the_rest_kept(
     )
     reading(fake_model, shampoo_page_url)
     fake_model.respond("check_page", READABLE)
-    fake_model.respond(
-        "pick_photos", {**SHAMPOO_PICKED, "gallery_images": [8, 10], "more_images": [15]}
-    )
+    fake_model.respond("pick_photos", {**SHAMPOO_PICKED, **picked})
 
     say(f"Make an ad for {shampoo_page_url}")
 
-    assert "Kept 1 product photo." in read_page_result()
+    assert kept in read_page_result()
     shop = firecrawl.shop
-    splash, lather = f"{shop}{SPLASH_PATH}?v=1782764654", f"{shop}{LATHER_PATH}?v=1782764664"
     assert [photo.source_url for photo in Job.objects.get().photos.all()] == [
-        f"{shop}{SHAMPOO_PHOTO_PATH}?v=1783623478"
+        f"{shop}{path}" for path in kept_paths
     ]
+    splash, lather = f"{shop}{SPLASH_PATH}?v=1782764654", f"{shop}{LATHER_PATH}?v=1782764664"
     assert notices(api, session_id) == [
         (
             "problem",
-            "2 product photos picked off the page couldn't be kept, so the ad is made without "
-            "them; the rest were kept:\n"
+            f"{notice}\n"
             f"- {splash}: {splash} answered 404 NOT FOUND, so trying again won't help.\n"
             f"- {lather}: It came back as text/html, not a PNG, JPEG, WebP or GIF image.",
-        )
-    ]
-
-
-def test_picked_photos_that_all_fail_fall_back_to_the_declared_photos(
-    api: APIClient,
-    fake_model: FakeModel,
-    httpserver: HTTPServer,
-    firecrawl: FakeFirecrawl,
-    shampoo_page_url: str,
-    session_id: str,
-    say: Callable[..., None],
-) -> None:
-    httpserver.expect_request(SPLASH_PATH).respond_with_data("Not here", status=404)
-    httpserver.expect_request(LATHER_PATH).respond_with_data(
-        "<html>Summer sale!</html>", content_type="text/html"
-    )
-    reading(fake_model, shampoo_page_url)
-    fake_model.respond("check_page", READABLE)
-    fake_model.respond("pick_photos", {**SHAMPOO_PICKED, "gallery_images": [10, 15]})
-
-    say(f"Make an ad for {shampoo_page_url}")
-
-    assert read_page_result().endswith("Kept 2 product photos.")
-    shop = firecrawl.shop
-    assert [photo.source_url for photo in Job.objects.get().photos.all()] == [
-        f"{shop}{SHAMPOO_PHOTO_PATH}?v=1783623478&width=1920",
-        f"{shop}{SHAMPOO_PHOTO_PATH}?v=1783623478",
-    ]
-    splash, lather = f"{shop}{SPLASH_PATH}?v=1782764654", f"{shop}{LATHER_PATH}?v=1782764664"
-    assert notices(api, session_id) == [
-        (
-            "problem",
-            "None of the 2 product photos picked off the page could be kept. "
-            + DECLARED_INSTEAD
-            + f"\n- {splash}: {splash} answered 404 NOT FOUND, so trying again won't help."
-            f"\n- {lather}: It came back as text/html, not a PNG, JPEG, WebP or GIF image.",
         )
     ]
 
@@ -1054,7 +1039,22 @@ def waits(monkeypatch: pytest.MonkeyPatch) -> list[float]:
     return waited
 
 
-def test_firecrawl_saying_too_many_requests_is_tried_again(
+@pytest.mark.parametrize(
+    ("times", "error", "headers", "waited"),
+    [
+        # It didn't say how long to wait: a minute is waited, as the limit is per minute.
+        pytest.param(1, "Rate limit exceeded", {}, [60], id="once, not saying how long"),
+        # Longer than the ordinary retries for a busy service last.
+        pytest.param(
+            5,
+            RATE_LIMITED.format(25),
+            {"Retry-After": "25"},
+            [25] * 5,
+            id="five times, saying 25 seconds each time",
+        ),
+    ],
+)
+def test_firecrawl_saying_too_many_requests_is_tried_again_after_the_wait_it_says_or_a_minute(
     api: APIClient,
     fake_model: FakeModel,
     firecrawl: FakeFirecrawl,
@@ -1062,8 +1062,12 @@ def test_firecrawl_saying_too_many_requests_is_tried_again(
     session_id: str,
     say: Callable[..., None],
     waits: list[float],
+    times: int,
+    error: str,
+    headers: dict[str, str],
+    waited: list[float],
 ) -> None:
-    firecrawl.answers_first(429, "Rate limit exceeded")
+    firecrawl.answers_first(429, error, times=times, headers=headers)
     reading(fake_model, shampoo_page_url)
     fake_model.respond("check_page", READABLE)
     fake_model.respond("copy_page_text", SHAMPOO_COPIED)
@@ -1071,33 +1075,8 @@ def test_firecrawl_saying_too_many_requests_is_tried_again(
     say(f"Make an ad for {shampoo_page_url}")
 
     assert read_page_result().endswith("Kept 1 product photo.")
-    assert len(firecrawl.asked("page")) == 2
-    # It didn't say how long to wait: a minute is waited, as the limit is per minute.
-    assert waits == [60]
-    assert Job.objects.get().page_text.startswith(f"{ON_THE_PAGE}\n{PAGE_WROTE}")
-    assert notices(api, session_id) == []
-
-
-def test_firecrawl_staying_rate_limited_is_waited_out_as_it_says(
-    api: APIClient,
-    fake_model: FakeModel,
-    firecrawl: FakeFirecrawl,
-    shampoo_page_url: str,
-    session_id: str,
-    say: Callable[..., None],
-    waits: list[float],
-) -> None:
-    # Longer than the ordinary retries for a busy service last.
-    firecrawl.answers_first(429, RATE_LIMITED.format(25), times=5, headers={"Retry-After": "25"})
-    reading(fake_model, shampoo_page_url)
-    fake_model.respond("check_page", READABLE)
-    fake_model.respond("copy_page_text", SHAMPOO_COPIED)
-
-    say(f"Make an ad for {shampoo_page_url}")
-
-    assert read_page_result().endswith("Kept 1 product photo.")
-    assert len(firecrawl.asked("page")) == 6
-    assert waits == [25] * 5
+    assert len(firecrawl.asked("page")) == times + 1
+    assert waits == waited
     assert Job.objects.get().page_text.startswith(f"{ON_THE_PAGE}\n{PAGE_WROTE}")
     assert notices(api, session_id) == []
 
@@ -1378,3 +1357,5 @@ def test_an_unexpected_error_is_handed_back_with_the_details_in_the_server_log(
     checkpoint = ToolCall.objects.get(tool="read_page")
     assert logged.getMessage() == f"The read_page tool failed for checkpoint {checkpoint.pk}"
     assert logged.exc_info is not None
+    # The tool is over, result and all: the producer isn't left waiting on it.
+    assert checkpoint.finished

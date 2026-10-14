@@ -1,6 +1,6 @@
 """Which model does each job, and what each model costs. Change a model here, nowhere else."""
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 MODEL_FOR_PURPOSE: dict[str, str] = {
     "produce": "gpt-5.6-sol",
@@ -136,7 +136,10 @@ def speech_cost_usd(model: str, characters: int) -> Decimal:
 
 
 def transcription_cost_usd(model: str, seconds: float) -> Decimal:
-    return Decimal(str(seconds)) * PRICE_PER_HOUR_OF_AUDIO[model] / 3_600
+    """What transcribing `seconds` of audio costs, to the millionth of a dollar a bill is
+    recorded to: an hour's price divided into seconds never ends."""
+    cost = Decimal(str(seconds)) * PRICE_PER_HOUR_OF_AUDIO[model] / 3_600
+    return cost.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
 
 
 def video_cost_usd(model: str, seconds: float) -> Decimal:

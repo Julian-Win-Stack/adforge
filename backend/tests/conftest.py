@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import time
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import timedelta
 from itertools import groupby
 from pathlib import Path
@@ -33,6 +34,8 @@ from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import ModelReply, ModelRequest, TurnReply, TurnRequest
 from jobs.models import BROLL_FIELDS, Fix, Job, Scene
+
+from . import ffmpeg_replay
 
 celery_app.conf.update(task_always_eager=True, task_eager_propagates=True)
 
@@ -293,6 +296,14 @@ def _isolated_outside_world(settings: Settings, tmp_path: Path) -> None:
     settings.FIRECRAWL_API_KEY = ""
 
 
+@pytest.fixture(autouse=True)
+def _ffmpeg_replayed(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """ffmpeg runs seen before with the same inputs are replayed (see ffmpeg_replay), but
+    in the tests of ffmpeg and of assembly themselves, which run it every time."""
+    if request.node.get_closest_marker("real_ffmpeg") is None:
+        monkeypatch.setattr(subprocess, "run", ffmpeg_replay.run)
+
+
 @pytest.fixture
 def api() -> APIClient:
     return APIClient()
@@ -366,6 +377,11 @@ def screenshot(width: int, height: int) -> bytes:
     return file.getvalue()
 
 
+# Firecrawl's screenshot of the shampoo's page, 2,600 px tall: three parts of 1,200 px. Drawn
+# once: it takes about 50 ms, and no test changes it.
+FIRECRAWL_SCREENSHOT = screenshot(480, 2_600)
+
+
 def photo(seed: int, width: int = 64, height: int = 80) -> bytes:
     """A photo of its own: random dots, so no two seeds look alike to the copy check, and
     one seed looks the same at every size."""
@@ -419,8 +435,7 @@ class FakeFirecrawl:
         self.marked: dict[str, Any] = json.loads(re.sub(shop_links, self.shop, FIRECRAWL_MARKED))
         self.marked["data"]["actions"]["screenshots"] = [f"{self.shop}/firecrawl/screenshot.png"]
         self.product: dict[str, Any] = json.loads(re.sub(shop_links, self.shop, FIRECRAWL_PRODUCT))
-        # 2,600 px tall: three parts of 1,200 px.
-        self.screenshot = screenshot(480, 2_600)
+        self.screenshot = FIRECRAWL_SCREENSHOT
         httpserver.expect_request("/v2/scrape", method="POST").respond_with_handler(self._answer)
         httpserver.expect_request("/firecrawl/screenshot.png").respond_with_handler(
             lambda _: Response(self.screenshot, content_type="image/png")
@@ -592,14 +607,22 @@ def served(link: str, settings: Settings) -> bytes:
     return (Path(settings.MEDIA_ROOT) / link.removeprefix("/media/")).read_bytes()
 
 
+@contextmanager
+def _written(data: bytes) -> Iterator[str]:
+    """`data` in a file of its own folder, under a name that is the same every time, so a
+    look at the same video twice is an ffmpeg run the replay knows (see ffmpeg_replay)."""
+    with tempfile.TemporaryDirectory() as folder:
+        file = Path(folder) / "media.mp4"
+        file.write_bytes(data)
+        yield str(file)
+
+
 def video(data: bytes) -> tuple[int, int, float]:
     """A video's width, height and length in seconds, as ffprobe reads it."""
-    with tempfile.NamedTemporaryFile(suffix=".mp4") as file:
-        file.write(data)
-        file.flush()
+    with _written(data) as file:
         probed = subprocess.run(
             [settings.FFPROBE, "-v", "error", "-show_streams", "-show_format", "-of", "json"]
-            + [file.name],
+            + [file],
             capture_output=True,
             text=True,
             timeout=60,
@@ -612,11 +635,9 @@ def video(data: bytes) -> tuple[int, int, float]:
 
 def colour_at(data: bytes, seconds: float) -> str:
     """Which of the fake's clip colours a video shows `seconds` in, read from its middle."""
-    with tempfile.NamedTemporaryFile(suffix=".mp4") as file:
-        file.write(data)
-        file.flush()
+    with _written(data) as file:
         frame = subprocess.run(
-            [settings.FFMPEG, "-v", "error", "-ss", str(seconds), "-i", file.name]
+            [settings.FFMPEG, "-v", "error", "-ss", str(seconds), "-i", file]
             + ["-frames:v", "1", "-f", "image2pipe", "-c:v", "png", "-"],
             capture_output=True,
             timeout=60,
@@ -641,11 +662,9 @@ def colour_at(data: bytes, seconds: float) -> str:
 def drawn_in(data: bytes, seconds: float) -> set[str]:
     """Which bands of the picture, "top" or "bottom", have something drawn over the clip
     `seconds` in: pixels that differ from the clip's own colour, read from its middle."""
-    with tempfile.NamedTemporaryFile(suffix=".mp4") as file:
-        file.write(data)
-        file.flush()
+    with _written(data) as file:
         frame = subprocess.run(
-            [settings.FFMPEG, "-v", "error", "-ss", str(seconds), "-i", file.name]
+            [settings.FFMPEG, "-v", "error", "-ss", str(seconds), "-i", file]
             + ["-frames:v", "1", "-f", "image2pipe", "-c:v", "png", "-"],
             capture_output=True,
             timeout=60,
@@ -675,11 +694,9 @@ def _rgb(image: PIL.Image.Image, x: int, y: int) -> tuple[int, int, int]:
 
 def silences(data: bytes) -> list[tuple[float, float]]:
     """Where a video's sound is silent for more than a quarter of a second, in seconds."""
-    with tempfile.NamedTemporaryFile(suffix=".mp4") as file:
-        file.write(data)
-        file.flush()
+    with _written(data) as file:
         heard = subprocess.run(
-            [settings.FFMPEG, "-i", file.name, "-af", "silencedetect=noise=-40dB:d=0.25"]
+            [settings.FFMPEG, "-i", file, "-af", "silencedetect=noise=-40dB:d=0.25"]
             + ["-f", "null", "-"],
             capture_output=True,
             text=True,
@@ -704,11 +721,9 @@ def loudness(
     }[band]
     if between is not None:
         heard = f"atrim={between[0]}:{between[1]}," + heard
-    with tempfile.NamedTemporaryFile(suffix=".mp4") as file:
-        file.write(data)
-        file.flush()
+    with _written(data) as file:
         measured = subprocess.run(
-            [settings.FFMPEG, "-i", file.name, "-af", f"{heard},volumedetect", "-f", "null", "-"],
+            [settings.FFMPEG, "-i", file, "-af", f"{heard},volumedetect", "-f", "null", "-"],
             capture_output=True,
             text=True,
             timeout=60,

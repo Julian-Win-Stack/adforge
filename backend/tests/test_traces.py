@@ -175,7 +175,7 @@ def test_a_messages_work_is_one_trace_of_turns_the_tools_they_asked_for_and_mode
     assert check_page.value("cost_details") == {"total": float(recorded.cost_usd)}
 
 
-def test_a_messages_work_is_grouped_with_the_rest_of_its_chat_session(
+def test_each_message_starts_a_new_trace_named_after_it_grouped_with_the_rest_of_its_chat_session(
     traces: Traces, fake_model: FakeModel, session_id: str, say: Callable[..., None]
 ) -> None:
     fake_model.respond("produce", turn(says="Send me your product page."), turn(says="Thanks!"))
@@ -183,7 +183,14 @@ def test_a_messages_work_is_grouped_with_the_rest_of_its_chat_session(
     say("Hi")
     say("Here it comes")
 
-    assert [trace.attributes["session.id"] for trace in traces.all()] == [session_id] * 2
+    first, second = traces.all()
+    assert first.trace_id != second.trace_id
+    assert [each.attributes["langfuse.trace.name"] for each in (first, second)] == [
+        "Hi",
+        "Here it comes",
+    ]
+    # Both are the session's, so Langfuse shows the chat's work together.
+    assert [each.attributes["session.id"] for each in (first, second)] == [session_id] * 2
 
 
 def test_a_scene_steps_model_calls_land_under_the_tool_call_that_started_it(
@@ -253,22 +260,6 @@ def test_a_messages_work_woken_again_by_a_scene_step_stays_in_the_messages_trace
           producer turn (agent)
             produce (generation)"""
     )
-
-
-def test_a_new_message_starts_a_new_trace_named_after_it(
-    traces: Traces, fake_model: FakeModel, say: Callable[..., None]
-) -> None:
-    fake_model.respond("produce", turn(says="Send me your product page."), turn(says="Thanks!"))
-
-    say("Hi")
-    say("Here it comes")
-
-    first, second = traces.all()
-    assert first.trace_id != second.trace_id
-    assert [each.attributes["langfuse.trace.name"] for each in (first, second)] == [
-        "Hi",
-        "Here it comes",
-    ]
 
 
 def test_a_scene_step_lands_under_its_tool_call_run_again_after_the_worker_stopped(

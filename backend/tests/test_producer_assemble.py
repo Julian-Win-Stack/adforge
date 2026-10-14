@@ -2,6 +2,7 @@
 with ffmpeg, driven through the chat. The producer's model and the scene models are faked at
 the gateway, but the clips are real tiny videos and ffmpeg runs for real."""
 
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -16,6 +17,7 @@ from jobs.models import Job, ProducedItem
 
 from .conftest import (
     HeldSteps,
+    chat,
     colour_at,
     drawn_in,
     loudness,
@@ -166,6 +168,40 @@ def test_the_scenes_are_assembled_into_one_ad_that_plays_in_the_chat(
     assert attached["scene"] is None
     last = api.get(f"/api/sessions/{session_id}/messages/").json()[-1]
     assert (last["role"], last["text"]) == ("agent", "Here's your ad!")
+
+
+def test_an_ad_ffmpeg_cant_put_together_is_handed_back_as_a_failure_and_leaves_no_ad(
+    api: APIClient,
+    fake_model: FakeModel,
+    finished: None,
+    say: Callable[..., None],
+    session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def ffmpeg_fails(*arguments: str) -> None:
+        raise assembly.AssemblyFailed("Output file #0 does not contain any stream")
+
+    monkeypatch.setattr(assembly, "_ffmpeg", ffmpeg_fails)
+    fake_model.respond(
+        "produce",
+        turn(calls=[("assemble_ad", {})]),
+        turn(says="I couldn't put the ad together just now."),
+    )
+
+    with caplog.at_level(logging.ERROR):
+        say("Put the ad together")
+
+    # Not a failure anyone expected (agents/loop.py EXPECTED_FAILURES): ffmpeg's words go to
+    # the server log, and the producer is told only that the tool stopped.
+    assert results_of("assemble_ad") == [
+        "Failed: an unexpected error stopped the tool. The details are in the server log."
+    ]
+    assert "does not contain any stream" in caplog.text
+    # No half-made ad is left, and none was shown; the producer carried on to tell the owner.
+    assert ads() == []
+    assert ads_shown(api, session_id) == []
+    assert chat(api, session_id)[-1] == ("agent", "I couldn't put the ad together just now.")
 
 
 def test_the_dead_air_between_scenes_is_cut_on_the_word_timings(

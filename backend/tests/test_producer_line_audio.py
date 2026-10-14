@@ -340,18 +340,30 @@ def unchecked(fake_model: FakeModel, planned: None, say: Callable[..., None]) ->
     say("Make the person")
 
 
-@pytest.mark.parametrize("tool", ["make_line_audio", "transcribe_line_audio"])
-def test_a_line_that_hasnt_passed_the_fact_check_gets_no_audio_or_transcript(
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        pytest.param("make_starting_picture", {"scene": 1, "note": None}, id="picture"),
+        pytest.param("make_line_audio", {"scene": 1}, id="audio"),
+        pytest.param("transcribe_line_audio", {"scene": 1}, id="transcript"),
+        pytest.param("make_clip", {"scene": 1}, id="clip"),
+    ],
+)
+def test_a_line_that_hasnt_passed_the_fact_check_gets_no_picture_audio_transcript_or_clip(
     fake_model: FakeModel,
     unchecked: None,
     steps: HeldSteps,
     say: Callable[..., None],
     tool: str,
+    arguments: dict[str, Any],
 ) -> None:
+    """Every scene tool starts by refusing a line that hasn't passed the fact check, before
+    it looks for anything else the scene lacks, so nothing is made or paid for until it
+    has."""
     paid = paid_for()
-    calling(fake_model, tool)
+    fake_model.respond("produce", turn(calls=[(tool, arguments)]), turn(says="On it."))
 
-    say("Make scene 1's audio")
+    say("Make scene 1")
 
     assert results_of(tool) == [
         "Refused: scene 1's line hasn't passed the fact check, and nothing is made for a line "
