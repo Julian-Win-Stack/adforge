@@ -9,27 +9,33 @@ prove the tools, the yes guard and the messages, not the model's judgement. Ever
 service is faked at the gateway; ffmpeg runs for real on tiny clips."""
 
 from collections.abc import Callable
+from decimal import Decimal
 from typing import Any
 
 import pytest
 from django.db.models.signals import post_save
 from rest_framework.test import APIClient
 
+from adforge.retry import OutsideServiceDown
 from agents import tasks
 from agents.producer import INSTRUCTIONS
 from chat.models import Message
 from gateway.fake import FakeModel, turn
+from gateway.models import ModelCall
 from jobs.models import Fix, Job, ProducedItem, Scene, SceneStep
 
 from .conftest import (
+    CLIP_MOTION_OK,
     JUDGED_CLIP,
     HeldSteps,
     given_to_the_producer,
+    handoffs,
     paid_for,
     producer_turns,
     results_of,
 )
 from .test_end_to_end import TALKING, ad_made_through_the_chat  # noqa: F401 (a fixture)
+from .test_producer_auto_fix import shown_clips
 from .test_producer_restarts import WorkerStopped, the_worker_stops
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -64,6 +70,12 @@ WAVE_FIX = "In scene 1, she waves at the camera."
 SALE = "On sale now for $19.00."
 SALE_FIX = f'In scene 3, she says "{SALE}"'
 BOTH_HANDS = "In scene 1, she holds the mug up beside her face with both hands."
+# What the clip judge sees wrong with a redo of scene 2's clip, and the remake written from it.
+HALF_TURN = "The hand stops at 1.5 s with the mug half turned. A real turn goes all the way round."
+TURN_REMADE: dict[str, Any] = {
+    "motion_prompt": "The hand turns the mug a full circle on the bench; the camera holds still.",
+    "motion_prompt_reason": "The judge saw the turn stop halfway.",
+}
 
 
 def owner_says(fake_model: FakeModel, say: Say, text: str, *calls: Call) -> None:
@@ -128,6 +140,14 @@ def told(scene: int, kind: str = "clip") -> str:
     """What the producer was told when scene `scene`'s latest `kind` step finished."""
     step = SceneStep.objects.filter(kind=kind, scene__number=scene).latest("id")
     return step.result
+
+
+def half_turn() -> dict[str, Any]:
+    """The clip judge's MOTION answer when it sees the turn stop halfway."""
+    return {
+        **CLIP_MOTION_OK,
+        "real_motion": {"verdict": "fail", "problem": HALF_TURN, "back_to_normal_at": "never"},
+    }
 
 
 @pytest.fixture
@@ -665,3 +685,154 @@ def test_a_line_note_remakes_that_scene_for_its_new_line_and_captions_the_new_ad
         "make_talking_clip",
         "collect_talking_clip",
     ]
+
+
+# --- 10. The clip judge fails the fix's redo: it is made again by code, in the same step ------
+
+
+def test_a_fixs_redo_the_judge_fails_is_made_again_by_code_and_the_remake_makes_the_new_ad(
+    fake_model: FakeModel, say: Say, steps: HeldSteps, shown: list[str]
+) -> None:
+    owner_says(fake_model, say, HOVERS, restating((2, TURN_FIX, "clip")))
+    owner_says(fake_model, say, "Yes", clip_of(2, TURN_FIX))
+    assert held_kinds(steps) == [(2, "clip")]
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
+    # The judge fails the redo on 2 of its 3 asks, and passes the remake on all 3.
+    fake_model.respond("check_clip_motion", half_turn(), half_turn(), *[CLIP_MOTION_OK] * 4)
+    fake_model.respond("remake_clip_prompt", TURN_REMADE)
+    step_lands(fake_model, steps)
+
+    # The redo and its remake are the step's, the remake the scene's clip: written from the
+    # redo's prompt and what the judge saw, keeping the shop owner's fix word for word.
+    fix = Fix.objects.get()
+    step = SceneStep.objects.filter(kind="clip", scene__number=2).latest("id")
+    redo, remake = step.produced.order_by("id")
+    assert (redo.version, redo.remake, remake.version, remake.remake) == (2, None, 3, 1)
+    assert latest("clip", 2) == remake
+    assert remake.motion_prompt == TURN_REMADE["motion_prompt"]
+    (handed,) = handoffs("remake_clip_prompt")
+    assert (handed["owner_fix"], handed["motion_prompt"], handed["faults"]) == (
+        TURN_FIX,
+        TURN_REWRITE["motion_prompt"],
+        [HALF_TURN],
+    )
+    # The new ad holds the remake, shown once; the chat never sees the clip the judge failed.
+    assert [ad.version for ad in ads()] == [1, 2]
+    assert [cut["clip"] for cut in ads()[1].cuts][1] == remake.pk
+    assert Message.objects.filter(attachments__file=ads()[1].file).count() == 1
+    assert shown_clips().count(remake.file) == 1
+    assert redo.file not in shown_clips()
+    # The producer is told what the judge did, the fix's check passed, and the cost of it
+    # all: the remake is the step's, so the fix's cost is the step's.
+    assert (
+        f' The clip judge failed the first clip it made ("{HALF_TURN}"), so it was made again '
+        "once, and the judge passed the new one. Scene 2 is finished."
+    ) in told(2)
+    assert "The check of scene 2's fix found the change in the new clip." in told(2)
+    assert told(2).endswith(
+        f"the ad was assembled again with it (version 2, {ads()[1].seconds:g} seconds) and shown "
+        "to the shop owner in the chat. Ask them to tell you if it's fixed."
+    )
+    # Two prompts written at $0.006, two 5-second clips at Boreal's $0.0792 a second, the
+    # judge's 6 asks on each at $0.003 and the fix check's 3: all the step's, so the fix's.
+    assert " It cost $0.849." in told(2)
+    assert "Scene 2's fix has cost $0.849 so far." in told(2)
+    assert fix.cost_usd() == Decimal("0.849")
+    charged = ModelCall.objects.filter(created_at__gte=step.started_at).exclude(purpose="produce")
+    assert {call.tool_call_id for call in charged} == {step.tool_call_id}
+    assert paid_for()[len(shown) :] == [
+        "rewrite_clip_prompt",
+        "make_broll_clip",
+        "collect_broll_clip",
+        *JUDGED_CLIP,
+        "remake_clip_prompt",
+        "make_broll_clip",
+        "collect_broll_clip",
+        *JUDGED_CLIP,
+        # The fix's check, once, on the clip kept (#131, call 4).
+        *["check_fix_clip"] * 3,
+    ]
+
+
+# --- 11. The video service fails the fix's redo ------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("purpose", "answers", "reason", "videos_asked"),
+    [
+        (
+            "collect_clip",
+            [{"state": "failed", "error": "The picture was too dark."}],
+            "the video model couldn't make the clip (The picture was too dark.).",
+            # Waiting on the one that failed would only fail again: a fresh one is asked for.
+            2,
+        ),
+        (
+            "make_clip",
+            [OutsideServiceDown("fal answered 503")] * 3,
+            "an outside service stayed down after several tries (The model provider was still "
+            "down after 3 tries: fal answered 503).",
+            # Nothing was paid for while the service was down.
+            1,
+        ),
+        (
+            "collect_clip",
+            [OutsideServiceDown("fal answered 503")] * 3,
+            "an outside service stayed down after several tries (The model provider was still "
+            "down after 3 tries: fal answered 503).",
+            # The clip paid for is waited for again rather than paid for again.
+            1,
+        ),
+    ],
+    ids=["clip_failed", "outage_asking", "outage_collecting"],
+)
+def test_a_fixs_redo_the_video_service_fails_fails_its_step_and_is_tried_again_on_the_same_yes(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],
+    api: APIClient,
+    session_id: str,
+    purpose: str,
+    answers: list[Any],
+    reason: str,
+    videos_asked: int,
+) -> None:
+    owner_says(fake_model, say, HOVERS, restating((2, TURN_FIX, "clip")))
+    owner_says(fake_model, say, "Yes", clip_of(2, TURN_FIX))
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
+    fake_model.respond(purpose, *answers)
+    asked_before = len(fake_model.clips_submitted)
+    step_lands(fake_model, steps)
+
+    step = SceneStep.objects.filter(kind="clip", scene__number=2).latest("id")
+    assert (step.status, step.reason) == ("failed", reason)
+    assert step.result == (
+        f"Background step failed: scene 2's clip couldn't be made: {reason} Tell the shop "
+        "owner what went wrong."
+    )
+    assert latest("clip", 2).version == 1
+    assert [ad.version for ad in ads()] == [1]
+    assert "check_fix_clip" not in paid_for()[len(shown) :]
+    # The chat is told nothing was made, so it stops showing the clip as being made.
+    texts = [message["text"] for message in api.get(f"/api/sessions/{session_id}/messages/").json()]
+    assert texts.index("Scene 2's clip couldn't be made.") > texts.index("Remaking scene 2's clip.")
+    # The fix stays said yes to, with nothing made for it yet.
+    fix = Fix.objects.get()
+    assert fix.confirmed_by is not None and fix.confirmed_by.text == "Yes"
+    # A producer that puts the ad together anyway finds the old one, already shown.
+    owner_says(fake_model, say, "Put it together then", ("assemble_ad", {}))
+    assert results_of("assemble_ad")[-1].startswith("The ad was already assembled")
+    assert Message.objects.filter(attachments__file=ads()[0].file).count() == 1
+
+    # The shop owner already said yes to this fix: the producer tries again on their word.
+    owner_says(fake_model, say, "Try again", clip_of(2, TURN_FIX))
+    assert held_kinds(steps) == [(2, "clip")]
+    assert Fix.objects.count() == 1
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
+    step_lands(fake_model, steps)
+
+    assert SceneStep.objects.filter(kind="clip", scene__number=2).latest("id").fix == fix
+    assert latest("clip", 2).version == 2
+    assert [ad.version for ad in ads()] == [1, 2]
+    assert len(fake_model.clips_submitted) - asked_before == videos_asked
