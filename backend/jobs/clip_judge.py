@@ -1,15 +1,19 @@
 """The judge of a B-roll clip, run right after the clip is made: two checks, each asked
-ASKS times, each failing on FAILS_TO_FAIL of its answers. SIDES looks at 5 stills for objects
-that can't exist and sides that aren't real; MOTION looks at FRAMES_PER_SECOND frames for
-movement and change no real camera could film. Ported from the eval harness the judge was
-tested in (/mnt/project-files/evals/clip-judge-v2: prompts.py proof arms PS and PM, the final
-wording that passed stage 4 on gpt-6.1-sol, 2026-10-13; judge.py; score.py). The plan: Claude
-Doc "Clip judge discussion", "Plan: what runs when" and changes 7 and 9.
+ASKS times, each failing on FAILS_TO_FAIL of its answers. SIDES looks at SIDES_FRAMES_PER_SECOND
+frames for objects that can't exist and a turn that shows a side that isn't real; MOTION looks
+at FRAMES_PER_SECOND frames for movement and change no real camera could film. Ported from the
+eval harness the judge was tested in (/mnt/project-files/evals/clip-judge-v2: prompts.py arm
+PM, the motion wording that passed stage 4 on gpt-6.1-sol, 2026-10-13, and arm F1, the
+phone-flip sides wording that caught 3 of 3 flips with no wrong fail on all 110 graded clips,
+2026-10-13; judge.py; score.py). The plan: Claude Doc "Clip judge discussion", "Plan: what
+runs when" and changes 7 and 9; the SIDES change: decisions/phone-flip-judge-test.md.
 
 The judge's words are Julian's to decide (project rule, 2026-10-12): SIDES_CHECK,
-MOTION_CHECK and the answer forms below are kept word for word as tested in the proof: SIDES
-without its pass list, MOTION without the changed-thing step, both still failing only when
-sure, and the problem in up to 3 sentences for the auto-redo's prompt writer (change 9;
+MOTION_CHECK and the answer forms below are kept word for word as tested: SIDES names the
+face it sees in every frame and decides the direction of every turn from the motion before
+it looks at the face that comes back (Julian's yes 2026-10-14 18:30; no code reads those
+fields), MOTION without the changed-thing step, both still failing only when sure, and the
+problem in up to 3 sentences for the auto-redo's prompt writer (change 9;
 decisions/julian-away-judgment-calls.md call 2). Which model judges is the catalog's
 (check_clip_sides, check_clip_motion)."""
 
@@ -64,8 +68,10 @@ BACK_TO_NORMAL_WITHIN_SECONDS = 0.5
 
 # MOTION's frames: the frame nearest each 1/FRAMES_PER_SECOND second, from the start.
 FRAMES_PER_SECOND = 5
-# SIDES' stills: the first, the last, the biggest change and two evenly between.
-STILLS = 5
+# SIDES' frames, the same way: twice as many, so it sees the moment a product is edge-on and
+# the frames right before and after, where a turn's direction shows (5 stills missed every
+# phone flip; 5 a second missed the direction: harness arms sides5, C8 and F1).
+SIDES_FRAMES_PER_SECOND = 10
 
 # ---------------------------------------------------------------- the product's facts
 
@@ -80,63 +86,99 @@ PAGE_FRAME = (
     "what's inside and which parts it has. Ignore what it claims the product does."
 )
 
-# ---------------------------------------------------------------- SIDES (proof arm PS, as tested)
+# ---------------------------------------------------------------- SIDES (harness arm F1, as tested)
 
 SIDES_CHECK = """\
 You check frames cut from an AI-made video clip before it is used in a product ad. Video models \
-sometimes draw objects that cannot exist, such as a car with headlights on its back, a door \
-hinged on both sides, or a hand with six fingers, and sometimes an object that turns shows a \
-side that is not a real side of it, such as a mug that turns and shows a second handle where the \
-plain side should be. Find those, and only those.
+sometimes draw objects that cannot exist, such as a car with headlights on its back, a door hinged \
+on both sides, or a hand with six fingers, and sometimes an object that turns over shows a side \
+that is not a real side of it, such as a mug that turns and shows a second handle where the plain \
+side should be, or a phone that turns over and shows a camera again where its screen should be. \
+Find those, and only those.
 
-You get a few frames from one clip, in order, each labelled with its time in seconds.
+You get frames from one clip, ten per second, in order, several per image side by side, each \
+labelled with its time in seconds.
 
-Work in two steps.
-1. Look before you judge. For each frame, and for each main object in it (the products, devices, \
-furniture and tools, and any hands holding them), write down which side of it faces the camera \
-and every part you can see on that side, and where. Describe what is actually drawn, not what \
-such an object usually has. Look closely at small parts: lenses, buttons, screens, spouts, caps, \
-hinges, handles, fingers.
-2. Then judge. For each object in each frame: could a real one of that object, seen from that \
-side, show exactly those parts in exactly those places? Then across the frames: when the object \
-turns, is the side that comes into view a real side of it? Do two frames show opposite sides of \
-it that look the same, although a real one's opposite sides differ? Does a part appear or vanish \
-on a side that kept facing the camera?
+Work in three steps.
+1. Look at the product, frame by frame. For every frame write which face of the product the camera \
+sees. Name the faces by what is drawn on them (for a phone: front = the screen face, back = the \
+face with the camera and logo), and use the same name for the same face in every frame. Name the \
+parts you can see on that face in that frame, each in a few words with where it sits (top left, \
+centre, bottom edge). Write what is drawn, not what such a product usually has. A part hidden by a \
+hand or too small to make out is left out, never guessed. Also write which thin edge of the \
+product you can see beside the broad face, and on which side of the broad face it sits in the \
+picture.
+2. Turns. A turn is every stretch where the product goes edge-only, or nearly, between two frames \
+that show a broad face. For each turn, decide whether the product kept turning the same way, so \
+the face that comes back into view must be the opposite face, or turned back, so the same face \
+returns. Decide the direction from the motion only, never from how the face after the turn looks: \
+that face is what you are checking, and the direction tells you what it has to be. Cues: the \
+narrow strip of broad face beside the thin edge in the frames right before and right after the \
+edge-only moment, on the same side of the thin edge both times means it turned back, on the other \
+side means it kept turning; an end or edge that was moving toward the camera and keeps moving that \
+way means it kept turning; a hand that keeps turning its wrist the same way; a product that tips \
+over as it falls or lands keeps turning, it does not tip back up. When the cues are not visible, \
+say unsure.
+3. Then judge. For each frame, could a real one of that product, seen from that face, show exactly \
+those parts in exactly those places? Across the frames: when the product turns, is the face that \
+comes into view a real face of it? Do two frames show opposite faces that look the same, although \
+a real one's opposite faces differ? Does a part appear or vanish on a face that kept facing the \
+camera?
 
 Decide "fail" only when you are sure something is physically impossible: a part on a side where \
-the real object can't have it, two sides of one object seen at once, a part fused into another, \
-a body part that can't be, two opposite sides that look the same where a real one's differ. \
-Decide "pass" for everything else.
+the real object can't have it, two sides of one object seen at once, a part fused into another, a \
+body part that can't be, two opposite sides that look the same where a real one's differ. Decide \
+"pass" for everything else.
 
 You may also be shown one shop photo of the product, and facts about it from the shop. They tell \
-you what the product is and how it is built: which parts it has and where they sit. Use them \
-only for that. Ignore the photo's background, setting and anything being done with the product; \
-only the product itself matters. Never compare the frames with the photo: differences in size, \
-shape, angle, distance, colour, label or print are not a fail, and the product may be held, \
-turned, upside down or partly hidden. Fail the product only if it shows a part a real one can't \
-have there, two sides at once, or a label that didn't turn with it."""
+you what the product is and how it is built: which parts it has and where they sit. Use them only \
+for that. Ignore the photo's background, setting and anything being done with the product; only \
+the product itself matters. Never compare the frames with the photo: differences in size, shape, \
+angle, distance, colour, label or print are not a fail, and the product may be held, turned, \
+upside down or partly hidden. Fail the product only if it shows a part a real one can't have \
+there, two sides at once, or a label that didn't turn with it."""
 
 # Change 7's field, Julian's yes 2026-10-13 04:34, in both checks' answers.
 BACK_TO_NORMAL = "When is this thing back to normal? Give the second, or say never."
 
 
-class ObjectLook(BaseModel):
-    name: str
-    side_facing_camera: str = Field(description="Which side or face of the object the camera sees.")
-    parts_seen: str = Field(description="The parts visible on that side, and where they are.")
-    a_real_one_could_look_like_this: bool
-    why: str = Field(description="One short sentence.")
-
-
-class FrameLook(BaseModel):
+# What SIDES sees of the product in one frame. Filling this in for every frame, and a
+# direction for every turn, is what makes the judge decide the direction from the motion
+# before it looks at the face that comes back; nothing in the code reads them.
+class FrameFace(BaseModel):
     time: float = Field(description="The frame's time in seconds, as labelled.")
-    objects: list[ObjectLook]
+    seen: Literal["broad_face", "edge_only", "not_visible", "unsure"] = Field(
+        description="broad_face: a face of the product shows. edge_only: the product is seen "
+        "so thin that no broad face shows. not_visible: the product is out of view or fully "
+        "hidden."
+    )
+    face: str = Field(
+        description="The name of the face that shows (front, back, top, left side...), the "
+        "same name for the same face in every frame. Empty when no broad face shows."
+    )
+    parts: str = Field(
+        description="The parts drawn on that face in this frame, each in a few words with "
+        "where it sits. Empty when none can be made out."
+    )
+    thin_edge_side: Literal["left", "right", "top", "bottom", "none"] = Field(
+        description="On which side of the broad face, in the picture, the visible thin edge "
+        "of the product sits. none when no thin edge shows or no broad face shows."
+    )
 
 
-# SIDES' answer, filled in from the top: it looks at each frame before it decides. A comment,
-# not a docstring: a docstring would be sent to the judge in the answer's schema.
+class Turn(BaseModel):
+    from_time: float = Field(description="The last frame before the turn that shows a broad face.")
+    to_time: float = Field(description="The first frame after the turn that shows a broad face.")
+    direction: Literal["kept_turning", "turned_back", "unsure"]
+    why: str = Field(description="One sentence: the motion cue you used, with frame times.")
+
+
+# SIDES' answer, filled in from the top: it looks at each frame, then each turn, before it
+# decides. A comment, not a docstring: a docstring would be sent to the judge in the answer's
+# schema.
 class SidesVerdict(BaseModel):
-    frames: list[FrameLook]
+    frames: list[FrameFace]
+    turns: list[Turn]
     across_frames: str = Field(
         description="Which sides of each main object were seen, in which frames; whether a "
         "side that came into view is a real side; whether a part appeared or "
@@ -430,7 +472,10 @@ def _asked(
     )
     photo = planned.photo.file
     needs = _needs_photos(step)
-    pictures = (clip.ruling or {}).get("pictures") or cut_pictures(clip.file, beside=1 + len(needs))
+    pictures = (clip.ruling or {}).get("pictures")
+    if not pictures or pictures.keys() != {"sides", "frames"}:
+        # None yet, or cut for an earlier judge (the fix check keeps only "frames").
+        pictures = cut_pictures(clip.file, beside=1 + len(needs))
     clip.ruling = {"pictures": pictures}
     clip.save(update_fields=["ruling"])
     owner: dict[str, Any] = {
@@ -443,7 +488,7 @@ def _asked(
             SIDES_CHECK,
             ClipCheckHandoff(ask=ask, facts=_facts(step, with_use=False), **owner),
             SidesVerdict,
-            _shown(photo, needs, pictures["stills"]),
+            _shown(photo, needs, pictures["sides"]),
         )
         for ask in range(1, ASKS + 1)
     ] + [
@@ -562,16 +607,17 @@ def frame_label(times: list[float]) -> str:
 
 def cut_pictures(clip: str, *, beside: int) -> dict[str, list[dict[str, Any]]]:
     """The pictures the judge is shown of the clip at `clip`, kept in the file store, each
-    with the time in seconds of each frame in it: "stills" for SIDES, "frames" for MOTION
+    with the time in seconds of each frame in it: "sides" for SIDES, SIDES_FRAMES_PER_SECOND
+    a second; "frames" for MOTION, FRAMES_PER_SECOND a second, which the fix check shows too
     (frames.py in the harness). Frames that wouldn't fit in one ask beside `beside` other
     pictures are joined side by side, as few in a row as fit."""
     with tempfile.TemporaryDirectory() as folder:
         video = Path(folder) / "clip.mp4"
         video.write_bytes(file_store.read(clip))
-        frames = _every_frame(video, Path(folder) / "frames")
-        stills = _stills(video, Path(folder) / "stills")
+        sides = _every_frame(video, Path(folder) / "sides", SIDES_FRAMES_PER_SECOND)
+        frames = _every_frame(video, Path(folder) / "frames", FRAMES_PER_SECOND)
         room = MOST_PICTURES - beside
-        return {"stills": _kept(stills, room), "frames": _kept(frames, room)}
+        return {"sides": _kept(sides, room), "frames": _kept(frames, room)}
 
 
 def _kept(frames: list[tuple[Path, float]], room: int) -> list[dict[str, Any]]:
@@ -616,79 +662,29 @@ def _ffmpeg(*arguments: str) -> bytes:
     return ran.stdout
 
 
-def _every_frame(video: Path, folder: Path) -> list[tuple[Path, float]]:
-    """The frame nearest each 1/FRAMES_PER_SECOND second, from the start to the end."""
+def _every_frame(video: Path, folder: Path, per_second: int) -> list[tuple[Path, float]]:
+    """The frame nearest each 1/`per_second` second, from the start to the end."""
     folder.mkdir()
     _ffmpeg(
         "-i",
         str(video),
         "-vf",
-        f"fps={FRAMES_PER_SECOND}:round=near",
+        f"fps={per_second}:round=near",
         "-q:v",
         "2",
         str(folder / "%03d.jpg"),
     )
     files = sorted(folder.glob("*.jpg"))
-    return [(file, round(i / FRAMES_PER_SECOND, 2)) for i, file in enumerate(files)]
-
-
-def _stills(video: Path, folder: Path) -> list[tuple[Path, float]]:
-    """STILLS frames: the first, the last, the one after the biggest change between two
-    frames, and two evenly between (the middle when the biggest change is one of those)."""
-    folder.mkdir()
-    end = assembly.seconds_of(video) - 0.05
-    biggest = round(_biggest_change(video), 2)
-    picks = sorted({0.0, round(end / 3, 2), round(2 * end / 3, 2), biggest, round(end, 2)})
-    if len(picks) < STILLS:
-        picks = sorted({*picks, round(end / 2, 2)})
-    return [_frame_at(video, t, folder / f"{i:03d}.jpg") for i, t in enumerate(picks)]
-
-
-def _frame_at(video: Path, t: float, into: Path) -> tuple[Path, float]:
-    """The frame at `t` seconds, and its time: a seek near the end can give no frame, so it
-    steps back until one comes."""
-    for back in (0, 0.1, 0.2, 0.3, 0.5):
-        at = max(t - back, 0)
-        _ffmpeg(
-            "-y", "-ss", f"{at:.3f}", "-i", str(video), "-frames:v", "1", "-q:v", "2", str(into)
-        )
-        if into.exists():
-            return into, round(at, 2)
-    raise RuntimeError(f"no frame near {t} s")
-
-
-def _biggest_change(video: Path) -> float:
-    """The time of the frame right after the biggest change from the frame before, over the
-    whole picture: a pointer to where something happens, never a judge."""
-    width, height = 96, 172
-    raw = _ffmpeg(
-        "-i",
-        str(video),
-        "-vf",
-        f"scale={width}:{height}",
-        "-pix_fmt",
-        "gray",
-        "-f",
-        "rawvideo",
-        "-",
-    )
-    size = width * height
-    frames = [raw[i : i + size] for i in range(0, len(raw) - size + 1, size)]
-    if len(frames) < 2:
-        return 0.0
-    changes = [
-        sum(abs(a - b) for a, b in zip(before, after, strict=True))
-        for before, after in zip(frames, frames[1:], strict=False)
-    ]
-    rate = len(frames) / assembly.seconds_of(video)
-    return (changes.index(max(changes)) + 1) / rate
+    return [(file, round(i / per_second, 2)) for i, file in enumerate(files)]
 
 
 def wording_version() -> str:
     """A version of everything the judge is told, kept with each ruling: its instructions,
-    the frames around the shop's text and the conversation, what it is handed, how the
-    pictures are labelled, and its answer forms. It changes whenever any of them does."""
+    the frames around the shop's text and the conversation, what it is handed, how many
+    frames a second each check is shown and how they are labelled, and its answer forms. It
+    changes whenever any of them does."""
     told = [
+        f"sides {SIDES_FRAMES_PER_SECOND} frames a second, motion {FRAMES_PER_SECOND}",
         SIDES_CHECK,
         MOTION_CHECK,
         PAGE_FRAME,

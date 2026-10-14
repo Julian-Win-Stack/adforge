@@ -1,9 +1,11 @@
 """A B-roll scene's clip is judged right after it is made, driven through the chat (#109): SIDES
-looks at 5 stills for objects that can't exist, MOTION at 5 frames a second for movement no
-real camera could film, each asked 3 times and failing on 2. The judge's ruling is kept on the
-clip, every answer with it, for the auto-redo to act on; its cost is the clip step's. Talking
-clips aren't judged. The producer's model, the scene models and the judge are faked at the
-gateway (the plan: Claude Doc "Clip judge discussion", Julian 2026-10-13)."""
+looks at 10 frames a second, joined two to a picture, for objects that can't exist and a turn
+that shows a side that isn't real; MOTION at 5 frames a second for movement no real camera
+could film; each asked 3 times and failing on 2. The judge's ruling is kept on the clip, every
+answer with it, for the auto-redo to act on; its cost is the clip step's. Talking clips aren't
+judged. The producer's model, the scene models and the judge are faked at the gateway (the
+plan: Claude Doc "Clip judge discussion", Julian 2026-10-13; the phone-flip SIDES check,
+Julian 2026-10-14)."""
 
 from collections.abc import Callable
 from typing import Any
@@ -104,15 +106,16 @@ def test_a_broll_clip_is_judged_three_times_by_each_check(judged: ProducedItem) 
     assert ruling(judged)["failed_answers"] == 0
 
 
-def test_sides_sees_the_shop_photo_then_5_stills_from_the_first_frame_to_the_last(
+def test_sides_sees_the_shop_photo_then_ten_frames_a_second_two_to_a_picture(
     judged: ProducedItem,
 ) -> None:
+    # A 5-second clip has 50 frames at 10 a second: with the shop photo, more than the 50
+    # pictures a model takes in one ask, so they are joined in pairs (the F1 harness run).
     for shown in labels("check_clip_sides"):
         assert shown[0] == "The shop photo of the product:"
-        assert shown[1] == "Frames from the clip, in order:\nFrame at 0 s"
-        assert len(shown) == 6
-        # The last still is from the clip's end: a 5-second clip's.
-        assert shown[-1].startswith("Frame at 4.9")
+        assert shown[1] == "Frames from the clip, in order:\nFrames at 0 s, 0.1 s, left to right"
+        assert len(shown) == 26
+        assert shown[-1] == "Frames at 4.8 s, 4.9 s, left to right"
 
 
 def test_motion_sees_the_shop_photo_then_a_frame_every_fifth_of_a_second(
@@ -257,6 +260,11 @@ def test_a_long_clips_frames_are_shown_two_to_a_picture_to_fit_one_ask(
         assert len(shown) == 26
         assert shown[1].endswith("Frames at 0 s, 0.2 s, left to right")
         assert shown[-1] == "Frames at 9.6 s, 9.8 s, left to right"
+    # SIDES' 100 frames at 10 a second go three to a picture.
+    for shown in labels("check_clip_sides"):
+        assert len(shown) == 35
+        assert shown[1].endswith("Frames at 0 s, 0.1 s, 0.2 s, left to right")
+        assert shown[-1] == "Frame at 9.9 s"
 
 
 def test_a_clip_judged_again_after_the_worker_stopped_pays_for_no_answer_twice(

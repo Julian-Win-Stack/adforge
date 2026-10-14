@@ -190,7 +190,16 @@ FIX_MADE: dict[str, Any] = {
 
 # The B-roll clip judge's answers, when SIDES and MOTION find nothing wrong.
 CLIP_SIDES_OK: dict[str, Any] = {
-    "frames": [{"time": 0.0, "objects": [PICTURE_OK["objects"][0] | {"name": "mug"}]}],
+    "frames": [
+        {
+            "time": 0.0,
+            "seen": "broad_face",
+            "face": "front",
+            "parts": "handle on the right, rim at the top",
+            "thin_edge_side": "none",
+        }
+    ],
+    "turns": [],
     "across_frames": "The mug keeps its front to the camera.",
     "verdict": "pass",
     "problem": None,
