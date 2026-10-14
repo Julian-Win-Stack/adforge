@@ -92,12 +92,19 @@ def test_a_scene_case_carries_the_start_picture_its_clip_started_from(tmp_path: 
 REFUSED = "gpt-6-luna's turn for rule_eval can't be used: it refused: I'm sorry, I cannot assist"
 
 
-def test_a_judge_that_refuses_is_asked_once_more(fake_model: FakeModel, tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "trouble",
+    [
+        pytest.param(UnusableReply(REFUSED, input_tokens=900, output_tokens=10), id="a refusal"),
+        pytest.param(OutsideServiceDown("Azure timed out"), id="the provider down"),
+    ],
+)
+def test_a_judge_that_refuses_or_cant_be_reached_is_asked_once_more(
+    fake_model: FakeModel, tmp_path: Path, trouble: Exception
+) -> None:
     (case,) = load_cases(cases_file(tmp_path, [("A14", "pass")]))
     fake_model.respond(
-        "rule_eval",
-        UnusableReply(REFUSED, input_tokens=900, output_tokens=10),
-        {"decision": "pass", "reason": "The camera stays still."},
+        "rule_eval", trouble, {"decision": "pass", "reason": "The camera stays still."}
     )
 
     assert ask_model(case).output.decision == "pass"
@@ -186,19 +193,6 @@ def test_a_judge_that_never_answers_has_no_answer(fake_model: FakeModel, tmp_pat
     with pytest.raises(UnusableReply):
         ask_majority(case)
     assert ask_or_count_as(case, "gpt-5-mini", "fail").output.decision == "fail"
-
-
-def test_a_judge_is_asked_again_while_the_provider_is_down(
-    fake_model: FakeModel, tmp_path: Path
-) -> None:
-    (case,) = load_cases(cases_file(tmp_path, [("A14", "pass")]))
-    fake_model.respond(
-        "rule_eval",
-        OutsideServiceDown("Azure timed out"),
-        {"decision": "pass", "reason": "The camera stays still."},
-    )
-
-    assert ask_model(case).output.decision == "pass"
 
 
 def test_a_judge_whose_provider_stays_down_counts_as_no_answer(

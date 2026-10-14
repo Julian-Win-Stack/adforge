@@ -116,28 +116,6 @@ def test_a_tool_that_fails_hands_the_reason_back_to_the_producer(
     assert not Job.objects.get().scenes.exists()
 
 
-def test_an_unexpected_error_in_a_tool_is_logged_and_handed_back_without_its_details(
-    caplog: pytest.LogCaptureFixture,
-    fake_model: FakeModel,
-    page_read: str,
-    say: Callable[..., None],
-) -> None:
-    fake_model.respond(
-        "produce", turn(calls=[("plan_ad", {})]), turn(says="Something went wrong on my side.")
-    )
-    fake_model.respond("plan_ad", KeyError("scenes_by_number"))
-
-    with caplog.at_level(logging.ERROR):
-        say("Plan it")
-
-    (result,) = results_of("plan_ad")
-    assert result == (
-        "Failed: an unexpected error stopped the tool. The details are in the server log."
-    )
-    assert "scenes_by_number" in caplog.text
-    assert ToolCall.objects.get(tool="plan_ad").finished
-
-
 @pytest.mark.parametrize(
     ("call", "told"),
     [
@@ -236,12 +214,13 @@ def test_a_tool_call_whose_arguments_cant_be_read_stops_the_producer_and_the_cha
 
 
 @pytest.mark.parametrize(
-    ("failure", "told"),
+    ("failure", "told", "logged"),
     [
         pytest.param(
             [UnusableReply("the reply was cut off", input_tokens=900, output_tokens=40)],
             "I had to stop: my AI model's answer couldn't be used (the reply was cut off). "
             "Send a message to try again.",
+            [],
             id="unusable answer",
         ),
         pytest.param(
@@ -249,29 +228,40 @@ def test_a_tool_call_whose_arguments_cant_be_read_stops_the_producer_and_the_cha
             "I had to stop: the AI service stayed down after several tries (The model "
             "provider was still down after 3 tries: 503 Service Unavailable). Send a message "
             "to try again.",
+            [],
             id="service down",
         ),
         pytest.param(
             [RuntimeError("the database password is hunter2")],
             "I had to stop: an unexpected error happened, and the details are in the server "
             "log. Send a message to try again.",
+            # The details the chat isn't told are in the server log.
+            [("The producer stopped in session {session_id}", "the database password is hunter2")],
             id="unexpected error",
         ),
     ],
 )
 def test_when_the_producers_own_model_fails_the_chat_is_told_why(
     api: APIClient,
+    caplog: pytest.LogCaptureFixture,
     fake_model: FakeModel,
     session_id: str,
     say: Callable[..., None],
     failure: list[BaseException],
     told: str,
+    logged: list[tuple[str, str]],
 ) -> None:
     fake_model.respond("produce", *failure)
 
-    say("Make me an ad")
+    with caplog.at_level(logging.ERROR):
+        say("Make me an ad")
 
     assert chat(api, session_id) == [("user", "Make me an ad"), ("agent", told)]
+    # What was logged as an error, each with the error it carries.
+    assert [
+        (record.getMessage(), str(record.exc_info[1]) if record.exc_info else "")
+        for record in caplog.records
+    ] == [(message.format(session_id=session_id), error) for message, error in logged]
 
     # Sending a message tries again.
     fake_model.respond("produce", turn(says="Sure. What's the link to your product's page?"))
@@ -300,17 +290,6 @@ def test_a_picture_the_safety_filter_blocks_stops_the_run_and_asks_for_another_p
         "session with a different product.",
     )
     assert ToolCall.objects.get(tool="plan_ad").finished
-
-
-def test_an_unexpected_error_in_the_producer_is_logged(
-    caplog: pytest.LogCaptureFixture, fake_model: FakeModel, say: Callable[..., None]
-) -> None:
-    fake_model.respond("produce", RuntimeError("the database password is hunter2"))
-
-    with caplog.at_level(logging.ERROR):
-        say("Make me an ad")
-
-    assert "hunter2" in caplog.text
 
 
 # --- The limit on tool calls for each message -----------------------------------------------
@@ -436,37 +415,8 @@ def what_happened(given: list[dict[str, Any]]) -> list[tuple[str, str, str]]:
     ]
 
 
-def test_a_message_sent_while_the_producer_works_is_read_on_its_next_turn(
-    fake_model: FakeModel, product_page_url: str, session_id: str, say: Callable[..., None]
-) -> None:
-    def the_user_sends_another_message() -> None:
-        # What the chat does with a message the moment it arrives: stores it.
-        messages.add(
-            Session.objects.get(pk=session_id),
-            role=Message.Role.USER,
-            text="Make it 10 seconds, please.",
-        )
-
-    fake_model.respond(
-        "produce",
-        meanwhile(
-            the_user_sends_another_message,
-            turn(calls=[("read_page", {"link": product_page_url, "target_seconds": None})]),
-        ),
-        turn(says="Got it: a 10 second ad."),
-    )
-    fake_model.respond("check_page", READABLE)
-
-    say(f"Make an ad for {product_page_url}")
-
-    read_page = ToolCall.objects.get(tool="read_page")
-    assert what_happened(given_to_the_producer(2)) == [
-        ("said", "user", f"Make an ad for {product_page_url}"),
-        ("said", "user", "Make it 10 seconds, please."),
-        ("tool_use", "read_page", read_page.call_id),
-    ]
-
-
+# A message the user sends while the producer works is read on its next turn:
+# test_producer_messages.py::test_an_interrupt_is_taken_and_read_by_the_producer_already_working.
 def test_the_producer_is_never_given_a_directors_tool_calls(
     fake_model: FakeModel, product_page_url: str, session_id: str, say: Callable[..., None]
 ) -> None:
@@ -1142,97 +1092,62 @@ def test_a_line_choice_that_cant_be_used_is_refused(
     assert paid_for().count("fact_check") == 3
 
 
+SUGGESTED = "Yours for $24.00, made by hand."
+
+
 @pytest.mark.parametrize(
-    ("wrote", "passed"),
+    ("user_says", "producer_says", "passed"),
     [
         pytest.param(
-            "yours for just $24.00, today.", "Yours for just $24.00, today.", id="capitals"
+            "Use this: yours for just $24.00, today.",
+            "",
+            "Yours for just $24.00, today.",
+            id="the user's line, with capitals",
         ),
-        pytest.param('Yours for "just" $24.00.', "Yours for “just” $24.00.", id="quote marks"),
+        pytest.param(
+            'Use this: Yours for "just" $24.00.',
+            "",
+            "Yours for “just” $24.00.",
+            id="the user's line, with other quote marks",
+        ),
+        pytest.param(
+            # The producer writes a line itself, after the question, then passes it as the
+            # user's.
+            "Write me a better one",
+            f"How about: {SUGGESTED}",
+            SUGGESTED,
+            id="a line only the producer wrote",
+        ),
+        pytest.param("Use my own line: Yours for $24.00.", "", "  ", id="a blank line"),
+        pytest.param(
+            # The user's message before the checks asked, not their reply.
+            "Keep the line as it is.",
+            "",
+            "Plan it and check it",
+            id="a line the user wrote before the question",
+        ),
     ],
 )
-def test_a_line_that_differs_from_the_users_by_more_than_spacing_is_refused(
+def test_a_line_the_user_didnt_write_in_their_reply_is_refused(
     fake_model: FakeModel,
     asked_about_scene_2: None,
     say: Callable[..., None],
-    wrote: str,
+    user_says: str,
+    producer_says: str,
     passed: str,
 ) -> None:
     fake_model.respond(
         "produce",
-        turn(calls=[("run_planning_checks", choosing(own(2, passed)))]),
+        turn(says=producer_says, calls=[("run_planning_checks", choosing(own(2, passed)))]),
         turn(says="Could you send your line again?"),
     )
 
-    say(f"Use this: {wrote}")
+    say(user_says)
 
     assert results_of("run_planning_checks")[1] == (
         f'Refused: the shop owner never wrote "{passed}" in their reply to the question. A '
         "line they give is used exactly as they wrote it, so pass it word for word, or ask "
         "them. Nothing was done."
-    )
-    assert lines() == ["Meet the mug.", "Just $19.99."]
-
-
-def test_a_line_only_the_producer_wrote_is_refused(
-    fake_model: FakeModel, asked_about_scene_2: None, say: Callable[..., None]
-) -> None:
-    suggested = "Yours for $24.00, made by hand."
-    fake_model.respond(
-        "produce",
-        # The producer writes a line itself, after the question, then passes it as the user's.
-        turn(
-            says=f"How about: {suggested}",
-            calls=[("run_planning_checks", choosing(own(2, suggested)))],
-        ),
-        turn(says="Would you like that line?"),
-    )
-
-    say("Write me a better one")
-
-    assert results_of("run_planning_checks")[1] == (
-        f'Refused: the shop owner never wrote "{suggested}" in their reply to the question. A '
-        "line they give is used exactly as they wrote it, so pass it word for word, or ask "
-        "them. Nothing was done."
-    )
-    assert lines() == ["Meet the mug.", "Just $19.99."]
-
-
-def test_a_blank_line_is_refused_as_one_the_user_never_wrote(
-    fake_model: FakeModel, asked_about_scene_2: None, say: Callable[..., None]
-) -> None:
-    fake_model.respond(
-        "produce",
-        turn(calls=[("run_planning_checks", choosing(own(2, "  ")))]),
-        turn(says="Which line would you like?"),
-    )
-
-    say("Use my own line: Yours for $24.00.")
-
-    assert results_of("run_planning_checks")[1] == (
-        'Refused: the shop owner never wrote "  " in their reply to the question. A line they '
-        "give is used exactly as they wrote it, so pass it word for word, or ask them. Nothing "
-        "was done."
-    )
-    assert lines() == ["Meet the mug.", "Just $19.99."]
-
-
-def test_a_line_the_user_wrote_before_the_question_is_refused(
-    fake_model: FakeModel, asked_about_scene_2: None, say: Callable[..., None]
-) -> None:
-    fake_model.respond(
-        "produce",
-        # The user's message before the checks asked, not their reply.
-        turn(calls=[("run_planning_checks", choosing(own(2, "Plan it and check it")))]),
-        turn(says="Sorry, I'll keep it."),
-    )
-
-    say("Keep the line as it is.")
-
-    assert results_of("run_planning_checks")[1] == (
-        'Refused: the shop owner never wrote "Plan it and check it" in their reply to the '
-        "question. A line they give is used exactly as they wrote it, so pass it word for "
-        "word, or ask them. Nothing was done."
     )
     assert lines() == ["Meet the mug.", "Just $19.99."]
 
@@ -1406,28 +1321,8 @@ def stopped_mid_tool(session_id: str, product_page_url: str) -> ToolCall:
     )
 
 
-def test_a_tool_a_stopped_worker_left_unfinished_is_run_when_the_loop_starts_again(
-    fake_model: FakeModel, stopped_mid_tool: ToolCall, product_page_url: str, session_id: str
-) -> None:
-    fake_model.respond("produce", turn(says="Your mug's page has what the ad needs."))
-    fake_model.respond("check_page", READABLE)
-
-    loop.run(PRODUCER, Session.objects.get(pk=session_id))
-
-    stopped_mid_tool.refresh_from_db()
-    assert stopped_mid_tool.result.endswith(
-        "The page names the mug, its price and its size.\nKept 2 product photos."
-    )
-    assert stopped_mid_tool.finished
-    assert (
-        Job.objects.filter(
-            session_id=session_id, product_url=product_page_url, target_seconds=15
-        ).count()
-        == 1
-    )
-    assert Job.objects.get(session_id=session_id).photos.count() == 2
-
-
+# That the tool is run first, once, and its result kept: test_producer_restarts.py
+# ::test_a_page_the_worker_stopped_keeping_the_photos_of_is_read_again_without_paying_twice.
 def test_the_producer_is_given_the_result_of_the_tool_the_stopped_worker_left(
     fake_model: FakeModel, stopped_mid_tool: ToolCall, product_page_url: str, session_id: str
 ) -> None:

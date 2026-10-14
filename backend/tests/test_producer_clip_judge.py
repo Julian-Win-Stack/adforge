@@ -1,9 +1,11 @@
 """A B-roll scene's clip is judged right after it is made, driven through the chat (#109): SIDES
-looks at 5 stills for objects that can't exist, MOTION at 5 frames a second for movement no
-real camera could film, each asked 3 times and failing on 2. The judge's ruling is kept on the
-clip, every answer with it, for the auto-redo to act on; its cost is the clip step's. Talking
-clips aren't judged. The producer's model, the scene models and the judge are faked at the
-gateway (the plan: Claude Doc "Clip judge discussion", Julian 2026-10-13)."""
+looks at 10 frames a second, joined two to a picture, for objects that can't exist and a turn
+that shows a side that isn't real; MOTION at 5 frames a second for movement no real camera
+could film; each asked 3 times and failing on 2. The judge's ruling is kept on the clip, every
+answer with it, for the auto-redo to act on; its cost is the clip step's. Talking clips aren't
+judged. The producer's model, the scene models and the judge are faked at the gateway (the
+plan: Claude Doc "Clip judge discussion", Julian 2026-10-13; the phone-flip SIDES check,
+Julian 2026-10-14)."""
 
 import json
 from collections.abc import Callable
@@ -113,15 +115,16 @@ def test_a_broll_clip_is_judged_three_times_by_each_check(judged: ProducedItem) 
     assert ruling(judged)["failed_answers"] == 0
 
 
-def test_sides_sees_the_shop_photo_then_5_stills_from_the_first_frame_to_the_last(
+def test_sides_sees_the_shop_photo_then_ten_frames_a_second_two_to_a_picture(
     judged: ProducedItem,
 ) -> None:
+    # A 5-second clip has 50 frames at 10 a second: with the shop photo, more than the 50
+    # pictures a model takes in one ask, so they are joined in pairs (the F1 harness run).
     for shown in labels("check_clip_sides"):
         assert shown[0] == "The shop photo of the product:"
-        assert shown[1] == "Frames from the clip, in order:\nFrame at 0 s"
-        assert len(shown) == 6
-        # The last still is from the clip's end: a 5-second clip's.
-        assert shown[-1].startswith("Frame at 4.9")
+        assert shown[1] == "Frames from the clip, in order:\nFrames at 0 s, 0.1 s, left to right"
+        assert len(shown) == 26
+        assert shown[-1] == "Frames at 4.8 s, 4.9 s, left to right"
 
 
 def test_motion_sees_the_shop_photo_then_a_frame_every_fifth_of_a_second(
@@ -207,16 +210,8 @@ def test_the_judges_cost_is_the_clip_steps(judged: ProducedItem) -> None:
     assert f"It cost {dollars(step.tool_call.cost_usd())}." in step.result
 
 
-def test_a_talking_clip_isnt_judged(
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],  # noqa: F811
-) -> None:
-    clip = clip_of(fake_model, steps, say, 1)
-
-    assert not ModelCall.objects.filter(purpose__startswith="check_clip_").exists()
-    assert clip.ruling is None
+# That a talking clip isn't judged, and so carries no ruling, is proved in
+# test_producer_auto_fix.py::test_a_talking_scene_is_left_as_it_is.
 
 
 def test_no_clip_is_judged_with_quality_checks_switched_off(
@@ -273,22 +268,68 @@ def test_a_first_clip_the_judge_couldnt_check_is_kept_and_the_producer_told_so(
     )
 
 
-def test_a_long_clips_frames_are_shown_two_to_a_picture_to_fit_one_ask(
+@pytest.mark.parametrize(
+    (
+        "words_per_second",
+        "pictures",
+        "first",
+        "last",
+        "sides_pictures",
+        "sides_first",
+        "sides_last",
+    ),
+    [
+        # A 10-second clip has 50 frames at 5 a second: with the shop photo, more than the 50
+        # pictures a model takes in one ask, so they are shown two to a picture. SIDES' 100
+        # frames at 10 a second go three to a picture.
+        (
+            0.8,
+            26,
+            "Frames at 0 s, 0.2 s, left to right",
+            "Frames at 9.6 s, 9.8 s, left to right",
+            35,
+            "Frames at 0 s, 0.1 s, 0.2 s, left to right",
+            "Frame at 9.9 s",
+        ),
+        # 45 frames and the shop photo fit in one ask, as in the tested setup: each on its own.
+        # SIDES' 90 don't, so they go two to a picture.
+        (
+            0.95,
+            46,
+            "Frame at 0 s",
+            "Frame at 8.8 s",
+            46,
+            "Frames at 0 s, 0.1 s, left to right",
+            "Frames at 8.8 s, 8.9 s, left to right",
+        ),
+    ],
+    ids=["a 10-second clip, two to a picture", "a 9-second clip, one each"],
+)
+def test_a_clips_frames_are_shown_two_to_a_picture_only_when_they_dont_fit_one_ask(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],  # noqa: F811
+    words_per_second: float,
+    pictures: int,
+    first: str,
+    last: str,
+    sides_pictures: int,
+    sides_first: str,
+    sides_last: str,
 ) -> None:
-    # A 10-second clip has 50 frames at 5 a second: with the shop photo, more than the 50
-    # pictures a model takes in one ask.
-    fake_model.words_per_second = 0.8
+    fake_model.words_per_second = words_per_second
 
     clip_of(fake_model, steps, say, 2)
 
     for shown in labels("check_clip_motion"):
-        assert len(shown) == 26
-        assert shown[1].endswith("Frames at 0 s, 0.2 s, left to right")
-        assert shown[-1] == "Frames at 9.6 s, 9.8 s, left to right"
+        assert len(shown) == pictures
+        assert shown[1].endswith(first)
+        assert shown[-1] == last
+    for shown in labels("check_clip_sides"):
+        assert len(shown) == sides_pictures
+        assert shown[1].endswith(sides_first)
+        assert shown[-1] == sides_last
 
 
 def test_a_clip_judged_again_after_the_worker_stopped_pays_for_no_answer_twice(
@@ -312,6 +353,37 @@ def test_a_clip_judged_again_after_the_worker_stopped_pays_for_no_answer_twice(
     assert paid_for().count("check_clip_motion") == 3
     clip = ProducedItem.objects.get(kind="clip", scene__number=2)
     assert ruling(clip)["verdict"] == "pass"
+
+
+def test_a_clip_whose_pictures_were_cut_for_an_earlier_judge_is_cut_again(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    # A clip mid-judging when SIDES went to 10 frames a second kept pictures cut for the old
+    # judge, 5 stills: nothing in them for SIDES to look at, so the clip is cut again.
+    made_ready(fake_model, steps, say, (2,))
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    fake_model.respond("check_clip_sides", *[WorkerStopped()] * ASKS)
+    fake_model.respond("check_clip_motion", *[WorkerStopped()] * ASKS)
+    with pytest.raises(WorkerStopped):
+        steps.run_next()
+    clip = ProducedItem.objects.get(kind="clip", scene__number=2)
+    frames = ruling(clip)["pictures"]["frames"]
+    clip.ruling = {"pictures": {"stills": frames[::5], "frames": frames}}
+    clip.save(update_fields=["ruling"])
+
+    # The step is handed out again, as after a restart.
+    fake_model.respond("produce", turn(says="Done."))
+    tasks.run_scene_step(SceneStep.objects.get(kind="clip", scene__number=2).pk)
+
+    clip.refresh_from_db()
+    assert ruling(clip)["verdict"] == "pass"
+    assert ruling(clip)["pictures"].keys() == {"sides", "frames"}
+    for shown in labels("check_clip_sides"):
+        assert shown[1] == "Frames from the clip, in order:\nFrames at 0 s, 0.1 s, left to right"
+        assert len(shown) == 26
 
 
 def test_an_ask_failing_for_a_reason_nobody_expected_goes_unchecked_and_the_rest_still_count(
@@ -352,22 +424,6 @@ def test_a_clip_that_cant_be_judged_at_all_is_kept_as_not_checked_with_a_whole_r
         ("sides", "real_motion", "sudden_change", "does_what_was_ordered"), "not_checked"
     )
     assert SceneStep.objects.get(kind="clip", scene__number=2).status == "finished"
-
-
-def test_a_9_second_clips_frames_are_each_shown_on_their_own(
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-) -> None:
-    # 45 frames and the shop photo fit in one ask, as in the tested setup.
-    fake_model.words_per_second = 0.95
-
-    clip_of(fake_model, steps, say, 2)
-
-    for shown in labels("check_clip_motion"):
-        assert len(shown) == 46
-        assert shown[-1] == "Frame at 8.8 s"
 
 
 def test_both_checks_are_told_the_products_colour_and_size_and_the_conversation(
@@ -497,8 +553,9 @@ def test_at_most_5_needs_photos_are_shown_one_per_photo_and_the_frames_fit_besid
         ]
         assert "part 8" not in json.dumps(call.images)
         assert call.images[6]["label"].startswith("Frames from the clip, in order:")
+    # SIDES' 90 frames at 10 a second go three to a picture beside the 6 photos.
     for shown in labels("check_clip_sides"):
-        assert len(shown) == 6 + 5
+        assert len(shown) == 6 + 30
     for shown in labels("check_clip_motion"):
         assert len(shown) == 6 + 23
         assert shown[6].endswith("Frames at 0 s, 0.2 s, left to right")

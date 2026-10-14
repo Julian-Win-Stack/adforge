@@ -449,6 +449,12 @@ def test_a_slow_clip_is_told_of_once_counted_from_the_first_look_even_if_the_ser
     ]
 
 
+# How long a slow purpose is given to answer below, and how long the stand-in server takes
+# over it: longer, by enough that the client gives up first however loaded the machine is.
+SLOW_ANSWER_SECONDS = 0.3
+STALLED_SECONDS = 0.6
+
+
 def _answers_after(httpserver: HTTPServer, seconds: float) -> None:
     """The stand-in OpenAI server answers its next request only after `seconds`."""
 
@@ -467,8 +473,8 @@ def test_a_slow_purpose_that_takes_too_long_is_given_up_on_and_not_asked_again(
 ) -> None:
     # Such as the clip judge: asked again, a stalled ask would hold the clip step for each try.
     settings.RETRY_DELAYS_SECONDS = [0, 0]
-    monkeypatch.setattr(catalog, "SLOW_ANSWER_SECONDS", {"check_page": 0.3})
-    _answers_after(httpserver, 1)
+    monkeypatch.setattr(catalog, "SLOW_ANSWER_SECONDS", {"check_page": SLOW_ANSWER_SECONDS})
+    _answers_after(httpserver, STALLED_SECONDS)
 
     with pytest.raises(AnswerTookTooLong):
         _check_page([])
@@ -479,8 +485,8 @@ def test_a_slow_purpose_that_takes_too_long_is_given_up_on_and_not_asked_again(
 def test_only_the_purposes_named_slow_get_their_own_time_to_answer(
     httpserver: HTTPServer, openai_server: Callable[..., None], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(catalog, "SLOW_ANSWER_SECONDS", {"check_clip_sides": 0.3})
-    _answers_after(httpserver, 1)
+    monkeypatch.setattr(catalog, "SLOW_ANSWER_SECONDS", {"check_clip_sides": SLOW_ANSWER_SECONDS})
+    _answers_after(httpserver, STALLED_SECONDS)
 
     _check_page([])
 

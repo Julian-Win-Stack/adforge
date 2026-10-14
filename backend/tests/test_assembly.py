@@ -14,6 +14,8 @@ from jobs import assembly
 
 from .conftest import colour_at, loudness
 
+pytestmark = pytest.mark.real_ffmpeg
+
 # The fake's pitches: a test hears the voice and the music apart by them.
 VOICE_HERTZ = FakeModel.VOICE_HERTZ
 MUSIC_HERTZ = FakeModel.MUSIC_HERTZ
@@ -81,10 +83,11 @@ def a_cut(
     *,
     picture: tuple[float, float, float, float],
     voice: tuple[float, float, float, float] | None = None,
+    overlay: str = "",
 ) -> assembly.Cut:
     """Scene `scene`'s cut: the part of its clip's `picture` kept and where it plays in the
     ad, and the same for its `voice`, as (from, to in the clip, start, end in the ad): the
-    picture's own, unless the voice is given."""
+    picture's own, unless the voice is given. Its `overlay`, blank for none."""
     clip_start, clip_end, start, end = picture
     voice_clip_start, voice_clip_end, voice_start, voice_end = voice or picture
     return assembly.Cut(
@@ -94,7 +97,7 @@ def a_cut(
         clip_end=clip_end,
         start=start,
         end=end,
-        overlay="",
+        overlay=overlay,
         voice_clip_start=voice_clip_start,
         voice_clip_end=voice_clip_end,
         voice_start=voice_start,
@@ -282,11 +285,52 @@ def test_captions_are_timed_from_where_each_scene_plays_in_the_ad() -> None:
     ]
 
 
+def text_drawn(ass: Path) -> list[str]:
+    """Each piece of text the ASS file at `ass` has ffmpeg draw, with its times and style,
+    as the format lists them."""
+    return [
+        line
+        for line in ass.read_text(encoding="utf-8").splitlines()
+        if line.startswith("Dialogue:")
+    ]
+
+
+def test_an_overlay_is_drawn_while_its_picture_plays_or_while_its_line_is_said_when_none_does(
+    tmp_path: Path,
+) -> None:
+    parts = [
+        # A B-roll picture plays whole, past its line: its overlay stays to its end.
+        a_cut(1, picture=(0.0, 5.0, 0.0, 5.0), voice=(0.0, 3.0, 0.0, 3.0), overlay="$24.00"),
+        # A talking scene said entirely over it shows none of its picture: its overlay is
+        # drawn while its line is said instead, so the price is still seen.
+        a_cut(2, picture=(1.0, 1.0, 5.0, 5.0), voice=(0.0, 1.0, 3.0, 4.0), overlay="Kiln & Co."),
+        # A scene with no overlay draws nothing.
+        a_cut(3, picture=(1.0, 3.0, 5.0, 7.0), voice=(0.0, 3.0, 4.0, 7.0)),
+    ]
+    into = tmp_path / "text.ass"
+
+    assembly.write_text_to_draw([assembly.Caption(text="Look", start=0.0, end=3.0)], parts, into)
+
+    assert text_drawn(into) == [
+        "Dialogue: 0,0:00:00.00,0:00:03.00,Caption,,0,0,0,,Look",
+        "Dialogue: 0,0:00:00.00,0:00:05.00,Overlay,,0,0,0,,$24.00",
+        "Dialogue: 0,0:00:03.00,0:00:04.00,Overlay,,0,0,0,,Kiln & Co.",
+    ]
+
+
 @pytest.mark.parametrize(
     ("seconds", "written"), [(0.0, "0:00:00.00"), (59.996, "0:01:00.00"), (3661.5, "1:01:01.50")]
 )
-def test_a_time_is_written_as_the_subtitle_format_reads_it(seconds: float, written: str) -> None:
-    assert assembly._timestamp(seconds) == written
+def test_a_time_is_written_as_the_subtitle_format_reads_it(
+    tmp_path: Path, seconds: float, written: str
+) -> None:
+    # Counted in whole centiseconds, so 59.996 never rounds up to 60 seconds.
+    into = tmp_path / "text.ass"
+
+    assembly.write_text_to_draw([assembly.Caption(text="Look", start=0.0, end=seconds)], [], into)
+
+    (caption,) = text_drawn(into)
+    assert caption.split(",")[2] == written
 
 
 def a_scene(
