@@ -170,6 +170,7 @@ def test_a_brought_back_picture_whose_clip_was_never_made_gets_a_new_clip_for_it
     back_to(fake_model, say, HIGHER)
     assert paid_for() == paid
     assert picture(2).file == version("starting_picture", 2).file
+    assert status(2) == "planned"
     clip_of_scene_2(fake_model, steps, say)
 
     assert paid_for().count("make_broll_clip") == paid.count("make_broll_clip") + 1
@@ -262,7 +263,68 @@ def test_a_worker_stopping_as_a_picture_is_brought_back_leaves_one_new_version(
 
     assert versions("starting_picture") == [1, 2, 3, 4]
     assert paid_for() == paid
-    assert results_of("make_starting_picture")[-1].startswith(
+    said = results_of("make_starting_picture")[-1]
+    assert said.startswith(
         "Scene 2's starting picture was already made for this line with this note (version 4)"
     )
+    # Still told the scene waits for its clip, as the first run would have said.
+    assert said.endswith("Scene 2 is no longer finished: make its clip from this picture.")
     assert status(2) == "planned"
+
+
+def test_no_picture_is_brought_back_while_a_newer_one_is_being_made(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], higher_then_slower: None
+) -> None:
+    # The newer picture would land on top of it, so the ad wouldn't use what the owner was told.
+    said_yes_to_a_fix(2, "Make it brighter.", "picture")
+    calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": "Make it brighter."}))
+    assert len(steps.held) == 1
+
+    said = back_to(fake_model, say, HIGHER)
+
+    assert said == (
+        "Refused: scene 2's starting picture is already being made. You'll be told when it's "
+        "ready. Nothing was done."
+    )
+    assert versions("starting_picture") == [1, 2, 3]
+
+
+def test_a_clip_isnt_paid_for_under_a_same_worded_fix_the_owner_hasnt_said_yes_to(
+    fake_model: FakeModel,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    assembled: ProducedItem,  # noqa: F811
+) -> None:
+    new_picture(fake_model, steps, say, 2, HIGHER)
+    restated = said_yes_to_a_fix(2, HIGHER, "picture")
+    restated.confirmed_by = None
+    restated.save(update_fields=["confirmed_by"])
+    paid = paid_for()
+
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+
+    assert results_of("make_clip")[-1].startswith(
+        "Refused: scene 2 already has a clip, so changing it is a fix."
+    )
+    assert steps.held == []
+    assert paid_for() == paid
+
+
+def test_a_clip_with_no_note_isnt_made_under_a_same_worded_clip_fix(
+    fake_model: FakeModel,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    assembled: ProducedItem,  # noqa: F811
+) -> None:
+    # A clip fix is made with the fix as the clip's note, not as a picture's.
+    new_picture(fake_model, steps, say, 2, HIGHER)
+    said_yes_to_a_fix(2, HIGHER, "clip")
+    paid = paid_for()
+
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+
+    assert results_of("make_clip")[-1].startswith(
+        "Refused: scene 2 already has a clip, so changing it is a fix."
+    )
+    assert steps.held == []
+    assert paid_for() == paid
