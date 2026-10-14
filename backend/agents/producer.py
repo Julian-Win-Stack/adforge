@@ -813,7 +813,11 @@ class MakeClip(Tool):
             )
         # A clip of a picture made for a fix is part of that fix: the shop owner's yes to it
         # covered the clip too, so it needs no note of its own.
-        if not note and picture_step.fix_id is not None and picture_step.fix == scene.fixes.last():
+        if (
+            not note
+            and picture_step.fix_id is not None
+            and picture_step.fix in (scene.fixes.last(), _line_fix(scene))
+        ):
             fix = picture_step.fix
             _answered_a_failed_check(call, picture_step)
         picture = picture_step.produced.first()
@@ -1041,9 +1045,18 @@ def _line_fix(scene: Scene) -> Fix | None:
     """The scene's fix for a new line, once the shop owner has said yes to it and the line is
     changed: the scene is made again for it with no note, so each step is part of the fix and
     paid for under it. Once its clip has landed, each is already made and handed back free. A
-    fix is confirmed only as change_line changes the line, so a confirmed one has changed it."""
-    fix = scene.fixes.last()
-    if fix is None or fix.redo != Fix.Redo.LINE or fix.confirmed_by_id is None:
+    fix is confirmed only as change_line changes the line, so a confirmed one has changed it.
+
+    A newer fix restated on the scene since doesn't drop the line the shop owner said yes to
+    (Julian, 2026-10-14 21:50: they never end up with, or without, something they didn't
+    confirm): once they have answered it, the scene is made for the line they confirmed, and
+    the newer fix, if they said yes, is made on that line with its note. Until they answer,
+    nothing is made, so nothing is paid for that a yes would have made again."""
+    fix = scene.fixes.filter(confirmed_by__isnull=False).last()
+    if fix is None or fix.redo != Fix.Redo.LINE:
+        return None
+    newer = scene.fixes.last()
+    if newer is not None and newer.pk != fix.pk and not _owner_answered(newer):
         return None
     return fix
 

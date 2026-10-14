@@ -2240,10 +2240,14 @@ def _clip_tries(step: SceneStep) -> list[ProducedItem]:
 def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
     """What the auto-fix did before `clip` was kept as a B-roll clip step's clip, as a sentence
     to follow another, for the producer to tell the shop owner: nothing when the judge passed
-    its first clip or didn't judge it."""
+    its first clip or didn't judge it. A first clip the judge couldn't check is kept as it is,
+    and the shop owner is told (Julian, 2026-10-14: "treat that as pass")."""
     tries = _clip_tries(step)
     first = tries[0]
-    if (first.ruling or {}).get("verdict") != "fail":
+    verdict = (first.ruling or {}).get("verdict")
+    if verdict == "not_checked":
+        return " The clip judge couldn't check this clip, so it is kept unchecked."
+    if verdict != "fail":
         return ""
     kept = next(made for made in tries if made.file == clip.file)
     remade = len(tries) - 1
