@@ -217,9 +217,44 @@ def test_the_producer_is_never_told_a_fault_the_judge_outvoted(
 
     assert f'failed the first clip it made ("{FLOATS}")' in step.result
     assert SPINS not in step.result
-    # The writer is still handed every failed answer.
+    # Nor is the writer: the first ask's answer is handed over without the question it was
+    # outvoted on (Julian's yes, 2026-10-13 19:42).
     (handoff,) = handoffs("remake_clip_prompt")
-    assert handoff["faults"] == [FLOATS, SPINS]
+    assert handoff["faults"] == [FLOATS]
+    outvoted_left_out = {
+        key: said for key, said in failing(FLOATS).items() if key != "sudden_change"
+    }
+    # The judge's asks run at once, so which ask saw what isn't in a fixed order.
+    assert sorted(handoff["judge_saw"], key=len) == [outvoted_left_out, failing(FLOATS)]
+    assert SPINS not in str(handoff)
+
+
+def test_the_second_remake_is_never_handed_a_fault_the_judge_outvoted_on_the_first(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    # The first clip fails on the teapot floating. Its remake fails on the mug spinning, seen
+    # by two asks of three, while only the third sees the teapot float: that one is outvoted.
+    fake_model.respond(
+        "check_clip_motion",
+        *[failing(FLOATS)] * 2,
+        CLIP_MOTION_OK,
+        *[failing(SPINS, "sudden_change")] * 2,
+        failing(FLOATS),
+        *[CLIP_MOTION_OK] * 3,
+    )
+    fake_model.respond("remake_clip_prompt", rewrite(REMADE), rewrite(REMADE_AGAIN))
+
+    clip_of_scene_2(fake_model, steps, say)
+
+    _, second = handoffs("remake_clip_prompt")
+    assert second["earlier_try"] == {
+        "motion_prompt": REMADE,
+        "faults": [SPINS],
+        "judge_saw": [failing(SPINS, "sudden_change")],
+    }
 
 
 # --- Fail, then 2 remakes the judge fails too ----------------------------------------------
