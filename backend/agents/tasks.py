@@ -33,7 +33,7 @@ from jobs.work import (
 from . import loop, step_signals
 from .loop import BLOCKED, EXPECTED_FAILURES, RunStopped, why_it_failed
 from .money import dollars
-from .producer import PRODUCER, assemble_after_fix, assembles_after
+from .producer import PRODUCER, STEP_NAMES, assemble_after_fix, assembles_after
 
 logger = logging.getLogger(__name__)
 
@@ -281,10 +281,9 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
 
 @dataclass(frozen=True)
 class StepWork:
-    """What one kind of scene step does: its name in what the producer is told, the work
-    itself, what the producer is told when it finishes, and what the chat shows then."""
+    """What one kind of scene step does: the work itself, what the producer is told when it
+    finishes, and what the chat shows then."""
 
-    name: str
     # Gives what it made.
     make: Callable[[SceneStep], ProducedItem | None]
     finished: Callable[[SceneStep, ProducedItem | None], str]
@@ -293,7 +292,6 @@ class StepWork:
 
 STEP_WORK = {
     SceneStep.Kind.STARTING_PICTURE: StepWork(
-        name="starting picture",
         make=make_starting_picture,
         finished=_picture_finished,
         shown=lambda step, picture: (
@@ -304,13 +302,11 @@ STEP_WORK = {
     ),
     # The line's audio and its transcript are the producer's to judge, not the shop owner's.
     SceneStep.Kind.LINE_AUDIO: StepWork(
-        name="line's audio",
         make=make_line_audio,
         finished=_audio_finished,
         shown=lambda _step, _audio: [],
     ),
     SceneStep.Kind.TRANSCRIPT: StepWork(
-        name="transcript",
         make=transcribe_line_audio,
         finished=_transcript_finished,
         shown=lambda _step, _transcript: [],
@@ -318,7 +314,6 @@ STEP_WORK = {
     # Each clip is shown with its scene number as it is made, so the shop owner sees each
     # scene on its own before the whole ad is put together from them.
     SceneStep.Kind.CLIP: StepWork(
-        name="clip",
         make=make_clip,
         finished=_clip_finished,
         shown=lambda step, clip: (
@@ -332,7 +327,7 @@ STEP_WORK = {
 
 def _step_name(step: SceneStep) -> str:
     """Such as "scene 1's starting picture"."""
-    return f"scene {step.scene.number}'s {STEP_WORK[SceneStep.Kind(step.kind)].name}"
+    return f"scene {step.scene.number}'s {STEP_NAMES[SceneStep.Kind(step.kind)]}"
 
 
 @shared_task

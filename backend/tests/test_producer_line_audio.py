@@ -273,7 +273,7 @@ def test_audio_isnt_transcribed_before_it_is_made(
 
     assert results_of("transcribe_line_audio") == [
         "Refused: scene 1 has no audio yet. Make the line's audio first. Nothing was done.",
-        "Refused: scene 1's audio is still being made. You'll be told when it's ready; "
+        "Refused: scene 1's line's audio is still being made. You'll be told when it's ready; "
         "transcribe it then. Nothing was done.",
     ]
     assert not SceneStep.objects.filter(kind="transcript").exists()

@@ -316,6 +316,26 @@ def test_a_clip_isnt_made_from_audio_that_hasnt_been_heard(
     ]
 
 
+def test_a_clip_isnt_made_while_the_lines_audio_is_still_being_made(
+    fake_model: FakeModel, pictured: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("make_line_audio", {"scene": 1})]),
+        turn(calls=[("make_clip", {"scene": 1})]),
+        turn(says="I'll make the clip once the audio is ready."),
+    )
+
+    say("Make scene 1's audio and its clip")
+
+    assert results_of("make_clip") == [
+        refused(
+            "scene 1's line's audio is still being made. You'll be told when it's ready; make "
+            "the clip then."
+        )
+    ]
+
+
 def test_a_clip_isnt_made_while_what_it_is_made_from_is_still_being_made(
     fake_model: FakeModel, spoken: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
