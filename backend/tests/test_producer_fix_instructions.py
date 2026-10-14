@@ -46,7 +46,8 @@ PICK_THE_STEP = (
     "When the shop owner writes about such a scene, pick the smallest thing to make again "
     "that fixes it: how a scene that shows the product moves, or what happens in it, is a new "
     "clip; what a scene's picture shows, such as the wrong side, an object that couldn't be "
-    "real or the wrong thing on screen, is a new starting picture, then its clip."
+    "real or the wrong thing on screen, is a new starting picture, then its clip; what a scene "
+    "says is a new line, with the new line in the fix word for word, in quotes."
 )
 ZOOM_IN = '"Zoom in" means a new starting picture, closer: the camera never moves.'
 # One restatement for every note, with the cost, before anything is made (Julian 20:51, 21:51).
@@ -62,9 +63,11 @@ NEVER_THE_STEP = "Never tell them which step is made again."
 CORRECTED = "If they correct you, restate it again."
 NOTHING_BEFORE_THE_YES = "Make nothing until they say yes."
 AFTER_THE_YES = (
-    "When they say yes, pass each scene's fix word for word as the note of its redo, for every "
-    "scene at the same time: make_clip for a new clip, or make_starting_picture for a new "
-    "starting picture, then make_clip with no note once the picture is ready."
+    "When they say yes, make every scene's fix at the same time. For a new clip, pass its fix "
+    "word for word as the note of make_clip; for a new starting picture, as the note of "
+    "make_starting_picture, then make_clip with no note once the picture is ready; for a new "
+    "line, call change_line with the new line exactly as it is in the fix, then make the scene "
+    "again in the usual order, with no note."
 )
 # No stop button in step 1: a note on a scene being made waits for it (Julian 21:44).
 STILL_BEING_MADE = (
@@ -94,9 +97,10 @@ CANT = (
     "from the starting picture; or change what the person does in a scene where they talk, "
     "only how it looks or what they hold, through a new starting picture."
 )
+# A scene's words change through change_line (#138).
 NOT_YET = (
-    "Not yet: changing a scene's words, the music, the text shown over a scene, the voice, the "
-    "person, the number of scenes or the ad's length."
+    "Not yet: changing the music, the text shown over a scene, the voice, the person, the "
+    "number of scenes or the ad's length."
 )
 SLOWER = "Slower can't be done: every clip plays at real-time speed."
 
@@ -120,7 +124,9 @@ PINNED = [
     SLOWER,
 ]
 
-NOTE_3_WORDS = "And in the last scene she should say it's on sale."
+NOTE_MUSIC = "And the music should be more upbeat."
+LINE_3 = "On sale now for $19.00."
+FIX_3 = f'In scene 3, she says "{LINE_3}"'
 FIX_2_AGAIN = "In scene 2, the tea pours in a thin stream from the spout right into the mug."
 
 
@@ -163,10 +169,16 @@ def test_the_producers_model_is_given_the_fix_instructions(
             id="an action in a talking scene",
         ),
         pytest.param(
-            [restating((3, "In scene 3, she says it's on sale.", "line"))],
-            "changing a scene's line isn't built yet",
-            NOT_YET,
-            id="the words",
+            [restating((3, FIX_3, "line")), ("change_line", {"scene": 3, "line": LINE_3})],
+            "scene 3's fix hasn't been restated to the shop owner yet",
+            TELL_THEM,
+            id="a line change before the restatement",
+        ),
+        pytest.param(
+            [("change_line", {"scene": 3, "line": LINE_3})],
+            "no fix was restated for it. Call restate_fix first",
+            RESTATE,
+            id="a line change with no fix",
         ),
         pytest.param(
             [restating((2, FIX_2, "clip")), clip_with(2, FIX_2)],
@@ -196,7 +208,9 @@ def test_a_refusal_on_the_way_to_a_fix_has_a_sentence_saying_what_to_do(
     owner_says(fake_model, say, NOTE_2)
 
     assert any(
-        refused in result for tool in ("restate_fix", "make_clip") for result in results_of(tool)
+        refused in result
+        for tool in ("restate_fix", "make_clip", "change_line")
+        for result in results_of(tool)
     )
     assert told in " ".join(INSTRUCTIONS.split())
     assert paid_for() == paid
@@ -237,7 +251,7 @@ def test_the_whole_fix_loop_runs_as_the_instructions_say(
 ) -> None:
     clips_paid = paid_for().count("make_broll_clip") + paid_for().count("make_talking_clip")
 
-    # Three notes in one message: a picture, a clip and the words, which can't change yet.
+    # Three notes in one message: a picture, a clip and the music, which can't change yet.
     # One restate_fix for what can be fixed, then the restatement, with the cost and the can't.
     fake_model.respond(
         "produce",
@@ -245,10 +259,10 @@ def test_the_whole_fix_loop_runs_as_the_instructions_say(
         turn(
             says="In scene 1 she'll hold the mug up beside her face with both hands, and in "
             "scene 2 the tea will pour into the mug with steam rising, for about $0.65 in all. "
-            "I can't change what she says yet. Shall I go ahead?"
+            "I can't change the music yet. Shall I go ahead?"
         ),
     )
-    say(f"{NOTE_1} {NOTE_2} {NOTE_3_WORDS}")
+    say(f"{NOTE_1} {NOTE_2} {NOTE_MUSIC}")
     assert Fix.objects.count() == 2
     assert steps.held == []
 
