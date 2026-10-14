@@ -18,7 +18,6 @@ from rest_framework.test import APIClient
 
 from adforge.retry import OutsideServiceDown
 from agents import tasks
-from agents.producer import INSTRUCTIONS
 from chat.models import Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
@@ -65,8 +64,6 @@ HANDLE_SHOWING: dict[str, Any] = {
     "motion_prompt": "The hand turns the mug slowly; the camera holds still.",
     "motion_prompt_reason": "Turning it shows the mug from every side.",
 }
-WAVE = "In scene 1 she should wave at the camera."
-WAVE_FIX = "In scene 1, she waves at the camera."
 SALE = "On sale now for $19.00."
 SALE_FIX = f'In scene 3, she says "{SALE}"'
 BOTH_HANDS = "In scene 1, she holds the mug up beside her face with both hands."
@@ -228,37 +225,6 @@ def test_a_clip_note_makes_only_that_scenes_clip_again_and_a_new_ad(
     ]
 
 
-def test_the_producer_assembling_after_the_fix_makes_and_shows_nothing_again(
-    fake_model: FakeModel, say: Say, steps: HeldSteps, shown: list[str], api: APIClient
-) -> None:
-    owner_says(fake_model, say, HOVERS, restating((2, TURN_FIX, "clip")))
-    clip_fixed(fake_model, say, steps, TURN_FIX, TURN_REWRITE)
-
-    # As the instructions don't ask, but a model might.
-    owner_says(fake_model, say, "Great, put it together", ("assemble_ad", {}))
-
-    assert results_of("assemble_ad")[-1].startswith("The ad was already assembled")
-    assert [ad.version for ad in ads()] == [1, 2]
-    assert Message.objects.filter(attachments__file=ads()[1].file).count() == 1
-
-
-def test_the_same_fix_again_is_already_made_and_paid_for_once(
-    fake_model: FakeModel, say: Say, steps: HeldSteps, shown: list[str]
-) -> None:
-    owner_says(fake_model, say, HOVERS, restating((2, TURN_FIX, "clip")))
-    clip_fixed(fake_model, say, steps, TURN_FIX, TURN_REWRITE)
-    paid = paid_for()
-
-    owner_says(fake_model, say, "Do it again", clip_of(2, TURN_FIX))
-
-    assert steps.held == []
-    assert results_of("make_clip")[-1].startswith(
-        "Scene 2's clip was already made from this starting picture and audio with this note "
-        "(version 2), so nothing was made or paid for again."
-    )
-    assert paid_for() == paid
-
-
 # --- 2. A picture note: a new picture un-finishes the scene, then its clip, then the ad ------
 
 
@@ -303,58 +269,10 @@ def test_a_picture_note_makes_the_picture_then_the_clip_then_the_ad(
 
 
 # --- 3. Nothing is made again before the shop owner's yes --------------------------------------
-
-
-@pytest.mark.parametrize(
-    "redo", [clip_of(2, TURN_FIX), picture_of(2, TURN_FIX)], ids=["clip", "picture"]
-)
-def test_a_redo_with_no_restatement_is_refused_and_nothing_is_paid(
-    fake_model: FakeModel, say: Say, steps: HeldSteps, shown: list[str], redo: Call
-) -> None:
-    owner_says(fake_model, say, HOVERS, redo)
-
-    assert results_of(redo[0])[-1] == (
-        "Refused: scene 2 already has a clip, so changing it is a fix, and no fix was restated "
-        "for it. Call restate_fix first and wait for the shop owner's answer. Nothing was done."
-    )
-    assert steps.held == []
-    assert paid_for() == shown
-
-
-def test_a_redo_in_the_same_turn_as_the_restatement_is_refused_and_nothing_is_paid(
-    fake_model: FakeModel, say: Say, steps: HeldSteps, shown: list[str]
-) -> None:
-    owner_says(fake_model, say, HOVERS, restating((2, TURN_FIX, "clip")), clip_of(2, TURN_FIX))
-
-    assert results_of("make_clip")[-1] == (
-        "Refused: scene 2's fix hasn't been restated to the shop owner yet. Tell them the "
-        "restatement and its cost, and wait for their answer. Nothing was done."
-    )
-    assert steps.held == []
-    assert paid_for() == shown
-    assert Fix.objects.get().confirmed_by is None
-
-
 # --- 4. An action in a talking scene can't be done ---------------------------------------------
-
-
-def test_an_action_in_a_talking_scene_is_refused_and_the_instructions_say_it_cant(
-    fake_model: FakeModel, say: Say, steps: HeldSteps, shown: list[str]
-) -> None:
-    owner_says(fake_model, say, WAVE, restating((1, WAVE_FIX, "clip")))
-
-    assert results_of("restate_fix")[-1] == (
-        "Refused: scene 1 shows the person talking, and a talking clip's movement can't be "
-        "changed from a note: the video model ignores what it's asked about movement in a "
-        "talking clip. Restate it as a new starting picture instead. Nothing was done."
-    )
-    assert not Fix.objects.exists()
-    assert paid_for() == shown
-    # What the producer is told to say plainly about it.
-    assert "change what the person does in a scene where they talk" in " ".join(
-        INSTRUCTIONS.split()
-    )
-
+# Both refusals, and the sentences the instructions give the producer for them, are proved on
+# a cheaper ad in test_producer_fixes.py (the guard, restate_fix) and
+# test_producer_fix_instructions.py.
 
 # --- 5. Two notes in one message: one restatement, one yes, both redos at once, one ad -------
 

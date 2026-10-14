@@ -226,53 +226,39 @@ def test_a_talking_line_of_16_seconds_is_left_alone(
     assert (scene_2().line, Job.objects.get().status) == (LONG, "ready_to_render")
 
 
-def test_a_middle_broll_line_still_too_long_after_three_shortenings_becomes_a_talking_scene(
+@pytest.mark.parametrize(
+    ("number", "saying"),
+    [
+        pytest.param(2, scene_2_saying, id="a middle scene"),
+        pytest.param(3, last_scene_saying, id="the last scene"),
+    ],
+)
+def test_a_broll_line_still_too_long_after_three_shortenings_becomes_a_talking_scene(
     fake_model: FakeModel,
     product_page_url: str,
     say: Callable[..., None],
     notices: Callable[[], list[str]],
+    number: int,
+    saying: Callable[[str], dict[str, Any]],
 ) -> None:
     # Round 2 fixes (spec: "The talking fallback must be allowed for any middle scene"):
     # nobody is asked for a shorter line; the person says it to camera.
-    checking(fake_model, product_page_url, scene_2_saying(LONG))
-    fake_model.respond("fact_check", FACTS_OK, facts_ok(2), facts_ok(2), facts_ok(2))
+    checking(fake_model, product_page_url, saying(LONG))
+    fake_model.respond("fact_check", FACTS_OK, facts_ok(number), facts_ok(number), facts_ok(number))
     fake_model.respond("shorten_line", {"line": LONG}, {"line": LONG}, {"line": LONG})
 
     say(f"Make an ad for {product_page_url}")
 
     assert paid_for().count("shorten_line") == 3
-    assert (scene_2().line, scene_2().shows) == (LONG, "")
-    assert results_of("run_planning_checks")[0].splitlines()[0] == PASSED
-    assert notices() == [SWITCHED.replace("Scene 3", "Scene 2")]
-
-
-@pytest.fixture
-def still_long_after_three_shortenings(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
-) -> None:
-    """A chat whose last scene, B-roll scene 3, had its line shortened 3 times and still
-    taking 16 seconds."""
-    checking(fake_model, product_page_url, last_scene_saying(LONG))
-    fake_model.respond("fact_check", FACTS_OK, facts_ok(3), facts_ok(3), facts_ok(3))
-    fake_model.respond("shorten_line", {"line": LONG}, {"line": LONG}, {"line": LONG})
-    say(f"Make an ad for {product_page_url}")
-
-
-def test_a_last_broll_line_still_too_long_after_three_shortenings_becomes_a_talking_scene(
-    still_long_after_three_shortenings: None,
-) -> None:
-    assert paid_for().count("shorten_line") == 3
-    assert (scene_3().line, scene_3().shows) == (LONG, "")
-    assert broll_labels()[2] == ("", "", "", "", [])
+    scene = Job.objects.get().scenes.get(number=number)
+    assert (scene.line, scene.shows) == (LONG, "")
+    assert broll_labels()[number - 1] == ("", "", "", "", [])
     # Nobody is asked: the checks pass with the person saying the line.
     assert results_of("run_planning_checks")[0].splitlines()[0] == PASSED
-
-
-def test_a_broll_scene_that_becomes_a_talking_scene_is_told_in_the_chat_and_kept_with_the_job(
-    still_long_after_three_shortenings: None, notices: Callable[[], list[str]]
-) -> None:
-    assert notices() == [SWITCHED]
-    assert ("info", SWITCHED) in [
+    # The chat is told, and the job keeps it.
+    switched = SWITCHED.replace("Scene 3", f"Scene {number}")
+    assert notices() == [switched]
+    assert ("info", switched) in [
         (warning["level"], warning["text"]) for warning in Job.objects.get().warnings
     ]
 

@@ -867,33 +867,33 @@ def test_creatifys_real_reply_for_a_clip_from_example_pictures_is_read_as_done(
         assert file_store.read(collecting_from_creatify()) == MADE
 
 
-@pytest.mark.parametrize("status", ["failed", "rejected"])
-def test_a_clip_creatify_failed_or_rejected_fails_with_its_reason_and_isnt_asked_for_again(
-    httpserver: HTTPServer, creatify: CreatifyProvider, status: str
-) -> None:
-    httpserver.expect_oneshot_request(TASK).respond_with_json(
-        {
-            **WAITING,
-            "status": status,
-            "failed_reason": "The prompt was flagged by the content checker.",
-        }
-    )
+FLAGGED = "The prompt was flagged by the content checker."
 
-    with (
-        use_model(creatify),
-        pytest.raises(ClipFailed, match=r"^The prompt was flagged by the content checker\.$"),
-    ):
+
+@pytest.mark.parametrize(
+    ("said", "why"),
+    [
+        pytest.param(
+            {"status": "failed", "failed_reason": FLAGGED},
+            r"^The prompt was flagged by the content checker\.$",
+            id="failed, with its reason",
+        ),
+        pytest.param(
+            {"status": "rejected", "failed_reason": FLAGGED},
+            r"^The prompt was flagged by the content checker\.$",
+            id="rejected, with its reason",
+        ),
+        pytest.param({"status": "failed"}, "^Creatify gave no reason$", id="failed, no reason"),
+    ],
+)
+def test_a_clip_creatify_failed_or_rejected_fails_with_its_reason_and_isnt_asked_for_again(
+    httpserver: HTTPServer, creatify: CreatifyProvider, said: dict[str, str], why: str
+) -> None:
+    httpserver.expect_oneshot_request(TASK).respond_with_json({**WAITING, **said})
+
+    with use_model(creatify), pytest.raises(ClipFailed, match=why):
         collecting_from_creatify()
     assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
-
-
-def test_a_clip_creatify_failed_without_a_reason_says_so(
-    httpserver: HTTPServer, creatify: CreatifyProvider
-) -> None:
-    httpserver.expect_oneshot_request(TASK).respond_with_json({**WAITING, "status": "failed"})
-
-    with use_model(creatify), pytest.raises(ClipFailed, match="^Creatify gave no reason$"):
-        collecting_from_creatify()
 
 
 def test_a_clip_creatify_no_longer_knows_of_counts_as_one_it_couldnt_make(
