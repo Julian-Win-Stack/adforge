@@ -1,0 +1,154 @@
+{
+  "$defs": {
+    "FrameFace": {
+      "properties": {
+        "face": {
+          "description": "The name of the face that shows (front, back, top, left side...), the same name for the same face in every frame. Empty when no broad face shows.",
+          "title": "Face",
+          "type": "string"
+        },
+        "parts": {
+          "description": "The parts drawn on that face in this frame, each in a few words with where it sits. Empty when none can be made out.",
+          "title": "Parts",
+          "type": "string"
+        },
+        "seen": {
+          "description": "broad_face: a face of the product shows. edge_only: the product is seen so thin that no broad face shows. not_visible: the product is out of view or fully hidden.",
+          "enum": [
+            "broad_face",
+            "edge_only",
+            "not_visible",
+            "unsure"
+          ],
+          "title": "Seen",
+          "type": "string"
+        },
+        "thin_edge_side": {
+          "description": "On which side of the broad face, in the picture, the visible thin edge of the product sits. none when no thin edge shows or no broad face shows.",
+          "enum": [
+            "left",
+            "right",
+            "top",
+            "bottom",
+            "none"
+          ],
+          "title": "Thin Edge Side",
+          "type": "string"
+        },
+        "time": {
+          "description": "The frame's time in seconds, as labelled.",
+          "title": "Time",
+          "type": "number"
+        }
+      },
+      "required": [
+        "time",
+        "seen",
+        "face",
+        "parts",
+        "thin_edge_side"
+      ],
+      "title": "FrameFace",
+      "type": "object"
+    },
+    "Turn": {
+      "properties": {
+        "direction": {
+          "enum": [
+            "kept_turning",
+            "turned_back",
+            "unsure"
+          ],
+          "title": "Direction",
+          "type": "string"
+        },
+        "from_time": {
+          "description": "The last frame before the turn that shows a broad face.",
+          "title": "From Time",
+          "type": "number"
+        },
+        "to_time": {
+          "description": "The first frame after the turn that shows a broad face.",
+          "title": "To Time",
+          "type": "number"
+        },
+        "why": {
+          "description": "One sentence: the motion cue you used, with frame times.",
+          "title": "Why",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from_time",
+        "to_time",
+        "direction",
+        "why"
+      ],
+      "title": "Turn",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "across_frames": {
+      "description": "Which sides of each main object were seen, in which frames; whether a side that came into view is a real side; whether a part appeared or vanished on a side that kept facing the camera.",
+      "title": "Across Frames",
+      "type": "string"
+    },
+    "back_to_normal_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "When is this thing back to normal? Give the second, or say never.",
+      "title": "Back To Normal At"
+    },
+    "frames": {
+      "items": {
+        "$ref": "#/$defs/FrameFace"
+      },
+      "title": "Frames",
+      "type": "array"
+    },
+    "problem": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "When it fails: up to 3 sentences: the object and what is impossible about it, the frame time, and what a real one would look like. Null when it passes.",
+      "title": "Problem"
+    },
+    "turns": {
+      "items": {
+        "$ref": "#/$defs/Turn"
+      },
+      "title": "Turns",
+      "type": "array"
+    },
+    "verdict": {
+      "enum": [
+        "pass",
+        "fail"
+      ],
+      "title": "Verdict",
+      "type": "string"
+    }
+  },
+  "required": [
+    "frames",
+    "turns",
+    "across_frames",
+    "verdict",
+    "problem",
+    "back_to_normal_at"
+  ],
+  "title": "SidesVerdict",
+  "type": "object"
+}

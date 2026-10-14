@@ -183,44 +183,57 @@ def test_a_scene_that_breaks_a_rule_fails_that_check(
     assert failed(run) == {("8-toilet-cleaner", 2, check)}
 
 
-def test_a_scene_that_shows_the_problem_may_have_the_product_rest_beside_it(
-    tmp_path: Path,
-) -> None:
-    problem = {
-        **GOOD,
-        "SHOWS": "the cleaner bottle rests in view beside a toilet bowl with a ring",
-        "BROLL_KIND": "shows the problem",
-    }
-
-    assert failed(saved_run(tmp_path, [problem])) == set()
-
-
 @pytest.mark.parametrize(
-    ("shows", "kind"),
+    ("change", "shop_answers"),
     [
-        # Round 1 #5 bag, graded OK: placing it is the job, showing the bag holds a phone.
-        ("a hand lowers a phone into the open bag beside a small wallet", "does a job"),
-        # Round 1 #8 s4, graded fine: the bottle only stands by while the brush scrubs.
-        (
-            "a hand scrubs a rust ring with a toilet brush while the cleaner bottle stands by",
-            "showcase",
+        pytest.param(
+            {
+                "SHOWS": "the cleaner bottle rests in view beside a toilet bowl with a ring",
+                "BROLL_KIND": "shows the problem",
+            },
+            "",
+            id="a scene that shows the problem has the product rest beside it",
+        ),
+        pytest.param(
+            # Round 1 #5 bag, graded OK: placing it is the job, showing the bag holds a phone.
+            {
+                "SHOWS": "a hand lowers a phone into the open bag beside a small wallet",
+                "BROLL_KIND": "does a job",
+            },
+            "",
+            id="handling the product is the scene's one action",
+        ),
+        pytest.param(
+            # Round 1 #8 s4, graded fine: the bottle only stands by while the brush scrubs.
+            {
+                "SHOWS": "a hand scrubs a rust ring with a toilet brush while the cleaner "
+                "bottle stands by",
+                "BROLL_KIND": "showcase",
+            },
+            "",
+            id="the product stands by the scene's one action",
+        ),
+        pytest.param(
+            {
+                "LINE": "Dropped from six feet and still fine.",
+                "START-PICTURE PROMPT": "A hand holds the phone 6 feet above a tile floor.",
+            },
+            "",
+            id="a number the prompts carry in words",
+        ),
+        pytest.param(
+            {},
+            "8: Q 'Could you attach a before-and-after photo of the tile?' -> A 'Here it is.'\n",
+            id="a before-and-after photo the owner gave keeps the B-roll",
         ),
     ],
 )
-def test_handling_the_product_that_is_not_the_scene_s_one_action_passes(
-    tmp_path: Path, shows: str, kind: str
+def test_a_scene_that_keeps_a_rule_another_way_passes_every_check(
+    tmp_path: Path, change: dict[str, object], shop_answers: str
 ) -> None:
-    assert failed(saved_run(tmp_path, [{**GOOD, "SHOWS": shows, "BROLL_KIND": kind}])) == set()
+    run = saved_run(tmp_path, [{**GOOD, **change}], shop_answers=shop_answers)
 
-
-def test_a_number_the_prompts_carry_in_words_passes(tmp_path: Path) -> None:
-    drop = {
-        **GOOD,
-        "LINE": "Dropped from six feet and still fine.",
-        "START-PICTURE PROMPT": "A hand holds the phone 6 feet above a tile floor.",
-    }
-
-    assert failed(saved_run(tmp_path, [drop])) == set()
+    assert failed(run) == set()
 
 
 def test_an_ad_that_opens_on_b_roll_fails(tmp_path: Path) -> None:
@@ -244,13 +257,6 @@ def test_after_the_shop_owner_has_no_before_and_after_photo_no_middle_scene_is_b
         ("N3-shower-tile-cleaner", 2, "C4 no B-roll filler after the owner has no photo"),
         ("N3-shower-tile-cleaner", 3, "C4 no B-roll filler after the owner has no photo"),
     }
-
-
-def test_a_before_and_after_photo_the_owner_gave_keeps_the_b_roll(tmp_path: Path) -> None:
-    answers = "N3: Q 'Could you attach a before-and-after photo of the tile?' -> A 'Here it is.'\n"
-    run = saved_run(tmp_path, [GOOD], ad="N3-shower-tile-cleaner", shop_answers=answers)
-
-    assert failed(run) == set()
 
 
 def test_an_ad_folder_with_scene_files_but_no_scene_folders_is_skipped(tmp_path: Path) -> None:

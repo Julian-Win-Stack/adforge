@@ -1902,7 +1902,9 @@ def _clip_frames(clip: ProducedItem, heading: str) -> list[Image]:
     pictures = (clip.ruling or {}).get("pictures")
     if not pictures:
         pictures = clip_judge.cut_pictures(
-            clip.file, beside=clip_judge.MOST_PICTURES - fix_check.MOST_PICTURES_PER_CLIP
+            clip.file,
+            beside=clip_judge.MOST_PICTURES - fix_check.MOST_PICTURES_PER_CLIP,
+            sets=("frames",),
         )
         clip.ruling = {**(clip.ruling or {}), "pictures": pictures}
         clip.save(update_fields=["ruling"])
