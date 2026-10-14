@@ -290,6 +290,37 @@ def test_a_clip_judged_again_after_the_worker_stopped_pays_for_no_answer_twice(
     assert ruling(clip)["verdict"] == "pass"
 
 
+def test_a_clip_whose_pictures_were_cut_for_an_earlier_judge_is_cut_again(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    # A clip mid-judging when SIDES went to 10 frames a second kept pictures cut for the old
+    # judge, 5 stills: nothing in them for SIDES to look at, so the clip is cut again.
+    made_ready(fake_model, steps, say, (2,))
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    fake_model.respond("check_clip_sides", *[WorkerStopped()] * ASKS)
+    fake_model.respond("check_clip_motion", *[WorkerStopped()] * ASKS)
+    with pytest.raises(WorkerStopped):
+        steps.run_next()
+    clip = ProducedItem.objects.get(kind="clip", scene__number=2)
+    frames = ruling(clip)["pictures"]["frames"]
+    clip.ruling = {"pictures": {"stills": frames[::5], "frames": frames}}
+    clip.save(update_fields=["ruling"])
+
+    # The step is handed out again, as after a restart.
+    fake_model.respond("produce", turn(says="Done."))
+    tasks.run_scene_step(SceneStep.objects.get(kind="clip", scene__number=2).pk)
+
+    clip.refresh_from_db()
+    assert ruling(clip)["verdict"] == "pass"
+    assert ruling(clip)["pictures"].keys() == {"sides", "frames"}
+    for shown in labels("check_clip_sides"):
+        assert shown[1] == "Frames from the clip, in order:\nFrames at 0 s, 0.1 s, left to right"
+        assert len(shown) == 26
+
+
 def test_an_ask_failing_for_a_reason_nobody_expected_goes_unchecked_and_the_rest_still_count(
     fake_model: FakeModel,
     checked: None,  # noqa: F811

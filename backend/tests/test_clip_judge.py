@@ -3,21 +3,16 @@ and a problem whose thing is back to normal within half a second is let go, its 
 (change 7, Julian 2026-10-13). What it rules is what the auto-redo acts on: pass or fail, how
 many of the 6 answers failed, and each failed answer's problem and everything it saw."""
 
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from jobs import clip_judge
-from jobs.clip_judge import (
-    FRAMES_PER_SECOND,
-    SIDES_CHECK,
-    SIDES_FRAMES_PER_SECOND,
-    FrameFace,
-    SidesVerdict,
-    Turn,
-    judged,
-    wording_version,
-)
+from jobs.clip_judge import SIDES_CHECK, SidesVerdict, judged, wording_version
+
+PINNED = Path(__file__).parent / "fixtures"
 
 SEEN = [{"time": 0.0, "seen": "broad_face", "face": "front", "parts": "", "thin_edge_side": "none"}]
 
@@ -193,13 +188,23 @@ def test_two_answers_settle_a_check_when_its_third_went_unchecked() -> None:
 
 
 @pytest.mark.parametrize(
-    "told", ["MOTION_CHECK", "SIDES_CHECK", "PAGE_FRAME", "CONVERSATION_FRAME", "FRAMES_LABEL"]
+    "told",
+    [
+        "MOTION_CHECK",
+        "SIDES_CHECK",
+        "PAGE_FRAME",
+        "CONVERSATION_FRAME",
+        "FRAMES_LABEL",
+        "SIDES_FRAMES_PER_SECOND",
+        "FRAMES_PER_SECOND",
+    ],
 )
 def test_the_wording_version_changes_whenever_what_the_judge_is_told_does(
     told: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     before = wording_version()
-    monkeypatch.setattr(clip_judge, told, getattr(clip_judge, told) + " Changed.")
+    now = getattr(clip_judge, told)
+    monkeypatch.setattr(clip_judge, told, now + " Changed." if isinstance(now, str) else now + 1)
 
     assert wording_version() != before
 
@@ -234,60 +239,16 @@ def test_a_bare_time_with_or_without_its_unit_counts_as_back_to_normal(back: str
 
 # The phone-flip SIDES check (harness arm F1, evals/clip-judge-v2 prompts.py SIDES_FLIP, tested
 # on all 110 graded clips 2026-10-13: 3 of 3 flips caught, 0 wrong fails; Julian's yes to ship
-# 2026-10-14 18:30). Each sentence is pinned word for word: the judge's words are Julian's.
-@pytest.mark.parametrize(
-    "sentence",
-    [
-        pytest.param(
-            "You get frames from one clip, ten per second, in order, several per image side by "
-            "side, each labelled with its time in seconds.",
-            id="ten frames a second",
-        ),
-        pytest.param(
-            "or a phone that turns over and shows a camera again where its screen should be.",
-            id="the flip is named as an example",
-        ),
-        pytest.param(
-            "For each turn, decide whether the product kept turning the same way, so the face "
-            "that comes back into view must be the opposite face, or turned back, so the same "
-            "face returns.",
-            id="every turn gets a direction",
-        ),
-        pytest.param(
-            "Decide the direction from the motion only, never from how the face after the turn "
-            "looks: that face is what you are checking, and the direction tells you what it "
-            "has to be.",
-            id="direction first, from the motion, never from the face that comes back",
-        ),
-        pytest.param(
-            "a product that tips over as it falls or lands keeps turning, it does not tip back up.",
-            id="a drop keeps turning",
-        ),
-        pytest.param(
-            'Decide "fail" only when you are sure something is physically impossible:',
-            id="still fails only when sure",
-        ),
-    ],
-)
-def test_the_sides_check_is_the_phone_flip_wording_as_tested(sentence: str) -> None:
-    assert sentence in SIDES_CHECK
+# 2026-10-14 18:30). The judge's words and its answer form are Julian's: both are pinned whole,
+# so any change to either fails here until he says so and the pinned copy changes with it.
+def test_the_sides_check_is_the_phone_flip_wording_as_tested_word_for_word() -> None:
+    assert SIDES_CHECK == (PINNED / "clip_judge_sides_check.txt").read_text()
 
 
-def test_sides_names_the_face_and_parts_in_every_frame_and_the_direction_of_every_turn() -> None:
-    # The per-frame fields stay: filling them is what makes the judge decide the direction
-    # before it looks at the face that comes back. No code reads them (Julian, 2026-10-14).
-    assert list(SidesVerdict.model_fields) == [
-        "frames",
-        "turns",
-        "across_frames",
-        "verdict",
-        "problem",
-        "back_to_normal_at",
-    ]
-    assert list(FrameFace.model_fields) == ["time", "seen", "face", "parts", "thin_edge_side"]
-    assert list(Turn.model_fields) == ["from_time", "to_time", "direction", "why"]
+def test_the_sides_answer_form_is_the_one_tested_field_for_field() -> None:
+    # The per-frame and turn fields stay: filling them is what makes the judge decide the
+    # direction before it looks at the face that comes back. No code reads them (Julian,
+    # 2026-10-14). The schema is what the model is handed, descriptions and choices included.
+    pinned = json.loads((PINNED / "clip_judge_sides_verdict_schema.json").read_text())
 
-
-def test_sides_looks_at_ten_frames_a_second_and_motion_still_at_five() -> None:
-    assert SIDES_FRAMES_PER_SECOND == 10
-    assert FRAMES_PER_SECOND == 5
+    assert SidesVerdict.model_json_schema() == pinned

@@ -26,7 +26,7 @@ import math
 import re
 import subprocess
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -474,7 +474,8 @@ def _asked(
     needs = _needs_photos(step)
     pictures = (clip.ruling or {}).get("pictures")
     if not pictures or pictures.keys() != {"sides", "frames"}:
-        # None yet, or cut for an earlier judge (the fix check keeps only "frames").
+        # None yet, cut before SIDES went to SIDES_FRAMES_PER_SECOND (then "stills"), or cut
+        # by the fix check, which keeps only "frames".
         pictures = cut_pictures(clip.file, beside=1 + len(needs))
     clip.ruling = {"pictures": pictures}
     clip.save(update_fields=["ruling"])
@@ -605,19 +606,26 @@ def frame_label(times: list[float]) -> str:
     return f"Frames at {', '.join(f'{t:g} s' for t in times)}, left to right"
 
 
-def cut_pictures(clip: str, *, beside: int) -> dict[str, list[dict[str, Any]]]:
+PICTURE_SETS = {"sides": SIDES_FRAMES_PER_SECOND, "frames": FRAMES_PER_SECOND}
+
+
+def cut_pictures(
+    clip: str, *, beside: int, sets: Iterable[str] = PICTURE_SETS
+) -> dict[str, list[dict[str, Any]]]:
     """The pictures the judge is shown of the clip at `clip`, kept in the file store, each
     with the time in seconds of each frame in it: "sides" for SIDES, SIDES_FRAMES_PER_SECOND
     a second; "frames" for MOTION, FRAMES_PER_SECOND a second, which the fix check shows too
-    (frames.py in the harness). Frames that wouldn't fit in one ask beside `beside` other
-    pictures are joined side by side, as few in a row as fit."""
+    (frames.py in the harness). `sets` names the ones wanted, both unless told. Frames that
+    wouldn't fit in one ask beside `beside` other pictures are joined side by side, as few in
+    a row as fit."""
     with tempfile.TemporaryDirectory() as folder:
         video = Path(folder) / "clip.mp4"
         video.write_bytes(file_store.read(clip))
-        sides = _every_frame(video, Path(folder) / "sides", SIDES_FRAMES_PER_SECOND)
-        frames = _every_frame(video, Path(folder) / "frames", FRAMES_PER_SECOND)
         room = MOST_PICTURES - beside
-        return {"sides": _kept(sides, room), "frames": _kept(frames, room)}
+        return {
+            name: _kept(_every_frame(video, Path(folder) / name, PICTURE_SETS[name]), room)
+            for name in sets
+        }
 
 
 def _kept(frames: list[tuple[Path, float]], room: int) -> list[dict[str, Any]]:
