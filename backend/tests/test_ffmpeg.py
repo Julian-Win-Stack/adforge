@@ -5,7 +5,10 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
 from django.conf import settings
+
+pytestmark = pytest.mark.real_ffmpeg
 
 
 def run(*args: str) -> str:

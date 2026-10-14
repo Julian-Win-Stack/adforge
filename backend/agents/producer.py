@@ -1,7 +1,7 @@
 """The producer: the agent the user talks to. What it is told to do, and its tools."""
 
 import re
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal, NamedTuple
 
 from django.conf import settings
@@ -1384,17 +1384,22 @@ class Estimate(NamedTuple):
 # estimated to cost when the ad has none recorded: about $0.07, the proof's average for an
 # ask of the clip judge on gpt-6.1-sol (decider call 13, 2026-10-13).
 CALL_FALLBACK_USD = Decimal("0.07")
+MILLIONTH = Decimal("0.000001")
 _JUDGE_PURPOSES = ["check_clip_sides", "check_clip_motion"]
 _WRITER_PURPOSES = ["rewrite_clip_prompt", "remake_clip_prompt"]
 
 
 def _estimate(scene: Scene, redo: Fix.Redo, fix: str) -> Estimate:
-    """What making `redo` again for the scene, for `fix`, is estimated to cost."""
+    """What making `redo` again for the scene, for `fix`, is estimated to cost, to the
+    millionth of a dollar a bill is recorded to: a price times the seconds a voice was
+    measured to take never ends."""
     if redo == Fix.Redo.PICTURE:
-        return picture_estimate(scene)
-    if redo == Fix.Redo.LINE:
-        return _line_estimate(scene, fix)
-    return _clip_estimate(scene, _clip_seconds(scene), from_note=True)
+        estimate = picture_estimate(scene)
+    elif redo == Fix.Redo.LINE:
+        estimate = _line_estimate(scene, fix)
+    else:
+        estimate = _clip_estimate(scene, _clip_seconds(scene), from_note=True)
+    return Estimate(*(amount.quantize(MILLIONTH, rounding=ROUND_HALF_UP) for amount in estimate))
 
 
 def _line_estimate(scene: Scene, fix: str) -> Estimate:

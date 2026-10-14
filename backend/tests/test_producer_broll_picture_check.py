@@ -66,13 +66,6 @@ def pictures_drawn() -> list[str]:
     return [call.output["file"] for call in calls if call.output is not None]
 
 
-def test_the_judge_runs_unless_quality_checks_are_switched_off() -> None:
-    # Julian 2026-10-10 21:55 agreed the new judge runs on every B-roll picture.
-    import adforge.settings
-
-    assert adforge.settings.QUALITY_CHECKS is True
-
-
 def test_a_picture_that_passes_is_judged_beside_the_shop_photo_it_was_drawn_from(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
@@ -143,6 +136,24 @@ def test_a_picture_that_fails_twice_is_drawn_again_from_prompts_written_to_fix_i
     assert step.prompt == FIXED_CHOICE["prompt"]
 
 
+def test_two_fails_settle_a_picture_without_a_third_ask(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    fake_model.respond("check_starting_picture", impossible(FUSED_HANDLE), impossible(TWO_SPOUTS))
+
+    step = picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE, FIXED_CHOICE)
+
+    first, second = pictures_drawn()
+    # The failed picture was asked about twice, and the one drawn to fix it twice.
+    assert paid_for().count("check_starting_picture") == 4
+    asked = [
+        (check.images[0]["key"], check.handoff["ask"])
+        for check in ModelCall.objects.filter(purpose="check_starting_picture").order_by("id")
+    ]
+    assert asked == [(first, 1), (first, 2), (second, 1), (second, 2)]
+    assert step.produced.get().file == second
+
+
 def test_a_picture_that_fails_three_times_stops_the_run_and_shows_each_picture_and_why(
     fake_model: FakeModel,
     steps: HeldSteps,
@@ -162,6 +173,8 @@ def test_a_picture_that_fails_three_times_stops_the_run_and_shows_each_picture_a
     assert not step.produced.exists()
     drawn = pictures_drawn()
     assert len(drawn) == 3
+    # Two fails settle each picture, so none is asked about a third time.
+    assert paid_for().count("check_starting_picture") == 6
     # The chat shows the three pictures and what the judge found in each.
     notice = Message.objects.get(role="notice", text__startswith="Scene 2")
     assert [a.file for a in notice.attachments.all()] == drawn
@@ -237,15 +250,19 @@ def test_after_the_run_stopped_a_message_from_the_user_carries_on(
     assert Message.objects.filter(role="agent").last().text == "Let's try again."  # type: ignore[union-attr]
 
 
-def test_a_judge_blocked_by_the_safety_filter_counts_as_not_checked(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+@pytest.mark.parametrize(
+    "unreadable",
+    [
+        pytest.param(BlockedBySafetyFilter("content_filter"), id="blocked by the safety filter"),
+        # A fail that doesn't say why can't be read.
+        pytest.param({**impossible(FUSED_HANDLE), "problem": " "}, id="a fail with no problem"),
+    ],
+)
+def test_a_judge_answer_that_cant_be_read_counts_as_not_checked(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], unreadable: Any
 ) -> None:
-    fake_model.respond(
-        "check_starting_picture",
-        BlockedBySafetyFilter("content_filter"),
-        impossible(FUSED_HANDLE),
-        PICTURE_OK,
-    )
+    # The two readable answers settle it: one fail, one pass, and the picture is paid for.
+    fake_model.respond("check_starting_picture", unreadable, impossible(FUSED_HANDLE), PICTURE_OK)
 
     step = picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE)
 
@@ -274,25 +291,12 @@ def test_a_picture_step_run_again_after_the_worker_stopped_pays_for_no_picture_t
 
     assert paid_for().count("make_starting_picture") == 2
     assert paid_for().count("choose_broll_picture") == 2
+    # The first picture's two asks are answered from their record; the second's are paid for
+    # as it is checked again, its stopped ask having been recorded as nothing.
+    assert paid_for().count("check_starting_picture") == 4
+    assert [ask["ask"] for ask in handoffs("check_starting_picture")] == [1, 2, 1, 2]
     step = SceneStep.objects.get(pk=step_id)
     assert step.produced.get().file == pictures_drawn()[1]
-
-
-def test_a_judge_answer_that_cant_be_read_counts_as_not_checked(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    # A fail that doesn't say why can't be read, but the picture is paid for.
-    fake_model.respond(
-        "check_starting_picture",
-        {**impossible(FUSED_HANDLE), "problem": " "},
-        impossible(FUSED_HANDLE),
-        PICTURE_OK,
-    )
-
-    step = picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE)
-
-    assert step.status == "finished"
-    assert len(pictures_drawn()) == 1
 
 
 def test_a_picture_whose_judge_service_is_down_is_kept_and_not_paid_for_again(

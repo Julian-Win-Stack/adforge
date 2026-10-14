@@ -235,15 +235,11 @@ def test_a_page_read_again_after_a_restart_pays_for_no_face_note_twice(
 # --- Shown in the admin -----------------------------------------------------------------------
 
 
-def test_the_face_note_is_shown_in_the_admin(
-    admin_client: Client, fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
-) -> None:
-    reading(fake_model, product_page_url)
-    fake_model.respond("check_page", READABLE)
-    fake_model.respond("note_face", FACE, NO_FACE)
-    say(f"Make an ad for {product_page_url}")
+def test_the_face_note_is_shown_in_the_admin(admin_client: Client) -> None:
+    job = Job.objects.create(product_url="https://shop.example/mug")
+    ProductPhoto.objects.create(job=job, position=1, file="photo-1.png", has_face=True)
 
-    page = admin_client.get(f"/admin/jobs/job/{Job.objects.get().pk}/change/")
+    page = admin_client.get(f"/admin/jobs/job/{job.pk}/change/")
 
     assert page.status_code == 200
     assert "Has face" in page.content.decode()

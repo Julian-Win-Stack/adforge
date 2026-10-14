@@ -5,9 +5,21 @@ Each case names the grade that proved the rule. Not frozen on purpose: the camer
 the video prompt's opener, "One continuous shot" (#117) and the "while" sentence (round 2 N5
 not graded yet)."""
 
+from pathlib import Path
+
 import pytest
 
-from gateway.catalog import MODEL_FOR_PURPOSE
+from gateway.catalog import MODEL_FOR_PURPOSE, SLOW_ANSWER_SECONDS
+from jobs import clip_judge
+from jobs.clip_judge import (
+    BACK_TO_NORMAL_WITHIN_SECONDS,
+    FRAMES_PER_SECOND,
+    MOTION_CHECK,
+    SIDES_CHECK,
+    SIDES_FRAMES_PER_SECOND,
+    Check,
+    SidesVerdict,
+)
 from jobs.picture_check import (
     ASKS,
     FAILS_TO_FAIL,
@@ -249,3 +261,91 @@ def test_the_start_picture_judge_runs_as_tested() -> None:
     assert (ASKS, FAILS_TO_FAIL) == (3, 2)
     # Julian 2026-10-10 21:48: two redraws, then the run stops.
     assert MOST_REDRAWS == 2
+
+
+# A22: the B-roll clip judge, word for word as proved on the 45 graded clips (SIDES_PROOF and
+# MOTION_PROOF in /mnt/project-files/evals/clip-judge-v2/prompts.py, the proof arms PS and PM):
+# on gpt-6.1-sol, 3 asks failing on 2, it wrongly failed 2 of 29 good clips and caught 6 of 12
+# faults, the bar met (decisions/julian-away-judgment-calls.md calls 10 and 12;
+# decisions/built-clip-judge-in-app.md). The wording is Julian's to change.
+# The phone-flip SIDES check (harness arm F1, Julian's yes to ship 2026-10-14 18:30), pinned
+# word for word beside its answer form in the clip judge's own tests.
+CLIP_SIDES_AS_PROVED = (
+    Path(__file__).parent / "fixtures" / "clip_judge_sides_check.txt"
+).read_text()
+
+CLIP_MOTION_AS_PROVED = """\
+You check a short video clip for a product ad before it is shown to the shop owner. You decide \
+whether everything in it moves and changes the way it would in real life, and whether it shows \
+what the scene was meant to show.
+
+You get frames from the clip, in order, each labelled with its time in seconds, so you can \
+follow what moves between them. You also get the scene's order: one sentence saying what the \
+clip should show.
+
+Work in two steps.
+1. Look before you judge. Fill in the look form from the frames: what is in the clip; how \
+everything is at the first frame; then every movement and change of the product, of the hands \
+touching it, and of the one thing the action changes (a surface, a liquid, a level, hair, a \
+shape), step by step, with the time of the frame where you see it; and how everything is at the \
+last frame. Describe what is on the frames, not what the product is for or what usually happens. \
+Write only about the product, the hands that touch it, and the things the product is used on or \
+changes (a surface, a liquid, a level, hair, a shape). Nothing else in the frame is your concern.
+2. Then answer three questions, each "pass" or "fail".
+- real_motion: does every object and liquid move the way a real one would? Use the facts about \
+the product: a thick gel must move like a thick gel, a hard object must stay rigid.
+- sudden_change: does the changed thing change only while something acts on it, and only where \
+it acts, step by step? Fail when it changes before the action reaches it, where nothing touched \
+it, or all at once between two frames; or when the product itself switches shape or state \
+between frames.
+- does_what_was_ordered: does the clip do the main action of the order with the product? Fail \
+only when that main action is missing, a different main action is done with the product, or the \
+person, hand or object the order names is not in the clip. A camera move, a close-up, the \
+framing, the pace, or something the order says should be "in view" or "emphasized" is never a \
+fail. Small extra movements around the main action, walking, posing or holding are not a fail.
+
+Decide "fail" only when you are sure from the frames. When a question passes, its problem is \
+null. When it fails, write up to 3 sentences: what went wrong and with which part, the second it \
+starts, and what a real one would do.
+
+You may also be shown one shop photo of the product, and facts about it from the shop. They tell \
+you what the product is, what it is made of, what is inside and how it is built. Use them only \
+for that. Never compare the frames with the photo: differences in size, angle, colour, label or \
+print are not a fail."""
+
+
+def test_the_clip_judge_is_unchanged_from_the_one_proved() -> None:
+    assert SIDES_CHECK == CLIP_SIDES_AS_PROVED
+    assert MOTION_CHECK == CLIP_MOTION_AS_PROVED
+
+
+def test_the_clip_judge_asks_for_each_problem_in_up_to_3_sentences() -> None:
+    # Decider call 2 (2026-10-13 05:33): the auto-redo's prompt writer needs what went wrong,
+    # when, and what a real one would do; the proof ran with these words.
+    assert SidesVerdict.model_fields["problem"].description == (
+        "When it fails: up to 3 sentences: the object and what is impossible about it, the "
+        "frame time, and what a real one would look like. Null when it passes."
+    )
+    assert Check.model_fields["problem"].description == (
+        "When it fails: up to 3 sentences: what went wrong and with which part, the second it "
+        "starts, and what a real one would do. Null when it passes."
+    )
+
+
+def test_the_clip_judge_runs_as_proved() -> None:
+    # Decider call 10: the proof's wrong fails pick the model, sol for both checks.
+    assert MODEL_FOR_PURPOSE["check_clip_sides"] == "gpt-6.1-sol"
+    assert MODEL_FOR_PURPOSE["check_clip_motion"] == "gpt-6.1-sol"
+    # Each ask may take as long as the harness waited.
+    assert SLOW_ANSWER_SECONDS["check_clip_sides"] == 600
+    assert SLOW_ANSWER_SECONDS["check_clip_motion"] == 600
+    # SIDES at 10 frames a second (the phone-flip check, Julian's yes 2026-10-14 18:30; it was
+    # 5 stills, call 9), MOTION at 5 frames a second, change 7's half second, 3 asks failing
+    # on 2.
+    assert (
+        SIDES_FRAMES_PER_SECOND,
+        FRAMES_PER_SECOND,
+        BACK_TO_NORMAL_WITHIN_SECONDS,
+        clip_judge.ASKS,
+        clip_judge.FAILS_TO_FAIL,
+    ) == (10, 5, 0.5, 3, 2)

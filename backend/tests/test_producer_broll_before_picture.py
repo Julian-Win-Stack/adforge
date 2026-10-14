@@ -108,6 +108,28 @@ def test_the_before_picture_is_planned_from_every_broll_scene(
     assert "No product, no person and no hand" in told
 
 
+def test_the_before_picture_is_drawn_from_words_alone_and_planned_from_the_chat_so_far(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": None}))
+    # Sent after the step started, so not what its planner is handed.
+    fake_model.respond("produce", turn(says="Noted."))
+    say("Make the bench oak.")
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    run(fake_model, steps)
+
+    # No shop photo: the product's looks come only from the photo sent with each scene's own
+    # picture, and the before-picture has no product in it.
+    (drawn,) = handoffs("make_before_picture")
+    assert drawn == {"prompt": BEFORE_PICTURE_PLAN["prompt"]}
+    assert ModelCall.objects.get(purpose="make_before_picture").images == []
+    (planned,) = handoffs("plan_before_picture")
+    said = [each["text"] for each in planned["conversation"] if each["by"] == "user"]
+    assert said[-1] == "Go on"
+    assert "Make the bench oak." not in said
+    assert any(each["by"] == "producer" for each in planned["conversation"])
+
+
 def test_the_model_writing_a_scenes_prompts_is_shown_the_before_picture_last(
     fake_model: FakeModel,
     instructed: dict[str, list[str]],  # noqa: F811
