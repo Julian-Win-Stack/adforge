@@ -157,6 +157,7 @@ from .scenes import (
     talking_motion_prompt,
     with_nothing_made_up,
 )
+from .threads import closing_its_connection as _closing_its_connection
 
 if TYPE_CHECKING:
     from agents.models import ToolCall
@@ -381,15 +382,6 @@ def copy_and_pick(job: Job, read: PageRead, product_page: page.ProductPage) -> t
         picking = pool.submit(context.run, _closing_its_connection, pick_photos, job, read)
         text = copy_page_text(job, read.download, product_page, read.record)
     return text, picking.result()
-
-
-def _closing_its_connection[Out](work: Callable[..., Out], *args: Any) -> Out:
-    """Run `work` in a thread of its own, then close the database connection the thread
-    opened."""
-    try:
-        return work(*args)
-    finally:
-        connection.close()
 
 
 def pick_photos(job: Job, read: PageRead) -> Picked:
