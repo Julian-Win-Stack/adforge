@@ -28,6 +28,7 @@ from jobs.scenes import (
 )
 
 from .conftest import (
+    CLIP_FIXED,
     CLIP_MOTION_OK,
     CLIP_SIDES_OK,
     JUDGED_CLIP,
@@ -437,7 +438,9 @@ def test_a_clip_made_from_a_note_is_remade_from_the_notes_prompt_keeping_the_own
         "rewrite_clip_prompt",
         {"motion_prompt": NOTED, "motion_prompt_reason": "The note asks for the pour."},
     )
-    fake_model.respond("check_clip_motion", failing(FLOATS), failing(FLOATS))
+    # A fix's clip: the judge is also asked about the owner's change.
+    fixs = {**failing(FLOATS), "owner_change": CLIP_FIXED}
+    fake_model.respond("check_clip_motion", fixs, fixs)
     fake_model.respond("remake_clip_prompt", rewrite(REMADE))
     calling(fake_model, say, ("make_clip", {"scene": 2, "note": HOVERS}))
     run(fake_model, steps)

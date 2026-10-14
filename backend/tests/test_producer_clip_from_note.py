@@ -173,8 +173,6 @@ def test_only_the_clip_is_made_again_and_paid_for(
         "make_broll_clip",
         "collect_broll_clip",
         *JUDGED_CLIP,
-        # The fix's check, asked 3 times at once (#131).
-        *["check_fix_clip"] * 3,
     ]
     assert clips() == [(2, 1), (2, 2)]
     second = ProducedItem.objects.get(kind="clip", version=2)

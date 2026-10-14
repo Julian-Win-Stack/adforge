@@ -224,6 +224,47 @@ CLIP_MOTION_OK: dict[str, Any] = {
 }
 
 
+# The clip judge's answer to its extra question on a fix's clip, when the change is made.
+CLIP_FIXED: dict[str, Any] = {
+    "old_shows": "The hand only hovers beside the mug.",
+    "new_shows": "The hand turns the mug.",
+    "verdict": "fixed",
+    "still_wrong": None,
+}
+
+
+def motion_answer(
+    answer: dict[str, Any], owner_change: dict[str, Any] = CLIP_FIXED
+) -> Callable[[ModelRequest[Any]], dict[str, Any]]:
+    """MOTION answering `answer`, and, asked about a fix's clip, `owner_change` to its extra
+    question."""
+
+    def answering(request: ModelRequest[Any]) -> dict[str, Any]:
+        if "owner_change" in request.output.model_fields:
+            return {**answer, "owner_change": owner_change}
+        return answer
+
+    return answering
+
+
+def asked_with(fake_model: FakeModel, *purposes: str) -> list[ModelRequest[Any]]:
+    """Every request the clip judge is sent for `purposes`, in the order sent, each answered
+    as by default."""
+    defaults = {
+        "check_clip_sides": lambda _: CLIP_SIDES_OK,
+        "check_clip_motion": motion_answer(CLIP_MOTION_OK),
+    }
+    requests: list[ModelRequest[Any]] = []
+    for purpose in purposes:
+
+        def answering(request: ModelRequest[Any], purpose: str = purpose) -> dict[str, Any]:
+            requests.append(request)
+            return defaults[purpose](request)
+
+        fake_model.answer_unscripted(purpose, answering)
+    return requests
+
+
 def a_plan_with(**changes: Any) -> dict[str, Any]:
     """PLAN with some of its plan's fields replaced."""
     return {**PLAN, "plan": {**PLAN["plan"], **changes}}
@@ -276,10 +317,9 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("note_face", lambda _: NO_FACE)
     fake.answer_unscripted("check_starting_picture", lambda _: PICTURE_OK)
     fake.answer_unscripted("check_fix", lambda _: FIX_MADE)
-    fake.answer_unscripted("check_fix_clip", lambda _: FIX_MADE)
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
     fake.answer_unscripted("check_clip_sides", lambda _: CLIP_SIDES_OK)
-    fake.answer_unscripted("check_clip_motion", lambda _: CLIP_MOTION_OK)
+    fake.answer_unscripted("check_clip_motion", motion_answer(CLIP_MOTION_OK))
     with use_model(fake):
         yield fake
 
