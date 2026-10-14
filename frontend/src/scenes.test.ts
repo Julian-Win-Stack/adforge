@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { Attachment, Message, SceneStep } from "./api";
-import { notesMessage, sceneCards, waitsForYes } from "./scenes";
+import { notesMessage, sceneCards, sceneNotes, suggestedNotes, waitsForYes } from "./scenes";
 
 let seq = 0;
 
@@ -14,6 +14,7 @@ function message(attachments: Attachment[], step: SceneStep | null = null): Mess
     created_at: "2026-10-11T10:00:00Z",
     attachments,
     step,
+    suggested_note: null,
   };
 }
 
@@ -291,4 +292,71 @@ test.each([
   ["notes from the agent", [said("agent", "Scene 2: planned"), said("agent", "Ok")], false],
 ] as const)("waits for a yes: %s", (_, messages, expected) => {
   expect(waitsForYes([...messages])).toBe(expected);
+});
+
+function suggesting(scene: number, text: string): Message {
+  return { ...message([]), role: "notice", suggested_note: { scene, text } };
+}
+
+function owner(text: string): Message {
+  return { ...message([]), role: "user", text };
+}
+
+function texts(suggested: ReturnType<typeof suggestedNotes>) {
+  return new Map([...suggested].map(([scene, note]) => [scene, note.text]));
+}
+
+test("each scene's newest suggested note fills its box until the owner sends anything", () => {
+  expect(suggestedNotes([])).toEqual(new Map());
+  expect(
+    texts(suggestedNotes([suggesting(2, "a"), suggesting(3, "b"), suggesting(2, "c")])),
+  ).toEqual(
+    new Map([
+      [2, "c"],
+      [3, "b"],
+    ]),
+  );
+  expect(suggestedNotes([suggesting(2, "a"), owner("go ahead")])).toEqual(new Map());
+  expect(
+    texts(suggestedNotes([suggesting(2, "a"), owner("go ahead"), suggesting(3, "b")])),
+  ).toEqual(new Map([[3, "b"]]));
+});
+
+test("what the owner typed wins over the suggestion it was typed over, not a newer one", () => {
+  const suggested = new Map([[2, { text: "still hovers", seq: 9 }]]);
+  expect(sceneNotes(suggested, new Map())).toEqual(new Map([[2, "still hovers"]]));
+  expect(sceneNotes(suggested, new Map([[2, { text: "", over: 9 }]]))).toEqual(new Map([[2, ""]]));
+  expect(sceneNotes(suggested, new Map([[2, { text: "", over: 4 }]]))).toEqual(
+    new Map([[2, "still hovers"]]),
+  );
+  expect(sceneNotes(suggested, new Map([[3, { text: "slower", over: null }]]))).toEqual(
+    new Map([
+      [3, "slower"],
+      [2, "still hovers"],
+    ]),
+  );
+});
+
+test("a scene whose new picture failed its fix check waits for the owner, not being remade", () => {
+  const before = [
+    message([picture(1, "/p1-a.png")]),
+    message([clip(1, "/c1-a.mp4")]),
+    message([picture(2, "/p2-a.png")]),
+    message([clip(2, "/c2-a.mp4")]),
+    // Scene 2's new picture lands; scene 1's fix is still being made.
+    message([], { scene: 1, kind: "clip", state: "started" }),
+    message([picture(2, "/p2-b.png")]),
+  ];
+  expect(sceneCards(before)[1].beingRemade).toBe(true);
+
+  // Its fix check failed: the owner is asked, so it isn't on its way.
+  const [, waiting] = sceneCards([...before, suggesting(2, "The handle still faces away.")]);
+  expect(waiting).toMatchObject({ beingRemade: false, busy: false, clipOutOfDate: true });
+
+  const [, answered] = sceneCards([
+    ...before,
+    suggesting(2, "The handle still faces away."),
+    owner("Go ahead"),
+  ]);
+  expect(answered.beingRemade).toBe(true);
 });

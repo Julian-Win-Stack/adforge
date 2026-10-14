@@ -32,6 +32,7 @@ function fakeBackend() {
     attachments: Attachment[] = [],
     level?: Message["level"],
     step: SceneStep | null = null,
+    suggested_note: Message["suggested_note"] = null,
   ) {
     const message = {
       seq: session.messages.length + 1,
@@ -41,6 +42,7 @@ function fakeBackend() {
       created_at: NOW,
       attachments,
       step,
+      suggested_note,
     };
     session.messages.push(message);
     if (message.seq === 1 && session.name === "" && text) session.name = text.slice(0, 80);
@@ -137,6 +139,11 @@ function fakeBackend() {
      * picture or clip started. */
     notice(text: string, level: "problem" | "info", step: SceneStep | null = null) {
       add(sessions[0], "notice", text, [], level, step);
+    },
+    /** Code posts a notice in the newest session that suggests a note for a scene, as when
+     * the check of a fix found the change missing. */
+    suggestNote(text: string, attachments: Attachment[], scene: number, note: string) {
+      add(sessions[0], "notice", text, attachments, "problem", null, { scene, text: note });
     },
     /** The next message sent is refused with these reasons, as Django answers a 400. */
     refuseNextSend(reasons: Record<string, string[]>) {
@@ -1157,4 +1164,74 @@ test("a new picture whose clip isn't being made says it's waiting, without claim
   backend.notice("Remaking scene 2's clip.", "info", { scene: 2, kind: "clip", state: "started" });
   await nextPoll();
   await waitFor(() => expect(statusOf(2)).toBe("Being remade"));
+});
+
+test("a failed fix check fills its scene's note box with the reason, ready to send or change", async () => {
+  const { backend, user } = await openFinishedAd();
+  const reason = "The mug's handle still faces away from the camera.";
+
+  backend.suggestNote(
+    `Scene 2's new starting picture may not have your change: ${reason}`,
+    [
+      { position: 1, kind: "picture", url: "/media/old.png", scene: null },
+      { position: 2, kind: "picture", url: "/media/new.png", scene: null },
+    ],
+    2,
+    reason,
+  );
+
+  await nextPoll();
+  await waitFor(() => expect((noteBox(2) as HTMLTextAreaElement).value).toBe(reason));
+  // The notice shows the old picture and the new one.
+  const notice = screen.getByText(/may not have your change/).closest("li") as HTMLElement;
+  expect(
+    within(notice)
+      .getAllByRole("img")
+      .map((shown) => shown.getAttribute("src")),
+  ).toEqual(["/media/old.png", "/media/new.png"]);
+  expect((noteBox(1) as HTMLTextAreaElement).value).toBe("");
+  expect(sendNotesButton().textContent).toBe("Send 1 note");
+
+  await user.type(noteBox(2), " Turn it round.");
+  await user.click(sendNotesButton());
+  await waitFor(() =>
+    expect(backend.sent.map((one) => one.text)).toEqual([`Scene 2: ${reason} Turn it round.`]),
+  );
+  // Answered, the suggestion fills the box no more.
+  await findSaid(`Scene 2: ${reason} Turn it round.`);
+  await nextPoll();
+  expect((noteBox(2) as HTMLTextAreaElement).value).toBe("");
+});
+
+test("the owner can clear a suggested note and send nothing for that scene", async () => {
+  const { backend, user } = await openFinishedAd();
+  backend.suggestNote(
+    "Scene 3's new clip may not have your change: still hovers",
+    [],
+    3,
+    "still hovers",
+  );
+  await nextPoll();
+  await waitFor(() => expect((noteBox(3) as HTMLTextAreaElement).value).toBe("still hovers"));
+
+  await user.clear(noteBox(3));
+
+  expect((noteBox(3) as HTMLTextAreaElement).value).toBe("");
+  expect(sendNotesButton().hasAttribute("disabled")).toBe(true);
+});
+
+test("a newer failed check fills a box the owner cleared for an earlier one", async () => {
+  const { backend, user } = await openFinishedAd();
+  backend.suggestNote("Scene 2's new starting picture may not have your change: a", [], 2, "a");
+  await nextPoll();
+  await waitFor(() => expect((noteBox(2) as HTMLTextAreaElement).value).toBe("a"));
+  await user.clear(noteBox(2));
+
+  // The owner answers in the chat, not the cards; the next fix fails its check too.
+  await user.type(screen.getByRole("textbox", { name: "Message" }), "Go ahead{Enter}");
+  await findSaid("Go ahead");
+  backend.suggestNote("Scene 2's new starting picture may not have your change: b", [], 2, "b");
+  await nextPoll();
+
+  await waitFor(() => expect((noteBox(2) as HTMLTextAreaElement).value).toBe("b"));
 });

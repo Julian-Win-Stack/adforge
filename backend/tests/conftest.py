@@ -178,6 +178,15 @@ PICTURE_OK: dict[str, Any] = {
 }
 
 
+# The fix check's answer, when the change a fix asks for is in the new picture (#131).
+FIX_MADE: dict[str, Any] = {
+    "old_shows": "The mug's handle faces away from the camera.",
+    "new_shows": "The mug's handle faces the camera.",
+    "verdict": "fixed",
+    "still_wrong": None,
+}
+
+
 def a_plan_with(**changes: Any) -> dict[str, Any]:
     """PLAN with some of its plan's fields replaced."""
     return {**PLAN, "plan": {**PLAN["plan"], **changes}}
@@ -221,6 +230,7 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("pick_photos", lambda _: SHAMPOO_PICKED)
     fake.answer_unscripted("note_face", lambda _: NO_FACE)
     fake.answer_unscripted("check_starting_picture", lambda _: PICTURE_OK)
+    fake.answer_unscripted("check_fix", lambda _: FIX_MADE)
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
     with use_model(fake):
         yield fake

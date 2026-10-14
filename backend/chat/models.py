@@ -88,6 +88,17 @@ class Message(models.Model):
     step_state = models.CharField(
         max_length=10, choices=StepState.choices, blank=True, db_default=""
     )
+    # The note a scene's card is filled with, for the shop owner to send or change, as when
+    # the check of a fix found the change missing (#131). A default in the database too, as
+    # for the step's fields.
+    suggested_note = models.TextField(
+        blank=True,
+        db_default="",
+        help_text="A note suggested for scene `suggested_note_scene`. Blank for none.",
+    )
+    suggested_note_scene = models.PositiveSmallIntegerField(
+        null=True, blank=True, help_text="The scene the suggested note is about."
+    )
     trace_id = models.CharField(
         max_length=32,
         blank=True,

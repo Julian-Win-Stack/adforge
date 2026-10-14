@@ -33,6 +33,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # 10 wrong pictures and failed none of 88 good ones; luna missed the bent neck, the bag clasp
     # and the logo (evals/picture-judge/wrong-pictures-and-photo-test.md; Julian 10 Oct 23:05).
     "check_starting_picture": "gpt-6.1-sol",
+    # Asks the complaint back about a fix's new starting picture, beside the old one (#131):
+    # the starting picture's judge, as Julian chose it for picture judges.
+    "check_fix": "gpt-6.1-sol",
     "design_voice": "inworld-tts-2",
     "measure_voice": "inworld-tts-2",
     "speak_line": "inworld-tts-2",
