@@ -468,3 +468,325 @@ test("says so when another session is making an ad, and keeps what was typed", a
   expect(backend.sent).toEqual([]);
   expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("This is my mug");
 });
+
+/** The scene cards, as the owner sees them: each card's name and the clip or picture it
+ * shows, or "nothing" while neither has been made. */
+function sceneCardsShown() {
+  const panel = screen.queryByRole("region", { name: "Scenes" });
+  if (panel === null) return null;
+  return within(panel)
+    .queryAllByRole("article")
+    .map((card) => {
+      const media = card.querySelector("video, img");
+      return [card.getAttribute("aria-label"), media?.getAttribute("src") ?? "nothing"];
+    });
+}
+
+function sceneCard(scene: number) {
+  return within(screen.getByRole("region", { name: "Scenes" })).getByRole("article", {
+    name: `Scene ${scene}`,
+  });
+}
+
+function scene(n: number, kind: Attachment["kind"], url: string): Attachment[] {
+  return [{ position: 1, kind, url, scene: n }];
+}
+
+/** Opens the session called `name`, as the owner would from the sidebar. */
+async function openSession(name: string) {
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name }));
+  return user;
+}
+
+async function nextPoll() {
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+}
+
+test("clips for scenes 1 to 3 make three cards in scene order with those clips", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  await openSession("Mug ad");
+  await findSaid("Make me an ad for my mug");
+
+  backend.agentSays("", scene(3, "video", "/media/c3.mp4"), {
+    scene: 3,
+    kind: "clip",
+    state: "made",
+  });
+  backend.agentSays("", scene(1, "video", "/media/c1.mp4"), {
+    scene: 1,
+    kind: "clip",
+    state: "made",
+  });
+  backend.agentSays("", scene(2, "video", "/media/c2.mp4"), {
+    scene: 2,
+    kind: "clip",
+    state: "made",
+  });
+  await nextPoll();
+
+  await waitFor(() =>
+    expect(sceneCardsShown()).toEqual([
+      ["Scene 1", "/media/c1.mp4"],
+      ["Scene 2", "/media/c2.mp4"],
+      ["Scene 3", "/media/c3.mp4"],
+    ]),
+  );
+  const played = within(sceneCard(2)).getByLabelText("Scene 2's clip");
+  expect(played.tagName).toBe("VIDEO");
+  expect(played.hasAttribute("controls")).toBe(true);
+});
+
+test("a later clip for a scene replaces the card's clip, and the old one stays one tap away", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  const user = await openSession("Mug ad");
+  backend.agentSays("", scene(2, "video", "/media/c2-a.mp4"), {
+    scene: 2,
+    kind: "clip",
+    state: "made",
+  });
+  await nextPoll();
+  await waitFor(() => expect(sceneCardsShown()).toEqual([["Scene 2", "/media/c2-a.mp4"]]));
+
+  // While it is remade, the old clip stays on the card, marked.
+  backend.notice("Remaking scene 2's clip.", "info", { scene: 2, kind: "clip", state: "started" });
+  await nextPoll();
+  await within(sceneCard(2)).findByText("Remaking the clip");
+  expect(sceneCardsShown()).toEqual([["Scene 2", "/media/c2-a.mp4"]]);
+
+  backend.agentSays("", scene(2, "video", "/media/c2-b.mp4"), {
+    scene: 2,
+    kind: "clip",
+    state: "made",
+  });
+  await nextPoll();
+  await waitFor(() => expect(sceneCardsShown()).toEqual([["Scene 2", "/media/c2-b.mp4"]]));
+  expect(within(sceneCard(2)).queryByText("Remaking the clip")).toBeNull();
+
+  await user.click(within(sceneCard(2)).getByRole("button", { name: "Previous" }));
+  expect(within(sceneCard(2)).getByLabelText("Scene 2's previous clip").getAttribute("src")).toBe(
+    "/media/c2-a.mp4",
+  );
+  expect(within(sceneCard(2)).getByText("Previous clip")).toBeDefined();
+  await user.click(within(sceneCard(2)).getByRole("button", { name: "Latest" }));
+  expect(sceneCardsShown()).toEqual([["Scene 2", "/media/c2-b.mp4"]]);
+
+  // Looking at the previous clip when a newer one lands goes back to the newest.
+  await user.click(within(sceneCard(2)).getByRole("button", { name: "Previous" }));
+  backend.agentSays("", scene(2, "video", "/media/c2-c.mp4"), {
+    scene: 2,
+    kind: "clip",
+    state: "made",
+  });
+  await nextPoll();
+  await waitFor(() => expect(sceneCardsShown()).toEqual([["Scene 2", "/media/c2-c.mp4"]]));
+  expect(within(sceneCard(2)).queryByText("Previous clip")).toBeNull();
+});
+
+test("a scene with a picture and no clip yet shows the picture, and its clip once made", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  await openSession("Mug ad");
+  backend.agentSays("", scene(1, "picture", "/media/p1.png"), {
+    scene: 1,
+    kind: "starting_picture",
+    state: "made",
+  });
+  await nextPoll();
+  await waitFor(() => expect(sceneCardsShown()).toEqual([["Scene 1", "/media/p1.png"]]));
+  expect(within(sceneCard(1)).getByAltText("Scene 1's starting picture")).toBeDefined();
+
+  backend.agentSays("", scene(1, "video", "/media/c1.mp4"), {
+    scene: 1,
+    kind: "clip",
+    state: "made",
+  });
+  await nextPoll();
+  await waitFor(() => expect(sceneCardsShown()).toEqual([["Scene 1", "/media/c1.mp4"]]));
+  // Until the clip loads, its first frame is the picture it was made from.
+  expect(within(sceneCard(1)).getByLabelText("Scene 1's clip").getAttribute("poster")).toBe(
+    "/media/p1.png",
+  );
+  // A newer picture doesn't take the clip's place, nor become its first frame.
+  backend.agentSays("", scene(1, "picture", "/media/p1-b.png"), {
+    scene: 1,
+    kind: "starting_picture",
+    state: "made",
+  });
+  await nextPoll();
+  await waitFor(() =>
+    expect(
+      screen.getAllByAltText("Picture the agent made (1)").map((img) => img.getAttribute("src")),
+    ).toContain("/media/p1-b.png"),
+  );
+  expect(sceneCardsShown()).toEqual([["Scene 1", "/media/c1.mp4"]]);
+  expect(within(sceneCard(1)).getByLabelText("Scene 1's clip").getAttribute("poster")).toBe(
+    "/media/p1.png",
+  ); // The clip is now out of date: the card says so and shows the new picture beside it.
+  expect(within(sceneCard(1)).getByText("New picture, clip next")).toBeDefined();
+  expect(
+    within(sceneCard(1)).getByAltText("Scene 1's new starting picture").getAttribute("src"),
+  ).toBe("/media/p1-b.png");
+
+  backend.agentSays("", scene(1, "video", "/media/c1-b.mp4"), {
+    scene: 1,
+    kind: "clip",
+    state: "made",
+  });
+  await nextPoll();
+  await waitFor(() => expect(sceneCardsShown()).toEqual([["Scene 1", "/media/c1-b.mp4"]]));
+  expect(within(sceneCard(1)).queryByText("New picture, clip next")).toBeNull();
+  expect(within(sceneCard(1)).queryByAltText("Scene 1's new starting picture")).toBeNull();
+});
+
+test("a clip that arrives before any picture for its scene still shows", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  await openSession("Mug ad");
+  backend.agentSays("", scene(4, "video", "/media/c4.mp4"), {
+    scene: 4,
+    kind: "clip",
+    state: "made",
+  });
+  await nextPoll();
+  await waitFor(() => expect(sceneCardsShown()).toEqual([["Scene 4", "/media/c4.mp4"]]));
+});
+
+test("a card says while its picture or clip is being made, until it is made or fails", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  await openSession("Mug ad");
+
+  backend.notice("Making scene 1's starting picture.", "info", {
+    scene: 1,
+    kind: "starting_picture",
+    state: "started",
+  });
+  backend.notice("Making scene 2's clip.", "info", { scene: 2, kind: "clip", state: "started" });
+  await nextPoll();
+  await within(await findCard(1)).findByText("Making the picture");
+  expect(within(sceneCard(2)).getByText("Making the clip")).toBeDefined();
+  expect(sceneCardsShown()).toEqual([
+    ["Scene 1", "nothing"],
+    ["Scene 2", "nothing"],
+  ]);
+  expect(screen.getByRole("button", { name: /Scenes/ }).textContent).toContain("2 being made");
+
+  backend.agentSays("", scene(1, "picture", "/media/p1.png"), {
+    scene: 1,
+    kind: "starting_picture",
+    state: "made",
+  });
+  backend.notice("Scene 2's clip couldn't be made.", "problem", {
+    scene: 2,
+    kind: "clip",
+    state: "not_made",
+  });
+  await nextPoll();
+  await within(sceneCard(2)).findByText("Couldn't make the clip");
+  expect(within(sceneCard(1)).queryByText("Making the picture")).toBeNull();
+  expect(within(sceneCard(2)).queryByText("Making the clip")).toBeNull();
+  expect(screen.getByRole("button", { name: /Scenes/ }).textContent).not.toContain("being made");
+});
+
+function findCard(scene: number) {
+  return waitFor(() => sceneCard(scene));
+}
+
+test("a picture and a clip for a scene in one poll leave its card on the clip", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  await openSession("Mug ad");
+  backend.agentSays("", scene(3, "picture", "/media/p3.png"), {
+    scene: 3,
+    kind: "starting_picture",
+    state: "made",
+  });
+  backend.agentSays("", scene(3, "video", "/media/c3.mp4"), {
+    scene: 3,
+    kind: "clip",
+    state: "made",
+  });
+  await nextPoll();
+  await waitFor(() => expect(sceneCardsShown()).toEqual([["Scene 3", "/media/c3.mp4"]]));
+});
+
+test("the finished ad, the portrait and the voice make no card, and no scenes means no panel", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  await openSession("Mug ad");
+  backend.agentSays("Here's who will present it.", [
+    { position: 1, kind: "picture", url: "/media/person.png", scene: null },
+    { position: 2, kind: "sound", url: "/media/voice.mp3", scene: null },
+  ]);
+  backend.agentSays("Here's the ad.", [
+    { position: 1, kind: "video", url: "/media/ad.mp4", scene: null },
+  ]);
+  await nextPoll();
+  await findSaid("Here's the ad.");
+  expect(sceneCardsShown()).toBeNull();
+});
+
+test("reopening a session rebuilds its cards from the whole history", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  backend.agentSays("", scene(1, "video", "/media/c1-a.mp4"), {
+    scene: 1,
+    kind: "clip",
+    state: "made",
+  });
+  backend.agentSays("", scene(2, "picture", "/media/p2.png"), {
+    scene: 2,
+    kind: "starting_picture",
+    state: "made",
+  });
+  backend.agentSays("", scene(1, "video", "/media/c1-b.mp4"), {
+    scene: 1,
+    kind: "clip",
+    state: "made",
+  });
+  backend.existing("Kettle ad", [["user", "Make me an ad for my kettle"]]);
+
+  const user = await openSession("Mug ad");
+  await waitFor(() =>
+    expect(sceneCardsShown()).toEqual([
+      ["Scene 1", "/media/c1-b.mp4"],
+      ["Scene 2", "/media/p2.png"],
+    ]),
+  );
+
+  await user.click(screen.getByRole("button", { name: "Kettle ad" }));
+  await findSaid("Make me an ad for my kettle");
+  expect(sceneCardsShown()).toBeNull();
+
+  await user.click(screen.getByRole("button", { name: "Mug ad" }));
+  await waitFor(() =>
+    expect(sceneCardsShown()).toEqual([
+      ["Scene 1", "/media/c1-b.mp4"],
+      ["Scene 2", "/media/p2.png"],
+    ]),
+  );
+});
+
+test("the scene cards fold away and open again", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  const user = await openSession("Mug ad");
+  backend.agentSays("", scene(1, "video", "/media/c1.mp4"), {
+    scene: 1,
+    kind: "clip",
+    state: "made",
+  });
+  await nextPoll();
+  const toggle = await screen.findByRole("button", { name: /Scenes/ });
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+  await user.click(toggle);
+  expect(sceneCardsShown()).toEqual([]);
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  await user.click(toggle);
+  expect(sceneCardsShown()).toEqual([["Scene 1", "/media/c1.mp4"]]);
+});
