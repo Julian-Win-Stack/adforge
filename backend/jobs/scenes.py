@@ -209,6 +209,42 @@ def clip_from_note_instructions(broll_kind: str) -> str:
     return f"{broll_prompt_instructions(broll_kind)}\n{CLIP_FROM_NOTE_RULES}"
 
 
+# Added, in place of CLIP_FROM_NOTE_RULES, when code makes a B-roll clip again because the clip
+# judge failed it (the auto-fix, #155; change 9 of the Clip judge discussion, Julian's yes Oct
+# 13 05:03-05:28). The proven rules above come with it, unchanged: they speak of a producer's
+# note, the conversation and timings, which this says how to read here.
+CLIP_FROM_JUDGE_RULES = """\
+The scene's starting picture is already made, and it stays as it is: you are shown it, and \
+"picture_prompt" is the prompt it was drawn from. Pick no photo and write no picture prompt. \
+Write only a new video prompt: "motion_prompt" is the one the scene's clip was first made \
+from, and a judge watched that clip and failed it. "faults" are the problems the judge saw, \
+and "judge_saw" is what it saw happen in the clip, second by second. These are not the shop \
+owner's wishes: they are mistakes the video model made. Write a video prompt for the \
+movement "shows" describes, starting from what the picture shows, so these mistakes don't \
+happen again, and keep what was right. No conversation with the shop owner is given here. The \
+faults are mistakes to avoid, not orders to copy, and the judge's seconds only say where a \
+fault happened: put none of those seconds in the prompt. When "owner_fix" is given, the shop \
+owner asked for it and "motion_prompt" was written for it: keep it while fixing the faults. \
+Give a one-sentence reason for the video prompt."""
+
+# Added after CLIP_FROM_JUDGE_RULES for the second remake: the first remake's prompt didn't fix
+# the clip either.
+CLIP_FROM_JUDGE_AGAIN = """\
+"earlier_try" is a second video prompt, written after that one to fix these faults, with the \
+faults the judge saw in the clip made from it and what it saw happen. It did not fix them: \
+write a different one, which makes neither the faults in "faults" nor those in \
+"earlier_try"."""
+
+
+def clip_from_judge_instructions(broll_kind: str, *, again: bool) -> str:
+    """What the model writing a B-roll scene's video prompt again after the clip judge failed
+    its clip is told: the same rules as when the scene's prompts were first written, then that
+    only the movement changes, to avoid the judge's faults, and, `again`, that a first remake
+    didn't fix them."""
+    rules = f"{broll_prompt_instructions(broll_kind)}\n{CLIP_FROM_JUDGE_RULES}"
+    return f"{rules}\n{CLIP_FROM_JUDGE_AGAIN}" if again else rules
+
+
 # The job of each picture the picture model gets for a B-roll scene's starting picture.
 MAIN_PHOTO_JOB = "the product, only how it looks"
 PORTRAIT_JOB = "the presenter"
@@ -373,6 +409,36 @@ class ClipFromNoteHandoff(Handoff):
     motion_prompt: str
     note: str
     conversation: list[ChatMessage]
+
+
+class JudgedTry(Handoff):
+    """A remake's video prompt, as the model writing the next one is handed it: what the judge
+    said of the clip made from it."""
+
+    motion_prompt: str
+    faults: list[str]
+    judge_saw: list[dict[str, Any]]
+
+
+class ClipFromJudgeHandoff(Handoff):
+    """What the model writing a B-roll scene's video prompt again after the clip judge failed
+    its clip is handed: the scene, the prompts its starting picture and the failed clip were
+    made from, what the judge saw wrong, the shop owner's fix that prompt was written for, if
+    any, and, for a second remake, the first one."""
+
+    scene: int
+    line: str
+    shows: str
+    broll_kind: str
+    person_shown: str
+    usage: str
+    result: str
+    picture_prompt: str
+    motion_prompt: str
+    faults: list[str]
+    judge_saw: list[dict[str, Any]]
+    owner_fix: str | None
+    earlier_try: JudgedTry | None
 
 
 class ClipFromNoteChoice(BaseModel):

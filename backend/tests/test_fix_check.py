@@ -555,6 +555,34 @@ def test_a_clip_brought_back_in_the_fixs_step_is_never_the_old_one(
     assert check.new.version == old_clip.version + 2
 
 
+def test_a_fixs_clip_the_auto_fix_brings_back_is_the_one_checked_beside_the_old_one(
+    fake_model: FakeModel,
+    say: Say,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+) -> None:
+    floats = "The mug rises at 1.2 s with no hand on it; a real one stays put."
+    failing = {
+        **CLIP_MOTION_OK,
+        "real_motion": {"verdict": "fail", "problem": floats, "back_to_normal_at": "never"},
+    }
+    # The fix's clip fails 2 answers; each remake fails all 3, so the fix's clip is kept.
+    fake_model.respond("check_clip_motion", failing, failing, CLIP_MOTION_OK, *[failing] * 6)
+    fake_model.respond("remake_clip_prompt", TURN_REWRITE, TURN_REWRITE)
+    old_clip = latest("clip", 2)
+
+    a_clip_redone(fake_model, say, steps)
+
+    fixs_clip, *remakes, brought_back = ProducedItem.objects.filter(
+        kind="clip", scene__number=2, version__gt=old_clip.version
+    ).order_by("id")
+    assert [made.remake for made in remakes] == [1, 2]
+    assert brought_back.file == fixs_clip.file
+    check = FixCheck.objects.get()
+    assert (check.old, check.new) == (old_clip, brought_back)
+    assert paid_for().count("check_fix_clip") == 3
+
+
 def test_another_scenes_fix_landing_shows_no_ad_over_a_clip_that_failed_its_check(
     fake_model: FakeModel,
     say: Say,

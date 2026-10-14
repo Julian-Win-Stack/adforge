@@ -25,6 +25,8 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "choose_broll_picture": "gpt-5.6-sol",
     # A B-roll scene's video prompt written again from a note, by the same model that wrote it.
     "rewrite_clip_prompt": "gpt-5.6-sol",
+    # And again after the clip judge failed the clip it was made from (the auto-fix, #155).
+    "remake_clip_prompt": "gpt-5.6-sol",
     "make_starting_picture": "gpt-image-2.5-sunburst",
     # The ad's before-picture: planned from every B-roll scene, then drawn.
     "plan_before_picture": "gpt-5.6-sol",
