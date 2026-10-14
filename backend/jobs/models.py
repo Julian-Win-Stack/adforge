@@ -573,6 +573,15 @@ class SceneStep(models.Model):
     def __str__(self) -> str:
         return f"Scene {self.scene.number} {self.kind} ({self.status})"
 
+    def shown_before(self, kind: str) -> ProducedItem | None:
+        """The scene's newest item of `kind` made before the step started: what the shop owner
+        saw last, so an item the step made, or brought back, is never it."""
+        return (
+            self.scene.produced.filter(kind=kind, created_at__lt=self.started_at)
+            .order_by("-version")
+            .first()
+        )
+
     @staticmethod
     def made_for(scene: Scene, through: str = "") -> dict[str, Any]:
         """What a step made for `scene` as it stands has: its line, what it shows and its

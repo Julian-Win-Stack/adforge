@@ -24,6 +24,7 @@ from gateway.models import ModelCall
 from jobs.models import Fix, Job, ProducedItem, Scene, SceneStep
 
 from .conftest import (
+    CLIP_FIXED,
     CLIP_MOTION_OK,
     JUDGED_CLIP,
     HeldSteps,
@@ -220,8 +221,6 @@ def test_a_clip_note_makes_only_that_scenes_clip_again_and_a_new_ad(
         "make_broll_clip",
         "collect_broll_clip",
         *JUDGED_CLIP,
-        # The fix's check, asked 3 times at once (#131).
-        *["check_fix_clip"] * 3,
     ]
 
 
@@ -538,8 +537,6 @@ def test_a_fixs_redo_run_again_after_the_worker_stopped_pays_and_shows_everythin
         "make_broll_clip",
         "collect_broll_clip",
         *JUDGED_CLIP,
-        # The fix's check, asked 3 times at once (#131).
-        *["check_fix_clip"] * 3,
     ]
     assert [ad.version for ad in ads()] == [1, 2]
     assert Message.objects.filter(attachments__file=ads()[1].file).count() == 1
@@ -616,7 +613,14 @@ def test_a_fixs_redo_the_judge_fails_is_made_again_by_code_and_the_remake_makes_
     assert held_kinds(steps) == [(2, "clip")]
     fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
     # The judge fails the redo on 2 of its 3 asks, and passes the remake on all 3.
-    fake_model.respond("check_clip_motion", half_turn(), half_turn(), *[CLIP_MOTION_OK] * 4)
+    # A fix's clip: each answer also says the owner's change is made.
+    fixed = {"owner_change": CLIP_FIXED}
+    fake_model.respond(
+        "check_clip_motion",
+        half_turn() | fixed,
+        half_turn() | fixed,
+        *[CLIP_MOTION_OK | fixed] * 4,
+    )
     fake_model.respond("remake_clip_prompt", TURN_REMADE)
     step_lands(fake_model, steps)
 
@@ -651,11 +655,11 @@ def test_a_fixs_redo_the_judge_fails_is_made_again_by_code_and_the_remake_makes_
         f"the ad was assembled again with it (version 2, {ads()[1].seconds:g} seconds) and shown "
         "to the shop owner in the chat. Ask them to tell you if it's fixed."
     )
-    # Two prompts written at $0.006, two 5-second clips at Boreal's $0.0792 a second, the
-    # judge's 6 asks on each at $0.003 and the fix check's 3: all the step's, so the fix's.
-    assert " It cost $0.849." in told(2)
-    assert "Scene 2's fix has cost $0.849 so far." in told(2)
-    assert fix.cost_usd() == Decimal("0.849")
+    # Two prompts written at $0.006, two 5-second clips at Boreal's $0.0792 a second, and the
+    # judge's 6 asks on each at $0.003, which check the fix too: all the step's, so the fix's.
+    assert " It cost $0.84." in told(2)
+    assert "Scene 2's fix has cost $0.84 so far." in told(2)
+    assert fix.cost_usd() == Decimal("0.840")
     charged = ModelCall.objects.filter(created_at__gte=step.started_at).exclude(purpose="produce")
     assert {call.tool_call_id for call in charged} == {step.tool_call_id}
     assert paid_for()[len(shown) :] == [
@@ -667,8 +671,6 @@ def test_a_fixs_redo_the_judge_fails_is_made_again_by_code_and_the_remake_makes_
         "make_broll_clip",
         "collect_broll_clip",
         *JUDGED_CLIP,
-        # The fix's check, once, on the clip kept (#131, call 4).
-        *["check_fix_clip"] * 3,
     ]
 
 
@@ -731,7 +733,7 @@ def test_a_fixs_redo_the_video_service_fails_fails_its_step_and_is_tried_again_o
     )
     assert latest("clip", 2).version == 1
     assert [ad.version for ad in ads()] == [1]
-    assert "check_fix_clip" not in paid_for()[len(shown) :]
+    assert not [each for each in paid_for()[len(shown) :] if each.startswith("check_")]
     # The chat is told nothing was made, so it stops showing the clip as being made.
     texts = [message["text"] for message in api.get(f"/api/sessions/{session_id}/messages/").json()]
     assert texts.index("Scene 2's clip couldn't be made.") > texts.index("Remaking scene 2's clip.")

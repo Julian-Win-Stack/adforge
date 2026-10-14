@@ -80,11 +80,12 @@ def judge_ask_usd(scene: int) -> Decimal:
 
 def broll_clip_usd(seconds: int, *, from_note: bool) -> tuple[Decimal, Decimal]:
     """Scene 2's new B-roll clip, about and up to: its video and the judge's 6 asks, the
-    writer's call and the fix check's 3 asks for a clip made from a note (neither recorded
-    yet, so at the fallback), and up to 2 remakes, each a video, the judge and the writer."""
+    writer's call for a clip made from a note (not recorded yet, so at the fallback; its fix
+    is checked by the judge's own asks), and up to 2 remakes, each a video, the judge and the
+    writer."""
     video = seconds * BOREAL
     judge = 6 * judge_ask_usd(2)
-    about = video + judge + (4 * CALL_FALLBACK_USD if from_note else 0)
+    about = video + judge + (CALL_FALLBACK_USD if from_note else 0)
     return about, about + 2 * (video + judge + CALL_FALLBACK_USD)
 
 
@@ -855,21 +856,19 @@ def test_a_picture_with_no_recorded_cost_is_estimated_at_the_fallback(
     )
 
 
-def test_a_clip_fix_is_estimated_from_the_ads_last_recorded_writer_and_fix_check(
+def test_a_clip_fix_is_estimated_from_the_ads_last_recorded_writer_and_judge(
     fake_model: FakeModel, restated_2: Fix, steps: HeldSteps, say: Say
 ) -> None:
     confirm_and_redo_2(fake_model, steps, say)
     owner_says(fake_model, say, NOTE_2, restating((2, FIX_2, "clip")))
 
-    paid = {
-        purpose: [call.cost_usd or 0 for call in ModelCall.objects.filter(purpose=purpose)]
-        for purpose in ("rewrite_clip_prompt", "check_fix_clip")
-    }
-    (writer,) = paid["rewrite_clip_prompt"]
-    assert writer > 0 and len(paid["check_fix_clip"]) == 3 and all(paid["check_fix_clip"])
-    fix_check = sum(paid["check_fix_clip"], Decimal(0))
+    (writer,) = [
+        call.cost_usd or 0 for call in ModelCall.objects.filter(purpose="rewrite_clip_prompt")
+    ]
+    assert writer > 0
+    # Its fix is checked by the clip judge's own asks: no check of its own is priced.
     assert Fix.objects.order_by("id").last().estimate_usd == (  # type: ignore[union-attr]
-        5 * BOREAL + 6 * judge_ask_usd(2) + writer + fix_check
+        5 * BOREAL + 6 * judge_ask_usd(2) + writer
     )
 
 
@@ -899,10 +898,10 @@ def test_a_clip_fix_with_no_judge_ask_recorded_is_estimated_at_the_fallback_an_a
 
     owner_says(fake_model, say, NOTE_2, restating((2, FIX_2, "clip")))
 
-    # The judge's 6 asks, the writer's call and the fix check's 3 asks, each at the fallback,
-    # and up to 2 remakes, each a video, the judge's 6 asks and the writer's call.
+    # The judge's 6 asks, which check the fix too, and the writer's call, each at the
+    # fallback, and up to 2 remakes, each a video, the judge's 6 asks and the writer's call.
     video = 5 * BOREAL
-    about = video + 10 * CALL_FALLBACK_USD
+    about = video + 7 * CALL_FALLBACK_USD
     up_to = about + 2 * (video + 7 * CALL_FALLBACK_USD)
     assert Fix.objects.get().estimate_usd == about
     assert results_of("restate_fix")[-1].startswith(

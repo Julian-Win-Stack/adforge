@@ -17,7 +17,7 @@ from chat.models import Attachment, Message, Session
 from gateway import catalog
 from gateway.models import ModelCall
 from gateway.types import MusicHandoff, UnusableReply
-from jobs import auto_fix, clip_judge, page, picture_check
+from jobs import auto_fix, clip_judge, page
 from jobs.checks import LONGEST_BROLL_LINE_SECONDS, LONGEST_LINE_SECONDS, line_seconds
 from jobs.models import (
     BROLL_FIELDS,
@@ -1548,10 +1548,10 @@ def _clip_seconds(scene: Scene) -> float:
 def _clip_estimate(scene: Scene, audio_seconds: float, *, from_note: bool) -> Estimate:
     """What a new clip of the scene covering `audio_seconds` of its line is estimated to
     cost: its video and, for a B-roll clip with quality checks on, the clip judge's asks; for
-    a clip made from the shop owner's note, also the call writing its video prompt and,
-    with quality checks on, the fix check's asks. It can cost up to that plus, for each
-    remake the clip judge can have made, its video, the judge's asks and the call writing
-    its prompt (decider call 13, 2026-10-13)."""
+    a clip made from the shop owner's note, also the call writing its video prompt; its fix
+    is checked by the clip judge's own asks (Julian 2026-10-14). It can cost up to that
+    plus, for each remake the clip judge can have made, its video, the judge's asks and the
+    call writing its prompt (decider call 13, 2026-10-13)."""
     video = clip_estimate_usd(audio_seconds, broll=bool(scene.shows))
     judged = bool(scene.shows) and settings.QUALITY_CHECKS
     judge = 2 * clip_judge.ASKS * _each_call_usd(scene, _JUDGE_PURPOSES) if judged else 0
@@ -1559,9 +1559,6 @@ def _clip_estimate(scene: Scene, audio_seconds: float, *, from_note: bool) -> Es
     about = video + judge
     if from_note:
         about += writer
-        if settings.QUALITY_CHECKS:
-            # The fix check asks as many times as the picture check (jobs.fix_check).
-            about += picture_check.ASKS * _each_call_usd(scene, ["check_fix_clip"])
     remakes = auto_fix.MOST_REMAKES * (video + judge + writer) if judged else Decimal(0)
     return Estimate(about, about + remakes)
 
