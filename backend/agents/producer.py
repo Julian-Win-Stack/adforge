@@ -22,6 +22,7 @@ from jobs.work import (
     DECLARED_INSTEAD,
     SkippedPhoto,
     assemble_ad,
+    bring_back_clip,
     check_page,
     copy_and_pick,
     create_music,
@@ -542,7 +543,7 @@ class MakeStartingPicture(Tool):
                 "the person hasn't been made yet, and the picture shows them. Create the "
                 "person first."
             )
-        note = " ".join((self.note or "").split())
+        note = normalised_note(self.note)
         steps = scene.steps.filter(kind=SceneStep.Kind.STARTING_PICTURE)
         made = (
             steps.filter(status=SceneStep.Status.FINISHED, note=note, **SceneStep.made_for(scene))
@@ -682,9 +683,32 @@ class MakeClip(Tool):
     name = "make_clip"
 
     scene: int = Field(description="The number of the scene.")
+    # Defaults to none, so a call without it makes the clip as before.
+    note: str | None = Field(
+        default=None,
+        description="For a scene that shows the product rather than the person talking: what "
+        "the clip's movement should change, as one short instruction. The picture and the "
+        "audio stay as they are, and only the clip is made again. Null for nothing.",
+    )
 
     def run(self, call: ToolCall) -> str:
         scene = _a_checked_scene(call, self.scene)
+        note = normalised_note(self.note)
+        if note and not scene.shows:
+            # HeyGen ignored the motion prompt in a talking clip (2026-10-11 test, Julian's
+            # grade "no"; runs/heygen-motion-test/ in the project files).
+            raise Refused(
+                f"scene {scene.number} shows the person talking, and a talking clip's movement "
+                "can't be changed from a note: the video model ignores what it's asked about "
+                "movement in a talking clip. Its starting picture or its line can change "
+                "instead."
+            )
+        if note and not scene.broll_kind:
+            raise Refused(
+                f"scene {scene.number} was planned before scenes had their B-roll labels, so "
+                "its movement can't be rewritten from a note. Make its starting picture again "
+                "with the note instead."
+            )
         for kind, what in [
             (SceneStep.Kind.STARTING_PICTURE, "starting picture"),
             (SceneStep.Kind.LINE_AUDIO, "audio"),
@@ -738,6 +762,9 @@ class MakeClip(Tool):
                 made_from=audio,
                 # A clip made before clips kept their picture step has only its picture.
                 **({"picture": picture} if picture else {"step__picture_step": picture_step}),
+                # With no note, any clip of the same picture and audio is already made, as
+                # before notes; a different note is a new clip.
+                **({"step__note": note} if note else {}),
             )
             .order_by("version")
             .last()
@@ -745,11 +772,27 @@ class MakeClip(Tool):
         if made is not None:
             assert made.step is not None, "a clip is made by a scene step"
             made_from = "from this starting picture" if picture else "for this scene"
+            with_note = " with this note" if note else ""
+            # A clip being made will be the scene's newest, whichever this one is.
+            if scene.steps.filter(
+                kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING
+            ).exists():
+                raise Refused(
+                    f"scene {scene.number}'s clip is already being made. You'll be told when "
+                    "it's ready."
+                )
+            # Gone back to an earlier clip, such as an earlier note's, after another was
+            # made: it is brought back as the newest version, so the ad uses it, with no
+            # video paid again (Julian 2026-10-11, "Reuse A's clip").
+            back = ""
+            if made != _latest_clip(scene):
+                again = bring_back_clip(made)
+                back = f" It is the scene's clip again, as version {again.version}."
             return (
-                f"Scene {scene.number}'s clip was already made {made_from} and audio "
-                f"(version {made.version}), so nothing was made or paid for again. Making it "
-                f"cost {_dollars(made.step.tool_call.cost_usd())}. Scene {scene.number} is "
-                "finished."
+                f"Scene {scene.number}'s clip was already made {made_from} and audio"
+                f"{with_note} (version {made.version}), so nothing was made or paid for "
+                f"again.{back} Making it cost {_dollars(made.step.tool_call.cost_usd())}. "
+                f"Scene {scene.number} is finished."
             )
         _start_step(
             call,
@@ -757,6 +800,7 @@ class MakeClip(Tool):
             SceneStep.Kind.CLIP,
             busy=f"scene {scene.number}'s clip is already being made. You'll be told when it's "
             "ready.",
+            note=note,
             made_from=audio,
             picture=picture,
             picture_step=picture_step,
@@ -887,6 +931,21 @@ def _scenes(numbers: list[int]) -> str:
 def _listed(items: list[str]) -> str:
     """ "a", "a and b", or "a, b and c"."""
     return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
+
+
+def _latest_clip(scene: Scene) -> ProducedItem | None:
+    """The scene's newest finished clip, if it has one."""
+    return (
+        scene.produced.filter(kind=ProducedItem.Kind.CLIP, step__status=SceneStep.Status.FINISHED)
+        .order_by("version")
+        .last()
+    )
+
+
+def normalised_note(note: str | None) -> str:
+    """A note a scene tool is given, as it is kept: its spacing tidied, blank for none, so the
+    same words spaced differently are the same note."""
+    return " ".join((note or "").split())
 
 
 def _current_audio(scene: Scene) -> ProducedItem:

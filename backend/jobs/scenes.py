@@ -188,6 +188,27 @@ def broll_prompt_instructions(broll_kind: str) -> str:
     return f"{BROLL_SHARED_RULES}\n{BROLL_KIND_RULES[broll_kind]}"
 
 
+# Added to what the model writing a B-roll scene's prompts is told when only its clip is made
+# again, from a note: the starting picture stays, so only the video prompt is written again
+# (route B step 1, #132). The proven rules above come with it, unchanged.
+CLIP_FROM_NOTE_RULES = """\
+The scene's starting picture is already made, and it stays as it is: you are shown it, and \
+"picture_prompt" is the prompt it was drawn from. Pick no photo and write no picture prompt. \
+Write only a new video prompt: "motion_prompt" is the one the scene's first clip from this \
+picture was made from, before any note, and "note" says what the shop owner wants changed \
+about how it moves. Change the movement as the note asks, starting from what the picture \
+shows, and keep what was right. Follow the note unless it asks for something that can't start \
+from this picture, or something "shows" doesn't describe, and then say so in the reason. Give \
+a one-sentence reason for the video prompt, written for the shop owner."""
+
+
+def clip_from_note_instructions(broll_kind: str) -> str:
+    """What the model writing a B-roll scene's video prompt again from a note is told: the
+    same rules as when the scene's prompts were first written, then that only the movement
+    changes."""
+    return f"{broll_prompt_instructions(broll_kind)}\n{CLIP_FROM_NOTE_RULES}"
+
+
 # The job of each picture the picture model gets for a B-roll scene's starting picture.
 MAIN_PHOTO_JOB = "the product, only how it looks"
 PORTRAIT_JOB = "the presenter"
@@ -335,6 +356,37 @@ class BrollPromptHandoff(Handoff):
     person_looks: str
     note: str | None
     conversation: list[ChatMessage]
+
+
+class ClipFromNoteHandoff(Handoff):
+    """What the model writing a B-roll scene's video prompt again from a note is handed: the
+    scene, the prompts its starting picture and last clip were made from, and the note."""
+
+    scene: int
+    line: str
+    shows: str
+    broll_kind: str
+    person_shown: str
+    usage: str
+    result: str
+    picture_prompt: str
+    motion_prompt: str
+    note: str
+    conversation: list[ChatMessage]
+
+
+class ClipFromNoteChoice(BaseModel):
+    motion_prompt: str = Field(description="The prompt for the video model: what moves, and how.")
+    motion_prompt_reason: str = Field(
+        description="One sentence saying why the motion prompt asks for that."
+    )
+
+    @field_validator("motion_prompt", "motion_prompt_reason")
+    @classmethod
+    def _not_empty(cls, text: str) -> str:
+        if not text.strip():
+            raise ValueError("This can't be empty.")
+        return text
 
 
 class BrollSceneToDraw(Handoff):

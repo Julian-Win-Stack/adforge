@@ -13,7 +13,6 @@ from rest_framework.test import APIClient
 from adforge.file_store import read
 from adforge.retry import OutsideServiceDown
 from agents import tasks
-from agents.producer import MakeClip
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import work
@@ -247,10 +246,6 @@ def test_a_talking_clips_motion_prompt_carries_the_pose_its_picture_was_planned_
         f"The person talks to the camera naturally, like a casual phone video. {pose} "
         "Minimal hand movement."
     )
-
-
-def test_the_tool_takes_only_the_scene_so_the_clip_is_made_from_what_was_checked() -> None:
-    assert list(MakeClip.model_json_schema()["properties"]) == ["scene"]
 
 
 # --- What the tool refuses -------------------------------------------------------------------

@@ -239,10 +239,11 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
     number = step.scene.number
     # A B-roll clip made before every B-roll scene got a picture may have none.
     picture = f"starting picture version {clip.picture.version} and " if clip.picture else ""
+    note = f', with its movement rewritten from the note "{step.note}"' if step.note else ""
     return (
         f"Background step finished: scene {number}'s clip is ready (version {clip.version}, "
         f"{clip.seconds:g} seconds), made from {picture}audio version "
-        f"{clip.made_from.version}. Scene {number} is finished. Tell the shop owner."
+        f"{clip.made_from.version}{note}. Scene {number} is finished. Tell the shop owner."
     )
 
 

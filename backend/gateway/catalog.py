@@ -23,6 +23,8 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "draw_person": "gpt-image-2.5-sunburst",
     "choose_starting_picture": "gpt-5.6-sol",
     "choose_broll_picture": "gpt-5.6-sol",
+    # A B-roll scene's video prompt written again from a note, by the same model that wrote it.
+    "rewrite_clip_prompt": "gpt-5.6-sol",
     "make_starting_picture": "gpt-image-2.5-sunburst",
     # The ad's before-picture: planned from every B-roll scene, then drawn.
     "plan_before_picture": "gpt-5.6-sol",
