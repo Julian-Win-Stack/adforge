@@ -25,13 +25,13 @@ from werkzeug import Request, Response
 from adforge import celery_app
 from agents import tasks
 from agents.models import ToolCall
-from chat.models import Session
+from chat.models import Message, Session
 from gateway.fake import FakeModel, turn
 from gateway.gateway import use_model
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import ModelReply, ModelRequest, TurnReply, TurnRequest
-from jobs.models import BROLL_FIELDS, Job
+from jobs.models import BROLL_FIELDS, Fix, Job, Scene
 
 celery_app.conf.update(task_always_eager=True, task_eager_propagates=True)
 
@@ -844,3 +844,27 @@ FINISHING_STEP = (
     "or putting it away, never gets a B-roll scene of its own: the voice says it over the main "
     "step's scene, or the person says it to camera."
 )
+
+
+def said_yes_to_a_fix(scene: int, fix: str, redo: Literal["clip", "picture"]) -> Fix:
+    """The shop owner said yes, with their last message, to `fix` restated as scene `scene`'s
+    fix, as after restate_fix and their answer, so a redo with it as its note passes the yes
+    guard (#135). For tests about the redo rather than the guard; the restating is recorded
+    by a call no agent gives its model."""
+    asked = ToolCall.objects.create(
+        session=Session.objects.get(),
+        agent="test",
+        tool="restate_fix",
+        call_id=f"said_yes_{Fix.objects.count()}",
+        arguments={},
+        finished_at=timezone.now(),
+    )
+    return Fix.objects.create(
+        job=Job.objects.get(),
+        scene=Scene.objects.get(number=scene),
+        fix=" ".join(fix.split()),
+        redo=redo,
+        estimate_usd=0,
+        asked=asked,
+        confirmed_by=Message.objects.filter(role="user").last(),
+    )

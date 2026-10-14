@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -2175,6 +2176,17 @@ def _broll_clip_seconds(audio_seconds: float) -> int:
     video model makes only whole seconds, at least LEAST_BROLL_SECONDS. A hair over a whole
     second, as a measurement can be, isn't counted as another second."""
     return max(LEAST_BROLL_SECONDS, math.ceil(audio_seconds - 1e-6))
+
+
+def clip_estimate_usd(audio_seconds: float, *, broll: bool) -> Decimal:
+    """What a scene's clip covering `audio_seconds` of its line is billed, before it is made:
+    a B-roll clip's whole seconds at the B-roll video model's price, a talking clip's audio
+    at the talking one's, as the clip's handoff asks for them (see _clip_handoff)."""
+    making = "make_broll_clip" if broll else "make_talking_clip"
+    seconds = (
+        _broll_clip_seconds(audio_seconds) if broll else max(audio_seconds, LEAST_CLIP_SECONDS)
+    )
+    return catalog.video_cost_usd(catalog.MODEL_FOR_PURPOSE[making], seconds)
 
 
 def _with_the_voice(file: str, audio: ProducedItem) -> tuple[str, float]:

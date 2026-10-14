@@ -10,12 +10,12 @@ from typing import Any
 import pytest
 
 from agents import tasks
-from agents.producer import MakeClip, _clip_and_transcript, normalised_note
+from agents.producer import MakeClip, _clip_and_transcript, _dollars, normalised_note
 from gateway.catalog import MODEL_FOR_PURPOSE
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import work
-from jobs.models import ProducedItem, Scene, SceneStep
+from jobs.models import Fix, ProducedItem, Scene, SceneStep
 from jobs.scenes import (
     BROLL_KIND_RULES,
     BROLL_SHARED_RULES,
@@ -24,7 +24,14 @@ from jobs.scenes import (
     clip_from_note_instructions,
 )
 
-from .conftest import HeldSteps, WorkerStopped, handoffs, paid_for, results_of
+from .conftest import (
+    HeldSteps,
+    WorkerStopped,
+    handoffs,
+    paid_for,
+    results_of,
+    said_yes_to_a_fix,
+)
 from .test_producer_broll import (
     BROLL_CHOICE,
     LINE_2,
@@ -66,10 +73,19 @@ def clip_with_note(
     note: str | None,
     *rewrites: dict[str, Any],
 ) -> None:
-    """Have the producer make scene 2's clip with `note`, the rewrite answering `rewrites`."""
-    calling(fake_model, say, ("make_clip", {"scene": 2, "note": note}))
+    """Have the producer make scene 2's clip with `note`, the rewrite answering `rewrites`:
+    once its clip is made, for a fix the shop owner said yes to."""
+    noted(fake_model, say, note)
     fake_model.respond("rewrite_clip_prompt", *rewrites)
     run(fake_model, steps)
+
+
+def noted(fake_model: FakeModel, say: Callable[..., None], note: str | None) -> None:
+    """Have the producer call make_clip for scene 2 with `note`: once its clip is made, for a
+    fix the shop owner said yes to (#135)."""
+    if note and ProducedItem.objects.filter(kind="clip", scene__number=2).exists():
+        said_yes_to_a_fix(2, note, "clip")
+    calling(fake_model, say, ("make_clip", {"scene": 2, "note": note}))
 
 
 @pytest.fixture
@@ -174,7 +190,9 @@ def test_the_producer_is_told_the_clip_was_made_from_the_note(
     assert SceneStep.objects.filter(kind="clip").last().result == (  # type: ignore[union-attr]
         "Background step finished: scene 2's clip is ready (version 2, 5 seconds), made from "
         "starting picture version 1 and audio version 1, with its movement rewritten from the "
-        f'note "{HOVERS}". Scene 2 is finished. Tell the shop owner.'
+        f'note "{HOVERS}". Scene 2 is finished. Scene 2\'s fix has cost '
+        f"{_dollars(Fix.objects.get().cost_usd())} so far. Tell the shop owner. The ad will be "
+        "assembled, and shown to the shop owner, once scenes 1 and 3 are finished."
     )
 
 
@@ -197,7 +215,7 @@ def test_the_same_note_again_is_already_made_and_charges_nothing(
     paid = paid_for()
 
     # Spaced differently, it is still the same note.
-    calling(fake_model, say, ("make_clip", {"scene": 2, "note": f" {HOVERS} "}))
+    noted(fake_model, say, f" {HOVERS} ")
 
     assert paid_for() == paid
     assert steps.held == []
@@ -245,7 +263,7 @@ def test_going_back_to_an_earlier_note_brings_its_clip_back_without_paying_again
     )
     paid = paid_for()
 
-    calling(fake_model, say, ("make_clip", {"scene": 2, "note": HOVERS}))
+    noted(fake_model, say, HOVERS)
 
     assert paid_for() == paid
     assert steps.held == []
@@ -271,9 +289,9 @@ def test_going_back_to_an_earlier_note_while_a_clip_is_being_made_is_refused_as_
     fake_model: FakeModel, clipped: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     clip_with_note(fake_model, steps, say, HOVERS, REWRITE)
-    calling(fake_model, say, ("make_clip", {"scene": 2, "note": "The tea should pour faster."}))
+    noted(fake_model, say, "The tea should pour faster.")
 
-    calling(fake_model, say, ("make_clip", {"scene": 2, "note": HOVERS}))
+    noted(fake_model, say, HOVERS)
 
     assert results_of("make_clip")[-1] == (
         "Refused: scene 2's clip is already being made. You'll be told when it's ready. "
@@ -305,7 +323,7 @@ def test_a_note_while_the_clip_is_being_made_is_refused_as_busy(
     made_ready(fake_model, steps, say, (2,))
     calling(fake_model, say, ("make_clip", {"scene": 2, "note": None}))
 
-    calling(fake_model, say, ("make_clip", {"scene": 2, "note": HOVERS}))
+    noted(fake_model, say, HOVERS)
 
     assert results_of("make_clip")[-1] == (
         "Refused: scene 2's clip is already being made. You'll be told when it's ready. "
@@ -357,7 +375,7 @@ def test_a_scene_planned_before_its_broll_labels_with_a_note_is_refused(
 ) -> None:
     paid = paid_for()
 
-    calling(fake_model, say, ("make_clip", {"scene": 2, "note": HOVERS}))
+    noted(fake_model, say, HOVERS)
 
     assert paid_for() == paid
     assert not SceneStep.objects.filter(kind="clip").exists()
@@ -396,7 +414,7 @@ def test_a_rewrite_answered_before_the_worker_stopped_isnt_paid_for_again(
     say: Callable[..., None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calling(fake_model, say, ("make_clip", {"scene": 2, "note": HOVERS}))
+    noted(fake_model, say, HOVERS)
     fake_model.respond("rewrite_clip_prompt", REWRITE)
     (step_id,) = steps.held
 
