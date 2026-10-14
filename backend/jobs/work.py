@@ -2409,6 +2409,26 @@ def bring_back_clip(clip: ProducedItem) -> ProducedItem:
     return again
 
 
+def bring_back_picture(picture: ProducedItem) -> tuple[ProducedItem, bool]:
+    """Make an earlier starting picture the scene's starting picture again, as its next
+    version: the same file and step, so the same photo and prompts, with nothing made, judged
+    or paid for again (#143, as `bring_back_clip`). Like any new picture, it plans a finished
+    scene again: its clip shows the picture before it (#133). Gives the picture brought back,
+    and whether its scene was finished."""
+    scene = picture.scene
+    assert scene is not None, "a starting picture belongs to a scene"
+    with transaction.atomic():
+        again = ProducedItem.objects.create(
+            job=picture.job,
+            scene=scene,
+            step=picture.step,
+            kind=ProducedItem.Kind.STARTING_PICTURE,
+            version=_next_version(scene, ProducedItem.Kind.STARTING_PICTURE),
+            file=picture.file,
+        )
+        return again, scene.plan_again()
+
+
 def _rewrite_motion_prompt(step: SceneStep) -> None:
     """Write a B-roll clip step's video prompt again from its note, keeping it on the step: a
     model told the same rules as the one that wrote the scene's prompts, and that the starting
