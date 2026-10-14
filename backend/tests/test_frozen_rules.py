@@ -5,6 +5,8 @@ Each case names the grade that proved the rule. Not frozen on purpose: the camer
 the video prompt's opener, "One continuous shot" (#117) and the "while" sentence (round 2 N5
 not graded yet)."""
 
+from pathlib import Path
+
 import pytest
 
 from gateway.catalog import MODEL_FOR_PURPOSE, SLOW_ANSWER_SECONDS
@@ -14,7 +16,7 @@ from jobs.clip_judge import (
     FRAMES_PER_SECOND,
     MOTION_CHECK,
     SIDES_CHECK,
-    STILLS,
+    SIDES_FRAMES_PER_SECOND,
     Check,
     SidesVerdict,
 )
@@ -266,39 +268,11 @@ def test_the_start_picture_judge_runs_as_tested() -> None:
 # on gpt-6.1-sol, 3 asks failing on 2, it wrongly failed 2 of 29 good clips and caught 6 of 12
 # faults, the bar met (decisions/julian-away-judgment-calls.md calls 10 and 12;
 # decisions/built-clip-judge-in-app.md). The wording is Julian's to change.
-CLIP_SIDES_AS_PROVED = """\
-You check frames cut from an AI-made video clip before it is used in a product ad. Video models \
-sometimes draw objects that cannot exist, such as a car with headlights on its back, a door \
-hinged on both sides, or a hand with six fingers, and sometimes an object that turns shows a \
-side that is not a real side of it, such as a mug that turns and shows a second handle where the \
-plain side should be. Find those, and only those.
-
-You get a few frames from one clip, in order, each labelled with its time in seconds.
-
-Work in two steps.
-1. Look before you judge. For each frame, and for each main object in it (the products, devices, \
-furniture and tools, and any hands holding them), write down which side of it faces the camera \
-and every part you can see on that side, and where. Describe what is actually drawn, not what \
-such an object usually has. Look closely at small parts: lenses, buttons, screens, spouts, caps, \
-hinges, handles, fingers.
-2. Then judge. For each object in each frame: could a real one of that object, seen from that \
-side, show exactly those parts in exactly those places? Then across the frames: when the object \
-turns, is the side that comes into view a real side of it? Do two frames show opposite sides of \
-it that look the same, although a real one's opposite sides differ? Does a part appear or vanish \
-on a side that kept facing the camera?
-
-Decide "fail" only when you are sure something is physically impossible: a part on a side where \
-the real object can't have it, two sides of one object seen at once, a part fused into another, \
-a body part that can't be, two opposite sides that look the same where a real one's differ. \
-Decide "pass" for everything else.
-
-You may also be shown one shop photo of the product, and facts about it from the shop. They tell \
-you what the product is and how it is built: which parts it has and where they sit. Use them \
-only for that. Ignore the photo's background, setting and anything being done with the product; \
-only the product itself matters. Never compare the frames with the photo: differences in size, \
-shape, angle, distance, colour, label or print are not a fail, and the product may be held, \
-turned, upside down or partly hidden. Fail the product only if it shows a part a real one can't \
-have there, two sides at once, or a label that didn't turn with it."""
+# The phone-flip SIDES check (harness arm F1, Julian's yes to ship 2026-10-14 18:30), pinned
+# word for word beside its answer form in the clip judge's own tests.
+CLIP_SIDES_AS_PROVED = (
+    Path(__file__).parent / "fixtures" / "clip_judge_sides_check.txt"
+).read_text()
 
 CLIP_MOTION_AS_PROVED = """\
 You check a short video clip for a product ad before it is shown to the shop owner. You decide \
@@ -365,12 +339,13 @@ def test_the_clip_judge_runs_as_proved() -> None:
     # Each ask may take as long as the harness waited.
     assert SLOW_ANSWER_SECONDS["check_clip_sides"] == 600
     assert SLOW_ANSWER_SECONDS["check_clip_motion"] == 600
-    # SIDES on 5 stills (call 9: not 5 a second), MOTION at 5 frames a second, change 7's
-    # half second, 3 asks failing on 2.
+    # SIDES at 10 frames a second (the phone-flip check, Julian's yes 2026-10-14 18:30; it was
+    # 5 stills, call 9), MOTION at 5 frames a second, change 7's half second, 3 asks failing
+    # on 2.
     assert (
-        STILLS,
+        SIDES_FRAMES_PER_SECOND,
         FRAMES_PER_SECOND,
         BACK_TO_NORMAL_WITHIN_SECONDS,
         clip_judge.ASKS,
         clip_judge.FAILS_TO_FAIL,
-    ) == (5, 5, 0.5, 3, 2)
+    ) == (10, 5, 0.5, 3, 2)

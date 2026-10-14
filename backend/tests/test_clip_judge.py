@@ -3,26 +3,26 @@ and a problem whose thing is back to normal within half a second is let go, its 
 (change 7, Julian 2026-10-13). What it rules is what the auto-redo acts on: pass or fail, how
 many of the 6 answers failed, and each failed answer's problem and everything it saw."""
 
-import subprocess
-import tempfile
+import json
 from pathlib import Path
 from typing import Any
 
 import pytest
-from django.conf import settings
 from pydantic import create_model
 
-from adforge import file_store
 from jobs import clip_judge
-from jobs.clip_judge import STILLS, cut_pictures, judged, still_failing, wording_version
+from jobs.clip_judge import SIDES_CHECK, SidesVerdict, judged, still_failing, wording_version
 
-SEEN = [{"time": 0.0, "objects": []}]
+PINNED = Path(__file__).parent / "fixtures"
+
+SEEN = [{"time": 0.0, "seen": "broad_face", "face": "front", "parts": "", "thin_edge_side": "none"}]
 
 
 def sides(problem: str | None = None, back: str | None = None) -> dict[str, Any]:
     """A SIDES answer: failing with `problem` when one is given."""
     return {
         "frames": SEEN,
+        "turns": [],
         "across_frames": "The mug turns once, showing its plain side.",
         "verdict": "fail" if problem else "pass",
         "problem": problem,
@@ -162,13 +162,16 @@ def test_two_answers_settle_a_check_when_its_third_went_unchecked() -> None:
         "FRAMES_LABEL",
         "SHOP_PHOTO_LABEL",
         "NEEDS_PHOTO_LABEL",
+        "SIDES_FRAMES_PER_SECOND",
+        "FRAMES_PER_SECOND",
     ],
 )
 def test_the_wording_version_changes_whenever_what_the_judge_is_told_does(
     told: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     before = wording_version()
-    monkeypatch.setattr(clip_judge, told, getattr(clip_judge, told) + " Changed.")
+    now = getattr(clip_judge, told)
+    monkeypatch.setattr(clip_judge, told, now + " Changed." if isinstance(now, str) else now + 1)
 
     assert wording_version() != before
 
@@ -248,69 +251,21 @@ def test_a_sides_problem_is_let_go_only_at_a_bare_time_within_half_a_second_of_i
     assert (ruling["verdict"], [note["check"] for note in ruling["let_go"]]) == ruled
 
 
-# --- The stills SIDES is shown ----------------------------------------------------------------
+# ---------------------------------------------------------------- the SIDES check as tested
 
 
-def a_clip(path: Path, *parts: tuple[str, float], fps: int = 25) -> None:
-    """A real 72 x 128 clip of plain colours at `path`, one after another, each for its
-    seconds, as the fake's clips are made."""
-    inputs: list[str] = []
-    for colour, seconds in parts:
-        inputs += ["-f", "lavfi", "-i", f"color=c={colour}:s=72x128:r={fps}:d={seconds}"]
-    joined = "".join(f"[{n}]" for n in range(len(parts))) + f"concat=n={len(parts)}:v=1:a=0"
-    subprocess.run(
-        [settings.FFMPEG, "-hide_banner", "-loglevel", "error", "-y", *inputs]
-        + ["-filter_complex", joined, "-pix_fmt", "yuv420p", str(path)],
-        check=True,
-        capture_output=True,
-        timeout=60,
-    )
+# The phone-flip SIDES check (harness arm F1, evals/clip-judge-v2 prompts.py SIDES_FLIP, tested
+# on all 110 graded clips 2026-10-13: 3 of 3 flips caught, 0 wrong fails; Julian's yes to ship
+# 2026-10-14 18:30). The judge's words and its answer form are Julian's: both are pinned whole,
+# so any change to either fails here until he says so and the pinned copy changes with it.
+def test_the_sides_check_is_the_phone_flip_wording_as_tested_word_for_word() -> None:
+    assert SIDES_CHECK == (PINNED / "clip_judge_sides_check.txt").read_text()
 
 
-def stills_of(*parts: tuple[str, float], fps: int = 25) -> list[float]:
-    """The time of each still SIDES is shown of a clip of `parts`, kept in the file store."""
-    with tempfile.TemporaryDirectory() as folder:
-        clip = Path(folder) / "clip.mp4"
-        a_clip(clip, *parts, fps=fps)
-        key = file_store.save("clip.mp4", clip.read_bytes())
-    cut = cut_pictures(key, beside=1)
-    times = [still["times"] for still in cut["stills"]]
-    assert all(len(each) == 1 for each in times), "each still is a picture of its own"
-    return [each[0] for each in times]
+def test_the_sides_answer_form_is_the_one_tested_field_for_field() -> None:
+    # The per-frame and turn fields stay: filling them is what makes the judge decide the
+    # direction before it looks at the face that comes back. No code reads them (Julian,
+    # 2026-10-14). The schema is what the model is handed, descriptions and choices included.
+    pinned = json.loads((PINNED / "clip_judge_sides_verdict_schema.json").read_text())
 
-
-@pytest.mark.parametrize(
-    ("parts", "fps", "times"),
-    [
-        pytest.param(
-            (("red", 2.0), ("blue", 3.0)),
-            25,
-            # The first, the last (a twentieth before the end), the biggest change at 2 s,
-            # and two evenly between: a third and two thirds of the way.
-            [0.0, 1.65, 2.0, 3.3, 4.95],
-            id="a change at 2 s",
-        ),
-        pytest.param(
-            (("red", 1.65), ("blue", 3.35)),
-            20,
-            # The biggest change falls on the one-third still, so the middle is taken instead.
-            [0.0, 1.65, 2.48, 3.3, 4.95],
-            id="a change on the one-third still",
-        ),
-        pytest.param(
-            (("red", 5.0),),
-            25,
-            # Nothing changes, so the "biggest change" is the first one measured: the second
-            # frame, as the harness's frames.py reads it too.
-            [0.0, 0.04, 1.65, 3.3, 4.95],
-            id="one colour throughout",
-        ),
-    ],
-)
-def test_sides_stills_are_the_first_the_last_the_biggest_change_and_two_evenly_between(
-    parts: tuple[tuple[str, float], ...], fps: int, times: list[float]
-) -> None:
-    stills = stills_of(*parts, fps=fps)
-
-    assert len(stills) == STILLS == 5
-    assert stills == pytest.approx(times, abs=0.05)
+    assert SidesVerdict.model_json_schema() == pinned
