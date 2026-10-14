@@ -168,6 +168,12 @@ def test_a_picture_that_fails_three_times_stops_the_run_and_shows_each_picture_a
     assert all(a.kind == Attachment.Kind.PICTURE for a in notice.attachments.all())
     for number in (1, 2, 3):
         assert f"Picture {number}: {FUSED_HANDLE}" in notice.text
+    # It also tells the chat scene 2's picture is no longer being made, with nothing made.
+    (said,) = [m for m in api.get(f"/api/sessions/{session_id}/messages/").json() if m["step"]][1:]
+    assert (said["seq"], said["step"]) == (
+        notice.seq,
+        {"scene": 2, "kind": "starting_picture", "state": "not_made"},
+    )
     # The producer takes no turn to carry on: the run is stopped and the chat says so.
     assert paid_for().count("produce") == turns_before
     role, said = chat(api, session_id)[-1]

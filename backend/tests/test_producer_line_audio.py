@@ -39,11 +39,11 @@ AUDIO_STARTED = "Started scene 1's audio. It isn't made yet: you'll be told when
 TRANSCRIBING = "Started transcribing scene 1's audio. It isn't done yet: you'll be told when it is."
 AUDIO_READY = (
     "Background step finished: scene 1's line's audio is ready (version 1, 4 seconds). It "
-    "isn't shown to the shop owner. Transcribe it next. Tell the shop owner."
+    "cost $0.00095. It isn't shown to the shop owner. Transcribe it next. Tell the shop owner."
 )
 TRANSCRIBED = (
     "Background step finished: scene 1's audio (version 1) was transcribed (version 1). It "
-    f'was heard as: "{LINE}" Tell the shop owner.'
+    f'was heard as: "{LINE}" It cost $0.000244. Tell the shop owner.'
 )
 
 # Once CHOICE's picture is chosen, the starting picture of scene 1 can be made.

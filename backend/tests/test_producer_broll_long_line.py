@@ -123,7 +123,7 @@ def test_a_line_too_long_for_its_clip_is_shortened_and_the_producer_told_to_make
 
     assert told == (
         "Background step finished: scene 2's line's audio takes 15.5 seconds to say, too long "
-        f"for any clip. {SHORTENED}"
+        f"for any clip. It cost $0.010475. {SHORTENED}"
     )
     scene = Scene.objects.get(number=2)
     assert (scene.line, scene.shows, scene.fact_checked) == (SHORTER, SHOWS, True)
@@ -256,7 +256,7 @@ def test_a_middle_scene_still_too_long_after_three_shortenings_becomes_a_talking
 
     assert told == (
         "Background step finished: scene 2's line's audio takes 15.5 seconds to say, too long "
-        f"for any clip. {NOW_TALKING}"
+        f"for any clip. It cost $0.001175. {NOW_TALKING}"
     )
     scene = Scene.objects.get(number=2)
     assert (scene.line, scene.shows) == (STILL_LONG[-1], "")
@@ -281,7 +281,7 @@ def test_a_line_still_too_long_after_three_shortenings_becomes_a_talking_scene(
 ) -> None:
     assert shortened_three_times == (
         "Background step finished: scene 2's line's audio takes 15.5 seconds to say, too long "
-        f"for any clip. {NOW_TALKING}"
+        f"for any clip. It cost $0.001175. {NOW_TALKING}"
     )
     assert paid_for().count("shorten_line") == 3
     scene = Scene.objects.get(number=2)

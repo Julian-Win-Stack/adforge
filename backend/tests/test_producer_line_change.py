@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from agents.money import dollars
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs.models import Fix, ProducedItem, Scene, SceneStep
@@ -492,9 +493,11 @@ def test_a_new_broll_line_whose_real_audio_runs_too_long_is_shortened_and_the_ow
     owner_says(fake_model, say, "Go on", ("make_line_audio", {"scene": 2}))
     run(fake_model, steps)
 
-    assert last_step("line_audio", 2).result == (
+    step = last_step("line_audio", 2)
+    assert step.result == (
         "Background step finished: scene 2's line's audio takes 15.5 seconds to say, too long "
-        "for any clip. Scene 2's line was shortened to fit its clip. It isn't the line the shop "
+        f"for any clip. It cost {dollars(step.tool_call.cost_usd())}. Scene 2's line was "
+        "shortened to fit its clip. It isn't the line the shop "
         'owner said yes to: it is now "Hand-thrown, oven and dishwasher safe." Tell the shop '
         "owner. Make its audio again."
     )

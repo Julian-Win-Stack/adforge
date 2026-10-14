@@ -35,8 +35,13 @@ class Session(models.Model):
 
 class Message(models.Model):
     """One turn in a session, from the user or the agent, or a notice the code posts when a
-    step fell back or failed. The only way the user and the agent talk; a notice is for the
-    user alone, and no model is ever given it."""
+    step fell back or failed, or a scene's starting picture or clip started being made. The
+    only way the user and the agent talk; a notice is for the user alone, and no model is
+    ever given it.
+
+    A message about a scene's starting picture or clip names its `step`: a notice when the
+    step starts, the message showing what it made, or a notice when it ended with nothing.
+    So the chat can tell a scene's picture or clip is being made, from the messages alone."""
 
     class Role(models.TextChoices):
         USER = "user"
@@ -46,6 +51,17 @@ class Message(models.Model):
     class Level(models.TextChoices):
         PROBLEM = "problem"  # Shown red: something went wrong that affects the ad.
         INFO = "info"  # Shown grey: normal, worth knowing.
+
+    class StepKind(models.TextChoices):
+        """The scene steps the chat follows: those whose result the shop owner sees."""
+
+        STARTING_PICTURE = "starting_picture"
+        CLIP = "clip"
+
+    class StepState(models.TextChoices):
+        STARTED = "started"
+        MADE = "made"  # The message carries what it made.
+        NOT_MADE = "not_made"  # It failed or stopped the run, with nothing made.
 
     session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name="messages")
     seq = models.PositiveIntegerField(
@@ -60,6 +76,18 @@ class Message(models.Model):
         help_text="How a notice is shown. Blank for the user's and the agent's messages.",
     )
     text = models.TextField(blank=True, help_text="Blank when the message only carries files.")
+    step_scene = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="The number of the scene whose step this message is about. Null when it "
+        "is about no step.",
+    )
+    # A default in the database too, so a worker still running code from before these
+    # fields can add a message while the new code is being rolled out.
+    step_kind = models.CharField(max_length=20, choices=StepKind.choices, blank=True, db_default="")
+    step_state = models.CharField(
+        max_length=10, choices=StepState.choices, blank=True, db_default=""
+    )
     trace_id = models.CharField(
         max_length=32,
         blank=True,
@@ -80,7 +108,8 @@ class Message(models.Model):
 
 class Attachment(models.Model):
     """A file a message carries: a photo the user attached, or something the agent made,
-    such as the portrait, the person's voice or the finished ad."""
+    such as the portrait, the person's voice, a scene's starting picture or clip, or the
+    finished ad."""
 
     class Kind(models.TextChoices):
         PICTURE = "picture"
@@ -91,6 +120,12 @@ class Attachment(models.Model):
     position = models.PositiveSmallIntegerField(help_text="1, 2, 3... in the order shown.")
     kind = models.CharField(max_length=10, choices=Kind.choices)
     file = models.CharField(max_length=500, help_text="Key in the file store.")
+    scene = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="The number of the scene this is the starting picture or clip of. Null for "
+        "a file that belongs to no scene: the portrait, the voice, the finished ad, a photo.",
+    )
 
     class Meta:
         ordering = ["message", "position"]
