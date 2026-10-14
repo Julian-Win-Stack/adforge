@@ -248,6 +248,29 @@ def test_an_ask_with_no_usable_answer_goes_unchecked(
     assert SceneStep.objects.get(kind="clip", scene__number=2).status == "finished"
 
 
+def test_a_first_clip_the_judge_couldnt_check_is_kept_and_the_producer_told_so(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],  # noqa: F811
+) -> None:
+    """Too few answers to settle a check is no fail, so the clip is kept as it is (Julian,
+    2026-10-14: "treat that as pass"), and the shop owner is told it wasn't checked."""
+    unusable = UnusableReply("no answer", input_tokens=1, output_tokens=1)
+    fake_model.respond("check_clip_sides", *[unusable] * 6, CLIP_SIDES_OK)
+
+    clip = clip_of(fake_model, steps, say, 2)
+
+    assert ruling(clip)["verdict"] == "not_checked"
+    assert paid_for().count("make_broll_clip") == 1
+    step = SceneStep.objects.get(kind="clip", scene__number=2)
+    assert step.status == "finished"
+    assert step.result.endswith(
+        " The clip judge couldn't check this clip, so it is kept unchecked. Scene 2 is "
+        "finished. Tell the shop owner."
+    )
+
+
 @pytest.mark.parametrize(
     (
         "words_per_second",
