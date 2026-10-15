@@ -54,6 +54,37 @@ class FixVerdict(BaseModel):
         return self
 
 
+# For a fix that takes things from the shop owner's photos (Julian 2026-10-15 19:34, the one
+# change to the frozen checks): the judge is also shown each photo, named, and looks at it
+# first. Every other fix is checked as before.
+PHOTO_FIX_QUESTION = """\
+The shop owner also sent photos of their own things for this change, named in \
+"owner_photos" in the order shown, after the new picture. Each named thing in the new \
+picture should look like it does in its photo, whatever the old picture or the product \
+photos show. Before anything else, write what the shop owner's photos show about each named \
+thing. A thing that doesn't look like its photo in the new picture is not fixed."""
+
+
+# The judge's answer when it is shown the shop owner's photos: what they show comes first,
+# then FixVerdict's fields, in its order.
+class PhotoFixVerdict(BaseModel):
+    owner_photo_shows: str = Field(
+        description="What the shop owner's photos show about each named thing."
+    )
+    old_shows: str = Field(description="What the old picture shows about the change.")
+    new_shows: str = Field(description="What the new picture shows about the change.")
+    verdict: Literal["fixed", "not fixed"]
+    still_wrong: str | None = Field(
+        description="When it isn't fixed: what is still wrong, in one sentence. Null when it is."
+    )
+
+    @model_validator(mode="after")
+    def _a_failure_says_why(self) -> Self:
+        if self.verdict == "not fixed" and not (self.still_wrong or "").strip():
+            raise ValueError("A change that isn't made must say what is still wrong.")
+        return self
+
+
 class FixCheckHandoff(Handoff):
     """The fix the shop owner said yes to, word for word, and which of the judge's asks
     about one new picture this is, from 1: the number keeps each ask's answer apart, so one
@@ -62,6 +93,16 @@ class FixCheckHandoff(Handoff):
     fix: str
     ask: int
     pictures: str = PICTURES_SHOWN
+
+
+class PhotoFixCheckHandoff(FixCheckHandoff):
+    """And the things the shop owner's photos are taken for, in the order shown."""
+
+    owner_photos: list[str]
+    pictures: str = (
+        "The old picture is first; the new picture is second; then the shop owner's photos, "
+        "in the order of owner_photos."
+    )
 
 
 Verdict = Literal["passed", "failed", "unchecked"]

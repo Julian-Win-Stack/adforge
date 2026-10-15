@@ -41,6 +41,7 @@ from gateway.types import (
     UnusableReply,
 )
 from jobs.models import SceneStep
+from jobs.reference_photos import ReferencePhotoUnusable
 
 from .models import ToolCall
 
@@ -55,6 +56,7 @@ EXPECTED_FAILURES = (
     UnreadableImage,
     ClipFailed,
     BlockedBySafetyFilter,
+    ReferencePhotoUnusable,
 )
 
 # Asking again sends the same thing, so the run stops and the shop owner starts afresh.
@@ -283,6 +285,8 @@ def why_it_failed(error: Exception, stopped: str) -> str:
         return f"{BLOCKED}."
     if isinstance(error, ClipFailed):
         return f"the video model couldn't make the clip ({error})."
+    if isinstance(error, ReferencePhotoUnusable):
+        return f"{error}"
     return f"an unexpected error stopped {stopped}. The details are in the server log."
 
 

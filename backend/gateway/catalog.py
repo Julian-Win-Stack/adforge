@@ -28,6 +28,13 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # And again after the clip judge failed the clip it was made from (the auto-fix, #155).
     "remake_clip_prompt": "gpt-5.6-sol",
     "make_starting_picture": "gpt-image-2.5-sunburst",
+    # A clean picture of only the thing a shop owner's photo is taken for (Reference photo,
+    # CONTEXT.md), drawn as starting pictures are.
+    "make_reference_photo_picture": "gpt-image-2.5-sunburst",
+    # Whether the thing in the shop owner's photo is in a scene's starting picture, belongs in
+    # it from the start, or only shows during the clip: the starting picture's judge, as it is
+    # proven at seeing what our pictures show (Julian 2026-10-15, D10).
+    "route_reference_photo": "gpt-6.1-sol",
     # The ad's before-picture: planned from every B-roll scene, then drawn.
     "plan_before_picture": "gpt-5.6-sol",
     "make_before_picture": "gpt-image-2.5-sunburst",

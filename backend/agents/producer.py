@@ -8,7 +8,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.db import IntegrityError, transaction
-from django.db.models import Avg, Max, Sum
+from django.db.models import Avg, Max, QuerySet, Sum
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from adforge.retry import OutsideServiceDown
@@ -17,7 +17,7 @@ from chat.models import Attachment, Message, Session
 from gateway import catalog
 from gateway.models import ModelCall
 from gateway.types import MusicHandoff, UnusableReply
-from jobs import auto_fix, clip_judge, page
+from jobs import auto_fix, clip_judge, page, reference_photos
 from jobs.checks import LONGEST_BROLL_LINE_SECONDS, LONGEST_LINE_SECONDS, line_seconds
 from jobs.models import (
     BROLL_FIELDS,
@@ -26,6 +26,7 @@ from jobs.models import (
     Job,
     ProducedItem,
     ProductPhoto,
+    ReferencePhoto,
     Scene,
     SceneStep,
 )
@@ -115,12 +116,22 @@ A new starting picture or clip made for a fix is checked for the change. When th
 finds it missing, the chat shows them the old one and the new one and why: make nothing \
 more for that scene, and don't assemble the ad, until they answer. If they say go ahead, \
 carry on; if they say what to change, restate a new fix.
-What you can't do, said plainly the same way each time: see pictures or videos; use new \
-product photos once the ad is planned; give the video model a photo, as it only starts from \
-the starting picture; or change what the person does in a scene where they talk, only how \
-it looks or what they hold, through a new starting picture. Not yet: changing the music, \
-the text shown over a scene, the voice, the person, the number of scenes or the ad's \
-length. Slower can't be done: every clip plays at real-time speed.
+The shop owner can send photos of their own things with a note on a scene that shows the \
+product, up to 3 a note: the chat numbers them "owner photo 1", "owner photo 2" and so on. \
+In restate_fix, give the fix each photo's number and the one thing to take from it, named \
+in their words, such as "black toilet". If their words don't say which thing, ask before \
+you restate. Tell them each photo's thing in your restatement, so they can correct it. \
+Never tell them how their photos are used. A photo stays with its scene for later fixes; to \
+stop using one, restate the fix with its thing to drop.
+What you can't do, said plainly the same way each time: see pictures or videos; or change \
+what the person does in a scene where they talk, only how it looks or what they hold, \
+through a new starting picture. Not yet: using the shop owner's photos in a scene where the \
+person talks; changing how the person looks to match a photo; using a video they send as an \
+example; changing the music, the text shown over a scene, the voice, the person, the number \
+of scenes or the ad's length. Before the ad is planned, every photo they send is a product \
+photo: if they send one of something else, don't add it, and tell them to send it with a \
+note on a scene once the first version is made. Slower can't be done: every clip plays at \
+real-time speed.
 Keep your messages short and friendly, written for someone who isn't technical."""
 
 
@@ -280,8 +291,8 @@ class UsePhotos(Tool):
         job = _with_its_page(call, "the photos belong to its ad")
         if job.scenes.exists():
             raise Refused(
-                "the ad is already planned, so its photos can't change now. Changing a planned "
-                "ad's photos comes later."
+                "the ad is already planned, so its product photos can't change now. A photo of "
+                "the shop owner's own thing goes with a note on a scene: restate the fix with it."
             )
         kept = set(job.photos.values_list("file", flat=True))
         position = job.photos.aggregate(last=Max("position"))["last"] or 0
@@ -615,11 +626,16 @@ class MakeStartingPicture(Tool):
         if not note:
             fix = _line_fix(scene)
         steps = scene.steps.filter(kind=SceneStep.Kind.STARTING_PICTURE)
-        made = (
+        # A picture made with other photos of the shop owner's is another picture.
+        made = _with_the_photos_in_use(
+            scene,
             steps.filter(status=SceneStep.Status.FINISHED, note=note, **SceneStep.made_for(scene))
             .filter(produced__isnull=False)
-            .last()
+            .distinct(),
         )
+        if fix is not None and fix.brings_back is not None:
+            # D2: the picture from before the photo the fix stops using, as it was.
+            made = fix.brings_back.step
         if made is not None:
             return _already_made_picture(call, scene, made, fix)
         _no_clip_being_made(scene)
@@ -639,6 +655,27 @@ class MakeStartingPicture(Tool):
         )
 
 
+def _with_the_photos_in_use(scene: Scene, steps: QuerySet[SceneStep]) -> SceneStep | None:
+    """The newest of `steps` made with the shop owner's photos the scene uses now, if any."""
+    using = {(row.file, row.thing) for row in _photos_in_use(scene)}
+    return next((step for step in reversed(steps) if _photos_of(step) == using), None)
+
+
+def _clip_with_the_photos_in_use(
+    scene: Scene, clips: QuerySet[ProducedItem]
+) -> ProducedItem | None:
+    """The newest of `clips` made with the shop owner's photos the scene uses now, if any."""
+    using = {(row.file, row.thing) for row in _photos_in_use(scene)}
+    return next(
+        (
+            clip
+            for clip in reversed(clips)
+            if clip.step is not None and _photos_of(clip.step) == using
+        ),
+        None,
+    )
+
+
 def _already_made_picture(call: ToolCall, scene: Scene, made: SceneStep, fix: Fix | None) -> str:
     """For a starting picture already made for the scene's line with the same note: say so
     if it is the scene's picture, or bring it back as the scene's picture if a newer one was
@@ -653,7 +690,11 @@ def _already_made_picture(call: ToolCall, scene: Scene, made: SceneStep, fix: Fi
             "when it's ready."
         )
     assert made.photo is not None, "a finished starting picture was made from a photo"
-    earlier = made.produced.order_by("version").last()
+    earlier = (
+        fix.brings_back
+        if fix is not None and fix.brings_back is not None
+        else made.produced.order_by("version").last()
+    )
     assert earlier is not None, "a finished starting picture step made its picture"
     current = _current_picture(scene)
     with_note = "with this note" if made.note else "with no note"
@@ -917,7 +958,8 @@ class MakeClip(Tool):
         if not note and answered is not None:
             fix = answered
             _answered_a_failed_check(call, picture_step)
-        made = (
+        made = _clip_with_the_photos_in_use(
+            scene,
             scene.produced.filter(
                 kind=ProducedItem.Kind.CLIP,
                 step__status=SceneStep.Status.FINISHED,
@@ -928,10 +970,11 @@ class MakeClip(Tool):
                 # With no note, any clip of the same picture and audio is already made, as
                 # before notes; a different note is a new clip.
                 **({"step__note": note} if note else {}),
-            )
-            .order_by("version")
-            .last()
+            ).order_by("version"),
         )
+        if fix is not None and fix.brings_back is not None and fix.redo == Fix.Redo.CLIP:
+            # D2: the clip from before the photo the fix stops using, as it was.
+            made = fix.brings_back
         if made is not None:
             assert made.step is not None, "a clip is made by a scene step"
             made_from = "from this starting picture"
@@ -1182,6 +1225,12 @@ def _fix_still_to_land(scene: Scene) -> bool:
         step.fix_id != fix.pk
         and step.note != fix.fix
         and (step.picture_step is None or not _picture_answers_fix(step.picture_step, fix))
+        # Brought back from before the shop owner's photo, for a fix that stops using it.
+        and not (
+            fix.redo == Fix.Redo.CLIP
+            and fix.brings_back is not None
+            and fix.brings_back.step_id == step.pk
+        )
     )
 
 
@@ -1192,7 +1241,26 @@ def _picture_answers_fix(picture_step: SceneStep, fix: Fix) -> bool:
     return picture_step.fix_id == fix.pk or (
         fix.redo == Fix.Redo.PICTURE
         and fix.confirmed_by_id is not None
-        and picture_step.note == fix.fix
+        and (
+            picture_step.note == fix.fix
+            # Brought back from before the shop owner's photo, for a fix that stops using it.
+            or (fix.brings_back is not None and fix.brings_back.step_id == picture_step.pk)
+        )
+    )
+
+
+class PhotoTaken(BaseModel):
+    """One of the shop owner's photos a fix takes a thing from, and the thing."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    photo: int = Field(
+        description='The photo\'s number, as the chat gives it: "owner photo 3" is 3.'
+    )
+    thing: str = Field(
+        description="The one thing to take from it, in a few words from what the shop owner "
+        'said, such as "black toilet" or "brown stain inside the bowl". Say it to them in your '
+        "restatement, so they can correct it."
     )
 
 
@@ -1212,7 +1280,21 @@ class FixAsked(BaseModel):
         'product moves, from its starting picture as it is; "picture" to change what the '
         'scene shows, with a new starting picture and then its clip; "line" to change what is '
         "said, with the new line in the fix word for word, in quotes. The shop owner isn't "
-        "told which."
+        "told which. With photos, code picks between a new starting picture and a new clip."
+    )
+    # Null rather than empty by default: OpenAI's strict schema keeps no other default.
+    photos: list[PhotoTaken] | None = Field(
+        default=None,
+        description="When the shop owner attached photos to their note on the scene to show "
+        "how something should look: each photo, at most 3, and the one thing to take from it, "
+        "named from their words. If their words don't say what to take from a photo, ask them "
+        "before restating. Null for none.",
+    )
+    drop: list[str] | None = Field(
+        default=None,
+        description="When the shop owner wants the scene to stop using a photo they sent "
+        "before, such as to go back to how it was before it: each thing whose photo it stops "
+        "using, by its name as they confirmed it. Null for none.",
     )
 
 
@@ -1243,28 +1325,36 @@ class RestateFix(Tool):
                 "everything the shop owner asked for it."
             )
         # Every fix is checked before any is recorded, so a refusal records nothing.
-        fixable = [(_fixable_scene(job, asked), asked) for asked in self.fixes]
-        estimates = {
-            scene.pk: _estimate(scene, Fix.Redo(asked.redo), normalised_note(asked.fix))
-            for scene, asked in fixable
-        }
+        owner = messages.owner_photos(call.session)
+        planned = [
+            _with_photos(job, _fixable_scene(job, asked), asked, owner) for asked in self.fixes
+        ]
+        planned += _joined(job, planned)
+        for one in planned:
+            _no_more_than_most_photos(one)
+        estimates = {one.scene.pk: _planned_estimate(one) for one in planned}
+        _clean_pictures_to_draw(job, planned, estimates)
         recorded = []
         with transaction.atomic():
-            for scene, asked in fixable:
-                redo = Fix.Redo(asked.redo)
+            for one in planned:
                 # Run again after a restart, the call records the same fixes, not more.
                 fix, _ = Fix.objects.update_or_create(
                     asked=call,
-                    scene=scene,
+                    scene=one.scene,
                     defaults={
                         "job": job,
-                        "fix": normalised_note(asked.fix),
-                        "redo": redo,
-                        "notes": fix_notes(scene),
-                        "estimate_usd": estimates[scene.pk].about,
+                        "fix": one.fix,
+                        "redo": one.redo,
+                        "notes": fix_notes(one.scene),
+                        "estimate_usd": estimates[one.scene.pk].about,
+                        "photos": one.photos,
+                        "drops": one.drops,
+                        "joined": one.joined,
+                        "brings_back": one.brings_back,
                     },
                 )
                 recorded.append(fix)
+            _drop_joined_fixes_restated_since(call, recorded)
         call.asked_about = "fixes"
         each = " ".join(
             f"Scene {fix.scene.number}: {_about(estimates[fix.scene.pk])}." for fix in recorded
@@ -1276,12 +1366,367 @@ class RestateFix(Tool):
         )
         waits = "".join(_waits_for(fix.scene) + _earlier_fix_lost(fix) for fix in recorded)
         return (
-            f"Recorded the fix{'es' if len(recorded) != 1 else ''}. {each} {total}. "
+            f"Recorded the fix{'es' if len(recorded) != 1 else ''}. {each} {total}."
+            f"{_photos_told(planned)} "
             "Tell the shop owner this restatement and what it will "
             "cost, and wait for their answer: nothing is made until they say yes. Once they "
             "have, pass each scene's fix word for word as the note of its redo, or, for a new "
             f"line, the new line to change_line.{waits}"
         )
+
+
+class Planned(NamedTuple):
+    """A fix as restate_fix will record it: what it is for each scene, with the shop owner's
+    photos it takes things from, as code routes them, and what it tells the producer."""
+
+    scene: Scene
+    fix: str
+    redo: Fix.Redo
+    photos: list[dict[str, object]]
+    drops: list[str]
+    joined: bool
+    brings_back: ProducedItem | None
+    told: str
+
+
+def _with_photos(job: Job, scene: Scene, asked: FixAsked, owner: list[Attachment]) -> Planned:
+    """The fix restated for `scene`, with the shop owner's photos `asked` names, routed: for
+    each, a model looks at the scene's starting picture to say whether its thing is in it,
+    belongs in it from the start, or only shows during the clip (D6). Either of the first two
+    is drawn into a new starting picture; the last makes the clip again in reference mode.
+    Refuses, saying why, a photo the fix can't take a thing from."""
+    fix = normalised_note(asked.fix)
+    photos, drops = (
+        asked.photos or [],
+        [reference_photos.name_of(thing) for thing in asked.drop or []],
+    )
+    if not photos and not drops:
+        return Planned(scene, fix, Fix.Redo(asked.redo), [], [], False, None, "")
+    number = scene.number
+    if not scene.shows:
+        # D7: a talking scene is HeyGen's, and a person can't be changed from a photo yet.
+        raise Refused(
+            f"scene {number} shows the person talking, and the shop owner's photos can't be "
+            "used in a scene where the person talks yet. Tell them so, and offer what you can "
+            "change in it instead."
+        )
+    if not scene.broll_kind:
+        raise Refused(
+            f"scene {number} was planned before scenes had their B-roll labels, so the shop "
+            "owner's photos can't be used in it."
+        )
+    if asked.redo == "line":
+        raise Refused(
+            f"scene {number}'s fix is a new line, and a photo changes how something looks, not "
+            "what is said. Restate the line and the photo as separate changes, or leave the "
+            "photo out."
+        )
+    if len(photos) > reference_photos.MOST_PHOTOS:
+        raise Refused(
+            f"scene {number}'s fix takes things from {len(photos)} photos, and a note's fix "
+            f"takes them from at most {reference_photos.MOST_PHOTOS}. Ask the shop owner which "
+            f"{reference_photos.MOST_PHOTOS} to use."
+        )
+    things = [reference_photos.name_of(taken.thing) for taken in photos]
+    if any(not thing for thing in things):
+        raise Refused(
+            f"scene {number}'s fix names no thing to take from one of its photos. Name one "
+            "from what the shop owner said, or ask them."
+        )
+    for thing in things:
+        if sum(reference_photos.same_thing(thing, other) for other in things) > 1:
+            raise Refused(
+                f"scene {number}'s fix takes the {thing} from more than one photo. Ask the "
+                "shop owner which photo shows it."
+            )
+    for taken in photos:
+        if not 1 <= taken.photo <= len(owner):
+            raise Refused(
+                f"the chat has no owner photo {taken.photo}: "
+                + (
+                    f"the shop owner's photos are 1 to {len(owner)}."
+                    if len(owner) > 1
+                    else "the shop owner's only photo is 1."
+                    if owner
+                    else "the shop owner hasn't attached any photo."
+                )
+            )
+    using = list(_photos_in_use(scene))
+    for thing in drops:
+        if not any(reference_photos.same_thing(thing, row.thing) for row in using):
+            uses = ", ".join(f"the {row.thing}" for row in using) or "none"
+            raise Refused(
+                f"scene {number} uses no photo of the {thing}. The shop owner's photos it uses: "
+                f"{uses}."
+            )
+    picture = _current_picture(scene)
+    routed = []
+    for taken, thing in zip(photos, things, strict=True):
+        file = owner[taken.photo - 1].file
+        answer = (
+            reference_photos.where_it_goes(
+                job, picture=picture.file, photo=file, thing=thing, shows=scene.shows, change=fix
+            )
+            if picture is not None
+            else None
+        )
+        if answer is None:
+            # No answer: the producer's own pick stands.
+            use = ReferencePhoto.Use.CLIP if asked.redo == "clip" else ReferencePhoto.Use.PICTURE
+            where = "not answered"
+        else:
+            during = answer.where == "appears_during_the_clip"
+            use = ReferencePhoto.Use.CLIP if during else ReferencePhoto.Use.PICTURE
+            where = answer.where
+        routed.append(
+            {"photo": taken.photo, "file": file, "thing": thing, "use": use.value, "where": where}
+        )
+    in_picture = any(photo["use"] == ReferencePhoto.Use.PICTURE for photo in routed)
+    redo = Fix.Redo.PICTURE if in_picture or asked.redo == "picture" else Fix.Redo.CLIP
+    brings_back, told = None, ""
+    if drops and not photos:
+        brings_back, told = _before_the_photos(scene, drops, redo)
+    return Planned(scene, fix, redo, routed, drops, False, brings_back, told)
+
+
+def _joined(job: Job, planned: list[Planned]) -> list[Planned]:
+    """The fixes code adds for scenes the shop owner didn't name, so a photo applies to every
+    scene that shows its thing (Julian 15:49, Q2; 20:14): a B-roll scene with a clip whose
+    starting picture a model finds the thing in, or which already uses a photo of the same
+    thing, which the new one replaces (D3). A scene whose starting picture doesn't show it is
+    left out (20:14). The shop owner sees each, and its cost, before their yes."""
+    named = {each.scene.pk for each in planned}
+    taken = [photo for each in planned for photo in each.photos]
+    if not taken:
+        return []
+    joined = []
+    for scene in job.scenes.exclude(pk__in=named).exclude(broll_kind=""):
+        try:
+            _fixable_scene(job, FixAsked(scene=scene.number, fix="-", redo="picture"))
+        except Refused:
+            continue
+        picture = _current_picture(scene)
+        using = list(_photos_in_use(scene))
+        photos: list[dict[str, object]] = []
+        for photo in taken:
+            if any(each["thing"] == photo["thing"] for each in photos):
+                continue
+            held = next(
+                (
+                    row
+                    for row in using
+                    if reference_photos.same_thing(row.thing, str(photo["thing"]))
+                ),
+                None,
+            )
+            answer = (
+                reference_photos.where_it_goes(
+                    job,
+                    picture=picture.file,
+                    photo=str(photo["file"]),
+                    thing=str(photo["thing"]),
+                    shows=scene.shows,
+                    change=None,
+                )
+                if picture is not None
+                else None
+            )
+            where: str
+            if answer is not None and answer.where == "in_the_picture":
+                use, where = ReferencePhoto.Use.PICTURE.value, answer.where
+            elif held is not None:
+                use, where = held.use, "already uses a photo of it"
+            else:
+                continue
+            photos.append({**photo, "use": use, "where": where})
+        if not photos:
+            continue
+        things = [f"the {photo['thing']}" for photo in photos]
+        ones = "the one" if len(photos) == 1 else "the ones"
+        fix = (
+            f"Make {_listed(things)} look like {ones} in the shop owner's "
+            f"photo{'s' if len(photos) != 1 else ''}."
+        )
+        in_picture = any(photo["use"] == ReferencePhoto.Use.PICTURE for photo in photos)
+        redo = Fix.Redo.PICTURE if in_picture else Fix.Redo.CLIP
+        joined.append(Planned(scene, fix, redo, photos, [], True, None, ""))
+    return joined
+
+
+def _photos_in_use(scene: Scene) -> QuerySet[ReferencePhoto]:
+    """The shop owner's photos the scene uses now, oldest first."""
+    return scene.reference_photos.filter(dropped_by__isnull=True)
+
+
+def _no_more_than_most_photos(planned: Planned) -> None:
+    """Refuse a fix that would leave its scene using more than MOST_PHOTOS of the shop
+    owner's photos (D4): the producer asks them which to drop."""
+    kept = [
+        row.thing
+        for row in _photos_in_use(planned.scene)
+        if not any(reference_photos.same_thing(row.thing, thing) for thing in planned.drops)
+        and not any(
+            reference_photos.same_thing(row.thing, str(photo["thing"])) for photo in planned.photos
+        )
+    ]
+    things = kept + [str(photo["thing"]) for photo in planned.photos]
+    if len(things) > reference_photos.MOST_PHOTOS:
+        raise Refused(
+            f"scene {planned.scene.number} would use {len(things)} of the shop owner's photos "
+            f"({_listed([f'the {thing}' for thing in things])}), and a scene uses at most "
+            f"{reference_photos.MOST_PHOTOS}. Ask them which to stop using, and restate the fix "
+            "with it to drop."
+        )
+
+
+def _before_the_photos(
+    scene: Scene, drops: list[str], redo: Fix.Redo
+) -> tuple[ProducedItem | None, str]:
+    """For a fix that only stops using photos, as when the shop owner wants the scene back as
+    it was before one: the scene's starting picture, or clip, from before the photos, to bring
+    back with nothing paid (D2), and what the producer is told. None when it can't be brought
+    back as it was: then it is made again without them, and when that is because the shop
+    owner said yes to a change since, they are told before their answer."""
+    rows = [
+        row
+        for row in _photos_in_use(scene)
+        if any(reference_photos.same_thing(row.thing, thing) for thing in drops)
+    ]
+    first = min((row.added_by for row in rows), key=lambda fix: (fix.created_at, fix.pk))
+    later = (
+        scene.fixes.filter(confirmed_by__isnull=False, created_at__gt=first.created_at)
+        .exclude(pk=first.pk)
+        .last()
+    )
+    if later is not None:
+        return None, (
+            f" Scene {scene.number} can't simply go back to how it was before the photo: the "
+            f'shop owner said yes to a change since ("{later.fix}"), which going back would '
+            "lose, so it is made again without the photo instead: tell them that too, before "
+            "their answer."
+        )
+    kept = {(row.file, row.thing) for row in _photos_in_use(scene) if row not in rows}
+    kind = (
+        ProducedItem.Kind.STARTING_PICTURE if redo == Fix.Redo.PICTURE else ProducedItem.Kind.CLIP
+    )
+    step = scene.steps.filter(fix=first, kind=kind, status=SceneStep.Status.FINISHED).first()
+    before = step.shown_before(kind) if step is not None else None
+    if before is None or before.step is None or _photos_of(before.step) != kept:
+        return None, ""
+    if kind == ProducedItem.Kind.STARTING_PICTURE:
+        current = scene.produced.filter(
+            pk=before.pk,
+            step__line__in=[scene.line, *scene.shortened_from],
+            **{
+                key: value
+                for key, value in SceneStep.made_for(scene, through="step__").items()
+                if key != "step__line"
+            },
+        )
+        if not current.exists():
+            return None, ""
+    else:
+        picture = _current_picture(scene)
+        try:
+            audio = _current_audio(scene)
+        except Refused:
+            return None, ""
+        if (
+            picture is None
+            or before.step.picture_step_id != picture.step_id
+            or before.made_from_id != audio.pk
+        ):
+            return None, ""
+    what = "starting picture" if kind == ProducedItem.Kind.STARTING_PICTURE else "clip"
+    return before, (
+        f" Scene {scene.number} goes back to its {what} from before the photo, so nothing is "
+        "made or paid for again."
+    )
+
+
+def _photos_of(step: SceneStep) -> set[tuple[str, str]]:
+    """The shop owner's photos a step was made with, as (file, thing)."""
+    return {(row.file, row.thing) for row in step.reference_photos.all()}
+
+
+def _planned_estimate(planned: Planned) -> Estimate:
+    """What a fix is estimated to cost: nothing to bring back what was made before the shop
+    owner's photo, or else its redo."""
+    if planned.brings_back is not None:
+        return Estimate(Decimal(0), Decimal(0))
+    return _estimate(planned.scene, planned.redo, planned.fix)
+
+
+# What a clean picture of a shop owner's thing is estimated to cost: a picture and its
+# check's looks, as a starting picture with none recorded (PICTURE_FALLBACK_USD).
+CLEAN_PICTURE_USD = Decimal("0.10")
+
+
+def _clean_pictures_to_draw(
+    job: Job, planned: list[Planned], estimates: dict[int, Estimate]
+) -> None:
+    """Add to the first fix taking each thing from a photo the cost of its clean picture,
+    unless one was already drawn for the ad: each is drawn once, whichever scenes use it."""
+    counted: set[tuple[str, str]] = set()
+    for each in planned:
+        for photo in each.photos:
+            key = (str(photo["file"]), str(photo["thing"]))
+            if (
+                key in counted
+                or ReferencePhoto.objects.filter(scene__job=job, file=key[0], thing=key[1])
+                .exclude(drawn="")
+                .exists()
+            ):
+                continue
+            counted.add(key)
+            about, up_to = estimates[each.scene.pk]
+            estimates[each.scene.pk] = Estimate(
+                about + CLEAN_PICTURE_USD, up_to + CLEAN_PICTURE_USD
+            )
+
+
+def _drop_joined_fixes_restated_since(call: ToolCall, recorded: list[Fix]) -> None:
+    """Drop the fixes code added to an earlier restatement for scenes this one leaves out,
+    while the shop owner hasn't said yes to them, once this one restates every scene they
+    named in it: it is their correction, and the old added fixes would otherwise wait for
+    a yes that never comes."""
+    scenes = {fix.scene_id for fix in recorded}
+    earlier = (
+        Fix.objects.filter(job=recorded[0].job, joined=True, confirmed_by__isnull=True)
+        .exclude(asked=call)
+        .exclude(scene_id__in=scenes)
+    )
+    for asked in {fix.asked for fix in earlier}:
+        named = asked.fixes.filter(joined=False).values_list("scene_id", flat=True)
+        if set(named) <= scenes:
+            earlier.filter(asked=asked).delete()
+
+
+def _photos_told(planned: list[Planned]) -> str:
+    """What the producer is told of the shop owner's photos the fixes take things from: what
+    each is taken as and in which scenes, the fixes code added, and what going back does."""
+    told = []
+    taken: dict[tuple[int, str], list[int]] = {}
+    for each in planned:
+        for photo in each.photos:
+            key = (int(str(photo["photo"])), str(photo["thing"]))
+            taken.setdefault(key, []).append(each.scene.number)
+    for (number, thing), scenes in taken.items():
+        told.append(f" Owner photo {number} is taken as the {thing}, in {_scenes(scenes)}.")
+    for each in planned:
+        if each.joined:
+            told.append(
+                f" Scene {each.scene.number} shows "
+                f"{_listed([f'the {photo["thing"]}' for photo in each.photos])} too, so a fix "
+                f'was added for it: "{each.fix}" Make it with the others once they say yes.'
+            )
+        told.append(each.told)
+    if taken:
+        told.append(
+            " Tell them what each photo is taken as and which scenes change, so they can "
+            "correct it, but never how their photos are used."
+        )
+    return "".join(told)
 
 
 def _about(estimate: Estimate) -> str:
@@ -1684,9 +2129,41 @@ def _confirmed_fix(call: ToolCall, scene: Scene, note: str, redo: Fix.Redo) -> F
             "picture. Make its clip with the fix as the note."
         )
     if fix.confirmed_by is None:
-        fix.confirmed_by = _yes_to(call.session, fix)
-        fix.save(update_fields=["confirmed_by"])
+        with transaction.atomic():
+            fix.confirmed_by = _yes_to(call.session, fix)
+            fix.save(update_fields=["confirmed_by"])
+            _use_the_photos(fix)
     return fix
+
+
+def _use_the_photos(fix: Fix) -> None:
+    """Once the shop owner has said yes to the fix, its scene uses its photos from now on
+    (D1), each in place of any it used of the same thing (D3), and stops using those it
+    drops. A clean picture already drawn of the same thing from the same photo is kept."""
+    using = list(_photos_in_use(fix.scene))
+    for row in using:
+        if any(reference_photos.same_thing(row.thing, thing) for thing in fix.drops) or any(
+            reference_photos.same_thing(row.thing, str(photo["thing"])) for photo in fix.photos
+        ):
+            row.dropped_by = fix
+            row.save(update_fields=["dropped_by"])
+    for photo in fix.photos:
+        drawn = (
+            ReferencePhoto.objects.filter(
+                scene__job=fix.job, file=photo["file"], thing=photo["thing"]
+            )
+            .exclude(drawn="")
+            .values_list("drawn", flat=True)
+            .first()
+        )
+        ReferencePhoto.objects.create(
+            scene=fix.scene,
+            file=photo["file"],
+            thing=photo["thing"],
+            use=photo["use"],
+            drawn=drawn or "",
+            added_by=fix,
+        )
 
 
 def _answered_a_failed_check(call: ToolCall, picture_step: SceneStep) -> None:
@@ -1883,6 +2360,9 @@ def _start_step(
                 picture=picture,
                 picture_step=picture_step,
             )
+            # The shop owner's photos go with every later step of their scene (D1).
+            if scene.shows:
+                step.reference_photos.set(_photos_in_use(scene))
             # Together with the step, so the chat is told once whatever happens to it.
             step_signals.say_started(step)
     except IntegrityError:

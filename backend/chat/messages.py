@@ -94,15 +94,46 @@ def add(
 
 def as_read(message: Message) -> str:
     """The message as an agent reads it: its words, then a note of the files it carries,
-    since a model given the conversation can't see them. A message may carry only files."""
+    since a model given the conversation can't see them. A message may carry only files. The
+    shop owner's photos are numbered through the chat, as "owner photo 3", so a fix can name
+    which photo shows which thing."""
     counts: dict[str, int] = {}
     for attachment in message.attachments.all():
         counts[attachment.kind] = counts.get(attachment.kind, 0) + 1
     if not counts:
         return message.text
     carried = [f"{count} {kind}{'s' if count != 1 else ''}" for kind, count in counts.items()]
-    note = f"[Attached {' and '.join(carried)}]"
+    pictures = counts.get(Attachment.Kind.PICTURE, 0)
+    numbered = ""
+    if message.role == Message.Role.USER and pictures:
+        first = _owner_photos_before(message) + 1
+        numbers = [str(number) for number in range(first, first + pictures)]
+        listed = numbers[0] if pictures == 1 else f"{', '.join(numbers[:-1])} and {numbers[-1]}"
+        numbered = f": owner photo{'s' if pictures != 1 else ''} {listed}"
+    note = f"[Attached {' and '.join(carried)}{numbered}]"
     return f"{message.text}\n\n{note}" if message.text else note
+
+
+def owner_photos(session: Session) -> list[Attachment]:
+    """Every photo the shop owner attached in the chat, in the order sent: owner photo 1
+    first."""
+    return list(
+        Attachment.objects.filter(
+            message__session=session,
+            message__role=Message.Role.USER,
+            kind=Attachment.Kind.PICTURE,
+        ).order_by("message__seq", "position")
+    )
+
+
+def _owner_photos_before(message: Message) -> int:
+    """How many photos the shop owner attached in the chat before `message`."""
+    return Attachment.objects.filter(
+        message__session_id=message.session_id,
+        message__role=Message.Role.USER,
+        message__seq__lt=message.seq,
+        kind=Attachment.Kind.PICTURE,
+    ).count()
 
 
 def name_from(text: str) -> str:
