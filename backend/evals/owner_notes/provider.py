@@ -107,8 +107,9 @@ class OwnerNotesProvider:
         # The real models; a test passes its fake.
         self.real = real if real is not None else OpenAIProvider()
         self.fake = fake or FakeModel()
-        # About as fast as the app's real voices speak.
-        self.fake.words_per_second = 2.6
+        # A little faster than the app's real voices, so a line's audio fits the round 4 clip
+        # made for its real audio: one longer than its clip can't be made into a scene.
+        self.fake.words_per_second = 3.2
         self._saved_clips: dict[str, bytes] = {}
 
     # Text.
