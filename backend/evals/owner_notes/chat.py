@@ -37,11 +37,24 @@ class Chat:
     def session(self) -> Session:
         return Session.objects.get(pk=self.session_id)
 
-    def say(self, text: str) -> None:
-        """The shop owner sends `text`, then every step it led to runs."""
-        sent = self.api.post(
-            f"/api/sessions/{self.session_id}/messages/", {"text": text}, format="json"
-        )
+    def say(self, text: str, photos: list[str] | None = None) -> None:
+        """The shop owner sends `text`, with the photo files at `photos` attached, then every
+        step it led to runs."""
+        if photos:
+            files = [open(path, "rb") for path in photos]  # noqa: SIM115
+            try:
+                sent = self.api.post(
+                    f"/api/sessions/{self.session_id}/messages/",
+                    {"text": text, "photos": files},
+                    format="multipart",
+                )
+            finally:
+                for file in files:
+                    file.close()
+        else:
+            sent = self.api.post(
+                f"/api/sessions/{self.session_id}/messages/", {"text": text}, format="json"
+            )
         assert sent.status_code == 201, sent.content
         self.run_held()
 
@@ -119,6 +132,10 @@ class Notes:
 
     messages: list[str]
     yes_answers: int = 1
+    # TEST (owner photos build, local only): the case as a script of turns, each
+    # {"say": text, "photos": [paths]} or "yes" (GO_AHEAD, only when a fix waits on a yes).
+    # When given, `messages` is not used.
+    turns: list[Any] = field(default_factory=list)
 
 
 @dataclass
@@ -131,6 +148,8 @@ def send_notes(chat: Chat, notes: Notes, most_rounds: int = 8) -> Turned:
     """The shop owner sends the case's messages, then says yes to what the producer restates,
     until the producer waits on nothing."""
     turned = Turned()
+    if notes.turns:
+        return _scripted(chat, notes, turned, most_rounds)
     left = list(notes.messages)
     yeses = notes.yes_answers
     for _ in range(most_rounds):
@@ -144,6 +163,36 @@ def send_notes(chat: Chat, notes: Notes, most_rounds: int = 8) -> Turned:
         turned.sent.append(text)
         try:
             chat.say(text)
+        except Exception as error:  # Recorded: a crash is a finding too.
+            turned.error = f"{type(error).__name__}: {error}"
+            break
+    return turned
+
+
+def _scripted(chat: Chat, notes: Notes, turned: Turned, most_rounds: int) -> Turned:
+    """TEST (owner photos build, local only): send the case's turns in order, then yes to
+    whatever is still restated, at most `yes_answers` times."""
+    script = list(notes.turns)
+    yeses = notes.yes_answers
+    for _ in range(most_rounds + len(script)):
+        photos = None
+        if script:
+            turn = script.pop(0)
+            if turn == "yes":
+                if not _waits_on_a_yes(chat):
+                    turned.sent.append("(yes skipped: nothing waited on a yes)")
+                    continue
+                text = GO_AHEAD
+            else:
+                text, photos = turn["say"], turn.get("photos") or None
+        elif yeses and _waits_on_a_yes(chat):
+            yeses -= 1
+            text = GO_AHEAD
+        else:
+            break
+        turned.sent.append(text + (f" [photos: {', '.join(photos)}]" if photos else ""))
+        try:
+            chat.say(text, photos)
         except Exception as error:  # Recorded: a crash is a finding too.
             turned.error = f"{type(error).__name__}: {error}"
             break

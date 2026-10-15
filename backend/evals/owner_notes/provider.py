@@ -76,6 +76,8 @@ CLIP_MOTION_OK: dict[str, Any] = {
     },
 }
 CLIP_FIXED: dict[str, Any] = {
+    # Asked of a fix with the shop owner's photos (owner photos build); ignored otherwise.
+    "owner_photo_shows": "(video faked)",
     "old_shows": "(video faked)",
     "new_shows": "(video faked)",
     "verdict": "fixed",
@@ -100,8 +102,21 @@ PICTURE_OK: dict[str, Any] = {
 class OwnerNotesProvider:
     name = "owner-notes"
 
-    def __init__(self, ad: SavedAd, *, real: Any = None, fake: FakeModel | None = None) -> None:
+    def __init__(
+        self,
+        ad: SavedAd,
+        *,
+        real: Any = None,
+        fake: FakeModel | None = None,
+        real_clip: bool = False,
+    ) -> None:
         self.ad = ad
+        # TEST (owner photos build, local only): the notes' first B-roll clip is made by
+        # Creatify for real and judged for real; a second one is refused, so a case pays for
+        # one clip at most.
+        self.real_clip = real_clip
+        self._real_videos: set[str] = set()
+        self._creatify: Any = None
         self.phase: Phase = "first"
         # The real models; a test passes its fake.
         self.real = real if real is not None else OpenAIProvider()
@@ -138,6 +153,8 @@ class OwnerNotesProvider:
         return reply
 
     def _faked(self, request: ModelRequest[Any]) -> dict[str, Any] | None:
+        if self.real_clip and self._real_videos and request.purpose.startswith("check_clip"):
+            return None
         if request.purpose == "check_clip_sides":
             return CLIP_SIDES_OK
         if request.purpose == "check_clip_motion":
@@ -262,6 +279,20 @@ class OwnerNotesProvider:
             video_id = f"round4-{_running_scene()}"
             self._saved_clips[video_id] = self.ad.scene(_running_scene()).clip
             return video_id
+        if self.real_clip:
+            if self._real_videos:
+                raise RuntimeError("test: this case pays for one real clip only")
+            from gateway.creatify_adapter import CreatifyProvider
+
+            self._creatify = CreatifyProvider()
+            made_id: str = self._creatify.submit_broll(
+                starting_picture=starting_picture,
+                example_pictures=example_pictures,
+                seconds=seconds,
+                prompt=prompt,
+            )
+            self._real_videos.add(made_id)
+            return made_id
         return self.fake.submit_broll(
             starting_picture=starting_picture,
             example_pictures=example_pictures,
@@ -270,11 +301,17 @@ class OwnerNotesProvider:
         )
 
     def status(self, *, video_id: str) -> ClipStatus:
+        if video_id in self._real_videos:
+            status: ClipStatus = self._creatify.status(video_id=video_id)
+            return status
         if video_id in self._saved_clips:
             return ClipStatus(state="completed", video_url=f"https://fake.fal/{video_id}.mp4")
         return self.fake.status(video_id=video_id)
 
     def download(self, *, url: str) -> bytes:
+        if self._real_videos and not url.startswith("https://fake."):
+            data: bytes = self._creatify.download(url=url)
+            return data
         video_id = url.removeprefix("https://fake.fal/").removesuffix(".mp4")
         if video_id in self._saved_clips:
             return self._saved_clips[video_id]

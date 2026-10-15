@@ -36,7 +36,12 @@ PAID_KEYS = [
 ]
 
 
-def _setup(database: str) -> None:
+# TEST (owner photos build, local only): a case marked "real_clip" makes its one B-roll clip
+# with Creatify for real (fal stores its pictures) and has it judged for real.
+REAL_CLIP_KEYS = ("CREATIFY_API_KEY", "FAL_KEY")
+
+
+def _setup(database: str, keep: tuple[str, ...] = ()) -> None:
     os.environ["DATABASE_URL"] = PG + database
     os.environ["MEDIA_ROOT"] = MEDIA
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "adforge.settings")
@@ -44,7 +49,8 @@ def _setup(database: str) -> None:
     os.environ["LANGFUSE_PUBLIC_KEY"] = ""
     os.environ["LANGFUSE_SECRET_KEY"] = ""
     for key in PAID_KEYS:
-        os.environ.pop(key, None)
+        if key not in keep:
+            os.environ.pop(key, None)
     import django
 
     django.setup()
@@ -76,7 +82,8 @@ def first(ad_key: str, database: str, out: Path) -> None:
 
 def case(case_json: str, session: str, database: str, out: Path) -> None:
     """Send one case's notes on its ad, made in `database`, and keep what happened."""
-    _setup(database)
+    real_clip = json.loads(case_json).get("real_clip", False)
+    _setup(database, keep=REAL_CLIP_KEYS if real_clip else ())
     from gateway.gateway import use_model
 
     from .chat import Chat, Notes, send_notes, since, speak_at
@@ -86,13 +93,16 @@ def case(case_json: str, session: str, database: str, out: Path) -> None:
 
     asked = json.loads(case_json)
     ad = saved_ads()[asked["ad"]]
-    provider = OwnerNotesProvider(ad)
+    provider = OwnerNotesProvider(ad, real_clip=real_clip)
     provider.start_notes(ad.words_per_second())
     with use_model(provider):
         chat = Chat(session)
         speak_at(chat, ad.words_per_second())
         start = since(chat)
-        turned = send_notes(chat, Notes(asked["messages"], asked.get("yes_answers", 1)))
+        turned = send_notes(
+            chat,
+            Notes(asked.get("messages", []), asked.get("yes_answers", 1), asked.get("turns", [])),
+        )
     record(chat, start, turned, asked, out / asked["id"])
 
 
