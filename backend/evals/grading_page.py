@@ -22,7 +22,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from evals.results import CAUSES
+from evals.results import CAUSES, grade_key
+from evals.round_export import check_folder, clip_name
 
 COLLECTION = "grades"
 CAUSE_LABELS = {
@@ -92,7 +93,7 @@ def _scene_card(ad: str, result: dict[str, Any]) -> str:
     kept = result.get("kept") or {}
     figures = []
     for clip in result["tries"]:
-        name = "first" if clip.get("remake") is None else f"remake-{clip['remake']}"
+        name = clip_name(clip.get("remake"))
         label = "First clip" if clip.get("remake") is None else f"Remake {clip['remake']}"
         badge = (
             '<span class="kept">app kept this</span>'
@@ -108,10 +109,10 @@ def _scene_card(ad: str, result: dict[str, Any]) -> str:
         <div>{_verdict(clip)}</div>
         {f'<ul class="problem">{saw}</ul>' if saw else ""}
       </figure>""")
-    grades = _taps(f"{ad}__scene-{number}", "First clip: good?", causes=True)
+    grades = _taps(grade_key(ad, number), "First clip: good?", causes=True)
     if result.get("kept_is_remake"):
         grades += _taps(
-            f"{ad}__scene-{number}__kept",
+            grade_key(ad, number, kept=True),
             f"Kept clip (remake {kept.get('remake')}): good?",
             causes=True,
         )
@@ -134,7 +135,8 @@ def page(run: Path) -> str:
     results: dict[str, dict[str, Any]] = json.loads((run / "results.json").read_text())
     ads: dict[str, list[dict[str, Any]]] = {}
     for key, result in results.items():
-        ads.setdefault(result.get("ad_folder") or key.rsplit(":", 1)[0], []).append(result)
+        ad = check_folder(result.get("ad_folder") or key.rsplit(":", 1)[0])
+        ads.setdefault(ad, []).append(result)
     sections = []
     for ad, scenes in ads.items():
         cards = "".join(_scene_card(ad, r) for r in sorted(scenes, key=lambda r: r["scene"]))
@@ -143,14 +145,19 @@ def page(run: Path) -> str:
     <h2>{_esc(ad)}</h2>
     <div class="card">
       <video class="whole" controls preload="metadata" playsinline src="{_esc(ad)}/ad.mp4"></video>
-      <div class="questions">{_taps(f"{ad}__whole-ad", "Whole ad: good?", causes=False)}
+      <div class="questions">{_taps(grade_key(ad), "Whole ad: good?", causes=False)}
       </div>
     </div>{cards}
   </section>""")
-    return TEMPLATE.replace("{{SECTIONS}}", "".join(sections)).replace("{{COLLECTION}}", COLLECTION)
+    return (
+        TEMPLATE.replace("{{SECTIONS}}", "".join(sections))
+        .replace("{{LOGIC}}", LOGIC)
+        .replace("{{COLLECTION}}", COLLECTION)
+    )
 
 
 TEMPLATE = (Path(__file__).parent / "grading_page.html").read_text()
+LOGIC = (Path(__file__).parent / "grading_page.js").read_text()
 
 
 def main(args: list[str]) -> None:

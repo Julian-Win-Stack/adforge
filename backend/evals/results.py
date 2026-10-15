@@ -11,7 +11,8 @@ round 5 must keep it):
 
 run.json  {"name": "Round 5", "ad_grade_is": "first" | "kept", "grades": "grades.json",
            "judge": "results.json", "taps": null | "taps.json", "costs": null | "costs.json",
-           "ad_folders": {"<ad id in judge keys>": "<ad folder>", ...}}
+           "ad_folders": {"<ad id in judge keys>": "<ad folder>", ...},
+           "regrades": null | "regrades.json"}
     Paths are relative to run.json. "ad_grade_is" says which clips the whole ad he graded
     holds: "first" when the ad was made without the auto-redo (round 4), "kept" when the app
     ran it (round 5).
@@ -27,8 +28,15 @@ results.json  the judge and the auto-redo per B-roll scene, keyed "<ad id>:<N>":
     dollars for the judge and the remakes}, "fix_check": {"verdict"} (optional)}. tries[0]
     is the first clip. evals/round_export.py writes it from the app; round 4's came from
     runs/round-4-loop-test/run_loop.py.
+regrades.json  (optional) {"<grades.json key>": {"now": "fail", "julian": his words}}: a
+    grade changed after he tapped it, applied before anything is counted. Where his note says
+    the judge was right and he was wrong, his grade is FAIL (Julian, 2026-10-14 21:12): a
+    session reading his notes writes that here, so a pass tap with such a note never counts
+    as the judge's wrong fail.
 taps.json  (optional, round 4's loop test) {"<ad folder>__scene-N": {"fixed_K": "yes" |
-    "partly" | "no", "fix_check_agree": "yes" | "no"}}.
+    "partly" | "no", "fix_check_agree": "yes" | "no"}}. The fix check was right when its
+    verdict and his "fixed" tap agree (passed/yes, failed/no), wrong when they're opposite
+    (passed/no, failed/yes); on "partly" his agree tap decides.
 costs.json  (optional) {"source": where the dollars come from, "ads": {"<ad folder>":
     {"total_usd": all model calls, "video_usd": the paid video calls}}}.
 
@@ -41,7 +49,7 @@ import json
 import re
 import sys
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -55,6 +63,13 @@ CAUSES = {
 FIXED = ("yes", "partly", "no")
 _SCENE = re.compile(r"^(?P<ad>.+)__scene-(?P<n>\d+)(?P<kept>__kept)?$")
 _WHOLE = re.compile(r"^(?P<ad>.+)__whole-ad$")
+
+
+def grade_key(ad: str, number: int | None = None, kept: bool = False) -> str:
+    """The grades.json key of an ad's whole-ad grade, or of a scene's first or kept clip."""
+    if number is None:
+        return f"{ad}__whole-ad"
+    return f"{ad}__scene-{number}" + ("__kept" if kept else "")
 
 
 @dataclass
@@ -78,6 +93,7 @@ class Scene:
     judge_kept: str | None = None
     redo_cost: float | None = None
     fixed: str | None = None
+    fix_check: str | None = None
     fix_check_agree: str | None = None
 
     @property
@@ -92,6 +108,17 @@ class Scene:
     def final(self) -> Grade | None:
         """His grade on the clip the ad ends up with: the kept remake's, else the first's."""
         return self.kept if self.kept_a_remake else self.first
+
+    @property
+    def fix_check_right(self) -> bool | None:
+        """Whether the fix check's verdict matched his tap on the kept remake; None when
+        neither his "fixed" tap nor his agree tap settles it."""
+        said = {"passed": "yes", "failed": "no"}.get(self.fix_check or "")
+        if said is None or self.fixed is None:
+            return None
+        if self.fixed != "partly":
+            return self.fixed == said
+        return {"yes": True, "no": False}.get(self.fix_check_agree or "")
 
 
 @dataclass
@@ -131,6 +158,9 @@ def load_run(where: Path) -> Run:
     taps: dict[str, Any] = _read(base, meta.get("taps")) or {}
     costs: dict[str, Any] = _read(base, meta.get("costs")) or {}
     folders: dict[str, str] = meta.get("ad_folders") or {}
+    regrades: dict[str, Any] = _read(base, meta.get("regrades")) or {}
+    for key, regrade in regrades.items():
+        grades[key] = {**grades.get(key, {}), "grade": regrade["now"]}
 
     scenes: dict[tuple[str, int], Scene] = {}
     ads: dict[str, Grade | None] = {}
@@ -164,6 +194,7 @@ def load_run(where: Path) -> Run:
             (_verdict(t) for t in tries if t.get("remake") == s.kept_remake), None
         )
         s.redo_cost = (result.get("costs") or {}).get("total")
+        s.fix_check = (result.get("fix_check") or {}).get("verdict")
         for clip in tries:
             wording = (clip.get("ruling") or {}).get("wording")
             if wording and wording not in wordings:
@@ -194,16 +225,20 @@ def _names(scenes: Iterable[Scene]) -> str:
     return f" ({', '.join(names)})" if names else ""
 
 
-def _judge_lines(scenes: list[Scene], grade_of: str, verdict_of: str) -> list[str]:
+def _judge_lines(
+    scenes: list[Scene],
+    grade_of: Callable[[Scene], Grade | None],
+    verdict_of: Callable[[Scene], str | None],
+) -> list[str]:
     """His fails the judge caught or missed, his passes it wrongly failed: score.py's terms."""
-    graded = [s for s in scenes if getattr(s, grade_of)]
-    fails = [s for s in graded if getattr(s, grade_of).grade == "fail"]
-    passes = [s for s in graded if getattr(s, grade_of).grade == "pass"]
+    graded = [(s, g) for s in scenes if (g := grade_of(s))]
+    fails = [s for s, g in graded if g.grade == "fail"]
+    passes = [s for s, g in graded if g.grade == "pass"]
 
     def judged(group: list[Scene], verdict: str | None) -> list[Scene]:
-        return [s for s in group if getattr(s, verdict_of) == verdict]
+        return [s for s in group if verdict_of(s) == verdict]
 
-    unjudged = [s for s in graded if getattr(s, verdict_of) not in ("pass", "fail", "not_checked")]
+    unjudged = [s for s, _ in graded if verdict_of(s) not in ("pass", "fail", "not_checked")]
     lines = [
         f"- Clips he failed: {len(fails)}. The judge caught {len(judged(fails, 'fail'))}"
         f"{_names(judged(fails, 'fail'))}, missed {len(judged(fails, 'pass'))}"
@@ -240,9 +275,19 @@ def report(run: Run) -> str:
         )
     )
 
-    # Whole ads.
-    graded, passed, failed = _count(run.ads.values())
-    held = (
+    # Whole ads. An ad is bad when any clip it holds is bad, whatever its whole-ad tap says.
+    def held(scene: Scene) -> Grade | None:
+        return scene.first if run.ad_grade_is == "first" else scene.final
+
+    whole = {ad: grade.grade for ad, grade in run.ads.items() if grade}
+    graded_ads = list(whole)
+    clip_failed = [
+        ad
+        for ad in graded_ads
+        if whole[ad] == "pass" and any((g := held(s)) and g.grade == "fail" for s in by_ad[ad])
+    ]
+    good = [ad for ad in graded_ads if whole[ad] == "pass" and ad not in clip_failed]
+    holds = (
         "the first clips (made without the auto-redo)"
         if run.ad_grade_is == "first"
         else "the clips the auto-redo kept"
@@ -250,18 +295,30 @@ def report(run: Run) -> str:
     out += [
         "",
         "### Whole ads",
-        f"- Ads graded: {graded}, good {passed}, bad {failed}. These ads hold {held}.",
+        f"- Ads graded: {len(graded_ads)}, good {len(good)}, bad {len(graded_ads) - len(good)}. "
+        f"These ads hold {holds}.",
     ]
+    if clip_failed:
+        out.append(
+            f"- Counted bad though he passed the whole ad, as a clip it holds failed: "
+            f"{len(clip_failed)} ({', '.join(clip_failed)})."
+        )
 
-    def all_good(ad: str, which: str) -> bool | None:
-        grades = [getattr(s, which) for s in by_ad[ad]]
+    def all_good(ad: str, grade_of: Callable[[Scene], Grade | None]) -> bool | None:
+        """False when a clip failed; None when none failed but one isn't graded."""
+        grades = [grade_of(s) for s in by_ad[ad]]
+        if any(g and g.grade == "fail" for g in grades):
+            return False
         if not grades or any(g is None for g in grades):
             return None
-        return all(g.grade == "pass" for g in grades)
+        return True
 
-    for which, label in (("first", "first clip"), ("final", "final clip (after the auto-redo)")):
-        known = {ad: all_good(ad, which) for ad in run.ads}
-        told = [ad for ad, good in known.items() if good is not None]
+    for grade_of, label in (
+        (lambda s: s.first, "first clip"),
+        (lambda s: s.final, "final clip (after the auto-redo)"),
+    ):
+        known = {ad: all_good(ad, grade_of) for ad in run.ads}
+        told = [ad for ad, good_ad in known.items() if good_ad is not None]
         missing = len(run.ads) - len(told)
         line = (
             f"- Ads where he passed every B-roll {label}: "
@@ -312,27 +369,30 @@ def report(run: Run) -> str:
         out.append("- No judge or auto-redo record in this run.")
     if run.has_taps:
         tapped = Counter(s.fixed for s in remade if s.fixed)
-        agree = Counter(s.fix_check_agree for s in remade if s.fix_check_agree)
+        checked = [s for s in remade if s.fix_check]
+        right = [s for s in checked if s.fix_check_right is True]
+        wrong = [s for s in checked if s.fix_check_right is False]
         out.append(
             "- Did the kept remake fix the judge's complaint (his taps): "
             + ", ".join(f"{word} {tapped[word]}" for word in FIXED)
             + f"; not tapped {len(remade) - sum(tapped.values())}."
         )
         out.append(
-            f"- He agreed with the fix check {agree['yes']}, disagreed {agree['no']}, not tapped "
-            f"{len(remade) - agree['yes'] - agree['no']}."
+            f"- Fix check (fixed or not, kept remake against the first clip), by his taps: right "
+            f"{len(right)}, wrong {len(wrong)}{_names(wrong)}, not settled "
+            f"{len(checked) - len(right) - len(wrong)}."
         )
 
     # Judge against his grades.
     out += ["", "### Judge against his grades, first clips"]
     out += (
-        _judge_lines(scenes, "first", "judge_first")
+        _judge_lines(scenes, lambda s: s.first, lambda s: s.judge_first)
         if run.has_judge
         else ["- No judge verdicts in this run."]
     )
     if any(s.kept for s in remade):
         out += ["", "### Judge against his grades, kept remakes"]
-        out += _judge_lines(remade, "kept", "judge_kept")
+        out += _judge_lines(remade, lambda s: s.kept, lambda s: s.judge_kept)
 
     # Causes.
     failed_clips = [g for s in scenes for g in (s.first, s.kept) if g and g.grade == "fail"]
@@ -351,7 +411,7 @@ def report(run: Run) -> str:
         out += [f"- {ad}: ${run.costs[ad]['total_usd']:.2f}" for ad in priced_ads]
         total = sum(run.costs[ad]["total_usd"] for ad in priced_ads)
         out.append(
-            f"- All {len(priced_ads)} ads: ${total:.2f}."
+            f"- All {len(priced_ads)} ads (sum of the figures above): ${total:.2f}."
             + (f" Source: {run.cost_source}." if run.cost_source else "")
         )
     else:
