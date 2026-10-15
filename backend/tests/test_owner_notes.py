@@ -190,3 +190,29 @@ def test_the_first_version_gets_round_4s_scenes_in_the_planners_plan(tmp_path: P
         ("call to action", "$9"),
     ]
     assert scenes[1]["needs"] == [{"what": "the gel", "photos": [2, 7]}]
+
+
+def test_the_first_version_keeps_round_4s_lines_through_the_fact_check(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    from jobs.checks import FactCheckHandoff, LineToCheck, fact_check_for
+
+    provider = OwnerNotesProvider(saved_ads(saved_round_4(tmp_path))["8"], real=FakeModel())
+    handoff = FactCheckHandoff(
+        page_text="",
+        conversation=[],
+        product_colour="white",
+        lines=[
+            LineToCheck(scene=1, line="Rings again?"),
+            LineToCheck(scene=2, line="It fights rings.", shows="A brush scrubs the ring."),
+        ],
+    )
+    request: Any = SimpleNamespace(
+        purpose="fact_check", handoff=handoff, output=fact_check_for([1, 2], showing=[2])
+    )
+
+    answer = provider.complete(request).output
+
+    assert [line.verdict for line in answer.lines] == ["ok", "ok"]
+    provider.phase = "notes"
+    assert provider._faked(request) is None
