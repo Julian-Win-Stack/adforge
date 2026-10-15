@@ -197,7 +197,7 @@ _Avoid_: Retry, redo (a redo is made for a fix)
 Named so the words mean one thing when these are built. Nothing implements them today.
 
 **Reference photo**:
-A photo the shop owner attaches to a note, showing how something in a scene should look, such as the gel. It takes the place of the product photos of that thing in every scene whose starting picture shows it, and stays with those scenes for every later fix until the shop owner says otherwise. Where the thing is in the starting picture, the starting picture is drawn again from it; where it only appears during the clip, the clip is made in reference mode with it. The shop owner isn't told which.
+A photo the shop owner attaches to a note, showing how something in a scene should look, such as the gel. When the fix is restated, the thing to take from it is named, such as "the black toilet", and the shop owner confirms it. A clean picture of only that thing is drawn from the photo, and it wins over the product photos wherever they disagree, in every scene whose starting picture shows it, for every later fix until the shop owner says otherwise. Where the thing is in the starting picture, the starting picture is drawn again with it; where it only appears during the clip, the clip is made in reference mode with it. The shop owner isn't told which.
 _Avoid_: Reference picture, owner picture
 
 **Side picture**:
