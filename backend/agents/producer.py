@@ -280,12 +280,31 @@ class ReadPage(Tool):
         return "\n".join(told)
 
 
+class PhotoShows(BaseModel):
+    """What one of the shop owner's photos shows, from what they said about it."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    photo: int = Field(
+        description='The photo\'s number, as the chat gives it: "owner photo 3" is 3.'
+    )
+    shows: Literal["the product", "something else"] = Field(
+        description='"the product" when it shows the product the ad sells; "something else" '
+        "when they said it shows their own thing for the ad, such as their toilet or their "
+        "kitchen. If their words don't say, ask them before you call this."
+    )
+
+
 class UsePhotos(Tool):
     """Add the product photos the shop owner attached to their messages in this chat to the
-    job, after the page's own. Every photo they sent is added, so to leave one out, ask them
-    which to send. Use it when the page had no usable photos or they want their own used."""
+    job, after the page's own. Say what each of their photos shows: only those of the product
+    are added. Use it when the page had no usable photos or they want their own used."""
 
     name = "use_photos"
+
+    photos: list[PhotoShows] = Field(
+        description="Every photo the shop owner attached in this chat, each once."
+    )
 
     def run(self, call: ToolCall) -> str:
         job = _with_its_page(call, "the photos belong to its ad")
@@ -294,15 +313,25 @@ class UsePhotos(Tool):
                 "the ad is already planned, so its product photos can't change now. A photo of "
                 "the shop owner's own thing goes with a note on a scene: restate the fix with it."
             )
+        attached_photos = messages.owner_photos(call.session)
+        said = {each.photo: each.shows for each in self.photos}
+        unsaid = [number for number in range(1, len(attached_photos) + 1) if number not in said]
+        if len(said) != len(self.photos) or set(said) - set(range(1, len(attached_photos) + 1)):
+            raise Refused(
+                f"the chat has {_owner_photos(len(attached_photos))}: say what each shows, "
+                "once, by its number."
+            )
+        if unsaid:
+            raise Refused(
+                "say what each of the shop owner's photos shows: you left out owner photo"
+                f"{'s' if len(unsaid) > 1 else ''} {_listed_numbers(unsaid)}."
+            )
+        others = [number for number, shows in said.items() if shows == "something else"]
         kept = set(job.photos.values_list("file", flat=True))
         position = job.photos.aggregate(last=Max("position"))["last"] or 0
         added = 0
-        for attached in Attachment.objects.filter(
-            message__session=call.session,
-            message__role=Message.Role.USER,
-            kind=Attachment.Kind.PICTURE,
-        ).order_by("message__seq", "position"):
-            if attached.file in kept:
+        for number, attached in enumerate(attached_photos, 1):
+            if attached.file in kept or number in others:
                 continue
             position += 1
             added += 1
@@ -314,7 +343,33 @@ class UsePhotos(Tool):
                 has_face=note_face(job, attached.file, attached.file),
             )
         count = job.photos.count()
-        return f"Added {added} of the shop owner's photos. The job now has {_photos(count)}."
+        told = f"Added {added} of the shop owner's photos. The job now has {_photos(count)}."
+        if others:
+            # Before the plan every photo is a product photo, so one of their own thing would
+            # be planned as the product (Julian 17:55; test C9).
+            told += (
+                f" Owner photo{'s' if len(others) > 1 else ''} {_listed_numbers(others)} "
+                f"show{'' if len(others) > 1 else 's'} something else than the product, so "
+                f"{'they weren' if len(others) > 1 else 'it wasn'}'t added: tell the shop owner "
+                "it can't be used yet, and to send it with a note on a scene once the first "
+                "version is made. Plan the ad without it."
+            )
+        return told
+
+
+def _owner_photos(count: int) -> str:
+    return (
+        "no owner photo"
+        if count == 0
+        else f"owner photos 1 to {count}"
+        if count > 1
+        else ("owner photo 1")
+    )
+
+
+def _listed_numbers(numbers: list[int]) -> str:
+    said = [str(number) for number in numbers]
+    return said[0] if len(said) == 1 else f"{', '.join(said[:-1])} and {said[-1]}"
 
 
 class PlanAd(Tool):

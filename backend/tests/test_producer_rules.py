@@ -630,7 +630,7 @@ def test_a_new_link_that_cant_be_used_leaves_the_ad_without_a_page(
     fake_model.respond(
         "produce",
         turn(calls=[("read_page", {"link": walled, "target_seconds": None})]),
-        turn(calls=[("use_photos", {})]),
+        turn(calls=[("use_photos", {"photos": [{"photo": 1, "shows": "the product"}]})]),
         turn(says="That page is only a cookie banner."),
     )
     fake_model.respond(
@@ -756,7 +756,7 @@ def test_reading_the_same_page_again_hands_back_what_was_read_and_pays_nothing(
         pytest.param(
             "nothing_yet",
             "use_photos",
-            {},
+            {"photos": []},
             "Refused: the product page hasn't been read yet, and the photos belong to its ad.",
             id="photos before the page is read",
         ),
@@ -787,7 +787,7 @@ def test_reading_the_same_page_again_hands_back_what_was_read_and_pays_nothing(
         pytest.param(
             "planned",
             "use_photos",
-            {},
+            {"photos": []},
             "Refused: the ad is already planned, so its product photos can't change now. A "
             "photo of the shop owner's own thing goes with a note on a scene: restate the fix "
             "with it.",
@@ -828,7 +828,7 @@ def test_a_jobs_status_is_only_a_label_and_doesnt_decide_what_a_tool_may_do(
     Job.objects.update(status=Job.Status.QUEUED)
     fake_model.respond(
         "produce",
-        turn(calls=[("use_photos", {})]),
+        turn(calls=[("use_photos", {"photos": [{"photo": 1, "shows": "the product"}]})]),
         turn(calls=[("plan_ad", {})]),
         turn(says="Here's the plan."),
     )

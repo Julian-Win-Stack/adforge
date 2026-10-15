@@ -123,7 +123,7 @@ def test_a_photo_attached_as_the_answer_is_added_and_can_be_a_needed_photo(
     filled = picture(300, 400, (120, 70, 30))
     fake_model.respond(
         "produce",
-        turn(calls=[("use_photos", {})]),
+        turn(calls=[("use_photos", {"photos": [{"photo": 1, "shows": "the product"}]})]),
         turn(calls=[("plan_ad", {})]),
         turn(says="Here's the plan."),
     )
@@ -159,7 +159,7 @@ def test_no_photo_clearly_showing_the_product_asks_for_one(
     # Their photo is the one the ad's colour is shown in.
     fake_model.respond(
         "produce",
-        turn(calls=[("use_photos", {})]),
+        turn(calls=[("use_photos", {"photos": [{"photo": 1, "shows": "the product"}]})]),
         turn(calls=[("plan_ad", {})]),
         turn(says="Here's the plan."),
     )

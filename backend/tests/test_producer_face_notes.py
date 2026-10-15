@@ -128,7 +128,23 @@ def test_a_photo_the_shop_owner_attaches_gets_its_own_face_note(
     reading(fake_model, link)
     fake_model.respond("check_page", READABLE)
     say(f"Make an ad for {link}")
-    fake_model.respond("produce", turn(calls=[("use_photos", {})]), turn(says="Got them."))
+    fake_model.respond(
+        "produce",
+        turn(
+            calls=[
+                (
+                    "use_photos",
+                    {
+                        "photos": [
+                            {"photo": 1, "shows": "the product"},
+                            {"photo": 2, "shows": "the product"},
+                        ]
+                    },
+                )
+            ]
+        ),
+        turn(says="Got them."),
+    )
     fake_model.respond("note_face", NO_FACE, FACE)
 
     say("Here are two photos of it", ("front.png", MUG_FRONT), ("side.png", MUG_SIDE))
@@ -182,7 +198,11 @@ def test_an_attached_photo_whose_face_note_fails_counts_as_having_a_face(
     reading(fake_model, link)
     fake_model.respond("check_page", READABLE)
     say(f"Make an ad for {link}")
-    fake_model.respond("produce", turn(calls=[("use_photos", {})]), turn(says="Got it."))
+    fake_model.respond(
+        "produce",
+        turn(calls=[("use_photos", {"photos": [{"photo": 1, "shows": "the product"}]})]),
+        turn(says="Got it."),
+    )
     fake_model.respond(
         "note_face", UnusableReply("The model refused", input_tokens=1_000, output_tokens=10)
     )
