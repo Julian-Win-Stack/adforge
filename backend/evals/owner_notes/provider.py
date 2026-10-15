@@ -138,6 +138,25 @@ class OwnerNotesProvider:
             return CLIP_MOTION_OK
         if self.phase == "first" and request.purpose == "check_starting_picture":
             return PICTURE_OK
+        if self.phase == "first" and request.purpose == "fact_check":
+            # Round 4's lines passed the fact check then; today's would change the ad the
+            # notes are about, as when it made a B-roll scene a talking one.
+            lines = request.handoff.model_dump()["lines"]
+            return {
+                "decision": "checked",
+                "reason": "(round 4's lines, checked when round 4 was made)",
+                "question": None,
+                "lines": [
+                    {
+                        "scene": line["scene"],
+                        "verdict": "ok",
+                        "wrong": None,
+                        "problem": None,
+                        "page_says": None,
+                    }
+                    for line in lines
+                ],
+            }
         return None
 
     def _round_4_plan(self, decision: dict[str, Any], photos: int) -> dict[str, Any]:
