@@ -1525,6 +1525,14 @@ def _with_photos(job: Job, scene: Scene, asked: FixAsked, owner: list[Attachment
             if picture is not None
             else None
         )
+        if answer is not None and not answer.clear_enough:
+            # D8: a photo the thing can't be copied from would be drawn as a guess, so
+            # nothing is made from it (test C16).
+            why = f" ({answer.unclear_why})" if answer.unclear_why else ""
+            raise Refused(
+                f"owner photo {taken.photo} doesn't show the {thing} clearly enough to copy its "
+                f"look{why}. Ask the shop owner for a clearer photo of the {thing}."
+            )
         if answer is None:
             # No answer: the producer's own pick stands.
             use = ReferencePhoto.Use.CLIP if asked.redo == "clip" else ReferencePhoto.Use.PICTURE

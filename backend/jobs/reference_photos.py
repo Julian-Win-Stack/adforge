@@ -36,11 +36,16 @@ named for you, to change how it looks in the ad. You are shown the scene's start
 first and the shop owner's photo second, and told what the scene shows and, if the shop \
 owner asked for a change to this scene, the change.
 
-Work in two steps.
-1. Look before you decide. Write what the shop owner's photo shows of the named thing. Then \
-write what the starting picture shows of that thing, or of anything that could be it in a \
-different look: where it is and how it looks, or that nothing like it is there.
-2. Then decide where the named thing goes in this scene:
+Work in three steps.
+1. Look at the shop owner's photo. Write what it shows of the named thing. Then say whether \
+the thing is clear enough in it to copy its colour, shape and details. An ordinary phone \
+photo is clear enough, even a bit soft, dark or taken from an angle; answer no only when you \
+can't really see the thing: too blurry, too dark, too small or mostly hidden. When it isn't, \
+say why in a few words.
+2. Look before you decide. Write what the starting picture shows of that thing, or of \
+anything that could be it in a different look: where it is and how it looks, or that \
+nothing like it is there.
+3. Then decide where the named thing goes in this scene:
 - "in_the_picture": the starting picture shows that thing, or something in its place that \
 could be it, even if it looks different from the photo.
 - "belongs_from_the_start": the starting picture doesn't show it, but the change asks for it \
@@ -66,6 +71,12 @@ class RouteHandoff(Handoff):
 # rule 1). A comment, not a docstring: a docstring would be sent in the answer's schema.
 class RouteAnswer(BaseModel):
     photo_shows: str = Field(description="What the shop owner's photo shows of the thing.")
+    clear_enough: bool = Field(
+        description="Whether the thing is clear enough in the photo to copy its look."
+    )
+    unclear_why: str | None = Field(
+        description="When it isn't clear enough: why, in a few words. Null when it is."
+    )
     picture_shows: str = Field(
         description="What the starting picture shows of the thing, or that it isn't there."
     )
