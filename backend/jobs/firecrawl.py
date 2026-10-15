@@ -40,12 +40,15 @@ MAX_RATE_LIMIT_WAIT_SECONDS = 120
 MAX_SCREENSHOT_BYTES = 50_000_000
 
 _SCRIPTS = Path(__file__).parent / "firecrawl_scripts"
-# What Firecrawl's browser does on the page before the marked screenshot, exactly as tested
-# (docs/scraping-test/text-test/scripts/fetch_marked.py): scroll down so lazy photos load,
+# What Firecrawl's browser does on the page before the marked screenshot, as tested
+# (docs/scraping-test/text-test/scripts/fetch_marked.py): run the scripts a shop holds back
+# from Linux browsers (run_held.js), as smartish.com does, scroll down so lazy photos load,
 # back to the top, open closed tabs (open.js), note the visible text (visible.js), number
 # every picture and piece of text a visitor sees (mark.js), then screenshot the whole page.
 ACTIONS: list[dict[str, Any]] = [
     {"type": "wait", "milliseconds": 3000},
+    {"type": "executeJavascript", "script": (_SCRIPTS / "run_held.js").read_text()},
+    {"type": "wait", "milliseconds": 2000},
     *[
         action
         for _ in range(10)

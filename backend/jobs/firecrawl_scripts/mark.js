@@ -59,19 +59,33 @@
     }
   };
 
+  // Some galleries show their photos as an element's background, not as a picture: those
+  // are numbered too, in page order with the pictures.
+  const backgroundOf = (el) => {
+    const m = /url\(["']?(.*?)["']?\)/.exec(getComputedStyle(el).backgroundImage);
+    return m && !m[1].startsWith('data:') ? new URL(m[1], location.href).href : '';
+  };
   let n = 0;
-  document.querySelectorAll('img').forEach((img) => {
-    const a = img.closest('a[href]');
-    const r = img.getBoundingClientRect();
-    const rec = {
-      n: null, src: img.currentSrc || img.src || '',
-      srcset: img.getAttribute('srcset') || img.getAttribute('data-srcset') || '',
-      dataSrc: img.getAttribute('data-src') || img.getAttribute('data-original') || '',
-      alt: (img.alt || '').slice(0, 200), nw: img.naturalWidth, nh: img.naturalHeight,
+  document.querySelectorAll('body *').forEach((el) => {
+    const isImg = el.tagName === 'IMG';
+    const background = isImg ? '' : backgroundOf(el);
+    if (!isImg && !background) return;
+    const a = el.closest('a[href]');
+    const r = el.getBoundingClientRect();
+    const rec = isImg ? {
+      n: null, src: el.currentSrc || el.src || '',
+      srcset: el.getAttribute('srcset') || el.getAttribute('data-srcset') || '',
+      dataSrc: el.getAttribute('data-src') || el.getAttribute('data-original') || '',
+      alt: (el.alt || '').slice(0, 200), nw: el.naturalWidth, nh: el.naturalHeight,
+    } : {
+      n: null, src: background, srcset: '', dataSrc: '',
+      alt: (el.getAttribute('aria-label') || el.getAttribute('title') || '').slice(0, 200), nw: 0, nh: 0,
+    };
+    Object.assign(rec, {
       href: a ? a.href : '', x: Math.round(r.left + scrollX), y: Math.round(r.top + scrollY),
       w: Math.round(r.width), h: Math.round(r.height),
-    };
-    if (r.width >= 40 && r.height >= 40) { rec.n = ++n; add(img, 'I' + n, '#0050ff', true); }
+    });
+    if (r.width >= 40 && r.height >= 40) { rec.n = ++n; add(el, 'I' + n, '#0050ff', true); }
     out.imgs.push(rec);
   });
 

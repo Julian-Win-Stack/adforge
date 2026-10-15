@@ -185,6 +185,11 @@ CLOUDINARY = "https://res.cloudinary.com/shop/image/upload"
             id="Shopify asked for 200 px wide",
         ),
         pytest.param(
+            {"src": "https://smartish.com/cdn/shop/files/PT01_1410x580.jpg?v=17"},
+            "https://smartish.com/cdn/shop/files/PT01.jpg?v=17",
+            id="Shopify's size in the file name",
+        ),
+        pytest.param(
             {"src": "https://m.media-amazon.com/images/I/71Q2x._AC_SX300_.jpg"},
             "https://m.media-amazon.com/images/I/71Q2x.jpg",
             id="Amazon's size part",
