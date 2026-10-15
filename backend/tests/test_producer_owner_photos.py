@@ -17,7 +17,7 @@ from agents.producer import CLEAN_PICTURE_USD
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, ModelRequest
-from jobs import fix_check, reference_photos
+from jobs import reference_photos
 from jobs.clip_judge import MOTION_PHOTO_FIX_QUESTION, OWNER_PHOTO_LABEL
 from jobs.fix_check import PhotoFixVerdict
 from jobs.models import Fix, Job, ProducedItem, ReferencePhoto, Scene, SceneStep
@@ -29,7 +29,6 @@ from .conftest import (
     FACTS_OK,
     NO_CHOICES,
     OWNER_PHOTO_SHOWS,
-    PICTURE_OK,
     PLAN,
     HeldSteps,
     broll,
@@ -109,18 +108,15 @@ def where(answer: str) -> dict[str, Any]:
 @pytest.fixture
 def routes(fake_model: FakeModel) -> dict[tuple[str, str], str]:
     """Where the route call says each (thing, scene shows) goes: in the starting picture
-    unless a test says otherwise. Every request it was sent is kept under "asked"."""
+    unless a test says otherwise."""
     answers: dict[tuple[str, str], str] = {}
-    asked: list[ModelRequest[Any]] = []
 
     def answering(request: ModelRequest[Any]) -> dict[str, Any]:
-        asked.append(request)
         handoff = request.handoff
+        assert isinstance(handoff, reference_photos.RouteHandoff)
         return where(answers.get((handoff.thing, handoff.scene_shows), "in_the_picture"))
 
     fake_model.answer_unscripted("route_reference_photo", answering)
-    answers[("asked", "")] = ""  # keeps the dict's type; never a real thing
-    routes.asked = asked  # type: ignore[attr-defined]
     return answers
 
 
@@ -190,13 +186,18 @@ def fix_asked(
 
 
 def restates(
-    fake_model: FakeModel, say: Say, text: str, *fixes: dict[str, Any], photos: tuple[Any, ...] = ()
+    fake_model: FakeModel,
+    say: Say,
+    text: str,
+    *fixes: dict[str, Any],
+    photos: tuple[Any, ...] = (),
+    only: bool | None = None,
 ) -> str:
-    """The shop owner sends `text` with `photos`; the producer restates `fixes` and replies.
-    Gives what restate_fix handed back."""
+    """The shop owner sends `text` with `photos`; the producer restates `fixes`, for `only`
+    the scenes named when it says so, and replies. Gives what restate_fix handed back."""
     fake_model.respond(
         "produce",
-        turn(calls=[("restate_fix", {"fixes": list(fixes)})]),
+        turn(calls=[("restate_fix", {"fixes": list(fixes), "only_these_scenes": only})]),
         turn(says="Here's what I'll change, and what it costs. Shall I?"),
     )
     say(text, *photos)
@@ -311,8 +312,9 @@ def test_a_thing_that_only_shows_during_the_clip_is_restated_as_a_new_clip(
     )
 
     fix = Fix.objects.get()
-    # The producer said picture: its pick stands, and the tea goes to the clip.
-    assert fix.redo == "picture"
+    # The producer said picture, but the route decides (spec item 4): the tea is never in a
+    # still, so only the clip is made again, in reference mode.
+    assert fix.redo == "clip"
     assert fix.photos[0]["use"] == "clip"
 
 
@@ -718,7 +720,10 @@ def test_the_clip_prompt_writer_is_told_of_the_shop_owners_thing_and_shown_it(
     assert call.images[1] == {"label": "The shop owner's own tea", "key": clean_pictures()[0]}
 
 
-def test_the_clip_judge_is_shown_the_shop_owners_photo_for_the_change(tea_fixed: Fix) -> None:
+def test_the_clip_judge_is_shown_the_shop_owners_photo_for_the_change(
+    instructed: dict[str, list[str]],  # noqa: F811 (the fixture)
+    tea_fixed: Fix,
+) -> None:
     motion = ModelCall.objects.filter(purpose="check_clip_motion").order_by("-id")[:3]
     for call in motion:
         assert call.handoff["owner_photos"] == ["tea"]
@@ -728,7 +733,9 @@ def test_the_clip_judge_is_shown_the_shop_owners_photo_for_the_change(tea_fixed:
     assert all("owner_photos" not in call.handoff for call in sides)
     check = tea_fixed.checks.get()
     assert check.verdict == "passed"
-    assert MOTION_PHOTO_FIX_QUESTION
+    assert all(
+        told.endswith(MOTION_PHOTO_FIX_QUESTION) for told in instructed["check_clip_motion"][-3:]
+    )
 
 
 def test_a_remake_after_the_judge_fails_stays_in_reference_mode(
@@ -1120,7 +1127,6 @@ def test_two_scenes_using_the_same_photo_share_one_clean_picture(
 
     assert len(clean_pictures()) == 1
     assert {row.drawn for row in ReferencePhoto.objects.all()} == set(clean_pictures())
-    assert Decimal(0) < CLEAN_PICTURE_USD
 
 
 def test_the_route_call_is_answered_from_its_record_when_restated_again(
@@ -1138,5 +1144,221 @@ def test_the_route_call_is_answered_from_its_record_when_restated_again(
     paid = ModelCall.objects.filter(purpose="route_reference_photo")
     # Scenes 2 and 3, once each.
     assert paid.count() == 2
-    assert fix_check.PHOTO_FIX_QUESTION
-    assert PICTURE_OK
+
+
+# --- Found by the review and the owner photos test -----------------------------------------------
+
+
+def test_with_no_answer_for_a_scene_the_shop_owner_didnt_name_they_are_told(
+    fake_model: FakeModel, shown: ProducedItem, say: Say, routes: dict[tuple[str, str], str]
+) -> None:
+    from gateway.types import UnusableReply
+
+    fake_model.respond(
+        "route_reference_photo",
+        where("in_the_picture"),
+        *[UnusableReply("unreadable", input_tokens=1, output_tokens=1)] * 3,
+    )
+
+    said = restates(
+        fake_model,
+        say,
+        MUG_NOTE,
+        fix_asked(2, MUG_FIX, "picture", [(1, "black mug")]),
+        photos=(OWNER_MUG,),
+    )
+
+    assert set(Fix.objects.values_list("scene__number", flat=True)) == {2}
+    assert (
+        "Whether scene 3 shows the black mug couldn't be checked, so it was left out: tell "
+        "them, so they can name it if it does." in said
+    )
+
+
+def test_going_back_follows_the_photo_dropped_not_the_producers_guess(
+    fake_model: FakeModel, mug_fixed: Fix, say: Say
+) -> None:
+    before = ProducedItem.objects.get(kind="starting_picture", scene__number=2, version=1)
+    back = "In scene 2, the mug is the green one again, as before the shop owner's photo."
+
+    restates(
+        fake_model, say, "Go back to the green mug.", fix_asked(2, back, "clip", drop=["black mug"])
+    )
+
+    fix = Fix.objects.last()
+    assert fix is not None
+    assert (fix.redo, fix.brings_back, fix.estimate_usd) == ("picture", before, Decimal(0))
+
+
+def test_going_back_from_a_clip_in_reference_mode_brings_back_the_clip_from_before(
+    fake_model: FakeModel, tea_fixed: Fix, steps: HeldSteps, say: Say
+) -> None:
+    old_clip = ProducedItem.objects.get(kind="clip", scene__number=2, version=1)
+    back = "In scene 2, the tea is as it was before the shop owner's photo."
+
+    said = restates(
+        fake_model, say, "Go back to the old tea.", fix_asked(2, back, "picture", drop=["tea"])
+    )
+
+    fix = Fix.objects.last()
+    assert fix is not None
+    assert (fix.redo, fix.brings_back, fix.estimate_usd) == ("clip", old_clip, Decimal(0))
+    assert "Scene 2 goes back to its clip from before the photo" in said
+    paid = paid_for()
+    says_yes(fake_model, steps, say, ("make_clip", {"scene": 2, "note": back}))
+
+    assert paid_for() == paid
+    assert latest("clip").file == old_clip.file
+    assert in_use() == []
+
+
+def test_a_picture_fix_check_looks_only_at_things_drawn_into_the_picture(
+    fake_model: FakeModel,
+    shown: ProducedItem,
+    steps: HeldSteps,
+    say: Say,
+    routes: dict[tuple[str, str], str],
+) -> None:
+    # The tea only shows during the clip: it is never in a still, so the picture's check
+    # isn't told to look for it.
+    routes[("tea", SHOWS)] = "appears_during_the_clip"
+    routes[("tea", SHOWS_3)] = "appears_during_the_clip"
+    routes[("black mug", SHOWS_3)] = "appears_during_the_clip"
+    fix = "In scene 2, the mug and the tea look like the shop owner's."
+    restates(
+        fake_model,
+        say,
+        "Our mug and our tea.",
+        fix_asked(2, fix, "picture", [(1, "black mug"), (2, "tea")]),
+        photos=(OWNER_MUG, OWNER_TEA),
+    )
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    says_yes(fake_model, steps, say, ("make_starting_picture", {"scene": 2, "note": fix}))
+
+    asked = ModelCall.objects.filter(purpose="check_fix").order_by("id")
+    assert asked.exists()
+    for call in asked:
+        assert call.handoff["owner_photos"] == ["black mug"]
+        assert [image["key"] for image in call.images[2:]] == [owner_file(1)]
+
+
+def test_a_scene_already_using_the_same_photo_isnt_made_again(
+    fake_model: FakeModel, mug_fixed: Fix, say: Say, routes: dict[tuple[str, str], str]
+) -> None:
+    routes[("black mug", SHOWS_3)] = "in_the_picture"
+
+    said = restates(
+        fake_model,
+        say,
+        "Use the same mug in scene 3.",
+        fix_asked(
+            3,
+            "In scene 3, the mug looks like the shop owner's black mug.",
+            "picture",
+            [(1, "black mug")],
+        ),
+    )
+
+    assert Fix.objects.filter(scene__number=2).count() == 1
+    assert "Scene 2 shows" not in said
+
+
+def test_the_same_thing_named_in_other_capitals_shares_its_clean_picture(
+    fake_model: FakeModel,
+    mug_fixed: Fix,
+    steps: HeldSteps,
+    say: Say,
+    routes: dict[tuple[str, str], str],
+) -> None:
+    routes[("Black mug", SHOWS_3)] = "in_the_picture"
+    fix = "In scene 3, the mug looks like the shop owner's Black mug."
+    said = restates(
+        fake_model,
+        say,
+        "Scene 3 too.",
+        fix_asked(3, fix, "picture", [(1, "Black mug")]),
+    )
+    assert f"Scene 3: about {dollars(Fix.objects.get(scene__number=3).estimate_usd)}" in said
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    says_yes(fake_model, steps, say, ("make_starting_picture", {"scene": 3, "note": fix}))
+
+    assert len(clean_pictures()) == 1
+    assert handoffs("make_starting_picture")[-1]["pictures"][0] == clean_pictures()[0]
+
+
+def test_only_the_scenes_the_shop_owner_names_use_the_photo_when_they_say_so(
+    fake_model: FakeModel, shown: ProducedItem, say: Say, routes: dict[tuple[str, str], str]
+) -> None:
+    # Test C10: "only in scene 2 (not the other scenes)". Their words win over the scenes
+    # code adds (design thread 22:27).
+    said = restates(
+        fake_model,
+        say,
+        "Only in scene 2, not the other scenes.",
+        fix_asked(2, MUG_FIX, "picture", [(1, "black mug")]),
+        photos=(OWNER_MUG,),
+        only=True,
+    )
+
+    assert set(Fix.objects.values_list("scene__number", flat=True)) == {2}
+    assert "Only the scenes named use the photos, as the shop owner asked" in said
+    assert "Refused" not in said
+    # Scene 3 isn't asked about: nothing would be done with the answer.
+    assert len(route_requests()) == 1
+
+
+def test_the_shop_owner_narrowing_the_scenes_at_the_restatement_drops_the_added_ones(
+    fake_model: FakeModel, shown: ProducedItem, say: Say, routes: dict[tuple[str, str], str]
+) -> None:
+    restates(
+        fake_model,
+        say,
+        MUG_NOTE,
+        fix_asked(2, MUG_FIX, "picture", [(1, "black mug")]),
+        photos=(OWNER_MUG,),
+    )
+    assert Fix.objects.filter(scene__number=3, joined=True).exists()
+
+    restates(
+        fake_model,
+        say,
+        "Just scene 2.",
+        fix_asked(2, MUG_FIX, "picture", [(1, "black mug")]),
+        only=True,
+    )
+
+    assert not Fix.objects.filter(scene__number=3).exists()
+    assert Fix.objects.filter(scene__number=2).count() == 2
+
+
+def test_a_scene_planned_before_b_roll_labels_cant_use_photos(
+    fake_model: FakeModel, shown: ProducedItem, say: Say, routes: Any
+) -> None:
+    Scene.objects.filter(number=2).update(broll_kind="")
+
+    restates(
+        fake_model,
+        say,
+        MUG_NOTE,
+        fix_asked(2, MUG_FIX, "picture", [(1, "black mug")]),
+        photos=(OWNER_MUG,),
+    )
+
+    assert results_of("restate_fix")[-1] == (
+        "Refused: scene 2 was planned before scenes had their B-roll labels, so the shop "
+        "owner's photos can't be used in it. Nothing was done."
+    )
+    assert not Fix.objects.exists()
+
+
+def test_a_clean_picture_drawn_before_a_restart_is_used_not_drawn_again(mug_fixed: Fix) -> None:
+    from jobs.work import clean_picture
+
+    (drawn,) = clean_pictures()
+    # As if the worker stopped once the picture was paid for, before it was kept.
+    ReferencePhoto.objects.update(drawn="")
+    row = ReferencePhoto.objects.get()
+
+    assert clean_picture(last_step("starting_picture"), row) == drawn
+    assert clean_pictures() == [drawn]
+    assert ReferencePhoto.objects.get().drawn == drawn

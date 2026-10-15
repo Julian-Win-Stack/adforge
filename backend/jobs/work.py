@@ -1709,7 +1709,7 @@ def clean_picture(step: SceneStep, row: ReferencePhoto) -> str:
         return row.drawn
     job = step.scene.job
     with _one_job_at_a_time(CLEAN_PICTURE_LOCK, job):
-        same = ReferencePhoto.objects.filter(scene__job=job, file=row.file, thing=row.thing)
+        same = ReferencePhoto.objects.filter(scene__job=job, file=row.file, thing__iexact=row.thing)
         drawn = same.exclude(drawn="").values_list("drawn", flat=True).first()
         if drawn:
             row.drawn = drawn
@@ -2019,7 +2019,10 @@ def _ask_about_the_fix(job: Job, fix: Fix, ask: int, old: str, new: str) -> dict
         Image(label="The old picture:", key=old),
         Image(label="The new picture:", key=new),
     ]
-    if not fix.photos:
+    # Only things drawn into the picture: one that shows during the clip is never in a still,
+    # and its clip's judge looks for it.
+    photos = [photo for photo in fix.photos if photo["use"] == ReferencePhoto.Use.PICTURE]
+    if not photos:
         return _fix_answer(
             job,
             purpose="check_fix",
@@ -2028,7 +2031,7 @@ def _ask_about_the_fix(job: Job, fix: Fix, ask: int, old: str, new: str) -> dict
             output=fix_check.FixVerdict,
             images=images,
         )
-    things = [str(photo["thing"]) for photo in fix.photos]
+    things = [str(photo["thing"]) for photo in photos]
     return _fix_answer(
         job,
         purpose="check_fix",
@@ -2042,7 +2045,7 @@ def _ask_about_the_fix(job: Job, fix: Fix, ask: int, old: str, new: str) -> dict
                     label=f"The shop owner's photo of their {photo['thing']}:",
                     key=str(photo["file"]),
                 )
-                for photo in fix.photos
+                for photo in photos
             ),
         ],
     )

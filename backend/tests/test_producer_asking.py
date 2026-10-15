@@ -139,7 +139,8 @@ def test_a_photo_attached_as_the_answer_is_added_and_can_be_a_needed_photo(
     assert planning["photo_count"] == 3
     assert planning["conversation"][-1] == {
         "by": "user",
-        "text": "Here's one\n\n[Attached 1 picture: owner photo 1]",
+        # Only the producer is told the photo's number: what the jobs read is as it was.
+        "text": "Here's one\n\n[Attached 1 picture]",
     }
     assert broll_labels()[1][-1] == [{"what": "the mug with tea in it", "photos": [3]}]
 
