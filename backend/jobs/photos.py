@@ -288,7 +288,8 @@ def best_url(picture: dict[str, Any]) -> str:
 
 def full_size(url: str) -> str:
     """`url` with the size asked of the shop's image server taken off: Shopify's width,
-    height and crop, Amazon's `._..._.` part. Other shops' links are left as they are."""
+    height and crop, and its `_<w>x<h>` size in the file name; Amazon's `._..._.` part.
+    Other shops' links are left as they are."""
     parts = urlparse(url)
     if "/cdn/shop/" in parts.path or "cdn.shopify.com" in parts.netloc:
         kept = [
@@ -296,7 +297,8 @@ def full_size(url: str) -> str:
             for key, value in parse_qsl(parts.query, keep_blank_values=True)
             if key not in ("width", "height", "crop")
         ]
-        return urlunparse(parts._replace(query=urlencode(kept)))
+        path = re.sub(r"_\d+x\d*(?=\.)", "", parts.path)
+        return urlunparse(parts._replace(path=path, query=urlencode(kept)))
     if "media-amazon.com" in parts.netloc:
         return urlunparse(parts._replace(path=re.sub(r"\._[^/]*_\.", ".", parts.path), query=""))
     return url
