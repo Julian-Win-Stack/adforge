@@ -53,10 +53,13 @@ def test_in_reference_mode_the_clip_starts_like_image_1_and_the_clean_pictures_f
     )
 
 
-def test_the_clean_picture_prompt_never_copies_a_face() -> None:
+def test_the_clean_picture_prompt_never_copies_a_face_or_invents_a_side() -> None:
     prompt = reference_photos.clean_picture_prompt("apron")
     assert prompt.startswith("A clean photo of only the apron in this photo")
     assert "Never copy any person's face." in prompt
+    # Locked rule 3: it never invents a side the photo doesn't show.
+    assert "never from a side the photo doesn't show" in prompt
+    assert "front" not in prompt
 
 
 def test_the_writer_is_told_the_product_photo_moves_past_the_clean_pictures() -> None:

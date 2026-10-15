@@ -1362,3 +1362,54 @@ def test_a_clean_picture_drawn_before_a_restart_is_used_not_drawn_again(mug_fixe
     assert clean_picture(last_step("starting_picture"), row) == drawn
     assert clean_pictures() == [drawn]
     assert ReferencePhoto.objects.get().drawn == drawn
+
+
+def test_a_thing_during_the_clip_in_a_picture_fix_is_checked_on_its_clip(
+    fake_model: FakeModel,
+    shown: ProducedItem,
+    steps: HeldSteps,
+    say: Say,
+    routes: dict[tuple[str, str], str],
+) -> None:
+    # The tea only shows during the clip, so the picture's check can't see it: the clip made
+    # from the new picture is asked about it, with its photo (Julian 20:25, "we always check
+    # whether the owner's words are applied right"; design thread 22:42).
+    routes[("tea", SHOWS)] = "appears_during_the_clip"
+    routes[("tea", SHOWS_3)] = "appears_during_the_clip"
+    routes[("black mug", SHOWS_3)] = "appears_during_the_clip"
+    fix = "In scene 2, the mug and the tea look like the shop owner's."
+    restates(
+        fake_model,
+        say,
+        "Our mug and our tea.",
+        fix_asked(2, fix, "picture", [(1, "black mug"), (2, "tea")]),
+        photos=(OWNER_MUG, OWNER_TEA),
+    )
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    says_yes(fake_model, steps, say, ("make_starting_picture", {"scene": 2, "note": fix}))
+    old_clip = latest("clip")
+    fake_model.respond("rewrite_clip_prompt", REWRITE)
+    calling(fake_model, say, ("make_clip", {"scene": 2, "note": None}))
+    run(fake_model, steps)
+
+    motion = ModelCall.objects.filter(purpose="check_clip_motion").order_by("-id")[:3]
+    for call in motion:
+        assert call.handoff["owner_photos"] == ["tea"]
+        assert {"label": OWNER_PHOTO_LABEL.format("tea"), "key": owner_file(2)} in call.images
+        assert {"label": OWNER_PHOTO_LABEL.format("black mug"), "key": owner_file(1)} not in (
+            call.images
+        )
+    picture_check, clip_check = Fix.objects.get(scene__number=2).checks.order_by("id")
+    assert (picture_check.step.kind, clip_check.step.kind) == ("starting_picture", "clip")
+    assert (clip_check.old, clip_check.verdict) == (old_clip, "passed")
+    assert latest("clip").ruling["compared_with"] == old_clip.pk  # type: ignore[index]
+
+
+def test_a_picture_fix_with_no_thing_during_the_clip_leaves_its_clip_judged_as_any(
+    mug_fixed: Fix,
+) -> None:
+    motion = ModelCall.objects.filter(purpose="check_clip_motion").order_by("-id")[:3]
+    assert all("owner_change" not in call.handoff for call in motion)
+    assert all("owner_photos" not in call.handoff for call in motion)
+    assert [check.step.kind for check in mug_fixed.checks.all()] == ["starting_picture"]
+    assert "compared_with" not in (latest("clip").ruling or {})
