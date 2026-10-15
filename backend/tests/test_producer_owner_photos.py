@@ -83,13 +83,26 @@ TEA_FIX = "In scene 2, the tea poured in looks like the shop owner's tea."
 
 WHERE_SAYS = {
     "photo_shows": "A black stoneware mug.",
+    "clear_enough": True,
+    "unclear_why": None,
     "picture_shows": "A sage green mug on a workbench.",
     "why": "The mug is in the picture.",
 }
 
 
+BLURRED = "The photo is too blurry to see the mug's shape."
+
+
 def where(answer: str) -> dict[str, Any]:
-    """The route call answering `answer`."""
+    """The route call answering `answer`; "unclear" when the thing can't be seen in the
+    photo, though it is in the starting picture."""
+    if answer == "unclear":
+        return {
+            **WHERE_SAYS,
+            "clear_enough": False,
+            "unclear_why": BLURRED,
+            "where": "in_the_picture",
+        }
     return {**WHERE_SAYS, "where": answer}
 
 
@@ -997,6 +1010,37 @@ def test_a_fourth_photo_on_a_scene_asks_which_to_drop(
 
 
 # --- A photo that can't be drawn clean (D8) -----------------------------------------------------
+
+
+def test_a_photo_the_thing_cant_be_seen_in_asks_for_a_clearer_one_and_makes_nothing(
+    fake_model: FakeModel, shown: ProducedItem, say: Say, routes: dict[tuple[str, str], str]
+) -> None:
+    # D8, from the owner photos test's C16: a blurry photo was drawn as a guess, so the
+    # route call says first whether the thing can be copied from it (design thread 22:15).
+    routes[("black mug", SHOWS)] = "unclear"
+    restates(
+        fake_model,
+        say,
+        MUG_NOTE,
+        fix_asked(2, MUG_FIX, "picture", [(1, "black mug")]),
+        photos=(OWNER_MUG,),
+    )
+
+    assert results_of("restate_fix")[-1] == (
+        "Refused: owner photo 1 doesn't show the black mug clearly enough to copy its look "
+        f"({BLURRED}). Ask the shop owner for a clearer photo of the black mug. Nothing was "
+        "done."
+    )
+    assert not Fix.objects.exists()
+    assert handoffs("make_reference_photo_picture") == []
+
+
+def test_the_route_call_looks_at_the_photo_and_is_lenient_about_it() -> None:
+    fields = list(reference_photos.RouteAnswer.model_fields)
+    assert fields[:3] == ["photo_shows", "clear_enough", "unclear_why"]
+    instructions = " ".join(reference_photos.ROUTE_INSTRUCTIONS.split())
+    assert "An ordinary phone photo is clear enough" in instructions
+    assert "answer no only when you can't really see the thing" in instructions
 
 
 def test_a_clean_picture_that_keeps_failing_its_check_asks_for_another_photo(
