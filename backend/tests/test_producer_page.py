@@ -1226,6 +1226,103 @@ def test_a_photo_link_to_a_private_network_address_is_never_fetched(
     assert not Job.objects.get().photos.exists()
 
 
+def _a_page_and_a_message(
+    fake_model: FakeModel, httpserver: HTTPServer, say: Callable[..., None], *calls: Outcome
+) -> None:
+    """The mug's page is read, then the shop owner sends two photos: the producer calls
+    `calls` in turn."""
+    httpserver.expect_request("/products/mug").respond_with_data(
+        "<html><body><h1>Stoneware Mug</h1><p>$24.00</p></body></html>",
+        content_type="text/html",
+    )
+    link = httpserver.url_for("/products/mug")
+    reading(fake_model, link)
+    fake_model.respond("check_page", READABLE)
+    say(f"Make an ad for {link}")
+    fake_model.respond("produce", *calls, turn(says="Got them."))
+    say(
+        "Here's our mug, and use our own kitchen from the second photo",
+        ("front.png", MUG_FRONT),
+        ("kitchen.png", MUG_SIDE),
+    )
+
+
+def test_a_photo_of_something_else_than_the_product_isnt_added_before_the_plan(
+    fake_model: FakeModel, httpserver: HTTPServer, say: Callable[..., None]
+) -> None:
+    # Before the plan every photo is a product photo, so their own kitchen would be planned
+    # as the product: it is sent with a note once the first version is made (Julian 17:55;
+    # the owner photos test, C9).
+    _a_page_and_a_message(
+        fake_model,
+        httpserver,
+        say,
+        turn(
+            calls=[
+                (
+                    "use_photos",
+                    {
+                        "photos": [
+                            {"photo": 1, "shows": "the product"},
+                            {"photo": 2, "shows": "something else"},
+                        ]
+                    },
+                )
+            ]
+        ),
+    )
+
+    assert results_of("use_photos") == [
+        "Added 1 of the shop owner's photos. The job now has 1 product photo. Owner photo 2 "
+        "shows something else than the product, so it wasn't added: tell the shop owner it "
+        "can't be used yet, and to send it with a note on a scene once the first version is "
+        "made. Plan the ad without it."
+    ]
+    (kept,) = Job.objects.get().photos.all()
+    assert kept.file == Attachment.objects.order_by("position").first().file  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    ("photos", "refused"),
+    [
+        (
+            [{"photo": 1, "shows": "the product"}],
+            "say what each of the shop owner's photos shows: you left out owner photo 2.",
+        ),
+        (
+            [
+                {"photo": 1, "shows": "the product"},
+                {"photo": 2, "shows": "the product"},
+                {"photo": 3, "shows": "the product"},
+            ],
+            "the chat has owner photos 1 to 2: say what each shows, once, by its number.",
+        ),
+        (
+            [
+                {"photo": 1, "shows": "the product"},
+                {"photo": 1, "shows": "something else"},
+                {"photo": 2, "shows": "the product"},
+            ],
+            "the chat has owner photos 1 to 2: say what each shows, once, by its number.",
+        ),
+    ],
+    ids=["one left out", "no such photo", "one said twice"],
+)
+def test_every_photo_must_be_said_once_before_any_is_added(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    say: Callable[..., None],
+    photos: list[dict[str, object]],
+    refused: str,
+) -> None:
+    _a_page_and_a_message(
+        fake_model, httpserver, say, turn(calls=[("use_photos", {"photos": photos})])
+    )
+
+    assert results_of("use_photos") == [f"Refused: {refused} Nothing was done."]
+    assert not Job.objects.get().photos.exists()
+
+
 def test_photos_the_user_attaches_are_kept_from_position_1_with_no_source_link(
     fake_model: FakeModel, httpserver: HTTPServer, say: Callable[..., None]
 ) -> None:
@@ -1237,7 +1334,23 @@ def test_photos_the_user_attaches_are_kept_from_position_1_with_no_source_link(
     reading(fake_model, link)
     fake_model.respond("check_page", READABLE)
     say(f"Make an ad for {link}")
-    fake_model.respond("produce", turn(calls=[("use_photos", {})]), turn(says="Got them."))
+    fake_model.respond(
+        "produce",
+        turn(
+            calls=[
+                (
+                    "use_photos",
+                    {
+                        "photos": [
+                            {"photo": 1, "shows": "the product"},
+                            {"photo": 2, "shows": "the product"},
+                        ]
+                    },
+                )
+            ]
+        ),
+        turn(says="Got them."),
+    )
 
     say("Here are two photos of it", ("front.png", MUG_FRONT), ("side.png", MUG_SIDE))
 
