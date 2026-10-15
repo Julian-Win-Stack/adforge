@@ -1,20 +1,33 @@
 """Copy a graded round's ads out of the app into a run folder in the record shape
-evals.results reads (see its docstring): results.json (the judge and the auto-redo per B-roll
-scene), costs.json, run.json, and per ad its finished ad and each B-roll scene's first clip,
-remakes and the judge's ruling on each. Run right after the ads finish (the file store's keys
+evals.results reads (see its docstring). Run right after the ads finish (the file store's keys
 are shared across jobs). From backend/:
 
     uv run python -m evals.round_export <ads.json> <run folder> [<run name>]
 
-ads.json is {"<ad folder>": "<chat session id>", ...}: one ad per session, its newest job.
+ads.json is {"<ad folder>": "<chat session id>", ...}: one ad per session, its newest job. An
+ad folder is letters, digits and - _ . only (it names the grading page's documents).
 
-A scene's FIRST clip is the first clip its first clip step made (not one made from an owner's
-note); its KEPT clip is the one the auto-redo kept for that step, the scene's clip unless an
-owner's note made another later.
+What it writes:
+- results.json: the judge and the auto-redo per B-roll scene, keyed "<ad folder>:<N>".
+- costs.json: every ad's model calls, all and paid video (the app's ModelCall records).
+- run.json, unless one is there: the run's files, its whole-ad grades about the auto-redo's.
+- <ad folder>/ad.mp4: the FIRST finished ad, the one made with the clips the auto-redo kept
+  (graded whole); ad-latest.mp4 too when owner notes made newer versions.
+- <ad folder>/ad.json: product link, app commit, when it started and was first finished
+  (wall time), abandoned (no finished ad), model calls that failed (refusals, filters).
+- <ad folder>/notes.json: each owner note, its restatement, estimate, yes, and fix check.
+- <ad folder>/scene-N/: first.mp4, remake-K.mp4, ruling-<clip>.json, start-picture.png and
+  inputs.txt (line, shows, kind, usage, result, picture prompt, motion prompt).
+
+A scene's FIRST clip is the first clip of its first clip step that made one (not one made from
+an owner's note); its KEPT clip is the one the auto-redo kept for that step. A B-roll scene
+with no such clip is left out and named on stderr.
 """
 
 import json
 import os
+import re
+import subprocess
 import sys
 from decimal import Decimal
 from pathlib import Path
@@ -22,10 +35,23 @@ from typing import Any
 
 BROLL_MADE = ("make_broll_clip", "collect_broll_clip")
 VIDEO_PROVIDERS = ("creatify", "heygen")
+SAFE_FOLDER = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
-def _clip_name(remake: int | None) -> str:
+def clip_name(remake: int | None) -> str:
+    """A clip's file name in its scene folder, without .mp4: "first" or "remake-K"."""
     return "first" if remake is None else f"remake-{remake}"
+
+
+def check_folder(folder: str) -> str:
+    """`folder`, refused unless it's safe as a file name and a page document id."""
+    if not SAFE_FOLDER.match(folder):
+        raise ValueError(f"Ad folder {folder!r}: use letters, digits and - _ . only")
+    return folder
+
+
+def _dollars(calls: Any) -> float:
+    return float(sum((c.cost_usd or Decimal(0) for c in calls), Decimal(0)))
 
 
 def _clip(clip: Any) -> dict[str, Any]:
@@ -49,61 +75,122 @@ def _redo_cost(step: Any) -> float:
     """What the judge and the remakes cost on a clip step: its model calls, less making and
     collecting its first clip."""
     calls = list(step.tool_call.model_calls.order_by("id")) if step.tool_call else []
-    first_made: set[int] = set()
-    for purpose in BROLL_MADE:
-        made = next((c.pk for c in calls if c.purpose == purpose), None)
-        if made is not None:
-            first_made.add(made)
-    return float(
-        sum((c.cost_usd or Decimal(0) for c in calls if c.pk not in first_made), Decimal(0))
+    first_made = {
+        made
+        for purpose in BROLL_MADE
+        if (made := next((c.pk for c in calls if c.purpose == purpose), None)) is not None
+    }
+    return _dollars(c for c in calls if c.pk not in first_made)
+
+
+def _first_clip_step(scene: Any) -> tuple[Any, list[Any]] | None:
+    """The scene's first clip step not made from an owner's note that made a clip, and its
+    clips oldest first; a step that failed before making one (and was asked again) is passed."""
+    from jobs.models import ProducedItem, SceneStep
+
+    steps = SceneStep.objects.filter(scene=scene, kind=SceneStep.Kind.CLIP, fix__isnull=True)
+    for step in steps.order_by("id"):
+        made = list(step.produced.filter(kind=ProducedItem.Kind.CLIP).order_by("id"))
+        if made:
+            return step, made
+    return None
+
+
+def _inputs(scene: Any, step: Any) -> str:
+    picture_prompt = step.picture_step.prompt if step.picture_step else ""
+    return (
+        f"SCENE: {scene.number}\nLINE: {scene.line}\nSHOWS: {scene.shows}\n"
+        f"BROLL_KIND: {scene.broll_kind}\nPERSON_SHOWN: {scene.person_shown}\n"
+        f"USAGE: {scene.usage}\nRESULT: {scene.result}\nNEEDS: {scene.needs}\n"
+        f"PICTURE PROMPT: {picture_prompt}\nMOTION PROMPT: {step.motion_prompt}\n"
     )
 
 
-def export_ad(job: Any, folder: str, out: Path) -> dict[str, dict[str, Any]]:
+def _notes(job: Any) -> list[dict[str, Any]]:
+    """Each owner note on the ad: his words, the restatement, the redo and what it cost to
+    estimate, whether he said yes, and the fix check on what it made."""
+    notes = []
+    for fix in job.fixes.select_related("scene").order_by("id"):
+        checks = [
+            {"verdict": check.verdict, "reason": check.reason}
+            for check in fix.checks.order_by("id")
+        ]
+        notes.append(
+            {
+                "scene": fix.scene.number,
+                "notes": fix.notes,
+                "fix": fix.fix,
+                "redo": fix.redo,
+                "estimate_usd": float(fix.estimate_usd),
+                "yes": fix.confirmed_by_id is not None,
+                "fix_checks": checks,
+            }
+        )
+    return notes
+
+
+def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, dict[str, Any]]:
     """Write one ad's files under out/<folder>/; gives its results.json entries."""
     from adforge import file_store
-    from jobs.models import ProducedItem, SceneStep
+    from jobs.models import ProducedItem
 
-    base = out / folder
+    base = out / check_folder(folder)
     base.mkdir(parents=True, exist_ok=True)
-    ad = job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).order_by("-version").first()
-    if ad is not None:
-        (base / "ad.mp4").write_bytes(file_store.read(ad.file))
+    ads = list(job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).order_by("version"))
+    if ads:
+        (base / "ad.mp4").write_bytes(file_store.read(ads[0].file))
+        if len(ads) > 1:
+            (base / "ad-latest.mp4").write_bytes(file_store.read(ads[-1].file))
+    failed = job.model_calls.exclude(outcome="succeeded").order_by("id")
+    (base / "ad.json").write_text(
+        json.dumps(
+            {
+                "product_url": job.product_url,
+                "app_commit": commit,
+                "started_at": job.created_at.isoformat(),
+                "first_finished_at": ads[0].created_at.isoformat() if ads else None,
+                "wall_seconds": round((ads[0].created_at - job.created_at).total_seconds())
+                if ads
+                else None,
+                "abandoned": not ads,
+                "finished_versions": len(ads),
+                "failed_model_calls": [
+                    {"purpose": c.purpose, "model": c.model, "error": c.error} for c in failed
+                ],
+            },
+            indent=1,
+        )
+    )
+    (base / "notes.json").write_text(json.dumps(_notes(job), indent=1))
+
     results: dict[str, dict[str, Any]] = {}
     for scene in job.scenes.order_by("number"):
         if not scene.shows:
             continue
-        step = (
-            SceneStep.objects.filter(scene=scene, kind=SceneStep.Kind.CLIP, fix__isnull=True)
-            .order_by("id")
-            .first()
-        )
-        made = (
-            list(step.produced.filter(kind=ProducedItem.Kind.CLIP).order_by("id")) if step else []
-        )
-        if step is None or not made:
+        found = _first_clip_step(scene)
+        if found is None:
+            print(f"{folder} scene {scene.number}: no B-roll clip made, left out", file=sys.stderr)
             continue
+        step, made = found
         first = made[0]
         tries = [first, *sorted((c for c in made if c.remake), key=lambda c: c.remake or 0)]
         kept = next(c for c in tries if c.file == made[-1].file)
         where = base / f"scene-{scene.number}"
         where.mkdir(exist_ok=True)
         for clip in tries:
-            name = _clip_name(clip.remake)
+            name = clip_name(clip.remake)
             (where / f"{name}.mp4").write_bytes(file_store.read(clip.file))
             (where / f"ruling-{name}.json").write_text(json.dumps(clip.ruling, indent=1))
-        (where / "inputs.txt").write_text(
-            f"SCENE: {scene.number}\nLINE: {scene.line}\nSHOWS: {scene.shows}\n"
-            f"BROLL_KIND: {scene.broll_kind}\nMOTION PROMPT: {step.motion_prompt}\n"
-        )
+        if step.picture:
+            suffix = Path(step.picture.file).suffix or ".png"
+            (where / f"start-picture{suffix}").write_bytes(file_store.read(step.picture.file))
+        (where / "inputs.txt").write_text(_inputs(scene, step))
         results[f"{folder}:{scene.number}"] = {
-            "status": "done",
             "ad_folder": folder,
             "scene": scene.number,
             "line": scene.line,
             "shows": scene.shows,
             "broll_kind": scene.broll_kind,
-            "first": _clip(first),
             "tries": [_clip(c) for c in tries],
             "kept": _clip(kept),
             "kept_is_remake": kept.remake is not None,
@@ -113,23 +200,30 @@ def export_ad(job: Any, folder: str, out: Path) -> dict[str, dict[str, Any]]:
 
 
 def _costs(job: Any) -> dict[str, float]:
-    calls = job.model_calls.all()
+    calls = list(job.model_calls.all())
     return {
-        "total_usd": float(sum((c.cost_usd or Decimal(0) for c in calls), Decimal(0))),
-        "video_usd": float(
-            sum(
-                (c.cost_usd or Decimal(0) for c in calls if c.provider in VIDEO_PROVIDERS),
-                Decimal(0),
-            )
-        ),
+        "total_usd": _dollars(calls),
+        "video_usd": _dollars(c for c in calls if c.provider in VIDEO_PROVIDERS),
     }
+
+
+def _commit() -> str:
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+    except OSError, subprocess.CalledProcessError:
+        return ""
 
 
 def export_run(ads: dict[str, str], out: Path, name: str) -> None:
     """Every ad of `ads` ({ad folder: chat session id}) into the run folder `out`."""
     from jobs.models import Job
 
+    for folder in ads:
+        check_folder(folder)
     out.mkdir(parents=True, exist_ok=True)
+    commit = _commit()
     results: dict[str, dict[str, Any]] = {}
     costs: dict[str, dict[str, float]] = {}
     for folder, session in ads.items():
@@ -137,7 +231,7 @@ def export_run(ads: dict[str, str], out: Path, name: str) -> None:
         if job is None:
             print(f"{folder}: no ad made in session {session}", file=sys.stderr)
             continue
-        results.update(export_ad(job, folder, out))
+        results.update(export_ad(job, folder, out, commit))
         costs[folder] = _costs(job)
     (out / "results.json").write_text(json.dumps(results, indent=1, default=str))
     (out / "costs.json").write_text(
@@ -155,6 +249,7 @@ def export_run(ads: dict[str, str], out: Path, name: str) -> None:
                     "taps": None,
                     "costs": "costs.json",
                     "ad_folders": {},
+                    "regrades": None,
                 },
                 indent=1,
             )

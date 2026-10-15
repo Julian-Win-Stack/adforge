@@ -59,6 +59,7 @@ textarea { font: inherit; width: 100%; max-width: 100%; box-sizing: border-box; 
 {{SECTIONS}}
 </div>
 <script>
+{{LOGIC}}
 (async () => {
   const status = document.getElementById("status");
   const blocks = [...document.querySelectorAll(".grade[data-doc]")];
@@ -82,8 +83,8 @@ textarea { font: inherit; width: 100%; max-width: 100%; box-sizing: border-box; 
   status.textContent = "Taps save as you go.";
   async function write(block, patch) {
     const id = block.dataset.doc;
-    const next = { grade: null, cause: null, note: "", ...(state[id] || {}), ...patch, at: new Date().toISOString() };
-    if (next.grade !== "fail") next.cause = null;
+    const typed = block.querySelector("textarea").value;
+    const next = nextDoc(state[id], patch, typed, new Date().toISOString());
     state[id] = next;
     paint(block, next);
     const run = async () => { await db.doc("{{COLLECTION}}/" + id).set(next); };
@@ -92,10 +93,15 @@ textarea { font: inherit; width: 100%; max-width: 100%; box-sizing: border-box; 
   }
   for (const block of blocks) {
     const id = block.dataset.doc;
-    db.doc("{{COLLECTION}}/" + id).onSnapshot(snap => {
-      state[id] = snap.exists ? snap.data() : {};
-      paint(block, state[id]);
-    }, err => { status.textContent = "Can't read saved taps: " + (err && err.message || err); });
+    try {
+      db.doc("{{COLLECTION}}/" + id).onSnapshot(snap => {
+        state[id] = snap.exists ? snap.data() : {};
+        paint(block, state[id]);
+      }, err => { status.textContent = "Can't read saved taps: " + (err && err.message || err); });
+    } catch (e) {
+      status.textContent = "Taps for " + id + " can't be saved: " + (e && e.message || e);
+      continue;
+    }
     block.querySelectorAll(".q").forEach(q => {
       q.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
         if ((state[id] || {})[q.dataset.field] === b.dataset.v) return;
@@ -106,7 +112,7 @@ textarea { font: inherit; width: 100%; max-width: 100%; box-sizing: border-box; 
     const saved = block.querySelector(".saved");
     block.querySelector(".save").addEventListener("click", async () => {
       if ((state[id] || {}).note === ta.value) return;
-      await write(block, { note: ta.value });
+      await write(block, {});
       saved.hidden = false; setTimeout(() => { saved.hidden = true; }, 1500);
     });
   }
