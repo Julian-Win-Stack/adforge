@@ -121,7 +121,7 @@ Julian graded round 2. Every "showcase" B-roll, where a hand only held, set down
 
 The old 7-check start-picture check is replaced by one judge that looks for objects that can't exist, such as #12 round 3 scene 4's phone showing its screen and rear camera on one face. It is shown the picture and the one shop photo it was drawn from, only for how the product is built; never the prompt or the line. Tested on 98 pictures Julian graded: with the photo, gpt-6.1-sol caught 7 of 10 wrong pictures and failed none of 88 good ones (project files evals/picture-judge/wrong-pictures-and-photo-test.md, reference/vision-judges.md). Julian's yes: 23:05.
 
-1. It runs on every B-roll start picture by default (QUALITY_CHECKS=0 turns it off), on gpt-6.1-sol, asked up to 3 times; 2 fails fail the picture.
+1. It runs on every B-roll start picture, always: QUALITY_CHECKS=0 no longer turns it off (Julian, 15 Oct 14:53, after round 4 ran with it off), on gpt-6.1-sol, asked up to 3 times; 2 fails fail the picture.
 2. A failed picture is drawn again from prompts rewritten with the judge's reasons and the picture shown, at most twice.
 3. When the third picture fails too, the run stops and the chat shows the three pictures and why each failed. Julian: "the best to crash the run" (21:48), so a judge too strict or prompts it can't fix are seen, not kept quietly.
 4. It misses wrong background objects, such as the 4 wrong toilets (docs/limitations.md).

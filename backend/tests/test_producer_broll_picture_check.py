@@ -311,13 +311,17 @@ def test_a_picture_whose_judge_service_is_down_is_kept_and_not_paid_for_again(
     assert paid_for().count("make_starting_picture") == 1
 
 
-def test_with_quality_checks_switched_off_a_picture_is_kept_unchecked(
+def test_a_picture_is_judged_even_with_quality_checks_switched_off(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], settings: Any
 ) -> None:
+    # Julian 2026-10-15 14:53: the picture check always runs; nothing switches it off.
     settings.QUALITY_CHECKS = False
+    fake_model.respond("check_starting_picture", impossible(FUSED_HANDLE), impossible(TWO_SPOUTS))
 
-    step = picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE)
+    step = picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE, FIXED_CHOICE)
 
     assert step.status == "finished"
-    assert paid_for()[-2:] == ["choose_broll_picture", "make_starting_picture"]
-    assert "check_starting_picture" not in paid_for()
+    # The first picture's two fails send it back to be drawn again; the second passes.
+    assert paid_for().count("check_starting_picture") == 4
+    assert len(pictures_drawn()) == 2
+    assert step.produced.get().file == pictures_drawn()[1]

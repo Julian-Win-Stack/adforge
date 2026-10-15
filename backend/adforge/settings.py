@@ -85,11 +85,11 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 
 # How often a working producer says it is still alive, and how long it can go unseen before
 # it is taken for dead and started again.
-# Quality checks (CONTEXT.md) look at something already produced, such as a starting
-# picture. On unless QUALITY_CHECKS=0; planning checks always run. Julian 10 Oct 03:10 turned
-# the old starting picture check off (all 12 of its fails in the round 2 fixes free check were
-# wrong); on 10 Oct 21:55 he agreed its replacement, a judge of impossible objects that failed
-# none of his good graded pictures, runs on every B-roll picture.
+# Quality checks (CONTEXT.md) look at something already produced, such as a clip. On unless
+# QUALITY_CHECKS=0; it switches off the clip judge (and its remakes), the clip judge's share
+# of clip cost estimates, and the fix check.
+# Planning checks always run, and so does the B-roll starting picture check, which nothing
+# switches off (Julian 15 Oct 14:53: "hardcode the check in the app to always turn it on").
 QUALITY_CHECKS = os.environ.get("QUALITY_CHECKS", "1") == "1"
 
 PRODUCER_HEARTBEAT_SECONDS = 30.0
