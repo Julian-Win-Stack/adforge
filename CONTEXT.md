@@ -196,6 +196,18 @@ _Avoid_: Retry, redo (a redo is made for a fix)
 
 Named so the words mean one thing when these are built. Nothing implements them today.
 
+**Reference photo**:
+A photo the shop owner attaches to a note, showing how something in a scene should look, such as the gel. It takes the place of the product photos of that thing in every scene whose starting picture shows it, and stays with those scenes for every later fix until the shop owner says otherwise. Where the thing is in the starting picture, the starting picture is drawn again from it; where it only appears during the clip, the clip is made in reference mode with it. The shop owner isn't told which.
+_Avoid_: Reference picture, owner picture
+
+**Side picture**:
+A picture of the product alone on a plain background, showing one side the product photos show, drawn from that photo and checked against it, or the photo itself when it is already plain. Made once per ad, only when the product photos show the product from more than one side.
+_Avoid_: Reference picture, side photo
+
+**Reference mode**:
+How a B-roll clip is made when it has pictures beyond its starting picture: the video model gets the starting picture first, told the clip starts like it, then the side pictures and reference photos, each named with what it shows. A reference photo goes in as a picture of the thing alone, drawn from it. Without such pictures, a clip is made from its starting picture alone.
+_Avoid_: Reference picture mode, way 3
+
 **Promo code**:
 A discount code the user supplies. Always a user-supplied fact, never taken from the page.
 _Avoid_: Coupon, discount, offer
