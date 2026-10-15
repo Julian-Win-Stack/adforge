@@ -1,0 +1,114 @@
+<title>Round Grading</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --bg: #f6f5f1; --surface: #ffffff; --fg: #1f2420; --muted: #5d655f; --line: #d9d8d0;
+  --accent: #0f6b5c; --accent-ink: #ffffff; --pass: #1c7c3f; --fail: #b3362b; --warn: #8a6d00;
+  --chip-pass: #e2f3e8; --chip-fail: #fae3df; --chip-warn: #f7efcf; --kept: #e5efec;
+  --font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15181a; --surface: #1e2224; --fg: #e9ebe6; --muted: #a3aaa4; --line: #343a3c;
+  --accent: #4fc3ad; --accent-ink: #0d1412; --pass: #6fd68f; --fail: #ff8f80; --warn: #e5c45a;
+  --chip-pass: #1d3a28; --chip-fail: #46231f; --chip-warn: #3d3515; --kept: #22332f; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #15181a; --surface: #1e2224; --fg: #e9ebe6; --muted: #a3aaa4; --line: #343a3c;
+  --accent: #4fc3ad; --accent-ink: #0d1412; --pass: #6fd68f; --fail: #ff8f80; --warn: #e5c45a;
+  --chip-pass: #1d3a28; --chip-fail: #46231f; --chip-warn: #3d3515; --kept: #22332f; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 15px; line-height: 1.45; margin: 0; }
+.wrap { max-width: 1040px; margin: 0 auto; padding-block: 24px 64px; padding-inline: 16px; display: grid; gap: 24px; }
+h1 { font-size: 1.6rem; margin: 0 0 4px; } h2 { font-size: 1.3rem; margin: 0; } h3 { font-size: 1.05rem; margin: 0; }
+.ad { display: grid; gap: 14px; }
+.lead, .muted { color: var(--muted); margin: 0; max-width: 75ch; }
+.status { font-family: var(--mono); font-size: 0.85rem; color: var(--muted); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 14px; min-width: 0; }
+.card header { display: grid; gap: 4px; }
+.scene { font-family: var(--mono); font-weight: 400; color: var(--muted); font-size: 0.85rem; margin-left: 6px; }
+.clips { display: flex; flex-wrap: wrap; gap: 14px; }
+.clip { margin: 0; flex: 1 1 220px; max-width: 300px; min-width: 0; display: grid; gap: 6px; align-content: start; }
+video { width: 100%; max-width: 100%; aspect-ratio: 9 / 16; background: #000; border-radius: 6px; }
+video.whole { max-width: 320px; }
+.clip figcaption { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.kept { background: var(--kept); color: var(--accent); font-family: var(--mono); font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; }
+.chip { display: inline-block; font-family: var(--mono); font-size: 0.78rem; padding: 2px 8px; border-radius: 999px; }
+.chip.pass { background: var(--chip-pass); color: var(--pass); }
+.chip.fail { background: var(--chip-fail); color: var(--fail); }
+.chip.unchecked { background: var(--chip-warn); color: var(--warn); }
+.problem { margin: 0; padding-left: 18px; font-size: 0.85rem; color: var(--muted); }
+.questions { display: grid; gap: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
+.grade { display: grid; gap: 8px; }
+.q { display: grid; gap: 6px; }
+.q[hidden] { display: none; }
+.opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.opts button, .save { font: inherit; font-size: 0.9rem; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
+.opts button:hover, .save:hover { border-color: var(--accent); }
+.opts button:focus-visible, .save:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.opts button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.note { display: grid; gap: 6px; }
+textarea { font: inherit; width: 100%; max-width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); resize: vertical; }
+.note .save { justify-self: start; }
+.saved { font-size: 0.85rem; color: var(--pass); }
+</style>
+<div class="wrap">
+  <header>
+    <h1>Round Grading</h1>
+    <p class="lead">Grade each ad, each scene's first clip and, where the app kept a remake, the kept clip. On a failed clip, tap the first step that broke. The judge's verdict is shown for every clip.</p>
+    <p class="status" id="status">Connecting to the tap store…</p>
+  </header>
+{{SECTIONS}}
+</div>
+<script>
+(async () => {
+  const status = document.getElementById("status");
+  const blocks = [...document.querySelectorAll(".grade[data-doc]")];
+  const state = {};
+  const pending = {};
+  function paint(block, data) {
+    block.querySelectorAll(".q").forEach(q => {
+      q.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(!!data && data[q.dataset.field] === b.dataset.v)));
+    });
+    const cause = block.querySelector(".cause");
+    if (cause) cause.hidden = !(data && data.grade === "fail");
+    const ta = block.querySelector("textarea");
+    if (data && typeof data.note === "string" && document.activeElement !== ta) ta.value = data.note;
+  }
+  let db = null;
+  try { db = await claude.use("db"); } catch (e) { db = null; }
+  if (!db) {
+    status.textContent = "Taps can't be saved in this view. You can still watch the clips.";
+    return;
+  }
+  status.textContent = "Taps save as you go.";
+  async function write(block, patch) {
+    const id = block.dataset.doc;
+    const next = { grade: null, cause: null, note: "", ...(state[id] || {}), ...patch, at: new Date().toISOString() };
+    if (next.grade !== "fail") next.cause = null;
+    state[id] = next;
+    paint(block, next);
+    const run = async () => { await db.doc("{{COLLECTION}}/" + id).set(next); };
+    pending[id] = (pending[id] || Promise.resolve()).then(run, run);
+    try { await pending[id]; } catch (e) { status.textContent = "A tap didn't save: " + (e && e.message || e); }
+  }
+  for (const block of blocks) {
+    const id = block.dataset.doc;
+    db.doc("{{COLLECTION}}/" + id).onSnapshot(snap => {
+      state[id] = snap.exists ? snap.data() : {};
+      paint(block, state[id]);
+    }, err => { status.textContent = "Can't read saved taps: " + (err && err.message || err); });
+    block.querySelectorAll(".q").forEach(q => {
+      q.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+        if ((state[id] || {})[q.dataset.field] === b.dataset.v) return;
+        write(block, { [q.dataset.field]: b.dataset.v });
+      }));
+    });
+    const ta = block.querySelector("textarea");
+    const saved = block.querySelector(".saved");
+    block.querySelector(".save").addEventListener("click", async () => {
+      if ((state[id] || {}).note === ta.value) return;
+      await write(block, { note: ta.value });
+      saved.hidden = false; setTimeout(() => { saved.hidden = true; }, 1500);
+    });
+  }
+})();
+</script>
