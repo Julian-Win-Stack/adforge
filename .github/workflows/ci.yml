@@ -32,7 +32,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
       - run: uv sync --frozen
       # The browser the marked screenshot's steps are tested in (tests/test_firecrawl_browser.py).
-      - run: uv run playwright install --with-deps chromium
+      - run: uv run playwright install --with-deps --only-shell chromium
       - run: uv run ruff format --check .
       - run: uv run ruff check .
       # mypy only rechecks what changed since the cache was saved.

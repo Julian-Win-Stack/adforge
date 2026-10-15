@@ -62,8 +62,10 @@
   // Some galleries show their photos as an element's background, not as a picture: those
   // are numbered too, in page order with the pictures.
   const backgroundOf = (el) => {
-    const m = /url\(["']?(.*?)["']?\)/.exec(getComputedStyle(el).backgroundImage);
-    return m && !m[1].startsWith('data:') ? new URL(m[1], location.href).href : '';
+    // The browser always writes a background's link as url("..."), quotes escaped.
+    const m = /url\("((?:[^"\\]|\\.)*)"\)/.exec(getComputedStyle(el).backgroundImage);
+    if (!m || m[1].startsWith('data:')) return '';
+    try { return new URL(m[1], location.href).href; } catch (e) { return ''; }  // a broken link
   };
   let n = 0;
   document.querySelectorAll('body *').forEach((el) => {

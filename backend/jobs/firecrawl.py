@@ -41,8 +41,9 @@ MAX_SCREENSHOT_BYTES = 50_000_000
 
 _SCRIPTS = Path(__file__).parent / "firecrawl_scripts"
 # What Firecrawl's browser does on the page before the marked screenshot, as tested
-# (docs/scraping-test/text-test/scripts/fetch_marked.py): run the scripts a shop holds back
-# from Linux browsers (run_held.js), as smartish.com does, scroll down so lazy photos load,
+# (docs/scraping-test/text-test/scripts/fetch_marked.py, plus run_held.js, tested in
+# tests/test_firecrawl_browser.py): run the scripts a shop holds back from Linux browsers
+# (run_held.js), as smartish.com does, scroll down so lazy photos load,
 # back to the top, open closed tabs (open.js), note the visible text (visible.js), number
 # every picture and piece of text a visitor sees (mark.js), then screenshot the whole page.
 ACTIONS: list[dict[str, Any]] = [

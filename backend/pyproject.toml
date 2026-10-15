@@ -24,6 +24,7 @@ dev = [
     "django-stubs>=6.1.1",
     "djangorestframework-stubs>=3.18.1",
     "mypy>=2.3.1",
+    # Pinned to the Chromium build cloud sessions have installed (/opt/pw-browsers, 1194).
     "playwright==1.56.0",
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
