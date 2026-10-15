@@ -380,6 +380,36 @@ class Fix(models.Model):
         help_text="The shop owner's answer the yes guard accepted. Blank until a redo is "
         "asked for with it after they answered.",
     )
+    photos = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The shop owner's photos the fix takes things from (Reference photo, "
+        'CONTEXT.md), as [{"photo", "file", "thing", "use", "where"}, ...]: the photo\'s number '
+        "in the chat, its key in the file store, the one thing to take from it, whether the "
+        'thing goes in the starting picture ("picture") or only shows during the clip '
+        '("clip"), and where the route call found it. Empty for a fix with no photo.',
+    )
+    drops = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The things whose photos the scene stops using once the shop owner says yes, "
+        "as their names. Empty for none.",
+    )
+    joined = models.BooleanField(
+        default=False,
+        help_text="Whether code added the fix because the scene shows a thing the shop "
+        "owner's photo on another scene's note shows, or already uses a photo of it.",
+    )
+    brings_back = models.ForeignKey(
+        "ProducedItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="For a fix that stops using a photo: the scene's starting picture or clip "
+        "from before the photo, brought back for it with nothing paid. Blank when it is made "
+        "again instead.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -403,6 +433,51 @@ class Fix(models.Model):
             .aggregate(cost=Sum("cost_usd"))["cost"]
         )
         return cost or Decimal(0)
+
+
+class ReferencePhoto(models.Model):
+    """A photo the shop owner attached to a note, kept on a scene that uses it (Reference
+    photo, CONTEXT.md): the one thing to take from it, and a clean picture of only that thing,
+    drawn from it once and sent in its place. It stays with the scene for every later fix, its
+    starting pictures and its clips alike, until a fix the shop owner said yes to drops it or
+    replaces it with a newer photo of the same thing (Julian 2026-10-15, D1 and D3)."""
+
+    class Use(models.TextChoices):
+        # The thing is in the starting picture, or should be from the start: drawn into it.
+        PICTURE = "picture"
+        # The thing only shows during the clip: its clean picture goes to the video model.
+        CLIP = "clip"
+
+    scene = models.ForeignKey(Scene, on_delete=models.CASCADE, related_name="reference_photos")
+    file = models.CharField(max_length=500, help_text="The shop owner's photo, in the file store.")
+    thing = models.CharField(
+        max_length=200, help_text='The one thing taken from it, such as "black toilet".'
+    )
+    use = models.CharField(max_length=10, choices=Use.choices)
+    drawn = models.CharField(
+        max_length=500,
+        blank=True,
+        help_text="The clean picture of only the thing, drawn from the photo, in the file "
+        "store. Blank until it is drawn.",
+    )
+    added_by = models.ForeignKey(
+        Fix, on_delete=models.CASCADE, related_name="+", help_text="The fix that added it."
+    )
+    dropped_by = models.ForeignKey(
+        Fix,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The fix that dropped it or replaced it. Blank while the scene uses it.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self) -> str:
+        return f"Scene {self.scene.number}'s photo of {self.thing}"
 
 
 class SceneStep(models.Model):
@@ -511,6 +586,14 @@ class SceneStep(models.Model):
         'with its job, such as [{"image": 1, "photo": 3, "job": "the product, only how it looks"}, '
         '{"image": 2, "portrait": true, "job": "the presenter"}], the ad\'s before-picture last '
         'with "before_picture": true. Empty otherwise.',
+    )
+    reference_photos = models.ManyToManyField(
+        ReferencePhoto,
+        blank=True,
+        related_name="+",
+        help_text="For a B-roll scene's step, the shop owner's photos its scene used when it "
+        "started, fixed then: a starting picture is drawn with those used in it, and a clip is "
+        "made in reference mode with those that show only during it.",
     )
     made_from = models.ForeignKey(
         "ProducedItem",

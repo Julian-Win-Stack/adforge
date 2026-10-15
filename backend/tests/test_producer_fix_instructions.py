@@ -92,15 +92,30 @@ STILL_WRONG = (
 )
 # The "I can't" list (#137): each item is a refusal or a limit in code or docs/limitations.md.
 CANT = (
-    "What you can't do, said plainly the same way each time: see pictures or videos; use new "
-    "product photos once the ad is planned; give the video model a photo, as it only starts "
-    "from the starting picture; or change what the person does in a scene where they talk, "
-    "only how it looks or what they hold, through a new starting picture."
+    "What you can't do, said plainly the same way each time: see pictures or videos; or "
+    "change what the person does in a scene where they talk, only how it looks or what they "
+    "hold, through a new starting picture."
 )
-# A scene's words change through change_line (#138).
+# A scene's words change through change_line (#138). The shop owner's photos: B-roll scenes
+# only (D7), never to change the person (17:45), and photos only, no videos (Q6).
 NOT_YET = (
-    "Not yet: changing the music, the text shown over a scene, the voice, the person, the "
-    "number of scenes or the ad's length."
+    "Not yet: using the shop owner's photos in a scene where the person talks; changing how "
+    "the person looks to match a photo; using a video they send as an example; changing the "
+    "music, the text shown over a scene, the voice, the person, the number of scenes or the "
+    "ad's length."
+)
+# A photo of something else than the product, sent before the plan (Julian 17:55).
+NOT_A_PRODUCT_PHOTO = (
+    "Before the ad is planned, every photo they send is a product photo: if they send one of "
+    "something else, don't add it, and tell them to send it with a note on a scene once the "
+    "first version is made."
+)
+# The shop owner's photos on notes: one thing named per photo, confirmed (17:43, 20:21).
+OWNER_PHOTOS = (
+    "In restate_fix, give the fix each photo's number and the one thing to take from it, "
+    'named in their words, such as "black toilet". If their words don\'t say which thing, ask '
+    "before you restate. Tell them each photo's thing in your restatement, so they can "
+    "correct it. Never tell them how their photos are used."
 )
 SLOWER = "Slower can't be done: every clip plays at real-time speed."
 
@@ -121,6 +136,8 @@ PINNED = [
     STILL_WRONG,
     CANT,
     NOT_YET,
+    NOT_A_PRODUCT_PHOTO,
+    OWNER_PHOTOS,
     SLOWER,
 ]
 
