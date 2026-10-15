@@ -5,7 +5,10 @@ since the page is served locally."""
 import io
 import json
 import socket
+import threading
+import time
 from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 import PIL.Image
@@ -29,8 +32,9 @@ BLUE = (30, 60, 220)
 # its speed script, when the browser says it runs on Linux as page-speed testers do, holds
 # back every script after it, so they never run. The held-back scripts build the photo
 # gallery, whose photos are cell backgrounds, hidden until the gallery is built. One of them
-# is gone from the shop, and one's server never answers. A script before the speed script
-# isn't held back.
+# is gone from the shop, and on a loaded page one's server never answers. A script before the
+# speed script isn't held back. On a slow page its small badge picture comes in late, so the
+# page is still loading when the steps begin.
 HELD_BACK_PAGE = """<!doctype html>
 <html>
 <head>
@@ -60,12 +64,13 @@ HELD_BACK_PAGE = """<!doctype html>
     .cell.built { visibility: visible; }
   </style>
   <script src="/gone.js"></script>
-  <script src="NEVER_ANSWERS/slow.js"></script>
+  HANGING
   <script src="/gallery.js"></script>
 </head>
 <body>
   <h1>Gripmunk Clear Case</h1>
   <p>$14.99</p>
+  <img src="BADGE" alt="Free shipping" width="20" height="20">
   <div class="gallery">
     <div class="cell" aria-label="Front"
          style="background:url('/cdn/shop/files/front_1410x580.png')"></div>
@@ -73,7 +78,7 @@ HELD_BACK_PAGE = """<!doctype html>
   </div>
   <script>
     document.addEventListener("DOMContentLoaded", () => Gallery.build());
-    window.addEventListener("load", () => (document.title = "Loaded"));
+    window.addEventListener("load", () => (window.loads = (window.loads || 0) + 1));
   </script>
 </body>
 </html>
@@ -93,7 +98,8 @@ def browser_page() -> Iterator[Page]:
 def run_actions(page: Page, url: str) -> tuple[dict[str, Any], PIL.Image.Image]:
     """Open `url` and run the marked screenshot's steps on it, as Firecrawl does: its answer's
     `actions` (the scripts' returns) and the screenshot."""
-    page.goto(url)
+    # Firecrawl may begin before the page has finished loading.
+    page.goto(url, wait_until="domcontentloaded")
     returns: list[dict[str, Any]] = []
     shot = b""
     for action in firecrawl.ACTIONS:
@@ -116,10 +122,43 @@ def never_answers() -> Iterator[str]:
         yield f"http://127.0.0.1:{server.getsockname()[1]}"
 
 
+class _Late(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        time.sleep(3)
+        body = picture(20, 20, RED)
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
 @pytest.fixture
-def held_back_shop(httpserver: HTTPServer, never_answers: str) -> str:
+def answers_late() -> Iterator[str]:
+    """A server that answers every request with a picture, 3 seconds late: after the held
+    scripts have run."""
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Late)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{server.server_address[1]}"
+    server.shutdown()
+
+
+@pytest.fixture(params=["slow page", "loaded page"])
+def held_back_shop(
+    request: pytest.FixtureRequest, httpserver: HTTPServer, never_answers: str, answers_late: str
+) -> str:
+    badge = f"{answers_late}/badge.png" if request.param == "slow page" else "/badge.png"
+    # A script that never comes would keep a page that is still loading from ever finishing,
+    # so only the loaded page has one.
+    hanging = (
+        "" if request.param == "slow page" else f'<script src="{never_answers}/slow.js"></script>'
+    )
+    httpserver.expect_request("/badge.png").respond_with_data(
+        picture(20, 20, RED), content_type="image/png"
+    )
     httpserver.expect_request("/products/case").respond_with_data(
-        HELD_BACK_PAGE.replace("NEVER_ANSWERS", never_answers), content_type="text/html"
+        HELD_BACK_PAGE.replace("HANGING", hanging).replace("BADGE", badge),
+        content_type="text/html",
     )
     httpserver.expect_request("/gone.js").respond_with_data("Not found", status=404)
     httpserver.expect_request("/gallery.js").respond_with_data(
@@ -138,7 +177,7 @@ def test_a_gallery_a_shop_holds_back_from_linux_browsers_is_shown_and_numbered(
     answer, shot = run_actions(browser_page, held_back_shop)
 
     assert browser_page.evaluate("window.readyRuns") == 1
-    assert browser_page.title() == "Loaded"
+    assert browser_page.evaluate("window.loads") == 1
 
     marks = firecrawl.marks_in(answer)
     numbered = {
