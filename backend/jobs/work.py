@@ -1962,7 +1962,8 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
     itself, beside the clip the shop owner complained about (Julian 2026-10-14, one judge for
     both): its answers are read from the ruling of the clip its remakes kept (#155), which is
     the step's newest, and nothing is asked here. A new line isn't checked, nor a picture
-    fix's clip: the complaint was about the picture. Nothing is checked when quality checks
+    fix's clip, the complaint being about the picture, unless the fix has the shop owner's
+    photo of a thing that only shows during the clip. Nothing is checked when quality checks
     are switched off.
 
     Run again, as after a worker stopped, it gives the verdict kept, or asks the judge
@@ -1971,7 +1972,11 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
     if fix is None or made is None or not settings.QUALITY_CHECKS:
         return None
     picture = fix.redo == Fix.Redo.PICTURE and step.kind == SceneStep.Kind.STARTING_PICTURE
-    clip = fix.redo == Fix.Redo.CLIP and step.kind == SceneStep.Kind.CLIP
+    # A picture fix's clip too, when the fix has the shop owner's photo of a thing that only
+    # shows during the clip: the picture's check can't see it (design thread 22:42).
+    clip = step.kind == SceneStep.Kind.CLIP and (
+        fix.redo == Fix.Redo.CLIP or bool(clip_judge.during_the_clip(fix))
+    )
     if not (picture or clip):
         return None
     kept = FixCheck.objects.filter(step=step).first()

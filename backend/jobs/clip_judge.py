@@ -530,13 +530,23 @@ class MotionPhotoFixCheckHandoff(MotionFixCheckHandoff):
 
 
 def complained_about(step: SceneStep) -> ProducedItem | None:
-    """For a step that makes a scene's new clip for the shop owner's clip fix, the clip they
-    complained about: the one they saw last before the step started. None for any other
-    step, or when the scene has no clip from before it."""
+    """For a step that makes a scene's new clip for the shop owner's clip fix, or for a fix
+    with their photo of a thing that only shows during the clip, the clip they complained
+    about: the one they saw last before the step started. None for any other step, or when
+    the scene has no clip from before it."""
     fix = step.fix
-    if fix is None or fix.redo != Fix.Redo.CLIP or step.kind != SceneStep.Kind.CLIP:
+    if fix is None or step.kind != SceneStep.Kind.CLIP:
+        return None
+    if fix.redo != Fix.Redo.CLIP and not during_the_clip(fix):
         return None
     return step.shown_before(ProducedItem.Kind.CLIP)
+
+
+def during_the_clip(fix: Fix) -> list[dict[str, Any]]:
+    """The shop owner's photos `fix` takes things from that only show during the clip: the
+    clip judge asks about them, even for a picture fix, whose picture check can't see them
+    (Julian 20:25, "we always check whether the owner's words are applied right")."""
+    return [photo for photo in fix.photos if photo["use"] == "clip"]
 
 
 def judge_clip(
@@ -562,7 +572,7 @@ def judge_clip(
             motion,
             clip,
             compared_with=old,
-            photos=bool(old and step.fix and step.fix.photos),
+            photos=bool(old and step.fix and during_the_clip(step.fix)),
         )
     except Exception as error:
         logger.exception("Scene %s's clip couldn't be judged", step.scene.number)
@@ -607,7 +617,7 @@ def _asked(
     pictures = (clip.ruling or {}).get("pictures")
     old = complained_about(step)
     # A clip fix with the shop owner's photos has MOTION shown them too.
-    photos = step.fix.photos if old is not None and step.fix is not None else []
+    photos = during_the_clip(step.fix) if old is not None and step.fix is not None else []
     owners = [
         Image(label=OWNER_PHOTO_LABEL.format(each["thing"]), key=str(each["file"]))
         for each in photos

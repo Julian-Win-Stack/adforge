@@ -133,12 +133,14 @@ class ReferencePhotoUnusable(Exception):
 def clean_picture_prompt(thing: str) -> str:
     """The picture model's prompt for the clean picture of only `thing` from the shop owner's
     photo. It always says never to copy a face, whoever is in the photo (Julian 17:45-17:46;
-    a hand may stay where it holds the thing)."""
+    a hand may stay where it holds the thing), and never to draw a side the photo doesn't
+    show (locked rule 3; design thread 22:27)."""
     return (
         f"A clean photo of only the {thing} in this photo, exactly as it looks: the same "
         "shape, colours, materials, print and every part. Nothing else from the photo: no "
-        "other object and no background. Never copy any person's face. Seen whole, from the "
-        "front, on a plain light grey background, in even, soft light."
+        "other object and no background. Never copy any person's face. Seen from the side "
+        "the photo shows it from, never from a side the photo doesn't show, on a plain light "
+        "grey background, in even, soft light."
     )
 
 
