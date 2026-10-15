@@ -9,8 +9,10 @@ owner's notes, says yes to what the producer restates, and keeps what happened i
     uv run python -m evals.owner_notes run --cases evals/owner_notes/cases.json \\
         --out /mnt/project-files/runs/owner-notes/<name> [--only id,id] [--parallel 4]
 
-Needs Postgres (adforge/adforge on localhost) and the OpenAI or Azure key. Costs only text
-models and the pictures the notes ask for again, at most 2 a minute across the run.
+Needs Postgres (adforge/adforge on localhost) and the OpenAI or Azure key. Costs the text
+models and the pictures the notes ask for again, at most 2 a minute across the run, and, when
+FIRECRAWL_API_KEY is set, Firecrawl's reads of each product page for the first versions (3 an
+ad), so the page's photos are the ones round 4's plan points at.
 """
 
 import argparse
@@ -77,23 +79,27 @@ def case(case_json: str, session: str, database: str, out: Path) -> None:
     _setup(database)
     from gateway.gateway import use_model
 
-    from .chat import Chat, Notes, send_notes, since
+    from .chat import Chat, Notes, send_notes, since, speak_at
     from .provider import OwnerNotesProvider
     from .record import record
     from .saved_ads import saved_ads
 
     asked = json.loads(case_json)
-    provider = OwnerNotesProvider(saved_ads()[asked["ad"]])
-    provider.phase = "notes"
+    ad = saved_ads()[asked["ad"]]
+    provider = OwnerNotesProvider(ad)
+    provider.start_notes(ad.words_per_second())
     with use_model(provider):
         chat = Chat(session)
+        speak_at(chat, ad.words_per_second())
         start = since(chat)
         turned = send_notes(chat, Notes(asked["messages"], asked.get("yes_answers", 1)))
     record(chat, start, turned, asked, out / asked["id"])
 
 
 def _psql(sql: str) -> None:
-    subprocess.run(["psql", PG + "postgres", "-qc", sql], check=True, capture_output=True)
+    subprocess.run(
+        ["psql", PG + "postgres", "-qc", sql], check=True, capture_output=True, text=True
+    )
 
 
 def _db_exists(name: str) -> bool:
@@ -123,10 +129,17 @@ def run(cases_file: Path, out: Path, only: list[str], parallel: int, fresh: bool
 
     def make(ad: str) -> None:
         database = f"owner_notes_first_{ad.lower()}"
-        if _db_exists(database) and (firsts / f"{ad}.json").exists() and not fresh:
+        made = firsts / f"{ad}.json"
+        if _db_exists(database) and made.exists() and not fresh:
             return
-        _psql(f"DROP DATABASE IF EXISTS {database}")
-        _psql(f"CREATE DATABASE {database}")
+        # A rebuild that fails leaves no first version for its cases to start from.
+        made.unlink(missing_ok=True)
+        try:
+            _psql(f"DROP DATABASE IF EXISTS {database}")
+            _psql(f"CREATE DATABASE {database}")
+        except subprocess.CalledProcessError as error:
+            print(f"first version of #{ad}: FAILED ({error.stderr.strip()})", flush=True)
+            return
         code = _child(
             "first", "--ad", ad, "--db", database, "--out", str(firsts), log=out / f"first-{ad}.log"
         )
@@ -142,8 +155,12 @@ def run(cases_file: Path, out: Path, only: list[str], parallel: int, fresh: bool
             print(f"{asked['id']}: skipped, #{ad} has no first version", flush=True)
             return
         database = f"owner_notes_case_{str(asked['id']).replace('-', '_').lower()}"
-        _psql(f"DROP DATABASE IF EXISTS {database}")
-        _psql(f"CREATE DATABASE {database} TEMPLATE owner_notes_first_{ad.lower()}")
+        try:
+            _psql(f"DROP DATABASE IF EXISTS {database}")
+            _psql(f"CREATE DATABASE {database} TEMPLATE owner_notes_first_{ad.lower()}")
+        except subprocess.CalledProcessError as error:
+            print(f"{asked['id']}: FAILED ({error.stderr.strip()})", flush=True)
+            return
         session = json.loads(made.read_text())["session"]
         code = _child(
             "case",

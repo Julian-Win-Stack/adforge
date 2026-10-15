@@ -2,22 +2,31 @@
 keeps, and how round 4's saved ads are read and replayed."""
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from adforge.file_store import read
 from chat.models import Message, Session
+from evals.owner_notes import provider as provider_module
 from evals.owner_notes.chat import GO_AHEAD, Chat, Notes, send_notes, since
 from evals.owner_notes.provider import OwnerNotesProvider
 from evals.owner_notes.record import record
-from evals.owner_notes.saved_ads import as_planned, saved_ads
-from gateway.fake import FakeModel, turn
-from jobs.models import Fix, ProducedItem
+from evals.owner_notes.saved_ads import SavedAd, SavedScene, as_planned, saved_ads
+from gateway.fake import COLOURS, FakeModel, turn
+from gateway.gateway import use_model
+from gateway.types import ModelRequest
+from jobs.models import Fix, Job, ProducedItem
+from jobs.planning import PlanHandoff, producer_decision_for
 
-from .conftest import HeldSteps
-from .test_producer_broll import checked  # noqa: F401 (a fixture)
-from .test_producer_fixes import FIX_2, NOTE_2, REWRITE, clip_with, restating
+from .conftest import HeldSteps, a_plan_with, colour_at, picture
+from .test_producer_broll import (
+    assemble_through_the_chat,
+    checked,  # noqa: F401 (a fixture)
+)
+from .test_producer_fixes import FIX_2, NOTE_2, REWRITE, Say, clip_with, restating
 from .test_producer_fixes import shown as shown  # noqa: F401 (a fixture)
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -55,8 +64,10 @@ def test_a_case_says_yes_to_the_restatement_and_keeps_what_was_made(
             "scene": 2,
             "redo": "clip",
             "fix": FIX_2,
-            "estimate_usd": kept["fixes"][0]["estimate_usd"],
+            "estimate_usd": "0.484000",
             "said_yes": True,
+            # The clip was never made, so its check is the fake's.
+            "checks": [{"what": "clip", "verdict": "video faked: not judged", "reason": ""}],
         }
     ]
     clip = next(step for step in kept["steps"] if step["kind"] == "clip")
@@ -168,20 +179,31 @@ def test_a_saved_scene_is_planned_with_only_the_photos_the_page_has_now(tmp_path
 
 def test_the_first_version_gets_round_4s_scenes_in_the_planners_plan(tmp_path: Path) -> None:
     ad = saved_ads(saved_round_4(tmp_path))["8"]
-    provider = OwnerNotesProvider(ad, real=FakeModel())
-    planned: dict[str, Any] = {
-        "decision": "plan",
-        "plan": {
-            "product_name": "cleaner",
-            "scenes": [
-                {"line": "A", "part": "hook", "overlay": "New"},
+    planner = FakeModel()
+    provider = OwnerNotesProvider(ad, real=planner)
+    planner.respond(
+        "plan_ad",
+        a_plan_with(
+            scenes=[
+                {"line": "Rings A", "part": "hook", "overlay": "New"},
                 {"line": "B", "part": "proof", "overlay": None},
                 {"line": "C", "part": "call to action", "overlay": "$9"},
             ],
-        },
-    }
+            product_name="Rings",
+        ),
+    )
+    request = ModelRequest(
+        purpose="plan_ad",
+        model="planner",
+        instructions="",
+        handoff=PlanHandoff(
+            product_url=ad.url, page_text="", target_seconds=None, photo_count=9, conversation=[]
+        ),
+        output=producer_decision_for(9),
+    )
 
-    scenes = provider._round_4_plan(planned, photos=9)["plan"]["scenes"]
+    planned = provider.complete(request).output.model_dump()
+    scenes = planned["plan"]["scenes"]
 
     assert [scene["line"] for scene in scenes] == ["Rings again?", "It fights rings."]
     # The last scene keeps the planner's last part, whatever came between.
@@ -197,7 +219,8 @@ def test_the_first_version_keeps_round_4s_lines_through_the_fact_check(tmp_path:
 
     from jobs.checks import FactCheckHandoff, LineToCheck, fact_check_for
 
-    provider = OwnerNotesProvider(saved_ads(saved_round_4(tmp_path))["8"], real=FakeModel())
+    checker = FakeModel()
+    provider = OwnerNotesProvider(saved_ads(saved_round_4(tmp_path))["8"], real=checker)
     handoff = FactCheckHandoff(
         page_text="",
         conversation=[],
@@ -214,5 +237,60 @@ def test_the_first_version_keeps_round_4s_lines_through_the_fact_check(tmp_path:
     answer = provider.complete(request).output
 
     assert [line.verdict for line in answer.lines] == ["ok", "ok"]
-    provider.phase = "notes"
-    assert provider._faked(request) is None
+    # The notes' fact checks are the real model's.
+    checker.respond("fact_check", {**answer.model_dump(), "reason": "checked today"})
+    provider.start_notes(2.0)
+    assert provider.complete(request).output.reason == "checked today"
+
+
+def a_round_4_of(job: Job, folder: Path) -> SavedAd:
+    """The planned job's ad as round 4 would have saved it: a picture of its own for each
+    scene, and a yellow clip, the colour the fake makes last."""
+    maker = FakeModel()
+    made = [
+        maker.submit_broll(starting_picture=None, example_pictures=[], seconds=6, prompt="r4")
+        for _ in COLOURS
+    ]
+    yellow = maker.download(url=maker.status(video_id=made[-1]).video_url or "")
+    scenes = []
+    for scene in job.scenes.order_by("number"):
+        saved = folder / f"scene-{scene.number}"
+        saved.mkdir(parents=True)
+        (saved / "start-picture.png").write_bytes(picture(720, 1280, (scene.number * 60, 9, 9)))
+        (saved / "clip.mp4").write_bytes(yellow)
+        scenes.append(SavedScene(scene.number, scene.line, shows=scene.shows, folder=saved))
+    return SavedAd("mug", folder, "mug", "https://shop.test/mug", [], scenes)
+
+
+def test_the_first_version_is_made_from_round_4s_pictures_and_clips(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Say,
+    tmp_path: Path,
+) -> None:
+    ad = a_round_4_of(Job.objects.get(), tmp_path / "round-4")
+
+    with use_model(OwnerNotesProvider(ad, real=fake_model)):
+        assemble_through_the_chat(fake_model, steps, say)
+
+    made = ProducedItem.objects.filter(scene__number=2)
+    assert read(made.get(kind=ProducedItem.Kind.STARTING_PICTURE).file) == ad.scene(2).picture
+    # The fake's own clips for the talking scenes are red and lime.
+    assert colour_at(read(made.get(kind=ProducedItem.Kind.CLIP).file), 1.0) == "yellow"
+
+
+def test_pictures_for_the_notes_are_asked_for_one_at_a_time_and_spaced_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(provider_module, "PICTURE_LOCK", tmp_path / "pictures.lock")
+    monkeypatch.setattr(provider_module, "PICTURE_GAP_SECONDS", 0.5)
+    provider = OwnerNotesProvider(saved_ads(saved_round_4(tmp_path))["8"], real=FakeModel())
+    provider.start_notes(2.0)
+
+    started = time.monotonic()
+    for _ in range(3):
+        provider.draw(model="pictures", prompt="A white toilet.")
+
+    # The first is drawn at once, each after it waits out the gap.
+    assert time.monotonic() - started >= 1.0
