@@ -106,10 +106,11 @@ class OwnerNotesProvider:
         # The real models; a test passes its fake.
         self.real = real if real is not None else OpenAIProvider()
         self.fake = fake or FakeModel()
-        # While the first version is made: a little faster than the app's real voices, so a
+        # While the first version is made: faster than the app's real voices (3.6 since #9's
+        # lengthened scene 4 line ran 0.1 s over its clip at 3.2), so a
         # line's audio fits the round 4 clip made for its real audio (one longer than its clip
         # can't be made into a scene). The notes get round 4's real speed (start_notes).
-        self.fake.words_per_second = 3.2
+        self.fake.words_per_second = 3.6
         self._saved_clips: dict[str, bytes] = {}
 
     def start_notes(self, words_per_second: float) -> None:
