@@ -9,7 +9,7 @@ from typing import Any
 from django.conf import settings
 
 from agents.models import ToolCall
-from jobs.models import Fix, ProducedItem, SceneStep
+from jobs.models import Fix, FixCheck, ProducedItem, SceneStep
 
 from .chat import Chat, Since, Turned, spent
 
@@ -25,6 +25,8 @@ def record(
             "text": message.text,
             "attached": [
                 f"{attachment.kind} of scene {attachment.scene}"
+                if attachment.scene is not None
+                else ("video of the whole ad" if attachment.kind == "video" else attachment.kind)
                 for attachment in message.attachments.all()
             ],
         }
@@ -37,6 +39,7 @@ def record(
             "fix": fix.fix,
             "estimate_usd": str(fix.estimate_usd),
             "said_yes": fix.confirmed_by_id is not None,
+            "checks": [_check(check) for check in fix.checks.all()],
         }
         for fix in Fix.objects.filter(pk__gt=start.fix).order_by("pk")
     ]
@@ -93,6 +96,14 @@ def record(
     return kept
 
 
+def _check(check: FixCheck) -> dict[str, str]:
+    """What the fix check found in a version the fix made. A clip's check is the fake's: the
+    video was never made."""
+    if check.what == "clip":
+        return {"what": "clip", "verdict": "video faked: not judged", "reason": ""}
+    return {"what": check.what, "verdict": check.verdict, "reason": check.reason}
+
+
 def _motion_before(step: SceneStep, start: Since) -> str:
     """The video prompt of the scene's clip before the notes."""
     clip = (
@@ -119,6 +130,11 @@ def as_text(kept: dict[str, Any]) -> str:
     lines += [
         f"- scene {fix['scene']} {fix['redo']}: {fix['fix']} (about ${fix['estimate_usd']}, "
         f"{'yes' if fix['said_yes'] else 'no yes'})"
+        + "".join(
+            f"\n  - {check['what']} check: {check['verdict']}"
+            + (f" ({check['reason']})" if check["reason"] else "")
+            for check in fix["checks"]
+        )
         for fix in kept["fixes"]
     ] or ["- none"]
     lines += ["", "## Steps made"]

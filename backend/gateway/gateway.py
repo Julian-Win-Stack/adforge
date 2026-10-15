@@ -80,6 +80,12 @@ _override: object | None = None
 # against it, so a tool call's cost is the sum of its model calls.
 _running_tool: ContextVar[ToolCall | None] = ContextVar("running_tool", default=None)
 
+
+def running_tool() -> ToolCall | None:
+    """The tool call whose work is running now, if any."""
+    return _running_tool.get()
+
+
 # The picture formats models can read. Anything else is refused before money is spent.
 IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
 # The same formats, as a person would name them.
