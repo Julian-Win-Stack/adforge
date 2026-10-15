@@ -6,8 +6,8 @@
   const held = [...document.querySelectorAll('script[type="text/lazyload"]')];
   if (!held.length) return JSON.stringify({ held: 0 });
   // A script runs as it is added, before the shop's watcher can hold it back again.
-  // The page was ready before they ran, so what they ask to run once it is ready or loaded
-  // is noted, and run after them; the page's other scripts aren't run again.
+  // The page is usually ready before they run, so what they ask to run once it is ready or
+  // loaded is noted, and run after them; the page's other scripts aren't run again.
   const late = [];
   const noting = (target) => {
     const add = target.addEventListener;
@@ -40,6 +40,8 @@
   delete document.addEventListener;
   delete window.addEventListener;
   for (const { target, type, handler } of late) {
+    // Events the page hasn't had yet will still come, and run these handlers then.
+    if (type === 'load' ? document.readyState !== 'complete' : document.readyState === 'loading') continue;
     try {
       const event = new Event(type);
       if (typeof handler === 'function') handler.call(target, event); else handler.handleEvent(event);
