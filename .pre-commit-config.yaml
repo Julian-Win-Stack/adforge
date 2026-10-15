@@ -1,6 +1,7 @@
 # Runs before every commit. Uses the versions pinned in backend/uv.lock and
 # frontend/package-lock.json, so the checks match CI exactly.
-# pytest needs Postgres and Redis running: `docker compose up -d db redis`.
+# pytest needs Postgres and Redis running: `docker compose up -d db redis`, and a Chromium
+# for its browser tests, installed once: `uv run --directory backend playwright install chromium`.
 # The formatters fix files in place; if they change anything the commit stops, so
 # look over the changes, `git add` them and commit again.
 repos:

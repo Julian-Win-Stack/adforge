@@ -6,6 +6,18 @@
   const held = [...document.querySelectorAll('script[type="text/lazyload"]')];
   if (!held.length) return JSON.stringify({ held: 0 });
   // A script runs as it is added, before the shop's watcher can hold it back again.
+  // The page was ready before they ran, so what they ask to run once it is ready or loaded
+  // is noted, and run after them; the page's other scripts aren't run again.
+  const late = [];
+  const noting = (target) => {
+    const add = target.addEventListener;
+    target.addEventListener = function (type, handler, options) {
+      if ((type === 'DOMContentLoaded' || type === 'load') && handler) late.push({ target, type, handler });
+      return add.call(this, type, handler, options);
+    };
+  };
+  noting(document);
+  noting(window);
   let failed = 0;
   for (const old of held) {
     const s = document.createElement('script');
@@ -25,8 +37,13 @@
     old.replaceWith(s);
     if (!(await loaded)) failed++;
   }
-  // Scripts that wait for the page to be ready were held past that moment.
-  document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true }));
-  window.dispatchEvent(new Event('load'));
+  delete document.addEventListener;
+  delete window.addEventListener;
+  for (const { target, type, handler } of late) {
+    try {
+      const event = new Event(type);
+      if (typeof handler === 'function') handler.call(target, event); else handler.handleEvent(event);
+    } catch (e) { /* one shop script failing doesn't stop the rest */ }
+  }
   return JSON.stringify({ held: held.length, failed });
 })()

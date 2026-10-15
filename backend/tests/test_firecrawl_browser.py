@@ -4,6 +4,7 @@ since the page is served locally."""
 
 import io
 import json
+import socket
 from collections.abc import Iterator
 from typing import Any
 
@@ -25,14 +26,19 @@ RED = (220, 30, 30)
 BLUE = (30, 60, 220)
 
 # A shop page that does what smartish.com does (seen 2026-10-15 on the Gripmunk case's page):
-# its first script, when the browser says it runs on Linux as page-speed testers do, holds
+# its speed script, when the browser says it runs on Linux as page-speed testers do, holds
 # back every script after it, so they never run. The held-back scripts build the photo
 # gallery, whose photos are cell backgrounds, hidden until the gallery is built. One of them
-# is gone from the shop.
+# is gone from the shop, and one's server never answers. A script before the speed script
+# isn't held back.
 HELD_BACK_PAGE = """<!doctype html>
 <html>
 <head>
   <title>Gripmunk Clear Case</title>
+  <script>
+    window.readyRuns = 0;
+    document.addEventListener("DOMContentLoaded", () => window.readyRuns++);
+  </script>
   <script>
     if (navigator.platform == "Linux x86_64") {
       var uLTS = new MutationObserver((changes) => {
@@ -54,6 +60,7 @@ HELD_BACK_PAGE = """<!doctype html>
     .cell.built { visibility: visible; }
   </style>
   <script src="/gone.js"></script>
+  <script src="NEVER_ANSWERS/slow.js"></script>
   <script src="/gallery.js"></script>
 </head>
 <body>
@@ -66,6 +73,7 @@ HELD_BACK_PAGE = """<!doctype html>
   </div>
   <script>
     document.addEventListener("DOMContentLoaded", () => Gallery.build());
+    window.addEventListener("load", () => (document.title = "Loaded"));
   </script>
 </body>
 </html>
@@ -102,9 +110,16 @@ def run_actions(page: Page, url: str) -> tuple[dict[str, Any], PIL.Image.Image]:
 
 
 @pytest.fixture
-def held_back_shop(httpserver: HTTPServer) -> str:
+def never_answers() -> Iterator[str]:
+    """A server that takes requests and never answers them."""
+    with socket.create_server(("127.0.0.1", 0)) as server:
+        yield f"http://127.0.0.1:{server.getsockname()[1]}"
+
+
+@pytest.fixture
+def held_back_shop(httpserver: HTTPServer, never_answers: str) -> str:
     httpserver.expect_request("/products/case").respond_with_data(
-        HELD_BACK_PAGE, content_type="text/html"
+        HELD_BACK_PAGE.replace("NEVER_ANSWERS", never_answers), content_type="text/html"
     )
     httpserver.expect_request("/gone.js").respond_with_data("Not found", status=404)
     httpserver.expect_request("/gallery.js").respond_with_data(
@@ -121,6 +136,9 @@ def test_a_gallery_a_shop_holds_back_from_linux_browsers_is_shown_and_numbered(
     browser_page: Page, held_back_shop: str
 ) -> None:
     answer, shot = run_actions(browser_page, held_back_shop)
+
+    assert browser_page.evaluate("window.readyRuns") == 1
+    assert browser_page.title() == "Loaded"
 
     marks = firecrawl.marks_in(answer)
     numbered = {
@@ -139,7 +157,8 @@ def test_a_gallery_a_shop_holds_back_from_linux_browsers_is_shown_and_numbered(
 
 
 # A page that holds nothing back: its scripts run once, as always. Its placeholder background
-# isn't a photo.
+# isn't a photo, and neither is a background whose link is broken; a background photo with
+# brackets in its name is.
 PLAIN_PAGE = """<!doctype html>
 <html>
 <head><title>Stoneware Mug</title><script>window.runs = (window.runs || 0) + 1;</script></head>
@@ -148,6 +167,8 @@ PLAIN_PAGE = """<!doctype html>
   <img src="/cdn/mug.png" alt="The mug" width="300" height="300">
   <div style="width:300px; height:300px;
               background:url('data:image/gif;base64,R0lGODlhAQABAAAAACw=')"></div>
+  <div style="width:300px; height:300px; background:url('http://[')"></div>
+  <div style="width:300px; height:300px; background:url('/cdn/mug(2).png')"></div>
 </body>
 </html>
 """
@@ -159,14 +180,16 @@ def test_a_page_that_holds_nothing_back_runs_its_scripts_once_and_its_photos_are
     httpserver.expect_request("/products/mug").respond_with_data(
         PLAIN_PAGE, content_type="text/html"
     )
-    httpserver.expect_request("/cdn/mug.png").respond_with_data(
-        picture(300, 300, RED), content_type="image/png"
-    )
+    for name in ("mug.png", "mug(2).png"):
+        httpserver.expect_request(f"/cdn/{name}").respond_with_data(
+            picture(300, 300, RED), content_type="image/png"
+        )
 
     answer, _ = run_actions(browser_page, httpserver.url_for("/products/mug"))
 
     assert browser_page.evaluate("window.runs") == 1
     numbered = [p for p in firecrawl.marks_in(answer)["imgs"] if isinstance(p.get("n"), int)]
     assert [(p["n"], p["alt"], p["src"].split("/")[-1]) for p in numbered] == [
-        (1, "The mug", "mug.png")
+        (1, "The mug", "mug.png"),
+        (2, "", "mug(2).png"),
     ]
