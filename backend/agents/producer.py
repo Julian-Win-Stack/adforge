@@ -121,8 +121,10 @@ product, up to 3 a note: the chat numbers them "owner photo 1", "owner photo 2" 
 In restate_fix, give the fix each photo's number and the one thing to take from it, named \
 in their words, such as "black toilet". If their words don't say which thing, ask before \
 you restate. Tell them each photo's thing in your restatement, so they can correct it. \
-Never tell them how their photos are used. A photo stays with its scene for later fixes; to \
-stop using one, restate the fix with its thing to drop.
+Never tell them how their photos are used. Code adds the other scenes that show the same \
+thing; if they say a photo is only for the scenes they named, restate with only those \
+scenes, never refuse it. A photo stays with its scene for later fixes; to stop using one, \
+restate the fix with its thing to drop.
 What you can't do, said plainly the same way each time: see pictures or videos; or change \
 what the person does in a scene where they talk, only how it looks or what they hold, \
 through a new starting picture. Not yet: using the shop owner's photos in a scene where the \
@@ -712,7 +714,7 @@ class MakeStartingPicture(Tool):
 
 def _with_the_photos_in_use(scene: Scene, steps: QuerySet[SceneStep]) -> SceneStep | None:
     """The newest of `steps` made with the shop owner's photos the scene uses now, if any."""
-    using = {(row.file, row.thing) for row in _photos_in_use(scene)}
+    using = {(row.file, row.thing.casefold()) for row in _photos_in_use(scene)}
     return next((step for step in reversed(steps) if _photos_of(step) == using), None)
 
 
@@ -720,7 +722,7 @@ def _clip_with_the_photos_in_use(
     scene: Scene, clips: QuerySet[ProducedItem]
 ) -> ProducedItem | None:
     """The newest of `clips` made with the shop owner's photos the scene uses now, if any."""
-    using = {(row.file, row.thing) for row in _photos_in_use(scene)}
+    using = {(row.file, row.thing.casefold()) for row in _photos_in_use(scene)}
     return next(
         (
             clip
@@ -1363,6 +1365,13 @@ class RestateFix(Tool):
     name = "restate_fix"
 
     fixes: list[FixAsked] = Field(description="One fix for each scene the notes are about.")
+    only_these_scenes: bool | None = Field(
+        default=None,
+        description="True when the shop owner said their photos are only for the scenes they "
+        'named, such as "only in scene 3", now or in answer to your restatement: other scenes '
+        "that show the thing keep their look. Null otherwise: code then adds every other "
+        "scene that shows it.",
+    )
 
     def run(self, call: ToolCall) -> str:
         job = _the_job(call)
@@ -1384,7 +1393,10 @@ class RestateFix(Tool):
         planned = [
             _with_photos(job, _fixable_scene(job, asked), asked, owner) for asked in self.fixes
         ]
-        planned += _joined(job, planned)
+        # The shop owner's own words win over adding the other scenes (design thread 22:27,
+        # test C10).
+        added, unchecked = ([], []) if self.only_these_scenes else _joined(job, planned)
+        planned += added
         for one in planned:
             _no_more_than_most_photos(one)
         estimates = {one.scene.pk: _planned_estimate(one) for one in planned}
@@ -1422,7 +1434,7 @@ class RestateFix(Tool):
         waits = "".join(_waits_for(fix.scene) + _earlier_fix_lost(fix) for fix in recorded)
         return (
             f"Recorded the fix{'es' if len(recorded) != 1 else ''}. {each} {total}."
-            f"{_photos_told(planned)} "
+            f"{_photos_told(planned, unchecked, only=bool(self.only_these_scenes))} "
             "Tell the shop owner this restatement and what it will "
             "cost, and wait for their answer: nothing is made until they say yes. Once they "
             "have, pass each scene's fix word for word as the note of its redo, or, for a new "
@@ -1544,15 +1556,25 @@ def _with_photos(job: Job, scene: Scene, asked: FixAsked, owner: list[Attachment
         routed.append(
             {"photo": taken.photo, "file": file, "thing": thing, "use": use.value, "where": where}
         )
-    in_picture = any(photo["use"] == ReferencePhoto.Use.PICTURE for photo in routed)
-    redo = Fix.Redo.PICTURE if in_picture or asked.redo == "picture" else Fix.Redo.CLIP
+    # The route decides, not the producer's guess (spec item 4): a thing drawn into the
+    # starting picture, or one dropped from it, needs a new picture; otherwise only the clip
+    # changes, in reference mode for a thing that shows during it.
+    dropped = [
+        row
+        for row in using
+        if any(reference_photos.same_thing(row.thing, thing) for thing in drops)
+    ]
+    in_picture = any(photo["use"] == ReferencePhoto.Use.PICTURE for photo in routed) or any(
+        row.use == ReferencePhoto.Use.PICTURE for row in dropped
+    )
+    redo = Fix.Redo.PICTURE if in_picture else Fix.Redo.CLIP
     brings_back, told = None, ""
     if drops and not photos:
         brings_back, told = _before_the_photos(scene, drops, redo)
     return Planned(scene, fix, redo, routed, drops, False, brings_back, told)
 
 
-def _joined(job: Job, planned: list[Planned]) -> list[Planned]:
+def _joined(job: Job, planned: list[Planned]) -> tuple[list[Planned], list[str]]:
     """The fixes code adds for scenes the shop owner didn't name, so a photo applies to every
     scene that shows its thing (Julian 15:49, Q2; 20:14): a B-roll scene with a clip whose
     starting picture a model finds the thing in, or which already uses a photo of the same
@@ -1561,8 +1583,9 @@ def _joined(job: Job, planned: list[Planned]) -> list[Planned]:
     named = {each.scene.pk for each in planned}
     taken = [photo for each in planned for photo in each.photos]
     if not taken:
-        return []
+        return [], []
     joined = []
+    unchecked = []
     for scene in job.scenes.exclude(pk__in=named).exclude(broll_kind=""):
         try:
             _fixable_scene(job, FixAsked(scene=scene.number, fix="-", redo="picture"))
@@ -1582,6 +1605,9 @@ def _joined(job: Job, planned: list[Planned]) -> list[Planned]:
                 ),
                 None,
             )
+            if held is not None and held.file == photo["file"]:
+                # It already uses this very photo for it: nothing would change.
+                continue
             answer = (
                 reference_photos.where_it_goes(
                     job,
@@ -1600,6 +1626,11 @@ def _joined(job: Job, planned: list[Planned]) -> list[Planned]:
             elif held is not None:
                 use, where = held.use, "already uses a photo of it"
             else:
+                if answer is None and picture is not None:
+                    unchecked.append(
+                        f" Whether scene {scene.number} shows the {photo['thing']} couldn't be "
+                        "checked, so it was left out: tell them, so they can name it if it does."
+                    )
                 continue
             photos.append({**photo, "use": use, "where": where})
         if not photos:
@@ -1613,7 +1644,7 @@ def _joined(job: Job, planned: list[Planned]) -> list[Planned]:
         in_picture = any(photo["use"] == ReferencePhoto.Use.PICTURE for photo in photos)
         redo = Fix.Redo.PICTURE if in_picture else Fix.Redo.CLIP
         joined.append(Planned(scene, fix, redo, photos, [], True, None, ""))
-    return joined
+    return joined, unchecked
 
 
 def _photos_in_use(scene: Scene) -> QuerySet[ReferencePhoto]:
@@ -1668,7 +1699,7 @@ def _before_the_photos(
             "lose, so it is made again without the photo instead: tell them that too, before "
             "their answer."
         )
-    kept = {(row.file, row.thing) for row in _photos_in_use(scene) if row not in rows}
+    kept = {(row.file, row.thing.casefold()) for row in _photos_in_use(scene) if row not in rows}
     kind = (
         ProducedItem.Kind.STARTING_PICTURE if redo == Fix.Redo.PICTURE else ProducedItem.Kind.CLIP
     )
@@ -1709,7 +1740,7 @@ def _before_the_photos(
 
 def _photos_of(step: SceneStep) -> set[tuple[str, str]]:
     """The shop owner's photos a step was made with, as (file, thing)."""
-    return {(row.file, row.thing) for row in step.reference_photos.all()}
+    return {(row.file, row.thing.casefold()) for row in step.reference_photos.all()}
 
 
 def _planned_estimate(planned: Planned) -> Estimate:
@@ -1733,10 +1764,10 @@ def _clean_pictures_to_draw(
     counted: set[tuple[str, str]] = set()
     for each in planned:
         for photo in each.photos:
-            key = (str(photo["file"]), str(photo["thing"]))
+            key = (str(photo["file"]), str(photo["thing"]).casefold())
             if (
                 key in counted
-                or ReferencePhoto.objects.filter(scene__job=job, file=key[0], thing=key[1])
+                or ReferencePhoto.objects.filter(scene__job=job, file=key[0], thing__iexact=key[1])
                 .exclude(drawn="")
                 .exists()
             ):
@@ -1765,9 +1796,10 @@ def _drop_joined_fixes_restated_since(call: ToolCall, recorded: list[Fix]) -> No
             earlier.filter(asked=asked).delete()
 
 
-def _photos_told(planned: list[Planned]) -> str:
+def _photos_told(planned: list[Planned], unchecked: list[str], *, only: bool) -> str:
     """What the producer is told of the shop owner's photos the fixes take things from: what
-    each is taken as and in which scenes, the fixes code added, and what going back does."""
+    each is taken as and in which scenes, the fixes code added, the scenes that couldn't be
+    checked for them, and what going back does."""
     told = []
     taken: dict[tuple[int, str], list[int]] = {}
     for each in planned:
@@ -1784,6 +1816,12 @@ def _photos_told(planned: list[Planned]) -> str:
                 f'was added for it: "{each.fix}" Make it with the others once they say yes.'
             )
         told.append(each.told)
+    told += unchecked
+    if taken and only:
+        told.append(
+            " Only the scenes named use the photos, as the shop owner asked: other scenes that "
+            "show the same things keep their look. You may say so once."
+        )
     if taken:
         told.append(
             " Tell them what each photo is taken as and which scenes change, so they can "
@@ -2213,7 +2251,7 @@ def _use_the_photos(fix: Fix) -> None:
     for photo in fix.photos:
         drawn = (
             ReferencePhoto.objects.filter(
-                scene__job=fix.job, file=photo["file"], thing=photo["thing"]
+                scene__job=fix.job, file=photo["file"], thing__iexact=photo["thing"]
             )
             .exclude(drawn="")
             .values_list("drawn", flat=True)

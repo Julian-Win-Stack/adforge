@@ -412,5 +412,5 @@ def _as_given(happened: Message | ToolCall | SceneStep) -> Happened:
         )
     return Said(
         by="user" if happened.role == Message.Role.USER else "agent",
-        text=messages.as_read(happened),
+        text=messages.as_read(happened, numbered=True),
     )

@@ -192,21 +192,21 @@ _Avoid_: QA, review, gate
 What code does when the B-roll clip check fails a clip: the clip is made again from the same starting picture, its video prompt written again from what the check saw wrong (keeping the shop owner's fix, when the clip was made for one), at most twice. Each remake is checked too; the clip with the fewest failed answers is kept, the newest of those tied, and the producer is told once, when it's done. The shop owner isn't asked: no yes is needed for it. A first clip the check can't settle (too few answers) is kept as it is, and the shop owner is told it went unchecked.
 _Avoid_: Retry, redo (a redo is made for a fix)
 
+**Reference photo**:
+A photo the shop owner attaches to a note, showing how something in a scene should look, such as the gel. When the fix is restated, the thing to take from it is named, such as "the black toilet", and the shop owner confirms it. A clean picture of only that thing is drawn from the photo, and it wins over the product photos wherever they disagree, in every scene whose starting picture shows it, for every later fix until the shop owner says otherwise. Other scenes that show it join the fix unless the shop owner says it is only for the scenes they named. A photo too unclear to copy the thing from, or one sent before the ad is planned that isn't of the product, isn't used: the shop owner is asked for another, or to send it with a note. A fix with a reference photo is checked against it: the fix check and the clip check's question about the shop owner's change are shown the photo and say first what it shows. Where the thing is in the starting picture, the starting picture is drawn again with it; where it only appears during the clip, the clip is made in reference mode with it. The shop owner isn't told which.
+_Avoid_: Reference picture, owner picture
+
+**Reference mode**:
+How a B-roll clip is made when it has pictures beyond its starting picture: the video model gets the starting picture first, told the clip starts like it, then the clean pictures of the reference photos, each named with what it shows (side pictures will join them once built). A reference photo goes in as a picture of the thing alone, drawn from it. Without such pictures, a clip is made from its starting picture alone.
+_Avoid_: Reference picture mode, way 3
+
 ### Not yet built
 
 Named so the words mean one thing when these are built. Nothing implements them today.
 
-**Reference photo**:
-A photo the shop owner attaches to a note, showing how something in a scene should look, such as the gel. When the fix is restated, the thing to take from it is named, such as "the black toilet", and the shop owner confirms it. A clean picture of only that thing is drawn from the photo, and it wins over the product photos wherever they disagree, in every scene whose starting picture shows it, for every later fix until the shop owner says otherwise. Where the thing is in the starting picture, the starting picture is drawn again with it; where it only appears during the clip, the clip is made in reference mode with it. The shop owner isn't told which.
-_Avoid_: Reference picture, owner picture
-
 **Side picture**:
 A picture of the product alone on a plain background, showing one side the product photos show, drawn from that photo and checked against it, or the photo itself when it is already plain. Made once per ad, only when the product photos show the product from more than one side.
 _Avoid_: Reference picture, side photo
-
-**Reference mode**:
-How a B-roll clip is made when it has pictures beyond its starting picture: the video model gets the starting picture first, told the clip starts like it, then the side pictures and reference photos, each named with what it shows. A reference photo goes in as a picture of the thing alone, drawn from it. Without such pictures, a clip is made from its starting picture alone.
-_Avoid_: Reference picture mode, way 3
 
 **Promo code**:
 A discount code the user supplies. Always a user-supplied fact, never taken from the page.

@@ -117,6 +117,11 @@ OWNER_PHOTOS = (
     "before you restate. Tell them each photo's thing in your restatement, so they can "
     "correct it. Never tell them how their photos are used."
 )
+# Their words win over the scenes code adds (test C10, design thread 22:27).
+ONLY_THESE_SCENES = (
+    "Code adds the other scenes that show the same thing; if they say a photo is only for the "
+    "scenes they named, restate with only those scenes, never refuse it."
+)
 SLOWER = "Slower can't be done: every clip plays at real-time speed."
 
 PINNED = [
@@ -138,6 +143,7 @@ PINNED = [
     NOT_YET,
     NOT_A_PRODUCT_PHOTO,
     OWNER_PHOTOS,
+    ONLY_THESE_SCENES,
     SLOWER,
 ]
 

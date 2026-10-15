@@ -92,11 +92,12 @@ def add(
     return message
 
 
-def as_read(message: Message) -> str:
+def as_read(message: Message, *, numbered: bool = False) -> str:
     """The message as an agent reads it: its words, then a note of the files it carries,
-    since a model given the conversation can't see them. A message may carry only files. The
-    shop owner's photos are numbered through the chat, as "owner photo 3", so a fix can name
-    which photo shows which thing."""
+    since a model given the conversation can't see them. A message may carry only files.
+    `numbered` numbers the shop owner's photos through the chat, as "owner photo 3", so the
+    producer's fix can name which photo shows which thing; no other model is told, so what
+    the judges read is as it was."""
     counts: dict[str, int] = {}
     for attachment in message.attachments.all():
         counts[attachment.kind] = counts.get(attachment.kind, 0) + 1
@@ -104,13 +105,13 @@ def as_read(message: Message) -> str:
         return message.text
     carried = [f"{count} {kind}{'s' if count != 1 else ''}" for kind, count in counts.items()]
     pictures = counts.get(Attachment.Kind.PICTURE, 0)
-    numbered = ""
-    if message.role == Message.Role.USER and pictures:
+    numbers_said = ""
+    if numbered and message.role == Message.Role.USER and pictures:
         first = _owner_photos_before(message) + 1
         numbers = [str(number) for number in range(first, first + pictures)]
         listed = numbers[0] if pictures == 1 else f"{', '.join(numbers[:-1])} and {numbers[-1]}"
-        numbered = f": owner photo{'s' if pictures != 1 else ''} {listed}"
-    note = f"[Attached {' and '.join(carried)}{numbered}]"
+        numbers_said = f": owner photo{'s' if pictures != 1 else ''} {listed}"
+    note = f"[Attached {' and '.join(carried)}{numbers_said}]"
     return f"{message.text}\n\n{note}" if message.text else note
 
 
