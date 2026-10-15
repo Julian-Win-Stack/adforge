@@ -3,8 +3,8 @@ product, the shop owner's answers, and each scene's line, labels, prompts, start
 and clip. The owner-notes run makes each ad again from these, paying for no video."""
 
 import ast
-import json
 import re
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -53,9 +53,22 @@ class SavedAd:
     def scene(self, number: int) -> SavedScene:
         return next(scene for scene in self.scenes if scene.number == number)
 
-    @property
-    def broll(self) -> list[SavedScene]:
-        return [scene for scene in self.scenes if not scene.talking]
+    def words_per_second(self) -> float:
+        """How fast round 4's voice spoke this ad's lines: the words its talking scenes say
+        over how long their clips last, each clip as long as its voice audio."""
+        talking = [scene for scene in self.scenes if scene.talking]
+        words = sum(len(scene.line.split()) for scene in talking)
+        return words / sum(_seconds(scene.folder / "clip.mp4") for scene in talking)
+
+
+def _seconds(video: Path) -> float:
+    found = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", video],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return float(found.stdout)
 
 
 def saved_ads(round_4: Path = ROUND_4) -> dict[str, SavedAd]:
@@ -142,19 +155,3 @@ def as_planned(scene: SavedScene, photo_count: int) -> dict[str, Any]:
         "result": scene.result or None,
         "needs": needs,
     }
-
-
-def dumps(ad: SavedAd) -> str:
-    """The ad, as plain text for a record."""
-    return json.dumps(
-        {
-            "key": ad.key,
-            "product": ad.product_name,
-            "url": ad.url,
-            "scenes": [
-                {"number": scene.number, "line": scene.line, "shows": scene.shows}
-                for scene in ad.scenes
-            ],
-        },
-        indent=1,
-    )

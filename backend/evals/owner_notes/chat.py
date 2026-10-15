@@ -60,6 +60,14 @@ class Chat:
         return job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).count() if job else 0
 
 
+def speak_at(chat: Chat, words_per_second: float) -> None:
+    """Have the app measure the ad's voice at `words_per_second`, so every line length it
+    allows is the one it would allow the real voice."""
+    ProducedItem.objects.filter(
+        job__session_id=chat.session_id, kind=ProducedItem.Kind.VOICE
+    ).update(words_per_second=words_per_second)
+
+
 def make_first_version(chat: Chat, link: str, answers: list[str], most_rounds: int = 20) -> None:
     """The shop owner sends the product's link and answers the producer, as round 4's owner
     did, until the ad is shown: each question is answered with the next of `answers`, and

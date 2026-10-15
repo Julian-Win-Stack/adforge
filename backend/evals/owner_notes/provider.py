@@ -22,7 +22,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from agents.models import ToolCall
 from gateway import gateway
 from gateway.fake import FakeModel
 from gateway.openai_adapter import OpenAIProvider
@@ -107,10 +106,17 @@ class OwnerNotesProvider:
         # The real models; a test passes its fake.
         self.real = real if real is not None else OpenAIProvider()
         self.fake = fake or FakeModel()
-        # A little faster than the app's real voices, so a line's audio fits the round 4 clip
-        # made for its real audio: one longer than its clip can't be made into a scene.
+        # While the first version is made: a little faster than the app's real voices, so a
+        # line's audio fits the round 4 clip made for its real audio (one longer than its clip
+        # can't be made into a scene). The notes get round 4's real speed (start_notes).
         self.fake.words_per_second = 3.2
         self._saved_clips: dict[str, bytes] = {}
+
+    def start_notes(self, words_per_second: float) -> None:
+        """Work on the shop owner's notes from now on, with the voice speaking at
+        `words_per_second`, as round 4's real voice did."""
+        self.phase = "notes"
+        self.fake.words_per_second = words_per_second
 
     # Text.
 
@@ -285,12 +291,12 @@ def _with[Out: BaseModel](
 
 
 def _running_tool() -> str:
-    call: ToolCall | None = gateway._running_tool.get()
+    call = gateway.running_tool()
     return call.tool if call is not None else ""
 
 
 def _running_scene() -> int:
-    call: ToolCall | None = gateway._running_tool.get()
+    call = gateway.running_tool()
     assert call is not None and "scene" in call.arguments, "a scene's step is running"
     return int(call.arguments["scene"])
 
