@@ -9,7 +9,8 @@ from typing import Any
 from django.conf import settings
 
 from agents.models import ToolCall
-from jobs.models import Fix, FixCheck, ProducedItem, SceneStep
+from gateway.models import ModelCall
+from jobs.models import Fix, FixCheck, ProducedItem, ReferencePhoto, SceneStep
 
 from .chat import Chat, Since, Turned, spent
 
@@ -90,10 +91,82 @@ def record(
         "steps": steps,
         "new_ads_shown": chat.finished_ads() - start.ads,
         "spent_usd": spent(start),
+        **_owner_photos(start, out),
     }
     (out / "record.json").write_text(json.dumps(kept, indent=1, default=str))
     (out / "chat.md").write_text(as_text(kept))
     return kept
+
+
+# TEST (owner photos build, local only): the calls the owner photos build adds or feeds.
+WATCHED = (
+    "route_reference_photo",
+    "make_reference_photo_picture",
+    "check_starting_picture",
+    "check_fix",
+    "make_broll_clip",
+    "check_clip_motion",
+    "check_clip_sides",
+)
+
+
+def _owner_photos(start: Since, out: Path) -> dict[str, Any]:
+    """TEST (owner photos build, local only): each reference photo kept on a scene, with its
+    photo and clean picture copied; each watched model call, with the pictures a B-roll clip
+    was made from copied; and each clip made, copied."""
+    media = Path(settings.MEDIA_ROOT)
+
+    def copied(file: str, name: str) -> str:
+        if not file or not (media / file).exists():
+            return ""
+        target = f"{name}{Path(file).suffix or '.png'}"
+        shutil.copy(media / file, out / target)
+        return target
+
+    photos = []
+    for photo in ReferencePhoto.objects.filter(added_by__pk__gt=start.fix).order_by("pk"):
+        photos.append(
+            {
+                "scene": photo.scene.number,
+                "thing": photo.thing,
+                "use": photo.use,
+                "dropped": photo.dropped_by_id is not None,
+                "photo": copied(photo.file, f"owner-photo-{photo.pk}"),
+                "clean": copied(photo.drawn, f"clean-{photo.pk}"),
+            }
+        )
+    calls = []
+    for number, call in enumerate(
+        ModelCall.objects.filter(pk__gt=start.model_call, purpose__in=WATCHED).order_by("pk"), 1
+    ):
+        kept: dict[str, Any] = {
+            "purpose": call.purpose,
+            "outcome": call.outcome,
+            "error": call.error,
+            "cost_usd": str(call.cost_usd),
+            "output": call.output,
+            "images": call.images,
+        }
+        if call.purpose == "make_broll_clip":
+            handoff = dict(call.handoff)
+            kept["prompt"] = handoff.get("prompt")
+            kept["starting_picture"] = copied(
+                handoff.get("starting_picture") or "", f"clip-{number}-starting-picture"
+            )
+            kept["example_pictures"] = [
+                copied(file, f"clip-{number}-example-{index}")
+                for index, file in enumerate(handoff.get("example_pictures") or [], 1)
+            ]
+        elif call.purpose == "route_reference_photo":
+            kept["handoff"] = call.handoff
+        calls.append(kept)
+    clips = [
+        copied(made.file, f"scene-{made.step.scene.number if made.step else 0}-clip-{made.version}")
+        for made in ProducedItem.objects.filter(
+            step__pk__gt=start.step, kind=ProducedItem.Kind.CLIP
+        ).order_by("pk")
+    ]
+    return {"reference_photos": photos, "watched_calls": calls, "clips": clips}
 
 
 def _check(check: FixCheck) -> dict[str, str]:
