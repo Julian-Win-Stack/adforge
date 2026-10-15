@@ -1765,9 +1765,8 @@ def _pictures_drawn(step: SceneStep) -> list[str]:
 
 def _check_broll_picture(step: SceneStep, picture: str) -> list[str]:
     """What is wrong with a B-roll scene's starting picture: see `judge_starting_picture`.
-    Nothing when quality checks are switched off."""
-    if not settings.QUALITY_CHECKS:
-        return []
+    Always checked, whatever QUALITY_CHECKS says (Julian 2026-10-15 14:53: "hardcode the
+    check in the app to always turn it on")."""
     assert step.photo is not None, "a B-roll picture is drawn from its main photo"
     return judge_starting_picture(
         step.scene.job, picture, step.photo.file, about=f"scene {step.scene.number}"
