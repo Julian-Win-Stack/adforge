@@ -118,7 +118,9 @@ _DRAWN_PICTURES = (_DRAWN_STARTING_PICTURE, "make_reference_photo_picture")
 
 
 def _drawn_start_picture(scene: SavedScene) -> str | None:
-    if re.search(r"starting_picture=\S", scene.settings):
+    if started := re.search(r"starting_picture=(\S+)", scene.settings):
+        if not Path(started.group(1)).name.startswith(_DRAWN_STARTING_PICTURE):
+            return f"the starting picture is {started.group(1)}, not the drawn one"
         if "example_pictures=[]" not in scene.settings:
             return "shop photos sent to the video model"
         return None
