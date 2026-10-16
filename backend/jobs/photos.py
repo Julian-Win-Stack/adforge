@@ -70,7 +70,10 @@ photos are a guide only: answer with I numbers from the page, never R numbers.
 
 Then note faces: face_images are the I numbers, among the ones you picked, of pictures that \
 show a person's face you could recognise. A body, a hand, an arm, lips or a face turned away, \
-cut off or too small to recognise doesn't count."""
+cut off or too small to recognise doesn't count.
+
+Last, page_blocked: true when the screenshots show a block, error, login or "verify you're \
+human" page instead of the shop's product page."""
 
 # A photo the picker never saw gets its Face note from a call of its own, worded as the
 # picker's note (tested on the 8 test products' 74 photos: backend/broll-test/face_notes.py).
@@ -113,8 +116,11 @@ class PickedPhotos(BaseModel):
     # Asked for because the picker was tested with it; the text is copied by its own call.
     product_sections: list[int]
     notes: str
-    # Last, as the picker was tested with it: the marks of picked pictures with a face.
+    # After the others, as the picker was tested with it: the marks of picked pictures with a
+    # face.
     face_images: list[int]
+    # Last, so the answers above come as the picker was tested with them.
+    page_blocked: bool
 
 
 class FaceNoteHandoff(Handoff):

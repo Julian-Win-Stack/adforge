@@ -369,11 +369,19 @@ class Picked:
     notices: list[tuple[str, Message.Level]]
     # The picked links the picker marked with a stranger's face.
     faces: frozenset[str] = frozenset()
+    # Whether the picker saw a block or error page instead of the shop's product page.
+    blocked: bool = False
 
 
 DECLARED_INSTEAD = (
     "Used the photos the page declares for search engines instead, which may include other "
     "products' photos and miss some of this one's."
+)
+
+
+PAGE_BLOCKED = (
+    "The shop's page blocked our page reader: it showed a block or error page instead of the "
+    f"product, so no photos could be picked off it. {DECLARED_INSTEAD}"
 )
 
 
@@ -444,6 +452,9 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
             )
         )
         return Picked(None, notices)
+    if picked.page_blocked:
+        notices.append((PAGE_BLOCKED, Message.Level.PROBLEM))
+        return Picked(None, notices, blocked=True)
     links = photos.picked_links(picked, read.marked.marks)
     if not links:
         notices.append(
