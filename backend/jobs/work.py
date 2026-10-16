@@ -2711,29 +2711,21 @@ def _clip_handoff(
     # A remade clip has its own, written again from what the judge saw wrong.
     motion = motion or step.motion_prompt or planned.motion_prompt
     during = _during_the_clip(step)
-    if during:
-        # Reference mode (Julian 2026-10-15 17:21, 19:38): the starting picture is still drawn
-        # and goes first, told the clip starts like it, then the clean pictures of the shop
-        # owner's things that only show during the clip. Their raw photos never go.
+    # A scene planned before it had its B-roll labels is moved as before. A labelled scene's
+    # prompt is sent as written, after its look and length: the real photo of the product
+    # keeps it true. Only a labelled scene takes the shop owner's photos.
+    prompt = broll_video_prompt(motion, seconds) if planned.way else with_nothing_made_up(motion)
+    if during or EVERY_BROLL_CLIP_IN_REFERENCE_MODE:
+        # Reference mode (Julian 2026-10-15 17:21, 19:38; every B-roll clip since 2026-10-16
+        # 19:14): the drawn starting picture goes first, as Image 1, told the clip starts like
+        # it, then the clean pictures of the shop owner's things that only show during the
+        # clip. Their raw photos never go.
         return BrollClipHandoff(
             example_pictures=[picture.file, *(clean_picture(step, row) for row in during)],
             seconds=seconds,
             prompt=(
-                f"{reference_photos.reference_mode_label([row.thing for row in during])} "
-                f"{broll_video_prompt(motion, seconds)}"
+                f"{reference_photos.reference_mode_label([row.thing for row in during])} {prompt}"
             ),
-        )
-    # A scene planned before it had its B-roll labels is moved as before. A labelled scene's
-    # prompt is sent as written, after its look and length: the real photo of the product
-    # keeps it true.
-    prompt = broll_video_prompt(motion, seconds) if planned.way else with_nothing_made_up(motion)
-    if EVERY_BROLL_CLIP_IN_REFERENCE_MODE:
-        # Every B-roll clip in reference mode (Julian 2026-10-16 19:14): its drawn starting
-        # picture is Image 1, told the clip starts like it, before the prompt it'd be sent.
-        return BrollClipHandoff(
-            example_pictures=[picture.file],
-            seconds=seconds,
-            prompt=f"{reference_photos.reference_mode_label([])} {prompt}",
         )
     return BrollClipHandoff(starting_picture=picture.file, seconds=seconds, prompt=prompt)
 
