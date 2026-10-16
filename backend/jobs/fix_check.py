@@ -65,6 +65,14 @@ photos show. Before anything else, write what the shop owner's photos show about
 thing. A thing that doesn't look like its photo in the new picture is not fixed."""
 
 
+# Only for a fix with the shop owner's photo of a thing that only shows during the clip: the
+# clip's judge looks for it (design thread 23:54).
+DURING_THE_ACTION = """\
+The things named in "during_the_action" only show once the clip's action starts, never in \
+a still picture. Don't expect them in the new picture, and don't count the change as not \
+made because they aren't there: they are checked in the clip."""
+
+
 # The judge's answer when it is shown the shop owner's photos: what they show comes first,
 # then FixVerdict's fields, in its order.
 class PhotoFixVerdict(BaseModel):
@@ -95,7 +103,13 @@ class FixCheckHandoff(Handoff):
     pictures: str = PICTURES_SHOWN
 
 
-class PhotoFixCheckHandoff(FixCheckHandoff):
+class DuringTheActionHandoff(FixCheckHandoff):
+    """And the things of the shop owner's photos that only show during the clip."""
+
+    during_the_action: list[str]
+
+
+class PhotoFixCheckHandoff(DuringTheActionHandoff):
     """And the things the shop owner's photos are taken for, in the order shown."""
 
     owner_photos: list[str]

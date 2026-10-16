@@ -122,6 +122,11 @@ ONLY_THESE_SCENES = (
     "Code adds the other scenes that show the same thing; if they say a photo is only for the "
     "scenes they named, restate with only those scenes, never refuse it."
 )
+# A word change to the picture beside photos of clip-only things (design thread 23:54).
+PICTURE_TOO = (
+    "When a note with photos also asks in words for a change to what the picture shows, say "
+    "so in its fix."
+)
 SLOWER = "Slower can't be done: every clip plays at real-time speed."
 
 PINNED = [
@@ -144,6 +149,7 @@ PINNED = [
     NOT_A_PRODUCT_PHOTO,
     OWNER_PHOTOS,
     ONLY_THESE_SCENES,
+    PICTURE_TOO,
     SLOWER,
 ]
 
