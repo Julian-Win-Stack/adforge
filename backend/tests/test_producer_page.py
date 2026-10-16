@@ -335,7 +335,7 @@ def test_a_shop_that_is_briefly_down_is_tried_again(
 
     say(f"Make an ad for {product_page_url}")
 
-    assert read_page_result().endswith("Kept 2 product photos.")
+    assert "Kept 2 product photos." in read_page_result()
     page_requests = [request for request, _ in httpserver.log if request.path == "/products/mug"]
     assert len(page_requests) == 2
 
@@ -384,7 +384,7 @@ def test_a_model_provider_that_is_briefly_down_is_tried_again_and_each_try_is_re
 
     say(f"Make an ad for {product_page_url}")
 
-    assert read_page_result().endswith("Kept 2 product photos.")
+    assert "Kept 2 product photos." in read_page_result()
     calls = ModelCall.objects.filter(purpose="check_page").order_by("attempt")
     assert [(call.attempt, call.outcome) for call in calls] == [(1, "failed"), (2, "succeeded")]
     assert "503 from the provider" in calls[0].error
@@ -408,7 +408,7 @@ def test_a_model_provider_that_stays_down_leaves_the_page_to_be_read_again_later
     reading(fake_model, product_page_url)
     fake_model.respond("check_page", READABLE)
     say("Try again")
-    assert results_of("read_page")[1].endswith("Kept 2 product photos.")
+    assert "Kept 2 product photos." in results_of("read_page")[1]
 
 
 # --- Through Firecrawl: only this product's text ---------------------------------------------
@@ -485,7 +485,7 @@ def test_a_page_selling_two_products_keeps_only_this_ones_text_and_photos(
 
     say(f"Make an ad for {shampoo_page_url}")
 
-    assert read_page_result().endswith("Kept 3 product photos.")
+    assert "Kept 3 product photos." in read_page_result()
     job = Job.objects.get()
     # Gallery first, each at its biggest size, the copy kept once, and not the conditioner.
     shop = firecrawl.shop
@@ -587,7 +587,7 @@ def test_firecrawl_being_down_reads_the_page_plainly_and_says_so(
 
     assert len(firecrawl.asked("page")) == tries
     # The photos are still picked off Firecrawl's marked screenshot.
-    assert read_page_result().endswith("Kept 1 product photo.")
+    assert "Kept 1 product photo." in read_page_result()
     job = Job.objects.get()
     # The words a visitor sees, from the plain download, the record's prices, and the
     # declared data without its price.
@@ -621,7 +621,7 @@ def test_without_a_firecrawl_key_the_page_is_read_plainly_and_says_so(
     say(f"Make an ad for {shampoo_page_url}")
 
     assert firecrawl.requests == []
-    assert read_page_result().endswith("Kept 2 product photos.")
+    assert "Kept 2 product photos." in read_page_result()
     assert f"{ON_THE_PAGE}\n" in Job.objects.get().page_text
     assert notices(api, session_id) == [("problem", NO_FIRECRAWL)]
 
@@ -685,7 +685,7 @@ def test_a_failed_copy_call_leaves_the_page_unread_and_says_so(
     fake_model.respond("copy_page_text", SHAMPOO_COPIED)
     say("Try again")
 
-    assert results_of("read_page")[1].endswith("Kept 1 product photo.")
+    assert "Kept 1 product photo." in results_of("read_page")[1]
     assert Job.objects.get().page_text.startswith(f"{ON_THE_PAGE}\n{PAGE_WROTE}")
     # Each of Firecrawl's three calls was made once.
     assert len(firecrawl.requests) == 3
@@ -777,7 +777,7 @@ def test_a_failed_screenshot_falls_back_to_the_declared_photos(
     say(f"Make an ad for {shampoo_page_url}")
 
     # The page declares the shampoo's photo twice: at full size, and 1,920 px wide.
-    assert read_page_result().endswith("Kept 2 product photos.")
+    assert "Kept 2 product photos." in read_page_result()
     assert Job.objects.get().page_text.startswith(f"{ON_THE_PAGE}\n{PAGE_WROTE}")
     assert "pick_photos" not in paid_for()
     assert notices(api, session_id) == [
@@ -839,7 +839,7 @@ def test_a_page_with_no_product_record_is_picked_without_one(
 
     say(f"Make an ad for {shampoo_page_url}")
 
-    assert read_page_result().endswith("Kept 1 product photo.")
+    assert "Kept 1 product photo." in read_page_result()
     (picker,) = ModelCall.objects.filter(purpose="pick_photos")
     assert picker.handoff["official_record"] == (
         "Official record of the product: none was found for this page."
@@ -892,7 +892,7 @@ def test_a_picker_that_fails_or_picks_nothing_falls_back_to_the_declared_photos(
 
     say(f"Make an ad for {shampoo_page_url}")
 
-    assert read_page_result().endswith("Kept 2 product photos.")
+    assert "Kept 2 product photos." in read_page_result()
     shop = firecrawl.shop
     assert [photo.source_url for photo in Job.objects.get().photos.all()] == [
         f"{shop}{SHAMPOO_PHOTO_PATH}?v=1783623478&width=1920",
@@ -1013,7 +1013,7 @@ def test_more_than_50_picked_photos_keeps_the_first_50(
 
     say(f"Make an ad for {shampoo_page_url}")
 
-    assert read_page_result().endswith("Kept 50 product photos.")
+    assert "Kept 50 product photos." in read_page_result()
     kept = [photo.source_url for photo in Job.objects.get().photos.all()]
     assert kept == [f"{firecrawl.shop}/cdn/many/{n}.png" for n in [*gallery, *more][:50]]
 
@@ -1074,7 +1074,7 @@ def test_firecrawl_saying_too_many_requests_is_tried_again_after_the_wait_it_say
 
     say(f"Make an ad for {shampoo_page_url}")
 
-    assert read_page_result().endswith("Kept 1 product photo.")
+    assert "Kept 1 product photo." in read_page_result()
     assert len(firecrawl.asked("page")) == times + 1
     assert waits == waited
     assert Job.objects.get().page_text.startswith(f"{ON_THE_PAGE}\n{PAGE_WROTE}")
@@ -1099,7 +1099,7 @@ def test_the_screenshot_and_the_record_wait_out_a_rate_limit_too(
 
     say(f"Make an ad for {shampoo_page_url}")
 
-    assert read_page_result().endswith("Kept 1 product photo.")
+    assert "Kept 1 product photo." in read_page_result()
     assert len(firecrawl.asked("marked")) == len(firecrawl.asked("product")) == 5
     assert waits == [40] * 8
     (picking,) = ModelCall.objects.filter(purpose="pick_photos")
@@ -1186,8 +1186,9 @@ def test_a_photo_that_cant_be_used_is_skipped_with_its_reason_and_the_rest_are_k
 
     say(f"Make an ad for {link}")
 
-    assert read_page_result().endswith(
+    assert (
         f"Kept 1 product photo.\nSkipped 1 photo:\n- {bad_url}: {why_skipped.format(url=bad_url)}"
+        in read_page_result()
     )
     photos = Job.objects.get().photos.all()
     assert [(photo.source_url, file_store.read(photo.file)) for photo in photos] == [

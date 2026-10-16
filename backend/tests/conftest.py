@@ -93,6 +93,7 @@ SHAMPOO_PICKED = {
     "product_sections": [15, 30],
     "notes": "",
     "face_images": [],
+    "page_blocked": False,
 }
 
 # What the Face-note call answers for a photo with no stranger's face in it.

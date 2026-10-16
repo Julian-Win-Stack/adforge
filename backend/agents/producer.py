@@ -221,6 +221,9 @@ class ReadPage(Tool):
             )
         for notice, level in picked.notices:
             post_notice(job, notice, level)
+        # Without Firecrawl set up nothing is picked off the page, which is a setup mistake
+        # the notice already names, not a doubt about this page's photos.
+        declared = picked.urls is None and read.marked is not None
         if picked.urls is None:
             skipped = save_photos(job, product_page.photo_urls)
         else:
@@ -228,6 +231,7 @@ class ReadPage(Tool):
             if skipped and not job.photos.exclude(source_url="").exists():
                 post_notice(job, _none_kept(skipped), Message.Level.PROBLEM)
                 skipped = save_photos(job, product_page.photo_urls)
+                declared = True
             elif skipped:
                 post_notice(job, _not_downloaded(skipped), Message.Level.PROBLEM)
         # Only once every photo is kept: a worker that stops part-way through them leaves the
@@ -252,6 +256,15 @@ class ReadPage(Tool):
             told.append(
                 "Every scene is made from a product photo, so ask the shop owner to attach "
                 "at least one."
+            )
+        elif why := _doubtful(picked.blocked, declared, kept):
+            _show_photos(call, job)
+            call.asked_about = "the photos"
+            told.append(
+                f"Stopped before planning: {why} The kept photos are shown to the shop owner "
+                "in the chat. Tell them why in plain words, and ask them to go ahead with "
+                "these photos or attach more. Wait for their answer: if they attach photos, "
+                "add them with use_photos, then plan."
             )
         return "\n".join(told)
 
@@ -318,6 +331,10 @@ class PlanAd(Tool):
                 "the ad has no product photos yet, and every scene is made from one. Ask the "
                 "shop owner to attach at least one, then add it with use_photos."
             )
+        # Doubtful photos are planned from only once the shop owner has seen them and answered.
+        shown = job.tool_calls.filter(tool=ReadPage.name, asked_about="the photos").last()
+        if shown is not None:
+            _answered(call.session, since=shown, who_asked="they were shown the page's photos")
         # Planning again before the shop owner has answered would pay for the same question.
         asked = job.tool_calls.filter(tool=self.name, asked_about="the plan").last()
         if asked is not None:
@@ -2011,6 +2028,38 @@ def _none_kept(skipped: list[SkippedPhoto]) -> str:
     return (
         f"None of the {_photos(len(skipped))} picked off the page could be kept. "
         f"{DECLARED_INSTEAD}{listed}"
+    )
+
+
+# Fewer photos than this kept off the page are doubtful: the ad has little to show.
+FEWEST_SURE_PHOTOS = 2
+
+
+def _doubtful(blocked: bool, declared: bool, kept: int) -> str:
+    """Why the photos kept off the page are doubtful, or "" if they aren't."""
+    if blocked:
+        return (
+            "the shop's page blocked our page reader, so the photos are the ones the page "
+            "declares for search engines, which may show other products or miss this one."
+        )
+    if declared:
+        return (
+            "no photos could be picked off the page, so they are the ones the page declares "
+            "for search engines, which may show other products or miss this one."
+        )
+    if kept < FEWEST_SURE_PHOTOS:
+        return "only 1 photo of the product was found on the page."
+    return ""
+
+
+def _show_photos(call: ToolCall, job: Job) -> None:
+    """Show the shop owner the job's photos in the chat, as pictures on the agent's message."""
+    messages.add(
+        call.session,
+        role=Message.Role.AGENT,
+        carrying=[
+            messages.AttachedFile(Attachment.Kind.PICTURE, photo.file) for photo in job.photos.all()
+        ],
     )
 
 
