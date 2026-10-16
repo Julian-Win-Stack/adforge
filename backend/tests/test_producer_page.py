@@ -1282,6 +1282,40 @@ def test_a_photo_of_something_else_than_the_product_isnt_added_before_the_plan(
     assert kept.file == Attachment.objects.order_by("position").first().file  # type: ignore[union-attr]
 
 
+def test_a_photo_already_added_as_a_product_photo_says_it_cant_be_taken_out(
+    fake_model: FakeModel, httpserver: HTTPServer, say: Callable[..., None]
+) -> None:
+    both = [{"photo": 1, "shows": "the product"}, {"photo": 2, "shows": "the product"}]
+    _a_page_and_a_message(
+        fake_model, httpserver, say, turn(calls=[("use_photos", {"photos": both})])
+    )
+    fake_model.respond(
+        "produce",
+        turn(
+            calls=[
+                (
+                    "use_photos",
+                    {
+                        "photos": [
+                            {"photo": 1, "shows": "the product"},
+                            {"photo": 2, "shows": "something else"},
+                        ]
+                    },
+                )
+            ]
+        ),
+        turn(says="I see."),
+    )
+
+    say("Oh, the second one is our kitchen.")
+
+    assert results_of("use_photos")[-1] == (
+        "Added 0 of the shop owner's photos. The job now has 2 product photos. Owner photo 2 "
+        "was already added as a product photo before, and can't be taken out now: tell the "
+        "shop owner so."
+    )
+
+
 @pytest.mark.parametrize(
     ("photos", "refused"),
     [

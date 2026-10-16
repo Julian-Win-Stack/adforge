@@ -2027,6 +2027,18 @@ def _ask_about_the_fix(job: Job, fix: Fix, ask: int, old: str, new: str) -> dict
     # Only things drawn into the picture: one that shows during the clip is never in a still,
     # and its clip's judge looks for it.
     photos = [photo for photo in fix.photos if photo["use"] == ReferencePhoto.Use.PICTURE]
+    during = [str(photo["thing"]) for photo in clip_judge.during_the_clip(fix)]
+    if not photos and during:
+        return _fix_answer(
+            job,
+            purpose="check_fix",
+            instructions=f"{fix_check.FIX_CHECK}\n\n{fix_check.DURING_THE_ACTION}",
+            handoff=fix_check.DuringTheActionHandoff(
+                fix=fix.fix, ask=ask, during_the_action=during
+            ),
+            output=fix_check.FixVerdict,
+            images=images,
+        )
     if not photos:
         return _fix_answer(
             job,
@@ -2040,8 +2052,16 @@ def _ask_about_the_fix(job: Job, fix: Fix, ask: int, old: str, new: str) -> dict
     return _fix_answer(
         job,
         purpose="check_fix",
-        instructions=f"{fix_check.FIX_CHECK}\n\n{fix_check.PHOTO_FIX_QUESTION}",
-        handoff=fix_check.PhotoFixCheckHandoff(fix=fix.fix, ask=ask, owner_photos=things),
+        instructions="\n\n".join(
+            [
+                fix_check.FIX_CHECK,
+                fix_check.PHOTO_FIX_QUESTION,
+                *([fix_check.DURING_THE_ACTION] if during else []),
+            ]
+        ),
+        handoff=fix_check.PhotoFixCheckHandoff(
+            fix=fix.fix, ask=ask, owner_photos=things, during_the_action=during
+        ),
         output=fix_check.PhotoFixVerdict,
         images=[
             *images,

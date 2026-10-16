@@ -123,8 +123,9 @@ in their words, such as "black toilet". If their words don't say which thing, as
 you restate. Tell them each photo's thing in your restatement, so they can correct it. \
 Never tell them how their photos are used. Code adds the other scenes that show the same \
 thing; if they say a photo is only for the scenes they named, restate with only those \
-scenes, never refuse it. A photo stays with its scene for later fixes; to stop using one, \
-restate the fix with its thing to drop.
+scenes, never refuse it. When a note with photos also asks in words for a change to what \
+the picture shows, say so in its fix. A photo stays with its scene for later fixes; to stop \
+using one, restate the fix with its thing to drop.
 What you can't do, said plainly the same way each time: see pictures or videos; or change \
 what the person does in a scene where they talk, only how it looks or what they hold, \
 through a new starting picture. Not yet: using the shop owner's photos in a scene where the \
@@ -346,6 +347,15 @@ class UsePhotos(Tool):
             )
         count = job.photos.count()
         told = f"Added {added} of the shop owner's photos. The job now has {_photos(count)}."
+        kept_before = [number for number in others if attached_photos[number - 1].file in kept]
+        others = [number for number in others if number not in kept_before]
+        if kept_before:
+            told += (
+                f" Owner photo{'s' if len(kept_before) > 1 else ''} "
+                f"{_listed_numbers(kept_before)} {'were' if len(kept_before) > 1 else 'was'} "
+                "already added as a product photo before, and can't be taken out now: tell "
+                "the shop owner so."
+            )
         if others:
             # Before the plan every photo is a product photo, so one of their own thing would
             # be planned as the product (Julian 17:55; test C9).
@@ -1347,6 +1357,12 @@ class FixAsked(BaseModel):
         "named from their words. If their words don't say what to take from a photo, ask them "
         "before restating. Null for none.",
     )
+    also_changes_the_picture: bool | None = Field(
+        default=None,
+        description="With photos: true when the note also asks, in words, for a change to "
+        'what the scene\'s picture shows beyond the photos, such as "a dark walnut bench". '
+        "Null otherwise.",
+    )
     drop: list[str] | None = Field(
         default=None,
         description="When the shop owner wants the scene to stop using a photo they sent "
@@ -1540,11 +1556,7 @@ def _with_photos(job: Job, scene: Scene, asked: FixAsked, owner: list[Attachment
         if answer is not None and not answer.clear_enough:
             # D8: a photo the thing can't be copied from would be drawn as a guess, so
             # nothing is made from it (test C16).
-            why = f" ({answer.unclear_why})" if answer.unclear_why else ""
-            raise Refused(
-                f"owner photo {taken.photo} doesn't show the {thing} clearly enough to copy its "
-                f"look{why}. Ask the shop owner for a clearer photo of the {thing}."
-            )
+            raise Refused(_unclear(taken.photo, thing, answer))
         if answer is None:
             # No answer: the producer's own pick stands.
             use = ReferencePhoto.Use.CLIP if asked.redo == "clip" else ReferencePhoto.Use.PICTURE
@@ -1567,11 +1579,26 @@ def _with_photos(job: Job, scene: Scene, asked: FixAsked, owner: list[Attachment
     in_picture = any(photo["use"] == ReferencePhoto.Use.PICTURE for photo in routed) or any(
         row.use == ReferencePhoto.Use.PICTURE for row in dropped
     )
-    redo = Fix.Redo.PICTURE if in_picture else Fix.Redo.CLIP
+    # A change to the picture asked in words, beside photos of things only in the clip: the
+    # picture is drawn again, and the clip's judge looks for those things (review follow-up,
+    # design thread 23:54).
+    redo = (
+        Fix.Redo.PICTURE
+        if in_picture or (photos and asked.also_changes_the_picture)
+        else Fix.Redo.CLIP
+    )
     brings_back, told = None, ""
     if drops and not photos:
         brings_back, told = _before_the_photos(scene, drops, redo)
     return Planned(scene, fix, redo, routed, drops, False, brings_back, told)
+
+
+def _unclear(number: int, thing: str, answer: reference_photos.RouteAnswer) -> str:
+    why = f" ({answer.unclear_why})" if answer.unclear_why else ""
+    return (
+        f"owner photo {number} doesn't show the {thing} clearly enough to copy its look{why}. "
+        f"Ask the shop owner for a clearer photo of the {thing}."
+    )
 
 
 def _joined(job: Job, planned: list[Planned]) -> tuple[list[Planned], list[str]]:
@@ -1620,6 +1647,8 @@ def _joined(job: Job, planned: list[Planned]) -> tuple[list[Planned], list[str]]
                 if picture is not None
                 else None
             )
+            if answer is not None and not answer.clear_enough:
+                raise Refused(_unclear(int(str(photo["photo"])), str(photo["thing"]), answer))
             where: str
             if answer is not None and answer.where == "in_the_picture":
                 use, where = ReferencePhoto.Use.PICTURE.value, answer.where
