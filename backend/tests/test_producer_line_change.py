@@ -21,9 +21,11 @@ from .conftest import JUDGED_CLIP, HeldSteps, facts_ok, paid_for, results_of, sa
 from .test_fix_loop import TURN_REWRITE, latest
 from .test_producer_broll import (
     BROLL_CHOICE,
+    IMAGE_1,
     SHOWS,
     TALKING_CHOICE,
     checked,  # noqa: F401 (a fixture)
+    clips_asked,
     run,
 )
 from .test_producer_fixes import (
@@ -224,6 +226,10 @@ def test_a_broll_scenes_new_line_pays_for_its_steps_the_judge_and_no_before_pict
         "collect_broll_clip",
         *JUDGED_CLIP,
     ]
+    # The new clip is in reference mode, its new starting picture as Image 1.
+    assert clips_asked("starting_picture")[-1] is None
+    assert clips_asked("example_pictures")[-1] == [latest("starting_picture", 2).file]
+    assert clips_asked("prompt")[-1].startswith(IMAGE_1)
 
 
 # --- What is refused --------------------------------------------------------------------------

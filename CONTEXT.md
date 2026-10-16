@@ -67,7 +67,7 @@ One piece of a scene's work, run in the background: its starting picture, its li
 _Avoid_: Task, job, render
 
 **Starting picture**:
-A scene's first frame, made from the portrait and one product photo: the person holding the product, or, for a B-roll scene, the "before" of what the scene shows, made from its main photo, then a photo for each thing it needs that the main photo can't show (at most 3), then the portrait only when the presenter's face is shown, then the ad's before-picture. A B-roll scene's picture has a quality check before its clip is paid for, and is drawn again, at most twice, when it fails; when the third fails too, the run stops and the chat shows the three pictures and why each failed. The clip is made from it.
+A scene's first frame, made from the portrait and one product photo: the person holding the product, or, for a B-roll scene, the "before" of what the scene shows, made from its main photo, then a photo for each thing it needs that the main photo can't show (at most 3), then the portrait only when the presenter's face is shown, then the ad's before-picture. A B-roll scene's picture has a quality check before its clip is paid for, and is drawn again, at most twice, when it fails; when the third fails too, the run stops and the chat shows the three pictures and why each failed. The clip is made from it: a talking clip as its first frame, a B-roll clip in reference mode, told to start like it.
 _Avoid_: Start frame, keyframe, thumbnail
 
 **Before-picture**:
@@ -197,7 +197,7 @@ A photo the shop owner attaches to a note, showing how something in a scene shou
 _Avoid_: Reference picture, owner picture
 
 **Reference mode**:
-How a B-roll clip is made when it has pictures beyond its starting picture: the video model gets the starting picture first, told the clip starts like it, then the clean pictures of the reference photos, each named with what it shows (side pictures will join them once built). A reference photo goes in as a picture of the thing alone, drawn from it. Without such pictures, a clip is made from its starting picture alone.
+How every B-roll clip is made (Julian 2026-10-16): the video model gets the drawn starting picture as Image 1, told the clip starts like it, then the clean pictures of the reference photos that only show during the clip, each named with what it shows. A reference photo goes in as a picture of the thing alone, drawn from it; no raw photo is ever sent. One switch in code goes back to before, when a clip without such pictures was made from its starting picture as its exact first frame.
 _Avoid_: Reference picture mode, way 3
 
 ### Not yet built
