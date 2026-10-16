@@ -6,6 +6,8 @@ producer's model faked at the gateway and the shop and Firecrawl served from a l
 from collections.abc import Callable
 
 import pytest
+from django.db import connection
+from django.db.migrations.executor import MigrationExecutor
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
@@ -119,19 +121,27 @@ def test_a_page_with_2_or_more_photos_picked_is_planned_straight_away(
     assert Job.objects.get().scenes.count() == 3
 
 
-def _picks_nothing(httpserver: HTTPServer) -> dict[str, object]:
+def _picks_nothing(httpserver: HTTPServer, firecrawl: FakeFirecrawl) -> dict[str, object] | None:
     return {**SHAMPOO_PICKED, "gallery_images": []}
 
 
-def _picks_photos_that_wont_download(httpserver: HTTPServer) -> dict[str, object]:
+def _picks_photos_that_wont_download(
+    httpserver: HTTPServer, firecrawl: FakeFirecrawl
+) -> dict[str, object] | None:
     # The shop doesn't serve I10 or I15, so the page's declared photos are used instead.
     return {**SHAMPOO_PICKED, "gallery_images": [10, 15]}
 
 
-def _picks_1_photo(httpserver: HTTPServer) -> dict[str, object]:
+def _picks_1_photo(httpserver: HTTPServer, firecrawl: FakeFirecrawl) -> dict[str, object] | None:
     serve_the_other_photos(httpserver)
     # I16 is a thumbnail of I8's photo, so 1 photo is kept.
     return {**SHAMPOO_PICKED, "gallery_images": [8, 16]}
+
+
+def _screenshot_fails(httpserver: HTTPServer, firecrawl: FakeFirecrawl) -> None:
+    # Nothing to pick from, so the picker isn't asked.
+    firecrawl.answers_first(400, "Actions failed", call="marked")
+    return None
 
 
 @pytest.mark.parametrize(
@@ -144,7 +154,10 @@ def _picks_1_photo(httpserver: HTTPServer) -> dict[str, object]:
             2,
             id="picked ones won't download",
         ),
-        pytest.param(_picks_1_photo, "only 1 photo of the product was found", 1, id="1 photo"),
+        pytest.param(_picks_1_photo, "only 1 product photo was found", 1, id="1 photo"),
+        pytest.param(
+            _screenshot_fails, "no photos could be picked off the page", 2, id="no screenshot"
+        ),
     ],
 )
 def test_doubtful_photos_are_shown_and_planned_only_once_the_owner_says_go(
@@ -155,12 +168,13 @@ def test_doubtful_photos_are_shown_and_planned_only_once_the_owner_says_go(
     shampoo_page_url: str,
     session_id: str,
     say: Callable[..., None],
-    picks: Callable[[HTTPServer], dict[str, object]],
+    picks: Callable[[HTTPServer, FakeFirecrawl], dict[str, object] | None],
     why: str,
     kept: int,
 ) -> None:
     read_then_plan(fake_model, shampoo_page_url)
-    fake_model.respond("pick_photos", picks(httpserver))
+    if (answer := picks(httpserver, firecrawl)) is not None:
+        fake_model.respond("pick_photos", answer)
 
     say(f"Make an ad for {shampoo_page_url}")
 
@@ -173,3 +187,27 @@ def test_doubtful_photos_are_shown_and_planned_only_once_the_owner_says_go(
     say("Those are fine, go ahead")
 
     assert Job.objects.get().scenes.count() == 3
+
+
+def test_a_pick_answered_before_pages_could_be_blocked_counts_as_not_blocked() -> None:
+    # A read run again pays for no pick twice, so an answer kept from before still has to fit.
+    executor = MigrationExecutor(connection)
+    before = [("gateway", "0008_music")]
+    executor.migrate(before)
+    old = executor.loader.project_state(before).apps
+    answered = {key: value for key, value in SHAMPOO_PICKED.items() if key != "page_blocked"}
+    old.get_model("gateway", "ModelCall").objects.create(
+        purpose="pick_photos",
+        provider="openai",
+        model="gpt-5",
+        attempt=1,
+        handoff={},
+        output=answered,
+        outcome="succeeded",
+        duration_ms=1,
+    )
+
+    executor = MigrationExecutor(connection)
+    executor.migrate(executor.loader.graph.leaf_nodes())
+
+    assert ModelCall.objects.get().output == {**answered, "page_blocked": False}
