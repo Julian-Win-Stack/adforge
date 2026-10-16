@@ -2037,18 +2037,16 @@ FEWEST_SURE_PHOTOS = 2
 
 def _doubtful(blocked: bool, declared: bool, kept: int) -> str:
     """Why the photos kept off the page are doubtful, or "" if they aren't."""
+    declared_ones = (
+        "the ones the page declares for search engines, which may show other products or miss "
+        "this one."
+    )
     if blocked:
-        return (
-            "the shop's page blocked our page reader, so the photos are the ones the page "
-            "declares for search engines, which may show other products or miss this one."
-        )
+        return f"the shop's page blocked our page reader, so the photos are {declared_ones}"
     if declared:
-        return (
-            "no photos could be picked off the page, so they are the ones the page declares "
-            "for search engines, which may show other products or miss this one."
-        )
+        return f"no photos could be picked off the page, so they are {declared_ones}"
     if kept < FEWEST_SURE_PHOTOS:
-        return "only 1 photo of the product was found on the page."
+        return f"only {_photos(kept)} was found on the page."
     return ""
 
 
