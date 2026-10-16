@@ -371,9 +371,11 @@ def ad_made_with_needs(
     chatting("Put it together", turn(calls=[("assemble_ad", {})]), turn(says="Here's your ad!"))
 
 
-def test_every_b_roll_clip_is_sent_its_starting_picture_and_no_shop_photo(
+def test_every_b_roll_clip_is_sent_its_starting_picture_as_image_1_and_no_shop_photo(
     ad_made_with_needs: None,
 ) -> None:
+    # Reference mode for every B-roll clip (Julian 2026-10-16 19:14): the drawn starting
+    # picture is Image 1, told the clip starts like it, and no shop photo is sent.
     job = Job.objects.get()
     pictures = dict(
         job.produced.filter(kind="starting_picture").values_list("scene__number", "file")
@@ -382,9 +384,11 @@ def test_every_b_roll_clip_is_sent_its_starting_picture_and_no_shop_photo(
         (handoff["starting_picture"], handoff["example_pictures"], handoff["seconds"])
         for handoff in handoffs("make_broll_clip")
     ]
-    assert asked == [(pictures[2], [], 5), (pictures[3], [], 6)]
-    # The clip's real length and a still camera first, then the prompt as written.
+    assert asked == [(None, [pictures[2]], 5), (None, [pictures[3]], 6)]
+    # Image 1's sentence, then the clip's real length and a still camera, then the prompt as
+    # written: what the clip was sent before, after the sentence.
     assert handoffs("make_broll_clip")[1]["prompt"] == (
+        "Image 1 is how the clip starts: the clip starts exactly like Image 1. "
         "A 6-second video at real-time speed. The camera stays still. Whatever side faces the "
         "camera at the start stays toward the camera the whole time. " + HANDLE_PROMPT
     )

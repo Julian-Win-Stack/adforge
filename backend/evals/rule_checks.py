@@ -109,11 +109,29 @@ def _photo_jobs_looks_only(scene: SavedScene) -> str | None:
 
 
 # A7: the video model gets the drawn start picture, never shop photos (#12 V1 FAIL, V2 GOOD).
+# Locked rule 1 as changed (Julian 2026-10-15 19:38): the drawn starting picture is what it
+# gets first, as its starting picture or, in reference mode, as Image 1, and every picture
+# after it is drawn too: a clean picture of a shop owner's thing. Pictures are told apart by
+# the name the app saves each under: what made it.
+_DRAWN_STARTING_PICTURE = "make_starting_picture"
+_DRAWN_PICTURES = (_DRAWN_STARTING_PICTURE, "make_reference_photo_picture")
+
+
 def _drawn_start_picture(scene: SavedScene) -> str | None:
-    if not re.search(r"starting_picture=\S", scene.settings):
+    if re.search(r"starting_picture=\S", scene.settings):
+        if "example_pictures=[]" not in scene.settings:
+            return "shop photos sent to the video model"
+        return None
+    listed = re.search(r"example_pictures=\[([^\]]*)\]", scene.settings)
+    pictures = [name.strip() for name in listed.group(1).split(",")] if listed else []
+    pictures = [name for name in pictures if name]
+    if not pictures:
         return "no starting picture"
-    if "example_pictures=[]" not in scene.settings:
-        return "shop photos sent to the video model"
+    if not Path(pictures[0]).name.startswith(_DRAWN_STARTING_PICTURE):
+        return f"Image 1 is {pictures[0]}, not the drawn starting picture"
+    for name in pictures[1:]:
+        if not Path(name).name.startswith(_DRAWN_PICTURES):
+            return f"shop photo {name} sent to the video model"
     return None
 
 

@@ -276,7 +276,11 @@ From Creatify's API page (Create a Boreal task) and the scene #16 check.
 ## The logic: which way for which scene
 
 Since item 57 (2026-10-08), step 1's "references" is no longer built: every B-roll scene is
-made from its starting picture.
+made from its starting picture. Since 2026-10-16 that picture goes to Boreal-H3 as a
+reference, Image 1, with the prompt saying the clip starts exactly like it, not as
+`image_url`; the clean pictures of the shop owner's things that only show during the clip
+follow as Image 2 and up (CONTEXT.md, "Reference mode"). Shop photos are never sent.
+`EVERY_BROLL_CLIP_IN_REFERENCE_MODE` in `jobs/work.py` switches back to `image_url`.
 
 1. **Does the scene show something the pack photo can't?** Such as gel coming out, blush on
    a cheek, powder in a drink: a texture, a colour, the inside, a result.

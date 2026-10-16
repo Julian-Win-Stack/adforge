@@ -145,9 +145,10 @@ def test_the_clip_is_made_from_the_starting_picture_and_no_shop_photo(
     clip_of_scene_2(fake_model, steps, say)
 
     picture = Job.objects.get().produced.get(kind="starting_picture", scene__number=2)
+    # Only the drawn starting picture, as Image 1 (Julian 2026-10-16 19:14), never the photo.
     assert (clips_asked("starting_picture"), clips_asked("example_pictures")) == (
-        [picture.file],
-        [[]],
+        [None],
+        [[picture.file]],
     )
 
 

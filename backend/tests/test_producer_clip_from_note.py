@@ -36,6 +36,7 @@ from .conftest import (
 )
 from .test_producer_broll import (
     BROLL_CHOICE,
+    IMAGE_1,
     LINE_2,
     MOTION,
     SHOWS,
@@ -154,9 +155,14 @@ def test_the_new_prompt_is_sent_to_the_video_model_with_the_rules_code_adds(
     # Wrapped by code exactly as the first clip's prompt was: its length, the still camera and
     # SAME_SIDE first, so the rewrite can't drop them.
     assert clips_asked("prompt") == [
-        f"A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} {MOTION}",
-        f"A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} {NEW_MOTION}",
+        f"{IMAGE_1}A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} "
+        f"{MOTION}",
+        f"{IMAGE_1}A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} "
+        f"{NEW_MOTION}",
     ]
+    # In reference mode, its starting picture as Image 1, as every B-roll clip.
+    picture = ProducedItem.objects.get(kind="starting_picture").file
+    assert clips_asked("example_pictures")[-1] == [picture]
 
 
 def test_only_the_clip_is_made_again_and_paid_for(

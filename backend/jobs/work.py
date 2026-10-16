@@ -2671,13 +2671,20 @@ def _clip_purposes(step: SceneStep) -> tuple[str, str]:
     return "make_talking_clip", "collect_talking_clip"
 
 
+# Every B-roll clip is made in reference mode, its drawn starting picture sent as Image 1
+# (Julian 2026-10-16 19:14). False goes back to before: a clip is made from its starting
+# picture as its first frame, and in reference mode only with the shop owner's things that
+# only show during it.
+EVERY_BROLL_CLIP_IN_REFERENCE_MODE = True
+
+
 def _clip_handoff(
     step: SceneStep, picture: ProducedItem | None, audio: ProducedItem, *, motion: str = ""
 ) -> ClipHandoff | BrollClipHandoff:
     """What the video model is asked for: a clip speaking the audio, or, for a scene that
     shows the product, a silent one that moves as the picture's step planned, in the fewest
-    whole seconds that cover the audio, from its starting picture. Raises ClipFailed for a line
-    longer than the longest B-roll clip, before anything is paid for."""
+    whole seconds that cover the audio, starting like its starting picture. Raises ClipFailed
+    for a line longer than the longest B-roll clip, before anything is paid for."""
     assert audio.seconds is not None, "a line's audio is measured when it's made"
     if not step.shows:
         assert picture is not None, "a talking scene's clip is made from its picture"
@@ -2716,14 +2723,19 @@ def _clip_handoff(
                 f"{broll_video_prompt(motion, seconds)}"
             ),
         )
-    return BrollClipHandoff(
-        starting_picture=picture.file,
-        seconds=seconds,
-        # A scene planned before it had its B-roll labels is moved as before. A labelled
-        # scene's prompt is sent as written, after its look and length: the real photo of
-        # the product keeps it true.
-        prompt=broll_video_prompt(motion, seconds) if planned.way else with_nothing_made_up(motion),
-    )
+    # A scene planned before it had its B-roll labels is moved as before. A labelled scene's
+    # prompt is sent as written, after its look and length: the real photo of the product
+    # keeps it true.
+    prompt = broll_video_prompt(motion, seconds) if planned.way else with_nothing_made_up(motion)
+    if EVERY_BROLL_CLIP_IN_REFERENCE_MODE:
+        # Every B-roll clip in reference mode (Julian 2026-10-16 19:14): its drawn starting
+        # picture is Image 1, told the clip starts like it, before the prompt it'd be sent.
+        return BrollClipHandoff(
+            example_pictures=[picture.file],
+            seconds=seconds,
+            prompt=f"{reference_photos.reference_mode_label([])} {prompt}",
+        )
+    return BrollClipHandoff(starting_picture=picture.file, seconds=seconds, prompt=prompt)
 
 
 def _broll_clip_seconds(audio_seconds: float) -> int:

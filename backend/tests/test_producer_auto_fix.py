@@ -40,6 +40,7 @@ from .conftest import (
 )
 from .test_producer_broll import (
     BROLL_CHOICE,
+    IMAGE_1,
     LINE_2,
     MOTION,
     SHOWS,
@@ -145,10 +146,15 @@ def test_a_failed_clip_is_made_again_from_the_same_picture_and_judged_again(
         *JUDGED_CLIP,
     ]
     assert clips_asked("prompt") == [
-        f"A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} {MOTION}",
-        f"A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} {REMADE}",
+        f"{IMAGE_1}A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} "
+        f"{MOTION}",
+        f"{IMAGE_1}A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} "
+        f"{REMADE}",
     ]
-    assert clips_asked("starting_picture")[0] == clips_asked("starting_picture")[1]
+    # The remake is in reference mode too, with the same drawn picture as Image 1.
+    picture = ProducedItem.objects.get(kind="starting_picture").file
+    assert clips_asked("example_pictures") == [[picture], [picture]]
+    assert clips_asked("starting_picture") == [None, None]
     assert clips() == [1, 2]
     assert ProducedItem.objects.filter(kind="starting_picture").count() == 1
 
@@ -286,8 +292,10 @@ def test_a_clip_is_made_again_at_most_twice(remade_twice: SceneStep) -> None:
     assert paid_for().count("make_broll_clip") == 3
     assert paid_for().count("check_clip_motion") == 9
     assert clips_asked("prompt")[1:] == [
-        f"A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} {REMADE}",
-        f"A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} {REMADE_AGAIN}",
+        f"{IMAGE_1}A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} "
+        f"{REMADE}",
+        f"{IMAGE_1}A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} "
+        f"{REMADE_AGAIN}",
     ]
 
 
