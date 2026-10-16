@@ -1278,7 +1278,8 @@ def test_the_same_thing_named_in_other_capitals_shares_its_clean_picture(
         "Scene 3 too.",
         fix_asked(3, fix, "picture", [(1, "Black mug")]),
     )
-    assert f"Scene 3: about {dollars(Fix.objects.get(scene__number=3).estimate_usd)}" in said
+    # A picture and its clip, with no clean picture to draw: the mug's is already drawn.
+    assert "Scene 3: about $0.4355," in said
     fake_model.respond("choose_broll_picture", BROLL_CHOICE)
     says_yes(fake_model, steps, say, ("make_starting_picture", {"scene": 3, "note": fix}))
 
@@ -1413,3 +1414,49 @@ def test_a_picture_fix_with_no_thing_during_the_clip_leaves_its_clip_judged_as_a
     assert all("owner_photos" not in call.handoff for call in motion)
     assert [check.step.kind for check in mug_fixed.checks.all()] == ["starting_picture"]
     assert "compared_with" not in (latest("clip").ruling or {})
+
+
+def test_the_same_photo_named_in_other_capitals_finds_the_picture_already_made(
+    fake_model: FakeModel, mug_fixed: Fix, steps: HeldSteps, say: Say
+) -> None:
+    made = latest("starting_picture")
+    restates(
+        fake_model,
+        say,
+        "Again, please.",
+        fix_asked(2, MUG_FIX, "picture", [(1, "Black Mug")]),
+    )
+    paid = paid_for()
+    says_yes(fake_model, steps, say, ("make_starting_picture", {"scene": 2, "note": MUG_FIX}))
+
+    assert results_of("make_starting_picture")[-1].startswith(
+        "Scene 2's starting picture was already made"
+    )
+    assert paid_for() == paid
+    assert latest("starting_picture") == made
+
+
+def test_a_route_answer_kept_in_an_older_form_counts_as_no_answer(
+    fake_model: FakeModel, shown: ProducedItem, say: Say, routes: Any
+) -> None:
+    restates(
+        fake_model,
+        say,
+        MUG_NOTE,
+        fix_asked(2, MUG_FIX, "picture", [(1, "black mug")]),
+        photos=(OWNER_MUG,),
+    )
+    # As kept before the answer had "clear_enough" (owner photos test, 23:53).
+    ModelCall.objects.filter(purpose="route_reference_photo").update(
+        output={"where": "in_the_picture"}
+    )
+    restates(
+        fake_model,
+        say,
+        MUG_NOTE,
+        fix_asked(2, MUG_FIX, "picture", [(1, "black mug")]),
+    )
+
+    assert results_of("restate_fix")[-1].startswith("Recorded the fix")
+    # No answer could be had, so the producer's own pick stands.
+    assert Fix.objects.filter(scene__number=2).last().photos[0]["where"] == "not answered"  # type: ignore[union-attr]

@@ -15,7 +15,7 @@ import logging
 import re
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from adforge.retry import OutsideServiceDown
 from gateway.gateway import call_model
@@ -105,7 +105,8 @@ def where_it_goes(
             ],
             pay_once=True,
         )
-    except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
+    # ValidationError: an answer kept from before the answer's form changed can't be read.
+    except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter, ValidationError) as error:
         logger.warning("Where the %s goes couldn't be had: %s", thing, error)
         return None
 
