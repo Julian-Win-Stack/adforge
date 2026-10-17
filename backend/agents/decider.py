@@ -80,7 +80,8 @@ camera never moves. A new picture gets a new clip made from it;
 - a new line, when what the scene says should change: give the new line word for word. \
 A new line keeps the scene's starting picture: plan a new picture only when the shop owner \
 asks for something different on screen. When they ask for both on one scene, it is a new \
-picture with the new line in its line;
+picture with the new line in its line, and its change says only what must look different \
+on screen, never the words to say;
 - go back to version N, when they liked an earlier version better: say which number, after \
 looking at it;
 - no change, when the scene already shows what they ask.
@@ -523,8 +524,9 @@ class SceneDecision(BaseModel):
     scene: int
     action: Literal["new_picture", "new_clip", "new_line", "go_back", "no_change"]
     change: str = Field(
-        description="What must be different, in plain words, never how to make it. Blank for "
-        "no change."
+        description="What must be different, in plain words, never how to make it. For a new "
+        "picture with a new line, only what must look different, never the words to say. Blank "
+        "for no change."
     )
     line: str = Field(
         description="The new line word for word, for new_line, or for new_picture when the "
