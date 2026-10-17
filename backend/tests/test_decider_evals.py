@@ -456,3 +456,28 @@ def test_a_fix_check_that_failed_can_be_gone_ahead_on(
     [went] = result["turns"]
     assert (went["outcome"], went["gone_ahead"]) == ("go_ahead", [2])
     assert all(check["same"] for check in result["checks"])
+
+
+def test_a_change_that_adds_what_the_owner_never_asked_for_is_caught() -> None:
+    plan = {
+        "question": "",
+        "scenes": [
+            {
+                "scene": 3,
+                "action": "new_clip",
+                "change": "The gel goes on the brush first; the scene ends with the bowl clean.",
+                "go_back_to": None,
+                "photos": [],
+            }
+        ],
+    }
+    result = {
+        "turns": [{"outcome": "planned", "plan": plan, "decide": _decided([])}],
+        "looks": [],
+        "judge_findings_calls": 0,
+    }
+    added = {"expect": [{"change_lacks": {"3": ["ends", "clean"]}}]}
+    asked = {"expect": [{"change_lacks": {"3": ["sparkl"]}}]}
+
+    assert [check["same"] for check in score.score(added, result)] == [False]
+    assert [check["same"] for check in score.score(asked, result)] == [True]
