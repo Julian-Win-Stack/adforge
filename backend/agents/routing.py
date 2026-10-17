@@ -16,7 +16,9 @@ from django.db.models import Max, QuerySet
 from django.utils import timezone
 
 from chat.models import Message, Session
+from gateway.types import BlockedBySafetyFilter
 from jobs import fix_plans
+from jobs.notices import post_notice
 from jobs.models import FixPlan, Job, ProducedItem
 
 from . import decider, run_plan
@@ -30,6 +32,12 @@ DECLINED = "The shop owner said no to the plan, so nothing in it was changed."
 TOO_LATE = (
     "The shop owner tapped yes on a plan a newer one had replaced, so nothing was run. The "
     "newer plan is waiting for their answer."
+)
+# What the chat says when the decider failed on a message: its answer comes from the producer.
+DECIDER_FAILED = (
+    "Your message couldn't be read for a fix: an unexpected error happened, and the details "
+    "are in the server log. It is answered as a question instead, so nothing was changed. "
+    "Send the note again to try again."
 )
 # What it is told when they tap yes on a plan they had already said no to in words.
 TAPPED_AFTER_NO = (
@@ -86,6 +94,16 @@ def _route(job: Job, message: Message) -> bool:
     except decider.NoDecision as stopped:
         # The decider never talks in the chat, so the producer answers instead.
         logger.warning("The decider gave no answer to message %s: %s", message.pk, stopped)
+        return _routed(message, producer=True)
+    except BlockedBySafetyFilter:
+        # Ends the session, as the producer's own block does (tasks.run_producer).
+        raise
+    except Exception:
+        # An error that comes back every time on the same message would hold every later
+        # message behind it: the producer answers this one, and the chat says so in red, so
+        # a run's warnings show it (design thread, 05:15 Oct 17).
+        logger.exception("The decider failed on message %s", message.pk)
+        post_notice(job, DECIDER_FAILED, Message.Level.PROBLEM)
         return _routed(message, producer=True)
     with transaction.atomic():
         match outcome:
