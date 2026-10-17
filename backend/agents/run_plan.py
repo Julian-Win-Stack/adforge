@@ -656,7 +656,22 @@ def _carry_on(row: FixPlanScene) -> None:
         made_from=audio,
         picture=picture,
         picture_step=picture.step,
+        motion_prompt=_kept_motion(row, scene, picture),
     )
+
+
+def _kept_motion(row: FixPlanScene, scene: Scene, picture: ProducedItem) -> str:
+    """For a new picture's clip in a scene that shows the product, how the clip it replaces
+    moved: only a new clip chooses a new movement (live ad fix 1; design thread, 05:15 Oct 17).
+    Blank otherwise, so the clip moves as its picture's step planned."""
+    if row.action != Action.NEW_PICTURE or not scene.shows:
+        return ""
+    before = [
+        version.clip
+        for version in work.versions(scene)
+        if version.clip is not None and version.picture != picture
+    ]
+    return work.motion_of(before[-1]) if before else ""
 
 
 def _picture(row: FixPlanScene, scene: Scene, running: set[str]) -> ProducedItem | None:
@@ -744,6 +759,7 @@ def _start(
     made_from: ProducedItem | None = None,
     picture: ProducedItem | None = None,
     picture_step: SceneStep | None = None,
+    motion_prompt: str = "",
 ) -> None:
     """Start a scene step for the row in the background, from the scene as it stands, on its
     own tool call made by code, unless one of its kind started for the scene since."""
@@ -760,6 +776,7 @@ def _start(
                 made_from=made_from,
                 picture=picture,
                 picture_step=picture_step,
+                motion_prompt=motion_prompt,
             )
             # The shop owner's photos go with every later step of their scene (D1).
             if scene.shows:

@@ -2687,6 +2687,18 @@ def versions(scene: Scene, *, landing: ProducedItem | None = None) -> list[Versi
     return found
 
 
+def motion_of(clip: ProducedItem) -> str:
+    """How a B-roll clip was asked to move: its own prompt for a remade clip, else its step's
+    for a clip made from a note, else as its picture's step planned."""
+    step = clip.step
+    planned = step.picture_step if step is not None else None
+    return (
+        clip.motion_prompt
+        or (step.motion_prompt if step is not None else "")
+        or (planned.motion_prompt if planned is not None else "")
+    )
+
+
 def _was_shown(made: ProducedItem) -> bool:
     """Whether the shop owner was shown a scene's starting picture or clip: one its step
     finished with. Of a clip step's clip and the remakes the judge failed it into, only the
