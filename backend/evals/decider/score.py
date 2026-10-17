@@ -3,7 +3,8 @@ expected. A check says only whether the answer is the expected one: the expected
 Claude's until Julian grades the first run, so a check is not a grade.
 
 A case's "expect" has one entry per turn, each with any of:
-- "outcome": planned / not_a_fix / yes / no; "a|b" for either.
+- "outcome": planned / not_a_fix / yes / no / go_ahead; "a|b" for either.
+- "gone_ahead": the scenes a go ahead carried on, in order.
 - "scenes": {"<scene>": "<action>"} for each scene the plan must change, an action being
   new_picture, new_clip, new_line, go_back:<N> or no_change ("a|b" for either). No other
   scene may be changed (a no-change row is not a change).
@@ -25,6 +26,7 @@ from typing import Any
 # What each kind of check counts towards in the run's numbers.
 KINDS = {
     "outcome": "kind",
+    "gone_ahead": "kind",
     "scenes": "kind",
     "scenes_include": "kind",
     "scene_cants": "cants",
@@ -68,6 +70,7 @@ def _answer(turn: dict[str, Any]) -> dict[str, Any]:
     decide = turn.get("decide") or {}
     return {
         "outcome": turn["outcome"],
+        "gone_ahead": turn.get("gone_ahead", []),
         "scenes": {
             str(row["scene"]): row["action"]
             + (f":{row['go_back_to']}" if row["action"] == "go_back" else "")

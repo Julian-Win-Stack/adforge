@@ -165,6 +165,9 @@ def _turn(folder: Path, turn: dict[str, Any]) -> str:
         "not_a_fix": "Not a fix note: handed to the producer",
         "yes": "Read it as yes to the plan",
         "no": "Read it as no to the plan",
+        "go_ahead": "Go ahead: scene "
+        + ", ".join(str(each) for each in turn.get("gone_ahead", []))
+        + " carries on with its new version",
         "no_decision": f"Stopped without an answer ({turn.get('why')})",
         "error": f"Stopped on an error ({turn.get('why')})",
     }.get(turn["outcome"], turn["outcome"])

@@ -424,3 +424,35 @@ def test_expected_answers_that_leave_room_are_checked_as_such() -> None:
         "thing_has": True,
         "clear": True,
     }
+
+
+def test_a_fix_check_that_failed_can_be_gone_ahead_on(
+    fake_model: FakeModel, ad: Job, tmp_path: Path
+) -> None:
+    drawn = tmp_path / "scene-2-picture-2.png"
+    drawn.write_bytes(_png((0, 0, 0)))
+    case: dict[str, Any] = {
+        "id": "rule-go-ahead-after-failed-check",
+        "ad": "8",
+        "setup": {
+            "held_checks": [
+                {
+                    "scene": 2,
+                    "picture": str(drawn),
+                    "change": "The toilet is black.",
+                    "reason": "The toilet still looks grey.",
+                }
+            ]
+        },
+        "turns": [{"say": "yes go ahead"}],
+        "expect": [{"outcome": "go_ahead", "gone_ahead": [2]}],
+    }
+    fake_model.respond("decide_fixes", turn(calls=[("sort_message", {"kind": "go_ahead"})]))
+
+    result = record(case, play(ad, case), tmp_path / "run", model="gpt-6.1-sol")
+
+    the_ad = json.loads((tmp_path / "run" / case["id"] / "given.json").read_text())[0]["the_ad"]
+    assert "Scene 2's fix check failed on its new picture: The toilet still looks grey." in the_ad
+    [went] = result["turns"]
+    assert (went["outcome"], went["gone_ahead"]) == ("go_ahead", [2])
+    assert all(check["same"] for check in result["checks"])
