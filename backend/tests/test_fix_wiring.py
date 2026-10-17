@@ -12,20 +12,27 @@ from typing import Any
 import pytest
 from rest_framework.test import APIClient
 
-from agents import loop
+from agents import decider, loop, routing, run_plan
 from agents.models import SystemNote, ToolCall
-from agents.producer import PRODUCER
 from chat.models import Message, Session
-from gateway.fake import FakeModel, turn
+from gateway.fake import FakeModel, meanwhile, turn
 from gateway.types import StepFinished, Turn
 from jobs import work
-from jobs.models import FixCheck, FixPlan, ProducedItem, ReferencePhoto, Scene, SceneStep
+from jobs.models import (
+    FixCheck,
+    FixPlan,
+    Job,
+    ProducedItem,
+    ReferencePhoto,
+    Scene,
+    SceneStep,
+)
 
 from .conftest import MUG_SIDE, HeldSteps, producer_turns
 from .fixing import fixed
 from .test_fix_check import HANDLE_HIDDEN, not_made
 from .test_fix_loop import TURN_REWRITE
-from .test_producer_broll import TALKING_CHOICE, checked  # noqa: F401 (a fixture)
+from .test_producer_broll import BROLL_CHOICE, TALKING_CHOICE, checked  # noqa: F401 (a fixture)
 from .test_producer_picture_then_clip import (
     ads,
     assembled,  # noqa: F401 (a fixture)
@@ -273,8 +280,11 @@ def test_the_producer_answers_whats_happening_from_the_notes_without_asking_agai
         "A fix plan is shown to the shop owner, waiting for their yes",
         "The shop owner said yes to the plan: scene 1's new starting picture is being made",
     ]
-    # It answered, and started nothing: no tool call, no new step.
-    assert not ToolCall.objects.filter(agent="producer", created_at__gt=plan.created_at)
+    # The question went to the producer, not into a new plan, and nothing new started.
+    assert plans() == [plan]
+    assert Message.objects.filter(role="agent").last().text == (  # type: ignore[union-attr]
+        "Scene 1's new starting picture is being made."
+    )
     assert len(held.held) == 1
 
 
@@ -505,7 +515,6 @@ def test_messages_from_before_the_first_clip_are_the_producers_and_never_the_dec
     assert not said.filter(created_at__gt=first_clip.created_at, routed_at__isnull=True)
     sorted_ = ToolCall.objects.filter(agent="decider", tool="sort_message")
     assert sorted_.count() == said.filter(created_at__gt=first_clip.created_at).count()
-    assert PRODUCER.reads_system_notes
 
 
 def test_two_plans_on_a_scene_each_show_their_own_labelled_ad(
@@ -529,3 +538,184 @@ def test_two_plans_on_a_scene_each_show_their_own_labelled_ad(
         1,
         1,
     ]
+
+
+def test_a_tap_after_a_typed_yes_adds_nothing_and_tells_no_one_of_a_newer_plan(
+    fake_model: FakeModel,
+    held: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    turns = producer_turns()
+    plan = a_picture_note_planned(fake_model, say)
+    # The shop owner taps yes too while the decider reads their typed yes.
+    fake_model.respond(
+        "decide_fixes",
+        meanwhile(lambda: tap_yes(api, session_id, plan), turn(calls=[sort("yes")])),
+    )
+
+    say("yes")
+
+    plan.refresh_from_db()
+    assert plan.state == "confirmed" and plans() == [plan]
+    assert not SystemNote.objects.filter(kind="yes_too_late").exists()
+    assert Message.objects.get(plan_event="yes").routed_at is not None
+    assert producer_turns() == turns
+    assert len(held.held) == 1
+
+
+def test_a_tap_after_a_typed_no_runs_nothing_and_the_producer_is_told_so(
+    fake_model: FakeModel,
+    held: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    plan = a_picture_note_planned(fake_model, say)
+    fake_model.respond(
+        "decide_fixes",
+        meanwhile(lambda: tap_yes(api, session_id, plan), turn(calls=[sort("no")])),
+    )
+    fake_model.respond("produce", turn(says="Nothing changed. Do you want it after all?"))
+
+    say("no")
+
+    plan.refresh_from_db()
+    assert plan.state == "declined"
+    assert held.held == []
+    told = given_to_the_producer(fake_model)
+    assert f"{loop.SYSTEM_NOTE} {routing.TAPPED_AFTER_NO}" in told
+    assert not any("a newer one had replaced" in text for text in told)
+
+
+def test_a_typed_yes_to_a_plan_with_only_a_question_runs_nothing_and_keeps_the_note(
+    fake_model: FakeModel, held: HeldSteps, say: Callable[..., None]
+) -> None:
+    fake_model.respond("decide_fixes", planning(decided(question="The blue mug or the green one?")))
+    say("Make the mug the other colour.")
+    [plan] = plans()
+    # A yes to a plan with nothing to run is refused; the decider sorts it again.
+    fake_model.respond("decide_fixes", turn(calls=[sort("yes")]), turn(calls=[sort("not_a_fix")]))
+    fake_model.respond("produce", turn(says="Which colour would you like?"))
+
+    say("yes")
+
+    assert (
+        ToolCall.objects.filter(agent="decider", tool="sort_message", result__startswith="Refused:")
+        .get()
+        .result.startswith("Refused: the plan waiting has nothing to run")
+    )
+    plan.refresh_from_db()
+    assert plan.state == "proposed"
+    assert notices("confirmed") == []
+    assert "Make the mug the other colour." in [
+        each.text for each in decider.this_round(Job.objects.get())
+    ]
+
+
+def test_a_note_on_a_scene_planned_again_after_its_fix_check_failed_no_longer_waits(
+    fake_model: FakeModel,
+    held: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    first = a_picture_note_planned(fake_model, say)
+    tap_yes(api, session_id, first)
+    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
+    fake_model.respond("check_fix", not_made(HANDLE_HIDDEN), not_made(HANDLE_HIDDEN))
+    held.run_held()
+    assert FixCheck.objects.get().verdict == "failed"
+    fake_model.respond(
+        "decide_fixes",
+        planning(
+            ("look_at_picture", {"scene": 1}),
+            decided(row(1, "new_picture", "The handle faces the camera.")),
+        ),
+    )
+    say("The handle should face the camera.")
+
+    tap_yes(api, session_id, plans()[-1])
+
+    # Planned again is the answer to the failed check (flow step 9): the old row waits no
+    # more, so it can't hold back the scene's bring-back or its plan's ad.
+    [old] = first.scenes.all()
+    assert old.landed_at is None
+    assert old.error == "Scene 1 was planned again before its failed fix check was answered."
+    assert run_plan.held_on_a_check(Session.objects.get()) == []
+
+
+def test_go_ahead_carries_on_only_the_scenes_it_names_when_two_checks_wait(
+    fake_model: FakeModel,
+    held: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    fake_model.respond(
+        "decide_fixes",
+        planning(
+            ("look_at_picture", {"scene": 1}),
+            ("look_at_picture", {"scene": 2}),
+            decided(row(1, "new_picture", BRIGHTER), row(2, "new_picture", BRIGHTER)),
+        ),
+    )
+    say("Make the workshop brighter in scenes 1 and 2.")
+    tap_yes(api, session_id, plans()[-1])
+    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    fake_model.respond("check_fix", *[not_made(HANDLE_HIDDEN)] * 4)
+    held.run_held()
+    assert list(FixCheck.objects.values_list("verdict", flat=True)) == ["failed", "failed"]
+    # A go ahead naming no scene, with two checks waiting, is refused: it names one.
+    fake_model.respond(
+        "decide_fixes",
+        turn(calls=[sort("go_ahead")]),
+        turn(calls=[("sort_message", {"kind": "go_ahead", "scenes": [1]})]),
+    )
+
+    say("Scene 1 is fine, go ahead with it.")
+
+    assert (
+        ToolCall.objects.filter(agent="decider", tool="sort_message", result__startswith="Refused:")
+        .get()
+        .result.startswith("Refused: fix checks wait on scenes 1 and 2: name the scenes")
+    )
+    gone = dict(FixCheck.objects.values_list("step__scene__number", "gone_ahead_at"))
+    assert gone[1] is not None and gone[2] is None
+    [step] = SceneStep.objects.filter(pk__in=held.held)
+    assert (step.kind, step.scene.number) == ("clip", 1)
+
+
+def test_a_typed_yes_sent_before_the_plan_was_shown_runs_nothing(
+    fake_model: FakeModel, held: HeldSteps, say: Callable[..., None]
+) -> None:
+    def typed_yes() -> None:
+        Message.objects.create(
+            session=Session.objects.get(),
+            seq=Message.objects.order_by("seq").last().seq + 1,  # type: ignore[union-attr]
+            role="user",
+            text="yes",
+        )
+
+    # The shop owner types yes while the decider is still planning their note.
+    fake_model.respond(
+        "decide_fixes",
+        meanwhile(
+            typed_yes,
+            planning(("look_at_picture", {"scene": 1}), decided(row(1, "new_picture", BRIGHTER))),
+        ),
+        turn(calls=[sort("yes")]),
+    )
+    fake_model.respond("produce", turn(says="Here's the plan: tap Yes if it looks right."))
+
+    say("Scene 1 looks dark. Make the workshop brighter.")
+
+    # It came before the notice, so it can't be a yes to it: the producer answers it.
+    [plan] = plans()
+    assert plan.state == "proposed"
+    assert held.held == []
+    assert Message.objects.filter(role="agent").last().text == (  # type: ignore[union-attr]
+        "Here's the plan: tap Yes if it looks right."
+    )

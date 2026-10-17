@@ -21,7 +21,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Exists, OuterRef
 from django.utils import timezone
 
-from chat.models import Session
+from chat.models import Message, Session
 from jobs import reference_photos, work
 from jobs.checks import LONGEST_BROLL_LINE_SECONDS, LONGEST_LINE_SECONDS
 from jobs.fix_plans import PlanCant, propose
@@ -36,6 +36,7 @@ from jobs.models import (
     Scene,
     SceneStep,
 )
+from jobs.notices import post_notice
 
 from . import step_signals
 from .loop import Refused, why_it_failed
@@ -61,9 +62,11 @@ __all__ = [
     "FIX_PLAN",
     "carry_on_scene",
     "check_and_propose",
+    "first_making",
     "go_ahead",
     "held_on_a_check",
     "run_after_yes",
+    "runs_something",
     "step_failed",
     "step_finished",
 ]
@@ -128,7 +131,7 @@ def check_and_propose(
 
 def _routed_again(job: Job, row: FixPlanScene) -> None:
     """Decision 5's fallback: each of the row's photos routed by the route call, looking at
-    the scene's starting picture and the photo, in place of the decider's two answers. An
+    the scene's starting picture and the photo, in place of the decider's answers. An
     answer that can't be had leaves the decider's."""
     picture = _current_picture(row.scene)
     if picture is None:
@@ -151,12 +154,22 @@ def _routed_again(job: Job, row: FixPlanScene) -> None:
         photo["clear"] = answer.clear_enough
 
 
+def first_making(plan: FixPlan) -> list[FixPlanScene]:
+    """The plan's rows about a scene with no clip yet: the producer still makes it for the
+    first time, with the shop owner's note, as before the ad had a clip."""
+    return [row for row in plan.scenes.select_related("scene") if _before_its_clip(row.scene)]
+
+
+def _before_its_clip(scene: Scene) -> bool:
+    return not scene.produced.filter(kind=ProducedItem.Kind.CLIP).exists()
+
+
 def _rule_cant(row: FixPlanScene) -> str:
     """What the shop owner is told when the row breaks a rule code knows, or blank."""
     scene = row.scene
     number = scene.number
-    if not scene.produced.filter(kind=ProducedItem.Kind.CLIP).exists():
-        return f"Scene {number} has no clip yet, so there is nothing to fix."
+    if _before_its_clip(scene):
+        return f"Scene {number} has no clip yet, so its note goes into making it."
     if row.action == Action.NEW_CLIP and not scene.shows:
         return (
             f"Scene {number} shows the person talking, and the movement of a talking clip "
@@ -300,6 +313,12 @@ def _shown(plan: FixPlan) -> str:
 
 def _line_of(row: FixPlanScene) -> str:
     number = row.scene.number
+    if _before_its_clip(row.scene):
+        # The producer makes it, as before the ad had a clip (design thread, 04:22 Oct 17).
+        return (
+            f"Scene {number} has no clip yet, so it isn't in the plan: the shop owner's note "
+            "on it is yours to make it with."
+        )
     if row.cant:
         return f"Scene {number} can't change: {row.cant}"
     if row.action in (Action.GO_BACK, Action.NO_CHANGE):
@@ -348,11 +367,40 @@ def run_after_yes(plan: FixPlan) -> None:
             if row.action != Action.GO_BACK:
                 row.fix = _confirmed_fix(plan, row)
             row.save(update_fields=["started_at", "fix"])
+            _no_longer_held(row)
         for row in rows:
             _carry_on(row)
         rows = [FixPlanScene.objects.select_related("scene").get(pk=row.pk) for row in rows]
         _note(plan, SystemNote.Kind.FIXES_STARTED, _started(rows))
         _assemble_once_landed(plan)
+
+
+def _no_longer_held(row: FixPlanScene) -> None:
+    """An older plan's row of the same scene whose fix check failed, and waits for the shop
+    owner's answer, was answered by this newer plan (flow step 9: anything but go ahead is
+    planned again). It waits no more, so it never holds back the scene's bring-back or its
+    plan's ad."""
+    waiting = FixCheck.objects.filter(
+        step__plan_scene=OuterRef("pk"),
+        verdict=FixCheck.Verdict.FAILED,
+        gone_ahead_at__isnull=True,
+    )
+    FixPlanScene.objects.filter(
+        scene=row.scene_id,
+        pk__lt=row.pk,
+        started_at__isnull=False,
+        landed_at__isnull=True,
+        error="",
+    ).filter(Exists(waiting)).update(
+        error=f"Scene {row.scene.number} was planned again before its failed fix check was "
+        "answered."
+    )
+
+
+def runs_something(plan: FixPlan) -> bool:
+    """Whether a yes to `plan` would run anything: it isn't only can'ts, a question, or
+    scenes left as they are. The chat offers no yes button for one that doesn't."""
+    return any(_doable(row) for row in plan.scenes.all())
 
 
 def _doable(row: FixPlanScene) -> bool:
@@ -431,6 +479,10 @@ def go_ahead(row: FixPlanScene) -> None:
     """The shop owner said go ahead to the row's failed fix check (08 routes their answer):
     its scene carries on, with the new version as it is."""
     with transaction.atomic():
+        # The job, then the chat, before the row, as every writer of a plan locks them: a
+        # step of the scene finishing meanwhile locks the job, then carries this row on.
+        Job.objects.select_for_update().get(pk=row.plan.job_id)
+        Session.objects.select_for_update().get(pk=row.plan.session_id)
         FixCheck.objects.filter(
             step__plan_scene=row, verdict=FixCheck.Verdict.FAILED, gone_ahead_at__isnull=True
         ).update(gone_ahead_at=timezone.now())
@@ -476,10 +528,31 @@ def step_finished(step: SceneStep, check: FixCheck | None) -> None:
     assert row is not None, "a plan's step runs one of its rows"
     if check is not None and check.verdict == FixCheck.Verdict.FAILED:
         _note(row.plan, SystemNote.Kind.CHECK_FAILED, _check_failed(row, check))
+    if check is not None and check.verdict == FixCheck.Verdict.UNCHECKED:
+        _say_it_wasnt_checked(row, check)
     _carry_on(row)
     _assemble_once_landed(row.plan)
     # Another plan's row may have waited for this step to free the scene.
     carry_on_scene(step.scene, but=row)
+
+
+def _say_it_wasnt_checked(row: FixPlanScene, check: FixCheck) -> None:
+    """A fix check that couldn't be had passes, and the shop owner is told their change in
+    the new version wasn't checked (#131): never silent. The producer is told the chat said so."""
+    number = row.scene.number
+    what = "starting picture" if check.what == "picture" else "clip"
+    post_notice(
+        row.plan.job,
+        f"Scene {number}'s new {what} couldn't be checked for your change, so it is kept "
+        "unchecked.",
+        Message.Level.INFO,
+    )
+    _note(
+        row.plan,
+        SystemNote.Kind.CHECK_UNCHECKED,
+        f"Scene {number}'s fix couldn't be checked in its new {check.what}, so it carries on "
+        "unchecked. The chat told the shop owner it wasn't checked.",
+    )
 
 
 def step_failed(step: SceneStep) -> None:
@@ -823,7 +896,7 @@ def _assemble_once_landed(plan: FixPlan) -> None:
         _note(plan, SystemNote.Kind.ERROR, f"The new ad couldn't be assembled: {refused}")
         return
     # Assembly failing for a reason nobody expected doesn't fail the step that landed the
-    # last scene: its clip is made and paid for (as tasks._assembled_after_fix).
+    # last scene: its clip is made and paid for.
     except Exception as error:
         logger.exception("Assembling the ad of fix plan %s failed", plan.pk)
         _note(

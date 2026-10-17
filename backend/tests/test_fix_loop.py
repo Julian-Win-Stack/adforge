@@ -89,14 +89,6 @@ def owner_says(fake_model: FakeModel, say: Say, text: str, *calls: Call) -> None
     say(text)
 
 
-def restating(*fixes: tuple[int, str, str]) -> Call:
-    """A restate_fix call for each (scene, fix, redo)."""
-    return (
-        "restate_fix",
-        {"fixes": [{"scene": scene, "fix": fix, "redo": redo} for scene, fix, redo in fixes]},
-    )
-
-
 def ads() -> list[ProducedItem]:
     return list(Job.objects.get().produced.filter(kind="finished_ad").order_by("version"))
 

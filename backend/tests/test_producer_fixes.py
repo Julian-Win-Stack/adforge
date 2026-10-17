@@ -32,6 +32,7 @@ from jobs.models import Fix, FixPlan, FixPlanScene, ProducedItem, Scene, SceneSt
 from . import fixing
 from .conftest import HeldSteps, WorkerStopped, paid_for, results_of
 from .fixing import fixed, plan_row, planned, say_yes
+from .test_fix_wiring import decided, planning, row
 from .test_producer_broll import (
     TALKING_CHOICE,
     assemble_through_the_chat,
@@ -558,7 +559,7 @@ def test_a_plan_cant_change_a_scene_with_no_clip_yet_while_another_has_its_clip(
         note=f"{NOTE_1} {NOTE_2}",
     )
 
-    assert row_of(plan, 1).cant == "Scene 1 has no clip yet, so there is nothing to fix."
+    assert row_of(plan, 1).cant == "Scene 1 has no clip yet, so its note goes into making it."
     assert row_of(plan, 2).cant == ""
 
 
@@ -570,19 +571,59 @@ def test_a_plan_cant_change_a_scene_whose_first_clip_is_still_being_made(
 
     plan = planned(plan_row(1, "new_picture", change=FIX_1), note=NOTE_1)
 
-    assert row_of(plan, 1).cant == "Scene 1 has no clip yet, so there is nothing to fix."
+    assert row_of(plan, 1).cant == "Scene 1 has no clip yet, so its note goes into making it."
 
 
 def test_before_the_ad_is_made_a_note_on_a_scene_with_no_clip_yet_is_the_producers_to_make(
     fake_model: FakeModel, early: None, steps: HeldSteps, say: Say
 ) -> None:
+    # The decider reads it as the note it is; a plan of only scenes with no clip yet isn't
+    # shown, and the producer makes the scene with the note.
+    fake_model.respond(
+        "decide_fixes",
+        planning(("look_at_picture", {"scene": 1}), decided(row(1, "new_picture", NOTE_1))),
+    )
     owner_says(fake_model, say, NOTE_1, picture_with(1, NOTE_1))
+
+    [plan] = FixPlan.objects.all()
+    assert plan.state == "replaced"
+    assert not plan.messages.exists()
+    assert not plan.system_notes.exists()
     fake_model.respond("choose_starting_picture", TALKING_CHOICE)
     run(fake_model, steps)
 
     assert not Fix.objects.exists()
     step = last_step("starting_picture", 1)
     assert (step.status, step.note, step.fix) == ("finished", NOTE_1, None)
+
+
+def test_a_note_on_a_scene_with_its_clip_and_one_without_is_planned_and_made_both_ways(
+    fake_model: FakeModel, early: None, steps: HeldSteps, say: Say
+) -> None:
+    fake_model.respond(
+        "decide_fixes",
+        planning(
+            ("look_at_picture", {"scene": 1}),
+            ("look_at_picture", {"scene": 2}),
+            decided(row(2, "new_picture", FIX_2), row(1, "new_picture", NOTE_1)),
+        ),
+    )
+    owner_says(fake_model, say, f"{NOTE_1} {NOTE_2}", picture_with(1, NOTE_1))
+
+    # Scene 2's fix is shown as the plan; scene 1's note goes into making it.
+    [plan] = FixPlan.objects.all()
+    assert plan.state == "proposed" and plan.messages.filter(plan_event="shown").exists()
+    assert row_of(plan, 1).cant == "Scene 1 has no clip yet, so its note goes into making it."
+    assert last_step("starting_picture", 1).note == NOTE_1
+    # The producer is told which scenes the plan covers, and which is its own to make.
+    [told] = plan.system_notes.filter(kind="plan_shown").values_list("text", flat=True)
+    assert "Scene 2: new starting picture, then its clip" in told
+    assert (
+        "Scene 1 has no clip yet, so it isn't in the plan: the shop owner's note on it is "
+        "yours to make it with."
+    ) in told
+    produced = [each for each in fake_model.turns_taken if each.purpose == "produce"]
+    assert any(told in str(each.handoff.conversation) for each in produced[-2:])
 
 
 def test_an_early_fix_landing_before_the_other_first_clips_leaves_the_first_ad_to_the_producer(

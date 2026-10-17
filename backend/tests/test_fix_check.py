@@ -20,6 +20,7 @@ from rest_framework.test import APIClient
 
 from agents import run_plan, tasks
 from agents.models import SystemNote
+from chat.models import Message
 from gateway import catalog
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
@@ -287,7 +288,7 @@ def test_a_new_note_after_a_failed_picture_check_redraws_the_picture_and_checks_
     assert [check.verdict for check in FixCheck.objects.order_by("id")] == ["failed", "passed"]
 
 
-def test_a_picture_check_that_cant_be_had_carries_on(
+def test_a_picture_check_that_cant_be_had_carries_on_and_says_so(
     fake_model: FakeModel,
     steps: HeldSteps,
     shown: list[str],  # noqa: F811
@@ -300,9 +301,19 @@ def test_a_picture_check_that_cant_be_had_carries_on(
     check = FixCheck.objects.get()
     assert (check.verdict, check.answers) == ("unchecked", [])
     assert held_kinds(steps) == [(2, "clip")]
+    # Never silent: the shop owner is told it wasn't checked, and the producer that it was.
+    assert Message.objects.filter(
+        role="notice",
+        text="Scene 2's new starting picture couldn't be checked for your change, so it is "
+        "kept unchecked.",
+    ).exists()
+    assert notes("check_unchecked") == [
+        "Scene 2's fix couldn't be checked in its new picture, so it carries on unchecked. "
+        "The chat told the shop owner it wasn't checked."
+    ]
 
 
-def test_a_picture_check_whose_asks_fail_unexpectedly_carries_on(
+def test_a_picture_check_whose_asks_fail_unexpectedly_carries_on_and_says_so(
     fake_model: FakeModel,
     steps: HeldSteps,
     shown: list[str],  # noqa: F811
@@ -315,6 +326,16 @@ def test_a_picture_check_whose_asks_fail_unexpectedly_carries_on(
     check = FixCheck.objects.get()
     assert (check.verdict, check.answers) == ("unchecked", [])
     assert held_kinds(steps) == [(2, "clip")]
+    # Never silent: the shop owner is told it wasn't checked, and the producer that it was.
+    assert Message.objects.filter(
+        role="notice",
+        text="Scene 2's new starting picture couldn't be checked for your change, so it is "
+        "kept unchecked.",
+    ).exists()
+    assert notes("check_unchecked") == [
+        "Scene 2's fix couldn't be checked in its new picture, so it carries on unchecked. "
+        "The chat told the shop owner it wasn't checked."
+    ]
 
 
 def test_a_not_fixed_answer_with_no_reason_is_no_answer_but_is_still_paid_for(

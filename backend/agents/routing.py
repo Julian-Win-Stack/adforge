@@ -1,7 +1,8 @@
 """Code routes the shop owner's messages once the ad has a clip (fix redesign, decisions 4, 15
 and 20; flow steps 2, 7 and 9). Before the first clip every message is the producer's, about
 making the ad. After it, each message goes first to the decider, which sorts it: a note is
-planned and code shows the plan; yes or no to the plan waiting is settled by code, and a yes
+planned and code shows the plan, but a note on a scene with no clip yet is the producer's,
+which still makes that scene; yes or no to the plan waiting is settled by code, and a yes
 runs it; go ahead to a failed fix check carries its scenes on; anything else is the
 producer's to answer. A tap of the plan's yes button needs no decider: it names its plan.
 
@@ -29,6 +30,10 @@ DECLINED = "The shop owner said no to the plan, so nothing in it was changed."
 TOO_LATE = (
     "The shop owner tapped yes on a plan a newer one had replaced, so nothing was run. The "
     "newer plan is waiting for their answer."
+)
+# What it is told when they tap yes on a plan they had already said no to in words.
+TAPPED_AFTER_NO = (
+    "The shop owner tapped yes on a plan they had already said no to, so nothing was run."
 )
 
 
@@ -87,16 +92,30 @@ def _route(job: Job, message: Message) -> bool:
             case decider.NotAFix():
                 return _routed(message, producer=True)
             case decider.Planned(plan=plan):
+                # A note on a scene with no clip yet is the producer's: it still makes the
+                # scene for the first time. A plan of only such scenes isn't shown.
+                making = run_plan.first_making(plan)
+                if (
+                    making
+                    and len(making) == plan.scenes.count()
+                    and not (plan.question or plan.cants)
+                ):
+                    FixPlan.objects.filter(pk=plan.pk, state=FixPlan.State.PROPOSED).update(
+                        state=FixPlan.State.REPLACED
+                    )
+                    plan.system_notes.filter(kind=SystemNote.Kind.PLAN_SHOWN).delete()
+                    return _routed(message, producer=True)
                 # The plan replaces any plan waiting, whose yes button the notice takes away.
                 if not plan.messages.filter(plan_event=Message.PlanEvent.SHOWN).exists():
                     fix_plans.show(plan)
-                return _routed(message, producer=False)
+                return _routed(message, producer=bool(making))
             case decider.Yes(plan=plan):
                 shown = plan.messages.filter(
                     plan_event=Message.PlanEvent.SHOWN, seq__lt=message.seq
                 ).exists()
-                if not shown or not _still_waiting(plan):
-                    # A typed yes can't approve a plan the shop owner hadn't been shown.
+                if not shown or not run_plan.runs_something(plan) or not _still_waiting(plan):
+                    # A typed yes can't approve a plan the shop owner hadn't been shown, or
+                    # one with nothing to run (sort_message refuses that yes too).
                     return _routed(message, producer=True)
                 _run(plan, message)
                 return _routed(message, producer=False)
@@ -112,14 +131,22 @@ def _route(job: Job, message: Message) -> bool:
 
 
 def _tapped(message: Message) -> bool:
-    """A tap of a plan's yes button: the plan runs, unless a newer plan replaced it since
-    the tap was kept. Then the producer tells the shop owner to look at the newer one."""
+    """A tap of a plan's yes button: the plan runs, unless it was answered since the tap was
+    kept. A newer plan replaced it: the producer tells the shop owner to look at the newer
+    one. A yes typed before it already runs it: the tap adds nothing. A no typed before it
+    dropped it: the producer asks which they meant."""
     plan = message.fix_plan
     with transaction.atomic():
-        if plan is not None and _still_waiting(plan):
+        if plan is None:
+            return _routed(message, producer=True)
+        if _still_waiting(plan):
             _run(plan, message)
             return _routed(message, producer=False)
-        if plan is not None:
+        if plan.state == FixPlan.State.CONFIRMED:
+            return _routed(message, producer=False)
+        if plan.state == FixPlan.State.DECLINED:
+            _note(plan, SystemNote.Kind.YES_TOO_LATE, TAPPED_AFTER_NO)
+        else:
             _note(plan, SystemNote.Kind.YES_TOO_LATE, TOO_LATE)
         return _routed(message, producer=True)
 

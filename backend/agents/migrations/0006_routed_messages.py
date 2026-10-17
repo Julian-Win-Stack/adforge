@@ -23,6 +23,7 @@ class Migration(migrations.Migration):
                     ("ad_shown", "Ad Shown"),
                     ("plan_declined", "Plan Declined"),
                     ("yes_too_late", "Yes Too Late"),
+                    ("check_unchecked", "Check Unchecked"),
                 ],
                 max_length=20,
             ),
