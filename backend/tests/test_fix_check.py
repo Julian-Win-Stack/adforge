@@ -39,6 +39,7 @@ from .conftest import (
     handoffs,
     motion_answer,
     paid_for,
+    results_of,
 )
 from .fixing import fixed, plan_row, planned, say_yes
 from .test_end_to_end import TALKING, ad_made_through_the_chat  # noqa: F401 (a fixture)
@@ -58,6 +59,7 @@ from .test_fix_loop import (
     ads,
     held_kinds,
     latest,
+    owner_says,
     shown,  # noqa: F401 (a fixture)
 )
 from .test_producer_restarts import WorkerStopped, the_worker_stops
@@ -562,6 +564,26 @@ def test_a_fixs_new_clip_that_fails_its_check_shows_both_clips_and_no_new_ad(
     assert [ad.version for ad in ads()] == [1, 2]
     # The new ad plays the new clip, as they said to, not the old one.
     assert {cut["scene"]: cut["clip"] for cut in ads()[1].cuts}[2] == new_clip.pk
+
+
+def test_the_producer_cant_assemble_the_ad_over_a_clip_whose_check_waits(
+    fake_model: FakeModel,
+    steps: HeldSteps,
+    say: Say,
+    shown: list[str],  # noqa: F811
+) -> None:
+    # The scene is finished with the new clip, but the shop owner hasn't said to use it.
+    fake_model.answer_unscripted(
+        "check_clip_motion", motion_answer(CLIP_MOTION_OK, not_made(HOVERING))
+    )
+    a_clip_redone(fake_model, steps)
+
+    owner_says(fake_model, say, "Can I see the ad now?", ("assemble_ad", {}))
+
+    assert results_of("assemble_ad")[-1].startswith(
+        "Refused: the shop owner hasn't answered the fix check on scene 2 yet."
+    )
+    assert [ad.version for ad in ads()] == [1]
 
 
 def test_a_new_note_after_a_failed_clip_check_remakes_the_clip_and_checks_again(

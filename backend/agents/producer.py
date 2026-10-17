@@ -1051,6 +1051,15 @@ class AssembleAd(Tool):
         job = _the_job(call)
         if job is None or not job.scenes.exists():
             raise Refused("the ad hasn't been planned yet, and it is assembled from its scenes.")
+        from .run_plan import held_on_a_check  # It runs fixes with this module's tools.
+
+        held = sorted({row.scene.number for row in held_on_a_check(call.session)})
+        if held:
+            # Code assembles the new ad once the shop owner answers (flow step 9).
+            raise Refused(
+                f"the shop owner hasn't answered the fix check on {_scenes(held)} yet. The app "
+                "assembles the new ad once they answer."
+            )
         ad, again = assemble_the_ad(call.session, job)
         if again:
             return (
