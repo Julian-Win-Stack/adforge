@@ -86,6 +86,7 @@ class SystemNote(models.Model):
         AD_SHOWN = "ad_shown"
         PLAN_DECLINED = "plan_declined"
         YES_TOO_LATE = "yes_too_late"
+        CHECK_UNCHECKED = "check_unchecked"
 
     session = models.ForeignKey(
         "chat.Session", on_delete=models.CASCADE, related_name="system_notes"

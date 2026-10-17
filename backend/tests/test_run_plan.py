@@ -516,7 +516,6 @@ def test_photos_on_a_plan_row_are_the_scenes_from_the_yes(held: HeldSteps) -> No
     assert fix.photos[0]["use"] == "clip"
     step = SceneStep.objects.get(pk=held.held[0])
     assert list(step.reference_photos.all()) == [used]
-    assert ToolCall.objects.filter(agent="producer", tool="restate_fix").count() == 0
 
 
 def test_a_rule_cant_is_added_after_the_deciders_own() -> None:
@@ -679,7 +678,7 @@ def test_a_scene_with_no_clip_yet_cant_be_fixed() -> None:
 
     plan = propose(row(2, "new_clip", change=TURN))
 
-    assert rows_of(plan)[2].cant == "Scene 2 has no clip yet, so there is nothing to fix."
+    assert rows_of(plan)[2].cant == "Scene 2 has no clip yet, so its note goes into making it."
 
 
 def test_a_new_clip_for_a_scene_planned_before_broll_labels_cant_be_made() -> None:

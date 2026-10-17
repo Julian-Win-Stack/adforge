@@ -346,19 +346,52 @@ class SortMessage(Tool):
     name: ClassVar[str] = "sort_message"
 
     kind: Literal["fix_note", "not_a_fix", "yes", "no", "go_ahead"]
+    scenes: list[int] = Field(
+        default_factory=list,
+        description="For go_ahead: the scenes whose failed fix check it says to carry on. "
+        "Needed when more than one waits.",
+    )
 
     def run(self, call: ToolCall) -> str:
         round = _round.get()
-        if self.kind in ("yes", "no") and fix_plans.open_plan(round.session) is None:
+        if self.kind == "go_ahead":
+            _gone_ahead(round, self.scenes)
+        waiting = fix_plans.open_plan(round.session)
+        if self.kind in ("yes", "no") and waiting is None:
             raise Refused("no plan is waiting for the shop owner's answer.")
-        if self.kind == "go_ahead" and not run_plan.held_on_a_check(
-            round.session, before=round.said[-1].seq
-        ):
-            raise Refused("no fix check is waiting for the shop owner's go ahead.")
+        if self.kind == "yes" and waiting is not None and not run_plan.runs_something(waiting):
+            raise Refused(
+                "the plan waiting has nothing to run, so a yes answers its question or "
+                "agrees with it: sort it as fix_note, or not_a_fix."
+            )
         sorted_as = f"{_sorted_as(round.said[-1])}{self.kind}."
         if self.kind == "fix_note":
             return f"{sorted_as} Look at what you need, then decide."
         return f"{sorted_as} You are done."
+
+
+def _gone_ahead(round: _Round, scenes: Sequence[int]) -> None:
+    """Refuse a go ahead naming `scenes` when no fix check waits, or it is unclear which
+    scenes it carries on (flow step 9: go ahead continues that scene). Naming none is the
+    one scene waiting."""
+    held = run_plan.held_on_a_check(round.session, before=round.said[-1].seq)
+    if not held:
+        raise Refused("no fix check is waiting for the shop owner's go ahead.")
+    waiting = sorted({row.scene.number for row in held})
+    if not scenes and len(waiting) > 1:
+        raise Refused(
+            f"fix checks wait on {_scenes(waiting)}: name the scenes they say "
+            "go ahead to. A message that also asks to change one of them is a fix_note."
+        )
+    if unknown := sorted(set(scenes) - set(waiting)):
+        raise Refused(f"no fix check waits on {_scenes(unknown)}; they wait on {_scenes(waiting)}.")
+
+
+def _scenes(numbers: Sequence[int]) -> str:
+    """ "scene 2", or "scenes 2 and 3"."""
+    if len(numbers) == 1:
+        return f"scene {numbers[0]}"
+    return f"scenes {', '.join(str(number) for number in numbers[:-1])} and {numbers[-1]}"
 
 
 class LookAtPicture(Tool):
@@ -749,7 +782,10 @@ def _outcome(round: _Round) -> Outcome | None:
         assert plan is not None, "sort_message refuses yes or no with no plan waiting"
         return Yes(plan) if kind == "yes" else No(plan)
     if kind == "go_ahead":
-        return GoAhead(tuple(run_plan.held_on_a_check(round.session, before=round.said[-1].seq)))
+        # The scenes sort_message checked when it was called.
+        scenes = sorting.arguments.get("scenes") or []
+        held = run_plan.held_on_a_check(round.session, before=round.said[-1].seq)
+        return GoAhead(tuple(row for row in held if not scenes or row.scene.number in scenes))
     decided = round.done().filter(tool=Decide.name, created_at__gt=sorting.created_at).last()
     if decided is None:
         return None
