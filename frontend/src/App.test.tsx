@@ -830,6 +830,37 @@ test("a later clip for a scene replaces the card's clip, and the old one stays o
   expect(within(sceneCard(2)).queryByText("Previous clip")).toBeNull();
 });
 
+test("a scene's card names the version it shows, the one gone back to too", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  const user = await openSession("Mug ad");
+  const versioned = (url: string, version: string): Attachment[] => [
+    { position: 1, kind: "video", url, scene: 2, version },
+  ];
+  backend.agentSays("", versioned("/media/c2-a.mp4", "v1 first version"), {
+    scene: 2,
+    kind: "clip",
+    state: "made",
+  });
+  backend.agentSays("", versioned("/media/c2-b.mp4", "v2 black toilet"), {
+    scene: 2,
+    kind: "clip",
+    state: "made",
+  });
+  await nextPoll();
+  await within(sceneCard(2)).findByText("v2 black toilet");
+
+  await user.click(within(sceneCard(2)).getByRole("button", { name: "Previous" }));
+  expect(within(sceneCard(2)).getByText("v1 first version")).toBeDefined();
+  await user.click(within(sceneCard(2)).getByRole("button", { name: "Latest" }));
+
+  // Going back shows the earlier clip again, as a version of its own.
+  backend.agentSays("", versioned("/media/c2-a.mp4", "v3 back to v1"), null);
+  await nextPoll();
+  await within(sceneCard(2)).findByText("v3 back to v1");
+  expect(sceneCardsShown()).toEqual([["Scene 2", "/media/c2-a.mp4"]]);
+});
+
 test("a scene with a picture and no clip yet shows the picture, and its clip once made", async () => {
   const backend = fakeBackend();
   backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);

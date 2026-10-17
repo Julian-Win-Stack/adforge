@@ -310,6 +310,11 @@ class Scene(models.Model):
             self.status = self.Status.PLANNED
         return bool(planned)
 
+    def photos_in_use(self) -> models.QuerySet[ReferencePhoto]:
+        """The shop owner's photos the scene uses now, which go with its later steps: those no
+        fix dropped and no going back set aside."""
+        return self.reference_photos.filter(dropped_by__isnull=True, set_aside_at__isnull=True)
+
     def change_line(
         self, line: str, shows: str | None = None, *, broll: dict[str, Any] | None = None
     ) -> None:
@@ -590,7 +595,9 @@ class ReferencePhoto(models.Model):
     photo, CONTEXT.md): the one thing to take from it, and a clean picture of only that thing,
     drawn from it once and sent in its place. It stays with the scene for every later fix, its
     starting pictures and its clips alike, until a fix the shop owner said yes to drops it or
-    replaces it with a newer photo of the same thing (Julian 2026-10-15, D1 and D3)."""
+    replaces it with a newer photo of the same thing (Julian 2026-10-15, D1 and D3), or going
+    back sets it aside: then the scene uses the photos the version gone back to was made with
+    (fix redesign, decision 8)."""
 
     class Use(models.TextChoices):
         # The thing is in the starting picture, or should be from the start: drawn into it.
@@ -620,6 +627,12 @@ class ReferencePhoto(models.Model):
         blank=True,
         related_name="+",
         help_text="The fix that dropped it or replaced it. Blank while the scene uses it.",
+    )
+    set_aside_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When going back to a version made without it set it aside. Blank while the "
+        "scene uses it, and again once going back to a version made with it.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -953,6 +966,19 @@ class ProducedItem(models.Model):
         db_default="",
         help_text="For a remade clip, the video prompt written for it from what the judge saw "
         "wrong.",
+    )
+    change = models.TextField(
+        blank=True,
+        db_default="",
+        help_text="For a starting picture or clip, the change it was made for, in the shop "
+        'owner\'s words, as its scene version\'s label ("black toilet"), or "back to v2" for '
+        "one brought back by going back. Blank for the ad's first making.",
+    )
+    back_to = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="For a starting picture or clip brought back by going back, the scene "
+        "version gone back to. Blank otherwise.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

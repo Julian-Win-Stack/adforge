@@ -1095,6 +1095,15 @@ button:disabled {
   white-space: nowrap;
 }
 
+.scene-version-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
 .scene-swap {
   margin-left: auto;
   padding: 2px 8px;

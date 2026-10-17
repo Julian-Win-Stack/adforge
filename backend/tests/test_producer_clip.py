@@ -227,7 +227,13 @@ def test_the_clip_is_made_in_the_background_from_the_picture_and_the_audio_heard
     shown = [m for m in after if m["attachments"]]
     assert [(m["role"], m["text"]) for m in shown] == [("agent", "")]
     assert shown[0]["attachments"] == [
-        {"position": 1, "kind": "video", "url": f"/media/{clip.file}", "scene": 1}
+        {
+            "position": 1,
+            "kind": "video",
+            "url": f"/media/{clip.file}",
+            "scene": 1,
+            "version": "v1 first version",
+        }
     ]
     # The clip's own message says the step that started has ended with it.
     assert clip_signals(api, session_id)[1:] == [

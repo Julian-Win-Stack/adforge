@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from django.conf import settings
 from django.db import connection, transaction
 from django.db.models import Max, Q, QuerySet
+from django.utils import timezone
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown, with_retries
@@ -2177,7 +2178,14 @@ def _keep_picture(step: SceneStep, file: str) -> ProducedItem:
         kind=ProducedItem.Kind.STARTING_PICTURE,
         version=_next_version(scene, ProducedItem.Kind.STARTING_PICTURE),
         file=file,
+        change=change_made_for(step),
     )
+
+
+def change_made_for(step: SceneStep) -> str:
+    """The change a starting picture or clip `step` makes is made for, in the shop owner's
+    words, as its version's label: its fix's. Blank for the ad's first making."""
+    return step.fix.fix if step.fix is not None else ""
 
 
 def make_line_audio(step: SceneStep) -> ProducedItem:
@@ -2548,15 +2556,19 @@ def _make_clip(step: SceneStep, *, remake: int = 0, motion: str = "") -> Produce
             picture=picture,
             remake=remake or None,
             motion_prompt=motion,
+            change=change_made_for(step),
         )
         Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
     return clip
 
 
-def bring_back_clip(clip: ProducedItem) -> ProducedItem:
+def bring_back_clip(
+    clip: ProducedItem, *, picture: ProducedItem | None = None, back_to: int | None = None
+) -> ProducedItem:
     """Make an earlier clip the scene's clip again, as its next version: the same file, step,
-    picture, audio and judge's ruling, with nothing made or paid for again (#132 review, M1).
-    The scene is finished, as it was when the clip was made."""
+    picture, audio, judge's ruling and change, with nothing made or paid for again (#132
+    review, M1). The scene is finished, as it was when the clip was made. Going back to
+    scene version `back_to` gives it the `picture` brought back with it, and says so."""
     scene = clip.scene
     assert scene is not None, "a clip belongs to a scene"
     with transaction.atomic():
@@ -2569,19 +2581,24 @@ def bring_back_clip(clip: ProducedItem) -> ProducedItem:
             file=clip.file,
             seconds=clip.seconds,
             made_from=clip.made_from,
-            picture=clip.picture,
+            picture=picture or clip.picture,
             ruling=clip.ruling,
+            change=_gone_back(back_to) or clip.change,
+            back_to=back_to,
         )
         Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
     return again
 
 
-def bring_back_picture(picture: ProducedItem) -> tuple[ProducedItem, bool]:
+def bring_back_picture(
+    picture: ProducedItem, *, back_to: int | None = None
+) -> tuple[ProducedItem, bool]:
     """Make an earlier starting picture the scene's starting picture again, as its next
-    version: the same file and step, so the same photo and prompts, with nothing made, judged
-    or paid for again (#143, as `bring_back_clip`). Like any new picture, it plans a finished
-    scene again: its clip shows the picture before it (#133). Gives the picture brought back,
-    and whether its scene was finished."""
+    version: the same file, step and change, so the same photo and prompts, with nothing made,
+    judged or paid for again (#143, as `bring_back_clip`). Like any new picture, it plans a
+    finished scene again: its clip shows the picture before it (#133). Going back to scene
+    version `back_to` says so. Gives the picture brought back, and whether its scene was
+    finished."""
     scene = picture.scene
     assert scene is not None, "a starting picture belongs to a scene"
     with transaction.atomic():
@@ -2592,8 +2609,209 @@ def bring_back_picture(picture: ProducedItem) -> tuple[ProducedItem, bool]:
             kind=ProducedItem.Kind.STARTING_PICTURE,
             version=_next_version(scene, ProducedItem.Kind.STARTING_PICTURE),
             file=picture.file,
+            change=_gone_back(back_to) or picture.change,
+            back_to=back_to,
         )
         return again, scene.plan_again()
+
+
+def _gone_back(back_to: int | None) -> str:
+    """The change going back to scene version `back_to` is, as its label: "back to v2"."""
+    return f"back to v{back_to}" if back_to is not None else ""
+
+
+# --- A scene's versions, and going back to one (fix redesign, decisions 8 and 17) ----------
+
+
+@dataclass(frozen=True)
+class Version:
+    """One version of a scene, as the shop owner was shown it: a starting picture and the clip
+    made from it, numbered from 1 in the order shown. A new picture starts one, its clip to
+    come; a new clip of the same picture is one of its own. A clip the judge failed and code
+    made again isn't one, unless it was kept. The line lives on its own: a version keeps the
+    line its clip says, or its picture was made for (Julian 2026-10-16 22:39, "the picture is
+    a picture and the line is a line")."""
+
+    number: int
+    # The change it was made for, in the shop owner's words; blank for the first making.
+    change: str
+    # None for a B-roll scene made from example pictures, which has none.
+    picture: ProducedItem | None
+    # None until its clip is made.
+    clip: ProducedItem | None
+    # For a version brought back by going back, the version gone back to.
+    back_to: int | None
+
+    @property
+    def label(self) -> str:
+        """How the shop owner and the agent deciding fixes see it named: "v1 first version",
+        then the change it was made for, as "v2 black toilet" (decision 17)."""
+        return f"v{self.number} {self.change or 'first version'}"
+
+    @property
+    def line(self) -> str:
+        """The line its clip says, or its picture was made for while it has no clip."""
+        made = self.clip or self.picture
+        return made.step.line if made is not None and made.step is not None else ""
+
+
+def versions(scene: Scene, *, landing: ProducedItem | None = None) -> list[Version]:
+    """The scene's versions, oldest first: each starting picture it was shown and each clip
+    kept, in the order made, a clip joining the version of its picture until that has one. A
+    step still running has shown nothing yet, but `landing`, what a step is about to show."""
+    shown = [
+        made
+        for made in scene.produced.filter(
+            kind__in=[ProducedItem.Kind.STARTING_PICTURE, ProducedItem.Kind.CLIP]
+        )
+        .select_related("step", "picture")
+        .order_by("created_at", "id")
+        if made == landing or _was_shown(made)
+    ]
+    found: list[Version] = []
+    for made in shown:
+        last = found[-1] if found else None
+        if made.kind == ProducedItem.Kind.STARTING_PICTURE:
+            found.append(Version(len(found) + 1, made.change, made, None, made.back_to))
+        elif (
+            last is not None
+            and last.clip is None
+            and last.picture is not None
+            and made.picture is not None
+            and made.picture.file == last.picture.file
+        ):
+            # A clip brought back with an earlier picture is still of the picture shown.
+            found[-1] = Version(last.number, last.change, last.picture, made, last.back_to)
+        else:
+            found.append(Version(len(found) + 1, made.change, made.picture, made, made.back_to))
+    return found
+
+
+def _was_shown(made: ProducedItem) -> bool:
+    """Whether the shop owner was shown a scene's starting picture or clip: one its step
+    finished with. Of a clip step's clip and the remakes the judge failed it into, only the
+    one kept was, unless an earlier one kept was brought back on top (`_auto_fixed`)."""
+    step = made.step
+    if step is None:
+        return True
+    if step.status != SceneStep.Status.FINISHED:
+        return False
+    if made.kind != ProducedItem.Kind.CLIP:
+        return True
+    tries = _clip_tries(step)
+    if made not in tries:
+        # Brought back: by the auto-fix, or as an earlier note's clip again.
+        return True
+    if len(tries) == 1:
+        return True
+    failed = [auto_fix.failed_answers(clip.ruling or {"verdict": "pass"}) for clip in tries]
+    return made == tries[-1] and auto_fix.clip_to_keep(failed) == len(tries) - 1
+
+
+def version_label(made: ProducedItem) -> str:
+    """The label of the scene version a starting picture or clip about to be shown is in."""
+    assert made.scene is not None, "a starting picture or clip belongs to a scene"
+    return next(
+        (
+            version.label
+            for version in reversed(versions(made.scene, landing=made))
+            if made in (version.picture, version.clip)
+        ),
+        "",
+    )
+
+
+class NoSuchVersion(Exception):
+    """Going back to a version the scene doesn't have."""
+
+
+class SceneBusy(Exception):
+    """Going back while the scene's starting picture or clip is being made, which would land
+    on top of what was brought back."""
+
+
+@dataclass(frozen=True)
+class GoneBack:
+    # The new top version: the picture brought back, and the clip too unless it is to make.
+    version: Version
+    # Whether its clip must be made from its picture, with the scene's line as it stands:
+    # paid, through the clip step and its judge as any clip. The scene is planned until then.
+    clip_to_make: bool
+
+
+def go_back(scene: Scene, number: int) -> GoneBack:
+    """Make the scene's version `number` its newest again, as a new top version, the
+    original too (decision 8, Julian 2026-10-16 22:40): its starting picture brought back,
+    free, and its clip too when it still says the scene's line as it stands, so nothing is
+    made, checked or paid for. When the line changed since, only the picture is brought back
+    and the scene waits for a clip made from it. The scene's photos in use become those the
+    version was made with, so a photo dropped is a version gone back to. The chat is shown
+    what was brought back. Refuses a version the scene doesn't have, and while the scene's
+    picture or clip is being made."""
+    with transaction.atomic():
+        Scene.objects.select_for_update().get(pk=scene.pk)
+        if scene.steps.filter(
+            kind__in=[SceneStep.Kind.STARTING_PICTURE, SceneStep.Kind.CLIP],
+            status=SceneStep.Status.RUNNING,
+        ).exists():
+            raise SceneBusy(f"scene {scene.number}'s picture or clip is still being made")
+        made = versions(scene)
+        if not 1 <= number <= len(made):
+            raise NoSuchVersion(f"scene {scene.number} has versions 1 to {len(made)}, not {number}")
+        earlier = made[number - 1]
+        _use_the_photos_of(scene, earlier)
+        picture = (
+            bring_back_picture(earlier.picture, back_to=number)[0]
+            if earlier.picture is not None
+            else None
+        )
+        free = earlier.clip is not None and _says_the_line_as_it_stands(scene, earlier.clip)
+        if earlier.clip is not None and free:
+            clip = bring_back_clip(earlier.clip, picture=picture, back_to=number)
+        else:
+            clip = None
+            scene.plan_again()
+        top = versions(scene)[-1]
+        if scene.job.session is not None:
+            messages.add(
+                scene.job.session,
+                role=Message.Role.AGENT,
+                carrying=[
+                    messages.AttachedFile(kind, made.file, scene.number, top.label)
+                    for kind, made in (
+                        (Attachment.Kind.PICTURE, picture),
+                        (Attachment.Kind.VIDEO, clip),
+                    )
+                    if made is not None
+                ],
+            )
+    return GoneBack(top, clip_to_make=not free)
+
+
+def _says_the_line_as_it_stands(scene: Scene, clip: ProducedItem) -> bool:
+    """Whether `clip` still says the scene's line, in the person's voice, and was made for
+    what the scene shows: the clip the ad is assembled from, if it were the newest."""
+    audio = clip.made_from
+    return (
+        audio is not None
+        and audio.made_from == latest(scene.job, ProducedItem.Kind.VOICE)
+        and scene.produced.filter(
+            pk=clip.pk, **SceneStep.made_for(scene, through="step__")
+        ).exists()
+    )
+
+
+def _use_the_photos_of(scene: Scene, version: Version) -> None:
+    """Have the scene use the shop owner's photos `version` was made with, and only those:
+    any used since is set aside, and any dropped since is used again."""
+    rows = {
+        row.pk
+        for made in (version.picture, version.clip)
+        if made is not None and made.step is not None
+        for row in made.step.reference_photos.all()
+    }
+    scene.photos_in_use().exclude(pk__in=rows).update(set_aside_at=timezone.now())
+    scene.reference_photos.filter(pk__in=rows).update(set_aside_at=None, dropped_by=None)
 
 
 def _rewrite_motion_prompt(step: SceneStep) -> None:

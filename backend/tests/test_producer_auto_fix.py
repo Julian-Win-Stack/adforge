@@ -765,3 +765,19 @@ def test_a_remake_with_the_fewest_failed_answers_is_brought_back_as_the_scenes_c
         "times, and it failed each remake too. The clip kept is remake 1, the one with the "
         f'fewest faults, and the judge still sees: "{SPINS}" Scene 2 is finished.'
     ) in step.result
+
+
+# --- Versions (fix redesign, decision 8) --------------------------------------------------
+
+
+def test_a_remade_clip_is_its_pictures_version_and_the_failed_try_is_none(
+    remade_once: SceneStep,
+) -> None:
+    (version,) = work.versions(remade_once.scene)
+    kept = ProducedItem.objects.get(kind="clip", version=2)
+    assert (version.label, version.clip) == ("v1 first version", kept)
+
+
+def test_an_earlier_try_kept_is_the_version_as_brought_back(remade_twice: SceneStep) -> None:
+    (version,) = work.versions(remade_twice.scene)
+    assert version.clip == ProducedItem.objects.get(kind="clip", version=4)

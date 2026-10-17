@@ -129,6 +129,8 @@ function SceneCardView({
   const onPrevious = showPrevious && previous !== null;
   const clip = onPrevious ? previous : latest;
   const name = `Scene ${card.scene}`;
+  // Which version the card shows, as the owner and the fix plan name it.
+  const version = (clip ? clip.file.version : card.picture?.version) || null;
 
   let status: string | null = null;
   let tone = "";
@@ -181,6 +183,7 @@ function SceneCardView({
       </div>
       <div className="scene-foot">
         <span className="scene-name">{name}</span>
+        {version && <span className="scene-version-label">{version}</span>}
         {previous && (
           <button
             className="scene-swap"

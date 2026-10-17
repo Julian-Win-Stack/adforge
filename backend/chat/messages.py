@@ -16,11 +16,13 @@ NAME_LENGTH = 80
 
 class AttachedFile(NamedTuple):
     """A file for a message to carry. It is already in the file store. `scene` is the
-    number of the scene it is the starting picture or clip of, if any."""
+    number of the scene it is the starting picture or clip of, if any, and `version` the
+    label of the scene version it is shown as."""
 
     kind: Attachment.Kind
     file: str
     scene: int | None = None
+    version: str = ""
 
 
 class StepSignal(NamedTuple):
@@ -82,6 +84,7 @@ def add(
                 kind=attached.kind,
                 file=attached.file,
                 scene=attached.scene,
+                version=attached.version,
             )
             for position, attached in enumerate(carrying, start=1)
         )

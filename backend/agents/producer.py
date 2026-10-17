@@ -53,6 +53,7 @@ from jobs.work import (
     run_checks,
     save_photos,
     use_music_again,
+    version_label,
     why_the_checks_havent_passed,
     why_the_checks_passed,
 )
@@ -790,7 +791,11 @@ def _already_made_picture(call: ToolCall, scene: Scene, made: SceneStep, fix: Fi
         messages.add(
             call.session,
             role=Message.Role.AGENT,
-            carrying=[messages.AttachedFile(Attachment.Kind.PICTURE, again.file, scene.number)],
+            carrying=[
+                messages.AttachedFile(
+                    Attachment.Kind.PICTURE, again.file, scene.number, version_label(again)
+                )
+            ],
         )
     unfinished = (
         f" Scene {scene.number} is no longer finished: make its clip from this picture."
@@ -1066,7 +1071,12 @@ class MakeClip(Tool):
                         call.session,
                         role=Message.Role.AGENT,
                         carrying=[
-                            messages.AttachedFile(Attachment.Kind.VIDEO, again.file, scene.number)
+                            messages.AttachedFile(
+                                Attachment.Kind.VIDEO,
+                                again.file,
+                                scene.number,
+                                version_label(again),
+                            )
                         ],
                     )
                 back = f" It is the scene's clip again, as version {again.version}."
@@ -1678,7 +1688,7 @@ def _joined(job: Job, planned: list[Planned]) -> tuple[list[Planned], list[str]]
 
 def _photos_in_use(scene: Scene) -> QuerySet[ReferencePhoto]:
     """The shop owner's photos the scene uses now, oldest first."""
-    return scene.reference_photos.filter(dropped_by__isnull=True)
+    return scene.photos_in_use()
 
 
 def _no_more_than_most_photos(planned: Planned) -> None:
