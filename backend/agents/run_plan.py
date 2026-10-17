@@ -10,6 +10,7 @@ shop owner said go ahead to its failed fix check. The worker calls `step_finishe
 `step_failed` for each step a plan started, and `carry_on_scene` after any other step, so a
 scene busy at the yes is run once it is free."""
 
+import logging
 from collections.abc import Sequence
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
@@ -19,7 +20,6 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from chat.models import Session
-from gateway import catalog
 from jobs import reference_photos, work
 from jobs.checks import LONGEST_BROLL_LINE_SECONDS, LONGEST_LINE_SECONDS
 from jobs.fix_plans import PlanCant, propose
@@ -36,7 +36,7 @@ from jobs.models import (
 )
 
 from . import step_signals
-from .loop import Refused
+from .loop import Refused, why_it_failed
 from .models import SystemNote, ToolCall
 from .money import dollars
 from .producer import (
@@ -46,17 +46,18 @@ from .producer import (
     _clip_estimate,
     _current_picture,
     _estimate,
-    _picture_only_estimate_usd,
+    _listed,
     _seconds_to_say,
     _use_the_photos,
     assemble_the_ad,
 )
 
+logger = logging.getLogger(__name__)
+
 __all__ = [
     "FIX_PLAN",
     "carry_on_scene",
     "check_and_propose",
-    "dollars",
     "go_ahead",
     "run_after_yes",
     "step_failed",
@@ -221,7 +222,8 @@ def _row_estimate(row: FixPlanScene, counted: set[tuple[str, str]]) -> Estimate:
             return Estimate(Decimal(0), Decimal(0))
         return _quantized(_clip_estimate(scene, _audio_seconds(scene), from_note=False))
     if row.action == Action.NEW_LINE:
-        estimate = _line_estimate(scene, row.line)
+        # Today's line fix holds its new line in quotes.
+        estimate = _estimate(scene, Fix.Redo.LINE, f'"{row.line}"')
     else:
         estimate = _estimate(scene, _REDO[Action(row.action)], row.change)
     clean = Decimal(0)
@@ -236,19 +238,6 @@ def _row_estimate(row: FixPlanScene, counted: set[tuple[str, str]]) -> Estimate:
         counted.add(key)
         clean += CLEAN_PICTURE_USD
     return Estimate(estimate.about + clean, estimate.up_to + clean)
-
-
-def _line_estimate(scene: Scene, line: str) -> Estimate:
-    """What a new line for the scene, then its starting picture, audio, transcript and clip,
-    is estimated to cost: as the producer's own estimate of a line fix."""
-    seconds = _seconds_to_say(scene, line)
-    rest = (
-        _picture_only_estimate_usd(scene)
-        + catalog.speech_cost_usd(catalog.MODEL_FOR_PURPOSE["speak_line"], len(line))
-        + catalog.transcription_cost_usd(catalog.MODEL_FOR_PURPOSE["transcribe_line"], seconds)
-    )
-    clip = _clip_estimate(scene, seconds, from_note=False)
-    return _quantized(Estimate(rest + clip.about, rest + clip.up_to))
 
 
 def _quantized(estimate: Estimate) -> Estimate:
@@ -380,7 +369,9 @@ def _uses(photo: dict[str, Any]) -> list[ReferencePhoto.Use]:
 
 
 def _started(rows: list[FixPlanScene]) -> str:
-    made = [f"scene {row.scene.number}'s {_made(row)}" for row in rows if row.action != "go_back"]
+    made = [
+        f"scene {row.scene.number}'s {_made(row)}" for row in rows if row.action != Action.GO_BACK
+    ]
     told = ["The shop owner said yes to the plan:"]
     if made:
         told.append(f"{_listed(made)} {'is' if len(made) == 1 else 'are'} being made.")
@@ -428,6 +419,8 @@ def step_finished(step: SceneStep, check: FixCheck | None) -> None:
         _note(row.plan, SystemNote.Kind.CHECK_FAILED, _check_failed(row, check))
     _carry_on(row)
     _assemble_once_landed(row.plan)
+    # Another plan's row may have waited for this step to free the scene.
+    carry_on_scene(step.scene, but=row)
 
 
 def step_failed(step: SceneStep) -> None:
@@ -437,17 +430,19 @@ def step_failed(step: SceneStep) -> None:
     assert row is not None, "a plan's step runs one of its rows"
     _failed(row, f"Scene {row.scene.number}'s {_step_made(step)} couldn't be made: {step.reason}")
     _assemble_once_landed(row.plan)
+    carry_on_scene(step.scene, but=row)
 
 
-def carry_on_scene(scene: Scene) -> None:
-    """After a step of the scene not started by a plan finishes: a plan row waiting for the
-    scene to be free carries on."""
+def carry_on_scene(scene: Scene, *, but: FixPlanScene | None = None) -> None:
+    """After a step of the scene finishes, fails or stops: a plan row waiting for the scene
+    to be free carries on, but the row the step was for, which its step carried on itself."""
     with transaction.atomic():
         for row in FixPlanScene.objects.filter(
             scene=scene, started_at__isnull=False, landed_at__isnull=True, error=""
         ):
-            _carry_on(row)
-            _assemble_once_landed(row.plan)
+            if row != but:
+                _carry_on(row)
+                _assemble_once_landed(row.plan)
 
 
 def _carry_on(row: FixPlanScene) -> None:
@@ -469,6 +464,16 @@ def _carry_on(row: FixPlanScene) -> None:
         if running & {SceneStep.Kind.STARTING_PICTURE, SceneStep.Kind.CLIP}:
             return
         try:
+            if not row.remakes_clip and not work.go_back_is_free(scene, row.go_back_to or 0):
+                # The shop owner said yes to going back for nothing: a clip they weren't told
+                # of isn't paid for.
+                _failed(
+                    row,
+                    f"Scene {scene.number} couldn't go back to version {row.go_back_to} for "
+                    "nothing: its line changed since the plan was shown, so its clip would "
+                    "have to be made again.",
+                )
+                return
             gone = work.go_back(scene, row.go_back_to or 0)
         except work.SceneBusy:
             return
@@ -671,9 +676,50 @@ def _landed(row: FixPlanScene) -> None:
 
 
 def _failed(row: FixPlanScene, why: str) -> None:
+    """The row couldn't be made: its scene stays as it was before it, when that is free, so
+    the new ad is assembled with the scenes that landed."""
     row.error = why
     row.save(update_fields=["error"])
-    _note(row.plan, SystemNote.Kind.ERROR, why)
+    _note(row.plan, SystemNote.Kind.ERROR, " ".join(filter(None, [why, _as_it_was(row)])))
+
+
+def _as_it_was(row: FixPlanScene) -> str:
+    """Bring back the row's scene's newest version with a clip that still says its line, for
+    nothing, when the row left the scene unfinished (a new picture with no clip yet, a picture
+    gone back to whose clip couldn't be made): the ad can't be assembled without it. Nothing
+    while another row of the scene is still to land, or the scene is being made. Says what
+    was done, or blank. A new line that couldn't be finished has no such version: its scene
+    waits for the shop owner's next note."""
+    scene = Scene.objects.get(pk=row.scene_id)
+    if scene.status == Scene.Status.FINISHED:
+        return ""
+    if (
+        FixPlanScene.objects.filter(
+            scene=scene, started_at__isnull=False, landed_at__isnull=True, error=""
+        )
+        .exclude(pk=row.pk)
+        .exists()
+    ):
+        return ""
+    made = work.versions(scene)
+    back_to = next(
+        (
+            version.number
+            for version in reversed(made)
+            if version.clip is not None and work.go_back_is_free(scene, version.number)
+        ),
+        None,
+    )
+    if back_to is None:
+        return (
+            f"Scene {scene.number} has no clip that says its line as it stands, so the new ad "
+            "can't be assembled until it has one."
+        )
+    try:
+        work.go_back(scene, back_to)
+    except work.SceneBusy, work.NoSuchVersion:
+        return ""
+    return f"Scene {scene.number} went back to version {back_to}, for nothing."
 
 
 def _step_made(step: SceneStep) -> str:
@@ -717,6 +763,16 @@ def _assemble_once_landed(plan: FixPlan) -> None:
     except Refused as refused:
         _note(plan, SystemNote.Kind.ERROR, f"The new ad couldn't be assembled: {refused}")
         return
+    # Assembly failing for a reason nobody expected doesn't fail the step that landed the
+    # last scene: its clip is made and paid for (as tasks._assembled_after_fix).
+    except Exception as error:
+        logger.exception("Assembling the ad of fix plan %s failed", plan.pk)
+        _note(
+            plan,
+            SystemNote.Kind.ERROR,
+            f"The new ad couldn't be assembled: {why_it_failed(error, 'it')}",
+        )
+        return
     _note(
         plan,
         SystemNote.Kind.AD_SHOWN,
@@ -727,8 +783,3 @@ def _assemble_once_landed(plan: FixPlan) -> None:
 
 def _note(plan: FixPlan, kind: SystemNote.Kind, text: str) -> None:
     SystemNote.objects.create(session_id=plan.session_id, plan=plan, kind=kind, text=text)
-
-
-def _listed(items: list[str]) -> str:
-    """ "a", "a and b", or "a, b and c"."""
-    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
