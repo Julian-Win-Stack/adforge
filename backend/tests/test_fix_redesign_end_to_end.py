@@ -2,17 +2,19 @@
 layers 2 and 3 of decisions/fix-redesign.md section 7). One shop owner's ad, first made,
 then fixed three ways in a row: a picture note planned by the decider, run by code after the
 yes through the picture check, the fix check and the clip judge, and shown; then going back
-to the first version; then a new line. And the producer's lane: asked mid-fix, it answers
-from the notes code wrote and never asks for the yes again (decision 20)."""
+to the first version; then a new line. And the producer's lane: a question asked mid-fix is
+the producer's, given with the notes code wrote, and the fix carries on by code (decision
+20). What the producer says from them is its model's, scripted here."""
 
 from collections.abc import Callable
 
 import pytest
 from rest_framework.test import APIClient
 
-from agents.models import SystemNote, ToolCall
+from agents.models import SystemNote
 from chat.models import Message
 from gateway.fake import FakeModel, turn
+from gateway.types import Said
 from jobs import work
 from jobs.models import FixCheck, Scene, SceneStep
 
@@ -129,7 +131,7 @@ def test_an_ad_is_fixed_by_a_picture_note_then_gone_back_then_given_a_new_line(
     assert producer_turns() == turns
 
 
-def test_asked_mid_fix_the_producer_answers_from_the_notes_and_never_asks_for_the_yes_again(
+def test_a_question_mid_fix_is_the_producers_with_the_notes_and_the_fix_carries_on(
     fake_model: FakeModel,
     held: HeldSteps,
     say: Callable[..., None],
@@ -146,11 +148,14 @@ def test_asked_mid_fix_the_producer_answers_from_the_notes_and_never_asks_for_th
     fake_model.respond("choose_broll_picture", BROLL_CHOICE)
     # The new picture is made and checked; its clip is still to be made.
     held.run_next()
+    fake_model.respond("decide_fixes", turn(calls=[("sort_message", {"kind": "not_a_fix"})]))
     fake_model.respond("produce", turn(says="Scene 2's new picture is done; its clip is next."))
-    calls = ToolCall.objects.filter(agent="producer").count()
 
     say("How is scene 2 coming along?")
 
+    produced = [each for each in fake_model.turns_taken if each.purpose == "produce"][-1]
+    asked = [each.text for each in produced.handoff.conversation if isinstance(each, Said)]
+    assert asked[-1] == "How is scene 2 coming along?"
     told = [
         text.split(":", 1)[1].split(".")[0].strip() for text in given_to_the_producer(fake_model)
     ]
@@ -158,13 +163,9 @@ def test_asked_mid_fix_the_producer_answers_from_the_notes_and_never_asks_for_th
         "A fix plan is shown to the shop owner, waiting for their yes",
         "The shop owner said yes to the plan: scene 2's new starting picture is being made",
     ]
-    # The producer only answered: no tool call, no new plan, no second yes asked for.
-    assert ToolCall.objects.filter(agent="producer").count() == calls
+    # Not a note: no new plan is shown, and the plan said yes to stays confirmed.
     assert plans() == [plan]
     assert not Message.objects.filter(plan_event="shown").exclude(fix_plan=plan).exists()
-    assert Message.objects.filter(role="agent").last().text == (  # type: ignore[union-attr]
-        "Scene 2's new picture is done; its clip is next."
-    )
     # The scene carries on by code once the producer has answered.
     held.run_held()
     assert status(2) == "finished"
