@@ -12,11 +12,13 @@ A case's "expect" has one entry per turn, each with any of:
 - "scene_cants_include": can'ts that must be on some scene, whichever.
 - "cants": the plan's can'ts, in any order.
 - "question": whether the plan asks the shop owner a question.
-- "routes": {"<scene>": {"<photo>": [in the picture now, more during the action]}}.
 - "clear": {"<photo>": whether the photo shows its thing clearly}.
 - "thing_has": {"<photo>": words the thing named for the photo must contain}.
 - "looks": [[tool, scene], ...] the decider must have made (for this turn or before).
-- "judge_findings": whether it called the judge's findings."""
+- "judge_findings": whether it called the judge's findings.
+
+Where a photo goes (in the picture now, more during the action) is not checked: no shop owner
+asks or sees it, and the cases check only what the owner meets (Julian, 03:26 Oct 17)."""
 
 from typing import Any
 
@@ -29,9 +31,8 @@ KINDS = {
     "scene_cants_include": "cants",
     "cants": "cants",
     "question": "question",
-    "routes": "route",
-    "clear": "route",
-    "thing_has": "route",
+    "clear": "thing",
+    "thing_has": "thing",
     "looks": "looks",
     "judge_findings": "judge_findings",
 }
@@ -80,14 +81,6 @@ def _answer(turn: dict[str, Any]) -> dict[str, Any]:
         "cants": sorted(decide.get("cants", [])),
         "things": {str(each["photo"]): each["thing"] for each in decide.get("photos", [])},
         "question": bool(plan.get("question")),
-        "routes": {
-            str(row["scene"]): {
-                str(photo["photo"]): [photo["in_picture"], photo["during_action"]]
-                for photo in row["photos"]
-            }
-            for row in rows
-            if row["photos"]
-        },
         "clear": {str(each["photo"]): each["clear"] for each in decide.get("photos", [])},
     }
 
@@ -128,12 +121,6 @@ def _same(what: str, wanted: Any, came: Any) -> bool:
         return bool(sorted(wanted) == came)
     if what == "looks":
         return all([tool, scene] in came for tool, scene in wanted)
-    if what == "routes":
-        return all(
-            came.get(scene, {}).get(photo) == answers
-            for scene, photos in wanted.items()
-            for photo, answers in photos.items()
-        )
     return bool(wanted == came)
 
 

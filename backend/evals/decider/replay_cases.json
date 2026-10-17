@@ -635,14 +635,6 @@
     "scenes_include": {
      "3": "new_picture"
     },
-    "routes": {
-     "3": {
-      "1": [
-       true,
-       false
-      ]
-     }
-    },
     "looks": [
      [
       "look_at_owner_photo",
@@ -679,14 +671,6 @@
     "outcome": "planned",
     "scenes": {
      "2": "new_clip|new_picture"
-    },
-    "routes": {
-     "2": {
-      "1": [
-       false,
-       true
-      ]
-     }
     }
    }
   ],
@@ -759,14 +743,6 @@
     "outcome": "planned",
     "scenes": {
      "3": "new_picture"
-    },
-    "routes": {
-     "3": {
-      "1": [
-       true,
-       false
-      ]
-     }
     }
    },
    {
@@ -999,14 +975,6 @@
     "outcome": "planned",
     "scenes": {
      "3": "new_clip|new_picture"
-    },
-    "routes": {
-     "3": {
-      "1": [
-       false,
-       true
-      ]
-     }
     },
     "looks": [
      [

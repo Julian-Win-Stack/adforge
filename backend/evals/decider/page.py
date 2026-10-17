@@ -195,11 +195,7 @@ def _row(row: dict[str, Any]) -> str:
     said = row["change"] or ""
     if row["line"]:
         said += f' New line: "{row["line"]}"'
-    photos = "; ".join(
-        f"photo {p['photo']} ({p['thing']}): in the picture {'yes' if p['in_picture'] else 'no'},"
-        f" more during the action {'yes' if p['during_action'] else 'no'}"
-        for p in row["photos"]
-    )
+    photos = "; ".join(f"photo {p['photo']} ({p['thing']})" for p in row["photos"])
     cant = f" Can't: {row['cant']}" if row["cant"] else ""
     return (
         f"<li>Scene {row['scene']}: <strong>{_esc(action)}</strong>. {_esc(said)}{_esc(cant)}"

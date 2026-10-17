@@ -130,7 +130,7 @@ def test_a_case_is_played_and_everything_it_did_is_kept(
             {
                 "outcome": "planned",
                 "scenes": {"2": "new_picture"},
-                "routes": {"2": {"1": [True, True]}},
+                "thing_has": {"1": "white"},
                 "looks": [["look_at_picture", 2]],
                 "judge_findings": False,
             },
@@ -203,12 +203,12 @@ def test_a_case_is_played_and_everything_it_did_is_kept(
     assert "Scene 2: shows the product" in given[0]["the_ad"]
     assert json.loads((folder / "case.json").read_text()) == case
     assert json.loads((folder / "result.json").read_text()) == result
-    # Its answers are checked against the expected ones: the route here differs.
+    # Its answers are checked against the expected ones: the thing named here differs.
     checks = {(check["turn"], check["what"]): check["same"] for check in result["checks"]}
     assert checks == {
         (1, "outcome"): True,
         (1, "scenes"): True,
-        (1, "routes"): False,
+        (1, "thing_has"): False,
         (1, "looks"): True,
         (1, "judge_findings"): True,
         (2, "outcome"): True,
