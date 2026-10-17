@@ -719,6 +719,7 @@ def test_a_new_line_keeps_the_picture_and_one_with_a_visual_change_is_a_new_pict
     told = " ".join(decider.INSTRUCTIONS.split())
     assert "A new line keeps the scene's starting picture" in told
     assert "a new picture with the new line" in told
+    assert "its change says only what must look different on screen" in told
 
 
 def test_a_photos_thing_found_in_no_scene_is_asked_about(fake_model: FakeModel, ad: Job) -> None:
