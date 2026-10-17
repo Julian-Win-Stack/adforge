@@ -64,11 +64,15 @@ def propose(
 ) -> FixPlan:
     """Record a plan from the shop owner's notes of this round, with `scenes` (unsaved rows,
     one per scene that changes or can't) and the `cants` that aren't about one scene, waiting
-    for their answer. A plan still waiting in the chat is replaced by it."""
+    for their answer. A plan still waiting in the chat is replaced by it. Refuses a row that
+    doesn't fit its action or isn't this ad's, and a can't of no known kind, before anything is
+    written."""
     assert job.session is not None, "a fix plan is shown in the job's chat"
     for cant in cants:
-        if cant["kind"] not in FixPlan.Cant.values:
+        if set(cant) != {"kind", "text"} or cant["kind"] not in FixPlan.Cant.values:
             raise ValueError(f"{cant['kind']!r} isn't a kind of can't a plan has")
+    for scene in scenes:
+        _check(job, scene)
     with transaction.atomic():
         # The chat is locked, so two plans proposed at once can't both stay open.
         session = Session.objects.select_for_update().get(pk=job.session.pk)
@@ -82,6 +86,29 @@ def propose(
             scene.plan = plan
         FixPlanScene.objects.bulk_create(scenes)
     return plan
+
+
+PHOTO_KEYS = frozenset({"photo", "file", "thing", "in_picture", "during_action"})
+
+
+def _check(job: Job, row: FixPlanScene) -> None:
+    """A row is one of this ad's scenes, carries the new line only for a new line and the
+    version only for a go back, and each photo in the shape the notice and the steps read."""
+    number = row.scene.number
+    if row.scene.job_id != job.pk:
+        raise ValueError(f"Scene {number} is another ad's.")
+    if row.action not in FixPlanScene.Action.values:
+        raise ValueError(f"Scene {number}: no such action {row.action!r}.")
+    if (row.action == FixPlanScene.Action.NEW_LINE) != bool(row.line):
+        raise ValueError(f"Scene {number}: a new line, and only a new line, carries the line.")
+    version = row.go_back_to
+    if (row.action == FixPlanScene.Action.GO_BACK) != (version is not None) or (
+        version is not None and version < 1
+    ):
+        raise ValueError(f"Scene {number}: a go back, and only a go back, names a version from 1.")
+    for photo in row.photos:
+        if set(photo) != PHOTO_KEYS:
+            raise ValueError(f"Scene {number}: a photo needs exactly {sorted(PHOTO_KEYS)}.")
 
 
 def open_plan(session: Session) -> FixPlan | None:

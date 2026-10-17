@@ -192,7 +192,7 @@ class Migration(migrations.Migration):
             name="plan_scene",
             field=models.ForeignKey(
                 blank=True,
-                help_text="The confirmed fix plan's scene the step was made for. Blank for the ad's first making and for a Fix's steps.",
+                help_text="The confirmed fix plan's scene the step was made for. Blank for the ad's first making and for a Fix's steps. Its tool call starts steps for this row only, so the row's cost is its own.",
                 null=True,
                 on_delete=django.db.models.deletion.SET_NULL,
                 related_name="steps",
