@@ -108,6 +108,7 @@ def check_and_propose(
     for row in scenes:
         row.change = " ".join(row.change.split())
         row.line = " ".join(row.line.split())
+        row.overlay = " ".join(row.overlay.split())
         # The decider's can'ts come first; a rule's is added after, never in place of it.
         row.cant = " ".join(filter(None, [row.cant, _rule_cant(row)]))
         # Whether a photo is clear is the decider's to say, and code's rule to keep: the row
@@ -692,7 +693,8 @@ def _carry_on(row: FixPlanScene) -> None:
             # The shop owner read the line and said yes: they know their product, so it
             # isn't fact checked (Julian, 2026-10-11 22:13, #138).
             scene.change_line(row.line)
-            scene.save(update_fields=["line", "shortened_from", "status"])
+            scene.overlay = row.overlay or scene.overlay
+            scene.save(update_fields=["line", "shortened_from", "status", "overlay"])
     picture = _picture(row, scene, running)
     if row.line and not _line_heard(row, scene, running):
         return

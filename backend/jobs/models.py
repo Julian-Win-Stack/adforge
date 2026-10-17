@@ -540,6 +540,11 @@ class FixPlanScene(models.Model):
         "(decision 7), never a prompt.",
     )
     line = models.TextField(blank=True, help_text="The new line, for a new line. Blank else.")
+    overlay = models.TextField(
+        blank=True,
+        help_text="The scene's new overlay, for a new line that changes what its overlay "
+        "shows, such as the price. Blank keeps the overlay.",
+    )
     go_back_to = models.PositiveIntegerField(
         null=True, blank=True, help_text="The version gone back to, for a go back. Blank else."
     )

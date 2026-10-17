@@ -1740,6 +1740,7 @@ test("a failed clip check shows both clips in its notice, and the card keeps the
 function aPlan(plan = 7, overrides: Partial<PlanNotice> = {}): PlanNotice {
   const row = {
     line: "",
+    overlay: "",
     go_back_to: null,
     cant: "",
     estimate_usd: "0.000000",
@@ -1835,6 +1836,26 @@ test("a new line is quoted in the plan", async () => {
   const [scene] = within(planNotices()[0]).getAllByRole("listitem");
   expect(scene.textContent).toContain("New line");
   expect(scene.textContent).toContain("“One wipe.”");
+});
+
+test("a new line's new overlay is shown in the plan as what goes on screen", async () => {
+  const row = aPlan().scenes[0];
+  await showAPlan(
+    aPlan(7, {
+      scenes: [
+        {
+          ...row,
+          action: "new_line",
+          change: "Say the new price.",
+          line: "Yours for $8.99.",
+          overlay: "$8.99",
+          photos: [],
+        },
+      ],
+    }),
+  );
+  const [scene] = within(planNotices()[0]).getAllByRole("listitem");
+  expect(scene.textContent).toContain("On screen: “$8.99”");
 });
 
 test("once code posts a plan, the producer's answer to the notes brings no yes of its own", async () => {

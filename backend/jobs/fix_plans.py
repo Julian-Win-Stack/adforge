@@ -40,6 +40,7 @@ class PlanNoticeScene(TypedDict):
     action: str
     change: str
     line: str
+    overlay: str
     go_back_to: int | None
     remakes_clip: bool
     cant: str
@@ -107,8 +108,8 @@ PHOTO_KEYS = frozenset({"photo", "file", "thing", "in_picture", "during_action"}
 
 def _check(job: Job, row: FixPlanScene) -> None:
     """A row is one of this ad's scenes, carries a new line for a new line, or for a new
-    picture asked for with it, and the version only for a go back, and each photo in the
-    shape the notice and the steps read."""
+    picture asked for with it, a new overlay only with a new line, the version only for a go
+    back, and each photo in the shape the notice and the steps read."""
     number = row.scene.number
     if row.scene.job_id != job.pk:
         raise ValueError(f"Scene {number} is another ad's.")
@@ -122,6 +123,8 @@ def _check(job: Job, row: FixPlanScene) -> None:
             f"Scene {number}: a new line carries the line, and only a new line or a new "
             "picture carries one."
         )
+    if row.overlay and not row.line:
+        raise ValueError(f"Scene {number}: a new overlay comes only with a new line.")
     version = row.go_back_to
     if (row.action == FixPlanScene.Action.GO_BACK) != (version is not None) or (
         version is not None and version < 1
@@ -194,6 +197,7 @@ def _scene(row: FixPlanScene) -> PlanNoticeScene:
         "action": row.action,
         "change": row.change,
         "line": row.line,
+        "overlay": row.overlay,
         "go_back_to": row.go_back_to,
         "remakes_clip": row.remakes_clip,
         "cant": row.cant,
@@ -238,6 +242,8 @@ def _in_words(shown: PlanNotice) -> str:
             said += f": {scene['change']}"
         if scene["line"]:
             said += f' New line: "{scene["line"]}"'
+        if scene["overlay"]:
+            said += f' On screen: "{scene["overlay"]}"'
         # As the chat shows it: a can't, free, or what it costs.
         if scene["cant"]:
             said += f" Can't: {scene['cant']}"

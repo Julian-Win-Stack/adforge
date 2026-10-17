@@ -105,7 +105,7 @@ def ad() -> Job:
     call = ToolCall.objects.create(
         session=session, job=job, agent="producer", tool="make_clip", call_id="c0", arguments={}
     )
-    talking = Scene.objects.create(job=job, number=1, line="Meet the gel.")
+    talking = Scene.objects.create(job=job, number=1, line="Meet the gel.", overlay="$9.99")
     _version(talking, call, 1)
     scrubbing = Scene.objects.create(
         job=job,
@@ -223,6 +223,7 @@ def test_the_decider_is_told_the_ad_and_the_note_and_doesnt_look_at_the_judge_fo
     the_ad, said, *_ = _given(fake_model, 0)
     assert "Scene 1: the person talks to camera." in the_ad.text
     assert 'Line: "One wipe and it shines."' in the_ad.text
+    assert 'Overlay: "$9.99"' in the_ad.text
     assert "How the product is used: Squeeze the gel on, scrub, rinse." in the_ad.text
     assert "The current clip's video prompt: A hand scrubs the toilet, take 2." in the_ad.text
     assert "Versions: v1 first version; v2 black toilet (the current version)" in the_ad.text
@@ -866,6 +867,26 @@ def test_a_photo_in_the_picture_and_during_the_action_needs_no_look_at_the_frame
                 ]
             ),
             "scene 1 uses photo 1, which isn't in photos with its thing.",
+        ),
+        (
+            _decided([_row(1, "new_picture", "Brighter.", overlay="$8.99")]),
+            "it was called with arguments it can't use (scenes.0: scene 1 has an overlay, but "
+            "no new line to go with it).",
+        ),
+        (
+            _decided(
+                [
+                    _row(
+                        1,
+                        "new_line",
+                        "New price.",
+                        line="Now $8.99.",
+                        overlay="Now only $8.99 " * 3,
+                    )
+                ]
+            ),
+            "it was called with arguments it can't use (scenes.0: scene 1's overlay is a few "
+            "words: 30 characters at most).",
         ),
     ],
 )

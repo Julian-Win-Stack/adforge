@@ -358,6 +358,7 @@ function PlanView({ plan, onYes }: { plan: PlanNotice; onYes: (() => Promise<voi
             </span>
             {scene.change && <span className="plan-change">{scene.change}</span>}
             {scene.line && <span className="plan-line">“{scene.line}”</span>}
+            {scene.overlay && <span className="plan-line">On screen: “{scene.overlay}”</span>}
             {scene.photos.map((photo) => (
               <span key={photo.photo} className="plan-photo">
                 Photo {photo.photo}: {photo.thing}

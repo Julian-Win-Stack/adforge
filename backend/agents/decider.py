@@ -32,7 +32,7 @@ from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.gateway import take_turn
 from gateway.types import Happened, Image, Said, Shown, ToolUse
-from jobs import clip_judge, fix_plans, work
+from jobs import clip_judge, fix_plans, planning, work
 from jobs.models import (
     FixCheck,
     FixPlan,
@@ -81,7 +81,9 @@ camera never moves. A new picture gets a new clip made from it;
 A new line keeps the scene's starting picture: plan a new picture only when the shop owner \
 asks for something different on screen. When they ask for both on one scene, it is a new \
 picture with the new line in its line, and its change says only what must look different \
-on screen, never the words to say;
+on screen, never the words to say. \
+When the scene has an overlay, the few words drawn over it such as the price, and the new \
+line changes something it shows, give the new overlay too;
 - go back to version N, when they liked an earlier version better: say which number, after \
 looking at it;
 - no change, when the scene already shows what they ask.
@@ -532,6 +534,12 @@ class SceneDecision(BaseModel):
         description="The new line word for word, for new_line, or for new_picture when the "
         "scene must also say something new. Blank otherwise."
     )
+    overlay: str = Field(
+        default="",
+        description="With a new line that changes something the scene's overlay shows, such "
+        f"as the price: the new overlay, {planning.MOST_OVERLAY_CHARACTERS} characters at "
+        "most. Blank keeps the overlay.",
+    )
     go_back_to: int | None = Field(description="The version's number, for go_back. Null otherwise.")
     cant: Literal["", "person_look", "slower", "talking_action"] = Field(
         description="What the note asks of this scene that can't be done yet. Blank for none."
@@ -547,6 +555,13 @@ class SceneDecision(BaseModel):
         if self.action not in ("new_line", "new_picture") and self.line.strip():
             raise ValueError(
                 f"scene {self.scene} has a line, but only a new line or a new picture takes one"
+            )
+        if self.overlay.strip() and not self.line.strip():
+            raise ValueError(f"scene {self.scene} has an overlay, but no new line to go with it")
+        if len(" ".join(self.overlay.split())) > planning.MOST_OVERLAY_CHARACTERS:
+            raise ValueError(
+                f"scene {self.scene}'s overlay is a few words: "
+                f"{planning.MOST_OVERLAY_CHARACTERS} characters at most"
             )
         if (self.action == "go_back") != (self.go_back_to is not None):
             raise ValueError(f"scene {self.scene}: go_back, and only go_back, takes go_back_to")
@@ -607,6 +622,7 @@ class Decide(Tool):
                     action=decided.action,
                     change=decided.change,
                     line=decided.line,
+                    overlay=decided.overlay,
                     go_back_to=decided.go_back_to,
                     cant=CANTS[decided.cant] if decided.cant else "",
                     photos=[
@@ -969,6 +985,9 @@ def _scene_facts(scene: Scene) -> str:
         prompt = _video_prompt(current.clip) if current and current.clip else ""
         if prompt:
             facts.append(f"The current clip's video prompt: {prompt}")
+    if scene.overlay:
+        # Read with the line it goes with.
+        facts.insert(2, f'Overlay: "{scene.overlay}"')
     in_use = scene.reference_photos.filter(dropped_by__isnull=True).values_list("thing", flat=True)
     if in_use:
         facts.append(f"The shop owner's photos it uses: {', '.join(in_use)}")
