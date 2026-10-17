@@ -148,6 +148,10 @@ _Avoid_: Change request, edit, revision
 What the decider plans to change in each scene from the shop owner's notes of one round, kept with those notes word for word: per scene a new starting picture, a new clip, a new line, going back to an earlier version, or no change, said in plain words, with its cost, any can't, and the shop owner's photos it uses; and at most one question for the shop owner. Shown to them in the chat and run by code once they say yes. A chat has at most one plan waiting for their answer: a newer one replaces it.
 _Avoid_: Fix list, proposal
 
+**System note**:
+What code tells the producer, in a short sentence, of a fix plan it runs: the plan shown, the fixes started, a scene done and what it cost, a failed fix check with its two versions, an error, the new ad shown. Never a picture, frames, judge words, version lists or the decider's reasoning. The shop owner isn't shown it.
+_Avoid_: Producer message, event
+
 **Fix check**:
 A judge asking a fix's complaint back about the new version it made, shown beside the old one: a new starting picture before its clip is paid for; a new clip by the clip judge itself, which on a fix's clip also sees the old clip and is asked one more question, whether the change is made, read once from the clip its remakes kept (its answer never fails the clip or remakes it); a new line is never checked. A pass carries on as before. A fail makes nothing more for the scene and assembles no ad: the chat shows the old and new versions and why, with anything the clip judge still sees, with the reason as the note the scene's card is filled with, and the producer waits for the shop owner's word. An answer that can't be had leaves it unchecked, and the fix carries on. Kept with its fix and both versions.
 _Avoid_: Fix judge, verification, QA

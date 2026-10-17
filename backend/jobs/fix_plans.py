@@ -28,6 +28,7 @@ class PlanNoticeScene(TypedDict):
     change: str
     line: str
     go_back_to: int | None
+    remakes_clip: bool
     cant: str
     estimate_usd: str
     estimate_up_to_usd: str
@@ -137,6 +138,7 @@ def _scene(row: FixPlanScene) -> PlanNoticeScene:
         "change": row.change,
         "line": row.line,
         "go_back_to": row.go_back_to,
+        "remakes_clip": row.remakes_clip,
         "cant": row.cant,
         "estimate_usd": _amount(row.estimate_usd),
         "estimate_up_to_usd": _amount(row.estimate_up_to_usd),
