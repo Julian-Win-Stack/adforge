@@ -7,6 +7,9 @@ export type Attachment = {
   kind: "picture" | "sound" | "video";
   url: string;
   scene: number | null;
+  /** For a scene's starting picture or clip, the label of the scene version it is shown as,
+   * such as "v2 black toilet"; blank otherwise. */
+  version?: string;
 };
 
 /** What a message says of a scene's starting picture or clip: a notice that it started, the

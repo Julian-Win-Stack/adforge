@@ -971,7 +971,7 @@ FINISHING_STEP = (
 )
 
 
-def said_yes_to_a_fix(scene: int, fix: str, redo: Literal["clip", "picture"]) -> Fix:
+def said_yes_to_a_fix(scene: int, fix: str, redo: Literal["clip", "picture", "line"]) -> Fix:
     """The shop owner said yes, with their last message, to `fix` restated as scene `scene`'s
     fix, as after restate_fix and their answer, so a redo with it as its note passes the yes
     guard (#135). For tests about the redo rather than the guard; the restating is recorded

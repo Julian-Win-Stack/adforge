@@ -29,7 +29,7 @@ class AttachmentSerializer(serializers.ModelSerializer[Attachment]):
 
     class Meta:
         model = Attachment
-        fields = ["position", "kind", "url", "scene"]
+        fields = ["position", "kind", "url", "scene", "version"]
 
     def get_url(self, attachment: Attachment) -> str:
         return file_store.url(attachment.file)

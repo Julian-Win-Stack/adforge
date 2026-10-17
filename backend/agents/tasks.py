@@ -29,6 +29,7 @@ from jobs.work import (
     say_the_pictures_kept_failing,
     too_long_for_a_clip,
     transcribe_line_audio,
+    version_label,
     what_the_judge_did,
 )
 
@@ -298,7 +299,11 @@ STEP_WORK = {
         make=make_starting_picture,
         finished=_picture_finished,
         shown=lambda step, picture: (
-            [messages.AttachedFile(Attachment.Kind.PICTURE, picture.file, step.scene.number)]
+            [
+                messages.AttachedFile(
+                    Attachment.Kind.PICTURE, picture.file, step.scene.number, version_label(picture)
+                )
+            ]
             if picture
             else []
         ),
@@ -320,7 +325,11 @@ STEP_WORK = {
         make=make_clip,
         finished=_clip_finished,
         shown=lambda step, clip: (
-            [messages.AttachedFile(Attachment.Kind.VIDEO, clip.file, step.scene.number)]
+            [
+                messages.AttachedFile(
+                    Attachment.Kind.VIDEO, clip.file, step.scene.number, version_label(clip)
+                )
+            ]
             if clip
             else []
         ),

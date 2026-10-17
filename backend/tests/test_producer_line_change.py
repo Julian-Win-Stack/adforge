@@ -793,7 +793,7 @@ def test_a_line_fix_with_no_earlier_picture_or_clip_fix_said_yes_to_says_nothing
     earlier: str | None,
 ) -> None:
     if earlier == "a line said yes to":
-        said_yes_to_a_fix(3, 'In scene 3, she says "Only $24."', "line")  # type: ignore[arg-type]
+        said_yes_to_a_fix(3, 'In scene 3, she says "Only $24."', "line")
     if earlier == "a picture not said yes to":
         owner_says(
             fake_model,
