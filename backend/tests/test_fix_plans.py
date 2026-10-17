@@ -173,6 +173,7 @@ def test_a_plan_with_every_kind_of_change_reads_back_as_the_chat_shows_it() -> N
         ],
     }
     # What the owner wrote is kept word for word, and the photo's file for the steps.
+    plan.refresh_from_db()
     assert plan.notes == NOTES
     assert plan.scenes.get(scene__number=1).photos[0]["file"] == "owner/toilet.jpg"
     assert plan.session == chat_of(job)
@@ -195,6 +196,8 @@ def test_a_plan_cant_is_one_of_the_known_kinds() -> None:
 
     with pytest.raises(ValueError, match="hair"):
         fix_plans.propose(job, NOTES, [], cants=[{"kind": "hair", "text": "No hair changes."}])
+    with pytest.raises(ValueError):
+        fix_plans.propose(job, NOTES, [], cants=[{"kind": "music"}])  # type: ignore[typeddict-item]
 
     assert not FixPlan.objects.exists()
     every: list[fix_plans.PlanCant] = [
@@ -238,6 +241,62 @@ def test_the_database_refuses_two_open_plans_in_one_chat() -> None:
 
     with pytest.raises(IntegrityError), transaction.atomic():
         FixPlan.objects.create(job=job, session=chat_of(job), notes=NOTES)
+
+
+def test_the_database_refuses_two_rows_for_one_scene_of_a_plan() -> None:
+    job = an_ad(1)
+    plan = fix_plans.propose(job, NOTES, [row(job, 1, FixPlanScene.Action.NEW_CLIP)])
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        FixPlanScene.objects.create(
+            plan=plan, scene=job.scenes.get(), action=FixPlanScene.Action.NEW_PICTURE
+        )
+
+
+PHOTO = {
+    "photo": 2,
+    "file": "owner/toilet.jpg",
+    "thing": "black toilet",
+    "in_picture": True,
+    "during_action": False,
+}
+
+
+@pytest.mark.parametrize(
+    ("action", "fields"),
+    [
+        (FixPlanScene.Action.NEW_LINE, {}),
+        (FixPlanScene.Action.NEW_CLIP, {"line": "A line nobody asked for."}),
+        (FixPlanScene.Action.GO_BACK, {}),
+        (FixPlanScene.Action.GO_BACK, {"go_back_to": 0}),
+        (FixPlanScene.Action.NEW_PICTURE, {"go_back_to": 1}),
+        ("redraw", {}),
+        (FixPlanScene.Action.NEW_PICTURE, {"photos": [{"photo": 2, "use": "toilet"}]}),
+        (FixPlanScene.Action.NEW_PICTURE, {"photos": [{**PHOTO, "where": "picture"}]}),
+    ],
+)
+def test_a_row_that_doesnt_fit_its_action_is_refused_and_the_open_plan_stays(
+    action: str, fields: dict[str, object]
+) -> None:
+    job = an_ad(1)
+    waiting = fix_plans.propose(job, NOTES, [])
+
+    with pytest.raises(ValueError):
+        fix_plans.propose(
+            job, NOTES, [FixPlanScene(scene=job.scenes.get(), action=action, **fields)]
+        )
+
+    assert fix_plans.open_plan(chat_of(job)) == waiting
+    assert FixPlan.objects.count() == 1
+
+
+def test_a_plan_refuses_another_ads_scene() -> None:
+    job, other = an_ad(1), an_ad(3)
+
+    with pytest.raises(ValueError, match="another ad"):
+        fix_plans.propose(job, NOTES, [row(other, 3, FixPlanScene.Action.NEW_CLIP)])
+
+    assert not FixPlan.objects.exists()
 
 
 def test_the_yes_is_kept_on_the_plan() -> None:
@@ -310,4 +369,17 @@ def test_a_plan_has_cost_what_its_scenes_steps_were_billed() -> None:
 
     assert picture.cost_usd() == Decimal("0.06")
     assert clip.cost_usd() == Decimal("0.40")
+    assert plan.cost_usd() == Decimal("0.46")
+
+    # A tool call starting more than one step of a row (a new picture, then its clip) is
+    # counted once, on the row and on the plan.
+    call = SceneStep.objects.get(plan_scene=picture).tool_call
+    SceneStep.objects.create(
+        scene=picture.scene,
+        kind=SceneStep.Kind.CLIP,
+        tool_call=call,
+        line=picture.scene.line,
+        plan_scene=picture,
+    )
+    assert picture.cost_usd() == Decimal("0.06")
     assert plan.cost_usd() == Decimal("0.46")

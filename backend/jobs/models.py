@@ -572,7 +572,9 @@ class FixPlanScene(models.Model):
 
     def cost_usd(self) -> Decimal:
         """What it has cost so far: every model call of the tool calls that started its
-        steps, failed ones included, as they were paid for."""
+        steps, failed ones included, as they were paid for. A model call is charged to a tool
+        call, not a step, so a tool call starting steps for more than one row would count on
+        each of them: every row's steps need tool calls of their own."""
         from gateway.models import ModelCall
 
         cost: Decimal | None = (
@@ -709,7 +711,8 @@ class SceneStep(models.Model):
         blank=True,
         related_name="steps",
         help_text="The confirmed fix plan's scene the step was made for. Blank for the ad's "
-        "first making and for a Fix's steps.",
+        "first making and for a Fix's steps. Its tool call starts steps for this row only, "
+        "so the row's cost is its own.",
     )
     photo = models.ForeignKey(
         ProductPhoto,

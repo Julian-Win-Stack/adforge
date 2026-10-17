@@ -145,7 +145,7 @@ The producer's restatement of what it will change about a finished scene, which 
 _Avoid_: Change request, edit, revision
 
 **Fix plan**:
-What the decider plans to change in each scene from the shop owner's notes of one round, kept with those notes word for word: per scene a new starting picture, a new clip, a new line, going back to an earlier version, or no change, said in plain words, with its cost, any can't, and the shop owner's photos it uses; and at most one question for the shop owner. Shown to them in the chat and run by code once they say yes. A chat has at most one plan waiting for their answer: a newer one replaces it. Replaces the fix once the redesign is wired in.
+What the decider plans to change in each scene from the shop owner's notes of one round, kept with those notes word for word: per scene a new starting picture, a new clip, a new line, going back to an earlier version, or no change, said in plain words, with its cost, any can't, and the shop owner's photos it uses; and at most one question for the shop owner. Shown to them in the chat and run by code once they say yes. A chat has at most one plan waiting for their answer: a newer one replaces it.
 _Avoid_: Fix list, proposal
 
 **Fix check**:
