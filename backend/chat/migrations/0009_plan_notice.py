@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("chat", "0006_suggested_notes"),
+        ("chat", "0008_attachment_version_any_length"),
         ("jobs", "0042_fix_plans"),
     ]
 

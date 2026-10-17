@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("agents", "0003_tool_call_trace_ids"),
+        ("agents", "0004_tool_call_pictures"),
         ("chat", "0007_scene_versions"),
         ("jobs", "0045_fix_plan_runs"),
     ]

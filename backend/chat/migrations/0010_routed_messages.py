@@ -13,7 +13,7 @@ def route_what_was_already_read(apps, schema_editor):  # type: ignore[no-untyped
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("chat", "0009_merge_20261017_0159"),
+        ("chat", "0009_plan_notice"),
     ]
 
     operations = [
