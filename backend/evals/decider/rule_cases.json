@@ -1409,5 +1409,176 @@
   "past": {
    "what this case checks": "yes with no plan waiting is not a yes"
   }
+ },
+ {
+  "id": "rule-go-ahead-after-failed-check",
+  "layer": "rule",
+  "rule": "go ahead",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "setup": {
+   "held_checks": [
+    {
+     "scene": 3,
+     "picture": "/mnt/project-files/runs/owner-photos-build/C10-later-fixes-keep-photo/scene-3-picture-2.png",
+     "change": "The toilet is black.",
+     "reason": "The toilet in the new picture is dark grey, not black."
+    }
+   ]
+  },
+  "turns": [
+   {
+    "say": "yes go ahead"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "go_ahead",
+    "gone_ahead": [
+     3
+    ]
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "after a failed fix check, \"yes go ahead\" carries the scene on with its new version"
+  }
+ },
+ {
+  "id": "rule-go-ahead-no-make-it-bluer",
+  "layer": "rule",
+  "rule": "go ahead",
+  "side": "fail",
+  "ad": "8",
+  "movement": false,
+  "setup": {
+   "held_checks": [
+    {
+     "scene": 3,
+     "picture": "/mnt/project-files/runs/owner-photos-build/C10-later-fixes-keep-photo/scene-3-picture-2.png",
+     "change": "The toilet is black.",
+     "reason": "The toilet in the new picture is dark grey, not black."
+    }
+   ]
+  },
+  "turns": [
+   {
+    "say": "no, make the toilet a bit bluer"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "new_picture"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "after a failed fix check, \"no, make it bluer\" is a new fix note, not a go ahead"
+  }
+ },
+ {
+  "id": "rule-go-ahead-nothing-waiting",
+  "layer": "rule",
+  "rule": "go ahead",
+  "side": "fail",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "go ahead"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "not_a_fix"
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "\"go ahead\" with no fix check waiting is not a go ahead"
+  }
+ },
+ {
+  "id": "rule-go-ahead-two-held-one-named",
+  "layer": "rule",
+  "rule": "go ahead",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "setup": {
+   "held_checks": [
+    {
+     "scene": 3,
+     "picture": "/mnt/project-files/runs/owner-photos-build/C10-later-fixes-keep-photo/scene-3-picture-2.png",
+     "change": "The toilet is black.",
+     "reason": "The toilet in the new picture is dark grey, not black."
+    },
+    {
+     "scene": 4,
+     "picture": "/mnt/project-files/runs/owner-photos-build/C10-later-fixes-keep-photo/scene-4-picture-2.png",
+     "change": "The toilet is black.",
+     "reason": "The toilet in the new picture is dark grey, not black."
+    }
+   ]
+  },
+  "turns": [
+   {
+    "say": "Scene 3 is fine, go ahead with it. Scene 4: make the toilet darker."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes_include": {
+     "4": "new_picture"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "two failed checks wait: \"scene 3 is fine, go ahead; scene 4 darker\" changes scene 4, a fix note"
+  }
+ },
+ {
+  "id": "rule-go-ahead-two-held-none-named",
+  "layer": "rule",
+  "rule": "go ahead",
+  "side": "fail",
+  "ad": "8",
+  "movement": false,
+  "setup": {
+   "held_checks": [
+    {
+     "scene": 3,
+     "picture": "/mnt/project-files/runs/owner-photos-build/C10-later-fixes-keep-photo/scene-3-picture-2.png",
+     "change": "The toilet is black.",
+     "reason": "The toilet in the new picture is dark grey, not black."
+    },
+    {
+     "scene": 4,
+     "picture": "/mnt/project-files/runs/owner-photos-build/C10-later-fixes-keep-photo/scene-4-picture-2.png",
+     "change": "The toilet is black.",
+     "reason": "The toilet in the new picture is dark grey, not black."
+    }
+   ]
+  },
+  "turns": [
+   {
+    "say": "go ahead"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "not_a_fix"
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "two failed checks wait: \"go ahead\" alone names no scene, so it carries nothing on"
+  }
  }
 ]

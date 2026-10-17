@@ -84,7 +84,9 @@ def _child(*args: str, log: Path) -> int:
         ).returncode
 
 
-def run(cases: list[dict[str, Any]], out: Path, model: str, parallel: int) -> list[dict[str, Any]]:
+def run(
+    cases: list[dict[str, Any]], out: Path, model: str, parallel: int, firsts: Path = FIRSTS
+) -> list[dict[str, Any]]:
     kept = out / "results.json"
     if kept.exists() and json.loads(kept.read_text())["model"] != model:
         raise SystemExit(f"{out} holds a run on another model: give this one its own folder")
@@ -92,7 +94,7 @@ def run(cases: list[dict[str, Any]], out: Path, model: str, parallel: int) -> li
     (out / "logs").mkdir(exist_ok=True)
 
     def send(asked: dict[str, Any]) -> dict[str, Any] | None:
-        made = FIRSTS / f"{asked['ad']}.json"
+        made = firsts / f"{asked['ad']}.json"
         if not made.exists():
             print(f"{asked['id']}: skipped, #{asked['ad']} has no first version", flush=True)
             return None
@@ -187,6 +189,9 @@ def main() -> None:
     each_run.add_argument("--only", default="", help="comma-separated case ids")
     each_run.add_argument("--model", default="gpt-6.1-sol")
     each_run.add_argument("--parallel", type=int, default=8)
+    each_run.add_argument(
+        "--firsts", type=Path, default=FIRSTS, help="the first versions' session ids, by ad"
+    )
     one = commands.add_parser("case")
     one.add_argument("--case", required=True)
     one.add_argument("--session", required=True)
@@ -199,7 +204,7 @@ def main() -> None:
     if args.command == "run":
         only = [each for each in args.only.split(",") if each]
         cases = load_cases([Path(each) for each in args.cases.split(",")], only)
-        run(cases, args.out, args.model, args.parallel)
+        run(cases, args.out, args.model, args.parallel, args.firsts)
         from .page import write
 
         print(report(args.out))
