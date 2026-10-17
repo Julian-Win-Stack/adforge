@@ -12,13 +12,16 @@ import PIL.Image
 import pytest
 
 from adforge import file_store
+from agents import decider
 from agents.models import ToolCall
-from chat.models import Session
+from chat import messages
+from chat.models import Message, Session
 from evals.decider import page, score
-from evals.decider.__main__ import _write_results, forget_the_faked_judge, report
+from evals.decider.__main__ import _write_results, forget_the_faked_judge, report, run
 from evals.decider.play import play
 from evals.decider.record import record
 from gateway.fake import FakeModel, turn
+from gateway.types import BlockedBySafetyFilter
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -148,10 +151,19 @@ def test_a_case_is_played_and_everything_it_did_is_kept(
         turn(calls=[("sort_message", {"kind": "yes"})]),
     )
     out = tmp_path / "run"
+    assert ad.session is not None
+    messages.add(
+        ad.session,
+        role=Message.Role.NOTICE,
+        level=Message.Level.PROBLEM,
+        text="Making the first version went wrong once.",
+    )
 
     result = record(case, play(ad, case), out, model="gpt-6.1-sol")
 
     folder = out / "rule-photo-in-picture"
+    # Only what the case did is its own: the ad's red notice from before it isn't.
+    assert result["red_notices"] == []
     assert [each["outcome"] for each in result["turns"]] == ["planned", "yes"]
     first = result["turns"][0]
     assert first["decide"]["photos"] == [{"photo": 1, "thing": "black toilet", "clear": True}]
@@ -179,6 +191,15 @@ def test_a_case_is_played_and_everything_it_did_is_kept(
         "Use our black toilet in scene 2.\n\n[Attached 1 picture: owner photo 1]",
         "yeah go",
     ]
+    # The photo the shop owner sent is kept with the message, looked at or not.
+    assert [each["photos"] for each in given] == [["pictures/sent-black-toilet.png"], []]
+    assert (folder / "pictures" / "sent-black-toilet.png").read_bytes() == _png((0, 0, 0))
+    # The scene it decided was looked at first; the decide refused before the look is no row.
+    assert result["rows"] == [{"scene": 2, "looked": True}]
+    # What the decider was told is kept once, and the result names it.
+    told = json.loads((out / "told" / f"{result['told']}.json").read_text())
+    assert told["instructions"] == decider.INSTRUCTIONS
+    assert "decide" in [tool["name"] for tool in told["tools"]]
     assert "Scene 2: shows the product" in given[0]["the_ad"]
     assert json.loads((folder / "case.json").read_text()) == case
     assert json.loads((folder / "result.json").read_text()) == result
@@ -233,6 +254,34 @@ def test_a_decider_that_stops_without_an_answer_is_kept_as_such(
     assert "reminded" in stopped["why"]
 
 
+def test_a_case_a_model_refuses_is_kept_with_what_it_did_and_paid(
+    fake_model: FakeModel, ad: Job, tmp_path: Path
+) -> None:
+    case = {
+        "id": "refused",
+        "ad": "8",
+        "turns": [{"say": "Scene 2 is too dark."}, {"say": "yes"}],
+        "expect": [{"outcome": "planned"}, {"outcome": "yes"}],
+    }
+    fake_model.respond(
+        "decide_fixes",
+        turn(calls=[("sort_message", {"kind": "fix_note"})]),
+        BlockedBySafetyFilter("the model wouldn't answer"),
+    )
+
+    result = record(case, play(ad, case), tmp_path / "run", model="gpt-6.1-sol")
+
+    # The case stops at the error, and the call it made before it is kept.
+    [stopped] = result["turns"]
+    assert stopped["outcome"] == "error"
+    assert "BlockedBySafetyFilter" in stopped["why"]
+    assert [
+        call["tool"]
+        for call in json.loads((tmp_path / "run" / "refused" / "tool_calls.json").read_text())
+    ] == ["sort_message"]
+    assert result["checks"][0]["same"] is False
+
+
 def test_the_judge_the_replay_faked_is_not_told_to_the_decider(ad: Job) -> None:
     forget_the_faked_judge(ad)
 
@@ -268,10 +317,59 @@ def test_the_run_is_counted_reported_and_shown_on_a_grading_page(
     assert "Not a fix note: handed to the producer" in text
     assert "answered the cost" in text
     assert 'data-doc="rule-not-a-fix-cost"' in text
+    # It says how many of the judge's findings had a judged clip behind them.
+    assert "0 of its 0 calls found a clip a judge had judged" in text
+    assert "Scenes decided after a look at that scene: 0 of 0." in text
     printed = report(out)
     assert "Red notices" in printed
     assert "Cases that didn't run: rule-broken" in printed
     assert "OpenAI spend: $" in printed
+
+
+def test_a_rerun_into_the_same_folder_replaces_what_it_reran(
+    fake_model: FakeModel, ad: Job, tmp_path: Path
+) -> None:
+    case = {"id": "rule-sort-thanks", "ad": "8", "turns": [{"say": "Thanks!"}], "expect": []}
+    fake_model.respond("decide_fixes", turn(calls=[("sort_message", {"kind": "not_a_fix"})]))
+    out = tmp_path / "run"
+    played = record(case, play(ad, case), out, model="gpt-6.1-sol")
+    _write_results(out, [played], "gpt-6.1-sol", failed=[])
+
+    # It fails on the rerun: its old answer isn't shown as this run's.
+    _write_results(out, [], "gpt-6.1-sol", failed=["rule-sort-thanks"])
+    kept = json.loads((out / "results.json").read_text())
+    assert (kept["cases"], kept["failed"]) == ([], ["rule-sort-thanks"])
+    assert "Cases that didn't run: rule-sort-thanks" in page.page(out)
+
+    # A later rerun of another case leaves it failed; running it again clears it.
+    _write_results(out, [{**played, "id": "other"}], "gpt-6.1-sol", failed=[])
+    assert json.loads((out / "results.json").read_text())["failed"] == ["rule-sort-thanks"]
+    _write_results(out, [played], "gpt-6.1-sol", failed=[])
+    assert json.loads((out / "results.json").read_text())["failed"] == []
+
+    # A run on another model gets a folder of its own.
+    with pytest.raises(SystemExit, match="another model"):
+        run([], out, "gpt-5.6-sol", parallel=1)
+
+
+def test_a_picture_looked_at_twice_is_shown_once_on_the_page(
+    fake_model: FakeModel, ad: Job, tmp_path: Path
+) -> None:
+    case = {"id": "twice", "ad": "8", "turns": [{"say": "Scene 2 is too dark."}], "expect": []}
+    fake_model.respond(
+        "decide_fixes",
+        turn(calls=[("sort_message", {"kind": "fix_note"})]),
+        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("decide", _decided([_row(2, "new_picture", "Brighter.")]))]),
+    )
+    out = tmp_path / "run"
+    _write_results(out, [record(case, play(ad, case), out, model="gpt-6.1-sol")], "m", [])
+
+    text = page.page(out)
+
+    assert text.count("<img") == 1
+    assert "The same 1 pictures as above." in text
 
 
 def test_expected_answers_that_leave_room_are_checked_as_such() -> None:

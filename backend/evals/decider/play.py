@@ -24,8 +24,8 @@ class Turn:
     said: str
     photos: list[str]
     seq: int
-    outcome: str  # planned, not_a_fix, yes, no or no_decision
-    why: str = ""  # why it stopped without a decision
+    outcome: str  # planned, not_a_fix, yes, no, no_decision or error
+    why: str = ""  # why it stopped without a decision, or the error it stopped on
     plan: dict[str, Any] | None = None  # the plan notice, for a planned turn
     decide: dict[str, Any] | None = None  # the decide call the plan was recorded from
 
@@ -37,12 +37,15 @@ class Played:
 
 
 def play(job: Job, case: dict[str, Any]) -> Played:
-    """Play `case` on `job`, a finished ad: its setup, then each of its turns."""
+    """Play `case` on `job`, a finished ad: its setup, then each of its turns. A turn that
+    stops on an error ends the case there, so what it did and paid for is still kept."""
     for version in case.get("setup", {}).get("versions", []):
         add_version(job, version["scene"], Path(version["picture"]), version["change"])
     played = Played(job)
     for turn in case["turns"]:
         played.turns.append(_send(job, turn["say"], turn.get("photos", [])))
+        if played.turns[-1].outcome == "error":
+            break
     return played
 
 
@@ -98,6 +101,9 @@ def _send(job: Job, text: str, photos: list[str]) -> Turn:
         outcome = decider.read(job, decider.this_round(job))
     except decider.NoDecision as stopped:
         turn.outcome, turn.why = "no_decision", str(stopped)
+        return turn
+    except Exception as error:  # a model refused or failed: the case is kept, not lost
+        turn.outcome, turn.why = "error", f"{type(error).__name__}: {error}"
         return turn
     if isinstance(outcome, decider.Planned):
         turn.outcome = "planned"

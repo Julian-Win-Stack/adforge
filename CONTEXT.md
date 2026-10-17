@@ -187,7 +187,7 @@ How fast a specific voice actually talks, found by having it read the script and
 _Avoid_: Pacing, WPS, rate
 
 **Replay**:
-Round 4's ads made again with every video, voice and picture taken from what round 4 saved (evals/owner_notes), so shop owners' notes can be sent to them for the price of the text models. The decider's replay and rule cases (evals/decider) start from copies of them.
+Round 4's ads made again with every starting picture and clip taken from what round 4 saved, and their voice and music faked (evals/owner_notes), so shop owners' notes can be sent to them for the price of the text models. The decider's replay and rule cases (evals/decider) start from copies of them.
 _Avoid_: Fixture ad, test ad
 
 ### Checks
