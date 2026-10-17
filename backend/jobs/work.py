@@ -2579,7 +2579,7 @@ def bring_back_clip(
     clip: ProducedItem, *, picture: ProducedItem | None = None, back_to: int | None = None
 ) -> ProducedItem:
     """Make an earlier clip the scene's clip again, as its next version: the same file, step,
-    picture, audio, judge's ruling and change, with nothing made or paid for again (#132
+    picture, audio, movement, judge's ruling and change, with nothing made or paid for again (#132
     review, M1). The scene is finished, as it was when the clip was made. Going back to
     scene version `back_to` gives it the `picture` brought back with it, and says so."""
     scene = clip.scene
@@ -2596,6 +2596,7 @@ def bring_back_clip(
             made_from=clip.made_from,
             picture=picture or clip.picture,
             ruling=clip.ruling,
+            motion_prompt=clip.motion_prompt,
             change=_gone_back(back_to) or clip.change,
             back_to=back_to,
         )

@@ -28,11 +28,11 @@ from jobs.models import (
     SceneStep,
 )
 
-from .conftest import CLIP_SIDES_OK, MUG_SIDE, HeldSteps, producer_turns
+from .conftest import CLIP_MOTION_OK, CLIP_SIDES_OK, MUG_SIDE, HeldSteps, producer_turns
 from .fixing import fixed
 from .test_fix_check import HANDLE_HIDDEN, not_made
 from .test_fix_loop import TURN_REWRITE
-from .test_producer_auto_fix import FLOATS, REMADE, REMADE_AGAIN, failing, rewrite
+from .test_producer_auto_fix import FLOATS, REMADE, REMADE_AGAIN, SPINS, failing, rewrite
 from .test_producer_broll import (  # noqa: F401 (a fixture)
     BROLL_CHOICE,
     MOTION,
@@ -821,6 +821,42 @@ def _a_picture_note_on_scene_2_said_yes_to(
     say("In scene 2 put the mug on a wooden table.")
     tap_yes(api, session_id, plans()[-1])
     fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+
+
+def test_a_new_picture_keeps_the_movement_of_a_remade_clip_the_judge_kept(
+    fake_model: FakeModel,
+    held: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    # The first fix's clip fails, its first remake fails less than its second, so the first
+    # remake is kept, brought back on top: the next new picture moves as that remake does.
+    _a_picture_note_on_scene_2_said_yes_to(fake_model, say, api, session_id)
+    fake_model.respond(
+        "check_clip_motion",
+        *[failing(FLOATS)] * 3,
+        *[failing(SPINS)] * 2,
+        CLIP_MOTION_OK,
+        *[failing(SPINS)] * 3,
+    )
+    fake_model.respond("remake_clip_prompt", rewrite(REMADE), rewrite(REMADE_AGAIN))
+    held.run_held()
+    fake_model.respond(
+        "decide_fixes",
+        planning(
+            ("look_at_picture", {"scene": 2}),
+            decided(row(2, "new_picture", "The mug is on a marble counter.")),
+        ),
+    )
+    say("In scene 2 put the mug on a marble counter.")
+    tap_yes(api, session_id, plans()[-1])
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+
+    held.run_held()
+
+    assert status(2) == "finished"
+    assert REMADE in fake_model.broll_clips_asked[-1]["prompt"]
 
 
 def test_a_fix_clip_the_judge_couldnt_check_is_kept_and_the_chat_says_so(
