@@ -29,8 +29,8 @@ LEAD = (
     "grade. The expected answer is Claude's guess, not a grade. Tap Right or Wrong on the "
     "decider's answer; words are optional."
 )
-THUMB = 220
-FRAME_THUMB = 110
+THUMB = 300
+FRAME_THUMB = 120
 
 
 def page(run: Path) -> str:
@@ -105,7 +105,10 @@ def _case(run: Path, result: dict[str, Any]) -> str:
         each for each in [result.get("layer"), result.get("rule"), result.get("side")] if each
     )
     turns = "".join(_turn(number, turn) for number, turn in enumerate(result["turns"], 1))
-    looks = "".join(_look(folder, call) for call in calls if call["pictures"] or call["refused"])
+    seen: set[str] = set()
+    looks = "".join(
+        _look(folder, call, seen) for call in calls if call["pictures"] or call["refused"]
+    )
     past = result.get("past") or {}
     past_rows = "".join(
         f"<dt>{_esc(key)}</dt><dd>{_esc(value)}</dd>" for key, value in past.items() if value
@@ -178,31 +181,42 @@ def _row(row: dict[str, Any]) -> str:
     )
 
 
-def _look(folder: Path, call: dict[str, Any]) -> str:
+def _look(folder: Path, call: dict[str, Any], seen: set[str]) -> str:
+    """One tool call with the pictures it showed. Pictures it already showed earlier in the
+    case are named, not shown again, so a case that looks many times stays small."""
     asked = ", ".join(f"{key} {value}" for key, value in call["arguments"].items())
+    said = f'<p class="muted">{_esc(call["tool"])} ({_esc(asked)}): {_esc(call["result"])}</p>'
     if call["refused"]:
-        return f'<p class="muted">{_esc(call["tool"])} ({_esc(asked)}): {_esc(call["result"])}</p>'
+        return said
+    new = [p for p in call["pictures"] if p["file"] not in seen]
+    seen.update(p["file"] for p in call["pictures"])
+    if not new:
+        return f"""
+    <div>{said}<p class="muted">The same {len(call["pictures"])} pictures as above.</p></div>"""
     frames = call["tool"] == "look_at_clip"
-    size = FRAME_THUMB if frames else THUMB
-    figures = "".join(
-        f'<figure><img alt="{_esc(p["label"])}" src="{_inline(folder / p["file"], size)}">'
-        f"<figcaption>{_esc(p['label'])}</figcaption></figure>"
-        for p in call["pictures"]
-    )
-    kind = "frames" if frames else "pics"
-    if not frames:
-        figures = figures.replace("<figure>", '<figure class="pic">')
+    figures = "".join(_figure(folder, p, frames) for p in new)
     return f"""
-    <div><p class="muted">{_esc(call["tool"])} ({_esc(asked)}): {_esc(call["result"])}</p>
-      <div class="{kind}">{figures}</div></div>"""
+    <div>{said}<div class="{"frames" if frames else "pics"}">{figures}</div></div>"""
+
+
+def _figure(folder: Path, picture: dict[str, str], frame: bool) -> str:
+    label = picture["label"]
+    # A frame's caption is its time; its whole label is the picture's alt text.
+    caption = label.rsplit(", ", 1)[-1] if frame else label
+    source = _inline(folder / picture["file"], FRAME_THUMB if frame else THUMB)
+    return (
+        f'<figure{"" if frame else " class=pic"}><img alt="{_esc(label)}" src="{source}">'
+        f"<figcaption>{_esc(caption)}</figcaption></figure>"
+    )
 
 
 def _inline(path: Path, width: int) -> str:
-    """The picture shrunk to `width` (twice that for sharp screens) as a JPEG in the page."""
+    """The picture shrunk to `width` as a JPEG in the page, small enough for a page of a whole
+    run's pictures."""
     picture = PIL.Image.open(path).convert("RGB")
-    picture.thumbnail((width * 2, width * 4))
+    picture.thumbnail((width, width * 2))
     made = io.BytesIO()
-    picture.save(made, format="JPEG", quality=70)
+    picture.save(made, format="JPEG", quality=65)
     return "data:image/jpeg;base64," + base64.b64encode(made.getvalue()).decode()
 
 

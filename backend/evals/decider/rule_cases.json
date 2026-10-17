@@ -91,7 +91,7 @@
   }
  },
  {
-  "id": "rule-look-white-toilet",
+  "id": "rule-look-beige-toilet",
   "layer": "rule",
   "rule": "look before deciding",
   "side": "pass",
@@ -99,7 +99,7 @@
   "movement": false,
   "turns": [
    {
-    "say": "Scene 4: the toilet should be white."
+    "say": "Scene 4: the toilet should be beige."
    }
   ],
   "expect": [

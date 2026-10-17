@@ -93,7 +93,9 @@ def run(cases: list[dict[str, Any]], out: Path, model: str, parallel: int) -> li
         if not made.exists():
             print(f"{asked['id']}: skipped, #{asked['ad']} has no first version", flush=True)
             return None
-        database = f"decider_case_{asked['id'].replace('-', '_').lower()}"[:63]
+        # One database per case and model, so runs on two models can go at once.
+        name = f"{model}_{asked['id']}".replace("-", "_").replace(".", "_").lower()
+        database = f"decider_{name}"[:63]
         _psql(f"DROP DATABASE IF EXISTS {database}")
         _psql(f"CREATE DATABASE {database} TEMPLATE owner_notes_first_{asked['ad'].lower()}")
         code = _child(
