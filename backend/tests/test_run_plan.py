@@ -496,6 +496,19 @@ def test_a_new_line_and_a_new_picture_for_one_scene_are_both_made(
     assert ads()[-1].cuts[-1]["overlay"] == "$19.99"
 
 
+def test_a_new_overlay_for_a_line_that_already_says_it_is_drawn(held: HeldSteps) -> None:
+    # The voice already says the new price; only the overlay still shows the old one.
+    say_yes(
+        propose(
+            row(3, "new_line", change="Show the new price.", line=scene(3).line, overlay="$19.99")
+        )
+    )
+    held.run_held()
+
+    assert scene(3).overlay == "$19.99"
+    assert ads()[-1].cuts[-1]["overlay"] == "$19.99"
+
+
 def test_going_back_after_the_line_changed_pays_for_a_new_clip(
     fake_model: FakeModel, held: HeldSteps
 ) -> None:

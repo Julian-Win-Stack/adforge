@@ -540,8 +540,12 @@ class FixPlanScene(models.Model):
         "(decision 7), never a prompt.",
     )
     line = models.TextField(blank=True, help_text="The new line, for a new line. Blank else.")
+    # A default in the database too, so a worker still on code from before this field can
+    # still save a plan while the new code is rolled out.
     overlay = models.TextField(
         blank=True,
+        default="",
+        db_default="",
         help_text="The scene's new overlay, for a new line that changes what its overlay "
         "shows, such as the price. Blank keeps the overlay.",
     )

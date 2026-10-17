@@ -111,6 +111,7 @@ def ad() -> Job:
         job=job,
         number=2,
         line="One wipe and it shines.",
+        overlay="Shines in one wipe",
         shows="A hand scrubs a toilet bowl with the gel.",
         broll_kind=Scene.BrollKind.DOES_A_JOB,
         person_shown=Scene.PersonShown.NO_FACE,
@@ -222,8 +223,9 @@ def test_the_decider_is_told_the_ad_and_the_note_and_doesnt_look_at_the_judge_fo
 
     the_ad, said, *_ = _given(fake_model, 0)
     assert "Scene 1: the person talks to camera." in the_ad.text
-    assert 'Line: "One wipe and it shines."' in the_ad.text
-    assert 'Overlay: "$9.99"' in the_ad.text
+    # Each overlay is read right after the line it goes with.
+    assert 'Line: "Meet the gel."\nOverlay: "$9.99"' in the_ad.text
+    assert 'Line: "One wipe and it shines."\nOverlay: "Shines in one wipe"' in the_ad.text
     assert "How the product is used: Squeeze the gel on, scrub, rinse." in the_ad.text
     assert "The current clip's video prompt: A hand scrubs the toilet, take 2." in the_ad.text
     assert "Versions: v1 first version; v2 black toilet (the current version)" in the_ad.text
