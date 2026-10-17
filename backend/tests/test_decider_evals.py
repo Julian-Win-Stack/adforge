@@ -42,6 +42,10 @@ def ad() -> Job:
     call = ToolCall.objects.create(
         session=session, job=job, agent="producer", tool="make_clip", call_id="c0", arguments={}
     )
+    # The person's voice, measured, as every ad made through the chat has it.
+    ProducedItem.objects.create(
+        job=job, kind=ProducedItem.Kind.VOICE, version=1, voice_id="v1", words_per_second=2.5
+    )
     scene = Scene.objects.create(
         job=job,
         number=2,
@@ -89,6 +93,15 @@ def ad() -> Job:
         version=1,
         file="s2.mp4",
         picture=picture,
+        # The line's audio it speaks, as code estimates a fix of it from.
+        made_from=ProducedItem.objects.create(
+            job=job,
+            scene=scene,
+            kind=ProducedItem.Kind.LINE_AUDIO,
+            version=1,
+            file="s2.mp3",
+            seconds=4.0,
+        ),
         ruling={"verdict": "pass", "checks": {}, "pictures": {"frames": frames, "sides": []}},
     )
     return job

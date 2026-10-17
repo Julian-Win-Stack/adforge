@@ -36,8 +36,8 @@ from .conftest import (
     WorkerStopped,
     handoffs,
     paid_for,
-    said_yes_to_a_fix,
 )
+from .fixing import fixed
 from .test_producer_broll import (
     BROLL_CHOICE,
     IMAGE_1,
@@ -441,7 +441,7 @@ def test_a_clip_made_from_a_note_is_remade_from_the_notes_prompt_keeping_the_own
     say: Callable[..., None],
 ) -> None:
     clip_of_scene_2(fake_model, steps, say)
-    said_yes_to_a_fix(2, HOVERS, "clip")
+    fixed(2, "new_clip", change=HOVERS)
     fake_model.respond(
         "rewrite_clip_prompt",
         {"motion_prompt": NOTED, "motion_prompt_reason": "The note asks for the pour."},
@@ -450,8 +450,7 @@ def test_a_clip_made_from_a_note_is_remade_from_the_notes_prompt_keeping_the_own
     fixs = {**failing(FLOATS), "owner_change": CLIP_FIXED}
     fake_model.respond("check_clip_motion", fixs, fixs)
     fake_model.respond("remake_clip_prompt", rewrite(REMADE))
-    calling(fake_model, say, ("make_clip", {"scene": 2, "note": HOVERS}))
-    run(fake_model, steps)
+    steps.run_held()
 
     (handoff,) = handoffs("remake_clip_prompt")
     assert (handoff["motion_prompt"], handoff["owner_fix"]) == (NOTED, HOVERS)

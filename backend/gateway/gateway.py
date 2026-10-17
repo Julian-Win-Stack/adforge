@@ -10,6 +10,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from functools import cache
 from typing import TYPE_CHECKING, Any, cast
@@ -212,10 +213,14 @@ def take_turn(
     instructions: str,
     conversation: Sequence[Happened],
     tools: Sequence[ToolSpec],
+    since: datetime | None = None,
 ) -> Turn:
     """Give an agent its conversation and the tools it may call, and have it take one turn:
     say something, ask for tools, or both. The pictures its tools handed back are read here
-    from the file store and shown with their labels, as `call_model`'s images are."""
+    from the file store and shown with their labels, as `call_model`'s images are. An agent
+    whose conversations start afresh, as the decider's each round, passes when this one
+    started (`since`): a turn taken in an earlier one, handed the same words, isn't this
+    one's to take again."""
     handoff = TurnHandoff(conversation=list(conversation), tools=[tool.name for tool in tools])
     # Validate again here rather than trusting the caller built the handoff properly.
     handoff = TurnHandoff.model_validate(handoff.model_dump())
@@ -235,7 +240,9 @@ def take_turn(
     )
     images = _shown(shown)
     # A turn paid for before the worker stopped, but not yet kept, is taken again for free.
-    answered = _answered_before(handoff, purpose=purpose, session=session, images=images)
+    answered = _answered_before(
+        handoff, purpose=purpose, session=session, images=images, since=since
+    )
     if answered is not None:
         return _turn_from(answered)
     provider = _agents()
@@ -765,6 +772,7 @@ def _answered_before(
     job: Job | None = None,
     images: list[dict[str, str]] | None = None,
     images_may_move: bool = False,
+    since: datetime | None = None,
 ) -> dict[str, Any] | None:
     """What a call for `purpose` answered when handed exactly `handoff` and shown exactly
     `images`, or any images with `images_may_move`, if one was paid for. Every call is recorded
@@ -779,6 +787,8 @@ def _answered_before(
         calls = calls.filter(images=images or [])
     if session is not None:
         calls = calls.filter(session=session)
+    if since is not None:
+        calls = calls.filter(created_at__gte=since)
     if job is not None:
         calls = calls.filter(job=job)
     answered = calls.last()

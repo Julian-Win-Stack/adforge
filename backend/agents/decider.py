@@ -33,9 +33,9 @@ from chat.models import Attachment, Message, Session
 from gateway.gateway import take_turn
 from gateway.types import Happened, Image, Said, Shown, ToolUse
 from jobs import clip_judge, fix_plans
-from jobs.models import FixPlan, FixPlanScene, Job, ProducedItem, Scene
+from jobs.models import FixCheck, FixPlan, FixPlanScene, Job, ProducedItem, Scene
 
-from . import loop
+from . import loop, run_plan
 from .loop import Agent, Refused, Tool, ToolResult
 from .models import ToolCall
 
@@ -53,8 +53,10 @@ owner and does all of it once they say yes.
 First, sort their newest message with sort_message, before you look at anything. It is a \
 fix note when it asks for something in the ad to change, or corrects the plan you made. It \
 is yes or no only when a plan is waiting for their answer and the message answers it: \
-"yeah go" is yes, "wait" is not a fix. Anything else, such as a question about the cost, \
-is not a fix. When it isn't a fix note, you are done.
+"yeah go" is yes, "wait" is not a fix. It is go ahead only when a fix check failed and \
+waits for their answer, and the message says to carry on with the new version as it is. \
+Anything else, such as a question about the cost, is not a fix. When it isn't a fix note, \
+you are done.
 For a fix note, look before you decide. You can't decide a scene you haven't looked at, or \
 go back to a version you haven't looked at. Look at a scene's starting picture for what \
 the picture shows, and at its clip's frames for what happens or how things move. The \
@@ -152,7 +154,15 @@ class No:
     plan: FixPlan
 
 
-Outcome = NotAFix | Planned | Yes | No
+@dataclass(frozen=True)
+class GoAhead:
+    """The newest message says go ahead to the scenes whose fix check failed (flow step 9):
+    each carries on with its new version as it is."""
+
+    rows: tuple[FixPlanScene, ...]
+
+
+Outcome = NotAFix | Planned | Yes | No | GoAhead
 
 
 # ---------------------------------------------------------------- the round
@@ -330,16 +340,21 @@ def _sorted_first() -> None:
 class SortMessage(Tool):
     """Sort the shop owner's newest message, before anything else. fix_note: it asks for
     something in the ad to change, or corrects the plan you made. yes or no: it answers the
-    plan waiting for their answer. not_a_fix: anything else, such as a question."""
+    plan waiting for their answer. go_ahead: it says to carry on with a new version whose
+    fix check failed. not_a_fix: anything else, such as a question."""
 
     name: ClassVar[str] = "sort_message"
 
-    kind: Literal["fix_note", "not_a_fix", "yes", "no"]
+    kind: Literal["fix_note", "not_a_fix", "yes", "no", "go_ahead"]
 
     def run(self, call: ToolCall) -> str:
         round = _round.get()
         if self.kind in ("yes", "no") and fix_plans.open_plan(round.session) is None:
             raise Refused("no plan is waiting for the shop owner's answer.")
+        if self.kind == "go_ahead" and not run_plan.held_on_a_check(
+            round.session, before=round.said[-1].seq
+        ):
+            raise Refused("no fix check is waiting for the shop owner's go ahead.")
         sorted_as = f"{_sorted_as(round.said[-1])}{self.kind}."
         if self.kind == "fix_note":
             return f"{sorted_as} Look at what you need, then decide."
@@ -602,9 +617,8 @@ class Decide(Tool):
             raise Refused(
                 "decide at least one scene, give a can't, or ask the shop owner one question."
             )
-        # Ticket 04's check-and-propose takes this one call's place: it checks the rule
-        # can'ts and sets each scene's estimate before the plan is shown.
-        fix_plans.propose(
+        # Code checks the rule can'ts and sets each scene's estimate before the plan is shown.
+        run_plan.check_and_propose(
             round.job,
             [{"seq": message.seq, "text": message.text} for message in round.said],
             rows,
@@ -694,6 +708,7 @@ def read(job: Job, said: Sequence[Message]) -> Outcome:
                     instructions=INSTRUCTIONS,
                     conversation=[*_conversation(round), *reminders],
                     tools=[tool.spec() for tool in DECIDER.tools],
+                    since=round.started,
                 )
                 if not turn.calls:
                     if reminded == MOST_REMINDERS:
@@ -733,6 +748,8 @@ def _outcome(round: _Round) -> Outcome | None:
         plan = fix_plans.open_plan(round.session)
         assert plan is not None, "sort_message refuses yes or no with no plan waiting"
         return Yes(plan) if kind == "yes" else No(plan)
+    if kind == "go_ahead":
+        return GoAhead(tuple(run_plan.held_on_a_check(round.session, before=round.said[-1].seq)))
     decided = round.done().filter(tool=Decide.name, created_at__gt=sorting.created_at).last()
     if decided is None:
         return None
@@ -884,9 +901,28 @@ def _the_ad(round: _Round) -> str:
             "Your last plan is waiting for the shop owner's answer."
             if plan is not None
             else "No plan is waiting for the shop owner's answer.",
+            *_held(round),
             "Their messages this round follow, oldest first.",
         ]
     )
+
+
+def _held(round: _Round) -> list[str]:
+    """Each fix check that failed and waits for the shop owner's answer, in a sentence."""
+    told = []
+    for row in run_plan.held_on_a_check(round.session, before=round.said[-1].seq):
+        check = (
+            FixCheck.objects.filter(step__plan_scene=row, verdict=FixCheck.Verdict.FAILED)
+            .select_related("old", "new")
+            .last()
+        )
+        assert check is not None, "a row held on a check has a failed check"
+        told.append(
+            f"Scene {row.scene.number}'s fix check failed on its new {check.what}: "
+            f"{check.reason} The shop owner was shown the old {check.what} and the new one, and "
+            "asked to say go ahead with the new one or what to change."
+        )
+    return told
 
 
 def _scene_facts(scene: Scene) -> str:

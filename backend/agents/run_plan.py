@@ -16,7 +16,9 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 from uuid import uuid4
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
+from django.db.models import Exists, OuterRef
 from django.utils import timezone
 
 from chat.models import Session
@@ -46,6 +48,7 @@ from .producer import (
     _clip_estimate,
     _current_picture,
     _estimate,
+    _latest_clip,
     _listed,
     _seconds_to_say,
     _use_the_photos,
@@ -59,6 +62,7 @@ __all__ = [
     "carry_on_scene",
     "check_and_propose",
     "go_ahead",
+    "held_on_a_check",
     "run_after_yes",
     "step_failed",
     "step_finished",
@@ -94,6 +98,9 @@ def check_and_propose(
     scene's estimate set as today's fix of the same redo would cost (a go back is free unless
     its clip must be made again). The producer is told the plan, scene by scene."""
     counted: set[tuple[str, str]] = set()
+    if settings.ROUTE_OWNER_PHOTOS_AFTER_THE_DECIDER:
+        for row in scenes:
+            _routed_again(job, row)
     for row in scenes:
         row.change = " ".join(row.change.split())
         row.line = " ".join(row.line.split())
@@ -117,6 +124,31 @@ def check_and_propose(
     plan = propose(job, notes, scenes, question=question, cants=cants)
     _note(plan, SystemNote.Kind.PLAN_SHOWN, _shown(plan))
     return plan
+
+
+def _routed_again(job: Job, row: FixPlanScene) -> None:
+    """Decision 5's fallback: each of the row's photos routed by the route call, looking at
+    the scene's starting picture and the photo, in place of the decider's two answers. An
+    answer that can't be had leaves the decider's."""
+    picture = _current_picture(row.scene)
+    if picture is None:
+        return
+    for photo in row.photos:
+        answer = reference_photos.where_it_goes(
+            job,
+            picture=picture.file,
+            photo=str(photo["file"]),
+            thing=str(photo["thing"]),
+            shows=row.scene.shows,
+            change=row.change,
+        )
+        if answer is None:
+            continue
+        photo["in_picture"] = answer.where != "appears_during_the_clip"
+        photo["during_action"] = answer.where == "appears_during_the_clip" or (
+            answer.where == "in_the_picture" and bool(photo["during_action"])
+        )
+        photo["clear"] = answer.clear_enough
 
 
 def _rule_cant(row: FixPlanScene) -> str:
@@ -404,6 +436,33 @@ def go_ahead(row: FixPlanScene) -> None:
         ).update(gone_ahead_at=timezone.now())
         _carry_on(row)
         _assemble_once_landed(row.plan)
+
+
+def held_on_a_check(session: Session, before: int | None = None) -> list[FixPlanScene]:
+    """The plan rows whose fix check failed and wait for the shop owner's answer (flow step
+    9), oldest first: go ahead carries them on, anything else is planned again. A check
+    waits only once its notice is posted, and, with `before`, only for a message numbered
+    after that notice: one sent before it isn't an answer to it. A row whose scene a newer
+    plan started on since no longer waits."""
+    failed = FixCheck.objects.filter(
+        step__plan_scene__plan__session=session,
+        verdict=FixCheck.Verdict.FAILED,
+        gone_ahead_at__isnull=True,
+        notice__isnull=False,
+    )
+    if before is not None:
+        failed = failed.filter(notice__seq__lt=before)
+    newer = FixPlanScene.objects.filter(
+        scene=OuterRef("scene"), started_at__isnull=False, pk__gt=OuterRef("pk")
+    )
+    return list(
+        FixPlanScene.objects.filter(
+            pk__in=failed.values("step__plan_scene"), landed_at__isnull=True, error=""
+        )
+        .exclude(Exists(newer))
+        .select_related("scene", "plan")
+        .order_by("id")
+    )
 
 
 # --- The worker carries each scene on ---------------------------------------------------------
@@ -759,7 +818,7 @@ def _assemble_once_landed(plan: FixPlan) -> None:
     session = Session.objects.get(pk=plan.session_id)
     try:
         with transaction.atomic():
-            ad, _ = assemble_the_ad(session, plan.job)
+            ad, _ = assemble_the_ad(session, plan.job, _made_for(rows))
     except Refused as refused:
         _note(plan, SystemNote.Kind.ERROR, f"The new ad couldn't be assembled: {refused}")
         return
@@ -779,6 +838,18 @@ def _assemble_once_landed(plan: FixPlan) -> None:
         f"Every scene of the plan is done, so the new ad (version {ad.version}) was assembled "
         "and shown to the shop owner.",
     )
+
+
+def _made_for(rows: list[FixPlanScene]) -> str:
+    """What a plan's ad is made for, as each landed scene's version label: "scene 2 v2 black
+    toilet". Two plans' ads, as when a newer plan changes a scene again before the older's
+    clip lands, are each shown as their own version (design thread, 03:15 Oct 17)."""
+    made = []
+    for row in sorted(rows, key=lambda row: row.scene.number):
+        clip = _latest_clip(row.scene) if row.landed_at else None
+        if clip is not None:
+            made.append(f"scene {row.scene.number} {work.version_label(clip)}")
+    return ", ".join(made)
 
 
 def _note(plan: FixPlan, kind: SystemNote.Kind, text: str) -> None:

@@ -29,7 +29,7 @@ ANOTHER_SESSION_IS_BUSY = "Another ad is being made right now. Please try again 
 PLAN_NO_LONGER_WAITS = "That plan isn't waiting for an answer any more. Look at the newer plan."
 # What it is told when the plan already has a yes from it, as after a reply that was lost.
 PLAN_ALREADY_SAID_YES = "You've already said yes to that plan."
-# What a tap of the yes button says, as the producer reads it.
+# What a tap of the yes button says, as the chat and the producer read it.
 TAPPED_YES = "Yes"
 
 
@@ -187,7 +187,10 @@ def session_messages(request: Request, session_id: str) -> Response:
 
 
 def _send(session: Session, request: Request) -> Response:
-    """Take the user's message, and start the producer on it unless it is already working.
+    """Take the user's message, and start the producer's worker on it unless it is already
+    working. Once the ad has a clip, the worker routes it by code first (agents/routing.py):
+    to the decider, which may pass it on to the producer, or, for a tap, to the plan it says
+    yes to.
     An interrupt is stored and acknowledged straight away rather than refused, and the
     working producer reads it next. Only one session works at a time, so a message to a
     session while another is busy is refused, and not kept. A tap of a plan's yes button
