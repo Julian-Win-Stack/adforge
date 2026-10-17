@@ -33,7 +33,7 @@ _Avoid_: Cancel, abort, pause
 ### The agents
 
 **Agent**:
-A model in a loop that chooses which tool to call next. The producer is the only one built; the critic comes later.
+A model in a loop that chooses which tool to call next. Two are built: the producer, and the decider, which plans owner-note fixes; the critic comes later.
 _Avoid_: Bot, assistant
 
 **Producer**:

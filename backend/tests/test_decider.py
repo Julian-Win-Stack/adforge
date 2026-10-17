@@ -5,6 +5,7 @@ the model faked: no paid call."""
 
 import io
 import subprocess
+from collections.abc import Sequence
 from typing import Any
 
 import PIL.Image
@@ -16,7 +17,7 @@ from agents.models import ToolCall
 from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.fake import FakeModel, turn
-from gateway.types import Said
+from gateway.types import Happened, Said, ToolUse
 from jobs.models import FixPlan, FixPlanScene, Job, ProducedItem, Scene, SceneStep
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -185,6 +186,11 @@ def test_a_picture_note_is_planned_after_the_decider_looks_at_the_scene(
 
 def _given(fake_model: FakeModel, turn_number: int) -> list[Any]:
     return list(fake_model.turns_taken[turn_number].handoff.conversation)
+
+
+def _uses(given: Sequence[Happened], tool: str) -> list[ToolUse]:
+    """The calls of `tool` in a conversation the decider was given."""
+    return [each for each in given if isinstance(each, ToolUse) and each.tool == tool]
 
 
 def test_the_decider_is_told_the_ad_and_the_note_and_doesnt_look_at_the_judge_for_a_colour(
@@ -488,25 +494,39 @@ def test_a_failed_clips_findings_say_what_the_judge_found(fake_model: FakeModel,
             ],
             "motion": [],
         },
-        "let_go": [],
+        "let_go": [
+            {
+                "check": "sides",
+                "ask": 3,
+                "problem": "A drop of gel blurs at 0.4 s.",
+                "back_to_normal_at": 0.5,
+            }
+        ],
     }
     clip.save()
     note = _owner_says(ad, "The bottle flips in scene 2.")
+    flips = _decided([_row(2, "new_clip", "The bottle never turns.")])
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
         turn(calls=[("judge_findings", {"scene": 2, "version": None})]),
-        turn(calls=[("decide", _decided([_row(2, "new_clip", "The bottle never turns.")]))]),
+        # The judge's words aren't a look at the scene: it can be wrong (decision 16).
+        turn(calls=[("decide", flips)]),
+        turn(calls=[("look_at_clip", {"scene": 2, "version": None})]),
+        turn(calls=[("decide", flips)]),
     )
 
-    decider.read(ad, [note])
+    outcome = decider.read(ad, [note])
 
     [found] = _results("judge_findings")
     assert found == (
         "Scene 2, clip of v2 black toilet: The judge failed this clip. "
         "It found: The bottle flips to its back at 1.2 s. "
-        "It found: The bottle turns round at 1.4 s."
+        "It found: The bottle turns round at 1.4 s. "
+        "It let go, as back to normal soon: A drop of gel blurs at 0.4 s."
     )
+    assert _results("decide")[0].startswith("Refused: look at scene 2 first")
+    assert isinstance(outcome, decider.Planned)
 
 
 def test_a_worker_that_stopped_carries_on_from_the_checkpoints(
@@ -809,3 +829,147 @@ def test_an_ad_with_no_clip_yet_has_no_round(ad: Job) -> None:
     _owner_says(ad, "Make it brighter.")
 
     assert decider.this_round(ad) == []
+
+
+def test_a_sort_kept_after_a_newer_message_came_in_doesnt_answer_the_newer_one(
+    fake_model: FakeModel, ad: Job
+) -> None:
+    question = _owner_says(ad, "What's the cost so far?")
+    # The note comes in while the decider is still sorting the question.
+    note = _owner_says(ad, "In scene 2 the toilet should be white.")
+    fake_model.respond("decide_fixes", turn(calls=[("sort_message", {"kind": "not_a_fix"})]))
+    assert decider.read(ad, [question]) == decider.NotAFix()
+    fake_model.respond(
+        "decide_fixes",
+        turn(calls=[("sort_message", {"kind": "fix_note"})]),
+        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("decide", _decided([_row(2, "new_picture", "The toilet is white.")]))]),
+    )
+
+    outcome = decider.read(ad, [question, note])
+
+    assert isinstance(outcome, decider.Planned)
+    assert _results("sort_message") == [
+        f"Sorted message {question.seq} as not_a_fix. You are done.",
+        f"Sorted message {note.seq} as fix_note. Look at what you need, then decide.",
+    ]
+
+
+def test_a_decide_after_a_yes_is_refused_and_the_plan_shown_stays(
+    fake_model: FakeModel, ad: Job, planned: tuple[Message, decider.Planned]
+) -> None:
+    note, made = planned
+    said = _owner_says(ad, "yes")
+    fake_model.respond(
+        "decide_fixes",
+        turn(
+            calls=[
+                ("sort_message", {"kind": "yes"}),
+                ("decide", _decided([_row(2, "new_picture", "The toilet is red.")])),
+            ]
+        ),
+    )
+
+    assert decider.read(ad, [note, said]) == decider.Yes(made.plan)
+
+    assert _results("decide")[-1].startswith(
+        "Refused: the shop owner's newest message is sorted as yes, so there is nothing to decide."
+    )
+    made.plan.refresh_from_db()
+    assert made.plan.state == FixPlan.State.PROPOSED
+    assert FixPlan.objects.count() == 1
+
+
+def test_a_decide_run_again_after_a_restart_records_its_plan_once(
+    fake_model: FakeModel, ad: Job, planned: tuple[Message, decider.Planned]
+) -> None:
+    note, made = planned
+    # The worker stopped after the plan was recorded, before the call was kept as done.
+    ToolCall.objects.filter(agent="decider", tool="decide").update(result="", finished_at=None)
+    taken = len(fake_model.turns_taken)
+
+    assert decider.read(ad, [note]) == made
+
+    assert len(fake_model.turns_taken) == taken
+    assert FixPlan.objects.get() == made.plan
+    assert FixPlan.objects.get().state == FixPlan.State.PROPOSED
+
+
+def test_a_message_is_sorted_without_the_pictures_already_looked_at(
+    fake_model: FakeModel, ad: Job, planned: tuple[Message, decider.Planned]
+) -> None:
+    note, _ = planned
+    question = _owner_says(ad, "What's the cost so far?")
+    fake_model.respond("decide_fixes", turn(calls=[("sort_message", {"kind": "not_a_fix"})]))
+
+    assert decider.read(ad, [note, question]) == decider.NotAFix()
+
+    sorting = fake_model.turns_taken[-1]
+    assert sorting.images == ()
+    looks = _uses(sorting.handoff.conversation, "look_at_picture")
+    assert [look.result for look in looks] == [
+        "Scene 2, starting picture, v2 black toilet (the current version).",
+        "Scene 1, starting picture, v1 first version (the current version).",
+    ]
+
+
+def test_each_look_is_shown_once_and_the_oldest_go_past_the_most_pictures(
+    fake_model: FakeModel, ad: Job, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(decider, "MOST_PICTURES", 2)
+    note = _owner_says(ad, "Scene 2 should be brighter.")
+    fake_model.respond(
+        "decide_fixes",
+        turn(calls=[("sort_message", {"kind": "fix_note"})]),
+        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("look_at_clip", {"scene": 2, "version": None})]),
+        turn(calls=[("decide", _decided([_row(2, "new_picture", "The scene is brighter.")]))]),
+    )
+
+    decider.read(ad, [note])
+
+    again, clip = fake_model.turns_taken[3:5]
+    picture = ad.scenes.get(number=2).produced.get(
+        kind=ProducedItem.Kind.STARTING_PICTURE, version=2
+    )
+    # Looked at twice: shown once, with the later look.
+    assert [image.key for image in again.images] == [picture.file]
+    first_look = _uses(again.handoff.conversation, "look_at_picture")[0]
+    assert first_look.result.endswith("(Its pictures are shown with the same look, later.)")
+    # The clip's two frames fill the turn: the picture is past the most and said so.
+    assert len(clip.images) == 2
+    assert {image.key for image in clip.images}.isdisjoint({picture.file})
+    looks = _uses(clip.handoff.conversation, "look_at_picture")
+    assert looks[-1].result.endswith(
+        "(Its pictures aren't shown any more: look again to see them.)"
+    )
+
+
+def test_the_decider_stops_at_the_limit_of_tools_for_one_message(
+    fake_model: FakeModel, ad: Job, settings: Any
+) -> None:
+    settings.MAX_TOOL_CALLS_PER_MESSAGE = 1
+    note = _owner_says(ad, "Scene 2 should be brighter.")
+    fake_model.respond("decide_fixes", turn(calls=[("sort_message", {"kind": "fix_note"})]))
+
+    with pytest.raises(decider.NoDecision, match="limit of tools"):
+        decider.read(ad, [note])
+
+    assert len(fake_model.turns_taken) == 1
+
+
+def test_a_version_the_scene_doesnt_have_is_refused(fake_model: FakeModel, ad: Job) -> None:
+    note = _owner_says(ad, "Go back to the fifth one in scene 2.")
+    fake_model.respond(
+        "decide_fixes",
+        turn(calls=[("sort_message", {"kind": "fix_note"})]),
+        turn(calls=[("look_at_version", {"scene": 2, "version": 5})]),
+        turn(calls=[("decide", _decided([], question="Which version of scene 2 do you mean?"))]),
+    )
+
+    decider.read(ad, [note])
+
+    assert _results("look_at_version") == [
+        "Refused: scene 2 has versions 1 to 2, not 5. Nothing was done."
+    ]

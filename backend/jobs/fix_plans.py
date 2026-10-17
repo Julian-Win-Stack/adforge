@@ -110,7 +110,9 @@ def _check(job: Job, row: FixPlanScene) -> None:
     for photo in row.photos:
         # The decider also says whether the photo is clear enough to copy its thing's look.
         if set(photo) - {"clear"} != PHOTO_KEYS:
-            raise ValueError(f"Scene {number}: a photo needs exactly {sorted(PHOTO_KEYS)}.")
+            raise ValueError(
+                f"Scene {number}: a photo needs exactly {sorted(PHOTO_KEYS)}, and may say clear."
+            )
 
 
 def open_plan(session: Session) -> FixPlan | None:
