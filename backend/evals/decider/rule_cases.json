@@ -288,7 +288,7 @@
   "movement": false,
   "turns": [
    {
-    "say": "In scene 1 she should hold the bottle up."
+    "say": "In scene 1 she should hold the bottle lower, at chest height."
    }
   ],
   "expect": [
@@ -301,7 +301,32 @@
   ],
   "expected_by": "claude",
   "past": {
-   "what this case checks": "what a talking scene's picture shows is a new picture"
+   "what this case checks": "what a talking person holds, and how, is a new picture (she already holds it up, so 'hold it up' was no change)"
+  }
+ },
+ {
+  "id": "rule-talking-point",
+  "layer": "rule",
+  "rule": "picture vs clip vs line",
+  "side": "fail",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "In scene 1 she should point at the bottle while she talks."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scene_cants": {
+     "1": "talking_action"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "an action while talking is a can't on the talking scene"
   }
  },
  {

@@ -634,6 +634,40 @@ def test_a_note_that_cant_be_done_is_planned_with_its_cant_said_by_code(
     )
 
 
+def test_an_action_while_talking_is_a_cant_and_what_they_hold_is_a_new_picture(
+    fake_model: FakeModel, ad: Job
+) -> None:
+    note = _owner_says(ad, "In scene 1 she should hold the gel up and point at it.")
+    fake_model.respond(
+        "decide_fixes",
+        turn(calls=[("sort_message", {"kind": "fix_note"})]),
+        turn(calls=[("look_at_picture", {"scene": 1})]),
+        turn(
+            calls=[
+                (
+                    "decide",
+                    _decided(
+                        [_row(1, "new_picture", "She holds the gel up.", cant="talking_action")]
+                    ),
+                )
+            ]
+        ),
+    )
+
+    outcome = decider.read(ad, [note])
+
+    assert isinstance(outcome, decider.Planned)
+    [row] = outcome.plan.scenes.all()
+    assert (row.action, row.cant) == (
+        FixPlanScene.Action.NEW_PICTURE,
+        "A person can't do an action while talking yet.",
+    )
+    # The decider is told the talking scene's clip only makes the person speak.
+    assert "what they hold, wear or stand next to is a new picture" in " ".join(
+        decider.INSTRUCTIONS.split()
+    )
+
+
 def test_a_photos_thing_found_in_no_scene_is_asked_about(fake_model: FakeModel, ad: Job) -> None:
     note = _owner_sends_a_photo(ad, "Here's my sponge, use it.")
     fake_model.respond(

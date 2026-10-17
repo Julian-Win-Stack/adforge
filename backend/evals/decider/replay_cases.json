@@ -572,6 +572,9 @@
     "outcome": "planned",
     "scenes_include": {
      "1": "new_picture"
+    },
+    "scene_cants": {
+     "1": "talking_action"
     }
    }
   ],
