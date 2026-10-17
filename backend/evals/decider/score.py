@@ -9,6 +9,8 @@ A case's "expect" has one entry per turn, each with any of:
   new_picture, new_clip, new_line, go_back:<N> or no_change ("a|b" for either). No other
   scene may be changed (a no-change row is not a change).
 - "scenes_include": the same, but other scenes may be changed too.
+- "change_lacks": {"<scene>": [words]}: words the scene's change must not hold, as what the
+  shop owner never asked for, such as how the scene ends.
 - "scene_cants": {"<scene>": "person_look" | "slower"}.
 - "scene_cants_include": can'ts that must be on some scene, whichever.
 - "cants": the plan's can'ts, in any order.
@@ -29,6 +31,7 @@ KINDS = {
     "gone_ahead": "kind",
     "scenes": "kind",
     "scenes_include": "kind",
+    "change_lacks": "kind",
     "scene_cants": "cants",
     "scene_cants_include": "cants",
     "cants": "cants",
@@ -76,6 +79,7 @@ def _answer(turn: dict[str, Any]) -> dict[str, Any]:
             + (f":{row['go_back_to']}" if row["action"] == "go_back" else "")
             for row in rows
         },
+        "changes": {str(row["scene"]): row.get("change", "") for row in rows},
         "scene_cants": {
             str(each["scene"]): each["cant"]
             for each in decide.get("scenes", [])
@@ -98,6 +102,8 @@ def _came(what: str, got: dict[str, Any], result: dict[str, Any]) -> Any:
         return got["scenes"]
     if what == "scene_cants_include":
         return sorted(set(got["scene_cants"].values()))
+    if what == "change_lacks":
+        return got["changes"]
     if what == "thing_has":
         return got["things"]
     return got[what]
@@ -118,6 +124,12 @@ def _same(what: str, wanted: Any, came: Any) -> bool:
         return all(came.get(scene) in str(action).split("|") for scene, action in wanted.items())
     if what == "scene_cants_include":
         return set(wanted) <= set(came)
+    if what == "change_lacks":
+        return all(
+            word.lower() not in came.get(scene, "").lower()
+            for scene, words in wanted.items()
+            for word in words
+        )
     if what == "thing_has":
         return all(words.lower() in came.get(photo, "").lower() for photo, words in wanted.items())
     if what == "cants":

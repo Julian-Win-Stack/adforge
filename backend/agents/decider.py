@@ -78,7 +78,9 @@ the starting picture: what they hold, wear or stand next to is a new picture, an
 while they talk, such as pointing or showing how the product works, is a can't on that \
 scene, beside any new picture the rest of the note needs.
 For each scene, say the change in plain words: what must be different, never how to make \
-it. Say what the scene must show, not what is wrong now.
+it. Say what the scene must show, not what is wrong now. The change says only what the \
+shop owner asked, in their words; don't add how the scene ends or anything else they didn't \
+ask for.
 Some things can't be done yet. Changing how the person looks, or making a clip slower \
 (every clip plays at real-time speed), is a can't on the scene the note is about, with no \
 change. Changing the music, the voice or the number of scenes, using a video as an \

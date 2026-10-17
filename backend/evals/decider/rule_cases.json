@@ -1580,5 +1580,41 @@
   "past": {
    "what this case checks": "two failed checks wait: \"go ahead\" alone names no scene, so it carries nothing on"
   }
+ },
+ {
+  "id": "rule-change-only-what-asked",
+  "layer": "rule",
+  "rule": "change says only what was asked",
+  "side": "pass",
+  "ad": "8",
+  "movement": true,
+  "turns": [
+   {
+    "say": "In scene 3, show the gel going onto the brush first."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "new_clip|new_picture"
+    },
+    "change_lacks": {
+     "3": [
+      "ends",
+      "shin",
+      "sparkl",
+      "spotless",
+      "clean",
+      "removed",
+      "gone"
+     ]
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "the change says only the gel going on the brush; nothing about how the scene ends (live ad fix 2 added \"the rust stain removed\")"
+  }
  }
 ]
