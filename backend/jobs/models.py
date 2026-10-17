@@ -563,6 +563,12 @@ class FixPlanScene(models.Model):
         "key in the file store, the one thing to take from it, whether the thing is in the "
         "starting picture now, and whether more of it shows during the action.",
     )
+    new_movement = models.BooleanField(
+        default=False,
+        help_text="For a new picture, whether it was a new clip, made a new picture because "
+        "a photo's thing is in the starting picture: its clip moves as the change says, not "
+        "as the clip it replaces.",
+    )
     remakes_clip = models.BooleanField(
         default=False,
         help_text="For a go back, whether its clip is made again, paid, because the line "
