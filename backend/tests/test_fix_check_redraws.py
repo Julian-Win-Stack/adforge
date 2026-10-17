@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from agents import run_plan
+from agents import run_plan, tasks
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
 from jobs import fix_check
@@ -169,3 +169,62 @@ def test_a_redraw_whose_picture_check_fails_is_still_told_the_fix_checks_reason(
     redo = asked("choose_broll_picture")[-1].handoff["redo"]
     # Each failing answer of the picture check is a problem of its own.
     assert redo["problems"] == [HANDLE_HIDDEN, "The mug floats.", "The mug floats."]
+
+
+def test_a_newer_plan_while_the_picture_is_drawn_again_stops_the_redraws(
+    fake_model: FakeModel, held: HeldSteps
+) -> None:
+    old = propose(row(1, "new_picture", change=BRIGHTER))
+    say_yes(old)
+    fake_model.respond("choose_starting_picture", *[TALKING_CHOICE] * 3)
+    fails(fake_model, 2)
+    held.run_next()
+    first, again = picture_steps(rows_of(old)[1])
+    assert again.status == "running"
+
+    # The shop owner plans the scene again while its picture is drawn again.
+    newer = propose(row(1, "new_picture", change="Make it warmer."))
+    say_yes(newer)
+    held.run_held()
+
+    # The old plan's redraw that was running finishes, and nothing more is drawn for it, nor
+    # asked; the newer plan's picture is made.
+    stale = rows_of(old)[1]
+    assert stale.error and stale.landed_at is None
+    assert len(picture_steps(stale)) == 2
+    assert FixCheck.objects.filter(step__plan_scene=stale, notice__isnull=False).count() == 0
+    assert notes("check_failed") == []
+    assert run_plan.held_on_a_check(old.session) == []
+    assert len(picture_steps(rows_of(newer)[1])) == 1
+
+
+def test_a_redraw_that_cant_be_made_asks_the_shop_owner_about_the_try_before_it(
+    fake_model: FakeModel, held: HeldSteps
+) -> None:
+    ads_before = len(ads())
+    plan = propose(row(1, "new_picture", change=BRIGHTER))
+    say_yes(plan)
+    fake_model.respond("choose_starting_picture", *[TALKING_CHOICE] * 2)
+    fails(fake_model, 1)
+    held.run_next()
+
+    # The worker restarts while the picture is drawn again.
+    held.held.clear()
+    tasks.carry_on_after_the_worker_starts()
+
+    one = rows_of(plan)[1]
+    first, again = picture_steps(one)
+    assert again.status == "failed"
+    failed = FixCheck.objects.get(step=first)
+    assert failed.notice is not None and STILL_DARK in failed.notice.text
+    (told,) = notes("check_failed")
+    assert STILL_DARK in told
+    assert one.error == ""
+    assert run_plan.held_on_a_check(plan.session) == [one]
+
+    # Go ahead makes the clip of the try before the one that couldn't be made.
+    run_plan.go_ahead(one)
+    held.run_held()
+
+    assert clip(1).picture == first.produced.get()
+    assert len(ads()) == ads_before + 1

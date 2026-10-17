@@ -17,7 +17,7 @@ from chat.models import Attachment, Message, Session
 from gateway import catalog
 from gateway.models import ModelCall
 from gateway.types import MusicHandoff, UnusableReply
-from jobs import auto_fix, clip_judge, fix_check, page, reference_photos
+from jobs import auto_fix, clip_judge, fix_check, page, picture_check, reference_photos
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
 from jobs.models import (
     BROLL_FIELDS,
@@ -1243,11 +1243,14 @@ def _line_estimate(scene: Scene, fix: str) -> Estimate:
 
 def picture_estimate(scene: Scene) -> Estimate:
     """What a new starting picture for the scene, then its clip, is estimated to cost: up to
-    the picture drawn again each time its fix check can fail it, when checks are on."""
+    the picture drawn again, and checked again, each time its fix check can fail it, when
+    checks are on."""
     picture = _picture_only_estimate_usd(scene)
     clip = _clip_estimate(scene, _clip_seconds(scene), from_note=False)
     redraws = fix_check.MOST_REDRAWS if settings.QUALITY_CHECKS else 0
-    return Estimate(picture + clip.about, picture * (1 + redraws) + clip.up_to)
+    # The fix check asks as often as the picture check does.
+    check = picture_check.ASKS * _each_call_usd(scene, ["check_fix"])
+    return Estimate(picture + clip.about, picture + redraws * (picture + check) + clip.up_to)
 
 
 def _picture_only_estimate_usd(scene: Scene) -> Decimal:
