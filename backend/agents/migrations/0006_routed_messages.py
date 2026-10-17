@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("agents", "0005_merge_0004_fix_plan_runs_0004_tool_call_pictures"),
+        ("agents", "0005_fix_plan_runs"),
     ]
 
     operations = [
