@@ -109,6 +109,7 @@ CANTS: dict[str, str] = {
 MOST_REMINDERS = 2
 # The most tools the decider may call for one message (design thread, 05b: a GUESS), far
 # under the limit for every agent together, so a decider going round in circles stops cheap.
+# Counted before each turn, so the turn that reaches it may run a few calls past it.
 MOST_TOOL_CALLS = 30
 REMINDER = "Answer with a tool call: sort_message, a look, or decide. Nothing you write is shown."
 
@@ -810,15 +811,15 @@ def _fitted(looks: list[ToolCall]) -> dict[int, list[dict[str, str]]]:
     (`clip_judge.cut_pictures`), so each frame is kept at FRAMES_PER_SECOND (decision 10) and
     a note about two clips sees both at once."""
     clips = [look for look in looks if look.tool == LookAtClip.name]
-    stills = sum(len(look.pictures) for look in looks if look.tool != LookAtClip.name)
+    others = sum(len(look.pictures) for look in looks if look.tool != LookAtClip.name)
     together = 1
     while together < max((len(clip.pictures) for clip in clips), default=1) and (
-        stills + sum(math.ceil(len(clip.pictures) / together) for clip in clips) > MOST_PICTURES
+        others + sum(math.ceil(len(clip.pictures) / together) for clip in clips) > MOST_PICTURES
     ):
         together += 1
     return {
         look.pk: [
-            _side_by_side(look.pictures[i : i + together])
+            _joined_frames(look.pictures[i : i + together])
             for i in range(0, len(look.pictures), together)
         ]
         if look.tool == LookAtClip.name
@@ -827,11 +828,20 @@ def _fitted(looks: list[ToolCall]) -> dict[int, list[dict[str, str]]]:
     }
 
 
+def _opens(data: bytes) -> bool:
+    """Whether `data` is a whole picture, not one a stopped worker left half-saved."""
+    try:
+        PIL.Image.open(io.BytesIO(data)).load()
+    except OSError, PIL.Image.DecompressionBombError:
+        return False
+    return True
+
+
 # A frame's label, as `LookAtClip` gives it: the clip, then the time of each frame in it.
 _FRAME_LABEL = re.compile(r"^(?P<clip>.*), Frames? at (?P<times>.+?)(?:, left to right)?$")
 
 
-def _side_by_side(frames: list[dict[str, str]]) -> dict[str, str]:
+def _joined_frames(frames: list[dict[str, str]]) -> dict[str, str]:
     """`frames` of one clip as one picture, joined left to right, labelled with the time of
     each. Kept under a name made from the frames, so a later turn, or a restart, shows the
     same picture and a paid turn is replayed for free."""
@@ -848,6 +858,7 @@ def _side_by_side(frames: list[dict[str, str]]) -> dict[str, str]:
     key = file_store.save_once(
         f"decider_frames_{hashlib.sha256(chr(10).join(keys).encode()).hexdigest()[:32]}.jpg",
         lambda: clip_judge.joined([PIL.Image.open(io.BytesIO(file_store.read(k))) for k in keys]),
+        whole=_opens,
     )
     return {"label": f"{labels[0]['clip']}, {clip_judge.frame_label(times)}", "key": key}  # type: ignore[index]
 

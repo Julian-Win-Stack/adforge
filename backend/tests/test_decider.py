@@ -10,6 +10,7 @@ from typing import Any
 
 import PIL.Image
 import pytest
+from django.core.files.storage import default_storage
 
 from adforge import file_store
 from agents import decider
@@ -990,6 +991,49 @@ def test_two_clips_past_the_most_pictures_are_both_shown_with_their_frames_side_
     again = decider._conversation(decider._Round(ad, (note,)))
     shown_again = [p.key for use in again if isinstance(use, ToolUse) for p in use.pictures]
     assert sorted(shown_again) == sorted(image.key for image in both.images)
+    # One a stopped worker left half-saved is made again under the same name, not shown cut.
+    whole = file_store.read(both.images[2].key)
+    default_storage.delete(both.images[2].key)
+    assert file_store.save(both.images[2].key, whole[: len(whole) // 3]) == both.images[2].key
+    again = decider._conversation(decider._Round(ad, (note,)))
+    shown_again = [p.key for use in again if isinstance(use, ToolUse) for p in use.pictures]
+    assert sorted(shown_again) == sorted(image.key for image in both.images)
+    assert file_store.read(both.images[2].key) == whole
+
+
+def test_a_long_clips_frames_already_in_pairs_are_joined_with_every_time(
+    fake_model: FakeModel, ad: Job, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A clip of 10 s or more comes from the judge with its frames already two to a
+    picture; past the most pictures those pictures are joined again, labelled with every
+    frame's time."""
+    monkeypatch.setattr(decider, "MOST_PICTURES", 1)
+    clip = ad.scenes.get(number=2).produced.get(kind=ProducedItem.Kind.CLIP, version=2)
+    clip.ruling = {
+        **(clip.ruling or {}),
+        "pictures": {
+            "frames": [
+                {"times": [0.0, 0.2], "key": _saved("pair_0.png", (1, 2, 3))},
+                {"times": [0.4, 0.6], "key": _saved("pair_1.png", (4, 5, 6))},
+            ],
+            "sides": [],
+        },
+    }
+    clip.save(update_fields=["ruling"])
+    note = _owner_says(ad, "Scene 2 should foam more.")
+    fake_model.respond(
+        "decide_fixes",
+        turn(calls=[("sort_message", {"kind": "fix_note"})]),
+        turn(calls=[("look_at_clip", {"scene": 2, "version": None})]),
+        turn(calls=[("decide", _decided([_row(2, "new_clip", "It foams more.")]))]),
+    )
+
+    decider.read(ad, [note])
+
+    assert [image.label for image in fake_model.turns_taken[2].images] == [
+        "Scene 2, clip of v2 black toilet (the current version), "
+        "Frames at 0 s, 0.2 s, 0.4 s, 0.6 s, left to right"
+    ]
 
 
 def test_the_decider_stops_after_the_most_tools_for_one_message(
@@ -1008,6 +1052,26 @@ def test_the_decider_stops_after_the_most_tools_for_one_message(
         decider.read(ad, [note])
 
     assert len(fake_model.turns_taken) == 3
+
+
+def test_a_correction_gets_its_own_tools_after_a_long_first_plan(
+    fake_model: FakeModel,
+    ad: Job,
+    planned: tuple[Message, decider.Planned],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The decider's limit counts the tools for the message being answered (design thread,
+    02:14 Oct 17), so the calls the first note's plan took leave a correction all of them."""
+    note, _ = planned
+    monkeypatch.setattr(decider, "MOST_TOOL_CALLS", 4)
+    correction = _owner_says(ad, "no, only scene 2")
+    fake_model.respond(
+        "decide_fixes",
+        turn(calls=[("sort_message", {"kind": "fix_note"})]),
+        turn(calls=[("decide", _decided([_row(2, "new_picture", "The toilet is white.")]))]),
+    )
+
+    assert isinstance(decider.read(ad, [note, correction]), decider.Planned)
 
 
 def test_the_decider_stops_at_the_limit_of_tools_for_one_message(
