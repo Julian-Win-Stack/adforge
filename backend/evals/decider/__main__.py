@@ -85,6 +85,9 @@ def _child(*args: str, log: Path) -> int:
 
 
 def run(cases: list[dict[str, Any]], out: Path, model: str, parallel: int) -> list[dict[str, Any]]:
+    kept = out / "results.json"
+    if kept.exists() and json.loads(kept.read_text())["model"] != model:
+        raise SystemExit(f"{out} holds a run on another model: give this one its own folder")
     out.mkdir(parents=True, exist_ok=True)
     (out / "logs").mkdir(exist_ok=True)
 
@@ -96,8 +99,12 @@ def run(cases: list[dict[str, Any]], out: Path, model: str, parallel: int) -> li
         # One database per case and model, so runs on two models can go at once.
         name = f"{model}_{asked['id']}".replace("-", "_").replace(".", "_").lower()
         database = f"decider_{name}"[:63]
-        _psql(f"DROP DATABASE IF EXISTS {database}")
-        _psql(f"CREATE DATABASE {database} TEMPLATE owner_notes_first_{asked['ad'].lower()}")
+        try:
+            _psql(f"DROP DATABASE IF EXISTS {database}")
+            _psql(f"CREATE DATABASE {database} TEMPLATE owner_notes_first_{asked['ad'].lower()}")
+        except subprocess.CalledProcessError as error:
+            print(f"{asked['id']}: FAILED, no copy of #{asked['ad']}: {error.stderr}", flush=True)
+            return None
         code = _child(
             "case",
             "--case",
@@ -125,16 +132,27 @@ def run(cases: list[dict[str, Any]], out: Path, model: str, parallel: int) -> li
 
 
 def _write_results(out: Path, played: list[dict[str, Any]], model: str, failed: list[str]) -> None:
-    """results.json: every case's result, the run's spend and model. A rerun of some cases
-    into the same folder keeps the other cases' results."""
+    """results.json: every case's result, the run's spend and model, and which of told/ the
+    cases' decider was told (evals.decider.record). A rerun of some cases into the same
+    folder keeps the other cases' results; a case that failed this time loses its old result
+    and is listed as failed until it runs again."""
     path = out / "results.json"
-    kept = json.loads(path.read_text())["cases"] if path.exists() else []
-    by_id = {each["id"]: each for each in kept} | {each["id"]: each for each in played}
+    before = json.loads(path.read_text()) if path.exists() else {"cases": [], "failed": []}
+    by_id = {each["id"]: each for each in before["cases"]} | {each["id"]: each for each in played}
+    for case_id in failed:
+        by_id.pop(case_id, None)
+    still_failed = sorted((set(before["failed"]) - set(by_id)) | set(failed))
     results = sorted(by_id.values(), key=lambda each: (each.get("layer", ""), each["id"]))
     spend = sum((Decimal(each["spend_usd"]) for each in results), Decimal(0))
     path.write_text(
         json.dumps(
-            {"model": model, "spend_usd": str(spend), "failed": failed, "cases": results},
+            {
+                "model": model,
+                "spend_usd": str(spend),
+                "failed": still_failed,
+                "told": sorted({each.get("told", "") for each in results} - {""}),
+                "cases": results,
+            },
             indent=1,
             ensure_ascii=False,
         )
@@ -184,15 +202,15 @@ def main() -> None:
         run(cases, args.out, args.model, args.parallel)
         from .page import write
 
-        print(f"Page: {write(args.out)}")
         print(report(args.out))
+        print(f"Page: {write(args.out)}")
     elif args.command == "case":
         case(json.loads(args.case), args.session, args.db, args.out, args.model)
     else:
         from .page import write
 
-        print(f"Page: {write(args.run)}")
         print(report(args.run))
+        print(f"Page: {write(args.run)}")
 
 
 if __name__ == "__main__":

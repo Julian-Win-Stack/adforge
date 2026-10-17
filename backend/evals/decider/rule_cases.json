@@ -577,6 +577,31 @@
   }
  },
  {
+  "id": "rule-nochange-bottle-on-tank",
+  "layer": "rule",
+  "rule": "no change",
+  "side": "fail",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "In scene 2 make sure our bottle is on the toilet tank."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "sounds already done, but in scene 2 the bottle stands on the floor (it is on the tank only in scene 4): a look shows it, so not no_change"
+  }
+ },
+ {
   "id": "rule-route-in-picture",
   "layer": "rule",
   "rule": "owner photo route",
@@ -691,6 +716,45 @@
   "expected_by": "claude",
   "past": {
    "what this case checks": "the bowl is in the picture"
+  }
+ },
+ {
+  "id": "rule-route-both-one-photo",
+  "layer": "rule",
+  "rule": "owner photo route",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Only in scene 3: use our blue toilet brush, photo attached.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photo-boss-test/owner-photos/o3-blue-brush.png"
+    ]
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "new_picture"
+    },
+    "routes": {
+     "3": {
+      "1": [
+       true,
+       true
+      ]
+     }
+    },
+    "thing_has": {
+     "1": "brush"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "one photo, both answers yes: the brush is in scene 3's picture and scrubs during its action (its plan says so); a new picture, then its clip in reference mode (decision 21)"
   }
  },
  {

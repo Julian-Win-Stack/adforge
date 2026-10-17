@@ -84,7 +84,25 @@ def _summary(run: Path, results: list[dict[str, Any]]) -> str:
     )
     movement = [r for r in results if r.get("movement")]
     with_findings = sum(1 for r in movement if r["judge_findings_calls"])
+    # Runs recorded before these counts were kept have none.
+    judged = (
+        f" {sum(r['judge_findings_judged'] for r in results)} of its"
+        f" {sum(r['judge_findings_calls'] for r in results)} calls found a clip a judge had"
+        " judged: the replayed ads' clips weren't judged (their video is faked), so most"
+        " findings were empty."
+        if all("judge_findings_judged" in r for r in results)
+        else ""
+    )
+    decided = [row for r in results for row in r.get("rows", [])]
+    looked = (
+        f"Scenes decided after a look at that scene: {sum(r['looked'] for r in decided)} of"
+        f" {len(decided)}. "
+        if all("rows" in r for r in results)
+        else ""
+    )
+    refused = sum(1 for r in results for each in r["refused"] if each["tool"] == "decide")
     red = sum(len(r["red_notices"]) for r in results)
+    failed = meta.get("failed") or []
     return f"""
   <section class="card">
     <header><h2>Run {_esc(run.name)}</h2>
@@ -93,7 +111,9 @@ def _summary(run: Path, results: list[dict[str, Any]]) -> str:
     <p class="muted">Matches with Claude's expected answers (not grades):</p>
     <table class="counts"><tr><th>Check</th><th>Same as expected</th></tr>{rows}</table>
     <p class="muted">Judge's findings looked at on {with_findings} of {len(movement)} notes
-    about movement.</p>
+    about movement.{judged}</p>
+    <p class="muted">{looked}Decide answers refused by code: {refused}.</p>
+    {f'<p class="differs">Cases that didn\'t run: {_esc(", ".join(failed))}</p>' if failed else ""}
   </section>"""
 
 
@@ -104,7 +124,7 @@ def _case(run: Path, result: dict[str, Any]) -> str:
     tag = " · ".join(
         each for each in [result.get("layer"), result.get("rule"), result.get("side")] if each
     )
-    turns = "".join(_turn(number, turn) for number, turn in enumerate(result["turns"], 1))
+    turns = "".join(_turn(folder, turn) for turn in result["turns"])
     seen: set[str] = set()
     looks = "".join(
         _look(folder, call, seen) for call in calls if call["pictures"] or call["refused"]
@@ -134,14 +154,19 @@ def _case(run: Path, result: dict[str, Any]) -> str:
   </section>"""
 
 
-def _turn(number: int, turn: dict[str, Any]) -> str:
+def _turn(folder: Path, turn: dict[str, Any]) -> str:
     photos = f" (+{len(turn['photos'])} photo)" if turn["photos"] else ""
+    sent = "".join(
+        _figure(folder, {"label": f"Sent: {Path(file).name}", "file": file}, frame=False)
+        for file in turn.get("photo_files", [])
+    )
     answer = {
         "planned": "Planned a fix",
         "not_a_fix": "Not a fix note: handed to the producer",
         "yes": "Read it as yes to the plan",
         "no": "Read it as no to the plan",
         "no_decision": f"Stopped without an answer ({turn.get('why')})",
+        "error": f"Stopped on an error ({turn.get('why')})",
     }.get(turn["outcome"], turn["outcome"])
     plan = turn.get("plan") or {}
     rows = "".join(_row(row) for row in plan.get("scenes", []))
@@ -154,6 +179,7 @@ def _turn(number: int, turn: dict[str, Any]) -> str:
     )
     return f"""
     <div><p class="said"><strong>Owner{photos}:</strong> {_esc(turn["said"])}</p>
+      {f'<div class="pics">{sent}</div>' if sent else ""}
       <p><strong>{_esc(answer)}</strong></p>
       {f"<ul>{rows}</ul>" if rows else ""}
       {f"<ul>{things}</ul>" if things else ""}

@@ -945,7 +945,8 @@
    "producer decided then": "no fix restated",
    "right route (test's expectation, not graded)": "can't: photos on a talking scene (scene 5) -> can't-yet message",
    "Julian's grade": "not graded yet",
-   "past run": "/mnt/project-files/runs/owner-photos-build/C15-talking-scene"
+   "past run": "/mnt/project-files/runs/owner-photos-build/C15-talking-scene",
+   "after code (ticket 04)": "a photo on a talking scene is a rule can't, written by code before the plan is shown: this new_picture becomes that can't"
   }
  },
  {
