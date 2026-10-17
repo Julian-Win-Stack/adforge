@@ -1547,7 +1547,7 @@
   "id": "rule-go-ahead-two-held-none-named",
   "layer": "rule",
   "rule": "go ahead",
-  "side": "fail",
+  "side": "pass",
   "ad": "8",
   "movement": false,
   "setup": {
@@ -1573,12 +1573,16 @@
   ],
   "expect": [
    {
-    "outcome": "not_a_fix"
+    "outcome": "go_ahead",
+    "gone_ahead": [
+     3,
+     4
+    ]
    }
   ],
   "expected_by": "claude",
   "past": {
-   "what this case checks": "two failed checks wait: \"go ahead\" alone names no scene, so it carries nothing on"
+   "what this case checks": "two failed checks wait: a bare \"go ahead\" carries both scenes on (design thread 05:43 Oct 17: the owner saw both versions and objected to neither)"
   }
  },
  {
