@@ -1752,6 +1752,7 @@ function aPlan(plan = 7, overrides: Partial<PlanNotice> = {}): PlanNotice {
     question: "",
     estimate_usd: "0.550000",
     estimate_up_to_usd: "1.100000",
+    cants: [],
     scenes: [
       {
         ...row,
@@ -1792,7 +1793,12 @@ async function showAPlan(plan: PlanNotice = aPlan()) {
 }
 
 test("a plan notice shows per scene what changes, what it costs and what can't be done", async () => {
-  await showAPlan(aPlan(7, { question: "Which toilet, the one in photo 1?" }));
+  await showAPlan(
+    aPlan(7, {
+      question: "Which toilet, the one in photo 1?",
+      cants: [{ kind: "music", text: "The music can't be changed." }],
+    }),
+  );
 
   const plan = within(planNotices()[0]);
   const scenes = plan.getAllByRole("listitem").map((item) => item.textContent);
@@ -1810,6 +1816,7 @@ test("a plan notice shows per scene what changes, what it costs and what can't b
   expect(scenes[2]).toContain("Can't: The person's look can't be changed.");
   expect(scenes[2]).not.toContain("$");
   expect(plan.getByText("Which toilet, the one in photo 1?")).toBeDefined();
+  expect(plan.getByText("Can't: The music can't be changed.")).toBeDefined();
   expect(plan.getByText("About $0.55 in all, up to $1.10")).toBeDefined();
   // The plan's own yes, not the producer's.
   expect(planYes()).not.toBeNull();
@@ -1878,6 +1885,19 @@ test("a newer plan replaces the yes: only the newest plan can be said yes to", a
 });
 
 test("a plan with nothing to do, only can'ts, offers no yes", async () => {
+  await showAPlan(
+    aPlan(7, {
+      scenes: [],
+      cants: [{ kind: "voice", text: "The voice can't be changed." }],
+      estimate_usd: "0.000000",
+      estimate_up_to_usd: "0.000000",
+    }),
+  );
+  expect(planYes()).toBeNull();
+  expect(screen.queryByText(/in all/)).toBeNull();
+});
+
+test("a plan whose only scene can't be done offers no yes", async () => {
   const cant = aPlan().scenes[2];
   await showAPlan(
     aPlan(7, { scenes: [cant], estimate_usd: "0.000000", estimate_up_to_usd: "0.000000" }),

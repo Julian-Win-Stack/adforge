@@ -235,6 +235,7 @@ def _in_words(shown: PlanNotice) -> str:
             said += f" (about {_dollars(scene['estimate_usd'])}, up to "
             said += f"{_dollars(scene['estimate_up_to_usd'])})"
         lines.append(said)
+    lines.extend(f"Can't: {cant['text']}" for cant in shown["cants"])
     if shown["question"]:
         lines.append(shown["question"])
     lines.append("Tap Yes to go ahead, or type what to change.")

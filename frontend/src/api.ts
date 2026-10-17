@@ -51,6 +51,8 @@ export type PlanNotice = {
   question: string;
   estimate_usd: string;
   estimate_up_to_usd: string;
+  /** What the owner asked that can't be done and isn't about one scene (music, voice...). */
+  cants: { kind: string; text: string }[];
   scenes: PlanScene[];
 };
 
