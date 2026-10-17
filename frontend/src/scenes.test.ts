@@ -16,6 +16,7 @@ function message(attachments: Attachment[], step: SceneStep | null = null): Mess
     attachments,
     step,
     suggested_note: null,
+    plan: null,
   };
 }
 
