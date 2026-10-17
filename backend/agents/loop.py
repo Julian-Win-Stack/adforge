@@ -286,6 +286,8 @@ def _run(agent: Agent, call: ToolCall) -> str | ToolResult:
             result = given.run(call)
         if isinstance(result, ToolResult):
             for picture in result.pictures:
+                if not (picture.label and picture.key):
+                    raise ValueError(f"the {call.tool} tool gave a picture with no label or key")
                 check_readable(picture)
         return result
     except Refused as refused:

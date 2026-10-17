@@ -10,6 +10,7 @@ from typing import Any, ClassVar
 
 import PIL.Image
 import pytest
+from django.db.models.signals import post_save
 from pytest_httpserver import HTTPServer
 
 from adforge import file_store
@@ -49,10 +50,10 @@ class LookAtScene(Tool):
         )
 
 
-class Note(Tool):
-    """Write a note."""
+class JotDown(Tool):
+    """Jot something down."""
 
-    name: ClassVar[str] = "note"
+    name: ClassVar[str] = "jot_down"
     text: str
 
     def run(self, call: ToolCall) -> str:
@@ -63,7 +64,7 @@ LOOKER = Agent(
     name="looker",
     purpose="produce",
     instructions="Look before you decide.",
-    tools=[LookAtScene, Note],
+    tools=[LookAtScene, JotDown],
 )
 
 CURRENT = "pictures/current.png"
@@ -154,10 +155,46 @@ def test_a_restart_shows_the_pictures_again_the_same_way(
     assert ToolCall.objects.filter(tool="look_at_scene").count() == 1
 
 
+class WorkerStopped(BaseException):
+    """The worker running the agent was killed."""
+
+
+def test_a_picture_turn_paid_for_when_the_worker_stopped_is_taken_again_without_paying(
+    fake_model: FakeModel, session: Session
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("look_at_scene", {"scene": 2})]),
+        turn("Version 1 has the white toilet."),
+    )
+
+    def stop(instance: ModelCall, **_: Any) -> None:
+        if instance.images and instance.outcome == ModelCall.Outcome.SUCCEEDED:
+            post_save.disconnect(stop, sender=ModelCall)
+            raise WorkerStopped
+
+    # The worker stops once the turn shown the pictures is paid for, before its words are kept.
+    post_save.connect(stop, sender=ModelCall, weak=False)
+    try:
+        with pytest.raises(WorkerStopped):
+            loop.run(LOOKER, session)
+    finally:
+        post_save.disconnect(stop, sender=ModelCall)
+
+    # Nothing more is scripted: paying for the stopped turn again would fail the run.
+    loop.run(LOOKER, session)
+
+    assert len(fake_model.turns_taken) == 2
+    assert ModelCall.objects.filter(purpose="produce").exclude(images=[]).count() == 1
+    assert session.messages.filter(role=Message.Role.AGENT).values_list(
+        "text", flat=True
+    ).last() == ("Version 1 has the white toilet.")
+
+
 def test_a_text_only_tool_is_kept_and_given_as_before(
     fake_model: FakeModel, session: Session
 ) -> None:
-    fake_model.respond("produce", turn(calls=[("note", {"text": "white"})]), turn("Noted it."))
+    fake_model.respond("produce", turn(calls=[("jot_down", {"text": "white"})]), turn("Noted it."))
 
     loop.run(LOOKER, session)
 
@@ -170,7 +207,7 @@ def test_a_text_only_tool_is_kept_and_given_as_before(
     assert record.handoff["conversation"][-1] == {
         "kind": "tool_use",
         "call_id": ToolCall.objects.get().call_id,
-        "tool": "note",
+        "tool": "jot_down",
         "arguments": {"text": "white"},
         "result": "Noted: white",
     }
@@ -185,7 +222,7 @@ def test_openai_is_sent_the_pictures_inside_the_tool_result(
     del fake_model  # Turns go to the real OpenAI code below; nothing else is called.
     openai_server(
         openai_turn("", ("call_look", "look_at_scene", {"scene": 2})),
-        openai_turn("", ("call_note", "note", {"text": "white"})),
+        openai_turn("", ("call_note", "jot_down", {"text": "white"})),
         openai_turn("Version 1 has the white toilet."),
     )
 
@@ -219,6 +256,35 @@ def test_openai_is_sent_the_pictures_inside_the_tool_result(
         {"label": LABELS[1], "key": FIRST},
     ]
     assert sum((record.cost_usd or Decimal(0)) for record in ModelCall.objects.all()) > Decimal(0)
+
+
+class LookAtNothing(Tool):
+    """Show a picture code forgot to label."""
+
+    name: ClassVar[str] = "look_at_nothing"
+
+    def run(self, call: ToolCall) -> ToolResult:
+        return ToolResult(text="Here it is.", pictures=[Image(label="", key=CURRENT)])
+
+
+def test_a_picture_with_no_label_fails_the_tool_and_the_agent_carries_on(
+    fake_model: FakeModel, session: Session
+) -> None:
+    agent = Agent(name="looker", purpose="produce", instructions="", tools=[LookAtNothing])
+    fake_model.respond(
+        "produce", turn(calls=[("look_at_nothing", {})]), turn("I couldn't look at it.")
+    )
+
+    loop.run(agent, session)
+    # A later run rebuilds the conversation from the checkpoint without tripping on it.
+    messages.add(session, role=Message.Role.USER, text="Try again.")
+    fake_model.respond("produce", turn("Still nothing to see."))
+    loop.run(agent, session)
+
+    call = ToolCall.objects.get()
+    assert call.result.startswith("Failed:")
+    assert call.pictures == []
+    assert [len(each.images) for each in fake_model.turns_taken] == [0, 0, 0]
 
 
 class LookAtText(Tool):

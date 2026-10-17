@@ -225,22 +225,16 @@ def _image_part(image: LoadedImage) -> ResponseInputImageParam:
     # "high" detail shows the model the picture as sent (the gateway has already shrunk it to
     # fit MAX_IMAGE_SIDE), so small print and look-alike products can be told apart. It costs
     # more than "low" per picture; decided for every call alike in #1 step 1.
-    data = base64.b64encode(image.data).decode("ascii")
-    return {
-        "type": "input_image",
-        "image_url": f"data:{image.media_type};base64,{data}",
-        "detail": "high",
-    }
+    return {"type": "input_image", "image_url": _data_url(image), "detail": "high"}
 
 
 def _output_image(image: LoadedImage) -> ResponseInputImageContentParam:
     # As sharp as `_image_part`'s, for the same reasons.
-    data = base64.b64encode(image.data).decode("ascii")
-    return {
-        "type": "input_image",
-        "image_url": f"data:{image.media_type};base64,{data}",
-        "detail": "high",
-    }
+    return {"type": "input_image", "image_url": _data_url(image), "detail": "high"}
+
+
+def _data_url(image: LoadedImage) -> str:
+    return f"data:{image.media_type};base64,{base64.b64encode(image.data).decode('ascii')}"
 
 
 def _conversation(request: TurnRequest) -> ResponseInputParam:

@@ -227,7 +227,7 @@ def take_turn(
         tools=tuple(tools),
         images=tuple(_load(image) for image in shown),
     )
-    images = [{"label": image.label, "key": image.key} for image in shown]
+    images = _shown(shown)
     # A turn paid for before the worker stopped, but not yet kept, is taken again for free.
     answered = _answered_before(handoff, purpose=purpose, session=session, images=images)
     if answered is not None:
@@ -308,7 +308,7 @@ def call_model[Out: BaseModel](
             handoff,
             purpose=purpose,
             job=job,
-            images=_shown(request),
+            images=_shown(request.images),
             images_may_move=images_may_move,
         )
         if answered is not None:
@@ -330,7 +330,9 @@ def call_model[Out: BaseModel](
             reason=judgement.reason if judgement else "",
         )
 
-    return _recorded(job, purpose, request.model, provider.name, handoff, complete, _shown(request))
+    return _recorded(
+        job, purpose, request.model, provider.name, handoff, complete, _shown(request.images)
+    )
 
 
 def draw_picture(*, job: Job | None, purpose: str, prompt: str) -> str:
@@ -834,9 +836,9 @@ def shrunk_image(image: Image, content: bytes) -> LoadedImage:
     )
 
 
-def _shown[Out: BaseModel](request: ModelRequest[Out]) -> list[dict[str, str]]:
-    """Which images the call showed, by their keys: the bytes are already in the file store."""
-    return [{"label": image.label, "key": image.key} for image in request.images]
+def _shown(images: Sequence[Image | LoadedImage]) -> list[dict[str, str]]:
+    """Which images a call showed, by their keys: the bytes are already in the file store."""
+    return [{"label": image.label, "key": image.key} for image in images]
 
 
 def _elapsed_ms(started: float) -> int:
