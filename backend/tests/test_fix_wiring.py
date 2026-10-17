@@ -32,7 +32,12 @@ from .conftest import MUG_SIDE, HeldSteps, producer_turns
 from .fixing import fixed
 from .test_fix_check import HANDLE_HIDDEN, not_made
 from .test_fix_loop import TURN_REWRITE
-from .test_producer_broll import BROLL_CHOICE, TALKING_CHOICE, checked  # noqa: F401 (a fixture)
+from .test_producer_broll import (  # noqa: F401 (a fixture)
+    BROLL_CHOICE,
+    MOTION,
+    TALKING_CHOICE,
+    checked,
+)
 from .test_producer_picture_then_clip import (
     ads,
     assembled,  # noqa: F401 (a fixture)
@@ -719,3 +724,31 @@ def test_a_typed_yes_sent_before_the_plan_was_shown_runs_nothing(
     assert Message.objects.filter(role="agent").last().text == (  # type: ignore[union-attr]
         "Here's the plan: tap Yes if it looks right."
     )
+
+
+def test_a_new_picture_keeps_the_movement_of_the_clip_it_replaces(
+    fake_model: FakeModel,
+    held: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    # The live ad's fix 1: a picture note gave the clip a newly chosen action the shop owner
+    # never asked for. Only a new clip chooses a new movement (design thread, 05:15 Oct 17).
+    fake_model.respond(
+        "decide_fixes",
+        planning(
+            ("look_at_picture", {"scene": 2}),
+            decided(row(2, "new_picture", "The mug is on a wooden table.")),
+        ),
+    )
+    say("In scene 2 put the mug on a wooden table.")
+    tap_yes(api, session_id, plans()[-1])
+    fake_model.respond("choose_broll_picture", {**BROLL_CHOICE, "motion_prompt": LIFT})
+
+    held.run_held()
+
+    assert status(2) == "finished"
+    asked = fake_model.broll_clips_asked[-1]["prompt"]
+    assert MOTION in asked
+    assert LIFT not in asked
