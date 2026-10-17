@@ -27,6 +27,7 @@ from gateway.gateway import (
     IMAGE_TYPE_NAMES,
     UnreadableImage,
     charged_to,
+    check_readable,
     last_turn_given,
     take_turn,
 )
@@ -34,15 +35,18 @@ from gateway.types import (
     BlockedBySafetyFilter,
     ClipFailed,
     Happened,
+    Image,
     Said,
+    Shown,
     StepFinished,
     ToolSpec,
     ToolUse,
     UnusableReply,
 )
 from jobs.models import SceneStep
+from jobs.reference_photos import ReferencePhotoUnusable
 
-from .models import ToolCall
+from .models import SystemNote, ToolCall
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +59,7 @@ EXPECTED_FAILURES = (
     UnreadableImage,
     ClipFailed,
     BlockedBySafetyFilter,
+    ReferencePhotoUnusable,
 )
 
 # Asking again sends the same thing, so the run stops and the shop owner starts afresh.
@@ -75,6 +80,16 @@ class Refused(Exception):
     rules, or what it works on doesn't exist yet. Says why, for the agent."""
 
 
+@dataclass(frozen=True)
+class ToolResult:
+    """What a tool hands back when it has pictures to show: its words, and the pictures,
+    each with the label code gave it, such as "Scene 2, starting picture, v1 first version".
+    The agent is shown them, labelled, in this order, on its next turn."""
+
+    text: str
+    pictures: Sequence[Image]
+
+
 class Tool(BaseModel):
     """One thing an agent can do. A subclass is one tool: its `name`, a docstring telling
     the model what it does, and fields for the arguments the model fills in."""
@@ -83,8 +98,9 @@ class Tool(BaseModel):
 
     name: ClassVar[str]
 
-    def run(self, call: ToolCall) -> str:
-        """Do the work and say what happened. What it says is the result the agent is given."""
+    def run(self, call: ToolCall) -> str | ToolResult:
+        """Do the work and say what happened. What it says is the result the agent is given,
+        with any pictures it hands back."""
         raise NotImplementedError
 
     @classmethod
@@ -97,12 +113,14 @@ class Tool(BaseModel):
 @dataclass(frozen=True)
 class Agent:
     """What runs on the loop: the agent's name, the purpose that picks its model, what it is
-    told to do, and the tools it may call."""
+    told to do, the tools it may call, and whether it is given code's system notes on the
+    fix plans it runs (the producer is: fix redesign, decision 20)."""
 
     name: str
     purpose: str
     instructions: str
     tools: Sequence[type[Tool]]
+    reads_system_notes: bool = False
 
 
 def run(agent: Agent, session: Session, *, woken_by: Sequence[str] = ()) -> int:
@@ -133,16 +151,16 @@ def _work(agent: Agent, session: Session) -> int:
     # A tool that was running when the last worker stopped runs again first: the agent
     # can't take another turn until every tool it asked for has handed back a result.
     for call in session.tool_calls.filter(agent=agent.name, finished_at__isnull=True):
-        _settle(agent, call)
+        settle(agent, call)
     while True:
-        conversation, read_up_to, steps = _conversation(agent, session)
+        conversation, read_up_to, steps, notes = _conversation(agent, session)
         if _stopped_since_the_user_spoke(session):
             stopping = [
                 step
                 for step in steps
                 if step.status == SceneStep.Status.STOPPED and step.producer_read_at is None
             ]
-            _read(steps)
+            _read(steps, notes)
             if stopping:
                 raise RunStopped(
                     f"{stopping[0].reason}. The pictures and why each failed are above"
@@ -151,7 +169,7 @@ def _work(agent: Agent, session: Session) -> int:
             return read_up_to
         if _nothing_to_answer_since_its_last_turn(agent, session, conversation):
             # Its last turn was given all of them, before a worker stopped past its reply.
-            _read(steps)
+            _read(steps, notes)
             return read_up_to
         # The turn is traced with the tools it asked for inside it.
         with tracing.agent_turn(agent.name):
@@ -168,9 +186,9 @@ def _work(agent: Agent, session: Session) -> int:
             # What the agent said and the tools it asked for are written down together, before
             # any tool runs, so a restart finds both or neither.
             with transaction.atomic():
-                # Only the steps the turn was given: one that finished while the model worked
-                # is given on the next turn.
-                _read(steps)
+                # Only the steps and notes the turn was given: one that came while the model
+                # worked is given on the next turn.
+                _read(steps, notes)
                 if turn.says:
                     messages.add(session, role=Message.Role.AGENT, text=turn.says)
                 if stopped:
@@ -197,7 +215,7 @@ def _work(agent: Agent, session: Session) -> int:
                 if _stopped_since_the_user_spoke(session):
                     _refuse_as_stopped(call)
                 else:
-                    _settle(agent, call)
+                    settle(agent, call)
 
 
 def _refuse_as_stopped(call: ToolCall) -> None:
@@ -208,7 +226,7 @@ def _refuse_as_stopped(call: ToolCall) -> None:
     call.save(update_fields=["result", "finished_at"])
 
 
-def _settle(agent: Agent, call: ToolCall) -> None:
+def settle(agent: Agent, call: ToolCall) -> None:
     """Run the tool a checkpoint asked for, unless it is past the limit, and keep what it
     handed back. A call the safety filter blocked is kept as failed, then stops the run."""
     blocked: BlockedBySafetyFilter | None = None
@@ -227,13 +245,20 @@ def _settle(agent: Agent, call: ToolCall) -> None:
             )
         else:
             try:
-                call.result = _run(agent, call)
+                result = _run(agent, call)
+                if isinstance(result, ToolResult):
+                    call.result = result.text
+                    call.pictures = [
+                        {"label": picture.label, "key": picture.key} for picture in result.pictures
+                    ]
+                else:
+                    call.result = result
             except BlockedBySafetyFilter as error:
                 blocked = error
                 call.result = f"Failed: {why_it_failed(error, 'the tool')}"
         tracing.handed_back(traced, call.result, **_level(call.result))
     call.finished_at = timezone.now()
-    call.save(update_fields=["result", "asked_about", "finished_at"])
+    call.save(update_fields=["result", "pictures", "asked_about", "finished_at"])
     if blocked is not None:
         raise blocked
 
@@ -247,9 +272,10 @@ def _level(result: str) -> dict[str, str]:
     return {}
 
 
-def _run(agent: Agent, call: ToolCall) -> str:
+def _run(agent: Agent, call: ToolCall) -> str | ToolResult:
     """What the tool hands back: what it did, or why it refused or failed. A tool that fails
-    hands the reason back, so the agent can tell the user, or try something else."""
+    hands the reason back, so the agent can tell the user, or try something else. A picture
+    no model can read fails the tool here, rather than the agent's next turn."""
     try:
         tool = {tool.name: tool for tool in agent.tools}[call.tool]
         try:
@@ -259,7 +285,13 @@ def _run(agent: Agent, call: ToolCall) -> str:
                 f"it was called with arguments it can't use ({_what_is_wrong(invalid)})."
             ) from invalid
         with charged_to(call):
-            return given.run(call)
+            result = given.run(call)
+        if isinstance(result, ToolResult):
+            for picture in result.pictures:
+                if not (picture.label and picture.key):
+                    raise ValueError(f"the {call.tool} tool gave a picture with no label or key")
+                check_readable(picture)
+        return result
     except Refused as refused:
         return f"Refused: {refused} Nothing was done."
     except BlockedBySafetyFilter:
@@ -283,6 +315,8 @@ def why_it_failed(error: Exception, stopped: str) -> str:
         return f"{BLOCKED}."
     if isinstance(error, ClipFailed):
         return f"the video model couldn't make the clip ({error})."
+    if isinstance(error, ReferencePhotoUnusable):
+        return f"{error}"
     return f"an unexpected error stopped {stopped}. The details are in the server log."
 
 
@@ -313,6 +347,11 @@ def _nothing_to_answer_since_its_last_turn(
     )
 
 
+def over_the_limit(session: Session) -> bool:
+    """Whether the agents have called every tool they may for the user's last message."""
+    return _calls_since_the_user_spoke(session) >= _limit()
+
+
 def _limit() -> int:
     """How many tools every agent together may call for one message from the user."""
     limit: int = settings.MAX_TOOL_CALLS_PER_MESSAGE
@@ -334,10 +373,13 @@ def _calls_since_the_user_spoke(session: Session, *, up_to: ToolCall | None = No
     return calls.count()
 
 
-def _conversation(agent: Agent, session: Session) -> tuple[list[Happened], int, list[SceneStep]]:
-    """Everything said in the session, every tool the agent called, and every scene step
-    its tools started that has finished, in the order they happened. With it, the number of
-    the last message in it, and the scene steps in it.
+def _conversation(
+    agent: Agent, session: Session
+) -> tuple[list[Happened], int, list[SceneStep], list[SystemNote]]:
+    """Everything said in the session, every tool the agent called, every scene step its
+    tools started that has finished, and, for an agent that reads them, every system note,
+    in the order they happened. With it, the number of the last message in it, and the
+    scene steps and system notes in it.
 
     A step comes where the agent was first given it, not when it finished, and one not
     given yet comes last. A step that finished while a turn was being taken is given on the
@@ -348,12 +390,16 @@ def _conversation(agent: Agent, session: Session) -> tuple[list[Happened], int, 
     so. Given as the agent's own "[Attached 1 picture]", it was copied as a reply with no
     picture on it. A notice is left out too: it is code telling the shop owner about a
     fallback, which the tool's result already told the agent, and given as the agent's own
-    words it would read as something it said."""
+    words it would read as something it said.
+
+    A system note comes where the agent was first given it, as a step does. The fix plan
+    steps code runs are never the agent's, so it is told of them only by these notes."""
     said = list(session.messages.prefetch_related("attachments"))
     finished = _finished_steps(agent, session).order_by("finished_at", "id")
     read = list(finished.filter(producer_read_at__isnull=False))
     unread = list(finished.filter(producer_read_at__isnull=True))
-    happened: list[tuple[datetime, Message | ToolCall | SceneStep]] = [
+    notes = list(session.system_notes.all()) if agent.reads_system_notes else []
+    happened: list[tuple[datetime, Message | ToolCall | SceneStep | SystemNote]] = [
         *(
             (message.created_at, message)
             for message in said
@@ -362,10 +408,15 @@ def _conversation(agent: Agent, session: Session) -> tuple[list[Happened], int, 
         ),
         *((call.created_at, call) for call in session.tool_calls.filter(agent=agent.name)),
         *((step.producer_read_at, step) for step in read if step.producer_read_at),
+        *((note.read_at, note) for note in notes if note.read_at),
     ]
-    in_order = [each for _, each in sorted(happened, key=lambda each: each[0])] + unread
+    in_order: list[Message | ToolCall | SceneStep | SystemNote] = [
+        *(each for _, each in sorted(happened, key=lambda each: each[0])),
+        *unread,
+        *(note for note in notes if note.read_at is None),
+    ]
     conversation = [_as_given(each) for each in in_order]
-    return conversation, max((message.seq for message in said), default=0), read + unread
+    return conversation, max((message.seq for message in said), default=0), read + unread, notes
 
 
 def _stopped_since_the_user_spoke(session: Session) -> bool:
@@ -389,24 +440,36 @@ def _finished_steps(agent: Agent, session: Session) -> QuerySet[SceneStep]:
     )
 
 
-def _read(steps: list[SceneStep]) -> None:
-    """Mark these scene steps' results as given to the agent that started them."""
+def _read(steps: list[SceneStep], notes: list[SystemNote]) -> None:
+    """Mark these scene steps' results as given to the agent that started them, and these
+    system notes as given to the producer."""
+    now = timezone.now()
     SceneStep.objects.filter(
         pk__in=[step.pk for step in steps], producer_read_at__isnull=True
-    ).update(producer_read_at=timezone.now())
+    ).update(producer_read_at=now)
+    SystemNote.objects.filter(pk__in=[note.pk for note in notes], read_at__isnull=True).update(
+        read_at=now
+    )
 
 
-def _as_given(happened: Message | ToolCall | SceneStep) -> Happened:
+# How a system note begins, so the agent reads it as the app's and not the shop owner's.
+SYSTEM_NOTE = "From the app, not the shop owner:"
+
+
+def _as_given(happened: Message | ToolCall | SceneStep | SystemNote) -> Happened:
     if isinstance(happened, SceneStep):
         return StepFinished(text=happened.result)
+    if isinstance(happened, SystemNote):
+        return StepFinished(text=f"{SYSTEM_NOTE} {happened.text}")
     if isinstance(happened, ToolCall):
         return ToolUse(
             call_id=happened.call_id,
             tool=happened.tool,
             arguments=happened.arguments,
             result=happened.result,
+            pictures=[Shown(**picture) for picture in happened.pictures],
         )
     return Said(
         by="user" if happened.role == Message.Role.USER else "agent",
-        text=messages.as_read(happened),
+        text=messages.as_read(happened, numbered=True),
     )

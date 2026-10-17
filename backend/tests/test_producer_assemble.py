@@ -23,11 +23,11 @@ from .conftest import (
     loudness,
     paid_for,
     results_of,
-    said_yes_to_a_fix,
     served,
     silences,
     video,
 )
+from .fixing import fixed
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -294,20 +294,11 @@ def test_the_ad_isnt_assembled_while_a_scene_is_unfinished(
 def test_the_ad_isnt_assembled_while_a_clip_is_being_made(
     fake_model: FakeModel, finished: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    # Scene 1 gets a new starting picture, and its new clip is started but not made yet.
-    said_yes_to_a_fix(1, "Hold it higher.", "picture")
-    fake_model.respond(
-        "produce",
-        turn(calls=[("make_starting_picture", {"scene": 1, "note": "Hold it higher."})]),
-        turn(says="Making a new picture."),
-    )
-    say("Make scene 1's picture again, holding it higher")
+    # Scene 1 gets a new starting picture through a plan said yes to, and the new clip code
+    # starts from it is not made yet.
+    fixed(1, "new_picture", change="Hold it higher.")
     fake_model.respond("choose_starting_picture", CHOICE)
-    run(fake_model, steps)
-    fake_model.respond(
-        "produce", turn(calls=[("make_clip", {"scene": 1})]), turn(says="Making the clip.")
-    )
-    say("Make its clip")
+    steps.run_next()
     assert len(steps.held) == 1
 
     assemble(fake_model, say)
@@ -362,21 +353,11 @@ def test_a_scene_made_again_gets_a_new_version_of_the_ad_and_the_old_one_is_kept
 ) -> None:
     assemble(fake_model, say)
     first_clip = ProducedItem.objects.get(kind="clip", scene__number=1)
-    said_yes_to_a_fix(1, "Hold it higher.", "picture")
-    fake_model.respond(
-        "produce",
-        turn(calls=[("make_starting_picture", {"scene": 1, "note": "Hold it higher."})]),
-        turn(says="Making a new picture."),
-    )
-    say("Make scene 1's picture again, holding it higher")
+    fixed(1, "new_picture", change="Hold it higher.")
     fake_model.respond("choose_starting_picture", CHOICE)
-    run(fake_model, steps)
-    fake_model.respond(
-        "produce", turn(calls=[("make_clip", {"scene": 1})]), turn(says="Making the clip.")
-    )
-    say("Make its clip")
-    run(fake_model, steps)
 
+    # Once its new picture and clip are made, code assembles the new ad.
+    steps.run_held()
     assemble(fake_model, say)
 
     first, second = ads()
@@ -386,6 +367,7 @@ def test_a_scene_made_again_gets_a_new_version_of_the_ad_and_the_old_one_is_kept
     new_clip = ProducedItem.objects.filter(kind="clip", scene__number=1).latest("version")
     assert second.cuts[0]["clip"] == new_clip.pk != first_clip.pk
     assert len(ads_shown(api, session_id)) == 2
+    assert results_of("assemble_ad")[-1].startswith("The ad was already assembled")
 
 
 def test_the_music_plays_under_the_voice_and_is_cut_to_the_ads_length(

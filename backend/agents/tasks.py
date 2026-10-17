@@ -21,7 +21,6 @@ from jobs.models import FixCheck, ProducedItem, Scene, SceneStep
 from jobs.picture_check import PictureKeptFailing
 from jobs.work import (
     check_fix,
-    judge_still_sees,
     make_clip,
     make_line_audio,
     make_starting_picture,
@@ -29,13 +28,14 @@ from jobs.work import (
     say_the_pictures_kept_failing,
     too_long_for_a_clip,
     transcribe_line_audio,
+    version_label,
     what_the_judge_did,
 )
 
-from . import loop, step_signals
+from . import loop, routing, run_plan, step_signals
 from .loop import BLOCKED, EXPECTED_FAILURES, RunStopped, why_it_failed
 from .money import dollars
-from .producer import PRODUCER, STEP_NAMES, assemble_after_fix, assembles_after
+from .producer import PRODUCER, STEP_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +44,10 @@ logger = logging.getLogger(__name__)
 # died is noticed by its heartbeat stopping, and started again (see wake_producer).
 @shared_task(acks_late=False)
 def run_producer(session_id: str) -> None:
-    """Let the producer work in the session until it replies. If it can't carry on, the
-    chat is told why."""
+    """Let the producer work in the session until it replies, once code has routed the shop
+    owner's messages: after the ad's first clip each goes to the decider first, and only
+    those it passes on, or none, leave the producer something to answer. If it can't carry
+    on, the chat is told why."""
     session = Session.objects.get(pk=session_id)
     try_again = " Send a message to try again."
     beating = _beating(
@@ -58,9 +60,7 @@ def run_producer(session_id: str) -> None:
             # The producer only stops once it has read everything the user sent and every
             # scene step's result: a message that arrives as it replies is an interrupt, and
             # it works on that too.
-            while not _stop_unless_theres_more_to_read(
-                session_id, loop.run(PRODUCER, session, woken_by=_woken_by(session))
-            ):
+            while not _stop_unless_theres_more_to_read(session_id, _work_on(session)):
                 pass
     except BlockedBySafetyFilter:
         why = BLOCKED
@@ -88,6 +88,14 @@ def run_producer(session_id: str) -> None:
         Session.objects.filter(pk=session_id).update(producer_running=False)
 
 
+def _work_on(session: Session) -> int:
+    """Route what the shop owner sent, then let the producer work if it has something to
+    answer or a scene step's result to read. Gives the number of the last message read."""
+    if routing.route(session) or loop.unread_steps(PRODUCER, session).exists():
+        return loop.run(PRODUCER, session, woken_by=_woken_by(session))
+    return routing.last_seq(session)
+
+
 def _woken_by(session: Session) -> list[str]:
     """The scene steps that finished since the producer last read them, by name."""
     unread = loop.unread_steps(PRODUCER, session).select_related("scene")
@@ -96,12 +104,15 @@ def _woken_by(session: Session) -> list[str]:
 
 def _stop_unless_theres_more_to_read(session_id: str, read_up_to: int) -> bool:
     """Mark the producer stopped, unless the user said something after the messages up to
-    `read_up_to` it was last given, or a scene step finished that it hasn't been given. Both
+    `read_up_to` it was last given or that code hasn't routed yet, or a scene step finished
+    that it hasn't been given. Both
     happen under the session's lock, which a message sent and a step finished take before
     they look for a producer, so each is either found here or starts a new producer itself."""
     with transaction.atomic():
         session = Session.objects.select_for_update().get(pk=session_id)
         if session.messages.filter(role=Message.Role.USER, seq__gt=read_up_to).exists():
+            return False
+        if routing.unrouted_messages(session).exists():
             return False
         if loop.unread_steps(PRODUCER, session).exists():
             return False
@@ -190,10 +201,9 @@ def _picture_finished(step: SceneStep, picture: ProducedItem | None) -> str:
     number = step.scene.number
     # A finished scene is planned again here, in the transaction that finishes the step and
     # tells the producer, so a worker that stops first leaves the scene with its old clip.
-    failed = FixCheck.objects.filter(step=step, verdict=FixCheck.Verdict.FAILED).exists()
+    # Its clip is made by code, never by the producer (decision 2).
     unfinished = (
-        f"Scene {number} is no longer finished"
-        + (". " if failed else ": make its clip from this picture. ")
+        f"Scene {number} is no longer finished. "
         if Scene.objects.get(pk=step.scene_id).plan_again()
         else ""
     )
@@ -298,7 +308,11 @@ STEP_WORK = {
         make=make_starting_picture,
         finished=_picture_finished,
         shown=lambda step, picture: (
-            [messages.AttachedFile(Attachment.Kind.PICTURE, picture.file, step.scene.number)]
+            [
+                messages.AttachedFile(
+                    Attachment.Kind.PICTURE, picture.file, step.scene.number, version_label(picture)
+                )
+            ]
             if picture
             else []
         ),
@@ -320,7 +334,11 @@ STEP_WORK = {
         make=make_clip,
         finished=_clip_finished,
         shown=lambda step, clip: (
-            [messages.AttachedFile(Attachment.Kind.VIDEO, clip.file, step.scene.number)]
+            [
+                messages.AttachedFile(
+                    Attachment.Kind.VIDEO, clip.file, step.scene.number, version_label(clip)
+                )
+            ]
             if clip
             else []
         ),
@@ -374,21 +392,26 @@ def run_scene_step(step_id: int) -> None:
                     carrying=shown,
                     step=step_signals.signal(step, Message.StepState.MADE),
                 )
-            failed = checked is not None and checked.verdict == FixCheck.Verdict.FAILED
-            if checked is not None and failed:
+            # A fix plan's step is shown its failed check by code, once it isn't drawn again.
+            if (
+                checked is not None
+                and checked.verdict == FixCheck.Verdict.FAILED
+                and step.plan_scene_id is None
+            ):
                 say_the_fix_check_failed(checked)
             step.status = SceneStep.Status.FINISHED
             # Inside the transaction: a picture's message plans its scene again.
-            step.result = work.finished(step, made) + _fix_checked(checked)
+            step.result = work.finished(step, made)
             step.finished_at = timezone.now()
             step.save(update_fields=["status", "result", "finished_at"])
-            # A fix's clip has the new ad assembled by code, in the same transaction, so a
-            # step run again after a crash assembles and shows it once. Not when its check
-            # failed: the shop owner decides first.
-            if assembles_after(step) and not failed:
-                step.result = f"{step.result} {_assembled_after_fix(step)}"
-                step.save(update_fields=["result"])
+            # A fix plan's step is carried on by code, and never wakes the producer: a
+            # fix's picture that passed its checks queues its clip here (decision 2).
+            if step.plan_scene_id is not None:
+                run_plan.step_finished(step, checked)
+                return
             wake_producer(str(session.pk))
+            # A fix plan's scene that waited for this one's step to finish carries on.
+            run_plan.carry_on_scene(step.scene)
     except PictureKeptFailing as error:
         # It stops the whole run. The chat is shown why in the same transaction, so a step
         # run again after a crash never shows it twice.
@@ -396,7 +419,7 @@ def run_scene_step(step_id: int) -> None:
         with transaction.atomic():
             say_the_pictures_kept_failing(step.scene.job, error)
             _stop(step, str(error))
-            wake_producer(str(session.pk))
+            _told_it_ended(step)
     # Whatever stops the step, it isn't left running: the producer is told why.
     except Exception as error:
         if not isinstance(error, EXPECTED_FAILURES):
@@ -404,52 +427,18 @@ def run_scene_step(step_id: int) -> None:
         tracing.flush()
         with transaction.atomic():
             _fail(step, why_it_failed(error, "the step"))
-            wake_producer(str(session.pk))
+            _told_it_ended(step)
 
 
-def _fix_checked(check: FixCheck | None) -> str:
-    """What the check of a fix found, for the producer, as a sentence to follow another."""
-    if check is None:
-        return ""
-    number = check.step.scene.number
-    if check.verdict == FixCheck.Verdict.PASSED:
-        return f" The check of scene {number}'s fix found the change in the new {check.what}."
-    if check.verdict == FixCheck.Verdict.UNCHECKED:
-        return (
-            f" Scene {number}'s fix couldn't be checked, so tell the shop owner it wasn't checked."
-        )
-    dont, go_ahead = (
-        ("make its clip", "make its clip with no note")
-        if check.what == "picture"
-        else ("assemble the ad", "assemble the ad with assemble_ad")
-    )
-    return (
-        f" The check of scene {number}'s fix found the change isn't in the new {check.what}: "
-        f"{check.reason} The chat shows the shop owner the old {check.what} and the new one, "
-        f"and why. Don't {dont} or say it's fixed: wait for their answer. If they say go "
-        f"ahead, {go_ahead}; if they say what to change, restate a new fix."
-        # One notice says both (decision thread, call 4): the producer doesn't say it again.
-        + (
-            " The chat also told them what the clip's own check still sees, so don't say it again."
-            if judge_still_sees(check.new)
-            else ""
-        )
-    )
-
-
-def _assembled_after_fix(step: SceneStep) -> str:
-    """What assembling the ad after a fix's clip landed did, for the producer. Assembly
-    failing for a reason nobody expected doesn't fail the step: its clip is made and paid
-    for."""
-    try:
-        with transaction.atomic():
-            return assemble_after_fix(step)
-    except Exception as error:
-        logger.exception("Assembling the ad after scene step %s failed", step.pk)
-        return (
-            f"The ad couldn't be assembled again: {why_it_failed(error, 'it')} Assemble it "
-            "with assemble_ad."
-        )
+def _told_it_ended(step: SceneStep) -> None:
+    """Tell whoever started a step that failed or stopped: the producer, woken to read it, or,
+    for a fix plan's step, code, which tells the producer with a system note."""
+    if step.plan_scene_id is not None:
+        run_plan.step_failed(step)
+    else:
+        wake_producer(str(step.tool_call.session_id))
+        # A fix plan's scene that waited for this one's step to end carries on.
+        run_plan.carry_on_scene(step.scene)
 
 
 def _fail(step: SceneStep, reason: str) -> None:
@@ -496,11 +485,21 @@ def carry_on_after_the_worker_starts() -> None:
     with transaction.atomic():
         hold_one_at_a_time_lock()
         sessions = set(Session.objects.filter(producer_running=True).values_list("pk", flat=True))
-        for step in SceneStep.objects.filter(status=SceneStep.Status.RUNNING).select_related(
-            "scene", "tool_call"
-        ):
+        stopped = list(
+            SceneStep.objects.filter(status=SceneStep.Status.RUNNING).select_related(
+                "scene", "tool_call"
+            )
+        )
+        for step in stopped:
             _fail(step, "The worker restarted while it was being made.")
-            sessions.add(step.tool_call.session_id)
+        # Every step is failed first, so a fix plan's scene isn't carried on while another
+        # of its steps still looks running.
+        for step in stopped:
+            if step.plan_scene_id is not None:
+                run_plan.step_failed(step)
+            else:
+                sessions.add(step.tool_call.session_id)
+                run_plan.carry_on_scene(step.scene)
         for session in Session.objects.filter(pk__in=sessions):
             if another_session_is_busy(session):
                 continue

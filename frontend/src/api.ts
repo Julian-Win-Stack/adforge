@@ -7,6 +7,9 @@ export type Attachment = {
   kind: "picture" | "sound" | "video";
   url: string;
   scene: number | null;
+  /** For a scene's starting picture or clip, the label of the scene version it is shown as,
+   * such as "v2 black toilet"; blank otherwise. */
+  version?: string;
 };
 
 /** What a message says of a scene's starting picture or clip: a notice that it started, the
@@ -16,6 +19,49 @@ export type SceneStep = {
   scene: number;
   kind: "starting_picture" | "clip";
   state: "started" | "made" | "not_made";
+};
+
+/** An owner photo a plan's scene uses: the one thing taken from it, whether that thing is in
+ * the scene's starting picture now, and whether more of it shows during the action. */
+export type PlanPhoto = {
+  photo: number;
+  thing: string;
+  in_picture: boolean;
+  during_action: boolean;
+};
+
+/** What a fix plan changes in one scene, or why it can't. Amounts are dollars as strings. */
+export type PlanScene = {
+  scene: number;
+  action: "new_picture" | "new_clip" | "new_line" | "go_back" | "no_change";
+  change: string;
+  line: string;
+  go_back_to: number | null;
+  cant: string;
+  estimate_usd: string;
+  estimate_up_to_usd: string;
+  photos: PlanPhoto[];
+};
+
+/** A fix plan as code posts it for the owner's yes (backend jobs/fix_plans.py `notice`),
+ * read as it stands when the message was fetched. */
+export type PlanNotice = {
+  plan: number;
+  state: "proposed" | "confirmed" | "declined" | "replaced";
+  question: string;
+  estimate_usd: string;
+  estimate_up_to_usd: string;
+  /** What the owner asked that can't be done and isn't about one scene (music, voice...). */
+  cants: { kind: string; text: string }[];
+  scenes: PlanScene[];
+};
+
+/** What a message says of a fix plan: code's notice showing it (with the plan), the owner's
+ * tap of its yes button, or code's notice that it is going ahead or was dropped. */
+export type MessagePlan = {
+  id: number;
+  event: "shown" | "yes" | "confirmed" | "declined";
+  notice: PlanNotice | null;
 };
 
 /** One turn in a session, from the user or the agent, or a notice the server posts when a
@@ -32,6 +78,8 @@ export type Message = {
   /** A note the message suggests for a scene's card, as when the check of a fix found the
    * change missing; null for none. */
   suggested_note: { scene: number; text: string } | null;
+  /** The fix plan the message is about; null for none. */
+  plan: MessagePlan | null;
 };
 
 /** One session, as the sidebar lists it. The name is blank until the first message names it. */
@@ -98,8 +146,14 @@ export async function getMessagesSince(sessionId: string, after: number): Promis
 }
 
 /** Say something in a session, with photos when there are any. The server takes it
- * straight away, even while the agent is working. */
-export async function sendMessage(sessionId: string, text: string, photos: File[]): Promise<Sent> {
+ * straight away, even while the agent is working. A tap of a plan's yes button names the
+ * `plan`, which marks the message as the button's, never typed. */
+export async function sendMessage(
+  sessionId: string,
+  text: string,
+  photos: File[],
+  plan?: number,
+): Promise<Sent> {
   let request: RequestInit;
   if (photos.length > 0) {
     const form = new FormData();
@@ -107,7 +161,7 @@ export async function sendMessage(sessionId: string, text: string, photos: File[
     for (const photo of photos) form.append("photos", photo);
     request = { method: "POST", body: form };
   } else {
-    request = jsonRequest("POST", { text });
+    request = jsonRequest("POST", plan === undefined ? { text } : { text, plan });
   }
   return readJson<Sent>(await fetch(`/api/sessions/${sessionId}/messages/`, request));
 }

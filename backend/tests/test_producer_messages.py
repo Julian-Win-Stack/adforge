@@ -189,7 +189,22 @@ def test_a_photo_the_user_sends_with_no_words_is_given_to_the_producer_as_a_note
 
     say("", ("front.png", MUG_FRONT))
 
-    assert what_the_user_said(given_to_the_producer(1)) == ["[Attached 1 picture]"]
+    assert what_the_user_said(given_to_the_producer(1)) == ["[Attached 1 picture: owner photo 1]"]
+
+
+def test_the_shop_owners_photos_are_numbered_through_the_chat_for_the_producer(
+    fake_model: FakeModel, say: Callable[..., None]
+) -> None:
+    # The producer can't see them, so a fix names each one by its number (owner photos).
+    fake_model.respond("produce", turn(says="Nice mug!"), turn(says="And those?"))
+
+    say("", ("front.png", MUG_FRONT))
+    say("These two too", ("side.png", MUG_FRONT), ("back.png", MUG_FRONT))
+
+    assert what_the_user_said(given_to_the_producer(2)) == [
+        "[Attached 1 picture: owner photo 1]",
+        "These two too\n\n[Attached 2 pictures: owner photos 2 and 3]",
+    ]
 
 
 def test_a_message_sent_to_a_dead_producer_starts_it_again(

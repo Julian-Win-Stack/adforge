@@ -28,6 +28,13 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # And again after the clip judge failed the clip it was made from (the auto-fix, #155).
     "remake_clip_prompt": "gpt-5.6-sol",
     "make_starting_picture": "gpt-image-2.5-sunburst",
+    # A clean picture of only the thing a shop owner's photo is taken for (Reference photo,
+    # CONTEXT.md), drawn as starting pictures are.
+    "make_reference_photo_picture": "gpt-image-2.5-sunburst",
+    # Whether the thing in the shop owner's photo is in a scene's starting picture, belongs in
+    # it from the start, or only shows during the clip: the starting picture's judge, as it is
+    # proven at seeing what our pictures show (Julian 2026-10-15, D10).
+    "route_reference_photo": "gpt-6.1-sol",
     # The ad's before-picture: planned from every B-roll scene, then drawn.
     "plan_before_picture": "gpt-5.6-sol",
     "make_before_picture": "gpt-image-2.5-sunburst",
@@ -38,6 +45,10 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # Asks the complaint back about a fix's new starting picture, beside the old one (#131):
     # the starting picture's judge, as Julian chose it for picture judges.
     "check_fix": "gpt-6.1-sol",
+    # The decider (agents/decider.py): reads the shop owner's notes once the ad has a clip and
+    # looks at pictures and clip frames before it plans each scene's fix. The picture judges'
+    # model, as it is proven at seeing what our pictures show (fix redesign, ticket 05).
+    "decide_fixes": "gpt-6.1-sol",
     # The B-roll clip judge's two checks (jobs/clip_judge.py). Tested on sol; the model check
     # of 2026-10-13 found luna matches it, at the edge, so stage 4 may move both to luna
     # (Claude Doc "Clip judge discussion", Results).

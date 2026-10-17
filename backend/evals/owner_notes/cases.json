@@ -1,0 +1,194 @@
+[
+ {
+  "id": "8-s3-seat",
+  "ad": "8",
+  "kind": "clip: what happens",
+  "messages": [
+   "The brush scrubs the toilet seat in scene 3. Our cleaner is for the bowl, never the seat. Only scrub inside the bowl please."
+  ],
+  "wants": "scene 3's clip again, brush only inside the bowl"
+ },
+ {
+  "id": "8-at-8-seconds",
+  "ad": "8",
+  "kind": "no scene number: a time",
+  "messages": [
+   "At around 8 seconds there's a hand pouring something into the toilet from a second bottle. Please take that out."
+  ],
+  "wants": "the producer finds the scene playing at 8 s and fixes it, or asks which scene"
+ },
+ {
+  "id": "8-correction",
+  "ad": "8",
+  "kind": "owner corrects the restatement",
+  "messages": [
+   "In scene 3 the brush should only scrub inside the bowl, not the seat.",
+   "Sorry, I meant scene 4, not scene 3."
+  ],
+  "wants": "the fix moves to scene 4 only, and only scene 4 is made again"
+ },
+ {
+  "id": "8-vague",
+  "ad": "8",
+  "kind": "vague note",
+  "messages": [
+   "Scene 3 doesn't look right."
+  ],
+  "wants": "the producer asks what looks wrong, makes nothing"
+ },
+ {
+  "id": "12-s2-floor",
+  "ad": "12",
+  "kind": "picture: wrong things in it",
+  "messages": [
+   "In scene 2 there's a ring and another phone already lying on the floor before the drop. Clear the floor so it's just our phone falling."
+  ],
+  "wants": "scene 2's starting picture again with an empty floor, then its clip"
+ },
+ {
+  "id": "12-two-backs",
+  "ad": "12",
+  "kind": "picture: impossible object, no scene number",
+  "messages": [
+   "When she pulls the phone out of her pocket, both sides of the phone show the camera. One side should be the screen."
+  ],
+  "wants": "the pocket scene (3) made again so the phone has a screen side"
+ },
+ {
+  "id": "12-cost-no",
+  "ad": "12",
+  "kind": "owner says no after the cost",
+  "messages": [
+   "The phone shakes on the floor after it lands in scene 2. Make it land and stay still.",
+   "Hmm, that's more than I want to spend. Never mind, leave it as it is."
+  ],
+  "yes_answers": 0,
+  "wants": "nothing is made or paid for"
+ },
+ {
+  "id": "12-higher-slower",
+  "ad": "12",
+  "kind": "two changes, one can't",
+  "messages": [
+   "In scene 4, drop the phone from higher up and play it in slow motion so people see it land."
+  ],
+  "wants": "higher drop restated as a fix; slow motion told plainly it can't be done"
+ },
+ {
+  "id": "N5-s2-twist",
+  "ad": "N5",
+  "kind": "clip: how it moves",
+  "messages": [
+   "Scene 2: she isn't using Le Duo right. To make a curl you twist the tool a full turn as you glide it down the hair."
+  ],
+  "wants": "scene 2's clip again with a full twist while gliding"
+ },
+ {
+  "id": "N5-curl-one",
+  "ad": "N5",
+  "kind": "no scene number: described",
+  "messages": [
+   "In the curling part she's holding it wrong. She has to twist it a full turn as she glides down."
+  ],
+  "wants": "the curl scene (2) made again with a full twist, or the producer asks which scene"
+ },
+ {
+  "id": "9-s2-noodles",
+  "ad": "9",
+  "kind": "picture: different thing in it",
+  "messages": [
+   "I'd rather not show the sauce on plain white rice in scene 2. Put it on noodles instead."
+  ],
+  "wants": "scene 2's starting picture again with noodles, then its clip"
+ },
+ {
+  "id": "9-line-jar",
+  "ad": "9",
+  "kind": "line: new words, no quotes",
+  "messages": [
+   "In the last scene she should tell people to grab a jar today instead."
+  ],
+  "wants": "the producer proposes the new words in quotes and waits for a yes before changing the line"
+ },
+ {
+  "id": "9-two-changes",
+  "ad": "9",
+  "kind": "two changes in one note",
+  "messages": [
+   "Two things: in scene 2 put the sauce on noodles, not rice, and in the last scene she should say \"Grab a jar today\"."
+  ],
+  "wants": "scene 2 picture fix and last scene line fix restated together, both made after one yes"
+ },
+ {
+  "id": "14-last-line",
+  "ad": "14",
+  "kind": "line: new words",
+  "messages": [
+   "In the last scene, can she say \"Order yours today and get free shipping\"?"
+  ],
+  "wants": "the last scene's line changed word for word, then that scene made again"
+ },
+ {
+  "id": "7-slower",
+  "ad": "7",
+  "kind": "can't: slower",
+  "messages": [
+   "Scene 3 feels rushed. Can you slow it down a bit?"
+  ],
+  "wants": "told plainly it can't be slowed, nothing made"
+ },
+ {
+  "id": "7-vague",
+  "ad": "7",
+  "kind": "vague note",
+  "messages": [
+   "The pan looks a bit off."
+  ],
+  "wants": "the producer asks which scene and what looks off, makes nothing"
+ },
+ {
+  "id": "2-music",
+  "ad": "2",
+  "kind": "can't: music",
+  "messages": [
+   "The music is too sleepy. Can it be more upbeat?"
+  ],
+  "wants": "told plainly the music can't change yet, nothing made"
+ },
+ {
+  "id": "2-two-scenes",
+  "ad": "2",
+  "kind": "two scenes in one message",
+  "messages": [
+   "Two things: in scene 2 she should swipe it on her other cheek, and in scene 4 use her ring finger to tap it on her lips."
+  ],
+  "wants": "both scenes restated in one go, both made again after one yes"
+ },
+ {
+  "id": "2-line-simpler",
+  "ad": "2",
+  "kind": "line: new words",
+  "messages": [
+   "The first scene sounds too salesy. Can she just say \"Meet Flush Balm, my everyday blush\"?"
+  ],
+  "wants": "scene 1's line changed word for word, then scene 1 made again"
+ },
+ {
+  "id": "6-first-scene-action",
+  "ad": "6",
+  "kind": "talking scene: action and holding",
+  "messages": [
+   "In the first scene she should hold the power bank up and point at its ports."
+  ],
+  "wants": "holding it can be a new starting picture; pointing (an action while talking) can't, and she's told"
+ },
+ {
+  "id": "5-s4-zoom",
+  "ad": "5",
+  "kind": "picture: zoom in",
+  "messages": [
+   "In scene 4 I can't really see the kiss-lock. Can you zoom in on it?"
+  ],
+  "wants": "scene 4's starting picture again, closer on the kiss-lock, then its clip"
+ }
+]

@@ -310,6 +310,11 @@ class Scene(models.Model):
             self.status = self.Status.PLANNED
         return bool(planned)
 
+    def photos_in_use(self) -> models.QuerySet[ReferencePhoto]:
+        """The shop owner's photos the scene uses now, which go with its later steps: those no
+        fix dropped and no going back set aside."""
+        return self.reference_photos.filter(dropped_by__isnull=True, set_aside_at__isnull=True)
+
     def change_line(
         self, line: str, shows: str | None = None, *, broll: dict[str, Any] | None = None
     ) -> None:
@@ -334,10 +339,10 @@ class Scene(models.Model):
 
 
 class Fix(models.Model):
-    """The producer's restatement of what it will change about a finished scene, from the
-    shop owner's notes on it (route B, #135). Recorded when the producer restates it, and
-    confirmed by the shop owner's answer: until then, nothing is redone or paid for. It is
-    the note its redo is made with, word for word."""
+    """What will change about a finished scene, from the shop owner's notes on it: one row of
+    a fix plan they said yes to, recorded by code when it runs the plan (fix redesign; route
+    B, #135, before it). Nothing is redone or paid for before the yes. It is the note its
+    redo is made with, word for word."""
 
     class Redo(models.TextChoices):
         CLIP = "clip"
@@ -347,7 +352,7 @@ class Fix(models.Model):
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="fixes")
     scene = models.ForeignKey(Scene, on_delete=models.CASCADE, related_name="fixes")
     fix = models.TextField(
-        help_text="The restatement, in one self-contained line, carrying everything the shop "
+        help_text="The change, in one self-contained line, carrying everything the shop "
         "owner's notes on the scene ask for."
     )
     redo = models.CharField(
@@ -358,7 +363,7 @@ class Fix(models.Model):
     )
     notes = models.JSONField(
         default=list,
-        help_text="The shop owner's own words it was restated from, verbatim: each of their "
+        help_text="The shop owner's own words it was planned from, verbatim: each of their "
         "messages since the ad was last shown, or since they confirmed the scene's last Fix, "
         'as [{"seq", "text"}, ...].',
     )
@@ -369,7 +374,7 @@ class Fix(models.Model):
         "agents.ToolCall",
         on_delete=models.CASCADE,
         related_name="fixes",
-        help_text="The restate_fix call that recorded it, after which the shop owner answers.",
+        help_text="The call that recorded it: code's run of the fix plan.",
     )
     confirmed_by = models.ForeignKey(
         "chat.Message",
@@ -377,15 +382,44 @@ class Fix(models.Model):
         null=True,
         blank=True,
         related_name="+",
-        help_text="The shop owner's answer the yes guard accepted. Blank until a redo is "
-        "asked for with it after they answered.",
+        help_text="The shop owner's yes to the fix plan it is a row of.",
+    )
+    photos = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The shop owner's photos the fix takes things from (Reference photo, "
+        'CONTEXT.md), as [{"photo", "file", "thing", "use", "where"}, ...]: the photo\'s number '
+        "in the chat, its key in the file store, the one thing to take from it, whether the "
+        'thing goes in the starting picture ("picture") or only shows during the clip '
+        '("clip"), and where the route call found it. Empty for a fix with no photo.',
+    )
+    drops = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The things whose photos the scene stops using once the shop owner says yes, "
+        "as their names. Empty for none.",
+    )
+    joined = models.BooleanField(
+        default=False,
+        help_text="Whether code added the fix because the scene shows a thing the shop "
+        "owner's photo on another scene's note shows, or already uses a photo of it.",
+    )
+    brings_back = models.ForeignKey(
+        "ProducedItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="For a fix that stops using a photo: the scene's starting picture or clip "
+        "from before the photo, brought back for it with nothing paid. Blank when it is made "
+        "again instead.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["created_at", "id"]
         constraints = [
-            # A restate_fix run again after a restart records the same Fix, not another.
+            # A plan run again after a restart records the same Fix, not another.
             models.UniqueConstraint(fields=["asked", "scene"], name="one_fix_per_call_and_scene")
         ]
 
@@ -403,6 +437,252 @@ class Fix(models.Model):
             .aggregate(cost=Sum("cost_usd"))["cost"]
         )
         return cost or Decimal(0)
+
+
+class FixPlan(models.Model):
+    """What the decider plans to change in each scene from the shop owner's notes of one
+    round (fix redesign, decision 19): shown to them with its cost, and run by code once
+    they say yes. A chat has at most one plan waiting for their answer; a newer plan replaces
+    it. Its scenes are `FixPlanScene` rows; a plan can have none, when nothing changes."""
+
+    class State(models.TextChoices):
+        PROPOSED = "proposed"
+        CONFIRMED = "confirmed"
+        DECLINED = "declined"
+        REPLACED = "replaced"
+
+    class Cant(models.TextChoices):
+        # What the shop owner asked that isn't about any one scene (decision 13's judgment
+        # can'ts); a scene's own can't is on its row.
+        MUSIC = "music"
+        VOICE = "voice"
+        NUMBER_OF_SCENES = "number_of_scenes"
+        EXAMPLE_VIDEO = "example_video"
+        NOT_ABOUT_THE_AD = "not_about_the_ad"
+
+    job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="fix_plans")
+    session = models.ForeignKey("chat.Session", on_delete=models.CASCADE, related_name="fix_plans")
+    notes = models.JSONField(
+        default=list,
+        help_text="The shop owner's own words it was planned from, verbatim: each of their "
+        'messages of this round, since they last said yes, as [{"seq", "text"}, ...].',
+    )
+    state = models.CharField(max_length=10, choices=State.choices, default=State.PROPOSED)
+    confirmed_by = models.ForeignKey(
+        "chat.Message",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The shop owner's yes to it. Blank until they say yes.",
+    )
+    question = models.TextField(
+        blank=True, help_text="The one question for the shop owner. Blank for none."
+    )
+    cants = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="What the shop owner asked that can't be done and isn't about one scene, as "
+        '[{"kind", "text"}, ...]: a `Cant`, and the sentence they are shown. Empty for none.',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["session"],
+                condition=models.Q(state="proposed"),
+                name="one_proposed_plan_per_session",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"Fix plan {self.pk} ({self.state})"
+
+    def estimate_usd(self) -> Decimal:
+        """What its scenes are estimated to cost."""
+        return sum((scene.estimate_usd for scene in self.scenes.all()), Decimal(0))
+
+    def estimate_up_to_usd(self) -> Decimal:
+        """The most its scenes can cost."""
+        return sum((scene.estimate_up_to_usd for scene in self.scenes.all()), Decimal(0))
+
+    def cost_usd(self) -> Decimal:
+        """What its scenes have cost so far, as `FixPlanScene.cost_usd`."""
+        from gateway.models import ModelCall
+
+        cost: Decimal | None = (
+            ModelCall.objects.filter(tool_call__scene_steps__plan_scene__plan=self)
+            .distinct()
+            .aggregate(cost=Sum("cost_usd"))["cost"]
+        )
+        return cost or Decimal(0)
+
+
+class FixPlanScene(models.Model):
+    """One scene of a fix plan: what changes in it, in plain words, and what that costs, or
+    why it can't (fix redesign, flow step 5)."""
+
+    class Action(models.TextChoices):
+        NEW_PICTURE = "new_picture"
+        NEW_CLIP = "new_clip"
+        NEW_LINE = "new_line"
+        GO_BACK = "go_back"
+        NO_CHANGE = "no_change"
+
+    plan = models.ForeignKey(FixPlan, on_delete=models.CASCADE, related_name="scenes")
+    scene = models.ForeignKey(Scene, on_delete=models.CASCADE, related_name="plan_rows")
+    action = models.CharField(max_length=20, choices=Action.choices)
+    change = models.TextField(
+        blank=True,
+        help_text="What changes, in plain words: the note the step's prompt writer is given "
+        "(decision 7), never a prompt.",
+    )
+    line = models.TextField(blank=True, help_text="The new line, for a new line. Blank else.")
+    go_back_to = models.PositiveIntegerField(
+        null=True, blank=True, help_text="The version gone back to, for a go back. Blank else."
+    )
+    cant = models.TextField(
+        blank=True, help_text="Why what the shop owner asked can't be done. Blank for none."
+    )
+    estimate_usd = models.DecimalField(
+        max_digits=10, decimal_places=6, default=Decimal(0), help_text="What it should cost."
+    )
+    estimate_up_to_usd = models.DecimalField(
+        max_digits=10,
+        decimal_places=6,
+        default=Decimal(0),
+        help_text="The most it can cost, if the clip judge has the clip made again.",
+    )
+    photos = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='The shop owner\'s photos it uses (decision 21), as [{"photo", "file", '
+        '"thing", "in_picture", "during_action"}, ...]: the photo\'s number in the chat, its '
+        "key in the file store, the one thing to take from it, whether the thing is in the "
+        "starting picture now, and whether more of it shows during the action.",
+    )
+    new_movement = models.BooleanField(
+        default=False,
+        help_text="For a new picture, whether it was a new clip, made a new picture because "
+        "a photo's thing is in the starting picture: its clip moves as the change says, not "
+        "as the clip it replaces.",
+    )
+    remakes_clip = models.BooleanField(
+        default=False,
+        help_text="For a go back, whether its clip is made again, paid, because the line "
+        "changed since that version: the plan says so before the yes (decision 8). False "
+        "when the picture and clip are brought back for nothing.",
+    )
+    fix = models.ForeignKey(
+        Fix,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The confirmed Fix code records for it once the shop owner says yes, which "
+        "the worker's checks and the shop owner's photos go by. Blank for a go back, and until "
+        "the yes.",
+    )
+    started_at = models.DateTimeField(
+        null=True, blank=True, help_text="When code started it, after the yes. Blank until then."
+    )
+    brought_back = models.ForeignKey(
+        "ProducedItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="For a go back, the starting picture brought back: what its clip, if it must "
+        "be made again, is made from. Blank until it is gone back.",
+    )
+    landed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the scene's new version was made and passed its checks, or the shop "
+        "owner said go ahead. Blank until then.",
+    )
+    error = models.TextField(
+        blank=True, help_text="Why it couldn't be made, once it couldn't. Blank otherwise."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["scene__number", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["plan", "scene"], name="one_row_per_plan_and_scene")
+        ]
+
+    def __str__(self) -> str:
+        return f"Scene {self.scene.number} plan: {self.action}"
+
+    def cost_usd(self) -> Decimal:
+        """What it has cost so far: every model call of the tool calls that started its
+        steps, failed ones included, as they were paid for. A model call is charged to a tool
+        call, not a step, so a tool call starting steps for more than one row would count on
+        each of them: every row's steps need tool calls of their own."""
+        from gateway.models import ModelCall
+
+        cost: Decimal | None = (
+            ModelCall.objects.filter(tool_call__scene_steps__plan_scene=self)
+            .distinct()
+            .aggregate(cost=Sum("cost_usd"))["cost"]
+        )
+        return cost or Decimal(0)
+
+
+class ReferencePhoto(models.Model):
+    """A photo the shop owner attached to a note, kept on a scene that uses it (Reference
+    photo, CONTEXT.md): the one thing to take from it, and a clean picture of only that thing,
+    drawn from it once and sent in its place. It stays with the scene for every later fix, its
+    starting pictures and its clips alike, until a fix the shop owner said yes to drops it or
+    replaces it with a newer photo of the same thing (Julian 2026-10-15, D1 and D3), or going
+    back sets it aside: then the scene uses the photos the version gone back to was made with
+    (fix redesign, decision 8)."""
+
+    class Use(models.TextChoices):
+        # The thing is in the starting picture, or should be from the start: drawn into it.
+        PICTURE = "picture"
+        # The thing only shows during the clip: its clean picture goes to the video model.
+        CLIP = "clip"
+
+    scene = models.ForeignKey(Scene, on_delete=models.CASCADE, related_name="reference_photos")
+    file = models.CharField(max_length=500, help_text="The shop owner's photo, in the file store.")
+    thing = models.CharField(
+        max_length=200, help_text='The one thing taken from it, such as "black toilet".'
+    )
+    use = models.CharField(max_length=10, choices=Use.choices)
+    drawn = models.CharField(
+        max_length=500,
+        blank=True,
+        help_text="The clean picture of only the thing, drawn from the photo, in the file "
+        "store. Blank until it is drawn.",
+    )
+    added_by = models.ForeignKey(
+        Fix, on_delete=models.CASCADE, related_name="+", help_text="The fix that added it."
+    )
+    dropped_by = models.ForeignKey(
+        Fix,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The fix that dropped it or replaced it. Blank while the scene uses it.",
+    )
+    set_aside_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When going back to a version made without it set it aside. Blank while the "
+        "scene uses it, and again once going back to a version made with it.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self) -> str:
+        return f"Scene {self.scene.number}'s photo of {self.thing}"
 
 
 class SceneStep(models.Model):
@@ -479,6 +759,16 @@ class SceneStep(models.Model):
         help_text="The confirmed Fix the step was made for, if it fixes a finished scene. Blank "
         "for the ad's first making.",
     )
+    plan_scene = models.ForeignKey(
+        "FixPlanScene",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="steps",
+        help_text="The confirmed fix plan's scene the step was made for. Blank for the ad's "
+        "first making and for a Fix's steps. Its tool call starts steps for this row only, "
+        "so the row's cost is its own.",
+    )
     photo = models.ForeignKey(
         ProductPhoto,
         on_delete=models.SET_NULL,
@@ -512,6 +802,14 @@ class SceneStep(models.Model):
         '{"image": 2, "portrait": true, "job": "the presenter"}], the ad\'s before-picture last '
         'with "before_picture": true. Empty otherwise.',
     )
+    reference_photos = models.ManyToManyField(
+        ReferencePhoto,
+        blank=True,
+        related_name="+",
+        help_text="For a B-roll scene's step, the shop owner's photos its scene used when it "
+        "started, fixed then: a starting picture is drawn with those used in it, and a clip is "
+        "made in reference mode with those that show only during it.",
+    )
     made_from = models.ForeignKey(
         "ProducedItem",
         on_delete=models.PROTECT,
@@ -538,6 +836,15 @@ class SceneStep(models.Model):
         related_name="+",
         help_text="For a clip, the starting picture step it was made from, fixed when it "
         "starts: for a B-roll scene made way 3, it holds the example pictures and the prompt.",
+    )
+    redraw_of = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="redraws",
+        help_text="For a fix's starting picture drawn again because the picture before it "
+        "failed its fix check, the step that drew that one. Blank otherwise.",
     )
     result = models.TextField(
         blank=True,
@@ -711,6 +1018,19 @@ class ProducedItem(models.Model):
         help_text="For a remade clip, the video prompt written for it from what the judge saw "
         "wrong.",
     )
+    change = models.TextField(
+        blank=True,
+        db_default="",
+        help_text="For a starting picture or clip, the change it was made for, in the shop "
+        'owner\'s words, as its scene version\'s label ("black toilet"), or "back to v2" for '
+        "one brought back by going back. Blank for the ad's first making.",
+    )
+    back_to = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="For a starting picture or clip brought back by going back, the scene "
+        "version gone back to. Blank otherwise.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -772,6 +1092,12 @@ class FixCheck(models.Model):
         related_name="+",
         help_text="For a failed check, the notice that showed the shop owner both versions and "
         "why: what they answer after it decides what happens next. Blank until it is posted.",
+    )
+    gone_ahead_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="For a failed check of a fix plan's step, when the shop owner said go ahead "
+        "with it anyway. Blank otherwise.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

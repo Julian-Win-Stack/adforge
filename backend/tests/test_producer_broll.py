@@ -191,6 +191,10 @@ def picture_of_scene_2(
     return SceneStep.objects.filter(kind="starting_picture", scene__number=2).last()  # type: ignore[return-value]
 
 
+# Every B-roll clip's prompt starts with this, in reference mode (Julian 2026-10-16 19:14).
+IMAGE_1 = "Image 1 is how the clip starts: the clip starts exactly like Image 1. "
+
+
 def clips_asked(field: str) -> list[Any]:
     """`field` of what the video model was asked for, for each clip, oldest first."""
     return [handoff[field] for handoff in handoffs("make_broll_clip")]
@@ -686,13 +690,36 @@ def test_an_unlabelled_scenes_picture_is_made_as_before(unlabelled: None) -> Non
     assert (step.way, step.pictures_sent) == (None, [])
 
 
+def test_with_reference_mode_switched_off_a_clip_is_made_from_its_starting_picture_as_before(
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The one-line switch back (Julian 2026-10-16 19:08): the starting picture is the clip's
+    # first frame and its prompt has no Image 1 sentence, exactly as before.
+    monkeypatch.setattr(work, "EVERY_BROLL_CLIP_IN_REFERENCE_MODE", False)
+    made_ready(fake_model, steps, say, (2,))
+    clip_of_scene_2(fake_model, steps, say)
+    picture = ProducedItem.objects.get(kind="starting_picture", scene__number=2)
+    assert (clips_asked("starting_picture"), clips_asked("example_pictures")) == (
+        [picture.file],
+        [[]],
+    )
+    assert clips_asked("prompt") == [
+        "A 5-second video at real-time speed. The camera stays still. Whatever side faces the "
+        f"camera at the start stays toward the camera the whole time. {MOTION}"
+    ]
+
+
 def test_an_unlabelled_scenes_clip_is_asked_for_as_before(
     fake_model: FakeModel, unlabelled: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     clip_of_scene_2(fake_model, steps, say)
 
     assert clips_asked("prompt") == [
-        "Steam rises as the tea fills the mug; the camera holds still. Show only what is "
+        f"{IMAGE_1}Steam rises as the tea fills the mug; the camera holds still. Show only what is "
         "described; add or change nothing about the product."
     ]
 
@@ -843,7 +870,7 @@ def test_the_clip_is_asked_for_at_the_whole_seconds_that_cover_its_line_and_kept
     # (test ads, 08 Oct: every B-roll looked phone-filmed). The side facing the camera stays
     # toward it (round 3, 10 Oct: the phone case flipped mid-clip).
     assert clips_asked("prompt") == [
-        f"A {asked_for}-second video at real-time speed. The camera stays still. "
+        f"{IMAGE_1}A {asked_for}-second video at real-time speed. The camera stays still. "
         "Whatever side faces the camera at the start stays toward the camera the whole time. "
         f"{MOTION}"
     ]

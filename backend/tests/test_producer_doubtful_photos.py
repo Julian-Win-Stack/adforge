@@ -83,7 +83,19 @@ def test_a_blocked_page_stops_before_planning_until_the_owner_attaches_photos(
     # The shop owner attaches 2 photos: they're added, and the ad is planned.
     fake_model.respond(
         "produce",
-        turn(calls=[("use_photos", {})]),
+        turn(
+            calls=[
+                (
+                    "use_photos",
+                    {
+                        "photos": [
+                            {"photo": 1, "shows": "the product"},
+                            {"photo": 2, "shows": "the product"},
+                        ]
+                    },
+                )
+            ]
+        ),
         turn(calls=[("plan_ad", {})]),
         turn(says="Here's the plan."),
     )

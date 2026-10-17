@@ -13,13 +13,14 @@ from rest_framework.test import APIClient
 from adforge.file_store import read
 from adforge.retry import OutsideServiceDown
 from agents import loop, tasks
+from agents.models import SystemNote
 from agents.money import dollars
 from agents.producer import PRODUCER
 from chat.models import Message, Session
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import work
-from jobs.models import Fix, Job, ProducedItem, Scene, SceneStep
+from jobs.models import FixPlanScene, Job, ProducedItem, Scene, SceneStep
 from jobs.planning import ChatMessage
 from jobs.scenes import talking_motion_prompt
 
@@ -35,8 +36,8 @@ from .conftest import (
     paid_for,
     producer_turns,
     results_of,
-    said_yes_to_a_fix,
 )
+from .fixing import fixed
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -227,7 +228,13 @@ def test_the_clip_is_made_in_the_background_from_the_picture_and_the_audio_heard
     shown = [m for m in after if m["attachments"]]
     assert [(m["role"], m["text"]) for m in shown] == [("agent", "")]
     assert shown[0]["attachments"] == [
-        {"position": 1, "kind": "video", "url": f"/media/{clip.file}", "scene": 1}
+        {
+            "position": 1,
+            "kind": "video",
+            "url": f"/media/{clip.file}",
+            "scene": 1,
+            "version": "v1 first version",
+        }
     ]
     # The clip's own message says the step that started has ended with it.
     assert clip_signals(api, session_id)[1:] == [
@@ -485,31 +492,29 @@ def test_a_new_starting_picture_gets_a_new_clip_and_the_old_clip_is_kept(
     clipped: None,
     steps: HeldSteps,
     session_id: str,
-    say: Callable[..., None],
 ) -> None:
     first = ProducedItem.objects.get(kind="clip")
-    # Made twice more, so the picture, the clip and the audio each have their own version.
+    # Two plans for a new picture said yes to at once: code makes the second once the first
+    # picture and its clip are made, so the picture, the clip and the audio each have their
+    # own version.
     for note in ["Smiling more.", "Smiling even more."]:
-        said_yes_to_a_fix(1, note, "picture")
-        calling(fake_model, "make_starting_picture", {"scene": 1, "note": note})
-        say(f"Make scene 1's picture again: {note}")
+        fixed(1, "new_picture", change=note)
         fake_model.respond("choose_starting_picture", CHOICE)
-        run(fake_model, steps)
-    calling(fake_model, "make_clip")
 
-    say("Make scene 1's clip again")
-    run(fake_model, steps)
+    steps.run_held()
 
-    assert made("clip") == [(1, 1), (1, 2)]
-    second = ProducedItem.objects.get(kind="clip", version=2)
-    assert second.picture == ProducedItem.objects.get(kind="starting_picture", version=3)
-    assert second.made_from == first.made_from
-    assert (read(first.file), read(second.file)) == (
+    assert made("clip") == [(1, 1), (1, 2), (1, 3)]
+    second, third = (ProducedItem.objects.get(kind="clip", version=v) for v in (2, 3))
+    assert second.picture == ProducedItem.objects.get(kind="starting_picture", version=2)
+    assert third.picture == ProducedItem.objects.get(kind="starting_picture", version=3)
+    assert second.made_from == third.made_from == first.made_from
+    assert (read(first.file), read(second.file), read(third.file)) == (
         fake_model.clips["video-1"],
         fake_model.clips["video-2"],
+        fake_model.clips["video-3"],
     )
-    assert paid_for().count("make_talking_clip") == 2
-    # Both versions were shown, the newer later, each with its scene number.
+    assert paid_for().count("make_talking_clip") == 3
+    # Every version was shown, the newer later, each with its scene number.
     shown = [
         (message["seq"], attached["url"], attached["scene"])
         for message in api.get(f"/api/sessions/{session_id}/messages/").json()
@@ -519,15 +524,17 @@ def test_a_new_starting_picture_gets_a_new_clip_and_the_old_clip_is_kept(
     assert [(url, scene) for _, url, scene in shown] == [
         (f"/media/{first.file}", 1),
         (f"/media/{second.file}", 1),
+        (f"/media/{third.file}", 1),
     ]
-    assert shown[0][0] < shown[1][0]
-    assert told() == (
-        "Background step finished: scene 1's clip is ready (version 2, 4 seconds), made from "
-        "starting picture version 3 and audio version 1. It cost $0.20. Scene 1 is finished. "
-        "Scene 1's fix "
-        f"has cost {dollars(Fix.objects.last().cost_usd())} so far. Tell the shop owner. The "  # type: ignore[union-attr]
-        "ad will be assembled, and shown to the shop owner, once scenes 2 and 3 are finished."
-    )
+    assert [seq for seq, _, _ in shown] == sorted(seq for seq, _, _ in shown)
+    # The producer is told by a note as each plan's scene is done.
+    rows = FixPlanScene.objects.order_by("id")
+    assert list(
+        SystemNote.objects.filter(kind="scene_done").order_by("id").values_list("text", flat=True)
+    ) == [
+        f"Scene 1's new starting picture is done. It cost {dollars(row.cost_usd())}."
+        for row in rows
+    ]
 
 
 def the_worker_stops(*_: object, **__: object) -> None:
@@ -633,7 +640,7 @@ def test_what_the_chat_is_shown_of_each_scene_is_never_given_to_a_model(
 ) -> None:
     session = Session.objects.get(pk=session_id)
     job = Job.objects.get()
-    given_to_the_producer_now, _, _ = loop._conversation(PRODUCER, session)
+    given_to_the_producer_now, _, _, _ = loop._conversation(PRODUCER, session)
     given_to_the_planners_now = work._conversation(job)
     # The chat was told of scene 1's picture and clip as each started and was made.
     shown = Message.objects.filter(step_scene__isnull=False)
@@ -746,25 +753,26 @@ def test_a_clip_given_up_on_isnt_waited_for_once_its_picture_is_made_again(
 
 
 def test_a_clip_given_up_on_is_waited_for_again_though_an_earlier_clip_was_fetched(
-    fake_model: FakeModel, clipped: None, steps: HeldSteps, say: Callable[..., None]
+    fake_model: FakeModel, clipped: None, steps: HeldSteps
 ) -> None:
     # The first clip, video-1, was fetched. The clip of a new picture is then given up on.
-    said_yes_to_a_fix(1, "Smiling more.", "picture")
-    calling(fake_model, "make_starting_picture", {"scene": 1, "note": "Smiling more."})
-    say("Make scene 1's picture again, smiling more")
+    fixed(1, "new_picture", change="Smiling more.")
     fake_model.respond("choose_starting_picture", CHOICE)
-    run(fake_model, steps)
-    calling(fake_model, "make_clip")
-    say("Make scene 1's clip again")
     fake_model.respond("collect_clip", *[OutsideServiceDown("fal answered 503")] * 3)
-    run(fake_model, steps)
-    calling(fake_model, "make_clip")
+    steps.run_held()
+    assert SceneStep.objects.filter(kind="clip").latest("id").status == "failed"
+    # Going back to the new picture, whose clip wasn't made, makes its clip again.
+    assert work.versions(Scene.objects.get(number=1))[1].clip is None
 
-    say("Make scene 1's clip once more")
-    run(fake_model, steps)
+    fixed(1, "go_back", change="The smiling one.", go_back_to=2)
+    steps.run_held()
 
     # video-2, already paid for, is waited for rather than paid for again.
     assert fake_model.clips_submitted == ["video-1", "video-2"]
+    assert (
+        read(ProducedItem.objects.filter(kind="clip").latest("version").file)
+        == (fake_model.clips["video-2"])
+    )
 
 
 def test_a_clip_the_video_model_couldnt_make_is_asked_for_afresh_when_made_again(

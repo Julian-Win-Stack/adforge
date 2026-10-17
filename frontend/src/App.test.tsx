@@ -2,7 +2,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App";
-import type { Attachment, Message, SceneStep, Session } from "./api";
+import type { Attachment, Message, PlanNotice, SceneStep, Session } from "./api";
 
 const NOW = "2026-09-20T10:00:00Z";
 
@@ -13,7 +13,7 @@ type StoredSession = Session & { messages: Message[] };
 function fakeBackend() {
   const sessions: StoredSession[] = [];
   const requests: string[] = [];
-  const sent: { text: string; photos: string[] }[] = [];
+  const sent: { text: string; photos: string[]; plan?: number }[] = [];
   let heldPolls: Promise<void> | null = null;
   let heldSends: Promise<void> | null = null;
   let pollsFail = false;
@@ -37,6 +37,7 @@ function fakeBackend() {
     level?: Message["level"],
     step: SceneStep | null = null,
     suggested_note: Message["suggested_note"] = null,
+    plan: Message["plan"] = null,
   ) {
     const message = {
       seq: session.messages.length + 1,
@@ -47,6 +48,7 @@ function fakeBackend() {
       attachments,
       step,
       suggested_note,
+      plan,
     };
     session.messages.push(message);
     if (message.seq === 1 && session.name === "" && text) session.name = text.slice(0, 80);
@@ -84,21 +86,31 @@ function fakeBackend() {
           return Response.json(body, { status });
         }
         let text: string;
+        let plan: number | undefined;
         const photos: string[] = [];
         if (init?.body instanceof FormData) {
           text = String(init.body.get("text"));
           for (const photo of init.body.getAll("photos")) photos.push((photo as File).name);
         } else {
-          text = JSON.parse(String(init?.body)).text;
+          ({ text, plan } = JSON.parse(String(init?.body)));
         }
-        sent.push({ text, photos });
+        sent.push(plan === undefined ? { text, photos } : { text, photos, plan });
         const carried = photos.map((name, i) => ({
           position: i + 1,
           kind: "picture" as const,
           url: `/media/${name}`,
           scene: null,
         }));
-        const message = add(session, "user", text, carried);
+        const message = add(
+          session,
+          "user",
+          text,
+          carried,
+          undefined,
+          null,
+          null,
+          plan === undefined ? null : { id: plan, event: "yes", notice: null },
+        );
         return Response.json({ session: summary(session), message }, { status: 201 });
       }
       if (heldPolls) await heldPolls;
@@ -155,6 +167,19 @@ function fakeBackend() {
      * the check of a fix found the change missing. */
     suggestNote(text: string, attachments: Attachment[], scene: number, note: string) {
       add(sessions[0], "notice", text, attachments, "problem", null, { scene, text: note });
+    },
+    /** Code posts a fix plan in the newest session, for the owner to say yes to. */
+    showPlan(notice: PlanNotice) {
+      add(sessions[0], "notice", "Here's the plan for your notes.", [], "info", null, null, {
+        id: notice.plan,
+        event: "shown",
+        notice,
+      });
+    },
+    /** Code says in the newest session that a plan is going ahead or was dropped. */
+    settlePlan(plan: number, event: "confirmed" | "declined") {
+      const said = event === "confirmed" ? "Going ahead with the plan." : "Plan dropped.";
+      add(sessions[0], "notice", said, [], "info", null, null, { id: plan, event, notice: null });
     },
     /** The next message sent is refused with these reasons, as Django answers a 400. */
     refuseNextSend(reasons: Record<string, string[]>) {
@@ -828,6 +853,64 @@ test("a later clip for a scene replaces the card's clip, and the old one stays o
   await nextPoll();
   await waitFor(() => expect(sceneCardsShown()).toEqual([["Scene 2", "/media/c2-c.mp4"]]));
   expect(within(sceneCard(2)).queryByText("Previous clip")).toBeNull();
+});
+
+test("a scene's card names the version it shows, the one gone back to too", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  const user = await openSession("Mug ad");
+  const versioned = (url: string, version: string): Attachment[] => [
+    { position: 1, kind: "video", url, scene: 2, version },
+  ];
+  backend.agentSays("", versioned("/media/c2-a.mp4", "v1 first version"), {
+    scene: 2,
+    kind: "clip",
+    state: "made",
+  });
+  backend.agentSays("", versioned("/media/c2-b.mp4", "v2 black toilet"), {
+    scene: 2,
+    kind: "clip",
+    state: "made",
+  });
+  await nextPoll();
+  await within(sceneCard(2)).findByText("v2 black toilet");
+
+  await user.click(within(sceneCard(2)).getByRole("button", { name: "Previous" }));
+  expect(within(sceneCard(2)).getByText("v1 first version")).toBeDefined();
+  await user.click(within(sceneCard(2)).getByRole("button", { name: "Latest" }));
+
+  // Going back shows the earlier clip again, as a version of its own.
+  backend.agentSays("", versioned("/media/c2-a.mp4", "v3 back to v1"), null);
+  await nextPoll();
+  await within(sceneCard(2)).findByText("v3 back to v1");
+  expect(sceneCardsShown()).toEqual([["Scene 2", "/media/c2-a.mp4"]]);
+
+  // Going back after the line changed brings back only the picture: it is the newest
+  // version, shown beside the clip it replaces until its own clip is made.
+  backend.agentSays(
+    "",
+    [{ position: 1, kind: "picture", url: "/media/p2-b.png", scene: 2, version: "v4 back to v2" }],
+    null,
+  );
+  await nextPoll();
+  await within(sceneCard(2)).findByText("v4 back to v2");
+  expect(sceneCardsShown()).toEqual([["Scene 2", "/media/c2-a.mp4"]]);
+  expect(within(sceneCard(2)).getByAltText("Scene 2's new starting picture")).toBeDefined();
+  await user.click(within(sceneCard(2)).getByRole("button", { name: "Previous" }));
+  expect(within(sceneCard(2)).getByText("v2 black toilet")).toBeDefined();
+});
+
+test("a scene's card with only a picture names the picture's version", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  await openSession("Mug ad");
+  backend.agentSays(
+    "",
+    [{ position: 1, kind: "picture", url: "/media/p1.png", scene: 1, version: "v1 first version" }],
+    { scene: 1, kind: "starting_picture", state: "made" },
+  );
+  await nextPoll();
+  await within(sceneCard(1)).findByText("v1 first version");
 });
 
 test("a scene with a picture and no clip yet shows the picture, and its clip once made", async () => {
@@ -1650,4 +1733,222 @@ test("a failed clip check shows both clips in its notice, and the card keeps the
   // The clips in the notice don't become the scene's: its previous clip is still c3.
   expect(within(sceneCard(3)).getByRole("button", { name: "Previous" })).toBeDefined();
   expect((noteBox(3) as HTMLTextAreaElement).value).toBe("the hand still hovers");
+});
+
+/** A plan as code posts it: scene 2 gets a new picture with the owner's photo, scene 3
+ * goes back to its first version, scene 4's ask can't be done. */
+function aPlan(plan = 7, overrides: Partial<PlanNotice> = {}): PlanNotice {
+  const row = {
+    line: "",
+    go_back_to: null,
+    cant: "",
+    estimate_usd: "0.000000",
+    estimate_up_to_usd: "0.000000",
+    photos: [],
+  };
+  return {
+    plan,
+    state: "proposed",
+    question: "",
+    estimate_usd: "0.550000",
+    estimate_up_to_usd: "1.100000",
+    cants: [],
+    scenes: [
+      {
+        ...row,
+        scene: 2,
+        action: "new_picture",
+        change: "The toilet is black.",
+        estimate_usd: "0.550000",
+        estimate_up_to_usd: "1.100000",
+        photos: [{ photo: 1, thing: "black toilet", in_picture: true, during_action: false }],
+      },
+      { ...row, scene: 3, action: "go_back", change: "Back to the first one.", go_back_to: 1 },
+      {
+        ...row,
+        scene: 4,
+        action: "no_change",
+        change: "",
+        cant: "The person's look can't be changed.",
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function planNotices() {
+  return screen.queryAllByRole("group", { name: "Plan for your notes" });
+}
+
+function planYes() {
+  return screen.queryByRole("button", { name: "Yes, go ahead" });
+}
+
+async function showAPlan(plan: PlanNotice = aPlan()) {
+  const ad = await openFinishedAd();
+  ad.backend.showPlan(plan);
+  await nextPoll();
+  await waitFor(() => expect(planNotices()).toHaveLength(1));
+  return ad;
+}
+
+test("a plan notice shows per scene what changes, what it costs and what can't be done", async () => {
+  await showAPlan(
+    aPlan(7, {
+      question: "Which toilet, the one in photo 1?",
+      cants: [{ kind: "music", text: "The music can't be changed." }],
+    }),
+  );
+
+  const plan = within(planNotices()[0]);
+  const scenes = plan.getAllByRole("listitem").map((item) => item.textContent);
+  expect(scenes).toEqual([
+    expect.stringContaining("Scene 2"),
+    expect.stringContaining("Scene 3"),
+    expect.stringContaining("Scene 4"),
+  ]);
+  expect(scenes[0]).toContain("New starting picture");
+  expect(scenes[0]).toContain("The toilet is black.");
+  expect(scenes[0]).toContain("Photo 1: black toilet");
+  expect(scenes[0]).toContain("About $0.55, up to $1.10");
+  expect(scenes[1]).toContain("Go back to version 1");
+  expect(scenes[1]).toContain("Free");
+  expect(scenes[2]).toContain("Can't: The person's look can't be changed.");
+  expect(scenes[2]).not.toContain("$");
+  expect(plan.getByText("Which toilet, the one in photo 1?")).toBeDefined();
+  expect(plan.getByText("Can't: The music can't be changed.")).toBeDefined();
+  expect(plan.getByText("About $0.55 in all, up to $1.10")).toBeDefined();
+  // The plan's own yes, not the producer's.
+  expect(planYes()).not.toBeNull();
+  expect(yesButton()).toBeNull();
+});
+
+test("a new line is quoted in the plan", async () => {
+  const row = aPlan().scenes[0];
+  await showAPlan(
+    aPlan(7, {
+      scenes: [
+        { ...row, action: "new_line", change: "Say it shorter.", line: "One wipe.", photos: [] },
+      ],
+    }),
+  );
+  const [scene] = within(planNotices()[0]).getAllByRole("listitem");
+  expect(scene.textContent).toContain("New line");
+  expect(scene.textContent).toContain("“One wipe.”");
+});
+
+test("once code posts a plan, the producer's answer to the notes brings no yes of its own", async () => {
+  const { backend, user } = await openFinishedAd();
+  await user.type(noteBox(2), "Make the toilet black");
+  await user.click(sendNotesButton());
+  backend.agentSays("I'll make scene 2's toilet black. About $0.55. Shall I?");
+  backend.showPlan(aPlan());
+  await nextPoll();
+  await waitFor(() => expect(planNotices()).toHaveLength(1));
+
+  // Only the plan's yes is offered: the producer's restatement is no longer what is said yes to.
+  expect(planYes()).not.toBeNull();
+  expect(yesButton()).toBeNull();
+});
+
+test("the plan's yes button sends a yes marked with the plan, and goes away", async () => {
+  const { backend, user } = await showAPlan();
+
+  await user.click(planYes()!);
+
+  await findSaid("Yes");
+  expect(backend.sent).toEqual([{ text: "Yes", photos: [], plan: 7 }]);
+  expect(planYes()).toBeNull();
+  // The plan stays on screen to read back.
+  expect(planNotices()).toHaveLength(1);
+});
+
+test("a typed answer to a plan goes as plain text, and the yes stays on offer until the plan is settled", async () => {
+  const { backend, user } = await showAPlan();
+
+  await user.type(screen.getByRole("textbox", { name: "Message" }), "what does it cost?{Enter}");
+  await findSaid("what does it cost?");
+  expect(backend.sent).toEqual([{ text: "what does it cost?", photos: [] }]);
+  expect(planYes()).not.toBeNull();
+
+  backend.settlePlan(7, "confirmed");
+  await nextPoll();
+  await findSaid("Going ahead with the plan.");
+  expect(planYes()).toBeNull();
+});
+
+test("a declined plan takes its yes away", async () => {
+  const { backend } = await showAPlan();
+  backend.settlePlan(7, "declined");
+  await nextPoll();
+  await findSaid("Plan dropped.");
+  expect(planYes()).toBeNull();
+});
+
+test("a newer plan replaces the yes: only the newest plan can be said yes to", async () => {
+  const { backend, user } = await showAPlan();
+  backend.showPlan(aPlan(8));
+  await nextPoll();
+  await waitFor(() => expect(planNotices()).toHaveLength(2));
+
+  const [older, newer] = planNotices();
+  expect(within(older).queryByRole("button", { name: "Yes, go ahead" })).toBeNull();
+  await user.click(within(newer).getByRole("button", { name: "Yes, go ahead" }));
+  await findSaid("Yes");
+  expect(backend.sent).toEqual([{ text: "Yes", photos: [], plan: 8 }]);
+});
+
+test("a plan with nothing to do, only can'ts, offers no yes", async () => {
+  await showAPlan(
+    aPlan(7, {
+      scenes: [],
+      cants: [{ kind: "voice", text: "The voice can't be changed." }],
+      estimate_usd: "0.000000",
+      estimate_up_to_usd: "0.000000",
+    }),
+  );
+  expect(planYes()).toBeNull();
+  expect(screen.queryByText(/in all/)).toBeNull();
+});
+
+test("a plan whose only scene can't be done offers no yes", async () => {
+  const cant = aPlan().scenes[2];
+  await showAPlan(
+    aPlan(7, { scenes: [cant], estimate_usd: "0.000000", estimate_up_to_usd: "0.000000" }),
+  );
+  expect(planYes()).toBeNull();
+});
+
+test("a reopened chat reads the plan as it stands: a settled one offers no yes", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  backend.showPlan(aPlan(7, { state: "confirmed" }));
+  await openSession("Mug ad");
+  await waitFor(() => expect(planNotices()).toHaveLength(1));
+  expect(planYes()).toBeNull();
+});
+
+test("the plan's yes is off while it is on its way, so a second tap sends nothing", async () => {
+  const { backend, user } = await showAPlan();
+
+  const release = backend.holdSends();
+  await user.click(planYes()!);
+  expect(planYes()!.hasAttribute("disabled")).toBe(true);
+  await user.click(planYes()!);
+  expect(postsTo(backend, "session-1")).toHaveLength(1);
+
+  release();
+  await findSaid("Yes");
+  expect(planYes()).toBeNull();
+});
+
+test("a refused yes says why and the button can be tapped again", async () => {
+  const { backend, user } = await showAPlan();
+  backend.refuseNextSend({ plan: ["That plan isn't waiting for an answer any more."] });
+
+  await user.click(planYes()!);
+
+  const told = await within(planNotices()[0]).findByRole("alert");
+  expect(told.textContent).toBe("That plan isn't waiting for an answer any more.");
+  expect(planYes()!.hasAttribute("disabled")).toBe(false);
 });

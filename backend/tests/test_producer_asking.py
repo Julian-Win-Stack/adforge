@@ -123,7 +123,7 @@ def test_a_photo_attached_as_the_answer_is_added_and_can_be_a_needed_photo(
     filled = picture(300, 400, (120, 70, 30))
     fake_model.respond(
         "produce",
-        turn(calls=[("use_photos", {})]),
+        turn(calls=[("use_photos", {"photos": [{"photo": 1, "shows": "the product"}]})]),
         turn(calls=[("plan_ad", {})]),
         turn(says="Here's the plan."),
     )
@@ -139,6 +139,7 @@ def test_a_photo_attached_as_the_answer_is_added_and_can_be_a_needed_photo(
     assert planning["photo_count"] == 3
     assert planning["conversation"][-1] == {
         "by": "user",
+        # Only the producer is told the photo's number: what the jobs read is as it was.
         "text": "Here's one\n\n[Attached 1 picture]",
     }
     assert broll_labels()[1][-1] == [{"what": "the mug with tea in it", "photos": [3]}]
@@ -159,7 +160,7 @@ def test_no_photo_clearly_showing_the_product_asks_for_one(
     # Their photo is the one the ad's colour is shown in.
     fake_model.respond(
         "produce",
-        turn(calls=[("use_photos", {})]),
+        turn(calls=[("use_photos", {"photos": [{"photo": 1, "shows": "the product"}]})]),
         turn(calls=[("plan_ad", {})]),
         turn(says="Here's the plan."),
     )

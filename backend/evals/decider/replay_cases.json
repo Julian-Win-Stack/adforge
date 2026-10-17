@@ -1,0 +1,1027 @@
+[
+ {
+  "id": "replay-8-s3-seat",
+  "layer": "replay",
+  "rule": "clip: what happens",
+  "ad": "8",
+  "movement": true,
+  "turns": [
+   {
+    "say": "The brush scrubs the toilet seat in scene 3. Our cleaner is for the bowl, never the seat. Only scrub inside the bowl please."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "new_clip|new_picture"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "scene 3's clip again, brush only inside the bowl",
+   "producer decided then": "scene 3 picture: Show the toilet brush scrubbing only inside the toilet bowl, never touching or scrubbing the toilet seat; keep the Molly’s Suds Toilet Bowl Cleaner bottle visible beside the toilet.",
+   "producer first said": "For scene 3, I’ll show the brush scrubbing **only inside the toilet bowl**, never touching the seat, while keeping the cleaner bottle visible beside it.\n\nEstimated cost: **$0.86792**, up to **$2.63992** if another render is required. Shall I proceed?",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/8-s3-seat"
+  }
+ },
+ {
+  "id": "replay-8-at-8-seconds",
+  "layer": "replay",
+  "rule": "no scene number: a time",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "At around 8 seconds there's a hand pouring something into the toilet from a second bottle. Please take that out."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned"
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "the producer finds the scene playing at 8 s and fixes it, or asks which scene",
+   "producer decided then": "scene 2 clip: Remove the hand and second bottle pouring into the toilet; show only the toilet bowl ring and rust stain with the Molly’s Suds bottle in view.",
+   "producer first said": "For scene 2, I’ll remove the hand and second bottle pouring into the toilet, leaving only the toilet bowl ring, rust stain, and Molly’s Suds bottle in view.\n\nEstimated cost: about **$0.886**, or up to **$2.658** if extra attempts are needed. Shall I proceed?",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/8-at-8-seconds"
+  }
+ },
+ {
+  "id": "replay-8-correction",
+  "layer": "replay",
+  "rule": "owner corrects the restatement",
+  "ad": "8",
+  "movement": true,
+  "turns": [
+   {
+    "say": "In scene 3 the brush should only scrub inside the bowl, not the seat."
+   },
+   {
+    "say": "Sorry, I meant scene 4, not scene 3."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "new_clip|new_picture"
+    }
+   },
+   {
+    "outcome": "planned",
+    "scenes": {
+     "4": "new_clip|new_picture"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "the fix moves to scene 4 only, and only scene 4 is made again",
+   "producer decided then": "scene 3 clip: Make the toilet brush scrub only inside the toilet bowl and never touch or scrub the seat. (no yes); scene 4 clip: Make the toilet brush scrub only inside the toilet bowl and never touch or scrub the seat.",
+   "producer first said": "For scene 3, I’ll make the toilet brush scrub only inside the bowl and never touch the seat.\n\nEstimated cost: **$0.886**, or up to **$2.658** if extra attempts are needed. Shall I go ahead?",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/8-correction"
+  }
+ },
+ {
+  "id": "replay-8-vague",
+  "layer": "replay",
+  "rule": "vague note",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 3 doesn't look right."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {},
+    "question": true
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "the producer asks what looks wrong, makes nothing",
+   "producer decided then": "no fix restated",
+   "producer first said": "What specifically looks wrong in scene 3—the product, bathroom, toilet brush, or scrubbing action?",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/8-vague"
+  }
+ },
+ {
+  "id": "replay-12-s2-floor",
+  "layer": "replay",
+  "rule": "picture: wrong things in it",
+  "ad": "12",
+  "movement": false,
+  "turns": [
+   {
+    "say": "In scene 2 there's a ring and another phone already lying on the floor before the drop. Clear the floor so it's just our phone falling."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "scene 2's starting picture again with an empty floor, then its clip",
+   "producer decided then": "scene 2 picture: Clear the floor so there is no ring or other phone, leaving only the Gripmunk-cased phone falling onto the plain floor.",
+   "producer first said": "For scene 2, I’ll clear away the ring and other phone so only the Gripmunk-cased phone falls onto the plain floor.\n\nEstimated cost: **$0.876748**, or up to **$2.648748** if another pass is needed. Shall I go ahead?",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/12-s2-floor"
+  }
+ },
+ {
+  "id": "replay-12-two-backs",
+  "layer": "replay",
+  "rule": "picture: impossible object, no scene number",
+  "ad": "12",
+  "movement": false,
+  "turns": [
+   {
+    "say": "When she pulls the phone out of her pocket, both sides of the phone show the camera. One side should be the screen."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "new_picture"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "the pocket scene (3) made again so the phone has a screen side",
+   "producer decided then": "scene 3 picture: When she pulls the phone out of her pocket, show a physically correct phone with the screen on one side and the rear camera only on the opposite side, not cameras on both sides.",
+   "producer first said": "For scene 3, I’ll show a physically correct phone: the screen on one side and the rear camera only on the opposite side—not cameras on both sides.\n\nEstimated cost: **$0.88282**, or up to **$2.65482** if another attempt is needed. Shall I proceed?",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/12-two-backs"
+  }
+ },
+ {
+  "id": "replay-12-cost-no",
+  "layer": "replay",
+  "rule": "owner says no after the cost",
+  "ad": "12",
+  "movement": true,
+  "turns": [
+   {
+    "say": "The phone shakes on the floor after it lands in scene 2. Make it land and stay still."
+   },
+   {
+    "say": "Hmm, that's more than I want to spend. Never mind, leave it as it is."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_clip"
+    }
+   },
+   {
+    "outcome": "no"
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "nothing is made or paid for",
+   "producer decided then": "scene 2 clip: Make the phone land on the floor and stay completely still after impact, with no shaking. (no yes)",
+   "producer first said": "For scene 2, I’ll make the phone land on the floor and stay completely still after impact, with no shaking.\n\nThis will cost about **$0.886**, or up to **$2.658** if extra attempts are needed. Shall I proceed?",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/12-cost-no"
+  }
+ },
+ {
+  "id": "replay-12-higher-slower",
+  "layer": "replay",
+  "rule": "two changes, one can't",
+  "ad": "12",
+  "movement": true,
+  "turns": [
+   {
+    "say": "In scene 4, drop the phone from higher up and play it in slow motion so people see it land."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "4": "new_picture|new_clip"
+    },
+    "scene_cants": {
+     "4": "slower"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "higher drop restated as a fix; slow motion told plainly it can't be done",
+   "producer decided then": "scene 4 picture: Show the phone starting higher above the floor, then falling and landing clearly at real-time speed.",
+   "producer first said": "For scene 4, I’ll show the phone starting higher above the floor, then falling and landing clearly at real-time speed.\n\nI can’t make it slow motion—every clip plays at real-time speed. This change will cost about **$0.876608**, or up to **$2.648608** if another render is needed. Shall I go ahead?",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/12-higher-slower"
+  }
+ },
+ {
+  "id": "replay-N5-s2-twist",
+  "layer": "replay",
+  "rule": "clip: how it moves",
+  "ad": "N5",
+  "movement": true,
+  "turns": [
+   {
+    "say": "Scene 2: she isn't using Le Duo right. To make a curl you twist the tool a full turn as you glide it down the hair."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_clip"
+    },
+    "looks": [
+     [
+      "look_at_clip",
+      2
+     ]
+    ]
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "scene 2's clip again with a full twist while gliding",
+   "producer decided then": "scene 2 clip: As Le Duo glides down the hair, show the tool twisting one full turn to create the curl.",
+   "producer first said": "For scene 2, I’ll show Le Duo twisting one full turn as it glides down the hair to create the curl. This will cost about **$0.97**, or up to **$2.90** if extra attempts are needed. Shall I proceed?",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/N5-s2-twist"
+  }
+ },
+ {
+  "id": "replay-N5-curl-one",
+  "layer": "replay",
+  "rule": "no scene number: described",
+  "ad": "N5",
+  "movement": true,
+  "turns": [
+   {
+    "say": "In the curling part she's holding it wrong. She has to twist it a full turn as she glides down."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_clip"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "the curl scene (2) made again with a full twist, or the producer asks which scene",
+   "producer decided then": "scene 2 clip: Change the curling motion so she twists the styler one full turn as she glides it down the section of hair.",
+   "producer first said": "For scene 2, I’ll change the curling motion so she twists the styler one full turn as she glides it down the section of hair.\n\nEstimated cost: $0.9652, or up to $2.8956 if extra attempts are needed. Shall I proceed?",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/N5-curl-one"
+  }
+ },
+ {
+  "id": "replay-9-s2-noodles",
+  "layer": "replay",
+  "rule": "picture: different thing in it",
+  "ad": "9",
+  "movement": false,
+  "turns": [
+   {
+    "say": "I'd rather not show the sauce on plain white rice in scene 2. Put it on noodles instead."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "scene 2's starting picture again with noodles, then its clip",
+   "producer decided then": "scene 2 picture: Replace the plain white rice with noodles, with Chili Crunch Sauce being squeezed over the noodles.",
+   "producer first said": "For scene 2, I’ll replace the plain white rice with noodles and show Chili Crunch Sauce being squeezed over them.\n\nEstimated cost: **$0.879316**, or up to **$2.651316** if another render is needed. Shall I go ahead?",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/9-s2-noodles"
+  }
+ },
+ {
+  "id": "replay-9-line-jar",
+  "layer": "replay",
+  "rule": "line: new words, no quotes",
+  "ad": "9",
+  "movement": false,
+  "turns": [
+   {
+    "say": "In the last scene she should tell people to grab a jar today instead."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "5": "new_line"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "the producer proposes the new words in quotes and waits for a yes before changing the line",
+   "producer decided then": "scene 5 line: Replace the line with “Grab a jar today.”",
+   "producer first said": "For scene 5, I’ll replace the line with: “Grab a jar today.”\n\nEstimated cost: $0.114028. Say **yes** to approve.",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/9-line-jar"
+  }
+ },
+ {
+  "id": "replay-9-two-changes",
+  "layer": "replay",
+  "rule": "two changes in one note",
+  "ad": "9",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Two things: in scene 2 put the sauce on noodles, not rice, and in the last scene she should say \"Grab a jar today\"."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture",
+     "5": "new_line"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "scene 2 picture fix and last scene line fix restated together, both made after one yes",
+   "producer decided then": "scene 2 picture: Show the Chili Crunch Sauce being squeezed onto noodles instead of rice, while keeping the product bottle and its label clear.; scene 5 line: Change the spoken line to \"Grab a jar today\".",
+   "producer first said": "I’ll make these two changes:\n\n- **Scene 2:** Show Chili Crunch Sauce squeezed onto noodles instead of rice, keeping the bottle and label clear.\n- **Scene 5:** Change the spoken line to **“Grab a jar today.”**\n\nEstimated total: **$0.993319**, up to **$2.765319** if scene 2 needs another attempt. Shall I go ahead?",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/9-two-changes"
+  }
+ },
+ {
+  "id": "replay-14-last-line",
+  "layer": "replay",
+  "rule": "line: new words",
+  "ad": "14",
+  "movement": false,
+  "turns": [
+   {
+    "say": "In the last scene, can she say \"Order yours today and get free shipping\"?"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "5": "new_line"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "the last scene's line changed word for word, then that scene made again",
+   "producer decided then": "scene 5 line: Change the spoken line to \"Order yours today and get free shipping\".",
+   "producer first said": "I’ll change scene 5 to say: “Order yours today and get free shipping.” This will cost about $0.158297. Shall I go ahead?",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/14-last-line"
+  }
+ },
+ {
+  "id": "replay-7-slower",
+  "layer": "replay",
+  "rule": "can't: slower",
+  "ad": "7",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 3 feels rushed. Can you slow it down a bit?"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "no_change"
+    },
+    "scene_cants": {
+     "3": "slower"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "told plainly it can't be slowed, nothing made",
+   "producer decided then": "no fix restated",
+   "producer first said": "I can’t slow Scene 3 down—every clip plays at real-time speed. I can shorten its spoken line to make it feel less rushed; would you like that?",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/7-slower"
+  }
+ },
+ {
+  "id": "replay-7-vague",
+  "layer": "replay",
+  "rule": "vague note",
+  "ad": "7",
+  "movement": false,
+  "turns": [
+   {
+    "say": "The pan looks a bit off."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {},
+    "question": true
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "the producer asks which scene and what looks off, makes nothing",
+   "producer decided then": "no fix restated",
+   "producer first said": "I can’t see pictures or videos. Which scene looks off, and what specifically is wrong with the pan—its shape, color, size, lid, handles, or something else?",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/7-vague"
+  }
+ },
+ {
+  "id": "replay-2-music",
+  "layer": "replay",
+  "rule": "can't: music",
+  "ad": "2",
+  "movement": false,
+  "turns": [
+   {
+    "say": "The music is too sleepy. Can it be more upbeat?"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {},
+    "cants": [
+     "music"
+    ]
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "told plainly the music can't change yet, nothing made",
+   "producer decided then": "no fix restated",
+   "producer first said": "Not yet—I can’t change the music after the ad has been made. I can only adjust individual scenes at this stage.",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/2-music"
+  }
+ },
+ {
+  "id": "replay-2-two-scenes",
+  "layer": "replay",
+  "rule": "two scenes in one message",
+  "ad": "2",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Two things: in scene 2 she should swipe it on her other cheek, and in scene 4 use her ring finger to tap it on her lips."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture|new_clip",
+     "4": "new_picture|new_clip"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "both scenes restated in one go, both made again after one yes",
+   "producer decided then": "scene 2 picture: Show her swiping Flush Balm onto her other cheek.; scene 4 picture: Show her using her ring finger to tap Flush Balm onto her lips.",
+   "producer first said": "I’ll update:\n\n- **Scene 2:** Show her swiping Flush Balm onto her other cheek.\n- **Scene 4:** Show her using her ring finger to tap Flush Balm onto her lips.\n\nEstimated total: **$1.723916**, or up to **$5.267916** if extra regeneration is needed. Shall I go ahead?",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/2-two-scenes"
+  }
+ },
+ {
+  "id": "replay-2-line-simpler",
+  "layer": "replay",
+  "rule": "line: new words",
+  "ad": "2",
+  "movement": false,
+  "turns": [
+   {
+    "say": "The first scene sounds too salesy. Can she just say \"Meet Flush Balm, my everyday blush\"?"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "1": "new_line"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "scene 1's line changed word for word, then scene 1 made again",
+   "producer decided then": "scene 1 line: Change the spoken line to \"Meet Flush Balm, my everyday blush\".",
+   "producer first said": "I’ll change scene 1 to say, “Meet Flush Balm, my everyday blush.” This will cost about $0.13708. Shall I go ahead?",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/2-line-simpler"
+  }
+ },
+ {
+  "id": "replay-6-first-scene-action",
+  "layer": "replay",
+  "rule": "talking scene: action and holding",
+  "ad": "6",
+  "movement": false,
+  "turns": [
+   {
+    "say": "In the first scene she should hold the power bank up and point at its ports."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes_include": {
+     "1": "new_picture"
+    },
+    "scene_cants": {
+     "1": "talking_action"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "holding it can be a new starting picture; pointing (an action while talking) can't, and she's told",
+   "producer decided then": "scene 1 picture: Show her holding the power bank up with its ports clearly visible.",
+   "producer first said": "I can show her holding the power bank up with its ports clearly visible. I can’t make her point while she talks; I can only change how the scene looks or what she holds. Estimated cost: $0.305347.\n\nShould I go ahead?",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/6-first-scene-action"
+  }
+ },
+ {
+  "id": "replay-5-s4-zoom",
+  "layer": "replay",
+  "rule": "picture: zoom in",
+  "ad": "5",
+  "movement": false,
+  "turns": [
+   {
+    "say": "In scene 4 I can't really see the kiss-lock. Can you zoom in on it?"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "4": "new_picture"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "scene 4's starting picture again, closer on the kiss-lock, then its clip",
+   "producer decided then": "scene 4 picture: Show scene 4 in a closer view so the stone kiss-lock is clearly visible.",
+   "producer first said": "I’ll show scene 4 in a closer view so the stone kiss-lock is clearly visible. It’ll cost about **$0.88**, or up to **$2.65** if another attempt is needed. Shall I go ahead?",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-notes/batch-1/5-s4-zoom"
+  }
+ },
+ {
+  "id": "replay-C1-black-toilet-s3",
+  "layer": "replay",
+  "rule": "owner photo",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "In scene 3, please use our own black toilet from this photo.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photo-boss-test/owner-photos/o1-black-toilet.png"
+    ]
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes_include": {
+     "3": "new_picture"
+    },
+    "looks": [
+     [
+      "look_at_owner_photo",
+      null
+     ]
+    ]
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "new starting picture; the black toilet; nothing else copied",
+   "producer decided then": "scene 3 picture: Change scene 3 to show our own black toilet from owner photo 1, while keeping the bowl-ring scrubbing action and product bottle in view.; scene 2 picture: Make the black toilet look like the one in the shop owner's photo.; scene 4 picture: Make the black toilet look like the one in the shop owner's photo.",
+   "right route (test's expectation, not graded)": "in the starting picture (new starting picture). cases.md: route = new starting picture; scenes 2 and 4 also show the toilet and join (spec case 4 / Julian Q2: every scene whose starting picture shows the thing)",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-photos-build/C1-black-toilet-s3"
+  }
+ },
+ {
+  "id": "replay-C2-green-sauce-s2-clip",
+  "layer": "replay",
+  "rule": "owner photo",
+  "ad": "9",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Only in scene 2 (not the other scenes): our sauce is the green one. It should look like this when it comes out of the bottle.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photos-build/owner-photos/q1-green-sauce.png"
+    ]
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_clip|new_picture"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "reference mode; starting picture first then the clean sauce; real clip with green sauce",
+   "producer decided then": "scene 2 picture: Only in scene 2, change the sauce coming out of the bottle to the green sauce appearance shown in owner photo 1; do not change the sauce in any other scene.",
+   "right route (test's expectation, not graded)": "only during the action (reference mode): starting picture first, then the clean sauce. Owner said 'only in scene 2'. Note: the old scene-2 picture has a small red dab at the nozzle, which made the route say 'in the picture'; Claude's open proposal is that this case is really 'both' (new picture + reference-mode clip) - not decided by Julian",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-photos-build/C2-green-sauce-s2-clip"
+  }
+ },
+ {
+  "id": "replay-C8-presenter-like-her",
+  "layer": "replay",
+  "rule": "owner photo",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Our presenter should look like her.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photos-build/owner-photos/q3-woman-yellow-brush.png"
+    ]
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scene_cants_include": [
+     "person_look"
+    ]
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "can't-yet message; nothing made",
+   "producer decided then": "no fix restated",
+   "right route (test's expectation, not graded)": "can't: talking scene / presenter change -> can't-yet message, nothing made",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-photos-build/C8-presenter-like-her"
+  }
+ },
+ {
+  "id": "replay-C10-later-fixes-keep-photo",
+  "layer": "replay",
+  "rule": "owner photo",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Only in scene 3 (not the other scenes), please use our own black toilet from this photo.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photo-boss-test/owner-photos/o1-black-toilet.png"
+    ]
+   },
+   {
+    "say": "yes"
+   },
+   {
+    "say": "Make the bathroom in scene 3 brighter.",
+    "photos": []
+   },
+   {
+    "say": "yes"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "new_picture"
+    }
+   },
+   {
+    "outcome": "yes"
+   },
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "new_picture"
+    }
+   },
+   {
+    "outcome": "yes"
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "the brighter redraw still sends the black toilet photo (D1)",
+   "producer decided then": "scene 3 picture: In scene 3 only, replace the toilet with your own black toilet from owner photo 1, while keeping the bowl-ring scrubbing action and product bottle in view; leave every other scene unchanged.; scene 2 picture: Make the your own black toilet look like the one in the shop owner's photo.; scene 4 picture: Make the your own black toilet look like the one in the shop owner's photo.; scene 3 picture: Make the bathroom in scene 3 brighter, while keeping your black toilet, the bowl-ring scrubbing action, and the product bottle in view unchanged.",
+   "right route (test's expectation, not graded)": "in the starting picture, scene 3 only (owner said only); the later 'brighter' redraw still sends the black toilet photo (D1)",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-photos-build/C10-later-fixes-keep-photo"
+  }
+ },
+ {
+  "id": "replay-C12b-fourth-photo",
+  "layer": "replay",
+  "rule": "owner photo",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Only in scene 3: use our toilet, our brush and show our stain, photos attached.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photo-boss-test/owner-photos/o1-black-toilet.png",
+     "/mnt/project-files/runs/owner-photo-boss-test/owner-photos/o3-blue-brush.png",
+     "/mnt/project-files/runs/owner-photo-boss-test/owner-photos/s1-black-mould-stain.png"
+    ]
+   },
+   {
+    "say": "yes"
+   },
+   {
+    "say": "Also use our bottle from this photo in scene 3.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photo-boss-test/owner-photos/p1-blue-label.jpg"
+    ]
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "new_picture"
+    }
+   },
+   {
+    "outcome": "yes"
+   },
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "new_picture"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "agent asks which photo to drop; nothing made for the 4th",
+   "producer decided then": "no fix restated",
+   "right route (test's expectation, not graded)": "ask: agent asks which photo to drop; nothing made for the 4th",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-photos-build/C12b-fourth-photo"
+  }
+ },
+ {
+  "id": "replay-C13-correct-the-thing",
+  "layer": "replay",
+  "rule": "owner photo",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 4: use the one in this photo.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photo-boss-test/owner-photos/o2-wood-seat-toilet.png"
+    ]
+   },
+   {
+    "say": "No, only the wooden seat, not the toilet.",
+    "photos": []
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "4": "new_picture"
+    }
+   },
+   {
+    "outcome": "planned",
+    "scenes": {
+     "4": "new_picture"
+    },
+    "thing_has": {
+     "1": "seat"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "restatement re-names the seat; only the seat changes",
+   "producer decided then": "scene 4 picture: Change scene 4 to use only the wooden seat from owner photo 1, while keeping the existing toilet and the rest of the scene unchanged.; scene 2 picture: Make the wooden seat look like the one in the shop owner's photo.; scene 3 picture: Make the wooden seat look like the one in the shop owner's photo.",
+   "right route (test's expectation, not graded)": "in the starting picture; restatement re-names the seat; only the seat changes (owner named scene 4; cases don't state joins; the run joined scenes 2 and 3 under the join default)",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-photos-build/C13-correct-the-thing"
+  }
+ },
+ {
+  "id": "replay-C14-add-plant",
+  "layer": "replay",
+  "rule": "owner photo",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Put our plant from this photo next to the toilet in scene 2.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photos-build/owner-photos/q4-snake-plant.png"
+    ]
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "new starting picture with the plant, not reference mode",
+   "producer decided then": "scene 2 picture: Add your plant from owner photo 1 next to the toilet in scene 2, while keeping the toilet, visible bowl ring and rust stain, and product bottle in view.; scene 3 picture: Make the your plant look like the one in the shop owner's photo.; scene 4 picture: Make the your plant look like the one in the shop owner's photo.",
+   "right route (test's expectation, not graded)": "in the starting picture: 'should be there from the start' -> new starting picture with the plant, not reference mode (owner named scene 2; the run joined 3 and 4)",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-photos-build/C14-add-plant"
+  }
+ },
+ {
+  "id": "replay-C15-talking-scene",
+  "layer": "replay",
+  "rule": "owner photo",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 5: use our black toilet from this photo.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photo-boss-test/owner-photos/o1-black-toilet.png"
+    ]
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes_include": {
+     "5": "new_picture"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "can't-yet for talking scenes",
+   "producer decided then": "no fix restated",
+   "right route (test's expectation, not graded)": "can't: photos on a talking scene (scene 5) -> can't-yet message",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-photos-build/C15-talking-scene",
+   "after code (ticket 04)": "a photo on a talking scene is a rule can't, written by code before the plan is shown: this new_picture becomes that can't"
+  }
+ },
+ {
+  "id": "replay-C16-blurry-photo",
+  "layer": "replay",
+  "rule": "owner photo",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 3: use our toilet, photo attached.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photos-build/owner-photos/q5-blurry-toilet.jpg"
+    ]
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "clear": {
+     "1": false
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "asks for another photo; nothing else made",
+   "producer decided then": "no fix restated",
+   "right route (test's expectation, not graded)": "ask: photo too blurry -> ask for another photo, nothing else made",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-photos-build/C16-blurry-photo"
+  }
+ },
+ {
+  "id": "replay-C20-blue-foam-s3-clip",
+  "layer": "replay",
+  "rule": "owner photo",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Only in scene 3 (not the other scenes): when you scrub, our cleaner foams up blue like this.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photos-build/owner-photos/q6-blue-foam.png"
+    ]
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "new_clip|new_picture"
+    },
+    "looks": [
+     [
+      "look_at_clip",
+      3
+     ]
+    ]
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "reference mode; clip shows blue foam where scrubbed",
+   "producer decided then": "scene 3 clip: Only in scene 3, make the cleaner foam up blue while the toilet brush scrubs, matching the blue foam shown in owner photo 1; keep the product bottle in view.",
+   "right route (test's expectation, not graded)": "only during the action (reference mode); clip shows blue foam where scrubbed; owner said only scene 3",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-photos-build/C20-blue-foam-s3-clip"
+  }
+ },
+ {
+  "id": "replay-C21-unnamed-thing",
+  "layer": "replay",
+  "rule": "owner photo",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 3: make it look like this.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photo-boss-test/owner-photos/o1-black-toilet.png"
+    ]
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes_include": {
+     "3": "new_picture"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "wanted (test author, Claude)": "producer can't see pictures: asks what the photo shows, doesn't guess",
+   "producer decided then": "no fix restated",
+   "right route (test's expectation, not graded)": "ask: producer can't see pictures; asks what the photo shows, doesn't guess",
+   "Julian's grade": "not graded yet",
+   "past run": "/mnt/project-files/runs/owner-photos-build/C21-unnamed-thing"
+  }
+ }
+]
