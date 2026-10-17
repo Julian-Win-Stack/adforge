@@ -707,6 +707,9 @@ def test_a_failed_clip_check_also_says_what_the_clip_judge_still_sees(
     assert notice_of(api, session_id, check)["text"].endswith(
         f"or tell me what to change. The clip's own check also still sees: {floats}"
     )
+    # That notice is the only one: the judge's kept clip isn't said again on top of it.
+    told = [each.text for each in Message.objects.filter(role="notice", level="info")]
+    assert not any("though the judge still found a fault" in text for text in told)
 
 
 def test_a_failed_clip_check_never_passes_on_a_problem_the_clip_judge_outvoted(
