@@ -119,6 +119,7 @@ def check_and_propose(
             continue
         if row.action == Action.NEW_CLIP and any(photo["in_picture"] for photo in row.photos):
             row.action = Action.NEW_PICTURE
+            row.new_movement = True
         if row.action == Action.GO_BACK:
             assert row.go_back_to is not None, "a go back names its version"
             row.remakes_clip = not work.go_back_is_free(row.scene, row.go_back_to)
@@ -685,9 +686,10 @@ def _carry_on(row: FixPlanScene) -> None:
 
 def _kept_motion(row: FixPlanScene, scene: Scene, picture: ProducedItem) -> str:
     """For a new picture's clip in a scene that shows the product, how the clip it replaces
-    moved: only a new clip chooses a new movement (live ad fix 1; design thread, 05:15 Oct 17).
-    Blank otherwise, so the clip moves as its picture's step planned."""
-    if row.action != Action.NEW_PICTURE or not scene.shows:
+    moved: only a new clip chooses a new movement (live ad fix 1; design thread, 05:15 Oct 17),
+    a new clip made a new picture for its photo too. Blank otherwise, so the clip moves as its
+    picture's step planned."""
+    if row.action != Action.NEW_PICTURE or row.new_movement or not scene.shows:
         return ""
     before = [
         version.clip

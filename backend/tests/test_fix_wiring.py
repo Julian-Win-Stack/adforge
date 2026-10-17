@@ -755,6 +755,39 @@ def test_a_new_picture_keeps_the_movement_of_the_clip_it_replaces(
     assert LIFT not in asked
 
 
+def test_a_movement_note_with_a_photo_of_a_thing_in_the_picture_moves_as_the_note_says(
+    fake_model: FakeModel,
+    held: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    # A new clip whose photo's thing is in the picture is made a new picture, as the route
+    # says; its clip still chooses its movement from the note (design thread, 05:15 Oct 17).
+    uses = [{"photo": 1, "in_picture": True, "during_action": True}]
+    fake_model.respond(
+        "decide_fixes",
+        planning(
+            ("look_at_owner_photo", {"photo": 1}),
+            ("look_at_picture", {"scene": 2}),
+            decided(
+                row(2, "new_clip", LIFT, photos=uses),
+                photos=[{"photo": 1, "thing": "black mug", "clear": True}],
+            ),
+        ),
+    )
+    say("In scene 2 the hand should lift my black mug to the camera.", ("mug.png", MUG_SIDE))
+    tap_yes(api, session_id, plans()[-1])
+    fake_model.respond("choose_broll_picture", {**BROLL_CHOICE, "motion_prompt": LIFT})
+
+    held.run_held()
+
+    assert status(2) == "finished"
+    asked = fake_model.broll_clips_asked[-1]["prompt"]
+    assert LIFT in asked
+    assert MOTION not in asked
+
+
 def test_a_decider_error_leaves_the_message_to_the_producer_and_later_ones_route(
     fake_model: FakeModel, held: HeldSteps, say: Callable[..., None]
 ) -> None:
