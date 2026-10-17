@@ -25,7 +25,7 @@ from typing import Any, ClassVar, Literal
 import PIL.Image
 from django.db import transaction
 from django.db.models import QuerySet
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from adforge import file_store, tracing
 from chat import messages
@@ -33,7 +33,15 @@ from chat.models import Attachment, Message, Session
 from gateway.gateway import take_turn
 from gateway.types import Happened, Image, Said, Shown, ToolUse
 from jobs import clip_judge, fix_plans, work
-from jobs.models import FixCheck, FixPlan, FixPlanScene, Job, ProducedItem, Scene
+from jobs.models import (
+    FixCheck,
+    FixPlan,
+    FixPlanScene,
+    Job,
+    ProducedItem,
+    ReferencePhoto,
+    Scene,
+)
 
 from . import loop, run_plan
 from .loop import Agent, Refused, Tool, ToolResult
@@ -484,6 +492,16 @@ class PhotoThing(BaseModel):
         description='The one thing to take from it, in their words, such as "black toilet".'
     )
     clear: bool = Field(description="Whether it shows the thing clearly enough to copy its look.")
+
+    # A validator rather than max_length, which OpenAI's strict schema doesn't accept.
+    @field_validator("thing")
+    @classmethod
+    def _a_thing_that_can_be_kept(cls, thing: str) -> str:
+        longest = ReferencePhoto._meta.get_field("thing").max_length
+        assert longest is not None
+        if len(thing) > longest:
+            raise ValueError(f"the thing is over {longest} characters, too long to be kept")
+        return thing
 
 
 class PhotoUse(BaseModel):

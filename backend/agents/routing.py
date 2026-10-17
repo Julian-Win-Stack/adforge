@@ -39,6 +39,12 @@ DECIDER_FAILED = (
     "are in the server log. It is answered as a question instead, so nothing was changed. "
     "Send the note again to try again."
 )
+# What the chat says when acting on what the decider read failed, as a yes whose plan
+# couldn't be run: nothing of it was kept, so nothing was changed.
+ACTING_FAILED = (
+    "Your message couldn't be acted on: an unexpected error happened, and the details are in "
+    "the server log, so nothing was changed. Send it again to try again."
+)
 # What it is told when they tap yes on a plan they had already said no to in words.
 TAPPED_AFTER_NO = (
     "The shop owner tapped yes on a plan they had already said no to, so nothing was run."
@@ -82,9 +88,24 @@ def last_seq(session: Session) -> int:
 
 
 def _route(job: Job, message: Message) -> bool:
-    """Route one message. Whether the producer is to answer it."""
-    if message.plan_event == Message.PlanEvent.YES:
-        return _tapped(message)
+    """Route one message. Whether the producer is to answer it. An error acting on it, which
+    would come back every time and hold every later message behind it, leaves nothing of it
+    done, and the chat says so in red, so a run's warnings show it."""
+    try:
+        if message.plan_event == Message.PlanEvent.YES:
+            return _tapped(message)
+        return _read(job, message)
+    except BlockedBySafetyFilter:
+        raise
+    except Exception:
+        logger.exception("Acting on message %s failed", message.pk)
+        post_notice(job, ACTING_FAILED, Message.Level.PROBLEM)
+        return _routed(message, producer=False)
+
+
+def _read(job: Job, message: Message) -> bool:
+    """Route a message the shop owner typed: the decider reads it, and code acts on what it
+    read. Whether the producer is to answer it."""
     said = [each for each in decider.this_round(job) if each.seq <= message.seq]
     if not said or said[-1].pk != message.pk:
         # Not in a round the decider reads, as a message from before the last yes.
