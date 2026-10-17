@@ -1225,15 +1225,16 @@ def _estimate(scene: Scene, redo: Fix.Redo, fix: str) -> Estimate:
     return Estimate(*(amount.quantize(MILLIONTH, rounding=ROUND_HALF_UP) for amount in estimate))
 
 
-def _line_estimate(scene: Scene, fix: str) -> Estimate:
-    """What a new line for the scene, then its starting picture, audio, transcript and clip,
-    is estimated to cost: the picture as for a picture fix, and the rest sized from the new
-    line in `fix`, as long as the voice takes to say it."""
+def _line_estimate(scene: Scene, fix: str, *, new_picture: bool = False) -> Estimate:
+    """What a new line for the scene, then its audio, transcript and clip, is estimated to
+    cost, sized from the new line in `fix`, as long as the voice takes to say it. A new line
+    keeps the scene's starting picture (Julian, 2026-10-17): with `new_picture`, the shop
+    owner also asked for a new one, estimated as for a picture fix."""
     line = quoted_line(fix)
     assert line is not None, "a fix for a new line holds it in quotes"
     seconds = _seconds_to_say(scene, line)
     rest = (
-        _picture_only_estimate_usd(scene)
+        (_picture_only_estimate_usd(scene) if new_picture else Decimal(0))
         + catalog.speech_cost_usd(catalog.MODEL_FOR_PURPOSE["speak_line"], len(line))
         + catalog.transcription_cost_usd(catalog.MODEL_FOR_PURPOSE["transcribe_line"], seconds)
     )

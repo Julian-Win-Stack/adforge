@@ -111,7 +111,10 @@ def test_an_ad_is_fixed_by_a_picture_note_then_gone_back_then_given_a_new_line(
     assert work.versions(Scene.objects.get(number=2))[-1].label == "v3 back to v1"
     assert len(ads()) == ads_before + 2
 
-    # A new line for the talking scene: code runs the line's chain and shows the ad.
+    # A new line for the talking scene: code makes its voice, transcript and clip from the
+    # starting picture it has, and shows the ad.
+    kept = picture(3)
+    paid_before = len(paid_for())
     fake_model.respond(
         "decide_fixes",
         planning(
@@ -121,13 +124,56 @@ def test_an_ad_is_fixed_by_a_picture_note_then_gone_back_then_given_a_new_line(
     )
     say(f'Scene 3 should say "{NEW_LINE}"')
     tap_yes(api, session_id, plans()[-1])
-    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
     held.run_held()
 
     assert Scene.objects.get(number=3).line == NEW_LINE
+    assert (picture(3), clip(3).picture) == (kept, kept)
+    assert paid_for()[paid_before:] == [
+        "speak_line",
+        "transcribe_line",
+        "make_talking_clip",
+        "collect_talking_clip",
+    ]
     assert ads()[-1].cuts[-1]["clip"] == clip(3).pk
     assert len(ads()) == ads_before + 3
     # Code did all of it: the producer took no turn.
+    assert producer_turns() == turns
+
+
+def test_a_note_asking_for_a_new_line_and_a_new_picture_on_one_scene_gets_both(
+    fake_model: FakeModel,
+    held: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    turns, ads_before, old = producer_turns(), len(ads()), picture(2)
+    fake_model.respond(
+        "decide_fixes",
+        planning(
+            ("look_at_picture", {"scene": 2}),
+            decided(row(2, "new_picture", TABLE, line=NEW_LINE)),
+        ),
+    )
+    say(f'Scene 2 should say "{NEW_LINE}", with the mug on a wooden table.')
+    [plan] = plans()
+    shown = Message.objects.get(plan_event="shown", fix_plan=plan)
+    assert f'New line: "{NEW_LINE}"' in shown.text
+
+    tap_yes(api, session_id, plan)
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    held.run_held()
+
+    scene = Scene.objects.get(number=2)
+    assert (scene.line, scene.status) == (NEW_LINE, "finished")
+    drawn = picture(2)
+    assert drawn != old and drawn.step is not None
+    assert (drawn.step.line, drawn.step.note) == (NEW_LINE, TABLE)
+    made = clip(2)
+    assert made.picture == drawn and made.step is not None and made.step.line == NEW_LINE
+    assert FixCheck.objects.get().verdict == "passed"
+    assert len(ads()) == ads_before + 1
+    assert made.pk in [cut["clip"] for cut in ads()[-1].cuts]
     assert producer_turns() == turns
 
 

@@ -1,6 +1,7 @@
 """Changing what a finished scene says (route B step 1, #138; fix redesign, ticket 08): a plan
-the shop owner said yes to gives the scene its new line, and code makes its starting picture,
-audio, transcript and clip again, with no note and no producer turn (tests/fixing.py); when
+the shop owner said yes to gives the scene its new line, and code makes its audio, transcript
+and clip again from the starting picture it has (Julian, 2026-10-17), with no note and no
+producer turn (tests/fixing.py); when
 its clip lands the ad is assembled again by code. What a new line is estimated to cost. The
 scene models are faked at the gateway; the clips are real tiny videos."""
 
@@ -12,14 +13,12 @@ from agents.money import dollars
 from agents.producer import Estimate, _estimate
 from gateway.catalog import MODEL_FOR_PURPOSE, transcription_cost_usd
 from gateway.fake import FakeModel
-from gateway.models import ModelCall
 from jobs.models import Fix, FixPlan, ProducedItem, Scene, SceneStep
 
 from .conftest import JUDGED_CLIP, HeldSteps, facts_ok, paid_for, producer_turns, results_of
 from .fixing import fixed, plan_row, planned
 from .test_fix_loop import TURN_REWRITE, latest
 from .test_producer_broll import (
-    BROLL_CHOICE,
     IMAGE_1,
     SHOWS,
     TALKING_CHOICE,
@@ -53,13 +52,9 @@ def new_line(scene: int, line: str, note: str = NOTE_3) -> FixPlan:
     return fixed(scene, "new_line", note=note, change="Say it as asked.", line=line)
 
 
-def made_again(fake_model: FakeModel, steps: HeldSteps, scene: int) -> None:
-    """The scene's starting picture and audio, its transcript, then its clip, each run as the
-    worker runs them, with no producer turn."""
-    fake_model.respond(
-        "choose_broll_picture" if scene == 2 else "choose_starting_picture",
-        BROLL_CHOICE if scene == 2 else TALKING_CHOICE,
-    )
+def made_again(steps: HeldSteps) -> None:
+    """The scene's audio, its transcript, then its clip, each run as the worker runs them,
+    with no producer turn: no new picture is chosen."""
     steps.run_held()
 
 
@@ -94,10 +89,10 @@ def test_a_talking_scenes_new_line_remakes_only_that_scene_and_a_new_ad(
     scene = Scene.objects.get(number=3)
     assert (scene.line, scene.status, scene.fact_checked) == (LINE_3, "planned", True)
 
-    made_again(fake_model, steps, 3)
+    made_again(steps)
 
     assert versions(3) == {
-        "starting_picture": [1, 2],
+        "starting_picture": [1],
         "line_audio": [1, 2],
         "transcript": [1, 2],
         "clip": [1, 2],
@@ -105,13 +100,9 @@ def test_a_talking_scenes_new_line_remakes_only_that_scene_and_a_new_ad(
     assert {1: versions(1), 2: versions(2)} == untouched
     assert Scene.objects.get(number=3).status == "finished"
     fix = fix_of(plan, 3)
-    assert {step.kind for step in fix.steps.all()} == {
-        "starting_picture",
-        "line_audio",
-        "transcript",
-        "clip",
-    }
+    assert {step.kind for step in fix.steps.all()} == {"line_audio", "transcript", "clip"}
     assert all(step.note == "" for step in fix.steps.all())
+    assert latest("clip", 3).picture == latest("starting_picture", 3)
     assert producer_turns() == turns
     # The fix's clip landing assembled the new ad, captioned with the new words.
     assert ads() == [1, 2]
@@ -128,12 +119,10 @@ def test_a_line_change_pays_only_for_the_scenes_steps_and_no_judge_checks_the_fi
     paid = len(paid_for())
 
     new_line(3, LINE_3)
-    made_again(fake_model, steps, 3)
+    made_again(steps)
 
-    # The step 6 judge doesn't check a change of words (#131).
+    # The step 6 judge doesn't check a change of words (#131), and the picture is kept.
     assert paid_for()[paid:] == [
-        "choose_starting_picture",
-        "make_starting_picture",
         "speak_line",
         "transcribe_line",
         "make_talking_clip",
@@ -150,7 +139,7 @@ def test_the_old_lines_items_are_kept_and_the_new_ad_uses_none_of_them(
     old_clip = ProducedItem.objects.get(kind="clip", scene__number=3)
 
     new_line(3, LINE_3)
-    made_again(fake_model, steps, 3)
+    made_again(steps)
     # Not a note: the decider passes it on to the producer.
     owner_says(fake_model, say, "Show me again", ("assemble_ad", {}))
 
@@ -171,7 +160,7 @@ def test_a_broll_scenes_new_line_keeps_what_it_shows_and_its_labels(
     labels = (scene.shows, scene.broll_kind, scene.person_shown, scene.usage, scene.result)
 
     plan = new_line(2, LINE_2_NEW, NOTE_2)
-    made_again(fake_model, steps, 2)
+    made_again(steps)
 
     scene = Scene.objects.get(number=2)
     assert scene.line == LINE_2_NEW
@@ -191,24 +180,21 @@ def test_a_broll_scenes_new_line_pays_for_its_steps_the_judge_and_no_before_pict
     paid = len(paid_for())
 
     new_line(2, LINE_2_NEW, NOTE_2)
-    made_again(fake_model, steps, 2)
+    made_again(steps)
 
-    # The ad's before-picture is drawn once and reused; the new clip is judged as any B-roll
-    # clip is, and a new line isn't checked against the fix (#131).
+    # The picture is kept; the new clip is judged as any B-roll clip is, and a new line isn't
+    # checked against the fix (#131).
     assert paid_for()[paid:] == [
-        "choose_broll_picture",
-        "make_starting_picture",
-        "check_starting_picture",
-        "check_starting_picture",
         "speak_line",
         "transcribe_line",
         "make_broll_clip",
         "collect_broll_clip",
         *JUDGED_CLIP,
     ]
-    # The new clip is in reference mode, its new starting picture as Image 1.
+    # The new clip is in reference mode, the starting picture it kept as Image 1.
     assert clips_asked("starting_picture")[-1] is None
     assert clips_asked("example_pictures")[-1] == [latest("starting_picture", 2).file]
+    assert latest("starting_picture", 2).version == 1
     assert clips_asked("prompt")[-1].startswith(IMAGE_1)
 
 
@@ -245,7 +231,6 @@ def test_a_new_line_said_yes_to_while_the_scene_is_being_made_waits_for_it(
     assert Scene.objects.get(number=3).line == LINE_3
     assert not SceneStep.objects.filter(plan_scene__plan=newer).exists()
 
-    fake_model.respond("choose_starting_picture", TALKING_CHOICE, TALKING_CHOICE)
     steps.run_held()
 
     assert row_of(first, 3).landed_at is not None
@@ -269,7 +254,7 @@ def test_a_picture_fix_said_yes_to_while_a_new_line_is_made_is_made_on_the_new_l
     new_line(3, LINE_3)
     picture = fixed(3, "new_picture", note="And she should hold the mug up.", change=MUG_UP)
 
-    fake_model.respond("choose_starting_picture", TALKING_CHOICE, TALKING_CHOICE)
+    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
     steps.run_held()
 
     step = last_step("starting_picture", 3)
@@ -286,13 +271,17 @@ def test_a_clip_fix_said_yes_to_while_a_new_line_is_made_is_made_on_the_new_line
     line = new_line(2, LINE_2_NEW, NOTE_2)
     clip = fixed(2, "new_clip", note="And slower.", change=SLOWER_2)
 
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
     fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
     steps.run_held()
 
     made = last_step("clip", 2)
     assert (made.line, made.note, made.fix) == (LINE_2_NEW, SLOWER_2, fix_of(clip, 2))
-    assert last_step("starting_picture", 2).fix == fix_of(line, 2)
+    # Both keep the scene's starting picture.
+    assert last_step("starting_picture", 2).fix is None
+    assert {step.fix for step in SceneStep.objects.filter(kind="clip", fix__isnull=False)} == {
+        fix_of(line, 2),
+        fix_of(clip, 2),
+    }
     assert Scene.objects.get(number=2).status == "finished"
 
 
@@ -311,7 +300,6 @@ def test_a_new_broll_line_whose_real_audio_runs_too_long_is_shortened_and_made(
     fake_model.words_per_second = 8 / 15.5
     fake_model.respond("shorten_line", {"line": "Hand-thrown, oven and dishwasher safe."})
     fake_model.respond("fact_check", facts_ok(2))
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
 
     steps.run_held()
 
@@ -344,20 +332,11 @@ def line_estimate(scene: int, line: str) -> Estimate:
 def test_a_line_fix_is_estimated_from_the_new_line(
     shown: ProducedItem,  # noqa: F811
 ) -> None:
-    picture = SceneStep.objects.get(kind="starting_picture", scene__number=3)
-    picture_paid = sum(
-        (
-            call.cost_usd or Decimal(0)
-            for call in ModelCall.objects.filter(tool_call=picture.tool_call)
-        ),
-        Decimal(0),
-    )
     # The new line's 23 characters at Inworld's $25 a million; its 5 words, 2.5 seconds at the
     # fake voice's speed, heard at Scribe's $0.22 an hour and spoken by HeyGen at $0.05 a
-    # second; on top of what the scene's picture cost.
+    # second. The scene keeps its picture, so nothing is paid for one.
     expected = (
-        picture_paid
-        + Decimal("0.000575")
+        Decimal("0.000575")
         + Decimal("2.5") * Decimal("0.22") / 3600
         + Decimal("2.5") * Decimal("0.05")
     ).quantize(Decimal("0.000001"))
@@ -370,14 +349,14 @@ def test_a_line_fix_at_an_uneven_voice_speed_is_estimated_to_the_millionth_of_a_
 ) -> None:
     # The voice was measured at 2.2 words a second, so the new line's 5 words take 2.2727...
     # seconds: HeyGen's $0.05 a second and Scribe's $0.22 an hour times that never end. On
-    # top of the scene's picture at $0.0155 and the line's 23 characters at $0.000575. A
-    # talking clip isn't judged, so it is never made again.
+    # top of the line's 23 characters at $0.000575. A talking clip isn't judged, so it is
+    # never made again.
     ProducedItem.objects.filter(kind="voice").update(words_per_second=2.2)
 
     estimate = line_estimate(3, LINE_3)
 
-    assert estimate == (Decimal("0.129850"), Decimal("0.129850"))
-    assert dollars(estimate.about) == "$0.12985"
+    assert estimate == (Decimal("0.114350"), Decimal("0.114350"))
+    assert dollars(estimate.about) == "$0.11435"
 
 
 @pytest.mark.parametrize(
@@ -404,11 +383,11 @@ def test_a_transcription_is_estimated_to_the_millionth_of_a_dollar(
 def test_a_broll_line_fix_is_estimated_with_the_judges_asks_and_up_to_two_remakes(
     shown: ProducedItem,  # noqa: F811
 ) -> None:
-    # The scene's picture cost $0.0215 without the shared before-picture; the new line's 52
+    # The scene keeps its picture; the new line's 52
     # characters at Inworld's $25 a million are $0.0013; its 8 words take the fake voice 4
     # seconds, $0.000244 at Scribe's $0.22 an hour; a 5-second clip at Boreal's $0.0792 a
     # second with the judge's 6 asks at $0.003 is $0.414, and up to 2 remakes with a prompt
     # written at $0.07 (decider call 13) bring it up to $1.382.
     estimate = line_estimate(2, LINE_2_NEW)
 
-    assert estimate == (Decimal("0.437044"), Decimal("1.405044"))
+    assert estimate == (Decimal("0.415544"), Decimal("1.383544"))

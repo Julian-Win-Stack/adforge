@@ -272,6 +272,7 @@ PHOTO = {
     [
         (FixPlanScene.Action.NEW_LINE, {}),
         (FixPlanScene.Action.NEW_CLIP, {"line": "A line nobody asked for."}),
+        (FixPlanScene.Action.GO_BACK, {"go_back_to": 1, "line": "A line nobody asked for."}),
         (FixPlanScene.Action.GO_BACK, {}),
         (FixPlanScene.Action.GO_BACK, {"go_back_to": 0}),
         (FixPlanScene.Action.NEW_PICTURE, {"go_back_to": 1}),
@@ -388,3 +389,20 @@ def test_a_plan_has_cost_what_its_scenes_steps_were_billed() -> None:
     )
     assert picture.cost_usd() == Decimal("0.06")
     assert plan.cost_usd() == Decimal("0.46")
+
+
+def test_a_new_picture_can_carry_a_new_line_for_the_same_scene() -> None:
+    job = an_ad(1)
+
+    plan = fix_plans.propose(
+        job,
+        NOTES,
+        [row(job, 1, FixPlanScene.Action.NEW_PICTURE, change="A black toilet.", line="It shines.")],
+    )
+
+    [shown] = fix_plans.notice(plan)["scenes"]
+    assert (shown["action"], shown["change"], shown["line"]) == (
+        "new_picture",
+        "A black toilet.",
+        "It shines.",
+    )
