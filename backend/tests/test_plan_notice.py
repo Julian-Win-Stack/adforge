@@ -3,7 +3,7 @@ way the browser meets them: code posts a plan in the chat, the chat API reads it
 the plan's fields, and the yes button sends a marked message that code can tell from a
 typed one. Nothing here routes the yes or runs the plan (ticket 08)."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from decimal import Decimal
 from typing import Any
 
@@ -29,7 +29,7 @@ def an_ad(scenes: int = 3) -> Job:
     return job
 
 
-def a_plan(job: Job, question: str = "") -> FixPlan:
+def a_plan(job: Job, question: str = "", cants: Sequence[fix_plans.PlanCant] = ()) -> FixPlan:
     return fix_plans.propose(
         job,
         NOTES,
@@ -57,6 +57,7 @@ def a_plan(job: Job, question: str = "") -> FixPlan:
             ),
         ],
         question=question,
+        cants=cants,
     )
 
 
@@ -85,7 +86,11 @@ def send(api: APIClient, fake_model: FakeModel) -> Callable[..., Any]:
 
 def test_a_plan_shown_in_the_chat_is_read_back_with_its_fields(api: APIClient) -> None:
     job = an_ad()
-    plan = a_plan(job, question="Which toilet, the one in photo 1?")
+    plan = a_plan(
+        job,
+        question="Which toilet, the one in photo 1?",
+        cants=[{"kind": "music", "text": "The music can't be changed."}],
+    )
 
     shown = fix_plans.show(plan)
 
@@ -103,6 +108,7 @@ def test_a_plan_shown_in_the_chat_is_read_back_with_its_fields(api: APIClient) -
             "question": "Which toilet, the one in photo 1?",
             "estimate_usd": "0.550000",
             "estimate_up_to_usd": "1.100000",
+            "cants": [{"kind": "music", "text": "The music can't be changed."}],
             "scenes": [
                 {
                     "scene": 2,
@@ -136,6 +142,9 @@ def test_a_plan_shown_in_the_chat_is_read_back_with_its_fields(api: APIClient) -
             ],
         },
     }
+    # Its words say the same, for where the plan can't be drawn.
+    for words in ("Scene 2", "The toilet is black.", "Scene 3", "The person's look", "music"):
+        assert words in said["text"]
     # Polling gets the same, so a notice that lands while the chat is open shows in full.
     polled = api.get(f"/api/sessions/{chat_id(job)}/messages/?after=0").json()
     assert polled[0]["plan"] == said["plan"]

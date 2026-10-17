@@ -746,6 +746,7 @@ button:disabled {
 }
 
 .plan-cant {
+  margin: 0;
   color: var(--danger);
 }
 

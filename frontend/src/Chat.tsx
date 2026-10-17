@@ -373,6 +373,11 @@ function PlanView({ plan, onYes }: { plan: PlanNotice; onYes: (() => Promise<voi
           </li>
         ))}
       </ul>
+      {plan.cants.map((cant) => (
+        <p key={cant.kind} className="plan-cant">
+          Can't: {cant.text}
+        </p>
+      ))}
       {plan.question && <p className="plan-question">{plan.question}</p>}
       {Number(plan.estimate_up_to_usd) > 0 && (
         <p className="plan-total">
