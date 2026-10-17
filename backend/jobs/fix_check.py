@@ -35,6 +35,16 @@ only partly made, and say in one sentence what is still wrong."""
 
 PICTURES_SHOWN = "The old picture is first; the new picture is second."
 
+# A fix's new starting picture this check fails is drawn again by itself, told why, at most
+# this many times before the shop owner is asked (Julian 2026-10-17 17:04, "two retry would
+# make sense"). A fix's clip is never drawn again for it: the shop owner is asked at once
+# (Julian 2026-10-14).
+MOST_REDRAWS = 2
+
+# What a talking scene's picture writer is told, after the change, when it draws a fix's
+# picture again; a B-roll scene's is told by picture_check.REDO_RULES, shown the picture.
+REDRAW_NOTE = "The last picture drawn for this change failed its check, which found: {reason}"
+
 
 # The judge's answer, filled in from the top: it looks at both pictures before it decides
 # (vision-judges.md, rule 1). A comment, not a docstring: a docstring would be sent to the

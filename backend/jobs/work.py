@@ -1494,6 +1494,12 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
     assert portrait is not None, "the tool refuses a scene whose person isn't made"
     photos = list(job.photos.filter(shows_product_colour=True))
     numbers = [photo.position for photo in photos]
+    note = step.note
+    failed = _the_try_before(step)
+    if failed is not None:
+        # Drawn again for its fix check: told what the check found still wrong.
+        redraw = fix_check.REDRAW_NOTE.format(reason=failed.reason)
+        note = f"{note}\n\n{redraw}" if note else redraw
     handoff = StartingPictureHandoff(
         scene=scene.number,
         line=step.line,
@@ -1502,7 +1508,7 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
         colour_photos=numbers,
         person_looks=job.person_looks,
         pose=pose_for(job.product_size),
-        note=step.note or None,
+        note=note or None,
         conversation=_conversation(job, until=step.started_at),
     )
     images = [
@@ -1549,7 +1555,9 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
     their face. It is checked before any clip is paid for; one that fails is drawn again from
     prompts written to fix what the check found, at most MOST_REDRAWS times. When the last
     one drawn fails too, the chat is shown each picture and why it failed, and
-    PictureKeptFailing is raised to stop the run.
+    PictureKeptFailing is raised to stop the run. A fix's picture drawn again because the one
+    before it failed its fix check is written as a redo of that one from the start, told
+    what the fix check found, and every redo of it after is told that too.
 
     Run again, as after a worker stopped, it pays for nothing already paid for: each model's
     answer for the same handoff is answered from its record, and each picture drawn is
@@ -1625,6 +1633,19 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
     # again pays for none of them twice.
     drawn = _pictures_drawn(step)
     redo: tuple[Redo, str] | None = None
+    fixing: list[str] = []
+    before_it = _the_try_before(step)
+    if before_it is not None:
+        assert step.redraw_of is not None, "a try before is the step's redraw_of's"
+        fixing = [before_it.reason]
+        redo = (
+            Redo(
+                picture_prompt=step.redraw_of.prompt,
+                video_prompt=step.redraw_of.motion_prompt,
+                problems=fixing,
+            ),
+            before_it.new.file,
+        )
     failed: list[tuple[str, list[str]]] = []
     for tries in range(MOST_REDRAWS + 1):
         instructions = broll_prompt_instructions(step.broll_kind)
@@ -1683,7 +1704,9 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
         failed.append((file, problems))
         redo = (
             Redo(
-                picture_prompt=choice.prompt, video_prompt=choice.motion_prompt, problems=problems
+                picture_prompt=choice.prompt,
+                video_prompt=choice.motion_prompt,
+                problems=[*fixing, *problems],
             ),
             file,
         )
@@ -1965,7 +1988,8 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
     the step's newest, and nothing is asked here. A new line isn't checked, nor a picture
     fix's clip, the complaint being about the picture, unless the fix has the shop owner's
     photo of a thing that only shows during the clip. Nothing is checked when quality checks
-    are switched off.
+    are switched off. A picture drawn again because the one before it failed this check is
+    checked beside the version its first try was (see `to_draw_again`).
 
     Run again, as after a worker stopped, it gives the verdict kept, or asks the judge
     again with each ask answered from its record, so nothing is paid for twice."""
@@ -1983,7 +2007,9 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
     kept = FixCheck.objects.filter(step=step).first()
     if kept is not None:
         return kept
-    old = step.shown_before(made.kind)
+    before_it = _the_try_before(step)
+    # A redraw is checked against what the shop owner complained about, as its first try was.
+    old = before_it.old if before_it is not None else step.shown_before(made.kind)
     if old is None:
         return None
     if picture:
@@ -2002,6 +2028,30 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
         reason=settled.reason,
         answers=settled.answers,
     )
+
+
+def _the_try_before(step: SceneStep) -> FixCheck | None:
+    """For a fix's starting picture drawn again for its fix check, the failed check of the
+    picture before it. None for any other step."""
+    if step.redraw_of is None:
+        return None
+    return FixCheck.objects.select_related("old", "new").get(step=step.redraw_of)
+
+
+def to_draw_again(check: FixCheck | None) -> bool:
+    """Whether the fix's new starting picture `check` failed is drawn again by itself, told
+    why, rather than shown to the shop owner (Julian 2026-10-17 17:04): a fix plan's picture
+    with redraws left, at most fix_check.MOST_REDRAWS after its first."""
+    if check is None or check.verdict != FixCheck.Verdict.FAILED or check.what != "picture":
+        return False
+    step = check.step
+    if step.plan_scene_id is None:
+        return False
+    redraws = 0
+    while step.redraw_of is not None:
+        step = step.redraw_of
+        redraws += 1
+    return redraws < fix_check.MOST_REDRAWS
 
 
 def _the_clip_judges_answer(new: ProducedItem) -> fix_check.Settled:

@@ -157,6 +157,7 @@ def test_a_fixs_new_picture_is_checked_beside_the_old_one_and_passing_carries_on
     assert FixCheck.objects.count() == 1
 
 
+@pytest.mark.usefixtures("no_fix_redraws")
 def test_a_fixs_new_picture_that_fails_its_check_shows_both_and_waits_for_the_owner(
     fake_model: FakeModel,
     steps: HeldSteps,
@@ -201,6 +202,7 @@ def test_a_fixs_new_picture_that_fails_its_check_shows_both_and_waits_for_the_ow
     ]
 
 
+@pytest.mark.usefixtures("no_fix_redraws")
 def test_a_clip_isnt_paid_for_after_a_failed_picture_check_before_the_owner_answers(
     fake_model: FakeModel,
     say: Say,
@@ -220,6 +222,7 @@ def test_a_clip_isnt_paid_for_after_a_failed_picture_check_before_the_owner_answ
     assert "make_broll_clip" not in paid_for()[len(shown) :]
 
 
+@pytest.mark.usefixtures("no_fix_redraws")
 def test_an_owner_message_before_the_failed_checks_notice_doesnt_unlock_its_clip(
     fake_model: FakeModel,
     say: Say,
@@ -246,6 +249,7 @@ def test_an_owner_message_before_the_failed_checks_notice_doesnt_unlock_its_clip
     assert FixCheck.objects.get().gone_ahead_at is None
 
 
+@pytest.mark.usefixtures("no_fix_redraws")
 def test_go_ahead_after_a_failed_picture_check_makes_its_clip_and_the_ad(
     fake_model: FakeModel,
     steps: HeldSteps,
@@ -264,6 +268,7 @@ def test_go_ahead_after_a_failed_picture_check_makes_its_clip_and_the_ad(
     assert [ad.version for ad in ads()] == [1, 2]
 
 
+@pytest.mark.usefixtures("no_fix_redraws")
 def test_a_new_note_after_a_failed_picture_check_redraws_the_picture_and_checks_again(
     fake_model: FakeModel,
     steps: HeldSteps,
@@ -364,6 +369,7 @@ def test_a_not_fixed_answer_with_no_reason_is_no_answer_but_is_still_paid_for(
     assert paid_for()[len(shown) :].count("check_fix") == 3
 
 
+@pytest.mark.usefixtures("no_fix_redraws")
 def test_a_check_run_again_after_the_worker_stopped_pays_and_shows_everything_once(
     fake_model: FakeModel,
     steps: HeldSteps,

@@ -392,7 +392,12 @@ def run_scene_step(step_id: int) -> None:
                     carrying=shown,
                     step=step_signals.signal(step, Message.StepState.MADE),
                 )
-            if checked is not None and checked.verdict == FixCheck.Verdict.FAILED:
+            # A fix plan's step is shown its failed check by code, once it isn't drawn again.
+            if (
+                checked is not None
+                and checked.verdict == FixCheck.Verdict.FAILED
+                and step.plan_scene_id is None
+            ):
                 say_the_fix_check_failed(checked)
             step.status = SceneStep.Status.FINISHED
             # Inside the transaction: a picture's message plans its scene again.

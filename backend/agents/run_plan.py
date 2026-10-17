@@ -385,6 +385,7 @@ def _no_longer_held(row: FixPlanScene) -> None:
         step__plan_scene=OuterRef("pk"),
         verdict=FixCheck.Verdict.FAILED,
         gone_ahead_at__isnull=True,
+        step__redraws__isnull=True,
     )
     FixPlanScene.objects.filter(
         scene=row.scene_id,
@@ -485,7 +486,10 @@ def go_ahead(row: FixPlanScene) -> None:
         Job.objects.select_for_update().get(pk=row.plan.job_id)
         Session.objects.select_for_update().get(pk=row.plan.session_id)
         FixCheck.objects.filter(
-            step__plan_scene=row, verdict=FixCheck.Verdict.FAILED, gone_ahead_at__isnull=True
+            step__plan_scene=row,
+            verdict=FixCheck.Verdict.FAILED,
+            gone_ahead_at__isnull=True,
+            step__redraws__isnull=True,
         ).update(gone_ahead_at=timezone.now())
         _carry_on(row)
         _assemble_once_landed(row.plan)
@@ -523,12 +527,20 @@ def held_on_a_check(session: Session, before: int | None = None) -> list[FixPlan
 
 def step_finished(step: SceneStep, check: FixCheck | None) -> None:
     """For a step a plan started, once it is marked finished, in the transaction that does:
-    tell the producer of a failed fix check, then carry its scene on, and assemble the new ad
-    once every scene of the plan has landed."""
+    draw a new starting picture that failed its fix check again, told why, while it has
+    redraws left; once it has none, show the shop owner the failed check and tell the
+    producer. Then carry its scene on, and assemble the new ad once every scene of the plan
+    has landed."""
     row = step.plan_scene
     assert row is not None, "a plan's step runs one of its rows"
     if check is not None and check.verdict == FixCheck.Verdict.FAILED:
-        _note(row.plan, SystemNote.Kind.CHECK_FAILED, _check_failed(row, check))
+        drawn_again = work.to_draw_again(check) and (
+            _start(row, row.scene, SceneStep.Kind.STARTING_PICTURE, note=step.note, redraw_of=step)
+            is not None
+        )
+        if not drawn_again:
+            work.say_the_fix_check_failed(check)
+            _note(row.plan, SystemNote.Kind.CHECK_FAILED, _check_failed(row, check))
     if check is not None and check.verdict == FixCheck.Verdict.UNCHECKED:
         _say_it_wasnt_checked(row, check)
     passed = check is None or check.verdict == FixCheck.Verdict.PASSED
@@ -608,8 +620,12 @@ def _carry_on(row: FixPlanScene) -> None:
     row = FixPlanScene.objects.select_for_update().select_related("scene", "plan").get(pk=row.pk)
     if row.started_at is None or row.landed_at is not None or row.error:
         return
+    # A failed check whose picture is being drawn again waits for nobody.
     if FixCheck.objects.filter(
-        step__plan_scene=row, verdict=FixCheck.Verdict.FAILED, gone_ahead_at__isnull=True
+        step__plan_scene=row,
+        verdict=FixCheck.Verdict.FAILED,
+        gone_ahead_at__isnull=True,
+        step__redraws__isnull=True,
     ).exists():
         return
     scene = Scene.objects.get(pk=row.scene_id)
@@ -723,6 +739,8 @@ def _picture(row: FixPlanScene, scene: Scene, running: set[str]) -> ProducedItem
             step__line__in=[scene.line, *scene.shortened_from],
             **made_for,
         )
+        # Not one drawn again for its fix check: only the try after it can have a clip.
+        .exclude(step__redraws__isnull=False)
         .order_by("version")
         .last()
     )
@@ -785,9 +803,11 @@ def _start(
     picture: ProducedItem | None = None,
     picture_step: SceneStep | None = None,
     motion_prompt: str = "",
-) -> None:
+    redraw_of: SceneStep | None = None,
+) -> SceneStep | None:
     """Start a scene step for the row in the background, from the scene as it stands, on its
-    own tool call made by code, unless one of its kind started for the scene since."""
+    own tool call made by code, unless one of its kind started for the scene since. Gives
+    the step started, or None when none was."""
     try:
         with transaction.atomic():
             step = SceneStep.objects.create(
@@ -802,17 +822,19 @@ def _start(
                 picture=picture,
                 picture_step=picture_step,
                 motion_prompt=motion_prompt,
+                redraw_of=redraw_of,
             )
             # The shop owner's photos go with every later step of their scene (D1).
             if scene.shows:
                 step.reference_photos.set(scene.photos_in_use())
             step_signals.say_started(step)
     except IntegrityError:
-        return
+        return None
     # tasks.py runs this module's steps, so it imports this module rather than the other way.
     from .tasks import run_scene_step
 
     transaction.on_commit(lambda: run_scene_step.delay(step.pk))
+    return step
 
 
 # The tool each step stands for, as the producer's tools would have started it.
