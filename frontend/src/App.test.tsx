@@ -1837,6 +1837,20 @@ test("a new line is quoted in the plan", async () => {
   expect(scene.textContent).toContain("“One wipe.”");
 });
 
+test("once code posts a plan, the producer's answer to the notes brings no yes of its own", async () => {
+  const { backend, user } = await openFinishedAd();
+  await user.type(noteBox(2), "Make the toilet black");
+  await user.click(sendNotesButton());
+  backend.agentSays("I'll make scene 2's toilet black. About $0.55. Shall I?");
+  backend.showPlan(aPlan());
+  await nextPoll();
+  await waitFor(() => expect(planNotices()).toHaveLength(1));
+
+  // Only the plan's yes is offered: the producer's restatement is no longer what is said yes to.
+  expect(planYes()).not.toBeNull();
+  expect(yesButton()).toBeNull();
+});
+
 test("the plan's yes button sends a yes marked with the plan, and goes away", async () => {
   const { backend, user } = await showAPlan();
 

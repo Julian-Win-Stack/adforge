@@ -27,6 +27,10 @@ ANOTHER_SESSION_IS_BUSY = "Another ad is being made right now. Please try again 
 
 # What the yes button is told when the plan it was tapped on no longer waits for an answer.
 PLAN_NO_LONGER_WAITS = "That plan isn't waiting for an answer any more. Look at the newer plan."
+# What it is told when the plan already has a yes from it, as after a reply that was lost.
+PLAN_ALREADY_SAID_YES = "You've already said yes to that plan."
+# What a tap of the yes button says, as the producer reads it.
+TAPPED_YES = "Yes"
 
 
 class AttachmentSerializer(serializers.ModelSerializer[Attachment]):
@@ -187,7 +191,8 @@ def _send(session: Session, request: Request) -> Response:
     An interrupt is stored and acknowledged straight away rather than refused, and the
     working producer reads it next. Only one session works at a time, so a message to a
     session while another is busy is refused, and not kept. A tap of a plan's yes button
-    names the plan, and is refused unless that plan is still waiting in this session."""
+    names the plan, and is refused unless that plan is still waiting in this session and has
+    no yes from it yet."""
     sending = SendSerializer(data=request.data)
     sending.is_valid(raise_exception=True)
     photos: list[UploadedFile[bytes]] = sending.validated_data["photos"]
@@ -198,16 +203,8 @@ def _send(session: Session, request: Request) -> Response:
         if another_session_is_busy(session):
             return Response({"detail": ANOTHER_SESSION_IS_BUSY}, status=status.HTTP_409_CONFLICT)
         tapped = sending.validated_data["plan"]
-        # The plan's row is locked until the yes is kept, so a plan replaced or settled
-        # meanwhile can't be said yes to.
-        if (
-            tapped is not None
-            and FixPlan.objects.select_for_update()
-            .filter(pk=tapped, session=session, state=FixPlan.State.PROPOSED)
-            .first()
-            is None
-        ):
-            return Response({"plan": PLAN_NO_LONGER_WAITS}, status=status.HTTP_400_BAD_REQUEST)
+        if tapped is not None and (refused := _refuse_tap(session, tapped)) is not None:
+            return Response({"plan": refused}, status=status.HTTP_400_BAD_REQUEST)
         kept = []
         for photo in photos:
             extension = mimetypes.guess_extension(photo.content_type or "") or ""
@@ -218,7 +215,8 @@ def _send(session: Session, request: Request) -> Response:
         message = messages.add(
             session,
             role=Message.Role.USER,
-            text=sending.validated_data["text"],
+            # A tap says yes and nothing else, whatever text came with it.
+            text=sending.validated_data["text"] if tapped is None else TAPPED_YES,
             carrying=kept,
             plan=None if tapped is None else messages.PlanSignal(tapped, Message.PlanEvent.YES),
         )
@@ -234,3 +232,22 @@ def _send(session: Session, request: Request) -> Response:
         },
         status=status.HTTP_201_CREATED,
     )
+
+
+def _refuse_tap(session: Session, plan: int) -> str | None:
+    """Why a tap of plan `plan`'s yes button in `session` is refused, or None to keep it:
+    the plan must be this chat's, still waiting, and not yet said yes to. The chat's row,
+    then the plan's, stay locked until the yes is kept, so a plan replaced or settled
+    meanwhile can't be said yes to. Every writer of a plan locks them in that order (the job
+    first when it locks it), so two of them never wait on each other."""
+    Session.objects.select_for_update().get(pk=session.pk)
+    waiting = (
+        FixPlan.objects.select_for_update()
+        .filter(pk=plan, session=session, state=FixPlan.State.PROPOSED)
+        .first()
+    )
+    if waiting is None:
+        return PLAN_NO_LONGER_WAITS
+    if waiting.messages.filter(plan_event=Message.PlanEvent.YES).exists():
+        return PLAN_ALREADY_SAID_YES
+    return None
