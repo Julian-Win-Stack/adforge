@@ -36,7 +36,7 @@ PAID_KEYS = [
 ]
 
 
-# TEST (owner photos build, local only): a case marked "real_clip" makes its one B-roll clip
+# A case marked "real_clip" makes its one B-roll clip
 # with Creatify for real (fal stores its pictures) and has it judged for real.
 REAL_CLIP_KEYS = ("CREATIFY_API_KEY", "FAL_KEY")
 

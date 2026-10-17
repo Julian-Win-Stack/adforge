@@ -132,7 +132,7 @@ class Notes:
 
     messages: list[str]
     yes_answers: int = 1
-    # TEST (owner photos build, local only): the case as a script of turns, each
+    # The case as a script of turns, each
     # {"say": text, "photos": [paths]} or "yes" (GO_AHEAD, only when a fix waits on a yes).
     # When given, `messages` is not used.
     turns: list[Any] = field(default_factory=list)
@@ -170,7 +170,7 @@ def send_notes(chat: Chat, notes: Notes, most_rounds: int = 8) -> Turned:
 
 
 def _scripted(chat: Chat, notes: Notes, turned: Turned, most_rounds: int) -> Turned:
-    """TEST (owner photos build, local only): send the case's turns in order, then yes to
+    """Send the case's turns in order, then yes to
     whatever is still restated, at most `yes_answers` times."""
     script = list(notes.turns)
     yeses = notes.yes_answers
