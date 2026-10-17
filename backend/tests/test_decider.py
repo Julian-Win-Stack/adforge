@@ -57,6 +57,7 @@ def _version(scene: Scene, call: ToolCall, number: int, note: str = "") -> Produ
         kind=ProducedItem.Kind.STARTING_PICTURE,
         version=number,
         file=_saved(f"s{scene.number}_v{number}.png", (10 * number, 20, 30)),
+        change=note,
     )
     clip_step = _step(
         scene,
@@ -90,6 +91,7 @@ def _version(scene: Scene, call: ToolCall, number: int, note: str = "") -> Produ
         picture=picture,
         made_from=audio,
         ruling={"verdict": "pass", "checks": {}, "pictures": {"frames": frames, "sides": []}},
+        change=note,
     )
     return picture
 
@@ -846,7 +848,8 @@ def test_a_clip_made_again_from_the_same_picture_is_a_version_of_its_own(
     call = ToolCall.objects.get(tool="make_clip")
     # A clip step for a note, then the judge's own remake of its clip in the same step.
     step = _step(scene, SceneStep.Kind.CLIP, call, picture=picture, note="scrub faster")
-    for version, remake in [(3, None), (4, 1)]:
+    rulings = [{"verdict": "fail", "failed_answers": 1, "checks": {}}, {"verdict": "pass"}]
+    for version, remake, ruling in [(3, None, rulings[0]), (4, 1, rulings[1])]:
         ProducedItem.objects.create(
             job=ad,
             scene=scene,
@@ -856,6 +859,8 @@ def test_a_clip_made_again_from_the_same_picture_is_a_version_of_its_own(
             file=f"remade_{version}.mp4",
             picture=picture,
             remake=remake,
+            change="scrub faster",
+            ruling=ruling,
         )
     note_message = _owner_says(ad, "Scene 2 is too dark.")
     fake_model.respond("decide_fixes", turn(calls=[("sort_message", {"kind": "not_a_fix"})]))
@@ -865,6 +870,46 @@ def test_a_clip_made_again_from_the_same_picture_is_a_version_of_its_own(
     the_ad = _given(fake_model, 0)[0]
     assert (
         "Versions: v1 first version; v2 black toilet; v3 scrub faster (the current version)"
+        in the_ad.text
+    )
+
+
+def test_the_decider_numbers_versions_as_going_back_does(fake_model: FakeModel, ad: Job) -> None:
+    """The decider sees the versions code goes back to: a picture going back brought back is
+    named so, and a picture whose step is still running isn't one yet."""
+    scene = ad.scenes.get(number=2)
+    first = scene.produced.get(kind=ProducedItem.Kind.STARTING_PICTURE, version=1)
+    ProducedItem.objects.create(
+        job=ad,
+        scene=scene,
+        step=first.step,
+        kind=ProducedItem.Kind.STARTING_PICTURE,
+        version=3,
+        file=first.file,
+        change="back to v1",
+        back_to=1,
+    )
+    call = ToolCall.objects.get(tool="make_clip")
+    running = _step(scene, SceneStep.Kind.STARTING_PICTURE, call, note="blue gel")
+    running.status = SceneStep.Status.RUNNING
+    running.save()
+    ProducedItem.objects.create(
+        job=ad,
+        scene=scene,
+        step=running,
+        kind=ProducedItem.Kind.STARTING_PICTURE,
+        version=4,
+        file="drawing.png",
+        change="blue gel",
+    )
+    note_message = _owner_says(ad, "Scene 2 is too dark.")
+    fake_model.respond("decide_fixes", turn(calls=[("sort_message", {"kind": "not_a_fix"})]))
+
+    decider.read(ad, [note_message])
+
+    the_ad = _given(fake_model, 0)[0]
+    assert (
+        "Versions: v1 first version; v2 black toilet; v3 back to v1 (the current version)"
         in the_ad.text
     )
 

@@ -32,7 +32,7 @@ from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.gateway import take_turn
 from gateway.types import Happened, Image, Said, Shown, ToolUse
-from jobs import clip_judge, fix_plans
+from jobs import clip_judge, fix_plans, work
 from jobs.models import FixCheck, FixPlan, FixPlanScene, Job, ProducedItem, Scene
 
 from . import loop, run_plan
@@ -232,59 +232,9 @@ def this_round(job: Job) -> list[Message]:
 # ---------------------------------------------------------------- versions
 
 
-@dataclass(frozen=True)
-class Version:
-    """One version of a scene: a starting picture the shop owner was shown and the clip made
-    from it, with the change it was made for. A stand-in with the shape of ticket 03's
-    `jobs.work.Version`, which replaces it once that ticket is stacked under this one."""
-
-    number: int
-    change: str
-    picture: ProducedItem | None
-    clip: ProducedItem | None
-
-    @property
-    def label(self) -> str:
-        if self.number == 1:
-            return "v1 first version"
-        return f"v{self.number} {self.change or 'made again'}"
-
-
-def _versions(scene: Scene) -> list[Version]:
-    """The scene's versions, oldest first: each starting picture starts one, and a clip made
-    again from the same picture by a later step is one of its own. The judge's own remakes
-    within one step stay in their version."""
-    made = scene.produced.filter(
-        kind__in=[ProducedItem.Kind.STARTING_PICTURE, ProducedItem.Kind.CLIP]
-    ).select_related("step__fix", "picture")
-    versions: list[Version] = []
-    for item in made.order_by("created_at", "id"):
-        change = _change_made_for(item)
-        if item.kind == ProducedItem.Kind.STARTING_PICTURE:
-            versions.append(Version(len(versions) + 1, change, item, None))
-            continue
-        last = versions[-1] if versions else None
-        if (
-            last is not None
-            and last.picture == item.picture
-            and (last.clip is None or last.clip.step_id == item.step_id)
-        ):
-            versions[-1] = Version(last.number, last.change, last.picture, item)
-        else:
-            versions.append(Version(len(versions) + 1, change, item.picture, item))
-    return versions
-
-
-def _change_made_for(item: ProducedItem) -> str:
-    step = item.step
-    if step is None:
-        return ""
-    return step.fix.fix if step.fix is not None else step.note
-
-
-def _version_of(scene: Scene, number: int | None) -> Version:
+def _version_of(scene: Scene, number: int | None) -> work.Version:
     """Version `number` of the scene, or its current one."""
-    versions = _versions(scene)
+    versions = work.versions(scene)
     if not versions:
         raise Refused(f"scene {scene.number} has nothing made yet.")
     if number is None:
@@ -294,7 +244,7 @@ def _version_of(scene: Scene, number: int | None) -> Version:
     return versions[number - 1]
 
 
-def _named(version: Version, current: int) -> str:
+def _named(version: work.Version, current: int) -> str:
     return f"{version.label}{' (the current version)' if version.number == current else ''}"
 
 
@@ -421,7 +371,7 @@ class LookAtVersion(Tool):
 
 def _picture_of(scene: Scene, number: int | None) -> ToolResult:
     version = _version_of(scene, number)
-    current = _versions(scene)[-1].number
+    current = work.versions(scene)[-1].number
     if version.picture is None:
         raise Refused(f"scene {scene.number}'s {version.label} has no starting picture.")
     label = f"Scene {scene.number}, starting picture, {_named(version, current)}"
@@ -444,7 +394,7 @@ class LookAtClip(Tool):
         clip = version.clip
         if clip is None:
             raise Refused(f"scene {scene.number}'s {version.label} has no clip.")
-        named = f"Scene {scene.number}, clip of {_named(version, _versions(scene)[-1].number)}"
+        named = f"Scene {scene.number}, clip of {_named(version, work.versions(scene)[-1].number)}"
         frames = _frames(clip)
         return ToolResult(
             text=f"{named}: {clip_judge.FRAMES_PER_SECOND} frames a second, each labelled with "
@@ -962,7 +912,7 @@ def _held(round: _Round) -> list[str]:
 
 
 def _scene_facts(scene: Scene) -> str:
-    versions = _versions(scene)
+    versions = work.versions(scene)
     current = versions[-1] if versions else None
     if not scene.shows:
         facts = [f"Scene {scene.number}: the person talks to camera.", f'Line: "{scene.line}"']
