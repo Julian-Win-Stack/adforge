@@ -50,6 +50,7 @@ from .producer import (
     _current_picture,
     _estimate,
     _latest_clip,
+    _line_estimate,
     _listed,
     _seconds_to_say,
     _use_the_photos,
@@ -96,8 +97,8 @@ def check_and_propose(
 ) -> FixPlan:
     """Record the decider's plan for the shop owner's notes of this round, waiting for their
     yes: each scene's row (unsaved, as `fix_plans.propose` takes them) checked against the
-    rule can'ts of decision 13 first, a can't kept in its `cant`; a new clip with a photo of
-    a thing in the starting picture made a new picture, as the route says; each doable
+    rule can'ts of decision 13 first, a can't kept in its `cant`; a new clip or line with a
+    photo of a thing in the starting picture made a new picture, as the route says; each doable
     scene's estimate set as today's fix of the same redo would cost (a go back is free unless
     its clip must be made again). The producer is told the plan, scene by scene."""
     counted: set[tuple[str, str]] = set()
@@ -120,6 +121,10 @@ def check_and_propose(
         if row.action == Action.NEW_CLIP and any(photo["in_picture"] for photo in row.photos):
             row.action = Action.NEW_PICTURE
             row.new_movement = True
+        if row.action == Action.NEW_LINE and any(photo["in_picture"] for photo in row.photos):
+            # A new line keeps its starting picture, but a photo of a thing in it changes how
+            # it looks: a new picture, with the new line.
+            row.action = Action.NEW_PICTURE
         if row.action == Action.GO_BACK:
             assert row.go_back_to is not None, "a go back names its version"
             row.remakes_clip = not work.go_back_is_free(row.scene, row.go_back_to)
@@ -134,7 +139,7 @@ def _routed_again(job: Job, row: FixPlanScene) -> None:
     """Decision 5's fallback: each of the row's photos routed by the route call, looking at
     the scene's starting picture and the photo, in place of the decider's answers. An
     answer that can't be had leaves the decider's."""
-    picture = _current_picture(row.scene)
+    picture = _shown_picture(row.scene)
     if picture is None:
         return
     for photo in row.photos:
@@ -181,7 +186,7 @@ def _rule_cant(row: FixPlanScene) -> str:
             f"Scene {number} was planned before scenes had their B-roll labels, so its "
             "movement can't be changed. Its picture can change instead."
         )
-    if row.action == Action.NEW_LINE:
+    if row.line:
         longest = LONGEST_BROLL_LINE_SECONDS if scene.shows else LONGEST_LINE_SECONDS
         seconds = _seconds_to_say(scene, row.line)
         if seconds > longest:
@@ -221,7 +226,8 @@ def _photo_cant(row: FixPlanScene) -> str:
             f"Scene {number} was planned before scenes had their B-roll labels, so your photos "
             "can't be used in it."
         )
-    # A new line's chain draws the picture again anyway, so its photo can go in it.
+    # A new line's clip takes a photo of a thing only during it; one of a thing in its
+    # picture made it a new picture before this.
     if row.action == Action.GO_BACK:
         return (
             f"Scene {number}'s change is going back to a version, and a photo changes how "
@@ -270,6 +276,9 @@ def _row_estimate(row: FixPlanScene, counted: set[tuple[str, str]]) -> Estimate:
     if row.action == Action.NEW_LINE:
         # Today's line fix holds its new line in quotes.
         estimate = _estimate(scene, Fix.Redo.LINE, f'"{row.line}"')
+    elif row.line:
+        # A new picture asked for with a new line: both, then the clip.
+        estimate = _quantized(_line_estimate(scene, f'"{row.line}"', new_picture=True))
     else:
         estimate = _estimate(scene, _REDO[Action(row.action)], row.change)
     clean = Decimal(0)
@@ -328,12 +337,14 @@ def _line_of(row: FixPlanScene) -> str:
 
 
 def _what(row: FixPlanScene) -> str:
+    if row.action == Action.NEW_PICTURE and row.line:
+        return f'new starting picture and new line, "{row.line}", then its clip'
     if row.action == Action.NEW_PICTURE:
         return "new starting picture, then its clip"
     if row.action == Action.NEW_CLIP:
         return "new clip"
     if row.action == Action.NEW_LINE:
-        return f'new line, "{row.line}", then its picture and clip'
+        return f'new line, "{row.line}", then its clip from the same starting picture'
     if row.action == Action.GO_BACK:
         return f"back to version {row.go_back_to}" + (
             ", its clip made again with the line as it stands"
@@ -478,6 +489,8 @@ def _made(row: FixPlanScene) -> str:
     """What the row makes, as "new starting picture"."""
     if row.action == Action.GO_BACK:
         return f"go back to version {row.go_back_to}"
+    if row.action == Action.NEW_PICTURE and row.line:
+        return "new starting picture and new line"
     return {
         Action.NEW_PICTURE: "new starting picture",
         Action.NEW_CLIP: "new clip",
@@ -673,7 +686,7 @@ def _carry_on(row: FixPlanScene) -> None:
             _landed(row)
             return
         scene.refresh_from_db()
-    if row.action == Action.NEW_LINE and not row.steps.exists():
+    if row.line and not row.steps.exists():
         if running:
             return
         if scene.line != row.line:
@@ -682,7 +695,7 @@ def _carry_on(row: FixPlanScene) -> None:
             scene.change_line(row.line)
             scene.save(update_fields=["line", "shortened_from", "status"])
     picture = _picture(row, scene, running)
-    if row.action == Action.NEW_LINE and not _line_heard(row, scene, running):
+    if row.line and not _line_heard(row, scene, running):
         return
     if picture is None:
         return
@@ -692,7 +705,7 @@ def _carry_on(row: FixPlanScene) -> None:
         produced__isnull=False,
         **SceneStep.made_for(scene),
     )
-    if row.action in (Action.NEW_PICTURE, Action.NEW_LINE):
+    if row.action == Action.NEW_PICTURE:
         clips = clips.filter(picture_step=picture.step)
     if clips.exists():
         _landed(row)
@@ -716,34 +729,41 @@ def _carry_on(row: FixPlanScene) -> None:
 
 
 def _kept_motion(row: FixPlanScene, scene: Scene, picture: ProducedItem) -> str:
-    """For a new picture's clip in a scene that shows the product, how the clip it replaces
-    moved: only a new clip chooses a new movement (live ad fix 1; design thread, 05:15 Oct 17),
-    a new clip made a new picture for its photo too. Blank otherwise, so the clip moves as its
-    picture's step planned."""
-    if row.action != Action.NEW_PICTURE or row.new_movement or not scene.shows:
+    """For a new picture's or a new line's clip in a scene that shows the product, how the
+    clip it replaces moved: only a new clip chooses a new movement (live ad fix 1; design
+    thread, 05:15 Oct 17), a new clip made a new picture for its photo too. Blank otherwise,
+    so the clip moves as its picture's step planned."""
+    if row.action not in (Action.NEW_PICTURE, Action.NEW_LINE) or row.new_movement:
         return ""
+    if not scene.shows:
+        return ""
+    # A new line's clip replaces the newest, of the same picture.
     before = [
         version.clip
         for version in work.versions(scene)
-        if version.clip is not None and version.picture != picture
+        if version.clip is not None
+        and (row.action == Action.NEW_LINE or version.picture != picture)
     ]
     return work.motion_of(before[-1]) if before else ""
 
 
 def _picture(row: FixPlanScene, scene: Scene, running: set[str]) -> ProducedItem | None:
     """The starting picture the row's clip is made from, or None while it is to make: for a
-    new picture or line, the one its own step made for the scene as it stands, started here
-    when there is none; for a new clip, the scene's newest version's; for a go back, the one
-    brought back."""
+    new picture, the one its own step made for the scene as it stands, started here when
+    there is none; for a new clip, the scene's newest version's; for a new line, the same,
+    kept (Julian, 2026-10-17: "unless the user tells us to change the visuals, we don't need
+    to change it"), or drawn as a new picture's when the scene has none; for a go back, the
+    one brought back."""
     if row.action == Action.GO_BACK:
         assert row.brought_back is not None, "gone back first"
         return row.brought_back
-    if row.action == Action.NEW_CLIP:
-        made = work.versions(scene)
-        picture = (made[-1].picture if made else None) or _current_picture(scene)
-        if picture is None:
+    if row.action in (Action.NEW_CLIP, Action.NEW_LINE):
+        picture = _shown_picture(scene)
+        if picture is not None:
+            return picture
+        if row.action == Action.NEW_CLIP:
             _failed(row, f"Scene {scene.number} has no starting picture to make its clip from.")
-        return picture
+            return None
     made_for = SceneStep.made_for(scene, through="step__")
     del made_for["step__line"]
     picture = (
@@ -767,6 +787,13 @@ def _picture(row: FixPlanScene, scene: Scene, running: set[str]) -> ProducedItem
         note = row.change if row.action == Action.NEW_PICTURE else ""
         _start(row, scene, SceneStep.Kind.STARTING_PICTURE, note=note)
     return None
+
+
+def _shown_picture(scene: Scene) -> ProducedItem | None:
+    """The starting picture the shop owner sees in the scene: its newest version's, or, for
+    a scene whose versions have none, the one made for what it shows as it stands."""
+    made = work.versions(scene)
+    return (made[-1].picture if made else None) or _current_picture(scene)
 
 
 def _line_heard(row: FixPlanScene, scene: Scene, running: set[str]) -> bool:

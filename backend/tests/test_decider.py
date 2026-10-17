@@ -680,6 +680,47 @@ def test_an_action_while_talking_is_a_cant_and_what_they_hold_is_a_new_picture(
     )
 
 
+def test_a_new_line_keeps_the_picture_and_one_with_a_visual_change_is_a_new_picture_with_it(
+    fake_model: FakeModel, ad: Job
+) -> None:
+    # A new line is estimated as long as the person's voice takes to say it.
+    ProducedItem.objects.create(
+        job=ad, kind=ProducedItem.Kind.VOICE, version=1, file="voice.mp3", words_per_second=2.0
+    )
+    note = _owner_says(
+        ad, 'Scene 2 should say "Shines in one wipe." and the toilet should be white.'
+    )
+    fake_model.respond(
+        "decide_fixes",
+        turn(calls=[("sort_message", {"kind": "fix_note"})]),
+        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(
+            calls=[
+                (
+                    "decide",
+                    _decided(
+                        [_row(2, "new_picture", "The toilet is white.", line="Shines in one wipe.")]
+                    ),
+                )
+            ]
+        ),
+    )
+
+    outcome = decider.read(ad, [note])
+
+    assert isinstance(outcome, decider.Planned)
+    [row] = outcome.plan.scenes.all()
+    assert (row.action, row.change, row.line) == (
+        FixPlanScene.Action.NEW_PICTURE,
+        "The toilet is white.",
+        "Shines in one wipe.",
+    )
+    # The decider is told a new line keeps the picture unless the owner asks for a visual change.
+    told = " ".join(decider.INSTRUCTIONS.split())
+    assert "A new line keeps the scene's starting picture" in told
+    assert "a new picture with the new line" in told
+
+
 def test_a_photos_thing_found_in_no_scene_is_asked_about(fake_model: FakeModel, ad: Job) -> None:
     note = _owner_sends_a_photo(ad, "Here's my sponge, use it.")
     fake_model.respond(
@@ -806,6 +847,11 @@ def test_a_photo_in_the_picture_and_during_the_action_needs_no_look_at_the_frame
         (
             _decided([_row(1, "new_picture", "Brighter."), _row(1, "new_clip", "Faster.")]),
             "scene 1 is decided twice.",
+        ),
+        (
+            _decided([_row(2, "new_clip", "Faster.", line="A line nobody asked for.")]),
+            "it was called with arguments it can't use (scenes.0: scene 2 has a line, but only a "
+            "new line or a new picture takes one).",
         ),
         (
             _decided(

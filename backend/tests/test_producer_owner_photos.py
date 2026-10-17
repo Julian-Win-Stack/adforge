@@ -819,18 +819,21 @@ def test_a_later_fix_on_the_scene_draws_it_with_the_photo_again_without_drawing_
     assert "owner_photos" not in handoffs("check_fix")[-1]
 
 
-def test_a_new_line_remakes_the_scene_with_the_photo(
+def test_a_new_line_keeps_the_picture_with_the_photo(
     fake_model: FakeModel, mug_fixed: Fix, steps: HeldSteps
 ) -> None:
     line = "Black stoneware, holds 350 ml, dishwasher safe."
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    with_the_mug = latest("starting_picture")
+    drawn = len(handoffs("make_starting_picture"))
 
     fixing.fixed(2, "new_line", note="Change scene 2's line.", change="A new line.", line=line)
     steps.run_held()
 
     assert Scene.objects.get(number=2).line == line
-    assert last_step("starting_picture").note == ""
-    assert handoffs("make_starting_picture")[-1]["pictures"][0] == clean_pictures()[0]
+    # Julian, 2026-10-17: a new line keeps the starting picture, the owner's mug in it.
+    assert len(handoffs("make_starting_picture")) == drawn
+    assert latest("starting_picture") == with_the_mug
+    assert latest("clip").picture == with_the_mug
     assert latest("clip").step.line == line  # type: ignore[union-attr]
 
 

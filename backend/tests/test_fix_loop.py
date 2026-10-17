@@ -463,9 +463,7 @@ def test_a_line_note_remakes_that_scene_for_its_new_line_and_captions_the_new_ad
     scene = Scene.objects.get(number=3)
     assert (scene.line, scene.status) == (SALE, "planned")
 
-    # Code makes the picture and audio, then the transcript, then the clip.
-    fake_model.respond("choose_starting_picture", TALKING)
-    steps.run_next()
+    # Code makes the audio, then the transcript, then the clip, from the picture it has.
     steps.run_next()
     steps.run_next()
     assert [ad.version for ad in ads()] == [1]
@@ -475,15 +473,10 @@ def test_a_line_note_remakes_that_scene_for_its_new_line_and_captions_the_new_ad
     assert {
         kind: latest(kind, 3).version
         for kind in ("starting_picture", "line_audio", "transcript", "clip")
-    } == {"starting_picture": 2, "line_audio": 2, "transcript": 2, "clip": 2}
+    } == {"starting_picture": 1, "line_audio": 2, "transcript": 2, "clip": 2}
     assert made_for(1, 2) == untouched
     fix = Fix.objects.get()
-    assert {step.kind for step in fix.steps.all()} == {
-        "starting_picture",
-        "line_audio",
-        "transcript",
-        "clip",
-    }
+    assert {step.kind for step in fix.steps.all()} == {"line_audio", "transcript", "clip"}
     # The fix's clip assembled the new ad, captioned with the new words.
     assert [ad.version for ad in ads()] == [1, 2]
     captioned = " ".join(caption["text"] for caption in ads()[1].captions)
@@ -491,8 +484,6 @@ def test_a_line_note_remakes_that_scene_for_its_new_line_and_captions_the_new_ad
     assert "Just $24.00" not in captioned
     # Only that scene's steps were paid for: no fact check, no judge.
     assert paid_for()[len(shown) :] == [
-        "choose_starting_picture",
-        "make_starting_picture",
         "speak_line",
         "transcribe_line",
         "make_talking_clip",

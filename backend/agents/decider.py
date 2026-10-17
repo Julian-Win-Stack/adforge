@@ -77,7 +77,10 @@ fixes it:
 screen, something that couldn't be real, a colour. "Zoom in" is a new picture, closer: the \
 camera never moves. A new picture gets a new clip made from it;
 - a new clip, when how things move or what happens is wrong;
-- a new line, when what the scene says should change: give the new line word for word;
+- a new line, when what the scene says should change: give the new line word for word. \
+A new line keeps the scene's starting picture: plan a new picture only when the shop owner \
+asks for something different on screen. When they ask for both on one scene, it is a new \
+picture with the new line in its line;
 - go back to version N, when they liked an earlier version better: say which number, after \
 looking at it;
 - no change, when the scene already shows what they ask.
@@ -523,7 +526,10 @@ class SceneDecision(BaseModel):
         description="What must be different, in plain words, never how to make it. Blank for "
         "no change."
     )
-    line: str = Field(description="The new line word for word, for new_line. Blank otherwise.")
+    line: str = Field(
+        description="The new line word for word, for new_line, or for new_picture when the "
+        "scene must also say something new. Blank otherwise."
+    )
     go_back_to: int | None = Field(description="The version's number, for go_back. Null otherwise.")
     cant: Literal["", "person_look", "slower", "talking_action"] = Field(
         description="What the note asks of this scene that can't be done yet. Blank for none."
@@ -536,8 +542,10 @@ class SceneDecision(BaseModel):
     def _whole(self) -> SceneDecision:
         if self.action == "new_line" and not self.line.strip():
             raise ValueError(f"scene {self.scene} is a new line, so it needs the new line")
-        if self.action != "new_line" and self.line.strip():
-            raise ValueError(f"scene {self.scene} has a line, but only a new line takes one")
+        if self.action not in ("new_line", "new_picture") and self.line.strip():
+            raise ValueError(
+                f"scene {self.scene} has a line, but only a new line or a new picture takes one"
+            )
         if (self.action == "go_back") != (self.go_back_to is not None):
             raise ValueError(f"scene {self.scene}: go_back, and only go_back, takes go_back_to")
         if self.action not in ("no_change", "go_back") and not self.change.strip():

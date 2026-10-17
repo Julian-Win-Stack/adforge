@@ -106,15 +106,22 @@ PHOTO_KEYS = frozenset({"photo", "file", "thing", "in_picture", "during_action"}
 
 
 def _check(job: Job, row: FixPlanScene) -> None:
-    """A row is one of this ad's scenes, carries the new line only for a new line and the
-    version only for a go back, and each photo in the shape the notice and the steps read."""
+    """A row is one of this ad's scenes, carries a new line for a new line, or for a new
+    picture asked for with it, and the version only for a go back, and each photo in the
+    shape the notice and the steps read."""
     number = row.scene.number
     if row.scene.job_id != job.pk:
         raise ValueError(f"Scene {number} is another ad's.")
     if row.action not in FixPlanScene.Action.values:
         raise ValueError(f"Scene {number}: no such action {row.action!r}.")
-    if (row.action == FixPlanScene.Action.NEW_LINE) != bool(row.line):
-        raise ValueError(f"Scene {number}: a new line, and only a new line, carries the line.")
+    takes_a_line = (FixPlanScene.Action.NEW_LINE, FixPlanScene.Action.NEW_PICTURE)
+    if (row.action == FixPlanScene.Action.NEW_LINE and not row.line) or (
+        row.line and row.action not in takes_a_line
+    ):
+        raise ValueError(
+            f"Scene {number}: a new line carries the line, and only a new line or a new "
+            "picture carries one."
+        )
     version = row.go_back_to
     if (row.action == FixPlanScene.Action.GO_BACK) != (version is not None) or (
         version is not None and version < 1

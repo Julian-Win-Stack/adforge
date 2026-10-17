@@ -239,7 +239,10 @@ def test_each_scenes_estimate_is_what_todays_fix_would_cost() -> None:
     assert shown.startswith("A fix plan is shown to the shop owner, waiting for their yes. ")
     assert f"Scene 1: new starting picture, then its clip: {BRIGHTER} " in shown
     assert f"Scene 2: new clip: {TURN} " in shown
-    assert f'Scene 3: new line, "{NEW_LINE}", then its picture and clip: Say it warmer. ' in shown
+    assert (
+        f'Scene 3: new line, "{NEW_LINE}", then its clip from the same starting picture: '
+        "Say it warmer. " in shown
+    )
     assert shown.endswith(f"About {dollars(plan.estimate_usd())} in all.")
 
 
@@ -373,12 +376,14 @@ def test_a_plan_not_said_yes_to_isnt_run(held: HeldSteps) -> None:
     assert held.held == []
 
 
-def test_a_line_change_runs_the_whole_chain_by_code(fake_model: FakeModel, held: HeldSteps) -> None:
-    turns = producer_turns()
+def test_a_new_line_keeps_the_scenes_starting_picture(
+    fake_model: FakeModel, held: HeldSteps
+) -> None:
+    turns, paid, kept = producer_turns(), paid_for(), picture(3)
     say_yes(propose(row(3, "new_line", change="Say it warmer.", line=NEW_LINE)))
 
     assert scene(3).line == NEW_LINE
-    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
+    # No picture is chosen: nothing is scripted for one.
     held.run_held()
 
     kinds = [
@@ -387,13 +392,78 @@ def test_a_line_change_runs_the_whole_chain_by_code(fake_model: FakeModel, held:
         .order_by("id")
         .values_list("kind", flat=True)
     ]
-    assert sorted(kinds) == ["clip", "line_audio", "starting_picture", "transcript"]
-    assert kinds[-1] == "clip"
+    assert kinds == ["line_audio", "transcript", "clip"]
+    assert "make_starting_picture" not in paid_for()[len(paid) :]
     made = clip(3)
     assert made.step is not None and made.step.line == NEW_LINE
+    assert made.picture == kept and picture(3) == kept
     assert status(3) == "finished"
+    assert work.versions(scene(3))[-1].picture == kept
     assert ads()[-1].cuts[-1]["clip"] == made.pk
     assert producer_turns() == turns
+
+
+def test_a_new_line_in_a_broll_scene_keeps_its_picture_and_how_its_clip_moves(
+    fake_model: FakeModel, held: HeldSteps
+) -> None:
+    # The clip the shop owner has moves as their earlier note asked.
+    say_yes(propose(row(2, "new_clip", change=TURN)))
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
+    held.run_held()
+    kept, moved = picture(2), work.motion_of(clip(2))
+    assert moved == TURN_REWRITE["motion_prompt"]
+
+    say_yes(propose(row(2, "new_line", change="Say it warmer.", line="A warm mug for cold days.")))
+    held.run_held()
+
+    made = clip(2)
+    assert made.step is not None and made.step.line == "A warm mug for cold days."
+    assert made.picture == kept and made.step.picture_step == kept.step
+    assert work.motion_of(made) == moved
+    assert not SceneStep.objects.filter(
+        scene__number=2, kind="starting_picture", plan_scene__isnull=False
+    ).exists()
+    assert status(2) == "finished"
+
+
+def test_a_new_line_and_a_new_picture_for_one_scene_are_both_made(
+    fake_model: FakeModel, held: HeldSteps
+) -> None:
+    plan = propose(row(3, "new_picture", change=BRIGHTER, line=NEW_LINE))
+
+    three = rows_of(plan)[3]
+    assert (three.estimate_usd, three.estimate_up_to_usd) == amounts(
+        _line_estimate(scene(3), f'"{NEW_LINE}"', new_picture=True)
+    )
+    assert three.estimate_usd > _estimate(scene(3), Fix.Redo.LINE, f'"{NEW_LINE}"').about
+    (shown,) = notes("plan_shown")
+    assert (
+        f'Scene 3: new starting picture and new line, "{NEW_LINE}", then its clip: {BRIGHTER} '
+        in shown
+    )
+
+    say_yes(plan)
+    assert scene(3).line == NEW_LINE
+    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
+    held.run_held()
+
+    steps = SceneStep.objects.filter(scene__number=3, plan_scene__isnull=False).order_by("id")
+    assert sorted(step.kind for step in steps) == [
+        "clip",
+        "line_audio",
+        "starting_picture",
+        "transcript",
+    ]
+    drawn = steps.get(kind="starting_picture")
+    assert (drawn.line, drawn.note) == (NEW_LINE, BRIGHTER)
+    made = clip(3)
+    assert made.step is not None and made.step.line == NEW_LINE
+    assert made.picture is not None and made.picture.step == drawn
+    assert rows_of(plan)[3].fix.redo == Fix.Redo.PICTURE  # type: ignore[union-attr]
+    assert notes("scene_done")[-1].startswith(
+        "Scene 3's new starting picture and new line is done."
+    )
+    assert ads()[-1].cuts[-1]["clip"] == made.pk
 
 
 def test_going_back_after_the_line_changed_pays_for_a_new_clip(
@@ -649,18 +719,37 @@ def test_a_thing_in_the_picture_and_more_during_the_action_is_drawn_in_and_sent_
     assert set(step.reference_photos.all()) == set(used)
 
 
-def test_a_photo_on_a_new_line_goes_in_its_new_picture() -> None:
+def test_a_photo_of_a_thing_in_the_picture_on_a_new_line_makes_a_new_picture_too() -> None:
     plan = propose(
         row(
             2,
             "new_line",
-            change="Say it warmer.",
+            change="Say it warmer, with a black mug.",
             line="A warm mug.",
             photos=[owner_photo(1, "black mug")],
         )
     )
 
-    assert rows_of(plan)[2].cant == ""
+    two = rows_of(plan)[2]
+    assert (two.action, two.line, two.cant) == ("new_picture", "A warm mug.", "")
+    assert two.estimate_usd == _line_estimate(
+        scene(2), '"A warm mug."', new_picture=True
+    ).about + Decimal("0.10")
+
+
+def test_a_photo_of_a_thing_only_during_the_clip_on_a_new_line_keeps_the_picture() -> None:
+    plan = propose(
+        row(
+            2,
+            "new_line",
+            change="Say it warmer, pouring from my teapot.",
+            line="A warm mug.",
+            photos=[owner_photo(1, "teapot", in_picture=False, during_action=True)],
+        )
+    )
+
+    two = rows_of(plan)[2]
+    assert (two.action, two.cant) == ("new_line", "")
 
 
 def test_a_photo_on_a_go_back_cant_be_used() -> None:
@@ -772,7 +861,7 @@ def test_a_new_line_that_cant_be_finished_holds_the_ad_and_says_why(
     )
     say_yes(plan)
     fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
-    fail_steps(monkeypatch, "starting_picture", 3)
+    fail_steps(monkeypatch, "line_audio", 3)
 
     held.run_held()
 
