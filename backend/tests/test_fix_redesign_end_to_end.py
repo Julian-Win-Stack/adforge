@@ -127,6 +127,8 @@ def test_an_ad_is_fixed_by_a_picture_note_then_gone_back_then_given_a_new_line(
     held.run_held()
 
     assert Scene.objects.get(number=3).line == NEW_LINE
+    # The decider gave no new overlay: the price still shows over the new line.
+    assert ads()[-1].cuts[-1]["overlay"] == "$24.00"
     assert (picture(3), clip(3).picture) == (kept, kept)
     assert paid_for()[paid_before:] == [
         "speak_line",
