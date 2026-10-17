@@ -1,0 +1,1368 @@
+[
+ {
+  "id": "rule-sort-brighter",
+  "layer": "rule",
+  "rule": "fix note or not",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Make scene 3 brighter."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "new_picture"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "a fix note is sorted as one"
+  }
+ },
+ {
+  "id": "rule-sort-cost",
+  "layer": "rule",
+  "rule": "fix note or not",
+  "side": "fail",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "What does a fix cost?"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "not_a_fix"
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "a question about cost is not a fix"
+  }
+ },
+ {
+  "id": "rule-sort-thanks",
+  "layer": "rule",
+  "rule": "fix note or not",
+  "side": "fail",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Thanks, this looks great!"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "not_a_fix"
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "thanks is not a fix"
+  }
+ },
+ {
+  "id": "rule-sort-why-question",
+  "layer": "rule",
+  "rule": "fix note or not",
+  "side": "fail",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Why is the bottle standing next to the toilet in scene 2?"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "not_a_fix"
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "a question about the ad is not a fix"
+  }
+ },
+ {
+  "id": "rule-look-white-toilet",
+  "layer": "rule",
+  "rule": "look before deciding",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 4: the toilet should be white."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "4": "new_picture"
+    },
+    "looks": [
+     [
+      "look_at_picture",
+      4
+     ]
+    ],
+    "judge_findings": false
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "looks at scene 4 before deciding; a colour note doesn't open the judge's findings"
+  }
+ },
+ {
+  "id": "rule-kind-black-toilet",
+  "layer": "rule",
+  "rule": "picture vs clip vs line",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 2: the toilet should be black."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture"
+    },
+    "judge_findings": false
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "a colour is a new picture"
+  }
+ },
+ {
+  "id": "rule-kind-scrub-faster",
+  "layer": "rule",
+  "rule": "picture vs clip vs line",
+  "side": "pass",
+  "ad": "8",
+  "movement": true,
+  "turns": [
+   {
+    "say": "Scene 3: scrub harder, with bigger strokes."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "new_clip"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "how it moves is a new clip"
+  }
+ },
+ {
+  "id": "rule-kind-new-line-broll",
+  "layer": "rule",
+  "rule": "picture vs clip vs line",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 4 should say \"Rust stains gone in one scrub.\" instead."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "4": "new_line"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "new words are a new line, word for word"
+  }
+ },
+ {
+  "id": "rule-kind-price-line",
+  "layer": "rule",
+  "rule": "picture vs clip vs line",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "In the last scene the price should be $8.99, not $9.99."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "5": "new_line"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "a new price in the line is a new line"
+  }
+ },
+ {
+  "id": "rule-kind-zoom",
+  "layer": "rule",
+  "rule": "picture vs clip vs line",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "In scene 2 zoom in on the rust stain."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "zoom in is a new picture: the camera never moves"
+  }
+ },
+ {
+  "id": "rule-kind-bounce",
+  "layer": "rule",
+  "rule": "picture vs clip vs line",
+  "side": "pass",
+  "ad": "12",
+  "movement": true,
+  "turns": [
+   {
+    "say": "Scene 2: the phone bounces way too much after it lands."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_clip"
+    },
+    "looks": [
+     [
+      "look_at_clip",
+      2
+     ]
+    ]
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "how it moves is a new clip, after a look at the frames"
+  }
+ },
+ {
+  "id": "rule-kind-talking-hold",
+  "layer": "rule",
+  "rule": "picture vs clip vs line",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "In scene 1 she should hold the bottle up."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "1": "new_picture"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "what a talking scene's picture shows is a new picture"
+  }
+ },
+ {
+  "id": "rule-back-first-one",
+  "layer": "rule",
+  "rule": "go back",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 3: I liked the first one better."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "go_back:1"
+    },
+    "looks": [
+     [
+      "look_at_version",
+      3
+     ]
+    ]
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "by 'first one', after a look at v1"
+  },
+  "setup": {
+   "versions": [
+    {
+     "scene": 3,
+     "picture": "/mnt/project-files/runs/owner-photos-build/C10-later-fixes-keep-photo/scene-3-picture-2.png",
+     "change": "black toilet"
+    },
+    {
+     "scene": 3,
+     "picture": "/mnt/project-files/runs/owner-photos-build/C10-later-fixes-keep-photo/scene-3-picture-3.png",
+     "change": "brighter bathroom"
+    }
+   ]
+  }
+ },
+ {
+  "id": "rule-back-white-toilet",
+  "layer": "rule",
+  "rule": "go back",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 3: go back to the white toilet."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "go_back:1"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "by what the version shows"
+  },
+  "setup": {
+   "versions": [
+    {
+     "scene": 3,
+     "picture": "/mnt/project-files/runs/owner-photos-build/C10-later-fixes-keep-photo/scene-3-picture-2.png",
+     "change": "black toilet"
+    },
+    {
+     "scene": 3,
+     "picture": "/mnt/project-files/runs/owner-photos-build/C10-later-fixes-keep-photo/scene-3-picture-3.png",
+     "change": "brighter bathroom"
+    }
+   ]
+  }
+ },
+ {
+  "id": "rule-back-by-label",
+  "layer": "rule",
+  "rule": "go back",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 3: bring back the black toilet one from before it got brighter."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "go_back:2"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "by its label"
+  },
+  "setup": {
+   "versions": [
+    {
+     "scene": 3,
+     "picture": "/mnt/project-files/runs/owner-photos-build/C10-later-fixes-keep-photo/scene-3-picture-2.png",
+     "change": "black toilet"
+    },
+    {
+     "scene": 3,
+     "picture": "/mnt/project-files/runs/owner-photos-build/C10-later-fixes-keep-photo/scene-3-picture-3.png",
+     "change": "brighter bathroom"
+    }
+   ]
+  }
+ },
+ {
+  "id": "rule-back-no-such",
+  "layer": "rule",
+  "rule": "go back",
+  "side": "fail",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 3: go back to the version with the blue toilet."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "question": true,
+    "scenes": {}
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "no version has a blue toilet: asks, doesn't guess"
+  },
+  "setup": {
+   "versions": [
+    {
+     "scene": 3,
+     "picture": "/mnt/project-files/runs/owner-photos-build/C10-later-fixes-keep-photo/scene-3-picture-2.png",
+     "change": "black toilet"
+    },
+    {
+     "scene": 3,
+     "picture": "/mnt/project-files/runs/owner-photos-build/C10-later-fixes-keep-photo/scene-3-picture-3.png",
+     "change": "brighter bathroom"
+    }
+   ]
+  }
+ },
+ {
+  "id": "rule-back-keep-current",
+  "layer": "rule",
+  "rule": "go back",
+  "side": "fail",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 3: the brighter one is good, keep it."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "not_a_fix|planned"
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "keeping the current version is not a go back"
+  },
+  "setup": {
+   "versions": [
+    {
+     "scene": 3,
+     "picture": "/mnt/project-files/runs/owner-photos-build/C10-later-fixes-keep-photo/scene-3-picture-2.png",
+     "change": "black toilet"
+    },
+    {
+     "scene": 3,
+     "picture": "/mnt/project-files/runs/owner-photos-build/C10-later-fixes-keep-photo/scene-3-picture-3.png",
+     "change": "brighter bathroom"
+    }
+   ]
+  }
+ },
+ {
+  "id": "rule-nochange-brush",
+  "layer": "rule",
+  "rule": "no change",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 3 should show a toilet brush scrubbing the bowl."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "no_change"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "the scene already shows it"
+  }
+ },
+ {
+  "id": "rule-nochange-bottle",
+  "layer": "rule",
+  "rule": "no change",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "In scene 2 make sure our bottle is in the shot."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "no_change"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "the bottle is already in view (plan says so); a look confirms"
+  }
+ },
+ {
+  "id": "rule-route-in-picture",
+  "layer": "rule",
+  "rule": "owner photo route",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Only in scene 3: use our black toilet, photo attached.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photo-boss-test/owner-photos/o1-black-toilet.png"
+    ]
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "new_picture"
+    },
+    "routes": {
+     "3": {
+      "1": [
+       true,
+       false
+      ]
+     }
+    },
+    "thing_has": {
+     "1": "toilet"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "the toilet is in the picture; scrubbing shows no more of it, so no frames"
+  }
+ },
+ {
+  "id": "rule-route-during-only",
+  "layer": "rule",
+  "rule": "owner photo route",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Only in scene 3: when you scrub, our cleaner foams up blue like this.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photos-build/owner-photos/q6-blue-foam.png"
+    ]
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "new_clip|new_picture"
+    },
+    "routes": {
+     "3": {
+      "1": [
+       false,
+       true
+      ]
+     }
+    },
+    "looks": [
+     [
+      "look_at_clip",
+      3
+     ]
+    ]
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "the foam shows only during the action: frames looked at"
+  }
+ },
+ {
+  "id": "rule-route-in-picture-bowl",
+  "layer": "rule",
+  "rule": "owner photo route",
+  "side": "pass",
+  "ad": "9",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 2: use our navy bowl, photo attached.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photos-build/owner-photos/q2-navy-bowl.png"
+    ]
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture"
+    },
+    "routes": {
+     "2": {
+      "1": [
+       true,
+       false
+      ]
+     }
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "the bowl is in the picture"
+  }
+ },
+ {
+  "id": "rule-route-both-photos",
+  "layer": "rule",
+  "rule": "owner photo route",
+  "side": "pass",
+  "ad": "9",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 2: use our navy bowl and our green sauce, photos attached.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photos-build/owner-photos/q2-navy-bowl.png",
+     "/mnt/project-files/runs/owner-photos-build/owner-photos/q1-green-sauce.png"
+    ]
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture"
+    },
+    "routes": {
+     "2": {
+      "1": [
+       true,
+       false
+      ],
+      "2": [
+       false,
+       true
+      ]
+     }
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "bowl in the picture, sauce only as it is squeezed"
+  }
+ },
+ {
+  "id": "rule-route-unclear-photo",
+  "layer": "rule",
+  "rule": "owner photo route",
+  "side": "fail",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 3: use our toilet, photo attached.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photos-build/owner-photos/q5-blurry-toilet.jpg"
+    ]
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "clear": {
+     "1": false
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "a blurry photo is said not clear"
+  }
+ },
+ {
+  "id": "rule-route-face-photo",
+  "layer": "rule",
+  "rule": "owner photo route",
+  "side": "pass",
+  "ad": "9",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 2: our sauce jar looks like this.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photos-build/owner-photos/q7-man-green-sauce-jar.png"
+    ]
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "thing_has": {
+     "1": "jar"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "the thing is the jar, not the man holding it"
+  }
+ },
+ {
+  "id": "rule-gap-foam-no-scene",
+  "layer": "rule",
+  "rule": "gel gap",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Our cleaner foams up blue like this when you scrub.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photos-build/owner-photos/q6-blue-foam.png"
+    ]
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes_include": {
+     "3": "new_clip|new_picture",
+     "4": "new_clip|new_picture"
+    },
+    "looks": [
+     [
+      "look_at_clip",
+      3
+     ],
+     [
+      "look_at_clip",
+      4
+     ]
+    ]
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "no scene named: the scrubbing scenes 3 and 4 from the plan, confirmed on frames"
+  }
+ },
+ {
+  "id": "rule-gap-found-nowhere",
+  "layer": "rule",
+  "rule": "gel gap",
+  "side": "fail",
+  "ad": "12",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Our foam looks like this.",
+    "photos": [
+     "/mnt/project-files/runs/owner-photos-build/owner-photos/q6-blue-foam.png"
+    ]
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "question": true,
+    "scenes": {}
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "a phone case ad has no foam anywhere: asks which scene"
+  }
+ },
+ {
+  "id": "rule-judge-flip",
+  "layer": "rule",
+  "rule": "judge tool",
+  "side": "pass",
+  "ad": "12",
+  "movement": true,
+  "turns": [
+   {
+    "say": "Scene 3: when she pulls the phone out of her pocket it flips around weirdly."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "new_clip|new_picture"
+    },
+    "judge_findings": true
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "a flip note may open the judge's findings"
+  }
+ },
+ {
+  "id": "rule-judge-not-done",
+  "layer": "rule",
+  "rule": "judge tool",
+  "side": "pass",
+  "ad": "8",
+  "movement": true,
+  "turns": [
+   {
+    "say": "In scene 4 the brush never actually touches the rust stain."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "4": "new_clip|new_picture"
+    },
+    "judge_findings": true
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "the action not happening may open the judge's findings"
+  }
+ },
+ {
+  "id": "rule-judge-colour",
+  "layer": "rule",
+  "rule": "judge tool",
+  "side": "fail",
+  "ad": "9",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 3: the bread should be darker, like toast."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "3": "new_picture"
+    },
+    "judge_findings": false
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "a colour note doesn't open the judge's findings"
+  }
+ },
+ {
+  "id": "rule-cant-person-look",
+  "layer": "rule",
+  "rule": "can'ts",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "The woman at the start should have curly hair."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scene_cants_include": [
+     "person_look"
+    ]
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "how the person looks can't change yet"
+  }
+ },
+ {
+  "id": "rule-cant-slower",
+  "layer": "rule",
+  "rule": "can'ts",
+  "side": "pass",
+  "ad": "12",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Make scene 4 slower so people can see it land."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scene_cants": {
+     "4": "slower"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "slower can't be done"
+  }
+ },
+ {
+  "id": "rule-cant-voice",
+  "layer": "rule",
+  "rule": "can'ts",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Can it be a man's voice instead?"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "cants": [
+     "voice"
+    ],
+    "scenes": {}
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "voice can't change, no look needed"
+  }
+ },
+ {
+  "id": "rule-cant-music",
+  "layer": "rule",
+  "rule": "can'ts",
+  "side": "pass",
+  "ad": "9",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Can the music be quieter?"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "cants": [
+     "music"
+    ],
+    "scenes": {}
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "music can't change"
+  }
+ },
+ {
+  "id": "rule-cant-scenes",
+  "layer": "rule",
+  "rule": "can'ts",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Add one more scene that just shows the bottle on a shelf."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "cants": [
+     "number_of_scenes"
+    ],
+    "scenes": {}
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "number of scenes can't change"
+  }
+ },
+ {
+  "id": "rule-cant-example-video",
+  "layer": "rule",
+  "rule": "can'ts",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Make it like this TikTok: https://www.tiktok.com/@cleanhome/video/7301234567"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "cants": [
+     "example_video"
+    ]
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "a video as an example can't be used"
+  }
+ },
+ {
+  "id": "rule-cant-not-about-ad",
+  "layer": "rule",
+  "rule": "can'ts",
+  "side": "fail",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Can you also post it to our Instagram?"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "not_a_fix|planned"
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "not about the ad"
+  }
+ },
+ {
+  "id": "rule-correct-only-2",
+  "layer": "rule",
+  "rule": "correction",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "In scenes 2 and 4 the toilet should be black."
+   },
+   {
+    "say": "No, only scene 2."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture",
+     "4": "new_picture"
+    }
+   },
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "'only scene 2' re-plans scene 2 alone"
+  }
+ },
+ {
+  "id": "rule-correct-also-4",
+  "layer": "rule",
+  "rule": "correction",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 2: the toilet should be black."
+   },
+   {
+    "say": "Also scene 4."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture"
+    }
+   },
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture",
+     "4": "new_picture"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "'also scene 4' adds it"
+  }
+ },
+ {
+  "id": "rule-typed-yes",
+  "layer": "rule",
+  "rule": "typed answers",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 2: the toilet should be black."
+   },
+   {
+    "say": "yes"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture"
+    }
+   },
+   {
+    "outcome": "yes"
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "yes"
+  }
+ },
+ {
+  "id": "rule-typed-yeah-go",
+  "layer": "rule",
+  "rule": "typed answers",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 2: the toilet should be black."
+   },
+   {
+    "say": "yeah go"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture"
+    }
+   },
+   {
+    "outcome": "yes"
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "yeah go is yes"
+  }
+ },
+ {
+  "id": "rule-typed-no",
+  "layer": "rule",
+  "rule": "typed answers",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 2: the toilet should be black."
+   },
+   {
+    "say": "no"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture"
+    }
+   },
+   {
+    "outcome": "no"
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "no"
+  }
+ },
+ {
+  "id": "rule-typed-wait",
+  "layer": "rule",
+  "rule": "typed answers",
+  "side": "fail",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 2: the toilet should be black."
+   },
+   {
+    "say": "wait"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture"
+    }
+   },
+   {
+    "outcome": "not_a_fix"
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "wait is neither yes nor no"
+  }
+ },
+ {
+  "id": "rule-typed-grey",
+  "layer": "rule",
+  "rule": "typed answers",
+  "side": "pass",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 2: the toilet should be black."
+   },
+   {
+    "say": "Actually make it grey instead."
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture"
+    }
+   },
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture"
+    }
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "a change is a correction, re-planned"
+  }
+ },
+ {
+  "id": "rule-typed-question",
+  "layer": "rule",
+  "rule": "typed answers",
+  "side": "fail",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "Scene 2: the toilet should be black."
+   },
+   {
+    "say": "How long will it take?"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "planned",
+    "scenes": {
+     "2": "new_picture"
+    }
+   },
+   {
+    "outcome": "not_a_fix"
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "a question while a plan waits is not an answer"
+  }
+ },
+ {
+  "id": "rule-typed-yes-no-plan",
+  "layer": "rule",
+  "rule": "typed answers",
+  "side": "fail",
+  "ad": "8",
+  "movement": false,
+  "turns": [
+   {
+    "say": "yes"
+   }
+  ],
+  "expect": [
+   {
+    "outcome": "not_a_fix"
+   }
+  ],
+  "expected_by": "claude",
+  "past": {
+   "what this case checks": "yes with no plan waiting is not a yes"
+  }
+ }
+]
