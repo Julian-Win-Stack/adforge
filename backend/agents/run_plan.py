@@ -226,8 +226,8 @@ def _photo_cant(row: FixPlanScene) -> str:
             f"Scene {number} was planned before scenes had their B-roll labels, so your photos "
             "can't be used in it."
         )
-    # A new line's clip takes a photo of a thing only during it; one of a thing in its
-    # picture made it a new picture before this.
+    # A new line's clip takes a photo of a thing only during it; with one of a thing in its
+    # picture, the row is made a new picture after this.
     if row.action == Action.GO_BACK:
         return (
             f"Scene {number}'s change is going back to a version, and a photo changes how "
@@ -273,12 +273,11 @@ def _row_estimate(row: FixPlanScene, counted: set[tuple[str, str]]) -> Estimate:
         if not row.remakes_clip:
             return Estimate(Decimal(0), Decimal(0))
         return _quantized(_clip_estimate(scene, _audio_seconds(scene), from_note=False))
-    if row.action == Action.NEW_LINE:
-        # Today's line fix holds its new line in quotes.
-        estimate = _estimate(scene, Fix.Redo.LINE, f'"{row.line}"')
-    elif row.line:
-        # A new picture asked for with a new line: both, then the clip.
-        estimate = _quantized(_line_estimate(scene, f'"{row.line}"', new_picture=True))
+    if row.line:
+        # A new picture asked for with a new line: both, then the clip. A new line keeps the
+        # picture, or draws one for a scene that has none.
+        new_picture = row.action == Action.NEW_PICTURE or _shown_picture(scene) is None
+        estimate = _quantized(_line_estimate(scene, f'"{row.line}"', new_picture=new_picture))
     else:
         estimate = _estimate(scene, _REDO[Action(row.action)], row.change)
     clean = Decimal(0)

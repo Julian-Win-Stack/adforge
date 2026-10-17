@@ -90,6 +90,7 @@ MUG_FIX = "In scene 2, the mug looks like the shop owner's black mug."
 TEA_NOTE = "The tea should look like this, it's our own blend."
 TEA_FIX = "In scene 2, the tea poured in looks like the shop owner's tea."
 BRIGHTER = "In scene 2, the workshop is brighter."
+LINE = "Black stoneware, holds 350 ml, dishwasher safe."
 
 WHERE_SAYS = {
     "photo_shows": "A black stoneware mug.",
@@ -235,6 +236,33 @@ def routes(fake_model: FakeModel, settings: Settings) -> dict[tuple[str, str], s
 
     fake_model.answer_unscripted("route_reference_photo", answering)
     return answers
+
+
+def test_with_the_fallback_a_scene_whose_new_line_kept_its_picture_is_still_routed(
+    fake_model: FakeModel,
+    shown: ProducedItem,
+    say: Say,
+    steps: HeldSteps,
+    routes: dict[tuple[str, str], str],
+) -> None:
+    # The scene's line changed and its picture was kept: no picture is made for the new line.
+    fixing.fixed(2, "new_line", note="Change scene 2's line.", change="A new line.", line=LINE)
+    steps.run_held()
+    photos_sent(fake_model, say, OWNER_MUG)
+
+    plan = fixing.planned(
+        fixing.plan_row(
+            2,
+            "new_clip",
+            change=MUG_FIX,
+            photos=[photo(1, "black mug", in_picture=False, during_action=True)],
+        ),
+        note=MUG_NOTE,
+    )
+
+    # The route call still looks at the picture the shop owner sees, and puts the mug in it.
+    assert len(handoffs("route_reference_photo")) == 1
+    assert plan.scenes.get().action == "new_picture"
 
 
 # The route call's "in the picture" keeps the decider's "more during the action"; "from the
@@ -822,7 +850,7 @@ def test_a_later_fix_on_the_scene_draws_it_with_the_photo_again_without_drawing_
 def test_a_new_line_keeps_the_picture_with_the_photo(
     fake_model: FakeModel, mug_fixed: Fix, steps: HeldSteps
 ) -> None:
-    line = "Black stoneware, holds 350 ml, dishwasher safe."
+    line = LINE
     with_the_mug = latest("starting_picture")
     drawn = len(handoffs("make_starting_picture"))
 

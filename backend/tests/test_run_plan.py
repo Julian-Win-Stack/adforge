@@ -34,7 +34,7 @@ from jobs.models import (
 from .conftest import HeldSteps, paid_for, producer_turns, said_yes_to_a_fix
 from .test_fix_check import HANDLE_HIDDEN, not_made
 from .test_fix_loop import TURN_REWRITE
-from .test_producer_broll import TALKING_CHOICE, checked  # noqa: F401 (a fixture)
+from .test_producer_broll import BROLL_CHOICE, TALKING_CHOICE, checked  # noqa: F401 (a fixture)
 from .test_producer_picture_then_clip import (
     ads,
     assembled,  # noqa: F401 (a fixture)
@@ -423,6 +423,34 @@ def test_a_new_line_in_a_broll_scene_keeps_its_picture_and_how_its_clip_moves(
     assert not SceneStep.objects.filter(
         scene__number=2, kind="starting_picture", plan_scene__isnull=False
     ).exists()
+    assert status(2) == "finished"
+
+
+def test_a_new_line_on_a_scene_with_no_starting_picture_draws_one(
+    fake_model: FakeModel, held: HeldSteps
+) -> None:
+    # A B-roll scene made from example pictures, before every B-roll scene had a picture.
+    ProducedItem.objects.filter(scene__number=2, kind=ProducedItem.Kind.CLIP).update(picture=None)
+    SceneStep.objects.filter(scene__number=2, kind=SceneStep.Kind.STARTING_PICTURE).update(
+        status=SceneStep.Status.STOPPED
+    )
+    line = "A warm mug for cold days."
+    plan = propose(row(2, "new_line", change="Say it warmer.", line=line))
+    # The picture it draws is in its estimate.
+    assert rows_of(plan)[2].estimate_usd == _line_estimate(
+        scene(2), f'"{line}"', new_picture=True
+    ).about.quantize(Decimal("0.000001"))
+
+    say_yes(plan)
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    held.run_held()
+
+    drawn = SceneStep.objects.get(
+        scene__number=2, kind="starting_picture", plan_scene__isnull=False
+    )
+    assert (drawn.line, drawn.note) == (line, "")
+    made = clip(2)
+    assert made.picture is not None and made.picture.step == drawn
     assert status(2) == "finished"
 
 
