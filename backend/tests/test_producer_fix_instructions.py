@@ -108,7 +108,7 @@ def test_the_fix_limits_are_written_down_and_dated() -> None:
     limitations = (docs / "limitations.md").read_text()
     for limit in [
         "**No stop button for a fix.**",
-        "**The producer never says a fix worked.**",
+        "**Nothing says a fix worked.**",
         "**No escalation on a repeated note.**",
     ]:
         entry = next(line for line in limitations.splitlines() if limit in line)

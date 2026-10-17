@@ -8,7 +8,7 @@ Every model call the app makes goes through `backend/gateway/gateway.py` under a
 
 How a decision can be checked:
 
-- **Test**: the suite in `tests/`. Every test there runs on a scripted fake model (`gateway/fake.py`), so tests prove the wiring and code guards, never the quality of a real answer. The one exception is the opt-in `tests/eval_producer_fixes.py`, listed as an eval.
+- **Test**: the suite in `tests/`. Every test there runs on a scripted fake model (`gateway/fake.py`), so tests prove the wiring and code guards, never the quality of a real answer.
 - **Eval**: a real model's answers scored against Julian's (the project owner's) grades, run by hand.
 - **Judge**: another model checks the output inside the app.
 - **Guard**: code refuses or caps a bad answer. **Prompt only** means the rule is just text in the prompt.
@@ -33,8 +33,9 @@ Harm if a decision is quietly wrong: **broken ad** (the owner sees a bad ad), **
 | Auto-fix prompt after a judge fail (`remake_clip_prompt`, `jobs/auto_fix.py`) | 0 to 2 per B-roll clip | Paid remake that repeats the fault | Judge: clip judge re-checks. Guard: 2 remakes; code keeps the clip with the fewest failed answers, newest on a tie (`clip_to_keep`) |
 | Clip for a fix, from the owner's note (`rewrite_clip_prompt`) | 1 per clip fix | Paid remake that ignores the note | Judge: clip judge asks if the owner's change was made (no eval of that question) |
 | Fix check on a new starting picture (`check_fix`, `jobs/fix_check.py`) | 3 asks per picture fix | Paid remake: a picture that ignores the fix passes and its clip is paid for | **No eval.** Guard: 2 of 3 answers decide; the app never tells the owner a fix worked (`docs/limitations.md`) |
-| Producer agent: next tool, which scene and step a note fixes, line changes (`produce`; tools `restate_fix`, `change_line` in `agents/producer.py`) | Every owner message | Paid remake: wrong scene or step redone, complaint not fixed | Eval: `tests/eval_producer_fixes.py` (11 cases, opt-in, picks the step only). Guard: no paid redo before the owner answers the restatement; a new line must match the quoted one |
+| Producer agent: next tool while the ad is first made; answers what isn't a note after (`produce`, `agents/producer.py`) | Every owner message before the first clip; after it, those that aren't a note | Broken ad: a step skipped or made wrong; a wrong answer about a fix | **No eval.** Guard: tools refuse out of order; once a scene has a clip its making tools refuse, and the producer has no fix tool: it reads the system notes code writes (`agents/routing.py`) |
+| Decider agent: sorts each owner message (note, yes, no, go ahead, other), looks, plans each scene's fix (`decide_fixes`, `agents/decider.py`) | Every owner message once the ad has a clip | Paid remake: wrong scene or step, a change the owner never asked for, a yes read wrong | Eval: `evals/decider` (32 replayed notes, 54 rule cases), Julian's grades pending. Guard: no decision on a scene it hasn't looked at; code adds rule can'ts and estimates, shows the plan, and runs nothing before a yes (a tap, or a typed yes to a plan shown before it) (`agents/run_plan.py`) |
 
 The rule judges: `evals/ai_checks.py` is scored against 208 graded cases in `evals/rule_cases.json` (20 plan-level, the rest B-roll scenes), and `evals/run_rule_checks.py` runs free code checks on a saved run. Re-running the cases tests the judges, not a new planner or prompt.
 
-Biggest blind spots today: the fact check has no eval; talking-scene starting pictures and the before-picture have no judge; the clip judge has never been scored on clips it wasn't tuned on; and whether the owner's answer to a restated fix means yes is the producer model's call: code only checks that they answered (`agents/producer.py` `_yes_to`).
+Biggest blind spots today: the fact check has no eval; talking-scene starting pictures and the before-picture have no judge; the clip judge has never been scored on clips it wasn't tuned on; and whether a typed answer to a fix plan means yes is the decider model's call: code reads a tapped yes itself, and a typed one only for a plan shown before it (`agents/routing.py`).

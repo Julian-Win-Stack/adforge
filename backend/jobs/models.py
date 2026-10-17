@@ -339,10 +339,10 @@ class Scene(models.Model):
 
 
 class Fix(models.Model):
-    """The producer's restatement of what it will change about a finished scene, from the
-    shop owner's notes on it (route B, #135). Recorded when the producer restates it, and
-    confirmed by the shop owner's answer: until then, nothing is redone or paid for. It is
-    the note its redo is made with, word for word."""
+    """What will change about a finished scene, from the shop owner's notes on it: one row of
+    a fix plan they said yes to, recorded by code when it runs the plan (fix redesign; route
+    B, #135, before it). Nothing is redone or paid for before the yes. It is the note its
+    redo is made with, word for word."""
 
     class Redo(models.TextChoices):
         CLIP = "clip"
@@ -352,7 +352,7 @@ class Fix(models.Model):
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="fixes")
     scene = models.ForeignKey(Scene, on_delete=models.CASCADE, related_name="fixes")
     fix = models.TextField(
-        help_text="The restatement, in one self-contained line, carrying everything the shop "
+        help_text="The change, in one self-contained line, carrying everything the shop "
         "owner's notes on the scene ask for."
     )
     redo = models.CharField(
@@ -363,7 +363,7 @@ class Fix(models.Model):
     )
     notes = models.JSONField(
         default=list,
-        help_text="The shop owner's own words it was restated from, verbatim: each of their "
+        help_text="The shop owner's own words it was planned from, verbatim: each of their "
         "messages since the ad was last shown, or since they confirmed the scene's last Fix, "
         'as [{"seq", "text"}, ...].',
     )
@@ -374,7 +374,7 @@ class Fix(models.Model):
         "agents.ToolCall",
         on_delete=models.CASCADE,
         related_name="fixes",
-        help_text="The restate_fix call that recorded it, after which the shop owner answers.",
+        help_text="The call that recorded it: code's run of the fix plan.",
     )
     confirmed_by = models.ForeignKey(
         "chat.Message",
@@ -382,8 +382,7 @@ class Fix(models.Model):
         null=True,
         blank=True,
         related_name="+",
-        help_text="The shop owner's answer the yes guard accepted. Blank until a redo is "
-        "asked for with it after they answered.",
+        help_text="The shop owner's yes to the fix plan it is a row of.",
     )
     photos = models.JSONField(
         default=list,
@@ -420,7 +419,7 @@ class Fix(models.Model):
     class Meta:
         ordering = ["created_at", "id"]
         constraints = [
-            # A restate_fix run again after a restart records the same Fix, not another.
+            # A plan run again after a restart records the same Fix, not another.
             models.UniqueConstraint(fields=["asked", "scene"], name="one_fix_per_call_and_scene")
         ]
 
