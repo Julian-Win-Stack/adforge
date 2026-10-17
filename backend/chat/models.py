@@ -41,7 +41,12 @@ class Message(models.Model):
 
     A message about a scene's starting picture or clip names its `step`: a notice when the
     step starts, the message showing what it made, or a notice when it ended with nothing.
-    So the chat can tell a scene's picture or clip is being made, from the messages alone."""
+    So the chat can tell a scene's picture or clip is being made, from the messages alone.
+
+    A message about a fix plan names it and what it says of it (`plan_event`): code's notice
+    showing it, the shop owner's tap of its yes button, or code's notice that it is settled.
+    So the chat can tell whether the plan's yes button is still on offer, from the messages
+    alone."""
 
     class Role(models.TextChoices):
         USER = "user"
@@ -62,6 +67,14 @@ class Message(models.Model):
         STARTED = "started"
         MADE = "made"  # The message carries what it made.
         NOT_MADE = "not_made"  # It failed or stopped the run, with nothing made.
+
+    class PlanEvent(models.TextChoices):
+        """What a message says of a fix plan (`fix_plan`)."""
+
+        SHOWN = "shown"  # Code's notice showing the plan, with the yes button.
+        YES = "yes"  # The shop owner tapped the plan's yes button: the marker, never typed.
+        CONFIRMED = "confirmed"  # Code's notice that the plan is going ahead.
+        DECLINED = "declined"  # Code's notice that the plan was dropped.
 
     session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name="messages")
     seq = models.PositiveIntegerField(
@@ -98,6 +111,23 @@ class Message(models.Model):
     )
     suggested_note_scene = models.PositiveSmallIntegerField(
         null=True, blank=True, help_text="The scene the suggested note is about."
+    )
+    # A default in the database too, as for the step's fields.
+    plan_event = models.CharField(
+        max_length=10,
+        choices=PlanEvent.choices,
+        blank=True,
+        db_default="",
+        help_text="What the message says of `fix_plan`. Blank for a message about no plan, "
+        "and for anything the shop owner typed: a typed yes is told apart from the button's.",
+    )
+    fix_plan = models.ForeignKey(
+        "jobs.FixPlan",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="messages",
+        help_text="The plan the message shows, answers or settles. Null for none.",
     )
     trace_id = models.CharField(
         max_length=32,
