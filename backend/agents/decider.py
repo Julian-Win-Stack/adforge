@@ -11,18 +11,23 @@ kept by code, from those checkpoints (decision 3): no scene is decided before it
 at, and no scene goes back to a version before that version was looked at."""
 
 import contextvars
+import hashlib
+import io
 import json
+import math
+import re
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, ClassVar, Literal
 
+import PIL.Image
 from django.db import transaction
 from django.db.models import QuerySet
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from adforge import tracing
+from adforge import file_store, tracing
 from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.gateway import take_turn
@@ -102,6 +107,9 @@ CANTS: dict[str, str] = {
 
 # Turns the decider may end with no tool, each answered with a reminder, before it stops.
 MOST_REMINDERS = 2
+# The most tools the decider may call for one message (design thread, 05b: a GUESS), far
+# under the limit for every agent together, so a decider going round in circles stops cheap.
+MOST_TOOL_CALLS = 30
 REMINDER = "Answer with a tool call: sort_message, a look, or decide. Nothing you write is shown."
 
 
@@ -669,6 +677,10 @@ def read(job: Job, said: Sequence[Message]) -> Outcome:
                 return outcome
             if loop.over_the_limit(session):
                 raise NoDecision("it hit the limit of tools for one message")
+            if round.calls().filter(created_at__gt=round.said[-1].created_at).count() >= (
+                MOST_TOOL_CALLS
+            ):
+                raise NoDecision("it hit the decider's limit of tools for one message")
             with tracing.agent_turn(DECIDER_NAME):
                 turn = take_turn(
                     session=session,
@@ -764,12 +776,13 @@ def _shown(
     calls: list[ToolCall], *, sorted_yet: bool
 ) -> dict[int, tuple[list[dict[str, str]], str]]:
     """Per call, the pictures this turn shows of it and what its result says of those it
-    doesn't. None before the newest message is sorted: sorting needs only the words. Then the
-    newest looks first, each look's pictures once, up to MOST_PICTURES."""
+    doesn't. None before the newest message is sorted: sorting needs only the words. Then each
+    look's pictures once, with its newest call, fitted together into MOST_PICTURES (`_fitted`);
+    past it even so, the newest looks first."""
     shown: dict[int, tuple[list[dict[str, str]], str]] = {call.pk: ([], "") for call in calls}
     if not sorted_yet:
         return shown
-    room = MOST_PICTURES
+    looks: list[ToolCall] = []
     seen: set[str] = set()
     for call in reversed(calls):
         if not call.pictures:
@@ -777,13 +790,66 @@ def _shown(
         look = f"{call.tool} {json.dumps(call.arguments, sort_keys=True)}"
         if look in seen:
             shown[call.pk] = ([], " (Its pictures are shown with the same look, later.)")
-        elif len(call.pictures) > room:
+        else:
+            looks.append(call)
+        seen.add(look)
+    fitted = _fitted(looks)
+    room = MOST_PICTURES
+    for call in looks:
+        if len(fitted[call.pk]) > room:
             shown[call.pk] = ([], " (Its pictures aren't shown any more: look again to see them.)")
         else:
-            shown[call.pk] = (call.pictures, "")
-            room -= len(call.pictures)
-        seen.add(look)
+            shown[call.pk] = (fitted[call.pk], "")
+            room -= len(fitted[call.pk])
     return shown
+
+
+def _fitted(looks: list[ToolCall]) -> dict[int, list[dict[str, str]]]:
+    """Each look's pictures, with every clip's frames joined side by side, as few to a
+    picture as lets every look fit in MOST_PICTURES: the clip judge's way of fitting frames
+    (`clip_judge.cut_pictures`), so each frame is kept at FRAMES_PER_SECOND (decision 10) and
+    a note about two clips sees both at once."""
+    clips = [look for look in looks if look.tool == LookAtClip.name]
+    stills = sum(len(look.pictures) for look in looks if look.tool != LookAtClip.name)
+    together = 1
+    while together < max((len(clip.pictures) for clip in clips), default=1) and (
+        stills + sum(math.ceil(len(clip.pictures) / together) for clip in clips) > MOST_PICTURES
+    ):
+        together += 1
+    return {
+        look.pk: [
+            _side_by_side(look.pictures[i : i + together])
+            for i in range(0, len(look.pictures), together)
+        ]
+        if look.tool == LookAtClip.name
+        else look.pictures
+        for look in looks
+    }
+
+
+# A frame's label, as `LookAtClip` gives it: the clip, then the time of each frame in it.
+_FRAME_LABEL = re.compile(r"^(?P<clip>.*), Frames? at (?P<times>.+?)(?:, left to right)?$")
+
+
+def _side_by_side(frames: list[dict[str, str]]) -> dict[str, str]:
+    """`frames` of one clip as one picture, joined left to right, labelled with the time of
+    each. Kept under a name made from the frames, so a later turn, or a restart, shows the
+    same picture and a paid turn is replayed for free."""
+    if len(frames) == 1:
+        return frames[0]
+    labels = [_FRAME_LABEL.fullmatch(frame["label"]) for frame in frames]
+    assert all(labels), "a look at a clip labels each frame with its times"
+    times = [
+        float(time.removesuffix(" s"))
+        for label in labels
+        for time in label["times"].split(", ")  # type: ignore[index]
+    ]
+    keys = [frame["key"] for frame in frames]
+    key = file_store.save_once(
+        f"decider_frames_{hashlib.sha256(chr(10).join(keys).encode()).hexdigest()[:32]}.jpg",
+        lambda: clip_judge.joined([PIL.Image.open(io.BytesIO(file_store.read(k))) for k in keys]),
+    )
+    return {"label": f"{labels[0]['clip']}, {clip_judge.frame_label(times)}", "key": key}  # type: ignore[index]
 
 
 def _the_ad(round: _Round) -> str:

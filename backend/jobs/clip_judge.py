@@ -864,17 +864,23 @@ def _side_by_side(paths: list[Path]) -> str:
     a single frame as it is."""
     if len(paths) == 1:
         return file_store.save("clip_frame.jpg", paths[0].read_bytes())
-    pictures = [PIL.Image.open(path).convert("RGB") for path in paths]
-    joined = PIL.Image.new(
+    return file_store.save("clip_frames.jpg", joined([PIL.Image.open(path) for path in paths]))
+
+
+def joined(pictures: list[PIL.Image.Image]) -> bytes:
+    """`pictures` joined left to right into one JPEG, as the judge is shown frames that
+    wouldn't fit one to a picture."""
+    pictures = [picture.convert("RGB") for picture in pictures]
+    together = PIL.Image.new(
         "RGB", (sum(p.width for p in pictures), max(p.height for p in pictures)), "white"
     )
     x = 0
     for picture in pictures:
-        joined.paste(picture, (x, 0))
+        together.paste(picture, (x, 0))
         x += picture.width
     saved = io.BytesIO()
-    joined.save(saved, format="JPEG", quality=92)
-    return file_store.save("clip_frames.jpg", saved.getvalue())
+    together.save(saved, format="JPEG", quality=92)
+    return saved.getvalue()
 
 
 def _ffmpeg(*arguments: str) -> bytes:
