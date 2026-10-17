@@ -2725,6 +2725,12 @@ class NoSuchVersion(Exception):
     """Going back to a version the scene doesn't have."""
 
 
+class NothingToBringBack(NoSuchVersion):
+    """Going back to a version with no starting picture (a B-roll scene made from example
+    pictures) after the scene's line changed: its clip no longer says the line, and there is
+    no picture to make a new one from."""
+
+
 class SceneBusy(Exception):
     """Going back while the scene's starting picture or clip is being made, which would land
     on top of what was brought back."""
@@ -2746,31 +2752,42 @@ def go_back(scene: Scene, number: int) -> GoneBack:
     made, checked or paid for. When the line changed since, only the picture is brought back
     and the scene waits for a clip made from it. The scene's photos in use become those the
     version was made with, so a photo dropped is a version gone back to. The chat is shown
-    what was brought back. Refuses a version the scene doesn't have, and while the scene's
-    picture or clip is being made."""
+    what was brought back. Refuses a version the scene doesn't have, one with no picture whose
+    clip no longer says the line, and while the scene's picture or clip is being made."""
     with transaction.atomic():
         Scene.objects.select_for_update().get(pk=scene.pk)
+        # Whether the clip still says the line is read from the scene as it now stands.
+        scene.refresh_from_db()
         if scene.steps.filter(
             kind__in=[SceneStep.Kind.STARTING_PICTURE, SceneStep.Kind.CLIP],
             status=SceneStep.Status.RUNNING,
         ).exists():
             raise SceneBusy(f"scene {scene.number}'s picture or clip is still being made")
-        made = versions(scene)
-        if not 1 <= number <= len(made):
-            raise NoSuchVersion(f"scene {scene.number} has versions 1 to {len(made)}, not {number}")
-        earlier = made[number - 1]
+        shown = versions(scene)
+        if not 1 <= number <= len(shown):
+            raise NoSuchVersion(
+                f"scene {scene.number} has versions 1 to {len(shown)}, not {number}"
+            )
+        earlier = shown[number - 1]
+        free = earlier.clip is not None and _says_the_line_as_it_stands(scene, earlier.clip)
+        if earlier.picture is None and not free:
+            raise NothingToBringBack(
+                f"scene {scene.number}'s version {number} has no starting picture, and its "
+                "clip no longer says the scene's line"
+            )
         _use_the_photos_of(scene, earlier)
         picture = (
             bring_back_picture(earlier.picture, back_to=number)[0]
             if earlier.picture is not None
             else None
         )
-        free = earlier.clip is not None and _says_the_line_as_it_stands(scene, earlier.clip)
         if earlier.clip is not None and free:
             clip = bring_back_clip(earlier.clip, picture=picture, back_to=number)
         else:
             clip = None
             scene.plan_again()
+        # The bring-backs set the status through their own copy of the scene.
+        scene.refresh_from_db(fields=["status"])
         top = versions(scene)[-1]
         if scene.job.session is not None:
             messages.add(

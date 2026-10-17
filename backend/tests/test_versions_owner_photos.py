@@ -92,3 +92,14 @@ def test_going_back_to_the_version_with_the_photo_uses_it_again(
     brighter(fake_model, steps, say)
     (clean,) = clean_pictures()
     assert handoffs("make_starting_picture")[-1]["pictures"][0] == clean
+
+
+def test_going_back_to_the_version_with_the_photo_uses_it_again_after_a_fix_dropped_it() -> None:
+    # A fix the shop owner said yes to dropped the photo: going back to the version made
+    # with it is the owner choosing it again.
+    scene_2().reference_photos.update(dropped_by=Fix.objects.get())
+    assert things_in_use() == []
+
+    work.go_back(scene_2(), 2)
+
+    assert things_in_use() == ["black mug"]
