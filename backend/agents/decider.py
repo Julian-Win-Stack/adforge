@@ -11,6 +11,7 @@ kept by code, from those checkpoints (decision 3): no scene is decided before it
 at, and no scene goes back to a version before that version was looked at."""
 
 import contextvars
+import json
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -293,10 +294,18 @@ def _owner_photo(number: int) -> Attachment:
 
 
 def _sorted_newest(round: _Round) -> ToolCall | None:
-    """The sorting of the newest message, once it is made."""
+    """The sorting of the newest message, once it is made. Found by the message it names, not
+    by time: a sort made for an earlier message can be kept after a newer one came in."""
     return (
-        round.done().filter(tool=SortMessage.name, created_at__gt=round.said[-1].created_at).last()
+        round.done()
+        .filter(tool=SortMessage.name, result__startswith=_sorted_as(round.said[-1]))
+        .last()
     )
+
+
+def _sorted_as(message: Message) -> str:
+    """How a sort's result begins: with the message it sorted."""
+    return f"Sorted message {message.seq} as "
 
 
 def _sorted_first() -> None:
@@ -317,9 +326,10 @@ class SortMessage(Tool):
         round = _round.get()
         if self.kind in ("yes", "no") and fix_plans.open_plan(round.session) is None:
             raise Refused("no plan is waiting for the shop owner's answer.")
+        sorted_as = f"{_sorted_as(round.said[-1])}{self.kind}."
         if self.kind == "fix_note":
-            return "Sorted as a fix note. Look at what you need, then decide."
-        return "Sorted. You are done."
+            return f"{sorted_as} Look at what you need, then decide."
+        return f"{sorted_as} You are done."
 
 
 class LookAtPicture(Tool):
@@ -394,16 +404,18 @@ def _frames(clip: ProducedItem) -> list[dict[str, Any]]:
 
 
 def _judged(clip: ProducedItem) -> str:
-    verdict = (clip.ruling or {}).get("verdict")
-    said = {
+    return (
+        f"{_verdict(clip)} What it found is in judge_findings, for a note about how things "
+        "move, a product that flips to another side, or the action not happening."
+    )
+
+
+def _verdict(clip: ProducedItem) -> str:
+    return {
         "pass": "The judge passed this clip.",
         "fail": "The judge failed this clip.",
         "not_checked": "The judge couldn't check this clip.",
-    }.get(verdict or "", "The judge didn't judge this clip.")
-    return (
-        f"{said} What it found is in judge_findings, for a note about how things move, a "
-        "product that flips to another side, or the action not happening."
-    )
+    }.get((clip.ruling or {}).get("verdict") or "", "The judge didn't judge this clip.")
 
 
 class JudgeFindings(Tool):
@@ -428,7 +440,7 @@ class JudgeFindings(Tool):
         let_go = [each["problem"] for each in ruling.get("let_go", [])]
         return " ".join(
             [
-                f"{named}: {_judged(version.clip).split(' What')[0]}",
+                f"{named}: {_verdict(version.clip)}",
                 *(f"It found: {problem}" for problem in dict.fromkeys(found)),
                 *(f"It let go, as back to normal soon: {problem}" for problem in let_go),
             ]
@@ -501,6 +513,9 @@ class SceneDecision(BaseModel):
         return self
 
 
+RECORDED = "Recorded. The app shows your plan to the shop owner. You are done."
+
+
 class Decide(Tool):
     """Answer with what changes in each scene the notes are about, once you have looked at
     each of them. With the shop owner's photos you use, each with its one thing, and at most
@@ -518,6 +533,16 @@ class Decide(Tool):
     def run(self, call: ToolCall) -> str:
         _sorted_first()
         round = _round.get()
+        sorting = _sorted_newest(round)
+        assert sorting is not None, "_sorted_first refuses an unsorted message"
+        if sorting.arguments["kind"] != "fix_note":
+            raise Refused(
+                "the shop owner's newest message is sorted as "
+                f"{sorting.arguments['kind']}, so there is nothing to decide."
+            )
+        if FixPlan.objects.filter(session=round.session, created_at__gte=call.created_at).exists():
+            # A worker stopped after the plan was recorded, before this call was kept as done.
+            return RECORDED
         things = {each.photo: each.thing for each in self.photos}
         clear = {each.photo: each.clear for each in self.photos}
         rows = []
@@ -572,13 +597,14 @@ class Decide(Tool):
             question=self.question.strip(),
             cants=[{"kind": kind, "text": CANTS[kind]} for kind in dict.fromkeys(self.cants)],
         )
-        return "Recorded. The app shows your plan to the shop owner. You are done."
+        return RECORDED
 
     @staticmethod
     def _looked(round: _Round, decided: SceneDecision) -> None:
         """Refuse a scene decided without a look at it, a go-back without a look at its
         version, and a photo's thing only during the action without a look at the clip."""
-        looks = (LookAtPicture.name, LookAtVersion.name, LookAtClip.name, JudgeFindings.name)
+        # The judge's findings are its words, not a look: it can be wrong (decision 16).
+        looks = (LookAtPicture.name, LookAtVersion.name, LookAtClip.name)
         if not any(_looked_at(round, tool, scene=decided.scene) for tool in looks):
             raise Refused(f"look at scene {decided.scene} first.")
         if decided.go_back_to is not None and not any(
@@ -703,7 +729,10 @@ def _outcome(round: _Round) -> Outcome | None:
 
 def _conversation(round: _Round) -> list[Happened]:
     """What the decider is given: the ad as it stands, then this round's messages from the
-    shop owner and its own tool calls, in the order they happened."""
+    shop owner and its own tool calls, in the order they happened. Every picture is sent
+    again on each turn, so only the ones it needs go (`_shown`)."""
+    calls = list(round.calls())
+    shown = _shown(calls, sorted_yet=_sorted_newest(round) is not None)
     happened: list[tuple[datetime, int, Happened]] = [
         (message.created_at, 0, Said(by="user", text=messages.as_read(message, numbered=True)))
         for message in round.said
@@ -715,16 +744,46 @@ def _conversation(round: _Round) -> list[Happened]:
                 call_id=call.call_id,
                 tool=call.tool,
                 arguments=call.arguments,
-                result=call.result,
-                pictures=[Shown(**picture) for picture in call.pictures],
+                result=call.result + shown[call.pk][1],
+                pictures=[Shown(**picture) for picture in shown[call.pk][0]],
             ),
         )
-        for call in round.calls()
+        for call in calls
     ]
     return [
         Said(by="user", text=_the_ad(round)),
         *(each for _, _, each in sorted(happened, key=lambda each: (each[0], each[1]))),
     ]
+
+
+# The most pictures one turn may carry: what the model takes in one ask.
+MOST_PICTURES = clip_judge.MOST_PICTURES
+
+
+def _shown(
+    calls: list[ToolCall], *, sorted_yet: bool
+) -> dict[int, tuple[list[dict[str, str]], str]]:
+    """Per call, the pictures this turn shows of it and what its result says of those it
+    doesn't. None before the newest message is sorted: sorting needs only the words. Then the
+    newest looks first, each look's pictures once, up to MOST_PICTURES."""
+    shown: dict[int, tuple[list[dict[str, str]], str]] = {call.pk: ([], "") for call in calls}
+    if not sorted_yet:
+        return shown
+    room = MOST_PICTURES
+    seen: set[str] = set()
+    for call in reversed(calls):
+        if not call.pictures:
+            continue
+        look = f"{call.tool} {json.dumps(call.arguments, sort_keys=True)}"
+        if look in seen:
+            shown[call.pk] = ([], " (Its pictures are shown with the same look, later.)")
+        elif len(call.pictures) > room:
+            shown[call.pk] = ([], " (Its pictures aren't shown any more: look again to see them.)")
+        else:
+            shown[call.pk] = (call.pictures, "")
+            room -= len(call.pictures)
+        seen.add(look)
+    return shown
 
 
 def _the_ad(round: _Round) -> str:
