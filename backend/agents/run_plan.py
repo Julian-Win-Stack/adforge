@@ -530,6 +530,9 @@ def step_finished(step: SceneStep, check: FixCheck | None) -> None:
         _note(row.plan, SystemNote.Kind.CHECK_FAILED, _check_failed(row, check))
     if check is not None and check.verdict == FixCheck.Verdict.UNCHECKED:
         _say_it_wasnt_checked(row, check)
+    passed = check is None or check.verdict == FixCheck.Verdict.PASSED
+    if step.kind == SceneStep.Kind.CLIP and step.scene.shows and passed:
+        _say_what_the_judge_kept(row, step)
     _carry_on(row)
     _assemble_once_landed(row.plan)
     # Another plan's row may have waited for this step to free the scene.
@@ -553,6 +556,26 @@ def _say_it_wasnt_checked(row: FixPlanScene, check: FixCheck) -> None:
         f"Scene {number}'s fix couldn't be checked in its new {check.what}, so it carries on "
         "unchecked. The chat told the shop owner it wasn't checked.",
     )
+
+
+def _say_what_the_judge_kept(row: FixPlanScene, step: SceneStep) -> None:
+    """A fix's clip the clip judge couldn't check, or still failed after its remakes, is kept,
+    and the shop owner is told so by code, never silent (Julian 2026-10-14, "treat that as
+    pass"; design thread, 05:15 Oct 17). Without the judge's words, and nothing for the
+    producer (decision 20). A fix check that failed or couldn't be had says so already."""
+    number = row.scene.number
+    tries = work.clip_tries(step)
+    verdict = (work.kept_clip(step).ruling or {}).get("verdict")
+    if verdict == "not_checked":
+        text = f"Scene {number}'s new clip couldn't be checked, so it is kept unchecked."
+    elif verdict == "fail":
+        text = (
+            f"Scene {number}'s new clip was kept after {len(tries)} tries though the judge "
+            "still found a fault."
+        )
+    else:
+        return
+    post_notice(row.plan.job, text, Message.Level.INFO)
 
 
 def step_failed(step: SceneStep) -> None:

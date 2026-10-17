@@ -16,7 +16,7 @@ from agents import decider, loop, routing, run_plan
 from agents.models import SystemNote, ToolCall
 from chat.models import Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
-from gateway.types import StepFinished, Turn
+from gateway.types import StepFinished, Turn, UnusableReply
 from jobs import work
 from jobs.models import (
     FixCheck,
@@ -28,10 +28,11 @@ from jobs.models import (
     SceneStep,
 )
 
-from .conftest import MUG_SIDE, HeldSteps, producer_turns
+from .conftest import CLIP_SIDES_OK, MUG_SIDE, HeldSteps, producer_turns
 from .fixing import fixed
 from .test_fix_check import HANDLE_HIDDEN, not_made
 from .test_fix_loop import TURN_REWRITE
+from .test_producer_auto_fix import FLOATS, REMADE, REMADE_AGAIN, failing, rewrite
 from .test_producer_broll import (  # noqa: F401 (a fixture)
     BROLL_CHOICE,
     MOTION,
@@ -772,3 +773,57 @@ def test_a_decider_error_leaves_the_message_to_the_producer_and_later_ones_route
 
     plan = a_picture_note_planned(fake_model, say)
     assert Message.objects.filter(plan_event="shown", fix_plan=plan).exists()
+
+
+def _a_picture_note_on_scene_2_said_yes_to(
+    fake_model: FakeModel, say: Callable[..., None], api: APIClient, session_id: str
+) -> None:
+    fake_model.respond(
+        "decide_fixes",
+        planning(
+            ("look_at_picture", {"scene": 2}),
+            decided(row(2, "new_picture", "The mug is on a wooden table.")),
+        ),
+    )
+    say("In scene 2 put the mug on a wooden table.")
+    tap_yes(api, session_id, plans()[-1])
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+
+
+def test_a_fix_clip_the_judge_couldnt_check_is_kept_and_the_chat_says_so(
+    fake_model: FakeModel,
+    held: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    _a_picture_note_on_scene_2_said_yes_to(fake_model, say, api, session_id)
+    unusable = UnusableReply("no answer", input_tokens=1, output_tokens=1)
+    fake_model.respond("check_clip_sides", *[unusable] * 6, CLIP_SIDES_OK)
+
+    held.run_held()
+
+    assert status(2) == "finished"
+    told = [each.text for each in Message.objects.filter(role="notice", level="info")]
+    assert "Scene 2's new clip couldn't be checked, so it is kept unchecked." in told
+
+
+def test_a_fix_clip_kept_with_a_fault_the_judge_still_sees_is_said_so_without_its_words(
+    fake_model: FakeModel,
+    held: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    _a_picture_note_on_scene_2_said_yes_to(fake_model, say, api, session_id)
+    fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 9)
+    fake_model.respond("remake_clip_prompt", rewrite(REMADE), rewrite(REMADE_AGAIN))
+
+    held.run_held()
+
+    assert status(2) == "finished"
+    told = [each.text for each in Message.objects.filter(role="notice", level="info")]
+    assert "Scene 2's new clip was kept after 3 tries though the judge still found a fault." in told
+    assert not any(FLOATS in text for text in told)
+    # Not the producer's to tell: no system note carries it (decision 20).
+    assert not any(FLOATS in text for text in SystemNote.objects.values_list("text", flat=True))

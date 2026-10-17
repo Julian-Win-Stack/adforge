@@ -2383,6 +2383,19 @@ def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
     return brought_back or bring_back_clip(kept)
 
 
+def kept_clip(step: SceneStep) -> ProducedItem:
+    """The clip a finished B-roll clip step kept: the scene's newest clip from the step, as a
+    remake kept from before the last is brought back as."""
+    kept = step.scene.produced.filter(kind=ProducedItem.Kind.CLIP, step=step).order_by("id").last()
+    assert kept is not None, "a finished clip step kept a clip"
+    return kept
+
+
+def clip_tries(step: SceneStep) -> list[ProducedItem]:
+    """A B-roll clip step's clips made, oldest first: its first, then each remake."""
+    return _clip_tries(step)
+
+
 def _clip_tries(step: SceneStep) -> list[ProducedItem]:
     """A B-roll clip step's clips made so far, oldest first: its first, then each remake. A
     clip brought back as the one kept isn't another."""

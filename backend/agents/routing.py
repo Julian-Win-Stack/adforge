@@ -18,8 +18,8 @@ from django.utils import timezone
 from chat.models import Message, Session
 from gateway.types import BlockedBySafetyFilter
 from jobs import fix_plans
-from jobs.notices import post_notice
 from jobs.models import FixPlan, Job, ProducedItem
+from jobs.notices import post_notice
 
 from . import decider, run_plan
 from .models import SystemNote
