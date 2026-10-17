@@ -49,6 +49,7 @@ from .types import (
     SpeechHandoff,
     ToolRequest,
     ToolSpec,
+    ToolUse,
     Transcription,
     TranscriptionHandoff,
     TranscriptionProvider,
@@ -207,19 +208,28 @@ def take_turn(
     tools: Sequence[ToolSpec],
 ) -> Turn:
     """Give an agent its conversation and the tools it may call, and have it take one turn:
-    say something, ask for tools, or both."""
+    say something, ask for tools, or both. The pictures its tools handed back are read here
+    from the file store and shown with their labels, as `call_model`'s images are."""
     handoff = TurnHandoff(conversation=list(conversation), tools=[tool.name for tool in tools])
     # Validate again here rather than trusting the caller built the handoff properly.
     handoff = TurnHandoff.model_validate(handoff.model_dump())
+    shown = [
+        Image(label=picture.label, key=picture.key)
+        for each in handoff.conversation
+        if isinstance(each, ToolUse)
+        for picture in each.pictures
+    ]
     request = TurnRequest(
         purpose=purpose,
         model=catalog.MODEL_FOR_PURPOSE[purpose],
         instructions=instructions,
         handoff=handoff,
         tools=tuple(tools),
+        images=tuple(_load(image) for image in shown),
     )
+    images = [{"label": image.label, "key": image.key} for image in shown]
     # A turn paid for before the worker stopped, but not yet kept, is taken again for free.
-    answered = _answered_before(handoff, purpose=purpose, session=session)
+    answered = _answered_before(handoff, purpose=purpose, session=session, images=images)
     if answered is not None:
         return _turn_from(answered)
     provider = _agents()
@@ -236,7 +246,9 @@ def take_turn(
             ),
         )
 
-    return _recorded(None, purpose, request.model, provider.name, handoff, take, session=session)
+    return _recorded(
+        None, purpose, request.model, provider.name, handoff, take, images, session=session
+    )
 
 
 def last_turn_given(session: Session, purpose: str) -> list[Happened] | None:
@@ -784,6 +796,11 @@ def _picture_extension(data: bytes) -> str:
     if PIL.Image.MIME.get(file_format, "") not in IMAGE_TYPES:
         raise UnreadableImage(f"The drawn picture is {file_format or 'an unknown format'}")
     return file_format.lower()
+
+
+def check_readable(image: Image) -> None:
+    """Raise UnreadableImage if `image` can't be shown to a model."""
+    _load(image)
 
 
 def _load(image: Image) -> LoadedImage:
