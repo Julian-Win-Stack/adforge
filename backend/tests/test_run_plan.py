@@ -442,6 +442,7 @@ def test_going_back_with_the_line_unchanged_pays_nothing(held: HeldSteps) -> Non
     assert not rows_of(plan)[3].remakes_clip
 
 
+@pytest.mark.usefixtures("no_fix_redraws")
 def test_a_failed_fix_check_stops_only_its_scene(fake_model: FakeModel, held: HeldSteps) -> None:
     ads_before = len(ads())
     plan = propose(row(1, "new_picture", change=BRIGHTER), row(2, "new_clip", change=TURN))

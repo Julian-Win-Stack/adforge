@@ -33,6 +33,7 @@ from gateway.gateway import use_model
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import ModelReply, ModelRequest, Turn, TurnReply, TurnRequest
+from jobs import fix_check
 from jobs.models import BROLL_FIELDS, Fix, Job, Scene
 
 from . import ffmpeg_replay
@@ -947,6 +948,14 @@ class HeldSteps:
 
 class WorkerStopped(BaseException):
     """The worker running a step stopped mid-way, as when its machine is shut down."""
+
+
+@pytest.fixture
+def no_fix_redraws(monkeypatch: pytest.MonkeyPatch) -> None:
+    """For tests of what happens once the shop owner is asked about a fix's starting picture
+    that failed its fix check: the first failed check asks them, with no redraw before it.
+    The redraws themselves are tested in test_fix_check_redraws.py."""
+    monkeypatch.setattr(fix_check, "MOST_REDRAWS", 0)
 
 
 @pytest.fixture

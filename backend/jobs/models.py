@@ -837,6 +837,15 @@ class SceneStep(models.Model):
         help_text="For a clip, the starting picture step it was made from, fixed when it "
         "starts: for a B-roll scene made way 3, it holds the example pictures and the prompt.",
     )
+    redraw_of = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="redraws",
+        help_text="For a fix's starting picture drawn again because the picture before it "
+        "failed its fix check, the step that drew that one. Blank otherwise.",
+    )
     result = models.TextField(
         blank=True,
         help_text="What the producer is told when the step finishes or fails. Blank while it runs.",

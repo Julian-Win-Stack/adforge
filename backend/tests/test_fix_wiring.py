@@ -17,7 +17,7 @@ from agents.models import SystemNote, ToolCall
 from chat.models import Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
 from gateway.types import StepFinished, Turn, UnusableReply
-from jobs import work
+from jobs import fix_check, work
 from jobs.models import (
     FixCheck,
     FixPlan,
@@ -434,17 +434,22 @@ def test_go_ahead_to_a_failed_fix_check_carries_its_scene_on(
 ) -> None:
     plan = a_picture_note_planned(fake_model, say)
     tap_yes(api, session_id, plan)
-    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
-    fake_model.respond("check_fix", not_made(HANDLE_HIDDEN), not_made(HANDLE_HIDDEN))
+    # The picture fails its fix check every try: drawn again twice, told why, then the shop
+    # owner is asked.
+    tries = 1 + fix_check.MOST_REDRAWS
+    fake_model.respond("choose_starting_picture", *[TALKING_CHOICE] * tries)
+    fake_model.respond("check_fix", *[not_made(HANDLE_HIDDEN)] * (2 * tries))
     held.run_held()
-    assert FixCheck.objects.get().verdict == "failed"
+    checks = list(FixCheck.objects.order_by("id"))
+    assert [check.verdict for check in checks] == ["failed"] * tries
+    assert [check.notice is not None for check in checks] == [False] * (tries - 1) + [True]
     assert not SceneStep.objects.filter(scene__number=1, kind="clip", plan_scene__isnull=False)
     ads_before = len(ads())
     fake_model.respond("decide_fixes", turn(calls=[sort("go_ahead")]))
 
     say("That's fine, go ahead.")
 
-    assert FixCheck.objects.get().gone_ahead_at is not None
+    assert FixCheck.objects.get(notice__isnull=False).gone_ahead_at is not None
     [step] = SceneStep.objects.filter(pk__in=held.held)
     assert (step.kind, step.scene.number) == ("clip", 1)
     held.run_held()
@@ -452,6 +457,7 @@ def test_go_ahead_to_a_failed_fix_check_carries_its_scene_on(
     assert len(ads()) == ads_before + 1
 
 
+@pytest.mark.usefixtures("no_fix_redraws")
 def test_the_decider_is_told_of_a_failed_fix_check_and_go_ahead_needs_one(
     fake_model: FakeModel,
     held: HeldSteps,
@@ -620,6 +626,7 @@ def test_a_typed_yes_to_a_plan_with_only_a_question_runs_nothing_and_keeps_the_n
     ]
 
 
+@pytest.mark.usefixtures("no_fix_redraws")
 def test_a_note_on_a_scene_planned_again_after_its_fix_check_failed_no_longer_waits(
     fake_model: FakeModel,
     held: HeldSteps,
@@ -652,6 +659,7 @@ def test_a_note_on_a_scene_planned_again_after_its_fix_check_failed_no_longer_wa
     assert run_plan.held_on_a_check(Session.objects.get()) == []
 
 
+@pytest.mark.usefixtures("no_fix_redraws")
 def test_go_ahead_carries_on_only_the_scenes_it_names_when_two_checks_wait(
     fake_model: FakeModel,
     held: HeldSteps,

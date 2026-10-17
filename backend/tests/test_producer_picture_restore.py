@@ -131,6 +131,7 @@ def test_a_brought_back_clip_counts_as_landed_when_another_scenes_fix_lands(
     assert clip(2).file == version("clip", 2).file
 
 
+@pytest.mark.usefixtures("no_fix_redraws")
 def test_a_brought_back_picture_whose_clip_was_never_made_gets_a_new_clip_from_it(
     fake_model: FakeModel,
     steps: HeldSteps,

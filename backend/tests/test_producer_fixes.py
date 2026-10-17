@@ -26,7 +26,7 @@ from chat.models import Attachment
 from gateway.catalog import MODEL_FOR_PURPOSE, PRICE_PER_SECOND_OF_VIDEO
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from jobs import fix_plans, work
+from jobs import fix_check, fix_plans, work
 from jobs.models import Fix, FixPlan, FixPlanScene, ProducedItem, Scene, SceneStep
 
 from . import fixing
@@ -201,8 +201,10 @@ def test_a_picture_fix_is_estimated_at_the_last_pictures_cost_and_a_clip(
     assert paid > 0
 
     # The fake voice says scene 1's 8 words in 4 seconds.
-    # Scene 1's talking clip isn't judged, so it can't be made again.
-    assert picture_estimate(scene) == (paid + 4 * HEYGEN, paid + 4 * HEYGEN)
+    # Scene 1's talking clip isn't judged, so it can't be made again; its picture can be
+    # drawn again for each fix check that fails it.
+    tries = 1 + fix_check.MOST_REDRAWS
+    assert picture_estimate(scene) == (paid + 4 * HEYGEN, tries * paid + 4 * HEYGEN)
 
 
 def test_a_broll_picture_fix_leaves_out_the_shared_before_picture(shown: ProducedItem) -> None:
@@ -215,7 +217,8 @@ def test_a_broll_picture_fix_leaves_out_the_shared_before_picture(shown: Produce
 
     cost = sum((call.cost_usd or Decimal(0) for call in kept), Decimal(0))
     about, up_to = broll_clip_usd(5, from_note=False)
-    assert picture_estimate(Scene.objects.get(number=2)) == (cost + about, cost + up_to)
+    tries = 1 + fix_check.MOST_REDRAWS
+    assert picture_estimate(Scene.objects.get(number=2)) == (cost + about, tries * cost + up_to)
 
 
 def test_a_picture_with_no_recorded_cost_is_estimated_at_the_fallback(
