@@ -916,7 +916,7 @@ def test_a_message_is_sorted_without_the_pictures_already_looked_at(
 def test_each_look_is_shown_once_and_the_oldest_go_past_the_most_pictures(
     fake_model: FakeModel, ad: Job, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(decider, "MOST_PICTURES", 2)
+    monkeypatch.setattr(decider, "MOST_PICTURES", 1)
     note = _owner_says(ad, "Scene 2 should be brighter.")
     fake_model.respond(
         "decide_fixes",
@@ -937,13 +937,77 @@ def test_each_look_is_shown_once_and_the_oldest_go_past_the_most_pictures(
     assert [image.key for image in again.images] == [picture.file]
     first_look = _uses(again.handoff.conversation, "look_at_picture")[0]
     assert first_look.result.endswith("(Its pictures are shown with the same look, later.)")
-    # The clip's two frames fill the turn: the picture is past the most and said so.
-    assert len(clip.images) == 2
-    assert {image.key for image in clip.images}.isdisjoint({picture.file})
+    # The clip's two frames, joined into one picture, fill the turn: with nothing left to
+    # join, the picture is past the most and said so.
+    assert [image.label for image in clip.images] == [
+        "Scene 2, clip of v2 black toilet (the current version), "
+        "Frames at 0 s, 0.2 s, left to right"
+    ]
     looks = _uses(clip.handoff.conversation, "look_at_picture")
     assert looks[-1].result.endswith(
         "(Its pictures aren't shown any more: look again to see them.)"
     )
+
+
+def test_two_clips_past_the_most_pictures_are_both_shown_with_their_frames_side_by_side(
+    fake_model: FakeModel, ad: Job, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A note that needs two clips' frames (the gel gap, decision 9): the decider once
+    looked at one clip, was told to look again at the other, and so on to the limit of
+    tools (07's rule case gap-foam-no-scene). Past the most pictures, every frame stays, two
+    or more to a picture, as the clip judge shows them, so every look is seen at once."""
+    monkeypatch.setattr(decider, "MOST_PICTURES", 3)
+    note = _owner_says(ad, "Our gel foams up blue when you scrub.")
+    fake_model.respond(
+        "decide_fixes",
+        turn(calls=[("sort_message", {"kind": "fix_note"})]),
+        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("look_at_clip", {"scene": 2, "version": 1})]),
+        turn(calls=[("look_at_clip", {"scene": 2, "version": 2})]),
+        turn(calls=[("decide", _decided([_row(2, "new_clip", "The gel foams up blue.")]))]),
+    )
+
+    outcome = decider.read(ad, [note])
+
+    assert isinstance(outcome, decider.Planned)
+    both = fake_model.turns_taken[4]
+    picture = ad.scenes.get(number=2).produced.get(
+        kind=ProducedItem.Kind.STARTING_PICTURE, version=2
+    )
+    assert [image.label for image in both.images] == [
+        "Scene 2, starting picture, v2 black toilet (the current version)",
+        "Scene 2, clip of v1 first version, Frames at 0 s, 0.2 s, left to right",
+        "Scene 2, clip of v2 black toilet (the current version), "
+        "Frames at 0 s, 0.2 s, left to right",
+    ]
+    assert both.images[0].key == picture.file
+    joined = PIL.Image.open(io.BytesIO(file_store.read(both.images[2].key)))
+    assert joined.size == (60, 40)
+    assert "look again" not in " ".join(
+        use.result for use in both.handoff.conversation if isinstance(use, ToolUse)
+    )
+    # Joined once: a later turn shows the same pictures, so a restart replays it for free.
+    again = decider._conversation(decider._Round(ad, (note,)))
+    shown_again = [p.key for use in again if isinstance(use, ToolUse) for p in use.pictures]
+    assert sorted(shown_again) == sorted(image.key for image in both.images)
+
+
+def test_the_decider_stops_after_the_most_tools_for_one_message(
+    fake_model: FakeModel, ad: Job, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(decider, "MOST_TOOL_CALLS", 3)
+    note = _owner_says(ad, "Scene 2 should be brighter.")
+    fake_model.respond(
+        "decide_fixes",
+        turn(calls=[("sort_message", {"kind": "fix_note"})]),
+        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("look_at_clip", {"scene": 2, "version": None})]),
+    )
+
+    with pytest.raises(decider.NoDecision, match="the decider's limit of tools"):
+        decider.read(ad, [note])
+
+    assert len(fake_model.turns_taken) == 3
 
 
 def test_the_decider_stops_at_the_limit_of_tools_for_one_message(
