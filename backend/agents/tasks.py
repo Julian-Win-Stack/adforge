@@ -430,6 +430,8 @@ def _told_it_ended(step: SceneStep) -> None:
         run_plan.step_failed(step)
     else:
         wake_producer(str(step.tool_call.session_id))
+        # A fix plan's scene that waited for this one's step to end carries on.
+        run_plan.carry_on_scene(step.scene)
 
 
 def _fix_checked(check: FixCheck | None) -> str:
@@ -521,14 +523,21 @@ def carry_on_after_the_worker_starts() -> None:
     with transaction.atomic():
         hold_one_at_a_time_lock()
         sessions = set(Session.objects.filter(producer_running=True).values_list("pk", flat=True))
-        for step in SceneStep.objects.filter(status=SceneStep.Status.RUNNING).select_related(
-            "scene", "tool_call"
-        ):
+        stopped = list(
+            SceneStep.objects.filter(status=SceneStep.Status.RUNNING).select_related(
+                "scene", "tool_call"
+            )
+        )
+        for step in stopped:
             _fail(step, "The worker restarted while it was being made.")
+        # Every step is failed first, so a fix plan's scene isn't carried on while another
+        # of its steps still looks running.
+        for step in stopped:
             if step.plan_scene_id is not None:
                 run_plan.step_failed(step)
             else:
                 sessions.add(step.tool_call.session_id)
+                run_plan.carry_on_scene(step.scene)
         for session in Session.objects.filter(pk__in=sessions):
             if another_session_is_busy(session):
                 continue

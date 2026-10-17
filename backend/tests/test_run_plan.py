@@ -11,8 +11,9 @@ from typing import Any
 
 import pytest
 
-from agents import run_plan
+from agents import producer, run_plan, tasks
 from agents.models import SystemNote, ToolCall
+from agents.money import dollars
 from agents.producer import Estimate, _clip_estimate, _estimate, _line_estimate
 from chat import messages
 from chat.models import Message, Session
@@ -24,6 +25,7 @@ from jobs.models import (
     FixPlan,
     FixPlanScene,
     Job,
+    ProducedItem,
     ReferencePhoto,
     Scene,
     SceneStep,
@@ -238,7 +240,7 @@ def test_each_scenes_estimate_is_what_todays_fix_would_cost() -> None:
     assert f"Scene 1: new starting picture, then its clip: {BRIGHTER} " in shown
     assert f"Scene 2: new clip: {TURN} " in shown
     assert f'Scene 3: new line, "{NEW_LINE}", then its picture and clip: Say it warmer. ' in shown
-    assert shown.endswith(f"About {run_plan.dollars(plan.estimate_usd())} in all.")
+    assert shown.endswith(f"About {dollars(plan.estimate_usd())} in all.")
 
 
 def test_a_plan_with_no_change_and_cant_costs_nothing() -> None:
@@ -349,7 +351,7 @@ def test_the_steps_are_charged_to_code_not_to_the_producer(
     assert step.tool_call.agent == run_plan.FIX_PLAN
     assert rows_of(plan)[2].cost_usd() == step.tool_call.cost_usd() > 0
     assert notes("scene_done") == [
-        f"Scene 2's new clip is done. It cost {run_plan.dollars(rows_of(plan)[2].cost_usd())}."
+        f"Scene 2's new clip is done. It cost {dollars(rows_of(plan)[2].cost_usd())}."
     ]
 
 
@@ -526,22 +528,106 @@ def test_a_rule_cant_is_added_after_the_deciders_own() -> None:
     )
 
 
-def test_a_scene_busy_at_the_yes_runs_once_its_step_is_done(held: HeldSteps) -> None:
-    busy = SceneStep.objects.create(
-        scene=scene(2),
+def busy_producer_clip(number: int) -> SceneStep:
+    """A clip step the producer started on the scene, still being made."""
+    return SceneStep.objects.create(
+        scene=scene(number),
         kind=SceneStep.Kind.CLIP,
         tool_call=ToolCall.objects.filter(agent="producer").latest("id"),
-        **SceneStep.made_for(scene(2)),
+        **SceneStep.made_for(scene(number)),
     )
+
+
+def fail_steps(monkeypatch: pytest.MonkeyPatch, kind: str, number: int) -> None:
+    """Steps of `kind` on scene `number` fail when the worker runs them."""
+    real = tasks.STEP_WORK[SceneStep.Kind(kind)]
+
+    def make(step: SceneStep) -> Any:
+        if step.scene.number == number:
+            raise RuntimeError("model down")
+        return real.make(step)
+
+    monkeypatch.setitem(
+        tasks.STEP_WORK,
+        SceneStep.Kind(kind),
+        tasks.StepWork(make=make, finished=real.finished, shown=real.shown),
+    )
+
+
+@pytest.fixture
+def producer_woken(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """The sessions whose producer the worker woke, without running it."""
+    woken: list[str] = []
+    monkeypatch.setattr(tasks, "wake_producer", woken.append)
+    return woken
+
+
+def test_a_scene_busy_at_the_yes_runs_once_its_step_is_done(held: HeldSteps) -> None:
+    busy = busy_producer_clip(2)
     plan = propose(row(2, "new_clip", change=TURN))
 
     say_yes(plan)
 
     assert held.held == []
-    busy.status = SceneStep.Status.FAILED
+    busy.status = SceneStep.Status.FINISHED
     busy.save(update_fields=["status"])
     run_plan.carry_on_scene(scene(2))
     assert held_kinds(held) == [(2, "clip")]
+
+
+def test_a_scene_busy_at_the_yes_runs_once_its_step_failed(
+    held: HeldSteps, monkeypatch: pytest.MonkeyPatch, producer_woken: list[str]
+) -> None:
+    busy = busy_producer_clip(2)
+    say_yes(propose(row(2, "new_clip", change=TURN)))
+    fail_steps(monkeypatch, "clip", 2)
+
+    tasks.run_scene_step(busy.pk)
+
+    assert SceneStep.objects.get(pk=busy.pk).status == "failed"
+    assert held_kinds(held) == [(2, "clip")]
+
+
+def test_a_scene_busy_when_the_worker_restarted_runs_after_it(
+    held: HeldSteps, producer_woken: list[str]
+) -> None:
+    busy_producer_clip(2)
+    say_yes(propose(row(2, "new_clip", change=TURN)))
+
+    tasks.carry_on_after_the_worker_starts()
+
+    assert held_kinds(held) == [(2, "clip")]
+
+
+def test_a_plans_step_stopped_by_a_worker_restart_is_told_by_a_note(
+    held: HeldSteps, producer_woken: list[str]
+) -> None:
+    plan = propose(row(2, "new_clip", change=TURN))
+    say_yes(plan)
+
+    tasks.carry_on_after_the_worker_starts()
+
+    assert rows_of(plan)[2].error.startswith("Scene 2's new clip couldn't be made: ")
+    assert notes("error") == [rows_of(plan)[2].error]
+    assert producer_woken == []
+
+
+def test_a_second_plan_on_a_scene_runs_once_the_first_plans_step_is_done(
+    fake_model: FakeModel, held: HeldSteps
+) -> None:
+    first = propose(row(2, "new_clip", change=TURN))
+    say_yes(first)
+    second = propose(row(2, "new_clip", change="The hand lifts the mug."))
+    say_yes(second)
+    # Scene 2's clip for the first plan is being made, so the second waits.
+    assert held_kinds(held) == [(2, "clip")]
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE, TURN_REWRITE)
+
+    held.run_held()
+
+    assert rows_of(first)[2].landed_at is not None
+    assert rows_of(second)[2].landed_at is not None
+    assert rows_of(second)[2].steps.filter(kind="clip", status="finished").count() == 1
 
 
 def test_a_thing_in_the_picture_and_more_during_the_action_is_drawn_in_and_sent_to_the_clip(
@@ -586,3 +672,141 @@ def test_a_photo_on_a_go_back_cant_be_used() -> None:
         "Scene 2's change is going back to a version, and a photo changes how something looks. "
         "Send the photo as its own change."
     )
+
+
+def test_a_scene_with_no_clip_yet_cant_be_fixed() -> None:
+    ProducedItem.objects.filter(scene__number=2, kind=ProducedItem.Kind.CLIP).delete()
+
+    plan = propose(row(2, "new_clip", change=TURN))
+
+    assert rows_of(plan)[2].cant == "Scene 2 has no clip yet, so there is nothing to fix."
+
+
+def test_a_new_clip_for_a_scene_planned_before_broll_labels_cant_be_made() -> None:
+    Scene.objects.filter(number=2).update(broll_kind="")
+
+    plan = propose(row(2, "new_clip", change=TURN))
+
+    assert rows_of(plan)[2].cant == (
+        "Scene 2 was planned before scenes had their B-roll labels, so its movement can't be "
+        "changed. Its picture can change instead."
+    )
+
+
+def a_new_voice() -> None:
+    """The person's voice made again: no clip says the scenes' lines as they stand."""
+    job = Job.objects.get()
+    voice = work.latest(job, ProducedItem.Kind.VOICE)
+    assert voice is not None
+    ProducedItem.objects.create(
+        job=job, kind=ProducedItem.Kind.VOICE, version=voice.version + 1, file=voice.file
+    )
+
+
+def test_going_back_to_a_version_with_no_picture_whose_clip_is_out_of_date_cant_be_made() -> None:
+    # A B-roll scene made from example pictures has no starting picture.
+    ProducedItem.objects.filter(scene__number=2, kind=ProducedItem.Kind.CLIP).update(picture=None)
+    SceneStep.objects.filter(scene__number=2, kind=SceneStep.Kind.STARTING_PICTURE).update(
+        status=SceneStep.Status.STOPPED
+    )
+    a_new_voice()
+
+    plan = propose(row(2, "go_back", change="The first one.", go_back_to=1))
+
+    assert rows_of(plan)[2].cant == (
+        "Scene 2's version 1 can't be brought back: its clip no longer says the scene's line, "
+        "and it has no starting picture to make a new clip from."
+    )
+
+
+def test_a_go_back_planned_for_nothing_isnt_paid_for_once_it_would_cost(
+    held: HeldSteps,
+) -> None:
+    plan = propose(row(3, "go_back", change="The first one.", go_back_to=1))
+    assert not rows_of(plan)[3].remakes_clip
+    # The clip stops saying the line between the plan and the yes.
+    a_new_voice()
+    paid = paid_for()
+
+    say_yes(plan)
+
+    assert paid_for() == paid
+    assert held.held == []
+    assert rows_of(plan)[3].error == (
+        "Scene 3 couldn't go back to version 1 for nothing: its line changed since the plan "
+        "was shown, so its clip would have to be made again."
+    )
+
+
+def test_a_new_pictures_clip_that_fails_leaves_its_scene_as_it_was_and_the_ad_is_assembled(
+    fake_model: FakeModel, held: HeldSteps, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ads_before, old = len(ads()), clip(1)
+    plan = propose(row(1, "new_picture", change=BRIGHTER), row(2, "new_clip", change=TURN))
+    say_yes(plan)
+    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
+    fail_steps(monkeypatch, "clip", 1)
+
+    held.run_held()
+
+    # Scene 1's new picture passed but its clip couldn't be made: its first version is
+    # brought back for nothing, so scene 2's new clip reaches the shop owner.
+    rows = rows_of(plan)
+    assert rows[1].error != "" and rows[2].landed_at is not None
+    assert work.versions(scene(1))[-1].label == "v3 back to v1"
+    assert status(1) == "finished"
+    assert len(ads()) == ads_before + 1
+    assert [cut["clip"] for cut in ads()[-1].cuts][:2] == [clip(1).pk, clip(2).pk]
+    assert clip(1).file == old.file
+    assert notes("error")[0].endswith("Scene 1 went back to version 1, for nothing.")
+
+
+def test_a_new_line_that_cant_be_finished_holds_the_ad_and_says_why(
+    fake_model: FakeModel, held: HeldSteps, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ads_before = len(ads())
+    plan = propose(
+        row(3, "new_line", change="Say it warmer.", line=NEW_LINE),
+        row(2, "new_clip", change=TURN),
+    )
+    say_yes(plan)
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
+    fail_steps(monkeypatch, "starting_picture", 3)
+
+    held.run_held()
+
+    # No version of scene 3 says the new line, and no clip is made for it unasked: the ad
+    # waits, scene 2's new clip made.
+    assert not SceneStep.objects.filter(scene__number=3, kind="clip", plan_scene__isnull=False)
+    assert rows_of(plan)[2].landed_at is not None
+    assert len(ads()) == ads_before
+    errors = notes("error")
+    assert errors[0].endswith(
+        "Scene 3 has no clip that says its line as it stands, so the new ad can't be assembled "
+        "until it has one."
+    )
+    assert errors[-1].startswith("The new ad couldn't be assembled: ")
+
+
+def test_an_ad_that_cant_be_assembled_keeps_the_clip_that_landed(
+    fake_model: FakeModel, held: HeldSteps, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = propose(row(2, "new_clip", change=TURN))
+    say_yes(plan)
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
+    step = held.held[0]
+
+    def broken(*_: Any, **__: Any) -> Any:
+        raise RuntimeError("ffmpeg exited 1")
+
+    monkeypatch.setattr(producer, "assemble_ad", broken)
+
+    held.run_held()
+
+    assert SceneStep.objects.get(pk=step).status == "finished"
+    assert rows_of(plan)[2].landed_at is not None
+    assert notes("error") == [
+        "The new ad couldn't be assembled: an unexpected error stopped it. The details are in "
+        "the server log."
+    ]
