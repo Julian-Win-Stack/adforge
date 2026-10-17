@@ -71,6 +71,10 @@ camera never moves. A new picture gets a new clip made from it;
 - go back to version N, when they liked an earlier version better: say which number, after \
 looking at it;
 - no change, when the scene already shows what they ask.
+In a scene where the person talks to camera, the clip only makes them speak the line from \
+the starting picture: what they hold, wear or stand next to is a new picture, and an action \
+while they talk, such as pointing or showing how the product works, is a can't on that \
+scene, beside any new picture the rest of the note needs.
 For each scene, say the change in plain words: what must be different, never how to make \
 it. Say what the scene must show, not what is wrong now.
 Some things can't be done yet. Changing how the person looks, or making a clip slower \
@@ -101,6 +105,7 @@ CANTS: dict[str, str] = {
     "voice": "Changing the voice can't be done yet.",
     "number_of_scenes": "Changing the number of scenes can't be done yet.",
     "slower": "Slower can't be done: every clip plays at real-time speed.",
+    "talking_action": "A person can't do an action while talking yet.",
     "example_video": "Using a video as an example can't be done yet.",
     "not_about_the_ad": "That isn't something the ad can change.",
 }
@@ -502,7 +507,7 @@ class SceneDecision(BaseModel):
     )
     line: str = Field(description="The new line word for word, for new_line. Blank otherwise.")
     go_back_to: int | None = Field(description="The version's number, for go_back. Null otherwise.")
-    cant: Literal["", "person_look", "slower"] = Field(
+    cant: Literal["", "person_look", "slower", "talking_action"] = Field(
         description="What the note asks of this scene that can't be done yet. Blank for none."
     )
     photos: list[PhotoUse] = Field(
