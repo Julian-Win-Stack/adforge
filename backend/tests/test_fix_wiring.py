@@ -788,6 +788,33 @@ def test_a_movement_note_with_a_photo_of_a_thing_in_the_picture_moves_as_the_not
     assert MOTION not in asked
 
 
+def test_a_photos_thing_too_long_to_keep_is_refused_to_the_decider_which_names_it_again(
+    fake_model: FakeModel,
+    held: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    # A name longer than the reference photo keeps would fail the yes that uses it.
+    uses = [{"photo": 1, "in_picture": False, "during_action": True}]
+    pours = row(2, "new_clip", "The hand pours tea into the black mug.", photos=uses)
+    fake_model.respond(
+        "decide_fixes",
+        planning(
+            ("look_at_owner_photo", {"photo": 1}),
+            ("look_at_clip", {"scene": 2, "version": None}),
+            decided(pours, photos=[{"photo": 1, "thing": "black mug " * 25, "clear": True}]),
+        ),
+        turn(calls=[decided(pours, photos=[{"photo": 1, "thing": "black mug", "clear": True}])]),
+    )
+    say("Pour the tea into my black mug in scene 2.", ("mug.png", MUG_SIDE))
+
+    tap_yes(api, session_id, plans()[-1])
+
+    [used] = ReferencePhoto.objects.filter(scene__number=2)
+    assert used.thing == "black mug"
+
+
 def test_a_decider_error_leaves_the_message_to_the_producer_and_later_ones_route(
     fake_model: FakeModel, held: HeldSteps, say: Callable[..., None]
 ) -> None:
@@ -806,6 +833,37 @@ def test_a_decider_error_leaves_the_message_to_the_producer_and_later_ones_route
 
     plan = a_picture_note_planned(fake_model, say)
     assert Message.objects.filter(plan_event="shown", fix_plan=plan).exists()
+
+
+def test_a_yes_that_fails_to_run_is_said_so_in_red_and_later_messages_route(
+    fake_model: FakeModel,
+    held: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An error that comes back every time on the same yes must not hold every later message
+    # behind it, as a decider error doesn't (design thread, 05:15 Oct 17).
+    plan = a_picture_note_planned(fake_model, say)
+
+    def broken(plan: FixPlan) -> None:
+        raise RuntimeError("the run broke")
+
+    monkeypatch.setattr(run_plan, "run_after_yes", broken)
+    tap_yes(api, session_id, plan)
+
+    plan.refresh_from_db()
+    assert plan.state == "proposed"
+    assert Message.objects.get(plan_event="yes").routed_at is not None
+    [red] = Message.objects.filter(role="notice", level="problem").order_by("-seq")[:1]
+    assert "couldn't be acted on" in red.text
+    fake_model.respond("produce", turn(says="It costs $0.81."))
+
+    say("How much does that cost?")
+
+    assert Message.objects.filter(role="user").last().routed_at is not None  # type: ignore[union-attr]
+    assert Message.objects.filter(role="agent").last().text == "It costs $0.81."  # type: ignore[union-attr]
 
 
 def _a_picture_note_on_scene_2_said_yes_to(
