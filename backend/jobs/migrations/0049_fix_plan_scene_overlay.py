@@ -15,6 +15,8 @@ class Migration(migrations.Migration):
             name="overlay",
             field=models.TextField(
                 blank=True,
+                default="",
+                db_default="",
                 help_text="The scene's new overlay, for a new line that changes what its overlay shows, such as the price. Blank keeps the overlay.",
             ),
         ),

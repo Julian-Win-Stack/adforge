@@ -960,13 +960,15 @@ def _held(round: _Round) -> list[str]:
 def _scene_facts(scene: Scene) -> str:
     versions = work.versions(scene)
     current = versions[-1] if versions else None
+    # The overlay is read with the line it goes with.
+    said = [f'Line: "{scene.line}"', *([f'Overlay: "{scene.overlay}"'] if scene.overlay else [])]
     if not scene.shows:
-        facts = [f"Scene {scene.number}: the person talks to camera.", f'Line: "{scene.line}"']
+        facts = [f"Scene {scene.number}: the person talks to camera.", *said]
     else:
         kind = ", ".join(each for each in [scene.broll_kind, scene.person_shown] if each)
         facts = [
             f"Scene {scene.number}: shows the product{f' ({kind})' if kind else ''}.",
-            f'Line: "{scene.line}"',
+            *said,
             f"Shows: {scene.shows}",
             *([f"How the product is used: {scene.usage}"] if scene.usage else []),
             *([f"What it ends on: {scene.result}"] if scene.result else []),
@@ -985,9 +987,6 @@ def _scene_facts(scene: Scene) -> str:
         prompt = _video_prompt(current.clip) if current and current.clip else ""
         if prompt:
             facts.append(f"The current clip's video prompt: {prompt}")
-    if scene.overlay:
-        # Read with the line it goes with.
-        facts.insert(2, f'Overlay: "{scene.overlay}"')
     in_use = scene.reference_photos.filter(dropped_by__isnull=True).values_list("thing", flat=True)
     if in_use:
         facts.append(f"The shop owner's photos it uses: {', '.join(in_use)}")

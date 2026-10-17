@@ -693,8 +693,11 @@ def _carry_on(row: FixPlanScene) -> None:
             # The shop owner read the line and said yes: they know their product, so it
             # isn't fact checked (Julian, 2026-10-11 22:13, #138).
             scene.change_line(row.line)
-            scene.overlay = row.overlay or scene.overlay
-            scene.save(update_fields=["line", "shortened_from", "status", "overlay"])
+            scene.save(update_fields=["line", "shortened_from", "status"])
+        # Also when the line already says it: the overlay the plan showed is the one drawn.
+        if row.overlay and scene.overlay != row.overlay:
+            scene.overlay = row.overlay
+            scene.save(update_fields=["overlay"])
     picture = _picture(row, scene, running)
     if row.line and not _line_heard(row, scene, running):
         return
