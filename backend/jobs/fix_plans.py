@@ -108,7 +108,8 @@ def _check(job: Job, row: FixPlanScene) -> None:
     ):
         raise ValueError(f"Scene {number}: a go back, and only a go back, names a version from 1.")
     for photo in row.photos:
-        if set(photo) != PHOTO_KEYS:
+        # The decider also says whether the photo is clear enough to copy its thing's look.
+        if set(photo) - {"clear"} != PHOTO_KEYS:
             raise ValueError(f"Scene {number}: a photo needs exactly {sorted(PHOTO_KEYS)}.")
 
 

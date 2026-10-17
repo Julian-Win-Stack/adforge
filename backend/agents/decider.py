@@ -1,0 +1,801 @@
+"""The decider (fix redesign, decisions 3, 5, 9, 10, 13, 15-19, 21): the agent that reads the
+shop owner's messages once the ad has a clip, looks at what it needs with read-only tools,
+and answers once, in `decide`, with what changes in each scene. Code records that as a fix
+plan (jobs.fix_plans) and does everything else: showing the plan, reading the yes, drawing,
+making clips and going back. The decider never speaks in the chat.
+
+One round is every message from the shop owner since their last yes (decision 18): within it
+the decider's conversation is kept, rebuilt from its checkpoints as the loop does, so a
+correction builds on the looks already made; at the next yes it starts afresh. Two rules are
+kept by code, from those checkpoints (decision 3): no scene is decided before it was looked
+at, and no scene goes back to a version before that version was looked at."""
+
+import contextvars
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, ClassVar, Literal
+
+from django.db import transaction
+from django.db.models import QuerySet
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from adforge import tracing
+from chat import messages
+from chat.models import Attachment, Message, Session
+from gateway.gateway import take_turn
+from gateway.types import Happened, Image, Said, Shown, ToolUse
+from jobs import clip_judge, fix_plans
+from jobs.models import FixPlan, FixPlanScene, Job, ProducedItem, Scene
+
+from . import loop
+from .loop import Agent, Refused, Tool, ToolResult
+from .models import ToolCall
+
+PURPOSE = "decide_fixes"
+
+INSTRUCTIONS = """\
+You decide how to fix a short video ad from its shop owner's notes. The ad is made of \
+scenes: in some a person speaks a line to camera, in others the product is shown while the \
+person's voice says the line over it. Each scene has a starting picture and a clip made \
+from it, and every time a scene was made again it got a new version, so it has a list of \
+versions: "v1 first version", then one for each change.
+You don't talk to the shop owner and you make nothing yourself. You read their messages, \
+look at what you need, and answer once, with decide. The app shows your plan to the shop \
+owner and does all of it once they say yes.
+First, sort their newest message with sort_message, before you look at anything. It is a \
+fix note when it asks for something in the ad to change, or corrects the plan you made. It \
+is yes or no only when a plan is waiting for their answer and the message answers it: \
+"yeah go" is yes, "wait" is not a fix. Anything else, such as a question about the cost, \
+is not a fix. When it isn't a fix note, you are done.
+For a fix note, look before you decide. You can't decide a scene you haven't looked at, or \
+go back to a version you haven't looked at. Look at a scene's starting picture for what \
+the picture shows, and at its clip's frames for what happens or how things move. The \
+judge's findings on a clip are for notes about how things move, a product that flips to \
+another side, or the action not happening; don't look at them for anything else. Look at \
+each of the shop owner's photos you use.
+Then decide, for each scene the notes are about, the smallest thing to make again that \
+fixes it:
+- a new picture, when what the picture shows is wrong: the wrong side, the wrong thing on \
+screen, something that couldn't be real, a colour. "Zoom in" is a new picture, closer: the \
+camera never moves. A new picture gets a new clip made from it;
+- a new clip, when how things move or what happens is wrong;
+- a new line, when what the scene says should change: give the new line word for word;
+- go back to version N, when they liked an earlier version better: say which number, after \
+looking at it;
+- no change, when the scene already shows what they ask.
+For each scene, say the change in plain words: what must be different, never how to make \
+it. Say what the scene must show, not what is wrong now.
+Some things can't be done yet. Changing how the person looks, or making a clip slower \
+(every clip plays at real-time speed), is a can't on the scene the note is about, with no \
+change. Changing the music, the voice or the number of scenes, using a video as an \
+example, or anything that isn't about the ad is a can't of the whole plan, in its cants, \
+with no scene and no look.
+The shop owner can send photos of their own things. For each photo you use, name the one \
+thing to take from it, in their words, such as "black toilet". For each scene that shows \
+that thing, answer two questions: is it in the starting picture now, and does more of it \
+show during the action? Both can be yes. When the thing is in the picture and the scene's \
+plan says whether it is used during the action ("scoops gel from the jar" is yes, "holds \
+the jar up" is no), you don't need the clip's frames. When it doesn't say, look at the \
+frames. When the thing is in no starting picture, read each scene's plan for where it \
+shows, look at those scenes' frames to confirm, and add each scene where you see it, \
+saying why in its change. Found nowhere: ask the shop owner which scene. Scenes they name \
+win: "only scene 2" means only scene 2. When a photo doesn't show its thing clearly enough \
+to copy how it looks, say it isn't clear.
+When you can't tell what they want, ask one short question instead, in the question of \
+decide, in plain words."""
+
+# How code says a can't the decider found (decision 13, the judgment can'ts), the same way
+# every time, as the producer says them today: a person's look and slower on the scene's
+# row, the others on the plan (FixPlan.Cant).
+CANTS: dict[str, str] = {
+    "person_look": "Changing how the person looks can't be done yet.",
+    "music": "Changing the music can't be done yet.",
+    "voice": "Changing the voice can't be done yet.",
+    "number_of_scenes": "Changing the number of scenes can't be done yet.",
+    "slower": "Slower can't be done: every clip plays at real-time speed.",
+    "example_video": "Using a video as an example can't be done yet.",
+    "not_about_the_ad": "That isn't something the ad can change.",
+}
+
+# Turns the decider may end with no tool, each answered with a reminder, before it stops.
+MOST_REMINDERS = 2
+REMINDER = "Answer with a tool call: sort_message, a look, or decide. Nothing you write is shown."
+
+
+class NoDecision(Exception):
+    """The decider stopped without an answer: it called no tool when reminded, or hit the
+    limit of tools for one message. Says why."""
+
+
+@dataclass(frozen=True)
+class NotAFix:
+    """The newest message isn't a fix note: the producer answers it. A plan waiting for the
+    shop owner's answer stays open."""
+
+
+@dataclass(frozen=True)
+class Planned:
+    """A fix plan was recorded from this round's notes, a correction included: it replaces
+    any plan that was waiting."""
+
+    plan: FixPlan
+
+
+@dataclass(frozen=True)
+class Yes:
+    """The newest message says yes to the plan waiting for an answer."""
+
+    plan: FixPlan
+
+
+@dataclass(frozen=True)
+class No:
+    """The newest message says no to the plan waiting for an answer."""
+
+    plan: FixPlan
+
+
+Outcome = NotAFix | Planned | Yes | No
+
+
+# ---------------------------------------------------------------- the round
+
+
+@dataclass(frozen=True)
+class _Round:
+    job: Job
+    said: tuple[Message, ...]
+
+    @property
+    def session(self) -> Session:
+        assert self.job.session is not None, "the decider works in the job's chat"
+        return self.job.session
+
+    @property
+    def started(self) -> datetime:
+        return self.said[0].created_at
+
+    def calls(self) -> QuerySet[ToolCall]:
+        """Every tool the decider called this round, in order."""
+        return ToolCall.objects.filter(
+            session=self.session, agent=DECIDER_NAME, created_at__gte=self.started
+        ).order_by("created_at", "id")
+
+    def done(self) -> QuerySet[ToolCall]:
+        """The calls this round that did what they were asked."""
+        return (
+            self.calls()
+            .filter(finished_at__isnull=False)
+            .exclude(result__startswith="Refused:")
+            .exclude(result__startswith="Failed:")
+        )
+
+
+_round: contextvars.ContextVar[_Round] = contextvars.ContextVar("decider_round")
+
+
+@contextmanager
+def _in(round: _Round) -> Iterator[None]:
+    token = _round.set(round)
+    try:
+        yield
+    finally:
+        _round.reset(token)
+
+
+def this_round(job: Job) -> list[Message]:
+    """The shop owner's messages since they last said yes to a plan, once the ad had a clip
+    (decision 18): what the decider is given. Messages from before the first clip are the
+    producer's, about making the ad."""
+    assert job.session is not None
+    first_clip = job.produced.filter(kind=ProducedItem.Kind.CLIP).order_by("created_at").first()
+    if first_clip is None:
+        return []
+    said = job.session.messages.filter(role=Message.Role.USER, created_at__gt=first_clip.created_at)
+    yes = (
+        FixPlan.objects.filter(session=job.session, confirmed_by__isnull=False)
+        .order_by("confirmed_by__seq")
+        .last()
+    )
+    if yes is not None and yes.confirmed_by is not None:
+        said = said.filter(seq__gt=yes.confirmed_by.seq)
+    return list(said.order_by("seq").prefetch_related("attachments"))
+
+
+# ---------------------------------------------------------------- versions
+
+
+@dataclass(frozen=True)
+class Version:
+    """One version of a scene: a starting picture the shop owner was shown and the clip made
+    from it, with the change it was made for. A stand-in with the shape of ticket 03's
+    `jobs.work.Version`, which replaces it once that ticket is stacked under this one."""
+
+    number: int
+    change: str
+    picture: ProducedItem | None
+    clip: ProducedItem | None
+
+    @property
+    def label(self) -> str:
+        if self.number == 1:
+            return "v1 first version"
+        return f"v{self.number} {self.change or 'made again'}"
+
+
+def _versions(scene: Scene) -> list[Version]:
+    """The scene's versions, oldest first: each starting picture starts one, and a clip made
+    again from the same picture by a later step is one of its own. The judge's own remakes
+    within one step stay in their version."""
+    made = scene.produced.filter(
+        kind__in=[ProducedItem.Kind.STARTING_PICTURE, ProducedItem.Kind.CLIP]
+    ).select_related("step__fix", "picture")
+    versions: list[Version] = []
+    for item in made.order_by("created_at", "id"):
+        change = _change_made_for(item)
+        if item.kind == ProducedItem.Kind.STARTING_PICTURE:
+            versions.append(Version(len(versions) + 1, change, item, None))
+            continue
+        last = versions[-1] if versions else None
+        if (
+            last is not None
+            and last.picture == item.picture
+            and (last.clip is None or last.clip.step_id == item.step_id)
+        ):
+            versions[-1] = Version(last.number, last.change, last.picture, item)
+        else:
+            versions.append(Version(len(versions) + 1, change, item.picture, item))
+    return versions
+
+
+def _change_made_for(item: ProducedItem) -> str:
+    step = item.step
+    if step is None:
+        return ""
+    return step.fix.fix if step.fix is not None else step.note
+
+
+def _version_of(scene: Scene, number: int | None) -> Version:
+    """Version `number` of the scene, or its current one."""
+    versions = _versions(scene)
+    if not versions:
+        raise Refused(f"scene {scene.number} has nothing made yet.")
+    if number is None:
+        return versions[-1]
+    if not 1 <= number <= len(versions):
+        raise Refused(f"scene {scene.number} has versions 1 to {len(versions)}, not {number}.")
+    return versions[number - 1]
+
+
+def _named(version: Version, current: int) -> str:
+    return f"{version.label}{' (the current version)' if version.number == current else ''}"
+
+
+# ---------------------------------------------------------------- the tools
+
+
+def _scene(number: int) -> Scene:
+    scene = _round.get().job.scenes.filter(number=number).first()
+    if scene is None:
+        raise Refused(f"the ad has no scene {number}.")
+    return scene
+
+
+def _owner_photo(number: int) -> Attachment:
+    photos = messages.owner_photos(_round.get().session)
+    if not 1 <= number <= len(photos):
+        raise Refused(
+            f"the shop owner has sent {len(photos)} photos, so there's no photo {number}."
+        )
+    return photos[number - 1]
+
+
+def _sorted_newest(round: _Round) -> ToolCall | None:
+    """The sorting of the newest message, once it is made."""
+    return (
+        round.done().filter(tool=SortMessage.name, created_at__gt=round.said[-1].created_at).last()
+    )
+
+
+def _sorted_first() -> None:
+    if _sorted_newest(_round.get()) is None:
+        raise Refused("sort the shop owner's newest message with sort_message first.")
+
+
+class SortMessage(Tool):
+    """Sort the shop owner's newest message, before anything else. fix_note: it asks for
+    something in the ad to change, or corrects the plan you made. yes or no: it answers the
+    plan waiting for their answer. not_a_fix: anything else, such as a question."""
+
+    name: ClassVar[str] = "sort_message"
+
+    kind: Literal["fix_note", "not_a_fix", "yes", "no"]
+
+    def run(self, call: ToolCall) -> str:
+        round = _round.get()
+        if self.kind in ("yes", "no") and fix_plans.open_plan(round.session) is None:
+            raise Refused("no plan is waiting for the shop owner's answer.")
+        if self.kind == "fix_note":
+            return "Sorted as a fix note. Look at what you need, then decide."
+        return "Sorted. You are done."
+
+
+class LookAtPicture(Tool):
+    """See a scene's current starting picture: what the scene shows now, before it moves."""
+
+    name: ClassVar[str] = "look_at_picture"
+
+    scene: int
+
+    def run(self, call: ToolCall) -> ToolResult:
+        _sorted_first()
+        return _picture_of(_scene(self.scene), None)
+
+
+class LookAtVersion(Tool):
+    """See an earlier version's starting picture, by its number in the scene's version list."""
+
+    name: ClassVar[str] = "look_at_version"
+
+    scene: int
+    version: int
+
+    def run(self, call: ToolCall) -> ToolResult:
+        _sorted_first()
+        return _picture_of(_scene(self.scene), self.version)
+
+
+def _picture_of(scene: Scene, number: int | None) -> ToolResult:
+    version = _version_of(scene, number)
+    current = _versions(scene)[-1].number
+    if version.picture is None:
+        raise Refused(f"scene {scene.number}'s {version.label} has no starting picture.")
+    label = f"Scene {scene.number}, starting picture, {_named(version, current)}"
+    return ToolResult(text=f"{label}.", pictures=[Image(label=label, key=version.picture.file)])
+
+
+class LookAtClip(Tool):
+    """See a scene's clip as frames, 5 a second, each labelled with its time: how things
+    move and what happens. The current version's clip, or an earlier version's by number."""
+
+    name: ClassVar[str] = "look_at_clip"
+
+    scene: int
+    version: int | None = Field(description="The version's number, or null for the current one.")
+
+    def run(self, call: ToolCall) -> ToolResult:
+        _sorted_first()
+        scene = _scene(self.scene)
+        version = _version_of(scene, self.version)
+        clip = version.clip
+        if clip is None:
+            raise Refused(f"scene {scene.number}'s {version.label} has no clip.")
+        named = f"Scene {scene.number}, clip of {_named(version, _versions(scene)[-1].number)}"
+        frames = _frames(clip)
+        return ToolResult(
+            text=f"{named}: {clip_judge.FRAMES_PER_SECOND} frames a second, each labelled with "
+            f"its time. {_judged(clip)}",
+            pictures=[
+                Image(label=f"{named}, {clip_judge.frame_label(each['times'])}", key=each["key"])
+                for each in frames
+            ],
+        )
+
+
+def _frames(clip: ProducedItem) -> list[dict[str, Any]]:
+    """The clip's frames as the judge was shown them for movement, kept on its ruling, or
+    cut now for a clip it never judged."""
+    kept = ((clip.ruling or {}).get("pictures") or {}).get("frames")
+    if kept:
+        return kept  # type: ignore[no-any-return]
+    return clip_judge.cut_pictures(clip.file, beside=0, sets=("frames",))["frames"]
+
+
+def _judged(clip: ProducedItem) -> str:
+    verdict = (clip.ruling or {}).get("verdict")
+    said = {
+        "pass": "The judge passed this clip.",
+        "fail": "The judge failed this clip.",
+        "not_checked": "The judge couldn't check this clip.",
+    }.get(verdict or "", "The judge didn't judge this clip.")
+    return (
+        f"{said} What it found is in judge_findings, for a note about how things move, a "
+        "product that flips to another side, or the action not happening."
+    )
+
+
+class JudgeFindings(Tool):
+    """What the clip judge found wrong in a scene's clip: only for notes about how things
+    move, a product that flips to another side, or the action not happening. The judge can
+    be wrong, so see the frames for yourself too."""
+
+    name: ClassVar[str] = "judge_findings"
+
+    scene: int
+    version: int | None = Field(description="The version's number, or null for the current one.")
+
+    def run(self, call: ToolCall) -> str:
+        _sorted_first()
+        scene = _scene(self.scene)
+        version = _version_of(scene, self.version)
+        if version.clip is None:
+            raise Refused(f"scene {scene.number}'s {version.label} has no clip.")
+        ruling = version.clip.ruling or {}
+        named = f"Scene {scene.number}, clip of {version.label}"
+        found = clip_judge.still_failing(ruling) if ruling.get("verdict") == "fail" else []
+        let_go = [each["problem"] for each in ruling.get("let_go", [])]
+        return " ".join(
+            [
+                f"{named}: {_judged(version.clip).split(' What')[0]}",
+                *(f"It found: {problem}" for problem in dict.fromkeys(found)),
+                *(f"It let go, as back to normal soon: {problem}" for problem in let_go),
+            ]
+        )
+
+
+class LookAtOwnerPhoto(Tool):
+    """See a photo the shop owner sent, by its number in the chat ("owner photo 2")."""
+
+    name: ClassVar[str] = "look_at_owner_photo"
+
+    photo: int
+
+    def run(self, call: ToolCall) -> ToolResult:
+        _sorted_first()
+        label = f"Owner photo {self.photo}"
+        return ToolResult(
+            text=f"{label}.", pictures=[Image(label=label, key=_owner_photo(self.photo).file)]
+        )
+
+
+class PhotoThing(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    photo: int = Field(description="The photo's number in the chat.")
+    thing: str = Field(
+        description='The one thing to take from it, in their words, such as "black toilet".'
+    )
+    clear: bool = Field(description="Whether it shows the thing clearly enough to copy its look.")
+
+
+class PhotoUse(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    photo: int
+    in_picture: bool = Field(
+        description="Whether the thing is in the scene's starting picture now."
+    )
+    during_action: bool = Field(description="Whether more of it shows during the scene's action.")
+
+
+class SceneDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    scene: int
+    action: Literal["new_picture", "new_clip", "new_line", "go_back", "no_change"]
+    change: str = Field(
+        description="What must be different, in plain words, never how to make it. Blank for "
+        "no change."
+    )
+    line: str = Field(description="The new line word for word, for new_line. Blank otherwise.")
+    go_back_to: int | None = Field(description="The version's number, for go_back. Null otherwise.")
+    cant: Literal["", "person_look", "slower"] = Field(
+        description="What the note asks of this scene that can't be done yet. Blank for none."
+    )
+    photos: list[PhotoUse] = Field(
+        description="The shop owner's photos whose thing the scene shows."
+    )
+
+    @model_validator(mode="after")
+    def _whole(self) -> SceneDecision:
+        if self.action == "new_line" and not self.line.strip():
+            raise ValueError(f"scene {self.scene} is a new line, so it needs the new line")
+        if self.action != "new_line" and self.line.strip():
+            raise ValueError(f"scene {self.scene} has a line, but only a new line takes one")
+        if (self.action == "go_back") != (self.go_back_to is not None):
+            raise ValueError(f"scene {self.scene}: go_back, and only go_back, takes go_back_to")
+        if self.action not in ("no_change", "go_back") and not self.change.strip():
+            raise ValueError(f"scene {self.scene} needs the change in plain words")
+        return self
+
+
+class Decide(Tool):
+    """Answer with what changes in each scene the notes are about, once you have looked at
+    each of them. With the shop owner's photos you use, each with its one thing, and at most
+    one question for them, blank for none."""
+
+    name: ClassVar[str] = "decide"
+
+    scenes: list[SceneDecision]
+    photos: list[PhotoThing]
+    cants: list[
+        Literal["music", "voice", "number_of_scenes", "example_video", "not_about_the_ad"]
+    ] = Field(description="What the notes ask that can't be done yet and isn't about one scene.")
+    question: str = Field(description="One short question for the shop owner. Blank for none.")
+
+    def run(self, call: ToolCall) -> str:
+        _sorted_first()
+        round = _round.get()
+        things = {each.photo: each.thing for each in self.photos}
+        clear = {each.photo: each.clear for each in self.photos}
+        rows = []
+        seen: set[int] = set()
+        for decided in self.scenes:
+            if decided.scene in seen:
+                raise Refused(f"scene {decided.scene} is decided twice.")
+            seen.add(decided.scene)
+            scene = _scene(decided.scene)
+            self._looked(round, decided)
+            for used in decided.photos:
+                if used.photo not in things:
+                    raise Refused(
+                        f"scene {decided.scene} uses photo {used.photo}, which isn't in photos "
+                        "with its thing."
+                    )
+            rows.append(
+                FixPlanScene(
+                    scene=scene,
+                    action=decided.action,
+                    change=decided.change,
+                    line=decided.line,
+                    go_back_to=decided.go_back_to,
+                    cant=CANTS[decided.cant] if decided.cant else "",
+                    photos=[
+                        {
+                            "photo": used.photo,
+                            "file": _owner_photo(used.photo).file,
+                            "thing": things[used.photo],
+                            "in_picture": used.in_picture,
+                            "during_action": used.during_action,
+                            "clear": clear[used.photo],
+                        }
+                        for used in decided.photos
+                    ],
+                )
+            )
+        for photo in things:
+            _owner_photo(photo)
+            if not _looked_at(round, LookAtOwnerPhoto.name, photo=photo):
+                raise Refused(f"look at owner photo {photo} first.")
+        if not rows and not self.cants and not self.question.strip():
+            raise Refused(
+                "decide at least one scene, give a can't, or ask the shop owner one question."
+            )
+        # Ticket 04's check-and-propose takes this one call's place: it checks the rule
+        # can'ts and sets each scene's estimate before the plan is shown.
+        fix_plans.propose(
+            round.job,
+            [{"seq": message.seq, "text": message.text} for message in round.said],
+            rows,
+            question=self.question.strip(),
+            cants=[{"kind": kind, "text": CANTS[kind]} for kind in dict.fromkeys(self.cants)],
+        )
+        return "Recorded. The app shows your plan to the shop owner. You are done."
+
+    @staticmethod
+    def _looked(round: _Round, decided: SceneDecision) -> None:
+        """Refuse a scene decided without a look at it, a go-back without a look at its
+        version, and a photo's thing only during the action without a look at the clip."""
+        looks = (LookAtPicture.name, LookAtVersion.name, LookAtClip.name, JudgeFindings.name)
+        if not any(_looked_at(round, tool, scene=decided.scene) for tool in looks):
+            raise Refused(f"look at scene {decided.scene} first.")
+        if decided.go_back_to is not None and not any(
+            _looked_at(round, tool, scene=decided.scene, version=decided.go_back_to)
+            for tool in (LookAtVersion.name, LookAtClip.name)
+        ):
+            raise Refused(f"look at version {decided.go_back_to} of scene {decided.scene} first.")
+        if any(
+            used.during_action and not used.in_picture for used in decided.photos
+        ) and not _looked_at(round, LookAtClip.name, scene=decided.scene):
+            raise Refused(
+                f"look at scene {decided.scene}'s clip first: you say the photo's thing shows "
+                "there only during the action."
+            )
+
+
+def _looked_at(round: _Round, tool: str, **arguments: int) -> bool:
+    """Whether the decider called `tool` this round with these arguments, and it did."""
+    return any(
+        all(call.arguments.get(name) == value for name, value in arguments.items())
+        for call in round.done().filter(tool=tool)
+    )
+
+
+DECIDER_NAME = "decider"
+
+DECIDER = Agent(
+    name=DECIDER_NAME,
+    purpose=PURPOSE,
+    instructions=INSTRUCTIONS,
+    tools=[
+        SortMessage,
+        LookAtPicture,
+        LookAtVersion,
+        LookAtClip,
+        JudgeFindings,
+        LookAtOwnerPhoto,
+        Decide,
+    ],
+)
+
+
+# ---------------------------------------------------------------- reading a round
+
+
+def read(job: Job, said: Sequence[Message]) -> Outcome:
+    """Have the decider read this round's messages from the shop owner (`said`, oldest
+    first, the newest the one to answer) and answer: not a fix, a plan recorded, or yes or
+    no to the plan waiting. Raises NoDecision when it stops without an answer. A worker that
+    stopped halfway is replaced by one that calls this again and carries on."""
+    assert said, "the decider reads at least one message"
+    round = _Round(job, tuple(said))
+    session = round.session
+    with _in(round):
+        for call in round.calls().filter(finished_at__isnull=True):
+            loop.settle(DECIDER, call)
+        reminders: list[Happened] = []
+        reminded = 0
+        while True:
+            outcome = _outcome(round)
+            if outcome is not None:
+                return outcome
+            if loop.over_the_limit(session):
+                raise NoDecision("it hit the limit of tools for one message")
+            with tracing.agent_turn(DECIDER_NAME):
+                turn = take_turn(
+                    session=session,
+                    purpose=PURPOSE,
+                    instructions=INSTRUCTIONS,
+                    conversation=[*_conversation(round), *reminders],
+                    tools=[tool.spec() for tool in DECIDER.tools],
+                )
+                if not turn.calls:
+                    if reminded == MOST_REMINDERS:
+                        raise NoDecision("it answered without a tool when reminded")
+                    reminded += 1
+                    reminders += [
+                        Said(by="agent", text=turn.says or "(nothing)"),
+                        Said(by="user", text=REMINDER),
+                    ]
+                    continue
+                reminders = []
+                with transaction.atomic():
+                    calls = [
+                        ToolCall.objects.create(
+                            session=session,
+                            job=job,
+                            agent=DECIDER_NAME,
+                            tool=asked.tool,
+                            call_id=asked.call_id,
+                            arguments=asked.arguments,
+                        )
+                        for asked in turn.calls
+                    ]
+                for call in calls:
+                    loop.settle(DECIDER, call)
+
+
+def _outcome(round: _Round) -> Outcome | None:
+    """The decider's answer to the newest message, once it has given one."""
+    sorting = _sorted_newest(round)
+    if sorting is None:
+        return None
+    kind = sorting.arguments["kind"]
+    if kind == "not_a_fix":
+        return NotAFix()
+    if kind in ("yes", "no"):
+        plan = fix_plans.open_plan(round.session)
+        assert plan is not None, "sort_message refuses yes or no with no plan waiting"
+        return Yes(plan) if kind == "yes" else No(plan)
+    decided = round.done().filter(tool=Decide.name, created_at__gt=sorting.created_at).last()
+    if decided is None:
+        return None
+    plan = (
+        FixPlan.objects.filter(session=round.session, created_at__gte=decided.created_at)
+        .order_by("created_at", "id")
+        .first()
+    )
+    assert plan is not None, "decide records a plan"
+    return Planned(plan)
+
+
+def _conversation(round: _Round) -> list[Happened]:
+    """What the decider is given: the ad as it stands, then this round's messages from the
+    shop owner and its own tool calls, in the order they happened."""
+    happened: list[tuple[datetime, int, Happened]] = [
+        (message.created_at, 0, Said(by="user", text=messages.as_read(message, numbered=True)))
+        for message in round.said
+    ] + [
+        (
+            call.created_at,
+            1,
+            ToolUse(
+                call_id=call.call_id,
+                tool=call.tool,
+                arguments=call.arguments,
+                result=call.result,
+                pictures=[Shown(**picture) for picture in call.pictures],
+            ),
+        )
+        for call in round.calls()
+    ]
+    return [
+        Said(by="user", text=_the_ad(round)),
+        *(each for _, _, each in sorted(happened, key=lambda each: (each[0], each[1]))),
+    ]
+
+
+def _the_ad(round: _Round) -> str:
+    """The ad as it stands, scene by scene, written by code for the decider."""
+    job = round.job
+    scenes = "\n\n".join(_scene_facts(scene) for scene in job.scenes.order_by("number"))
+    sent = _photos_sent(round)
+    plan = fix_plans.open_plan(round.session)
+    return "\n\n".join(
+        [
+            "From the app, not the shop owner. The ad as it stands, scene by scene:",
+            scenes,
+            f"Photos the shop owner sent this round: {sent}."
+            if sent
+            else "The shop owner sent no photos this round.",
+            "Your last plan is waiting for the shop owner's answer."
+            if plan is not None
+            else "No plan is waiting for the shop owner's answer.",
+            "Their messages this round follow, oldest first.",
+        ]
+    )
+
+
+def _scene_facts(scene: Scene) -> str:
+    versions = _versions(scene)
+    current = versions[-1] if versions else None
+    if not scene.shows:
+        facts = [f"Scene {scene.number}: the person talks to camera.", f'Line: "{scene.line}"']
+    else:
+        kind = ", ".join(each for each in [scene.broll_kind, scene.person_shown] if each)
+        facts = [
+            f"Scene {scene.number}: shows the product{f' ({kind})' if kind else ''}.",
+            f'Line: "{scene.line}"',
+            f"Shows: {scene.shows}",
+            *([f"How the product is used: {scene.usage}"] if scene.usage else []),
+            *([f"What it ends on: {scene.result}"] if scene.result else []),
+            *(
+                [
+                    "What it needs: "
+                    + "; ".join(
+                        f"{need['what']} (product photos {', '.join(map(str, need['photos']))})"
+                        for need in scene.needs
+                    )
+                ]
+                if scene.needs
+                else []
+            ),
+        ]
+        prompt = _video_prompt(current.clip) if current and current.clip else ""
+        if prompt:
+            facts.append(f"The current clip's video prompt: {prompt}")
+    in_use = scene.reference_photos.filter(dropped_by__isnull=True).values_list("thing", flat=True)
+    if in_use:
+        facts.append(f"The shop owner's photos it uses: {', '.join(in_use)}")
+    if current is not None:
+        facts.append(
+            "Versions: " + "; ".join(_named(version, current.number) for version in versions)
+        )
+    return "\n".join(facts)
+
+
+def _video_prompt(clip: ProducedItem) -> str:
+    return clip.motion_prompt or (clip.step.motion_prompt if clip.step else "")
+
+
+def _photos_sent(round: _Round) -> str:
+    """The numbers of the photos the shop owner sent this round, as the chat numbers them."""
+    ids = {attachment.pk for message in round.said for attachment in message.attachments.all()}
+    numbers = [
+        str(number)
+        for number, photo in enumerate(messages.owner_photos(round.session), 1)
+        if photo.pk in ids
+    ]
+    return ", ".join(f"owner photo {number}" for number in numbers)

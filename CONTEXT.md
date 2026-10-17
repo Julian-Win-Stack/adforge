@@ -152,6 +152,10 @@ _Avoid_: Fix list, proposal
 What code tells the producer, in a short sentence, of a fix plan it runs: the plan shown, the fixes started, a scene done and what it cost, a failed fix check with its two versions, an error, the new ad shown. Never a picture, frames, judge words, version lists or the decider's reasoning. The shop owner isn't shown it.
 _Avoid_: Producer message, event
 
+**Decider**:
+The AI that reads the shop owner's messages once the ad has a clip, sorts each one (a note, yes or no to the plan waiting, or something else, which the producer answers), looks at the starting pictures, clip frames, versions and photos it needs, and answers with the fix plan. It never talks to the shop owner and makes nothing: code shows its plan and runs it. It can't decide a scene it hasn't looked at, or go back to a version it hasn't looked at.
+_Avoid_: Fixer, planner
+
 **Fix check**:
 A judge asking a fix's complaint back about the new version it made, shown beside the old one: a new starting picture before its clip is paid for; a new clip by the clip judge itself, which on a fix's clip also sees the old clip and is asked one more question, whether the change is made, read once from the clip its remakes kept (its answer never fails the clip or remakes it); a new line is never checked. A pass carries on as before. A fail makes nothing more for the scene and assembles no ad: the chat shows the old and new versions and why, with anything the clip judge still sees, with the reason as the note the scene's card is filled with, and the producer waits for the shop owner's word. An answer that can't be had leaves it unchecked, and the fix carries on. Kept with its fix and both versions.
 _Avoid_: Fix judge, verification, QA
