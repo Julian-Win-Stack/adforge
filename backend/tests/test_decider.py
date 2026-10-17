@@ -700,7 +700,15 @@ def test_a_new_line_keeps_the_picture_and_one_with_a_visual_change_is_a_new_pict
                 (
                     "decide",
                     _decided(
-                        [_row(2, "new_picture", "The toilet is white.", line="Shines in one wipe.")]
+                        [
+                            _row(
+                                2,
+                                "new_picture",
+                                "The toilet is white.",
+                                line="Shines in one wipe.",
+                                overlay="One wipe",
+                            )
+                        ]
                     ),
                 )
             ]
@@ -711,10 +719,11 @@ def test_a_new_line_keeps_the_picture_and_one_with_a_visual_change_is_a_new_pict
 
     assert isinstance(outcome, decider.Planned)
     [row] = outcome.plan.scenes.all()
-    assert (row.action, row.change, row.line) == (
+    assert (row.action, row.change, row.line, row.overlay) == (
         FixPlanScene.Action.NEW_PICTURE,
         "The toilet is white.",
         "Shines in one wipe.",
+        "One wipe",
     )
     # The decider is told a new line keeps the picture unless the owner asks for a visual change.
     told = " ".join(decider.INSTRUCTIONS.split())

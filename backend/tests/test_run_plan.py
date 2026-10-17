@@ -457,7 +457,7 @@ def test_a_new_line_on_a_scene_with_no_starting_picture_draws_one(
 def test_a_new_line_and_a_new_picture_for_one_scene_are_both_made(
     fake_model: FakeModel, held: HeldSteps
 ) -> None:
-    plan = propose(row(3, "new_picture", change=BRIGHTER, line=NEW_LINE))
+    plan = propose(row(3, "new_picture", change=BRIGHTER, line=NEW_LINE, overlay="$19.99"))
 
     three = rows_of(plan)[3]
     assert (three.estimate_usd, three.estimate_up_to_usd) == amounts(
@@ -492,6 +492,8 @@ def test_a_new_line_and_a_new_picture_for_one_scene_are_both_made(
         "Scene 3's new starting picture and new line is done."
     )
     assert ads()[-1].cuts[-1]["clip"] == made.pk
+    # The new line's overlay is drawn over it.
+    assert ads()[-1].cuts[-1]["overlay"] == "$19.99"
 
 
 def test_going_back_after_the_line_changed_pays_for_a_new_clip(
