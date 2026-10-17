@@ -15,10 +15,14 @@ from chat.models import Message, Session
 from .models import FixPlan, FixPlanScene, Job
 from .notices import post_notice
 
-# What the chat says once a plan is settled, so its yes button goes away.
+# What the chat says once a plan is settled, so its yes button goes away, and what the
+# notice says of the plan.
 SETTLED = {
-    FixPlan.State.CONFIRMED: "Going ahead with the plan.",
-    FixPlan.State.DECLINED: "Plan dropped: nothing in it will be changed.",
+    FixPlan.State.CONFIRMED: ("Going ahead with the plan.", Message.PlanEvent.CONFIRMED),
+    FixPlan.State.DECLINED: (
+        "Plan dropped: nothing in it will be changed.",
+        Message.PlanEvent.DECLINED,
+    ),
 }
 
 
@@ -144,22 +148,20 @@ def settle(plan: FixPlan, state: FixPlan.State, by: Message | None = None) -> Me
     """Confirm the waiting `plan`, with the message that said yes (`by`), or decline it, and
     tell the chat, so its yes button goes away whether the answer was tapped or typed."""
     assert state in SETTLED, "a plan is settled as confirmed or declined"
+    text, event = SETTLED[state]
     with transaction.atomic():
+        # Locked in the order every writer of a plan takes: the job (as the notice locks it),
+        # the chat (as `propose` and the yes button lock it), then the plan. Taken the other
+        # way round, two of them could each wait on the other.
+        Job.objects.select_for_update().get(pk=plan.job_id)
+        Session.objects.select_for_update().get(pk=plan.session_id)
         locked = FixPlan.objects.select_for_update().get(pk=plan.pk)
         assert locked.state == FixPlan.State.PROPOSED, "only a waiting plan is settled"
         locked.state = state
         locked.confirmed_by = by if state == FixPlan.State.CONFIRMED else None
         locked.save(update_fields=["state", "confirmed_by"])
-        event = (
-            Message.PlanEvent.CONFIRMED
-            if state == FixPlan.State.CONFIRMED
-            else Message.PlanEvent.DECLINED
-        )
         posted = post_notice(
-            plan.job,
-            SETTLED[state],
-            Message.Level.INFO,
-            plan=messages.PlanSignal(plan.pk, event),
+            plan.job, text, Message.Level.INFO, plan=messages.PlanSignal(plan.pk, event)
         )
     plan.state, plan.confirmed_by = locked.state, locked.confirmed_by
     return posted
@@ -229,11 +231,14 @@ def _in_words(shown: PlanNotice) -> str:
             said += f": {scene['change']}"
         if scene["line"]:
             said += f' New line: "{scene["line"]}"'
+        # As the chat shows it: a can't, free, or what it costs.
         if scene["cant"]:
             said += f" Can't: {scene['cant']}"
-        elif Decimal(scene["estimate_usd"]):
+        elif Decimal(scene["estimate_usd"]) or Decimal(scene["estimate_up_to_usd"]):
             said += f" (about {_dollars(scene['estimate_usd'])}, up to "
             said += f"{_dollars(scene['estimate_up_to_usd'])})"
+        else:
+            said += " (free)"
         lines.append(said)
     lines.extend(f"Can't: {cant['text']}" for cant in shown["cants"])
     if shown["question"]:

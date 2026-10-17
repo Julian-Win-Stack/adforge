@@ -3,11 +3,14 @@ way the browser meets them: code posts a plan in the chat, the chat API reads it
 the plan's fields, and the yes button sends a marked message that code can tell from a
 typed one. Nothing here routes the yes or runs the plan (ticket 08)."""
 
+import threading
+import time
 from collections.abc import Callable, Sequence
 from decimal import Decimal
 from typing import Any
 
 import pytest
+from django.db import connection
 from rest_framework.test import APIClient
 
 from chat import messages
@@ -168,8 +171,8 @@ def test_the_yes_button_sends_a_marked_yes_naming_the_plan_and_typed_text_stays_
     assert typed.json()["message"]["plan"] is None
     assert tapped.json()["message"]["plan"] == {"id": plan.pk, "event": "yes", "notice": None}
     # Code tells them apart from the rows alone (what 08 routes on).
-    by_text = {m.seq: m for m in Message.objects.filter(role=Message.Role.USER)}
-    assert [(m.text, m.plan_event, m.fix_plan_id) for m in by_text.values()] == [
+    said = Message.objects.filter(role=Message.Role.USER)
+    assert [(m.text, m.plan_event, m.fix_plan_id) for m in said] == [
         ("yes", "", None),
         ("Yes", Message.PlanEvent.YES, plan.pk),
     ]
@@ -196,6 +199,116 @@ def test_a_yes_to_a_plan_that_no_longer_waits_is_refused_and_not_kept(
     assert refused.status_code == 400
     assert "newer plan" in " ".join(str(v) for v in refused.json().values())
     assert not Message.objects.filter(role=Message.Role.USER).exists()
+
+
+def test_a_second_tap_on_one_plan_is_refused_and_a_tap_only_ever_says_yes(
+    send: Callable[..., Any],
+) -> None:
+    job = an_ad()
+    plan = a_plan(job)
+    fix_plans.show(plan)
+
+    # Whatever text a tap carries, it is kept as the button's yes.
+    first = send(job, {"text": "no, scrap it", "plan": plan.pk})
+    # The reply to the first tap was lost, so the button came back and was tapped again.
+    again = send(job, {"text": "Yes", "plan": plan.pk})
+
+    assert first.status_code == 201, first.json()
+    assert again.status_code == 400
+    assert again.json() == {"plan": "You've already said yes to that plan."}
+    assert [(m.text, m.plan_event) for m in Message.objects.filter(role=Message.Role.USER)] == [
+        ("Yes", Message.PlanEvent.YES)
+    ]
+
+
+def while_holding_its_locks(
+    monkeypatch: pytest.MonkeyPatch, module: Any, name: str, first: Callable[[], object]
+) -> Callable[[Callable[[], object]], dict[str, object]]:
+    """Run `first` in a thread, and `then` in another once `first` reaches `module.name`
+    (where it holds its locks), slowed there so `then` runs in the middle of it. Gives what
+    each gave, or the error each raised."""
+    real = getattr(module, name)
+    reached = threading.Event()
+
+    def slowly(*args: Any, **kwargs: Any) -> Any:
+        reached.set()
+        time.sleep(0.5)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(module, name, slowly)
+
+    def racing(then: Callable[[], object]) -> dict[str, object]:
+        outcome: dict[str, object] = {}
+
+        def run(key: str, call: Callable[[], object], after: threading.Event | None) -> None:
+            if after is not None:
+                after.wait(10)
+            try:
+                outcome[key] = call()
+            except Exception as error:
+                outcome[key] = repr(error)
+            finally:
+                connection.close()
+
+        running = [
+            threading.Thread(target=run, args=("first", first, None)),
+            threading.Thread(target=run, args=("then", then, reached)),
+        ]
+        for thread in running:
+            thread.start()
+        for thread in running:
+            thread.join(30)
+        return outcome
+
+    return racing
+
+
+def test_a_tap_while_the_plan_is_being_replaced_waits_for_it_instead_of_deadlocking(
+    fake_model: FakeModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The yes button and a new plan both lock the chat and the plan. Taken in opposite
+    orders, Postgres killed the new plan ("deadlock detected") and kept the yes to the old
+    one, the plan the owner was correcting."""
+    job = an_ad()
+    old = a_plan(job)
+    fix_plans.show(old)
+    fake_model.respond("produce", turn())
+
+    def tap() -> int:
+        return (
+            APIClient()
+            .post(
+                f"/api/sessions/{chat_id(job)}/messages/",
+                {"text": "Yes", "plan": old.pk},
+                format="json",
+            )
+            .status_code
+        )
+
+    race = while_holding_its_locks(monkeypatch, messages, "add", tap)
+
+    assert race(lambda: a_plan(job).state) == {"first": 201, "then": FixPlan.State.PROPOSED}
+    old.refresh_from_db()
+    # The tap landed first; the newer plan replaced the one it said yes to.
+    assert old.state == FixPlan.State.REPLACED
+
+
+def test_settling_a_plan_while_a_new_one_is_proposed_waits_instead_of_deadlocking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = an_ad()
+    old = a_plan(job)
+
+    race = while_holding_its_locks(
+        monkeypatch,
+        fix_plans,
+        "post_notice",
+        lambda: fix_plans.settle(old, FixPlan.State.DECLINED) is not None,
+    )
+
+    assert race(lambda: a_plan(job).state) == {"first": True, "then": FixPlan.State.PROPOSED}
+    old.refresh_from_db()
+    assert old.state == FixPlan.State.DECLINED
 
 
 def test_a_yes_to_another_chats_plan_is_refused(send: Callable[..., Any]) -> None:
@@ -242,11 +355,64 @@ def test_settling_a_plan_sets_its_state_and_tells_the_chat(
     }
 
 
-def test_a_plan_can_only_be_settled_as_confirmed_or_declined() -> None:
+def test_a_plan_can_only_be_settled_as_confirmed_or_declined_and_only_once() -> None:
     job = an_ad()
     plan = a_plan(job)
-    with pytest.raises(AssertionError):
+    with pytest.raises(AssertionError, match="confirmed or declined"):
         fix_plans.settle(plan, FixPlan.State.REPLACED)
+
+    fix_plans.settle(plan, FixPlan.State.DECLINED)
+    with pytest.raises(AssertionError, match="only a waiting plan"):
+        fix_plans.settle(plan, FixPlan.State.CONFIRMED)
+    plan.refresh_from_db()
+    assert plan.state == FixPlan.State.DECLINED
+
+
+def test_the_plan_notice_says_the_whole_plan_in_words() -> None:
+    job = an_ad(scenes=4)
+    plan = fix_plans.propose(
+        job,
+        NOTES,
+        [
+            FixPlanScene(
+                scene=job.scenes.get(number=1),
+                action=FixPlanScene.Action.NEW_LINE,
+                change="Say it shorter.",
+                line="One wipe.",
+                estimate_usd=Decimal("0.4"),
+                estimate_up_to_usd=Decimal("0.81"),
+            ),
+            FixPlanScene(
+                scene=job.scenes.get(number=2),
+                action=FixPlanScene.Action.GO_BACK,
+                change="Back to the first one.",
+                go_back_to=1,
+            ),
+            FixPlanScene(
+                scene=job.scenes.get(number=3),
+                action=FixPlanScene.Action.NEW_CLIP,
+                change="The hand scrubs the tile.",
+                cant="Scene 3 is a talking scene.",
+            ),
+        ],
+        question="Which tile, the white one?",
+        cants=[{"kind": "music", "text": "The music can't be changed."}],
+    )
+
+    shown = fix_plans.show(plan)
+
+    assert shown is not None
+    assert shown.text == "\n".join(
+        [
+            "Here's the plan for your notes.",
+            'Scene 1, new line: Say it shorter. New line: "One wipe." (about $0.40, up to $0.81)',
+            "Scene 2, go back to version 1: Back to the first one. (free)",
+            "Scene 3, new clip: The hand scrubs the tile. Can't: Scene 3 is a talking scene.",
+            "Can't: The music can't be changed.",
+            "Which tile, the white one?",
+            "Tap Yes to go ahead, or type what to change.",
+        ]
+    )
 
 
 def test_messages_from_before_plans_read_back_with_no_plan(
