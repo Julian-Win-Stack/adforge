@@ -1,6 +1,7 @@
 """Fix plans (fix redesign, decision 19): recording what the decider plans to change in each
-scene from the shop owner's notes of one round, and what the chat's plan notice shows of it
-(flow step 6). Nothing here checks a plan's rules or runs it."""
+scene from the shop owner's notes of one round, what the chat's plan notice shows of it
+(flow step 6), and telling the chat once it is settled (decision 4). Nothing here checks a
+plan's rules, routes the shop owner's answer or runs it."""
 
 from collections.abc import Sequence
 from decimal import Decimal
@@ -8,9 +9,17 @@ from typing import Any, TypedDict
 
 from django.db import transaction
 
-from chat.models import Session
+from chat import messages
+from chat.models import Message, Session
 
 from .models import FixPlan, FixPlanScene, Job
+from .notices import post_notice
+
+# What the chat says once a plan is settled, so its yes button goes away.
+SETTLED = {
+    FixPlan.State.CONFIRMED: "Going ahead with the plan.",
+    FixPlan.State.DECLINED: "Plan dropped: nothing in it will be changed.",
+}
 
 
 class PlanPhoto(TypedDict):
@@ -120,6 +129,42 @@ def open_plan(session: Session) -> FixPlan | None:
     return FixPlan.objects.filter(session=session, state=FixPlan.State.PROPOSED).first()
 
 
+def show(plan: FixPlan) -> Message | None:
+    """Post `plan` in the job's chat as a notice the shop owner can say yes to with one tap.
+    The chat reads the plan's fields from the notice; its text says the same in words."""
+    return post_notice(
+        plan.job,
+        _in_words(notice(plan)),
+        Message.Level.INFO,
+        plan=messages.PlanSignal(plan.pk, Message.PlanEvent.SHOWN),
+    )
+
+
+def settle(plan: FixPlan, state: FixPlan.State, by: Message | None = None) -> Message | None:
+    """Confirm the waiting `plan`, with the message that said yes (`by`), or decline it, and
+    tell the chat, so its yes button goes away whether the answer was tapped or typed."""
+    assert state in SETTLED, "a plan is settled as confirmed or declined"
+    with transaction.atomic():
+        locked = FixPlan.objects.select_for_update().get(pk=plan.pk)
+        assert locked.state == FixPlan.State.PROPOSED, "only a waiting plan is settled"
+        locked.state = state
+        locked.confirmed_by = by if state == FixPlan.State.CONFIRMED else None
+        locked.save(update_fields=["state", "confirmed_by"])
+        event = (
+            Message.PlanEvent.CONFIRMED
+            if state == FixPlan.State.CONFIRMED
+            else Message.PlanEvent.DECLINED
+        )
+        posted = post_notice(
+            plan.job,
+            SETTLED[state],
+            Message.Level.INFO,
+            plan=messages.PlanSignal(plan.pk, event),
+        )
+    plan.state, plan.confirmed_by = locked.state, locked.confirmed_by
+    return posted
+
+
 def notice(plan: FixPlan) -> PlanNotice:
     """What the chat shows of `plan`."""
     scenes = list(plan.scenes.select_related("scene"))
@@ -160,3 +205,41 @@ def _scene(row: FixPlanScene) -> PlanNoticeScene:
 def _amount(usd: Decimal) -> str:
     """An amount to the millionth of a dollar, as the database keeps it."""
     return str(Decimal(usd).quantize(Decimal("0.000001")))
+
+
+ACTIONS_IN_WORDS = {
+    FixPlanScene.Action.NEW_PICTURE: "new starting picture",
+    FixPlanScene.Action.NEW_CLIP: "new clip",
+    FixPlanScene.Action.NEW_LINE: "new line",
+    FixPlanScene.Action.GO_BACK: "go back",
+    FixPlanScene.Action.NO_CHANGE: "no change",
+}
+
+
+def _in_words(shown: PlanNotice) -> str:
+    """The plan notice as text: what the chat shows where it can't draw the plan, and what
+    the job's warnings keep."""
+    lines = ["Here's the plan for your notes."]
+    for scene in shown["scenes"]:
+        what = ACTIONS_IN_WORDS[FixPlanScene.Action(scene["action"])]
+        if scene["action"] == FixPlanScene.Action.GO_BACK:
+            what = f"go back to version {scene['go_back_to']}"
+        said = f"Scene {scene['scene']}, {what}"
+        if scene["change"]:
+            said += f": {scene['change']}"
+        if scene["line"]:
+            said += f' New line: "{scene["line"]}"'
+        if scene["cant"]:
+            said += f" Can't: {scene['cant']}"
+        elif Decimal(scene["estimate_usd"]):
+            said += f" (about {_dollars(scene['estimate_usd'])}, up to "
+            said += f"{_dollars(scene['estimate_up_to_usd'])})"
+        lines.append(said)
+    if shown["question"]:
+        lines.append(shown["question"])
+    lines.append("Tap Yes to go ahead, or type what to change.")
+    return "\n".join(lines)
+
+
+def _dollars(amount: str) -> str:
+    return f"${Decimal(amount):.2f}"

@@ -41,6 +41,14 @@ class SuggestedNote(NamedTuple):
     text: str
 
 
+class PlanSignal(NamedTuple):
+    """What a message says of fix plan `plan` (its id): shown, a tap of its yes button, or
+    settled."""
+
+    plan: int
+    event: Message.PlanEvent
+
+
 def add(
     session: Session,
     *,
@@ -50,11 +58,12 @@ def add(
     carrying: Sequence[AttachedFile] = (),
     step: StepSignal | None = None,
     suggested: SuggestedNote | None = None,
+    plan: PlanSignal | None = None,
 ) -> Message:
     """Say something in a session, with any files it carries, and name the session from
     the first thing the user types. A notice carries its `level`; nothing else does. A
     message about a scene's starting picture or clip carries its `step`, and one may
-    suggest a note on a scene.
+    suggest a note on a scene, and one about a fix plan carries its `plan`.
 
     Messages are numbered 1, 2, 3... per session. The session row is locked while
     numbering, so messages always become visible in number order. Without that, a poll
@@ -76,6 +85,8 @@ def add(
             step_state=step.state if step else "",
             suggested_note=suggested.text if suggested else "",
             suggested_note_scene=suggested.scene if suggested else None,
+            plan_event=plan.event if plan else "",
+            fix_plan_id=plan.plan if plan else None,
         )
         Attachment.objects.bulk_create(
             Attachment(
