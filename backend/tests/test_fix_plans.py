@@ -92,7 +92,13 @@ def every_kind(job: Job) -> list[FixPlanScene]:
 def test_a_plan_with_every_kind_of_change_reads_back_as_the_chat_shows_it() -> None:
     job = an_ad()
 
-    plan = fix_plans.propose(job, NOTES, every_kind(job), question="Black or dark grey?")
+    plan = fix_plans.propose(
+        job,
+        NOTES,
+        every_kind(job),
+        question="Black or dark grey?",
+        cants=[{"kind": "music", "text": "The music can't be changed yet."}],
+    )
 
     assert fix_plans.notice(FixPlan.objects.get(pk=plan.pk)) == {
         "plan": plan.pk,
@@ -100,6 +106,7 @@ def test_a_plan_with_every_kind_of_change_reads_back_as_the_chat_shows_it() -> N
         "question": "Black or dark grey?",
         "estimate_usd": "1.700000",
         "estimate_up_to_usd": "3.250000",
+        "cants": [{"kind": "music", "text": "The music can't be changed yet."}],
         "scenes": [
             {
                 "scene": 1,
@@ -180,6 +187,28 @@ def test_a_plan_that_changes_nothing_is_still_a_plan_the_owner_sees() -> None:
     assert shown["scenes"] == []
     assert shown["estimate_usd"] == "0.000000"
     assert shown["question"] == "Which scene do you mean?"
+    assert shown["cants"] == []
+
+
+def test_a_plan_cant_is_one_of_the_known_kinds() -> None:
+    job = an_ad(1)
+
+    with pytest.raises(ValueError, match="hair"):
+        fix_plans.propose(job, NOTES, [], cants=[{"kind": "hair", "text": "No hair changes."}])
+
+    assert not FixPlan.objects.exists()
+    every: list[fix_plans.PlanCant] = [
+        {"kind": kind, "text": f"Can't: {kind}."} for kind in FixPlan.Cant.values
+    ]
+    plan = fix_plans.propose(job, NOTES, [], cants=every)
+    assert fix_plans.notice(plan)["cants"] == every
+    assert set(FixPlan.Cant.values) == {
+        "music",
+        "voice",
+        "number_of_scenes",
+        "example_video",
+        "not_about_the_ad",
+    }
 
 
 def test_a_new_plan_replaces_the_one_the_owner_hasnt_answered() -> None:

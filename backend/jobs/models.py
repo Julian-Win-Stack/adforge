@@ -447,6 +447,15 @@ class FixPlan(models.Model):
         DECLINED = "declined"
         REPLACED = "replaced"
 
+    class Cant(models.TextChoices):
+        # What the shop owner asked that isn't about any one scene (decision 13's judgment
+        # can'ts); a scene's own can't is on its row.
+        MUSIC = "music"
+        VOICE = "voice"
+        NUMBER_OF_SCENES = "number_of_scenes"
+        EXAMPLE_VIDEO = "example_video"
+        NOT_ABOUT_THE_AD = "not_about_the_ad"
+
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="fix_plans")
     session = models.ForeignKey("chat.Session", on_delete=models.CASCADE, related_name="fix_plans")
     notes = models.JSONField(
@@ -465,6 +474,12 @@ class FixPlan(models.Model):
     )
     question = models.TextField(
         blank=True, help_text="The one question for the shop owner. Blank for none."
+    )
+    cants = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="What the shop owner asked that can't be done and isn't about one scene, as "
+        '[{"kind", "text"}, ...]: a `Cant`, and the sentence they are shown. Empty for none.',
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

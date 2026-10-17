@@ -34,6 +34,13 @@ class PlanNoticeScene(TypedDict):
     photos: list[PlanPhoto]
 
 
+class PlanCant(TypedDict):
+    """Something the shop owner asked that can't be done and isn't about one scene."""
+
+    kind: str
+    text: str
+
+
 class PlanNotice(TypedDict):
     """What the chat's plan notice shows: per scene what changes, what it costs and any
     can't, the one question, and the plan's total. Amounts are strings, as the chat API
@@ -44,16 +51,24 @@ class PlanNotice(TypedDict):
     question: str
     estimate_usd: str
     estimate_up_to_usd: str
+    cants: list[PlanCant]
     scenes: list[PlanNoticeScene]
 
 
 def propose(
-    job: Job, notes: Sequence[dict[str, Any]], scenes: Sequence[FixPlanScene], question: str = ""
+    job: Job,
+    notes: Sequence[dict[str, Any]],
+    scenes: Sequence[FixPlanScene],
+    question: str = "",
+    cants: Sequence[PlanCant] = (),
 ) -> FixPlan:
     """Record a plan from the shop owner's notes of this round, with `scenes` (unsaved rows,
-    one per scene that changes or can't), waiting for their answer. A plan still waiting in
-    the chat is replaced by it."""
+    one per scene that changes or can't) and the `cants` that aren't about one scene, waiting
+    for their answer. A plan still waiting in the chat is replaced by it."""
     assert job.session is not None, "a fix plan is shown in the job's chat"
+    for cant in cants:
+        if cant["kind"] not in FixPlan.Cant.values:
+            raise ValueError(f"{cant['kind']!r} isn't a kind of can't a plan has")
     with transaction.atomic():
         # The chat is locked, so two plans proposed at once can't both stay open.
         session = Session.objects.select_for_update().get(pk=job.session.pk)
@@ -61,7 +76,7 @@ def propose(
             state=FixPlan.State.REPLACED
         )
         plan = FixPlan.objects.create(
-            job=job, session=session, notes=list(notes), question=question
+            job=job, session=session, notes=list(notes), question=question, cants=list(cants)
         )
         for scene in scenes:
             scene.plan = plan
@@ -83,6 +98,7 @@ def notice(plan: FixPlan) -> PlanNotice:
         "question": plan.question,
         "estimate_usd": _amount(plan.estimate_usd()),
         "estimate_up_to_usd": _amount(plan.estimate_up_to_usd()),
+        "cants": [{"kind": cant["kind"], "text": cant["text"]} for cant in plan.cants],
         "scenes": [_scene(row) for row in scenes],
     }
 
