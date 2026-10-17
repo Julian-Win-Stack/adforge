@@ -33,7 +33,7 @@ from jobs.work import (
     what_the_judge_did,
 )
 
-from . import loop, step_signals
+from . import loop, run_plan, step_signals
 from .loop import BLOCKED, EXPECTED_FAILURES, RunStopped, why_it_failed
 from .money import dollars
 from .producer import PRODUCER, STEP_NAMES, assemble_after_fix, assembles_after
@@ -391,6 +391,11 @@ def run_scene_step(step_id: int) -> None:
             step.result = work.finished(step, made) + _fix_checked(checked)
             step.finished_at = timezone.now()
             step.save(update_fields=["status", "result", "finished_at"])
+            # A fix plan's step is carried on by code, and never wakes the producer: a
+            # fix's picture that passed its checks queues its clip here (decision 2).
+            if step.plan_scene_id is not None:
+                run_plan.step_finished(step, checked)
+                return
             # A fix's clip has the new ad assembled by code, in the same transaction, so a
             # step run again after a crash assembles and shows it once. Not when its check
             # failed: the shop owner decides first.
@@ -398,6 +403,8 @@ def run_scene_step(step_id: int) -> None:
                 step.result = f"{step.result} {_assembled_after_fix(step)}"
                 step.save(update_fields=["result"])
             wake_producer(str(session.pk))
+            # A fix plan's scene that waited for this one's step to finish carries on.
+            run_plan.carry_on_scene(step.scene)
     except PictureKeptFailing as error:
         # It stops the whole run. The chat is shown why in the same transaction, so a step
         # run again after a crash never shows it twice.
@@ -405,7 +412,7 @@ def run_scene_step(step_id: int) -> None:
         with transaction.atomic():
             say_the_pictures_kept_failing(step.scene.job, error)
             _stop(step, str(error))
-            wake_producer(str(session.pk))
+            _told_it_ended(step)
     # Whatever stops the step, it isn't left running: the producer is told why.
     except Exception as error:
         if not isinstance(error, EXPECTED_FAILURES):
@@ -413,7 +420,16 @@ def run_scene_step(step_id: int) -> None:
         tracing.flush()
         with transaction.atomic():
             _fail(step, why_it_failed(error, "the step"))
-            wake_producer(str(session.pk))
+            _told_it_ended(step)
+
+
+def _told_it_ended(step: SceneStep) -> None:
+    """Tell whoever started a step that failed or stopped: the producer, woken to read it, or,
+    for a fix plan's step, code, which tells the producer with a system note."""
+    if step.plan_scene_id is not None:
+        run_plan.step_failed(step)
+    else:
+        wake_producer(str(step.tool_call.session_id))
 
 
 def _fix_checked(check: FixCheck | None) -> str:
@@ -509,7 +525,10 @@ def carry_on_after_the_worker_starts() -> None:
             "scene", "tool_call"
         ):
             _fail(step, "The worker restarted while it was being made.")
-            sessions.add(step.tool_call.session_id)
+            if step.plan_scene_id is not None:
+                run_plan.step_failed(step)
+            else:
+                sessions.add(step.tool_call.session_id)
         for session in Session.objects.filter(pk__in=sessions):
             if another_session_is_busy(session):
                 continue

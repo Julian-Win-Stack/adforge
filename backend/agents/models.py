@@ -68,3 +68,36 @@ class ToolCall(models.Model):
         """What the tool's work cost: the sum of the model calls made for it."""
         cost: Decimal | None = self.model_calls.aggregate(cost=Sum("cost_usd"))["cost"]
         return cost or Decimal(0)
+
+
+class SystemNote(models.Model):
+    """What code tells the producer of a fix plan it runs (fix redesign, decision 20): the plan
+    with its per-scene lines, the fixes started, a scene done and what it cost, a failed check
+    and its two versions, an error, the new ad shown. Short and written by code; never a
+    picture, frames, judge words, version lists or the decider's reasoning. The shop owner
+    isn't shown them: the chat's own messages tell them."""
+
+    class Kind(models.TextChoices):
+        PLAN_SHOWN = "plan_shown"
+        FIXES_STARTED = "fixes_started"
+        SCENE_DONE = "scene_done"
+        CHECK_FAILED = "check_failed"
+        ERROR = "error"
+        AD_SHOWN = "ad_shown"
+
+    session = models.ForeignKey(
+        "chat.Session", on_delete=models.CASCADE, related_name="system_notes"
+    )
+    plan = models.ForeignKey("jobs.FixPlan", on_delete=models.CASCADE, related_name="system_notes")
+    kind = models.CharField(max_length=20, choices=Kind.choices)
+    text = models.TextField()
+    read_at = models.DateTimeField(
+        null=True, blank=True, help_text="When the producer was given it. Blank until then."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self) -> str:
+        return f"{self.kind}: {self.text}"

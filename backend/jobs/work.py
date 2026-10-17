@@ -2805,6 +2805,16 @@ def go_back(scene: Scene, number: int) -> GoneBack:
     return GoneBack(top, clip_to_make=not free)
 
 
+def go_back_is_free(scene: Scene, number: int) -> bool:
+    """Whether going back to the scene's version `number` would cost nothing: its clip still
+    says the scene's line as it stands, so it is brought back with its picture."""
+    made = versions(scene)
+    if not 1 <= number <= len(made):
+        raise NoSuchVersion(f"scene {scene.number} has versions 1 to {len(made)}, not {number}")
+    clip = made[number - 1].clip
+    return clip is not None and _says_the_line_as_it_stands(scene, clip)
+
+
 def _says_the_line_as_it_stands(scene: Scene, clip: ProducedItem) -> bool:
     """Whether `clip` still says the scene's line, in the person's voice, and was made for
     what the scene shows: the clip the ad is assembled from, if it were the newest."""

@@ -564,6 +564,43 @@ class FixPlanScene(models.Model):
         "key in the file store, the one thing to take from it, whether the thing is in the "
         "starting picture now, and whether more of it shows during the action.",
     )
+    remakes_clip = models.BooleanField(
+        default=False,
+        help_text="For a go back, whether its clip is made again, paid, because the line "
+        "changed since that version: the plan says so before the yes (decision 8). False "
+        "when the picture and clip are brought back for nothing.",
+    )
+    fix = models.ForeignKey(
+        Fix,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The confirmed Fix code records for it once the shop owner says yes, which "
+        "the worker's checks and the shop owner's photos go by. Blank for a go back, and until "
+        "the yes.",
+    )
+    started_at = models.DateTimeField(
+        null=True, blank=True, help_text="When code started it, after the yes. Blank until then."
+    )
+    brought_back = models.ForeignKey(
+        "ProducedItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="For a go back, the starting picture brought back: what its clip, if it must "
+        "be made again, is made from. Blank until it is gone back.",
+    )
+    landed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the scene's new version was made and passed its checks, or the shop "
+        "owner said go ahead. Blank until then.",
+    )
+    error = models.TextField(
+        blank=True, help_text="Why it couldn't be made, once it couldn't. Blank otherwise."
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -1041,6 +1078,12 @@ class FixCheck(models.Model):
         related_name="+",
         help_text="For a failed check, the notice that showed the shop owner both versions and "
         "why: what they answer after it decides what happens next. Blank until it is posted.",
+    )
+    gone_ahead_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="For a failed check of a fix plan's step, when the shop owner said go ahead "
+        "with it anyway. Blank otherwise.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
