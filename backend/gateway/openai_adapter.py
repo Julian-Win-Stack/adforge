@@ -11,6 +11,8 @@ from openai.lib._pydantic import to_strict_json_schema
 from openai.types import ImagesResponse
 from openai.types.responses import (
     FunctionToolParam,
+    ResponseFunctionCallOutputItemListParam,
+    ResponseInputImageContentParam,
     ResponseInputImageParam,
     ResponseInputMessageContentListParam,
     ResponseInputParam,
@@ -231,10 +233,22 @@ def _image_part(image: LoadedImage) -> ResponseInputImageParam:
     }
 
 
+def _output_image(image: LoadedImage) -> ResponseInputImageContentParam:
+    # As sharp as `_image_part`'s, for the same reasons.
+    data = base64.b64encode(image.data).decode("ascii")
+    return {
+        "type": "input_image",
+        "image_url": f"data:{image.media_type};base64,{data}",
+        "detail": "high",
+    }
+
+
 def _conversation(request: TurnRequest) -> ResponseInputParam:
     """The agent's conversation as OpenAI takes it: each tool it called is the call, then
-    what the tool handed back, paired by the call's id. What the system tells it, such as
-    that background work finished, comes from the developer, above the user."""
+    what the tool handed back, paired by the call's id: its words, then each picture after
+    its label. What the system tells it, such as that background work finished, comes from
+    the developer, above the user."""
+    images = iter(request.images)
     items: ResponseInputParam = []
     for each in request.handoff.conversation:
         if isinstance(each, Said):
@@ -253,9 +267,14 @@ def _conversation(request: TurnRequest) -> ResponseInputParam:
                 "arguments": json.dumps(each.arguments),
             }
         )
-        items.append(
-            {"type": "function_call_output", "call_id": each.call_id, "output": each.result}
-        )
+        output: str | ResponseFunctionCallOutputItemListParam = each.result
+        if each.pictures:
+            output = [{"type": "input_text", "text": each.result}]
+            for picture in each.pictures:
+                image = next(images)
+                assert (image.label, image.key) == (picture.label, picture.key)
+                output += [{"type": "input_text", "text": image.label}, _output_image(image)]
+        items.append({"type": "function_call_output", "call_id": each.call_id, "output": output})
     return items
 
 

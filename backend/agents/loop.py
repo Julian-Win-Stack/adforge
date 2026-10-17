@@ -27,6 +27,7 @@ from gateway.gateway import (
     IMAGE_TYPE_NAMES,
     UnreadableImage,
     charged_to,
+    check_readable,
     last_turn_given,
     take_turn,
 )
@@ -34,7 +35,9 @@ from gateway.types import (
     BlockedBySafetyFilter,
     ClipFailed,
     Happened,
+    Image,
     Said,
+    Shown,
     StepFinished,
     ToolSpec,
     ToolUse,
@@ -77,6 +80,16 @@ class Refused(Exception):
     rules, or what it works on doesn't exist yet. Says why, for the agent."""
 
 
+@dataclass(frozen=True)
+class ToolResult:
+    """What a tool hands back when it has pictures to show: its words, and the pictures,
+    each with the label code gave it, such as "Scene 2, starting picture, v1 first version".
+    The agent is shown them, labelled, in this order, on its next turn."""
+
+    text: str
+    pictures: Sequence[Image]
+
+
 class Tool(BaseModel):
     """One thing an agent can do. A subclass is one tool: its `name`, a docstring telling
     the model what it does, and fields for the arguments the model fills in."""
@@ -85,8 +98,9 @@ class Tool(BaseModel):
 
     name: ClassVar[str]
 
-    def run(self, call: ToolCall) -> str:
-        """Do the work and say what happened. What it says is the result the agent is given."""
+    def run(self, call: ToolCall) -> str | ToolResult:
+        """Do the work and say what happened. What it says is the result the agent is given,
+        with any pictures it hands back."""
         raise NotImplementedError
 
     @classmethod
@@ -229,13 +243,20 @@ def _settle(agent: Agent, call: ToolCall) -> None:
             )
         else:
             try:
-                call.result = _run(agent, call)
+                result = _run(agent, call)
+                if isinstance(result, ToolResult):
+                    call.result = result.text
+                    call.pictures = [
+                        {"label": picture.label, "key": picture.key} for picture in result.pictures
+                    ]
+                else:
+                    call.result = result
             except BlockedBySafetyFilter as error:
                 blocked = error
                 call.result = f"Failed: {why_it_failed(error, 'the tool')}"
         tracing.handed_back(traced, call.result, **_level(call.result))
     call.finished_at = timezone.now()
-    call.save(update_fields=["result", "asked_about", "finished_at"])
+    call.save(update_fields=["result", "pictures", "asked_about", "finished_at"])
     if blocked is not None:
         raise blocked
 
@@ -249,9 +270,10 @@ def _level(result: str) -> dict[str, str]:
     return {}
 
 
-def _run(agent: Agent, call: ToolCall) -> str:
+def _run(agent: Agent, call: ToolCall) -> str | ToolResult:
     """What the tool hands back: what it did, or why it refused or failed. A tool that fails
-    hands the reason back, so the agent can tell the user, or try something else."""
+    hands the reason back, so the agent can tell the user, or try something else. A picture
+    no model can read fails the tool here, rather than the agent's next turn."""
     try:
         tool = {tool.name: tool for tool in agent.tools}[call.tool]
         try:
@@ -261,7 +283,11 @@ def _run(agent: Agent, call: ToolCall) -> str:
                 f"it was called with arguments it can't use ({_what_is_wrong(invalid)})."
             ) from invalid
         with charged_to(call):
-            return given.run(call)
+            result = given.run(call)
+        if isinstance(result, ToolResult):
+            for picture in result.pictures:
+                check_readable(picture)
+        return result
     except Refused as refused:
         return f"Refused: {refused} Nothing was done."
     except BlockedBySafetyFilter:
@@ -409,6 +435,7 @@ def _as_given(happened: Message | ToolCall | SceneStep) -> Happened:
             tool=happened.tool,
             arguments=happened.arguments,
             result=happened.result,
+            pictures=[Shown(**picture) for picture in happened.pictures],
         )
     return Said(
         by="user" if happened.role == Message.Role.USER else "agent",

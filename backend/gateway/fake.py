@@ -120,6 +120,8 @@ class FakeModel:
         self.clips: dict[str, bytes] = {}
         # Every piece of music made, in turn.
         self.music: list[bytes] = []
+        # Every turn an agent was asked to take, as it was sent, pictures and all.
+        self.turns_taken: list[TurnRequest] = []
 
     def respond(self, purpose: str, *outcomes: Outcome) -> None:
         self._scripts[purpose].extend(outcomes)
@@ -153,6 +155,7 @@ class FakeModel:
         )
 
     def take_turn(self, request: TurnRequest) -> TurnReply:
+        self.turns_taken.append(request)
         outcome = self._next(request.purpose)
         assert isinstance(outcome, Turn), f"{request.purpose!r} was scripted output, not a turn"
         return TurnReply(

@@ -27,6 +27,12 @@ class ToolCall(models.Model):
     result = models.TextField(
         blank=True, help_text="What the tool handed back to the agent. Blank until it finishes."
     )
+    pictures = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The pictures it handed back with its result, in the order the agent is "
+        "shown them: each one's label, written by code, and its file-store key.",
+    )
     asked_about = models.CharField(
         max_length=50,
         blank=True,
