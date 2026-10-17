@@ -149,7 +149,7 @@ def _work(agent: Agent, session: Session) -> int:
     # A tool that was running when the last worker stopped runs again first: the agent
     # can't take another turn until every tool it asked for has handed back a result.
     for call in session.tool_calls.filter(agent=agent.name, finished_at__isnull=True):
-        _settle(agent, call)
+        settle(agent, call)
     while True:
         conversation, read_up_to, steps = _conversation(agent, session)
         if _stopped_since_the_user_spoke(session):
@@ -213,7 +213,7 @@ def _work(agent: Agent, session: Session) -> int:
                 if _stopped_since_the_user_spoke(session):
                     _refuse_as_stopped(call)
                 else:
-                    _settle(agent, call)
+                    settle(agent, call)
 
 
 def _refuse_as_stopped(call: ToolCall) -> None:
@@ -224,7 +224,7 @@ def _refuse_as_stopped(call: ToolCall) -> None:
     call.save(update_fields=["result", "finished_at"])
 
 
-def _settle(agent: Agent, call: ToolCall) -> None:
+def settle(agent: Agent, call: ToolCall) -> None:
     """Run the tool a checkpoint asked for, unless it is past the limit, and keep what it
     handed back. A call the safety filter blocked is kept as failed, then stops the run."""
     blocked: BlockedBySafetyFilter | None = None
@@ -343,6 +343,11 @@ def _nothing_to_answer_since_its_last_turn(
         and bool(gained)
         and all(isinstance(each, Said) and each.by == "agent" for each in gained)
     )
+
+
+def over_the_limit(session: Session) -> bool:
+    """Whether the agents have called every tool they may for the user's last message."""
+    return _calls_since_the_user_spoke(session) >= _limit()
 
 
 def _limit() -> int:
