@@ -1495,7 +1495,7 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
     photos = list(job.photos.filter(shows_product_colour=True))
     numbers = [photo.position for photo in photos]
     note = step.note
-    failed = _the_try_before(step)
+    failed = the_try_before(step)
     if failed is not None:
         # Drawn again for its fix check: told what the check found still wrong.
         redraw = fix_check.REDRAW_NOTE.format(reason=failed.reason)
@@ -1634,7 +1634,7 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
     drawn = _pictures_drawn(step)
     redo: tuple[Redo, str] | None = None
     fixing: list[str] = []
-    before_it = _the_try_before(step)
+    before_it = the_try_before(step)
     if before_it is not None:
         assert step.redraw_of is not None, "a try before is the step's redraw_of's"
         fixing = [before_it.reason]
@@ -2007,7 +2007,7 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
     kept = FixCheck.objects.filter(step=step).first()
     if kept is not None:
         return kept
-    before_it = _the_try_before(step)
+    before_it = the_try_before(step)
     # A redraw is checked against what the shop owner complained about, as its first try was.
     old = before_it.old if before_it is not None else step.shown_before(made.kind)
     if old is None:
@@ -2030,7 +2030,7 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
     )
 
 
-def _the_try_before(step: SceneStep) -> FixCheck | None:
+def the_try_before(step: SceneStep) -> FixCheck | None:
     """For a fix's starting picture drawn again for its fix check, the failed check of the
     picture before it. None for any other step."""
     if step.redraw_of is None:

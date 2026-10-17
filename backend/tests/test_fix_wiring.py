@@ -425,6 +425,30 @@ def test_a_line_note_runs_the_line_chain_by_code(
     assert producer_turns() == turns
 
 
+def test_a_picture_failing_its_fix_check_once_is_drawn_again_and_its_clip_made(
+    fake_model: FakeModel,
+    held: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    turns, ads_before = producer_turns(), len(ads())
+    plan = a_picture_note_planned(fake_model, say)
+    tap_yes(api, session_id, plan)
+    fake_model.respond("choose_starting_picture", TALKING_CHOICE, TALKING_CHOICE)
+    fake_model.respond("check_fix", not_made(HANDLE_HIDDEN), not_made(HANDLE_HIDDEN))
+
+    held.run_held()
+
+    # The redraw passed: the shop owner was never asked, and its clip made the new ad.
+    failed, passed = FixCheck.objects.order_by("id")
+    assert (failed.verdict, passed.verdict) == ("failed", "passed")
+    assert failed.notice is None
+    assert clip(1).picture == passed.new
+    assert len(ads()) == ads_before + 1
+    assert producer_turns() == turns
+
+
 def test_go_ahead_to_a_failed_fix_check_carries_its_scene_on(
     fake_model: FakeModel,
     held: HeldSteps,

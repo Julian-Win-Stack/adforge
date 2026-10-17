@@ -26,7 +26,7 @@ from chat.models import Attachment
 from gateway.catalog import MODEL_FOR_PURPOSE, PRICE_PER_SECOND_OF_VIDEO
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from jobs import fix_check, fix_plans, work
+from jobs import fix_check, fix_plans, picture_check, work
 from jobs.models import Fix, FixPlan, FixPlanScene, ProducedItem, Scene, SceneStep
 
 from . import fixing
@@ -202,9 +202,10 @@ def test_a_picture_fix_is_estimated_at_the_last_pictures_cost_and_a_clip(
 
     # The fake voice says scene 1's 8 words in 4 seconds.
     # Scene 1's talking clip isn't judged, so it can't be made again; its picture can be
-    # drawn again for each fix check that fails it.
-    tries = 1 + fix_check.MOST_REDRAWS
-    assert picture_estimate(scene) == (paid + 4 * HEYGEN, tries * paid + 4 * HEYGEN)
+    # drawn again, and checked again, for each fix check that fails it. No fix check was
+    # paid for yet, so each of its asks is estimated at the fallback.
+    redraws = fix_check.MOST_REDRAWS * (paid + picture_check.ASKS * CALL_FALLBACK_USD)
+    assert picture_estimate(scene) == (paid + 4 * HEYGEN, paid + redraws + 4 * HEYGEN)
 
 
 def test_a_broll_picture_fix_leaves_out_the_shared_before_picture(shown: ProducedItem) -> None:
@@ -217,8 +218,8 @@ def test_a_broll_picture_fix_leaves_out_the_shared_before_picture(shown: Produce
 
     cost = sum((call.cost_usd or Decimal(0) for call in kept), Decimal(0))
     about, up_to = broll_clip_usd(5, from_note=False)
-    tries = 1 + fix_check.MOST_REDRAWS
-    assert picture_estimate(Scene.objects.get(number=2)) == (cost + about, tries * cost + up_to)
+    redraws = fix_check.MOST_REDRAWS * (cost + picture_check.ASKS * CALL_FALLBACK_USD)
+    assert picture_estimate(Scene.objects.get(number=2)) == (cost + about, cost + redraws + up_to)
 
 
 def test_a_picture_with_no_recorded_cost_is_estimated_at_the_fallback(
@@ -231,6 +232,16 @@ def test_a_picture_with_no_recorded_cost_is_estimated_at_the_fallback(
     assert picture_estimate(Scene.objects.get(number=1)).about == (
         PICTURE_FALLBACK_USD + 4 * HEYGEN
     )
+
+
+def test_with_quality_checks_off_a_picture_fix_is_estimated_with_no_redraw(
+    shown: ProducedItem, settings: Settings
+) -> None:
+    settings.QUALITY_CHECKS = False
+
+    # Nothing checks the fix, so nothing draws its picture again.
+    about, up_to = picture_estimate(Scene.objects.get(number=1))
+    assert about == up_to
 
 
 def test_a_clip_fix_is_estimated_at_its_video_the_judge_and_the_writer_at_the_fallback(

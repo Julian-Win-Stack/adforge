@@ -376,6 +376,11 @@ def run_after_yes(plan: FixPlan) -> None:
         _assemble_once_landed(plan)
 
 
+# A failed fix check whose picture is being drawn again, or was, waits for nobody: the try
+# after it decides. One whose redraw failed or stopped waits for the shop owner again.
+DRAWN_AGAIN = [SceneStep.Status.RUNNING, SceneStep.Status.FINISHED]
+
+
 def _no_longer_held(row: FixPlanScene) -> None:
     """An older plan's row of the same scene whose fix check failed, and waits for the shop
     owner's answer, was answered by this newer plan (flow step 9: anything but go ahead is
@@ -385,7 +390,10 @@ def _no_longer_held(row: FixPlanScene) -> None:
         step__plan_scene=OuterRef("pk"),
         verdict=FixCheck.Verdict.FAILED,
         gone_ahead_at__isnull=True,
-        step__redraws__isnull=True,
+    ).exclude(
+        # Its picture drawn again, the try after it decides. One still being drawn again
+        # was answered as well: no redraw is paid for once the scene is planned again.
+        step__redraws__status=SceneStep.Status.FINISHED
     )
     FixPlanScene.objects.filter(
         scene=row.scene_id,
@@ -486,11 +494,8 @@ def go_ahead(row: FixPlanScene) -> None:
         Job.objects.select_for_update().get(pk=row.plan.job_id)
         Session.objects.select_for_update().get(pk=row.plan.session_id)
         FixCheck.objects.filter(
-            step__plan_scene=row,
-            verdict=FixCheck.Verdict.FAILED,
-            gone_ahead_at__isnull=True,
-            step__redraws__isnull=True,
-        ).update(gone_ahead_at=timezone.now())
+            step__plan_scene=row, verdict=FixCheck.Verdict.FAILED, gone_ahead_at__isnull=True
+        ).exclude(step__redraws__status__in=DRAWN_AGAIN).update(gone_ahead_at=timezone.now())
         _carry_on(row)
         _assemble_once_landed(row.plan)
 
@@ -533,7 +538,9 @@ def step_finished(step: SceneStep, check: FixCheck | None) -> None:
     has landed."""
     row = step.plan_scene
     assert row is not None, "a plan's step runs one of its rows"
-    if check is not None and check.verdict == FixCheck.Verdict.FAILED:
+    # A newer plan may have planned the scene again while this try was drawn.
+    row.refresh_from_db(fields=["error"])
+    if check is not None and check.verdict == FixCheck.Verdict.FAILED and not row.error:
         drawn_again = work.to_draw_again(check) and (
             _start(row, row.scene, SceneStep.Kind.STARTING_PICTURE, note=step.note, redraw_of=step)
             is not None
@@ -596,6 +603,14 @@ def step_failed(step: SceneStep) -> None:
     producer is told why, and the other scenes carry on to the new ad."""
     row = step.plan_scene
     assert row is not None, "a plan's step runs one of its rows"
+    before_it = work.the_try_before(step)
+    if before_it is not None and not row.error:
+        # A picture drawn again for its fix check that couldn't be made leaves the try before
+        # it as the last: the shop owner is asked about that one, as when no redraw is left.
+        work.say_the_fix_check_failed(before_it)
+        _note(row.plan, SystemNote.Kind.CHECK_FAILED, _check_failed(row, before_it))
+        carry_on_scene(step.scene, but=row)
+        return
     _failed(row, f"Scene {row.scene.number}'s {_step_made(step)} couldn't be made: {step.reason}")
     _assemble_once_landed(row.plan)
     carry_on_scene(step.scene, but=row)
@@ -620,13 +635,13 @@ def _carry_on(row: FixPlanScene) -> None:
     row = FixPlanScene.objects.select_for_update().select_related("scene", "plan").get(pk=row.pk)
     if row.started_at is None or row.landed_at is not None or row.error:
         return
-    # A failed check whose picture is being drawn again waits for nobody.
-    if FixCheck.objects.filter(
-        step__plan_scene=row,
-        verdict=FixCheck.Verdict.FAILED,
-        gone_ahead_at__isnull=True,
-        step__redraws__isnull=True,
-    ).exists():
+    if (
+        FixCheck.objects.filter(
+            step__plan_scene=row, verdict=FixCheck.Verdict.FAILED, gone_ahead_at__isnull=True
+        )
+        .exclude(step__redraws__status__in=DRAWN_AGAIN)
+        .exists()
+    ):
         return
     scene = Scene.objects.get(pk=row.scene_id)
     running = set(
@@ -740,7 +755,7 @@ def _picture(row: FixPlanScene, scene: Scene, running: set[str]) -> ProducedItem
             **made_for,
         )
         # Not one drawn again for its fix check: only the try after it can have a clip.
-        .exclude(step__redraws__isnull=False)
+        .exclude(step__redraws__status__in=DRAWN_AGAIN)
         .order_by("version")
         .last()
     )
