@@ -118,6 +118,7 @@ def test_a_plan_shown_in_the_chat_is_read_back_with_its_fields(api: APIClient) -
                     "action": "new_picture",
                     "change": "The toilet is black.",
                     "line": "",
+                    "overlay": "",
                     "go_back_to": None,
                     "cant": "",
                     "estimate_usd": "0.550000",
@@ -137,6 +138,7 @@ def test_a_plan_shown_in_the_chat_is_read_back_with_its_fields(api: APIClient) -
                     "action": "no_change",
                     "change": "",
                     "line": "",
+                    "overlay": "",
                     "go_back_to": None,
                     "cant": "The person's look can't be changed.",
                     "estimate_usd": "0.000000",
@@ -381,6 +383,7 @@ def test_the_plan_notice_says_the_whole_plan_in_words() -> None:
                 action=FixPlanScene.Action.NEW_LINE,
                 change="Say it shorter.",
                 line="One wipe.",
+                overlay="1 wipe",
                 estimate_usd=Decimal("0.4"),
                 estimate_up_to_usd=Decimal("0.81"),
             ),
@@ -407,7 +410,8 @@ def test_the_plan_notice_says_the_whole_plan_in_words() -> None:
     assert shown.text == "\n".join(
         [
             "Here's the plan for your notes.",
-            'Scene 1, new line: Say it shorter. New line: "One wipe." (about $0.40, up to $0.81)',
+            'Scene 1, new line: Say it shorter. New line: "One wipe." On screen: "1 wipe" '
+            "(about $0.40, up to $0.81)",
             "Scene 2, go back to version 1: Back to the first one. (free)",
             "Scene 3, new clip: The hand scrubs the tile. Can't: Scene 3 is a talking scene.",
             "Can't: The music can't be changed.",

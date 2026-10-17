@@ -216,3 +216,35 @@ def test_a_question_mid_fix_is_the_producers_with_the_notes_and_the_fix_carries_
     held.run_held()
     assert status(2) == "finished"
     assert "scene_done" in SystemNote.objects.values_list("kind", flat=True)
+
+
+def test_a_new_price_line_changes_the_price_on_screen_too(
+    fake_model: FakeModel,
+    held: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    # Scene 3 says "Yours for $24.00." with "$24.00" drawn over it. The shop owner changes the
+    # price: the decider gives the new line and the overlay that shows the new price.
+    fake_model.respond(
+        "decide_fixes",
+        planning(
+            ("look_at_picture", {"scene": 3}),
+            decided(
+                row(
+                    3,
+                    "new_line",
+                    "Say the new price.",
+                    line="Yours for $19.99.",
+                    overlay=" $19.99 ",
+                )
+            ),
+        ),
+    )
+    say("Change the price to $19.99.")
+    tap_yes(api, session_id, plans()[-1])
+    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
+    held.run_held()
+
+    assert ads()[-1].cuts[-1]["overlay"] == "$19.99"

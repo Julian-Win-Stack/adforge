@@ -36,6 +36,8 @@ export type PlanScene = {
   action: "new_picture" | "new_clip" | "new_line" | "go_back" | "no_change";
   change: string;
   line: string;
+  /** The scene's new overlay, for a new line that changes what it shows. Blank keeps it. */
+  overlay: string;
   go_back_to: number | null;
   cant: string;
   estimate_usd: string;
