@@ -137,8 +137,7 @@ class Attachment(models.Model):
         help_text="The number of the scene this is the starting picture or clip of. Null for "
         "a file that belongs to no scene: the portrait, the voice, the finished ad, a photo.",
     )
-    version = models.CharField(
-        max_length=300,
+    version = models.TextField(
         blank=True,
         db_default="",
         help_text="For a scene's starting picture or clip, the label of the scene version it "

@@ -129,8 +129,10 @@ function SceneCardView({
   const onPrevious = showPrevious && previous !== null;
   const clip = onPrevious ? previous : latest;
   const name = `Scene ${card.scene}`;
-  // Which version the card shows, as the owner and the fix plan name it.
-  const version = (clip ? clip.file.version : card.picture?.version) || null;
+  // Which version the card shows, as the owner and the fix plan name it: a new picture
+  // waiting for its clip is the newest one, shown beside the clip it replaces.
+  const newest = clip && !(card.clipOutOfDate && !onPrevious) ? clip.file : card.picture;
+  const version = newest?.version || null;
 
   let status: string | null = null;
   let tone = "";

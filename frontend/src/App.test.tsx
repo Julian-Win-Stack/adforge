@@ -859,6 +859,33 @@ test("a scene's card names the version it shows, the one gone back to too", asyn
   await nextPoll();
   await within(sceneCard(2)).findByText("v3 back to v1");
   expect(sceneCardsShown()).toEqual([["Scene 2", "/media/c2-a.mp4"]]);
+
+  // Going back after the line changed brings back only the picture: it is the newest
+  // version, shown beside the clip it replaces until its own clip is made.
+  backend.agentSays(
+    "",
+    [{ position: 1, kind: "picture", url: "/media/p2-b.png", scene: 2, version: "v4 back to v2" }],
+    null,
+  );
+  await nextPoll();
+  await within(sceneCard(2)).findByText("v4 back to v2");
+  expect(sceneCardsShown()).toEqual([["Scene 2", "/media/c2-a.mp4"]]);
+  expect(within(sceneCard(2)).getByAltText("Scene 2's new starting picture")).toBeDefined();
+  await user.click(within(sceneCard(2)).getByRole("button", { name: "Previous" }));
+  expect(within(sceneCard(2)).getByText("v2 black toilet")).toBeDefined();
+});
+
+test("a scene's card with only a picture names the picture's version", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  await openSession("Mug ad");
+  backend.agentSays(
+    "",
+    [{ position: 1, kind: "picture", url: "/media/p1.png", scene: 1, version: "v1 first version" }],
+    { scene: 1, kind: "starting_picture", state: "made" },
+  );
+  await nextPoll();
+  await within(sceneCard(1)).findByText("v1 first version");
 });
 
 test("a scene with a picture and no clip yet shows the picture, and its clip once made", async () => {
