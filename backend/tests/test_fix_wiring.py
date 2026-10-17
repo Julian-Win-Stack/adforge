@@ -752,3 +752,23 @@ def test_a_new_picture_keeps_the_movement_of_the_clip_it_replaces(
     asked = fake_model.broll_clips_asked[-1]["prompt"]
     assert MOTION in asked
     assert LIFT not in asked
+
+
+def test_a_decider_error_leaves_the_message_to_the_producer_and_later_ones_route(
+    fake_model: FakeModel, held: HeldSteps, say: Callable[..., None]
+) -> None:
+    # An error that comes back every time on the same message must not hold every later
+    # message, taps too, behind it (review 08; design thread, 05:15 Oct 17).
+    fake_model.respond("decide_fixes", RuntimeError("the decider broke"))
+    fake_model.respond("produce", turn(says="Sorry, could you say that again?"))
+
+    say("Make it pop.")
+
+    assert Message.objects.filter(role="user").last().routed_at is not None  # type: ignore[union-attr]
+    assert Message.objects.filter(role="agent").last().text == "Sorry, could you say that again?"  # type: ignore[union-attr]
+    [red] = Message.objects.filter(role="notice", level="problem").order_by("-seq")[:1]
+    assert "couldn't be read for a fix" in red.text
+    assert any("couldn't be read for a fix" in each["text"] for each in Job.objects.get().warnings)
+
+    plan = a_picture_note_planned(fake_model, say)
+    assert Message.objects.filter(plan_event="shown", fix_plan=plan).exists()
