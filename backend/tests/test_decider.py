@@ -66,6 +66,16 @@ def _version(scene: Scene, call: ToolCall, number: int, note: str = "") -> Produ
         picture_step=picture_step,
         motion_prompt=f"A hand scrubs the toilet, take {number}.",
     )
+    # The clip speaks its line's audio, as code estimates a fix of it from.
+    audio = ProducedItem.objects.create(
+        job=scene.job,
+        scene=scene,
+        step=_step(scene, SceneStep.Kind.LINE_AUDIO, call),
+        kind=ProducedItem.Kind.LINE_AUDIO,
+        version=number,
+        file=f"s{scene.number}_v{number}.mp3",
+        seconds=4.0,
+    )
     frames = [
         {"times": [0.0], "key": _saved(f"s{scene.number}_v{number}_f0.png", (1, 2, 3))},
         {"times": [0.2], "key": _saved(f"s{scene.number}_v{number}_f1.png", (4, 5, 6))},
@@ -78,6 +88,7 @@ def _version(scene: Scene, call: ToolCall, number: int, note: str = "") -> Produ
         version=number,
         file=f"s{scene.number}_v{number}.mp4",
         picture=picture,
+        made_from=audio,
         ruling={"verdict": "pass", "checks": {}, "pictures": {"frames": frames, "sides": []}},
     )
     return picture
@@ -292,7 +303,6 @@ def test_a_photo_in_the_picture_needs_no_look_at_the_frames(fake_model: FakeMode
             "thing": "black toilet",
             "in_picture": True,
             "during_action": False,
-            "clear": True,
         }
     ]
     assert not ToolCall.objects.filter(agent="decider", tool="look_at_clip").exists()
@@ -782,9 +792,9 @@ def test_a_photo_in_the_picture_and_during_the_action_needs_no_look_at_the_frame
 
     assert isinstance(outcome, decider.Planned)
     [row] = outcome.plan.scenes.all()
-    assert [(each["in_picture"], each["during_action"], each["clear"]) for each in row.photos] == [
-        (True, True, False)
-    ]
+    assert [(each["in_picture"], each["during_action"]) for each in row.photos] == [(True, True)]
+    # Code turned the photo that isn't clear into the can't that asks for a clearer one.
+    assert "clearly enough" in row.cant
 
 
 @pytest.mark.parametrize(

@@ -2,9 +2,10 @@
 a version is a starting picture the shop owner was shown and the clip made from it, labelled
 with the change it was made for. Going back to version N makes a new top version from N's
 files: free when N's clip still says the scene's line, or with N's picture copied free and a
-new clip made from it when the line changed since. The original can be gone back to. Driven
-through the chat up to the go-back, which code calls; the models are faked at the gateway,
-but the clips are real tiny videos and ffmpeg runs for real."""
+new clip made from it when the line changed since. The original can be gone back to. The ad
+is made through the chat and its scenes changed through plans the shop owner said yes to, up
+to the go-back, which code calls; the models are faked at the gateway, but the clips are real
+tiny videos and ffmpeg runs for real."""
 
 from collections.abc import Callable
 
@@ -18,8 +19,9 @@ from gateway.models import ModelCall
 from jobs import work
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 
-from .conftest import JUDGED_CLIP, HeldSteps, paid_for, said_yes_to_a_fix
-from .test_producer_broll import calling, checked, run  # noqa: F401 (a fixture)
+from .conftest import JUDGED_CLIP, HeldSteps, paid_for
+from .fixing import fixed
+from .test_producer_broll import BROLL_CHOICE, checked  # noqa: F401 (a fixture)
 from .test_producer_picture_restore import SLOWER, higher_then_slower  # noqa: F401 (a fixture)
 from .test_producer_picture_then_clip import (
     HIGHER,
@@ -109,33 +111,30 @@ def test_going_back_with_the_line_unchanged_is_a_new_top_version_for_nothing(
 
 
 def test_a_newer_change_after_going_back_is_the_next_version(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+    fake_model: FakeModel, steps: HeldSteps
 ) -> None:
     work.go_back(scene_2(), 1)
 
-    new_picture(fake_model, steps, say, 2, "Make the workshop brighter.")
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
-    run(fake_model, steps)
+    new_picture(fake_model, steps, 2, "Make the workshop brighter.")
 
     labels = [version.label for version in work.versions(scene_2())]
     assert labels[3:] == ["v4 back to v1", "v5 Make the workshop brighter."]
     assert work.versions(scene_2())[-1].clip == clip(2)
 
 
-def change_the_line(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> None:
-    """Scene 2 says NEW_LINE, said yes to, its audio made and transcribed."""
-    said_yes_to_a_fix(2, f'Scene 2 says "{NEW_LINE}"', "line")
-    calling(fake_model, say, ("change_line", {"scene": 2, "line": NEW_LINE}))
-    calling(fake_model, say, ("make_line_audio", {"scene": 2}))
-    run(fake_model, steps)
-    calling(fake_model, say, ("transcribe_line_audio", {"scene": 2}))
-    run(fake_model, steps)
+def change_the_line(fake_model: FakeModel, steps: HeldSteps) -> None:
+    """Scene 2 says NEW_LINE, through a plan said yes to: its audio made and transcribed,
+    and a new picture and clip made for it, version 4."""
+    fixed(2, "new_line", change="Say it warmer.", line=NEW_LINE)
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    steps.run_held()
+    assert scene_2().line == NEW_LINE
 
 
 def test_going_back_after_the_line_changed_copies_the_picture_and_remakes_its_clip(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+    fake_model: FakeModel, steps: HeldSteps
 ) -> None:
-    change_the_line(fake_model, steps, say)
+    change_the_line(fake_model, steps)
     earlier = work.versions(scene_2())[1]
     paid = paid_for()
 
@@ -144,11 +143,11 @@ def test_going_back_after_the_line_changed_copies_the_picture_and_remakes_its_cl
     assert paid_for() == paid
     assert gone.clip_to_make
     top = gone.version
-    assert top.label == "v4 back to v2"
+    assert top.label == "v5 back to v2"
     assert top.picture is not None and top.picture.file == earlier.picture.file  # type: ignore[union-attr]
     assert top.clip is None
     assert status(2) == "planned"
-    assert shown_labels()[-1] == "v4 back to v2"
+    assert shown_labels()[-1] == "v5 back to v2"
 
     # Code then makes its clip from the copied picture with the line as it stands, through
     # the normal clip step, which the clip judge checks as any.
@@ -162,7 +161,7 @@ def test_going_back_after_the_line_changed_copies_the_picture_and_remakes_its_cl
     assert made.step is not None and made.step.line == NEW_LINE
     assert status(2) == "finished"
     assert work.versions(scene_2())[-1] == work.Version(
-        number=4, change="back to v2", picture=top.picture, clip=made, back_to=2
+        number=5, change="back to v2", picture=top.picture, clip=made, back_to=2
     )
 
 
@@ -174,7 +173,7 @@ def clip_step_from(picture: ProducedItem) -> SceneStep:
     return SceneStep.objects.create(
         scene=scene,
         kind=SceneStep.Kind.CLIP,
-        tool_call=ToolCall.objects.latest("id"),
+        tool_call=ToolCall.objects.filter(agent="producer").latest("id"),
         **SceneStep.made_for(scene),
         made_from=audio,
         picture=picture,
@@ -201,26 +200,6 @@ def test_there_is_no_going_back_while_the_scenes_picture_or_clip_is_being_made()
     assert len(work.versions(scene)) == 3
 
 
-def test_an_earlier_note_brought_back_by_the_producer_is_still_a_version_of_its_own(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    # The exact-same-note reuse (#143) keeps working, and what it brings back is shown as a
-    # new version with the change it was made for.
-    paid = paid_for()
-    new_picture(fake_model, steps, say, 2, HIGHER)
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
-    run(fake_model, steps)
-
-    assert paid_for() == paid
-    top = work.versions(scene_2())[-1]
-    assert (top.number, top.label) == (4, f"v4 {HIGHER}")
-    assert top.picture is not None and top.clip is not None
-    assert (top.picture.file, top.clip.file) == (
-        item("starting_picture", 2).file,
-        item("clip", 2).file,
-    )
-
-
 def test_versions_of_a_job_with_no_session_are_still_read() -> None:
     Job.objects.update(session=None)
     assert len(work.versions(scene_2())) == 3
@@ -230,17 +209,16 @@ def test_versions_of_a_job_with_no_session_are_still_read() -> None:
 
 
 def test_a_new_clip_of_the_same_picture_is_a_version_of_its_own(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+    fake_model: FakeModel, steps: HeldSteps
 ) -> None:
     from .test_producer_auto_fix import HOVERS, NOTED
 
-    said_yes_to_a_fix(2, HOVERS, "clip")
+    fixed(2, "new_clip", change=HOVERS)
     fake_model.respond(
         "rewrite_clip_prompt",
         {"motion_prompt": NOTED, "motion_prompt_reason": "The note asks for the pour."},
     )
-    calling(fake_model, say, ("make_clip", {"scene": 2, "note": HOVERS}))
-    run(fake_model, steps)
+    steps.run_held()
 
     versions = work.versions(scene_2())
     assert [version.label for version in versions][3:] == [f"v4 {HOVERS}"]
@@ -270,7 +248,7 @@ def test_going_back_after_the_voice_changed_copies_the_picture_and_remakes_its_c
 
 
 def test_a_version_with_no_picture_cant_be_gone_back_to_once_the_line_changed(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+    fake_model: FakeModel, steps: HeldSteps
 ) -> None:
     # A B-roll scene made from example pictures has no starting picture: once its line
     # changed there is nothing to bring back and nothing to make a clip from.
@@ -279,7 +257,7 @@ def test_a_version_with_no_picture_cant_be_gone_back_to_once_the_line_changed(
         status=SceneStep.Status.STOPPED
     )
     assert [version.picture for version in work.versions(scene_2())] == [None] * 3
-    change_the_line(fake_model, steps, say)
+    change_the_line(fake_model, steps)
     before = (ProducedItem.objects.count(), Message.objects.count(), status(2))
 
     with pytest.raises(work.NoSuchVersion, match="version 1 has no starting picture"):
@@ -289,19 +267,18 @@ def test_a_version_with_no_picture_cant_be_gone_back_to_once_the_line_changed(
 
 
 def test_a_long_change_is_shown_with_its_whole_label(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+    fake_model: FakeModel, steps: HeldSteps
 ) -> None:
     from .test_producer_auto_fix import HOVERS, NOTED
 
     # A fix folds in every note the shop owner wrote, so its words can run long.
     long = f"{HOVERS} {'The steam should rise slowly from the tea as it settles. ' * 8}".strip()
-    said_yes_to_a_fix(2, long, "clip")
+    fixed(2, "new_clip", change=long)
     fake_model.respond(
         "rewrite_clip_prompt",
         {"motion_prompt": NOTED, "motion_prompt_reason": "The note asks for the pour."},
     )
-    calling(fake_model, say, ("make_clip", {"scene": 2, "note": long}))
-    run(fake_model, steps)
+    steps.run_held()
 
     assert len(long) > 300
     assert clip(2).step.status == SceneStep.Status.FINISHED  # type: ignore[union-attr]

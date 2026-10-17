@@ -122,6 +122,7 @@ def test_a_plan_shown_in_the_chat_is_read_back_with_its_fields(api: APIClient) -
                     "cant": "",
                     "estimate_usd": "0.550000",
                     "estimate_up_to_usd": "1.100000",
+                    "remakes_clip": False,
                     "photos": [
                         {
                             "photo": 1,
@@ -140,6 +141,7 @@ def test_a_plan_shown_in_the_chat_is_read_back_with_its_fields(api: APIClient) -
                     "cant": "The person's look can't be changed.",
                     "estimate_usd": "0.000000",
                     "estimate_up_to_usd": "0.000000",
+                    "remakes_clip": False,
                     "photos": [],
                 },
             ],

@@ -1,12 +1,13 @@
-"""The whole fix loop through the chat (route B steps 1-2, #140): the mug's ad is made from
-the shop owner's first message, as in test_end_to_end.py, then the shop owner writes a note
-on a scene, the producer restates it as a fix with what it will cost, the shop owner says
-yes, only the smallest step of that scene is made again, and the new ad is assembled and
+"""The whole fix loop through the chat (route B steps 1-2, #140; fix redesign): the mug's ad
+is made from the shop owner's first message, as in test_end_to_end.py, then the shop owner
+writes a note on a scene, a plan for it is shown with what it will cost, the shop owner says
+yes, code makes only the smallest step of that scene again, and the new ad is assembled and
 shown. Each ticket tested its own piece; this proves the pieces fit together.
 
-The producer's turns are scripted to follow its instructions word for word: these tests
-prove the tools, the yes guard and the messages, not the model's judgement. Every outside
-service is faked at the gateway; ffmpeg runs for real on tiny clips."""
+The plan is the decider's, recorded and run by code (tests/fixing.py), so these tests prove
+the worker's part of a fix and the messages, not the decider's judgement (test_fix_wiring.py
+drives the decider through the chat). Every outside service is faked at the gateway; ffmpeg
+runs for real on tiny clips."""
 
 from collections.abc import Callable
 from decimal import Decimal
@@ -18,10 +19,12 @@ from rest_framework.test import APIClient
 
 from adforge.retry import OutsideServiceDown
 from agents import tasks
+from agents.models import SystemNote
+from agents.money import dollars
 from chat.models import Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from jobs.models import Fix, Job, ProducedItem, Scene, SceneStep
+from jobs.models import Fix, FixPlan, Job, ProducedItem, Scene, SceneStep
 
 from .conftest import (
     CLIP_FIXED,
@@ -34,6 +37,7 @@ from .conftest import (
     producer_turns,
     results_of,
 )
+from .fixing import fixed, plan_row, planned, say_yes
 from .test_end_to_end import TALKING, ad_made_through_the_chat  # noqa: F401 (a fixture)
 from .test_producer_auto_fix import shown_clips
 from .test_producer_restarts import WorkerStopped, the_worker_stops
@@ -93,23 +97,6 @@ def restating(*fixes: tuple[int, str, str]) -> Call:
     )
 
 
-def clip_of(scene: int, note: str | None = None) -> Call:
-    return ("make_clip", {"scene": scene, "note": note})
-
-
-def picture_of(scene: int, note: str | None) -> Call:
-    return ("make_starting_picture", {"scene": scene, "note": note})
-
-
-def step_lands(fake_model: FakeModel, steps: HeldSteps, *calls: Call) -> None:
-    """The oldest held step runs; told it finished, the producer makes `calls`, if any, then
-    tells the shop owner."""
-    if calls:
-        fake_model.respond("produce", turn(calls=list(calls)))
-    fake_model.respond("produce", turn(says="That part's ready."))
-    steps.run_next()
-
-
 def ads() -> list[ProducedItem]:
     return list(Job.objects.get().produced.filter(kind="finished_ad").order_by("version"))
 
@@ -134,12 +121,6 @@ def held_kinds(steps: HeldSteps) -> list[tuple[int, str]]:
     ]
 
 
-def told(scene: int, kind: str = "clip") -> str:
-    """What the producer was told when scene `scene`'s latest `kind` step finished."""
-    step = SceneStep.objects.filter(kind=kind, scene__number=scene).latest("id")
-    return step.result
-
-
 def half_turn() -> dict[str, Any]:
     """The clip judge's MOTION answer when it sees the turn stop halfway."""
     return {
@@ -156,40 +137,55 @@ def shown(ad_made_through_the_chat: None) -> list[str]:  # noqa: F811
 
 
 def clip_fixed(
-    fake_model: FakeModel, say: Say, steps: HeldSteps, fix: str, rewrite: dict[str, Any]
+    fake_model: FakeModel,
+    steps: HeldSteps,
+    plan: FixPlan,
+    yes: str = "yes",
+    rewrite: dict[str, Any] = TURN_REWRITE,
 ) -> None:
-    """The shop owner says yes to scene 2's restated clip fix; its clip is made again and
-    lands."""
-    owner_says(fake_model, say, "Yes, do that.", clip_of(2, fix))
+    """The shop owner says yes to `plan`, of a new clip for scene 2; its clip is made again
+    and lands."""
+    say_yes(plan, yes)
     assert held_kinds(steps) == [(2, "clip")]
     fake_model.respond("rewrite_clip_prompt", rewrite)
-    step_lands(fake_model, steps)
+    steps.run_next()
 
 
-# --- 1. A clip note: restated, confirmed, one scene's clip made again, a new ad ------------------
+def notes(kind: str) -> list[str]:
+    """The system notes of `kind` the producer is told, oldest first."""
+    return list(
+        SystemNote.objects.filter(kind=kind)
+        .order_by("created_at", "id")
+        .values_list("text", flat=True)
+    )
+
+
+# --- 1. A clip note: planned, confirmed, one scene's clip made again, a new ad ------------------
 
 
 def test_a_clip_note_makes_only_that_scenes_clip_again_and_a_new_ad(
-    fake_model: FakeModel, say: Say, steps: HeldSteps, shown: list[str]
+    fake_model: FakeModel, steps: HeldSteps, shown: list[str]
 ) -> None:
     first_ad = ads()[0]
     untouched = made_for(1, 3)
     picture_2 = latest("starting_picture", 2)
     old_clip_2 = latest("clip", 2)
 
-    owner_says(fake_model, say, HOVERS, restating((2, TURN_FIX, "clip")))
+    plan = planned(plan_row(2, "new_clip", change=TURN_FIX), note=HOVERS)
 
-    # Restated with its cost, and nothing made before the yes.
-    fix = Fix.objects.get()
-    assert (fix.scene.number, fix.redo, fix.confirmed_by) == (2, "clip", None)
-    assert [note["text"] for note in fix.notes] == [HOVERS]
-    assert results_of("restate_fix")[-1].startswith("Recorded the fix. Scene 2: about $")
+    # Planned with its cost, and nothing made before the yes.
+    row = plan.scenes.get()
+    assert (row.scene.number, row.action, plan.state) == (2, "new_clip", "proposed")
+    assert row.estimate_usd > 0
+    assert not Fix.objects.exists()
     assert steps.held == []
     assert paid_for() == shown
 
-    clip_fixed(fake_model, say, steps, TURN_FIX, TURN_REWRITE)
+    clip_fixed(fake_model, steps, plan, "Yes, do that.")
 
-    fix.refresh_from_db()
+    fix = Fix.objects.get()
+    assert (fix.scene.number, fix.fix, fix.redo) == (2, TURN_FIX, "clip")
+    assert [note["text"] for note in fix.notes] == [HOVERS]
     assert fix.confirmed_by is not None and fix.confirmed_by.text == "Yes, do that."
     new_clip_2 = latest("clip", 2)
     assert new_clip_2.version == 2
@@ -208,13 +204,13 @@ def test_a_clip_note_makes_only_that_scenes_clip_again_and_a_new_ad(
         (3, old_cuts[3]),
     ]
     assert old_cuts[2] == old_clip_2.pk
-    # The producer is told the clip's cost, the fix's running cost and that the ad is shown.
-    assert " It cost $" in told(2)
-    assert "Scene 2's fix has cost $" in told(2)
-    assert told(2).endswith(
-        f"the ad was assembled again with it (version 2, {new_ad.seconds:g} seconds) and shown "
-        "to the shop owner in the chat. Ask them to tell you if it's fixed."
-    )
+    # The producer is told the clip's cost and that the ad is shown.
+    (done,) = notes(SystemNote.Kind.SCENE_DONE)
+    assert done == f"Scene 2's new clip is done. It cost {dollars(fix.cost_usd())}."
+    assert notes(SystemNote.Kind.AD_SHOWN) == [
+        "Every scene of the plan is done, so the new ad (version 2) was assembled and shown "
+        "to the shop owner."
+    ]
     # Only the rewrite and the one clip were paid for.
     assert paid_for()[len(shown) :] == [
         "rewrite_clip_prompt",
@@ -231,29 +227,22 @@ def test_a_picture_note_makes_the_picture_then_the_clip_then_the_ad(
     fake_model: FakeModel, say: Say, steps: HeldSteps, shown: list[str]
 ) -> None:
     untouched = made_for(1, 3)
-    owner_says(fake_model, say, WRONG_SIDE, restating((2, HANDLE_FIX, "picture")))
+    fixed(2, "new_picture", change=HANDLE_FIX, note=WRONG_SIDE)
     assert Fix.objects.get().redo == "picture"
-
-    owner_says(fake_model, say, "Yes", picture_of(2, HANDLE_FIX))
     assert held_kinds(steps) == [(2, "starting_picture")]
     fake_model.respond("choose_broll_picture", HANDLE_SHOWING)
-    step_lands(fake_model, steps)
+    steps.run_next()
 
-    # The new picture plans the scene again: the ad can't be assembled from the old clip.
+    # The new picture plans the scene again, and passed its checks, so code makes its clip,
+    # with no note: the ad can't be assembled from the old clip meanwhile.
     assert latest("starting_picture", 2).version == 2
     assert Scene.objects.get(number=2).status == "planned"
-    assert "Scene 2 is no longer finished: make its clip from this picture." in told(
-        2, "starting_picture"
-    )
-    assert " It cost $" in told(2, "starting_picture")
-    owner_says(fake_model, say, "Is it ready?", ("assemble_ad", {}))
-    assert results_of("assemble_ad")[-1].startswith("Refused: scene 2 isn't finished")
-    assert [ad.version for ad in ads()] == [1]
-
-    # Told the picture is ready, the producer makes its clip with no note.
-    owner_says(fake_model, say, "Go on", clip_of(2))
     assert held_kinds(steps) == [(2, "clip")]
-    step_lands(fake_model, steps)
+    owner_says(fake_model, say, "Is it ready?", ("assemble_ad", {}))
+    assert results_of("assemble_ad")[-1].startswith("Refused: scene 2's clip is still being made.")
+    assert [ad.version for ad in ads()] == [1]
+    assert SceneStep.objects.get(pk=steps.held[0]).note == ""
+    steps.run_next()
 
     new_clip_2 = latest("clip", 2)
     assert new_clip_2.picture == latest("starting_picture", 2)
@@ -269,40 +258,39 @@ def test_a_picture_note_makes_the_picture_then_the_clip_then_the_ad(
 
 # --- 3. Nothing is made again before the shop owner's yes --------------------------------------
 # --- 4. An action in a talking scene can't be done ---------------------------------------------
-# Both refusals, and the sentences the instructions give the producer for them, are proved on
-# a cheaper ad in test_producer_fixes.py (the guard, restate_fix) and
-# test_producer_fix_instructions.py.
+# Both are proved by code's plan: test_run_plan.py (the rule can'ts) and test_fix_wiring.py
+# (nothing made before the yes).
 
-# --- 5. Two notes in one message: one restatement, one yes, both redos at once, one ad -------
+# --- 5. Two notes in one message: one plan, one yes, both redos at once, one ad --------------
 
 
-def test_two_notes_at_once_are_restated_together_and_make_one_new_ad(
-    fake_model: FakeModel, say: Say, steps: HeldSteps, shown: list[str]
+def test_two_notes_at_once_are_planned_together_and_make_one_new_ad(
+    fake_model: FakeModel, steps: HeldSteps, shown: list[str]
 ) -> None:
     untouched = made_for(3)
-    owner_says(
-        fake_model,
-        say,
-        f"{HOVERS} And in the first scene she should hold the mug with both hands.",
-        restating((1, BOTH_HANDS, "picture"), (2, TURN_FIX, "clip")),
+    plan = planned(
+        plan_row(1, "new_picture", change=BOTH_HANDS),
+        plan_row(2, "new_clip", change=TURN_FIX),
+        note=f"{HOVERS} And in the first scene she should hold the mug with both hands.",
     )
-    assert Fix.objects.count() == 2
-    assert "in all" in results_of("restate_fix")[-1]
+    (told,) = notes(SystemNote.Kind.PLAN_SHOWN)
+    assert told.endswith(f"About {dollars(plan.estimate_usd())} in all.")
 
-    owner_says(fake_model, say, "Yes to both", picture_of(1, BOTH_HANDS), clip_of(2, TURN_FIX))
+    say_yes(plan, "Yes to both")
+    assert Fix.objects.count() == 2
     # Both started at once.
     assert held_kinds(steps) == [(1, "starting_picture"), (2, "clip")]
     fake_model.respond("choose_starting_picture", TALKING)
     fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
-    # Scene 1's picture lands; told, the producer makes its clip.
-    step_lands(fake_model, steps, clip_of(1))
+    # Scene 1's picture lands; code makes its clip.
+    steps.run_next()
     # Scene 2's clip lands while scene 1's is still being made: nothing assembled yet.
-    step_lands(fake_model, steps)
+    steps.run_next()
     assert [ad.version for ad in ads()] == [1]
-    assert "once scene 1 is finished" in told(2)
+    assert notes(SystemNote.Kind.AD_SHOWN) == []
     # Scene 1's clip lands last and assembles the one new ad, with both new clips.
     assert held_kinds(steps) == [(1, "clip")]
-    step_lands(fake_model, steps)
+    steps.run_next()
 
     assert [ad.version for ad in ads()] == [1, 2]
     assert [cut["clip"] for cut in ads()[1].cuts] == [
@@ -312,98 +300,26 @@ def test_two_notes_at_once_are_restated_together_and_make_one_new_ad(
     ]
     assert (latest("clip", 1).version, latest("clip", 2).version) == (2, 2)
     assert made_for(3) == untouched
-    assert "the ad was assembled again" in told(1)
-
-
-# --- 6. A note while the scene's redo is running waits for it ---------------------------------
-
-
-def test_a_note_while_the_scenes_redo_runs_is_made_once_that_redo_lands(
-    fake_model: FakeModel, say: Say, steps: HeldSteps, shown: list[str]
-) -> None:
-    owner_says(fake_model, say, HOVERS, restating((2, TURN_FIX, "clip")))
-    owner_says(fake_model, say, "Yes", clip_of(2, TURN_FIX))
-    assert held_kinds(steps) == [(2, "clip")]
-
-    # While it runs, the shop owner writes again about scene 2: restated, and they say yes.
-    # As instructed, the producer tells them the fix starts once the redo is finished, and
-    # makes nothing yet.
-    owner_says(
-        fake_model,
-        say,
-        "Actually, lift it off the bench first.",
-        restating((2, LIFT_FIX, "clip")),
-    )
-    owner_says(fake_model, say, "Yes")
-    assert held_kinds(steps) == [(2, "clip")]
-
-    # The first redo lands. The shop owner already corrected it, so it isn't assembled into
-    # an ad; told, the producer makes the corrected fix.
-    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
-    step_lands(fake_model, steps, clip_of(2, LIFT_FIX))
-    assert [ad.version for ad in ads()] == [1]
-    first_redo = SceneStep.objects.filter(kind="clip", scene__number=2).order_by("id")[1]
-    assert first_redo.result.endswith(
-        "Tell the shop owner. The check of scene 2's fix found the change in the new clip. "
-        "The ad will be assembled again, and shown to the shop owner, "
-        "once scene 2's newer fix is made. If the shop owner said no to "
-        "scene 2's fix, assemble the ad with assemble_ad instead."
-    )
-    assert held_kinds(steps) == [(2, "clip")]
-    assert SceneStep.objects.get(pk=steps.held[0]).note == LIFT_FIX
-    fake_model.respond("rewrite_clip_prompt", LIFT_REWRITE)
-    step_lands(fake_model, steps)
-
-    # One new ad, with the corrected fix's clip.
-    assert latest("clip", 2).version == 3
-    assert [ad.version for ad in ads()] == [1, 2]
-    assert [cut["clip"] for cut in ads()[1].cuts][1] == latest("clip", 2).pk
-    assert paid_for()[len(shown) :].count("make_broll_clip") == 2
-
-
-def test_a_redo_asked_for_while_the_scenes_redo_runs_is_refused_as_busy(
-    fake_model: FakeModel, say: Say, steps: HeldSteps, shown: list[str]
-) -> None:
-    owner_says(fake_model, say, HOVERS, restating((2, TURN_FIX, "clip")))
-    owner_says(fake_model, say, "Yes", clip_of(2, TURN_FIX))
-    owner_says(
-        fake_model,
-        say,
-        "Actually, lift it off the bench first.",
-        restating((2, LIFT_FIX, "clip")),
-    )
-
-    # A model that doesn't wait, as the instructions tell it to.
-    owner_says(fake_model, say, "Yes", clip_of(2, LIFT_FIX))
-
-    assert results_of("make_clip")[-1] == (
-        "Refused: scene 2's clip is already being made. You'll be told when it's ready. "
-        "Nothing was done."
-    )
-    assert held_kinds(steps) == [(2, "clip")]
-    assert paid_for() == shown
+    assert len(notes(SystemNote.Kind.AD_SHOWN)) == 1
 
 
 # --- 7. A second note on the same scene after its fix ------------------------------------------
 
 
 def test_a_second_note_after_the_fix_makes_the_same_step_again(
-    fake_model: FakeModel, say: Say, steps: HeldSteps, shown: list[str]
+    fake_model: FakeModel, steps: HeldSteps, shown: list[str]
 ) -> None:
-    owner_says(fake_model, say, HOVERS, restating((2, TURN_FIX, "clip")))
-    clip_fixed(fake_model, say, steps, TURN_FIX, TURN_REWRITE)
+    clip_fixed(fake_model, steps, planned(plan_row(2, "new_clip", change=TURN_FIX), note=HOVERS))
 
-    owner_says(
+    again = "Still not right: lift it off the bench first."
+    clip_fixed(
         fake_model,
-        say,
-        "Still not right: lift it off the bench first.",
-        restating((2, LIFT_FIX, "clip")),
+        steps,
+        planned(plan_row(2, "new_clip", change=LIFT_FIX), note=again),
+        rewrite=LIFT_REWRITE,
     )
     second = Fix.objects.latest("id")
-    assert [note["text"] for note in second.notes] == [
-        "Still not right: lift it off the bench first."
-    ]
-    clip_fixed(fake_model, say, steps, LIFT_FIX, LIFT_REWRITE)
+    assert [note["text"] for note in second.notes] == [again]
 
     assert latest("clip", 2).version == 3
     assert latest("clip", 2).step.fix == second  # type: ignore[union-attr]
@@ -420,14 +336,12 @@ def test_a_second_note_after_the_fix_makes_the_same_step_again(
 
 def test_the_chat_is_shown_the_new_clip_with_its_scene_and_when_it_was_being_made(
     fake_model: FakeModel,
-    say: Say,
     steps: HeldSteps,
     shown: list[str],
     api: APIClient,
     session_id: str,
 ) -> None:
-    owner_says(fake_model, say, HOVERS, restating((2, TURN_FIX, "clip")))
-    clip_fixed(fake_model, say, steps, TURN_FIX, TURN_REWRITE)
+    clip_fixed(fake_model, steps, planned(plan_row(2, "new_clip", change=TURN_FIX), note=HOVERS))
 
     messages = api.get(f"/api/sessions/{session_id}/messages/").json()
     # The scene's clips, each shown with its scene number, the new one last.
@@ -456,33 +370,34 @@ def test_the_chat_is_shown_the_new_clip_with_its_scene_and_when_it_was_being_mad
     assert remaking[0]["seq"] < shown_at
 
 
-def test_the_producer_is_given_only_the_restatement_and_its_steps_not_the_chats_signals(
+def test_the_producer_is_given_the_plans_notes_not_the_chats_signals(
     fake_model: FakeModel, say: Say, steps: HeldSteps, shown: list[str]
 ) -> None:
-    owner_says(fake_model, say, HOVERS, restating((2, TURN_FIX, "clip")))
-    clip_fixed(fake_model, say, steps, TURN_FIX, TURN_REWRITE)
+    clip_fixed(fake_model, steps, planned(plan_row(2, "new_clip", change=TURN_FIX), note=HOVERS))
+
+    owner_says(fake_model, say, "Is it done?")
 
     given = str(given_to_the_producer(producer_turns()))
     assert "Remaking scene 2's clip." not in given
-    assert "restate_fix" in given
+    assert "A fix plan is shown to the shop owner" in given
+    assert "Scene 2's new clip is done." in given
 
 
 # --- A redo that fails ---------------------------------------------------------------------------
 
 
-def test_a_fixs_redo_that_fails_is_tried_again_without_a_new_yes(
+def test_a_fixs_redo_that_fails_pays_for_no_clip_and_the_producer_is_told(
     fake_model: FakeModel,
-    say: Say,
     steps: HeldSteps,
     shown: list[str],
     api: APIClient,
     session_id: str,
 ) -> None:
-    owner_says(fake_model, say, HOVERS, restating((2, TURN_FIX, "clip")))
-    owner_says(fake_model, say, "Yes", clip_of(2, TURN_FIX))
+    turns = producer_turns()
+    fixed(2, "new_clip", change=TURN_FIX, note=HOVERS)
     # The rewrite's answer can't be used, so the step fails before any video is paid for.
     fake_model.respond("rewrite_clip_prompt", {"motion_prompt": " ", "nonsense": 1})
-    step_lands(fake_model, steps)
+    steps.run_next()
 
     assert "make_broll_clip" not in paid_for()[len(shown) :]
     assert SceneStep.objects.filter(kind="clip").latest("id").status == "failed"
@@ -490,15 +405,10 @@ def test_a_fixs_redo_that_fails_is_tried_again_without_a_new_yes(
     # The chat is told nothing was made, so it stops showing the clip as being made.
     texts = [message["text"] for message in api.get(f"/api/sessions/{session_id}/messages/").json()]
     assert texts.index("Scene 2's clip couldn't be made.") > texts.index("Remaking scene 2's clip.")
-
-    # The shop owner already said yes to this fix: the producer tries again on their word.
-    owner_says(fake_model, say, "Try again", clip_of(2, TURN_FIX))
-    assert held_kinds(steps) == [(2, "clip")]
-    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
-    step_lands(fake_model, steps)
-
-    assert latest("clip", 2).version == 2
-    assert [ad.version for ad in ads()] == [1, 2]
+    # The producer is told by a note, not woken.
+    (error,) = notes(SystemNote.Kind.ERROR)
+    assert error.startswith("Scene 2's new clip couldn't be made: ")
+    assert producer_turns() == turns
 
 
 # --- A worker restart in the middle of a fix's redo ---------------------------------------------
@@ -506,14 +416,12 @@ def test_a_fixs_redo_that_fails_is_tried_again_without_a_new_yes(
 
 def test_a_fixs_redo_run_again_after_the_worker_stopped_pays_and_shows_everything_once(
     fake_model: FakeModel,
-    say: Say,
     steps: HeldSteps,
     shown: list[str],
     api: APIClient,
     session_id: str,
 ) -> None:
-    owner_says(fake_model, say, HOVERS, restating((2, TURN_FIX, "clip")))
-    owner_says(fake_model, say, "Yes", clip_of(2, TURN_FIX))
+    fixed(2, "new_clip", change=TURN_FIX, note=HOVERS)
     (step_id,) = steps.held
     fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
 
@@ -527,7 +435,6 @@ def test_a_fixs_redo_run_again_after_the_worker_stopped_pays_and_shows_everythin
         steps.run_next()
     assert SceneStep.objects.get(pk=step_id).status == "running"
     # The step is handed out again, as Celery does with a task its worker never finished.
-    fake_model.respond("produce", turn(says="That part's ready."))
     tasks.run_scene_step(step_id)
 
     assert SceneStep.objects.get(pk=step_id).status == "finished"
@@ -543,36 +450,35 @@ def test_a_fixs_redo_run_again_after_the_worker_stopped_pays_and_shows_everythin
     messages = api.get(f"/api/sessions/{session_id}/messages/").json()
     texts = [message["text"] for message in messages]
     assert texts.count("Remaking scene 2's clip.") == 1
+    assert len(notes(SystemNote.Kind.AD_SHOWN)) == 1
 
 
 # --- 9. A line note: the scene's picture, audio, transcript and clip are made again ----------
 
 
 def test_a_line_note_remakes_that_scene_for_its_new_line_and_captions_the_new_ad(
-    fake_model: FakeModel, say: Say, steps: HeldSteps, shown: list[str]
+    fake_model: FakeModel, steps: HeldSteps, shown: list[str]
 ) -> None:
     untouched = made_for(1, 2)
-    owner_says(
-        fake_model,
-        say,
-        "The last scene should say it's on sale, not just the price.",
-        restating((3, SALE_FIX, "line")),
+    plan = planned(
+        plan_row(3, "new_line", change=SALE_FIX, line=SALE),
+        note="The last scene should say it's on sale, not just the price.",
     )
-    assert "about $" in results_of("restate_fix")[-1]
+    assert plan.scenes.get().estimate_usd > 0
     assert paid_for() == shown
 
-    owner_says(fake_model, say, "Yes", ("change_line", {"scene": 3, "line": SALE}))
+    say_yes(plan)
     scene = Scene.objects.get(number=3)
     assert (scene.line, scene.status) == (SALE, "planned")
 
-    # As the change tells it: the picture and audio, then the transcript, then the clip.
-    owner_says(fake_model, say, "Go on", picture_of(3, None), ("make_line_audio", {"scene": 3}))
+    # Code makes the picture and audio, then the transcript, then the clip.
     fake_model.respond("choose_starting_picture", TALKING)
-    step_lands(fake_model, steps)
-    step_lands(fake_model, steps, ("transcribe_line_audio", {"scene": 3}))
-    step_lands(fake_model, steps, clip_of(3))
+    steps.run_next()
+    steps.run_next()
+    steps.run_next()
     assert [ad.version for ad in ads()] == [1]
-    step_lands(fake_model, steps)
+    assert held_kinds(steps) == [(3, "clip")]
+    steps.run_next()
 
     assert {
         kind: latest(kind, 3).version
@@ -606,26 +512,25 @@ def test_a_line_note_remakes_that_scene_for_its_new_line_and_captions_the_new_ad
 
 
 def test_a_fixs_redo_the_judge_fails_is_made_again_by_code_and_the_remake_makes_the_new_ad(
-    fake_model: FakeModel, say: Say, steps: HeldSteps, shown: list[str]
+    fake_model: FakeModel, steps: HeldSteps, shown: list[str]
 ) -> None:
-    owner_says(fake_model, say, HOVERS, restating((2, TURN_FIX, "clip")))
-    owner_says(fake_model, say, "Yes", clip_of(2, TURN_FIX))
+    fixed(2, "new_clip", change=TURN_FIX, note=HOVERS)
     assert held_kinds(steps) == [(2, "clip")]
     fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
     # The judge fails the redo on 2 of its 3 asks, and passes the remake on all 3.
     # A fix's clip: each answer also says the owner's change is made.
-    fixed = {"owner_change": CLIP_FIXED}
+    fixed_ = {"owner_change": CLIP_FIXED}
     fake_model.respond(
         "check_clip_motion",
-        half_turn() | fixed,
-        half_turn() | fixed,
-        *[CLIP_MOTION_OK | fixed] * 4,
+        half_turn() | fixed_,
+        half_turn() | fixed_,
+        *[CLIP_MOTION_OK | fixed_] * 4,
     )
     fake_model.respond("remake_clip_prompt", TURN_REMADE)
-    step_lands(fake_model, steps)
+    steps.run_next()
 
     # The redo and its remake are the step's, the remake the scene's clip: written from the
-    # redo's prompt and what the judge saw, keeping the shop owner's fix word for word.
+    # redo's prompt and what the judge saw, keeping the shop owner's change word for word.
     fix = Fix.objects.get()
     step = SceneStep.objects.filter(kind="clip", scene__number=2).latest("id")
     redo, remake = step.produced.order_by("id")
@@ -644,21 +549,9 @@ def test_a_fixs_redo_the_judge_fails_is_made_again_by_code_and_the_remake_makes_
     assert Message.objects.filter(attachments__file=ads()[1].file).count() == 1
     assert shown_clips().count(remake.file) == 1
     assert redo.file not in shown_clips()
-    # The producer is told what the judge did, the fix's check passed, and the cost of it
-    # all: the remake is the step's, so the fix's cost is the step's.
-    assert (
-        f' The clip judge failed the first clip it made ("{HALF_TURN}"), so it was made again '
-        "once, and the judge passed the new one. Scene 2 is finished."
-    ) in told(2)
-    assert "The check of scene 2's fix found the change in the new clip." in told(2)
-    assert told(2).endswith(
-        f"the ad was assembled again with it (version 2, {ads()[1].seconds:g} seconds) and shown "
-        "to the shop owner in the chat. Ask them to tell you if it's fixed."
-    )
     # Two prompts written at $0.006, two 5-second clips at Boreal's $0.0792 a second, and the
     # judge's 6 asks on each at $0.003, which check the fix too: all the step's, so the fix's.
-    assert " It cost $0.84." in told(2)
-    assert "Scene 2's fix has cost $0.84 so far." in told(2)
+    assert notes(SystemNote.Kind.SCENE_DONE) == ["Scene 2's new clip is done. It cost $0.84."]
     assert fix.cost_usd() == Decimal("0.840")
     charged = ModelCall.objects.filter(created_at__gte=step.started_at).exclude(purpose="produce")
     assert {call.tool_call_id for call in charged} == {step.tool_call_id}
@@ -706,7 +599,7 @@ def test_a_fixs_redo_the_judge_fails_is_made_again_by_code_and_the_remake_makes_
     ],
     ids=["clip_failed", "outage_asking", "outage_collecting"],
 )
-def test_a_fixs_redo_the_video_service_fails_fails_its_step_and_is_tried_again_on_the_same_yes(
+def test_a_fixs_redo_the_video_service_fails_fails_its_step_and_planned_again_is_made(
     fake_model: FakeModel,
     say: Say,
     steps: HeldSteps,
@@ -718,41 +611,40 @@ def test_a_fixs_redo_the_video_service_fails_fails_its_step_and_is_tried_again_o
     reason: str,
     videos_asked: int,
 ) -> None:
-    owner_says(fake_model, say, HOVERS, restating((2, TURN_FIX, "clip")))
-    owner_says(fake_model, say, "Yes", clip_of(2, TURN_FIX))
+    plan = fixed(2, "new_clip", change=TURN_FIX, note=HOVERS)
     fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
     fake_model.respond(purpose, *answers)
     asked_before = len(fake_model.clips_submitted)
-    step_lands(fake_model, steps)
+    steps.run_next()
 
     step = SceneStep.objects.filter(kind="clip", scene__number=2).latest("id")
     assert (step.status, step.reason) == ("failed", reason)
-    assert step.result == (
-        f"Background step failed: scene 2's clip couldn't be made: {reason} Tell the shop "
-        "owner what went wrong."
-    )
+    assert notes(SystemNote.Kind.ERROR) == [f"Scene 2's new clip couldn't be made: {reason}"]
+    assert plan.scenes.get().error == f"Scene 2's new clip couldn't be made: {reason}"
     assert latest("clip", 2).version == 1
     assert [ad.version for ad in ads()] == [1]
     assert not [each for each in paid_for()[len(shown) :] if each.startswith("check_")]
     # The chat is told nothing was made, so it stops showing the clip as being made.
     texts = [message["text"] for message in api.get(f"/api/sessions/{session_id}/messages/").json()]
     assert texts.index("Scene 2's clip couldn't be made.") > texts.index("Remaking scene 2's clip.")
-    # The fix stays said yes to, with nothing made for it yet.
+    # The fix stays said yes to, with nothing made for it.
     fix = Fix.objects.get()
-    assert fix.confirmed_by is not None and fix.confirmed_by.text == "Yes"
+    assert fix.confirmed_by is not None and fix.confirmed_by.text == "yes"
+    assert not ProducedItem.objects.filter(step__fix=fix)
     # A producer that puts the ad together anyway finds the old one, already shown.
     owner_says(fake_model, say, "Put it together then", ("assemble_ad", {}))
     assert results_of("assemble_ad")[-1].startswith("The ad was already assembled")
     assert Message.objects.filter(attachments__file=ads()[0].file).count() == 1
 
-    # The shop owner already said yes to this fix: the producer tries again on their word.
-    owner_says(fake_model, say, "Try again", clip_of(2, TURN_FIX))
+    # The shop owner asks for the same change again, and says yes to its plan.
+    again = fixed(2, "new_clip", change=TURN_FIX, note="Try again")
     assert held_kinds(steps) == [(2, "clip")]
-    assert Fix.objects.count() == 1
     fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
-    step_lands(fake_model, steps)
+    steps.run_next()
 
-    assert SceneStep.objects.filter(kind="clip", scene__number=2).latest("id").fix == fix
+    assert SceneStep.objects.filter(kind="clip", scene__number=2).latest("id").fix == (
+        again.scenes.get().fix
+    )
     assert latest("clip", 2).version == 2
     assert [ad.version for ad in ads()] == [1, 2]
     assert len(fake_model.clips_submitted) - asked_before == videos_asked

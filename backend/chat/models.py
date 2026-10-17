@@ -129,6 +129,14 @@ class Message(models.Model):
         related_name="messages",
         help_text="The plan the message shows, answers or settles. Null for none.",
     )
+    routed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When code sent the shop owner's message, once the ad had a clip, to whoever "
+        "answers it: the decider, the producer, or code for a tap of a plan's yes button. "
+        "Blank until then, and for messages from before the first clip, which the producer "
+        "reads as they come.",
+    )
     trace_id = models.CharField(
         max_length=32,
         blank=True,

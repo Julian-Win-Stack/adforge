@@ -3,6 +3,7 @@ keeps, and how round 4's saved ads are read and replayed."""
 
 import json
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -11,107 +12,159 @@ import pytest
 from adforge.file_store import read
 from chat.models import Message, Session
 from evals.owner_notes import provider as provider_module
-from evals.owner_notes.chat import GO_AHEAD, Chat, Notes, send_notes, since
+from evals.owner_notes.chat import TAP_YES, Chat, Notes, send_notes, since
 from evals.owner_notes.provider import OwnerNotesProvider
 from evals.owner_notes.record import record
 from evals.owner_notes.saved_ads import SavedAd, SavedScene, as_planned, saved_ads
 from gateway.fake import COLOURS, FakeModel, turn
 from gateway.gateway import use_model
 from gateway.types import ModelRequest
-from jobs.models import Fix, Job, ProducedItem
+from jobs.models import FixPlan, Job, ProducedItem
 from jobs.planning import PlanHandoff, producer_decision_for
 
 from .conftest import HeldSteps, a_plan_with, colour_at, picture
+from .test_fix_loop import TURN_REWRITE
+from .test_fix_wiring import decided, planning, row, sort
 from .test_producer_broll import (
     assemble_through_the_chat,
     checked,  # noqa: F401 (a fixture)
 )
-from .test_producer_fixes import FIX_2, NOTE_2, REWRITE, Say, clip_with, restating
-from .test_producer_fixes import shown as shown  # noqa: F401 (a fixture)
+from .test_producer_picture_then_clip import assembled  # noqa: F401 (a fixture)
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+NOTE_2 = "Scene 2 just sits there. The hand should turn the mug all the way round."
+TURN = "The hand turns the mug all the way round."
 
 
 def a_chat() -> Chat:
     return Chat(str(Session.objects.get().pk))
 
 
-def test_a_case_says_yes_to_the_restatement_and_keeps_what_was_made(
+def a_clip_note_planned(fake_model: FakeModel) -> None:
+    """The decider's plan for NOTE_2: scene 2's clip made again, the hand turning the mug."""
+    fake_model.respond(
+        "decide_fixes",
+        planning(
+            ("look_at_clip", {"scene": 2, "version": None}), decided(row(2, "new_clip", TURN))
+        ),
+    )
+
+
+def test_a_case_taps_yes_on_the_plan_shown_and_keeps_what_was_made(
     fake_model: FakeModel,
-    shown: ProducedItem,  # noqa: F811
+    checked: None,  # noqa: F811
+    assembled: ProducedItem,  # noqa: F811
     steps: HeldSteps,
     tmp_path: Path,
 ) -> None:
     chat = a_chat()
     start = since(chat)
-    fake_model.respond(
-        "produce",
-        turn(calls=[restating((2, FIX_2, "clip"))]),
-        turn(says=f"I'll change scene 2: {FIX_2} Shall I?"),
-        turn(calls=[clip_with(2, FIX_2)]),
-        turn(says="Making scene 2's clip again."),
-        *[turn(says="Here's the new ad.") for _ in range(3)],
-    )
-    fake_model.respond("rewrite_clip_prompt", REWRITE)
+    a_clip_note_planned(fake_model)
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
 
     turned = send_notes(chat, Notes([NOTE_2]))
-    kept = record(chat, start, turned, {"id": "mug-pour", "ad": "mug", "wants": "a pour"}, tmp_path)
+    kept = record(chat, start, turned, {"id": "mug-turn", "ad": "mug", "wants": "a turn"}, tmp_path)
 
-    assert turned.sent == [NOTE_2, GO_AHEAD]
+    plan = FixPlan.objects.get()
+    assert turned.sent == [NOTE_2, f"{TAP_YES} [tapped on plan {plan.pk}]"]
     assert turned.error == ""
-    assert kept["fixes"] == [
+    # The yes was the button's, not typed.
+    assert plan.state == "confirmed"
+    assert plan.confirmed_by == Message.objects.get(plan_event="yes")
+    estimate = plan.scenes.get().estimate_usd
+    assert str(estimate) == "0.484000"
+    # The plan is made from the owner's messages of this round, the note last.
+    [kept_plan] = kept["plans"]
+    assert kept_plan["notes"][-1] == NOTE_2
+    assert [{**kept_plan, "notes": [NOTE_2]}] == [
         {
-            "scene": 2,
-            "redo": "clip",
-            "fix": FIX_2,
-            "estimate_usd": "0.484000",
+            "plan": plan.pk,
+            "state": "confirmed",
             "said_yes": True,
-            # The clip was never made, so its check is the fake's.
-            "checks": [{"what": "clip", "verdict": "video faked: not judged", "reason": ""}],
+            "notes": [NOTE_2],
+            "question": "",
+            "cants": [],
+            "estimate_usd": str(estimate),
+            "estimate_up_to_usd": str(plan.estimate_up_to_usd()),
+            "scenes": [
+                {
+                    "scene": 2,
+                    "action": "new_clip",
+                    "change": TURN,
+                    "line": "",
+                    "go_back_to": None,
+                    "cant": "",
+                    "estimate_usd": str(estimate),
+                    "estimate_up_to_usd": str(plan.estimate_up_to_usd()),
+                    "photos": [],
+                    "landed": True,
+                    # The clip was never made, so its check is the fake's.
+                    "checks": [
+                        {"what": "clip", "verdict": "video faked: not judged", "reason": ""}
+                    ],
+                }
+            ],
         }
     ]
     clip = next(step for step in kept["steps"] if step["kind"] == "clip")
-    assert clip["note"] == FIX_2
-    assert clip["motion_prompt"] == REWRITE["motion_prompt"]
+    assert clip["note"] == TURN
+    assert clip["motion_prompt"] == TURN_REWRITE["motion_prompt"]
     assert clip["motion_prompt_before"] != clip["motion_prompt"]
     assert kept["new_ads_shown"] == 1
     assert json.loads((tmp_path / "record.json").read_text())["sent"] == turned.sent
-    assert f"**OWNER:** {NOTE_2}" in (tmp_path / "chat.md").read_text()
+    text = (tmp_path / "chat.md").read_text()
+    assert f"**OWNER:** {NOTE_2}" in text
+    assert f"- plan {plan.pk} (confirmed, yes)" in text
+    assert f"  - scene 2 new_clip: {TURN}" in text
 
 
 def test_an_owner_who_says_no_has_nothing_made(
     fake_model: FakeModel,
-    shown: ProducedItem,  # noqa: F811
+    checked: None,  # noqa: F811
+    assembled: ProducedItem,  # noqa: F811
     steps: HeldSteps,
     tmp_path: Path,
 ) -> None:
     chat = a_chat()
     start = since(chat)
-    fake_model.respond(
-        "produce",
-        turn(calls=[restating((2, FIX_2, "clip"))]),
-        turn(says="That will cost about $0.80. Shall I?"),
-        turn(says="No problem, I'll leave it as it is."),
-    )
+    a_clip_note_planned(fake_model)
+    fake_model.respond("decide_fixes", turn(calls=[sort("no")]))
+    fake_model.respond("produce", turn(says="No problem, I'll leave it as it is."))
 
     turned = send_notes(chat, Notes([NOTE_2, "Never mind, leave it."], yes_answers=0))
     kept = record(chat, start, turned, {"id": "no", "ad": "mug"}, tmp_path)
 
     assert turned.sent == [NOTE_2, "Never mind, leave it."]
-    assert [fix["said_yes"] for fix in kept["fixes"]] == [False]
+    assert [(plan["state"], plan["said_yes"]) for plan in kept["plans"]] == [("declined", False)]
     assert kept["steps"] == []
     assert kept["new_ads_shown"] == 0
 
 
+def test_a_scripted_yes_with_no_plan_waiting_is_skipped(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    assembled: ProducedItem,  # noqa: F811
+    steps: HeldSteps,
+) -> None:
+    chat = a_chat()
+
+    turned = send_notes(chat, Notes([], turns=["yes"]))
+
+    assert turned.sent == ["(yes skipped: no plan waited on a yes)"]
+    assert Message.objects.filter(plan_event="yes").count() == 0
+
+
 def test_a_crash_is_kept_as_the_cases_error(
     fake_model: FakeModel,
-    shown: ProducedItem,  # noqa: F811
+    checked: None,  # noqa: F811
+    assembled: ProducedItem,  # noqa: F811
     steps: HeldSteps,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     chat = a_chat()
 
-    def broken(_: str) -> None:
+    def broken(*_: object) -> None:
         raise RuntimeError("the producer fell over")
 
     monkeypatch.setattr(chat, "say", broken)
@@ -119,7 +172,7 @@ def test_a_crash_is_kept_as_the_cases_error(
 
     assert turned.error == "RuntimeError: the producer fell over"
     assert Message.objects.filter(text=NOTE_2).count() == 0
-    assert Fix.objects.count() == 0
+    assert FixPlan.objects.count() == 0
 
 
 def saved_round_4(root: Path) -> Path:
@@ -266,7 +319,7 @@ def test_the_first_version_is_made_from_round_4s_pictures_and_clips(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
-    say: Say,
+    say: Callable[..., None],
     tmp_path: Path,
 ) -> None:
     ad = a_round_4_of(Job.objects.get(), tmp_path / "round-4")

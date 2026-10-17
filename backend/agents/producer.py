@@ -18,11 +18,10 @@ from gateway import catalog
 from gateway.models import ModelCall
 from gateway.types import MusicHandoff, UnusableReply
 from jobs import auto_fix, clip_judge, page, reference_photos
-from jobs.checks import LONGEST_BROLL_LINE_SECONDS, LONGEST_LINE_SECONDS, line_seconds
+from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
 from jobs.models import (
     BROLL_FIELDS,
     Fix,
-    FixCheck,
     Job,
     ProducedItem,
     ProductPhoto,
@@ -90,52 +89,22 @@ is missing or unclear, ask one short, specific question. When you can't do somet
 so plainly and say why.
 When a tool skips a product photo, tell the shop owner which photo and why. When a tool \
 fails or refuses, tell the shop owner honestly what happened.
-Once a scene has a clip, changing it is a fix. When the shop owner writes about such a \
-scene, pick the smallest thing to make again that fixes it: how a scene that shows the \
-product moves, or what happens in it, is a new clip; what a scene's picture shows, such as \
-the wrong side, an object that couldn't be real or the wrong thing on screen, is a new \
-starting picture, then its clip; what a scene says is a new line, with the new line in the \
-fix word for word, in quotes. "Zoom in" means a new starting picture, closer: the camera \
-never moves.
-Before you reply, call restate_fix once, with a fix for every scene they wrote about that \
-you can fix. Then tell them in their own words what you'll change in each scene, what it \
-will cost, and anything you can't do, and wait for their answer. If a scene they wrote \
-about is still being made, tell them its fix waits until that's finished. Never tell \
-them which step is made again. If they correct you, restate it again. Make nothing until \
-they say yes.
-When they say yes, make every scene's fix at the same time. For a new clip, pass its fix \
-word for word as the note of make_clip; for a new starting picture, as the note of \
-make_starting_picture, then make_clip with no note once the picture is ready; for a new \
-line, call change_line with the new line exactly as it is in the fix, then make the scene \
-again in the usual order, with no note. When you're told something of a scene is ready and \
-a fix they said yes to for it isn't made yet, make it then.
-When a fix's clip is ready and every scene is finished, the ad is assembled and shown \
-to them on its own. Tell them what the fix cost, and ask them to tell you if it's \
-fixed. Never say it is: you can't see pictures or videos. If they say it still isn't \
-right, restate a new fix for that scene the same way, making the same thing again.
-A new starting picture or clip made for a fix is checked for the change. When the check \
-finds it missing, the chat shows them the old one and the new one and why: make nothing \
-more for that scene, and don't assemble the ad, until they answer. If they say go ahead, \
-carry on; if they say what to change, restate a new fix.
-The shop owner can send photos of their own things with a note on a scene that shows the \
-product, up to 3 a note: the chat numbers them "owner photo 1", "owner photo 2" and so on. \
-In restate_fix, give the fix each photo's number and the one thing to take from it, named \
-in their words, such as "black toilet". If their words don't say which thing, ask before \
-you restate. Tell them each photo's thing in your restatement, so they can correct it. \
-Never tell them how their photos are used. Code adds the other scenes that show the same \
-thing; if they say a photo is only for the scenes they named, restate with only those \
-scenes, never refuse it. When a note with photos also asks in words for a change to what \
-the picture shows, say so in its fix. A photo stays with its scene for later fixes; to stop \
-using one, restate the fix with its thing to drop.
-What you can't do, said plainly the same way each time: see pictures or videos; or change \
-what the person does in a scene where they talk, only how it looks or what they hold, \
-through a new starting picture. Not yet: using the shop owner's photos in a scene where the \
-person talks; changing how the person looks to match a photo; using a video they send as an \
-example; changing the music, the text shown over a scene, the voice, the person, the number \
-of scenes or the ad's length. Before the ad is planned, every photo they send is a product \
-photo: if they send one of something else, don't add it, and tell them to send it with a \
-note on a scene once the first version is made. Slower can't be done: every clip plays at \
-real-time speed.
+Once a scene has a clip, the app takes the shop owner's notes on the ad: another AI \
+reads each one and looks at the pictures and clips, then the app shows them a plan in the \
+chat with a yes button, and once they say yes it makes every change and shows the new ad. \
+You don't decide what changes or make it, and you have no tool for it: never restate a \
+note, ask them to confirm it or say yes, or say you'll change something. What reaches you \
+from them then is what isn't a note, such as a question: answer it. You are told what the \
+app does in messages from the app, not from the shop owner: the plan shown, with each \
+scene's change and cost; the changes started; each scene done and what it cost; a check \
+that found a change missing; an error; the new ad shown. Answer their questions from \
+those, such as what is happening with a scene or what it costs, and don't repeat what the \
+chat already showed them. Never say a change is done before the app says so, and never say \
+it is right: you can't see pictures or videos.
+What you can't do, said plainly the same way each time: see pictures or videos. Before \
+the ad is planned, every photo they send is a product photo: if they send one of something \
+else, don't add it, and tell them to send it with a note on a scene once the first version \
+is made. Slower can't be done: every clip plays at real-time speed.
 Keep your messages short and friendly, written for someone who isn't technical."""
 
 
@@ -315,7 +284,7 @@ class UsePhotos(Tool):
         if job.scenes.exists():
             raise Refused(
                 "the ad is already planned, so its product photos can't change now. A photo of "
-                "the shop owner's own thing goes with a note on a scene: restate the fix with it."
+                "the shop owner's own thing goes with a note on a scene, once its clip is made."
             )
         attached_photos = messages.owner_photos(call.session)
         said = {each.photo: each.shows for each in self.photos}
@@ -678,8 +647,7 @@ class MakeStartingPicture(Tool):
     scene: int = Field(description="The number of the scene.")
     note: str | None = Field(
         description="What the picture should show or change, such as what the shop owner "
-        "asked for this scene, as a short instruction. For a scene that already has a clip: "
-        "its fix, word for word, once the shop owner has said yes. Null for nothing."
+        "asked for this scene, as a short instruction. Null for nothing."
     )
 
     def run(self, call: ToolCall) -> str:
@@ -690,9 +658,6 @@ class MakeStartingPicture(Tool):
                 "person first."
             )
         note = normalised_note(self.note)
-        fix = _confirmed_fix(call, scene, note, Fix.Redo.PICTURE)
-        if not note:
-            fix = _line_fix(scene)
         steps = scene.steps.filter(kind=SceneStep.Kind.STARTING_PICTURE)
         # A picture made with other photos of the shop owner's is another picture.
         made = _with_the_photos_in_use(
@@ -701,13 +666,10 @@ class MakeStartingPicture(Tool):
             .filter(produced__isnull=False)
             .distinct(),
         )
-        if fix is not None and fix.brings_back is not None:
-            # D2: the picture from before the photo the fix stops using, as it was.
-            made = fix.brings_back.step
         if made is not None:
-            return _already_made_picture(call, scene, made, fix)
+            return _already_made_picture(call, scene, made)
         _no_clip_being_made(scene)
-        _a_fix_unless_first_making(scene, fix)
+        _before_its_clip(scene)
         _start_step(
             call,
             scene,
@@ -715,7 +677,6 @@ class MakeStartingPicture(Tool):
             busy=f"scene {scene.number}'s starting picture is already being made. You'll be "
             "told when it's ready.",
             note=note,
-            fix=fix,
         )
         return (
             f"Started scene {scene.number}'s starting picture. It isn't made yet: you'll be "
@@ -744,11 +705,11 @@ def _clip_with_the_photos_in_use(
     )
 
 
-def _already_made_picture(call: ToolCall, scene: Scene, made: SceneStep, fix: Fix | None) -> str:
+def _already_made_picture(call: ToolCall, scene: Scene, made: SceneStep) -> str:
     """For a starting picture already made for the scene's line with the same note: say so
     if it is the scene's picture, or bring it back as the scene's picture if a newer one was
     made since, with nothing paid again (#143, Julian 2026-10-11, "same inputs, never pay
-    twice"). Bringing it back changes the ad, so it is a fix like any new picture."""
+    twice"). Bringing it back changes the ad, so it is refused once the scene has a clip."""
     # A newer picture being made would land on top of it.
     if scene.steps.filter(
         kind=SceneStep.Kind.STARTING_PICTURE, status=SceneStep.Status.RUNNING
@@ -758,11 +719,7 @@ def _already_made_picture(call: ToolCall, scene: Scene, made: SceneStep, fix: Fi
             "when it's ready."
         )
     assert made.photo is not None, "a finished starting picture was made from a photo"
-    earlier = (
-        fix.brings_back
-        if fix is not None and fix.brings_back is not None
-        else made.produced.order_by("version").last()
-    )
+    earlier = made.produced.order_by("version").last()
     assert earlier is not None, "a finished starting picture step made its picture"
     current = _current_picture(scene)
     with_note = "with this note" if made.note else "with no note"
@@ -784,7 +741,7 @@ def _already_made_picture(call: ToolCall, scene: Scene, made: SceneStep, fix: Fi
             f"nothing was made or paid for again. Making it cost {cost}. {photo}{unclipped}"
         )
     _no_clip_being_made(scene)
-    _a_fix_unless_first_making(scene, fix)
+    _before_its_clip(scene)
     # Shown again together, so the scene's card shows the picture its clip is made from.
     with transaction.atomic():
         again, was_finished = bring_back_picture(earlier)
@@ -873,6 +830,7 @@ class MakeLineAudio(Tool):
                 f"(version {made.version}), so nothing was made or paid for again. Making it "
                 f"cost {dollars(made.step.tool_call.cost_usd())}."
             )
+        _before_its_clip(scene)
         _start_step(
             call,
             scene,
@@ -880,7 +838,6 @@ class MakeLineAudio(Tool):
             busy=f"scene {scene.number}'s audio is already being made. You'll be told when "
             "it's ready.",
             made_from=voice,
-            fix=_line_fix(scene),
         )
         return (
             f"Started scene {scene.number}'s audio. It isn't made yet: you'll be told when "
@@ -924,6 +881,7 @@ class TranscribeLineAudio(Tool):
                 f"again. Transcribing it cost {dollars(heard.step.tool_call.cost_usd())}. It "
                 f'was heard as: "{heard.text}"'
             )
+        _before_its_clip(scene)
         _start_step(
             call,
             scene,
@@ -931,7 +889,6 @@ class TranscribeLineAudio(Tool):
             busy=f"scene {scene.number}'s audio is already being transcribed. You'll be told "
             "what was heard.",
             made_from=audio,
-            fix=_line_fix(scene),
         )
         return (
             f"Started transcribing scene {scene.number}'s audio. It isn't done yet: you'll be "
@@ -955,9 +912,7 @@ class MakeClip(Tool):
         default=None,
         description="For a scene that shows the product rather than the person talking: what "
         "the clip's movement should change, as one short instruction. The picture and the "
-        "audio stay as they are, and only the clip is made again. For a scene that already "
-        "has a clip: its fix, word for word, once the shop owner has said yes. Null for "
-        "nothing, as for the clip of a fix's new starting picture.",
+        "audio stay as they are, and only the clip is made again. Null for nothing.",
     )
 
     def run(self, call: ToolCall) -> str:
@@ -1009,27 +964,8 @@ class MakeClip(Tool):
                 "transcribed yet, and a clip is only made from audio that was heard saying the "
                 "line. Transcribe it first."
             )
-        # Only once nothing above is refused: a clip fix confirmed by a refused call would
-        # drop a line fix the shop owner said yes to before it was made (_line_fix), and the
-        # scene couldn't be made for either.
-        fix = _confirmed_fix(call, scene, note, Fix.Redo.CLIP)
         picture_step = picture.step
         assert picture_step is not None, "a starting picture is made by a scene step"
-        # A clip of a picture made for a fix is part of that fix: the shop owner's yes to it
-        # covered the clip too, so it needs no note of its own. So is a clip of a picture
-        # brought back for a fix, made earlier with the same fix as its note (#143), and one of
-        # a picture made for a line fix still kept through a newer fix (_line_fix).
-        answered = next(
-            (
-                made_for
-                for made_for in (scene.fixes.last(), _line_fix(scene))
-                if made_for is not None and _picture_answers_fix(picture_step, made_for)
-            ),
-            None,
-        )
-        if not note and answered is not None:
-            fix = answered
-            _answered_a_failed_check(call, picture_step)
         made = _clip_with_the_photos_in_use(
             scene,
             scene.produced.filter(
@@ -1044,9 +980,6 @@ class MakeClip(Tool):
                 **({"step__note": note} if note else {}),
             ).order_by("version"),
         )
-        if fix is not None and fix.brings_back is not None and fix.redo == Fix.Redo.CLIP:
-            # D2: the clip from before the photo the fix stops using, as it was.
-            made = fix.brings_back
         if made is not None:
             assert made.step is not None, "a clip is made by a scene step"
             made_from = "from this starting picture"
@@ -1064,6 +997,7 @@ class MakeClip(Tool):
             # video paid again (Julian 2026-10-11, "Reuse A's clip").
             back = ""
             if made != _latest_clip(scene):
+                _before_its_clip(scene)
                 # Shown again together, so the scene's card shows the clip the ad now uses.
                 with transaction.atomic():
                     again = bring_back_clip(made)
@@ -1086,7 +1020,7 @@ class MakeClip(Tool):
                 f"again.{back} Making it cost {dollars(made.step.tool_call.cost_usd())}. "
                 f"Scene {scene.number} is finished."
             )
-        _a_fix_unless_first_making(scene, fix)
+        _before_its_clip(scene)
         _start_step(
             call,
             scene,
@@ -1094,7 +1028,6 @@ class MakeClip(Tool):
             busy=f"scene {scene.number}'s clip is already being made. You'll be told when it's "
             "ready.",
             note=note,
-            fix=fix,
             made_from=audio,
             picture=picture,
             picture_step=picture_step,
@@ -1138,11 +1071,12 @@ class AssembleAd(Tool):
         )
 
 
-def assemble_the_ad(session: Session, job: Job) -> tuple[ProducedItem, bool]:
+def assemble_the_ad(session: Session, job: Job, made_for: str = "") -> tuple[ProducedItem, bool]:
     """Assemble the finished ad from every scene's clip and the music, and show it in the
     chat, unless it was already assembled from them: then it is shown if it isn't yet, and
     nothing is made again. Gives the ad, and whether it was already assembled. Refuses,
-    saying why, until every scene is finished and the music is made. Costs nothing."""
+    saying why, until every scene is finished and the music is made. Costs nothing. A fix
+    plan's ad is shown labelled with what it was `made_for`, as "scene 2 v2 black toilet"."""
     scenes = list(job.scenes.all())
     being_made = [
         scene.number
@@ -1176,514 +1110,11 @@ def assemble_the_ad(session: Session, job: Job) -> tuple[ProducedItem, bool]:
     for ad in job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).order_by("-version"):
         was_made_from = [(cut["clip"], cut.get("overlay")) for cut in ad.cuts]
         if was_made_from == made_from and ad.made_from_id == music.pk:
-            _show(session, ad)
+            _show(session, ad, made_for)
             return ad, True
     ad = assemble_ad(job, scene_clips, music)
-    _show(session, ad)
+    _show(session, ad, made_for)
     return ad, False
-
-
-def assemble_after_fix(step: SceneStep) -> str:
-    """For a clip `assembles_after` that has just landed, its step marked finished: assemble
-    the new ad and show it once every scene is finished, so a producer that forgets can't
-    leave the shop owner without it (Julian, 2026-10-11 22:24, on #135). Says what was done,
-    for the producer: the ad assembled, what it waits for, or why it couldn't be. Costs nothing."""
-    job = step.scene.job
-    # Two fixes' clips landing at once: the second waits here for the first's transaction,
-    # then sees that clip landed, so the last to land assembles.
-    Job.objects.select_for_update().get(pk=job.pk)
-    # A scene with any step running is being made or fixed.
-    unfinished = [
-        scene
-        for scene in job.scenes.all()
-        if scene.status != Scene.Status.FINISHED
-        or scene.steps.filter(status=SceneStep.Status.RUNNING).exists()
-    ]
-    # A finished scene whose latest fix the shop owner has answered but whose clip isn't made
-    # yet, as when its new starting picture has landed but its clip isn't started, or when
-    # this clip is an older fix's and they said yes to a newer one while it was being made:
-    # the ad they already corrected isn't shown (#140 review, must-fix 1).
-    unfixed = [
-        scene for scene in job.scenes.all() if scene not in unfinished and _fix_still_to_land(scene)
-    ]
-    # A scene whose fix's clip failed its check waits for the shop owner's word: no ad is
-    # shown with it until they answer (#131), whichever scene's clip lands last.
-    session = step.tool_call.session
-    unchecked = [
-        scene
-        for scene in job.scenes.all()
-        if scene not in unfinished
-        and scene not in unfixed
-        and _waits_on_a_failed_check(session, _latest_clip(scene))
-    ]
-    again = " again" if job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).exists() else ""
-    if unfinished or unfixed or unchecked:
-        waits = []
-        if unfinished:
-            is_ = "is" if len(unfinished) == 1 else "are"
-            waits.append(f"{_scenes([scene.number for scene in unfinished])} {is_} finished")
-        for scene in unfixed:
-            newer = " newer" if scene == step.scene else ""
-            waits.append(f"scene {scene.number}'s{newer} fix is made")
-        for scene in unchecked:
-            waits.append(f"the shop owner answers scene {scene.number}'s failed fix check")
-        # An answer no redo has followed yet may have been no, which code can't tell from a yes.
-        unmade = [scene for scene in unfixed if scene.fixes.last().confirmed_by_id is None]  # type: ignore[union-attr]
-        no = (
-            f" If the shop owner said no to {_scenes([scene.number for scene in unmade])}'s "
-            "fix, assemble the ad with assemble_ad instead."
-            if unmade
-            else ""
-        )
-        return (
-            f"The ad will be assembled{again}, and shown to the shop owner, once "
-            f"{_listed(waits)}.{no}"
-        )
-    try:
-        ad, _ = assemble_the_ad(step.tool_call.session, job)
-    except Refused as refused:
-        return f"The ad couldn't be assembled{again}: {refused}"
-    return (
-        f"Every scene is finished, so the ad was assembled{again} with it (version {ad.version}, "
-        f"{ad.seconds:g} seconds) and shown to the shop owner in the chat. Ask them to tell you "
-        "if it's fixed."
-    )
-
-
-def assembles_after(step: SceneStep) -> bool:
-    """Whether code assembles the ad once this step has finished: it is a fix's clip, or the
-    clip of a scene still being made for the first time while a scene the shop owner has
-    already said yes to fixing waits for the ad. A scene can be fixed before the whole ad is
-    first made (#135 question 5), and its clip was told the ad would be assembled once the
-    others are finished, so the last of their clips keeps that promise."""
-    if step.kind != SceneStep.Kind.CLIP:
-        return False
-    if step.fix_id is not None:
-        return True
-    job = step.scene.job
-    return (
-        job.fixes.filter(confirmed_by__isnull=False).exists()
-        and not job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).exists()
-    )
-
-
-def _line_fix(scene: Scene) -> Fix | None:
-    """The scene's fix for a new line, once the shop owner has said yes to it and the line is
-    changed: the scene is made again for it with no note, so each step is part of the fix and
-    paid for under it. Once its clip has landed, each is already made and handed back free. A
-    fix is confirmed only as change_line changes the line, so a confirmed one has changed it.
-
-    A newer fix restated on the scene since doesn't drop the line the shop owner said yes to
-    (Julian, 2026-10-14 21:50: they never end up with, or without, something they didn't
-    confirm): once they have answered it, the scene is made for the line they confirmed, and
-    the newer fix, if they said yes, is made on that line with its note. Until they answer,
-    nothing is made, so nothing is paid for that a yes would have made again."""
-    fix = scene.fixes.filter(confirmed_by__isnull=False).last()
-    if fix is None or fix.redo != Fix.Redo.LINE:
-        return None
-    newer = scene.fixes.last()
-    if newer is not None and newer.pk != fix.pk and not _owner_answered(newer):
-        return None
-    return fix
-
-
-def _fix_still_to_land(scene: Scene) -> bool:
-    """Whether the shop owner has answered the scene's latest fix but its clip isn't the
-    scene's clip yet. Answered, not only confirmed by a redo: the producer waits for a
-    scene's clip still being made before making its newer fix (`_waits_for`), and the clip
-    landing meanwhile mustn't show an ad the owner already corrected (#140 review, must-fix
-    1). A clip brought back for it, made earlier with the same fix as its note, counts."""
-    fix = scene.fixes.last()
-    if fix is None or not _owner_answered(fix):
-        return False
-    clip = _latest_clip(scene)
-    step = clip.step if clip is not None else None
-    return step is None or (
-        step.fix_id != fix.pk
-        and step.note != fix.fix
-        and (step.picture_step is None or not _picture_answers_fix(step.picture_step, fix))
-        # Brought back from before the shop owner's photo, for a fix that stops using it.
-        and not (
-            fix.redo == Fix.Redo.CLIP
-            and fix.brings_back is not None
-            and fix.brings_back.step_id == step.pk
-        )
-    )
-
-
-def _picture_answers_fix(picture_step: SceneStep, fix: Fix) -> bool:
-    """Whether the starting picture `picture_step` made is the one `fix` asks for: made for
-    it, or, once the shop owner said yes to it, made earlier with the same fix as its note and
-    brought back for it (#143)."""
-    return picture_step.fix_id == fix.pk or (
-        fix.redo == Fix.Redo.PICTURE
-        and fix.confirmed_by_id is not None
-        and (
-            picture_step.note == fix.fix
-            # Brought back from before the shop owner's photo, for a fix that stops using it.
-            or (fix.brings_back is not None and fix.brings_back.step_id == picture_step.pk)
-        )
-    )
-
-
-class PhotoTaken(BaseModel):
-    """One of the shop owner's photos a fix takes a thing from, and the thing."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    photo: int = Field(
-        description='The photo\'s number, as the chat gives it: "owner photo 3" is 3.'
-    )
-    thing: str = Field(
-        description="The one thing to take from it, in a few words from what the shop owner "
-        'said, such as "black toilet" or "brown stain inside the bowl". Say it to them in your '
-        "restatement, so they can correct it."
-    )
-
-
-class FixAsked(BaseModel):
-    """One scene's fix, as the producer restates it."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    scene: int = Field(description="The number of the scene.")
-    fix: str = Field(
-        description="What you will change about the scene, restated in one self-contained line "
-        "that carries everything the shop owner asked for it, in every note on it. Once they "
-        "say yes, it is passed word for word as the note of the redo."
-    )
-    redo: Literal["clip", "picture", "line"] = Field(
-        description='What is made again: "clip" to change only how a scene that shows the '
-        'product moves, from its starting picture as it is; "picture" to change what the '
-        'scene shows, with a new starting picture and then its clip; "line" to change what is '
-        "said, with the new line in the fix word for word, in quotes. The shop owner isn't "
-        "told which. With photos, code picks between a new starting picture and a new clip."
-    )
-    # Null rather than empty by default: OpenAI's strict schema keeps no other default.
-    photos: list[PhotoTaken] | None = Field(
-        default=None,
-        description="When the shop owner attached photos to their note on the scene to show "
-        "how something should look: each photo, at most 3, and the one thing to take from it, "
-        "named from their words. If their words don't say what to take from a photo, ask them "
-        "before restating. Null for none.",
-    )
-    also_changes_the_picture: bool | None = Field(
-        default=None,
-        description="With photos: true when the note also asks, in words, for a change to "
-        'what the scene\'s picture shows beyond the photos, such as "a dark walnut bench". '
-        "Null otherwise.",
-    )
-    drop: list[str] | None = Field(
-        default=None,
-        description="When the shop owner wants the scene to stop using a photo they sent "
-        "before, such as to go back to how it was before it: each thing whose photo it stops "
-        "using, by its name as they confirmed it. Null for none.",
-    )
-
-
-class RestateFix(Tool):
-    """Record what you will change about scenes that have their clip, from the shop owner's
-    notes on them, before anything is made again, and work out what each fix will cost. A
-    scene that already has a clip is only made again for a fix restated here, once the shop
-    owner has answered: tell them your restatement and the cost, and wait for their answer.
-    If they correct it, restate it again: the new fix replaces the old one."""
-
-    name = "restate_fix"
-
-    fixes: list[FixAsked] = Field(description="One fix for each scene the notes are about.")
-    only_these_scenes: bool | None = Field(
-        default=None,
-        description="True when the shop owner said their photos are only for the scenes they "
-        'named, such as "only in scene 3", now or in answer to your restatement: other scenes '
-        "that show the thing keep their look. Null otherwise: code then adds every other "
-        "scene that shows it.",
-    )
-
-    def run(self, call: ToolCall) -> str:
-        job = _the_job(call)
-        # A scene can be fixed as soon as it has a clip, while the others are still being
-        # made (Julian 2026-10-12 00:26, #135 review question 5).
-        if job is None or not job.scenes.exists():
-            raise Refused("the ad hasn't been planned yet, and a fix changes one of its scenes.")
-        if not self.fixes:
-            raise Refused("no fix was given. Restate at least one scene's fix.")
-        numbers = [asked.scene for asked in self.fixes]
-        twice = next((number for number in numbers if numbers.count(number) > 1), None)
-        if twice is not None:
-            raise Refused(
-                f"scene {twice} is restated twice. Give each scene one fix that carries "
-                "everything the shop owner asked for it."
-            )
-        # Every fix is checked before any is recorded, so a refusal records nothing.
-        owner = messages.owner_photos(call.session)
-        planned = [
-            _with_photos(job, _fixable_scene(job, asked), asked, owner) for asked in self.fixes
-        ]
-        # The shop owner's own words win over adding the other scenes (design thread 22:27,
-        # test C10).
-        added, unchecked = ([], []) if self.only_these_scenes else _joined(job, planned)
-        planned += added
-        for one in planned:
-            _no_more_than_most_photos(one)
-        estimates = {one.scene.pk: _planned_estimate(one) for one in planned}
-        _clean_pictures_to_draw(job, planned, estimates)
-        recorded = []
-        with transaction.atomic():
-            for one in planned:
-                # Run again after a restart, the call records the same fixes, not more.
-                fix, _ = Fix.objects.update_or_create(
-                    asked=call,
-                    scene=one.scene,
-                    defaults={
-                        "job": job,
-                        "fix": one.fix,
-                        "redo": one.redo,
-                        "notes": fix_notes(one.scene),
-                        "estimate_usd": estimates[one.scene.pk].about,
-                        "photos": one.photos,
-                        "drops": one.drops,
-                        "joined": one.joined,
-                        "brings_back": one.brings_back,
-                    },
-                )
-                recorded.append(fix)
-            _drop_joined_fixes_restated_since(call, recorded)
-        call.asked_about = "fixes"
-        each = " ".join(
-            f"Scene {fix.scene.number}: {_about(estimates[fix.scene.pk])}." for fix in recorded
-        )
-        about = sum((estimates[fix.scene.pk].about for fix in recorded), Decimal(0))
-        up_to = sum((estimates[fix.scene.pk].up_to for fix in recorded), Decimal(0))
-        total = f"About {dollars(about)} in all" + (
-            f", up to {dollars(up_to)} if the judge has a clip made again" if up_to != about else ""
-        )
-        waits = "".join(_waits_for(fix.scene) + _earlier_fix_lost(fix) for fix in recorded)
-        return (
-            f"Recorded the fix{'es' if len(recorded) != 1 else ''}. {each} {total}."
-            f"{_photos_told(planned, unchecked, only=bool(self.only_these_scenes))} "
-            "Tell the shop owner this restatement and what it will "
-            "cost, and wait for their answer: nothing is made until they say yes. Once they "
-            "have, pass each scene's fix word for word as the note of its redo, or, for a new "
-            f"line, the new line to change_line.{waits}"
-        )
-
-
-class Planned(NamedTuple):
-    """A fix as restate_fix will record it: what it is for each scene, with the shop owner's
-    photos it takes things from, as code routes them, and what it tells the producer."""
-
-    scene: Scene
-    fix: str
-    redo: Fix.Redo
-    photos: list[dict[str, object]]
-    drops: list[str]
-    joined: bool
-    brings_back: ProducedItem | None
-    told: str
-
-
-def _with_photos(job: Job, scene: Scene, asked: FixAsked, owner: list[Attachment]) -> Planned:
-    """The fix restated for `scene`, with the shop owner's photos `asked` names, routed: for
-    each, a model looks at the scene's starting picture to say whether its thing is in it,
-    belongs in it from the start, or only shows during the clip (D6). Either of the first two
-    is drawn into a new starting picture; the last makes the clip again in reference mode.
-    Refuses, saying why, a photo the fix can't take a thing from."""
-    fix = normalised_note(asked.fix)
-    photos, drops = (
-        asked.photos or [],
-        [reference_photos.name_of(thing) for thing in asked.drop or []],
-    )
-    if not photos and not drops:
-        return Planned(scene, fix, Fix.Redo(asked.redo), [], [], False, None, "")
-    number = scene.number
-    if not scene.shows:
-        # D7: a talking scene is HeyGen's, and a person can't be changed from a photo yet.
-        raise Refused(
-            f"scene {number} shows the person talking, and the shop owner's photos can't be "
-            "used in a scene where the person talks yet. Tell them so, and offer what you can "
-            "change in it instead."
-        )
-    if not scene.broll_kind:
-        raise Refused(
-            f"scene {number} was planned before scenes had their B-roll labels, so the shop "
-            "owner's photos can't be used in it."
-        )
-    if asked.redo == "line":
-        raise Refused(
-            f"scene {number}'s fix is a new line, and a photo changes how something looks, not "
-            "what is said. Restate the line and the photo as separate changes, or leave the "
-            "photo out."
-        )
-    if len(photos) > reference_photos.MOST_PHOTOS:
-        raise Refused(
-            f"scene {number}'s fix takes things from {len(photos)} photos, and a note's fix "
-            f"takes them from at most {reference_photos.MOST_PHOTOS}. Ask the shop owner which "
-            f"{reference_photos.MOST_PHOTOS} to use."
-        )
-    things = [reference_photos.name_of(taken.thing) for taken in photos]
-    if any(not thing for thing in things):
-        raise Refused(
-            f"scene {number}'s fix names no thing to take from one of its photos. Name one "
-            "from what the shop owner said, or ask them."
-        )
-    for thing in things:
-        if sum(reference_photos.same_thing(thing, other) for other in things) > 1:
-            raise Refused(
-                f"scene {number}'s fix takes the {thing} from more than one photo. Ask the "
-                "shop owner which photo shows it."
-            )
-    for taken in photos:
-        if not 1 <= taken.photo <= len(owner):
-            raise Refused(
-                f"the chat has no owner photo {taken.photo}: "
-                + (
-                    f"the shop owner's photos are 1 to {len(owner)}."
-                    if len(owner) > 1
-                    else "the shop owner's only photo is 1."
-                    if owner
-                    else "the shop owner hasn't attached any photo."
-                )
-            )
-    using = list(_photos_in_use(scene))
-    for thing in drops:
-        if not any(reference_photos.same_thing(thing, row.thing) for row in using):
-            uses = ", ".join(f"the {row.thing}" for row in using) or "none"
-            raise Refused(
-                f"scene {number} uses no photo of the {thing}. The shop owner's photos it uses: "
-                f"{uses}."
-            )
-    picture = _current_picture(scene)
-    routed = []
-    for taken, thing in zip(photos, things, strict=True):
-        file = owner[taken.photo - 1].file
-        answer = (
-            reference_photos.where_it_goes(
-                job, picture=picture.file, photo=file, thing=thing, shows=scene.shows, change=fix
-            )
-            if picture is not None
-            else None
-        )
-        if answer is not None and not answer.clear_enough:
-            # D8: a photo the thing can't be copied from would be drawn as a guess, so
-            # nothing is made from it (test C16).
-            raise Refused(_unclear(taken.photo, thing, answer))
-        if answer is None:
-            # No answer: the producer's own pick stands.
-            use = ReferencePhoto.Use.CLIP if asked.redo == "clip" else ReferencePhoto.Use.PICTURE
-            where = "not answered"
-        else:
-            during = answer.where == "appears_during_the_clip"
-            use = ReferencePhoto.Use.CLIP if during else ReferencePhoto.Use.PICTURE
-            where = answer.where
-        routed.append(
-            {"photo": taken.photo, "file": file, "thing": thing, "use": use.value, "where": where}
-        )
-    # The route decides, not the producer's guess (spec item 4): a thing drawn into the
-    # starting picture, or one dropped from it, needs a new picture; otherwise only the clip
-    # changes, in reference mode for a thing that shows during it.
-    dropped = [
-        row
-        for row in using
-        if any(reference_photos.same_thing(row.thing, thing) for thing in drops)
-    ]
-    in_picture = any(photo["use"] == ReferencePhoto.Use.PICTURE for photo in routed) or any(
-        row.use == ReferencePhoto.Use.PICTURE for row in dropped
-    )
-    # A change to the picture asked in words, beside photos of things only in the clip: the
-    # picture is drawn again, and the clip's judge looks for those things (review follow-up,
-    # design thread 23:54).
-    redo = (
-        Fix.Redo.PICTURE
-        if in_picture or (photos and asked.also_changes_the_picture)
-        else Fix.Redo.CLIP
-    )
-    brings_back, told = None, ""
-    if drops and not photos:
-        brings_back, told = _before_the_photos(scene, drops, redo)
-    return Planned(scene, fix, redo, routed, drops, False, brings_back, told)
-
-
-def _unclear(number: int, thing: str, answer: reference_photos.RouteAnswer) -> str:
-    why = f" ({answer.unclear_why})" if answer.unclear_why else ""
-    return (
-        f"owner photo {number} doesn't show the {thing} clearly enough to copy its look{why}. "
-        f"Ask the shop owner for a clearer photo of the {thing}."
-    )
-
-
-def _joined(job: Job, planned: list[Planned]) -> tuple[list[Planned], list[str]]:
-    """The fixes code adds for scenes the shop owner didn't name, so a photo applies to every
-    scene that shows its thing (Julian 15:49, Q2; 20:14): a B-roll scene with a clip whose
-    starting picture a model finds the thing in, or which already uses a photo of the same
-    thing, which the new one replaces (D3). A scene whose starting picture doesn't show it is
-    left out (20:14). The shop owner sees each, and its cost, before their yes."""
-    named = {each.scene.pk for each in planned}
-    taken = [photo for each in planned for photo in each.photos]
-    if not taken:
-        return [], []
-    joined = []
-    unchecked = []
-    for scene in job.scenes.exclude(pk__in=named).exclude(broll_kind=""):
-        try:
-            _fixable_scene(job, FixAsked(scene=scene.number, fix="-", redo="picture"))
-        except Refused:
-            continue
-        picture = _current_picture(scene)
-        using = list(_photos_in_use(scene))
-        photos: list[dict[str, object]] = []
-        for photo in taken:
-            if any(each["thing"] == photo["thing"] for each in photos):
-                continue
-            held = next(
-                (
-                    row
-                    for row in using
-                    if reference_photos.same_thing(row.thing, str(photo["thing"]))
-                ),
-                None,
-            )
-            if held is not None and held.file == photo["file"]:
-                # It already uses this very photo for it: nothing would change.
-                continue
-            answer = (
-                reference_photos.where_it_goes(
-                    job,
-                    picture=picture.file,
-                    photo=str(photo["file"]),
-                    thing=str(photo["thing"]),
-                    shows=scene.shows,
-                    change=None,
-                )
-                if picture is not None
-                else None
-            )
-            if answer is not None and not answer.clear_enough:
-                raise Refused(_unclear(int(str(photo["photo"])), str(photo["thing"]), answer))
-            where: str
-            if answer is not None and answer.where == "in_the_picture":
-                use, where = ReferencePhoto.Use.PICTURE.value, answer.where
-            elif held is not None:
-                use, where = held.use, "already uses a photo of it"
-            else:
-                if answer is None and picture is not None:
-                    unchecked.append(
-                        f" Whether scene {scene.number} shows the {photo['thing']} couldn't be "
-                        "checked, so it was left out: tell them, so they can name it if it does."
-                    )
-                continue
-            photos.append({**photo, "use": use, "where": where})
-        if not photos:
-            continue
-        things = [f"the {photo['thing']}" for photo in photos]
-        ones = "the one" if len(photos) == 1 else "the ones"
-        fix = (
-            f"Make {_listed(things)} look like {ones} in the shop owner's "
-            f"photo{'s' if len(photos) != 1 else ''}."
-        )
-        in_picture = any(photo["use"] == ReferencePhoto.Use.PICTURE for photo in photos)
-        redo = Fix.Redo.PICTURE if in_picture else Fix.Redo.CLIP
-        joined.append(Planned(scene, fix, redo, photos, [], True, None, ""))
-    return joined, unchecked
 
 
 def _photos_in_use(scene: Scene) -> QuerySet[ReferencePhoto]:
@@ -1691,191 +1122,14 @@ def _photos_in_use(scene: Scene) -> QuerySet[ReferencePhoto]:
     return scene.photos_in_use()
 
 
-def _no_more_than_most_photos(planned: Planned) -> None:
-    """Refuse a fix that would leave its scene using more than MOST_PHOTOS of the shop
-    owner's photos (D4): the producer asks them which to drop."""
-    kept = [
-        row.thing
-        for row in _photos_in_use(planned.scene)
-        if not any(reference_photos.same_thing(row.thing, thing) for thing in planned.drops)
-        and not any(
-            reference_photos.same_thing(row.thing, str(photo["thing"])) for photo in planned.photos
-        )
-    ]
-    things = kept + [str(photo["thing"]) for photo in planned.photos]
-    if len(things) > reference_photos.MOST_PHOTOS:
-        raise Refused(
-            f"scene {planned.scene.number} would use {len(things)} of the shop owner's photos "
-            f"({_listed([f'the {thing}' for thing in things])}), and a scene uses at most "
-            f"{reference_photos.MOST_PHOTOS}. Ask them which to stop using, and restate the fix "
-            "with it to drop."
-        )
-
-
-def _before_the_photos(
-    scene: Scene, drops: list[str], redo: Fix.Redo
-) -> tuple[ProducedItem | None, str]:
-    """For a fix that only stops using photos, as when the shop owner wants the scene back as
-    it was before one: the scene's starting picture, or clip, from before the photos, to bring
-    back with nothing paid (D2), and what the producer is told. None when it can't be brought
-    back as it was: then it is made again without them, and when that is because the shop
-    owner said yes to a change since, they are told before their answer."""
-    rows = [
-        row
-        for row in _photos_in_use(scene)
-        if any(reference_photos.same_thing(row.thing, thing) for thing in drops)
-    ]
-    first = min((row.added_by for row in rows), key=lambda fix: (fix.created_at, fix.pk))
-    later = (
-        scene.fixes.filter(confirmed_by__isnull=False, created_at__gt=first.created_at)
-        .exclude(pk=first.pk)
-        .last()
-    )
-    if later is not None:
-        return None, (
-            f" Scene {scene.number} can't simply go back to how it was before the photo: the "
-            f'shop owner said yes to a change since ("{later.fix}"), which going back would '
-            "lose, so it is made again without the photo instead: tell them that too, before "
-            "their answer."
-        )
-    kept = {(row.file, row.thing.casefold()) for row in _photos_in_use(scene) if row not in rows}
-    kind = (
-        ProducedItem.Kind.STARTING_PICTURE if redo == Fix.Redo.PICTURE else ProducedItem.Kind.CLIP
-    )
-    step = scene.steps.filter(fix=first, kind=kind, status=SceneStep.Status.FINISHED).first()
-    before = step.shown_before(kind) if step is not None else None
-    if before is None or before.step is None or _photos_of(before.step) != kept:
-        return None, ""
-    if kind == ProducedItem.Kind.STARTING_PICTURE:
-        current = scene.produced.filter(
-            pk=before.pk,
-            step__line__in=[scene.line, *scene.shortened_from],
-            **{
-                key: value
-                for key, value in SceneStep.made_for(scene, through="step__").items()
-                if key != "step__line"
-            },
-        )
-        if not current.exists():
-            return None, ""
-    else:
-        picture = _current_picture(scene)
-        try:
-            audio = _current_audio(scene)
-        except Refused:
-            return None, ""
-        if (
-            picture is None
-            or before.step.picture_step_id != picture.step_id
-            or before.made_from_id != audio.pk
-        ):
-            return None, ""
-    what = "starting picture" if kind == ProducedItem.Kind.STARTING_PICTURE else "clip"
-    return before, (
-        f" Scene {scene.number} goes back to its {what} from before the photo, so nothing is "
-        "made or paid for again."
-    )
-
-
 def _photos_of(step: SceneStep) -> set[tuple[str, str]]:
     """The shop owner's photos a step was made with, as (file, thing)."""
     return {(row.file, row.thing.casefold()) for row in step.reference_photos.all()}
 
 
-def _planned_estimate(planned: Planned) -> Estimate:
-    """What a fix is estimated to cost: nothing to bring back what was made before the shop
-    owner's photo, or else its redo."""
-    if planned.brings_back is not None:
-        return Estimate(Decimal(0), Decimal(0))
-    return _estimate(planned.scene, planned.redo, planned.fix)
-
-
 # What a clean picture of a shop owner's thing is estimated to cost: a picture and its
 # check's looks, as a starting picture with none recorded (PICTURE_FALLBACK_USD).
 CLEAN_PICTURE_USD = Decimal("0.10")
-
-
-def _clean_pictures_to_draw(
-    job: Job, planned: list[Planned], estimates: dict[int, Estimate]
-) -> None:
-    """Add to the first fix taking each thing from a photo the cost of its clean picture,
-    unless one was already drawn for the ad: each is drawn once, whichever scenes use it."""
-    counted: set[tuple[str, str]] = set()
-    for each in planned:
-        for photo in each.photos:
-            key = (str(photo["file"]), str(photo["thing"]).casefold())
-            if (
-                key in counted
-                or ReferencePhoto.objects.filter(scene__job=job, file=key[0], thing__iexact=key[1])
-                .exclude(drawn="")
-                .exists()
-            ):
-                continue
-            counted.add(key)
-            about, up_to = estimates[each.scene.pk]
-            estimates[each.scene.pk] = Estimate(
-                about + CLEAN_PICTURE_USD, up_to + CLEAN_PICTURE_USD
-            )
-
-
-def _drop_joined_fixes_restated_since(call: ToolCall, recorded: list[Fix]) -> None:
-    """Drop the fixes code added to an earlier restatement for scenes this one leaves out,
-    while the shop owner hasn't said yes to them, once this one restates every scene they
-    named in it: it is their correction, and the old added fixes would otherwise wait for
-    a yes that never comes."""
-    scenes = {fix.scene_id for fix in recorded}
-    earlier = (
-        Fix.objects.filter(job=recorded[0].job, joined=True, confirmed_by__isnull=True)
-        .exclude(asked=call)
-        .exclude(scene_id__in=scenes)
-    )
-    for asked in {fix.asked for fix in earlier}:
-        named = asked.fixes.filter(joined=False).values_list("scene_id", flat=True)
-        if set(named) <= scenes:
-            earlier.filter(asked=asked).delete()
-
-
-def _photos_told(planned: list[Planned], unchecked: list[str], *, only: bool) -> str:
-    """What the producer is told of the shop owner's photos the fixes take things from: what
-    each is taken as and in which scenes, the fixes code added, the scenes that couldn't be
-    checked for them, and what going back does."""
-    told = []
-    taken: dict[tuple[int, str], list[int]] = {}
-    for each in planned:
-        for photo in each.photos:
-            key = (int(str(photo["photo"])), str(photo["thing"]))
-            taken.setdefault(key, []).append(each.scene.number)
-    for (number, thing), scenes in taken.items():
-        told.append(f" Owner photo {number} is taken as the {thing}, in {_scenes(scenes)}.")
-    for each in planned:
-        if each.joined:
-            told.append(
-                f" Scene {each.scene.number} shows "
-                f"{_listed([f'the {photo["thing"]}' for photo in each.photos])} too, so a fix "
-                f'was added for it: "{each.fix}" Make it with the others once they say yes.'
-            )
-        told.append(each.told)
-    told += unchecked
-    if taken and only:
-        told.append(
-            " Only the scenes named use the photos, as the shop owner asked: other scenes that "
-            "show the same things keep their look. You may say so once."
-        )
-    if taken:
-        told.append(
-            " Tell them what each photo is taken as and which scenes change, so they can "
-            "correct it, but never how their photos are used."
-        )
-    return "".join(told)
-
-
-def _about(estimate: Estimate) -> str:
-    """An estimate as the shop owner is told it: about what it will cost, and, when the clip
-    judge can have a clip made again, the most it can cost."""
-    about = f"about {dollars(estimate.about)}"
-    if estimate.up_to == estimate.about:
-        return about
-    return f"{about}, up to {dollars(estimate.up_to)} if the judge has it made again"
 
 
 # What the producer calls each kind of step, in what it is told.
@@ -1885,105 +1139,6 @@ STEP_NAMES = {
     SceneStep.Kind.TRANSCRIPT: "transcript",
     SceneStep.Kind.CLIP: "clip",
 }
-
-
-def _earlier_fix_lost(fix: Fix) -> str:
-    """For a fix for a new line on a scene whose last fix the shop owner said yes to changed its
-    picture or clip: that the new line makes them again from scratch, with no note, so the
-    earlier change may not stay, and the shop owner is told before their answer (#138
-    review). Empty otherwise."""
-    if fix.redo != Fix.Redo.LINE:
-        return ""
-    earlier = fix.scene.fixes.exclude(pk=fix.pk).filter(confirmed_by__isnull=False).last()
-    if earlier is None or earlier.redo == Fix.Redo.LINE:
-        return ""
-    return (
-        f" Scene {fix.scene.number} had an earlier fix the shop owner said yes to "
-        f'("{earlier.fix}"), and a new line makes its picture and clip again from scratch, so '
-        "that change may not stay: tell the shop owner that too, before their answer."
-    )
-
-
-def _waits_for(scene: Scene) -> str:
-    """For a fix restated while something of its scene is still being made, as when the shop
-    owner sends a second note while the first fix's clip is being made: that its redo waits
-    for it, since a redo then is refused as busy, so the producer tells the shop owner (#137
-    review). Empty when nothing of the scene is being made."""
-    running = [
-        STEP_NAMES[SceneStep.Kind(kind)]
-        for kind in scene.steps.filter(status=SceneStep.Status.RUNNING)
-        .order_by("started_at", "id")
-        .values_list("kind", flat=True)
-    ]
-    if not running:
-        return ""
-    is_ = "is" if len(running) == 1 else "are"
-    return (
-        f" Scene {scene.number}'s {' and '.join(running)} {is_} still being made, so its fix "
-        "can only be made once that's ready: tell the shop owner that too, and make the fix "
-        "when you're told it is."
-    )
-
-
-class ChangeLine(Tool):
-    """Give a scene that has its clip a new line, for its fix restated as a new line once the
-    shop owner has answered: the new line exactly as it is in the fix. Its starting picture,
-    audio, transcript and clip were made for the old line, so they are then made again, with
-    no note, and its clip assembles the new ad. Costs nothing itself."""
-
-    name = "change_line"
-
-    scene: int = Field(description="The number of the scene.")
-    line: str = Field(description="The new line, word for word as it is in the scene's fix.")
-
-    def run(self, call: ToolCall) -> str:
-        scene = _a_checked_scene(call, self.scene)
-        number = scene.number
-        line = normalised_note(self.line)
-        fix = scene.fixes.last()
-        if fix is None or fix.redo != Fix.Redo.LINE:
-            raise Refused(
-                f"scene {number}'s line changes only for a fix restated as a new line, and "
-                + (
-                    "no fix was restated for it."
-                    if fix is None
-                    else f"its fix was restated as a new {fix.get_redo_display().lower()}."
-                )
-                + " Call restate_fix first and wait for the shop owner's answer."
-            )
-        if line != quoted_line(fix.fix):
-            raise Refused(
-                f"the line isn't the new line in quotes in scene {number}'s fix as it was "
-                f'restated to the shop owner: "{fix.fix}" Pass the words inside the quotes '
-                "exactly, or restate the fix."
-            )
-        # Changed already, as when run again after a restart, maybe shortened since to fit
-        # its clip.
-        if line == scene.line or (fix.confirmed_by is not None and line in scene.shortened_from):
-            return (
-                f'Scene {number}\'s line is already "{scene.line}", so nothing was changed. '
-                + _MAKE_IT_AGAIN
-            )
-        if line in scene.shortened_from:
-            raise Refused(
-                f"scene {number}'s line was shortened from this line because its audio was too "
-                "long for its clip, so it can't be used as it stands. Ask the shop owner for a "
-                "shorter line."
-            )
-        if scene.steps.filter(status=SceneStep.Status.RUNNING).exists():
-            raise Refused(
-                f"scene {number} is still being made. You'll be told when it's ready; change "
-                "its line then."
-            )
-        with transaction.atomic():
-            if fix.confirmed_by is None:
-                fix.confirmed_by = _yes_to(call.session, fix)
-                fix.save(update_fields=["confirmed_by"])
-            # The shop owner read the line and said yes: they know their product, so it isn't
-            # fact checked, and the scene stays checked (Julian, 2026-10-11 22:13, #138).
-            scene.change_line(line)
-            scene.save(update_fields=["line", "shortened_from", "status"])
-        return f'Scene {number}\'s line is now "{line}". ' + _MAKE_IT_AGAIN
 
 
 def quoted_line(fix: str) -> str | None:
@@ -2000,66 +1155,6 @@ def _seconds_to_say(scene: Scene, line: str) -> float:
         "a scene with a clip was made in a measured voice"
     )
     return line_seconds(line, voice.words_per_second)
-
-
-_MAKE_IT_AGAIN = (
-    "Its starting picture, audio, transcript and clip were made for the old line, so make "
-    "them again with no note: its starting picture and its line's audio, then transcribe the "
-    "audio, then make its clip. The ad is assembled again when its clip is ready."
-)
-
-
-def _fixable_scene(job: Job, asked: FixAsked) -> Scene:
-    """The scene a fix is restated for, once it can be fixed that way: it exists, has a clip
-    to fix, and its redo can be made. Refuses, saying why, otherwise."""
-    scene = job.scenes.filter(number=asked.scene).first()
-    if scene is None:
-        raise Refused(
-            f"the ad has no scene {asked.scene}: its scenes are 1 to {job.scenes.count()}."
-        )
-    if not scene.produced.filter(kind=ProducedItem.Kind.CLIP).exists():
-        raise Refused(
-            f"scene {scene.number} has no clip yet, so it isn't finished and there is nothing "
-            "to fix."
-        )
-    # A clip is kept before its step finishes, so a scene's first clip can be saved while
-    # its step is still running, or one that then failed.
-    if _latest_clip(scene) is None:
-        if scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING).exists():
-            # Decider call 14, 2026-10-13.
-            raise Refused(
-                f"scene {scene.number}'s clip is still being made, so there is nothing to fix "
-                "yet. Restate its fix when you're told it's ready, and restate the other "
-                "scenes' fixes now without it."
-            )
-        raise Refused(
-            f"scene {scene.number}'s clip couldn't be finished, so there is nothing to fix. "
-            "Make its clip again first."
-        )
-    if not normalised_note(asked.fix):
-        raise Refused(f"scene {scene.number}'s fix is blank. Restate it in one line.")
-    redo = Fix.Redo(asked.redo)
-    if redo == Fix.Redo.CLIP:
-        instead = "Restate it as a new starting picture instead."
-        _refuse_unless_movement_can_change(scene, talking=instead, unlabelled=instead)
-    if redo == Fix.Redo.LINE:
-        line = quoted_line(normalised_note(asked.fix))
-        if line is None:
-            raise Refused(
-                f"scene {scene.number}'s fix is a new line, but it doesn't hold exactly one line "
-                "in quotes. Restate it with the new line word for word, in quotes."
-            )
-        # A line the shop owner confirmed is theirs, so it is never shortened for them: one
-        # too long is refused before they are asked (Julian's card, 2026-10-12).
-        longest = LONGEST_BROLL_LINE_SECONDS if scene.shows else LONGEST_LINE_SECONDS
-        seconds = _seconds_to_say(scene, line)
-        if seconds > longest:
-            raise Refused(
-                f"scene {scene.number}'s new line takes about {round(seconds)} seconds to say at "
-                f"the voice's speed, longer than the scene can last ({longest} seconds). Ask the "
-                "shop owner for a shorter line, and restate the fix with it."
-            )
-    return scene
 
 
 def _refuse_unless_movement_can_change(scene: Scene, *, talking: str, unlabelled: str) -> None:
@@ -2198,82 +1293,16 @@ def _each_call_usd(scene: Scene, purposes: list[str]) -> Decimal:
     return CALL_FALLBACK_USD
 
 
-def fix_notes(scene: Scene) -> list[dict[str, object]]:
-    """The shop owner's messages a fix for the scene is restated from, verbatim, as
-    {"seq", "text"}: each one since the latest of the scene's first clip being made, the ad
-    last being shown, and their yes to the scene's last fix. A correction to a fix they
-    haven't confirmed keeps the notes before it, so the new fix holds every note it
-    carries."""
-    session = scene.job.session
-    assert session is not None, "a fix is restated in the job's chat"
-    ads = scene.job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).values_list(
-        "file", flat=True
-    )
-    shown: int | None = session.messages.filter(attachments__file__in=ads).aggregate(
-        seq=Max("seq")
-    )["seq"]
-    confirmed: int | None = scene.fixes.aggregate(seq=Max("confirmed_by__seq"))["seq"]
-    first_clip = scene.produced.filter(kind=ProducedItem.Kind.CLIP).order_by("created_at").first()
-    assert first_clip is not None, "a fix is for a scene with a clip"
-    said = session.messages.filter(
-        role=Message.Role.USER,
-        seq__gt=max(shown or 0, confirmed or 0),
-        created_at__gt=first_clip.created_at,
-    ).order_by("seq")
-    return [{"seq": seq, "text": text} for seq, text in said.values_list("seq", "text")]
-
-
-def _a_fix_unless_first_making(scene: Scene, fix: Fix | None) -> None:
-    """Refuse to pay for a new picture or clip of a scene that already has a clip unless it is
-    made for a confirmed fix: with no note, too, nothing is paid before the shop owner's
-    yes (#135 review, must-fix 1). Checked once nothing already made can be handed back, so
-    what is free stays free."""
-    if fix is None and scene.produced.filter(kind=ProducedItem.Kind.CLIP).exists():
+def _before_its_clip(scene: Scene) -> None:
+    """Refuse to change a scene that already has a clip: from then on it changes only through
+    the shop owner's notes, which the app plans, shows them and makes once they say yes (fix
+    redesign, decisions 1 and 2). Checked once nothing already made can be handed back, so
+    what is free and changes nothing stays free."""
+    if scene.produced.filter(kind=ProducedItem.Kind.CLIP).exists():
         raise Refused(
-            f"scene {scene.number} already has a clip, so changing it is a fix. Call "
-            "restate_fix first, wait for the shop owner's answer, then pass the fix word for "
-            "word as the note."
+            f"scene {scene.number} already has a clip, so it changes only through the shop "
+            "owner's notes: the app shows them a plan and makes it once they say yes."
         )
-
-
-def _confirmed_fix(call: ToolCall, scene: Scene, note: str, redo: Fix.Redo) -> Fix | None:
-    """The yes guard (#135): the fix a redo with `note` is made for, once the shop owner has
-    answered its restatement, their first answer kept as their yes. Refuses, saying why,
-    when the scene's latest fix isn't `note` word for word or is for the other redo, or they
-    haven't answered since it was restated, so nothing is paid for before their yes. None
-    for no note, or for a scene with no clip yet: making the ad the first time, from what
-    the shop owner said, isn't fixing it."""
-    if not note or not scene.produced.filter(kind=ProducedItem.Kind.CLIP).exists():
-        return None
-    fix = scene.fixes.last()
-    if fix is None:
-        raise Refused(
-            f"scene {scene.number} already has a clip, so changing it is a fix, and no fix was "
-            "restated for it. Call restate_fix first and wait for the shop owner's answer."
-        )
-    if fix.fix != note:
-        raise Refused(
-            f"the note isn't scene {scene.number}'s fix as it was restated to the shop owner: "
-            f'"{fix.fix}" Pass that fix word for word, or restate it.'
-        )
-    if fix.redo != redo:
-        raise Refused(
-            f"scene {scene.number}'s fix was restated as a new starting picture, not a new "
-            "clip. Make its starting picture with the fix as the note, then its clip with no "
-            "note."
-            if fix.redo == Fix.Redo.PICTURE
-            else f"scene {scene.number}'s fix was restated as a new line. Change its line with "
-            "change_line, then make the scene again with no note."
-            if fix.redo == Fix.Redo.LINE
-            else f"scene {scene.number}'s fix was restated as a new clip, not a new starting "
-            "picture. Make its clip with the fix as the note."
-        )
-    if fix.confirmed_by is None:
-        with transaction.atomic():
-            fix.confirmed_by = _yes_to(call.session, fix)
-            fix.save(update_fields=["confirmed_by"])
-            _use_the_photos(fix)
-    return fix
 
 
 def _use_the_photos(fix: Fix) -> None:
@@ -2304,79 +1333,6 @@ def _use_the_photos(fix: Fix) -> None:
             drawn=drawn or "",
             added_by=fix,
         )
-
-
-def _answered_a_failed_check(call: ToolCall, picture_step: SceneStep) -> None:
-    """Refuses a clip of a fix's new starting picture whose check found the change missing
-    until the shop owner has answered since they were shown it (#131): its clip is paid for
-    only on their word. Code can't tell their go ahead from a new note, so any answer will
-    do: a new note is restated as a new fix, which this clip's picture isn't made for."""
-    picture = picture_step.produced.first()
-    if _waits_on_a_failed_check(call.session, picture):
-        raise Refused(
-            f"scene {picture_step.scene.number}'s new starting picture failed the check of its "
-            "fix, and the shop owner hasn't answered since they were shown it. Wait for their "
-            "answer."
-        )
-
-
-def _waits_on_a_failed_check(session: Session, made: ProducedItem | None) -> bool:
-    """Whether `made` failed the check of its fix and the shop owner hasn't answered since
-    they were shown it: until its notice is posted they haven't been, whatever they wrote."""
-    if made is None:
-        return False
-    check = FixCheck.objects.filter(new=made, verdict=FixCheck.Verdict.FAILED).first()
-    if check is None:
-        return False
-    return (
-        check.notice is None
-        or not session.messages.filter(role=Message.Role.USER, seq__gt=check.notice.seq).exists()
-    )
-
-
-def _owner_answered(fix: Fix) -> bool:
-    """Whether the shop owner has answered the fix's restatement: a redo confirmed it, or
-    there is an answer `_yes_to` would take as their yes. If their answer was no, the
-    producer's assemble_ad still assembles the ad."""
-    if fix.confirmed_by_id is not None:
-        return True
-    if fix.asked.finished_at is None:
-        return False
-    try:
-        _yes_to(fix.asked.session, fix)
-    except Refused:
-        return False
-    return True
-
-
-def _yes_to(session: Session, fix: Fix) -> Message:
-    """The shop owner's answer to the fix's restatement: their first message after the
-    producer's first words since restate_fix recorded it, which are the restatement and its
-    cost. A message they sent before seeing it isn't their answer (#135 review, should-fix
-    2). Refuses, saying why, when there is none."""
-    number = fix.scene.number
-    restated = (
-        session.messages.filter(role=Message.Role.AGENT, created_at__gt=fix.asked.finished_at)
-        .exclude(text="")
-        .order_by("seq")
-        .first()
-    )
-    if restated is None:
-        raise Refused(
-            f"scene {number}'s fix hasn't been restated to the shop owner yet. Tell them the "
-            "restatement and its cost, and wait for their answer."
-        )
-    answer = (
-        session.messages.filter(role=Message.Role.USER, seq__gt=restated.seq)
-        .order_by("seq")
-        .first()
-    )
-    if answer is None:
-        raise Refused(
-            f"the shop owner hasn't answered since scene {number}'s fix was restated to them. "
-            "Wait for their answer."
-        )
-    return answer
 
 
 def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem]:
@@ -2410,12 +1366,14 @@ def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem]:
     return clip, transcript
 
 
-def _show(session: Session, ad: ProducedItem) -> None:
-    """Show the finished ad in the chat, unless it already is, as after a restart."""
+def _show(session: Session, ad: ProducedItem, made_for: str = "") -> None:
+    """Show the finished ad in the chat, unless it already is, as after a restart: with
+    what it was made for, if a fix plan made it, so two of them can be told apart."""
     if not Attachment.objects.filter(message__session=session, file=ad.file).exists():
         messages.add(
             session,
             role=Message.Role.AGENT,
+            text=f"Ad version {ad.version}, with {made_for}." if made_for else "",
             carrying=[messages.AttachedFile(Attachment.Kind.VIDEO, ad.file)],
         )
 
@@ -2477,7 +1435,6 @@ def _start_step(
     *,
     busy: str,
     note: str = "",
-    fix: Fix | None = None,
     made_from: ProducedItem | None = None,
     picture: ProducedItem | None = None,
     picture_step: SceneStep | None = None,
@@ -2495,7 +1452,6 @@ def _start_step(
                 tool_call=call,
                 **SceneStep.made_for(scene),
                 note=note,
-                fix=fix,
                 made_from=made_from,
                 picture=picture,
                 picture_step=picture_step,
@@ -2719,7 +1675,7 @@ PRODUCER = Agent(
         TranscribeLineAudio,
         MakeClip,
         AssembleAd,
-        RestateFix,
-        ChangeLine,
     ],
+    # What code does with the fix plans it runs reaches the producer only so (decision 20).
+    reads_system_notes=True,
 )

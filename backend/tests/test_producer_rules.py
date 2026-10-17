@@ -789,8 +789,8 @@ def test_reading_the_same_page_again_hands_back_what_was_read_and_pays_nothing(
             "use_photos",
             {"photos": []},
             "Refused: the ad is already planned, so its product photos can't change now. A "
-            "photo of the shop owner's own thing goes with a note on a scene: restate the fix "
-            "with it.",
+            "photo of the shop owner's own thing goes with a note on a scene, once its clip is "
+            "made.",
             id="photos after the plan",
         ),
         pytest.param(

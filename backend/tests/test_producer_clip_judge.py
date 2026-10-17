@@ -37,9 +37,9 @@ from .conftest import (
     handoffs,
     paid_for,
     photo,
-    said_yes_to_a_fix,
 )
-from .test_fix_loop import HOVERS, TURN_FIX, TURN_REWRITE, owner_says, restating
+from .fixing import fixed
+from .test_fix_loop import TURN_REWRITE
 from .test_producer_broll import (
     BROLL_CHOICE,
     DOES_A_JOB,
@@ -56,6 +56,16 @@ from .test_producer_clip_from_note import REWRITE
 pytestmark = pytest.mark.django_db(transaction=True)
 
 FLOATS = "The teapot rises at 1.2 s with no hand on it; a real one stays put."
+# A clip fix, as the plan the shop owner said yes to words it.
+POURS = "The tea pours into the mug, not beside it."
+
+
+def a_clip_fix(fake_model: FakeModel) -> SceneStep:
+    """The shop owner said yes to a plan making scene 2's clip again so the tea pours into
+    the mug: its clip step is queued, the rewrite answering. Gives the step."""
+    fixed(2, "new_clip", change=POURS)
+    fake_model.respond("rewrite_clip_prompt", REWRITE)
+    return SceneStep.objects.filter(kind="clip", scene__number=2).latest("id")
 
 
 def sideways() -> dict[str, Any]:
@@ -461,17 +471,15 @@ def test_both_checks_see_a_photo_of_what_the_scene_needs_labelled_with_what_it_s
 
 
 def test_a_fixs_clip_is_judged_with_what_the_agent_understood_from_the_owner(
-    fake_model: FakeModel, judged: ProducedItem, steps: HeldSteps, say: Callable[..., None]
+    fake_model: FakeModel, judged: ProducedItem, steps: HeldSteps
 ) -> None:
-    fix = said_yes_to_a_fix(2, "The tea pours into the mug, not beside it.", "clip")
-    calling(fake_model, say, ("make_clip", {"scene": 2, "note": fix.fix}))
-    fake_model.respond("rewrite_clip_prompt", REWRITE)
-    run(fake_model, steps)
+    a_clip_fix(fake_model)
+    steps.run_held()
 
     new = ProducedItem.objects.get(kind="clip", scene__number=2, version=2)
     assert ruling(new)["verdict"] == "pass"
     for asked in handoffs("check_clip_motion")[ASKS:] + handoffs("check_clip_sides")[ASKS:]:
-        assert asked["what_the_agent_understood_from_the_owner"] == fix.fix
+        assert asked["what_the_agent_understood_from_the_owner"] == POURS
     # Beside the old clip: the ruling says which, and that the fix's words judged it.
     assert ruling(new)["compared_with"] == judged.pk
     assert ruling(new)["wording"] == wording_version(fix=True) != wording_version()
@@ -488,20 +496,48 @@ def test_the_ruling_says_which_words_and_models_judged_it(judged: ProducedItem) 
         assert call.model == MODEL_FOR_PURPOSE[call.purpose]
 
 
-def test_a_fixs_clip_is_judged_with_the_owners_note_and_the_restatement_but_no_notice_or_later_word(
+def test_a_fixs_clip_is_judged_with_the_owners_note_and_their_yes_but_no_notice_or_later_word(
     fake_model: FakeModel,
     judged: ProducedItem,
     steps: HeldSteps,
     say: Callable[..., None],
     session_id: str,
 ) -> None:
-    # The owner's note, restated by the producer, and their yes; the fix's clip is started.
-    restated = f"Scene 2 would be made again so that {TURN_FIX[:-1]}, for about $1. Shall I?"
+    # The owner's note, planned by the decider and shown by code, and their typed yes: the
+    # fix's clip is started.
+    note = "Scene 2: the hand just hovers, it should turn the mug all the way round."
+    change = "The hand turns the mug all the way round on the workbench."
     fake_model.respond(
-        "produce", turn(calls=[restating((2, TURN_FIX, "clip"))]), turn(says=restated)
+        "decide_fixes",
+        turn(
+            calls=[
+                ("sort_message", {"kind": "fix_note"}),
+                ("look_at_clip", {"scene": 2, "version": None}),
+                (
+                    "decide",
+                    {
+                        "scenes": [
+                            {
+                                "scene": 2,
+                                "action": "new_clip",
+                                "change": change,
+                                "line": "",
+                                "go_back_to": None,
+                                "cant": "",
+                                "photos": [],
+                            }
+                        ],
+                        "photos": [],
+                        "cants": [],
+                        "question": "",
+                    },
+                ),
+            ]
+        ),
+        turn(calls=[("sort_message", {"kind": "yes"})]),
     )
-    say(HOVERS)
-    owner_says(fake_model, say, "Yes, do that.", ("make_clip", {"scene": 2, "note": TURN_FIX}))
+    say(note)
+    say("Yes, do that.")
     assert [SceneStep.objects.get(pk=pk).kind for pk in steps.held] == ["clip"]
     # While it is being made, code posts a notice and the owner writes again.
     notice = "Scene 2's clip is taking longer than usual."
@@ -510,16 +546,17 @@ def test_a_fixs_clip_is_judged_with_the_owners_note_and_the_restatement_but_no_n
     messages.add(Session.objects.get(pk=session_id), role=Message.Role.USER, text=later)
     fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
 
-    run(fake_model, steps)
+    steps.run_held()
 
     for asked in handoffs("check_clip_sides")[ASKS:] + handoffs("check_clip_motion")[ASKS:]:
         said = [(message["by"], message["text"]) for message in asked["conversation"]]
-        assert ("user", HOVERS) in said
-        assert ("producer", restated) in said
+        assert ("user", note) in said
         assert said[-1] == ("user", "Yes, do that.")
+        # The plan shown to the owner is code's notice, as the one posted later.
+        assert change not in str(said)
         assert notice not in str(said)
         assert later not in str(said)
-        assert asked["what_the_agent_understood_from_the_owner"] == TURN_FIX
+        assert asked["what_the_agent_understood_from_the_owner"] == change
 
 
 def test_at_most_5_needs_photos_are_shown_one_per_photo_and_the_frames_fit_beside_them(
@@ -590,12 +627,10 @@ def test_neither_check_is_handed_the_clips_prompt_or_line_and_blank_colour_and_s
 
 
 def test_a_fixs_clip_and_the_old_one_each_get_half_the_room_in_one_ask(
-    fake_model: FakeModel, judged: ProducedItem, steps: HeldSteps, say: Callable[..., None]
+    fake_model: FakeModel, judged: ProducedItem, steps: HeldSteps
 ) -> None:
-    fix = said_yes_to_a_fix(2, "The tea pours into the mug, not beside it.", "clip")
-    calling(fake_model, say, ("make_clip", {"scene": 2, "note": fix.fix}))
-    fake_model.respond("rewrite_clip_prompt", REWRITE)
-    run(fake_model, steps)
+    a_clip_fix(fake_model)
+    steps.run_held()
 
     # Each 5-second clip is 25 frames: alone, each is shown on its own; beside the other clip,
     # each gets 24 pictures' room of the 49 left by the shop photo, so its frames are joined
@@ -623,26 +658,21 @@ def test_a_fixs_clip_and_the_old_one_each_get_half_the_room_in_one_ask(
         assert not any("old clip" in label for label in shown)
 
 
-def a_fixs_clip_judged_until_the_worker_stops(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
-) -> SceneStep:
+def a_fixs_clip_judged_until_the_worker_stops(fake_model: FakeModel, steps: HeldSteps) -> SceneStep:
     """Scene 2's clip made again for a clip fix, the worker stopping before the judge's last
     MOTION answer; gives the step, as handed out again."""
-    fix = said_yes_to_a_fix(2, "The tea pours into the mug, not beside it.", "clip")
-    calling(fake_model, say, ("make_clip", {"scene": 2, "note": fix.fix}))
-    fake_model.respond("rewrite_clip_prompt", REWRITE)
+    step = a_clip_fix(fake_model)
     answered = {**CLIP_MOTION_OK, "owner_change": CLIP_FIXED}
     fake_model.respond("check_clip_motion", answered, answered, WorkerStopped())
     with pytest.raises(WorkerStopped):
         steps.run_next()
-    return SceneStep.objects.filter(kind="clip", scene__number=2).last()  # type: ignore[return-value]
+    return step
 
 
 def test_a_fixs_clip_judged_again_after_the_worker_stopped_shows_the_old_clip_cut_once(
     fake_model: FakeModel,
     judged: ProducedItem,
     steps: HeldSteps,
-    say: Callable[..., None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cutting = clip_judge.cut_pictures
@@ -653,10 +683,9 @@ def test_a_fixs_clip_judged_again_after_the_worker_stopped_shows_the_old_clip_cu
         return cutting(clip, **kwargs)
 
     monkeypatch.setattr(clip_judge, "cut_pictures", counted)
-    step = a_fixs_clip_judged_until_the_worker_stops(fake_model, steps, say)
+    step = a_fixs_clip_judged_until_the_worker_stops(fake_model, steps)
     requests = asked_with(fake_model, "check_clip_motion")
 
-    fake_model.respond("produce", turn(says="Done."))
     tasks.run_scene_step(step.pk)
 
     assert cut.count(judged.file) == 1
@@ -673,7 +702,6 @@ def test_a_fixs_clip_whose_old_frames_couldnt_be_cut_stays_judged_alone_when_ask
     fake_model: FakeModel,
     judged: ProducedItem,
     steps: HeldSteps,
-    say: Callable[..., None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cutting = clip_judge.cut_pictures
@@ -686,16 +714,13 @@ def test_a_fixs_clip_whose_old_frames_couldnt_be_cut_stays_judged_alone_when_ask
         return cutting(clip, **kwargs)
 
     monkeypatch.setattr(clip_judge, "cut_pictures", fails_once_on_the_old_clip)
-    fix = said_yes_to_a_fix(2, "The tea pours into the mug, not beside it.", "clip")
-    calling(fake_model, say, ("make_clip", {"scene": 2, "note": fix.fix}))
-    fake_model.respond("rewrite_clip_prompt", REWRITE)
+    step = a_clip_fix(fake_model)
     fake_model.respond("check_clip_motion", CLIP_MOTION_OK, CLIP_MOTION_OK, WorkerStopped())
     with pytest.raises(WorkerStopped):
         steps.run_next()
     requests = asked_with(fake_model, "check_clip_motion")
 
-    fake_model.respond("produce", turn(says="Done."))
-    tasks.run_scene_step(SceneStep.objects.filter(kind="clip", scene__number=2).last().pk)  # type: ignore[union-attr]
+    tasks.run_scene_step(step.pk)
 
     # Its frames were cut to fit alone: the old clip's can't join them now.
     (again,) = requests

@@ -1,4 +1,5 @@
-"""What a case led to, kept for reading: what was said, each fix restated, each tool called,
+"""What a case led to, kept for reading: what was said, each fix plan shown and what came of
+each of its scenes, each tool called,
 each step made and the prompt it was made with, the pictures made, and what it cost."""
 
 import json
@@ -10,7 +11,7 @@ from django.conf import settings
 
 from agents.models import ToolCall
 from gateway.models import ModelCall
-from jobs.models import Fix, FixCheck, ProducedItem, ReferencePhoto, SceneStep
+from jobs.models import FixCheck, FixPlan, FixPlanScene, ProducedItem, ReferencePhoto, SceneStep
 
 from .chat import Chat, Since, Turned, spent
 
@@ -33,17 +34,7 @@ def record(
         }
         for message in chat.said_since(start.seq)
     ]
-    fixes = [
-        {
-            "scene": fix.scene.number,
-            "redo": fix.redo,
-            "fix": fix.fix,
-            "estimate_usd": str(fix.estimate_usd),
-            "said_yes": fix.confirmed_by_id is not None,
-            "checks": [_check(check) for check in fix.checks.all()],
-        }
-        for fix in Fix.objects.filter(pk__gt=start.fix).order_by("pk")
-    ]
+    plans = [_plan(plan) for plan in FixPlan.objects.filter(pk__gt=start.plan).order_by("pk")]
     calls = [
         {"tool": call.tool, "arguments": call.arguments, "result": call.result}
         for call in ToolCall.objects.filter(pk__gt=start.tool_call).order_by("pk")
@@ -86,7 +77,7 @@ def record(
         "sent": turned.sent,
         "error": turned.error,
         "said": said,
-        "fixes": fixes,
+        "plans": plans,
         "tool_calls": calls,
         "steps": steps,
         "new_ads_shown": chat.finished_ads() - start.ads,
@@ -169,6 +160,42 @@ def _owner_photos(start: Since, out: Path) -> dict[str, Any]:
     return {"reference_photos": photos, "watched_calls": calls, "clips": clips}
 
 
+def _plan(plan: FixPlan) -> dict[str, Any]:
+    """A fix plan as the shop owner was shown it, and what became of it."""
+    return {
+        "plan": plan.pk,
+        "state": plan.state,
+        "said_yes": plan.confirmed_by_id is not None,
+        "notes": [note["text"] for note in plan.notes],
+        "question": plan.question,
+        "cants": plan.cants,
+        "estimate_usd": str(plan.estimate_usd()),
+        "estimate_up_to_usd": str(plan.estimate_up_to_usd()),
+        "scenes": [_row(row) for row in plan.scenes.select_related("scene").order_by("pk")],
+    }
+
+
+def _row(row: FixPlanScene) -> dict[str, Any]:
+    """One scene of a plan: what changes, what it should cost, and the fix check of each
+    version made for it."""
+    return {
+        "scene": row.scene.number,
+        "action": row.action,
+        "change": row.change,
+        "line": row.line,
+        "go_back_to": row.go_back_to,
+        "cant": row.cant,
+        "estimate_usd": str(row.estimate_usd),
+        "estimate_up_to_usd": str(row.estimate_up_to_usd),
+        "photos": [
+            {key: photo[key] for key in ("photo", "thing", "in_picture", "during_action")}
+            for photo in row.photos
+        ],
+        "landed": row.landed_at is not None,
+        "checks": [_check(check) for check in row.fix.checks.all()] if row.fix else [],
+    }
+
+
 def _check(check: FixCheck) -> dict[str, str]:
     """What the fix check found in a version the fix made. A clip's check is the fake's: the
     video was never made."""
@@ -199,17 +226,34 @@ def as_text(kept: dict[str, Any]) -> str:
         if said["text"] or attached:
             lines.append(f"**{who}:** {said['text']}{attached}")
             lines.append("")
-    lines.append("## Fixes restated")
-    lines += [
-        f"- scene {fix['scene']} {fix['redo']}: {fix['fix']} (about ${fix['estimate_usd']}, "
-        f"{'yes' if fix['said_yes'] else 'no yes'})"
-        + "".join(
-            f"\n  - {check['what']} check: {check['verdict']}"
-            + (f" ({check['reason']})" if check["reason"] else "")
-            for check in fix["checks"]
+    lines.append("## Fix plans")
+    for plan in kept["plans"]:
+        lines.append(
+            f"- plan {plan['plan']} ({plan['state']}, "
+            f"{'yes' if plan['said_yes'] else 'no yes'}): about ${plan['estimate_usd']}, "
+            f"up to ${plan['estimate_up_to_usd']}"
         )
-        for fix in kept["fixes"]
-    ] or ["- none"]
+        if plan["question"]:
+            lines.append(f"  - question: {plan['question']}")
+        lines += [f"  - can't ({cant['kind']}): {cant['text']}" for cant in plan["cants"]]
+        for row in plan["scenes"]:
+            what = (
+                row["change"]
+                or row["line"]
+                or (f"version {row['go_back_to']}" if row["go_back_to"] is not None else "")
+            )
+            lines.append(
+                f"  - scene {row['scene']} {row['action']}: {what} (about ${row['estimate_usd']}"
+                f"{', landed' if row['landed'] else ''})"
+                + (f" can't: {row['cant']}" if row["cant"] else "")
+            )
+            lines += [
+                f"    - {check['what']} check: {check['verdict']}"
+                + (f" ({check['reason']})" if check["reason"] else "")
+                for check in row["checks"]
+            ]
+    if not kept["plans"]:
+        lines.append("- none")
     lines += ["", "## Steps made"]
     for step in kept["steps"]:
         lines.append(

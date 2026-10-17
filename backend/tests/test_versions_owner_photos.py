@@ -1,8 +1,9 @@
 """Going back with the shop owner's photos (fix redesign, decision 8): a photo "drop" is a
 plain go-back to a version made without it. The scene then uses the photos the version gone
 back to was made with, so a later fix draws it without the photo, and going back to a version
-made with it uses it again. Driven through the chat up to the go-back, which code calls; the
-models are faked at the gateway."""
+made with it uses it again. The first ad is made through the chat and its fixes are plans run
+by code (tests/fixing.py); the go-back is called as code calls it. The models are faked at the
+gateway."""
 
 import pytest
 
@@ -12,23 +13,16 @@ from jobs import work
 from jobs.models import Fix, ProducedItem, Scene
 
 from .conftest import HeldSteps, handoffs
-from .test_producer_broll import BROLL_CHOICE
 from .test_producer_owner_photos import (  # noqa: F401 (fixtures)
-    Say,
+    brighter,
     checked,
     clean_pictures,
-    fix_asked,
     last_step,
     mug_fixed,
-    restates,
-    routes,
-    says_yes,
     shown,
 )
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("mug_fixed")]
-
-BRIGHTER = "In scene 2, the workshop is brighter."
 
 
 def scene_2() -> Scene:
@@ -41,13 +35,6 @@ def things_in_use() -> list[str]:
 
 def item(kind: str, number: int) -> ProducedItem:
     return ProducedItem.objects.get(kind=kind, scene__number=2, version=number)
-
-
-def brighter(fake_model: FakeModel, steps: HeldSteps, say: Say) -> None:
-    """A later fix of scene 2's starting picture, said yes to and made."""
-    restates(fake_model, say, "Make it brighter.", fix_asked(2, BRIGHTER, "picture"))
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
-    says_yes(fake_model, steps, say, ("make_starting_picture", {"scene": 2, "note": BRIGHTER}))
 
 
 def test_dropping_the_photo_is_going_back_to_the_version_before_it_for_nothing() -> None:
@@ -68,11 +55,11 @@ def test_dropping_the_photo_is_going_back_to_the_version_before_it_for_nothing()
 
 
 def test_after_going_back_a_later_fix_is_made_without_the_photo(
-    fake_model: FakeModel, steps: HeldSteps, say: Say
+    fake_model: FakeModel, steps: HeldSteps
 ) -> None:
     work.go_back(scene_2(), 1)
 
-    brighter(fake_model, steps, say)
+    brighter(fake_model, steps)
 
     assert list(last_step("starting_picture").reference_photos.all()) == []
     (clean,) = clean_pictures()
@@ -80,7 +67,7 @@ def test_after_going_back_a_later_fix_is_made_without_the_photo(
 
 
 def test_going_back_to_the_version_with_the_photo_uses_it_again(
-    fake_model: FakeModel, steps: HeldSteps, say: Say
+    fake_model: FakeModel, steps: HeldSteps
 ) -> None:
     work.go_back(scene_2(), 1)
     assert things_in_use() == []
@@ -89,7 +76,7 @@ def test_going_back_to_the_version_with_the_photo_uses_it_again(
 
     assert gone.version.label == "v4 back to v2"
     assert things_in_use() == ["black mug"]
-    brighter(fake_model, steps, say)
+    brighter(fake_model, steps)
     (clean,) = clean_pictures()
     assert handoffs("make_starting_picture")[-1]["pictures"][0] == clean
 
