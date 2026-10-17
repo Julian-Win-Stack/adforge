@@ -13,11 +13,14 @@ def save(name: str, data: bytes) -> str:
     return default_storage.save(name, ContentFile(data))
 
 
-def save_once(name: str, make: Callable[[], bytes]) -> str:
-    """Store what `make` gives as `name`, unless something is already kept there: for a file
-    whose name says what is in it, so asking for it again finds the one already made."""
+def save_once(name: str, make: Callable[[], bytes], *, whole: Callable[[bytes], bool]) -> str:
+    """Store what `make` gives as `name`, unless something `whole` is already kept there: for a
+    file whose name says what is in it, so asking for it again finds the one already made. A
+    file left half-written (a worker stopped while saving it) is made again."""
     if default_storage.exists(name):
-        return name
+        if whole(read(name)):
+            return name
+        default_storage.delete(name)
     return save(name, make())
 
 
