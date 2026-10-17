@@ -435,6 +435,139 @@ class Fix(models.Model):
         return cost or Decimal(0)
 
 
+class FixPlan(models.Model):
+    """What the decider plans to change in each scene from the shop owner's notes of one
+    round (fix redesign, decision 19): shown to them with its cost, and run by code once
+    they say yes. A chat has at most one plan waiting for their answer; a newer plan replaces
+    it. Its scenes are `FixPlanScene` rows; a plan can have none, when nothing changes."""
+
+    class State(models.TextChoices):
+        PROPOSED = "proposed"
+        CONFIRMED = "confirmed"
+        DECLINED = "declined"
+        REPLACED = "replaced"
+
+    job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="fix_plans")
+    session = models.ForeignKey("chat.Session", on_delete=models.CASCADE, related_name="fix_plans")
+    notes = models.JSONField(
+        default=list,
+        help_text="The shop owner's own words it was planned from, verbatim: each of their "
+        'messages of this round, since they last said yes, as [{"seq", "text"}, ...].',
+    )
+    state = models.CharField(max_length=10, choices=State.choices, default=State.PROPOSED)
+    confirmed_by = models.ForeignKey(
+        "chat.Message",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The shop owner's yes to it. Blank until they say yes.",
+    )
+    question = models.TextField(
+        blank=True, help_text="The one question for the shop owner. Blank for none."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["session"],
+                condition=models.Q(state="proposed"),
+                name="one_proposed_plan_per_session",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"Fix plan {self.pk} ({self.state})"
+
+    def estimate_usd(self) -> Decimal:
+        """What its scenes are estimated to cost."""
+        return sum((scene.estimate_usd for scene in self.scenes.all()), Decimal(0))
+
+    def estimate_up_to_usd(self) -> Decimal:
+        """The most its scenes can cost."""
+        return sum((scene.estimate_up_to_usd for scene in self.scenes.all()), Decimal(0))
+
+    def cost_usd(self) -> Decimal:
+        """What its scenes have cost so far, as `FixPlanScene.cost_usd`."""
+        from gateway.models import ModelCall
+
+        cost: Decimal | None = (
+            ModelCall.objects.filter(tool_call__scene_steps__plan_scene__plan=self)
+            .distinct()
+            .aggregate(cost=Sum("cost_usd"))["cost"]
+        )
+        return cost or Decimal(0)
+
+
+class FixPlanScene(models.Model):
+    """One scene of a fix plan: what changes in it, in plain words, and what that costs, or
+    why it can't (fix redesign, flow step 5)."""
+
+    class Action(models.TextChoices):
+        NEW_PICTURE = "new_picture"
+        NEW_CLIP = "new_clip"
+        NEW_LINE = "new_line"
+        GO_BACK = "go_back"
+        NO_CHANGE = "no_change"
+
+    plan = models.ForeignKey(FixPlan, on_delete=models.CASCADE, related_name="scenes")
+    scene = models.ForeignKey(Scene, on_delete=models.CASCADE, related_name="plan_rows")
+    action = models.CharField(max_length=20, choices=Action.choices)
+    change = models.TextField(
+        blank=True,
+        help_text="What changes, in plain words: the note the step's prompt writer is given "
+        "(decision 7), never a prompt.",
+    )
+    line = models.TextField(blank=True, help_text="The new line, for a new line. Blank else.")
+    go_back_to = models.PositiveIntegerField(
+        null=True, blank=True, help_text="The version gone back to, for a go back. Blank else."
+    )
+    cant = models.TextField(
+        blank=True, help_text="Why what the shop owner asked can't be done. Blank for none."
+    )
+    estimate_usd = models.DecimalField(
+        max_digits=10, decimal_places=6, default=Decimal(0), help_text="What it should cost."
+    )
+    estimate_up_to_usd = models.DecimalField(
+        max_digits=10,
+        decimal_places=6,
+        default=Decimal(0),
+        help_text="The most it can cost, if the clip judge has the clip made again.",
+    )
+    photos = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='The shop owner\'s photos it uses (decision 21), as [{"photo", "file", '
+        '"thing", "in_picture", "during_action"}, ...]: the photo\'s number in the chat, its '
+        "key in the file store, the one thing to take from it, whether the thing is in the "
+        "starting picture now, and whether more of it shows during the action.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["scene__number", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["plan", "scene"], name="one_row_per_plan_and_scene")
+        ]
+
+    def __str__(self) -> str:
+        return f"Scene {self.scene.number} plan: {self.action}"
+
+    def cost_usd(self) -> Decimal:
+        """What it has cost so far: every model call of the tool calls that started its
+        steps, failed ones included, as they were paid for."""
+        from gateway.models import ModelCall
+
+        cost: Decimal | None = (
+            ModelCall.objects.filter(tool_call__scene_steps__plan_scene=self)
+            .distinct()
+            .aggregate(cost=Sum("cost_usd"))["cost"]
+        )
+        return cost or Decimal(0)
+
+
 class ReferencePhoto(models.Model):
     """A photo the shop owner attached to a note, kept on a scene that uses it (Reference
     photo, CONTEXT.md): the one thing to take from it, and a clean picture of only that thing,
@@ -553,6 +686,15 @@ class SceneStep(models.Model):
         related_name="steps",
         help_text="The confirmed Fix the step was made for, if it fixes a finished scene. Blank "
         "for the ad's first making.",
+    )
+    plan_scene = models.ForeignKey(
+        "FixPlanScene",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="steps",
+        help_text="The confirmed fix plan's scene the step was made for. Blank for the ad's "
+        "first making and for a Fix's steps.",
     )
     photo = models.ForeignKey(
         ProductPhoto,
