@@ -6,11 +6,13 @@ import {
   startSession,
   type Attachment,
   type Message,
+  type PlanNotice,
+  type PlanScene,
   type Sent,
 } from "./api";
 import { ScenePanel } from "./ScenePanel";
 import { nextFollowing } from "./follow";
-import { waitsForYes } from "./scenes";
+import { planOnOffer, waitsForYes } from "./scenes";
 import { ArrowUpIcon, CloseIcon, ImageIcon, SidebarIcon, SoundIcon, SparkIcon } from "./icons";
 
 const POLL_EVERY_MS = 2000;
@@ -126,10 +128,11 @@ export function Chat({
     if (el && following.current) toBottom(el);
   }, [messages.length]);
 
-  /** Says something. The first message of a new session is what creates the session. */
-  async function send(text: string, photos: File[]) {
+  /** Says something. The first message of a new session is what creates the session. A
+   * plan's yes button names its `plan`. */
+  async function send(text: string, photos: File[], plan?: number) {
     const id = sessionId ?? (started.current ??= (await startSession()).id);
-    const sent = await sendMessage(id, text, photos);
+    const sent = await sendMessage(id, text, photos, plan);
     if (sessionId !== null) show([sent.message]);
     // A brand new session has no polling yet: opening it loads what was just said.
     onSent(sent);
@@ -142,6 +145,7 @@ export function Chat({
     .reverse()
     .find((message) => message.role !== "notice" && message.step?.state !== "made");
   const producerHasTheFloor = sessionId !== null && lastSaid?.role === "user";
+  const offered = planOnOffer(messages);
 
   return (
     <section className="chat">
@@ -192,7 +196,18 @@ export function Chat({
 
               <ol aria-label="Conversation" className="messages">
                 {messages.map((message) =>
-                  message.role === "notice" ? (
+                  message.plan?.event === "shown" && message.plan.notice !== null ? (
+                    <li key={message.seq} className="message notice-message">
+                      <PlanView
+                        plan={message.plan.notice}
+                        onYes={
+                          offered?.seq === message.seq
+                            ? () => send("Yes", [], offered.plan.plan)
+                            : null
+                        }
+                      />
+                    </li>
+                  ) : message.role === "notice" ? (
                     <li key={message.seq} className="message notice-message">
                       <p
                         role="status"
@@ -302,6 +317,101 @@ function YesBar({ onYes }: { onYes: () => Promise<void> }) {
       <button type="button" className="yes-button" disabled={sending} onClick={yes}>
         Yes
       </button>
+    </div>
+  );
+}
+
+const ACTIONS: Record<PlanScene["action"], string> = {
+  new_picture: "New starting picture",
+  new_clip: "New clip",
+  new_line: "New line",
+  go_back: "Go back",
+  no_change: "No change",
+};
+
+/** Dollars to the cent, from the server's amount. */
+function dollars(amount: string) {
+  return `$${Number(amount).toFixed(2)}`;
+}
+
+/** What a plan's scene costs, or that it is free. */
+function cost(about: string, upTo: string) {
+  if (Number(about) === 0 && Number(upTo) === 0) return "Free";
+  return `About ${dollars(about)}, up to ${dollars(upTo)}`;
+}
+
+/** The plan code posts from the owner's notes: per scene what changes in their words, what
+ * it costs and what can't be done, the one question, and the total. Its yes button
+ * (`onYes`) is there only while the plan is the one on offer; a correction is typed below. */
+function PlanView({ plan, onYes }: { plan: PlanNotice; onYes: (() => Promise<void>) | null }) {
+  return (
+    <div className="plan" role="group" aria-label="Plan for your notes">
+      <p className="plan-title">Here's the plan for your notes</p>
+      <ul className="plan-scenes">
+        {plan.scenes.map((scene) => (
+          <li key={scene.scene} className="plan-scene">
+            <span className="plan-scene-head">
+              <strong>Scene {scene.scene}</strong>{" "}
+              {scene.action === "go_back"
+                ? `Go back to version ${scene.go_back_to}`
+                : ACTIONS[scene.action]}
+            </span>
+            {scene.change && <span className="plan-change">{scene.change}</span>}
+            {scene.line && <span className="plan-line">“{scene.line}”</span>}
+            {scene.photos.map((photo) => (
+              <span key={photo.photo} className="plan-photo">
+                Photo {photo.photo}: {photo.thing}
+              </span>
+            ))}
+            {scene.cant ? (
+              <span className="plan-cant">Can't: {scene.cant}</span>
+            ) : (
+              <span className="plan-cost">
+                {cost(scene.estimate_usd, scene.estimate_up_to_usd)}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+      {plan.question && <p className="plan-question">{plan.question}</p>}
+      {Number(plan.estimate_up_to_usd) > 0 && (
+        <p className="plan-total">
+          About {dollars(plan.estimate_usd)} in all, up to {dollars(plan.estimate_up_to_usd)}
+        </p>
+      )}
+      {onYes && <PlanYes onYes={onYes} />}
+    </div>
+  );
+}
+
+/** One tap says yes to the plan; the message it sends is marked as the button's. */
+function PlanYes({ onYes }: { onYes: () => Promise<void> }) {
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function yes() {
+    setSending(true);
+    setError(null);
+    try {
+      await onYes();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="plan-yes">
+      {error && (
+        <p role="alert" className="notice error">
+          {error}
+        </p>
+      )}
+      <button type="button" className="yes-button" disabled={sending} onClick={yes}>
+        Yes, go ahead
+      </button>
+      <span className="plan-or">Or type what to change below.</span>
     </div>
   );
 }

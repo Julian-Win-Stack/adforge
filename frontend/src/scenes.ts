@@ -1,4 +1,4 @@
-import type { Attachment, Message, SceneStep } from "./api";
+import type { Attachment, Message, PlanNotice, SceneStep } from "./api";
 
 /** One version of a scene's clip, with the starting picture it was made from (the scene's
  * latest picture when the clip landed), which is its first frame. */
@@ -125,6 +125,19 @@ function namedScenes(text: string): number[] {
   return [...text.matchAll(/\bscene (\d+)\b/gi)].map(([, scene]) => Number(scene));
 }
 
+/** The plan whose yes button is on offer, and the message showing it, or null: the newest
+ * message about any plan shows one that was still waiting when read and has something to
+ * do. A tap of its yes, code saying it is going ahead or was dropped, or a newer plan, all
+ * come after it, so any of them takes the yes away. A typed answer is about no plan and
+ * leaves it on offer. */
+export function planOnOffer(messages: Message[]): { seq: number; plan: PlanNotice } | null {
+  const newest = [...messages].reverse().find((one) => one.plan !== null);
+  const shown = newest?.plan?.event === "shown" ? newest.plan.notice : null;
+  if (newest === undefined || shown === null || shown.state !== "proposed") return null;
+  const doable = shown.scenes.some((scene) => scene.action !== "no_change" && scene.cant === "");
+  return doable ? { seq: newest.seq, plan: shown } : null;
+}
+
 /** Whether the producer is waiting on the owner's yes: the owner sent notes, the producer's
  * latest words answer them (its restatement, or a new one after a correction), and no redo
  * of a scene the fix is about has started since, which would mean the yes was already given:
@@ -132,6 +145,8 @@ function namedScenes(text: string): number[] {
  * the fix. Another scene's step starting, as while it is still being made for the first
  * time, says nothing about the yes. */
 export function waitsForYes(messages: Message[]): boolean {
+  // Once code posts plans, the yes is the plan's own (planOnOffer).
+  if (messages.some((one) => one.plan !== null)) return false;
   const notesAgo = [...messages]
     .reverse()
     .findIndex((one) => one.role === "user" && NOTES.test(one.text));
