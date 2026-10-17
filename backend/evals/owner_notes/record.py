@@ -98,7 +98,7 @@ def record(
     return kept
 
 
-# TEST (owner photos build, local only): the calls the owner photos build adds or feeds.
+# The calls the owner photos build adds or feeds.
 WATCHED = (
     "route_reference_photo",
     "make_reference_photo_picture",
@@ -111,7 +111,7 @@ WATCHED = (
 
 
 def _owner_photos(start: Since, out: Path) -> dict[str, Any]:
-    """TEST (owner photos build, local only): each reference photo kept on a scene, with its
+    """Each reference photo kept on a scene, with its
     photo and clean picture copied; each watched model call, with the pictures a B-roll clip
     was made from copied; and each clip made, copied."""
     media = Path(settings.MEDIA_ROOT)

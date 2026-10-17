@@ -186,6 +186,10 @@ _Avoid_: API call, request, generation
 How fast a specific voice actually talks, found by having it read the script and timing the result. Every length decision uses it. No fixed words-per-second value exists anywhere.
 _Avoid_: Pacing, WPS, rate
 
+**Replay**:
+Round 4's ads made again with every video, voice and picture taken from what round 4 saved (evals/owner_notes), so shop owners' notes can be sent to them for the price of the text models. The decider's replay and rule cases (evals/decider) start from copies of them.
+_Avoid_: Fixture ad, test ad
+
 ### Checks
 
 **Planning check**:

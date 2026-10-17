@@ -111,7 +111,7 @@ class OwnerNotesProvider:
         real_clip: bool = False,
     ) -> None:
         self.ad = ad
-        # TEST (owner photos build, local only): the notes' first B-roll clip is made by
+        # The notes' first B-roll clip is made by
         # Creatify for real and judged for real; a second one is refused, so a case pays for
         # one clip at most.
         self.real_clip = real_clip
