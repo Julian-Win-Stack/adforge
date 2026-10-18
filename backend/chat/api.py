@@ -12,8 +12,9 @@ from rest_framework.response import Response
 from adforge import file_store
 from agents.tasks import another_session_is_busy, hold_one_at_a_time_lock, wake_producer
 from gateway.gateway import IMAGE_TYPE_NAMES, IMAGE_TYPES
+from jobs import work
 from jobs.fix_plans import notice
-from jobs.models import FixPlan
+from jobs.models import FixPlan, ProducedItem
 from jobs.page import MAX_PHOTO_BYTES, MAX_PHOTOS
 
 from . import messages
@@ -49,6 +50,11 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
     step = serializers.SerializerMethodField()
     suggested_note = serializers.SerializerMethodField()
     plan = serializers.SerializerMethodField()
+    tries = serializers.SerializerMethodField()
+    # The try a tap of "Use this one" chose (#180); null for any other message.
+    use_clip: serializers.PrimaryKeyRelatedField[ProducedItem] = serializers.PrimaryKeyRelatedField(
+        source="chosen_clip", read_only=True
+    )
 
     class Meta:
         model = Message
@@ -62,6 +68,8 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
             "step",
             "suggested_note",
             "plan",
+            "tries",
+            "use_clip",
         ]
 
     def get_step(self, message: Message) -> dict[str, object] | None:
@@ -91,6 +99,27 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
             "id": plan.pk,
             "event": message.plan_event,
             "notice": notice(plan) if shown else None,
+        }
+
+    def get_tries(self, message: Message) -> dict[str, object] | None:
+        """Every try of a clip the judge failed every try of, as it stands now, with the one
+        in the ad, for a notice showing them to pick from (#180), or null."""
+        if message.tries_of is None:
+            return None
+        shown = work.tries_shown(message.tries_of)
+        return {
+            "scene": shown.scene,
+            "in_ad": shown.in_ad.pk if shown.in_ad is not None else None,
+            "clips": [
+                {
+                    "clip": each.clip.pk,
+                    "name": each.name,
+                    "version": each.version,
+                    "url": file_store.url(each.clip.file),
+                    "problem": each.problem,
+                }
+                for each in shown.tries
+            ],
         }
 
 
@@ -147,6 +176,13 @@ class SendSerializer(serializers.Serializer[None]):
         default=None,
         help_text="The fix plan whose yes button sent this. Never set by typing.",
     )
+    use_clip = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        default=None,
+        help_text='The try of a clip the judge failed every try of whose "Use this one" '
+        "button sent this. Never set by typing.",
+    )
 
     def validate_photos(self, photos: list[UploadedFile[bytes]]) -> list[UploadedFile[bytes]]:
         # The same formats and size the rest of the system keeps: what the models can read.
@@ -160,7 +196,7 @@ class SendSerializer(serializers.Serializer[None]):
         return photos
 
     def validate(self, data: dict[str, object]) -> dict[str, object]:
-        if not data["text"] and not data["photos"]:
+        if not data["text"] and not data["photos"] and data["use_clip"] is None:
             raise serializers.ValidationError({"text": "Type something, or attach a photo."})
         return data
 
@@ -208,6 +244,12 @@ def _send(session: Session, request: Request) -> Response:
         tapped = sending.validated_data["plan"]
         if tapped is not None and (refused := _refuse_tap(session, tapped)) is not None:
             return Response({"plan": refused}, status=status.HTTP_400_BAD_REQUEST)
+        chosen = None
+        if sending.validated_data["use_clip"] is not None:
+            try:
+                chosen = _chosen_try(session, sending.validated_data["use_clip"])
+            except work.TryNotOnOffer as refused_try:
+                return Response({"use_clip": str(refused_try)}, status=status.HTTP_400_BAD_REQUEST)
         kept = []
         for photo in photos:
             extension = mimetypes.guess_extension(photo.content_type or "") or ""
@@ -215,13 +257,20 @@ def _send(session: Session, request: Request) -> Response:
                 f"sessions/{session.pk}/photos/{uuid.uuid4()}{extension}", photo.read()
             )
             kept.append(messages.AttachedFile(Attachment.Kind.PICTURE, key))
+        text = sending.validated_data["text"]
+        if tapped is not None:
+            # A tap says yes and nothing else, whatever text came with it.
+            text = TAPPED_YES
+        elif chosen is not None:
+            assert chosen.scene is not None
+            text = f"Use {work.try_name(chosen)} for scene {chosen.scene.number}."
         message = messages.add(
             session,
             role=Message.Role.USER,
-            # A tap says yes and nothing else, whatever text came with it.
-            text=sending.validated_data["text"] if tapped is None else TAPPED_YES,
+            text=text,
             carrying=kept,
             plan=None if tapped is None else messages.PlanSignal(tapped, Message.PlanEvent.YES),
+            chosen_clip=chosen.pk if chosen is not None else None,
         )
         # Only once the message is saved: a producer about to stop either finds it, or has
         # already stopped, and one is started here.
@@ -235,6 +284,31 @@ def _send(session: Session, request: Request) -> Response:
         },
         status=status.HTTP_201_CREATED,
     )
+
+
+def _chosen_try(session: Session, clip: int) -> ProducedItem:
+    """The try of a clip the judge failed every try of that a tap of its "Use this one"
+    button in `session` chose (#180), refused, saying why, unless it can be swapped in: it
+    must be a clip of this chat's ad, one of the tries the chat showed, and not the one in
+    the ad already, or by then: a tap sent before it, not yet acted on, as while the producer
+    is busy, swaps its try in first."""
+    chosen = (
+        ProducedItem.objects.filter(pk=clip, job__session=session, kind=ProducedItem.Kind.CLIP)
+        .select_related("step", "scene")
+        .first()
+    )
+    if chosen is None:
+        raise work.TryNotOnOffer(work.TRIES_NOT_ON_OFFER)
+    waiting = (
+        session.messages.filter(
+            role=Message.Role.USER, routed_at__isnull=True, chosen_clip__step=chosen.step_id
+        )
+        .select_related("chosen_clip")
+        .order_by("seq")
+        .last()
+    )
+    work.check_try_to_use(chosen, waiting=waiting.chosen_clip if waiting is not None else None)
+    return chosen
 
 
 def _refuse_tap(session: Session, plan: int) -> str | None:
