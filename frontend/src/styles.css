@@ -499,7 +499,7 @@ button:disabled {
 }
 
 /* A scene's picture or clip, with its scene and version under it. */
-.scene-media {
+.chat-media {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -507,7 +507,7 @@ button:disabled {
   max-width: 360px;
 }
 
-.scene-media figcaption {
+.chat-media figcaption {
   max-width: 220px;
   font-size: 12px;
   color: var(--text-3);
@@ -516,7 +516,7 @@ button:disabled {
   text-overflow: ellipsis;
 }
 
-.scene-media:has(.video) figcaption {
+.chat-media:has(.video) figcaption {
   max-width: 360px;
 }
 

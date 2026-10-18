@@ -567,7 +567,7 @@ function AttachmentView({
     label === null ? (
       media
     ) : (
-      <figure className="scene-media">
+      <figure className="chat-media">
         {media}
         <figcaption title={label}>{label}</figcaption>
       </figure>

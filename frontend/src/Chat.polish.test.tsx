@@ -205,7 +205,9 @@ test("the old and new clip a failed check shows are told apart", async () => {
     ),
   ]);
 
-  expect(screen.getByText("Scene 2 · old")).toBeTruthy();
+  // Its own class: the scene card's media class squeezes a caption under a tall clip to nothing.
+  const caption = screen.getByText("Scene 2 · old");
+  expect(caption.closest("figure")?.className).toBe("chat-media");
   expect(screen.getByText("Scene 2 · new")).toBeTruthy();
   expect(screen.queryByRole("group", { name: "Your ad" })).toBeNull();
 });
