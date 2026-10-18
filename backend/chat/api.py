@@ -290,7 +290,8 @@ def _chosen_try(session: Session, clip: int) -> ProducedItem:
     """The try of a clip the judge failed every try of that a tap of its "Use this one"
     button in `session` chose (#180), refused, saying why, unless it can be swapped in: it
     must be a clip of this chat's ad, one of the tries the chat showed, and not the one in
-    the ad already."""
+    the ad already, or by then: a tap sent before it, not yet acted on, as while the producer
+    is busy, swaps its try in first."""
     chosen = (
         ProducedItem.objects.filter(pk=clip, job__session=session, kind=ProducedItem.Kind.CLIP)
         .select_related("step", "scene")
@@ -298,7 +299,15 @@ def _chosen_try(session: Session, clip: int) -> ProducedItem:
     )
     if chosen is None:
         raise work.TryNotOnOffer(work.TRIES_NOT_ON_OFFER)
-    work.check_try_to_use(chosen)
+    waiting = (
+        session.messages.filter(
+            role=Message.Role.USER, routed_at__isnull=True, chosen_clip__step=chosen.step_id
+        )
+        .select_related("chosen_clip")
+        .order_by("seq")
+        .last()
+    )
+    work.check_try_to_use(chosen, waiting=waiting.chosen_clip if waiting is not None else None)
     return chosen
 
 

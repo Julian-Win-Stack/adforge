@@ -213,7 +213,7 @@ export function Chat({
                       <TriesView
                         text={message.text}
                         tries={message.tries}
-                        inAd={tryInAd(messages, message.seq)}
+                        {...tryInAd(messages, message.seq)}
                         onUse={(clip) => send("", [], undefined, clip)}
                       />
                     </li>
@@ -440,11 +440,14 @@ function TriesView({
   text,
   tries,
   inAd,
+  swapping,
   onUse,
 }: {
   text: string;
   tries: MessageTries;
   inAd: number | null;
+  /** The try a tap chose, until the scene's clip is shown as it. */
+  swapping: number | null;
   onUse: (clip: number) => Promise<void>;
 }) {
   const [sending, setSending] = useState<number | null>(null);
@@ -494,10 +497,10 @@ function TriesView({
               <button
                 type="button"
                 className="try-use"
-                disabled={sending !== null}
+                disabled={sending !== null || swapping !== null}
                 onClick={() => use(each.clip)}
               >
-                {sending === each.clip ? "Swapping…" : "Use this one"}
+                {sending === each.clip || swapping === each.clip ? "Swapping in…" : "Use this one"}
               </button>
             )}
           </li>

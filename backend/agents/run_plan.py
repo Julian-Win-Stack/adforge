@@ -525,9 +525,27 @@ def swapped_in(step: SceneStep) -> None:
     job = step.scene.job
     if not job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).exists():
         return
-    if FixPlanScene.objects.filter(
-        plan__job=job, started_at__isnull=False, landed_at__isnull=True, error=""
-    ).exists():
+    landing = sorted(
+        set(
+            FixPlanScene.objects.filter(
+                plan__job=job, started_at__isnull=False, landed_at__isnull=True, error=""
+            ).values_list("scene__number", flat=True)
+        )
+    )
+    if landing:
+        # Its plan's ad is assembled once it lands, from the try swapped in; one held on a
+        # failed fix check waits for the shop owner, who is told what they wait for.
+        named = (
+            f"scene {landing[0]}'s fix is"
+            if len(landing) == 1
+            else f"the fixes of scenes {', '.join(map(str, landing))} are"
+        )
+        post_notice(
+            job,
+            f"The ad will be put together again with scene {step.scene.number}'s new clip "
+            f"once {named} done.",
+            Message.Level.INFO,
+        )
         return
     if job.session is None:
         return

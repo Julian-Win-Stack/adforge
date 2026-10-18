@@ -2552,11 +2552,12 @@ class TryNotOnOffer(Exception):
     """A tap of "Use this one" on a try that can't be swapped in, saying why."""
 
 
-def _try_to_use(clip: ProducedItem) -> int:
+def _try_to_use(clip: ProducedItem, waiting: ProducedItem | None = None) -> int:
     """The number of the scene version a try of a clip the judge failed every try of is, to
     swap it in for nothing: it must be one of the tries the chat showed, those tries still
-    hold the clip in the ad, and it isn't that one. Refuses, saying why, otherwise, and while
-    the scene's picture or clip is being made."""
+    hold the clip in the ad, and it isn't that one, or `waiting`, the try a tap not yet acted
+    on chose, which is in the ad by then. Refuses, saying why, otherwise, and while the
+    scene's picture or clip is being made."""
     step = clip.step
     scene = clip.scene
     if (
@@ -2570,6 +2571,8 @@ def _try_to_use(clip: ProducedItem) -> int:
     in_ad = tries_shown(step).in_ad
     if in_ad is None:
         raise TryNotOnOffer(TRIES_NOT_ON_OFFER)
+    if waiting is not None:
+        in_ad = waiting
     if in_ad == clip:
         raise TryNotOnOffer(TRY_IN_THE_AD)
     if scene.steps.filter(
@@ -2586,9 +2589,10 @@ def _try_to_use(clip: ProducedItem) -> int:
     return number
 
 
-def check_try_to_use(clip: ProducedItem) -> None:
-    """Refuse a tap of "Use this one" on `clip`, saying why, unless it can be swapped in."""
-    _try_to_use(clip)
+def check_try_to_use(clip: ProducedItem, *, waiting: ProducedItem | None = None) -> None:
+    """Refuse a tap of "Use this one" on `clip`, saying why, unless it can be swapped in once
+    `waiting`, the try an earlier tap not yet acted on chose, if any, is."""
+    _try_to_use(clip, waiting)
 
 
 def use_try(clip: ProducedItem) -> GoneBack:
@@ -2921,6 +2925,13 @@ def _tried(made: ProducedItem) -> str:
     return try_name(made)
 
 
+def _tries_were_shown(step: SceneStep) -> bool:
+    """Whether the chat showed the shop owner every try of a clip step the judge failed every
+    try of. A step finished before the chat showed them (#180) never did: its tries aren't
+    versions, so its versions keep their numbers."""
+    return every_try_failed(step) and step.tries_shown.exists()
+
+
 def motion_of(clip: ProducedItem) -> str:
     """How a B-roll clip was asked to move: its own prompt for a remade clip, else its step's
     for a clip made from a note, else as its picture's step planned."""
@@ -2949,7 +2960,7 @@ def _was_shown(made: ProducedItem) -> bool:
     if made not in tries:
         # Brought back: by the auto-fix, or as an earlier note's clip again.
         return True
-    if len(tries) == 1 or every_try_failed(step):
+    if len(tries) == 1 or _tries_were_shown(step):
         return True
     failed = [auto_fix.failed_answers(clip.ruling or {"verdict": "pass"}) for clip in tries]
     return made == tries[-1] and auto_fix.clip_to_keep(failed) == len(tries) - 1
