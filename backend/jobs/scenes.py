@@ -3,6 +3,7 @@
 from typing import Any, Self, cast
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from gateway.types import Handoff
 
@@ -555,7 +556,20 @@ def starting_picture_choice_for[Choice: StartingPictureChoice](
     colour_photos: list[int], choice: type[Choice]
 ) -> type[Choice]:
     """`choice` for a job whose photos in the ad's colour are `colour_photos`. A photo
-    that isn't one of them fails while the answer is read, like any other broken answer."""
+    that isn't one of them fails while the answer is read, like any other broken answer.
+    With only one, the model isn't asked which (case C12b): code fills it in."""
+    if len(colour_photos) == 1:
+        (only,) = colour_photos
+
+        class OnlyPhotoForJob(choice):  # type: ignore[valid-type,misc]
+            photo: SkipJsonSchema[int] = only
+
+            @model_validator(mode="after")
+            def _the_only_photo(self) -> Self:
+                self.photo = only
+                return self
+
+        return OnlyPhotoForJob
 
     class StartingPictureChoiceForJob(choice):  # type: ignore[valid-type,misc]
         @model_validator(mode="after")
