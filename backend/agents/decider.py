@@ -86,7 +86,9 @@ When the scene has an overlay, the few words drawn over it such as the price, an
 line changes something it shows, give the new overlay too;
 - go back to version N, when they liked an earlier version better: say which number, after \
 looking at it;
-- no change, when the scene already shows what they ask.
+- no change, when the scene already shows what they ask, or a scene of the plan they \
+corrected no longer changes: its change says why in one line, such as "Scene 4's brush \
+already stays inside the bowl".
 In a scene where the person talks to camera, the clip only makes them speak the line from \
 the starting picture: what they hold, wear or stand next to is a new picture, and an action \
 while they talk, such as pointing or showing how the product works, is a can't on that \
@@ -527,8 +529,9 @@ class SceneDecision(BaseModel):
     action: Literal["new_picture", "new_clip", "new_line", "go_back", "no_change"]
     change: str = Field(
         description="What must be different, in plain words, never how to make it. For a new "
-        "picture with a new line, only what must look different, never the words to say. Blank "
-        "for no change."
+        "picture with a new line, only what must look different, never the words to say. For no "
+        "change, why in one line, such as \"Scene 4's brush already stays inside the bowl\"; "
+        "blank only when its can't says why."
     )
     line: str = Field(
         description="The new line word for word, for new_line, or for new_picture when the "
@@ -567,6 +570,8 @@ class SceneDecision(BaseModel):
             raise ValueError(f"scene {self.scene}: go_back, and only go_back, takes go_back_to")
         if self.action not in ("no_change", "go_back") and not self.change.strip():
             raise ValueError(f"scene {self.scene} needs the change in plain words")
+        if self.action == "no_change" and not self.cant and not self.change.strip():
+            raise ValueError(f"scene {self.scene} is no change, so it needs the reason in one line")
         return self
 
 
