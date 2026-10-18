@@ -1935,7 +1935,7 @@ test("a plan with nothing to do, only can'ts, offers no yes", async () => {
   expect(plan.queryByText(/Here's the plan/)).toBeNull();
 });
 
-test("a plan whose only scene can't be done offers no yes", async () => {
+test("a plan of a can't and a scene left as it is offers no yes and prices nothing", async () => {
   const cant = aPlan().scenes[2];
   await showAPlan(
     aPlan(7, {
