@@ -498,6 +498,62 @@ button:disabled {
   background: black;
 }
 
+/* A scene's picture or clip, with its scene and version under it. */
+.chat-media {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  max-width: 360px;
+}
+
+.chat-media figcaption {
+  max-width: 220px;
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-media:has(.video) figcaption {
+  max-width: 360px;
+}
+
+/* The finished ad: set apart from the clips, with a way to keep it. */
+.finished-ad {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--radius-m);
+  border: 1px solid var(--accent-2);
+  background: var(--accent-soft);
+}
+
+.finished-ad-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.finished-ad-download {
+  padding: 5px 12px;
+  border-radius: var(--radius-s);
+  background: var(--accent-2);
+  color: var(--bg, white);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.finished-ad-download:hover {
+  filter: brightness(1.08);
+}
+
 .sound {
   display: flex;
   align-items: center;
@@ -1490,6 +1546,33 @@ button:disabled {
   border-color: var(--border);
   background: var(--surface-2);
   color: var(--text-2);
+}
+
+/* A long notice: its first line, then the rest only when asked for. */
+.notice.notice-long {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.notice-details {
+  flex-basis: 100%;
+  max-height: 240px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.notice-toggle {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .notice.inline {
