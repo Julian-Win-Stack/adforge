@@ -524,6 +524,11 @@ def need_job(need: NeedPhoto) -> str:
     return f"{job}; ignore the person in it" if need.has_face else job
 
 
+class NotAColourPhoto(ValueError):
+    """The model writing a starting picture's prompts picked a photo that doesn't show the
+    product in the ad's colour."""
+
+
 class StartingPictureChoice(BaseModel):
     photo: int = Field(description="The number of the product photo to make the picture from.")
     photo_reason: str = Field(description="One sentence saying why that photo suits the line.")
@@ -564,11 +569,6 @@ def starting_picture_choice_for[Choice: StartingPictureChoice](
         class OnlyPhotoForJob(choice):  # type: ignore[valid-type,misc]
             photo: SkipJsonSchema[int] = only
 
-            @model_validator(mode="after")
-            def _the_only_photo(self) -> Self:
-                self.photo = only
-                return self
-
         return OnlyPhotoForJob
 
     class StartingPictureChoiceForJob(choice):  # type: ignore[valid-type,misc]
@@ -576,7 +576,7 @@ def starting_picture_choice_for[Choice: StartingPictureChoice](
         def _a_photo_in_the_colour(self) -> Self:
             if self.photo not in colour_photos:
                 shown = ", ".join(str(number) for number in colour_photos)
-                raise ValueError(
+                raise NotAColourPhoto(
                     f"Photo {self.photo} isn't one showing the product in the ad's colour: "
                     f"those are {shown}."
                 )

@@ -629,7 +629,7 @@ def test_a_clip_the_video_service_is_down_for_fails_its_step_and_the_producer_is
         (
             "notice",
             "problem",
-            "Scene 1's clip couldn't be made.",
+            "Scene 1's clip couldn't be made: an outside service stayed down.",
             {"scene": 1, "kind": "clip", "state": "not_made"},
         )
     ]

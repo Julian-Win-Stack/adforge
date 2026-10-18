@@ -130,6 +130,10 @@ class ReferencePhotoUnusable(Exception):
     failing its check, or the picture model refused it. Nothing more is made for the scene:
     the shop owner is asked for another photo (D8). Says why, for the producer."""
 
+    def __init__(self, why: str, *, thing: str) -> None:
+        super().__init__(why)
+        self.thing = thing
+
 
 def clean_picture_prompt(thing: str) -> str:
     """The picture model's prompt for the clean picture of only `thing` from the shop owner's
@@ -181,7 +185,7 @@ def writer_rules(in_picture: list[str], during_clip: list[str]) -> str:
         rules.append(
             "The shop owner sent photos of their own things. Code sends a clean picture of only "
             "each thing, drawn from their photo, to the picture model first, before every other "
-            f"picture ({each}). Wherever the rules above say Image 1, write \"the product "
+            f'picture ({each}). Wherever the rules above say Image 1, write "the product '
             'photo" instead, never an Image number: code tells the picture model which picture '
             'it is. Answer "photo" with its Photo number, as "colour_photos" gives it. '
             "You are shown them first, before the product photos. They are the shop owner's "

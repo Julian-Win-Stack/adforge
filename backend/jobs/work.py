@@ -1763,7 +1763,8 @@ def clean_picture(step: SceneStep, row: ReferencePhoto) -> str:
                 raise ReferencePhotoUnusable(
                     f"the picture model refused to draw the {row.thing} from the shop owner's "
                     f"photo ({error}), so nothing more was made for scene {step.scene.number}. "
-                    f"Ask them for another photo of the {row.thing}."
+                    f"Ask them for another photo of the {row.thing}.",
+                    thing=row.thing,
                 ) from error
             problems = (
                 judge_starting_picture(job, file, row.file, about=f"the shop owner's {row.thing}")
@@ -1780,7 +1781,8 @@ def clean_picture(step: SceneStep, row: ReferencePhoto) -> str:
             f"the clean copy of the {row.thing} drawn from the shop owner's photo failed its "
             f"check all {len(failed)} times it was drawn ({found}), so nothing more was made "
             f"for scene {step.scene.number}. Ask them for another photo of the {row.thing}, "
-            "showing it clearly."
+            "showing it clearly.",
+            thing=row.thing,
         )
 
 

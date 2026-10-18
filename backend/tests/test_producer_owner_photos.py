@@ -17,6 +17,7 @@ from pytest_django import Settings
 
 from agents.models import SystemNote
 from agents.producer import CLEAN_PICTURE_USD
+from chat.models import Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, ModelRequest, UnusableReply
@@ -210,6 +211,11 @@ def errors() -> list[str]:
         .order_by("created_at", "id")
         .values_list("text", flat=True)
     )
+
+
+def problems() -> list[str]:
+    """What the chat told the shop owner went wrong."""
+    return list(Message.objects.filter(level="problem").values_list("text", flat=True))
 
 
 def brighter(fake_model: FakeModel, steps: HeldSteps) -> None:
@@ -513,6 +519,45 @@ def test_the_new_starting_picture_is_drawn_with_the_clean_picture_first_labelled
     assert sent["prompt"].startswith(
         "Image 1 is how the clip starts: the clip starts exactly like Image 1. A "
     )
+
+
+OWNER_COASTER = ("my-coaster.png", picture(60, 80, (90, 60, 30)))
+
+
+def test_with_three_of_the_shop_owners_things_the_product_photo_is_still_photo_1(
+    fake_model: FakeModel,
+    shown: ProducedItem,
+    steps: HeldSteps,
+    say: Say,
+    instructed: dict[str, list[str]],  # noqa: F811 (the fixture)
+) -> None:
+    # Case C12b, replayed free: three things drawn in first made the product photo Image 4,
+    # and the writer, told so, answered "photo" with 4. With one photo in the ad's colour it
+    # is no longer asked which.
+    photos_sent(fake_model, say, OWNER_MUG, OWNER_TEA, OWNER_COASTER)
+    asked: list[dict[str, Any]] = []
+
+    def answer(request: ModelRequest[Any]) -> dict[str, Any]:
+        asked.append(request.output.model_json_schema())
+        return {key: value for key, value in BROLL_CHOICE.items() if key != "photo"}
+
+    fake_model.answer_unscripted("choose_broll_picture", answer)
+    fixing.fixed(
+        2,
+        "new_picture",
+        change=MUG_FIX,
+        photos=[photo(1, "black mug"), photo(2, "tea"), photo(3, "coaster")],
+    )
+    steps.run_held()
+
+    assert "photo" not in asked[0]["properties"]
+    assert "Image 4" not in instructed["choose_broll_picture"][-1]
+    step = last_step("starting_picture")
+    assert step.status == "finished"
+    assert step.photo is not None and step.photo.position == 1
+    drawn = handoffs("make_starting_picture")[-1]
+    assert drawn["pictures"][3] == Job.objects.get().photos.get(position=1).file
+    assert "Image 4 is the product photo. " in drawn["prompt"]
 
 
 def test_the_writer_of_the_prompts_is_told_the_shop_owners_pictures_win(
@@ -978,6 +1023,10 @@ def test_a_clean_picture_that_keeps_failing_its_check_asks_for_another_photo(
     assert "Ask them for another photo of the black mug" in step.result
     assert any("Ask them for another photo of the black mug" in told for told in errors())
     assert latest("clip").file == old.file
+    assert (
+        "Scene 2's starting picture couldn't be made: your black mug couldn't be drawn from "
+        "your photo. Please send another photo of it."
+    ) in problems()
     assert Scene.objects.get(number=2).status == "finished"
 
 
@@ -1002,6 +1051,10 @@ def test_a_photo_the_picture_model_refuses_asks_for_another_photo(
     assert "the picture model refused to draw the black mug" in step.result
     assert "Ask them for another photo of the black mug" in step.result
     assert any("the picture model refused to draw the black mug" in told for told in errors())
+    assert (
+        "Scene 2's starting picture couldn't be made: your black mug couldn't be drawn from "
+        "your photo. Please send another photo of it."
+    ) in problems()
 
 
 def test_a_scene_planned_before_b_roll_labels_cant_use_photos(

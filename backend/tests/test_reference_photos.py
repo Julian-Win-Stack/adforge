@@ -62,8 +62,7 @@ def test_the_clean_picture_prompt_never_copies_a_face_or_invents_a_side() -> Non
     assert "front" not in prompt
 
 
-def test_the_writer_names_the_product_photo_by_no_image_number_and_picks_it_by_its_photo_number(
-) -> None:
+def test_the_writer_names_the_product_photo_by_its_photo_number_alone() -> None:
     rules = reference_photos.writer_rules(["black toilet", "blue brush"], [])
     assert "(Image 1: their black toilet; Image 2: their blue brush)" in rules
     # One number only (case C12b): told the product photo was Image 3, the writer answered

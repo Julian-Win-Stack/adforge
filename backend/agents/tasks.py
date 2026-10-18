@@ -33,7 +33,7 @@ from jobs.work import (
 )
 
 from . import loop, routing, run_plan, step_signals
-from .loop import BLOCKED, EXPECTED_FAILURES, RunStopped, why_it_failed
+from .loop import BLOCKED, EXPECTED_FAILURES, RunStopped, why_it_failed, why_it_failed_plainly
 from .money import dollars
 from .producer import PRODUCER, STEP_NAMES
 
@@ -426,7 +426,7 @@ def run_scene_step(step_id: int) -> None:
             logger.exception("Scene step %s failed", step_id)
         tracing.flush()
         with transaction.atomic():
-            _fail(step, why_it_failed(error, "the step"))
+            _fail(step, why_it_failed(error, "the step"), why_it_failed_plainly(error))
             _told_it_ended(step)
 
 
@@ -441,8 +441,9 @@ def _told_it_ended(step: SceneStep) -> None:
         run_plan.carry_on_scene(step.scene)
 
 
-def _fail(step: SceneStep, reason: str) -> None:
-    """Mark the step failed for `reason`, and word what the producer is told."""
+def _fail(step: SceneStep, reason: str, plainly: str) -> None:
+    """Mark the step failed for `reason`, word what the producer is told, and tell the chat
+    nothing was made and why, `plainly`."""
     step.status = SceneStep.Status.FAILED
     step.reason = reason
     step.result = (
@@ -451,7 +452,7 @@ def _fail(step: SceneStep, reason: str) -> None:
     )
     step.finished_at = timezone.now()
     step.save(update_fields=["status", "reason", "result", "finished_at"])
-    step_signals.say_not_made(step)
+    step_signals.say_not_made(step, plainly)
 
 
 def _stop(step: SceneStep, reason: str) -> None:
@@ -491,7 +492,11 @@ def carry_on_after_the_worker_starts() -> None:
             )
         )
         for step in stopped:
-            _fail(step, "The worker restarted while it was being made.")
+            _fail(
+                step,
+                "The worker restarted while it was being made.",
+                "it was stopped partway.",
+            )
         # Every step is failed first, so a fix plan's scene isn't carried on while another
         # of its steps still looks running.
         for step in stopped:

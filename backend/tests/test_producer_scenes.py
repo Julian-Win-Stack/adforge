@@ -269,12 +269,12 @@ def test_a_starting_picture_that_cant_be_made_fails_its_step_and_the_producer_is
         f"{step.reason} Tell the shop owner what went wrong.",
     }
     assert chat(api, session_id)[-1] == ("agent", "Sorry, the picture service is down.")
-    # The chat can tell the picture is no longer being made. Why is the producer's to say:
-    # the error, worded for a model, isn't shown to the shop owner.
+    # The chat can tell the picture is no longer being made, and why in plain words: the
+    # error, worded for a model, isn't shown to the shop owner.
     assert step_messages(api, session_id)[-1] == (
         "notice",
         "problem",
-        "Scene 1's starting picture couldn't be made.",
+        "Scene 1's starting picture couldn't be made: an outside service stayed down.",
         picture_step("not_made"),
     )
     assert "503" not in str(chat(api, session_id))
@@ -318,7 +318,12 @@ def test_a_step_that_breaks_while_showing_its_picture_isnt_left_running(
 
 
 def test_a_photo_not_in_the_ads_colour_is_never_used(
-    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
 ) -> None:
     # Both photos show the mug in the ad's colour, so the model picks one: there is no
     # Photo 3.
@@ -336,6 +341,10 @@ def test_a_photo_not_in_the_ads_colour_is_never_used(
         step.reason
     )
     assert "make_starting_picture" not in paid_for()
+    assert step_messages(api, session_id)[-1][2] == (
+        "Scene 1's starting picture couldn't be made: the model picked a photo that doesn't "
+        "show the product in the ad's colour."
+    )
 
 
 def test_with_one_photo_in_the_ads_colour_the_model_isnt_asked_which_and_it_is_used(
@@ -622,7 +631,10 @@ def test_a_step_working_when_the_worker_stopped_fails_as_the_worker_starts_and_t
     # Told once that it started and once that it ended with nothing made.
     assert [(text, step) for _, _, text, step in step_messages(api, session_id)] == [
         ("Making scene 1's starting picture.", picture_step("started")),
-        ("Scene 1's starting picture couldn't be made.", picture_step("not_made")),
+        (
+            "Scene 1's starting picture couldn't be made: it was stopped partway.",
+            picture_step("not_made"),
+        ),
     ]
 
 
