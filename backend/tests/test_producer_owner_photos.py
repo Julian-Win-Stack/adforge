@@ -565,7 +565,7 @@ def test_the_writer_of_the_prompts_is_told_the_shop_owners_pictures_win(
     mug_fixed: Fix,
 ) -> None:
     assert instructed["choose_broll_picture"][-1].endswith(
-        reference_photos.writer_rules(["black mug"], [])
+        reference_photos.writer_rules(["black mug"], [], picks_photo=False)
     )
 
 

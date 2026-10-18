@@ -63,7 +63,7 @@ def test_the_clean_picture_prompt_never_copies_a_face_or_invents_a_side() -> Non
 
 
 def test_the_writer_names_the_product_photo_by_its_photo_number_alone() -> None:
-    rules = reference_photos.writer_rules(["black toilet", "blue brush"], [])
+    rules = reference_photos.writer_rules(["black toilet", "blue brush"], [], picks_photo=True)
     assert "(Image 1: their black toilet; Image 2: their blue brush)" in rules
     # One number only (case C12b): told the product photo was Image 3, the writer answered
     # "photo" with 3, not a photo of the product.
@@ -72,11 +72,17 @@ def test_the_writer_names_the_product_photo_by_its_photo_number_alone() -> None:
     assert 'Answer "photo" with its Photo number' in rules
 
 
+def test_the_writer_isnt_told_to_answer_a_photo_it_isnt_asked_for() -> None:
+    rules = reference_photos.writer_rules(["black toilet"], [], picks_photo=False)
+    assert 'write "the product photo"' in rules
+    assert '"photo"' not in rules.replace('"the product photo"', "")
+
+
 def test_the_writer_is_told_of_things_only_seen_during_the_clip() -> None:
-    assert reference_photos.writer_rules([], ["green gel", "foam", "brush"]) == (
+    assert reference_photos.writer_rules([], ["green gel", "foam", "brush"], picks_photo=True) == (
         reference_photos.during_clip_rules(["green gel", "foam", "brush"])
     )
     assert "their green gel, their foam and their brush" in (
         reference_photos.during_clip_rules(["green gel", "foam", "brush"])
     )
-    assert reference_photos.writer_rules([], []) == ""
+    assert reference_photos.writer_rules([], [], picks_photo=True) == ""

@@ -331,6 +331,10 @@ def why_it_failed_plainly(error: Exception) -> str:
         return "an outside service stayed down."
     if isinstance(error, ClipFailed):
         return "the video model couldn't make it."
+    if isinstance(error, UnreadableImage):
+        return f"a picture was in a kind models can't read: only {IMAGE_TYPE_NAMES}."
+    if isinstance(error, BlockedBySafetyFilter):
+        return "the AI service's safety filter blocked it."
     if isinstance(error, ReferencePhotoUnusable):
         return (
             f"your {error.thing} couldn't be drawn from your photo. Please send another photo "

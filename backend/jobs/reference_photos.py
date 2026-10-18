@@ -172,23 +172,29 @@ def picture_label(things: list[str]) -> str:
     )
 
 
-def writer_rules(in_picture: list[str], during_clip: list[str]) -> str:
+def writer_rules(in_picture: list[str], during_clip: list[str], *, picks_photo: bool) -> str:
     """Added to what the model writing a B-roll scene's prompts is told when the scene uses
     the shop owner's photos: those drawn into the starting picture, sent first, and those
     that only show during the clip, whose look the video model gets from their clean
-    pictures (locked rule 2, changed by Julian 19:38)."""
+    pictures (locked rule 2, changed by Julian 19:38). Told how to answer "photo" only when
+    it `picks_photo`: with one photo in the ad's colour, code fills it in."""
     rules = []
     if in_picture:
         each = "; ".join(
             f"Image {number}: their {thing}" for number, thing in enumerate(in_picture, 1)
+        )
+        answer = (
+            'Answer "photo" with its Photo number, as "colour_photos" gives it. '
+            if picks_photo
+            else ""
         )
         rules.append(
             "The shop owner sent photos of their own things. Code sends a clean picture of only "
             "each thing, drawn from their photo, to the picture model first, before every other "
             f'picture ({each}). Wherever the rules above say Image 1, write "the product '
             'photo" instead, never an Image number: code tells the picture model which picture '
-            'it is. Answer "photo" with its Photo number, as "colour_photos" gives it. '
-            "You are shown them first, before the product photos. They are the shop owner's "
+            f"it is. {answer}You are shown them first, before the product photos. They are the "
+            "shop owner's "
             'own, so wherever one disagrees with another picture or with "before_picture" '
             "about how that thing looks, it is right. Never write an order that disagrees with "
             "them: say to take each thing's look from its picture. Code puts a sentence saying "
