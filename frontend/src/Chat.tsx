@@ -12,7 +12,7 @@ import {
 } from "./api";
 import { ScenePanel } from "./ScenePanel";
 import { nextFollowing } from "./follow";
-import { planOnOffer, waitsForYes } from "./scenes";
+import { planOnOffer, runsSomething, waitsForYes } from "./scenes";
 import { ArrowUpIcon, CloseIcon, ImageIcon, SidebarIcon, SoundIcon, SparkIcon } from "./icons";
 
 const POLL_EVERY_MS = 2000;
@@ -342,11 +342,19 @@ function cost(about: string, upTo: string) {
 
 /** The plan code posts from the owner's notes: per scene what changes in their words, what
  * it costs and what can't be done, the one question, and the total. Its yes button
- * (`onYes`) is there only while the plan is the one on offer; a correction is typed below. */
+ * (`onYes`) is there only while the plan is the one on offer; a correction is typed below.
+ * A plan that runs nothing is no plan to say yes to: it says it can't be done yet, if
+ * anything asked can't, and prices nothing. */
 function PlanView({ plan, onYes }: { plan: PlanNotice; onYes: (() => Promise<void>) | null }) {
+  const runs = runsSomething(plan);
+  const cant = plan.cants.length > 0 || plan.scenes.some((scene) => scene.cant !== "");
   return (
     <div className="plan" role="group" aria-label="Plan for your notes">
-      <p className="plan-title">Here's the plan for your notes</p>
+      {runs ? (
+        <p className="plan-title">Here's the plan for your notes</p>
+      ) : (
+        cant && <p className="plan-title">We can't do that yet</p>
+      )}
       <ul className="plan-scenes">
         {plan.scenes.map((scene) => (
           <li key={scene.scene} className="plan-scene">
@@ -367,9 +375,11 @@ function PlanView({ plan, onYes }: { plan: PlanNotice; onYes: (() => Promise<voi
             {scene.cant ? (
               <span className="plan-cant">Can't: {scene.cant}</span>
             ) : (
-              <span className="plan-cost">
-                {cost(scene.estimate_usd, scene.estimate_up_to_usd)}
-              </span>
+              runs && (
+                <span className="plan-cost">
+                  {cost(scene.estimate_usd, scene.estimate_up_to_usd)}
+                </span>
+              )
             )}
           </li>
         ))}

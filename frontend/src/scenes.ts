@@ -134,8 +134,13 @@ export function planOnOffer(messages: Message[]): { seq: number; plan: PlanNotic
   const newest = [...messages].reverse().find((one) => one.plan !== null);
   const shown = newest?.plan?.event === "shown" ? newest.plan.notice : null;
   if (newest === undefined || shown === null || shown.state !== "proposed") return null;
-  const doable = shown.scenes.some((scene) => scene.action !== "no_change" && scene.cant === "");
-  return doable ? { seq: newest.seq, plan: shown } : null;
+  return runsSomething(shown) ? { seq: newest.seq, plan: shown } : null;
+}
+
+/** Whether a yes to `plan` would run anything: it isn't only can'ts, a question, or scenes
+ * left as they are (as the server's `run_plan.runs_something` says). */
+export function runsSomething(plan: PlanNotice): boolean {
+  return plan.scenes.some((scene) => scene.action !== "no_change" && scene.cant === "");
 }
 
 /** Whether the producer is waiting on the owner's yes: the owner sent notes, the producer's
