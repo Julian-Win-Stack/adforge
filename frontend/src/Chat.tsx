@@ -19,7 +19,7 @@ import {
 } from "./api";
 import { ScenePanel } from "./ScenePanel";
 import { nextFollowing } from "./follow";
-import { planOnOffer, suggestedNotes, waitsForYes } from "./scenes";
+import { planOnOffer, sceneCards, suggestedNotes, waitsForYes } from "./scenes";
 import { ArrowUpIcon, CloseIcon, ImageIcon, SidebarIcon, SoundIcon, SparkIcon } from "./icons";
 
 const POLL_EVERY_MS = 2000;
@@ -153,10 +153,18 @@ export function Chat({
     .find((message) => message.role !== "notice" && message.step?.state !== "made");
   const producerHasTheFloor = sessionId !== null && lastSaid?.role === "user";
   const offered = planOnOffer(messages);
+  const cards = sceneCards(messages);
   // A plan on offer or a suggested note is a question to the owner: nothing runs until they
-  // answer, though their last words are still the newest.
-  const waitingOnOwner = offered !== null || suggestedNotes(messages).size > 0;
-  const covers = clipCovers(messages);
+  // answer, though their last words are still the newest. A plan stays on offer when they
+  // type instead of tapping yes, but then the producer is answering what they typed; and a
+  // scene still being made means the run goes on.
+  const ownerSaidLast = [...messages].reverse().find((message) => message.role === "user");
+  const planWaits = offered !== null && offered.seq > (ownerSaidLast?.seq ?? 0);
+  const waitingOnOwner =
+    (planWaits || suggestedNotes(messages).size > 0) && !cards.some((card) => card.making !== null);
+  const covers = new Map(
+    cards.flatMap((card) => card.clips.map((clip) => [clip.file, clip.picture])),
+  );
 
   return (
     <section className="chat">
@@ -226,12 +234,14 @@ export function Chat({
                       />
                       {message.attachments.length > 0 && (
                         <div className="attachments">
-                          {message.attachments.map((attachment) => (
+                          {message.attachments.map((attachment, index) => (
                             <AttachmentView
                               key={attachment.position}
                               attachment={attachment}
                               role={message.role}
-                              covers={covers}
+                              label={attachmentLabel(message, attachment, index)}
+                              cover={covers.get(attachment)?.url}
+                              finished={isFinishedAd(message, attachment)}
                             />
                           ))}
                         </div>
@@ -255,12 +265,14 @@ export function Chat({
                         ))}
                       {message.attachments.length > 0 && (
                         <div className="attachments">
-                          {message.attachments.map((attachment) => (
+                          {message.attachments.map((attachment, index) => (
                             <AttachmentView
                               key={attachment.position}
                               attachment={attachment}
                               role={message.role}
-                              covers={covers}
+                              label={attachmentLabel(message, attachment, index)}
+                              cover={covers.get(attachment)?.url}
+                              finished={isFinishedAd(message, attachment)}
                             />
                           ))}
                         </div>
@@ -447,59 +459,62 @@ function PlanYes({ onYes }: { onYes: () => Promise<void> }) {
   );
 }
 
-/** Starting pictures by scene, to cover each clip before it plays: the picture of the clip's
- * own version (`"3 v2 black toilet"`), else the scene's newest picture (`"3"`). */
-type Covers = Map<string, string>;
-
-function clipCovers(messages: Message[]): Covers {
-  const covers: Covers = new Map();
-  for (const message of messages) {
-    for (const attachment of message.attachments) {
-      if (attachment.kind !== "picture" || attachment.scene === null) continue;
-      covers.set(`${attachment.scene}`, attachment.url);
-      if (attachment.version)
-        covers.set(`${attachment.scene} ${attachment.version}`, attachment.url);
-    }
+/** What a picture or clip is shown as: its scene and version ("Scene 3 · v2 black toilet"),
+ * or, for the old and new version a failed fix check shows side by side, which is which. The
+ * check's notice carries them with no scene, so the scene's card keeps its newest: the scene is
+ * the suggested note's, and the old one comes first. Null for any other file. */
+function attachmentLabel(message: Message, attachment: Attachment, index: number) {
+  if (attachment.scene !== null) {
+    return `Scene ${attachment.scene}${attachment.version ? ` · ${attachment.version}` : ""}`;
   }
-  return covers;
+  const pair = message.role === "notice" && message.suggested_note !== null;
+  if (!pair || message.attachments.length !== 2) return null;
+  return `Scene ${message.suggested_note!.scene} · ${index === 0 ? "old" : "new"}`;
+}
+
+/** The finished ad: a video of the agent's that is about no scene. Clips from before scene
+ * numbers were kept came with their step, so they aren't taken for it. */
+function isFinishedAd(message: Message, attachment: Attachment) {
+  return (
+    message.role === "agent" &&
+    message.step === null &&
+    attachment.kind === "video" &&
+    attachment.scene === null
+  );
 }
 
 /** Notices that scenes' starting pictures or clips started, back to back, read as one line:
  * "Making pictures for scenes 1-5" for five "Making scene N's starting picture." notices. The
- * joined notice keeps the first one's number; any other message is as it was. */
+ * joined notice keeps the first one's number; any other message is as it was. Whether a step
+ * makes something again is told from what the scene had made by then. */
 function joinStarts(messages: Message[]): Message[] {
-  const joined: { message: Message; scenes: number[] }[] = [];
+  const shown = new Set<string>();
+  const joined: { message: Message; again: boolean; scenes: number[] }[] = [];
   for (const message of messages) {
+    for (const { kind, scene } of message.attachments) {
+      if (scene !== null) shown.add(`${kind === "picture" ? "starting_picture" : "clip"} ${scene}`);
+    }
+    const step =
+      message.role === "notice" && message.step?.state === "started" ? message.step : null;
+    const again = step !== null && shown.has(`${step.kind} ${step.scene}`);
     const previous = joined[joined.length - 1];
-    if (previous && startsAlike(previous.message, message)) {
-      previous.scenes.push(message.step!.scene);
+    if (
+      step !== null &&
+      previous?.scenes.length &&
+      previous.message.step!.kind === step.kind &&
+      previous.again === again
+    ) {
+      previous.scenes.push(step.scene);
       continue;
     }
-    joined.push({ message, scenes: message.step ? [message.step.scene] : [] });
+    joined.push({ message, again, scenes: step ? [step.scene] : [] });
   }
-  return joined.map(({ message, scenes }) =>
-    scenes.length < 2 ? message : { ...message, text: startsLine(message, scenes) },
-  );
-}
-
-/** Whether `next` starts the same kind of step as `first`, made for the first time or again. */
-function startsAlike(first: Message, next: Message) {
-  const isStart = (one: Message) => one.role === "notice" && one.step?.state === "started";
-  return (
-    isStart(first) &&
-    isStart(next) &&
-    first.step!.kind === next.step!.kind &&
-    remaking(first) === remaking(next)
-  );
-}
-
-function remaking(message: Message) {
-  return message.text.startsWith("Remaking");
-}
-
-function startsLine(message: Message, scenes: number[]) {
-  const what = message.step!.kind === "clip" ? "clips" : "pictures";
-  return `${remaking(message) ? "Remaking" : "Making"} ${what} for scenes ${sceneList(scenes)}`;
+  return joined.map(({ message, again, scenes }) => {
+    if (scenes.length < 2) return message;
+    const what = message.step!.kind === "clip" ? "clips" : "pictures";
+    const listed = sceneList([...new Set(scenes)].sort((a, b) => a - b));
+    return { ...message, text: `${again ? "Remaking" : "Making"} ${what} for scenes ${listed}` };
+  });
 }
 
 /** Scene numbers as a reader says them: "1-5" for a run, else "2, 4". */
@@ -532,22 +547,22 @@ function NoticeText({ text, tone }: { text: string; tone: "error" | "info" }) {
 }
 
 /** What a message carries: a picture shows, a sound plays, a video can be watched. A scene's
- * picture or clip is labelled with its scene and version, and a clip is covered with its
- * picture until played; the agent's video of no scene is the finished ad. */
+ * picture or clip shows its `label` under it, and a clip its starting picture (`cover`) until
+ * played; the `finished` ad gets a card of its own with a way to download it. */
 function AttachmentView({
   attachment,
   role,
-  covers,
+  label,
+  cover,
+  finished,
 }: {
   attachment: Attachment;
   role: Message["role"];
-  covers: Covers;
+  label: string | null;
+  cover: string | undefined;
+  finished: boolean;
 }) {
   const described = role === "user" ? "Photo you attached" : "Picture the agent made";
-  const label =
-    attachment.scene === null
-      ? null
-      : `Scene ${attachment.scene}${attachment.version ? ` · ${attachment.version}` : ""}`;
   const labelled = (media: ReactNode) =>
     label === null ? (
       media
@@ -580,12 +595,12 @@ function AttachmentView({
       </div>
     );
   }
-  if (label === null && role === "agent") {
+  if (finished) {
     return (
-      <div className="final-ad" role="group" aria-label="Your ad">
-        <div className="final-ad-top">
+      <div className="finished-ad" role="group" aria-label="Your ad">
+        <div className="finished-ad-top">
           <strong>Your ad</strong>
-          <a className="final-ad-download" href={attachment.url} download>
+          <a className="finished-ad-download" href={attachment.url} download>
             Download
           </a>
         </div>
@@ -599,11 +614,6 @@ function AttachmentView({
       </div>
     );
   }
-  const cover =
-    attachment.scene === null
-      ? undefined
-      : (covers.get(`${attachment.scene} ${attachment.version}`) ??
-        covers.get(`${attachment.scene}`));
   return labelled(
     <video
       className="video"

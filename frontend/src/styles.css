@@ -521,7 +521,7 @@ button:disabled {
 }
 
 /* The finished ad: set apart from the clips, with a way to keep it. */
-.final-ad {
+.finished-ad {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -531,7 +531,7 @@ button:disabled {
   background: var(--accent-soft);
 }
 
-.final-ad-top {
+.finished-ad-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -540,7 +540,7 @@ button:disabled {
   color: var(--text);
 }
 
-.final-ad-download {
+.finished-ad-download {
   padding: 5px 12px;
   border-radius: var(--radius-s);
   background: var(--accent-2);
@@ -550,7 +550,7 @@ button:disabled {
   text-decoration: none;
 }
 
-.final-ad-download:hover {
+.finished-ad-download:hover {
   filter: brightness(1.08);
 }
 

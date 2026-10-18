@@ -111,6 +111,7 @@ test("a long problem notice shows its first line, and the rest only on asking", 
 
 test("a one-line notice has nothing to show or hide", async () => {
   await session([said("user", "Make it"), said("notice", "Making scene 1's starting picture.")]);
+  expect(screen.getByText("Making scene 1's starting picture.")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Show details" })).toBeNull();
 });
 
@@ -185,19 +186,91 @@ test("a scene's picture and clip are labelled with the scene and version, and th
   expect(screen.queryByRole("group", { name: "Your ad" })).toBeNull();
 });
 
-test("an old and a new clip of a scene shown together each carry their version", async () => {
+test("the old and new clip a failed check shows are told apart", async () => {
+  // As the backend posts it: a notice carrying the old clip then the new, with no scene, so
+  // the scene's card keeps its newest; the scene is the suggested note's.
   await session([
     said("user", "Yes"),
-    said("agent", "The check didn't see the change. Old and new:", {
-      attachments: [
-        { ...file("video", "/media/s2-v1.mp4", 2, "v1"), position: 1 },
-        { ...file("video", "/media/s2-v2.mp4", 2, "v2 scrubs harder"), position: 2 },
-      ],
+    said(
+      "notice",
+      "Scene 2's new clip may not have your change: he doesn't scrub. Here are the old clip and the new one.",
+      {
+        level: "problem",
+        attachments: [
+          { ...file("video", "/media/s2-v1.mp4", null), position: 1 },
+          { ...file("video", "/media/s2-v2.mp4", null), position: 2 },
+        ],
+        suggested_note: { scene: 2, text: "he doesn't scrub" },
+      },
+    ),
+  ]);
+
+  expect(screen.getByText("Scene 2 · old")).toBeTruthy();
+  expect(screen.getByText("Scene 2 · new")).toBeTruthy();
+  expect(screen.queryByRole("group", { name: "Your ad" })).toBeNull();
+});
+
+test("a clip made again from the same picture keeps that picture as its cover", async () => {
+  await session([
+    said("user", "Make it"),
+    said("agent", "", {
+      attachments: [file("picture", "/media/s3-v1.png", 3, "v1")],
+      step: made(3, "starting_picture"),
+    }),
+    said("agent", "", {
+      attachments: [file("video", "/media/s3-v1.mp4", 3, "v1")],
+      step: made(3, "clip"),
+    }),
+    said("agent", "", {
+      attachments: [file("video", "/media/s3-v2.mp4", 3, "v2 scrubs harder")],
+      step: made(3, "clip"),
+    }),
+    said("agent", "A new picture for scene 3.", {
+      attachments: [file("picture", "/media/s3-v3.png", 3, "v3 blue sink")],
+      step: made(3, "starting_picture"),
     }),
   ]);
 
-  expect(screen.getByText("Scene 2 · v1")).toBeTruthy();
-  expect(screen.getByText("Scene 2 · v2 scrubs harder")).toBeTruthy();
+  const posters = screen
+    .getAllByLabelText("Video the agent made")
+    .map((clip) => clip.getAttribute("poster"));
+  expect(posters).toEqual(["/media/s3-v1.png", "/media/s3-v1.png"]);
+});
+
+test("after the owner types an answer under a plan, the producer is said to be working", async () => {
+  await session([
+    said("user", "Scene 2: he should scrub harder"),
+    said("notice", "", { plan: { id: 1, event: "shown", notice: PLAN } }),
+    said("user", "How much will that cost?"),
+  ]);
+  await screen.findByRole("button", { name: "Yes, go ahead" });
+
+  expect(screen.getByText("The producer is working")).toBeTruthy();
+  expect(screen.queryByText("Waiting for your answer")).toBeNull();
+});
+
+test("a suggested note while another scene is still being made keeps the producer working", async () => {
+  await session([
+    said("user", "Yes"),
+    said("notice", "Remaking scene 4's clip.", { step: started(4, "clip") }),
+    said("notice", "Scene 2's new clip may not have your change.", {
+      suggested_note: { scene: 2, text: "He scrubs the sole harder" },
+    }),
+  ]);
+
+  expect(screen.getByText("The producer is working")).toBeTruthy();
+  expect(screen.queryByText("Waiting for your answer")).toBeNull();
+});
+
+test("a video with no scene that came with a scene step isn't taken for the finished ad", async () => {
+  await session([
+    said("user", "Make it"),
+    said("agent", "", {
+      attachments: [file("video", "/media/old-clip.mp4", null)],
+      step: made(1, "clip"),
+    }),
+  ]);
+  expect(screen.queryByRole("group", { name: "Your ad" })).toBeNull();
 });
 
 test("back-to-back notices that pictures started read as one line", async () => {
@@ -207,18 +280,25 @@ test("back-to-back notices that pictures started read as one line", async () => 
       said("notice", `Making scene ${scene}'s starting picture.`, { step: started(scene) }),
     ),
     said("agent", "", {
-      attachments: [file("picture", "/media/s1.png", 1, "v1")],
+      attachments: [1, 2, 3, 4].map((scene) => ({
+        ...file("picture", `/media/s${scene}.png`, scene, "v1"),
+        position: scene,
+      })),
       step: made(1, "starting_picture"),
     }),
     said("notice", "Remaking scene 2's starting picture.", { step: started(2) }),
     said("notice", "Remaking scene 4's starting picture.", { step: started(4) }),
     said("notice", "Making scene 1's clip.", { step: started(1, "clip") }),
+    said("notice", "Remaking scene 3's starting picture.", { step: started(3) }),
+    said("notice", "Remaking scene 2's starting picture.", { step: started(2) }),
+    said("notice", "Remaking scene 2's starting picture.", { step: started(2) }),
   ]);
 
   expect(screen.getByText("Making pictures for scenes 1-5")).toBeTruthy();
   expect(screen.queryByText("Making scene 3's starting picture.")).toBeNull();
   expect(screen.getByText("Remaking pictures for scenes 2, 4")).toBeTruthy();
   expect(screen.getByText("Making scene 1's clip.")).toBeTruthy();
+  expect(screen.getByText("Remaking pictures for scenes 2-3")).toBeTruthy();
 });
 
 test("once a session has started, the message box asks for a message, not a product link", async () => {
