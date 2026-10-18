@@ -2052,15 +2052,38 @@ test("every try is shown with what the judge saw, the one in the ad marked, the 
   }
 });
 
-test("a tap on a try sends it marked as the button's, and it is in the ad at once", async () => {
+test("a tap on a try sends it, and it is being swapped in until the scene's clip is it", async () => {
   const { backend, user } = await showTheTries();
 
   await user.click(within(aTry("Remake 1")).getByRole("button", { name: "Use this one" }));
 
-  await waitFor(() => expect(aTry("Remake 1").textContent).toContain("In the ad"));
+  await waitFor(() => expect(aTry("Remake 1").textContent).toContain("Swapping in…"));
   expect(backend.sent).toEqual([{ text: "", photos: [], use_clip: 12 }]);
+  expect(aTry("First try").textContent).toContain("In the ad");
+  const others = within(triesShown()).getAllByRole("button", { name: /Use this one|Swapping/ });
+  expect(others.every((button) => button.hasAttribute("disabled"))).toBe(true);
+
+  backend.agentSays("", scene(2, "video", "/media/t2.mp4"));
+  await nextPoll();
+
+  await waitFor(() => expect(aTry("Remake 1").textContent).toContain("In the ad"));
   expect(aTry("First try").textContent).not.toContain("In the ad");
-  expect(within(aTry("First try")).getByRole("button", { name: "Use this one" })).toBeDefined();
+  const back = within(aTry("First try")).getByRole("button", { name: "Use this one" });
+  expect(back.hasAttribute("disabled")).toBe(false);
+});
+
+test("a tap the app couldn't act on, said in red, leaves the try in the ad as it was", async () => {
+  const { backend, user } = await showTheTries();
+  await user.click(within(aTry("Remake 1")).getByRole("button", { name: "Use this one" }));
+  await waitFor(() => expect(aTry("Remake 1").textContent).toContain("Swapping in…"));
+
+  backend.notice("Scene 2 couldn't use remake 1. Those tries aren't on offer any more.", "problem");
+  await nextPoll();
+
+  await waitFor(() => expect(aTry("Remake 1").textContent).not.toContain("Swapping in…"));
+  expect(aTry("First try").textContent).toContain("In the ad");
+  const again = within(aTry("Remake 1")).getByRole("button", { name: "Use this one" });
+  expect(again.hasAttribute("disabled")).toBe(false);
 });
 
 test("once a newer clip of the scene is shown, no try can be swapped in", async () => {
@@ -2103,5 +2126,5 @@ test("the tries are off while a tap is on its way, so a second tap sends nothing
   expect(postsTo(backend, "session-1")).toHaveLength(1);
 
   release();
-  await waitFor(() => expect(aTry("Remake 1").textContent).toContain("In the ad"));
+  await waitFor(() => expect(aTry("Remake 1").textContent).toContain("Swapping in…"));
 });

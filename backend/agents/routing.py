@@ -198,8 +198,10 @@ def _chose(job: Job, message: Message, clip: ProducedItem) -> bool:
     can't be swapped in since the tap was kept is said in red, and nothing is changed. No
     one answers it: the tap is the shop owner's yes, and the chat shows what changed."""
     with transaction.atomic():
-        # The job first, as every writer of a plan locks it, before the scene going back.
+        # The job, then the chat, as every writer of a plan locks them, before the scene going
+        # back: a step finishing meanwhile, which says so in the chat, never waits on this.
         Job.objects.select_for_update().get(pk=job.pk)
+        Session.objects.select_for_update().get(pk=message.session_id)
         assert clip.scene is not None and clip.step is not None, "a try is a scene's clip"
         try:
             work.use_try(clip)
