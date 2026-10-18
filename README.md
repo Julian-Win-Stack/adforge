@@ -39,3 +39,7 @@ Harm if a decision is quietly wrong: **broken ad** (the owner sees a bad ad), **
 The rule judges: `evals/ai_checks.py` is scored against 208 graded cases in `evals/rule_cases.json` (20 plan-level, the rest B-roll scenes), and `evals/run_rule_checks.py` runs free code checks on a saved run. Re-running the cases tests the judges, not a new planner or prompt.
 
 Biggest blind spots today: the fact check has no eval; talking-scene starting pictures and the before-picture have no judge; the clip judge has never been scored on clips it wasn't tuned on; and whether a typed answer to a fix plan means yes is the decider model's call: code reads a tapped yes itself, and a typed one only for a plan shown before it (`agents/routing.py`).
+
+## What we learned
+
+What went wrong in round 5 (15 real ads on new products) and the lesson from each: [docs/lessons.md](docs/lessons.md).
