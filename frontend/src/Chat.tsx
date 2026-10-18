@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import {
   ApiError,
   getMessagesSince,
@@ -12,7 +19,7 @@ import {
 } from "./api";
 import { ScenePanel } from "./ScenePanel";
 import { nextFollowing } from "./follow";
-import { planOnOffer, waitsForYes } from "./scenes";
+import { planOnOffer, suggestedNotes, waitsForYes } from "./scenes";
 import { ArrowUpIcon, CloseIcon, ImageIcon, SidebarIcon, SoundIcon, SparkIcon } from "./icons";
 
 const POLL_EVERY_MS = 2000;
@@ -146,6 +153,10 @@ export function Chat({
     .find((message) => message.role !== "notice" && message.step?.state !== "made");
   const producerHasTheFloor = sessionId !== null && lastSaid?.role === "user";
   const offered = planOnOffer(messages);
+  // A plan on offer or a suggested note is a question to the owner: nothing runs until they
+  // answer, though their last words are still the newest.
+  const waitingOnOwner = offered !== null || suggestedNotes(messages).size > 0;
+  const covers = clipCovers(messages);
 
   return (
     <section className="chat">
@@ -195,7 +206,7 @@ export function Chat({
               )}
 
               <ol aria-label="Conversation" className="messages">
-                {messages.map((message) =>
+                {joinStarts(messages).map((message) =>
                   message.plan?.event === "shown" && message.plan.notice !== null ? (
                     <li key={message.seq} className="message notice-message">
                       <PlanView
@@ -209,12 +220,10 @@ export function Chat({
                     </li>
                   ) : message.role === "notice" ? (
                     <li key={message.seq} className="message notice-message">
-                      <p
-                        role="status"
-                        className={`notice ${message.level === "problem" ? "error" : "info"}`}
-                      >
-                        {message.text}
-                      </p>
+                      <NoticeText
+                        text={message.text}
+                        tone={message.level === "problem" ? "error" : "info"}
+                      />
                       {message.attachments.length > 0 && (
                         <div className="attachments">
                           {message.attachments.map((attachment) => (
@@ -222,6 +231,7 @@ export function Chat({
                               key={attachment.position}
                               attachment={attachment}
                               role={message.role}
+                              covers={covers}
                             />
                           ))}
                         </div>
@@ -250,6 +260,7 @@ export function Chat({
                               key={attachment.position}
                               attachment={attachment}
                               role={message.role}
+                              covers={covers}
                             />
                           ))}
                         </div>
@@ -259,7 +270,12 @@ export function Chat({
                 )}
               </ol>
 
-              {producerHasTheFloor && (
+              {producerHasTheFloor && waitingOnOwner && (
+                <div className="working" aria-live="polite">
+                  Waiting for your answer
+                </div>
+              )}
+              {producerHasTheFloor && !waitingOnOwner && (
                 <div className="working" aria-live="polite">
                   <span className="dots">
                     <i />
@@ -274,7 +290,16 @@ export function Chat({
 
           <div className="composer-wrap">
             {waitsForYes(messages) && <YesBar onYes={() => send("Yes", [])} />}
-            <Composer text={draft} onChange={setDraft} onSend={send} />
+            <Composer
+              text={draft}
+              onChange={setDraft}
+              onSend={send}
+              placeholder={
+                sessionId === null
+                  ? "Paste a product link and describe the ad you want..."
+                  : "Write a message or answer the producer..."
+              }
+            />
             <p className="composer-foot">
               The producer only states what the page says, plus what you tell it.
             </p>
@@ -422,11 +447,119 @@ function PlanYes({ onYes }: { onYes: () => Promise<void> }) {
   );
 }
 
-/** What a message carries: a picture shows, a sound plays, a video can be watched. */
-function AttachmentView({ attachment, role }: { attachment: Attachment; role: Message["role"] }) {
-  const described = role === "user" ? "Photo you attached" : "Picture the agent made";
-  if (attachment.kind === "picture") {
+/** Starting pictures by scene, to cover each clip before it plays: the picture of the clip's
+ * own version (`"3 v2 black toilet"`), else the scene's newest picture (`"3"`). */
+type Covers = Map<string, string>;
+
+function clipCovers(messages: Message[]): Covers {
+  const covers: Covers = new Map();
+  for (const message of messages) {
+    for (const attachment of message.attachments) {
+      if (attachment.kind !== "picture" || attachment.scene === null) continue;
+      covers.set(`${attachment.scene}`, attachment.url);
+      if (attachment.version)
+        covers.set(`${attachment.scene} ${attachment.version}`, attachment.url);
+    }
+  }
+  return covers;
+}
+
+/** Notices that scenes' starting pictures or clips started, back to back, read as one line:
+ * "Making pictures for scenes 1-5" for five "Making scene N's starting picture." notices. The
+ * joined notice keeps the first one's number; any other message is as it was. */
+function joinStarts(messages: Message[]): Message[] {
+  const joined: { message: Message; scenes: number[] }[] = [];
+  for (const message of messages) {
+    const previous = joined[joined.length - 1];
+    if (previous && startsAlike(previous.message, message)) {
+      previous.scenes.push(message.step!.scene);
+      continue;
+    }
+    joined.push({ message, scenes: message.step ? [message.step.scene] : [] });
+  }
+  return joined.map(({ message, scenes }) =>
+    scenes.length < 2 ? message : { ...message, text: startsLine(message, scenes) },
+  );
+}
+
+/** Whether `next` starts the same kind of step as `first`, made for the first time or again. */
+function startsAlike(first: Message, next: Message) {
+  const isStart = (one: Message) => one.role === "notice" && one.step?.state === "started";
+  return (
+    isStart(first) &&
+    isStart(next) &&
+    first.step!.kind === next.step!.kind &&
+    remaking(first) === remaking(next)
+  );
+}
+
+function remaking(message: Message) {
+  return message.text.startsWith("Remaking");
+}
+
+function startsLine(message: Message, scenes: number[]) {
+  const what = message.step!.kind === "clip" ? "clips" : "pictures";
+  return `${remaking(message) ? "Remaking" : "Making"} ${what} for scenes ${sceneList(scenes)}`;
+}
+
+/** Scene numbers as a reader says them: "1-5" for a run, else "2, 4". */
+function sceneList(scenes: number[]) {
+  const run = scenes.every((scene, i) => i === 0 || scene === scenes[i - 1] + 1);
+  return run ? `${scenes[0]}-${scenes[scenes.length - 1]}` : scenes.join(", ");
+}
+
+/** A notice's text. A long one, like every photo the page couldn't give, shows its first line
+ * and the rest only when asked for, so it doesn't fill the chat. */
+function NoticeText({ text, tone }: { text: string; tone: "error" | "info" }) {
+  const [open, setOpen] = useState(false);
+  const [first, ...rest] = text.split("\n");
+  if (rest.length === 0) {
     return (
+      <p role="status" className={`notice ${tone}`}>
+        {text}
+      </p>
+    );
+  }
+  return (
+    <div role="status" className={`notice ${tone} notice-long`}>
+      <span>{first}</span>
+      {open && <span className="notice-details">{rest.join("\n")}</span>}
+      <button type="button" className="notice-toggle" onClick={() => setOpen((was) => !was)}>
+        {open ? "Hide details" : "Show details"}
+      </button>
+    </div>
+  );
+}
+
+/** What a message carries: a picture shows, a sound plays, a video can be watched. A scene's
+ * picture or clip is labelled with its scene and version, and a clip is covered with its
+ * picture until played; the agent's video of no scene is the finished ad. */
+function AttachmentView({
+  attachment,
+  role,
+  covers,
+}: {
+  attachment: Attachment;
+  role: Message["role"];
+  covers: Covers;
+}) {
+  const described = role === "user" ? "Photo you attached" : "Picture the agent made";
+  const label =
+    attachment.scene === null
+      ? null
+      : `Scene ${attachment.scene}${attachment.version ? ` · ${attachment.version}` : ""}`;
+  const labelled = (media: ReactNode) =>
+    label === null ? (
+      media
+    ) : (
+      <figure className="scene-media">
+        {media}
+        <figcaption title={label}>{label}</figcaption>
+      </figure>
+    );
+
+  if (attachment.kind === "picture") {
+    return labelled(
       <a href={attachment.url} target="_blank" rel="noreferrer">
         <img
           className="picture"
@@ -434,7 +567,7 @@ function AttachmentView({ attachment, role }: { attachment: Attachment; role: Me
           alt={`${described} (${attachment.position})`}
           loading="lazy"
         />
-      </a>
+      </a>,
     );
   }
   if (attachment.kind === "sound") {
@@ -447,14 +580,40 @@ function AttachmentView({ attachment, role }: { attachment: Attachment; role: Me
       </div>
     );
   }
-  return (
+  if (label === null && role === "agent") {
+    return (
+      <div className="final-ad" role="group" aria-label="Your ad">
+        <div className="final-ad-top">
+          <strong>Your ad</strong>
+          <a className="final-ad-download" href={attachment.url} download>
+            Download
+          </a>
+        </div>
+        <video
+          className="video"
+          controls
+          playsInline
+          src={attachment.url}
+          aria-label="Video the agent made"
+        />
+      </div>
+    );
+  }
+  const cover =
+    attachment.scene === null
+      ? undefined
+      : (covers.get(`${attachment.scene} ${attachment.version}`) ??
+        covers.get(`${attachment.scene}`));
+  return labelled(
     <video
       className="video"
       controls
       playsInline
+      preload="metadata"
+      poster={cover}
       src={attachment.url}
       aria-label="Video the agent made"
-    />
+    />,
   );
 }
 
@@ -464,10 +623,12 @@ function Composer({
   text,
   onChange,
   onSend,
+  placeholder,
 }: {
   text: string;
   onChange: (text: string) => void;
   onSend: (text: string, photos: File[]) => Promise<void>;
+  placeholder: string;
 }) {
   const [photos, setPhotos] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
@@ -525,7 +686,7 @@ function Composer({
       <textarea
         ref={box}
         aria-label="Message"
-        placeholder="Paste a product link and describe the ad you want..."
+        placeholder={placeholder}
         value={text}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={onKeyDown}
