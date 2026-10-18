@@ -331,7 +331,7 @@ def _line_of(row: FixPlanScene) -> str:
         )
     if row.cant:
         return f"Scene {number} can't change: {row.cant}"
-    if row.action in (Action.GO_BACK, Action.NO_CHANGE):
+    if row.action == Action.GO_BACK or not row.change:
         return f"Scene {number}: {_what(row)}."
     return f"Scene {number}: {_what(row)}: {row.change}"
 

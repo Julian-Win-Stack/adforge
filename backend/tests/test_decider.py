@@ -650,9 +650,10 @@ def test_a_note_that_cant_be_done_is_planned_with_its_cant_said_by_code(
     )
 
 
-def test_no_change_tells_the_shop_owner_why(fake_model: FakeModel, ad: Job) -> None:
-    """The owner corrects which scene they meant; the decider drops the old scene and finds
-    the new one already right, and the plan says why for both (replay-8-correction)."""
+def test_the_reason_for_no_change_reaches_the_plan_notice(fake_model: FakeModel, ad: Job) -> None:
+    """The owner corrects which scene they meant (replay-8-correction): each no change's reason
+    is kept on its row and said in the plan notice. The rule that it needs one is pinned by the
+    refusal in test_a_decide_that_breaks_a_rule_is_refused_and_nothing_is_planned."""
     note = _owner_says(ad, "Sorry, I meant scene 2, not scene 1.")
     fake_model.respond(
         "decide_fixes",
