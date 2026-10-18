@@ -1,13 +1,15 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "./api";
 import type { Message } from "./api";
 import { ChevronIcon } from "./icons";
 import {
+  adFinished,
   notesMessage,
   sceneCards,
   sceneNotes,
   nonBlankNotes,
   suggestedNotes,
+  suggestionShown,
   type SceneCard,
   type TypedNote,
 } from "./scenes";
@@ -23,12 +25,16 @@ export function ScenePanel({
   onSend: (text: string) => Promise<void>;
 }) {
   const cards = useMemo(() => sceneCards(messages), [messages]);
-  const [open, setOpen] = useState(true);
+  // Until the owner folds or opens the cards, they are open, except on a phone once the ad
+  // is finished: there they would take half the screen from the chat and the ad.
+  const [chosen, setChosen] = useState<boolean | null>(null);
+  const open = chosen ?? !(isPhone() && adFinished(messages));
   // The notes live here, not in the cards, so folding the cards away keeps them.
   const [typed, setTyped] = useState<ReadonlyMap<number, TypedNote>>(new Map());
   // A suggested note fills a scene's box until the owner types in it, clearing it included.
   const suggested = useMemo(() => suggestedNotes(messages), [messages]);
   const notes = sceneNotes(suggested, typed);
+  const fromSuggestion = suggestionShown(suggested, typed);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (cards.length === 0) return null;
@@ -53,13 +59,20 @@ export function ScenePanel({
 
   return (
     <section className={`scene-panel ${open ? "open" : "closed"}`} aria-label="Scenes">
-      <button
-        className="scene-panel-toggle"
-        aria-expanded={open}
-        onClick={() => setOpen((was) => !was)}
-      >
+      <button className="scene-panel-toggle" aria-expanded={open} onClick={() => setChosen(!open)}>
         <span className="scene-panel-title">Scenes</span>
         <span className="scene-panel-count">{cards.length}</span>
+        {!open && (
+          <span className="scene-thumbs" aria-hidden="true">
+            {cards.map((card) =>
+              card.picture ? (
+                <img key={card.scene} src={card.picture.url} alt="" />
+              ) : (
+                <i key={card.scene} />
+              ),
+            )}
+          </span>
+        )}
         {busy > 0 && (
           <span className="scene-panel-busy">
             <i className="pulse" />
@@ -69,13 +82,15 @@ export function ScenePanel({
         <ChevronIcon />
       </button>
       {open && (
-        <form className="scene-form" onSubmit={submit}>
+        // Once the owner is in the cards, the ad landing doesn't fold them away under them.
+        <form className="scene-form" onSubmit={submit} onFocus={() => setChosen(true)}>
           <ol className="scene-cards">
             {cards.map((card) => (
               <li key={card.scene}>
                 <SceneCardView
                   card={card}
                   note={notes.get(card.scene) ?? ""}
+                  suggested={fromSuggestion.has(card.scene)}
                   onNote={(note) =>
                     setTyped((had) =>
                       new Map(had).set(card.scene, {
@@ -107,6 +122,11 @@ export function ScenePanel({
   );
 }
 
+/** A phone-sized window, where the cards sit above the chat and share its little height. */
+function isPhone() {
+  return window.innerWidth <= 720;
+}
+
 const STEP_NOUN = { clip: "clip", starting_picture: "picture" } as const;
 
 /** One scene: the newest clip plays here, the one before it is a tap away, and while a
@@ -114,10 +134,13 @@ const STEP_NOUN = { clip: "clip", starting_picture: "picture" } as const;
 function SceneCardView({
   card,
   note,
+  suggested,
   onNote,
 }: {
   card: SceneCard;
   note: string;
+  /** The note is the producer's suggestion, untouched by the owner. */
+  suggested: boolean;
   onNote: (note: string) => void;
 }) {
   // Which clip count the owner tapped "Previous" at: a new clip landing brings the card
@@ -185,7 +208,11 @@ function SceneCardView({
       </div>
       <div className="scene-foot">
         <span className="scene-name">{name}</span>
-        {version && <span className="scene-version-label">{version}</span>}
+        {version && (
+          <span className="scene-version-label" title={version}>
+            {version}
+          </span>
+        )}
         {previous && (
           <button
             className="scene-swap"
@@ -196,14 +223,47 @@ function SceneCardView({
           </button>
         )}
       </div>
-      <textarea
-        className="scene-note"
-        aria-label={`Note for ${name.toLowerCase()}`}
-        placeholder="Add a note"
-        value={note}
-        onChange={(event) => onNote(event.target.value)}
-        rows={2}
-      />
+      {suggested && (
+        <span
+          className="scene-note-suggested"
+          title="The producer suggested this note. Change it or clear it before sending."
+        >
+          Suggested
+        </span>
+      )}
+      <NoteBox name={name} note={note} onNote={onNote} />
     </article>
+  );
+}
+
+/** A scene's note box, as tall as what is written in it, so a long note shows whole. */
+function NoteBox({
+  name,
+  note,
+  onNote,
+}: {
+  name: string;
+  note: string;
+  onNote: (note: string) => void;
+}) {
+  const box = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const element = box.current;
+    if (element === null) return;
+    // Measured at its smallest, so deleting lines shrinks it again.
+    element.style.setProperty("--note-height", "0px");
+    const borders = element.offsetHeight - element.clientHeight;
+    element.style.setProperty("--note-height", `${element.scrollHeight + borders}px`);
+  }, [note]);
+  return (
+    <textarea
+      ref={box}
+      className="scene-note"
+      aria-label={`Note for ${name.toLowerCase()}`}
+      placeholder="Add a note"
+      value={note}
+      onChange={(event) => onNote(event.target.value)}
+      rows={2}
+    />
   );
 }

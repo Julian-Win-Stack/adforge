@@ -753,6 +753,17 @@ test("the chat is titled with the open session's name, Untitled without one, or 
   expect(chatTitle()).toBe("New session");
 });
 
+test("a session named after a product link is titled with the product in the chat too", async () => {
+  const backend = fakeBackend();
+  backend.existing("https://www.allbirds.com/products/mens-tree-runners", [
+    ["user", "https://www.allbirds.com/products/mens-tree-runners"],
+  ]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: "Mens Tree Runners · allbirds.com" }));
+  expect(chatTitle()).toBe("Mens Tree Runners · allbirds.com");
+});
+
 test("says so when the sessions can't be listed", async () => {
   const backend = fakeBackend();
   backend.cantListSessions();

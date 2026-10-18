@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Chat } from "./Chat";
-import { SessionList } from "./SessionList";
+import { SessionList, sessionTitle } from "./SessionList";
 import { listSessions, type Session } from "./api";
 
 export function App() {
@@ -51,7 +51,7 @@ export function App() {
       <Chat
         key={openId ?? "new"}
         sessionId={openId}
-        title={open?.name || null}
+        title={open ? sessionTitle(open) : null}
         sidebarOpen={sidebarOpen}
         onShowSidebar={() => setSidebarOpen(true)}
         onSent={(sent) => {

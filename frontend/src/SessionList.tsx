@@ -95,7 +95,7 @@ export function SessionList({
                           aria-current={session.id === openId}
                           title={session.name || "Untitled"}
                         >
-                          {session.name || "Untitled"}
+                          {sessionTitle(session)}
                         </button>
                         {session.id === openId && (
                           <button
@@ -123,6 +123,78 @@ export function SessionList({
       </div>
     </nav>
   );
+}
+
+/** What a session is called on screen. The server names it after the first thing the owner
+ * typed, which is usually the product's link, and links all look alike, so a name that
+ * starts with one shows the product the link names and the shop. Any other name, as one
+ * the owner gave it, shows as it is. */
+export function sessionTitle(session: Session): string {
+  if (session.name === "") return "Untitled";
+  const [first] = session.name.split(" ");
+  if (!/^(https?:\/\/|www\.)/i.test(first)) return session.name;
+  let link: URL;
+  try {
+    link = new URL(/^www\./i.test(first) ? `https://${first}` : first);
+  } catch {
+    return session.name;
+  }
+  // The shop as typed, since the parsed one spells a name like müller.de in punycode.
+  const shop = first
+    .replace(/^https?:\/\//i, "")
+    .split(/[/?#:]/)[0]
+    .replace(/^www\./i, "");
+  const product = productIn(link.pathname);
+  return product ? `${product} · ${shop}` : shop;
+}
+
+/** Path parts that say where a product is, not which. */
+const NOT_A_PRODUCT = new Set([
+  "products",
+  "product",
+  "p",
+  "dp",
+  "gp",
+  "ip",
+  "item",
+  "items",
+  "itm",
+  "listing",
+  "ref",
+  "shop",
+]);
+
+/** A code, not a name: "B07X4Q2ABC", "A-87654321", "123456789". */
+const CODE = /^[a-z]{0,3}[-_]?\d[\da-z]*$/i;
+
+/** The product a link's path names, in words: its last part that is a name, as
+ * "/products/mens-tree-runners" or "/Bamboo-Toothbrush/dp/B07X4Q2ABC". A word the server
+ * cut short ("…") is left out. Null for none. */
+function productIn(path: string): string | null {
+  const names = path
+    .split("/")
+    .map((part) => decoded(part).replace(/\.html?$/i, ""))
+    .filter(
+      (part) =>
+        /[a-z]/i.test(part) &&
+        !part.includes("=") &&
+        !CODE.test(part) &&
+        !NOT_A_PRODUCT.has(part.toLowerCase()),
+    )
+    .map((part) => part.split(/[-_ ]+/).filter((word) => word !== "" && !word.endsWith("…")))
+    .filter((words) => words.length > 0);
+  const named = names.at(-1);
+  if (named === undefined) return null;
+  return named.map((word) => word[0].toUpperCase() + word.slice(1)).join(" ");
+}
+
+/** A path part as typed, its %-escapes read; one with a broken escape is kept as it is. */
+function decoded(part: string): string {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return part;
+  }
 }
 
 /** Today's sessions, yesterday's, then everything older, each newest first as given. */

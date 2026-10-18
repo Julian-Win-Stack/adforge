@@ -199,10 +199,36 @@ export function sceneNotes(
 ): Map<number, string> {
   const notes = new Map<number, string>();
   for (const [scene, note] of typed) notes.set(scene, note.text);
-  for (const [scene, suggestion] of suggested) {
-    if (typed.get(scene)?.over !== suggestion.seq) notes.set(scene, suggestion.text);
+  for (const scene of suggestionShown(suggested, typed)) {
+    notes.set(scene, suggested.get(scene)!.text);
   }
   return notes;
+}
+
+/** The scenes whose box still holds the suggestion as it came: the owner hasn't typed in it
+ * since. */
+export function suggestionShown(
+  suggested: ReadonlyMap<number, SuggestedNote>,
+  typed: ReadonlyMap<number, TypedNote>,
+): Set<number> {
+  return new Set(
+    [...suggested]
+      .filter(([scene, suggestion]) => typed.get(scene)?.over !== suggestion.seq)
+      .map(([scene]) => scene),
+  );
+}
+
+/** Whether the finished ad has been made: the producer's message showing it carries that one
+ * video and no scene's. The fix check's notice shows a scene's old and new clips without
+ * their scene, so it is no finished ad. */
+export function adFinished(messages: Message[]): boolean {
+  return messages.some(
+    ({ role, attachments }) =>
+      role === "agent" &&
+      attachments.length === 1 &&
+      attachments[0].kind === "video" &&
+      attachments[0].scene === null,
+  );
 }
 
 /** Which try a notice of every try of a scene's clip (the message numbered `seq`) shows in
