@@ -421,6 +421,50 @@ def test_the_plan_notice_says_the_whole_plan_in_words() -> None:
     )
 
 
+def test_a_plan_of_only_cants_says_it_cant_be_done_yet_and_asks_for_no_yes() -> None:
+    job = an_ad(scenes=4)
+    plan = fix_plans.propose(
+        job,
+        NOTES,
+        [
+            FixPlanScene(
+                scene=job.scenes.get(number=2),
+                action=FixPlanScene.Action.NO_CHANGE,
+                change="It already looks right.",
+            ),
+            FixPlanScene(
+                scene=job.scenes.get(number=3),
+                action=FixPlanScene.Action.NEW_CLIP,
+                change="The hand scrubs the tile.",
+                cant="Scene 3 is a talking scene.",
+            ),
+        ],
+        cants=[{"kind": "music", "text": "The music can't be changed."}],
+    )
+
+    shown = fix_plans.show(plan)
+
+    assert shown is not None
+    assert shown.text == "\n".join(
+        [
+            "We can't do that yet.",
+            "Scene 2, no change: It already looks right.",
+            "Scene 3, new clip: The hand scrubs the tile. Can't: Scene 3 is a talking scene.",
+            "Can't: The music can't be changed.",
+        ]
+    )
+
+
+def test_a_plan_that_only_asks_says_its_question_and_asks_for_no_yes() -> None:
+    job = an_ad(scenes=4)
+    plan = fix_plans.propose(job, NOTES, [], question="Which tile, the white one?")
+
+    shown = fix_plans.show(plan)
+
+    assert shown is not None
+    assert shown.text == "Which tile, the white one?"
+
+
 def test_messages_from_before_plans_read_back_with_no_plan(
     api: APIClient, send: Callable[..., Any]
 ) -> None:
