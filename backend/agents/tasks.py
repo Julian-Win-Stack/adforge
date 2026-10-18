@@ -17,7 +17,7 @@ from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.gateway import charged_to
 from gateway.types import BlockedBySafetyFilter, UnusableReply
-from jobs.models import FixCheck, ProducedItem, Scene, SceneStep
+from jobs.models import FixCheck, Job, ProducedItem, Scene, SceneStep
 from jobs.picture_check import PictureKeptFailing
 from jobs.work import (
     check_fix,
@@ -386,6 +386,9 @@ def run_scene_step(step_id: int) -> None:
         # producer is woken in the same transaction, so its session never looks idle
         # between the two, when another session could start.
         with transaction.atomic():
+            # The job, then the chat, as every writer of a plan locks them: a notice said
+            # here locks the job after the chat's message, so the job is locked first.
+            Job.objects.select_for_update().get(pk=step.scene.job_id)
             shown = work.shown(step, made)
             if shown:
                 messages.add(
