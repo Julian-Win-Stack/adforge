@@ -32,7 +32,8 @@ from gateway.fake import FakeModel, turn
 from gateway.gateway import use_model
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
-from gateway.types import ModelReply, ModelRequest, TurnReply, TurnRequest
+from gateway.types import ModelReply, ModelRequest, Turn, TurnReply, TurnRequest
+from jobs import fix_check
 from jobs.models import BROLL_FIELDS, Fix, Job, Scene
 
 from . import ffmpeg_replay
@@ -73,6 +74,11 @@ PRODUCT_PAGE = """<!doctype html>
 </body>
 </html>
 """
+
+
+def not_a_fix() -> Turn:
+    """The decider's turn sorting the shop owner's newest message as not a fix note."""
+    return turn(calls=[("sort_message", {"kind": "not_a_fix"})])
 
 
 # What the page check answers for the mug's page.
@@ -234,6 +240,17 @@ CLIP_FIXED: dict[str, Any] = {
 }
 
 
+OWNER_PHOTO_SHOWS = "The shop owner's photo shows a black mug."
+
+
+def with_owner_photo(answer: dict[str, Any], output: Any) -> dict[str, Any]:
+    """`answer`, looking at the shop owner's photo first when a fix with their photo is
+    checked."""
+    if "owner_photo_shows" in getattr(output, "model_fields", {}):
+        return {"owner_photo_shows": OWNER_PHOTO_SHOWS, **answer}
+    return answer
+
+
 def motion_answer(
     answer: dict[str, Any], owner_change: dict[str, Any] = CLIP_FIXED
 ) -> Callable[[ModelRequest[Any]], dict[str, Any]]:
@@ -242,7 +259,8 @@ def motion_answer(
 
     def answering(request: ModelRequest[Any]) -> dict[str, Any]:
         if "owner_change" in request.output.model_fields:
-            return {**answer, "owner_change": owner_change}
+            asked = request.output.model_fields["owner_change"].annotation
+            return {**answer, "owner_change": with_owner_photo(owner_change, asked)}
         return answer
 
     return answering
@@ -317,10 +335,13 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("pick_photos", lambda _: SHAMPOO_PICKED)
     fake.answer_unscripted("note_face", lambda _: NO_FACE)
     fake.answer_unscripted("check_starting_picture", lambda _: PICTURE_OK)
-    fake.answer_unscripted("check_fix", lambda _: FIX_MADE)
+    fake.answer_unscripted("check_fix", lambda request: with_owner_photo(FIX_MADE, request.output))
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
     fake.answer_unscripted("check_clip_sides", lambda _: CLIP_SIDES_OK)
     fake.answer_unscripted("check_clip_motion", motion_answer(CLIP_MOTION_OK))
+    # Once the ad has a clip, every message goes to the decider first: unless a test scripts
+    # it, it passes each one on to the producer.
+    fake.answer_unscripted("decide_fixes", lambda _: not_a_fix())
     with use_model(fake):
         yield fake
 
@@ -573,11 +594,11 @@ JUDGED_CLIP = ["check_clip_sides"] * 3 + ["check_clip_motion"] * 3
 
 
 def paid_for() -> list[str]:
-    """The purpose of every model call the tools made, oldest first: the producer's own
-    turns aside. A clip judge's asks are made all at once, so the ones made together are
-    listed as JUDGED_CLIP lists them, whichever answered first."""
+    """The purpose of every model call the tools made, oldest first: the agents' own turns,
+    the producer's and the decider's, aside. A clip judge's asks are made all at once, so the
+    ones made together are listed as JUDGED_CLIP lists them, whichever answered first."""
     paid = list(
-        ModelCall.objects.exclude(purpose="produce")
+        ModelCall.objects.exclude(purpose__in=["produce", "decide_fixes"])
         .order_by("created_at", "id")
         .values_list("purpose", flat=True)
     )
@@ -930,6 +951,14 @@ class WorkerStopped(BaseException):
 
 
 @pytest.fixture
+def no_fix_redraws(monkeypatch: pytest.MonkeyPatch) -> None:
+    """For tests of what happens once the shop owner is asked about a fix's starting picture
+    that failed its fix check: the first failed check asks them, with no redraw before it.
+    The redraws themselves are tested in test_fix_check_redraws.py."""
+    monkeypatch.setattr(fix_check, "MOST_REDRAWS", 0)
+
+
+@pytest.fixture
 def steps(monkeypatch: pytest.MonkeyPatch) -> Iterator[HeldSteps]:
     held = HeldSteps()
     monkeypatch.setattr(tasks.run_scene_step, "delay", held.held.append)
@@ -959,11 +988,10 @@ FINISHING_STEP = (
 )
 
 
-def said_yes_to_a_fix(scene: int, fix: str, redo: Literal["clip", "picture"]) -> Fix:
-    """The shop owner said yes, with their last message, to `fix` restated as scene `scene`'s
-    fix, as after restate_fix and their answer, so a redo with it as its note passes the yes
-    guard (#135). For tests about the redo rather than the guard; the restating is recorded
-    by a call no agent gives its model."""
+def said_yes_to_a_fix(scene: int, fix: str, redo: Literal["clip", "picture", "line"]) -> Fix:
+    """The shop owner said yes, with their last message, to `fix` as scene `scene`'s fix,
+    recorded by a call no agent gives its model. For tests about a redo made from a Fix
+    rather than about the plan that would confirm it (tests/fixing.py)."""
     asked = ToolCall.objects.create(
         session=Session.objects.get(),
         agent="test",

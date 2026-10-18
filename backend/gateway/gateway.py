@@ -10,6 +10,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from functools import cache
 from typing import TYPE_CHECKING, Any, cast
@@ -49,6 +50,7 @@ from .types import (
     SpeechHandoff,
     ToolRequest,
     ToolSpec,
+    ToolUse,
     Transcription,
     TranscriptionHandoff,
     TranscriptionProvider,
@@ -78,6 +80,12 @@ _override: object | None = None
 # The tool call whose work is running now. Every model call made meanwhile is recorded
 # against it, so a tool call's cost is the sum of its model calls.
 _running_tool: ContextVar[ToolCall | None] = ContextVar("running_tool", default=None)
+
+
+def running_tool() -> ToolCall | None:
+    """The tool call whose work is running now, if any."""
+    return _running_tool.get()
+
 
 # The picture formats models can read. Anything else is refused before money is spent.
 IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
@@ -205,21 +213,36 @@ def take_turn(
     instructions: str,
     conversation: Sequence[Happened],
     tools: Sequence[ToolSpec],
+    since: datetime | None = None,
 ) -> Turn:
     """Give an agent its conversation and the tools it may call, and have it take one turn:
-    say something, ask for tools, or both."""
+    say something, ask for tools, or both. The pictures its tools handed back are read here
+    from the file store and shown with their labels, as `call_model`'s images are. An agent
+    whose conversations start afresh, as the decider's each round, passes when this one
+    started (`since`): a turn taken in an earlier one, handed the same words, isn't this
+    one's to take again."""
     handoff = TurnHandoff(conversation=list(conversation), tools=[tool.name for tool in tools])
     # Validate again here rather than trusting the caller built the handoff properly.
     handoff = TurnHandoff.model_validate(handoff.model_dump())
+    shown = [
+        Image(label=picture.label, key=picture.key)
+        for each in handoff.conversation
+        if isinstance(each, ToolUse)
+        for picture in each.pictures
+    ]
     request = TurnRequest(
         purpose=purpose,
         model=catalog.MODEL_FOR_PURPOSE[purpose],
         instructions=instructions,
         handoff=handoff,
         tools=tuple(tools),
+        images=tuple(_load(image) for image in shown),
     )
+    images = _shown(shown)
     # A turn paid for before the worker stopped, but not yet kept, is taken again for free.
-    answered = _answered_before(handoff, purpose=purpose, session=session)
+    answered = _answered_before(
+        handoff, purpose=purpose, session=session, images=images, since=since
+    )
     if answered is not None:
         return _turn_from(answered)
     provider = _agents()
@@ -236,7 +259,9 @@ def take_turn(
             ),
         )
 
-    return _recorded(None, purpose, request.model, provider.name, handoff, take, session=session)
+    return _recorded(
+        None, purpose, request.model, provider.name, handoff, take, images, session=session
+    )
 
 
 def last_turn_given(session: Session, purpose: str) -> list[Happened] | None:
@@ -296,7 +321,7 @@ def call_model[Out: BaseModel](
             handoff,
             purpose=purpose,
             job=job,
-            images=_shown(request),
+            images=_shown(request.images),
             images_may_move=images_may_move,
         )
         if answered is not None:
@@ -318,7 +343,9 @@ def call_model[Out: BaseModel](
             reason=judgement.reason if judgement else "",
         )
 
-    return _recorded(job, purpose, request.model, provider.name, handoff, complete, _shown(request))
+    return _recorded(
+        job, purpose, request.model, provider.name, handoff, complete, _shown(request.images)
+    )
 
 
 def draw_picture(*, job: Job | None, purpose: str, prompt: str) -> str:
@@ -745,6 +772,7 @@ def _answered_before(
     job: Job | None = None,
     images: list[dict[str, str]] | None = None,
     images_may_move: bool = False,
+    since: datetime | None = None,
 ) -> dict[str, Any] | None:
     """What a call for `purpose` answered when handed exactly `handoff` and shown exactly
     `images`, or any images with `images_may_move`, if one was paid for. Every call is recorded
@@ -759,6 +787,8 @@ def _answered_before(
         calls = calls.filter(images=images or [])
     if session is not None:
         calls = calls.filter(session=session)
+    if since is not None:
+        calls = calls.filter(created_at__gte=since)
     if job is not None:
         calls = calls.filter(job=job)
     answered = calls.last()
@@ -784,6 +814,11 @@ def _picture_extension(data: bytes) -> str:
     if PIL.Image.MIME.get(file_format, "") not in IMAGE_TYPES:
         raise UnreadableImage(f"The drawn picture is {file_format or 'an unknown format'}")
     return file_format.lower()
+
+
+def check_readable(image: Image) -> None:
+    """Raise UnreadableImage if `image` can't be shown to a model."""
+    _load(image)
 
 
 def _load(image: Image) -> LoadedImage:
@@ -817,9 +852,9 @@ def shrunk_image(image: Image, content: bytes) -> LoadedImage:
     )
 
 
-def _shown[Out: BaseModel](request: ModelRequest[Out]) -> list[dict[str, str]]:
-    """Which images the call showed, by their keys: the bytes are already in the file store."""
-    return [{"label": image.label, "key": image.key} for image in request.images]
+def _shown(images: Sequence[Image | LoadedImage]) -> list[dict[str, str]]:
+    """Which images a call showed, by their keys: the bytes are already in the file store."""
+    return [{"label": image.label, "key": image.key} for image in images]
 
 
 def _elapsed_ms(started: float) -> int:

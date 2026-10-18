@@ -16,11 +16,13 @@ NAME_LENGTH = 80
 
 class AttachedFile(NamedTuple):
     """A file for a message to carry. It is already in the file store. `scene` is the
-    number of the scene it is the starting picture or clip of, if any."""
+    number of the scene it is the starting picture or clip of, if any, and `version` the
+    label of the scene version it is shown as."""
 
     kind: Attachment.Kind
     file: str
     scene: int | None = None
+    version: str = ""
 
 
 class StepSignal(NamedTuple):
@@ -39,6 +41,14 @@ class SuggestedNote(NamedTuple):
     text: str
 
 
+class PlanSignal(NamedTuple):
+    """What a message says of fix plan `plan` (its id): shown, a tap of its yes button, or
+    settled."""
+
+    plan: int
+    event: Message.PlanEvent
+
+
 def add(
     session: Session,
     *,
@@ -48,11 +58,16 @@ def add(
     carrying: Sequence[AttachedFile] = (),
     step: StepSignal | None = None,
     suggested: SuggestedNote | None = None,
+    plan: PlanSignal | None = None,
+    tries_of: int | None = None,
+    chosen_clip: int | None = None,
 ) -> Message:
     """Say something in a session, with any files it carries, and name the session from
     the first thing the user types. A notice carries its `level`; nothing else does. A
     message about a scene's starting picture or clip carries its `step`, and one may
-    suggest a note on a scene.
+    suggest a note on a scene, and one about a fix plan carries its `plan`. One showing every
+    try of a clip the judge failed names its clip step, `tries_of`, and the shop owner's tap
+    on one of them names the try chosen, `chosen_clip`.
 
     Messages are numbered 1, 2, 3... per session. The session row is locked while
     numbering, so messages always become visible in number order. Without that, a poll
@@ -74,6 +89,10 @@ def add(
             step_state=step.state if step else "",
             suggested_note=suggested.text if suggested else "",
             suggested_note_scene=suggested.scene if suggested else None,
+            plan_event=plan.event if plan else "",
+            fix_plan_id=plan.plan if plan else None,
+            tries_of_id=tries_of,
+            chosen_clip_id=chosen_clip,
         )
         Attachment.objects.bulk_create(
             Attachment(
@@ -82,6 +101,7 @@ def add(
                 kind=attached.kind,
                 file=attached.file,
                 scene=attached.scene,
+                version=attached.version,
             )
             for position, attached in enumerate(carrying, start=1)
         )
@@ -92,17 +112,49 @@ def add(
     return message
 
 
-def as_read(message: Message) -> str:
+def as_read(message: Message, *, numbered: bool = False) -> str:
     """The message as an agent reads it: its words, then a note of the files it carries,
-    since a model given the conversation can't see them. A message may carry only files."""
+    since a model given the conversation can't see them. A message may carry only files.
+    `numbered` numbers the shop owner's photos through the chat, as "owner photo 3", so the
+    producer's fix can name which photo shows which thing; no other model is told, so what
+    the judges read is as it was."""
     counts: dict[str, int] = {}
     for attachment in message.attachments.all():
         counts[attachment.kind] = counts.get(attachment.kind, 0) + 1
     if not counts:
         return message.text
     carried = [f"{count} {kind}{'s' if count != 1 else ''}" for kind, count in counts.items()]
-    note = f"[Attached {' and '.join(carried)}]"
+    pictures = counts.get(Attachment.Kind.PICTURE, 0)
+    numbers_said = ""
+    if numbered and message.role == Message.Role.USER and pictures:
+        first = _owner_photos_before(message) + 1
+        numbers = [str(number) for number in range(first, first + pictures)]
+        listed = numbers[0] if pictures == 1 else f"{', '.join(numbers[:-1])} and {numbers[-1]}"
+        numbers_said = f": owner photo{'s' if pictures != 1 else ''} {listed}"
+    note = f"[Attached {' and '.join(carried)}{numbers_said}]"
     return f"{message.text}\n\n{note}" if message.text else note
+
+
+def owner_photos(session: Session) -> list[Attachment]:
+    """Every photo the shop owner attached in the chat, in the order sent: owner photo 1
+    first."""
+    return list(
+        Attachment.objects.filter(
+            message__session=session,
+            message__role=Message.Role.USER,
+            kind=Attachment.Kind.PICTURE,
+        ).order_by("message__seq", "position")
+    )
+
+
+def _owner_photos_before(message: Message) -> int:
+    """How many photos the shop owner attached in the chat before `message`."""
+    return Attachment.objects.filter(
+        message__session_id=message.session_id,
+        message__role=Message.Role.USER,
+        message__seq__lt=message.seq,
+        kind=Attachment.Kind.PICTURE,
+    ).count()
 
 
 def name_from(text: str) -> str:

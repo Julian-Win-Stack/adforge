@@ -1,4 +1,4 @@
-import type { Attachment, Message, SceneStep } from "./api";
+import type { Attachment, Message, PlanNotice, SceneStep } from "./api";
 
 /** One version of a scene's clip, with the starting picture it was made from (the scene's
  * latest picture when the clip landed), which is its first frame. */
@@ -125,6 +125,19 @@ function namedScenes(text: string): number[] {
   return [...text.matchAll(/\bscene (\d+)\b/gi)].map(([, scene]) => Number(scene));
 }
 
+/** The plan whose yes button is on offer, and the message showing it, or null: the newest
+ * message about any plan shows one that was still waiting when read and has something to
+ * do. A tap of its yes, code saying it is going ahead or was dropped, or a newer plan, all
+ * come after it, so any of them takes the yes away. A typed answer is about no plan and
+ * leaves it on offer. */
+export function planOnOffer(messages: Message[]): { seq: number; plan: PlanNotice } | null {
+  const newest = [...messages].reverse().find((one) => one.plan !== null);
+  const shown = newest?.plan?.event === "shown" ? newest.plan.notice : null;
+  if (newest === undefined || shown === null || shown.state !== "proposed") return null;
+  const doable = shown.scenes.some((scene) => scene.action !== "no_change" && scene.cant === "");
+  return doable ? { seq: newest.seq, plan: shown } : null;
+}
+
 /** Whether the producer is waiting on the owner's yes: the owner sent notes, the producer's
  * latest words answer them (its restatement, or a new one after a correction), and no redo
  * of a scene the fix is about has started since, which would mean the yes was already given:
@@ -132,6 +145,8 @@ function namedScenes(text: string): number[] {
  * the fix. Another scene's step starting, as while it is still being made for the first
  * time, says nothing about the yes. */
 export function waitsForYes(messages: Message[]): boolean {
+  // Once code posts plans, the yes is the plan's own (planOnOffer).
+  if (messages.some((one) => one.plan !== null)) return false;
   const notesAgo = [...messages]
     .reverse()
     .findIndex((one) => one.role === "user" && NOTES.test(one.text));
@@ -183,4 +198,34 @@ export function sceneNotes(
     if (typed.get(scene)?.over !== suggestion.seq) notes.set(scene, suggestion.text);
   }
   return notes;
+}
+
+/** Which try a notice of every try of a scene's clip (the message numbered `seq`) shows in
+ * the ad, and which one a tap of "Use this one" is swapping in. The one in the ad is the one
+ * when the notice was read, then whichever the messages after it put there: the scene's
+ * clip shown again as one of the tries, as after going back to it, is that try; any other
+ * clip of the scene shown means a newer clip replaced them all: null, so none can be swapped
+ * in. A tap's try is being swapped in until the scene's clip is shown, or a red notice says
+ * it couldn't be. */
+export function tryInAd(
+  messages: Message[],
+  seq: number,
+): { inAd: number | null; swapping: number | null } {
+  const at = messages.findIndex((one) => one.seq === seq);
+  const tries = messages[at]?.tries;
+  if (!tries) return { inAd: null, swapping: null };
+  let inAd = tries.in_ad;
+  let swapping: number | null = null;
+  for (const later of messages.slice(at + 1)) {
+    if (later.use_clip != null && tries.clips.some((one) => one.clip === later.use_clip)) {
+      swapping = later.use_clip;
+    }
+    if (later.role === "notice" && later.level === "problem") swapping = null;
+    for (const attachment of later.attachments) {
+      if (attachment.kind !== "video" || attachment.scene !== tries.scene) continue;
+      inAd = tries.clips.find((one) => one.url === attachment.url)?.clip ?? null;
+      swapping = null;
+    }
+  }
+  return { inAd, swapping };
 }

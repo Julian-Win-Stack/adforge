@@ -83,6 +83,9 @@ def test_a_new_session_is_named_from_the_users_first_message(
         "attachments": [],
         "step": None,
         "suggested_note": None,
+        "plan": None,
+        "tries": None,
+        "use_clip": None,
     }
 
 
@@ -339,9 +342,15 @@ def test_an_agent_message_can_carry_a_picture_a_sound_and_a_video(
 
     assert polled[0]["role"] == "agent"
     assert polled[0]["attachments"] == [
-        {"position": 1, "kind": "picture", "url": "/media/portrait.png", "scene": None},
-        {"position": 2, "kind": "sound", "url": "/media/voice.mp3", "scene": None},
-        {"position": 3, "kind": "video", "url": "/media/ad.mp4", "scene": None},
+        {
+            "position": 1,
+            "kind": "picture",
+            "url": "/media/portrait.png",
+            "scene": None,
+            "version": "",
+        },
+        {"position": 2, "kind": "sound", "url": "/media/voice.mp3", "scene": None, "version": ""},
+        {"position": 3, "kind": "video", "url": "/media/ad.mp4", "scene": None, "version": ""},
     ]
 
 
@@ -373,7 +382,7 @@ def test_a_reopened_session_says_which_scene_each_file_and_step_message_is_about
         ({"scene": 2, "kind": "clip", "state": "started"}, []),
         (
             {"scene": 2, "kind": "clip", "state": "made"},
-            [{"position": 1, "kind": "video", "url": "/media/clip.mp4", "scene": 2}],
+            [{"position": 1, "kind": "video", "url": "/media/clip.mp4", "scene": 2, "version": ""}],
         ),
     ]
 

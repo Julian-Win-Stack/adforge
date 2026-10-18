@@ -2,7 +2,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Protocol, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
 
 
 class Handoff(BaseModel):
@@ -93,14 +100,31 @@ class Said(Handoff):
     text: str
 
 
+class Shown(Handoff):
+    """A picture a tool handed back, by the label code gave it and its key in the file store."""
+
+    label: str = Field(min_length=1)
+    key: str = Field(min_length=1)
+
+
 class ToolUse(Handoff):
-    """A tool the agent called earlier in its conversation, and what the tool handed back."""
+    """A tool the agent called earlier in its conversation, and what the tool handed back:
+    its words, and any pictures, which the agent is shown with their labels in this order."""
 
     kind: Literal["tool_use"] = "tool_use"
     call_id: str
     tool: str
     arguments: dict[str, Any]
     result: str
+    pictures: list[Shown] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def _no_pictures_left_out(self, dump: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        # A text-only tool's use is recorded exactly as before pictures could be handed back.
+        dumped: dict[str, Any] = dump(self)
+        if not self.pictures:
+            dumped.pop("pictures", None)
+        return dumped
 
 
 class StepFinished(Handoff):
@@ -135,11 +159,15 @@ class ToolSpec:
 
 @dataclass(frozen=True)
 class TurnRequest:
+    """One turn to take. `images` are the pictures the conversation's tools handed back, read
+    from the file store, one for each picture its tool uses name, in the same order."""
+
     purpose: str
     model: str
     instructions: str
     handoff: TurnHandoff
     tools: tuple[ToolSpec, ...]
+    images: tuple[LoadedImage, ...] = ()
 
 
 @dataclass(frozen=True)

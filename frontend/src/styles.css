@@ -693,6 +693,178 @@ button:disabled {
   cursor: default;
 }
 
+/* Code's plan for the owner's notes, with its own yes. */
+.plan {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(560px, 100%);
+  padding: 14px 16px;
+  border-radius: var(--radius-l);
+  border: 1px solid rgba(200, 240, 74, 0.35);
+  background: rgba(200, 240, 74, 0.06);
+  font-size: 14px;
+  color: var(--text);
+}
+
+.plan-title,
+.plan-question,
+.plan-total {
+  margin: 0;
+}
+
+.plan-title {
+  font-weight: 600;
+}
+
+.plan-scenes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-scene {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plan-change,
+.plan-line,
+.plan-photo,
+.plan-cost,
+.plan-total {
+  color: var(--text-2);
+}
+
+.plan-cost,
+.plan-total {
+  font-size: 13px;
+}
+
+.plan-cant {
+  margin: 0;
+  color: var(--danger);
+}
+
+.plan-question {
+  font-weight: 600;
+}
+
+.plan-yes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.plan-yes .notice {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.plan-or {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+/* Every try at a scene's clip the judge failed every try of, side by side, to pick from. */
+.tries {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(720px, 100%);
+  padding: 14px 16px;
+  border-radius: var(--radius-l);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  font-size: 14px;
+}
+
+.tries-title,
+.tries-gone {
+  margin: 0;
+}
+
+.tries-gone {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.tries-clips {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.try {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: var(--radius-m);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.try.in-ad {
+  border-color: rgba(200, 240, 74, 0.55);
+  background: rgba(200, 240, 74, 0.06);
+}
+
+.try .video {
+  width: 100%;
+  max-width: none;
+  max-height: 320px;
+  object-fit: contain;
+}
+
+.try-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.try-badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.try-problem {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.try-use {
+  margin-top: auto;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.try-use:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.try-use:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .composer {
   width: min(820px, 100%);
   margin: 0 auto;
@@ -1093,6 +1265,15 @@ button:disabled {
   font-weight: 600;
   color: var(--text-2);
   white-space: nowrap;
+}
+
+.scene-version-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-3);
 }
 
 .scene-swap {

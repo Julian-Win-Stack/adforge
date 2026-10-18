@@ -36,10 +36,11 @@ from .conftest import (
     WorkerStopped,
     handoffs,
     paid_for,
-    said_yes_to_a_fix,
 )
+from .fixing import fixed
 from .test_producer_broll import (
     BROLL_CHOICE,
+    IMAGE_1,
     LINE_2,
     MOTION,
     SHOWS,
@@ -61,6 +62,11 @@ FLOATS = "The teapot rises at 1.2 s with no hand on it. A real one stays on the 
 SPINS = "The mug spins at 2 s and shows its back. A real one keeps its front to the camera."
 REMADE = "A hand tips the teapot and tea pours into the mug while the teapot stays in the hand."
 REMADE_AGAIN = "A hand holds the teapot by its handle and pours tea into the mug."
+# What the producer is told after the judge failed every try of 3 (#180).
+SHOWN_ALL_3 = (
+    "The chat showed the shop owner all 3 tries, each with what the judge still sees, so they "
+    "can tap another to use it instead, for nothing."
+)
 
 
 def failing(problem: str, question: str = "real_motion") -> dict[str, Any]:
@@ -145,10 +151,15 @@ def test_a_failed_clip_is_made_again_from_the_same_picture_and_judged_again(
         *JUDGED_CLIP,
     ]
     assert clips_asked("prompt") == [
-        f"A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} {MOTION}",
-        f"A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} {REMADE}",
+        f"{IMAGE_1}A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} "
+        f"{MOTION}",
+        f"{IMAGE_1}A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} "
+        f"{REMADE}",
     ]
-    assert clips_asked("starting_picture")[0] == clips_asked("starting_picture")[1]
+    # The remake is in reference mode too, with the same drawn picture as Image 1.
+    picture = ProducedItem.objects.get(kind="starting_picture").file
+    assert clips_asked("example_pictures") == [[picture], [picture]]
+    assert clips_asked("starting_picture") == [None, None]
     assert clips() == [1, 2]
     assert ProducedItem.objects.filter(kind="starting_picture").count() == 1
 
@@ -286,8 +297,10 @@ def test_a_clip_is_made_again_at_most_twice(remade_twice: SceneStep) -> None:
     assert paid_for().count("make_broll_clip") == 3
     assert paid_for().count("check_clip_motion") == 9
     assert clips_asked("prompt")[1:] == [
-        f"A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} {REMADE}",
-        f"A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} {REMADE_AGAIN}",
+        f"{IMAGE_1}A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} "
+        f"{REMADE}",
+        f"{IMAGE_1}A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} "
+        f"{REMADE_AGAIN}",
     ]
 
 
@@ -325,7 +338,8 @@ def test_the_clip_with_the_fewest_failed_answers_is_the_scenes_clip_again(
     assert (
         f'The clip judge failed the first clip it made ("{FLOATS}"), so it was made again 2 '
         "times, and it failed each remake too. The clip kept is the first clip, the one with "
-        f'the fewest faults, and the judge still sees: "{FLOATS}" Scene 2 is finished.'
+        f'the fewest faults, and the judge still sees: "{FLOATS}" {SHOWN_ALL_3} Scene 2 is '
+        "finished."
     ) in remade_twice.result
 
 
@@ -433,7 +447,7 @@ def test_a_clip_made_from_a_note_is_remade_from_the_notes_prompt_keeping_the_own
     say: Callable[..., None],
 ) -> None:
     clip_of_scene_2(fake_model, steps, say)
-    said_yes_to_a_fix(2, HOVERS, "clip")
+    fixed(2, "new_clip", change=HOVERS)
     fake_model.respond(
         "rewrite_clip_prompt",
         {"motion_prompt": NOTED, "motion_prompt_reason": "The note asks for the pour."},
@@ -442,8 +456,7 @@ def test_a_clip_made_from_a_note_is_remade_from_the_notes_prompt_keeping_the_own
     fixs = {**failing(FLOATS), "owner_change": CLIP_FIXED}
     fake_model.respond("check_clip_motion", fixs, fixs)
     fake_model.respond("remake_clip_prompt", rewrite(REMADE))
-    calling(fake_model, say, ("make_clip", {"scene": 2, "note": HOVERS}))
-    run(fake_model, steps)
+    steps.run_held()
 
     (handoff,) = handoffs("remake_clip_prompt")
     assert (handoff["motion_prompt"], handoff["owner_fix"]) == (NOTED, HOVERS)
@@ -639,7 +652,9 @@ def test_a_failed_remake_whose_own_remake_cant_be_written_is_kept_as_the_newest_
     assert (
         f'The clip judge failed the first clip it made ("{FLOATS}"), so it was made again once, '
         "and it failed the remake too. The clip kept is remake 1, the one with the fewest "
-        f'faults, and the judge still sees: "{SPINS}" Scene 2 is finished.'
+        f'faults, and the judge still sees: "{SPINS}" The chat showed the shop owner all 2 '
+        "tries, each with what the judge still sees, so they can tap another to use it instead, "
+        "for nothing. Scene 2 is finished."
     ) in step.result
 
 
@@ -755,5 +770,27 @@ def test_a_remake_with_the_fewest_failed_answers_is_brought_back_as_the_scenes_c
     assert (
         f'The clip judge failed the first clip it made ("{FLOATS}"), so it was made again 2 '
         "times, and it failed each remake too. The clip kept is remake 1, the one with the "
-        f'fewest faults, and the judge still sees: "{SPINS}" Scene 2 is finished.'
+        f'fewest faults, and the judge still sees: "{SPINS}" {SHOWN_ALL_3} Scene 2 is finished.'
     ) in step.result
+
+
+# --- Versions (fix redesign, decision 8) --------------------------------------------------
+
+
+def test_a_remade_clip_is_its_pictures_version_and_the_failed_try_is_none(
+    remade_once: SceneStep,
+) -> None:
+    (version,) = work.versions(remade_once.scene)
+    kept = ProducedItem.objects.get(kind="clip", version=2)
+    assert (version.label, version.clip) == ("v1 first version", kept)
+
+
+def test_an_earlier_try_kept_is_the_version_gone_back_to_after_every_try(
+    remade_twice: SceneStep,
+) -> None:
+    # Every try failed, so each is a version, to pick from (#180).
+    *_, version = work.versions(remade_twice.scene)
+    assert (version.label, version.clip) == (
+        "v4 back to v1",
+        ProducedItem.objects.get(kind="clip", version=4),
+    )

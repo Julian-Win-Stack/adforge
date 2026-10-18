@@ -10,7 +10,7 @@ import math
 import mimetypes
 import tempfile
 import wave
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from django.conf import settings
 from django.db import connection, transaction
 from django.db.models import Max, Q, QuerySet
+from django.utils import timezone
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown, with_retries
@@ -62,7 +63,17 @@ from gateway.types import (
     UnusableReply,
 )
 
-from . import assembly, auto_fix, clip_judge, firecrawl, fix_check, page, page_text, photos
+from . import (
+    assembly,
+    auto_fix,
+    clip_judge,
+    firecrawl,
+    fix_check,
+    page,
+    page_text,
+    photos,
+    reference_photos,
+)
 from .checks import (
     FACT_CHECK_INSTRUCTIONS,
     LENGTH_ALLOWANCE_SECONDS,
@@ -104,6 +115,7 @@ from .models import (
     Job,
     ProducedItem,
     ProductPhoto,
+    ReferencePhoto,
     Scene,
     SceneStep,
 )
@@ -127,6 +139,7 @@ from .planning import (
     ProducerDecision,
     producer_decision_for,
 )
+from .reference_photos import ReferencePhotoUnusable
 from .scenes import (
     BEFORE_PICTURE_INSTRUCTIONS,
     BEFORE_PICTURE_JOB,
@@ -1481,6 +1494,12 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
     assert portrait is not None, "the tool refuses a scene whose person isn't made"
     photos = list(job.photos.filter(shows_product_colour=True))
     numbers = [photo.position for photo in photos]
+    note = step.note
+    failed = the_try_before(step)
+    if failed is not None:
+        # Drawn again for its fix check: told what the check found still wrong.
+        redraw = fix_check.REDRAW_NOTE.format(reason=failed.reason)
+        note = f"{note}\n\n{redraw}" if note else redraw
     handoff = StartingPictureHandoff(
         scene=scene.number,
         line=step.line,
@@ -1489,7 +1508,7 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
         colour_photos=numbers,
         person_looks=job.person_looks,
         pose=pose_for(job.product_size),
-        note=step.note or None,
+        note=note or None,
         conversation=_conversation(job, until=step.started_at),
     )
     images = [
@@ -1536,7 +1555,9 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
     their face. It is checked before any clip is paid for; one that fails is drawn again from
     prompts written to fix what the check found, at most MOST_REDRAWS times. When the last
     one drawn fails too, the chat is shown each picture and why it failed, and
-    PictureKeptFailing is raised to stop the run.
+    PictureKeptFailing is raised to stop the run. A fix's picture drawn again because the one
+    before it failed its fix check is written as a redo of that one from the start, told
+    what the fix check found, and every redo of it after is told that too.
 
     Run again, as after a worker stopped, it pays for nothing already paid for: each model's
     answer for the same handoff is answered from its record, and each picture drawn is
@@ -1548,6 +1569,29 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
     numbers = [photo.position for photo in photos]
     images = [Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos]
     pictures = [PictureJob(image=1, job=MAIN_PHOTO_JOB)]
+    # The shop owner's things drawn into the picture go first, as clean pictures of only each
+    # thing, labelled to win wherever they disagree with another picture (option C, Julian
+    # 2026-10-15 16:01): the main photo is then the picture after them.
+    owners = [row for row in step.reference_photos.all() if row.use == ReferencePhoto.Use.PICTURE]
+    cleans = [clean_picture(step, row) for row in owners]
+    things = [row.thing for row in owners]
+    if owners:
+        images = [
+            *(
+                Image(label=f"The shop owner's own {thing}", key=clean)
+                for thing, clean in zip(things, cleans, strict=True)
+            ),
+            *images,
+        ]
+        pictures = [
+            *(
+                PictureJob(image=number, job=reference_photos.picture_job(thing))
+                for number, thing in enumerate(things, 1)
+            ),
+            PictureJob(image=len(owners) + 1, job=MAIN_PHOTO_JOB),
+        ]
+    during = [row.thing for row in _during_the_clip(step)]
+    owner_rules = reference_photos.writer_rules(things, during, picks_photo=len(numbers) > 1)
     # What the scene needs that the main photo can't show comes from a photo of its own,
     # sent to the picture model after the main photo, never to the video model: sent to it,
     # a shop photo's own scene leaked into the clip (graded #12).
@@ -1589,9 +1633,24 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
     # again pays for none of them twice.
     drawn = _pictures_drawn(step)
     redo: tuple[Redo, str] | None = None
+    fixing: list[str] = []
+    before_it = the_try_before(step)
+    if before_it is not None:
+        assert step.redraw_of is not None, "a try before is the step's redraw_of's"
+        fixing = [before_it.reason]
+        redo = (
+            Redo(
+                picture_prompt=step.redraw_of.prompt,
+                video_prompt=step.redraw_of.motion_prompt,
+                problems=fixing,
+            ),
+            before_it.new.file,
+        )
     failed: list[tuple[str, list[str]]] = []
     for tries in range(MOST_REDRAWS + 1):
         instructions = broll_prompt_instructions(step.broll_kind)
+        if owner_rules:
+            instructions = f"{instructions}\n{owner_rules}"
         asked: BrollPromptHandoff = handoff
         shown = images
         if redo is not None:
@@ -1608,8 +1667,18 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
             images=shown,
             pay_once=True,
         )
-        _plan_broll_picture(step, choice, pictures, needs, portrait is not None)
+        _plan_broll_picture(step, choice, pictures[len(owners) :], needs, portrait is not None)
+        if owners:
+            step.pictures_sent = [
+                *(
+                    {**picture.model_dump(), "reference_photo": row.pk}
+                    for picture, row in zip(pictures, owners, strict=False)
+                ),
+                *step.pictures_sent,
+            ]
+            step.save(update_fields=["pictures_sent"])
         sent = [
+            *cleans,
             job.photos.get(position=choice.photo).file,
             *(job.photos.get(position=need.photo).file for need in needs),
             *([portrait.file] if portrait else []),
@@ -1619,7 +1688,14 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
             drawn[tries]
             if tries < len(drawn)
             else edit_picture(
-                job=job, purpose="make_starting_picture", prompt=choice.prompt, pictures=sent
+                job=job,
+                purpose="make_starting_picture",
+                prompt=(
+                    f"{reference_photos.picture_label(things)} {choice.prompt}"
+                    if owners
+                    else choice.prompt
+                ),
+                pictures=sent,
             )
         )
         problems = _check_broll_picture(step, file)
@@ -1628,11 +1704,92 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
         failed.append((file, problems))
         redo = (
             Redo(
-                picture_prompt=choice.prompt, video_prompt=choice.motion_prompt, problems=problems
+                picture_prompt=choice.prompt,
+                video_prompt=choice.motion_prompt,
+                problems=[*fixing, *problems],
             ),
             file,
         )
     raise PictureKeptFailing(scene.number, failed)
+
+
+# Which Postgres advisory lock stands for "one clean picture of the shop owner's things drawn
+# at a time per ad", with the job's.
+CLEAN_PICTURE_LOCK = 3
+
+
+def clean_picture(step: SceneStep, row: ReferencePhoto) -> str:
+    """The clean picture of only `row`'s thing, drawn from the shop owner's photo (Julian
+    2026-10-15 17:43) once per ad, by whichever step needs it first, and kept on every scene's
+    row of the same photo and thing. It is checked as a starting picture is, beside the photo,
+    and drawn again when the check fails, at most MOST_REDRAWS times (D8). Gives its key in the
+    file store. Raises ReferencePhotoUnusable when it still fails, or the picture model
+    refuses the photo: nothing more is made for the scene, and the shop owner is asked for
+    another photo.
+
+    Run again, as after a worker stopped, it pays for nothing already paid for: each picture
+    drawn is reused in turn, and each check answered from its record."""
+    if row.drawn:
+        return row.drawn
+    job = step.scene.job
+    with _one_job_at_a_time(CLEAN_PICTURE_LOCK, job):
+        same = ReferencePhoto.objects.filter(scene__job=job, file=row.file, thing__iexact=row.thing)
+        drawn = same.exclude(drawn="").values_list("drawn", flat=True).first()
+        if drawn:
+            row.drawn = drawn
+            return drawn
+        prompt = reference_photos.clean_picture_prompt(row.thing)
+        paid = [
+            str(call.output["file"])
+            for call in _paid_calls(job, "make_reference_photo_picture").filter(
+                handoff={"prompt": prompt, "pictures": [row.file]}
+            )
+            if call.output is not None
+        ]
+        failed: list[list[str]] = []
+        for tries in range(MOST_REDRAWS + 1):
+            try:
+                file = (
+                    paid[tries]
+                    if tries < len(paid)
+                    else edit_picture(
+                        job=job,
+                        purpose="make_reference_photo_picture",
+                        prompt=prompt,
+                        pictures=[row.file],
+                    )
+                )
+            except BlockedBySafetyFilter as error:
+                raise ReferencePhotoUnusable(
+                    f"the picture model refused to draw the {row.thing} from the shop owner's "
+                    f"photo ({error}), so nothing more was made for scene {step.scene.number}. "
+                    f"Ask them for another photo of the {row.thing}.",
+                    thing=row.thing,
+                ) from error
+            problems = (
+                judge_starting_picture(job, file, row.file, about=f"the shop owner's {row.thing}")
+                if settings.QUALITY_CHECKS
+                else []
+            )
+            if not problems:
+                same.update(drawn=file)
+                row.drawn = file
+                return file
+            failed.append(problems)
+        found = " ".join(problems[0] for problems in failed)
+        raise ReferencePhotoUnusable(
+            f"the clean copy of the {row.thing} drawn from the shop owner's photo failed its "
+            f"check all {len(failed)} times it was drawn ({found}), so nothing more was made "
+            f"for scene {step.scene.number}. Ask them for another photo of the {row.thing}, "
+            "showing it clearly.",
+            thing=row.thing,
+        )
+
+
+def _during_the_clip(step: SceneStep) -> list[ReferencePhoto]:
+    """The shop owner's photos of things that only show during the step's scene's clip, as
+    the step started: a clip made with any is made in reference mode."""
+    return [row for row in step.reference_photos.all() if row.use == ReferencePhoto.Use.CLIP]
 
 
 def say_the_pictures_kept_failing(job: Job, failing: PictureKeptFailing) -> None:
@@ -1831,8 +1988,10 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
     itself, beside the clip the shop owner complained about (Julian 2026-10-14, one judge for
     both): its answers are read from the ruling of the clip its remakes kept (#155), which is
     the step's newest, and nothing is asked here. A new line isn't checked, nor a picture
-    fix's clip: the complaint was about the picture. Nothing is checked when quality checks
-    are switched off.
+    fix's clip, the complaint being about the picture, unless the fix has the shop owner's
+    photo of a thing that only shows during the clip. Nothing is checked when quality checks
+    are switched off. A picture drawn again because the one before it failed this check is
+    checked beside the version its first try was (see `to_draw_again`).
 
     Run again, as after a worker stopped, it gives the verdict kept, or asks the judge
     again with each ask answered from its record, so nothing is paid for twice."""
@@ -1840,19 +1999,25 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
     if fix is None or made is None or not settings.QUALITY_CHECKS:
         return None
     picture = fix.redo == Fix.Redo.PICTURE and step.kind == SceneStep.Kind.STARTING_PICTURE
-    clip = fix.redo == Fix.Redo.CLIP and step.kind == SceneStep.Kind.CLIP
+    # A picture fix's clip too, when the fix has the shop owner's photo of a thing that only
+    # shows during the clip: the picture's check can't see it (design thread 22:42).
+    clip = step.kind == SceneStep.Kind.CLIP and (
+        fix.redo == Fix.Redo.CLIP or bool(clip_judge.during_the_clip(fix))
+    )
     if not (picture or clip):
         return None
     kept = FixCheck.objects.filter(step=step).first()
     if kept is not None:
         return kept
-    old = step.shown_before(made.kind)
+    before_it = the_try_before(step)
+    # A redraw is checked against what the shop owner complained about, as its first try was.
+    old = before_it.old if before_it is not None else step.shown_before(made.kind)
     if old is None:
         return None
     if picture:
         job = fix.job
         settled = fix_check.settle(
-            lambda ask: _ask_about_the_fix(job, fix.fix, ask, old.file, made.file)
+            lambda ask: _ask_about_the_fix(job, fix, ask, old.file, made.file)
         )
     else:
         settled = _the_clip_judges_answer(made)
@@ -1867,6 +2032,30 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
     )
 
 
+def the_try_before(step: SceneStep) -> FixCheck | None:
+    """For a fix's starting picture drawn again for its fix check, the failed check of the
+    picture before it. None for any other step."""
+    if step.redraw_of is None:
+        return None
+    return FixCheck.objects.select_related("old", "new").get(step=step.redraw_of)
+
+
+def to_draw_again(check: FixCheck | None) -> bool:
+    """Whether the fix's new starting picture `check` failed is drawn again by itself, told
+    why, rather than shown to the shop owner (Julian 2026-10-17 17:04): a fix plan's picture
+    with redraws left, at most fix_check.MOST_REDRAWS after its first."""
+    if check is None or check.verdict != FixCheck.Verdict.FAILED or check.what != "picture":
+        return False
+    step = check.step
+    if step.plan_scene_id is None:
+        return False
+    redraws = 0
+    while step.redraw_of is not None:
+        step = step.redraw_of
+        redraws += 1
+    return redraws < fix_check.MOST_REDRAWS
+
+
 def _the_clip_judges_answer(new: ProducedItem) -> fix_check.Settled:
     """What the clip judge's answers about `new` settled on the shop owner's change, asked
     beside the clip the step's fix was for (clip_judge.complained_about, the same `old`):
@@ -1878,19 +2067,64 @@ def _the_clip_judges_answer(new: ProducedItem) -> fix_check.Settled:
     return fix_check.settle_all(clip_judge.owner_change_answers(ruling))
 
 
-def _ask_about_the_fix(job: Job, fix: str, ask: int, old: str, new: str) -> dict[str, Any] | None:
+def _ask_about_the_fix(job: Job, fix: Fix, ask: int, old: str, new: str) -> dict[str, Any] | None:
     """Ask the judge once whether the new picture at `new` has the change `fix` asks for,
-    shown the old picture at `old` first. Gives its answer, or None when none could be had:
-    the picture is paid for, and failing it on no answer would hold up its clip."""
+    shown the old picture at `old` first and, for a fix that takes things from the shop
+    owner's photos, each photo after the new picture, named (Julian 2026-10-15 19:34). Gives
+    its answer, or None when none could be had: the picture is paid for, and failing it on no
+    answer would hold up its clip."""
+    images = [
+        Image(label="The old picture:", key=old),
+        Image(label="The new picture:", key=new),
+    ]
+    # Only things drawn into the picture: one that shows during the clip is never in a still,
+    # and its clip's judge looks for it.
+    photos = [photo for photo in fix.photos if photo["use"] == ReferencePhoto.Use.PICTURE]
+    during = [str(photo["thing"]) for photo in clip_judge.during_the_clip(fix)]
+    if not photos and during:
+        return _fix_answer(
+            job,
+            purpose="check_fix",
+            instructions=f"{fix_check.FIX_CHECK}\n\n{fix_check.DURING_THE_ACTION}",
+            handoff=fix_check.DuringTheActionHandoff(
+                fix=fix.fix, ask=ask, during_the_action=during
+            ),
+            output=fix_check.FixVerdict,
+            images=images,
+        )
+    if not photos:
+        return _fix_answer(
+            job,
+            purpose="check_fix",
+            instructions=fix_check.FIX_CHECK,
+            handoff=fix_check.FixCheckHandoff(fix=fix.fix, ask=ask),
+            output=fix_check.FixVerdict,
+            images=images,
+        )
+    things = [str(photo["thing"]) for photo in photos]
     return _fix_answer(
         job,
         purpose="check_fix",
-        instructions=fix_check.FIX_CHECK,
-        handoff=fix_check.FixCheckHandoff(fix=fix, ask=ask),
-        output=fix_check.FixVerdict,
+        instructions="\n\n".join(
+            [
+                fix_check.FIX_CHECK,
+                fix_check.PHOTO_FIX_QUESTION,
+                *([fix_check.DURING_THE_ACTION] if during else []),
+            ]
+        ),
+        handoff=fix_check.PhotoFixCheckHandoff(
+            fix=fix.fix, ask=ask, owner_photos=things, during_the_action=during
+        ),
+        output=fix_check.PhotoFixVerdict,
         images=[
-            Image(label="The old picture:", key=old),
-            Image(label="The new picture:", key=new),
+            *images,
+            *(
+                Image(
+                    label=f"The shop owner's photo of their {photo['thing']}:",
+                    key=str(photo["file"]),
+                )
+                for photo in photos
+            ),
         ],
     )
 
@@ -1901,7 +2135,7 @@ def _fix_answer(
     purpose: str,
     instructions: str,
     handoff: fix_check.FixCheckHandoff,
-    output: type[fix_check.FixVerdict],
+    output: type[fix_check.FixVerdict] | type[fix_check.PhotoFixVerdict],
     images: list[Image],
 ) -> dict[str, Any] | None:
     """One answer of the judge checking a fix, or None when none could be had, whatever went
@@ -1996,7 +2230,14 @@ def _keep_picture(step: SceneStep, file: str) -> ProducedItem:
         kind=ProducedItem.Kind.STARTING_PICTURE,
         version=_next_version(scene, ProducedItem.Kind.STARTING_PICTURE),
         file=file,
+        change=change_made_for(step),
     )
+
+
+def change_made_for(step: SceneStep) -> str:
+    """The change a starting picture or clip `step` makes is made for, in the shop owner's
+    words, as its version's label: its fix's. Blank for the ad's first making."""
+    return step.fix.fix if step.fix is not None else ""
 
 
 def make_line_audio(step: SceneStep) -> ProducedItem:
@@ -2191,7 +2432,27 @@ def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
     if kept == tries[-1]:
         return kept
     brought_back = step.produced.filter(remake__isnull=True).exclude(pk=first.pk).first()
-    return brought_back or bring_back_clip(kept)
+    if brought_back is not None:
+        return brought_back
+    # Every try failed, so each is a version the shop owner sees, and the one kept is gone
+    # back to (#180).
+    back_to = next(
+        version.number for version in versions(step.scene, landing=tries) if version.clip == kept
+    )
+    return bring_back_clip(kept, back_to=back_to)
+
+
+def kept_clip(step: SceneStep) -> ProducedItem:
+    """The clip a finished B-roll clip step kept: the scene's newest clip from the step, as a
+    remake kept from before the last is brought back as."""
+    kept = step.scene.produced.filter(kind=ProducedItem.Kind.CLIP, step=step).order_by("id").last()
+    assert kept is not None, "a finished clip step kept a clip"
+    return kept
+
+
+def clip_tries(step: SceneStep) -> list[ProducedItem]:
+    """A B-roll clip step's clips made, oldest first: its first, then each remake."""
+    return _clip_tries(step)
 
 
 def _clip_tries(step: SceneStep) -> list[ProducedItem]:
@@ -2200,6 +2461,148 @@ def _clip_tries(step: SceneStep) -> list[ProducedItem]:
     first = step.produced.order_by("id").first()
     assert first is not None, "the step made its clip"
     return [first, *step.produced.filter(remake__isnull=False).order_by("remake")]
+
+
+def every_try_failed(step: SceneStep) -> bool:
+    """Whether the clip judge failed a B-roll clip step's first clip and every remake of it
+    made: the shop owner is then shown them all, to pick from (#180). A step with one clip
+    has nothing to pick from."""
+    tries = _clip_tries(step)
+    return len(tries) > 1 and all((clip.ruling or {}).get("verdict") == "fail" for clip in tries)
+
+
+def try_name(clip: ProducedItem) -> str:
+    """Which try of its step a clip is, as the shop owner is shown it: "first try", or
+    "remake 1"."""
+    return f"remake {clip.remake}" if clip.remake else "first try"
+
+
+@dataclass(frozen=True)
+class TryShown:
+    """One try of a clip the judge failed every try of, as the shop owner is shown it."""
+
+    clip: ProducedItem
+    # "First try", "Remake 1".
+    name: str
+    # The label of the scene version it is.
+    version: str
+    # What the judge still sees wrong in it, in its words: its first answer's.
+    problem: str
+
+
+@dataclass(frozen=True)
+class TriesShown:
+    """Every try of a B-roll clip step the judge failed every try of (#180), and the one in
+    the ad now: the scene's current clip, when it is one of them, else None."""
+
+    scene: int
+    tries: list[TryShown]
+    in_ad: ProducedItem | None
+
+
+def tries_shown(step: SceneStep) -> TriesShown:
+    """What the chat shows of a clip step the judge failed every try of, as it stands now."""
+    made = versions(step.scene)
+    labels = {version.clip.pk: version.label for version in made if version.clip is not None}
+    tries = _clip_tries(step)
+    current = made[-1].clip if made else None
+    in_ad = next(
+        (
+            clip
+            for clip in tries
+            if current is not None and current.step_id == step.pk and current.file == clip.file
+        ),
+        None,
+    )
+    return TriesShown(
+        scene=step.scene.number,
+        tries=[
+            TryShown(
+                clip=clip,
+                name=try_name(clip).capitalize(),
+                version=labels.get(clip.pk, ""),
+                # The first only: the judge's asks word the same fault again and again.
+                problem=next(iter(clip_judge.still_failing(_ruling(clip))), ""),
+            )
+            for clip in tries
+        ],
+        in_ad=in_ad,
+    )
+
+
+def say_every_try_failed(step: SceneStep) -> None:
+    """Show the shop owner every try of a B-roll clip the judge failed every try of, to pick
+    from, the one kept already in the ad (#180): by code, never silent."""
+    # The pick isn't named: a tap swaps another in, and the notice is read again then.
+    post_notice(
+        step.scene.job,
+        f"The clip judge found a problem in all {len(_clip_tries(step))} tries at scene "
+        f"{step.scene.number}'s clip. The app put the one with the fewest problems in the ad. "
+        "Watch them, and tap another to use it instead.",
+        Message.Level.INFO,
+        tries_of=step.pk,
+    )
+
+
+# What a tap of "Use this one" is told when the tries it was under aren't on offer any more:
+# the scene has a newer clip, or its line changed since.
+TRIES_NOT_ON_OFFER = "Those tries aren't on offer any more."
+TRY_IN_THE_AD = "That try is already in the ad."
+
+
+class TryNotOnOffer(Exception):
+    """A tap of "Use this one" on a try that can't be swapped in, saying why."""
+
+
+def _try_to_use(clip: ProducedItem, waiting: ProducedItem | None = None) -> int:
+    """The number of the scene version a try of a clip the judge failed every try of is, to
+    swap it in for nothing: it must be one of the tries the chat showed, those tries still
+    hold the clip in the ad, and it isn't that one, or `waiting`, the try a tap not yet acted
+    on chose, which is in the ad by then. Refuses, saying why, otherwise, and while the
+    scene's picture or clip is being made."""
+    step = clip.step
+    scene = clip.scene
+    if (
+        step is None
+        or scene is None
+        or step.kind != SceneStep.Kind.CLIP
+        or not step.tries_shown.exists()
+        or clip not in _clip_tries(step)
+    ):
+        raise TryNotOnOffer(TRIES_NOT_ON_OFFER)
+    in_ad = tries_shown(step).in_ad
+    if in_ad is None:
+        raise TryNotOnOffer(TRIES_NOT_ON_OFFER)
+    if waiting is not None:
+        in_ad = waiting
+    if in_ad == clip:
+        raise TryNotOnOffer(TRY_IN_THE_AD)
+    if scene.steps.filter(
+        kind__in=[SceneStep.Kind.STARTING_PICTURE, SceneStep.Kind.CLIP],
+        status=SceneStep.Status.RUNNING,
+    ).exists():
+        raise TryNotOnOffer(
+            f"Scene {scene.number}'s picture or clip is being made right now. Tap again once "
+            "it's ready."
+        )
+    number = next(version.number for version in versions(scene) if version.clip == clip)
+    if not go_back_is_free(scene, number):
+        raise TryNotOnOffer(TRIES_NOT_ON_OFFER)
+    return number
+
+
+def check_try_to_use(clip: ProducedItem, *, waiting: ProducedItem | None = None) -> None:
+    """Refuse a tap of "Use this one" on `clip`, saying why, unless it can be swapped in once
+    `waiting`, the try an earlier tap not yet acted on chose, if any, is."""
+    _try_to_use(clip, waiting)
+
+
+def use_try(clip: ProducedItem) -> GoneBack:
+    """Swap a try of a clip the judge failed every try of into the ad, as the shop owner
+    tapped (#180): its version is gone back to, for nothing, with nothing made, judged or paid
+    for, and the chat is shown it. The tap is their yes. Refuses as `check_try_to_use` does."""
+    assert clip.scene is not None, "a try is a scene's clip"
+    return go_back(clip.scene, _try_to_use(clip))
 
 
 def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
@@ -2228,9 +2631,16 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
         return f"{said}, and the judge couldn't check the new one, so it is kept unchecked."
     which = "the first clip" if kept.remake is None else f"remake {kept.remake}"
     still = " ".join(dict.fromkeys(clip_judge.still_failing(_ruling(kept))))
+    shown = (
+        f" The chat showed the shop owner all {len(tries)} tries, each with what the judge still "
+        "sees, so they can tap another to use it instead, for nothing."
+        if every_try_failed(step)
+        else ""
+    )
     return (
         f"{said}, and it failed {'the remake' if remade == 1 else 'each remake'} too. The clip "
         f'kept is {which}, the one with the fewest faults, and the judge still sees: "{still}"'
+        f"{shown}"
     )
 
 
@@ -2256,10 +2666,15 @@ def _remake_clip(step: SceneStep, tries: list[ProducedItem]) -> ProducedItem:
     )
     first, *remade = tries
     earlier = remade[-1] if remade else None
+    during = _during_the_clip(step)
+    instructions = clip_from_judge_instructions(step.broll_kind, again=earlier is not None)
+    if during:
+        rules = reference_photos.during_clip_rules([row.thing for row in during])
+        instructions = f"{instructions}\n{rules}"
     written = call_model(
         job=job,
         purpose="remake_clip_prompt",
-        instructions=clip_from_judge_instructions(step.broll_kind, again=earlier is not None),
+        instructions=instructions,
         handoff=ClipFromJudgeHandoff(
             scene=step.scene.number,
             line=step.line,
@@ -2284,10 +2699,22 @@ def _remake_clip(step: SceneStep, tries: list[ProducedItem]) -> ProducedItem:
             ),
         ),
         output=ClipFromNoteChoice,
-        images=[Image(label="The starting picture", key=step.picture.file)],
+        images=[
+            Image(label="The starting picture", key=step.picture.file),
+            *_the_owners_things(step, during),
+        ],
         pay_once=True,
     )
     return _make_clip(step, remake=len(tries), motion=written.motion_prompt)
+
+
+def _the_owners_things(step: SceneStep, during: list[ReferencePhoto]) -> list[Image]:
+    """The clean pictures of the shop owner's things that only show during the clip, as a
+    model writing its video prompt is shown them."""
+    return [
+        Image(label=f"The shop owner's own {row.thing}", key=clean_picture(step, row))
+        for row in during
+    ]
 
 
 def _judge_clip(step: SceneStep, clip: ProducedItem) -> None:
@@ -2350,15 +2777,19 @@ def _make_clip(step: SceneStep, *, remake: int = 0, motion: str = "") -> Produce
             picture=picture,
             remake=remake or None,
             motion_prompt=motion,
+            change=change_made_for(step),
         )
         Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
     return clip
 
 
-def bring_back_clip(clip: ProducedItem) -> ProducedItem:
+def bring_back_clip(
+    clip: ProducedItem, *, picture: ProducedItem | None = None, back_to: int | None = None
+) -> ProducedItem:
     """Make an earlier clip the scene's clip again, as its next version: the same file, step,
-    picture, audio and judge's ruling, with nothing made or paid for again (#132 review, M1).
-    The scene is finished, as it was when the clip was made."""
+    picture, audio, movement, judge's ruling and change, with nothing made or paid for again (#132
+    review, M1). The scene is finished, as it was when the clip was made. Going back to
+    scene version `back_to` gives it the `picture` brought back with it, and says so."""
     scene = clip.scene
     assert scene is not None, "a clip belongs to a scene"
     with transaction.atomic():
@@ -2371,19 +2802,25 @@ def bring_back_clip(clip: ProducedItem) -> ProducedItem:
             file=clip.file,
             seconds=clip.seconds,
             made_from=clip.made_from,
-            picture=clip.picture,
+            picture=picture or clip.picture,
             ruling=clip.ruling,
+            motion_prompt=clip.motion_prompt,
+            change=_gone_back(back_to) or clip.change,
+            back_to=back_to,
         )
         Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
     return again
 
 
-def bring_back_picture(picture: ProducedItem) -> tuple[ProducedItem, bool]:
+def bring_back_picture(
+    picture: ProducedItem, *, back_to: int | None = None
+) -> tuple[ProducedItem, bool]:
     """Make an earlier starting picture the scene's starting picture again, as its next
-    version: the same file and step, so the same photo and prompts, with nothing made, judged
-    or paid for again (#143, as `bring_back_clip`). Like any new picture, it plans a finished
-    scene again: its clip shows the picture before it (#133). Gives the picture brought back,
-    and whether its scene was finished."""
+    version: the same file, step and change, so the same photo and prompts, with nothing made,
+    judged or paid for again (#143, as `bring_back_clip`). Like any new picture, it plans a
+    finished scene again: its clip shows the picture before it (#133). Going back to scene
+    version `back_to` says so. Gives the picture brought back, and whether its scene was
+    finished."""
     scene = picture.scene
     assert scene is not None, "a starting picture belongs to a scene"
     with transaction.atomic():
@@ -2394,15 +2831,292 @@ def bring_back_picture(picture: ProducedItem) -> tuple[ProducedItem, bool]:
             kind=ProducedItem.Kind.STARTING_PICTURE,
             version=_next_version(scene, ProducedItem.Kind.STARTING_PICTURE),
             file=picture.file,
+            change=_gone_back(back_to) or picture.change,
+            back_to=back_to,
         )
         return again, scene.plan_again()
+
+
+def _gone_back(back_to: int | None) -> str:
+    """The change going back to scene version `back_to` is, as its label: "back to v2"."""
+    return f"back to v{back_to}" if back_to is not None else ""
+
+
+# --- A scene's versions, and going back to one (fix redesign, decisions 8 and 17) ----------
+
+
+@dataclass(frozen=True)
+class Version:
+    """One version of a scene, as the shop owner was shown it: a starting picture and the clip
+    made from it, numbered from 1 in the order shown. A new picture starts one, its clip to
+    come; a new clip of the same picture is one of its own. A clip the judge failed and code
+    made again isn't one, unless it was kept, or the judge failed every try of it: then each
+    try is one (#180). The line lives on its own: a version keeps the
+    line its clip says, or its picture was made for (Julian 2026-10-16 22:39, "the picture is
+    a picture and the line is a line")."""
+
+    number: int
+    # The change it was made for, in the shop owner's words; blank for the first making.
+    change: str
+    # None for a B-roll scene made from example pictures, which has none.
+    picture: ProducedItem | None
+    # None until its clip is made.
+    clip: ProducedItem | None
+    # For a version brought back by going back, the version gone back to.
+    back_to: int | None
+    # For a try of a clip whose every try the judge failed, which try it is: "remake 1".
+    tried: str = ""
+
+    @property
+    def label(self) -> str:
+        """How the shop owner and the agent deciding fixes see it named: "v1 first version",
+        then the change it was made for, as "v2 black toilet" (decision 17), and which try it
+        is of a clip the judge failed every try of, as "v3 black toilet (remake 1)"."""
+        tried = f" ({self.tried})" if self.tried else ""
+        return f"v{self.number} {self.change or 'first version'}{tried}"
+
+    @property
+    def line(self) -> str:
+        """The line its clip says, or its picture was made for while it has no clip."""
+        made = self.clip or self.picture
+        return made.step.line if made is not None and made.step is not None else ""
+
+
+def versions(scene: Scene, *, landing: Sequence[ProducedItem] = ()) -> list[Version]:
+    """The scene's versions, oldest first: each starting picture it was shown and each clip
+    kept, in the order made, a clip joining the version of its picture until that has one. A
+    step still running has shown nothing yet, but `landing`, what a step is about to show."""
+    shown = [
+        made
+        for made in scene.produced.filter(
+            kind__in=[ProducedItem.Kind.STARTING_PICTURE, ProducedItem.Kind.CLIP]
+        )
+        .select_related("step", "picture")
+        .order_by("created_at", "id")
+        if made in landing or _was_shown(made)
+    ]
+    found: list[Version] = []
+    for made in shown:
+        last = found[-1] if found else None
+        tried = _tried(made)
+        if made.kind == ProducedItem.Kind.STARTING_PICTURE:
+            found.append(Version(len(found) + 1, made.change, made, None, made.back_to))
+        elif (
+            last is not None
+            and last.clip is None
+            and last.picture is not None
+            and made.picture is not None
+            and made.picture.file == last.picture.file
+        ):
+            # A clip brought back with an earlier picture is still of the picture shown.
+            found[-1] = Version(last.number, last.change, last.picture, made, last.back_to, tried)
+        else:
+            found.append(
+                Version(len(found) + 1, made.change, made.picture, made, made.back_to, tried)
+            )
+    return found
+
+
+def _tried(made: ProducedItem) -> str:
+    """Which try a clip is, when its step's judge failed every try: blank otherwise."""
+    step = made.step
+    if made.kind != ProducedItem.Kind.CLIP or step is None or step.kind != SceneStep.Kind.CLIP:
+        return ""
+    if made not in _clip_tries(step) or not every_try_failed(step):
+        return ""
+    return try_name(made)
+
+
+def _tries_were_shown(step: SceneStep) -> bool:
+    """Whether the chat showed the shop owner every try of a clip step the judge failed every
+    try of. A step finished before the chat showed them (#180) never did: its tries aren't
+    versions, so its versions keep their numbers."""
+    return every_try_failed(step) and step.tries_shown.exists()
+
+
+def motion_of(clip: ProducedItem) -> str:
+    """How a B-roll clip was asked to move: its own prompt for a remade clip, else its step's
+    for a clip made from a note, else as its picture's step planned."""
+    step = clip.step
+    planned = step.picture_step if step is not None else None
+    return (
+        clip.motion_prompt
+        or (step.motion_prompt if step is not None else "")
+        or (planned.motion_prompt if planned is not None else "")
+    )
+
+
+def _was_shown(made: ProducedItem) -> bool:
+    """Whether the shop owner was shown a scene's starting picture or clip: one its step
+    finished with. Of a clip step's clip and the remakes the judge failed it into, only the
+    one kept was, unless an earlier one kept was brought back on top (`_auto_fixed`), or the
+    judge failed them all: then each was, to pick from (#180)."""
+    step = made.step
+    if step is None:
+        return True
+    if step.status != SceneStep.Status.FINISHED:
+        return False
+    if made.kind != ProducedItem.Kind.CLIP:
+        return True
+    tries = _clip_tries(step)
+    if made not in tries:
+        # Brought back: by the auto-fix, or as an earlier note's clip again.
+        return True
+    if len(tries) == 1 or _tries_were_shown(step):
+        return True
+    failed = [auto_fix.failed_answers(clip.ruling or {"verdict": "pass"}) for clip in tries]
+    return made == tries[-1] and auto_fix.clip_to_keep(failed) == len(tries) - 1
+
+
+def version_label(made: ProducedItem) -> str:
+    """The label of the scene version a starting picture or clip about to be shown is in."""
+    assert made.scene is not None, "a starting picture or clip belongs to a scene"
+    landing = [made]
+    step = made.step
+    if (
+        made.kind == ProducedItem.Kind.CLIP
+        and step is not None
+        and step.kind == SceneStep.Kind.CLIP
+    ):
+        # Every try the judge failed lands with the one kept, each its own version.
+        if every_try_failed(step):
+            landing = [*_clip_tries(step), made]
+    return next(
+        (
+            version.label
+            for version in reversed(versions(made.scene, landing=landing))
+            if made in (version.picture, version.clip)
+        ),
+        "",
+    )
+
+
+class NoSuchVersion(Exception):
+    """Going back to a version the scene doesn't have."""
+
+
+class NothingToBringBack(NoSuchVersion):
+    """Going back to a version with no starting picture (a B-roll scene made from example
+    pictures) after the scene's line changed: its clip no longer says the line, and there is
+    no picture to make a new one from."""
+
+
+class SceneBusy(Exception):
+    """Going back while the scene's starting picture or clip is being made, which would land
+    on top of what was brought back."""
+
+
+@dataclass(frozen=True)
+class GoneBack:
+    # The new top version: the picture brought back, and the clip too unless it is to make.
+    version: Version
+    # Whether its clip must be made from its picture, with the scene's line as it stands:
+    # paid, through the clip step and its judge as any clip. The scene is planned until then.
+    clip_to_make: bool
+
+
+def go_back(scene: Scene, number: int) -> GoneBack:
+    """Make the scene's version `number` its newest again, as a new top version, the
+    original too (decision 8, Julian 2026-10-16 22:40): its starting picture brought back,
+    free, and its clip too when it still says the scene's line as it stands, so nothing is
+    made, checked or paid for. When the line changed since, only the picture is brought back
+    and the scene waits for a clip made from it. The scene's photos in use become those the
+    version was made with, so a photo dropped is a version gone back to. The chat is shown
+    what was brought back. Refuses a version the scene doesn't have, one with no picture whose
+    clip no longer says the line, and while the scene's picture or clip is being made."""
+    with transaction.atomic():
+        Scene.objects.select_for_update().get(pk=scene.pk)
+        # Whether the clip still says the line is read from the scene as it now stands.
+        scene.refresh_from_db()
+        if scene.steps.filter(
+            kind__in=[SceneStep.Kind.STARTING_PICTURE, SceneStep.Kind.CLIP],
+            status=SceneStep.Status.RUNNING,
+        ).exists():
+            raise SceneBusy(f"scene {scene.number}'s picture or clip is still being made")
+        shown = versions(scene)
+        if not 1 <= number <= len(shown):
+            raise NoSuchVersion(
+                f"scene {scene.number} has versions 1 to {len(shown)}, not {number}"
+            )
+        earlier = shown[number - 1]
+        free = earlier.clip is not None and _says_the_line_as_it_stands(scene, earlier.clip)
+        if earlier.picture is None and not free:
+            raise NothingToBringBack(
+                f"scene {scene.number}'s version {number} has no starting picture, and its "
+                "clip no longer says the scene's line"
+            )
+        _use_the_photos_of(scene, earlier)
+        picture = (
+            bring_back_picture(earlier.picture, back_to=number)[0]
+            if earlier.picture is not None
+            else None
+        )
+        if earlier.clip is not None and free:
+            clip = bring_back_clip(earlier.clip, picture=picture, back_to=number)
+        else:
+            clip = None
+            scene.plan_again()
+        # The bring-backs set the status through their own copy of the scene.
+        scene.refresh_from_db(fields=["status"])
+        top = versions(scene)[-1]
+        if scene.job.session is not None:
+            messages.add(
+                scene.job.session,
+                role=Message.Role.AGENT,
+                carrying=[
+                    messages.AttachedFile(kind, made.file, scene.number, top.label)
+                    for kind, made in (
+                        (Attachment.Kind.PICTURE, picture),
+                        (Attachment.Kind.VIDEO, clip),
+                    )
+                    if made is not None
+                ],
+            )
+    return GoneBack(top, clip_to_make=not free)
+
+
+def go_back_is_free(scene: Scene, number: int) -> bool:
+    """Whether going back to the scene's version `number` would cost nothing: its clip still
+    says the scene's line as it stands, so it is brought back with its picture."""
+    made = versions(scene)
+    if not 1 <= number <= len(made):
+        raise NoSuchVersion(f"scene {scene.number} has versions 1 to {len(made)}, not {number}")
+    clip = made[number - 1].clip
+    return clip is not None and _says_the_line_as_it_stands(scene, clip)
+
+
+def _says_the_line_as_it_stands(scene: Scene, clip: ProducedItem) -> bool:
+    """Whether `clip` still says the scene's line, in the person's voice, and was made for
+    what the scene shows: the clip the ad is assembled from, if it were the newest."""
+    audio = clip.made_from
+    return (
+        audio is not None
+        and audio.made_from == latest(scene.job, ProducedItem.Kind.VOICE)
+        and scene.produced.filter(
+            pk=clip.pk, **SceneStep.made_for(scene, through="step__")
+        ).exists()
+    )
+
+
+def _use_the_photos_of(scene: Scene, version: Version) -> None:
+    """Have the scene use the shop owner's photos `version` was made with, and only those:
+    any used since is set aside, and any dropped since is used again."""
+    rows = {
+        row.pk
+        for made in (version.picture, version.clip)
+        if made is not None and made.step is not None
+        for row in made.step.reference_photos.all()
+    }
+    scene.photos_in_use().exclude(pk__in=rows).update(set_aside_at=timezone.now())
+    scene.reference_photos.filter(pk__in=rows).update(set_aside_at=None, dropped_by=None)
 
 
 def _rewrite_motion_prompt(step: SceneStep) -> None:
     """Write a B-roll clip step's video prompt again from its note, keeping it on the step: a
     model told the same rules as the one that wrote the scene's prompts, and that the starting
-    picture stays, is handed the picture's prompts, the scene and the note, and shown the
-    picture. The producer never writes a prompt (Julian 2026-10-11 21:00).
+    picture stays, is handed the picture's prompt, the movement of the clip it improves on,
+    the scene and the note, and shown the picture. The producer never writes a prompt (Julian
+    2026-10-11 21:00).
 
     Run again, as after a worker stopped, it pays for nothing already paid for: the answer for
     the same handoff is answered from its record."""
@@ -2411,10 +3125,15 @@ def _rewrite_motion_prompt(step: SceneStep) -> None:
     assert step.picture is not None and planned is not None, (
         "the tool makes a B-roll clip from a note only from its starting picture's step"
     )
+    during = _during_the_clip(step)
+    instructions = clip_from_note_instructions(step.broll_kind)
+    if during:
+        rules = reference_photos.during_clip_rules([row.thing for row in during])
+        instructions = f"{instructions}\n{rules}"
     rewrite = call_model(
         job=job,
         purpose="rewrite_clip_prompt",
-        instructions=clip_from_note_instructions(step.broll_kind),
+        instructions=instructions,
         handoff=ClipFromNoteHandoff(
             scene=step.scene.number,
             line=step.line,
@@ -2424,16 +3143,35 @@ def _rewrite_motion_prompt(step: SceneStep) -> None:
             usage=step.usage,
             result=step.broll_result,
             picture_prompt=planned.prompt,
-            motion_prompt=planned.motion_prompt,
+            motion_prompt=_movement_to_improve(step, planned),
             note=step.note,
             conversation=_conversation(job, until=step.started_at),
         ),
         output=ClipFromNoteChoice,
-        images=[Image(label="The starting picture", key=step.picture.file)],
+        images=[
+            Image(label="The starting picture", key=step.picture.file),
+            *_the_owners_things(step, during),
+        ],
         pay_once=True,
     )
     step.motion_prompt = rewrite.motion_prompt
     step.save(update_fields=["motion_prompt"])
+
+
+def _movement_to_improve(step: SceneStep, planned: SceneStep) -> str:
+    """How the clip a note's clip improves on moved: the scene's clip as the shop owner sees
+    it now, when it is of the same starting picture, so a try they swapped in, or an earlier
+    note's clip, is built on (#180); else as the picture's step planned."""
+    made = versions(step.scene)
+    current = made[-1].clip if made else None
+    if (
+        current is not None
+        and current.picture is not None
+        and step.picture is not None
+        and current.picture.file == step.picture.file
+    ):
+        return motion_of(current)
+    return planned.motion_prompt
 
 
 def _ask_for_clip(job: Job, making: str, handoff: ClipHandoff | BrollClipHandoff) -> str:
@@ -2465,13 +3203,20 @@ def _clip_purposes(step: SceneStep) -> tuple[str, str]:
     return "make_talking_clip", "collect_talking_clip"
 
 
+# Every B-roll clip is made in reference mode, its drawn starting picture sent as Image 1
+# (Julian 2026-10-16 19:14). False goes back to before: a clip is made from its starting
+# picture as its first frame, and in reference mode only with the shop owner's things that
+# only show during it.
+EVERY_BROLL_CLIP_IN_REFERENCE_MODE = True
+
+
 def _clip_handoff(
     step: SceneStep, picture: ProducedItem | None, audio: ProducedItem, *, motion: str = ""
 ) -> ClipHandoff | BrollClipHandoff:
     """What the video model is asked for: a clip speaking the audio, or, for a scene that
     shows the product, a silent one that moves as the picture's step planned, in the fewest
-    whole seconds that cover the audio, from its starting picture. Raises ClipFailed for a line
-    longer than the longest B-roll clip, before anything is paid for."""
+    whole seconds that cover the audio, starting like its starting picture. Raises ClipFailed
+    for a line longer than the longest B-roll clip, before anything is paid for."""
     assert audio.seconds is not None, "a line's audio is measured when it's made"
     if not step.shows:
         assert picture is not None, "a talking scene's clip is made from its picture"
@@ -2497,14 +3242,24 @@ def _clip_handoff(
     # A clip made from a note has its own prompt, written again from the picture's.
     # A remade clip has its own, written again from what the judge saw wrong.
     motion = motion or step.motion_prompt or planned.motion_prompt
-    return BrollClipHandoff(
-        starting_picture=picture.file,
-        seconds=seconds,
-        # A scene planned before it had its B-roll labels is moved as before. A labelled
-        # scene's prompt is sent as written, after its look and length: the real photo of
-        # the product keeps it true.
-        prompt=broll_video_prompt(motion, seconds) if planned.way else with_nothing_made_up(motion),
-    )
+    during = _during_the_clip(step)
+    # A scene planned before it had its B-roll labels is moved as before. A labelled scene's
+    # prompt is sent as written, after its look and length: the real photo of the product
+    # keeps it true. Only a labelled scene takes the shop owner's photos.
+    prompt = broll_video_prompt(motion, seconds) if planned.way else with_nothing_made_up(motion)
+    if during or EVERY_BROLL_CLIP_IN_REFERENCE_MODE:
+        # Reference mode (Julian 2026-10-15 17:21, 19:38; every B-roll clip since 2026-10-16
+        # 19:14): the drawn starting picture goes first, as Image 1, told the clip starts like
+        # it, then the clean pictures of the shop owner's things that only show during the
+        # clip. Their raw photos never go.
+        return BrollClipHandoff(
+            example_pictures=[picture.file, *(clean_picture(step, row) for row in during)],
+            seconds=seconds,
+            prompt=(
+                f"{reference_photos.reference_mode_label([row.thing for row in during])} {prompt}"
+            ),
+        )
+    return BrollClipHandoff(starting_picture=picture.file, seconds=seconds, prompt=prompt)
 
 
 def _broll_clip_seconds(audio_seconds: float) -> int:

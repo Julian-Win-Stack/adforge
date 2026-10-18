@@ -276,7 +276,11 @@ From Creatify's API page (Create a Boreal task) and the scene #16 check.
 ## The logic: which way for which scene
 
 Since item 57 (2026-10-08), step 1's "references" is no longer built: every B-roll scene is
-made from its starting picture.
+made from its starting picture. Since 2026-10-16 that picture goes to Boreal-H3 as a
+reference, Image 1, with the prompt saying the clip starts exactly like it, not as
+`image_url`; the clean pictures of the shop owner's things that only show during the clip
+follow as Image 2 and up (CONTEXT.md, "Reference mode"). Shop photos are never sent.
+`EVERY_BROLL_CLIP_IN_REFERENCE_MODE` in `jobs/work.py` switches back to `image_url`.
 
 1. **Does the scene show something the pack photo can't?** Such as gel coming out, blush on
    a cheek, powder in a drink: a texture, a colour, the inside, a result.
@@ -410,7 +414,7 @@ From the MiniMax H3 prompt guides (Boreal-H3 is built on H3) and the four mistak
 - One continuous shot, doing what "shows" says in order at a natural, real-time pace. No
   seconds, timings, "slowly" or "gently" (2026-10-08): "one action per 2 to 3 seconds" gave
   stopwatch timings, #5 "3 actions in 6 s" and #7 "far too slow", both failed by the user.
-- One movement per clip, no exceptions (the user's decision, 2026-10-08): the plan's "shows"
+- One movement per clip (the user's decision, 2026-10-08; one exception below): the plan's "shows"
   says which movement (a hold-up "shows" was turned back into the drop its line claims,
   #12, 4 runs of 4). When it lists several, the one where the product or its tool does the
   work is filmed, not putting the product on before it or rinsing after it ("the one that
@@ -421,7 +425,10 @@ From the MiniMax H3 prompt guides (Boreal-H3 is built on H3) and the four mistak
   graded perfect; the bag clip that filmed the strap change failed, one clip per state
   passed; "two or three actions that flow as one" let clamp + rotate + glide through on a
   curling iron and the video model skipped the middle. The planner owns splitting such
-  lines; this is the prompt writer's backstop.
+  lines; this is the prompt writer's backstop. One exception (Julian, 2026-10-18): when only
+  a clip is remade from the shop owner's note, or remade after the judge fails that clip, and
+  the note names the movements to film, such as "show the gel going onto the brush first",
+  they are filmed in its order (the gel was dropped in the real-clip run he graded).
 - The product, or the tool used with it, acts; the product may stand in view when holding it
   would bend its shape (2026-10-08: the toilet clip the user graded perfect had the bottle
   standing on the tank; holding it bent its neck).
@@ -429,7 +436,8 @@ From the MiniMax H3 prompt guides (Boreal-H3 is built on H3) and the four mistak
   changes; it happens as the touch passes, never all at once or time-compressed. When a
   tool works after the product is put on, putting it on is never filmed or drawn (the user,
   2026-10-08: "just scrub it and then that scrub area become clean", "you don't need to even
-  put in the gel at all"; the toilet clip's whole ring had vanished where nothing touched it).
+  put in the gel at all"; the toilet clip's whole ring had vanished where nothing touched it),
+  unless the shop owner's note asks for it (the exception above).
 - Never two orders that can't both be true ("upright" + "nozzle pointing down" bent the
   bottle; "squeeze" + "no gel" put gel on the rim). Each order is checked against the photos.
 - Code starts every B-roll video prompt with "A {N}-second video at real-time speed. The

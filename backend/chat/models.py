@@ -41,7 +41,12 @@ class Message(models.Model):
 
     A message about a scene's starting picture or clip names its `step`: a notice when the
     step starts, the message showing what it made, or a notice when it ended with nothing.
-    So the chat can tell a scene's picture or clip is being made, from the messages alone."""
+    So the chat can tell a scene's picture or clip is being made, from the messages alone.
+
+    A message about a fix plan names it and what it says of it (`plan_event`): code's notice
+    showing it, the shop owner's tap of its yes button, or code's notice that it is settled.
+    So the chat can tell whether the plan's yes button is still on offer, from the messages
+    alone."""
 
     class Role(models.TextChoices):
         USER = "user"
@@ -62,6 +67,14 @@ class Message(models.Model):
         STARTED = "started"
         MADE = "made"  # The message carries what it made.
         NOT_MADE = "not_made"  # It failed or stopped the run, with nothing made.
+
+    class PlanEvent(models.TextChoices):
+        """What a message says of a fix plan (`fix_plan`)."""
+
+        SHOWN = "shown"  # Code's notice showing the plan, with the yes button.
+        YES = "yes"  # The shop owner tapped the plan's yes button: the marker, never typed.
+        CONFIRMED = "confirmed"  # Code's notice that the plan is going ahead.
+        DECLINED = "declined"  # Code's notice that the plan was dropped.
 
     session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name="messages")
     seq = models.PositiveIntegerField(
@@ -98,6 +111,50 @@ class Message(models.Model):
     )
     suggested_note_scene = models.PositiveSmallIntegerField(
         null=True, blank=True, help_text="The scene the suggested note is about."
+    )
+    # A default in the database too, as for the step's fields.
+    plan_event = models.CharField(
+        max_length=10,
+        choices=PlanEvent.choices,
+        blank=True,
+        db_default="",
+        help_text="What the message says of `fix_plan`. Blank for a message about no plan, "
+        "and for anything the shop owner typed: a typed yes is told apart from the button's.",
+    )
+    fix_plan = models.ForeignKey(
+        "jobs.FixPlan",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="messages",
+        help_text="The plan the message shows, answers or settles. Null for none.",
+    )
+    tries_of = models.ForeignKey(
+        "jobs.SceneStep",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="tries_shown",
+        help_text="The B-roll clip step whose every try the clip judge failed, for code's "
+        "notice showing them to pick from (#180). Null for any other message.",
+    )
+    chosen_clip = models.ForeignKey(
+        "jobs.ProducedItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="chosen_by",
+        help_text='For the shop owner\'s tap of "Use this one" under a try of a clip the judge '
+        "failed every try of, the try they chose (#180): the marker, never typed. Null "
+        "otherwise.",
+    )
+    routed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When code sent the shop owner's message, once the ad had a clip, to whoever "
+        "answers it: the decider, the producer, or code for a tap of a plan's yes button. "
+        "Blank until then, and for messages from before the first clip, which the producer "
+        "reads as they come.",
     )
     trace_id = models.CharField(
         max_length=32,
@@ -136,6 +193,12 @@ class Attachment(models.Model):
         blank=True,
         help_text="The number of the scene this is the starting picture or clip of. Null for "
         "a file that belongs to no scene: the portrait, the voice, the finished ad, a photo.",
+    )
+    version = models.TextField(
+        blank=True,
+        db_default="",
+        help_text="For a scene's starting picture or clip, the label of the scene version it "
+        'is shown as, such as "v2 black toilet". Blank otherwise.',
     )
 
     class Meta:

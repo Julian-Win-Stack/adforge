@@ -23,7 +23,8 @@ GOOD: dict[str, object] = {
     "VIDEO PROMPT SENT": "A 5-second video at real-time speed. The camera stays still. The hand "
     "makes one firm scrubbing pass along the rust ring; the stain lifts only under the "
     "bristles.",
-    "SETTINGS": "model=creatify/boreal-h3 seconds=5 starting_picture=start.png example_pictures=[]",
+    "SETTINGS": "model=creatify/boreal-h3 seconds=5 starting_picture=make_starting_picture_Ab1.png "
+    "example_pictures=[]",
 }
 
 
@@ -128,6 +129,49 @@ def test_a_scene_that_keeps_every_rule_passes_every_check(tmp_path: Path) -> Non
             id="shop photos sent to the video model",
         ),
         pytest.param(
+            # Reference mode (Julian 2026-10-16): a raw photo after the drawn Image 1.
+            {
+                "SETTINGS": "model=creatify/boreal-h3 seconds=5 starting_picture= "
+                "example_pictures=[make_starting_picture_N21pGSn.png, "
+                "sessions/4/photos/3f2a.jpg]"
+            },
+            "A7 drawn start picture, no shop photos",
+            id="a raw photo after the drawn starting picture",
+        ),
+        pytest.param(
+            # Image 1 must be the drawn starting picture: the clip starts like it.
+            {
+                "SETTINGS": "model=creatify/boreal-h3 seconds=5 starting_picture= "
+                "example_pictures=[make_reference_photo_picture_x1.png, "
+                "make_starting_picture_N21pGSn.png]"
+            },
+            "A7 drawn start picture, no shop photos",
+            id="image 1 not the drawn starting picture",
+        ),
+        pytest.param(
+            {"SETTINGS": "model=creatify/boreal-h3 starting_picture= example_pictures=[]"},
+            "A7 drawn start picture, no shop photos",
+            id="no picture at all",
+        ),
+        pytest.param(
+            # Both ways at once, as the video model refuses: a shop photo with the start one.
+            {
+                "SETTINGS": "model=creatify/boreal-h3 starting_picture=make_starting_picture_1.png "
+                "example_pictures=[sessions/4/photos/3f2a.jpg]"
+            },
+            "A7 drawn start picture, no shop photos",
+            id="a shop photo beside a starting picture",
+        ),
+        pytest.param(
+            # Starting-picture mode with a raw photo as the first frame.
+            {
+                "SETTINGS": "model=creatify/boreal-h3 starting_picture=sessions/4/photos/3f2a.jpg "
+                "example_pictures=[]"
+            },
+            "A7 drawn start picture, no shop photos",
+            id="a raw photo as the starting picture",
+        ),
+        pytest.param(
             # Round 1 #8 s2: the camera pushed toward the ring.
             {
                 "MOTION PROMPT": "The person holding the phone pushes the camera forward toward "
@@ -181,6 +225,37 @@ def test_a_scene_that_breaks_a_rule_fails_that_check(
     run = saved_run(tmp_path, [{**GOOD, **change}])
 
     assert failed(run) == {("8-toilet-cleaner", 2, check)}
+
+
+@pytest.mark.parametrize(
+    "sent_with",
+    [
+        pytest.param(
+            "model=creatify/boreal-h3 seconds=5 starting_picture= "
+            "example_pictures=[make_starting_picture_N21pGSn.png]",
+            id="reference mode, the drawn starting picture as image 1",
+        ),
+        pytest.param(
+            "model=creatify/boreal-h3 seconds=5 starting_picture= "
+            "example_pictures=[make_starting_picture_N21pGSn.png, "
+            "make_reference_photo_picture_x1.png]",
+            id="reference mode, then a clean picture of the shop owner's thing",
+        ),
+        pytest.param(
+            # As round 2 saved it, in starting-picture mode.
+            "model=creatify/boreal-h3 (Boreal-H3) seconds=7 resolution=768p "
+            "prompt_enhancement=auto starting_picture=make_starting_picture_3p9bZly.png "
+            "example_pictures=[]",
+            id="an old saved run in starting-picture mode",
+        ),
+    ],
+)
+def test_the_drawn_starting_picture_sent_first_either_way_passes(
+    tmp_path: Path, sent_with: str
+) -> None:
+    run = saved_run(tmp_path, [{**GOOD, "SETTINGS": sent_with}])
+
+    assert failed(run) == set()
 
 
 @pytest.mark.parametrize(
@@ -267,3 +342,12 @@ def test_an_ad_folder_with_scene_files_but_no_scene_folders_is_skipped(tmp_path:
     (loose / "scene-2-plan.txt").write_text("a plan")
 
     assert {result.ad for result in check_run(run)} == {"8-toilet-cleaner"}
+
+
+def test_a7_names_the_purposes_the_app_saves_drawn_pictures_under() -> None:
+    # A7 tells drawn pictures from photos by the purpose each is saved under: renaming one
+    # would fail every good reference-mode scene.
+    from evals.rule_checks import _DRAWN_PICTURES
+    from gateway.catalog import MODEL_FOR_PURPOSE
+
+    assert all(purpose in MODEL_FOR_PURPOSE for purpose in _DRAWN_PICTURES)
