@@ -229,12 +229,15 @@ def _in(round: _Round) -> Iterator[None]:
 def this_round(job: Job) -> list[Message]:
     """The shop owner's messages since they last said yes to a plan, once the ad had a clip
     (decision 18): what the decider is given. Messages from before the first clip are the
-    producer's, about making the ad."""
+    producer's, about making the ad. A tap of "Use this one" under a try is code's, already
+    done, so it isn't one (#180): the scene's versions show it."""
     assert job.session is not None
     first_clip = job.produced.filter(kind=ProducedItem.Kind.CLIP).order_by("created_at").first()
     if first_clip is None:
         return []
-    said = job.session.messages.filter(role=Message.Role.USER, created_at__gt=first_clip.created_at)
+    said = job.session.messages.filter(
+        role=Message.Role.USER, created_at__gt=first_clip.created_at, chosen_clip__isnull=True
+    )
     yes = (
         FixPlan.objects.filter(session=job.session, confirmed_by__isnull=False)
         .order_by("confirmed_by__seq")

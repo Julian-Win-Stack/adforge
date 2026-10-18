@@ -1,7 +1,14 @@
 // @vitest-environment node
 import { expect, test } from "vitest";
 import type { Attachment, Message, SceneStep } from "./api";
-import { notesMessage, sceneCards, sceneNotes, suggestedNotes, waitsForYes } from "./scenes";
+import {
+  notesMessage,
+  sceneCards,
+  sceneNotes,
+  suggestedNotes,
+  tryInAd,
+  waitsForYes,
+} from "./scenes";
 
 let seq = 0;
 
@@ -370,4 +377,46 @@ test("a scene whose new picture failed its fix check waits for the owner, not be
     owner("Go ahead"),
   ]);
   expect(answered.beingRemade).toBe(true);
+});
+
+function triesNotice(inAd: number | null): Message {
+  return {
+    ...message([]),
+    role: "notice",
+    level: "info",
+    tries: {
+      scene: 2,
+      in_ad: inAd,
+      clips: [
+        { clip: 11, name: "First try", version: "v1", url: "/t1.mp4", problem: "Floats." },
+        { clip: 12, name: "Remake 1", version: "v2", url: "/t2.mp4", problem: "Spins." },
+        { clip: 13, name: "Remake 2", version: "v3", url: "/t3.mp4", problem: "Spins." },
+      ],
+    },
+  };
+}
+
+function tap(clip: number): Message {
+  return { ...message([]), role: "user", text: "Use it", use_clip: clip };
+}
+
+test("the try in the ad is the one the notice was read with until something changes it", () => {
+  const notice = triesNotice(11);
+  expect(tryInAd([message([clip(1, "/c1.mp4")]), notice], notice.seq)).toBe(11);
+});
+
+test("a tap puts the try chosen in the ad at once", () => {
+  const notice = triesNotice(11);
+  expect(tryInAd([notice, tap(12)], notice.seq)).toBe(12);
+});
+
+test("the scene's clip shown again as a try, as when gone back to, is that try", () => {
+  const notice = triesNotice(11);
+  expect(tryInAd([notice, message([clip(2, "/t3.mp4")])], notice.seq)).toBe(13);
+});
+
+test("a newer clip of the scene takes every try out of the ad; another scene's doesn't", () => {
+  const notice = triesNotice(11);
+  expect(tryInAd([notice, message([clip(3, "/c3.mp4")])], notice.seq)).toBe(11);
+  expect(tryInAd([notice, message([clip(2, "/new.mp4")])], notice.seq)).toBeNull();
 });

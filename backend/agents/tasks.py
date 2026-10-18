@@ -21,9 +21,11 @@ from jobs.models import FixCheck, ProducedItem, Scene, SceneStep
 from jobs.picture_check import PictureKeptFailing
 from jobs.work import (
     check_fix,
+    every_try_failed,
     make_clip,
     make_line_audio,
     make_starting_picture,
+    say_every_try_failed,
     say_the_fix_check_failed,
     say_the_pictures_kept_failing,
     too_long_for_a_clip,
@@ -404,6 +406,9 @@ def run_scene_step(step_id: int) -> None:
             step.result = work.finished(step, made)
             step.finished_at = timezone.now()
             step.save(update_fields=["status", "result", "finished_at"])
+            # Right after the clip kept, once its step is finished, so its tries are versions.
+            if shown and step.kind == SceneStep.Kind.CLIP and step.shows and every_try_failed(step):
+                say_every_try_failed(step)
             # A fix plan's step is carried on by code, and never wakes the producer: a
             # fix's picture that passed its checks queues its clip here (decision 2).
             if step.plan_scene_id is not None:

@@ -13,7 +13,7 @@ type StoredSession = Session & { messages: Message[] };
 function fakeBackend() {
   const sessions: StoredSession[] = [];
   const requests: string[] = [];
-  const sent: { text: string; photos: string[]; plan?: number }[] = [];
+  const sent: { text: string; photos: string[]; plan?: number; use_clip?: number }[] = [];
   let heldPolls: Promise<void> | null = null;
   let heldSends: Promise<void> | null = null;
   let pollsFail = false;
@@ -38,6 +38,8 @@ function fakeBackend() {
     step: SceneStep | null = null,
     suggested_note: Message["suggested_note"] = null,
     plan: Message["plan"] = null,
+    tries: Message["tries"] = null,
+    use_clip: Message["use_clip"] = null,
   ) {
     const message = {
       seq: session.messages.length + 1,
@@ -49,6 +51,8 @@ function fakeBackend() {
       step,
       suggested_note,
       plan,
+      tries,
+      use_clip,
     };
     session.messages.push(message);
     if (message.seq === 1 && session.name === "" && text) session.name = text.slice(0, 80);
@@ -87,12 +91,20 @@ function fakeBackend() {
         }
         let text: string;
         let plan: number | undefined;
+        let use_clip: number | undefined;
         const photos: string[] = [];
         if (init?.body instanceof FormData) {
           text = String(init.body.get("text"));
           for (const photo of init.body.getAll("photos")) photos.push((photo as File).name);
         } else {
-          ({ text, plan } = JSON.parse(String(init?.body)));
+          ({ text, plan, use_clip } = JSON.parse(String(init?.body)));
+        }
+        if (use_clip !== undefined) {
+          sent.push({ text, photos, use_clip });
+          // The server words the tap itself, as chat/api.py does.
+          const said = add(session, "user", "Use it.", [], undefined, null, null, null, null);
+          said.use_clip = use_clip;
+          return Response.json({ session: summary(session), message: said }, { status: 201 });
         }
         sent.push(plan === undefined ? { text, photos } : { text, photos, plan });
         const carried = photos.map((name, i) => ({
@@ -175,6 +187,21 @@ function fakeBackend() {
         event: "shown",
         notice,
       });
+    },
+    /** Code posts a notice in the newest session showing every try of a scene's clip the
+     * judge failed every try of. */
+    showTries(tries: NonNullable<Message["tries"]>) {
+      add(
+        sessions[0],
+        "notice",
+        "The clip judge found a problem in all 3 tries at scene 2's clip.",
+        [],
+        "info",
+        null,
+        null,
+        null,
+        tries,
+      );
     },
     /** Code says in the newest session that a plan is going ahead or was dropped. */
     settlePlan(plan: number, event: "confirmed" | "declined") {
@@ -1972,4 +1999,109 @@ test("a refused yes says why and the button can be tapped again", async () => {
   const told = await within(planNotices()[0]).findByRole("alert");
   expect(told.textContent).toBe("That plan isn't waiting for an answer any more.");
   expect(planYes()!.hasAttribute("disabled")).toBe(false);
+});
+
+// --- Every try of a clip the judge failed every try of (#180) ------------------------------
+
+function threeTries(inAd: number | null = 11): NonNullable<Message["tries"]> {
+  return {
+    scene: 2,
+    in_ad: inAd,
+    clips: [
+      { clip: 11, name: "First try", version: "v1", url: "/media/t1.mp4", problem: "It floats." },
+      { clip: 12, name: "Remake 1", version: "v2", url: "/media/t2.mp4", problem: "It spins." },
+      { clip: 13, name: "Remake 2", version: "v3", url: "/media/t3.mp4", problem: "It flips." },
+    ],
+  };
+}
+
+function triesShown() {
+  return screen.getByRole("group", { name: "Every try at scene 2's clip" });
+}
+
+function aTry(name: string) {
+  return within(triesShown()).getByRole("listitem", { name });
+}
+
+async function showTheTries(tries = threeTries()) {
+  const ad = await openFinishedAd();
+  ad.backend.showTries(tries);
+  await nextPoll();
+  await waitFor(() => triesShown());
+  return ad;
+}
+
+test("every try is shown with what the judge saw, the one in the ad marked, the others swappable", async () => {
+  await showTheTries();
+
+  const tries = within(triesShown()).getAllByRole("listitem");
+  expect(tries.map((one) => one.getAttribute("aria-label"))).toEqual([
+    "First try",
+    "Remake 1",
+    "Remake 2",
+  ]);
+  expect(within(tries[0]).getByLabelText("Scene 2, First try").getAttribute("src")).toBe(
+    "/media/t1.mp4",
+  );
+  expect(tries[0].textContent).toContain("The judge saw: It floats.");
+  expect(tries[0].textContent).toContain("In the ad");
+  expect(within(tries[0]).queryByRole("button", { name: "Use this one" })).toBeNull();
+  for (const other of tries.slice(1)) {
+    expect(other.textContent).not.toContain("In the ad");
+    expect(within(other).getByRole("button", { name: "Use this one" })).toBeDefined();
+  }
+});
+
+test("a tap on a try sends it marked as the button's, and it is in the ad at once", async () => {
+  const { backend, user } = await showTheTries();
+
+  await user.click(within(aTry("Remake 1")).getByRole("button", { name: "Use this one" }));
+
+  await waitFor(() => expect(aTry("Remake 1").textContent).toContain("In the ad"));
+  expect(backend.sent).toEqual([{ text: "", photos: [], use_clip: 12 }]);
+  expect(aTry("First try").textContent).not.toContain("In the ad");
+  expect(within(aTry("First try")).getByRole("button", { name: "Use this one" })).toBeDefined();
+});
+
+test("once a newer clip of the scene is shown, no try can be swapped in", async () => {
+  const { backend } = await showTheTries();
+
+  backend.agentSays("", scene(2, "video", "/media/newer.mp4"), {
+    scene: 2,
+    kind: "clip",
+    state: "made",
+  });
+  await nextPoll();
+
+  await waitFor(() =>
+    expect(within(triesShown()).queryAllByRole("button", { name: "Use this one" })).toEqual([]),
+  );
+  expect(triesShown().textContent).toContain("A newer clip of this scene is in the ad now.");
+  expect(triesShown().textContent).not.toContain("In the ad");
+});
+
+test("a refused tap says why and the tries can be tapped again", async () => {
+  const { backend, user } = await showTheTries();
+  backend.refuseNextSend({ use_clip: ["Those tries aren't on offer any more."] });
+
+  await user.click(within(aTry("Remake 2")).getByRole("button", { name: "Use this one" }));
+
+  const told = await within(triesShown()).findByRole("alert");
+  expect(told.textContent).toBe("Those tries aren't on offer any more.");
+  const button = within(aTry("Remake 2")).getByRole("button", { name: "Use this one" });
+  expect(button.hasAttribute("disabled")).toBe(false);
+});
+
+test("the tries are off while a tap is on its way, so a second tap sends nothing", async () => {
+  const { backend, user } = await showTheTries();
+
+  const release = backend.holdSends();
+  await user.click(within(aTry("Remake 1")).getByRole("button", { name: "Use this one" }));
+  const other = within(aTry("Remake 2")).getByRole("button", { name: "Use this one" });
+  expect(other.hasAttribute("disabled")).toBe(true);
+  await user.click(other);
+  expect(postsTo(backend, "session-1")).toHaveLength(1);
+
+  release();
+  await waitFor(() => expect(aTry("Remake 1").textContent).toContain("In the ad"));
 });

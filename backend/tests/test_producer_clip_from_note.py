@@ -239,10 +239,11 @@ def test_a_different_note_makes_a_new_clip(
         HOVERS,
         "The tea should pour from the left.",
     ]
-    # Each rewrite starts from the picture's own prompt, not the last note's.
+    # Each rewrite improves the clip in the ad: the second starts from the first note's
+    # movement, not the picture's own prompt (#180).
     assert [handoff["motion_prompt"] for handoff in handoffs("rewrite_clip_prompt")] == [
         MOTION,
-        MOTION,
+        REWRITE["motion_prompt"],
     ]
 
 
