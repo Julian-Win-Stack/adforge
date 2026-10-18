@@ -25,6 +25,8 @@ from jobs.scenes import (
     BROLL_SHARED_RULES,
     CLIP_FROM_NOTE_RULES,
     SAME_SIDE,
+    broll_prompt_instructions,
+    clip_from_judge_instructions,
     clip_from_note_instructions,
 )
 
@@ -455,8 +457,24 @@ def test_the_clip_only_block_says_the_picture_is_fixed_and_only_the_movement_cha
         'picture prompt. Write only a new video prompt: "motion_prompt" is the one the '
         'scene\'s first clip from this picture was made from, before any note, and "note" '
         "says what the shop owner wants changed about how it moves. Change the movement as the "
-        "note asks, starting from what the picture shows, and keep what was right. Follow the "
-        "note unless it asks for something that can't start from this picture, or something "
-        '"shows" doesn\'t describe, and then say so in the reason. Give a one-sentence reason '
-        "for the video prompt, written for the shop owner."
+        "note asks, starting from what the picture shows, and keep what was right. When the "
+        'note names a movement to film, such as a step before the one "shows" names, like '
+        "putting the product on the tool used with it, film every movement the note names, in "
+        "the order it says: here the note wins over the rules above that say to film one "
+        "movement only, never to film or draw putting the product on, and to follow a note "
+        'only for what "shows" describes. Follow the note unless it asks for something that '
+        "can't start from this picture, or something else \"shows\" doesn't describe, and then "
+        "say so in the reason. Give a one-sentence reason for the video prompt, written for "
+        "the shop owner."
     )
+
+
+def test_a_note_naming_a_movement_beats_the_one_movement_rule_only_in_a_note_rewrite() -> None:
+    # Julian's grade of the real-clip run (Oct 18): "show the gel going onto the brush first"
+    # was dropped because the one-movement rule won. The note wins only in a rewrite from a
+    # note: the proven rules a scene's prompts are first written with stay as they are.
+    assert "the note wins over the rules above" in CLIP_FROM_NOTE_RULES
+    for kind in BROLL_KIND_RULES:
+        assert "the note wins" not in broll_prompt_instructions(kind)
+        assert "the note wins" not in clip_from_judge_instructions(kind, again=False)
+        assert "the note wins" not in clip_from_judge_instructions(kind, again=True)
