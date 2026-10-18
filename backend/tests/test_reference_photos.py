@@ -42,7 +42,7 @@ def test_the_clean_pictures_are_numbered_first_and_each_said_to_win() -> None:
     assert reference_photos.picture_label(["black toilet", "blue brush"]) == (
         "Image 1 is the shop owner's own black toilet: wherever it disagrees with another "
         "picture, follow Image 1. Image 2 is the shop owner's own blue brush: wherever it "
-        "disagrees with another picture, follow Image 2."
+        "disagrees with another picture, follow Image 2. Image 3 is the product photo."
     )
 
 
@@ -62,10 +62,15 @@ def test_the_clean_picture_prompt_never_copies_a_face_or_invents_a_side() -> Non
     assert "front" not in prompt
 
 
-def test_the_writer_is_told_the_product_photo_moves_past_the_clean_pictures() -> None:
+def test_the_writer_names_the_product_photo_by_no_image_number_and_picks_it_by_its_photo_number(
+) -> None:
     rules = reference_photos.writer_rules(["black toilet", "blue brush"], [])
     assert "(Image 1: their black toilet; Image 2: their blue brush)" in rules
-    assert "the product photo you pick is Image 3, not Image 1" in rules
+    # One number only (case C12b): told the product photo was Image 3, the writer answered
+    # "photo" with 3, not a photo of the product.
+    assert "Image 3" not in rules
+    assert 'Wherever the rules above say Image 1, write "the product photo"' in rules
+    assert 'Answer "photo" with its Photo number' in rules
 
 
 def test_the_writer_is_told_of_things_only_seen_during_the_clip() -> None:
