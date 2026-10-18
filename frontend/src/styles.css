@@ -1021,6 +1021,24 @@ button:disabled {
   text-align: center;
 }
 
+/* The folded bar's small pictures, one per scene, so the scenes stay in sight. */
+.scene-thumbs {
+  display: inline-flex;
+  gap: 3px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.scene-thumbs img,
+.scene-thumbs i {
+  flex-shrink: 0;
+  width: 14px;
+  height: 24px;
+  border-radius: 3px;
+  object-fit: cover;
+  background: var(--surface-3);
+}
+
 .scene-panel-busy {
   display: inline-flex;
   align-items: center;
@@ -1157,9 +1175,9 @@ button:disabled {
   color: var(--text);
 }
 
+/* One line whatever the version's name: a long one is cut short, whole on hover. */
 .scene-foot {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   min-height: 22px;
@@ -1167,6 +1185,7 @@ button:disabled {
 }
 
 .scene-name {
+  flex-shrink: 0;
   font-size: 12.5px;
   font-weight: 600;
   color: var(--text-2);
@@ -1183,6 +1202,7 @@ button:disabled {
 }
 
 .scene-swap {
+  flex-shrink: 0;
   margin-left: auto;
   padding: 2px 8px;
   border-radius: 999px;
@@ -1206,9 +1226,12 @@ button:disabled {
   flex-direction: column;
 }
 
+/* The note box grows with what is written in it (--note-height, set as it's typed). */
 .scene-note {
   width: 100%;
+  height: var(--note-height, auto);
   min-height: 52px;
+  max-height: 240px;
   padding: 7px 9px;
   resize: none;
   border-radius: var(--radius-m);
@@ -1222,6 +1245,16 @@ button:disabled {
     border-color 150ms,
     background 150ms,
     min-height 180ms;
+}
+
+/* The producer's suggestion fills the box until the owner writes in it, so it says whose it is. */
+.scene-note-suggested {
+  margin-bottom: -2px;
+  padding: 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-2);
+  cursor: default;
 }
 
 .scene-note::placeholder {
@@ -1315,8 +1348,10 @@ button:disabled {
     overflow-y: hidden;
   }
 
+  /* A long version name is cut short, never widening its card. */
   .scene-cards > li {
     flex: 0 0 104px;
+    min-width: 0;
   }
 
   /* The clip keeps the strip's width whatever the card's, so a card opening or closing
@@ -1351,7 +1386,32 @@ button:disabled {
     height: 100%;
   }
 
+  /* The strip keeps its height, so the mark sits on the box's top edge instead of above
+     it, and goes while the note is being written. */
+  .scene-card {
+    position: relative;
+  }
+
+  .scene-note-suggested {
+    position: absolute;
+    left: 6px;
+    bottom: 39px;
+    z-index: 1;
+    margin: 0;
+    padding: 0 4px;
+    font-size: 10px;
+    line-height: 14px;
+    background: var(--bg-sidebar);
+  }
+
+  .scene-cards > li:focus-within .scene-note-suggested {
+    display: none;
+  }
+
+  /* The strip keeps its height, so the box doesn't grow with the note here. */
   .scene-note {
+    height: 46px;
+    max-height: none;
     min-height: 40px;
     padding: 6px 8px;
     font-size: 12px;

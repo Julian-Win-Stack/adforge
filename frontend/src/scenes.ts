@@ -194,8 +194,28 @@ export function sceneNotes(
 ): Map<number, string> {
   const notes = new Map<number, string>();
   for (const [scene, note] of typed) notes.set(scene, note.text);
-  for (const [scene, suggestion] of suggested) {
-    if (typed.get(scene)?.over !== suggestion.seq) notes.set(scene, suggestion.text);
+  for (const scene of suggestionShown(suggested, typed)) {
+    notes.set(scene, suggested.get(scene)!.text);
   }
   return notes;
+}
+
+/** The scenes whose box still holds the suggestion as it came: the owner hasn't typed in it
+ * since. */
+export function suggestionShown(
+  suggested: ReadonlyMap<number, SuggestedNote>,
+  typed: ReadonlyMap<number, TypedNote>,
+): Set<number> {
+  return new Set(
+    [...suggested]
+      .filter(([scene, suggestion]) => typed.get(scene)?.over !== suggestion.seq)
+      .map(([scene]) => scene),
+  );
+}
+
+/** Whether the finished ad has been made: a video that is no scene's clip. */
+export function adFinished(messages: Message[]): boolean {
+  return messages.some((message) =>
+    message.attachments.some((one) => one.kind === "video" && one.scene === null),
+  );
 }

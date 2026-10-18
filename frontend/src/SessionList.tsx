@@ -95,7 +95,7 @@ export function SessionList({
                           aria-current={session.id === openId}
                           title={session.name || "Untitled"}
                         >
-                          {session.name || "Untitled"}
+                          {sessionTitle(session)}
                         </button>
                         {session.id === openId && (
                           <button
@@ -123,6 +123,57 @@ export function SessionList({
       </div>
     </nav>
   );
+}
+
+/** What a session is called on screen. The server names it after the first thing the owner
+ * typed, which is usually the product's link, and links all look alike, so a name that
+ * starts with one shows the product the link names and the shop. Any other name, as one
+ * the owner gave it, shows as it is. */
+export function sessionTitle(session: Session): string {
+  if (session.name === "") return "Untitled";
+  const [first] = session.name.split(" ");
+  if (!/^(https?:\/\/|www\.)/i.test(first)) return session.name;
+  let link: URL;
+  try {
+    link = new URL(/^www\./i.test(first) ? `https://${first}` : first);
+  } catch {
+    return session.name;
+  }
+  const shop = link.hostname.replace(/^www\./, "");
+  const product = productIn(link.pathname);
+  return product ? `${product} · ${shop}` : shop;
+}
+
+/** Path parts that say where a product is, not which. */
+const NOT_A_PRODUCT = new Set(["products", "product", "p", "dp", "gp", "item", "items", "shop"]);
+
+/** The product a link's path names, in words: its last part made of words, as
+ * "/products/mens-tree-runners" or "/Bamboo-Toothbrush/dp/B07X4Q2ABC". Null for none. */
+function productIn(path: string): string | null {
+  const parts = path
+    .split("/")
+    .map((part) => decoded(part).replace(/\.html?$/i, ""))
+    .filter((part) => part !== "" && !NOT_A_PRODUCT.has(part.toLowerCase()));
+  // A word part has letters and is split into words, or has no digits: a code like
+  // "B07X4Q2ABC" is no name.
+  const named = parts
+    .reverse()
+    .find((part) => /[a-z]/i.test(part) && (/[-_ ]/.test(part) || !/\d/.test(part)));
+  if (named === undefined) return null;
+  return named
+    .split(/[-_ ]+/)
+    .filter((word) => word !== "")
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+/** A path part as typed, its %-escapes read; one with a broken escape is kept as it is. */
+function decoded(part: string): string {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return part;
+  }
 }
 
 /** Today's sessions, yesterday's, then everything older, each newest first as given. */
