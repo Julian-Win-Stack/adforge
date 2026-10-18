@@ -199,3 +199,25 @@ export function sceneNotes(
   }
   return notes;
 }
+
+/** Which try a notice of every try of a scene's clip (the message numbered `seq`) shows in
+ * the ad: the one in the ad when it was read, then whichever the messages after it put
+ * there. A tap of "Use this one" chooses a try at once; the scene's clip shown again as one
+ * of the tries, as after going back to it, is that try; any other clip of the scene shown
+ * means a newer clip replaced them all: null, so none can be swapped in. */
+export function tryInAd(messages: Message[], seq: number): number | null {
+  const at = messages.findIndex((one) => one.seq === seq);
+  const tries = messages[at]?.tries;
+  if (!tries) return null;
+  let inAd = tries.in_ad;
+  for (const later of messages.slice(at + 1)) {
+    if (later.use_clip != null && tries.clips.some((one) => one.clip === later.use_clip)) {
+      inAd = later.use_clip;
+    }
+    for (const attachment of later.attachments) {
+      if (attachment.kind !== "video" || attachment.scene !== tries.scene) continue;
+      inAd = tries.clips.find((one) => one.url === attachment.url)?.clip ?? null;
+    }
+  }
+  return inAd;
+}

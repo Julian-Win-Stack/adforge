@@ -10,7 +10,7 @@ import math
 import mimetypes
 import tempfile
 import wave
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
@@ -2430,7 +2430,14 @@ def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
     if kept == tries[-1]:
         return kept
     brought_back = step.produced.filter(remake__isnull=True).exclude(pk=first.pk).first()
-    return brought_back or bring_back_clip(kept)
+    if brought_back is not None:
+        return brought_back
+    # Every try failed, so each is a version the shop owner sees, and the one kept is gone
+    # back to (#180).
+    back_to = next(
+        version.number for version in versions(step.scene, landing=tries) if version.clip == kept
+    )
+    return bring_back_clip(kept, back_to=back_to)
 
 
 def kept_clip(step: SceneStep) -> ProducedItem:
@@ -2452,6 +2459,144 @@ def _clip_tries(step: SceneStep) -> list[ProducedItem]:
     first = step.produced.order_by("id").first()
     assert first is not None, "the step made its clip"
     return [first, *step.produced.filter(remake__isnull=False).order_by("remake")]
+
+
+def every_try_failed(step: SceneStep) -> bool:
+    """Whether the clip judge failed a B-roll clip step's first clip and every remake of it
+    made: the shop owner is then shown them all, to pick from (#180). A step with one clip
+    has nothing to pick from."""
+    tries = _clip_tries(step)
+    return len(tries) > 1 and all((clip.ruling or {}).get("verdict") == "fail" for clip in tries)
+
+
+def try_name(clip: ProducedItem) -> str:
+    """Which try of its step a clip is, as the shop owner is shown it: "first try", or
+    "remake 1"."""
+    return f"remake {clip.remake}" if clip.remake else "first try"
+
+
+@dataclass(frozen=True)
+class TryShown:
+    """One try of a clip the judge failed every try of, as the shop owner is shown it."""
+
+    clip: ProducedItem
+    # "First try", "Remake 1".
+    name: str
+    # The label of the scene version it is.
+    version: str
+    # What the judge still sees wrong in it, in its words: its first answer's.
+    problem: str
+
+
+@dataclass(frozen=True)
+class TriesShown:
+    """Every try of a B-roll clip step the judge failed every try of (#180), and the one in
+    the ad now: the scene's current clip, when it is one of them, else None."""
+
+    scene: int
+    tries: list[TryShown]
+    in_ad: ProducedItem | None
+
+
+def tries_shown(step: SceneStep) -> TriesShown:
+    """What the chat shows of a clip step the judge failed every try of, as it stands now."""
+    made = versions(step.scene)
+    labels = {version.clip.pk: version.label for version in made if version.clip is not None}
+    tries = _clip_tries(step)
+    current = made[-1].clip if made else None
+    in_ad = next(
+        (
+            clip
+            for clip in tries
+            if current is not None and current.step_id == step.pk and current.file == clip.file
+        ),
+        None,
+    )
+    return TriesShown(
+        scene=step.scene.number,
+        tries=[
+            TryShown(
+                clip=clip,
+                name=try_name(clip).capitalize(),
+                version=labels.get(clip.pk, ""),
+                # The first only: the judge's asks word the same fault again and again.
+                problem=next(iter(clip_judge.still_failing(_ruling(clip))), ""),
+            )
+            for clip in tries
+        ],
+        in_ad=in_ad,
+    )
+
+
+def say_every_try_failed(step: SceneStep) -> None:
+    """Show the shop owner every try of a B-roll clip the judge failed every try of, to pick
+    from, the one kept already in the ad (#180): by code, never silent."""
+    # The pick isn't named: a tap swaps another in, and the notice is read again then.
+    post_notice(
+        step.scene.job,
+        f"The clip judge found a problem in all {len(_clip_tries(step))} tries at scene "
+        f"{step.scene.number}'s clip. The app put the one with the fewest problems in the ad. "
+        "Watch them, and tap another to use it instead.",
+        Message.Level.INFO,
+        tries_of=step.pk,
+    )
+
+
+# What a tap of "Use this one" is told when the tries it was under aren't on offer any more:
+# the scene has a newer clip, or its line changed since.
+TRIES_NOT_ON_OFFER = "Those tries aren't on offer any more."
+TRY_IN_THE_AD = "That try is already in the ad."
+
+
+class TryNotOnOffer(Exception):
+    """A tap of "Use this one" on a try that can't be swapped in, saying why."""
+
+
+def _try_to_use(clip: ProducedItem) -> int:
+    """The number of the scene version a try of a clip the judge failed every try of is, to
+    swap it in for nothing: it must be one of the tries the chat showed, those tries still
+    hold the clip in the ad, and it isn't that one. Refuses, saying why, otherwise, and while
+    the scene's picture or clip is being made."""
+    step = clip.step
+    scene = clip.scene
+    if (
+        step is None
+        or scene is None
+        or step.kind != SceneStep.Kind.CLIP
+        or not step.tries_shown.exists()
+        or clip not in _clip_tries(step)
+    ):
+        raise TryNotOnOffer(TRIES_NOT_ON_OFFER)
+    in_ad = tries_shown(step).in_ad
+    if in_ad is None:
+        raise TryNotOnOffer(TRIES_NOT_ON_OFFER)
+    if in_ad == clip:
+        raise TryNotOnOffer(TRY_IN_THE_AD)
+    if scene.steps.filter(
+        kind__in=[SceneStep.Kind.STARTING_PICTURE, SceneStep.Kind.CLIP],
+        status=SceneStep.Status.RUNNING,
+    ).exists():
+        raise TryNotOnOffer(
+            f"Scene {scene.number}'s picture or clip is being made right now. Tap again once "
+            "it's ready."
+        )
+    number = next(version.number for version in versions(scene) if version.clip == clip)
+    if not go_back_is_free(scene, number):
+        raise TryNotOnOffer(TRIES_NOT_ON_OFFER)
+    return number
+
+
+def check_try_to_use(clip: ProducedItem) -> None:
+    """Refuse a tap of "Use this one" on `clip`, saying why, unless it can be swapped in."""
+    _try_to_use(clip)
+
+
+def use_try(clip: ProducedItem) -> GoneBack:
+    """Swap a try of a clip the judge failed every try of into the ad, as the shop owner
+    tapped (#180): its version is gone back to, for nothing, with nothing made, judged or paid
+    for, and the chat is shown it. The tap is their yes. Refuses as `check_try_to_use` does."""
+    assert clip.scene is not None, "a try is a scene's clip"
+    return go_back(clip.scene, _try_to_use(clip))
 
 
 def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
@@ -2480,9 +2625,16 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
         return f"{said}, and the judge couldn't check the new one, so it is kept unchecked."
     which = "the first clip" if kept.remake is None else f"remake {kept.remake}"
     still = " ".join(dict.fromkeys(clip_judge.still_failing(_ruling(kept))))
+    shown = (
+        f" The chat showed the shop owner all {len(tries)} tries, each with what the judge still "
+        "sees, so they can tap another to use it instead, for nothing."
+        if every_try_failed(step)
+        else ""
+    )
     return (
         f"{said}, and it failed {'the remake' if remade == 1 else 'each remake'} too. The clip "
         f'kept is {which}, the one with the fewest faults, and the judge still sees: "{still}"'
+        f"{shown}"
     )
 
 
@@ -2692,7 +2844,8 @@ class Version:
     """One version of a scene, as the shop owner was shown it: a starting picture and the clip
     made from it, numbered from 1 in the order shown. A new picture starts one, its clip to
     come; a new clip of the same picture is one of its own. A clip the judge failed and code
-    made again isn't one, unless it was kept. The line lives on its own: a version keeps the
+    made again isn't one, unless it was kept, or the judge failed every try of it: then each
+    try is one (#180). The line lives on its own: a version keeps the
     line its clip says, or its picture was made for (Julian 2026-10-16 22:39, "the picture is
     a picture and the line is a line")."""
 
@@ -2705,12 +2858,16 @@ class Version:
     clip: ProducedItem | None
     # For a version brought back by going back, the version gone back to.
     back_to: int | None
+    # For a try of a clip whose every try the judge failed, which try it is: "remake 1".
+    tried: str = ""
 
     @property
     def label(self) -> str:
         """How the shop owner and the agent deciding fixes see it named: "v1 first version",
-        then the change it was made for, as "v2 black toilet" (decision 17)."""
-        return f"v{self.number} {self.change or 'first version'}"
+        then the change it was made for, as "v2 black toilet" (decision 17), and which try it
+        is of a clip the judge failed every try of, as "v3 black toilet (remake 1)"."""
+        tried = f" ({self.tried})" if self.tried else ""
+        return f"v{self.number} {self.change or 'first version'}{tried}"
 
     @property
     def line(self) -> str:
@@ -2719,7 +2876,7 @@ class Version:
         return made.step.line if made is not None and made.step is not None else ""
 
 
-def versions(scene: Scene, *, landing: ProducedItem | None = None) -> list[Version]:
+def versions(scene: Scene, *, landing: Sequence[ProducedItem] = ()) -> list[Version]:
     """The scene's versions, oldest first: each starting picture it was shown and each clip
     kept, in the order made, a clip joining the version of its picture until that has one. A
     step still running has shown nothing yet, but `landing`, what a step is about to show."""
@@ -2730,11 +2887,12 @@ def versions(scene: Scene, *, landing: ProducedItem | None = None) -> list[Versi
         )
         .select_related("step", "picture")
         .order_by("created_at", "id")
-        if made == landing or _was_shown(made)
+        if made in landing or _was_shown(made)
     ]
     found: list[Version] = []
     for made in shown:
         last = found[-1] if found else None
+        tried = _tried(made)
         if made.kind == ProducedItem.Kind.STARTING_PICTURE:
             found.append(Version(len(found) + 1, made.change, made, None, made.back_to))
         elif (
@@ -2745,10 +2903,22 @@ def versions(scene: Scene, *, landing: ProducedItem | None = None) -> list[Versi
             and made.picture.file == last.picture.file
         ):
             # A clip brought back with an earlier picture is still of the picture shown.
-            found[-1] = Version(last.number, last.change, last.picture, made, last.back_to)
+            found[-1] = Version(last.number, last.change, last.picture, made, last.back_to, tried)
         else:
-            found.append(Version(len(found) + 1, made.change, made.picture, made, made.back_to))
+            found.append(
+                Version(len(found) + 1, made.change, made.picture, made, made.back_to, tried)
+            )
     return found
+
+
+def _tried(made: ProducedItem) -> str:
+    """Which try a clip is, when its step's judge failed every try: blank otherwise."""
+    step = made.step
+    if made.kind != ProducedItem.Kind.CLIP or step is None or step.kind != SceneStep.Kind.CLIP:
+        return ""
+    if made not in _clip_tries(step) or not every_try_failed(step):
+        return ""
+    return try_name(made)
 
 
 def motion_of(clip: ProducedItem) -> str:
@@ -2766,7 +2936,8 @@ def motion_of(clip: ProducedItem) -> str:
 def _was_shown(made: ProducedItem) -> bool:
     """Whether the shop owner was shown a scene's starting picture or clip: one its step
     finished with. Of a clip step's clip and the remakes the judge failed it into, only the
-    one kept was, unless an earlier one kept was brought back on top (`_auto_fixed`)."""
+    one kept was, unless an earlier one kept was brought back on top (`_auto_fixed`), or the
+    judge failed them all: then each was, to pick from (#180)."""
     step = made.step
     if step is None:
         return True
@@ -2778,7 +2949,7 @@ def _was_shown(made: ProducedItem) -> bool:
     if made not in tries:
         # Brought back: by the auto-fix, or as an earlier note's clip again.
         return True
-    if len(tries) == 1:
+    if len(tries) == 1 or every_try_failed(step):
         return True
     failed = [auto_fix.failed_answers(clip.ruling or {"verdict": "pass"}) for clip in tries]
     return made == tries[-1] and auto_fix.clip_to_keep(failed) == len(tries) - 1
@@ -2787,10 +2958,20 @@ def _was_shown(made: ProducedItem) -> bool:
 def version_label(made: ProducedItem) -> str:
     """The label of the scene version a starting picture or clip about to be shown is in."""
     assert made.scene is not None, "a starting picture or clip belongs to a scene"
+    landing = [made]
+    step = made.step
+    if (
+        made.kind == ProducedItem.Kind.CLIP
+        and step is not None
+        and step.kind == SceneStep.Kind.CLIP
+    ):
+        # Every try the judge failed lands with the one kept, each its own version.
+        if every_try_failed(step):
+            landing = [*_clip_tries(step), made]
     return next(
         (
             version.label
-            for version in reversed(versions(made.scene, landing=made))
+            for version in reversed(versions(made.scene, landing=landing))
             if made in (version.picture, version.clip)
         ),
         "",
@@ -2920,8 +3101,9 @@ def _use_the_photos_of(scene: Scene, version: Version) -> None:
 def _rewrite_motion_prompt(step: SceneStep) -> None:
     """Write a B-roll clip step's video prompt again from its note, keeping it on the step: a
     model told the same rules as the one that wrote the scene's prompts, and that the starting
-    picture stays, is handed the picture's prompts, the scene and the note, and shown the
-    picture. The producer never writes a prompt (Julian 2026-10-11 21:00).
+    picture stays, is handed the picture's prompt, the movement of the clip it improves on,
+    the scene and the note, and shown the picture. The producer never writes a prompt (Julian
+    2026-10-11 21:00).
 
     Run again, as after a worker stopped, it pays for nothing already paid for: the answer for
     the same handoff is answered from its record."""
@@ -2948,7 +3130,7 @@ def _rewrite_motion_prompt(step: SceneStep) -> None:
             usage=step.usage,
             result=step.broll_result,
             picture_prompt=planned.prompt,
-            motion_prompt=planned.motion_prompt,
+            motion_prompt=_movement_to_improve(step, planned),
             note=step.note,
             conversation=_conversation(job, until=step.started_at),
         ),
@@ -2961,6 +3143,22 @@ def _rewrite_motion_prompt(step: SceneStep) -> None:
     )
     step.motion_prompt = rewrite.motion_prompt
     step.save(update_fields=["motion_prompt"])
+
+
+def _movement_to_improve(step: SceneStep, planned: SceneStep) -> str:
+    """How the clip a note's clip improves on moved: the scene's clip as the shop owner sees
+    it now, when it is of the same starting picture, so a try they swapped in, or an earlier
+    note's clip, is built on (#180); else as the picture's step planned."""
+    made = versions(step.scene)
+    current = made[-1].clip if made else None
+    if (
+        current is not None
+        and current.picture is not None
+        and step.picture is not None
+        and current.picture.file == step.picture.file
+    ):
+        return motion_of(current)
+    return planned.motion_prompt
 
 
 def _ask_for_clip(job: Job, making: str, handoff: ClipHandoff | BrollClipHandoff) -> str:

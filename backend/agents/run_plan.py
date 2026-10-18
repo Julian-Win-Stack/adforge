@@ -513,6 +513,42 @@ def go_ahead(row: FixPlanScene) -> None:
         _assemble_once_landed(row.plan)
 
 
+def swapped_in(step: SceneStep) -> None:
+    """Once the shop owner swapped a try of `step`'s clip into the ad (#180): a plan's scene
+    held on that step's failed fix check goes ahead with it, as their go ahead; else the ad,
+    once there is one and no plan is still landing, is assembled again from it, for
+    nothing."""
+    row = step.plan_scene
+    if row is not None and row in held_on_a_check(Session.objects.get(pk=row.plan.session_id)):
+        go_ahead(row)
+        return
+    job = step.scene.job
+    if not job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).exists():
+        return
+    if FixPlanScene.objects.filter(
+        plan__job=job, started_at__isnull=False, landed_at__isnull=True, error=""
+    ).exists():
+        return
+    if job.session is None:
+        return
+    top = work.versions(step.scene)[-1]
+    try:
+        with transaction.atomic():
+            assemble_the_ad(job.session, job, f"scene {step.scene.number} {top.label}")
+    except Refused:
+        # A scene not finished yet: the ad is assembled once it is, from the try swapped in.
+        return
+    # Assembly failing for a reason nobody expected doesn't undo the swap: the chat says so.
+    except Exception as error:
+        logger.exception("Assembling the ad again after a swap in scene %s failed", step.scene_id)
+        post_notice(
+            job,
+            f"The ad couldn't be put together again with scene {step.scene.number}'s new "
+            f"clip: {why_it_failed(error, 'it')} Ask for it to be assembled again.",
+            Message.Level.PROBLEM,
+        )
+
+
 def held_on_a_check(session: Session, before: int | None = None) -> list[FixPlanScene]:
     """The plan rows whose fix check failed and wait for the shop owner's answer (flow step
     9), oldest first: go ahead carries them on, anything else is planned again. A check
@@ -592,16 +628,18 @@ def _say_it_wasnt_checked(row: FixPlanScene, check: FixCheck) -> None:
 
 
 def _say_what_the_judge_kept(row: FixPlanScene, step: SceneStep) -> None:
-    """A fix's clip the clip judge couldn't check, or still failed after its remakes, is kept,
-    and the shop owner is told so by code, never silent (Julian 2026-10-14, "treat that as
-    pass"; design thread, 05:15 Oct 17). Without the judge's words, and nothing for the
-    producer (decision 20). A fix check that failed or couldn't be had says so already."""
+    """A fix's clip the clip judge couldn't check is kept, and the shop owner is told so by
+    code, never silent (Julian 2026-10-14, "treat that as pass"; design thread, 05:15 Oct 17).
+    So is one it still failed, without the judge's words, unless it failed every try of it:
+    those are shown, to pick from (#180). Nothing for the producer (decision 20). A fix check
+    that failed or couldn't be had says so already."""
     number = row.scene.number
     tries = work.clip_tries(step)
     verdict = (work.kept_clip(step).ruling or {}).get("verdict")
     if verdict == "not_checked":
         text = f"Scene {number}'s new clip couldn't be checked, so it is kept unchecked."
-    elif verdict == "fail":
+    elif verdict == "fail" and not work.every_try_failed(step):
+        # Only one try, its remake not made: nothing to pick from.
         text = (
             f"Scene {number}'s new clip was kept after {len(tries)} tries though the judge "
             "still found a fault."
