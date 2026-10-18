@@ -68,10 +68,25 @@ test("on a phone, the scene cards start folded once the ad is finished, with eac
   ]);
 });
 
-test("on a phone, the scene cards stay open while the ad is still being made", () => {
-  showPanel(SCENES, 390);
+test("on a phone, the scene cards stay open while the ad is still being made, a fix check's clips included", () => {
+  // The fix check shows the old and the new clip without their scene, beside its suggestion.
+  const fixCheck = said(
+    [file("video", "/c1.mp4", null), file("video", "/c1-b.mp4", null)],
+    { scene: 1, text: "Show the brush touching the shoe" },
+    "notice",
+  );
+  showPanel([...SCENES, fixCheck], 390);
   expect(toggle().getAttribute("aria-expanded")).toBe("true");
   expect(screen.getAllByRole("article")).toHaveLength(2);
+});
+
+test("on a phone, the ad landing while the owner writes a note leaves the cards open", async () => {
+  const shown = showPanel(SCENES, 390);
+  await userEvent.type(screen.getByRole("textbox", { name: "Note for scene 1" }), "Brighter");
+  shown.rerender(<ScenePanel messages={[...SCENES, FINISHED_AD]} onSend={async () => {}} />);
+  const box = screen.getByRole("textbox", { name: "Note for scene 1" }) as HTMLTextAreaElement;
+  expect(box.value).toBe("Brighter");
+  expect(document.activeElement).toBe(box);
 });
 
 test("on a wide screen, the scene cards stay open after the ad is finished", () => {
@@ -95,13 +110,19 @@ test("the note box grows to fit what is typed", async () => {
   vi.spyOn(HTMLTextAreaElement.prototype, "scrollHeight", "get").mockImplementation(function (
     this: HTMLTextAreaElement,
   ) {
-    return 20 + 18 * this.value.split("\n").length;
+    // Like a browser: a box never measures smaller than it is drawn.
+    const drawn = parseInt(this.style.getPropertyValue("--note-height")) || 0;
+    return Math.max(20 + 18 * this.value.split("\n").length, drawn);
   });
   showPanel(SCENES);
-  const box = screen.getByRole("textbox", { name: "Note for scene 1" });
+  const box = screen.getByRole("textbox", { name: "Note for scene 1" }) as HTMLTextAreaElement;
 
   await userEvent.type(box, "one{Enter}two{Enter}three{Enter}four");
   expect(box.style.getPropertyValue("--note-height")).toBe("92px");
+
+  await userEvent.type(box, "{Backspace}".repeat("\nthree\nfour".length));
+  expect(box.value).toBe("one\ntwo");
+  expect(box.style.getPropertyValue("--note-height")).toBe("56px");
 });
 
 test("a note the producer suggested is marked as suggested, until the owner writes their own", async () => {
@@ -137,6 +158,26 @@ test("a session named after a product link shows the product and the shop", () =
     "Balm Dotcom · glossier.com",
   );
   expect(sessionTitle(session("https://shop.example.com/"))).toBe("shop.example.com");
+  expect(
+    sessionTitle(
+      session("https://www.amazon.com/Bamboo-Toothbrush-Pack/dp/B07X4Q2ABC/ref=sr_1_5?k=brush"),
+    ),
+  ).toBe("Bamboo Toothbrush Pack · amazon.com");
+  expect(sessionTitle(session("https://www.target.com/p/ninja-blender/-/A-87654321"))).toBe(
+    "Ninja Blender · target.com",
+  );
+  expect(sessionTitle(session("https://www.ebay.com/itm/123456789"))).toBe("ebay.com");
+  expect(sessionTitle(session("https://www.etsy.com/listing/123456/handmade-clay-mug"))).toBe(
+    "Handmade Clay Mug · etsy.com",
+  );
+  expect(sessionTitle(session("https://müller.de/produkte/bürste"))).toBe("Bürste · müller.de");
+});
+
+test("a link the server cut short loses the cut word", () => {
+  expect(
+    sessionTitle(session("https://www.allbirds.com/products/womens-tree-runner-blizzard-sol…")),
+  ).toBe("Womens Tree Runner Blizzard · allbirds.com");
+  expect(sessionTitle(session("https://www.amazon.com/B…"))).toBe("amazon.com");
 });
 
 test("a session the owner named, or named from words, keeps its name", () => {

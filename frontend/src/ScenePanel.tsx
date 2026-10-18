@@ -82,7 +82,8 @@ export function ScenePanel({
         <ChevronIcon />
       </button>
       {open && (
-        <form className="scene-form" onSubmit={submit}>
+        // Once the owner is in the cards, the ad landing doesn't fold them away under them.
+        <form className="scene-form" onSubmit={submit} onFocus={() => setChosen(true)}>
           <ol className="scene-cards">
             {cards.map((card) => (
               <li key={card.scene}>

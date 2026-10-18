@@ -139,32 +139,53 @@ export function sessionTitle(session: Session): string {
   } catch {
     return session.name;
   }
-  const shop = link.hostname.replace(/^www\./, "");
+  // The shop as typed, since the parsed one spells a name like müller.de in punycode.
+  const shop = first
+    .replace(/^https?:\/\//i, "")
+    .split(/[/?#:]/)[0]
+    .replace(/^www\./i, "");
   const product = productIn(link.pathname);
   return product ? `${product} · ${shop}` : shop;
 }
 
 /** Path parts that say where a product is, not which. */
-const NOT_A_PRODUCT = new Set(["products", "product", "p", "dp", "gp", "item", "items", "shop"]);
+const NOT_A_PRODUCT = new Set([
+  "products",
+  "product",
+  "p",
+  "dp",
+  "gp",
+  "ip",
+  "item",
+  "items",
+  "itm",
+  "listing",
+  "ref",
+  "shop",
+]);
 
-/** The product a link's path names, in words: its last part made of words, as
- * "/products/mens-tree-runners" or "/Bamboo-Toothbrush/dp/B07X4Q2ABC". Null for none. */
+/** A code, not a name: "B07X4Q2ABC", "A-87654321", "123456789". */
+const CODE = /^[a-z]{0,3}[-_]?\d[\da-z]*$/i;
+
+/** The product a link's path names, in words: its last part that is a name, as
+ * "/products/mens-tree-runners" or "/Bamboo-Toothbrush/dp/B07X4Q2ABC". A word the server
+ * cut short ("…") is left out. Null for none. */
 function productIn(path: string): string | null {
-  const parts = path
+  const names = path
     .split("/")
     .map((part) => decoded(part).replace(/\.html?$/i, ""))
-    .filter((part) => part !== "" && !NOT_A_PRODUCT.has(part.toLowerCase()));
-  // A word part has letters and is split into words, or has no digits: a code like
-  // "B07X4Q2ABC" is no name.
-  const named = parts
-    .reverse()
-    .find((part) => /[a-z]/i.test(part) && (/[-_ ]/.test(part) || !/\d/.test(part)));
+    .filter(
+      (part) =>
+        /[a-z]/i.test(part) &&
+        !part.includes("=") &&
+        !CODE.test(part) &&
+        !NOT_A_PRODUCT.has(part.toLowerCase()),
+    )
+    .map((part) => part.split(/[-_ ]+/).filter((word) => word !== "" && !word.endsWith("…")))
+    .filter((words) => words.length > 0);
+  const named = names.at(-1);
   if (named === undefined) return null;
-  return named
-    .split(/[-_ ]+/)
-    .filter((word) => word !== "")
-    .map((word) => word[0].toUpperCase() + word.slice(1))
-    .join(" ");
+  return named.map((word) => word[0].toUpperCase() + word.slice(1)).join(" ");
 }
 
 /** A path part as typed, its %-escapes read; one with a broken escape is kept as it is. */

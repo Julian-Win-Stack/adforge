@@ -51,7 +51,7 @@ export function App() {
       <Chat
         key={openId ?? "new"}
         sessionId={openId}
-        title={open?.name ? sessionTitle(open) : null}
+        title={open ? sessionTitle(open) : null}
         sidebarOpen={sidebarOpen}
         onShowSidebar={() => setSidebarOpen(true)}
         onSent={(sent) => {

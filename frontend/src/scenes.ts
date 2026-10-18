@@ -213,9 +213,15 @@ export function suggestionShown(
   );
 }
 
-/** Whether the finished ad has been made: a video that is no scene's clip. */
+/** Whether the finished ad has been made: the producer's message showing it carries that one
+ * video and no scene's. The fix check's notice shows a scene's old and new clips without
+ * their scene, so it is no finished ad. */
 export function adFinished(messages: Message[]): boolean {
-  return messages.some((message) =>
-    message.attachments.some((one) => one.kind === "video" && one.scene === null),
+  return messages.some(
+    ({ role, attachments }) =>
+      role === "agent" &&
+      attachments.length === 1 &&
+      attachments[0].kind === "video" &&
+      attachments[0].scene === null,
   );
 }
