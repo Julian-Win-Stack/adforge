@@ -190,15 +190,21 @@ def broll_prompt_instructions(broll_kind: str) -> str:
 
 # Added to what the model writing a B-roll scene's prompts is told when only its clip is made
 # again, from a note: the starting picture stays, so only the video prompt is written again
-# (route B step 1, #132). The proven rules above come with it, unchanged.
+# (route B step 1, #132). The proven rules above come with it, unchanged, but a note naming the
+# movement to film wins over the one-movement rule here only (Julian's grade of the real-clip
+# run, Oct 18: "show the gel going onto the brush first" was dropped).
 CLIP_FROM_NOTE_RULES = """\
 The scene's starting picture is already made, and it stays as it is: you are shown it, and \
 "picture_prompt" is the prompt it was drawn from. Pick no photo and write no picture prompt. \
 Write only a new video prompt: "motion_prompt" is the one the scene's first clip from this \
 picture was made from, before any note, and "note" says what the shop owner wants changed \
 about how it moves. Change the movement as the note asks, starting from what the picture \
-shows, and keep what was right. Follow the note unless it asks for something that can't start \
-from this picture, or something "shows" doesn't describe, and then say so in the reason. Give \
+shows, and keep what was right. When the note names a movement to film, such as a step before \
+the one "shows" names, like putting the product on the tool used with it, film every movement \
+the note names, in the order it says: here the note wins over the rules above that say to film \
+one movement only, never to film or draw putting the product on, and to follow a note only for \
+what "shows" describes. Follow the note unless it asks for something that can't start from \
+this picture, or something else "shows" doesn't describe, and then say so in the reason. Give \
 a one-sentence reason for the video prompt, written for the shop owner."""
 
 
