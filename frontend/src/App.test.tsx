@@ -1968,14 +1968,40 @@ test("a plan with nothing to do, only can'ts, offers no yes", async () => {
   );
   expect(planYes()).toBeNull();
   expect(screen.queryByText(/in all/)).toBeNull();
+  const plan = within(planNotices()[0]);
+  expect(plan.getByText("We can't do that yet")).toBeDefined();
+  expect(plan.queryByText(/Here's the plan/)).toBeNull();
 });
 
-test("a plan whose only scene can't be done offers no yes", async () => {
+test("a plan of a can't and a scene left as it is offers no yes and prices nothing", async () => {
   const cant = aPlan().scenes[2];
   await showAPlan(
-    aPlan(7, { scenes: [cant], estimate_usd: "0.000000", estimate_up_to_usd: "0.000000" }),
+    aPlan(7, {
+      scenes: [cant, { ...cant, scene: 5, cant: "", change: "It already looks right." }],
+      estimate_usd: "0.000000",
+      estimate_up_to_usd: "0.000000",
+    }),
   );
   expect(planYes()).toBeNull();
+  const plan = within(planNotices()[0]);
+  expect(plan.getByText("We can't do that yet")).toBeDefined();
+  // Nothing runs, so nothing is priced, not even as free.
+  expect(plan.queryByText("Free")).toBeNull();
+});
+
+test("a plan that only asks shows its question and no title", async () => {
+  await showAPlan(
+    aPlan(7, {
+      scenes: [],
+      question: "Which toilet, the one in photo 1?",
+      estimate_usd: "0.000000",
+      estimate_up_to_usd: "0.000000",
+    }),
+  );
+  expect(planYes()).toBeNull();
+  const plan = within(planNotices()[0]);
+  expect(plan.getByText("Which toilet, the one in photo 1?")).toBeDefined();
+  expect(plan.queryByText(/Here's the plan|can't do that/)).toBeNull();
 });
 
 test("a reopened chat reads the plan as it stands: a settled one offers no yes", async () => {

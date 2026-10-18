@@ -231,8 +231,16 @@ ACTIONS_IN_WORDS = {
 
 def _in_words(shown: PlanNotice) -> str:
     """The plan notice as text: what the chat shows where it can't draw the plan, and what
-    the job's warnings keep."""
-    lines = ["Here's the plan for your notes."]
+    the job's warnings keep. A plan a yes would run nothing of (only can'ts, scenes left as
+    they are, or a question; as `run_plan.runs_something` says) asks for no yes and shows
+    no costs: it says it can't be done yet, if anything was asked that can't."""
+    runs = any(_doable(scene) for scene in shown["scenes"])
+    asked_cant = any(scene["cant"] for scene in shown["scenes"]) or bool(shown["cants"])
+    lines: list[str] = []
+    if runs:
+        lines.append("Here's the plan for your notes.")
+    elif asked_cant:
+        lines.append("We can't do that yet.")
     for scene in shown["scenes"]:
         what = ACTIONS_IN_WORDS[FixPlanScene.Action(scene["action"])]
         if scene["action"] == FixPlanScene.Action.GO_BACK:
@@ -247,17 +255,28 @@ def _in_words(shown: PlanNotice) -> str:
         # As the chat shows it: a can't, free, or what it costs.
         if scene["cant"]:
             said += f" Can't: {scene['cant']}"
-        elif Decimal(scene["estimate_usd"]) or Decimal(scene["estimate_up_to_usd"]):
-            said += f" (about {_dollars(scene['estimate_usd'])}, up to "
-            said += f"{_dollars(scene['estimate_up_to_usd'])})"
-        else:
-            said += " (free)"
+        elif runs:
+            said += _cost(scene)
         lines.append(said)
     lines.extend(f"Can't: {cant['text']}" for cant in shown["cants"])
     if shown["question"]:
         lines.append(shown["question"])
-    lines.append("Tap Yes to go ahead, or type what to change.")
+    if runs:
+        lines.append("Tap Yes to go ahead, or type what to change.")
     return "\n".join(lines)
+
+
+def _cost(scene: PlanNoticeScene) -> str:
+    if Decimal(scene["estimate_usd"]) or Decimal(scene["estimate_up_to_usd"]):
+        return (
+            f" (about {_dollars(scene['estimate_usd'])}, "
+            f"up to {_dollars(scene['estimate_up_to_usd'])})"
+        )
+    return " (free)"
+
+
+def _doable(scene: PlanNoticeScene) -> bool:
+    return scene["action"] != FixPlanScene.Action.NO_CHANGE and not scene["cant"]
 
 
 def _dollars(amount: str) -> str:
