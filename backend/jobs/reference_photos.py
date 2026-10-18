@@ -154,11 +154,17 @@ def picture_job(thing: str) -> str:
 
 def picture_label(things: list[str]) -> str:
     """Put by code before the starting picture's prompt, so the picture model always gets it:
-    a sentence for each clean picture, sent first, in order (option C, Julian 16:01)."""
+    a sentence for each clean picture, sent first, in order (option C, Julian 16:01), then
+    which picture is the product photo, which the prompt names by no number."""
     return " ".join(
-        f"Image {number} is the shop owner's own {thing}: wherever it disagrees with another "
-        f"picture, follow Image {number}."
-        for number, thing in enumerate(things, 1)
+        [
+            *(
+                f"Image {number} is the shop owner's own {thing}: wherever it disagrees with "
+                f"another picture, follow Image {number}."
+                for number, thing in enumerate(things, 1)
+            ),
+            f"Image {len(things) + 1} is the product photo.",
+        ]
     )
 
 
@@ -169,15 +175,15 @@ def writer_rules(in_picture: list[str], during_clip: list[str]) -> str:
     pictures (locked rule 2, changed by Julian 19:38)."""
     rules = []
     if in_picture:
-        first = len(in_picture) + 1
         each = "; ".join(
             f"Image {number}: their {thing}" for number, thing in enumerate(in_picture, 1)
         )
         rules.append(
             "The shop owner sent photos of their own things. Code sends a clean picture of only "
             "each thing, drawn from their photo, to the picture model first, before every other "
-            f'picture ({each}). Use each picture\'s number as "pictures" gives it: the product '
-            f"photo you pick is Image {first}, not Image 1, wherever the rules above say Image 1. "
+            f"picture ({each}). Wherever the rules above say Image 1, write \"the product "
+            'photo" instead, never an Image number: code tells the picture model which picture '
+            'it is. Answer "photo" with its Photo number, as "colour_photos" gives it. '
             "You are shown them first, before the product photos. They are the shop owner's "
             'own, so wherever one disagrees with another picture or with "before_picture" '
             "about how that thing looks, it is right. Never write an order that disagrees with "
