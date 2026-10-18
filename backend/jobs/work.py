@@ -1591,7 +1591,7 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
             PictureJob(image=len(owners) + 1, job=MAIN_PHOTO_JOB),
         ]
     during = [row.thing for row in _during_the_clip(step)]
-    owner_rules = reference_photos.writer_rules(things, during)
+    owner_rules = reference_photos.writer_rules(things, during, picks_photo=len(numbers) > 1)
     # What the scene needs that the main photo can't show comes from a photo of its own,
     # sent to the picture model after the main photo, never to the video model: sent to it,
     # a shop photo's own scene leaked into the clip (graded #12).

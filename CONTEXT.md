@@ -15,7 +15,7 @@ One turn in a session, from the user or the producer, or a notice. The only way 
 _Avoid_: Comment, note, activity entry
 
 **Notice**:
-A message the code posts, not the producer, when a step fell back to a worse source or failed. It says what failed, what was used instead, and what that means for the ad. Shown red when it affects the ad, grey when it is only worth knowing. Kept with the job as one of its warnings, and never given to a model. A scene's starting picture or clip also gets a notice when it starts being made ("Making scene 2's clip.") and when it ends with nothing made: these only tell the chat which scene is being made, and aren't warnings.
+A message the code posts, not the producer, when a step fell back to a worse source or failed. It says what failed, what was used instead, and what that means for the ad. Shown red when it affects the ad, grey when it is only worth knowing. Kept with the job as one of its warnings, and never given to a model. A scene's starting picture or clip also gets a notice when it starts being made ("Making scene 2's clip.") and when it ends with nothing made, saying why in plain words ("Scene 3's starting picture couldn't be made: an outside service stayed down."): these tell the chat which scene is being made, and aren't warnings.
 _Avoid_: Alert, error message, system message
 
 **Attachment**:
