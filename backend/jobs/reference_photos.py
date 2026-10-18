@@ -130,6 +130,10 @@ class ReferencePhotoUnusable(Exception):
     failing its check, or the picture model refused it. Nothing more is made for the scene:
     the shop owner is asked for another photo (D8). Says why, for the producer."""
 
+    def __init__(self, why: str, *, thing: str) -> None:
+        super().__init__(why)
+        self.thing = thing
+
 
 def clean_picture_prompt(thing: str) -> str:
     """The picture model's prompt for the clean picture of only `thing` from the shop owner's
@@ -154,31 +158,43 @@ def picture_job(thing: str) -> str:
 
 def picture_label(things: list[str]) -> str:
     """Put by code before the starting picture's prompt, so the picture model always gets it:
-    a sentence for each clean picture, sent first, in order (option C, Julian 16:01)."""
+    a sentence for each clean picture, sent first, in order (option C, Julian 16:01), then
+    which picture is the product photo, which the prompt names by no number."""
     return " ".join(
-        f"Image {number} is the shop owner's own {thing}: wherever it disagrees with another "
-        f"picture, follow Image {number}."
-        for number, thing in enumerate(things, 1)
+        [
+            *(
+                f"Image {number} is the shop owner's own {thing}: wherever it disagrees with "
+                f"another picture, follow Image {number}."
+                for number, thing in enumerate(things, 1)
+            ),
+            f"Image {len(things) + 1} is the product photo.",
+        ]
     )
 
 
-def writer_rules(in_picture: list[str], during_clip: list[str]) -> str:
+def writer_rules(in_picture: list[str], during_clip: list[str], *, picks_photo: bool) -> str:
     """Added to what the model writing a B-roll scene's prompts is told when the scene uses
     the shop owner's photos: those drawn into the starting picture, sent first, and those
     that only show during the clip, whose look the video model gets from their clean
-    pictures (locked rule 2, changed by Julian 19:38)."""
+    pictures (locked rule 2, changed by Julian 19:38). Told how to answer "photo" only when
+    it `picks_photo`: with one photo in the ad's colour, code fills it in."""
     rules = []
     if in_picture:
-        first = len(in_picture) + 1
         each = "; ".join(
             f"Image {number}: their {thing}" for number, thing in enumerate(in_picture, 1)
+        )
+        answer = (
+            'Answer "photo" with its Photo number, as "colour_photos" gives it. '
+            if picks_photo
+            else ""
         )
         rules.append(
             "The shop owner sent photos of their own things. Code sends a clean picture of only "
             "each thing, drawn from their photo, to the picture model first, before every other "
-            f'picture ({each}). Use each picture\'s number as "pictures" gives it: the product '
-            f"photo you pick is Image {first}, not Image 1, wherever the rules above say Image 1. "
-            "You are shown them first, before the product photos. They are the shop owner's "
+            f'picture ({each}). Wherever the rules above say Image 1, write "the product '
+            'photo" instead, never an Image number: code tells the picture model which picture '
+            f"it is. {answer}You are shown them first, before the product photos. They are the "
+            "shop owner's "
             'own, so wherever one disagrees with another picture or with "before_picture" '
             "about how that thing looks, it is right. Never write an order that disagrees with "
             "them: say to take each thing's look from its picture. Code puts a sentence saying "

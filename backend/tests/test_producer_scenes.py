@@ -19,6 +19,7 @@ from chat import messages
 from chat.models import Message
 from gateway.fake import FakeModel, meanwhile, turn
 from gateway.models import ModelCall
+from gateway.types import BlockedBySafetyFilter, ModelRequest
 from jobs.models import Job, Scene, SceneStep
 from jobs.scenes import pose_for
 
@@ -269,15 +270,37 @@ def test_a_starting_picture_that_cant_be_made_fails_its_step_and_the_producer_is
         f"{step.reason} Tell the shop owner what went wrong.",
     }
     assert chat(api, session_id)[-1] == ("agent", "Sorry, the picture service is down.")
-    # The chat can tell the picture is no longer being made. Why is the producer's to say:
-    # the error, worded for a model, isn't shown to the shop owner.
+    # The chat can tell the picture is no longer being made, and why in plain words: the
+    # error, worded for a model, isn't shown to the shop owner.
     assert step_messages(api, session_id)[-1] == (
         "notice",
         "problem",
-        "Scene 1's starting picture couldn't be made.",
+        "Scene 1's starting picture couldn't be made: an outside service stayed down.",
         picture_step("not_made"),
     )
     assert "503" not in str(chat(api, session_id))
+
+
+def test_a_starting_picture_the_safety_filter_refuses_tells_the_shop_owner_so(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    making(fake_model, (1, None))
+    say("Make scene 1's starting picture")
+    fake_model.respond("choose_starting_picture", CHOICE)
+    fake_model.respond("make_starting_picture", BlockedBySafetyFilter("content_filter"))
+    fake_model.respond("produce", turn(says="The picture was blocked."))
+
+    steps.run_held()
+
+    assert SceneStep.objects.get().status == "failed"
+    assert step_messages(api, session_id)[-1][2] == (
+        "Scene 1's starting picture couldn't be made: the AI service's safety filter blocked it."
+    )
 
 
 def test_a_step_that_breaks_while_showing_its_picture_isnt_left_running(
@@ -315,23 +338,63 @@ def test_a_step_that_breaks_while_showing_its_picture_isnt_left_running(
         "Background step failed: scene 1's starting picture couldn't be made"
     )
     assert chat(api, session_id)[-1] == ("agent", "Sorry, something went wrong.")
+    assert step_messages(api, session_id)[-1][2] == (
+        "Scene 1's starting picture couldn't be made: something went wrong on our side."
+    )
 
 
 def test_a_photo_not_in_the_ads_colour_is_never_used(
-    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
 ) -> None:
+    # Both photos show the mug in the ad's colour, so the model picks one: there is no
+    # Photo 3.
+    Job.objects.get().photos.update(shows_product_colour=True)
     making(fake_model, (1, None))
     say("Make scene 1's starting picture")
-    # Photo 2 shows the mug in cream, and the ad's colour is sage green.
-    fake_model.respond("choose_starting_picture", {**CHOICE, "photo": 2})
+    fake_model.respond("choose_starting_picture", {**CHOICE, "photo": 3})
     fake_model.respond("produce", turn(says="Something went wrong with the picture."))
 
     steps.run_held()
 
     step = SceneStep.objects.get()
     assert step.status == "failed"
-    assert "Photo 2 isn't one showing the product in the ad's colour: those are 1." in step.reason
+    assert "Photo 3 isn't one showing the product in the ad's colour: those are 1, 2." in (
+        step.reason
+    )
     assert "make_starting_picture" not in paid_for()
+    assert step_messages(api, session_id)[-1][2] == (
+        "Scene 1's starting picture couldn't be made: the model picked a photo that doesn't "
+        "show the product in the ad's colour."
+    )
+
+
+def test_with_one_photo_in_the_ads_colour_the_model_isnt_asked_which_and_it_is_used(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    making(fake_model, (1, None))
+    say("Make scene 1's starting picture")
+    # Only Photo 1 shows the mug in sage green: asked for the photo anyway, a model once
+    # answered with another number, and nothing was made (case C12b).
+    asked: list[dict[str, Any]] = []
+
+    def answer(request: ModelRequest[Any]) -> dict[str, Any]:
+        asked.append(request.output.model_json_schema())
+        return {key: value for key, value in CHOICE.items() if key != "photo"}
+
+    fake_model.answer_unscripted("choose_starting_picture", answer)
+    fake_model.respond("produce", turn(says="Scene 1's starting picture is ready!"))
+
+    steps.run_held()
+
+    assert "photo" not in asked[0]["properties"]
+    step = SceneStep.objects.get()
+    assert step.status == "finished"
+    assert step.photo is not None and step.photo.position == 1
 
 
 # --- What the picture is made from ----------------------------------------------------------
@@ -594,7 +657,10 @@ def test_a_step_working_when_the_worker_stopped_fails_as_the_worker_starts_and_t
     # Told once that it started and once that it ended with nothing made.
     assert [(text, step) for _, _, text, step in step_messages(api, session_id)] == [
         ("Making scene 1's starting picture.", picture_step("started")),
-        ("Scene 1's starting picture couldn't be made.", picture_step("not_made")),
+        (
+            "Scene 1's starting picture couldn't be made: it was stopped partway.",
+            picture_step("not_made"),
+        ),
     ]
 
 

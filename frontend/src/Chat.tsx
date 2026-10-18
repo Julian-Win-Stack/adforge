@@ -6,13 +6,14 @@ import {
   startSession,
   type Attachment,
   type Message,
+  type MessageTries,
   type PlanNotice,
   type PlanScene,
   type Sent,
 } from "./api";
 import { ScenePanel } from "./ScenePanel";
 import { nextFollowing } from "./follow";
-import { planOnOffer, waitsForYes } from "./scenes";
+import { planOnOffer, tryInAd, waitsForYes } from "./scenes";
 import { ArrowUpIcon, CloseIcon, ImageIcon, SidebarIcon, SoundIcon, SparkIcon } from "./icons";
 
 const POLL_EVERY_MS = 2000;
@@ -129,10 +130,10 @@ export function Chat({
   }, [messages.length]);
 
   /** Says something. The first message of a new session is what creates the session. A
-   * plan's yes button names its `plan`. */
-  async function send(text: string, photos: File[], plan?: number) {
+   * plan's yes button names its `plan`, and a try's "Use this one" button the try. */
+  async function send(text: string, photos: File[], plan?: number, useClip?: number) {
     const id = sessionId ?? (started.current ??= (await startSession()).id);
-    const sent = await sendMessage(id, text, photos, plan);
+    const sent = await sendMessage(id, text, photos, plan, useClip);
     if (sessionId !== null) show([sent.message]);
     // A brand new session has no polling yet: opening it loads what was just said.
     onSent(sent);
@@ -205,6 +206,15 @@ export function Chat({
                             ? () => send("Yes", [], offered.plan.plan)
                             : null
                         }
+                      />
+                    </li>
+                  ) : message.tries ? (
+                    <li key={message.seq} className="message notice-message">
+                      <TriesView
+                        text={message.text}
+                        tries={message.tries}
+                        {...tryInAd(messages, message.seq)}
+                        onUse={(clip) => send("", [], undefined, clip)}
                       />
                     </li>
                   ) : message.role === "notice" ? (
@@ -418,6 +428,85 @@ function PlanYes({ onYes }: { onYes: () => Promise<void> }) {
         Yes, go ahead
       </button>
       <span className="plan-or">Or type what to change below.</span>
+    </div>
+  );
+}
+
+/** Every try of a scene's clip the clip judge failed every try of, side by side, each with
+ * what the judge still sees wrong in it. The one in the ad (`inAd`) says so; each other one
+ * can be swapped in with one tap, for nothing. Once a newer clip replaced them all, none
+ * can. */
+function TriesView({
+  text,
+  tries,
+  inAd,
+  swapping,
+  onUse,
+}: {
+  text: string;
+  tries: MessageTries;
+  inAd: number | null;
+  /** The try a tap chose, until the scene's clip is shown as it. */
+  swapping: number | null;
+  onUse: (clip: number) => Promise<void>;
+}) {
+  const [sending, setSending] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function use(clip: number) {
+    setSending(clip);
+    setError(null);
+    try {
+      await onUse(clip);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
+    } finally {
+      setSending(null);
+    }
+  }
+
+  return (
+    <div className="tries" role="group" aria-label={`Every try at scene ${tries.scene}'s clip`}>
+      <p className="tries-title">{text}</p>
+      {error && (
+        <p role="alert" className="notice error inline">
+          {error}
+        </p>
+      )}
+      <ol className="tries-clips">
+        {tries.clips.map((each) => (
+          <li
+            key={each.clip}
+            className={`try${each.clip === inAd ? " in-ad" : ""}`}
+            aria-label={each.name}
+          >
+            <video
+              className="video"
+              controls
+              playsInline
+              preload="metadata"
+              src={each.url}
+              aria-label={`Scene ${tries.scene}, ${each.name}`}
+            />
+            <span className="try-head">
+              <strong>{each.name}</strong>
+              {each.clip === inAd && <span className="try-badge">In the ad</span>}
+            </span>
+            <span className="try-problem">The judge saw: {each.problem}</span>
+            {inAd !== null && each.clip !== inAd && (
+              <button
+                type="button"
+                className="try-use"
+                disabled={sending !== null || swapping !== null}
+                onClick={() => use(each.clip)}
+              >
+                {sending === each.clip || swapping === each.clip ? "Swapping in…" : "Use this one"}
+              </button>
+            )}
+          </li>
+        ))}
+      </ol>
+      {inAd === null && <p className="tries-gone">A newer clip of this scene is in the ad now.</p>}
     </div>
   );
 }

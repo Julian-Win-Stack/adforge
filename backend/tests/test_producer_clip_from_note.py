@@ -25,6 +25,8 @@ from jobs.scenes import (
     BROLL_SHARED_RULES,
     CLIP_FROM_NOTE_RULES,
     SAME_SIDE,
+    broll_prompt_instructions,
+    clip_from_judge_instructions,
     clip_from_note_instructions,
 )
 
@@ -239,10 +241,11 @@ def test_a_different_note_makes_a_new_clip(
         HOVERS,
         "The tea should pour from the left.",
     ]
-    # Each rewrite starts from the picture's own prompt, not the last note's.
+    # Each rewrite improves the clip in the ad: the second starts from the first note's
+    # movement, not the picture's own prompt (#180).
     assert [handoff["motion_prompt"] for handoff in handoffs("rewrite_clip_prompt")] == [
         MOTION,
-        MOTION,
+        REWRITE["motion_prompt"],
     ]
 
 
@@ -454,8 +457,36 @@ def test_the_clip_only_block_says_the_picture_is_fixed_and_only_the_movement_cha
         'picture prompt. Write only a new video prompt: "motion_prompt" is the one the '
         'scene\'s first clip from this picture was made from, before any note, and "note" '
         "says what the shop owner wants changed about how it moves. Change the movement as the "
-        "note asks, starting from what the picture shows, and keep what was right. Follow the "
-        "note unless it asks for something that can't start from this picture, or something "
-        '"shows" doesn\'t describe, and then say so in the reason. Give a one-sentence reason '
-        "for the video prompt, written for the shop owner."
+        "note asks, starting from what the picture shows, and keep what was right. When the "
+        'note names a movement to film, such as a step before the one "shows" names, like '
+        "putting the product on the tool used with it, film every movement the note names, in "
+        "the order it says: here the note wins over the rules above that say to film one "
+        "movement only, never to film or draw putting the product on, and to follow a note "
+        'only for what "shows" describes. Every other rule of this scene\'s kind still holds, '
+        "such as nobody touching the product in a scene that shows the problem. Follow the "
+        "note unless it asks for something that "
+        "can't start from this picture, or something else \"shows\" doesn't describe, and then "
+        "say so in the reason. Give a one-sentence reason for the video prompt, written for "
+        "the shop owner."
     )
+
+
+def test_a_note_naming_a_movement_beats_the_one_movement_rule_only_in_a_note_rewrite() -> None:
+    # Julian's grade of the real-clip run (Oct 18): "show the gel going onto the brush first"
+    # was dropped because the one-movement rule won. The note wins only in a rewrite from a
+    # note: the proven rules a scene's prompts are first written with stay as they are.
+    for kind in BROLL_KIND_RULES:
+        assert "wins over the rules above" not in broll_prompt_instructions(kind)
+
+
+@pytest.mark.parametrize("again", [False, True])
+def test_a_judge_remake_keeps_the_movements_the_owners_note_names(again: bool) -> None:
+    # The review of the build (Oct 18): a judge remake of a note clip was told the same
+    # one-movement rule, so it could drop the gel the owner asked for again.
+    told = clip_from_judge_instructions("does a job", again=again)
+
+    assert (
+        'When "owner_fix" names movements to film, film them in its order: there it wins over '
+        'the rules above on one movement, putting the product on, and what "shows" '
+        "describes."
+    ) in told
