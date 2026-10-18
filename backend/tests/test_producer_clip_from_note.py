@@ -461,7 +461,9 @@ def test_the_clip_only_block_says_the_picture_is_fixed_and_only_the_movement_cha
         "putting the product on the tool used with it, film every movement the note names, in "
         "the order it says: here the note wins over the rules above that say to film one "
         "movement only, never to film or draw putting the product on, and to follow a note "
-        'only for what "shows" describes. Follow the note unless it asks for something that '
+        'only for what "shows" describes. Every other rule of this scene\'s kind still holds, '
+        "such as nobody touching the product in a scene that shows the problem. Follow the "
+        "note unless it asks for something that "
         "can't start from this picture, or something else \"shows\" doesn't describe, and then "
         "say so in the reason. Give a one-sentence reason for the video prompt, written for "
         "the shop owner."
@@ -472,8 +474,18 @@ def test_a_note_naming_a_movement_beats_the_one_movement_rule_only_in_a_note_rew
     # Julian's grade of the real-clip run (Oct 18): "show the gel going onto the brush first"
     # was dropped because the one-movement rule won. The note wins only in a rewrite from a
     # note: the proven rules a scene's prompts are first written with stay as they are.
-    assert "the note wins over the rules above" in CLIP_FROM_NOTE_RULES
     for kind in BROLL_KIND_RULES:
-        assert "the note wins" not in broll_prompt_instructions(kind)
-        assert "the note wins" not in clip_from_judge_instructions(kind, again=False)
-        assert "the note wins" not in clip_from_judge_instructions(kind, again=True)
+        assert "wins over the rules above" not in broll_prompt_instructions(kind)
+
+
+@pytest.mark.parametrize("again", [False, True])
+def test_a_judge_remake_keeps_the_movements_the_owners_note_names(again: bool) -> None:
+    # The review of the build (Oct 18): a judge remake of a note clip was told the same
+    # one-movement rule, so it could drop the gel the owner asked for again.
+    told = clip_from_judge_instructions("does a job", again=again)
+
+    assert (
+        'When "owner_fix" names movements to film, film them in its order: there it wins over '
+        'the rules above on one movement, putting the product on, and what "shows" '
+        "describes."
+    ) in told

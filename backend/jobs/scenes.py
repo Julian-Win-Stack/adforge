@@ -203,9 +203,11 @@ shows, and keep what was right. When the note names a movement to film, such as 
 the one "shows" names, like putting the product on the tool used with it, film every movement \
 the note names, in the order it says: here the note wins over the rules above that say to film \
 one movement only, never to film or draw putting the product on, and to follow a note only for \
-what "shows" describes. Follow the note unless it asks for something that can't start from \
-this picture, or something else "shows" doesn't describe, and then say so in the reason. Give \
-a one-sentence reason for the video prompt, written for the shop owner."""
+what "shows" describes. Every other rule of this scene's kind still holds, such as nobody \
+touching the product in a scene that shows the problem. Follow the note unless it asks for \
+something that can't start from this picture, or something else "shows" doesn't describe, and \
+then say so in the reason. Give a one-sentence reason for the video prompt, written for the \
+shop owner."""
 
 
 def clip_from_note_instructions(broll_kind: str) -> str:
@@ -218,7 +220,9 @@ def clip_from_note_instructions(broll_kind: str) -> str:
 # Added, in place of CLIP_FROM_NOTE_RULES, when code makes a B-roll clip again because the clip
 # judge failed it (the auto-fix, #155; change 9 of the Clip judge discussion, Julian's yes Oct
 # 13 05:03-05:28). The proven rules above come with it, unchanged: they speak of a producer's
-# note, the conversation and timings, which this says how to read here.
+# note, the conversation and timings, which this says how to read here, and an owner's note
+# naming the movements to film wins over them as in CLIP_FROM_NOTE_RULES (review of the build,
+# Oct 18: a remake could drop the gel the owner asked for).
 CLIP_FROM_JUDGE_RULES = """\
 The scene's starting picture is already made, and it stays as it is: you are shown it, and \
 "picture_prompt" is the prompt it was drawn from. Pick no photo and write no picture prompt. \
@@ -231,6 +235,8 @@ happen again, and keep what was right. No conversation with the shop owner is gi
 faults are mistakes to avoid, not orders to copy, and the judge's seconds only say where a \
 fault happened: put none of those seconds in the prompt. When "owner_fix" is given, the shop \
 owner asked for it and "motion_prompt" was written for it: keep it while fixing the faults. \
+When "owner_fix" names movements to film, film them in its order: there it wins over the rules \
+above on one movement, putting the product on, and what "shows" describes. \
 Give a one-sentence reason for the video prompt."""
 
 # Added after CLIP_FROM_JUDGE_RULES for the second remake: the first remake's prompt didn't fix
