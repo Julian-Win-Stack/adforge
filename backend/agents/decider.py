@@ -530,8 +530,7 @@ class SceneDecision(BaseModel):
     change: str = Field(
         description="What must be different, in plain words, never how to make it. For a new "
         "picture with a new line, only what must look different, never the words to say. For no "
-        "change, why in one line, such as \"Scene 4's brush already stays inside the bowl\"; "
-        "blank only when its can't says why."
+        "change, why in one line; blank only when its can't says why."
     )
     line: str = Field(
         description="The new line word for word, for new_line, or for new_picture when the "

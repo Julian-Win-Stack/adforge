@@ -247,10 +247,16 @@ def test_each_scenes_estimate_is_what_todays_fix_would_cost() -> None:
 
 
 def test_a_plan_with_no_change_and_cant_costs_nothing() -> None:
-    plan = propose(row(1, "no_change"), row(2, "new_picture", change="X", cant="Can't."))
+    plan = propose(
+        row(1, "no_change", change="The brush already stays inside the bowl."),
+        row(2, "new_picture", change="X", cant="Can't."),
+    )
 
     assert plan.estimate_usd() == 0
     assert rows_of(plan)[2].cant == "Can't."
+    # The producer is told why the scene stays, as the shop owner is.
+    (shown,) = notes("plan_shown")
+    assert "Scene 1: no change: The brush already stays inside the bowl. " in shown
 
 
 # --- After the yes: code runs every scene ----------------------------------------------------
