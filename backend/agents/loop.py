@@ -45,6 +45,7 @@ from gateway.types import (
 )
 from jobs.models import SceneStep
 from jobs.reference_photos import ReferencePhotoUnusable
+from jobs.scenes import NotAColourPhoto
 
 from .models import SystemNote, ToolCall
 
@@ -318,6 +319,36 @@ def why_it_failed(error: Exception, stopped: str) -> str:
     if isinstance(error, ReferencePhotoUnusable):
         return f"{error}"
     return f"an unexpected error stopped {stopped}. The details are in the server log."
+
+
+def why_it_failed_plainly(error: Exception) -> str:
+    """Why work failed, in plain words for the shop owner, from what it raised."""
+    if isinstance(error, UnusableReply):
+        if _picked_a_photo_not_in_the_colour(error):
+            return "the model picked a photo that doesn't show the product in the ad's colour."
+        return "a model gave an answer we couldn't use."
+    if isinstance(error, OutsideServiceDown):
+        return "an outside service stayed down."
+    if isinstance(error, ClipFailed):
+        return "the video model couldn't make it."
+    if isinstance(error, UnreadableImage):
+        return f"a picture was in a kind models can't read: only {IMAGE_TYPE_NAMES}."
+    if isinstance(error, BlockedBySafetyFilter):
+        return "the AI service's safety filter blocked it."
+    if isinstance(error, ReferencePhotoUnusable):
+        return (
+            f"your {error.thing} couldn't be drawn from your photo. Please send another photo "
+            "of it."
+        )
+    return "something went wrong on our side."
+
+
+def _picked_a_photo_not_in_the_colour(error: UnusableReply) -> bool:
+    """Whether the answer couldn't be used because the photo picked isn't in the ad's colour."""
+    invalid = error.__cause__
+    return isinstance(invalid, ValidationError) and any(
+        isinstance(each.get("ctx", {}).get("error"), NotAColourPhoto) for each in invalid.errors()
+    )
 
 
 def _what_is_wrong(invalid: ValidationError) -> str:

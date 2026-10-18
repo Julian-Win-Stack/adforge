@@ -19,6 +19,7 @@ from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.fake import FakeModel, turn
 from gateway.types import Happened, Said, ToolUse
+from jobs import fix_plans
 from jobs.models import FixPlan, FixPlanScene, Job, ProducedItem, Scene, SceneStep
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -649,6 +650,44 @@ def test_a_note_that_cant_be_done_is_planned_with_its_cant_said_by_code(
     )
 
 
+def test_the_reason_for_no_change_reaches_the_plan_notice(fake_model: FakeModel, ad: Job) -> None:
+    """The owner corrects which scene they meant (replay-8-correction): each no change's reason
+    is kept on its row and said in the plan notice. The rule that it needs one is pinned by the
+    refusal in test_a_decide_that_breaks_a_rule_is_refused_and_nothing_is_planned."""
+    note = _owner_says(ad, "Sorry, I meant scene 2, not scene 1.")
+    fake_model.respond(
+        "decide_fixes",
+        turn(calls=[("sort_message", {"kind": "fix_note"})]),
+        turn(calls=[("look_at_clip", {"scene": 1, "version": None})]),
+        turn(calls=[("look_at_clip", {"scene": 2, "version": None})]),
+        turn(
+            calls=[
+                (
+                    "decide",
+                    _decided(
+                        [
+                            _row(1, "no_change", "You meant scene 2, so scene 1 stays."),
+                            _row(2, "no_change", "Scene 2's brush already stays inside the bowl."),
+                        ]
+                    ),
+                )
+            ]
+        ),
+    )
+
+    outcome = decider.read(ad, [note])
+
+    assert isinstance(outcome, decider.Planned)
+    shown = fix_plans.notice(outcome.plan)
+    assert [scene["change"] for scene in shown["scenes"]] == [
+        "You meant scene 2, so scene 1 stays.",
+        "Scene 2's brush already stays inside the bowl.",
+    ]
+    said = fix_plans.show(outcome.plan)
+    assert said is not None
+    assert "Scene 2, no change: Scene 2's brush already stays inside the bowl." in said.text
+
+
 def test_an_action_while_talking_is_a_cant_and_what_they_hold_is_a_new_picture(
     fake_model: FakeModel, ad: Job
 ) -> None:
@@ -898,6 +937,11 @@ def test_a_photo_in_the_picture_and_during_the_action_needs_no_look_at_the_frame
             ),
             "it was called with arguments it can't use (scenes.0: scene 1's overlay is a few "
             "words: 30 characters at most).",
+        ),
+        (
+            _decided([_row(1, "no_change")]),
+            "it was called with arguments it can't use (scenes.0: scene 1 is no change, so it "
+            "needs the reason in one line).",
         ),
     ],
 )

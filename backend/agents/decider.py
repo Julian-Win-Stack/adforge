@@ -86,7 +86,9 @@ When the scene has an overlay, the few words drawn over it such as the price, an
 line changes something it shows, give the new overlay too;
 - go back to version N, when they liked an earlier version better: say which number, after \
 looking at it;
-- no change, when the scene already shows what they ask.
+- no change, when the scene already shows what they ask, or a scene of the plan they \
+corrected no longer changes: its change says why in one line, such as "Scene 4's brush \
+already stays inside the bowl".
 In a scene where the person talks to camera, the clip only makes them speak the line from \
 the starting picture: what they hold, wear or stand next to is a new picture, and an action \
 while they talk, such as pointing or showing how the product works, is a can't on that \
@@ -229,12 +231,15 @@ def _in(round: _Round) -> Iterator[None]:
 def this_round(job: Job) -> list[Message]:
     """The shop owner's messages since they last said yes to a plan, once the ad had a clip
     (decision 18): what the decider is given. Messages from before the first clip are the
-    producer's, about making the ad."""
+    producer's, about making the ad. A tap of "Use this one" under a try is code's, already
+    done, so it isn't one (#180): the scene's versions show it."""
     assert job.session is not None
     first_clip = job.produced.filter(kind=ProducedItem.Kind.CLIP).order_by("created_at").first()
     if first_clip is None:
         return []
-    said = job.session.messages.filter(role=Message.Role.USER, created_at__gt=first_clip.created_at)
+    said = job.session.messages.filter(
+        role=Message.Role.USER, created_at__gt=first_clip.created_at, chosen_clip__isnull=True
+    )
     yes = (
         FixPlan.objects.filter(session=job.session, confirmed_by__isnull=False)
         .order_by("confirmed_by__seq")
@@ -527,8 +532,8 @@ class SceneDecision(BaseModel):
     action: Literal["new_picture", "new_clip", "new_line", "go_back", "no_change"]
     change: str = Field(
         description="What must be different, in plain words, never how to make it. For a new "
-        "picture with a new line, only what must look different, never the words to say. Blank "
-        "for no change."
+        "picture with a new line, only what must look different, never the words to say. For no "
+        "change, why in one line; blank only when its can't says why."
     )
     line: str = Field(
         description="The new line word for word, for new_line, or for new_picture when the "
@@ -567,6 +572,8 @@ class SceneDecision(BaseModel):
             raise ValueError(f"scene {self.scene}: go_back, and only go_back, takes go_back_to")
         if self.action not in ("no_change", "go_back") and not self.change.strip():
             raise ValueError(f"scene {self.scene} needs the change in plain words")
+        if self.action == "no_change" and not self.cant and not self.change.strip():
+            raise ValueError(f"scene {self.scene} is no change, so it needs the reason in one line")
         return self
 
 

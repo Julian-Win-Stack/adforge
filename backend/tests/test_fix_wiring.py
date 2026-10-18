@@ -967,7 +967,7 @@ def test_a_fix_clip_the_judge_couldnt_check_is_kept_and_the_chat_says_so(
     assert "Scene 2's new clip couldn't be checked, so it is kept unchecked." in told
 
 
-def test_a_fix_clip_kept_with_a_fault_the_judge_still_sees_is_said_so_without_its_words(
+def test_a_fix_clip_the_judge_failed_every_try_of_shows_its_tries_not_the_producer(
     fake_model: FakeModel,
     held: HeldSteps,
     say: Callable[..., None],
@@ -981,8 +981,9 @@ def test_a_fix_clip_kept_with_a_fault_the_judge_still_sees_is_said_so_without_it
     held.run_held()
 
     assert status(2) == "finished"
+    # The chat shows every try to pick from (#180), not a line saying one was kept.
+    assert Message.objects.filter(role="notice", tries_of__isnull=False).count() == 1
     told = [each.text for each in Message.objects.filter(role="notice", level="info")]
-    assert "Scene 2's new clip was kept after 3 tries though the judge still found a fault." in told
-    assert not any(FLOATS in text for text in told)
+    assert not any("though the judge still found a fault" in text for text in told)
     # Not the producer's to tell: no system note carries it (decision 20).
     assert not any(FLOATS in text for text in SystemNote.objects.values_list("text", flat=True))

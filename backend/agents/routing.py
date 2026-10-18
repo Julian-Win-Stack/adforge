@@ -17,7 +17,7 @@ from django.utils import timezone
 
 from chat.models import Message, Session
 from gateway.types import BlockedBySafetyFilter
-from jobs import fix_plans
+from jobs import fix_plans, work
 from jobs.models import FixPlan, Job, ProducedItem
 from jobs.notices import post_notice
 
@@ -94,6 +94,8 @@ def _route(job: Job, message: Message) -> bool:
     try:
         if message.plan_event == Message.PlanEvent.YES:
             return _tapped(message)
+        if message.chosen_clip is not None:
+            return _chose(job, message, message.chosen_clip)
         return _read(job, message)
     except BlockedBySafetyFilter:
         raise
@@ -188,6 +190,30 @@ def _tapped(message: Message) -> bool:
         else:
             _note(plan, SystemNote.Kind.YES_TOO_LATE, TOO_LATE)
         return _routed(message, producer=True)
+
+
+def _chose(job: Job, message: Message, clip: ProducedItem) -> bool:
+    """A tap of "Use this one" under a try of a clip the judge failed every try of (#180):
+    the try is swapped in for nothing, and the ad is assembled again from it. A try that
+    can't be swapped in since the tap was kept is said in red, and nothing is changed. No
+    one answers it: the tap is the shop owner's yes, and the chat shows what changed."""
+    with transaction.atomic():
+        # The job, then the chat, as every writer of a plan locks them, before the scene going
+        # back: a step finishing meanwhile, which says so in the chat, never waits on this.
+        Job.objects.select_for_update().get(pk=job.pk)
+        Session.objects.select_for_update().get(pk=message.session_id)
+        assert clip.scene is not None and clip.step is not None, "a try is a scene's clip"
+        try:
+            work.use_try(clip)
+        except work.TryNotOnOffer as refused:
+            post_notice(
+                job,
+                f"Scene {clip.scene.number} couldn't use {work.try_name(clip)}. {refused}",
+                Message.Level.PROBLEM,
+            )
+            return _routed(message, producer=False)
+        run_plan.swapped_in(clip.step)
+    return _routed(message, producer=False)
 
 
 def _still_waiting(plan: FixPlan) -> bool:

@@ -129,6 +129,25 @@ class Message(models.Model):
         related_name="messages",
         help_text="The plan the message shows, answers or settles. Null for none.",
     )
+    tries_of = models.ForeignKey(
+        "jobs.SceneStep",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="tries_shown",
+        help_text="The B-roll clip step whose every try the clip judge failed, for code's "
+        "notice showing them to pick from (#180). Null for any other message.",
+    )
+    chosen_clip = models.ForeignKey(
+        "jobs.ProducedItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="chosen_by",
+        help_text='For the shop owner\'s tap of "Use this one" under a try of a clip the judge '
+        "failed every try of, the try they chose (#180): the marker, never typed. Null "
+        "otherwise.",
+    )
     routed_at = models.DateTimeField(
         null=True,
         blank=True,

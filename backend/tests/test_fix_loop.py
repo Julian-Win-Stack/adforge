@@ -394,9 +394,12 @@ def test_a_fixs_redo_that_fails_pays_for_no_clip_and_the_producer_is_told(
     assert "make_broll_clip" not in paid_for()[len(shown) :]
     assert SceneStep.objects.filter(kind="clip").latest("id").status == "failed"
     assert [ad.version for ad in ads()] == [1]
-    # The chat is told nothing was made, so it stops showing the clip as being made.
+    # The chat is told nothing was made, and why in plain words, so it stops showing the
+    # clip as being made.
     texts = [message["text"] for message in api.get(f"/api/sessions/{session_id}/messages/").json()]
-    assert texts.index("Scene 2's clip couldn't be made.") > texts.index("Remaking scene 2's clip.")
+    assert texts.index(
+        "Scene 2's clip couldn't be made: a model gave an answer we couldn't use."
+    ) > texts.index("Remaking scene 2's clip.")
     # The producer is told by a note, not woken.
     (error,) = notes(SystemNote.Kind.ERROR)
     assert error.startswith("Scene 2's new clip couldn't be made: ")
@@ -554,12 +557,13 @@ def test_a_fixs_redo_the_judge_fails_is_made_again_by_code_and_the_remake_makes_
 
 
 @pytest.mark.parametrize(
-    ("purpose", "answers", "reason", "videos_asked"),
+    ("purpose", "answers", "reason", "told", "videos_asked"),
     [
         (
             "collect_clip",
             [{"state": "failed", "error": "The picture was too dark."}],
             "the video model couldn't make the clip (The picture was too dark.).",
+            "the video model couldn't make it.",
             # Waiting on the one that failed would only fail again: a fresh one is asked for.
             2,
         ),
@@ -568,6 +572,7 @@ def test_a_fixs_redo_the_judge_fails_is_made_again_by_code_and_the_remake_makes_
             [OutsideServiceDown("fal answered 503")] * 3,
             "an outside service stayed down after several tries (The model provider was still "
             "down after 3 tries: fal answered 503).",
+            "an outside service stayed down.",
             # Nothing was paid for while the service was down.
             1,
         ),
@@ -576,6 +581,7 @@ def test_a_fixs_redo_the_judge_fails_is_made_again_by_code_and_the_remake_makes_
             [OutsideServiceDown("fal answered 503")] * 3,
             "an outside service stayed down after several tries (The model provider was still "
             "down after 3 tries: fal answered 503).",
+            "an outside service stayed down.",
             # The clip paid for is waited for again rather than paid for again.
             1,
         ),
@@ -592,6 +598,7 @@ def test_a_fixs_redo_the_video_service_fails_fails_its_step_and_planned_again_is
     purpose: str,
     answers: list[Any],
     reason: str,
+    told: str,
     videos_asked: int,
 ) -> None:
     plan = fixed(2, "new_clip", change=TURN_FIX, note=HOVERS)
@@ -607,9 +614,12 @@ def test_a_fixs_redo_the_video_service_fails_fails_its_step_and_planned_again_is
     assert latest("clip", 2).version == 1
     assert [ad.version for ad in ads()] == [1]
     assert not [each for each in paid_for()[len(shown) :] if each.startswith("check_")]
-    # The chat is told nothing was made, so it stops showing the clip as being made.
+    # The chat is told nothing was made, and why in plain words, so it stops showing the
+    # clip as being made.
     texts = [message["text"] for message in api.get(f"/api/sessions/{session_id}/messages/").json()]
-    assert texts.index("Scene 2's clip couldn't be made.") > texts.index("Remaking scene 2's clip.")
+    assert texts.index(f"Scene 2's clip couldn't be made: {told}") > texts.index(
+        "Remaking scene 2's clip."
+    )
     # The fix stays said yes to, with nothing made for it.
     fix = Fix.objects.get()
     assert fix.confirmed_by is not None and fix.confirmed_by.text == "yes"

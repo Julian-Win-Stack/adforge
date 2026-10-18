@@ -59,11 +59,15 @@ def add(
     step: StepSignal | None = None,
     suggested: SuggestedNote | None = None,
     plan: PlanSignal | None = None,
+    tries_of: int | None = None,
+    chosen_clip: int | None = None,
 ) -> Message:
     """Say something in a session, with any files it carries, and name the session from
     the first thing the user types. A notice carries its `level`; nothing else does. A
     message about a scene's starting picture or clip carries its `step`, and one may
-    suggest a note on a scene, and one about a fix plan carries its `plan`.
+    suggest a note on a scene, and one about a fix plan carries its `plan`. One showing every
+    try of a clip the judge failed names its clip step, `tries_of`, and the shop owner's tap
+    on one of them names the try chosen, `chosen_clip`.
 
     Messages are numbered 1, 2, 3... per session. The session row is locked while
     numbering, so messages always become visible in number order. Without that, a poll
@@ -87,6 +91,8 @@ def add(
             suggested_note_scene=suggested.scene if suggested else None,
             plan_event=plan.event if plan else "",
             fix_plan_id=plan.plan if plan else None,
+            tries_of_id=tries_of,
+            chosen_clip_id=chosen_clip,
         )
         Attachment.objects.bulk_create(
             Attachment(
