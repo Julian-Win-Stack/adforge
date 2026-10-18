@@ -320,18 +320,46 @@ def test_a_step_that_breaks_while_showing_its_picture_isnt_left_running(
 def test_a_photo_not_in_the_ads_colour_is_never_used(
     fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
+    # Both photos show the mug in the ad's colour, so the model picks one: there is no
+    # Photo 3.
+    Job.objects.get().photos.update(shows_product_colour=True)
     making(fake_model, (1, None))
     say("Make scene 1's starting picture")
-    # Photo 2 shows the mug in cream, and the ad's colour is sage green.
-    fake_model.respond("choose_starting_picture", {**CHOICE, "photo": 2})
+    fake_model.respond("choose_starting_picture", {**CHOICE, "photo": 3})
     fake_model.respond("produce", turn(says="Something went wrong with the picture."))
 
     steps.run_held()
 
     step = SceneStep.objects.get()
     assert step.status == "failed"
-    assert "Photo 2 isn't one showing the product in the ad's colour: those are 1." in step.reason
+    assert "Photo 3 isn't one showing the product in the ad's colour: those are 1, 2." in (
+        step.reason
+    )
     assert "make_starting_picture" not in paid_for()
+
+
+def test_with_one_photo_in_the_ads_colour_the_model_isnt_asked_which_and_it_is_used(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    making(fake_model, (1, None))
+    say("Make scene 1's starting picture")
+    # Only Photo 1 shows the mug in sage green: asked for the photo anyway, a model once
+    # answered with another number, and nothing was made (case C12b).
+    asked: list[dict[str, Any]] = []
+
+    def answer(request: Any) -> dict[str, Any]:
+        asked.append(request.output.model_json_schema())
+        return {key: value for key, value in CHOICE.items() if key != "photo"}
+
+    fake_model.answer_unscripted("choose_starting_picture", answer)
+    fake_model.respond("produce", turn(says="Scene 1's starting picture is ready!"))
+
+    steps.run_held()
+
+    assert "photo" not in asked[0]["properties"]
+    step = SceneStep.objects.get()
+    assert step.status == "finished"
+    assert step.photo is not None and step.photo.position == 1
 
 
 # --- What the picture is made from ----------------------------------------------------------
