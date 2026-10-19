@@ -2,12 +2,16 @@
   // Number every image (blue "I<n>") and every heading (red "T<n>") on the page, and return
   // what each number points at. Text between one heading and the next is that heading's
   // section, hidden text (closed accordions) included.
+  // Each numbered picture also says how much of it a visitor sees without scrolling a box or
+  // sliding a carousel (`vis`, 0-1; `shown` when at least 0.4) and which clipping box it sits
+  // in (`box`, listed in `boxes`). Every video player is listed in `vids` (V<n>) with the
+  // same facts, so a gallery's videos can be told from the rest of the page's.
   // Firecrawl lays the page out with a 100,000 px tall window while scripts run, and with a
   // normal one for the screenshot, so the marks are re-placed on every layout change, and a
   // mark is hidden while its element can't be seen.
   const MAX_SECTION = 6000, MAX_TOTAL = 250000;
   const doc = document.documentElement;
-  const out = { url: location.href, vw: window.innerWidth, vh: window.innerHeight, imgs: [], secs: [] };
+  const out = { url: location.href, vw: window.innerWidth, vh: window.innerHeight, imgs: [], secs: [], vids: [], boxes: [] };
   const layer = document.createElement('div');
   layer.id = '__marks';
   layer.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;z-index:2147483647;pointer-events:none;';
@@ -26,23 +30,71 @@
     }
     items.push({ el, t, b, isImage });
   };
-  // The part of an element not cut off by the window or a clipping parent (carousels).
-  const visibleRect = (el) => {
+  // Which ways a parent cuts off what overflows it (carousels, scroll strips).
+  const clips = (p) => {
+    const s = getComputedStyle(p);
+    return { cx: /(hidden|clip|auto|scroll)/.test(s.overflowX), cy: /(hidden|clip|auto|scroll)/.test(s.overflowY) };
+  };
+  // The part of an element its clipping parents don't cut off.
+  const unclipped = (el) => {
     const r = el.getBoundingClientRect();
     let l = r.left, t = r.top, rt = r.right, b = r.bottom;
     for (let p = el.parentElement; p && p !== doc; p = p.parentElement) {
-      const s = getComputedStyle(p);
-      const cx = /(hidden|clip|auto|scroll)/.test(s.overflowX), cy = /(hidden|clip|auto|scroll)/.test(s.overflowY);
+      const { cx, cy } = clips(p);
       if (cx || cy) {
         const pr = p.getBoundingClientRect();
         if (cx) { l = Math.max(l, pr.left); rt = Math.min(rt, pr.right); }
         if (cy) { t = Math.max(t, pr.top); b = Math.min(b, pr.bottom); }
       }
     }
-    l = Math.max(l, 0); rt = Math.min(rt, window.innerWidth);
+    return { r, l, t, rt, b };
+  };
+  // The part of an element not cut off by the window or a clipping parent.
+  const visibleRect = (el) => {
+    const { r, l: cl, t, rt: crt, b } = unclipped(el);
+    const l = Math.max(cl, 0), rt = Math.min(crt, window.innerWidth);
     return { r, l, t, w: Math.max(0, rt - l), h: Math.max(0, b - t) };
   };
   const shown = (el) => (el.checkVisibility ? el.checkVisibility({ opacityProperty: true, visibilityProperty: true }) : true);
+  // How much of an element a visitor sees without scrolling a box: 0 (cut off or hidden) to 1
+  // (whole). The window is left out, since Firecrawl runs this in a very tall window and then
+  // screenshots the whole page.
+  const visibleShare = (el) => {
+    if (!shown(el)) return 0;
+    const { r, l, t, rt, b } = unclipped(el);
+    if (r.width <= 0 || r.height <= 0) return 0;
+    return Math.round(Math.max(0, rt - l) * Math.max(0, b - t) / (r.width * r.height) * 100) / 100;
+  };
+  // The clipping box an element sits in: the nearest clipping parent that actually cuts it
+  // off, else (it is undisplayed, or wholly inside) the nearest clipping parent, else 0.
+  // Each box gets an id the first time it is met.
+  const boxIds = new Map();
+  const boxOf = (el) => {
+    const r = el.getBoundingClientRect();
+    let box = null;
+    for (let p = el.parentElement; p && p !== doc; p = p.parentElement) {
+      const { cx, cy } = clips(p);
+      if (!cx && !cy) continue;
+      if (!box) box = p;
+      const pr = p.getBoundingClientRect();
+      if ((cx && (r.left < pr.left - 1 || r.right > pr.right + 1)) || (cy && (r.top < pr.top - 1 || r.bottom > pr.bottom + 1))) {
+        box = p;
+        break;
+      }
+    }
+    if (!box) return 0;
+    if (!boxIds.has(box)) {
+      const pr = box.getBoundingClientRect();
+      boxIds.set(box, boxIds.size + 1);
+      out.boxes.push({
+        id: boxIds.get(box), x: Math.round(pr.left + scrollX), y: Math.round(pr.top + scrollY),
+        w: Math.round(pr.width), h: Math.round(pr.height), tag: box.tagName.toLowerCase(),
+        cls: (typeof box.className === 'string' ? box.className : '').slice(0, 120),
+        aria: (box.getAttribute('aria-label') || box.id || '').slice(0, 80),
+      });
+    }
+    return boxIds.get(box);
+  };
   const place = () => {
     for (const it of items) {
       const v = visibleRect(it.el);
@@ -87,8 +139,38 @@
       href: a ? a.href : '', x: Math.round(r.left + scrollX), y: Math.round(r.top + scrollY),
       w: Math.round(r.width), h: Math.round(r.height),
     });
-    if (r.width >= 40 && r.height >= 40) { rec.n = ++n; add(el, 'I' + n, '#0050ff', true); }
+    if (r.width >= 40 && r.height >= 40) {
+      rec.n = ++n; add(el, 'I' + n, '#0050ff', true);
+      rec.vis = visibleShare(el); rec.shown = rec.vis >= 0.4; rec.box = boxOf(el);
+    }
     out.imgs.push(rec);
+  });
+
+  // Video players: the page's own videos and embedded players from the video sites shops use.
+  const PLAYER = /youtube\.com\/embed|youtube-nocookie|youtu\.be|vimeo\.com\/video|player\.vimeo|wistia\.(com|net)|vidyard|tolstoy|videowise/i;
+  const addVideo = (el, kind, src, poster) => {
+    const r = el.getBoundingClientRect();
+    const a = el.closest('a[href]');
+    const vis = visibleShare(el);
+    out.vids.push({
+      n: out.vids.length + 1, kind, src, poster,
+      x: Math.round(r.left + scrollX), y: Math.round(r.top + scrollY), w: Math.round(r.width), h: Math.round(r.height),
+      vis, shown: vis >= 0.4 && r.width >= 40 && r.height >= 40, box: boxOf(el),
+      href: a ? a.href : '', aria: (el.getAttribute('aria-label') || el.getAttribute('title') || '').slice(0, 120),
+      autoplay: !!el.autoplay, loop: !!el.loop, muted: !!el.muted, controls: !!el.controls,
+    });
+  };
+  const absolute = (link) => {
+    try { return link ? new URL(link, location.href).href : ''; } catch (e) { return ''; }  // a broken link
+  };
+  document.querySelectorAll('video, iframe[src]').forEach((el) => {
+    if (el.tagName === 'IFRAME') {
+      if (PLAYER.test(el.src)) addVideo(el, 'iframe', el.src, '');
+      return;
+    }
+    const source = el.querySelector('source[src]');
+    const src = el.currentSrc || el.src || (source && source.src) || absolute(el.getAttribute('data-src'));
+    addVideo(el, 'video', src, el.poster || absolute(el.getAttribute('data-poster')));
   });
 
   const HEAD = 'h1,h2,h3,h4,h5,h6,[role="heading"]';

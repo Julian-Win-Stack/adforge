@@ -232,3 +232,104 @@ def test_a_page_that_holds_nothing_back_runs_its_scripts_once_and_its_photos_are
         (1, "The mug", "mug.png"),
         (2, "", "mug(2).png"),
     ]
+
+
+# A gallery that hides most of its photos: a carousel showing one slide at a time, the others
+# slid off to the side and cut off by its frame, and a strip of small photos in a scroll box
+# narrower than the strip. Beside them, the shop's own video with a cover picture, and an
+# embedded YouTube player.
+HIDDEN_GALLERY_PAGE = """<!doctype html>
+<html>
+<head>
+  <title>Glass Water Bottle</title>
+  <style>
+    .carousel { width: 500px; height: 500px; overflow: hidden; }
+    .track { display: flex; width: 1500px; }
+    .track img { width: 500px; height: 500px; flex: none; }
+    .strip { display: flex; width: 160px; overflow-x: auto; }
+    .strip img { width: 140px; height: 140px; flex: none; }
+  </style>
+</head>
+<body>
+  <h1>Glass Water Bottle</h1>
+  <div class="carousel" aria-label="Product gallery">
+    <div class="track">
+      <img src="/cdn/slide1.png" alt="Slide 1">
+      <img src="/cdn/slide2.png" alt="Slide 2">
+      <img src="/cdn/slide3.png" alt="Slide 3">
+      <video poster="/cdn/cover.png" muted loop width="500" height="500">
+        <source src="/cdn/pour.mp4" type="video/mp4">
+      </video>
+    </div>
+  </div>
+  <div class="strip">
+    <img src="/cdn/thumb1.png" alt="Thumb 1">
+    <img src="/cdn/thumb2.png" alt="Thumb 2">
+    <img src="/cdn/thumb3.png" alt="Thumb 3">
+  </div>
+  <iframe src="https://www.youtube.com/embed/abc123" title="How it pours" style="border: 0"
+          width="560" height="315"></iframe>
+</body>
+</html>
+"""
+
+
+def test_pictures_and_videos_a_gallery_hides_are_numbered_with_the_box_that_hides_them(
+    browser_page: Page, httpserver: HTTPServer
+) -> None:
+    httpserver.expect_request("/products/bottle").respond_with_data(
+        HIDDEN_GALLERY_PAGE, content_type="text/html"
+    )
+    for name in ("slide1", "slide2", "slide3", "thumb1", "thumb2", "thumb3", "cover"):
+        httpserver.expect_request(f"/cdn/{name}.png").respond_with_data(
+            picture(500, 500, RED), content_type="image/png"
+        )
+
+    answer, _ = run_actions(browser_page, httpserver.url_for("/products/bottle"))
+
+    marks = firecrawl.marks_in(answer)
+    numbered = {
+        p["alt"]: (p["n"], p["shown"], p["vis"], p["box"])
+        for p in marks["imgs"]
+        if isinstance(p.get("n"), int)
+    }
+    boxes = {box["id"]: box for box in marks["boxes"]}
+    carousel = numbered["Slide 1"][3]
+    strip = numbered["Thumb 1"][3]
+    assert boxes[carousel]["aria"] == "Product gallery"
+    assert (boxes[carousel]["w"], boxes[carousel]["h"]) == (500, 500)
+    assert "strip" in boxes[strip]["cls"]
+    # Numbering is in page order, as before.
+    assert numbered == {
+        "Slide 1": (1, True, 1.0, carousel),
+        "Slide 2": (2, False, 0.0, carousel),
+        "Slide 3": (3, False, 0.0, carousel),
+        # 140 px photos in a 160 px box: only the second's first 20 pixels are in it.
+        "Thumb 1": (4, True, 1.0, strip),
+        "Thumb 2": (5, False, pytest.approx(0.14, abs=0.03), strip),
+        "Thumb 3": (6, False, 0.0, strip),
+    }
+
+    video, youtube = marks["vids"]
+    assert (video["n"], video["kind"], video["shown"], video["box"]) == (
+        1,
+        "video",
+        False,
+        carousel,
+    )
+    assert video["src"] == httpserver.url_for("/cdn/pour.mp4")
+    assert video["poster"] == httpserver.url_for("/cdn/cover.png")
+    assert (video["muted"], video["loop"], video["autoplay"], video["controls"]) == (
+        True,
+        True,
+        False,
+        False,
+    )
+    assert (youtube["n"], youtube["kind"], youtube["shown"], youtube["box"]) == (
+        2,
+        "iframe",
+        True,
+        0,
+    )
+    assert youtube["src"] == "https://www.youtube.com/embed/abc123"
+    assert (youtube["aria"], youtube["w"], youtube["h"]) == ("How it pours", 560, 315)

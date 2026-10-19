@@ -190,7 +190,9 @@ def marked_screenshot(link: str) -> tuple[dict[str, Any], bytes]:
 
 def marks_in(answer: dict[str, Any]) -> dict[str, Any]:
     """The marking script's lists in a marked screenshot's answer. Each script hands back
-    a JSON string; the marking script's is the one with the pictures (`imgs`)."""
+    a JSON string; the marking script's is the one with the pictures (`imgs`). An answer
+    from before the script recorded hidden pictures and video players reads as every
+    numbered picture whole and in no box, with no videos."""
     for returned in answer.get("actions", {}).get("javascriptReturns") or []:
         value = returned.get("value") if isinstance(returned, dict) else returned
         if not isinstance(value, str):
@@ -200,6 +202,13 @@ def marks_in(answer: dict[str, Any]) -> dict[str, Any]:
         except ValueError:
             continue
         if isinstance(parsed, dict) and isinstance(parsed.get("imgs"), list):
+            for picture in parsed["imgs"]:
+                if isinstance(picture, dict) and isinstance(picture.get("n"), int):
+                    picture.setdefault("vis", 1.0)
+                    picture.setdefault("shown", True)
+                    picture.setdefault("box", 0)
+            parsed.setdefault("vids", [])
+            parsed.setdefault("boxes", [])
             return parsed
     raise FirecrawlFailed("the page's pictures couldn't be numbered")
 
