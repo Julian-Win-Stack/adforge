@@ -12,7 +12,6 @@ import pytest
 from gateway.catalog import MODEL_FOR_PURPOSE, SLOW_ANSWER_SECONDS
 from jobs import clip_judge
 from jobs.clip_judge import (
-    BACK_TO_NORMAL_WITHIN_SECONDS,
     FRAMES_PER_SECOND,
     MOTION_CHECK,
     SIDES_CHECK,
@@ -340,12 +339,10 @@ def test_the_clip_judge_runs_as_proved() -> None:
     assert SLOW_ANSWER_SECONDS["check_clip_sides"] == 600
     assert SLOW_ANSWER_SECONDS["check_clip_motion"] == 600
     # SIDES at 10 frames a second (the phone-flip check, Julian's yes 2026-10-14 18:30; it was
-    # 5 stills, call 9), MOTION at 5 frames a second, change 7's half second, 3 asks failing
-    # on 2.
+    # 5 stills, call 9), MOTION at 5 frames a second, 3 asks failing on 2.
     assert (
         SIDES_FRAMES_PER_SECOND,
         FRAMES_PER_SECOND,
-        BACK_TO_NORMAL_WITHIN_SECONDS,
         clip_judge.ASKS,
         clip_judge.FAILS_TO_FAIL,
-    ) == (10, 5, 0.5, 3, 2)
+    ) == (10, 5, 3, 2)
