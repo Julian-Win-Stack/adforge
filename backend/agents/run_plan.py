@@ -26,6 +26,7 @@ from jobs import reference_photos, work
 from jobs.checks import LONGEST_BROLL_LINE_SECONDS, LONGEST_LINE_SECONDS
 from jobs.fix_plans import PlanCant, propose
 from jobs.models import (
+    AgentFix,
     Fix,
     FixCheck,
     FixPlan,
@@ -883,9 +884,12 @@ def agent_gave_up(step: SceneStep, reason: str) -> None:
     scene = Scene.objects.get(pk=step.scene_id)
     before = step.shown_before(ProducedItem.Kind.CLIP)
     made = work.versions(scene)
-    if before is not None and made and made[-1].clip != before:
+    kept = made[-1].clip if made else None
+    if before is not None and kept != before:
         back_to = next((version.number for version in made if version.clip == before), None)
-        work.bring_back_clip(before, back_to=back_to)
+        kept = work.bring_back_clip(before, back_to=back_to)
+    # The clip the give-up left in the ad, so the shop owner can still swap a try in for it.
+    AgentFix.objects.filter(step=step).update(kept=kept)
     reason = " ".join(reason.split())
     tried = bool(work.clip_tries(step))
     post_notice(

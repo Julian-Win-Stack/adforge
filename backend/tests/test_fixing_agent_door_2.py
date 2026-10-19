@@ -19,6 +19,7 @@ from jobs.models import Fix, FixCheck, FixPlanScene, Scene, SceneStep
 from .conftest import HeldSteps
 from .fake_fixing_agent import FakeAgent, ScriptedTry, _ruling, install
 from .test_fix_wiring import decided, planning, plans, row, tap_yes
+from .test_pick_from_tries import tap_use
 from .test_producer_broll import checked  # noqa: F401 (a fixture)
 from .test_producer_picture_then_clip import (
     ads,
@@ -179,3 +180,28 @@ def test_a_fix_of_a_talking_scene_is_a_cant_said_by_code(
     assert "fixing agent only films scenes that show the product" in planned.cant
     assert planned.estimate_usd == 0
     assert not run_plan.runs_something(plan)
+
+
+def test_after_the_agent_gave_up_the_shop_owner_can_tap_a_try_to_use_it(
+    fake_model: FakeModel,
+    held: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install(
+        monkeypatch,
+        FakeAgent(tries=[ScriptedTry(judge="fail"), ScriptedTry(judge="fail")], gave_up="No."),
+    )
+    _a_fix_said_yes_to(fake_model, held, say, api, session_id)
+    [step] = SceneStep.objects.filter(pk__in=held.held)
+    held.run_held()
+    try_1, _ = work.clip_tries(step)
+    assert work.tries_shown(step).on_offer
+
+    sent = tap_use(api, session_id, try_1)
+
+    assert sent.status_code == 201, sent.json()
+    latest = _latest_clip(Scene.objects.get(number=2))
+    assert latest is not None and latest.file == try_1.file
