@@ -4,7 +4,8 @@
   // section, hidden text (closed accordions) included.
   // Each numbered picture also says how much of it a visitor sees without scrolling a box or
   // sliding a carousel (`vis`, 0-1; `shown` when at least 0.4) and which clipping box it sits
-  // in (`box`, listed in `boxes`). Every video player is listed in `vids` (V<n>) with the
+  // in (`box`, listed in `boxes`); `disp` is false when the page doesn't display it at all
+  // (a closed menu, a popup, an inactive tab). Every video player is listed in `vids` (V<n>) with the
   // same facts, so a gallery's videos can be told from the rest of the page's.
   // Firecrawl lays the page out with a 100,000 px tall window while scripts run, and with a
   // normal one for the screenshot, so the marks are re-placed on every layout change, and a
@@ -141,7 +142,7 @@
     });
     if (r.width >= 40 && r.height >= 40) {
       rec.n = ++n; add(el, 'I' + n, '#0050ff', true);
-      rec.vis = visibleShare(el); rec.shown = rec.vis >= 0.4; rec.box = boxOf(el);
+      rec.vis = visibleShare(el); rec.shown = rec.vis >= 0.4; rec.disp = shown(el); rec.box = boxOf(el);
     }
     out.imgs.push(rec);
   });

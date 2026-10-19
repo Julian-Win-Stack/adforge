@@ -121,9 +121,11 @@ def test_hidden_gallery_pictures_reach_the_picker_in_a_grid_and_a_picked_one_is_
         # Its picture is gone from the shop.
         hidden_picture(firecrawl, 45),
         hidden_picture(firecrawl, 43, y=5000, w=400, h=300, box=0),
+        # In the gallery's box, but in a tab the page doesn't display.
+        hidden_picture(firecrawl, 46, disp=False),
     ]
     mark(firecrawl, marks)
-    serve_hidden(httpserver, 42, 43, 44)
+    serve_hidden(httpserver, 42, 43, 44, 46)
     reading(fake_model, shampoo_page_url)
     fake_model.respond("check_page", READABLE)
     fake_model.respond("pick_photos", {**SHAMPOO_PICKED, "gallery_images": [8, 40]})
@@ -134,16 +136,18 @@ def test_hidden_gallery_pictures_reach_the_picker_in_a_grid_and_a_picked_one_is_
     assert [image["label"] for image in picker.images] == [
         *SCREENSHOT_PARTS,
         OFFICIAL_R1,
-        "Hidden pictures: I40 (hidden), I41 (hidden), I43 (hidden) (each labelled in its "
-        "black bar)",
+        "Hidden pictures: I40 (hidden), I41 (hidden), I43 (hidden), I46 (hidden) (each "
+        "labelled in its black bar)",
     ]
     assert picker.handoff["hidden_pictures"] == (
         "I40 (hidden): 0% visible, 763x942 px at 167 px down the page, cut off by box 2, box "
         "shared with drawn pictures I8\n"
         "I41 (hidden): 0% visible, 763x942 px at 167 px down the page, cut off by box 2, box "
         "shared with drawn pictures I8\n"
-        "I43 (hidden): 0% visible, 400x300 px at 5000 px down the page, not displayed, no drawn "
-        "picture shares its box"
+        "I43 (hidden): 0% visible, 400x300 px at 5000 px down the page, not displayed at all "
+        "(a collapsed menu, popup or inactive tab), no drawn picture shares its box\n"
+        "I46 (hidden): 0% visible, 763x942 px at 167 px down the page, not displayed at all "
+        "(a collapsed menu, popup or inactive tab), box shared with drawn pictures I8"
     )
     assert read_page_result().endswith("Kept 2 product photos.")
     shop = firecrawl.shop
@@ -405,6 +409,40 @@ def test_a_page_read_again_shows_the_picker_the_same_grids_and_pays_once(
     assert fetched.count("/cdn/hidden/41.png") == 0
 
 
+def test_a_page_read_before_the_grids_had_lines_is_shown_the_grids_afresh(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    from adforge.retry import OutsideServiceDown
+
+    with_hidden_gallery(firecrawl, httpserver)
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("copy_page_text", *[OutsideServiceDown("503 from the provider")] * 3)
+    fake_model.respond("pick_photos", {**SHAMPOO_PICKED, "gallery_images": [8, 40]})
+    say(f"Make an ad for {shampoo_page_url}")
+    # As a job read before the picker's lines were kept with its pictures.
+    job = Job.objects.get()
+    del job.firecrawl["picker_lines"]
+    job.save(update_fields=["firecrawl"])
+    # The grids are drawn and stored again, so the picker is asked again.
+    fake_model.respond("pick_photos", {**SHAMPOO_PICKED, "gallery_images": [8, 40]})
+
+    reading(fake_model, shampoo_page_url)
+    say("Try again")
+
+    first, again = ModelCall.objects.filter(purpose="pick_photos").order_by("created_at")
+    assert [image["label"] for image in again.images] == [
+        image["label"] for image in first.images
+    ]
+    assert again.handoff["hidden_pictures"] == first.handoff["hidden_pictures"]
+    assert "I40 (hidden)" in again.handoff["hidden_pictures"]
+    assert read_page_result_of_last().endswith("Kept 2 product photos.")
+
+
 def read_page_result_of_last() -> str:
     from .conftest import results_of
 
@@ -507,3 +545,34 @@ def test_when_every_grid_alone_is_blocked_the_photos_are_picked_off_the_screensh
     assert [len(call.images) for call in asked] == [5, 4, 4, 3]
     assert asked.last().handoff["official_photos"] == "(none)"  # type: ignore[union-attr]
     assert "Kept 1 product photo." in read_page_result()
+
+
+def test_a_picked_picture_whose_biggest_size_cant_be_had_is_kept_at_its_link_as_given(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    shop = firecrawl.shop
+    with_hidden_gallery(firecrawl, httpserver)
+    # A shop's own file name that reads like a size: "candle.png" doesn't exist.
+    marks = marks_of(firecrawl)
+    marks["imgs"].append(
+        hidden_picture(firecrawl, 42, src=f"{shop}/cdn/shop/files/candle_small.png")
+    )
+    mark(firecrawl, marks)
+    httpserver.expect_request("/cdn/shop/files/candle_small.png").respond_with_data(
+        photo(242, 300, 400), content_type="image/png"
+    )
+    httpserver.expect_request("/cdn/shop/files/candle.png").respond_with_data("", status=404)
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("pick_photos", {**SHAMPOO_PICKED, "gallery_images": [8, 42]})
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    assert "I42 (hidden)" in picker_call().images[-1]["label"]
+    assert read_page_result().endswith("Kept 2 product photos.")
+    kept = Job.objects.get().photos.last()
+    assert kept is not None and file_store.read(kept.file) == photo(242, 300, 400)

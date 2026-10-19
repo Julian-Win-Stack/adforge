@@ -8,9 +8,10 @@ import PIL.Image
 import PIL.ImageDraw
 import pytest
 
+from jobs import picker_grids
 from jobs.page import DECLARED_DATA_HEADING
 from jobs.page_text import PRICES_HEADING, match_back, record_prices, without_prices
-from jobs.photos import Copies, best_url, record_photo_urls, too_small
+from jobs.photos import Copies, ShownLines, best_url, record_photo_urls, too_small
 
 from .conftest import photo
 
@@ -366,3 +367,47 @@ def test_a_picture_under_100_px_on_a_side_is_too_small(
     picture: dict[str, Any], small: bool
 ) -> None:
     assert too_small(picture) is small
+
+
+def test_tiles_are_packed_into_labelled_grids_of_at_most_across_by_across() -> None:
+    tiles = [(f"I{n} (hidden)", photo(n)) for n in range(1, 11)]
+
+    packed = picker_grids.grids("Hidden pictures", tiles, 3, 400)
+
+    assert [label for label, _ in packed] == [
+        "Hidden pictures: I1 (hidden), I2 (hidden), I3 (hidden), I4 (hidden), I5 (hidden), "
+        "I6 (hidden), I7 (hidden), I8 (hidden), I9 (hidden) (each labelled in its black bar)",
+        "Hidden pictures: I10 (hidden) (each labelled in its black bar)",
+    ]
+    assert picker_grids.tiles_of(packed[1][0]) == ["I10 (hidden)"]
+    with (
+        PIL.Image.open(io.BytesIO(packed[0][1])) as full,
+        PIL.Image.open(io.BytesIO(packed[1][1])) as one_row,
+    ):
+        # Three tiles across with a gap on each side of each; three rows, then one.
+        assert full.width == one_row.width == 3 * 400 + 4 * 8
+        assert full.height > 3 * 400 > one_row.height > 400
+
+
+@pytest.mark.django_db
+def test_more_pictures_than_the_picker_takes_is_refused_before_it_is_asked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from chat.models import Session
+    from jobs import work
+    from jobs.models import Job
+
+    from .conftest import FIRECRAWL_SCREENSHOT
+
+    job = Job.objects.create(session=Session.objects.create(), product_url="https://shop.example/p")
+    # Three screenshot parts and 48 grids: one more than the model takes.
+    monkeypatch.setattr(
+        picker_grids,
+        "beside_the_screenshot",
+        lambda record, marks: picker_grids.Shown(
+            grids=[(f"Grid {n}", photo(n)) for n in range(48)], lines=ShownLines()
+        ),
+    )
+
+    with pytest.raises(ValueError, match="50 pictures, not 51"):
+        work._picker_images(job, None, {}, FIRECRAWL_SCREENSHOT)

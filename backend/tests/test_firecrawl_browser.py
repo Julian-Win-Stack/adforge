@@ -266,6 +266,7 @@ HIDDEN_GALLERY_PAGE = """<!doctype html>
     <img src="/cdn/thumb1.png" alt="Thumb 1">
     <img src="/cdn/thumb2.png" alt="Thumb 2">
     <img src="/cdn/thumb3.png" alt="Thumb 3">
+    <img src="/cdn/thumb1.png" alt="Tab photo" style="visibility: hidden">
   </div>
   <iframe src="https://www.youtube.com/embed/abc123" title="How it pours" style="border: 0"
           width="560" height="315"></iframe>
@@ -289,7 +290,7 @@ def test_pictures_and_videos_a_gallery_hides_are_numbered_with_the_box_that_hide
 
     marks = firecrawl.marks_in(answer)
     numbered = {
-        p["alt"]: (p["n"], p["shown"], p["vis"], p["box"])
+        p["alt"]: (p["n"], p["shown"], p["vis"], p["box"], p["disp"])
         for p in marks["imgs"]
         if isinstance(p.get("n"), int)
     }
@@ -301,13 +302,15 @@ def test_pictures_and_videos_a_gallery_hides_are_numbered_with_the_box_that_hide
     assert "strip" in boxes[strip]["cls"]
     # Numbering is in page order, as before.
     assert numbered == {
-        "Slide 1": (1, True, 1.0, carousel),
-        "Slide 2": (2, False, 0.0, carousel),
-        "Slide 3": (3, False, 0.0, carousel),
+        "Slide 1": (1, True, 1.0, carousel, True),
+        "Slide 2": (2, False, 0.0, carousel, True),
+        "Slide 3": (3, False, 0.0, carousel, True),
         # 140 px photos in a 160 px box: only the second's first 20 pixels are in it.
-        "Thumb 1": (4, True, 1.0, strip),
-        "Thumb 2": (5, False, pytest.approx(0.14, abs=0.03), strip),
-        "Thumb 3": (6, False, 0.0, strip),
+        "Thumb 1": (4, True, 1.0, strip, True),
+        "Thumb 2": (5, False, pytest.approx(0.14, abs=0.03), strip, True),
+        "Thumb 3": (6, False, 0.0, strip, True),
+        # In the strip, but not displayed at all.
+        "Tab photo": (7, False, 0.0, strip, False),
     }
 
     video, youtube = marks["vids"]

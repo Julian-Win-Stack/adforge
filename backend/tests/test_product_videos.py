@@ -238,6 +238,27 @@ def test_a_job_with_no_picked_videos_keeps_none(
     assert not ProductVideo.objects.exists()
 
 
+def test_a_video_whose_link_cant_be_stored_is_left_out(
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+    picks_videos: list[dict[str, Any]],
+) -> None:
+    picks_videos += [
+        player(1, "data:video/mp4;base64,AAAA"),
+        player(2, f"{firecrawl.shop}/cdn/videos/{'a' * 2000}.mp4"),
+        player(3, "blob:https://shop.example/1234"),
+    ]
+
+    read(fake_model, say, shampoo_page_url)
+
+    assert "Kept 1 product photo." in results_of("read_page")[0]
+    assert [video.source_url for video in ProductVideo.objects.all()] == [
+        "blob:https://shop.example/1234"
+    ]
+
+
 def test_frames_never_reach_past_the_file(tmp_path: Path) -> None:
     assert product_videos.frame_times(2.0) == [0.25, 0.75, 1.25, 1.75]
     assert product_videos.first_frame_time(2.0) == 0.5

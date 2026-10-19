@@ -14,7 +14,7 @@ import wave
 from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -391,6 +391,9 @@ class Picked:
     # The video players the picker picked from the product's gallery, as the page script
     # found them.
     videos: tuple[dict[str, Any], ...] = ()
+    # Each picked link that was sized up, with the link as the page gave it: fetched instead
+    # when the biggest size can't be, as when a size-like word was the shop's own name.
+    as_given: dict[str, str] = field(default_factory=dict)
 
 
 DECLARED_INSTEAD = (
@@ -496,11 +499,12 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
         )
         return Picked(None, notices, videos=videos)
     return Picked(
-        [url for url, _ in links],
+        [link.url for link in links],
         notices,
-        frozenset(url for url, has_face in links if has_face),
-        unnoted=frozenset(url for url, has_face in links if has_face is None),
+        frozenset(link.url for link in links if link.has_face),
+        unnoted=frozenset(link.url for link in links if link.has_face is None),
         videos=videos,
+        as_given={link.url: link.as_given for link in links if link.as_given != link.url},
     )
 
 
@@ -641,13 +645,15 @@ def save_photos(
     merge_copies: bool = False,
     faces: frozenset[str] | None = None,
     unnoted: frozenset[str] = frozenset(),
+    as_given: dict[str, str] | None = None,
 ) -> list[SkippedPhoto]:
     """Download and keep each photo, after any the job already has, up to MAX_PHOTOS. With
     `merge_copies`, a photo that is a copy of one already kept, at another size or under
     another name, is left out, and the one kept has a face if either does. `faces` are the
     links the picker marked with a face; without them, or for the `unnoted` links it didn't
-    note, each photo kept is given its Face note by a call of its own. Gives back each one
-    that was skipped, with why."""
+    note, each photo kept is given its Face note by a call of its own. A link that can't be
+    fetched is fetched `as_given` instead, when that names another link for it. Gives back
+    each one that was skipped, with why."""
     # A read run again after a crash starts the page's photos afresh, so each is kept once.
     # Photos the user attached are theirs, and stay.
     job.photos.exclude(source_url="").delete()
@@ -662,7 +668,7 @@ def save_photos(
             _merge_face(kept[copy], url, faces)
             continue
         try:
-            photo = page.download(url, max_bytes=page.MAX_PHOTO_BYTES, what="product photo")
+            photo = _photo_at(url, (as_given or {}).get(url))
         except (page.PageUnreadable, OutsideServiceDown) as error:
             skipped.append(SkippedPhoto(url, str(error).rstrip(".") + "."))
             continue
@@ -695,6 +701,20 @@ def save_photos(
             )
         )
     return skipped
+
+
+def _photo_at(url: str, as_given: str | None) -> page.Download:
+    """The photo at `url`, else at `as_given`; the error from `url` if neither can be had."""
+    try:
+        return page.download(url, max_bytes=page.MAX_PHOTO_BYTES, what="product photo")
+    except page.PageUnreadable, OutsideServiceDown:
+        if not as_given:
+            raise
+        try:
+            return page.download(as_given, max_bytes=page.MAX_PHOTO_BYTES, what="product photo")
+        except page.PageUnreadable, OutsideServiceDown:
+            pass
+        raise
 
 
 def _merge_face(kept: ProductPhoto, url: str, faces: frozenset[str] | None) -> None:

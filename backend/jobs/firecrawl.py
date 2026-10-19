@@ -206,6 +206,7 @@ def marks_in(answer: dict[str, Any]) -> dict[str, Any]:
                 if isinstance(picture, dict) and isinstance(picture.get("n"), int):
                     picture.setdefault("vis", 1.0)
                     picture.setdefault("shown", True)
+                    picture.setdefault("disp", True)
                     picture.setdefault("box", 0)
             parsed.setdefault("vids", [])
             parsed.setdefault("boxes", [])

@@ -47,11 +47,18 @@ def save_videos(job: Job, players: Sequence[dict[str, Any]]) -> list[ProductVide
     for player in players:
         src, poster = str(player.get("src") or ""), str(player.get("poster") or "")
         found_by = src or poster
-        if not found_by or found_by in seen:
+        if not found_by or found_by in seen or not _storable(src):
             continue
         seen.add(found_by)
         kept.append(keep_video(job, len(kept) + 1, player))
     return kept
+
+
+def _storable(src: str) -> bool:
+    """Whether a player's link can be kept as its video's link: none, a web link or a blob:
+    link, short enough for the column. A data: link holds the video itself."""
+    longest = ProductVideo._meta.get_field("source_url").max_length or 0
+    return (not src or src.startswith(("http://", "https://", "blob:"))) and len(src) <= longest
 
 
 def keep_video(job: Job, position: int, player: dict[str, Any]) -> ProductVideo:

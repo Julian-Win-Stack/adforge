@@ -213,7 +213,12 @@ class ReadPage(Tool):
             skipped = save_photos(job, product_page.photo_urls)
         else:
             skipped = save_photos(
-                job, picked.urls, merge_copies=True, faces=picked.faces, unnoted=picked.unnoted
+                job,
+                picked.urls,
+                merge_copies=True,
+                faces=picked.faces,
+                unnoted=picked.unnoted,
+                as_given=picked.as_given,
             )
             if skipped and not job.photos.exclude(source_url="").exists():
                 post_notice(job, _none_kept(skipped), Message.Level.PROBLEM)

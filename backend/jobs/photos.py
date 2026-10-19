@@ -12,7 +12,7 @@ import io
 import re
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from PIL import Image, ImageStat
@@ -236,20 +236,33 @@ def too_small(picture: dict[str, Any]) -> bool:
     return min(width, height) < SMALLEST_PHOTO
 
 
+class PickedLink(NamedTuple):
+    """A picked photo's link at its biggest size, the link as the page or record gave it,
+    and whether the picker marked it with a face: None for an official photo, which it
+    doesn't note."""
+
+    url: str
+    as_given: str
+    has_face: bool | None
+
+
 def picked_links(
     picked: PickedPhotos, marks: dict[str, Any], record_urls: list[str]
-) -> list[tuple[str, bool | None]]:
-    """The picked photos' links at their biggest size, the gallery's, then the rest of the
-    page's, then the record's official photos, each with whether the picker marked it with a
-    face: None for an official photo, which it doesn't note. Numbers the page or record
-    didn't show are dropped, and so are marks of pictures that weren't picked."""
+) -> list[PickedLink]:
+    """The picked photos' links, the gallery's, then the rest of the page's, then the
+    record's official photos. Numbers the page or record didn't show are dropped, and so are
+    marks of pictures that weren't picked."""
     by_number = {picture["n"]: picture for picture in numbered(marks)}
     return [
-        (best_url(by_number[number]), number in picked.face_images)
+        PickedLink(
+            best_url(by_number[number]),
+            widest_url(by_number[number]),
+            number in picked.face_images,
+        )
         for number in [*picked.gallery_images, *picked.more_images]
         if number in by_number
     ] + [
-        (full_size(record_urls[number - 1]), None)
+        PickedLink(full_size(record_urls[number - 1]), record_urls[number - 1], None)
         for number in picked.record_images
         if 1 <= number <= len(record_urls)
     ]
@@ -314,7 +327,11 @@ def hidden_line(picture: dict[str, Any], marks: dict[str, Any]) -> str:
         f"I{picture['n']} (hidden): {round(float(picture.get('vis') or 0) * 100)}% visible, "
         f"{_side(picture, 'w')}x{_side(picture, 'h')} px at {_side(picture, 'y')} px down the "
         "page, "
-        + (f"cut off by box {box}, " if box else "not displayed, ")
+        + (
+            f"cut off by box {box}, "
+            if box and picture.get("disp", True)
+            else "not displayed at all (a collapsed menu, popup or inactive tab), "
+        )
         + (
             f"box shared with drawn pictures {', '.join(mates)}"
             if mates
@@ -379,6 +396,12 @@ def other_page(href: str, page_url: str) -> str:
 def best_url(picture: dict[str, Any]) -> str:
     """The link to a picture at its biggest size: the widest in its srcset, else its src,
     with any size the shop's image server was asked for taken off."""
+    return full_size(widest_url(picture))
+
+
+def widest_url(picture: dict[str, Any]) -> str:
+    """The link to the widest size of a picture its srcset offers, else its src, as the
+    page gives it."""
     url, widest = str(picture.get("src") or ""), 0
     # Split at a comma followed by a space: some image links hold commas.
     for candidate in re.split(r",\s+", str(picture.get("srcset") or "").strip()):
@@ -393,7 +416,7 @@ def best_url(picture: dict[str, Any]) -> str:
             widest, url = int(bits[1][:-1]), bits[0]
     if url.startswith("//"):
         url = "https:" + url
-    return full_size(url)
+    return url
 
 
 def full_size(url: str) -> str:

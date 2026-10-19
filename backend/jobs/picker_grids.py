@@ -58,8 +58,13 @@ def beside_the_screenshot(record: dict[str, Any] | None, marks: dict[str, Any]) 
     record_urls = photos.record_photo_urls(record) if record else []
     hidden = photos.hidden(marks)
     players = videos(marks)
-    record_photos = _fetched(_picture, record_urls)
-    hidden_photos = _fetched(_picture, [photos.best_url(picture) for picture in hidden])
+    record_photos = _fetched(
+        _sized_up_picture, [(photos.full_size(url), url) for url in record_urls]
+    )
+    hidden_photos = _fetched(
+        _sized_up_picture,
+        [(photos.best_url(picture), photos.widest_url(picture)) for picture in hidden],
+    )
     frames = _fetched(first_frame, players)
     record_tiles = [
         (f"R{number}", content)
@@ -178,6 +183,13 @@ def _frame_at_half_a_second(video: bytes) -> bytes | None:
             if ran.returncode == 0 and _opens(ran.stdout):
                 return ran.stdout
     return None
+
+
+def _sized_up_picture(links: tuple[str, str]) -> bytes | None:
+    """The picture at its biggest size, else at the link as given."""
+    biggest, as_given = links
+    found = _picture(biggest)
+    return found if found is not None or as_given == biggest else _picture(as_given)
 
 
 def _picture(url: str) -> bytes | None:
