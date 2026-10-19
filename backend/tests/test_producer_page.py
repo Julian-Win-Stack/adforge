@@ -41,6 +41,7 @@ from .conftest import (
     SHAMPOO_PHOTO,
     SHAMPOO_PHOTO_PATH,
     SHAMPOO_PICKED,
+    SHAMPOO_RECORD_PHOTO_PATH,
     FakeDns,
     FakeFirecrawl,
     handoffs,
@@ -494,15 +495,20 @@ def test_a_page_selling_two_products_keeps_only_this_ones_text_and_photos(
         (f"{shop}{SPLASH_PATH}?v=1782764654", SPLASH),
         (f"{shop}{LATHER_PATH}?v=1782764664", LATHER),
     ]
-    # The picker saw the record's official photo, then the screenshot top to bottom.
+    # The picker saw the screenshot top to bottom, then the record's official photo in a grid:
+    # its second, which the shop's CDN doesn't have, is left out.
     (picker,) = ModelCall.objects.filter(purpose="pick_photos")
     assert [image["label"] for image in picker.images] == [
-        "R1",
         "Part 1 of 3 (from 0 px down the page):",
         "Part 2 of 3 (from 1200 px down the page):",
         "Part 3 of 3 (from 2400 px down the page):",
+        "Official photos: R1 (each labelled in its black bar)",
     ]
-    assert file_store.read(picker.images[0]["key"]) == SHAMPOO_PHOTO
+    # Each official photo is named by its link, cut to 120 characters.
+    assert (
+        picker.handoff["official_photos"]
+        == (f"R1: {firecrawl.shop}{SHAMPOO_RECORD_PHOTO_PATH}?v=1783623478"[:124])
+    )
     assert "Title: Detox Clarifying Hair Shampoo" in picker.handoff["official_record"]
     assert 'I23: alt="An ivory OUAI Fine Hair Conditioner' in picker.handoff["numbered_pictures"]
     assert "links to /products/fine-hair-conditioner" in picker.handoff["numbered_pictures"]
@@ -980,7 +986,9 @@ def test_a_record_that_arrives_when_the_page_is_read_again_is_shown_to_the_picke
     first, again = ModelCall.objects.filter(purpose="pick_photos").order_by("created_at")
     assert first.handoff["official_record"].startswith("Official record of the product: none")
     assert "Title: Detox Clarifying Hair Shampoo" in again.handoff["official_record"]
-    assert [image["label"] for image in again.images][0] == "R1"
+    assert [image["label"] for image in again.images][-1] == (
+        "Official photos: R1 (each labelled in its black bar)"
+    )
 
 
 def test_more_than_50_picked_photos_keeps_the_first_50(
