@@ -231,16 +231,13 @@ def test_a_clip_two_answers_fail_on_different_faults_passes_and_is_kept(
         "real_motion": {"verdict": "fail", "problem": LID, "back_to_normal_at": "never"},
     }
     fake_model.respond("check_clip_motion", floating(), CLIP_MOTION_OK, lid)
-    fake_model.respond(
+    # Each failing answer names a fault of its own, whichever asks they came from.
+    fake_model.answer_unscripted(
         "agree_on_fault",
-        {
-            "read": [
-                {"ask": 1, "object": "teapot", "event": "rises", "time_span": "1.2 s on"},
-                {"ask": 3, "object": "lid", "event": "melts", "time_span": "3.2 s on"},
-            ],
+        lambda request: {
+            "read": [],
             "groups": [
-                {"asks": [1], "fault": "The teapot rises."},
-                {"asks": [3], "fault": "The lid melts."},
+                {"asks": [each["ask"]], "fault": "Its own."} for each in request.handoff.answers
             ],
         },
     )
@@ -532,6 +529,7 @@ def test_the_ruling_says_which_words_and_models_judged_it(judged: ProducedItem) 
     assert ruling(judged)["models"] == {
         "sides": MODEL_FOR_PURPOSE["check_clip_sides"],
         "motion": MODEL_FOR_PURPOSE["check_clip_motion"],
+        "agree": MODEL_FOR_PURPOSE["agree_on_fault"],
     }
     for call in ModelCall.objects.filter(purpose__startswith="check_clip_"):
         assert call.model == MODEL_FOR_PURPOSE[call.purpose]

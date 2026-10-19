@@ -386,7 +386,7 @@ class OneFault(BaseModel):
     time_span: str = Field(description="From when to when, in seconds, as the problem says.")
 
 
-class FaultGroup(BaseModel):
+class Group(BaseModel):
     asks: list[int] = Field(description="The ask numbers whose problems describe this one fault.")
     fault: str = Field(description="The fault, in one sentence.")
 
@@ -394,13 +394,13 @@ class FaultGroup(BaseModel):
 # The call's answer, filled in from the top: it reads each answer before it groups them.
 class Agreement(BaseModel):
     read: list[OneFault]
-    groups: list[FaultGroup]
+    groups: list[Group]
 
 
 def agree_on_fault(job: Job | None) -> SameFault:
     """The same-fault call, paid for by `job`."""
 
-    def asked(check: str, failing: list[dict[str, Any]]) -> dict[str, Any]:
+    def call(check: str, failing: list[dict[str, Any]]) -> dict[str, Any]:
         return call_model(
             job=job,
             purpose="agree_on_fault",
@@ -410,7 +410,7 @@ def agree_on_fault(job: Job | None) -> SameFault:
             pay_once=True,
         ).model_dump(mode="json")
 
-    return asked
+    return call
 
 
 # ---------------------------------------------------------------- the ruling
@@ -433,12 +433,16 @@ def judged(
     each MOTION question) is voted on by itself: it fails on FAILS_TO_FAIL failing answers,
     and is not checked with fewer than FAILS_TO_FAIL usable ones. The clip fails when any
     check fails. Every failing answer counts, however soon its thing is back to normal: the
-    half-second forgive rule is gone (Julian 2026-10-19 03:37).
+    half-second forgive rule is gone (Julian 2026-10-19 03:37). A MOTION check's failing
+    answers agree only when `same_fault` says at least FAILS_TO_FAIL of them name the same
+    fault; when it can't say, the check fails on them, as before the vote. SIDES is voted on
+    as before: the vote was tested on MOTION only, and the judge is frozen beyond it.
 
     Gives "verdict" (pass, fail or not_checked), "checks" (each check's verdict),
     "failed_answers" (how many answers failed on anything, of all asked), "failures" (each
-    failed answer's check, ask, problems and whole answer) and "answers" (every answer, as
-    given)."""
+    failed answer's check, ask, problems and whole answer), "agreement" (each MOTION check
+    the same-fault call was made for: its reply and "sharing", the asks that share a fault,
+    or "error") and "answers" (every answer, as given)."""
     # Each check's name and, by ask, the part of each answer that holds its verdict.
     asked: list[tuple[str, list[tuple[int, dict[str, Any]]]]] = [
         ("sides", [(ask, answer) for ask, answer in enumerate(sides, 1) if answer])
@@ -468,13 +472,13 @@ def judged(
                         for ask, said in failing
                     ],
                 )
+                sharing = _sharing(reply, {ask for ask, _ in failing})
             except Exception as error:
                 # Never a silent pass: the check fails on its failing answers, as before the
                 # vote (handoff, judge-same-fault-vote).
                 logger.exception("The same-fault call on %s failed; the check fails as voted", name)
                 agreement[name] = {"error": str(error)}
             else:
-                sharing = _sharing(reply, {ask for ask, _ in failing})
                 agreement[name] = {**reply, "sharing": sorted(sharing)}
                 agreed = bool(sharing)
         checks[name] = (
@@ -509,13 +513,15 @@ def judged(
 
 def _sharing(reply: dict[str, Any], failing: set[int]) -> set[int]:
     """The asks, of `failing`, that the same-fault call's `reply` puts in a group with
-    another: each names a fault at least one other answer names too."""
-    shared: set[int] = set()
-    for group in reply["groups"]:
-        asks = set(group["asks"]) & failing
-        if len(asks) >= FAILS_TO_FAIL:
-            shared |= asks
-    return shared
+    another: each names a fault at least one other answer names too. A reply that doesn't put
+    each failing ask in exactly one group, and nothing else, is no answer (ValueError)."""
+    groups = [list(group["asks"]) for group in reply["groups"]]
+    grouped = [ask for asks in groups for ask in asks]
+    if sorted(grouped) != sorted(failing):
+        raise ValueError(
+            f"The same-fault reply groups asks {groups}, not each of {sorted(failing)}"
+        )
+    return {ask for asks in groups if len(asks) >= FAILS_TO_FAIL for ask in asks}
 
 
 def owner_change_answers(ruling: dict[str, Any]) -> list[dict[str, Any] | None]:
@@ -656,22 +662,21 @@ def judge_clip(
     change is made: each answer's "owner_change", which never counts in the verdict. Its
     ruling's "compared_with" is that clip's id. When that clip's frames can't be cut, the
     clip is judged as any other, and the fix is left unchecked."""
+    same_fault = agree_on_fault(step.scene.job)
     try:
         sides, motion, old = _asked(step, clip, conversation)
         ruling = _ruling(
             sides,
             motion,
             clip,
-            same_fault=agree_on_fault(step.scene.job),
+            same_fault=same_fault,
             compared_with=old,
             photos=bool(old and step.fix and during_the_clip(step.fix)),
         )
     except Exception as error:
         logger.exception("Scene %s's clip couldn't be judged", step.scene.number)
         ruling = {
-            **_ruling(
-                [None] * ASKS, [None] * ASKS, clip, same_fault=agree_on_fault(step.scene.job)
-            ),
+            **_ruling([None] * ASKS, [None] * ASKS, clip, same_fault=same_fault),
             "error": str(error),
         }
     clip.ruling = ruling
@@ -694,6 +699,7 @@ def _ruling(
         "models": {
             "sides": catalog.MODEL_FOR_PURPOSE["check_clip_sides"],
             "motion": catalog.MODEL_FOR_PURPOSE["check_clip_motion"],
+            "agree": catalog.MODEL_FOR_PURPOSE["agree_on_fault"],
         },
         "pictures": (clip.ruling or {}).get("pictures"),
         **({"compared_with": compared_with.pk} if compared_with is not None else {}),
@@ -1030,6 +1036,13 @@ def wording_version(*, fix: bool = False, photos: bool = False) -> str:
         *(
             json.dumps(form.model_json_schema(), sort_keys=True)
             for form in (ClipCheckHandoff, MotionCheckHandoff, SidesVerdict, MotionVerdict)
+        ),
+        # The same-fault call, which every clip's MOTION vote may make.
+        AGREE_ON_FAULT,
+        json.dumps(AGREE_QUESTIONS, sort_keys=True),
+        *(
+            json.dumps(form.model_json_schema(), sort_keys=True)
+            for form in (AgreeHandoff, Agreement)
         ),
     ]
     if fix:
