@@ -16,8 +16,11 @@ import {
   type MessageTries,
   type PlanNotice,
   type PlanScene,
+  type SendAs,
   type Sent,
 } from "./api";
+import { PagePanel } from "./PagePanel";
+import { pagePanel } from "./pagePanel";
 import { ScenePanel } from "./ScenePanel";
 import { nextFollowing } from "./follow";
 import {
@@ -144,10 +147,10 @@ export function Chat({
   }, [messages.length]);
 
   /** Says something. The first message of a new session is what creates the session. A
-   * plan's yes button names its `plan`, and a try's "Use this one" button the try. */
-  async function send(text: string, photos: File[], plan?: number, useClip?: number) {
+   * button's message says what it is (`as`). */
+  async function send(text: string, photos: File[], as: SendAs = {}) {
     const id = sessionId ?? (started.current ??= (await startSession()).id);
-    const sent = await sendMessage(id, text, photos, plan, useClip);
+    const sent = await sendMessage(id, text, photos, as);
     if (sessionId !== null) show([sent.message]);
     // A brand new session has no polling yet: opening it loads what was just said.
     onSent(sent);
@@ -170,6 +173,7 @@ export function Chat({
   const planWaits = offered !== null && offered.seq > (ownerSaidLast?.seq ?? 0);
   const waitingOnOwner =
     (planWaits || suggestedNotes(messages).size > 0) && !cards.some((card) => card.making !== null);
+  const pageAsk = pagePanel(messages);
   const covers = new Map(
     cards.flatMap((card) => card.clips.map((clip) => [clip.file, clip.picture])),
   );
@@ -229,7 +233,7 @@ export function Chat({
                         plan={message.plan.notice}
                         onYes={
                           offered?.seq === message.seq
-                            ? () => send("Yes", [], offered.plan.plan)
+                            ? () => send("Yes", [], { plan: offered.plan.plan })
                             : null
                         }
                       />
@@ -240,7 +244,7 @@ export function Chat({
                         text={message.text}
                         tries={message.tries}
                         {...tryInAd(messages, message.seq)}
-                        onUse={(clip) => send("", [], undefined, clip)}
+                        onUse={(clip) => send("", [], { useClip: clip })}
                       />
                     </li>
                   ) : message.role === "notice" ? (
@@ -318,6 +322,12 @@ export function Chat({
           </div>
 
           <div className="composer-wrap">
+            {pageAsk && (
+              <PagePanel
+                state={pageAsk}
+                onDone={(text, photos) => send(text, photos, { pastedPage: true })}
+              />
+            )}
             {waitsForYes(messages) && <YesBar onYes={() => send("Yes", [])} />}
             <Composer
               text={draft}

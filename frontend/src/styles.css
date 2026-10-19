@@ -749,6 +749,277 @@ button:disabled {
   cursor: default;
 }
 
+/* The page panel: when the page can't be read from its link, the shop owner pastes the page
+   text and adds its photos here. It sits on the composer like the yes bar, in the same
+   lime-edged card, and folds to one line to give the chat room. */
+.page-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(820px, 100%);
+  max-height: min(62vh, 560px);
+  margin: 0 auto 10px;
+  padding: 14px 14px 12px 16px;
+  overflow-y: auto;
+  border-radius: var(--radius-l);
+  border: 1px solid rgba(200, 240, 74, 0.35);
+  background:
+    linear-gradient(180deg, rgba(200, 240, 74, 0.07), rgba(200, 240, 74, 0.02) 60%), var(--surface);
+  box-shadow: var(--shadow);
+  animation: rise 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.page-panel.folded {
+  padding: 0;
+  overflow: hidden;
+}
+
+.page-panel-unfold {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 14px 11px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.page-panel-unfold-hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 400;
+  color: var(--text-2);
+}
+
+.page-panel-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+.page-panel-chevron.up,
+.page-panel-fold svg {
+  display: grid;
+  color: var(--text-2);
+}
+
+.page-panel-chevron.up {
+  transform: rotate(180deg);
+}
+
+.page-panel-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.page-panel-head > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.page-panel-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.page-panel-sub {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.page-panel-fold {
+  flex-shrink: 0;
+}
+
+.page-panel-text {
+  position: relative;
+}
+
+.page-panel-text textarea {
+  display: block;
+  width: 100%;
+  height: 168px;
+  min-height: 96px;
+  padding: 12px 14px 26px;
+  border-radius: var(--radius-m);
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  resize: vertical;
+  outline: none;
+  font-size: 14px;
+  line-height: 1.5;
+  transition:
+    border-color 160ms,
+    box-shadow 160ms;
+}
+
+.page-panel-text textarea:focus {
+  border-color: rgba(200, 240, 74, 0.5);
+  box-shadow: 0 0 0 4px rgba(200, 240, 74, 0.08);
+}
+
+.page-panel-text textarea::placeholder {
+  color: var(--text-3);
+}
+
+.page-panel-text textarea:disabled {
+  opacity: 0.6;
+}
+
+.page-panel-count {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+.page-panel-photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.page-panel-thumb {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  margin: 0;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.page-panel-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* A photo the browser can't picture shows its name. */
+.page-panel-thumb img:not([src]) {
+  padding: 6px;
+  font-size: 11px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.page-panel-thumb button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(10, 10, 14, 0.75);
+  color: var(--text);
+  backdrop-filter: blur(4px);
+}
+
+.page-panel-thumb button:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+.page-panel-drop {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 200px;
+  min-height: 72px;
+  padding: 12px 16px;
+  border-radius: var(--radius-m);
+  border: 1.5px dashed var(--border-strong);
+  color: var(--text-2);
+  font-size: 13.5px;
+  cursor: pointer;
+  transition:
+    border-color 140ms,
+    background 140ms,
+    color 140ms;
+}
+
+.page-panel-drop strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.page-panel-drop.small {
+  flex: 0 0 72px;
+  min-width: 72px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  font-size: 11.5px;
+}
+
+.page-panel-drop:hover,
+.page-panel-drop:focus-visible,
+.page-panel-drop.over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.page-panel-drop[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.page-panel-skipped {
+  margin: -4px 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.page-panel-error {
+  margin: 0;
+}
+
+.page-panel-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.page-panel-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.page-panel-checking {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+}
+
+.page-panel-checking .spinner {
+  width: 14px;
+  height: 14px;
+  border-color: rgba(200, 240, 74, 0.25);
+  border-top-color: var(--accent);
+}
+
 /* Code's plan for the owner's notes, with its own yes. */
 .plan {
   display: flex;
@@ -1705,6 +1976,19 @@ button:disabled {
 
   .composer-hint {
     display: none;
+  }
+
+  .page-panel {
+    max-height: 56vh;
+    padding: 12px;
+  }
+
+  .page-panel-text textarea {
+    height: 120px;
+  }
+
+  .page-panel-drop {
+    min-width: 0;
   }
 
   .scene-panel,
