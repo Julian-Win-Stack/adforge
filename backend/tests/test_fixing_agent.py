@@ -11,7 +11,7 @@ import pytest
 from django.db.models import Q, Sum
 
 from adforge.retry import OutsideServiceDown
-from agents import producer, tasks
+from agents import fixing_agent, producer, tasks
 from agents.fixing_agent import Failure, Outcome, Try, fix_scene
 from agents.models import ToolCall
 from agents.money import dollars
@@ -29,6 +29,7 @@ from .conftest import (
     facts_ok,
     handoffs,
     motion_answer,
+    paid_for,
 )
 from .fixing import fixed as fixed_by_a_plan
 from .test_pick_from_tries import made_ad  # noqa: F401 (a fixture)
@@ -770,3 +771,58 @@ def test_the_producer_never_takes_a_try_for_a_clip_already_made(
     assert "already made" not in made.result
     assert made.result.startswith("Refused: scene 2 already has a clip")
     assert len(handoffs("make_broll_clip")) == asked
+
+
+# --- Run again after the worker stopped ----------------------------------------------------
+
+
+def test_a_try_the_worker_stopped_in_is_carried_on_from_its_checkpoint(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    fake_model.respond("fix_scene", turn(calls=[film_again()]))
+    fake_model.respond("check_clip_motion", WorkerStopped())
+    with pytest.raises(WorkerStopped):
+        fixed(failed_clip)
+    [stopped] = ToolCall.objects.filter(tool="film_again", finished_at__isnull=True)
+    clips_paid = paid_for().count("make_broll_clip")
+
+    outcome = fixed(failed_clip)
+
+    # The film_again call left running is run again first, with no turn asked for it, and
+    # its clip, fetched already, isn't paid for again.
+    stopped.refresh_from_db()
+    assert stopped.finished_at is not None
+    assert len([each for each in fake_model.turns_taken if each.purpose == "fix_scene"]) == 1
+    assert paid_for().count("make_broll_clip") == clips_paid
+    assert [each.number for each in outcome.tries] == [1]
+    assert outcome.passed == outcome.tries[0].clip
+
+
+def test_a_new_picture_drawn_before_the_worker_stopped_isnt_drawn_again(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    fake_model.respond("fix_scene", turn(calls=[a_new_picture()]))
+    fake_model.respond("check_starting_picture", WorkerStopped())
+    with pytest.raises(WorkerStopped):
+        fixed(failed_clip)
+    edits = fake_model.edits
+
+    outcome = fixed(failed_clip)
+
+    assert fake_model.edits == edits
+    [made] = outcome.tries
+    assert made.picture is not None and made.picture.step is not None
+    assert made.picture.step.prompt == PICTURE_PROMPT
+
+
+def test_the_agent_is_given_up_on_after_its_most_turns(
+    fake_model: FakeModel, failed_clip: SceneStep, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(fixing_agent, "MOST_TURNS", 3)
+    fake_model.respond("fix_scene", *[turn(calls=[("look_at_place", {})]) for _ in range(4)])
+
+    outcome = fixed(failed_clip)
+
+    assert outcome.gave_up == "The fixing agent stopped after 3 turns."
+    assert len([each for each in fake_model.turns_taken if each.purpose == "fix_scene"]) == 3
+    assert scene_row() == (LINE_2, SHOWS, "", "showcase", "no face")
