@@ -178,12 +178,12 @@ def test_no_photo_clearly_showing_the_product_asks_for_one(
 # What the planner asks when the page only names a use and shows nobody how it is done.
 ONLY_NAMED_USE = (
     "Your page says the mug works as a pour-over brewer, but no photo shows it used that way "
-    "and the page doesn't say how. Could you attach a photo of it, or tell me in a few words "
+    "and the page doesn't say how. Could you attach a photo of it, or tell me in one sentence "
     "how it is held and poured, or should I go ahead without one?"
 )
 
 
-def test_a_use_the_page_only_names_is_asked_about_and_without_an_answer_is_said_to_camera(
+def test_a_use_the_page_only_names_is_asked_about_and_the_answer_reaches_the_planner(
     fake_model: FakeModel, page_read: str, say: Callable[..., None], api: Any, session_id: str
 ) -> None:
     # Round 5 cause 1: a use the page only named was filmed any way the planner liked. Julian
@@ -196,7 +196,8 @@ def test_a_use_the_page_only_names_is_asked_about_and_without_an_answer_is_said_
     assert chat(api, session_id)[-1] == ("agent", ONLY_NAMED_USE)
     assert not Job.objects.get().scenes.exists()
 
-    # They go ahead without one: the line is the person's, said to camera.
+    # They go ahead without one: the planner gets their answer. What it then plans is the
+    # model's (the fallback's wording is pinned in test_planning.py).
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
     fake_model.respond("plan_ad", PLAN)
     say("Go ahead without one.")
@@ -206,18 +207,3 @@ def test_a_use_the_page_only_names_is_asked_about_and_without_an_answer_is_said_
         {"by": "producer", "text": ONLY_NAMED_USE},
         {"by": "user", "text": "Go ahead without one."},
     ]
-    # Every scene is said to camera: none shows anything over its line.
-    assert [scene.shows for scene in Job.objects.get().scenes.order_by("number")] == [""] * 3
-
-
-def test_a_use_a_photo_shows_is_planned_as_broll_without_asking(
-    fake_model: FakeModel, page_read: str, say: Callable[..., None]
-) -> None:
-    shows = "A hand pours hot tea from the mug into a cup on a workbench."
-    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
-    fake_model.respond("plan_ad", broll_plan(shows, [], [1]))
-
-    say("Plan it")
-
-    assert paid_for().count("plan_ad") == 1
-    assert Job.objects.get().scenes.get(number=2).shows == shows

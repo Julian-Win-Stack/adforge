@@ -4,7 +4,7 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, StrictInt, field_validator, model_validator
 
-from gateway.types import Handoff, Judgement
+from gateway.types import LEAST_BROLL_SECONDS, Handoff, Judgement
 
 # How a B-roll scene's details are given, by the planner and by a rewrite alike.
 BROLL_DETAILS_INSTRUCTIONS = """\
@@ -76,13 +76,13 @@ that part.
 # How long a B-roll scene's one action lasts, for the planner only. Round 5 cause 2: every
 # one-moment action stretched over a 5-7 s clip broke, 37 clips and no exception. Julian
 # 2026-10-19 00:44: "the action must fill the clip" ... "I approve this one."
-BROLL_FILLS_CLIP_INSTRUCTIONS = """\
+BROLL_FILLS_CLIP_INSTRUCTIONS = f"""\
 That one action lasts the whole clip, which is as long as its line takes to say and never \
-under 5 seconds: by its own course, such as a steady pour or a walk, or by what it \
-naturally sets off in the same scene, such as a cushion tossed onto a sofa that bounces \
-and settles. An action that is over in a moment never gets a scene that ends as the moment \
-ends, and never gets a second action added to fill the time. When no single action can \
-last the whole clip, the person says that line to camera.
+under {LEAST_BROLL_SECONDS} seconds: by its own course, such as a steady pour or a walk, \
+or by what it naturally sets off in the same scene, such as a cushion tossed onto a sofa \
+that bounces and settles. An action that is over in a moment never gets a scene that ends \
+as the moment ends, and never gets a second action added to fill the time. When no single \
+action can last the whole clip, the person says that line to camera.
 """
 
 PLAN_INSTRUCTIONS = (
