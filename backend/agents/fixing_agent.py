@@ -248,7 +248,8 @@ def _started(step: SceneStep, door: str, failure: Failure, goal: str | None, cap
         found = AgentFix.objects.select_for_update().filter(step=step).first()
         if found is not None:
             return found
-        scene = step.scene
+        # As it stands now: the step's own copy may be from before its clip was made.
+        scene = Scene.objects.get(pk=step.scene_id)
         first = failure.clip or (
             step.produced.filter(kind=ProducedItem.Kind.CLIP).order_by("id").first()
             if door == AgentFix.Door.JUDGE
