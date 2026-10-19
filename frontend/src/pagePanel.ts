@@ -18,7 +18,8 @@ export function pagePanel(messages: Message[]): PagePanelState | null {
   if (messages[asked].wants_pasted_page !== true) return null;
   let state: PagePanelState = { checking: false, reason: null };
   for (const message of messages.slice(asked + 1)) {
-    const result = message.pasted_page_result ?? null;
+    // The backend sends "" for "no result yet", as on every other message.
+    const result = message.pasted_page_result || null;
     if (result === "accepted") return null;
     if (message.pasted_page === true) state = { checking: result === null, reason: result };
     else if (result !== null) state = { checking: false, reason: result };

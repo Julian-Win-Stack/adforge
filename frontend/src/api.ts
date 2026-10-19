@@ -109,8 +109,8 @@ export type Message = {
   /** The shop owner's page text and photos, sent from the page panel, never typed. */
   pasted_page?: boolean;
   /** What code made of a pasted page: "accepted", or the one-line reason it can't be used.
-   * On the pasted message once it is checked, and on code's notice saying so. Null while it
-   * is being checked, and on any other message. */
+   * On the pasted message once it is checked, and on code's notice saying so. Blank ("", or
+   * null) while it is being checked, and on any other message. */
   pasted_page_result?: string | null;
 };
 

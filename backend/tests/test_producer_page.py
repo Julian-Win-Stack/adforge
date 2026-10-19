@@ -21,7 +21,7 @@ from werkzeug import Request, Response
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
 from agents.models import ToolCall
-from agents.producer import PASTE_IN_THE_PANEL
+from agents.producer import PAGE_NOT_OPENED, PASTE_IN_THE_PANEL
 from chat.models import Attachment
 from gateway.fake import FakeModel, Outcome, turn
 from gateway.models import ModelCall
@@ -648,10 +648,7 @@ def test_a_page_the_shop_answers_firecrawl_404_for_cant_be_read_and_isnt_downloa
     assert "/products/detox-shampoo" not in [request.path for request, _ in httpserver.log]
     assert paid_for() == []
     # The page panel's notice: test_unreadable_page.py.
-    assert [text for _, text in notices(api, session_id)] == [
-        f"This page couldn't be read: {shampoo_page_url} answered 404 Not Found, so trying "
-        "again won't help."
-    ]
+    assert [text for _, text in notices(api, session_id)] == [PAGE_NOT_OPENED]
 
 
 def test_a_failed_copy_call_leaves_the_page_unread_and_says_so(

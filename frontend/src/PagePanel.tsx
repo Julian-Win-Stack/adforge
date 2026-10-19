@@ -76,6 +76,14 @@ export function wordCount(text: string) {
   return `${count.toLocaleString("en-US")} word${count === 1 ? "" : "s"}`;
 }
 
+/** The count under the paste: its words, and how close it is to the most the app takes once
+ * it gets near. */
+function pasteCount(text: string) {
+  if (text.length < MAX_PASTED_PAGE_CHARACTERS * 0.9) return wordCount(text);
+  const of = MAX_PASTED_PAGE_CHARACTERS.toLocaleString("en-US");
+  return `${text.length.toLocaleString("en-US")} of ${of} characters`;
+}
+
 /** The page text being pasted is kept in the browser until it is sent, so a reload or a
  * closed tab doesn't lose a long paste. */
 const draftKey = (sessionId: string) => `page-panel-draft:${sessionId}`;
@@ -97,7 +105,16 @@ function keepDraft(sessionId: string, text: string | null) {
   }
 }
 
+/** As much page text as the app takes in one paste. */
+export const MAX_PASTED_PAGE_CHARACTERS = 200_000;
+
+function tooLong(text: string) {
+  return text.length > MAX_PASTED_PAGE_CHARACTERS;
+}
+
 function hint(text: string, photos: number) {
+  if (tooLong(text))
+    return "That's too long: keep just the product's part (name, price, description, details).";
   if (!text.trim() && photos === 0) return "Paste the page text and add at least one photo.";
   if (!text.trim()) return "Paste the page text.";
   if (photos === 0) return "Add at least one photo.";
@@ -147,7 +164,7 @@ export function PagePanel({
       : []);
 
   const busy = sending || state.checking;
-  const ready = text.trim().length > 0 && photos.length > 0;
+  const ready = text.trim().length > 0 && photos.length > 0 && !tooLong(text);
   const shownError = refused ?? state.reason;
   const error = busy || shownError === dismissed ? null : shownError;
 
@@ -289,7 +306,11 @@ export function PagePanel({
             disabled={busy}
             onChange={(event) => write(event.target.value)}
           />
-          {text.trim() && <span className="page-panel-count">{wordCount(text)}</span>}
+          {text.trim() && (
+            <span className={`page-panel-count${tooLong(text) ? " over" : ""}`}>
+              {pasteCount(text)}
+            </span>
+          )}
         </div>
 
         <input

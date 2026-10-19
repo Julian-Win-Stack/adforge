@@ -13,7 +13,7 @@ said in the chat: it is the page now."""
 from dataclasses import dataclass
 
 from django.db import transaction
-from django.db.models import Max
+from django.db.models import Max, QuerySet
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
@@ -37,11 +37,13 @@ ALREADY_KEPT = "The product's page is already read."
 def take_pastes(session: Session) -> None:
     """Keep each page the shop owner pasted in the page panel that code hasn't looked at
     yet, oldest first, or say why it can't be used."""
-    pasted = session.messages.filter(
-        role=Message.Role.USER, pasted_page=True, pasted_page_result=""
-    ).order_by("seq")
-    for message in pasted:
+    for message in unlooked_at(session).order_by("seq"):
         _take(message)
+
+
+def unlooked_at(session: Session) -> QuerySet[Message]:
+    """The pages the shop owner pasted in the page panel that code hasn't looked at yet."""
+    return session.messages.filter(role=Message.Role.USER, pasted_page=True, pasted_page_result="")
 
 
 @dataclass(frozen=True)
@@ -100,7 +102,7 @@ def _refuse(job: Job, message: Message, why: str) -> None:
     with transaction.atomic():
         post_notice(
             job,
-            f"Your pasted page can't be used: {why}",
+            f"Your pasted page can't be used. {why}",
             Message.Level.PROBLEM,
             pasted_page_result=why,
         )

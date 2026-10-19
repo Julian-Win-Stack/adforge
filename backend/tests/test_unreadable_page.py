@@ -10,7 +10,12 @@ import pytest
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
-from agents.producer import INSTRUCTIONS, PASTE_IN_THE_PANEL
+from agents.producer import (
+    INSTRUCTIONS,
+    PAGE_NOT_OPENED,
+    PAGE_TEXT_UNUSABLE,
+    PASTE_IN_THE_PANEL,
+)
 from chat.messages import page_panel_wanted
 from chat.models import Session
 from gateway.fake import FakeModel, turn
@@ -50,8 +55,7 @@ def panel_notices(api: APIClient, session_id: str) -> list[tuple[str, str, bool]
 
 def _a_shop_that_answers_404(httpserver: HTTPServer, fake_model: FakeModel) -> str:
     httpserver.expect_request("/products/mug").respond_with_data("Not here", status=404)
-    link = httpserver.url_for("/products/mug")
-    return f"This page couldn't be read: {link} answered 404 NOT FOUND, so trying again won't help."
+    return PAGE_NOT_OPENED
 
 
 def _a_cookie_wall(httpserver: HTTPServer, fake_model: FakeModel) -> str:
@@ -61,7 +65,7 @@ def _a_cookie_wall(httpserver: HTTPServer, fake_model: FakeModel) -> str:
     fake_model.respond(
         "check_page", {"decision": "unreadable", "reason": "The page is only a cookie banner."}
     )
-    return "This page was read but can't be used: The page is only a cookie banner."
+    return f"{PAGE_TEXT_UNUSABLE} The page is only a cookie banner."
 
 
 @pytest.mark.parametrize(
@@ -110,12 +114,15 @@ def test_a_page_firecrawl_hears_404_for_asks_for_the_page_panel(
     assert panel_notices(api, session_id) == [
         (
             "problem",
-            f"This page couldn't be read: {shampoo_page_url} answered 404 Not Found, so trying "
-            "again won't help.",
+            PAGE_NOT_OPENED,
             True,
         )
     ]
-    assert results_of("read_page")[0].endswith(PASTE_IN_THE_PANEL)
+    # The producer is still given why, in the tool's result.
+    assert results_of("read_page")[0] == (
+        f"The page couldn't be read: {shampoo_page_url} answered 404 Not Found, so trying "
+        f"again won't help. {PASTE_IN_THE_PANEL}"
+    )
     assert paid_for() == []
 
 

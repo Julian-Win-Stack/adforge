@@ -59,7 +59,7 @@ function server(start: Omit<Message, "seq">[]) {
       const message = post(
         said("user", text, {
           pasted_page: pasted === "true",
-          pasted_page_result: null,
+          pasted_page_result: "",
           attachments: photos.map((name, i) => ({
             position: i + 1,
             kind: "picture",
@@ -177,6 +177,10 @@ test("Done sends the page text and photos as one pasted page, says it is checkin
   ]);
   await within(opened).findByText("Checking your page…");
   expect(within(opened).getByRole("button", { name: "Done" })).toHaveProperty("disabled", true);
+  // Still checking once the chat has fetched the pasted page back, unchecked.
+  await poll();
+  expect(within(opened).getByText("Checking your page…")).toBeTruthy();
+  expect(within(opened).getByRole("button", { name: "Done" })).toHaveProperty("disabled", true);
 
   backend.post(
     said("notice", "Using your text as the page and these 2 photos as the product photos.", {
@@ -236,7 +240,7 @@ test("a refused send says why in the panel and keeps everything for another try"
 });
 
 test("a reopened chat reads the result off the pasted message itself", async () => {
-  const pasted = said("user", PAGE, { pasted_page: true, pasted_page_result: null });
+  const pasted = said("user", PAGE, { pasted_page: true, pasted_page_result: "" });
   server([said("user", "https://shop.example/p/mug"), cantRead(), pasted]);
   await openChat();
   const opened = await screen.findByRole("region", { name: "Paste your product page" });
@@ -492,9 +496,24 @@ test("a reopened chat shows the paste being checked, not an empty panel", async 
   server([
     said("user", "https://shop.example/p/mug"),
     cantRead(),
-    said("user", PAGE, { pasted_page: true, pasted_page_result: null }),
+    said("user", PAGE, { pasted_page: true, pasted_page_result: "" }),
   ]);
   await openChat();
   const opened = await screen.findByRole("region", { name: "Paste your product page" });
   expect(within(opened).getByLabelText("Page text")).toHaveProperty("value", PAGE);
+  expect(within(opened).getByText("Checking your page…")).toBeTruthy();
+  expect(within(opened).getByRole("button", { name: "Done" })).toHaveProperty("disabled", true);
+});
+
+test("a paste longer than the app takes says so before Done", async () => {
+  server([said("user", "https://shop.example/p/mug"), cantRead()]);
+  await openChat();
+  const opened = await screen.findByRole("region", { name: "Paste your product page" });
+  const box = within(opened).getByLabelText("Page text");
+  fireEvent.change(box, { target: { value: "m".repeat(200_001) } });
+  await userEvent.upload(within(opened).getByLabelText("Product photos"), [photo("front.png")]);
+
+  expect(within(opened).getByText("200,001 of 200,000 characters")).toBeTruthy();
+  expect(within(opened).getByText(/That's too long/)).toBeTruthy();
+  expect(within(opened).getByRole("button", { name: "Done" })).toHaveProperty("disabled", true);
 });

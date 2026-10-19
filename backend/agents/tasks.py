@@ -108,8 +108,8 @@ def _woken_by(session: Session) -> list[str]:
 
 def _stop_unless_theres_more_to_read(session_id: str, read_up_to: int) -> bool:
     """Mark the producer stopped, unless the user said something after the messages up to
-    `read_up_to` it was last given or that code hasn't routed yet, or a scene step finished
-    that it hasn't been given. Both
+    `read_up_to` it was last given or that code hasn't routed yet, sent a pasted page code
+    hasn't looked at, or a scene step finished that it hasn't been given. Both
     happen under the session's lock, which a message sent and a step finished take before
     they look for a producer, so each is either found here or starts a new producer itself."""
     with transaction.atomic():
@@ -117,6 +117,8 @@ def _stop_unless_theres_more_to_read(session_id: str, read_up_to: int) -> bool:
         if session.messages.filter(role=Message.Role.USER, seq__gt=read_up_to).exists():
             return False
         if routing.unrouted_messages(session).exists():
+            return False
+        if page_panel.unlooked_at(session).exists():
             return False
         if loop.unread_steps(PRODUCER, session).exists():
             return False

@@ -749,6 +749,13 @@ button:disabled {
   cursor: default;
 }
 
+/* The panel's Done waits on the owner, so plainly off: grey, not a dimmed accent. */
+.page-panel .yes-button:disabled {
+  opacity: 1;
+  background: var(--border-strong);
+  color: var(--text-3);
+}
+
 /* A page the owner pasted, as a short card in the chat instead of a page-long bubble. */
 .pasted-page {
   display: flex;
@@ -948,13 +955,22 @@ button:disabled {
   opacity: 0.6;
 }
 
+/* On a pill of its own, so a long paste scrolling under it stays readable. */
 .page-panel-count {
   position: absolute;
-  right: 12px;
-  bottom: 8px;
+  right: 10px;
+  bottom: 7px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--border-strong);
   font-size: 11.5px;
   color: var(--text-3);
   pointer-events: none;
+}
+
+.page-panel-count.over {
+  color: var(--danger);
 }
 
 .page-panel-photos {
@@ -2078,7 +2094,7 @@ button:disabled {
 
   .page-panel {
     gap: 10px;
-    max-height: 50vh;
+    max-height: 60vh;
     padding: 12px;
   }
 
@@ -2091,8 +2107,8 @@ button:disabled {
   }
 
   .page-panel-text textarea {
-    height: 104px;
-    min-height: 72px;
+    height: 160px;
+    min-height: 96px;
   }
 
   /* On a phone the photos run in one row that scrolls sideways. */

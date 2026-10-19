@@ -17,10 +17,12 @@ from chat.api import (
     MAX_PASTED_PAGE_CHARACTERS,
     MAX_TEXT_CHARACTERS,
     PAGE_PANEL_NOT_WANTED,
+    PASTE_BEING_CHECKED,
     PASTE_THE_PAGE,
+    PASTE_TOO_LONG,
 )
 from chat.models import Attachment, Message
-from gateway.fake import FakeModel, turn
+from gateway.fake import FakeModel, meanwhile, turn
 from jobs.models import Job
 
 from .conftest import (
@@ -170,7 +172,7 @@ def test_a_pasted_page_that_fails_its_check_keeps_nothing_and_says_why_until_a_g
     assert [(each["level"], each["text"], each["pasted_page_result"]) for each in failed] == [
         (
             "problem",
-            "Your pasted page can't be used: The text is only a cookie banner.",
+            "Your pasted page can't be used. The text is only a cookie banner.",
             "The text is only a cookie banner.",
         )
     ]
@@ -280,6 +282,74 @@ def test_a_pasted_page_that_cant_be_checked_keeps_nothing_and_says_so_once(
         (each["text"], each["pasted_page_result"])
         for each in messages(api, session_id)
         if each["role"] == "notice" and each["pasted_page_result"]
-    ] == [(f"Your pasted page can't be used: {why}", why)]
+    ] == [(f"Your pasted page can't be used. {why}", why)]
     assert Job.objects.get().page_html_key == ""
     assert producer_turns() == 2
+
+
+def test_a_pasted_page_counts_each_line_end_once_and_says_plainly_when_too_long(
+    fake_model: FakeModel, unreadable: str, paste: Callable[..., Any]
+) -> None:
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("produce", turn(says="Got your page."))
+    # A browser sends each line end of the text box as two characters.
+    lines = MAX_PASTED_PAGE_CHARACTERS // 10
+    just_fits = "\r\n".join(["Mug line."] * lines)
+    assert len(just_fits) > MAX_PASTED_PAGE_CHARACTERS >= len(just_fits.replace("\r\n", "\n"))
+
+    too_long = paste(just_fits + "\r\nOne more line.", ("front.png", FRONT))
+    sent = paste(just_fits, ("front.png", FRONT), ("side.png", SIDE))
+
+    assert (too_long.status_code, too_long.json()) == (400, {"text": [PASTE_TOO_LONG]})
+    assert sent.status_code == 201, sent.json()
+    kept = Message.objects.get(pasted_page=True)
+    assert (kept.text, kept.pasted_page_result) == (just_fits.replace("\r\n", "\n"), "accepted")
+
+
+def test_a_second_pasted_page_is_refused_while_the_first_is_checked(
+    api: APIClient,
+    fake_model: FakeModel,
+    unreadable: str,
+    session_id: str,
+    paste: Callable[..., Any],
+) -> None:
+    second: list[Any] = []
+
+    def checked_while_pasted_again() -> dict[str, Any]:
+        second.append(paste(PASTE, ("front.png", FRONT)))
+        return READABLE
+
+    fake_model.respond("check_page", checked_while_pasted_again)
+    fake_model.respond("produce", turn(says="Got your page."))
+
+    sent = paste(PASTE, ("front.png", FRONT), ("side.png", SIDE))
+
+    assert sent.status_code == 201, sent.json()
+    assert (second[0].status_code, second[0].json()) == (400, {"detail": PASTE_BEING_CHECKED})
+    assert [
+        each["pasted_page_result"] for each in messages(api, session_id) if each["pasted_page"]
+    ] == ["accepted"]
+
+
+def test_a_page_pasted_while_the_producer_answers_a_question_is_kept_without_another_message(
+    api: APIClient,
+    fake_model: FakeModel,
+    unreadable: str,
+    session_id: str,
+    paste: Callable[..., Any],
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond(
+        "produce",
+        meanwhile(
+            lambda: paste(PASTE, ("front.png", FRONT), ("side.png", SIDE)),
+            turn(says="Paste it in the panel below."),
+        ),
+        turn(says="Got your page."),
+    )
+
+    say("Where do I paste my page?")
+
+    assert Job.objects.get().page_text == PASTE
+    assert the_paste(api, session_id)["pasted_page_result"] == "accepted"

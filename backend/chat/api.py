@@ -10,6 +10,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from adforge import file_store
+from agents import page_panel
 from agents.tasks import another_session_is_busy, hold_one_at_a_time_lock, wake_producer
 from gateway.gateway import IMAGE_TYPE_NAMES, IMAGE_TYPES
 from jobs import work
@@ -37,8 +38,11 @@ TAPPED_YES = "Yes"
 
 # What the page panel is told when its message can't be taken.
 PASTE_THE_PAGE = "Paste the text of the product's page."
-PAGE_PANEL_NOT_WANTED = (
-    "The product page doesn't need pasting: send it in the chat as a normal message instead."
+PAGE_PANEL_NOT_WANTED = "Your product page doesn't need pasting right now."
+PASTE_BEING_CHECKED = "Your pasted page is still being checked."
+PASTE_TOO_LONG = (
+    f"That's too long to use. Paste just the product's part of the page (its name, price, "
+    f"description and details), up to {MAX_PASTED_PAGE_CHARACTERS:,} characters."
 )
 ATTACH_A_PHOTO = "Attach at least one photo of the product with the page's text."
 
@@ -176,9 +180,11 @@ class SendSerializer(serializers.Serializer[None]):
     """What the chat box sends: free text, photos, or both. There is no link field, no
     length field and no set of options to pick from."""
 
-    # Typed text is held to MAX_TEXT_CHARACTERS in `validate`: only a pasted page is longer.
+    # Held to its cap in `validate`, typed text to MAX_TEXT_CHARACTERS and a pasted page to
+    # MAX_PASTED_PAGE_CHARACTERS, counted once its line ends are one character each. This
+    # bound only stops a send far past both before it is read.
     text = serializers.CharField(
-        max_length=MAX_PASTED_PAGE_CHARACTERS, required=False, allow_blank=True, default=""
+        max_length=2 * MAX_PASTED_PAGE_CHARACTERS, required=False, allow_blank=True, default=""
     )
     photos = serializers.ListField(
         child=serializers.FileField(), required=False, max_length=MAX_PHOTOS, default=list
@@ -217,9 +223,14 @@ class SendSerializer(serializers.Serializer[None]):
     def validate(self, data: dict[str, object]) -> dict[str, object]:
         text = str(data["text"])
         if data["pasted_page"]:
+            # A browser sends a text box's line ends as two characters each; the owner pasted
+            # one, and the page keeps one.
+            text = text.replace("\r\n", "\n")
             if not text.strip():
                 raise serializers.ValidationError({"text": PASTE_THE_PAGE})
-            return data
+            if len(text) > MAX_PASTED_PAGE_CHARACTERS:
+                raise serializers.ValidationError({"text": PASTE_TOO_LONG})
+            return {**data, "text": text}
         if len(text) > MAX_TEXT_CHARACTERS:
             raise serializers.ValidationError(
                 {"text": f"Ensure this field has no more than {MAX_TEXT_CHARACTERS} characters."}
@@ -345,10 +356,13 @@ def _chosen_try(session: Session, clip: int) -> ProducedItem:
 
 def _refuse_paste(session: Session, photos: list[UploadedFile[bytes]]) -> str | None:
     """Why the page panel's message in `session` is refused, or None to keep it: the chat
-    must be waiting for the page to be pasted, and the page must come with a photo. A page
-    with no photo can't be made into an ad until the whole product can be drawn from text."""
+    must be waiting for the page to be pasted, with no pasted page still being checked, and
+    the page must come with a photo. A page with no photo can't be made into an ad until the
+    whole product can be drawn from text."""
     if not messages.page_panel_wanted(session):
         return PAGE_PANEL_NOT_WANTED
+    if page_panel.unlooked_at(session).exists():
+        return PASTE_BEING_CHECKED
     if not photos:
         return ATTACH_A_PHOTO
     return None
