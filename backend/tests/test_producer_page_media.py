@@ -435,9 +435,7 @@ def test_a_page_read_before_the_grids_had_lines_is_shown_the_grids_afresh(
     say("Try again")
 
     first, again = ModelCall.objects.filter(purpose="pick_photos").order_by("created_at")
-    assert [image["label"] for image in again.images] == [
-        image["label"] for image in first.images
-    ]
+    assert [image["label"] for image in again.images] == [image["label"] for image in first.images]
     assert again.handoff["hidden_pictures"] == first.handoff["hidden_pictures"]
     assert "I40 (hidden)" in again.handoff["hidden_pictures"]
     assert read_page_result_of_last().endswith("Kept 2 product photos.")
