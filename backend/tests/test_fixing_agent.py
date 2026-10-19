@@ -637,6 +637,31 @@ def test_an_old_plans_new_clip_the_agent_fixes_with_a_new_line_lands(
     assert [cut["clip"] for cut in ads()[-1].cuts if cut["scene"] == 2] == [passed.pk]
 
 
+def test_an_agent_fixing_an_old_plans_new_clip_is_told_giving_up_keeps_the_scenes_clip(
+    made_ad: ProducedItem,  # noqa: F811
+    fake_model: FakeModel,
+    steps: HeldSteps,
+) -> None:
+    fixed_by_a_plan(2, "new_clip", change=SLOWER, note=SLOWER)
+    fake_model.respond("rewrite_clip_prompt", rewrite(REMADE))
+    fake_model.answer_unscripted("check_clip_motion", failing_first(50))
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[film_again()]),
+        turn(calls=[("say_to_camera", {"reason": "The pour never slows."})]),
+    )
+
+    steps.run_held()
+
+    # Door 1 took it, but a fix's scene keeps its clip from before, so that's what it's told.
+    fixing = AgentFix.objects.get()
+    assert (fixing.door, fixing.said_to_camera) == (AgentFix.Door.JUDGE, False)
+    [turn_1, *_] = [each for each in fake_model.turns_taken if each.purpose == "fix_scene"]
+    assert fixing_agent.GAVE_UP[AgentFix.Door.OWNER] in turn_1.instructions
+    assert told()[-1].startswith(fixing_agent.GIVEN_UP[AgentFix.Door.OWNER])
+
+
 def test_an_agent_fixing_an_owners_note_is_told_giving_up_keeps_the_scenes_clip(
     fake_model: FakeModel, failed_clip: SceneStep
 ) -> None:
@@ -694,6 +719,34 @@ def test_an_agent_that_stops_after_a_try_puts_the_scene_back_and_keeps_the_first
     assert first is not None
     used, _ = producer._clip_and_transcript(Scene.objects.get(number=2))
     assert used.file == first.file
+
+
+def test_a_step_run_again_after_the_agent_stopped_keeps_the_first_clip(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond(
+        "check_clip_motion",
+        *judged(failing(FLOATS), failing(FLOATS)),
+        *judged(failing(FLOATS), failing(FLOATS)),
+    )
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[film_again(line=NEW_LINE, shows=STIRS, video_prompt=STIRS)]),
+        *[OutsideServiceDown("503 from the model")] * 6,
+    )
+    step = clip_of_scene_2(fake_model, steps, say)
+    first = step.produced.order_by("id").first()
+
+    # Run again, it finds the agent stopped with no try passed and no give-up: the scene is
+    # not said to camera, and the first clip stays.
+    assert first is not None and work._auto_fixed(step, first).file == first.file
+    fixing = AgentFix.objects.get()
+    assert (fixing.said_to_camera, fixing.camera_before) == (False, {})
+    assert scene_row() == (LINE_2, SHOWS, "", "showcase", "no face")
 
 
 # --- When the worker restarts ----------------------------------------------------------------
@@ -852,3 +905,30 @@ def test_the_agent_is_given_up_on_after_its_most_turns(
     assert outcome.gave_up == "The fixing agent stopped after 3 turns."
     assert len([each for each in fake_model.turns_taken if each.purpose == "fix_scene"]) == 3
     assert scene_row() == (LINE_2, SHOWS, "", "showcase", "no face")
+
+
+def test_a_give_up_kept_already_is_left_as_it_is_when_the_worker_restarts(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond(
+        "check_clip_motion",
+        *judged(failing(FLOATS), failing(FLOATS)),
+        *judged(failing(FLOATS), failing(FLOATS)),
+    )
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[film_again()]),
+        turn(calls=[("say_to_camera", {"reason": "The stir never reads."})]),
+    )
+    step = clip_of_scene_2(fake_model, steps, say)
+    kept = AgentFix.objects.get()
+    assert kept.said_to_camera and kept.camera_before
+
+    # The worker restarted after the give-up was kept, before the step finished.
+    work.end_the_agents_fixing(step)
+
+    again = AgentFix.objects.get()
+    assert (again.camera_before, again.kept_id) == (kept.camera_before, kept.kept_id)

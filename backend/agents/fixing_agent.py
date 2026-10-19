@@ -129,20 +129,28 @@ helps; and a rule about following a producer's note does not apply.
 # door 2's keeps its clip as it was (spec section 2; Julian's OK 2026-10-19 20:10).
 GAVE_UP = {
     AgentFix.Door.JUDGE: "the line is then said to camera by the presenter.",
-    AgentFix.Door.OWNER: "the scene then keeps its clip as it was, and the shop owner is shown "
-    "every try you made and your reason.",
+    AgentFix.Door.OWNER: "the scene keeps its clip as it was, and the shop owner is shown every "
+    "try and your reason.",
 }
 # The say_to_camera tool's description for door 2; door 1's is the tool's own.
 SAY_TO_CAMERA_FOR_A_NOTE = (
     "Give up on filming this scene: it keeps its clip as it was, and the shop owner is shown "
-    "every try you made and your reason. Say why, and which try you think is best."
+    "every try and your reason. Say why, and which try you think is best."
 )
 # What say_to_camera answers, by door.
 GIVEN_UP = {
     AgentFix.Door.JUDGE: "The scene is given up: its line will be said to camera.",
     AgentFix.Door.OWNER: "The scene is given up: it keeps its clip as it was, and the shop "
-    "owner is shown every try you made and your reason.",
+    "owner is shown every try and your reason.",
 }
+
+
+def _gives_up_as(fixing: AgentFix) -> AgentFix.Door:
+    """Which door's giving up `fixing` is told of: door 1's on a step of its own, said to
+    camera; else door 2's, as a fix's step keeps its clip from before whichever door took it."""
+    if fixing.door == AgentFix.Door.JUDGE and work.said_to_camera_on_give_up(fixing.step):
+        return AgentFix.Door.JUDGE
+    return AgentFix.Door.OWNER
 
 
 def instructions(door: str = AgentFix.Door.JUDGE) -> str:
@@ -314,9 +322,9 @@ def _work(fixing: AgentFix) -> None:
             turn = take_turn(
                 session=fixing.step.tool_call.session,
                 purpose=PURPOSE,
-                instructions=instructions(fixing.door),
+                instructions=instructions(_gives_up_as(fixing)),
                 conversation=_fit(_conversation(fixing)),
-                tools=_tools(fixing.door),
+                tools=_tools(_gives_up_as(fixing)),
                 since=fixing.created_at,
             )
         with transaction.atomic():
@@ -749,7 +757,7 @@ class SayToCamera(Tool):
         fixing.gave_up = self.reason
         fixing.picked = self.best_try
         fixing.save(update_fields=["gave_up", "picked"])
-        return GIVEN_UP[AgentFix.Door(fixing.door)]
+        return GIVEN_UP[_gives_up_as(fixing)]
 
 
 TOOLS: list[type[Tool]] = [

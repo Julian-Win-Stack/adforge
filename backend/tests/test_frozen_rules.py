@@ -394,17 +394,17 @@ def test_the_fixing_agents_instructions_are_the_approved_ones_word_for_word() ->
 # OK 2026-10-19 20:10): door 1's scene is said to camera, door 2's keeps its clip.
 GAVE_UP_AT_EACH_DOOR = {
     "judge": "the line is then said to camera by the presenter.",
-    "owner": "the scene then keeps its clip as it was, and the shop owner is shown every try you "
-    "made and your reason.",
+    "owner": "the scene keeps its clip as it was, and the shop owner is shown every try and "
+    "your reason.",
 }
 SAY_TO_CAMERA_FOR_A_NOTE = (
     "Give up on filming this scene: it keeps its clip as it was, and the shop owner is shown "
-    "every try you made and your reason. Say why, and which try you think is best."
+    "every try and your reason. Say why, and which try you think is best."
 )
 GIVEN_UP_AT_EACH_DOOR = {
     "judge": "The scene is given up: its line will be said to camera.",
     "owner": "The scene is given up: it keeps its clip as it was, and the shop owner is shown "
-    "every try you made and your reason.",
+    "every try and your reason.",
 }
 
 

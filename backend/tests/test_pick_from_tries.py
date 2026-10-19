@@ -19,6 +19,7 @@ from chat.models import Attachment, Message, Session
 from gateway.fake import FakeModel, turn
 from jobs import work
 from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
+from jobs.notices import post_notice
 
 from .agent_tries import agent_films
 from .conftest import (
@@ -33,7 +34,17 @@ from .conftest import (
 )
 from .fixing import fixed
 from .test_fix_wiring import decided, planning, plans, row, tap_yes
-from .test_producer_auto_fix import FLOATS, REMADE, REMADE_AGAIN, SPINS, failing, rewrite
+from .test_producer_auto_fix import (
+    FAILED,
+    FLOATS,
+    REMADE,
+    REMADE_AGAIN,
+    SPINS,
+    clip_of_scene_2,
+    failing,
+    old_remakes,
+    rewrite,
+)
 from .test_producer_broll import (
     SHOWS,
     TALKING_CHOICE,
@@ -541,3 +552,22 @@ def test_a_tap_on_a_fixs_try_swaps_it_in_and_assembles_the_ad_again(
     assert current_clip(2).file == try_2.file
     assert len(ads()) == ads_before + 1
     assert [cut["clip"] for cut in ads()[-1].cuts if cut["scene"] == 2] == [current_clip(2).pk]
+
+
+def test_a_tap_on_an_old_jobs_remake_shown_before_the_fixing_agent_swaps_it_in(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    step = clip_of_scene_2(fake_model, steps, say)
+    made = old_remakes(FAILED, FAILED)
+    post_notice(step.scene.job, "Watch them.", Message.Level.INFO, tries_of=step.pk)
+
+    assert [shown.clip for shown in work.tries_shown(step).tries] == made
+    sent = tap_use(api, session_id, made[1])
+
+    assert sent.status_code == 201, sent.json()
+    assert current_clip(2).file == made[1].file

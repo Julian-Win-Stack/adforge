@@ -2530,7 +2530,7 @@ def _ended(step: SceneStep) -> AgentFix:
             return ended
         scene = Scene.objects.select_for_update().get(pk=step.scene_id)
         before = _before_the_fix(step)
-        if step.fix_id is None and step.plan_scene_id is None:
+        if said_to_camera_on_give_up(step):
             ended.camera_before = _said_to_camera_from(scene)
             ended.said_to_camera = True
             _say_it_to_camera(scene, told=False)
@@ -2543,6 +2543,12 @@ def _ended(step: SceneStep) -> AgentFix:
         # Else a fix changed the line its clip from before says: the newest try stays.
         ended.save(update_fields=["said_to_camera", "kept", "camera_before"])
     return ended
+
+
+def said_to_camera_on_give_up(step: SceneStep) -> bool:
+    """Whether the fixing agent giving up on `step` has its scene said to camera: a clip step
+    of its own, not a fix's, whose scene keeps its clip from before."""
+    return step.fix_id is None and step.plan_scene_id is None
 
 
 # Why the fixing agent gave up on a scene whose step the worker stopped in the middle of.
@@ -2692,6 +2698,16 @@ def _clip_tries(step: SceneStep) -> list[ProducedItem]:
     return [first, *tries] if first is not None else tries
 
 
+def _tries_shown(step: SceneStep) -> list[ProducedItem]:
+    """The clips a tries notice under a B-roll clip step shows, oldest first: its clip tries,
+    or, for a step from before the fixing agent, its first clip and the old auto-fix's
+    remakes (#180)."""
+    tries = _clip_tries(step)
+    if AgentFix.objects.filter(step=step).exists():
+        return tries
+    return [*tries[:1], *_old_remakes(step)]
+
+
 def try_name(clip: ProducedItem) -> str:
     """Which try of its step a clip is, as the shop owner is shown it: "first clip", or
     "try 1"."""
@@ -2732,7 +2748,7 @@ def tries_shown(step: SceneStep) -> TriesShown:
     """What the chat shows of a clip step the judge failed every try of, as it stands now."""
     made = versions(step.scene)
     labels = {version.clip.pk: version.label for version in made if version.clip is not None}
-    tries = _clip_tries(step)
+    tries = _tries_shown(step)
     current = made[-1].clip if made else None
     in_ad = next(
         (clip for clip in tries if current is not None and current.file == clip.file),
@@ -2820,7 +2836,7 @@ def _try_to_use(clip: ProducedItem, waiting: ProducedItem | None = None) -> int:
         or scene is None
         or step.kind != SceneStep.Kind.CLIP
         or not step.tries_shown.exists()
-        or clip not in _clip_tries(step)
+        or clip not in _tries_shown(step)
     ):
         raise TryNotOnOffer(TRIES_NOT_ON_OFFER)
     shown = tries_shown(step)
