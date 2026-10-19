@@ -214,6 +214,7 @@ def plan_once(case: Case, run: int) -> dict[str, Any]:
                 target_seconds=None,
                 photo_count=len(keys),
                 conversation=conversation,
+                video_transcripts=[],
             ),
             output=producer_decision_for(len(keys)),
             images=[Image(label=f"Photo {n}", key=key) for n, key in enumerate(keys, start=1)],

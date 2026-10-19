@@ -169,6 +169,21 @@ class ProductPhoto(models.Model):
             "such a photo is only used when no other shows what's needed."
         ),
     )
+    from_video = models.ForeignKey(
+        "ProductVideo",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="pictures",
+        help_text="The product video this video picture was cut from; none for any other photo.",
+    )
+    at_second = models.FloatField(
+        null=True, blank=True, help_text="The second of its video it was cut at; none if no video."
+    )
+    note = models.TextField(
+        blank=True,
+        help_text="For a video picture, what it shows that no other photo shows.",
+    )
 
     class Meta:
         ordering = ["job", "position"]
@@ -215,6 +230,10 @@ class ProductVideo(models.Model):
         help_text="Keys of frames spread over the file, first to last; none without a file.",
     )
     duration = models.FloatField(null=True, blank=True, help_text="Seconds; none without a file.")
+    transcript = models.TextField(
+        blank=True,
+        help_text='The words spoken in it, "music only" when nothing is; blank without a file.',
+    )
 
     class Meta:
         ordering = ["job", "position"]

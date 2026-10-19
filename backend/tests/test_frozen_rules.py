@@ -11,6 +11,7 @@ import pytest
 
 from gateway.catalog import MODEL_FOR_PURPOSE, SLOW_ANSWER_SECONDS
 from jobs import clip_judge
+from jobs.checks import FACT_CHECK_INSTRUCTIONS
 from jobs.clip_judge import (
     FRAMES_PER_SECOND,
     MOTION_CHECK,
@@ -412,3 +413,41 @@ def test_the_photo_picker_is_told_of_the_pictures_beside_the_screenshot_as_teste
 )
 def test_the_photo_pickers_rules_name_no_shop(name: str) -> None:
     assert name.casefold() not in PICK_INSTRUCTIONS.casefold()
+
+
+# What the planner and the fact check are told of the product's videos, each line Julian's
+# "keep" (2026-10-19 22:35, decisions/video-context.md).
+PLANNER_VIDEO_PICTURE = (
+    "A picture marked as from the product's video is a product photo like every other, "
+    "showing the product's looks at that moment; the line beside it says what it shows that "
+    "no photo shows."
+)
+PLANNER_VIDEO_WORDS = (
+    "What the product's video says is the shop's own words, used like the page text; "
+    '"music only" means it says nothing.'
+)
+FACT_CHECK_VIDEO_WORDS = (
+    "What the product's video says counts as the shop's own words, like the page's text."
+)
+VIDEO_LINES = [
+    pytest.param(PLANNER, PLANNER_VIDEO_PICTURE, id="planner: a video picture is a product photo"),
+    pytest.param(PLANNER, PLANNER_VIDEO_WORDS, id="planner: what the video says is the shop's"),
+    pytest.param(
+        FACT_CHECK_INSTRUCTIONS, FACT_CHECK_VIDEO_WORDS, id="fact check: the video's words count"
+    ),
+]
+
+
+@pytest.mark.parametrize(("prompt", "line"), VIDEO_LINES)
+def test_the_product_videos_lines_are_as_approved(prompt: str, line: str) -> None:
+    assert " ".join(line.split()) in " ".join(prompt.split())
+
+
+@pytest.mark.parametrize(
+    "name",
+    # The shops and products the video reader was tried on (CODING_STANDARDS.md).
+    ["Rare Beauty", "blush", "applicator", "AirPods", "Helinox", "Levi", "Greenies", "Lemi"],
+)
+def test_the_product_videos_lines_name_no_shop_or_product(name: str) -> None:
+    for line in (PLANNER_VIDEO_PICTURE, PLANNER_VIDEO_WORDS, FACT_CHECK_VIDEO_WORDS):
+        assert name.casefold() not in line.casefold()
