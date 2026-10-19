@@ -32,7 +32,7 @@ from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.gateway import take_turn
 from gateway.types import Happened, Image, Said, Shown, ToolUse
-from jobs import clip_judge, fix_plans, planning, work
+from jobs import clip_judge, fix_plans, owner_parts, planning, work
 from jobs.models import (
     FixCheck,
     FixPlan,
@@ -113,6 +113,9 @@ shows, look at those scenes' frames to confirm, and add each scene where you see
 saying why in its change. Found nowhere: ask the shop owner which scene. Scenes they name \
 win: "only scene 2" means only scene 2. When a photo doesn't show its thing clearly enough \
 to copy how it looks, say it isn't clear.
+A scene's owner part is a part of the product no photo showed, drawn from the shop owner's \
+words or made up, that they said yes to in its starting picture: it is settled. Every later \
+picture of the scene keeps it, so never ask them for a photo of it or how it looks.
 When you can't tell what they want, ask one short question instead, in the question of \
 decide, in plain words."""
 
@@ -994,6 +997,9 @@ def _scene_facts(scene: Scene) -> str:
         prompt = _video_prompt(current.clip) if current and current.clip else ""
         if prompt:
             facts.append(f"The current clip's video prompt: {prompt}")
+    part = owner_parts.owner_part(scene)
+    if part is not None and owner_parts.is_approved(scene):
+        facts.append(f"Its owner part, which the shop owner said yes to: {part.what}. {part.looks}")
     in_use = scene.reference_photos.filter(dropped_by__isnull=True).values_list("thing", flat=True)
     if in_use:
         facts.append(f"The shop owner's photos it uses: {', '.join(in_use)}")
