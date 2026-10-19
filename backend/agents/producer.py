@@ -17,7 +17,15 @@ from chat.models import Attachment, Message, Session
 from gateway import catalog
 from gateway.models import ModelCall
 from gateway.types import MusicHandoff, UnusableReply
-from jobs import auto_fix, clip_judge, fix_check, page, picture_check, reference_photos
+from jobs import (
+    auto_fix,
+    clip_judge,
+    fix_check,
+    owner_parts,
+    page,
+    picture_check,
+    reference_photos,
+)
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
 from jobs.models import (
     BROLL_FIELDS,
@@ -105,6 +113,8 @@ What you can't do, said plainly the same way each time: see pictures or videos. 
 the ad is planned, every photo they send is a product photo: if they send one of something \
 else, don't add it, and tell them to send it with a note on a scene once the first version \
 is made. Slower can't be done: every clip plays at real-time speed.
+A part of the product drawn from the shop owner's words or made up is settled once they \
+say yes to it in a starting picture: never ask them for a photo of it or how it looks again.
 Keep your messages short and friendly, written for someone who isn't technical."""
 
 
@@ -933,6 +943,12 @@ class MakeClip(Tool):
                 f"scene {scene.number}'s starting picture was made for an earlier line, or for "
                 "what the scene showed before, and the scene has changed since. Make its "
                 "starting picture again first."
+            )
+        part = owner_parts.photo_drawn_without(scene, picture)
+        if part is not None:
+            raise Refused(
+                f"scene {scene.number}'s starting picture was drawn before the shop owner's "
+                f"photo of the {part} was kept for it. Make its starting picture again first."
             )
         audio = _current_audio(scene)
         if not scene.produced.filter(
