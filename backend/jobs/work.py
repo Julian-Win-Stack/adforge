@@ -620,6 +620,14 @@ def save_photos(
                 )
             )
             continue
+        size = photos.size_of(photo.content)
+        if size is not None and min(size) < photos.SMALLEST_PHOTO:
+            skipped.append(
+                SkippedPhoto(
+                    url, f"It's only {size[0]} by {size[1]} px, too small to be a product photo."
+                )
+            )
+            continue
         if merge_copies and (copy := copies.copy_of(url, photo.content)) is not None:
             _merge_face(kept[copy], url, faces)
             continue
@@ -686,6 +694,7 @@ def plan(job: Job) -> ProducerDecision:
     """Have the planner plan the ad from the page, the product photos and the conversation,
     and keep the plan. A decision to ask the user keeps nothing."""
     photos = list(job.photos.all())
+    shown = _photos_to_show(job, photos)
     decision = call_model(
         job=job,
         purpose="plan_ad",
@@ -698,7 +707,7 @@ def plan(job: Job) -> ProducerDecision:
             conversation=_conversation(job),
         ),
         output=producer_decision_for(len(photos)),
-        images=[Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos],
+        images=[Image(label=f"Photo {photo.position}", key=photo.file) for photo in shown],
     )
     planned = decision.plan
     if planned is None:
@@ -739,6 +748,26 @@ def plan(job: Job) -> ProducerDecision:
         )
         job.photos.filter(position__in=planned.colour_photos).update(shows_product_colour=True)
     return decision
+
+
+def _photos_to_show(job: Job, photos: list[ProductPhoto]) -> list[ProductPhoto]:
+    """The job's photos a model can be shown in one call: at most clip_judge.MOST_PICTURES,
+    the page's first, then the shop owner's. When some are left out, the chat is told once
+    which."""
+    shown = sorted(photos, key=lambda photo: not photo.source_url)[: clip_judge.MOST_PICTURES]
+    left_out = [f"{photo.position}" for photo in photos if photo not in shown]
+    if not left_out:
+        return shown
+    listed = left_out[0] if len(left_out) == 1 else f"{', '.join(left_out[:-1])} and {left_out[-1]}"
+    text = (
+        f"The ad has {len(photos)} product photos, more than the {clip_judge.MOST_PICTURES} a "
+        f"model can be shown at once, so photo{'s' if len(left_out) > 1 else ''} {listed} "
+        f"{'are' if len(left_out) > 1 else 'is'} left out when it's planned or a line is "
+        "rewritten."
+    )
+    if all(warning["text"] != text for warning in job.warnings):
+        post_notice(job, text, Message.Level.INFO)
+    return shown
 
 
 PORTRAIT_PROMPT = """\
@@ -1019,7 +1048,10 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
         output=rewritten_scene_for(
             scene.number, shows_something=bool(scene.shows), photo_count=len(photos)
         ),
-        images=[Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos]
+        images=[
+            Image(label=f"Photo {photo.position}", key=photo.file)
+            for photo in _photos_to_show(job, photos)
+        ]
         if scene.shows
         else [],
     )
