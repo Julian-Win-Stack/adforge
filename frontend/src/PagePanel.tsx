@@ -55,6 +55,13 @@ function Thumb({ photo, onRemove }: { photo: Photo; onRemove: (() => void) | nul
   );
 }
 
+/** A stored photo's name as the owner gave it: the server's file name, without the unique
+ * id the server puts in front. */
+function shownName(url: string) {
+  const name = decodeURIComponent(url.split("/").pop() ?? url);
+  return name.replace(/^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}[-_]/i, "");
+}
+
 /** The file a photo is sent as: a photo already on the server is fetched back. */
 async function asFile(photo: Photo): Promise<File> {
   if ("file" in photo) return photo.file;
@@ -110,8 +117,8 @@ export function PagePanel({
 }: {
   sessionId: string;
   state: PagePanelState;
-  /** The owner's newest pasted page, put back in the panel when the app couldn't use it and
-   * nothing has been changed here since, as after a reload. */
+  /** The owner's newest pasted page the app hasn't accepted, put back in the panel until
+   * something is changed here, as after a reload. */
   lastPasted: Message | null;
   onDone: (text: string, photos: File[]) => Promise<void>;
 }) {
@@ -130,14 +137,13 @@ export function PagePanel({
   const box = useRef<HTMLTextAreaElement>(null);
   const unfolded = useRef(false);
 
-  const putBack = state.reason !== null && lastPasted !== null;
-  const text = typed ?? (putBack ? lastPasted.text : "");
+  const text = typed ?? lastPasted?.text ?? "";
   const photos: Photo[] =
     added ??
-    (putBack
+    (lastPasted
       ? lastPasted.attachments
           .filter((attachment) => attachment.kind === "picture")
-          .map(({ url }) => ({ name: decodeURIComponent(url.split("/").pop() ?? url), url }))
+          .map(({ url }) => ({ name: shownName(url), url }))
       : []);
 
   const busy = sending || state.checking;
@@ -165,12 +171,13 @@ export function PagePanel({
     const all = Array.from(files);
     const usable = all.filter((file) => PHOTO_TYPES.includes(file.type));
     setSkipped(usable.length < all.length);
-    const fresh = usable.filter(
-      (file) =>
-        !photos.some(
-          (have) => "file" in have && have.name === file.name && have.file.size === file.size,
-        ),
-    );
+    const fresh: File[] = [];
+    for (const file of usable) {
+      const same = (name: string, size: number) => name === file.name && size === file.size;
+      if (photos.some((have) => "file" in have && same(have.name, have.file.size))) continue;
+      if (fresh.some((have) => same(have.name, have.size))) continue;
+      fresh.push(file);
+    }
     if (fresh.length === 0) return;
     setAdded([...photos, ...fresh.map((file) => ({ name: file.name, file }))]);
     changed();
@@ -257,8 +264,8 @@ export function PagePanel({
         <div>
           <p className="page-panel-title">Paste your product page</p>
           <p className="page-panel-sub">
-            We couldn't read it from the link. Paste the page's text and add its photos, or send a
-            working link below.
+            We couldn't read it from the link. Paste the page's text and add its photos
+            <span className="page-panel-sub-more">, or send a working link below</span>.
           </p>
         </div>
         <button
@@ -329,7 +336,7 @@ export function PagePanel({
                 <span className="page-panel-drop-how touch">Tap to choose</span>
               </span>
             ) : (
-              <span>Add more</span>
+              <span>Add</span>
             )}
           </div>
         </div>

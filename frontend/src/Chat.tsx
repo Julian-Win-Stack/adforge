@@ -178,6 +178,8 @@ export function Chat({
   const waitingOnOwner =
     (planWaits || suggestedNotes(messages).size > 0) && !cards.some((card) => card.making !== null);
   const pageAsk = pagePanel(messages);
+  const pasted = lastPastedPage(messages);
+  const unacceptedPaste = pasted && !acceptedPastes(messages).has(pasted.seq) ? pasted : null;
   const covers = new Map(
     cards.flatMap((card) => card.clips.map((clip) => [clip.file, clip.picture])),
   );
@@ -336,7 +338,7 @@ export function Chat({
               <PagePanel
                 sessionId={sessionId as string}
                 state={pageAsk}
-                lastPasted={lastPastedPage(messages)}
+                lastPasted={unacceptedPaste}
                 onDone={(text, photos) => send(text, photos, { pastedPage: true })}
               />
             )}

@@ -2086,6 +2086,10 @@ button:disabled {
     font-size: 12.5px;
   }
 
+  .page-panel-sub-more {
+    display: none;
+  }
+
   .page-panel-text textarea {
     height: 104px;
     min-height: 72px;

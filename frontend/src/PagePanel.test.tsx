@@ -456,3 +456,45 @@ test("the hint says what is still missing, and the reason goes once the paste is
   await user.type(within(opened).getByLabelText("Page text"), " more");
   expect(within(opened).queryByRole("alert")).toBeNull();
 });
+
+test("a paste put back after a reload stays when another link can't be read either", async () => {
+  const backend = server([
+    said("user", "https://shop.example/p/mug"),
+    cantRead(),
+    said("user", "Accept cookies", {
+      pasted_page: true,
+      pasted_page_result: "It's a cookie banner.",
+      attachments: [
+        {
+          position: 1,
+          kind: "picture",
+          url: "/media/0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b-front.png",
+          scene: null,
+        },
+      ],
+    }),
+  ]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  await openChat();
+  const opened = await screen.findByRole("region", { name: "Paste your product page" });
+  expect(within(opened).getByAltText("front.png")).toBeTruthy();
+  await user.upload(within(opened).getByLabelText("Product photos"), [photo("side.png")]);
+
+  backend.post(said("user", "https://shop.example/mug-2"));
+  backend.post(cantRead());
+  await poll();
+  await screen.findAllByText(CANT_READ);
+  expect(within(panel()!).getByLabelText("Page text")).toHaveProperty("value", "Accept cookies");
+  expect(within(panel()!).getAllByRole("img")).toHaveLength(2);
+});
+
+test("a reopened chat shows the paste being checked, not an empty panel", async () => {
+  server([
+    said("user", "https://shop.example/p/mug"),
+    cantRead(),
+    said("user", PAGE, { pasted_page: true, pasted_page_result: null }),
+  ]);
+  await openChat();
+  const opened = await screen.findByRole("region", { name: "Paste your product page" });
+  expect(within(opened).getByLabelText("Page text")).toHaveProperty("value", PAGE);
+});
