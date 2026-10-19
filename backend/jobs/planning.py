@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field, StrictInt, field_validator, model_validat
 
 from gateway.types import Handoff, Judgement
 
+from .reference_photos import same_thing
+
 # How a B-roll scene's details are given, by the planner and by a rewrite alike.
 BROLL_DETAILS_INSTRUCTIONS = """\
 For each B-roll scene, also give:
@@ -619,8 +621,7 @@ class Plan(BaseModel):
         for number, scene in enumerate(self.scenes, start=1):
             if scene.owner_part is None:
                 continue
-            part = " ".join(scene.owner_part.what.split()).casefold()
-            if any(" ".join(need.what.split()).casefold() == part for need in scene.needs):
+            if any(same_thing(need.what, scene.owner_part.what) for need in scene.needs):
                 raise ValueError(
                     f'Scene {number} has a photo of "{scene.owner_part.what}": a part a photo '
                     "shows is a need, never an owner part."

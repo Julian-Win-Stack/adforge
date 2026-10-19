@@ -215,7 +215,19 @@ def _picture_finished(step: SceneStep, picture: ProducedItem | None) -> str:
         f"Background step finished: scene {number}'s starting picture is ready "
         f"(version {picture.version}), and is shown to the shop owner in the chat. "
         f"Photo {step.photo.position} was used: "
-        f"{step.photo_reason}{_cost(step)} {unfinished}{_needs_a_yes(step)}Tell the shop owner."
+        f"{step.photo_reason}{_cost(step)} {unfinished}{_needs_a_yes(step)}{_told_it_waits(step)}"
+        "Tell the shop owner."
+    )
+
+
+def _told_it_waits(step: SceneStep) -> str:
+    """What the producer is told when the chat has just told the shop owner which scenes wait
+    for their yes, as when this picture was the last thing being made."""
+    return "".join(
+        f"The chat told the shop owner that scene {scene.number} waits for their yes on "
+        f"{part.what} in its starting picture, so the ad can't be assembled yet: don't tell "
+        "them again. "
+        for scene, part in say_what_waits_on_the_shop_owner(step.scene.job, step)
     )
 
 
@@ -319,7 +331,7 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
         f" The chat told the shop owner that scene {scene.number} waits for their yes on "
         f"{part.what} in its starting picture, so the ad can't be assembled yet: don't tell "
         "them again."
-        for scene, part in say_what_waits_on_the_shop_owner(step.scene.job)
+        for scene, part in say_what_waits_on_the_shop_owner(step.scene.job, step)
     )
     return (
         f"Background step finished: scene {number}'s clip is ready (version {clip.version}, "
@@ -330,10 +342,16 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
     )
 
 
-def say_what_waits_on_the_shop_owner(job: Job) -> list[tuple[Scene, owner_parts.OwnerPart]]:
+def say_what_waits_on_the_shop_owner(
+    job: Job, finishing: SceneStep | None = None
+) -> list[tuple[Scene, owner_parts.OwnerPart]]:
     """Once every scene is finished but those waiting for the shop owner's yes on their owner
     part, tell the shop owner in the chat which scenes wait and why, once each, ever. Gives
-    the scenes told of now, each with its part."""
+    the scenes told of now, each with its part. `finishing` is the step whose end is being
+    told: it counts as done."""
+    running = SceneStep.objects.filter(status=SceneStep.Status.RUNNING)
+    if finishing is not None:
+        running = running.exclude(pk=finishing.pk)
     scenes = list(job.scenes.order_by("number"))
     waiting = [
         (scene, part)
@@ -342,7 +360,7 @@ def say_what_waits_on_the_shop_owner(job: Job) -> list[tuple[Scene, owner_parts.
         and (part := owner_parts.owner_part(scene)) is not None
         and not owner_parts.is_approved(scene)
         and scene.current_picture() is not None
-        and not scene.steps.filter(status=SceneStep.Status.RUNNING).exists()
+        and not running.filter(scene=scene).exists()
     ]
     if len(waiting) + sum(scene.status == Scene.Status.FINISHED for scene in scenes) != len(scenes):
         return []

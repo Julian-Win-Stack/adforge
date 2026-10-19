@@ -147,7 +147,7 @@ def test_the_owner_part_is_approved_once_the_shop_owner_says_yes_to_the_picture(
     scene = a_broll_scene(call, owner_part=APPLICATOR)
     a_picture(scene, call)
 
-    scene.owner_part_approved_at = timezone.now()
+    owner_parts.approve(scene)
 
     assert owner_parts.is_approved(scene)
 
@@ -157,7 +157,7 @@ def test_a_picture_drawn_again_for_the_part_as_approved_keeps_the_yes(call: Tool
     # fix's, isn't asked about again (T4).
     scene = a_broll_scene(call, owner_part=APPLICATOR)
     a_picture(scene, call, version=1)
-    scene.owner_part_approved_at = timezone.now()
+    owner_parts.approve(scene)
 
     a_picture(scene, call, version=2)
 
@@ -169,7 +169,7 @@ def test_a_picture_drawn_after_the_yes_for_a_changed_part_needs_a_new_yes(
 ) -> None:
     scene = a_broll_scene(call, owner_part=APPLICATOR)
     a_picture(scene, call, version=1)
-    scene.owner_part_approved_at = timezone.now()
+    owner_parts.approve(scene)
 
     scene.owner_part = {**APPLICATOR, "looks": "A pink foam tip on a short gold stem."}
     scene.save()
@@ -183,7 +183,7 @@ def test_a_picture_drawn_after_the_yes_with_a_new_photo_of_the_part_needs_a_new_
 ) -> None:
     scene = a_broll_scene(call, owner_part=APPLICATOR)
     a_picture(scene, call, version=1)
-    scene.owner_part_approved_at = timezone.now()
+    owner_parts.approve(scene)
 
     a_photo_of_the_part(scene)
     a_picture(scene, call, version=2)
@@ -293,3 +293,105 @@ def test_a_word_that_only_contains_the_parts_name_isnt_it(call: ToolCall) -> Non
     owner_parts.approve(approved)
 
     assert Scene.objects.get(number=3).owner_part is None
+
+
+# --- One part for the whole ad (review of the merged build) --------------------------------
+
+PINK = "A pink foam tip on a short gold stem."
+
+
+def a_step(scene: Scene, call: ToolCall) -> SceneStep:
+    """A starting-picture step started for `scene` as it stands now."""
+    step = SceneStep.objects.create(
+        scene=scene,
+        kind=SceneStep.Kind.STARTING_PICTURE,
+        tool_call=call,
+        **SceneStep.snapshot(scene),
+    )
+    step.reference_photos.set(scene.photos_in_use())
+    return step
+
+
+def test_a_correction_on_one_scene_changes_the_part_on_every_scene_showing_it(
+    call: ToolCall,
+) -> None:
+    two = a_broll_scene(call, 2, owner_part=APPLICATOR)
+    three = a_broll_scene(call, 3, owner_part=APPLICATOR)
+    a_picture(two, call)
+    a_picture(three, call)
+
+    owner_parts.words_correction(three, PINK)
+
+    two.refresh_from_db()
+    assert two.owner_part is not None and two.owner_part["looks"] == PINK
+    # Scene 2's picture shows the look corrected away: a yes to it can't be kept.
+    with pytest.raises(ValueError, match="no starting picture"):
+        owner_parts.approve(two)
+
+
+def test_a_correction_after_the_yes_needs_a_new_yes_on_every_scene_showing_the_part(
+    call: ToolCall,
+) -> None:
+    two = a_broll_scene(call, 2, owner_part=APPLICATOR)
+    a_broll_scene(call, 3, owner_part=APPLICATOR)
+    a_picture(two, call)
+    owner_parts.approve(two)
+
+    owner_parts.words_correction(two, PINK)
+
+    three = Scene.objects.get(number=3)
+    assert three.owner_part is not None and three.owner_part["looks"] == PINK
+    assert not owner_parts.is_approved(three)
+    assert not owner_parts.is_approved(Scene.objects.get(number=2))
+
+
+def test_the_shop_owners_change_to_their_photo_goes_into_every_later_picture(
+    call: ToolCall,
+) -> None:
+    two = a_broll_scene(call, 2, owner_part=APPLICATOR)
+    a_broll_scene(call, 3, owner_part=APPLICATOR)
+    a_photo_of_the_part(two)
+    owner_parts.words_correction(two, PINK)
+    two.refresh_from_db()
+    a_picture(two, call, version=2)
+    owner_parts.approve(two)
+
+    three = Scene.objects.get(number=3)
+    assert owner_parts.is_approved(three)
+    step = a_step(three, call)
+    assert owner_parts.drawn_from_words(step) is None
+    changed = owner_parts.photo_words(step)
+    assert changed is not None and changed[1] == PINK
+
+
+def test_a_yes_leaves_a_scene_whose_clip_is_made_as_it_is(call: ToolCall) -> None:
+    two = a_broll_scene(call, 2, owner_part=APPLICATOR)
+    four = a_broll_scene(
+        call, 4, shows="A hand sweeps the applicator across the lips.", status=Scene.Status.FINISHED
+    )
+    ProducedItem.objects.create(
+        job=four.job, scene=four, kind=ProducedItem.Kind.CLIP, version=1, file="s4.mp4"
+    )
+    a_picture(two, call)
+
+    owner_parts.approve(two)
+
+    four.refresh_from_db()
+    assert (four.status, four.owner_part) == (Scene.Status.FINISHED, None)
+
+
+def test_going_back_to_a_picture_the_shop_owner_corrected_needs_a_new_yes(
+    call: ToolCall,
+) -> None:
+    two = a_broll_scene(call, 2, owner_part=APPLICATOR)
+    a_picture(two, call, version=1)
+    row = a_photo_of_the_part(two)
+    a_picture(two, call, version=2)
+    owner_parts.approve(two)
+    assert owner_parts.is_approved(two)
+
+    # Going back to version 1 sets the photo aside.
+    row.set_aside_at = timezone.now()
+    row.save()
+
+    assert not owner_parts.is_approved(two)

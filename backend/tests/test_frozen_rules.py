@@ -178,7 +178,7 @@ FROZEN = [
 ]
 
 
-# The planner's ask for something of the product no photo shows, as Julian approved it for
+# The planner's ask for something of the product no photo shows, for
 # the owner part loop (Oct 19, spec handoffs/owner-part-approval): not proven by grades yet,
 # pinned so it changes only when he says so.
 OWNER_PART_ASK = [

@@ -393,3 +393,80 @@ def test_the_producer_takes_only_the_shop_owners_own_yes() -> None:
         in INSTRUCTIONS
     )
     assert "never decide for them" in INSTRUCTIONS
+
+
+# --- What the producer is refused -------------------------------------------------------------
+
+
+@pytest.mark.usefixtures("pictured")
+def test_a_second_yes_is_kept_once(fake_model: FakeModel, say: Callable[..., None]) -> None:
+    owner_says(fake_model, say, "Yes, that lid looks right.", ("approve_owner_part", {"scene": 2}))
+    owner_says(fake_model, say, "Yes, really.", ("approve_owner_part", {"scene": 2}))
+
+    assert results_of("approve_owner_part")[-1].startswith(
+        "The shop owner already said yes to the lid in scene 2's starting picture"
+    )
+    assert owner_parts.is_approved(scene_2())
+
+
+def test_a_yes_before_any_picture_of_the_part_is_refused(
+    fake_model: FakeModel, say: Callable[..., None]
+) -> None:
+    owner_says(fake_model, say, "Yes.", ("approve_owner_part", {"scene": 2}))
+
+    (approved,) = results_of("approve_owner_part")
+    assert approved.startswith("Refused: scene 2 has no starting picture of the lid as it is now")
+    assert scene_2().owner_part_approved_at is None
+
+
+@pytest.mark.usefixtures("pictured")
+def test_a_yes_while_the_part_is_drawn_again_is_refused(
+    fake_model: FakeModel, say: Callable[..., None]
+) -> None:
+    # The correction's picture is started but not yet drawn.
+    owner_says(
+        fake_model,
+        say,
+        "Make it pink.",
+        ("correct_owner_part", {"scene": 2, "words": "A round pink lid.", "photo": None}),
+    )
+    owner_says(fake_model, say, "Yes.", ("approve_owner_part", {"scene": 2}))
+
+    (approved,) = results_of("approve_owner_part")
+    assert approved.startswith("Refused: scene 2's starting picture is being made")
+    assert scene_2().owner_part_approved_at is None
+
+
+@pytest.mark.usefixtures("pictured")
+def test_a_correction_naming_a_photo_the_chat_hasnt_got_is_refused(
+    fake_model: FakeModel, say: Callable[..., None]
+) -> None:
+    owner_says(
+        fake_model,
+        say,
+        "Like this.",
+        ("correct_owner_part", {"scene": 2, "words": None, "photo": 3}),
+    )
+
+    (result,) = results_of("correct_owner_part")
+    assert result.startswith("Refused: the chat has ")
+    assert pictures_of_scene_2() == 1
+
+
+@pytest.mark.usefixtures("pictured")
+def test_a_correction_once_the_clip_is_made_is_refused(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    yes(fake_model, steps, say)
+
+    owner_says(
+        fake_model,
+        say,
+        "Make it pink.",
+        ("correct_owner_part", {"scene": 2, "words": "A round pink lid.", "photo": None}),
+    )
+
+    (result,) = results_of("correct_owner_part")
+    assert result.startswith("Refused: scene 2 already has a clip")
+    assert owner_parts.owner_part(scene_2()) == owner_parts.OwnerPart(**PART)
+    assert owner_parts.is_approved(scene_2())

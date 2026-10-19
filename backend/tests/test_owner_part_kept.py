@@ -152,3 +152,31 @@ def test_going_back_before_the_photo_sets_it_aside_and_forward_uses_it_again(
 def test_the_producer_and_the_decider_never_ask_again_about_an_approved_part() -> None:
     for instructions in (producer.INSTRUCTIONS, decider.INSTRUCTIONS):
         assert "never ask them for a photo of it or how it looks" in " ".join(instructions.split())
+
+
+def test_a_later_fix_of_a_part_drawn_from_words_gives_the_prompt_writer_its_looks(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811 (the fixture)
+    instructed: dict[str, list[str]],  # noqa: F811
+    steps: HeldSteps,
+    say: Say,
+) -> None:
+    Scene.objects.filter(number=2).update(owner_part=HANDLE)
+    calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
+    made_ready(fake_model, steps, say)
+    owner_parts.approve(scene(2))
+    calling(fake_model, say, *[("make_clip", {"scene": number}) for number in (1, 2, 3)])
+    run(fake_model, steps)
+    calling(fake_model, say, ("assemble_ad", {}))
+
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    fixing.fixed(
+        2, "new_picture", note="Make it brighter.", change="In scene 2, the shelf is brighter."
+    )
+    steps.run_held()
+
+    step = last_step("starting_picture", 2)
+    assert step.fix is not None
+    told = instructed["choose_broll_picture"][-1]
+    assert owner_parts.writer_rule(owner_parts.OwnerPart(**HANDLE)) in told
+    assert HANDLE["looks"] in told

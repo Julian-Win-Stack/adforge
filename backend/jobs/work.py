@@ -1600,6 +1600,12 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
         owner_rules = "\n".join(
             rule for rule in (owner_rules, owner_parts.writer_rule(part)) if rule
         )
+    # Or drawn from the shop owner's photo of it, with what they said to change in it.
+    changed = owner_parts.photo_words(step)
+    if changed is not None:
+        owner_rules = "\n".join(
+            rule for rule in (owner_rules, owner_parts.photo_words_rule(*changed)) if rule
+        )
     # What the scene needs that the main photo can't show comes from a photo of its own,
     # sent to the picture model after the main photo, never to the video model: sent to it,
     # a shop photo's own scene leaked into the clip (graded #12).
@@ -1702,6 +1708,7 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
                     [
                         *([reference_photos.picture_label(things)] if owners else []),
                         *([owner_parts.picture_label(part)] if part is not None else []),
+                        *([owner_parts.photo_words_label(*changed)] if changed else []),
                         choice.prompt,
                     ]
                 ),

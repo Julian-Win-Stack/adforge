@@ -244,9 +244,11 @@ def test_an_approved_owner_part_is_told_as_settled(fake_model: FakeModel, ad: Jo
     part = {"what": "the nozzle", "source": "invented", "looks": "A short white angled spout."}
     scene = ad.scenes.get(number=2)
     scene.owner_part = part
-    scene.owner_part_approved_at = timezone.now()
     scene.save()
     scene.steps.update(owner_part=part)
+    scene.owner_part_approved_at = timezone.now()
+    scene.owner_part_approved_picture = scene.produced.filter(kind="starting_picture").last()
+    scene.save()
     note = _owner_says(ad, "In scene 2 the toilet should be white.")
     fake_model.respond(
         "decide_fixes",

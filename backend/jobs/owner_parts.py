@@ -23,27 +23,21 @@ def owner_part(scene: Scene | SceneStep) -> OwnerPart | None:
 
 
 def is_approved(scene: Scene) -> bool:
-    """Whether the shop owner said yes to the scene's owner part: to the part as it stands,
-    with the same photos of it, in a starting picture of the ad drawn by the time of the yes.
-    A later picture of the part as approved, such as a fix's or another scene's, needs no
-    new yes; one whose part changed since, in its looks or its photos, does."""
-    approved_at = scene.owner_part_approved_at
+    """Whether the shop owner said yes to the scene's owner part as it stands: the picture they
+    said yes to, of this scene or another showing the part, was drawn with the same part and
+    the same photos of it as the scene has now. A later picture of the part as approved, such
+    as a fix's or another scene's, needs no new yes; one whose part changed since, in its looks
+    or its photos, does, even when an older picture drawn the same way exists."""
     part = owner_part(scene)
-    if approved_at is None or part is None:
+    picture = scene.owner_part_approved_picture
+    if part is None or scene.owner_part_approved_at is None or picture is None:
         return False
-    in_use = _photos_of_the_part(scene.photos_in_use(), part.what)
-    seen = ProducedItem.objects.filter(
-        job=scene.job,
-        kind=ProducedItem.Kind.STARTING_PICTURE,
-        step__kind=SceneStep.Kind.STARTING_PICTURE,
-        step__status=SceneStep.Status.FINISHED,
-        step__owner_part=scene.owner_part,
-        created_at__lte=approved_at,
-    ).select_related("step")
-    return any(
-        picture.step is not None
-        and _photos_of_the_part(picture.step.reference_photos.all(), part.what) == in_use
-        for picture in seen
+    step = picture.step
+    return (
+        step is not None
+        and step.owner_part == scene.owner_part
+        and _photos_of_the_part(step.reference_photos.all(), part.what)
+        == _photos_of_the_part(scene.photos_in_use(), part.what)
     )
 
 
@@ -59,30 +53,59 @@ def photo_drawn_without(scene: Scene, picture: ProducedItem) -> str | None:
 
 
 def approve(scene: Scene) -> None:
-    """The shop owner's yes to the scene's owner part, kept for the whole ad: every other
-    scene whose plan shows the same part gets it, approved, with the scene's photos of it, so
-    its pictures and later fixes are drawn with it and the shop owner isn't asked again. A
-    scene with a different owner part, or a product photo that shows the part, keeps its
-    own."""
+    """The shop owner's yes to the scene's owner part in its current starting picture. The part
+    is one thing for the whole ad: every other scene whose plan shows it and has no clip yet
+    gets it, approved, with the scene's photos of it, so its pictures and later fixes are drawn
+    with it and the shop owner isn't asked again. A scene with a different owner part, a
+    product photo that shows the part, or a clip already made keeps its own. Raises ValueError
+    for a scene with no owner part, or no starting picture of the part as it stands."""
     part = owner_part(scene)
     if part is None:
         raise ValueError(f"scene {scene.number} has no owner part")
+    picture = scene.current_picture()
+    if picture is None:
+        raise ValueError(f"scene {scene.number} has no starting picture of its part as it is")
     now = timezone.now()
     with transaction.atomic():
         scene.owner_part_approved_at = now
-        scene.save(update_fields=["owner_part_approved_at"])
-        photos = [
-            row
-            for row in scene.photos_in_use()
-            if reference_photos.same_thing(row.thing, part.what)
-        ]
-        for other in scene.job.scenes.exclude(pk=scene.pk).exclude(shows=""):
-            if not _shows(other, part):
-                continue
-            other.change_line(other.line, broll={"owner_part": scene.owner_part})
+        scene.owner_part_approved_picture = picture
+        scene.save(update_fields=["owner_part_approved_at", "owner_part_approved_picture"])
+        photos = _part_photos(scene, part.what)
+        for other in _sharing(scene, part):
+            _give(other, scene.owner_part, photos, part.what)
             other.owner_part_approved_at = now
-            other.save(update_fields=["owner_part", "owner_part_approved_at", "status"])
-            _keep_photos(other, photos, part.what)
+            other.owner_part_approved_picture = picture
+            other.save(update_fields=["owner_part_approved_at", "owner_part_approved_picture"])
+
+
+def _sharing(scene: Scene, part: OwnerPart) -> list[Scene]:
+    """Every other scene of the ad whose plan shows `part` and whose clip isn't made yet: the
+    part is one thing for the whole ad, so a yes or a correction on one is on them all. A scene
+    whose clip is made keeps its clip and its part."""
+    return [
+        other
+        for other in scene.job.scenes.exclude(pk=scene.pk).exclude(shows="")
+        if _shows(other, part) and not other.produced.filter(kind=ProducedItem.Kind.CLIP).exists()
+    ]
+
+
+def _give(
+    scene: Scene, part: dict[str, object] | None, photos: list[ReferencePhoto], what: str
+) -> None:
+    """Give the scene the owner part `part` and `photos` of it, unapproved: a changed part
+    plans the scene again, so its starting picture is drawn again before its clip."""
+    scene.change_line(scene.line, broll={"owner_part": part})
+    scene.owner_part_approved_at = None
+    scene.owner_part_approved_picture = None
+    scene.save(
+        update_fields=[
+            "owner_part",
+            "owner_part_approved_at",
+            "owner_part_approved_picture",
+            "status",
+        ]
+    )
+    _keep_photos(scene, photos, what)
 
 
 def _shows(scene: Scene, part: OwnerPart) -> bool:
@@ -97,25 +120,39 @@ def _shows(scene: Scene, part: OwnerPart) -> bool:
     return bool(name.search(scene.shows) or name.search(scene.usage))
 
 
+def _part_photos(scene: Scene, what: str) -> list[ReferencePhoto]:
+    """The scene's photos of the part `what` in use."""
+    return [row for row in scene.photos_in_use() if reference_photos.same_thing(row.thing, what)]
+
+
 def _keep_photos(scene: Scene, photos: list[ReferencePhoto], what: str) -> None:
     """Have the scene use `photos` of the part `what`, each as a row of its own with the
     clean picture already drawn, and set aside any other photo of the part it used."""
     wanted = _photos_of_the_part(photos, what)
     for row in scene.photos_in_use():
-        if reference_photos.same_thing(row.thing, what) and (row.file, row.use) not in wanted:
+        if reference_photos.same_thing(row.thing, what) and _photo(row) not in wanted:
             row.set_aside_at = timezone.now()
             row.save(update_fields=["set_aside_at"])
     kept = _photos_of_the_part(scene.photos_in_use(), what)
     for row in photos:
-        if (row.file, row.use) not in kept:
+        if _photo(row) not in kept:
             ReferencePhoto.objects.create(
-                scene=scene, file=row.file, thing=row.thing, use=row.use, drawn=row.drawn
+                scene=scene,
+                file=row.file,
+                thing=row.thing,
+                use=row.use,
+                drawn=row.drawn,
+                words=row.words,
             )
 
 
-def _photos_of_the_part(rows: Iterable[ReferencePhoto], what: str) -> set[tuple[str, str]]:
-    """The (file, use) of each photo in `rows` of the part `what`."""
-    return {(row.file, row.use) for row in rows if reference_photos.same_thing(row.thing, what)}
+def _photo(row: ReferencePhoto) -> tuple[str, str, str]:
+    return (row.file, row.use, row.words)
+
+
+def _photos_of_the_part(rows: Iterable[ReferencePhoto], what: str) -> set[tuple[str, str, str]]:
+    """The (file, use, words) of each photo in `rows` of the part `what`."""
+    return {_photo(row) for row in rows if reference_photos.same_thing(row.thing, what)}
 
 
 def drawn_from_words(step: SceneStep) -> OwnerPart | None:
@@ -159,6 +196,43 @@ def picture_label(part: OwnerPart) -> str:
     )
 
 
+def photo_words(step: SceneStep) -> tuple[OwnerPart, str] | None:
+    """The owner part the step's starting picture draws from the shop owner's photo of it, and
+    what they said to change in that photo, when they said anything: their words go with the
+    photo into every picture of the part."""
+    part = owner_part(step)
+    if part is None:
+        return None
+    words = [
+        row.words
+        for row in step.reference_photos.all()
+        if row.use == ReferencePhoto.Use.PICTURE
+        and row.words
+        and reference_photos.same_thing(row.thing, part.what)
+    ]
+    return (part, words[-1]) if words else None
+
+
+def photo_words_rule(part: OwnerPart, words: str) -> str:
+    """Added to what the model writing a B-roll scene's prompts is told when the shop owner
+    sent a photo of the scene's owner part and said what to change in it."""
+    return (
+        f'One part of the product this scene shows, "{part.what}", comes from the shop owner\'s '
+        f'own photo of it, changed as they said: "{words}" Draw it as their photo shows it, '
+        "with exactly that change and nothing else changed: write the change into the picture "
+        "prompt. Code puts their words before your picture prompt too."
+    )
+
+
+def photo_words_label(part: OwnerPart, words: str) -> str:
+    """Put by code before the starting picture's prompt, so the picture model always gets the
+    shop owner's change to their photo of the part as given."""
+    return (
+        f"Change the {reference_photos.name_of(part.what)} from the shop owner's own picture of "
+        f'it exactly as this says, and nothing else about it: "{words}"'
+    )
+
+
 # Added after the picture check as tested (STARTING_PICTURE_CHECK, unchanged) when the picture
 # draws an owner part from its sentence: the sentence stands in for the shop photo the check
 # has of the rest of the product, for that part only.
@@ -193,20 +267,32 @@ def check_handoff(ask: int, part: OwnerPart | None) -> StartingPictureCheckHando
 
 def words_correction(scene: Scene, words: str) -> None:
     """The shop owner said how their owner part should look: their words are its sentence from
-    now on, and the scene's starting picture is drawn again from them before the clip. Their
-    yes to the last picture no longer counts. Raises ValueError for a scene with no owner part,
-    or no words."""
-    _corrected(scene, _the_part(scene), words)
+    now on, and, when a photo of it is in use, what to change in the photo. The part is one
+    thing for the whole ad, so every scene showing it without a clip yet takes the change, and
+    its starting picture is drawn again before the clip. Their yes to the last picture no
+    longer counts. Raises ValueError for a scene with no owner part."""
+    part = _the_part(scene)
+    photos = [
+        ReferencePhoto.objects.create(
+            scene=scene, file=row.file, thing=row.thing, use=row.use, drawn=row.drawn, words=words
+        )
+        if row.use == ReferencePhoto.Use.PICTURE
+        else row
+        for row in _part_photos(scene, part.what)
+    ]
+    _corrected(scene, part, words, photos)
 
 
 def photo_correction(scene: Scene, file: str, words: str = "") -> ReferencePhoto:
-    """The shop owner sent a photo of their owner part, at `file`, and maybe words on it: it is
-    kept as their reference photo of the part, in place of any older one, and a clean picture
-    of only the part is drawn from it now, which every later starting picture of the scene is
-    drawn with first. Their words, when given, are the part's sentence from now on. The scene's
-    starting picture is drawn again before the clip, and their yes to the last one no longer
-    counts. Raises ValueError for a scene with no owner part, and ReferencePhotoUnusable when
-    the part can't be copied from the photo: then nothing is kept."""
+    """The shop owner sent a photo of their owner part, at `file`, and maybe words on what to
+    change in it: it is kept as their reference photo of the part, in place of any older one,
+    and a clean picture of only the part is drawn from it now, which every later starting
+    picture of it is drawn with first, changed as their words say. Their words, when given, are
+    the part's sentence from now on. The part is one thing for the whole ad, so every scene
+    showing it without a clip yet takes the photo, and its starting picture is drawn again
+    before the clip; their yes to the last one no longer counts. Raises ValueError for a scene
+    with no owner part, and ReferencePhotoUnusable when the part can't be copied from the
+    photo: then nothing is kept."""
     part = _the_part(scene)
     # work draws pictures with this module's rules, so it is imported here rather than above.
     from .work import clean_picture
@@ -216,6 +302,7 @@ def photo_correction(scene: Scene, file: str, words: str = "") -> ReferencePhoto
         file=file,
         thing=reference_photos.name_of(part.what),
         use=ReferencePhoto.Use.PICTURE,
+        words=words,
     )
     try:
         clean_picture(scene, row)
@@ -223,13 +310,7 @@ def photo_correction(scene: Scene, file: str, words: str = "") -> ReferencePhoto
         row.delete()
         raise
     row.save(update_fields=["drawn"])
-    older = [
-        other.pk
-        for other in scene.photos_in_use().exclude(pk=row.pk)
-        if reference_photos.same_thing(other.thing, part.what)
-    ]
-    scene.reference_photos.filter(pk__in=older).update(set_aside_at=timezone.now())
-    _corrected(scene, part, words or part.looks)
+    _corrected(scene, part, words or part.looks, [row])
     return row
 
 
@@ -240,10 +321,13 @@ def _the_part(scene: Scene) -> OwnerPart:
     return part
 
 
-def _corrected(scene: Scene, part: OwnerPart, looks: str) -> None:
-    """Keep `looks` as the part's sentence, and have the scene's starting picture drawn again
-    and approved again before its clip."""
-    scene.owner_part = OwnerPart(what=part.what, source=part.source, looks=looks).model_dump()
-    scene.owner_part_approved_at = None
-    scene.status = Scene.Status.PLANNED
-    scene.save(update_fields=["owner_part", "owner_part_approved_at", "status"])
+def _corrected(scene: Scene, part: OwnerPart, looks: str, photos: list[ReferencePhoto]) -> None:
+    """Keep `looks` as the part's sentence and `photos` as its photos, on the scene and every
+    other scene showing the part without a clip yet, and have each scene's starting picture
+    drawn again and approved again before its clip."""
+    corrected = OwnerPart(what=part.what, source=part.source, looks=looks).model_dump()
+    with transaction.atomic():
+        for each in [scene, *_sharing(scene, part)]:
+            _give(each, corrected, photos, part.what)
+            each.status = Scene.Status.PLANNED
+            each.save(update_fields=["status"])

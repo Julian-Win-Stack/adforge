@@ -276,14 +276,24 @@ class Scene(models.Model):
         blank=True,
         help_text="A part of the product the B-roll scene shows that no photo shows (Owner "
         "part, CONTEXT.md): what it is, whether its looks come from the shop owner's words or "
-        'were invented, and one sentence of how it looks, such as {"what": "the applicator", '
+        'were invented, and one sentence of how it looks, such as {"what": "the lid", '
         '"source": "owner\'s words", "looks": "..."}. Blank when none.',
     )
     owner_part_approved_at = models.DateTimeField(
         null=True,
         blank=True,
-        help_text="When the shop owner said yes to the owner part in the scene's starting "
-        "picture. Blank until then; a picture drawn after it needs a new yes.",
+        help_text="When the shop owner said yes to the owner part in a starting picture. Blank "
+        "until then. The yes covers the part as it stands, its looks and its photos: a later "
+        "picture of it needs no new yes, and a correction clears it.",
+    )
+    owner_part_approved_picture = models.ForeignKey(
+        "ProducedItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The starting picture the shop owner said yes to the owner part in, of this "
+        "scene or another showing the same part. Blank until the yes.",
     )
     fact_checked = models.BooleanField(
         default=False,
@@ -701,6 +711,11 @@ class ReferencePhoto(models.Model):
         blank=True,
         help_text="The clean picture of only the thing, drawn from the photo, in the file "
         "store. Blank until it is drawn.",
+    )
+    words = models.TextField(
+        blank=True,
+        help_text="For a photo of an owner part: what the shop owner said to change in it, "
+        "with the photo or after, drawn into every picture of it. Blank for none.",
     )
     added_by = models.ForeignKey(
         Fix,
