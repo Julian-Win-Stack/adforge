@@ -23,7 +23,6 @@ import io
 import json
 import logging
 import math
-import re
 import subprocess
 import tempfile
 from collections.abc import Iterable, Sequence
@@ -60,11 +59,6 @@ logger = logging.getLogger(__name__)
 
 # Each check is asked ASKS times, each time on its own, and fails when FAILS_TO_FAIL of its
 # answers fail it, as the picture judge: one answer alone misses or invents too often.
-
-# Change 7 (Julian 2026-10-13 04:11): a thing back to normal within this many seconds of when
-# the problem starts is a glitch nobody notices, so the answer passes, its note kept. A
-# starting value from 5 graded clips.
-BACK_TO_NORMAL_WITHIN_SECONDS = 0.5
 
 # MOTION's frames: the frame nearest each 1/FRAMES_PER_SECOND second, from the start.
 FRAMES_PER_SECOND = 5
@@ -353,12 +347,13 @@ def judged(
     or MotionVerdict as a dict, or None for an ask that went unchecked. Each check (SIDES, and
     each MOTION question) is voted on by itself: it fails on FAILS_TO_FAIL failing answers,
     and is not checked with fewer than FAILS_TO_FAIL usable ones. The clip fails when any
-    check fails. A failing answer whose thing is back to normal soon enough is let go.
+    check fails. Every failing answer counts, however soon its thing is back to normal: the
+    half-second forgive rule is gone (Julian 2026-10-19 03:37).
 
     Gives "verdict" (pass, fail or not_checked), "checks" (each check's verdict),
     "failed_answers" (how many answers failed on anything, of all asked), "failures" (each
-    failed answer's check, ask, problems and whole answer), "let_go" (each problem let go,
-    with when it was back to normal) and "answers" (every answer, as given)."""
+    failed answer's check, ask, problems and whole answer) and "answers" (every answer, as
+    given)."""
     # Each check's name and, by ask, the part of each answer that holds its verdict.
     asked: list[tuple[str, list[tuple[int, dict[str, Any]]]]] = [
         ("sides", [(ask, answer) for ask, answer in enumerate(sides, 1) if answer])
@@ -368,21 +363,10 @@ def judged(
     ]
     checks: dict[str, Verdict] = {}
     problems: dict[tuple[str, int], list[str]] = {}
-    let_go: list[dict[str, Any]] = []
     for name, usable in asked:
         fails = 0
         for ask, said in usable:
             if said["verdict"] != "fail":
-                continue
-            if _back_to_normal_soon(said["problem"], said["back_to_normal_at"]):
-                let_go.append(
-                    {
-                        "check": name,
-                        "ask": ask,
-                        "problem": said["problem"],
-                        "back_to_normal_at": said["back_to_normal_at"],
-                    }
-                )
                 continue
             fails += 1
             which = "sides" if name == "sides" else "motion"
@@ -416,7 +400,6 @@ def judged(
         "checks": checks,
         "failed_answers": len(failures),
         "failures": failures,
-        "let_go": let_go,
         "answers": {"sides": sides, "motion": motion},
     }
 
@@ -441,7 +424,8 @@ def _without_owner_change(answer: dict[str, Any] | None) -> dict[str, Any] | Non
 
 def still_failing(ruling: dict[str, Any]) -> list[str]:
     """The problems behind a ruling's failed checks, SIDES first, each check's in the order
-    asked: never one from an answer outvoted on its check, or let go."""
+    asked: never one from an answer outvoted on its check, or let go by a ruling made before
+    the forgive rule was gone."""
     let_go = {(each["check"], each["ask"]) for each in ruling.get("let_go", [])}
     answers = ruling.get("answers", {})
     problems = []
@@ -453,29 +437,6 @@ def still_failing(ruling: dict[str, Any]) -> list[str]:
             if said and said["verdict"] == "fail" and (name, ask) not in let_go:
                 problems.append(said["problem"])
     return problems
-
-
-# Where a problem starts: the first number of the first time it names, as "at 8.0 s",
-# "from 1.2-1.4 s", "from 1.2 to about 3.4 s" or "3 seconds".
-_STARTS = re.compile(
-    r"(\d+(?:\.\d+)?)\s*(?:(?:[-\u2013\u2014]|to|and)\s*(?:about|around|roughly|~)?\s*"
-    r"\d+(?:\.\d+)?\s*)?(?:s\b|sec|second)"
-)
-# When the thing is back to normal, only as a bare time: "4.9", "4.9 s", "4.9 seconds".
-_BACK_AT = re.compile(r"\s*(\d+(?:\.\d+)?)\s*(?:s|secs?|seconds?)?\s*\.?\s*", re.IGNORECASE)
-
-
-def _back_to_normal_soon(problem: str | None, back_to_normal_at: str | None) -> bool:
-    """Whether the thing `problem` is about is back to normal, at `back_to_normal_at`, within
-    BACK_TO_NORMAL_WITHIN_SECONDS of when the problem starts. Only a bare time counts as back
-    to normal: anything else, "never" included, is not back; and a problem that names no
-    second is never let go (decided 2026-10-13, decisions/review-clip-judge-in-app.md item 5;
-    the harness's score.py reads them the same way)."""
-    starts = _STARTS.search(problem or "")
-    back = _BACK_AT.fullmatch(back_to_normal_at or "")
-    if starts is None or back is None:
-        return False
-    return 0 <= float(back.group(1)) - float(starts.group(1)) <= BACK_TO_NORMAL_WITHIN_SECONDS
 
 
 # ---------------------------------------------------------------- judging a clip

@@ -1,6 +1,5 @@
 """The clip judge's ruling from its answers: each check fails a clip on 2 of its 3 answers,
-and a problem whose thing is back to normal within half a second is let go, its note kept
-(change 7, Julian 2026-10-13). What it rules is what the auto-redo acts on: pass or fail, how
+every failing answer counting (the half-second forgive rule is gone, Julian 2026-10-19). What it rules is what the auto-redo acts on: pass or fail, how
 many of the 6 answers failed, and each failed answer's problem and everything it saw."""
 
 import json
@@ -105,33 +104,18 @@ def test_every_answer_is_kept() -> None:
     assert judged(*answers)["answers"] == {"sides": answers[0], "motion": answers[1]}
 
 
-def test_a_thing_back_to_normal_within_half_a_second_is_let_go_with_its_note_kept() -> None:
+def test_a_thing_back_to_normal_soon_still_fails_the_check() -> None:
+    # The half-second forgive rule is gone (Julian 2026-10-19 03:37): every failing answer
+    # counts, however soon its thing is back to normal.
     blink = "The ring at the rim vanishes at 8.0 s; a real one stays."
-    ruling = judged([sides()] * 3, [motion(sudden_change=(blink, "8.4"))] * 2 + [motion()])
-
-    assert ruling["verdict"] == "pass"
-    assert ruling["failed_answers"] == 0
-    assert ruling["failures"] == []
-    assert ruling["let_go"] == [
-        {"check": "sudden_change", "ask": 1, "problem": blink, "back_to_normal_at": "8.4"},
-        {"check": "sudden_change", "ask": 2, "problem": blink, "back_to_normal_at": "8.4"},
-    ]
-
-
-def test_a_thing_back_to_normal_later_than_half_a_second_still_fails() -> None:
-    # The toilet scrub's streaks fade for about a second: Julian tapped it "worth fixing".
-    streaks = "The streaks fade at 2.0 s where the brush isn't; real ones stay."
-    ruling = judged([sides()] * 3, [motion(sudden_change=(streaks, "2.6"))] * 3)
+    ruling = judged(
+        [sides()] * 3,
+        [motion(sudden_change=(blink, "8.1"))] * 2 + [motion()],
+    )
 
     assert ruling["verdict"] == "fail"
-    assert ruling["failed_answers"] == 3
-
-
-def test_a_time_range_is_measured_from_where_it_starts() -> None:
-    blink = "The screen pattern changes from 1.2-1.4 s mid-air; a real screen stays the same."
-    ruling = judged([sides()] * 3, [motion(real_motion=(blink, "1.6 s"))] * 3)
-
-    assert ruling["verdict"] == "pass"
+    assert ruling["failed_answers"] == 2
+    assert still_failing(ruling) == [blink, blink]
 
 
 def test_a_check_with_fewer_than_two_answers_is_not_checked() -> None:
@@ -191,14 +175,12 @@ def test_the_wording_version_changes_whenever_an_answer_form_or_handoff_does(
     assert wording_version() != before
 
 
-def test_still_failing_lists_sides_problems_before_motions_and_leaves_out_what_was_let_go() -> None:
-    blink = "The ring at the rim vanishes at 8.0 s; a real one stays."
-    # SIDES and real_motion fail on 2 of 3; the blink is let go each time, and the third
-    # answer's does_what_was_ordered fail is outvoted.
+def test_still_failing_lists_sides_problems_before_motions_and_leaves_out_the_outvoted() -> None:
+    # SIDES and real_motion fail on 2 of 3; the third answer's does_what_was_ordered fail is
+    # outvoted.
     ruling = judged(
         [sides(HANDLE), sides(), sides(HANDLE)],
-        [motion(real_motion=FLOATS, sudden_change=(blink, "8.4"))] * 2
-        + [motion(does_what_was_ordered=FILLS)],
+        [motion(real_motion=FLOATS)] * 2 + [motion(does_what_was_ordered=FILLS)],
     )
 
     assert ruling["checks"] == {
@@ -210,46 +192,28 @@ def test_still_failing_lists_sides_problems_before_motions_and_leaves_out_what_w
     assert still_failing(ruling) == [HANDLE, HANDLE, FLOATS, FLOATS]
 
 
-# The HANDLE problem starts at 2.4 s. Two SIDES answers fail with a problem and a time it is
-# back to normal at; the clip fails unless the time is a bare one within half a second.
-NO_TIME = "The mug shows a second handle where its plain side should be."
-# Back 2.3 s after it started at 1.2: read from 3.4, it would look like 0.1 s.
-SPAN = "The handle melts into the side from 1.2 to about 3.4 s; a real one stays put."
-BLINK = "A logo appears on the case's back at 3 s and is gone by the next frame."
-FAILS: tuple[str, list[str]] = ("fail", [])
-LET_GO: tuple[str, list[str]] = ("pass", ["sides", "sides"])
+def test_still_failing_leaves_out_what_a_ruling_from_before_let_go() -> None:
+    # Rulings made before the forgive rule was gone are kept on clips, with what they let go.
+    blink = "The ring at the rim vanishes at 8.0 s; a real one stays."
+    ruling = {
+        "checks": {"sides": "pass", "real_motion": "fail"},
+        "answers": {
+            "sides": [sides()] * 3,
+            "motion": [motion(real_motion=FLOATS)] * 2 + [motion(real_motion=(blink, "8.4"))],
+        },
+        "let_go": [
+            {"check": "real_motion", "ask": 3, "problem": blink, "back_to_normal_at": "8.4"}
+        ],
+    }
+
+    assert still_failing(ruling) == [FLOATS, FLOATS]
 
 
-@pytest.mark.parametrize(
-    ("problem", "back", "ruled"),
-    [
-        pytest.param(HANDLE, "never", FAILS, id="never back to normal"),
-        pytest.param(NO_TIME, "0.1", FAILS, id="a problem that names no second"),
-        # A misread time: it can't be back before it went wrong.
-        pytest.param(HANDLE, "2.2", FAILS, id="back before the problem starts"),
-        pytest.param(HANDLE, "never; it stays from 2.4 s on", FAILS, id="never, whatever it names"),
-        pytest.param(SPAN, "3.5", FAILS, id="a span with an about is measured from its start"),
-        pytest.param(
-            HANDLE,
-            "Not back to normal; still fused at the last frame, 2.6 s",
-            FAILS,
-            id="a time in a sentence saying it isn't back",
-        ),
-        pytest.param(HANDLE, "about 2.6", FAILS, id="about a time"),
-        pytest.param(HANDLE, "2.6 or so", FAILS, id="a time or so"),
-        pytest.param(HANDLE, "2.6", LET_GO, id="a bare time"),
-        pytest.param(HANDLE, "2.6 s", LET_GO, id="a bare time with its unit"),
-        pytest.param(HANDLE, " 2.6s ", LET_GO, id="a bare time with its unit stuck on"),
-        pytest.param(HANDLE, "2.6 seconds", LET_GO, id="a bare time in seconds"),
-        pytest.param(BLINK, "3.2 s", LET_GO, id="sides are let go the same way as motions"),
-    ],
-)
-def test_a_sides_problem_is_let_go_only_at_a_bare_time_within_half_a_second_of_its_start(
-    problem: str, back: str, ruled: tuple[str, list[str]]
-) -> None:
-    ruling = judged([sides(problem, back)] * 2 + [sides()], [motion()] * 3)
+def test_a_sides_problem_back_to_normal_soon_still_fails_the_check() -> None:
+    blink = "A logo appears on the case's back at 3 s and is gone by the next frame."
+    ruling = judged([sides(blink, "3.1 s")] * 2 + [sides()], [motion()] * 3)
 
-    assert (ruling["verdict"], [note["check"] for note in ruling["let_go"]]) == ruled
+    assert ruling["checks"]["sides"] == "fail"
 
 
 # ---------------------------------------------------------------- the SIDES check as tested

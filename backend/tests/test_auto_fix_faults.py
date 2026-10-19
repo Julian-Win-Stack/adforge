@@ -77,16 +77,20 @@ def test_an_answer_whose_only_fail_was_outvoted_isnt_handed_over() -> None:
     assert judge_saw(ruling) == [motion(real_motion=FLOATS)]
 
 
-def test_a_fail_let_go_on_a_failed_question_is_left_out() -> None:
-    # The first ask sees the teapot float, and the mug spin at 2 s but back to normal at
-    # 2.2 s: the spin is let go. The other two see the mug spin for good, so sudden_change
-    # still fails, from them; the second sees the teapot float too.
+def test_a_fail_a_ruling_from_before_let_go_on_a_failed_question_is_left_out() -> None:
+    # Made before the half-second forgive rule was gone: the first ask sees the teapot float,
+    # and the mug spin at 2 s but back to normal at 2.2 s, and the spin was let go. The other
+    # two see the mug spin for good, so sudden_change still fails, from them; the second sees
+    # the teapot float too.
     first = motion(real_motion=FLOATS)
     first["sudden_change"] = {"verdict": "fail", "problem": SPINS, "back_to_normal_at": "2.2"}
     ruling = judged(
         [SIDES_OK] * 3,
         [first, motion(real_motion=FLOATS, sudden_change=SPINS), motion(sudden_change=SPINS)],
     )
+    ruling["let_go"] = [
+        {"check": "sudden_change", "ask": 1, "problem": SPINS, "back_to_normal_at": "2.2"}
+    ]
 
     assert faults(ruling) == [FLOATS, SPINS]
     first_seen = {
