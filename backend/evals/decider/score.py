@@ -6,8 +6,9 @@ A case's "expect" has one entry per turn, each with any of:
 - "outcome": planned / not_a_fix / yes / no / go_ahead; "a|b" for either.
 - "gone_ahead": the scenes a go ahead carried on, in order.
 - "scenes": {"<scene>": "<action>"} for each scene the plan must change, an action being
-  new_picture, new_clip, new_line, go_back:<N> or no_change ("a|b" for either). No other
-  scene may be changed (a no-change row is not a change).
+  fix (a B-roll scene's only redo, made by the fixing agent), new_picture or new_line (only
+  on a scene where the person talks to camera), go_back:<N> or no_change ("a|b" for
+  either). No other scene may be changed (a no-change row is not a change).
 - "scenes_include": the same, but other scenes may be changed too.
 - "change_lacks": {"<scene>": [words]}: words the scene's change must not hold, as what the
   shop owner never asked for, such as how the scene ends.
