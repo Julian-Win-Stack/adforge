@@ -2649,7 +2649,7 @@ def _shown_again_for(scene: Scene, clip: ProducedItem) -> None:
     the try filmed it, and the scene after it follows it again."""
     step = tried_at(clip)
     ended = agent_fix(step) if step is not None else None
-    if scene.shows or ended is None or not ended.said_to_camera:
+    if step is None or scene.shows or ended is None or not ended.said_to_camera:
         return
     before = ended.camera_before
     filmed = AgentFixTry.objects.filter(clip=clip).first()
@@ -2661,7 +2661,9 @@ def _shown_again_for(scene: Scene, clip: ProducedItem) -> None:
         "shortened_from": before["shortened_from"],
         "second_state": before["second_state"],
     }
-    if row.get("line"):
+    # A line changed since the give-up is newer than the try's: it stays, and the try's
+    # clip, no longer saying it, is made again from its picture.
+    if row.get("line") and scene.line == step.line:
         shown["line"] = row["line"]
     Scene.objects.filter(pk=scene.pk).update(**shown)
     if before["next_second_state"] is not None:

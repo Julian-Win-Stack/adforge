@@ -408,6 +408,37 @@ def test_typing_which_try_to_use_goes_back_to_it_for_nothing(
     assert paid_for() == paid
 
 
+def test_going_back_to_a_try_after_the_line_changed_keeps_the_newer_line(
+    failed_ad: ProducedItem,
+    api: APIClient,
+    session_id: str,
+    fake_model: FakeModel,
+    say: Callable[..., None],
+) -> None:
+    _, try_1, _ = tries()
+    scene = Scene.objects.get(number=2)
+    newer = "Stoneware that keeps your tea hot."
+    scene.change_line(newer)
+    scene.save(update_fields=["line", "shortened_from", "status"])
+    fake_model.respond(
+        "decide_fixes",
+        planning(
+            ("look_at_version", {"scene": 2, "version": 2}),
+            decided(row(2, "go_back", go_back_to=2)),
+        ),
+    )
+    say("Use the second one in scene 2.")
+
+    tap_yes(api, session_id, plans()[-1])
+
+    # The try's picture is brought back, the product shown again, with the newer line.
+    scene.refresh_from_db()
+    assert (scene.line, scene.shows) == (newer, SHOWS)
+    top = work.versions(scene)[-1]
+    assert top.picture is not None and top.picture.file == try_1.picture.file  # type: ignore[union-attr]
+    assert top.clip is None
+
+
 SLOWER = "Pour the tea slower."
 
 
