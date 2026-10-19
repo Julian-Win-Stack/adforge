@@ -167,18 +167,32 @@ def test_two_of_three_failing_answers_on_one_fault_fail_their_check_on_that_faul
     assert still_failing(ruling) == [FLOATS, FLOATS]
 
 
-def test_a_group_counts_only_the_failing_answers_in_it() -> None:
-    # The call puts a passing answer in with a failing one: still only one failing answer.
-    def with_a_pass(check: str, failing: list[dict[str, Any]]) -> dict[str, Any]:
-        return {"read": [], "groups": [{"asks": [1, 3]}, {"asks": [2]}]}
+@pytest.mark.parametrize(
+    "groups",
+    [
+        pytest.param([{"asks": [0, 1]}], id="asks counted from 0"),
+        pytest.param([{"asks": [5, 6]}], id="asks never sent"),
+        pytest.param([], id="no groups"),
+        pytest.param([{"asks": [1]}], id="a failing answer left out"),
+        pytest.param([{"asks": [1, 3]}, {"asks": [2]}], id="a passing answer put in"),
+        pytest.param([{"asks": [1, 2]}, {"asks": [2]}], id="an answer in two groups"),
+    ],
+)
+def test_a_muddled_same_fault_reply_fails_the_check_on_its_votes(
+    groups: list[dict[str, Any]],
+) -> None:
+    # Never a silent pass: a reply that doesn't put each failing answer in one group is no
+    # answer, as when the call fails.
+    def muddled(check: str, failing: list[dict[str, Any]]) -> dict[str, Any]:
+        return {"read": [], "groups": groups}
 
     ruling = judged(
-        [sides()] * 3,
-        [motion(real_motion=FLOATS), motion(real_motion=FILLS), motion()],
-        with_a_pass,
+        [sides()] * 3, [motion(real_motion=FLOATS), motion(real_motion=FILLS), motion()], muddled
     )
 
-    assert ruling["checks"]["real_motion"] == "pass"
+    assert ruling["checks"]["real_motion"] == "fail"
+    assert "error" in ruling["agreement"]["real_motion"]
+    assert still_failing(ruling) == [FLOATS, FILLS]
 
 
 def test_when_the_same_fault_call_fails_two_failing_answers_still_fail_their_check() -> None:
@@ -267,6 +281,7 @@ def test_two_answers_settle_a_check_when_its_third_went_unchecked() -> None:
         "NEEDS_PHOTO_LABEL",
         "SIDES_FRAMES_PER_SECOND",
         "FRAMES_PER_SECOND",
+        "AGREE_ON_FAULT",
     ],
 )
 def test_the_wording_version_changes_whenever_what_the_judge_is_told_does(
@@ -280,7 +295,15 @@ def test_the_wording_version_changes_whenever_what_the_judge_is_told_does(
 
 
 @pytest.mark.parametrize(
-    "form", ["SidesVerdict", "MotionVerdict", "ClipCheckHandoff", "MotionCheckHandoff"]
+    "form",
+    [
+        "SidesVerdict",
+        "MotionVerdict",
+        "ClipCheckHandoff",
+        "MotionCheckHandoff",
+        "AgreeHandoff",
+        "Agreement",
+    ],
 )
 def test_the_wording_version_changes_whenever_an_answer_form_or_handoff_does(
     form: str, monkeypatch: pytest.MonkeyPatch
@@ -289,6 +312,15 @@ def test_the_wording_version_changes_whenever_an_answer_form_or_handoff_does(
     # The form with one more field, as when a question is added to it.
     changed = create_model("Changed", __base__=getattr(clip_judge, form), changed_thing=(str, ""))
     monkeypatch.setattr(clip_judge, form, changed)
+
+    assert wording_version() != before
+
+
+def test_the_wording_version_changes_whenever_a_same_fault_question_does(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    before = wording_version()
+    monkeypatch.setitem(clip_judge.AGREE_QUESTIONS, "real_motion", "does it move?")
 
     assert wording_version() != before
 

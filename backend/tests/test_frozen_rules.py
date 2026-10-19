@@ -314,6 +314,31 @@ for that. Never compare the frames with the photo: differences in size, angle, c
 print are not a fail."""
 
 
+# The same-fault call (Change A, Julian's yes 2026-10-18 21:48), as the judge prototype
+# tested it on round 5 (runs/round-5-prototypes/judge).
+AGREE_ON_FAULT_AS_TESTED = """\
+Several independent looks at the same short video clip each answered one question about \
+it, and each said the clip fails. You get each failing answer's problem, as written, with its ask \
+number. Decide whether at least two of them describe the SAME fault.
+
+Same fault means all three of these: the same object or part, the same event happening to it, and \
+time spans that overlap. A problem's time span runs from when it says it starts to when it says it \
+ends or is back to normal ("never" means to the end of the clip). A single moment counts as a span \
+of that moment: "from 1.0 to 1.8 s" and "at 1.4 s" overlap; moments 0.1 s apart, like 0.8 s and \
+0.9 s, are the same moment. Different words for the same thing count as the same \
+("the tip merges with" and "the tip absorbs"). Two different things wrong with the clip, or the \
+same object with two different things happening to it, or the same kind of thing at times that \
+don't overlap, are different faults, even if both are real.
+
+Work in two steps. First, for each answer write its object, its event and its time span. Then put \
+the answers in groups, one group per fault, every answer in exactly one group."""
+
+
+def test_the_same_fault_call_is_unchanged_from_the_one_tested() -> None:
+    assert clip_judge.AGREE_ON_FAULT == AGREE_ON_FAULT_AS_TESTED
+    assert MODEL_FOR_PURPOSE["agree_on_fault"] == "gpt-6.1-sol"
+
+
 def test_the_clip_judge_is_unchanged_from_the_one_proved() -> None:
     assert SIDES_CHECK == CLIP_SIDES_AS_PROVED
     assert MOTION_CHECK == CLIP_MOTION_AS_PROVED
