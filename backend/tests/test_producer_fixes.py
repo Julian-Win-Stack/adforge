@@ -619,7 +619,7 @@ def test_a_note_on_a_scene_with_its_clip_and_one_without_is_planned_and_made_bot
         planning(
             ("look_at_picture", {"scene": 1}),
             ("look_at_picture", {"scene": 2}),
-            decided(row(2, "new_picture", FIX_2), row(1, "new_picture", NOTE_1)),
+            decided(row(2, "fix", FIX_2), row(1, "new_picture", NOTE_1)),
         ),
     )
     owner_says(fake_model, say, f"{NOTE_1} {NOTE_2}", picture_with(1, NOTE_1))
@@ -631,7 +631,7 @@ def test_a_note_on_a_scene_with_its_clip_and_one_without_is_planned_and_made_bot
     assert last_step("starting_picture", 1).note == NOTE_1
     # The producer is told which scenes the plan covers, and which is its own to make.
     [told] = plan.system_notes.filter(kind="plan_shown").values_list("text", flat=True)
-    assert "Scene 2: new starting picture, then its clip" in told
+    assert "Scene 2: fixed by the fixing agent, to this goal" in told
     assert (
         "Scene 1 has no clip yet, so it isn't in the plan: the shop owner's note on it is "
         "yours to make it with."

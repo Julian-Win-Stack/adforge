@@ -42,12 +42,10 @@ def a_chat() -> Chat:
 
 
 def a_clip_note_planned(fake_model: FakeModel) -> None:
-    """The decider's plan for NOTE_2: scene 2's clip made again, the hand turning the mug."""
+    """The decider's plan for NOTE_2: B-roll scene 2 fixed, the hand turning the mug."""
     fake_model.respond(
         "decide_fixes",
-        planning(
-            ("look_at_clip", {"scene": 2, "version": None}), decided(row(2, "new_clip", TURN))
-        ),
+        planning(("look_at_clip", {"scene": 2, "version": None}), decided(row(2, "fix", TURN))),
     )
 
 
