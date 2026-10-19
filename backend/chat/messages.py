@@ -61,13 +61,15 @@ def add(
     plan: PlanSignal | None = None,
     tries_of: int | None = None,
     chosen_clip: int | None = None,
+    wants_pasted_page: bool | None = None,
 ) -> Message:
     """Say something in a session, with any files it carries, and name the session from
     the first thing the user types. A notice carries its `level`; nothing else does. A
     message about a scene's starting picture or clip carries its `step`, and one may
     suggest a note on a scene, and one about a fix plan carries its `plan`. One showing every
     try of a clip the judge failed names its clip step, `tries_of`, and the shop owner's tap
-    on one of them names the try chosen, `chosen_clip`.
+    on one of them names the try chosen, `chosen_clip`. A notice about the product page says
+    whether it wants the page panel, `wants_pasted_page`.
 
     Messages are numbered 1, 2, 3... per session. The session row is locked while
     numbering, so messages always become visible in number order. Without that, a poll
@@ -93,6 +95,7 @@ def add(
             fix_plan_id=plan.plan if plan else None,
             tries_of_id=tries_of,
             chosen_clip_id=chosen_clip,
+            wants_pasted_page=wants_pasted_page,
         )
         Attachment.objects.bulk_create(
             Attachment(
@@ -145,6 +148,20 @@ def owner_photos(session: Session) -> list[Attachment]:
             kind=Attachment.Kind.PICTURE,
         ).order_by("message__seq", "position")
     )
+
+
+def page_panel_wanted(session: Session) -> bool:
+    """Whether the chat should show the page panel: the latest notice about it asked for it,
+    as when the product page couldn't be read, and no page has been read since."""
+    # TODO(U4): also not wanted once a later owner-pasted page is accepted (U1's
+    # `pasted_page_result`).
+    latest = (
+        session.messages.filter(wants_pasted_page__isnull=False)
+        .order_by("-seq")
+        .values_list("wants_pasted_page", flat=True)
+        .first()
+    )
+    return bool(latest)
 
 
 def _owner_photos_before(message: Message) -> int:

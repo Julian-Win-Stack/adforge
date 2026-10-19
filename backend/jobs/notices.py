@@ -22,6 +22,7 @@ def post_notice(
     suggested: messages.SuggestedNote | None = None,
     plan: messages.PlanSignal | None = None,
     tries_of: int | None = None,
+    wants_pasted_page: bool | None = None,
 ) -> Message | None:
     """Tell the user, in the chat, that something fell back or failed, with any files that
     show it. `text` says three things: what failed, what was used instead, and what that
@@ -29,7 +30,8 @@ def post_notice(
     later. No model is ever given a notice: the producer learns of the failure from the
     tool's result. A notice about a scene's starting picture or clip carries its `step`, and one
     may suggest a note on a scene; one about a fix plan carries its `plan`; one showing every
-    try of a clip the judge failed names its clip step, `tries_of`. Gives the message
+    try of a clip the judge failed names its clip step, `tries_of`; one about the product page
+    says whether it wants the page panel, `wants_pasted_page`. Gives the message
     posted, or None for a job with no chat."""
     warning = {"level": level, "text": text, "at": timezone.now().isoformat()}
     # The job is read again under a lock, so a notice posted through another copy of the job
@@ -51,6 +53,7 @@ def post_notice(
                 suggested=suggested,
                 plan=plan,
                 tries_of=tries_of,
+                wants_pasted_page=wants_pasted_page,
             )
     job.warnings = locked.warnings
     return posted

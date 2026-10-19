@@ -70,6 +70,7 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
             "plan",
             "tries",
             "use_clip",
+            "wants_pasted_page",
         ]
 
     def get_step(self, message: Message) -> dict[str, object] | None:
