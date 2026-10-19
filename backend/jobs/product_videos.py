@@ -26,7 +26,7 @@ MAX_VIDEO_BYTES = 50_000_000
 FRAMES = 4
 # Where YouTube keeps a video's thumbnail, by the video's id.
 YOUTUBE_THUMBNAIL = "https://img.youtube.com/vi/{id}/hqdefault.jpg"
-_YOUTUBE_ID = re.compile(r"(?:youtube(?:-nocookie)?\.com/embed/|youtu\.be/)([A-Za-z0-9_-]{6,})")
+YOUTUBE_ID = re.compile(r"(?:youtube(?:-nocookie)?\.com/embed/|youtu\.be/)([A-Za-z0-9_-]{6,})")
 # ffmpeg reads a kept file only as a plain video, and reaches nothing else: a file that is
 # really a playlist (HLS) would have it fetch the links inside.
 _READ_ONLY_THE_FILE = [
@@ -160,7 +160,7 @@ def _still(src: str, poster: str, folder: str) -> str:
     """The key of a first frame had without the video's file: the page's poster for it,
     else the player's thumbnail for a YouTube player; "" if neither can be had."""
     links = [poster] if poster else []
-    if found := _YOUTUBE_ID.search(src):
+    if found := YOUTUBE_ID.search(src):
         links.append(YOUTUBE_THUMBNAIL.format(id=found[1]))
     for link in links:
         try:

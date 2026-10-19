@@ -266,7 +266,9 @@ def test_video_players_reach_the_picker_by_their_first_frames_and_picked_ones_ar
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     shop = firecrawl.shop
-    monkeypatch.setattr("jobs.picker_grids.YOUTUBE_THUMBNAIL", f"{shop}/youtube/{{}}/hqdefault.jpg")
+    monkeypatch.setattr(
+        "jobs.picker_grids.YOUTUBE_THUMBNAIL", f"{shop}/youtube/{{id}}/hqdefault.jpg"
+    )
     httpserver.expect_request("/cdn/videos/poster.jpg").respond_with_data(
         photo(301, 300, 400), content_type="image/png"
     )
@@ -312,11 +314,13 @@ def test_video_players_reach_the_picker_by_their_first_frames_and_picked_ones_ar
         "V5: video, 763x942 px at 167 px down the page, drawn, box 0 (no drawn picture shares "
         "it); controls; picture: first frame"
     )
-    # The picked players, as the page script found them, are kept for the video saver.
+    # The picked players are kept as the job's product videos. V3, a copy of V5 it wasn't
+    # shown, and V9, which isn't on the page, are dropped.
     job = Job.objects.get()
-    # V3, a copy of V5 it wasn't shown, and V9, which isn't on the page, are dropped.
-    assert [video["n"] for video in job.firecrawl["picked_videos"]] == [1, 5]
-    assert job.firecrawl["picked_videos"][1]["src"] == f"{shop}{TINY_MP4_PATH}"
+    assert [video.source_url for video in job.videos.order_by("position")] == [
+        f"{shop}/cdn/videos/promo.mp4",
+        f"{shop}{TINY_MP4_PATH}",
+    ]
 
 
 def test_a_page_with_many_hidden_pictures_record_photos_and_videos_stays_under_50_images(

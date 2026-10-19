@@ -1,8 +1,8 @@
 """Product videos: the gallery videos the photo picker picks off the page are kept with the
 job, as files with a few frames, or as links with a first frame when no file can be had.
-Through the chat, with the picker's picked players stored on the job's Firecrawl answers as
-the picker leaves them."""
+Through the chat, with the picker's picked players set by the test."""
 
+import dataclasses
 import io
 import subprocess
 from collections.abc import Callable, Iterator
@@ -41,17 +41,12 @@ def tiny_mp4(tmp_path_factory: pytest.TempPathFactory) -> bytes:
 
 @pytest.fixture
 def picks_videos(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[dict[str, Any]]]:
-    """The video players the picker picks, as the page script lists them: a test fills it.
-    The picker stores them with the job's Firecrawl answers, as it does until it hands them
-    to save_videos itself."""
+    """The video players the picker picks, as the page script lists them: a test fills it."""
     players: list[dict[str, Any]] = []
     picking = work.pick_photos
 
     def picks(job: Job, read: PageRead) -> Picked:
-        picked = picking(job, read)
-        job.firecrawl["picked_videos"] = players
-        job.save(update_fields=["firecrawl"])
-        return picked
+        return dataclasses.replace(picking(job, read), videos=tuple(players))
 
     monkeypatch.setattr(work, "pick_photos", picks)
     yield players

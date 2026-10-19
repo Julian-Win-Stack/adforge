@@ -27,6 +27,7 @@ from django.conf import settings
 from adforge.retry import OutsideServiceDown
 
 from . import page, photos
+from .product_videos import MAX_VIDEO_BYTES, YOUTUBE_ID, YOUTUBE_THUMBNAIL
 
 # Official photos and video frames go 2 by 2 in tiles this many px a side; hidden pictures,
 # which are many, 3 by 3 in smaller tiles.
@@ -35,15 +36,10 @@ HIDDEN_GRID = (3, 400)
 VIDEO_GRID = (2, 600)
 # Pictures are fetched this many at a time.
 FETCHING_TOGETHER = 8
-# A video file fetched for its first frame may be at most this big.
-MAX_VIDEO_BYTES = 50_000_000
 # ffmpeg may take at most this long to get a video's first frame.
 FRAME_SECONDS = 120
 # Embedded players whose video file the page doesn't link to: their first frame can't be got.
 NO_FRAME_PLAYERS = re.compile(r"vimeo|wistia|vidyard|tolstoy|videowise", re.I)
-# Where YouTube keeps each video's thumbnail, by the video's id.
-YOUTUBE_THUMBNAIL = "https://img.youtube.com/vi/{}/hqdefault.jpg"
-YOUTUBE_ID = re.compile(r"(?:youtube(?:-nocookie)?\.com/embed/|youtu\.be/)([A-Za-z0-9_-]{6,})")
 
 
 @dataclass(frozen=True)
@@ -150,7 +146,7 @@ def first_frame(player: dict[str, Any]) -> tuple[bytes | None, str]:
     if not src.startswith(("http://", "https://")):
         return None, "no link to its video"
     if found := YOUTUBE_ID.search(src):
-        return _picture(YOUTUBE_THUMBNAIL.format(found[1])), "youtube thumbnail"
+        return _picture(YOUTUBE_THUMBNAIL.format(id=found[1])), "youtube thumbnail"
     if NO_FRAME_PLAYERS.search(src):
         return None, "embedded player"
     try:
@@ -185,13 +181,17 @@ def _frame_at_half_a_second(video: bytes) -> bytes | None:
 
 
 def _picture(url: str) -> bytes | None:
-    """The picture at `url`, or None if it can't be fetched or opened."""
+    """The picture at `url`, or None if it can't be fetched or opened, or is under
+    photos.SMALLEST_PHOTO px on a side, too small to be a product photo."""
     try:
         fetched = page.download(url, max_bytes=page.MAX_PHOTO_BYTES, what="product photo")
     except page.PageUnreadable, OutsideServiceDown:
         return None
     # Any picture that opens will do: the grid is drawn afresh as a JPEG.
     if not _opens(fetched.content):
+        return None
+    size = photos.size_of(fetched.content)
+    if size is None or min(size) < photos.SMALLEST_PHOTO:
         return None
     return fetched.content
 

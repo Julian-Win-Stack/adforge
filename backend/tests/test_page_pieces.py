@@ -10,7 +10,7 @@ import pytest
 
 from jobs.page import DECLARED_DATA_HEADING
 from jobs.page_text import PRICES_HEADING, match_back, record_prices, without_prices
-from jobs.photos import Copies, best_url, reference_urls, too_small
+from jobs.photos import Copies, best_url, record_photo_urls, too_small
 
 from .conftest import photo
 
@@ -327,7 +327,7 @@ def test_a_record_photo_at_two_sizes_is_one_official_photo() -> None:
             "https://cdn.shopify.com/s/files/1/side.jpg?v=1",
         ]
     }
-    assert reference_urls(record) == [
+    assert record_photo_urls(record) == [
         "https://cdn.shopify.com/s/files/1/front_120x120_crop_center.jpg?v=1",
         "https://cdn.shopify.com/s/files/1/side.jpg?v=1",
     ]

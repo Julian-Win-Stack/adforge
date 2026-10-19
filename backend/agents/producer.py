@@ -222,7 +222,7 @@ class ReadPage(Tool):
             elif skipped:
                 post_notice(job, _not_downloaded(skipped), Message.Level.PROBLEM)
         # The gallery videos the picker picked, kept for later: nothing uses them yet.
-        save_videos(job, job.firecrawl.get("picked_videos") or [])
+        save_videos(job, list(picked.videos))
         # Only once every photo is kept: a worker that stops part-way through them leaves the
         # page unread, so the read run again keeps them all rather than the few already kept.
         keep_page(job, download, product_page, text)

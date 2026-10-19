@@ -478,7 +478,7 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
     links = photos.picked_links(
         picked, read.marked.marks, photos.record_photo_urls(record) if record else []
     )
-    videos = tuple(_keep_picked_videos(job, picked, read.marked.marks))
+    videos = tuple(_picked_videos(picked, read.marked.marks))
     if not links:
         notices.append(
             (
@@ -496,16 +496,11 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
     )
 
 
-def _keep_picked_videos(
-    job: Job, picked: photos.PickedPhotos, marks: dict[str, Any]
-) -> list[dict[str, Any]]:
-    """The video players the picker picked, as the page script found them, kept with the
-    job's Firecrawl answers. Numbers of players it wasn't shown are dropped."""
+def _picked_videos(picked: photos.PickedPhotos, marks: dict[str, Any]) -> list[dict[str, Any]]:
+    """The video players the picker picked, as the page script found them. Numbers of
+    players it wasn't shown are dropped."""
     players = {player["n"]: player for player in picker_grids.videos(marks)}
-    videos = [players[number] for number in picked.gallery_videos if number in players]
-    job.firecrawl["picked_videos"] = videos
-    job.save(update_fields=["firecrawl"])
-    return videos
+    return [players[number] for number in picked.gallery_videos if number in players]
 
 
 # The most pictures the picker's model takes in one call.
