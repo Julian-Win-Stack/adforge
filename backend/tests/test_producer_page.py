@@ -1018,6 +1018,50 @@ def test_more_than_50_picked_photos_keeps_the_first_50(
     assert kept == [f"{firecrawl.shop}/cdn/many/{n}.png" for n in [*gallery, *more][:50]]
 
 
+def test_a_picture_under_100_px_on_a_side_is_never_offered_to_the_picker(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    # I200 is 99 px wide at its biggest, I201 100 px on each side.
+    returns = firecrawl.marked["data"]["actions"]["javascriptReturns"]
+    marks = json.loads(returns[3]["value"])
+    marks["imgs"] += [
+        {
+            "n": n,
+            "src": f"{firecrawl.shop}/cdn/sized/{n}.png",
+            "srcset": "",
+            "alt": "",
+            "href": "",
+            "nw": width,
+            "nh": 120,
+            "w": width,
+            "h": 120,
+        }
+        for n, width in [(200, 99), (201, 100)]
+    ]
+    returns[3]["value"] = json.dumps(marks)
+    httpserver.expect_request("/cdn/sized/201.png").respond_with_data(
+        photo(201, 100, 120), content_type="image/png"
+    )
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    # A picker that names the small picture anyway, off the screenshot.
+    fake_model.respond(
+        "pick_photos", {**SHAMPOO_PICKED, "gallery_images": [200, 201], "more_images": []}
+    )
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    (picker,) = ModelCall.objects.filter(purpose="pick_photos")
+    assert "I200:" not in picker.handoff["numbered_pictures"]
+    assert "I201:" in picker.handoff["numbered_pictures"]
+    kept = [photo.source_url for photo in Job.objects.get().photos.all()]
+    assert kept == [f"{firecrawl.shop}/cdn/sized/201.png"]
+
+
 # Firecrawl's answer when more than a minute's worth of requests were asked for.
 RATE_LIMITED = (
     "Rate limit exceeded. Consumed (req/min): 34, Remaining (req/min): 0. Upgrade your plan at "
@@ -1123,9 +1167,15 @@ def _serve_heic_photo(httpserver: HTTPServer, _: pytest.MonkeyPatch) -> None:
 
 
 def _serve_huge_photo(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("jobs.page.MAX_PHOTO_BYTES", 100)
+    monkeypatch.setattr("jobs.page.MAX_PHOTO_BYTES", 400)
     httpserver.expect_request("/cdn/bad").respond_with_data(
-        b"\x89PNG" + b"0" * 200, content_type="image/png"
+        b"\x89PNG" + b"0" * 600, content_type="image/png"
+    )
+
+
+def _serve_tiny_photo(httpserver: HTTPServer, _: pytest.MonkeyPatch) -> None:
+    httpserver.expect_request("/cdn/bad").respond_with_data(
+        picture(99, 120, (143, 170, 140)), content_type="image/png"
     )
 
 
@@ -1148,13 +1198,18 @@ def _serve_down_photo_host(httpserver: HTTPServer, _: pytest.MonkeyPatch) -> Non
         ),
         pytest.param(
             _serve_huge_photo,
-            "{url} is too big to be a product photo, at over 100 bytes.",
+            "{url} is too big to be a product photo, at over 400 bytes.",
             id="too big",
         ),
         pytest.param(
             _serve_down_photo_host,
             "{url} answered 503 SERVICE UNAVAILABLE.",
             id="its server stays down",
+        ),
+        pytest.param(
+            _serve_tiny_photo,
+            "It's only 99 by 120 px, too small to be a product photo.",
+            id="under 100 px on a side",
         ),
     ],
 )
@@ -1168,8 +1223,8 @@ def test_a_photo_that_cant_be_used_is_skipped_with_its_reason_and_the_rest_are_k
 ) -> None:
     bad_url = httpserver.url_for("/cdn/bad")
     good_url = httpserver.url_for("/cdn/mug-front.png")
-    # 69 bytes: small enough to be kept when the too-big case lowers the limit to 100.
-    good_photo = picture(1, 1, (143, 170, 140))
+    # 292 bytes: small enough to be kept when the too-big case lowers the limit to 400.
+    good_photo = picture(100, 100, (143, 170, 140))
     httpserver.expect_request("/products/mug").respond_with_data(
         f'<html><head><meta property="og:image" content="{bad_url}">'
         f'<meta property="og:image" content="{good_url}"></head>'

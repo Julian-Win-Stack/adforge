@@ -11,6 +11,7 @@ from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs.checks import fits_target, most_words, most_words_in_a_line
 from jobs.models import Job, Scene
+from jobs.work import keep_photo
 
 from .conftest import (
     FACTS_OK,
@@ -25,6 +26,7 @@ from .conftest import (
     handoffs,
     lines,
     paid_for,
+    picture,
     plan_with,
     results_of,
 )
@@ -866,6 +868,47 @@ def test_a_broll_scenes_details_and_needed_photos_are_handed_to_the_fact_check_a
     assert images_shown("rewrite_line") == [["Photo 1", "Photo 2"]]
     (sent,) = handoffs("rewrite_line")
     assert (sent["photo_count"], sent["colour_photos"]) == (2, [1])
+
+
+def test_a_rewrite_on_a_job_with_more_than_50_photos_is_shown_50_page_photos_first(
+    fake_model: FakeModel, page_read: str, say: Callable[..., None]
+) -> None:
+    # The page's 2 photos, 3 the shop owner attached, then 48 more of the page's: 53 in all.
+    job = Job.objects.get()
+    for position in range(3, 54):
+        keep_photo(
+            job,
+            position,
+            picture(100 + position, 100, (143, 170, 140)),
+            "image/png",
+            source_url="" if position <= 5 else f"https://shop.example/{position}.png",
+        )
+    fake_model.respond(
+        "produce",
+        turn(calls=[("plan_ad", {})]),
+        turn(calls=[("create_person", {})]),
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(says="Here's where your ad stands."),
+    )
+    fake_model.respond("plan_ad", doing_a_job())
+    fake_model.respond(
+        "fact_check",
+        shows_wrong("The page doesn't say tea is poured in.", passing=(1, 3)),
+        facts_ok(2),
+    )
+    fake_model.respond("rewrite_line", REWRITTEN)
+
+    say("Plan it and check it")
+
+    assert images_shown("rewrite_line") == [
+        [f"Photo {position}" for position in [1, 2, *range(6, 54)]]
+    ]
+    # The plan left the same photos out, and the chat was told once.
+    job.refresh_from_db()
+    assert [warning["text"] for warning in job.warnings].count(
+        "The ad has 53 product photos, more than the 50 a model can be shown at once, so "
+        "photos 3, 4 and 5 are left out when it's planned or a line is rewritten."
+    ) == 1
 
 
 def test_a_usage_or_result_the_page_doesnt_state_fails_the_scenes_fact_check(

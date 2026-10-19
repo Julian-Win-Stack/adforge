@@ -99,6 +99,16 @@ LEAST_COLOUR_RANGE = 12
 LONGEST_TEXT_PIECE = 2_000
 # Two photos whose fingerprints differ in at most this many of their 256 bits are copies.
 MOST_BITS_APART = 12
+# A picture under this many pixels on either side is never a product photo.
+SMALLEST_PHOTO = 100
+# The size Shopify's image server was asked for in a file name, just before its type:
+# `_<w>x<h>`, `_x<h>` or one of its old size names, with any crop and pixel density (`@2x`)
+# after it.
+SHOPIFY_SIZE = re.compile(
+    r"_(?:\d+x\d*|x\d+|pico|icon|thumb|small|compact|medium|large|grande|original|master)"
+    r"(?:_crop_[a-z]+)?(?:@\dx)?(?=\.)",
+    re.I,
+)
 
 
 class PickHandoff(Handoff):
@@ -157,12 +167,27 @@ def handoff(record: dict[str, Any] | None, marks: dict[str, Any], title: str) ->
 
 
 def numbered(marks: dict[str, Any]) -> list[dict[str, Any]]:
-    """The pictures the marking script numbered: those a visitor can see."""
+    """The pictures the marking script numbered, those a visitor can see, that are big
+    enough to be a product photo."""
     return [
         picture
         for picture in marks.get("imgs") or []
-        if isinstance(picture, dict) and isinstance(picture.get("n"), int)
+        if isinstance(picture, dict)
+        and isinstance(picture.get("n"), int)
+        and not too_small(picture)
     ]
+
+
+def too_small(picture: dict[str, Any]) -> bool:
+    """Whether a numbered picture is under SMALLEST_PHOTO px on a side, as the browser
+    loaded it. A picture of unknown size, as one not loaded yet (0 by 0), isn't, and nor is
+    one with a bigger size to fetch: in its srcset, or by taking a size off its link."""
+    width, height = picture.get("nw"), picture.get("nh")
+    if not isinstance(width, int) or not isinstance(height, int) or not width or not height:
+        return False
+    if best_url(picture) != _link(picture.get("src")):
+        return False
+    return min(width, height) < SMALLEST_PHOTO
 
 
 def picked_links(picked: PickedPhotos, marks: dict[str, Any]) -> list[tuple[str, bool]]:
@@ -251,7 +276,7 @@ def _link(url: Any) -> str:
 def _name(url: str) -> str:
     """A picture's file name without its type or size part, so one picture at two sizes
     has one name."""
-    name = urlparse(url).path.rstrip("/").split("/")[-1]
+    name = urlparse(full_size(url)).path.rstrip("/").split("/")[-1]
     name = re.sub(r"\.[a-z0-9]{2,5}$", "", name, flags=re.I)
     name = re.sub(r"(_\d+x\d*|_\d+x|-\d+x\d+|\._[A-Z0-9_,]+_)$", "", name)
     return name.casefold()
@@ -303,7 +328,7 @@ def full_size(url: str) -> str:
             for key, value in parse_qsl(parts.query, keep_blank_values=True)
             if key not in ("width", "height", "crop")
         ]
-        path = re.sub(r"_\d+x\d*(?=\.)", "", parts.path)
+        path = SHOPIFY_SIZE.sub("", parts.path)
         return urlunparse(parts._replace(path=path, query=urlencode(kept)))
     if "media-amazon.com" in parts.netloc:
         return urlunparse(parts._replace(path=re.sub(r"\._[^/]*_\.", ".", parts.path), query=""))
@@ -315,6 +340,15 @@ def same_key(url: str) -> str:
     `_<w>x<h>` size part taken off."""
     parts = urlparse(full_size(url))
     return parts.netloc + re.sub(r"_\d+x\d*(?=\.)", "", parts.path)
+
+
+def size_of(content: bytes) -> tuple[int, int] | None:
+    """A photo's width and height in pixels, or None when it can't be read as an image."""
+    try:
+        with Image.open(io.BytesIO(content)) as image:
+            return image.size
+    except OSError:
+        return None
 
 
 def dhash(content: bytes) -> int:
