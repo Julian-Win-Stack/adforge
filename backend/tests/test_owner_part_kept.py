@@ -16,7 +16,7 @@ from jobs import owner_parts, work
 from jobs.models import ReferencePhoto, Scene
 
 from . import fixing
-from .conftest import HeldSteps, handoffs, results_of
+from .conftest import HeldSteps, given_to_the_producer, handoffs, producer_turns, results_of
 from .test_producer_broll import BROLL_CHOICE, calling, instructed, run  # noqa: F401
 from .test_producer_owner_photos import (  # noqa: F401 (fixtures)
     OWNER_MUG,
@@ -104,6 +104,14 @@ def test_a_scene_drawn_before_the_photo_was_kept_is_drawn_again_before_its_clip(
     (clean,) = clean_pictures()
     assert handoffs("make_starting_picture")[-1]["pictures"][0] == clean
     assert owner_parts.is_approved(scene(3))
+    # The producer is told the shop owner already said yes to the part, not to ask again.
+    picture_ready = [
+        each["text"]
+        for each in given_to_the_producer(producer_turns())
+        if each["kind"] == "step_finished" and "scene 3's starting picture is ready" in each["text"]
+    ][-1]
+    assert "the handle, which the shop owner already said yes to" in picture_ready
+    assert "Its clip isn't made until" not in picture_ready
 
 
 def test_a_later_fix_of_the_scene_draws_it_with_the_approved_part(

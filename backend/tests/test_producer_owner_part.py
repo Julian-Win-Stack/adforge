@@ -228,6 +228,11 @@ def test_the_shop_owners_photo_draws_the_part_from_it(
     newest = SceneStep.objects.filter(kind="starting_picture", scene__number=2).last()
     assert newest is not None and list(newest.reference_photos.all()) == [row]
     assert pictures_of_scene_2() == 2
+    # The producer is told the part was drawn from the photo, not from the sentence.
+    picture_ready = [text for text in step_results() if "starting picture is ready" in text][-1]
+    assert "drawn from the shop owner's photo of it" in picture_ready
+    assert PART["looks"] not in picture_ready
+    assert "Its clip isn't made until the shop owner says yes" in picture_ready
 
 
 @pytest.mark.usefixtures("pictured")

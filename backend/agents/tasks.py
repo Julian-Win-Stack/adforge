@@ -221,19 +221,27 @@ def _picture_finished(step: SceneStep, picture: ProducedItem | None) -> str:
 
 def _needs_a_yes(step: SceneStep) -> str:
     """What the producer is told about a picture of an owner part, which the shop owner must
-    say yes to before its scene's clip is made, or blank for a picture of none."""
+    say yes to before its scene's clip is made, or blank for a picture of none. A part they
+    already said yes to, as drawn here, is settled: they aren't asked about it again."""
     if step.owner_part is None:
         return ""
     part = owner_parts.OwnerPart.model_validate(step.owner_part)
-    drawn_from = (
-        "the shop owner's words"
-        if part.source == "owner's words"
-        else "a description made up for it, as the shop owner let us draw it"
-    )
+    if owner_parts.is_approved(step.scene):
+        return (
+            f"The picture shows {part.what}, which the shop owner already said yes to: don't "
+            "ask them about it again. "
+        )
+    if owner_parts.drawn_from_words(step) is None:
+        drawn_from = "the shop owner's photo of it"
+    elif part.source == "owner's words":
+        drawn_from = f'the shop owner\'s words: "{part.looks}"'
+    else:
+        drawn_from = (
+            f'a description made up for it, as the shop owner let us draw it: "{part.looks}"'
+        )
     return (
-        f"The picture shows {part.what}, which no photo shows, drawn from {drawn_from}: "
-        f'"{part.looks}" '
-        "Its clip isn't made until the shop owner says yes to this picture. "
+        f"The picture shows {part.what}, which no product photo shows, drawn from "
+        f"{drawn_from}. Its clip isn't made until the shop owner says yes to this picture. "
         f"Ask them, in plain words, to look at {part.what} in it and say yes if it looks "
         "right, or say what to change, or send a photo of it, and wait for their answer. "
     )
