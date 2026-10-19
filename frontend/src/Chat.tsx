@@ -375,7 +375,9 @@ function YesBar({ onYes }: { onYes: () => Promise<void> }) {
   );
 }
 
+// A fix reads as its goal alone: the fixing agent chooses what is made again.
 const ACTIONS: Record<PlanScene["action"], string> = {
+  fix: "",
   new_picture: "New starting picture",
   new_clip: "New clip",
   new_line: "New line",

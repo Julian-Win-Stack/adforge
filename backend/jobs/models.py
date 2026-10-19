@@ -348,6 +348,8 @@ class Fix(models.Model):
         CLIP = "clip"
         PICTURE = "picture"
         LINE = "line"
+        # The whole scene, by the fixing agent: a fix plan's fix row (fixing agent build, T3).
+        SCENE = "scene"
 
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="fixes")
     scene = models.ForeignKey(Scene, on_delete=models.CASCADE, related_name="fixes")
@@ -359,7 +361,8 @@ class Fix(models.Model):
         max_length=10,
         choices=Redo.choices,
         help_text="Which step is made again for it: the clip, the starting picture (and then "
-        "the clip), or the line. The shop owner isn't told.",
+        "the clip), the line, or the whole scene, by the fixing agent. The shop owner isn't "
+        "told.",
     )
     notes = models.JSONField(
         default=list,
@@ -525,6 +528,9 @@ class FixPlanScene(models.Model):
     why it can't (fix redesign, flow step 5)."""
 
     class Action(models.TextChoices):
+        # A B-roll scene handed to the fixing agent with its goal, in `change` (T3). The new
+        # clip below, and a B-roll scene's new picture or new line, are only stored plans'.
+        FIX = "fix"
         NEW_PICTURE = "new_picture"
         NEW_CLIP = "new_clip"
         NEW_LINE = "new_line"
@@ -537,7 +543,7 @@ class FixPlanScene(models.Model):
     change = models.TextField(
         blank=True,
         help_text="What changes, in plain words: the note the step's prompt writer is given "
-        "(decision 7), never a prompt.",
+        "(decision 7), never a prompt. For a fix, its goal, which the fixing agent is given.",
     )
     line = models.TextField(blank=True, help_text="The new line, for a new line. Blank else.")
     # A default in the database too, so a worker still on code from before this field can

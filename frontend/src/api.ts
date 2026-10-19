@@ -33,7 +33,7 @@ export type PlanPhoto = {
 /** What a fix plan changes in one scene, or why it can't. Amounts are dollars as strings. */
 export type PlanScene = {
   scene: number;
-  action: "new_picture" | "new_clip" | "new_line" | "go_back" | "no_change";
+  action: "fix" | "new_picture" | "new_clip" | "new_line" | "go_back" | "no_change";
   change: string;
   line: string;
   /** The scene's new overlay, for a new line that changes what it shows. Blank keeps it. */

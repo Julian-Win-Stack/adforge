@@ -162,7 +162,7 @@ def test_a_picture_note_is_planned_after_the_decider_looks_at_the_scene(
     fake_model: FakeModel, ad: Job
 ) -> None:
     note = _owner_says(ad, "In scene 2 the toilet should be white.")
-    picture_note = _decided([_row(2, "new_picture", "The toilet is white.")])
+    picture_note = _decided([_row(2, "fix", "The toilet is white.")])
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
@@ -180,7 +180,7 @@ def test_a_picture_note_is_planned_after_the_decider_looks_at_the_scene(
     [row] = outcome.plan.scenes.all()
     assert (row.scene.number, row.action, row.change) == (
         2,
-        FixPlanScene.Action.NEW_PICTURE,
+        FixPlanScene.Action.FIX,
         "The toilet is white.",
     )
     assert outcome.plan.state == FixPlan.State.PROPOSED
@@ -217,7 +217,7 @@ def test_the_decider_is_told_the_ad_and_the_note_and_doesnt_look_at_the_judge_fo
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
         turn(calls=[("look_at_picture", {"scene": 2})]),
-        turn(calls=[("decide", _decided([_row(2, "new_picture", "The toilet is white.")]))]),
+        turn(calls=[("decide", _decided([_row(2, "fix", "The toilet is white.")]))]),
     )
 
     decider.read(ad, [note])
@@ -280,7 +280,7 @@ def test_a_photo_in_the_picture_needs_no_look_at_the_frames(fake_model: FakeMode
     note = _owner_sends_a_photo(ad, "Use my toilet in scene 2.")
     uses = [{"photo": 1, "in_picture": True, "during_action": False}]
     decided = _decided(
-        [_row(2, "new_picture", "The toilet is the shop owner's black toilet.", photos=uses)],
+        [_row(2, "fix", "The toilet is the shop owner's black toilet.", photos=uses)],
         photos=[{"photo": 1, "thing": "black toilet", "clear": True}],
     )
     fake_model.respond(
@@ -320,7 +320,7 @@ def test_a_photos_thing_only_during_the_action_needs_a_look_at_the_clip(
     note = _owner_sends_a_photo(ad, "This is my gel, use it.")
     uses = [{"photo": 1, "in_picture": False, "during_action": True}]
     decided = _decided(
-        [_row(2, "new_clip", "The gel squeezed on is the shop owner's blue gel.", photos=uses)],
+        [_row(2, "fix", "The gel squeezed on is the shop owner's blue gel.", photos=uses)],
         photos=[{"photo": 1, "thing": "blue gel", "clear": True}],
     )
     fake_model.respond(
@@ -398,7 +398,7 @@ def planned(fake_model: FakeModel, ad: Job) -> tuple[Message, decider.Planned]:
                     _decided(
                         [
                             _row(1, "new_picture", "The scene is brighter."),
-                            _row(2, "new_picture", "The toilet is white."),
+                            _row(2, "fix", "The toilet is white."),
                         ]
                     ),
                 )
@@ -455,7 +455,7 @@ def test_a_correction_plans_again_on_the_looks_already_made(
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("decide", _decided([_row(2, "new_picture", "The toilet is white.")]))]),
+        turn(calls=[("decide", _decided([_row(2, "fix", "The toilet is white.")]))]),
     )
     looked_before = len(fake_model.turns_taken)
 
@@ -522,7 +522,7 @@ def test_a_failed_clips_findings_say_what_the_judge_found(fake_model: FakeModel,
     }
     clip.save()
     note = _owner_says(ad, "The bottle flips in scene 2.")
-    flips = _decided([_row(2, "new_clip", "The bottle never turns.")])
+    flips = _decided([_row(2, "fix", "The bottle never turns.")])
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
@@ -561,7 +561,7 @@ def test_a_worker_that_stopped_carries_on_from_the_checkpoints(
         decider.read(ad, [note])
     fake_model.respond(
         "decide_fixes",
-        turn(calls=[("decide", _decided([_row(2, "new_picture", "The toilet is white.")]))]),
+        turn(calls=[("decide", _decided([_row(2, "fix", "The toilet is white.")]))]),
     )
 
     outcome = decider.read(ad, [note])
@@ -729,13 +729,11 @@ def test_a_new_line_keeps_the_picture_and_one_with_a_visual_change_is_a_new_pict
     ProducedItem.objects.create(
         job=ad, kind=ProducedItem.Kind.VOICE, version=1, file="voice.mp3", words_per_second=2.0
     )
-    note = _owner_says(
-        ad, 'Scene 2 should say "Shines in one wipe." and the toilet should be white.'
-    )
+    note = _owner_says(ad, 'Scene 1 should say "Shines in one wipe." and she should hold the gel.')
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("look_at_picture", {"scene": 1})]),
         turn(
             calls=[
                 (
@@ -743,9 +741,9 @@ def test_a_new_line_keeps_the_picture_and_one_with_a_visual_change_is_a_new_pict
                     _decided(
                         [
                             _row(
-                                2,
+                                1,
                                 "new_picture",
-                                "The toilet is white.",
+                                "She holds the gel.",
                                 line="Shines in one wipe.",
                                 overlay="One wipe",
                             )
@@ -762,7 +760,7 @@ def test_a_new_line_keeps_the_picture_and_one_with_a_visual_change_is_a_new_pict
     [row] = outcome.plan.scenes.all()
     assert (row.action, row.change, row.line, row.overlay) == (
         FixPlanScene.Action.NEW_PICTURE,
-        "The toilet is white.",
+        "She holds the gel.",
         "Shines in one wipe.",
         "One wipe",
     )
@@ -875,7 +873,7 @@ def test_a_photo_in_the_picture_and_during_the_action_needs_no_look_at_the_frame
                 (
                     "decide",
                     _decided(
-                        [_row(2, "new_picture", "The jar is the shop owner's jar.", photos=uses)],
+                        [_row(2, "fix", "The jar is the shop owner's jar.", photos=uses)],
                         photos=[{"photo": 1, "thing": "gel jar", "clear": False}],
                     ),
                 )
@@ -895,13 +893,15 @@ def test_a_photo_in_the_picture_and_during_the_action_needs_no_look_at_the_frame
 @pytest.mark.parametrize(
     ("decided", "refused"),
     [
-        (_decided([_row(2, "new_clip", "Faster.")]), "look at scene 2 first."),
+        (_decided([_row(2, "fix", "Faster.")]), "look at scene 2 first."),
         (
-            _decided([_row(1, "new_picture", "Brighter."), _row(1, "new_clip", "Faster.")]),
+            _decided(
+                [_row(1, "new_picture", "Brighter."), _row(1, "new_line", "New.", line="Hi.")]
+            ),
             "scene 1 is decided twice.",
         ),
         (
-            _decided([_row(2, "new_clip", "Faster.", line="A line nobody asked for.")]),
+            _decided([_row(2, "fix", "Faster.", line="A line nobody asked for.")]),
             "it was called with arguments it can't use (scenes.0: scene 2 has a line, but only a "
             "new line or a new picture takes one).",
         ),
@@ -937,6 +937,20 @@ def test_a_photo_in_the_picture_and_during_the_action_needs_no_look_at_the_frame
             ),
             "it was called with arguments it can't use (scenes.0: scene 1's overlay is a few "
             "words: 30 characters at most).",
+        ),
+        (
+            _decided([_row(1, "fix", "She holds the gel up.")]),
+            "scene 1 shows the person talking to camera, which the fixing agent doesn't film: "
+            "change it with a new picture or a new line.",
+        ),
+        (
+            _decided([_row(2, "new_picture", "The toilet is white.")]),
+            "scene 2 is a B-roll scene: its change is a fix, which the fixing agent makes.",
+        ),
+        (
+            _decided([_row(2, "fix", "")]),
+            "it was called with arguments it can't use (scenes.0: scene 2 needs the change in "
+            "plain words).",
         ),
         (
             _decided([_row(1, "no_change")]),
@@ -1056,7 +1070,7 @@ def test_a_sort_kept_after_a_newer_message_came_in_doesnt_answer_the_newer_one(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
         turn(calls=[("look_at_picture", {"scene": 2})]),
-        turn(calls=[("decide", _decided([_row(2, "new_picture", "The toilet is white.")]))]),
+        turn(calls=[("decide", _decided([_row(2, "fix", "The toilet is white.")]))]),
     )
 
     outcome = decider.read(ad, [question, note])
@@ -1078,7 +1092,7 @@ def test_a_decide_after_a_yes_is_refused_and_the_plan_shown_stays(
         turn(
             calls=[
                 ("sort_message", {"kind": "yes"}),
-                ("decide", _decided([_row(2, "new_picture", "The toilet is red.")])),
+                ("decide", _decided([_row(2, "fix", "The toilet is red.")])),
             ]
         ),
     )
@@ -1137,7 +1151,7 @@ def test_each_look_is_shown_once_and_the_oldest_go_past_the_most_pictures(
         turn(calls=[("look_at_picture", {"scene": 2})]),
         turn(calls=[("look_at_picture", {"scene": 2})]),
         turn(calls=[("look_at_clip", {"scene": 2, "version": None})]),
-        turn(calls=[("decide", _decided([_row(2, "new_picture", "The scene is brighter.")]))]),
+        turn(calls=[("decide", _decided([_row(2, "fix", "The scene is brighter.")]))]),
     )
 
     decider.read(ad, [note])
@@ -1177,7 +1191,7 @@ def test_two_clips_past_the_most_pictures_are_both_shown_with_their_frames_side_
         turn(calls=[("look_at_picture", {"scene": 2})]),
         turn(calls=[("look_at_clip", {"scene": 2, "version": 1})]),
         turn(calls=[("look_at_clip", {"scene": 2, "version": 2})]),
-        turn(calls=[("decide", _decided([_row(2, "new_clip", "The gel foams up blue.")]))]),
+        turn(calls=[("decide", _decided([_row(2, "fix", "The gel foams up blue.")]))]),
     )
 
     outcome = decider.read(ad, [note])
@@ -1237,7 +1251,7 @@ def test_a_long_clips_frames_already_in_pairs_are_joined_with_every_time(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
         turn(calls=[("look_at_clip", {"scene": 2, "version": None})]),
-        turn(calls=[("decide", _decided([_row(2, "new_clip", "It foams more.")]))]),
+        turn(calls=[("decide", _decided([_row(2, "fix", "It foams more.")]))]),
     )
 
     decider.read(ad, [note])
@@ -1280,7 +1294,7 @@ def test_a_correction_gets_its_own_tools_after_a_long_first_plan(
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("decide", _decided([_row(2, "new_picture", "The toilet is white.")]))]),
+        turn(calls=[("decide", _decided([_row(2, "fix", "The toilet is white.")]))]),
     )
 
     assert isinstance(decider.read(ad, [note, correction]), decider.Planned)
@@ -1313,3 +1327,31 @@ def test_a_version_the_scene_doesnt_have_is_refused(fake_model: FakeModel, ad: J
     assert _results("look_at_version") == [
         "Refused: scene 2 has versions 1 to 2, not 5. Nothing was done."
     ]
+
+
+# What the decider is told the fixing agent can do (fixing agent build, T3; approved by
+# Julian 2026-10-19 16:50Z and 16:55Z): pinned word for word, so it changes only on purpose.
+# No list of problem kinds and no product words.
+WHAT_THE_AGENT_CAN_DO = (
+    "- a fix, in a scene that shows the product rather than the person talking. A fixing agent "
+    "then owns that scene until the change is made. It sees everything you can see, and it may "
+    "change what happens in the scene and how it ends, its starting picture, what is said in "
+    "it, its kind of B-roll, whether the person's face shows, and how close the camera is. It "
+    "films the scene again up to 6 times, each try checked for the shop owner's change, and "
+    "never asks the shop owner anything. When it can't film the change well, the scene stays "
+    "as it was and the shop owner is shown its tries. The fix's change is its goal: one "
+    "sentence in the shop owner's own words saying what must be different, with any words "
+    "they give to say in it word for word."
+)
+
+
+def test_the_decider_is_told_what_the_fixing_agent_can_do_and_offers_no_new_clip() -> None:
+    told = " ".join(decider.INSTRUCTIONS.split())
+    assert WHAT_THE_AGENT_CAN_DO in told
+    assert "look before you decide" in told
+    # A talking scene keeps its new picture and new line: the agent films B-roll scenes only.
+    assert "in a scene where the person talks to camera, which the fixing agent doesn't film" in (
+        told
+    )
+    assert "new clip" not in told
+    assert "new_clip" not in str(decider.SceneDecision.model_json_schema())

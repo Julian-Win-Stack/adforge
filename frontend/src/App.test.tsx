@@ -1862,6 +1862,21 @@ test("a plan notice shows per scene what changes, what it costs and what can't b
   expect(yesButton()).toBeNull();
 });
 
+test("a fix reads as its goal, with no word of what is made again", async () => {
+  const row = aPlan().scenes[0];
+  await showAPlan(
+    aPlan(7, { scenes: [{ ...row, action: "fix", change: "The tablet drops into the bottle." }] }),
+  );
+
+  const [scene] = within(planNotices()[0])
+    .getAllByRole("listitem")
+    .map((item) => item.textContent ?? "");
+  expect(scene).toContain("Scene 2");
+  expect(scene).toContain("The tablet drops into the bottle.");
+  expect(scene).not.toMatch(/new (starting picture|clip|line)/i);
+  expect(planYes()).not.toBeNull();
+});
+
 test("a new line is quoted in the plan", async () => {
   const row = aPlan().scenes[0];
   await showAPlan(

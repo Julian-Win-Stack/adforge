@@ -537,7 +537,8 @@ def complained_about(step: SceneStep) -> ProducedItem | None:
     fix = step.fix
     if fix is None or step.kind != SceneStep.Kind.CLIP:
         return None
-    if fix.redo != Fix.Redo.CLIP and not during_the_clip(fix):
+    # A fix plan's fix row, filmed again by the fixing agent, is judged for the change too.
+    if fix.redo not in (Fix.Redo.CLIP, Fix.Redo.SCENE) and not during_the_clip(fix):
         return None
     return step.shown_before(ProducedItem.Kind.CLIP)
 

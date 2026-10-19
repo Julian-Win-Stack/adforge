@@ -20,6 +20,7 @@ from gateway.types import BlockedBySafetyFilter, UnusableReply
 from jobs.models import FixCheck, Job, ProducedItem, Scene, SceneStep
 from jobs.picture_check import PictureKeptFailing
 from jobs.work import (
+    AgentGaveUp,
     check_fix,
     every_try_failed,
     make_clip,
@@ -420,6 +421,17 @@ def run_scene_step(step_id: int) -> None:
             wake_producer(str(session.pk))
             # A fix plan's scene that waited for this one's step to finish carries on.
             run_plan.carry_on_scene(step.scene)
+    except AgentGaveUp as gave_up:
+        # The fixing agent gave up on a fix plan's fix row: code says so in the chat and keeps
+        # the scene as it was, in the same transaction, so nothing is said twice.
+        tracing.flush()
+        with transaction.atomic():
+            Job.objects.select_for_update().get(pk=step.scene.job_id)
+            step.status = SceneStep.Status.FAILED
+            step.reason = gave_up.reason
+            step.finished_at = timezone.now()
+            step.save(update_fields=["status", "reason", "finished_at"])
+            run_plan.agent_gave_up(step, gave_up.reason)
     except PictureKeptFailing as error:
         # It stops the whole run. The chat is shown why in the same transaction, so a step
         # run again after a crash never shows it twice.
