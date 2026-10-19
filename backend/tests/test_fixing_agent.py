@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from adforge.retry import OutsideServiceDown
-from agents import fixing_agent, tasks
+from agents import fixing_agent, producer, tasks
 from agents.fixing_agent import Failure, Outcome, Try, fix_scene
 from agents.models import ToolCall
 from gateway.fake import FakeModel, turn
@@ -19,7 +19,7 @@ from jobs import work
 from jobs.models import AgentFix, Fix, ProducedItem, Scene, SceneStep
 
 from .conftest import CLIP_MOTION_OK, PICTURE_OK, HeldSteps, facts_ok, motion_answer
-from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing
+from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing, judged
 from .test_producer_broll import (
     LINE_2,
     SHOWS,
@@ -493,6 +493,39 @@ def test_a_try_whose_owners_change_isnt_made_fails_though_the_judge_passes_it(
     assert made.fix_check is not None and made.fix_check["verdict"] == "failed"
     assert outcome.passed is None and outcome.gave_up == "The stir never shows."
     assert f"Whether the owner's change is made: no. {STILL_HOVERS}" in told()[0]
+
+
+# --- When the agent stops ------------------------------------------------------------------
+
+
+def test_an_agent_that_stops_after_a_try_puts_the_scene_back_and_keeps_the_first_clip(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond(
+        "check_clip_motion",
+        *judged(failing(FLOATS), failing(FLOATS)),
+        *judged(failing(FLOATS), failing(FLOATS)),
+    )
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[film_again(line=NEW_LINE, shows=STIRS, video_prompt=STIRS)]),
+        *[OutsideServiceDown("503 from the model")] * 6,
+    )
+
+    step = clip_of_scene_2(fake_model, steps, say)
+
+    # Try 1 changed the line and the judge failed it; then the agent stopped. The scene is
+    # put back as it was, and the ad is assembled from the first clip, never from try 1.
+    assert scene_row() == (LINE_2, SHOWS, "", "showcase", "no face")
+    assert AgentFix.objects.get().finished_at is not None
+    first = step.produced.order_by("id").first()
+    assert first is not None
+    used, _ = producer._clip_and_transcript(Scene.objects.get(number=2))
+    assert used.file == first.file
 
 
 # --- In the background ---------------------------------------------------------------------

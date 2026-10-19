@@ -201,11 +201,16 @@ def fix_scene(
 ) -> Outcome:
     """Have the agent fix `step`'s scene until a try passes or it gives up. A passing try's
     scene row is the scene's from then on, on its record and `step`'s; a give-up puts the
-    scene back as it was before try 1. Run again for the same step, as after a worker
-    stopped, it carries on from its checkpoints, or gives the outcome it ended on."""
+    scene back as it was before try 1, and so does an error that stops the agent, which is
+    raised once it has. Run again for the same step, as after a worker stopped, it carries on
+    from its checkpoints, or gives the outcome it ended on."""
     fixing = _started(step, door, failure, goal, cap)
     if fixing.finished_at is None:
-        _work(fixing)
+        try:
+            _work(fixing)
+        except Exception:
+            _stopped(fixing)
+            raise
     return outcome(fixing)
 
 
@@ -375,6 +380,19 @@ def _finish(fixing: AgentFix) -> None:
             _put_back(fixing.step.scene, fixing.scene_before)
         fixing.finished_at = timezone.now()
         fixing.save(update_fields=["finished_at"])
+
+
+def _stopped(fixing: AgentFix) -> None:
+    """End a fixing an error stopped: the scene is put back as it was before try 1, so no try
+    the judge failed is its, and the fixing ends with no try passed and no give-up."""
+    with transaction.atomic():
+        fixing = AgentFix.objects.select_for_update().get(pk=fixing.pk)
+        if fixing.finished_at is not None:
+            return
+        _put_back(fixing.step.scene, fixing.scene_before)
+        fixing.passed = None
+        fixing.finished_at = timezone.now()
+        fixing.save(update_fields=["passed", "finished_at"])
 
 
 def _give_up(fixing: AgentFix, reason: str) -> None:

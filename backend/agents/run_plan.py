@@ -882,14 +882,8 @@ def agent_gave_up(step: SceneStep, reason: str) -> None:
     row = step.plan_scene
     assert row is not None, "a fix row's step runs one of its rows"
     scene = Scene.objects.get(pk=step.scene_id)
-    before = step.shown_before(ProducedItem.Kind.CLIP)
-    made = work.versions(scene)
-    kept = made[-1].clip if made else None
-    if before is not None and kept != before:
-        back_to = next((version.number for version in made if version.clip == before), None)
-        kept = work.bring_back_clip(before, back_to=back_to)
-    # The clip the give-up left in the ad, so the shop owner can still swap a try in for it.
-    AgentFix.objects.filter(step=step).update(kept=kept)
+    # The clip the give-up left in the ad is kept, so a try can still be swapped in for it.
+    AgentFix.objects.filter(step=step).update(kept=work.back_to_the_clip_before(step))
     reason = " ".join(reason.split())
     tried = bool(work.clip_tries(step))
     post_notice(

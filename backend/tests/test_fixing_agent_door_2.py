@@ -9,17 +9,20 @@ from collections.abc import Callable
 import pytest
 from rest_framework.test import APIClient
 
+from adforge.retry import OutsideServiceDown
 from agents.models import SystemNote
 from agents.producer import _latest_clip
 from chat.models import Message
-from gateway.fake import FakeModel
+from gateway.fake import FakeModel, turn
 from jobs import work
-from jobs.models import Fix, FixCheck, FixPlanScene, Scene, SceneStep
+from jobs.models import AgentFix, Fix, FixCheck, FixPlanScene, Scene, SceneStep
 
-from .conftest import HeldSteps
+from .conftest import HeldSteps, facts_ok, motion_answer
 from .fake_fixing_agent import FakeAgent, ScriptedTry, _ruling, install
 from .test_fix_wiring import decided, planning, plans, row, tap_yes
+from .test_fixing_agent import STIRS, film_again
 from .test_pick_from_tries import tap_use
+from .test_producer_auto_fix import FLOATS, failing
 from .test_producer_broll import checked  # noqa: F401 (a fixture)
 from .test_producer_picture_then_clip import (
     ads,
@@ -205,3 +208,38 @@ def test_after_the_agent_gave_up_the_shop_owner_can_tap_a_try_to_use_it(
     assert sent.status_code == 201, sent.json()
     latest = _latest_clip(Scene.objects.get(number=2))
     assert latest is not None and latest.file == try_1.file
+
+
+# --- The real agent, on scripted turns -----------------------------------------------------
+
+NEW_LINE = "Lift it, sip it: it holds 350 ml."
+
+
+def test_an_agent_that_stops_after_a_try_leaves_the_scene_as_it_was(
+    fake_model: FakeModel,
+    held: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    before = clip(2)
+    line = Scene.objects.get(number=2).line
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.answer_unscripted("check_clip_motion", motion_answer(failing(FLOATS)))
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[film_again(line=NEW_LINE, video_prompt=STIRS)]),
+        *[OutsideServiceDown("503 from the model")] * 6,
+    )
+    planned = _a_fix_said_yes_to(fake_model, held, say, api, session_id)
+    held.run_held()
+
+    # Try 1 changed the line and the judge failed it; then the agent stopped. The scene is
+    # put back, its clip from before is the one in the ad, and the row ends with the error.
+    scene = Scene.objects.get(number=2)
+    assert (scene.line, scene.status) == (line, Scene.Status.FINISHED)
+    latest = _latest_clip(scene)
+    assert latest is not None and latest.file == before.file
+    assert AgentFix.objects.get().finished_at is not None
+    planned.refresh_from_db()
+    assert planned.landed_at is None and planned.error

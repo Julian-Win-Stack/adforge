@@ -2437,16 +2437,21 @@ def _fixed_by_the_agent(step: SceneStep) -> ProducedItem:
     fix = step.fix
     assert fix is not None, "a fix row's step has its Fix"
     before = step.shown_before(ProducedItem.Kind.CLIP)
-    outcome = fixing_agent.fix_scene(
-        step,
-        door="owner",
-        failure=fixing_agent.Failure(
-            note="\n".join(note["text"] for note in fix.notes),
-            ruling=before.ruling if before is not None else None,
-            clip=before,
-        ),
-        goal=fix.fix,
-    )
+    try:
+        outcome = fixing_agent.fix_scene(
+            step,
+            door="owner",
+            failure=fixing_agent.Failure(
+                note="\n".join(note["text"] for note in fix.notes),
+                ruling=before.ruling if before is not None else None,
+                clip=before,
+            ),
+            goal=fix.fix,
+        )
+    except Exception:
+        # The agent stopped: the scene keeps its clip from before, never a try it filmed.
+        back_to_the_clip_before(step)
+        raise
     if outcome.passed is None:
         raise AgentGaveUp(outcome.gave_up or "it couldn't film the change well.")
     passed: ProducedItem = outcome.passed
@@ -2468,8 +2473,7 @@ def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
         _judge_clip(step, first)
     if _ruling(first)["verdict"] != "fail":
         return first
-    ended = agent_fix(step)
-    if ended is None:
+    if agent_fix(step) is None:
         # The agent's module runs the scene's work, so it is imported where it is used.
         from agents import fixing_agent
 
@@ -2485,7 +2489,10 @@ def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
             # An agent that can't carry on doesn't fail the step: the first clip is kept.
             logger.exception("The fixing agent stopped at scene %s's clip", step.scene.number)
             return _first_kept(step, first)
-        ended = _ended(step, outcome)
+        if outcome.passed is None and outcome.gave_up is None:
+            # It stopped before, as a step run again finds it.
+            return _first_kept(step, first)
+    ended = _ended(step)
     if ended.passed is not None:
         return ended.passed
     newest = _newest_clip(step.scene)
@@ -2494,10 +2501,11 @@ def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
 
 
 def agent_fix(step: SceneStep) -> AgentFix | None:
-    """How the fixing agent ended with a B-roll clip step, or None when it never took it or
-    hasn't ended yet (a worker stopped mid-fixing carries on from its checkpoints)."""
+    """How the fixing agent ended with a B-roll clip step, a try passed or it gave up, or
+    None when it never took it, hasn't ended yet, or an error stopped it."""
     return (
         AgentFix.objects.filter(step=step, finished_at__isnull=False)
+        .filter(Q(passed__isnull=False) | ~Q(gave_up=""))
         .select_related("passed", "kept")
         .first()
     )
@@ -2517,12 +2525,13 @@ def agent_gave_up(step: SceneStep) -> bool:
     return ended is not None and not ended.passed_id
 
 
-def _ended(step: SceneStep, outcome: Any) -> AgentFix:
-    """Keep how the fixing agent ended with `step`, from its `outcome`: a try passed, or it
-    gave up, when the scene is said to camera or keeps its clip from before, all at once."""
+def _ended(step: SceneStep) -> AgentFix:
+    """Keep how the fixing agent ended with `step`: a try passed, or it gave up, when the
+    scene is said to camera or keeps its clip from before, all at once. A give-up kept
+    already is left as it is, so it can be kept again whenever it may not have been."""
     with transaction.atomic():
         ended = AgentFix.objects.select_for_update().get(step=step)
-        if outcome.passed is not None:
+        if ended.passed_id is not None or ended.said_to_camera or ended.kept_id is not None:
             return ended
         scene = Scene.objects.select_for_update().get(pk=step.scene_id)
         before = _before_the_fix(step)
@@ -2539,6 +2548,20 @@ def _ended(step: SceneStep, outcome: Any) -> AgentFix:
         # Else a fix changed the line its clip from before says: the newest try stays.
         ended.save(update_fields=["said_to_camera", "kept", "camera_before"])
     return ended
+
+
+def back_to_the_clip_before(step: SceneStep) -> ProducedItem | None:
+    """For a fix row's step (door 2) the fixing agent ended with no try passed: the scene's
+    clip from before the plan is its newest again, brought back for nothing when a try is
+    newer. Gives the clip in the ad now."""
+    scene = Scene.objects.get(pk=step.scene_id)
+    before = step.shown_before(ProducedItem.Kind.CLIP)
+    made = versions(scene)
+    kept = made[-1].clip if made else None
+    if before is not None and kept != before:
+        back_to = next((version.number for version in made if version.clip == before), None)
+        kept = bring_back_clip(before, back_to=back_to)
+    return kept
 
 
 def waits_to_be_said_to_camera(scene: Scene) -> bool:
