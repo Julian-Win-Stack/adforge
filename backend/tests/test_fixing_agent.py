@@ -134,7 +134,7 @@ def scene_clip() -> ProducedItem:
 
 def test_every_try_is_a_version_named_by_its_try(passed_on_try_2: Outcome) -> None:
     assert [version.label for version in work.versions(Scene.objects.get(number=2))] == [
-        "v1 first version",
+        "v1 first version (first clip)",
         "v2 try 1",
         "v3 try 2",
     ]
@@ -235,7 +235,7 @@ def test_a_give_up_puts_the_scene_back_as_it_was(given_up: Outcome) -> None:
 
 def test_a_given_up_scenes_tries_are_still_versions(given_up: Outcome) -> None:
     assert [version.label for version in work.versions(Scene.objects.get(number=2))] == [
-        "v1 first version",
+        "v1 first version (first clip)",
         "v2 try 1",
     ]
 
@@ -389,7 +389,7 @@ def test_a_new_start_picture_is_drawn_checked_and_filmed(
     assert made.clip is not None and made.clip.picture == made.picture
     assert made.picture.step is not None and made.picture.step.prompt == PICTURE_PROMPT
     assert [version.label for version in work.versions(Scene.objects.get(number=2))] == [
-        "v1 first version",
+        "v1 first version (first clip)",
         "v2 try 1",
     ]
 

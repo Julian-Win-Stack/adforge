@@ -53,6 +53,7 @@ from jobs.work import (
     save_photos,
     use_music_again,
     version_label,
+    waits_to_be_said_to_camera,
     why_the_checks_havent_passed,
     why_the_checks_passed,
 )
@@ -1209,7 +1210,9 @@ class Estimate(NamedTuple):
 CALL_FALLBACK_USD = Decimal("0.07")
 MILLIONTH = Decimal("0.000001")
 _JUDGE_PURPOSES = ["check_clip_sides", "check_clip_motion"]
-_WRITER_PURPOSES = ["rewrite_clip_prompt", "remake_clip_prompt"]
+_WRITER_PURPOSES = ["rewrite_clip_prompt"]
+# The fixing agent's turns, one at least for each try it films.
+_AGENT_PURPOSES = ["fix_scene"]
 
 
 def _estimate(scene: Scene, redo: Fix.Redo, fix: str) -> Estimate:
@@ -1282,17 +1285,19 @@ def _clip_estimate(scene: Scene, audio_seconds: float, *, from_note: bool) -> Es
     cost: its video and, for a B-roll clip with quality checks on, the clip judge's asks; for
     a clip made from the shop owner's note, also the call writing its video prompt; its fix
     is checked by the clip judge's own asks (Julian 2026-10-14). It can cost up to that
-    plus, for each remake the clip judge can have made, its video, the judge's asks and the
-    call writing its prompt (decider call 13, 2026-10-13)."""
+    plus, for each try the fixing agent can film once the judge fails it, a new starting
+    picture, its video, the judge's asks and the agent's turn (door 1)."""
     video = clip_estimate_usd(audio_seconds, broll=bool(scene.shows))
     judged = bool(scene.shows) and settings.QUALITY_CHECKS
     judge = 2 * clip_judge.ASKS * _each_call_usd(scene, _JUDGE_PURPOSES) if judged else 0
-    writer = _each_call_usd(scene, _WRITER_PURPOSES)
     about = video + judge
     if from_note:
-        about += writer
-    remakes = auto_fix.MOST_REMAKES * (video + judge + writer) if judged else Decimal(0)
-    return Estimate(about, about + remakes)
+        about += _each_call_usd(scene, _WRITER_PURPOSES)
+    each_try = (
+        _picture_only_estimate_usd(scene) + video + judge + _each_call_usd(scene, _AGENT_PURPOSES)
+    )
+    tries = auto_fix.MOST_TRIES * each_try if judged else Decimal(0)
+    return Estimate(about, about + tries)
 
 
 def _each_call_usd(scene: Scene, purposes: list[str]) -> Decimal:
@@ -1311,9 +1316,12 @@ def _each_call_usd(scene: Scene, purposes: list[str]) -> Decimal:
 def _before_its_clip(scene: Scene) -> None:
     """Refuse to change a scene that already has a clip: from then on it changes only through
     the shop owner's notes, which the app plans, shows them and makes once they say yes (fix
-    redesign, decisions 1 and 2). Checked once nothing already made can be handed back, so
-    what is free and changes nothing stays free."""
-    if scene.produced.filter(kind=ProducedItem.Kind.CLIP).exists():
+    redesign, decisions 1 and 2). A scene the fixing agent gave up on, said to camera, is
+    made again as a talking scene until it has its clip. Checked once nothing already made
+    can be handed back, so what is free and changes nothing stays free."""
+    if scene.produced.filter(kind=ProducedItem.Kind.CLIP).exists() and not (
+        waits_to_be_said_to_camera(scene)
+    ):
         raise Refused(
             f"scene {scene.number} already has a clip, so it changes only through the shop "
             "owner's notes: the app shows them a plan and makes it once they say yes."

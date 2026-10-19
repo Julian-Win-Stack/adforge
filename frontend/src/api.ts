@@ -66,7 +66,7 @@ export type MessagePlan = {
   notice: PlanNotice | null;
 };
 
-/** One try of a clip the clip judge failed every try of: its "Remake 1" name, its scene
+/** One try of a clip the clip judge failed every try of: its "Try 1" name, its scene
  * version label, and what the judge still sees wrong in it. */
 export type TryClip = {
   clip: number;
@@ -77,9 +77,17 @@ export type TryClip = {
 };
 
 /** Every try of a scene's clip the clip judge failed every try of, for the owner to pick
- * from, and the one in the ad when the notice was read (null once a newer clip replaced
- * them). */
-export type MessageTries = { scene: number; in_ad: number | null; clips: TryClip[] };
+ * from, and the one in the ad when the notice was read (null when none is). `on_offer` says
+ * whether a try can be swapped in then: one is in the ad, or the app gave up on the scene
+ * and none is yet. `picked` is the try the app would pick, and `reason` why it gave up. */
+export type MessageTries = {
+  scene: number;
+  in_ad: number | null;
+  on_offer?: boolean;
+  picked?: number | null;
+  reason?: string;
+  clips: TryClip[];
+};
 
 /** One turn in a session, from the user or the agent, or a notice the server posts when a
  * step fell back or failed, or a scene's picture or clip started. Only a notice has a level:

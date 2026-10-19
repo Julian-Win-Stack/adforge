@@ -29,6 +29,7 @@ from jobs import clip_judge, fix_check, work
 from jobs.clip_judge import ASKS
 from jobs.models import Fix, FixCheck, FixPlan, ProducedItem, Scene, SceneStep
 
+from .agent_tries import agent_films, agent_stops
 from .conftest import (
     CLIP_FIXED,
     CLIP_MOTION_OK,
@@ -522,7 +523,11 @@ def test_the_clip_checks_cost_is_the_clip_steps(
 ) -> None:
     a_clip_redone(fake_model, steps)
 
-    step = SceneStep.objects.filter(kind="clip", scene__number=2).latest("id")
+    step = (
+        SceneStep.objects.filter(kind="clip", scene__number=2)
+        .exclude(tool_call__agent="fixing_agent")
+        .latest("id")
+    )
     asked = ModelCall.objects.filter(purpose__startswith="check_").filter(tool_call=step.tool_call)
     assert asked.count() == 2 * ASKS
     # The prompt written at $0.006, the 5-second clip at Boreal's $0.0792 a second, and the
@@ -641,10 +646,11 @@ def test_a_change_not_made_never_remakes_the_clip_by_itself(
     assert FixCheck.objects.get().verdict == "failed"
 
 
-def test_a_remake_the_judge_asks_for_is_asked_the_owners_change_again_and_its_answer_is_kept(
+def test_a_try_the_agent_films_is_asked_the_owners_change_again_and_its_answer_is_kept(
     fake_model: FakeModel,
     steps: HeldSteps,
     shown: list[str],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     floats = "The mug rises at 1.2 s with no hand on it; a real one stays put."
     failing = {
@@ -653,26 +659,26 @@ def test_a_remake_the_judge_asks_for_is_asked_the_owners_change_again_and_its_an
         "owner_change": not_made(HOVERING),
     }
     passing = {**CLIP_MOTION_OK, "owner_change": CLIP_FIXED}
-    # The fix's clip fails the judge (and its change isn't made); the remake passes both.
+    # The fix's clip fails the judge (and its change isn't made); the agent's try passes both.
     fake_model.respond("check_clip_motion", failing, failing, failing, *[passing] * 3)
-    fake_model.respond("remake_clip_prompt", TURN_REWRITE)
+    agent = agent_films(monkeypatch, TURN_REWRITE["motion_prompt"])
     old_clip = latest("clip", 2)
 
     a_clip_redone(fake_model, steps)
 
-    (remake,) = ProducedItem.objects.filter(scene__number=2, remake__isnull=False)
-    assert latest("clip", 2) == remake
-    # The remake's prompt writer gets the judge's own faults, never the owner's change.
-    (written,) = handoffs("remake_clip_prompt")
-    assert written["faults"] == [floats]
-    assert HOVERING not in str(written["judge_saw"])
-    # Both tries were asked the extra question, shown the same old clip.
+    (tried,) = ProducedItem.objects.filter(scene__number=2, remake__isnull=False)
+    assert latest("clip", 2) == tried
+    # The agent is handed the judge's ruling of the fix's clip.
+    ((_, door, failure, _),) = agent.handed
+    assert door == "judge" and failure.ruling is not None
+    assert failure.ruling["verdict"] == "fail"
+    # Both clips were asked the extra question, shown the same old clip.
     motions = ModelCall.objects.filter(purpose="check_clip_motion").order_by("id")
     fixs = list(motions)[-2 * ASKS :]
     assert all((call.output or {})["owner_change"] for call in fixs)
-    # The fix check is the kept clip's answers, once.
+    # The fix check is the passing try's answers, once.
     check = FixCheck.objects.get()
-    assert (check.old, check.new, check.verdict) == (old_clip, remake, "passed")
+    assert (check.old, check.new, check.verdict) == (old_clip, tried, "passed")
     assert check.answers == [CLIP_FIXED] * ASKS
 
 
@@ -680,6 +686,7 @@ def test_a_change_not_made_with_no_reason_never_costs_the_clip_its_own_checks(
     fake_model: FakeModel,
     steps: HeldSteps,
     shown: list[str],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     floats = "The mug rises at 1.2 s with no hand on it; a real one stays put."
     # Found by the review: a "not fixed" that forgets to say why.
@@ -691,17 +698,17 @@ def test_a_change_not_made_with_no_reason_never_costs_the_clip_its_own_checks(
     }
     passing = {**CLIP_MOTION_OK, "owner_change": CLIP_FIXED}
     fake_model.respond("check_clip_motion", failing, failing, failing, *[passing] * 3)
-    fake_model.respond("remake_clip_prompt", TURN_REWRITE)
+    agent_films(monkeypatch, TURN_REWRITE["motion_prompt"])
 
     a_clip_redone(fake_model, steps)
 
-    # The clip's own fault still fails it, and it is remade.
+    # The clip's own fault still fails it, and the agent films it again.
     first = ProducedItem.objects.get(
         scene__number=2, step__isnull=False, remake__isnull=True, version__gt=1
     )
     assert (first.ruling or {})["verdict"] == "fail"
-    (remake,) = ProducedItem.objects.filter(scene__number=2, remake__isnull=False)
-    assert FixCheck.objects.get().new == remake
+    (tried,) = ProducedItem.objects.filter(scene__number=2, remake__isnull=False)
+    assert FixCheck.objects.get().new == tried
 
 
 def test_a_failed_clip_check_also_says_what_the_clip_judge_still_sees(
@@ -710,10 +717,11 @@ def test_a_failed_clip_check_also_says_what_the_clip_judge_still_sees(
     shown: list[str],  # noqa: F811
     api: APIClient,
     session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     floats = "The mug rises at 1.2 s with no hand on it; a real one stays put."
-    # The clip judge fails the fix's clip and both remakes alike, so the last remake is kept
-    # and checked, and the judge's problem is still seen in it.
+    # The clip judge fails the fix's clip, and the agent can't carry on, so the fix's clip is
+    # kept and checked, and the judge's problem is still seen in it.
     fake_model.answer_unscripted(
         "check_clip_motion",
         motion_answer(
@@ -724,20 +732,19 @@ def test_a_failed_clip_check_also_says_what_the_clip_judge_still_sees(
             not_made(HOVERING),
         ),
     )
-    fake_model.respond("remake_clip_prompt", TURN_REWRITE, TURN_REWRITE)
+    agent_stops(monkeypatch, RuntimeError("the model fell over"))
 
     a_clip_redone(fake_model, steps)
 
     check = FixCheck.objects.get()
-    assert (check.new, check.new.remake) == (latest("clip", 2), 2)
-    assert paid_for().count("remake_clip_prompt") == 2
+    assert (check.new, check.new.remake) == (latest("clip", 2), None)
     # One notice says both.
     assert notice_of(api, session_id, check)["text"].endswith(
         f"or tell me what to change. The clip's own check also still sees: {floats}"
     )
     # That notice is the only one: the judge's kept clip isn't said again on top of it.
     told = [each.text for each in Message.objects.filter(role="notice", level="info")]
-    assert not any("though the judge still found a fault" in text for text in told)
+    assert not any("though the judge found a fault" in text for text in told)
 
 
 def test_a_failed_clip_check_never_passes_on_a_problem_the_clip_judge_outvoted(
@@ -847,32 +854,32 @@ def test_a_clip_brought_back_in_the_fixs_step_is_never_the_old_one(
     assert check.new.version == old_clip.version + 2
 
 
-def test_a_fixs_clip_the_auto_fix_brings_back_is_the_one_checked_beside_the_old_one(
+def test_a_fixs_clip_the_agent_gave_up_on_isnt_checked_as_the_scene_keeps_its_old_clip(
     fake_model: FakeModel,
     steps: HeldSteps,
     shown: list[str],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     floats = "The mug rises at 1.2 s with no hand on it; a real one stays put."
     failing = {
         **CLIP_MOTION_OK,
         "real_motion": {"verdict": "fail", "problem": floats, "back_to_normal_at": "never"},
+        "owner_change": CLIP_FIXED,
     }
-    # The fix's clip fails 2 answers; each remake fails all 3, so the fix's clip is kept.
-    failing = {**failing, "owner_change": CLIP_FIXED}
-    passing = {**CLIP_MOTION_OK, "owner_change": CLIP_FIXED}
-    fake_model.respond("check_clip_motion", failing, failing, passing, *[failing] * 6)
-    fake_model.respond("remake_clip_prompt", TURN_REWRITE, TURN_REWRITE)
+    # The fix's clip and both the agent's tries fail; the agent gives up.
+    fake_model.respond("check_clip_motion", *[failing] * 9)
+    agent_films(monkeypatch, TURN_REWRITE["motion_prompt"], TURN_REWRITE["motion_prompt"])
     old_clip = latest("clip", 2)
 
     a_clip_redone(fake_model, steps)
 
-    fixs_clip, *remakes, brought_back = ProducedItem.objects.filter(
+    fixs_clip, *tried, brought_back = ProducedItem.objects.filter(
         kind="clip", scene__number=2, version__gt=old_clip.version
     ).order_by("id")
-    assert [made.remake for made in remakes] == [1, 2]
-    assert brought_back.file == fixs_clip.file
-    check = FixCheck.objects.get()
-    assert (check.old, check.new, check.verdict) == (old_clip, brought_back, "passed")
+    assert [made.remake for made in tried] == [1, 2]
+    assert (fixs_clip.remake, brought_back.file) == (None, old_clip.file)
+    assert latest("clip", 2) == brought_back
+    assert not FixCheck.objects.exists()
 
 
 def test_another_scenes_fix_landing_shows_no_ad_over_a_clip_that_failed_its_check(

@@ -969,7 +969,7 @@ def test_a_clip_made_again_from_the_same_picture_is_a_version_of_its_own(
     scene = ad.scenes.get(number=2)
     picture = scene.produced.get(kind=ProducedItem.Kind.STARTING_PICTURE, version=2)
     call = ToolCall.objects.get(tool="make_clip")
-    # A clip step for a note, then the judge's own remake of its clip in the same step.
+    # A clip step for a note, then the fixing agent's try of its clip in the same step.
     step = _step(scene, SceneStep.Kind.CLIP, call, picture=picture, note="scrub faster")
     rulings = [{"verdict": "fail", "failed_answers": 1, "checks": {}}, {"verdict": "pass"}]
     for version, remake, ruling in [(3, None, rulings[0]), (4, 1, rulings[1])]:
@@ -992,8 +992,8 @@ def test_a_clip_made_again_from_the_same_picture_is_a_version_of_its_own(
 
     the_ad = _given(fake_model, 0)[0]
     assert (
-        "Versions: v1 first version; v2 black toilet; v3 scrub faster (the current version)"
-        in the_ad.text
+        "Versions: v1 first version; v2 black toilet; v3 scrub faster (first clip); v4 scrub "
+        "faster (try 1) (the current version)" in the_ad.text
     )
 
 

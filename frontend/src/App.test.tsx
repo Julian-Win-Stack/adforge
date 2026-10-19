@@ -2044,12 +2044,20 @@ function threeTries(inAd: number | null = 11): NonNullable<Message["tries"]> {
   return {
     scene: 2,
     in_ad: inAd,
+    on_offer: inAd !== null,
+    picked: null,
+    reason: "",
     clips: [
-      { clip: 11, name: "First try", version: "v1", url: "/media/t1.mp4", problem: "It floats." },
-      { clip: 12, name: "Remake 1", version: "v2", url: "/media/t2.mp4", problem: "It spins." },
-      { clip: 13, name: "Remake 2", version: "v3", url: "/media/t3.mp4", problem: "It flips." },
+      { clip: 11, name: "First clip", version: "v1", url: "/media/t1.mp4", problem: "It floats." },
+      { clip: 12, name: "Try 1", version: "v2", url: "/media/t2.mp4", problem: "It spins." },
+      { clip: 13, name: "Try 2", version: "v3", url: "/media/t3.mp4", problem: "It flips." },
     ],
   };
+}
+
+/** The tries of a scene the app gave up on: none in the ad, every one on offer. */
+function givenUp(): NonNullable<Message["tries"]> {
+  return { ...threeTries(null), on_offer: true, picked: 12, reason: "Each try spins the mug." };
 }
 
 function triesShown() {
@@ -2073,11 +2081,11 @@ test("every try is shown with what the judge saw, the one in the ad marked, the 
 
   const tries = within(triesShown()).getAllByRole("listitem");
   expect(tries.map((one) => one.getAttribute("aria-label"))).toEqual([
-    "First try",
-    "Remake 1",
-    "Remake 2",
+    "First clip",
+    "Try 1",
+    "Try 2",
   ]);
-  expect(within(tries[0]).getByLabelText("Scene 2, First try").getAttribute("src")).toBe(
+  expect(within(tries[0]).getByLabelText("Scene 2, First clip").getAttribute("src")).toBe(
     "/media/t1.mp4",
   );
   expect(tries[0].textContent).toContain("The judge saw: It floats.");
@@ -2089,37 +2097,56 @@ test("every try is shown with what the judge saw, the one in the ad marked, the 
   }
 });
 
+test("when the app gave up, every try can be swapped in, with its pick and why it stopped", async () => {
+  const { backend } = await showTheTries(givenUp());
+
+  expect(triesShown().textContent).toContain("Why it stopped trying: Each try spins the mug.");
+  expect(aTry("Try 1").textContent).toContain("App's pick");
+  expect(aTry("First clip").textContent).not.toContain("App's pick");
+  for (const name of ["First clip", "Try 1", "Try 2"]) {
+    expect(aTry(name).textContent).not.toContain("In the ad");
+    expect(within(aTry(name)).getByRole("button", { name: "Use this one" })).toBeDefined();
+  }
+
+  // The clip said to camera in their place leaves them on offer.
+  backend.agentSays("", scene(2, "video", "/media/talking.mp4"));
+  await nextPoll();
+
+  await waitFor(() => expect(within(triesShown()).getAllByRole("button")).toHaveLength(3));
+  expect(triesShown().textContent).not.toContain("A newer clip of this scene is in the ad now.");
+});
+
 test("a tap on a try sends it, and it is being swapped in until the scene's clip is it", async () => {
   const { backend, user } = await showTheTries();
 
-  await user.click(within(aTry("Remake 1")).getByRole("button", { name: "Use this one" }));
+  await user.click(within(aTry("Try 1")).getByRole("button", { name: "Use this one" }));
 
-  await waitFor(() => expect(aTry("Remake 1").textContent).toContain("Swapping in…"));
+  await waitFor(() => expect(aTry("Try 1").textContent).toContain("Swapping in…"));
   expect(backend.sent).toEqual([{ text: "", photos: [], use_clip: 12 }]);
-  expect(aTry("First try").textContent).toContain("In the ad");
+  expect(aTry("First clip").textContent).toContain("In the ad");
   const others = within(triesShown()).getAllByRole("button", { name: /Use this one|Swapping/ });
   expect(others.every((button) => button.hasAttribute("disabled"))).toBe(true);
 
   backend.agentSays("", scene(2, "video", "/media/t2.mp4"));
   await nextPoll();
 
-  await waitFor(() => expect(aTry("Remake 1").textContent).toContain("In the ad"));
-  expect(aTry("First try").textContent).not.toContain("In the ad");
-  const back = within(aTry("First try")).getByRole("button", { name: "Use this one" });
+  await waitFor(() => expect(aTry("Try 1").textContent).toContain("In the ad"));
+  expect(aTry("First clip").textContent).not.toContain("In the ad");
+  const back = within(aTry("First clip")).getByRole("button", { name: "Use this one" });
   expect(back.hasAttribute("disabled")).toBe(false);
 });
 
 test("a tap the app couldn't act on, said in red, leaves the try in the ad as it was", async () => {
   const { backend, user } = await showTheTries();
-  await user.click(within(aTry("Remake 1")).getByRole("button", { name: "Use this one" }));
-  await waitFor(() => expect(aTry("Remake 1").textContent).toContain("Swapping in…"));
+  await user.click(within(aTry("Try 1")).getByRole("button", { name: "Use this one" }));
+  await waitFor(() => expect(aTry("Try 1").textContent).toContain("Swapping in…"));
 
-  backend.notice("Scene 2 couldn't use remake 1. Those tries aren't on offer any more.", "problem");
+  backend.notice("Scene 2 couldn't use try 1. Those tries aren't on offer any more.", "problem");
   await nextPoll();
 
-  await waitFor(() => expect(aTry("Remake 1").textContent).not.toContain("Swapping in…"));
-  expect(aTry("First try").textContent).toContain("In the ad");
-  const again = within(aTry("Remake 1")).getByRole("button", { name: "Use this one" });
+  await waitFor(() => expect(aTry("Try 1").textContent).not.toContain("Swapping in…"));
+  expect(aTry("First clip").textContent).toContain("In the ad");
+  const again = within(aTry("Try 1")).getByRole("button", { name: "Use this one" });
   expect(again.hasAttribute("disabled")).toBe(false);
 });
 
@@ -2144,11 +2171,11 @@ test("a refused tap says why and the tries can be tapped again", async () => {
   const { backend, user } = await showTheTries();
   backend.refuseNextSend({ use_clip: ["Those tries aren't on offer any more."] });
 
-  await user.click(within(aTry("Remake 2")).getByRole("button", { name: "Use this one" }));
+  await user.click(within(aTry("Try 2")).getByRole("button", { name: "Use this one" }));
 
   const told = await within(triesShown()).findByRole("alert");
   expect(told.textContent).toBe("Those tries aren't on offer any more.");
-  const button = within(aTry("Remake 2")).getByRole("button", { name: "Use this one" });
+  const button = within(aTry("Try 2")).getByRole("button", { name: "Use this one" });
   expect(button.hasAttribute("disabled")).toBe(false);
 });
 
@@ -2156,12 +2183,12 @@ test("the tries are off while a tap is on its way, so a second tap sends nothing
   const { backend, user } = await showTheTries();
 
   const release = backend.holdSends();
-  await user.click(within(aTry("Remake 1")).getByRole("button", { name: "Use this one" }));
-  const other = within(aTry("Remake 2")).getByRole("button", { name: "Use this one" });
+  await user.click(within(aTry("Try 1")).getByRole("button", { name: "Use this one" }));
+  const other = within(aTry("Try 2")).getByRole("button", { name: "Use this one" });
   expect(other.hasAttribute("disabled")).toBe(true);
   await user.click(other);
   expect(postsTo(backend, "session-1")).toHaveLength(1);
 
   release();
-  await waitFor(() => expect(aTry("Remake 1").textContent).toContain("Swapping in…"));
+  await waitFor(() => expect(aTry("Try 1").textContent).toContain("Swapping in…"));
 });

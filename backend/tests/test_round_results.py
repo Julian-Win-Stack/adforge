@@ -128,7 +128,7 @@ def test_the_numbers_of_a_graded_round_come_from_its_files(
     assert f"- {AD}: $" in report
 
 
-def test_a_first_clip_kept_over_its_remakes_has_no_kept_clip_to_grade(
+def test_a_scene_the_agent_gave_up_on_is_exported_with_every_try_and_no_kept_clip_to_grade(
     remade_twice: SceneStep,  # noqa: F811
     tmp_path: Path,
 ) -> None:
@@ -136,11 +136,13 @@ def test_a_first_clip_kept_over_its_remakes_has_no_kept_clip_to_grade(
 
     scene = json.loads((run / "results.json").read_text())[f"{AD}:2"]
     assert [t["remake"] for t in scene["tries"]] == [None, 1, 2]
-    assert (scene["kept"]["remake"], scene["kept_is_remake"]) == (None, False)
+    assert (scene["kept"], scene["kept_is_remake"]) == (None, False)
+    assert scene["gave_up"] == "Every try kept the same fault."
+    assert scene["shows"] == remade_twice.shows
     assert scene["tries"][1]["judge_saw"][0] == SPINS
     page = grading_page.page(run)
     assert f"{AD}__scene-2__kept" not in page
-    assert page.count("app kept this") == 1
+    assert "app kept this" not in page
 
 
 def test_a_first_clip_step_that_made_no_clip_is_passed_for_the_one_asked_again(

@@ -28,11 +28,12 @@ from jobs.models import (
     SceneStep,
 )
 
-from .conftest import CLIP_MOTION_OK, CLIP_SIDES_OK, MUG_SIDE, HeldSteps, producer_turns
+from .agent_tries import agent_films
+from .conftest import CLIP_SIDES_OK, MUG_SIDE, HeldSteps, producer_turns
 from .fixing import fixed
 from .test_fix_check import HANDLE_HIDDEN, not_made
 from .test_fix_loop import TURN_REWRITE
-from .test_producer_auto_fix import FLOATS, REMADE, REMADE_AGAIN, SPINS, failing, rewrite
+from .test_producer_auto_fix import FLOATS, REMADE, REMADE_AGAIN, failing
 from .test_producer_broll import (  # noqa: F401 (a fixture)
     BROLL_CHOICE,
     MOTION,
@@ -913,24 +914,19 @@ def _a_picture_note_on_scene_2_said_yes_to(
     fake_model.respond("choose_broll_picture", BROLL_CHOICE)
 
 
-def test_a_new_picture_keeps_the_movement_of_a_remade_clip_the_judge_kept(
+def test_a_new_picture_keeps_the_movement_of_the_agents_try_the_judge_passed(
     fake_model: FakeModel,
     held: HeldSteps,
     say: Callable[..., None],
     api: APIClient,
     session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The first fix's clip fails, its first remake fails less than its second, so the first
-    # remake is kept, brought back on top: the next new picture moves as that remake does.
+    # The first fix's clip fails, and the fixing agent's first try passes: the next new
+    # picture moves as that try does.
     _a_picture_note_on_scene_2_said_yes_to(fake_model, say, api, session_id)
-    fake_model.respond(
-        "check_clip_motion",
-        *[failing(FLOATS)] * 3,
-        *[failing(SPINS)] * 2,
-        CLIP_MOTION_OK,
-        *[failing(SPINS)] * 3,
-    )
-    fake_model.respond("remake_clip_prompt", rewrite(REMADE), rewrite(REMADE_AGAIN))
+    fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 3)
+    agent_films(monkeypatch, REMADE)
     held.run_held()
     fake_model.respond(
         "decide_fixes",
@@ -967,23 +963,24 @@ def test_a_fix_clip_the_judge_couldnt_check_is_kept_and_the_chat_says_so(
     assert "Scene 2's new clip couldn't be checked, so it is kept unchecked." in told
 
 
-def test_a_fix_clip_the_judge_failed_every_try_of_shows_its_tries_not_the_producer(
+def test_a_fix_clip_the_agent_gave_up_on_shows_its_tries_not_the_producer(
     fake_model: FakeModel,
     held: HeldSteps,
     say: Callable[..., None],
     api: APIClient,
     session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _a_picture_note_on_scene_2_said_yes_to(fake_model, say, api, session_id)
     fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 9)
-    fake_model.respond("remake_clip_prompt", rewrite(REMADE), rewrite(REMADE_AGAIN))
+    agent_films(monkeypatch, REMADE, REMADE_AGAIN)
 
     held.run_held()
 
     assert status(2) == "finished"
-    # The chat shows every try to pick from (#180), not a line saying one was kept.
+    # The chat shows every try to pick from, not a line saying one was kept.
     assert Message.objects.filter(role="notice", tries_of__isnull=False).count() == 1
     told = [each.text for each in Message.objects.filter(role="notice", level="info")]
-    assert not any("though the judge still found a fault" in text for text in told)
+    assert not any("though the judge found a fault" in text for text in told)
     # Not the producer's to tell: no system note carries it (decision 20).
     assert not any(FLOATS in text for text in SystemNote.objects.values_list("text", flat=True))

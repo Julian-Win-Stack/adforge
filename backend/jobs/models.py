@@ -1018,8 +1018,9 @@ class ProducedItem(models.Model):
     remake = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
-        help_text="For a B-roll clip made again by code because the clip judge failed the one "
-        "before it (the auto-fix, #155): which remake of its step's clip it is, 1 or 2.",
+        help_text="For a B-roll clip the fixing agent filmed again because the clip judge "
+        "failed its step's first clip: which try it is, from 1. Older remakes by code (the "
+        "auto-fix, #155) are 1 or 2.",
     )
     motion_prompt = models.TextField(
         blank=True,
@@ -1185,11 +1186,37 @@ class AgentFix(models.Model):
         blank=True,
         help_text="On a give-up, the try the agent picks as best, for the owner to see marked.",
     )
+    said_to_camera = models.BooleanField(
+        default=False, help_text="Whether a door 1 give-up had the scene said to camera."
+    )
+    kept = models.ForeignKey(
+        ProducedItem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="On a give-up of a fix's clip, the clip the scene had before, brought back.",
+    )
+    camera_before = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="On a give-up said to camera, what saying it changed, to put back when the "
+        "shop owner picks a try: the scene's shows, B-roll labels, shortened_from and "
+        "second_state, and the next scene's second_state.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     finished_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self) -> str:
         return f"Scene {self.step.scene.number} fixed by the agent ({self.door})"
+
+    @property
+    def picked_clip(self) -> ProducedItem | None:
+        """On a give-up, the clip of the try the agent picks as best."""
+        if self.picked is None:
+            return None
+        chosen = self.tries.filter(number=self.picked).select_related("clip").first()
+        return chosen.clip if chosen is not None else None
 
 
 class AgentFixTry(models.Model):
