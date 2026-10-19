@@ -216,6 +216,44 @@ def test_a_clip_the_judge_fails_keeps_each_failed_answers_problem_and_what_it_sa
     assert Scene.objects.get(number=2).status == "finished"
 
 
+# The teapot's lid, a fault of its own at another time.
+LID = "The teapot's lid melts into its body at 3.2 s; a real lid stays a separate piece."
+
+
+def test_a_clip_two_answers_fail_on_different_faults_passes_and_is_kept(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],  # noqa: F811
+) -> None:
+    lid = {
+        **CLIP_MOTION_OK,
+        "real_motion": {"verdict": "fail", "problem": LID, "back_to_normal_at": "never"},
+    }
+    fake_model.respond("check_clip_motion", floating(), CLIP_MOTION_OK, lid)
+    # Each failing answer names a fault of its own, whichever asks they came from.
+    fake_model.answer_unscripted(
+        "agree_on_fault",
+        lambda request: {
+            "read": [],
+            "groups": [
+                {"asks": [each["ask"]], "fault": "Its own."} for each in request.handoff.answers
+            ],
+        },
+    )
+
+    clip = clip_of(fake_model, steps, say, 2)
+
+    assert ruling(clip)["verdict"] == "pass"
+    assert ruling(clip)["agreement"]["real_motion"]["sharing"] == []
+    # Kept: no remake.
+    assert ProducedItem.objects.filter(kind="clip", scene__number=2).count() == 1
+    asked = handoffs("agree_on_fault")
+    assert sorted(answer["problem"] for answer in asked[0]["answers"]) == [FLOATS, LID]
+    step = SceneStep.objects.get(kind="clip", scene__number=2)
+    assert ModelCall.objects.get(purpose="agree_on_fault").tool_call_id == step.tool_call_id
+
+
 def test_the_judges_cost_is_the_clip_steps(judged: ProducedItem) -> None:
     step = SceneStep.objects.get(kind="clip", scene__number=2)
     for check in ModelCall.objects.filter(purpose__startswith="check_clip_"):
@@ -491,6 +529,7 @@ def test_the_ruling_says_which_words_and_models_judged_it(judged: ProducedItem) 
     assert ruling(judged)["models"] == {
         "sides": MODEL_FOR_PURPOSE["check_clip_sides"],
         "motion": MODEL_FOR_PURPOSE["check_clip_motion"],
+        "agree": MODEL_FOR_PURPOSE["agree_on_fault"],
     }
     for call in ModelCall.objects.filter(purpose__startswith="check_clip_"):
         assert call.model == MODEL_FOR_PURPOSE[call.purpose]

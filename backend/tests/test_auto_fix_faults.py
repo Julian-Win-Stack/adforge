@@ -5,8 +5,8 @@ problems of the judge's checks that failed, never one from an answer outvoted on
 
 from typing import Any
 
+from jobs import clip_judge
 from jobs.auto_fix import faults, judge_saw
-from jobs.clip_judge import judged
 
 FLOATS = "The teapot rises at 1.2 s with no hand on it. A real one stays on the bench."
 SPINS = "The mug spins at 2 s and shows its back. A real one keeps its front to the camera."
@@ -37,6 +37,21 @@ def motion(**failed: str) -> dict[str, Any]:
             for question, problem in failed.items()
         },
     }
+
+
+def judged(
+    sides: list[dict[str, Any]], motion: list[dict[str, Any]], *apart: int
+) -> dict[str, Any]:
+    """The ruling, when every check's failing answers name one fault, but those of the asks
+    `apart`, each a fault of its own."""
+    return clip_judge.judged(
+        sides,
+        motion,
+        same_fault=lambda _, failing: {
+            "groups": [{"asks": [each["ask"] for each in failing if each["ask"] not in apart]}]
+            + [{"asks": [ask]} for ask in apart]
+        },
+    )
 
 
 def sides(problem: str) -> dict[str, Any]:
@@ -77,16 +92,20 @@ def test_an_answer_whose_only_fail_was_outvoted_isnt_handed_over() -> None:
     assert judge_saw(ruling) == [motion(real_motion=FLOATS)]
 
 
-def test_a_fail_let_go_on_a_failed_question_is_left_out() -> None:
-    # The first ask sees the teapot float, and the mug spin at 2 s but back to normal at
-    # 2.2 s: the spin is let go. The other two see the mug spin for good, so sudden_change
-    # still fails, from them; the second sees the teapot float too.
+def test_a_fail_a_ruling_from_before_let_go_on_a_failed_question_is_left_out() -> None:
+    # Made before the half-second forgive rule was gone: the first ask sees the teapot float,
+    # and the mug spin at 2 s but back to normal at 2.2 s, and the spin was let go. The other
+    # two see the mug spin for good, so sudden_change still fails, from them; the second sees
+    # the teapot float too.
     first = motion(real_motion=FLOATS)
     first["sudden_change"] = {"verdict": "fail", "problem": SPINS, "back_to_normal_at": "2.2"}
     ruling = judged(
         [SIDES_OK] * 3,
         [first, motion(real_motion=FLOATS, sudden_change=SPINS), motion(sudden_change=SPINS)],
     )
+    ruling["let_go"] = [
+        {"check": "sudden_change", "ask": 1, "problem": SPINS, "back_to_normal_at": "2.2"}
+    ]
 
     assert faults(ruling) == [FLOATS, SPINS]
     first_seen = {
@@ -101,6 +120,18 @@ def test_a_fail_let_go_on_a_failed_question_is_left_out() -> None:
         motion(real_motion=FLOATS, sudden_change=SPINS),
         motion(sudden_change=SPINS),
     ]
+
+
+def test_a_fail_no_other_answer_shares_on_a_failed_question_is_left_out() -> None:
+    # All three asks fail real_motion, but the second on a fault of its own: the spin.
+    ruling = judged(
+        [SIDES_OK] * 3,
+        [motion(real_motion=FLOATS), motion(real_motion=SPINS), motion(real_motion=FLOATS)],
+        2,
+    )
+
+    assert faults(ruling) == [FLOATS]
+    assert judge_saw(ruling) == [motion(real_motion=FLOATS)]
 
 
 def test_every_failed_check_is_handed_over_sides_first_each_problem_once() -> None:

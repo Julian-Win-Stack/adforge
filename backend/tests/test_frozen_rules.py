@@ -12,7 +12,6 @@ import pytest
 from gateway.catalog import MODEL_FOR_PURPOSE, SLOW_ANSWER_SECONDS
 from jobs import clip_judge
 from jobs.clip_judge import (
-    BACK_TO_NORMAL_WITHIN_SECONDS,
     FRAMES_PER_SECOND,
     MOTION_CHECK,
     SIDES_CHECK,
@@ -289,8 +288,9 @@ everything is at the first frame; then every movement and change of the product,
 touching it, and of the one thing the action changes (a surface, a liquid, a level, hair, a \
 shape), step by step, with the time of the frame where you see it; and how everything is at the \
 last frame. Describe what is on the frames, not what the product is for or what usually happens. \
-Write only about the product, the hands that touch it, and the things the product is used on or \
-changes (a surface, a liquid, a level, hair, a shape). Nothing else in the frame is your concern.
+Everything in the frame is your concern, not only the product: write down anything else that \
+moves or changes too, and judge it in the questions as well. Anything that changes while nothing \
+acts on it is a fault.
 2. Then answer three questions, each "pass" or "fail".
 - real_motion: does every object and liquid move the way a real one would? Use the facts about \
 the product: a thick gel must move like a thick gel, a hard object must stay rigid.
@@ -312,6 +312,32 @@ You may also be shown one shop photo of the product, and facts about it from the
 you what the product is, what it is made of, what is inside and how it is built. Use them only \
 for that. Never compare the frames with the photo: differences in size, angle, colour, label or \
 print are not a fail."""
+
+
+# The same-fault call (Change A, Julian's yes 2026-10-18 21:48; its example swapped for a made-up
+# neutral one, Julian 2026-10-19 17:36), as the judge prototype
+# tested it on round 5 (runs/round-5-prototypes/judge).
+AGREE_ON_FAULT_AS_TESTED = """\
+Several independent looks at the same short video clip each answered one question about \
+it, and each said the clip fails. You get each failing answer's problem, as written, with its ask \
+number. Decide whether at least two of them describe the SAME fault.
+
+Same fault means all three of these: the same object or part, the same event happening to it, and \
+time spans that overlap. A problem's time span runs from when it says it starts to when it says it \
+ends or is back to normal ("never" means to the end of the clip). A single moment counts as a span \
+of that moment: "from 1.0 to 1.8 s" and "at 1.4 s" overlap; moments 0.1 s apart, like 0.8 s and \
+0.9 s, are the same moment. Different words for the same thing count as the same \
+("the cup tips over" and "the cup falls on its side"). Two different things wrong with the \
+clip, or the same object with two different things happening to it, or the same kind of \
+thing at times that don't overlap, are different faults, even if both are real.
+
+Work in two steps. First, for each answer write its object, its event and its time span. Then put \
+the answers in groups, one group per fault, every answer in exactly one group."""
+
+
+def test_the_same_fault_call_is_unchanged_from_the_one_tested() -> None:
+    assert clip_judge.AGREE_ON_FAULT == AGREE_ON_FAULT_AS_TESTED
+    assert MODEL_FOR_PURPOSE["agree_on_fault"] == "gpt-6.1-sol"
 
 
 def test_the_clip_judge_is_unchanged_from_the_one_proved() -> None:
@@ -340,12 +366,10 @@ def test_the_clip_judge_runs_as_proved() -> None:
     assert SLOW_ANSWER_SECONDS["check_clip_sides"] == 600
     assert SLOW_ANSWER_SECONDS["check_clip_motion"] == 600
     # SIDES at 10 frames a second (the phone-flip check, Julian's yes 2026-10-14 18:30; it was
-    # 5 stills, call 9), MOTION at 5 frames a second, change 7's half second, 3 asks failing
-    # on 2.
+    # 5 stills, call 9), MOTION at 5 frames a second, 3 asks failing on 2.
     assert (
         SIDES_FRAMES_PER_SECOND,
         FRAMES_PER_SECOND,
-        BACK_TO_NORMAL_WITHIN_SECONDS,
         clip_judge.ASKS,
         clip_judge.FAILS_TO_FAIL,
-    ) == (10, 5, 0.5, 3, 2)
+    ) == (10, 5, 3, 2)

@@ -1,9 +1,11 @@
 """The clip judge's ruling from its answers: each check fails a clip on 2 of its 3 answers,
-and a problem whose thing is back to normal within half a second is let go, its note kept
-(change 7, Julian 2026-10-13). What it rules is what the auto-redo acts on: pass or fail, how
-many of the 6 answers failed, and each failed answer's problem and everything it saw."""
+every failing answer counting (the half-second forgive rule is gone, Julian 2026-10-19), and
+two failing MOTION answers agree only when they name the same fault. What it rules is what the
+auto-redo acts on: pass or fail, how many of the 6 answers failed, and each failed answer's
+problem and everything it saw."""
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +14,7 @@ from pydantic import create_model
 
 from gateway import catalog
 from jobs import clip_judge, fix_check
-from jobs.clip_judge import SIDES_CHECK, SidesVerdict, judged, still_failing, wording_version
+from jobs.clip_judge import SIDES_CHECK, SameFault, SidesVerdict, still_failing, wording_version
 
 PINNED = Path(__file__).parent / "fixtures"
 
@@ -47,6 +49,25 @@ def motion(**failing: tuple[str, str | None] | str) -> dict[str, Any]:
         given = failing.get(question)
         answer[question] = check(*given) if isinstance(given, tuple) else check(given)
     return answer
+
+
+def one_fault(check: str, failing: list[dict[str, Any]]) -> dict[str, Any]:
+    """The same-fault call's reply when every failing answer names one fault."""
+    return {"read": [], "groups": [{"asks": [each["ask"] for each in failing], "fault": "one"}]}
+
+
+def apart(check: str, failing: list[dict[str, Any]]) -> dict[str, Any]:
+    """Its reply when each failing answer names a fault of its own."""
+    return {"read": [], "groups": [{"asks": [each["ask"]], "fault": "own"} for each in failing]}
+
+
+def judged(
+    sides: Sequence[dict[str, Any] | None],
+    motion: Sequence[dict[str, Any] | None],
+    same_fault: SameFault = one_fault,
+) -> dict[str, Any]:
+    """The ruling, when the same-fault call says `same_fault`: by default, one fault."""
+    return clip_judge.judged(sides, motion, same_fault=same_fault)
 
 
 HANDLE = "The mug shows a second handle at 2.4 s where its plain side should be."
@@ -105,33 +126,128 @@ def test_every_answer_is_kept() -> None:
     assert judged(*answers)["answers"] == {"sides": answers[0], "motion": answers[1]}
 
 
-def test_a_thing_back_to_normal_within_half_a_second_is_let_go_with_its_note_kept() -> None:
+def test_a_thing_back_to_normal_soon_still_fails_the_check() -> None:
+    # The half-second forgive rule is gone (Julian 2026-10-19 03:37): every failing answer
+    # counts, however soon its thing is back to normal.
     blink = "The ring at the rim vanishes at 8.0 s; a real one stays."
-    ruling = judged([sides()] * 3, [motion(sudden_change=(blink, "8.4"))] * 2 + [motion()])
-
-    assert ruling["verdict"] == "pass"
-    assert ruling["failed_answers"] == 0
-    assert ruling["failures"] == []
-    assert ruling["let_go"] == [
-        {"check": "sudden_change", "ask": 1, "problem": blink, "back_to_normal_at": "8.4"},
-        {"check": "sudden_change", "ask": 2, "problem": blink, "back_to_normal_at": "8.4"},
-    ]
-
-
-def test_a_thing_back_to_normal_later_than_half_a_second_still_fails() -> None:
-    # The toilet scrub's streaks fade for about a second: Julian tapped it "worth fixing".
-    streaks = "The streaks fade at 2.0 s where the brush isn't; real ones stay."
-    ruling = judged([sides()] * 3, [motion(sudden_change=(streaks, "2.6"))] * 3)
+    ruling = judged(
+        [sides()] * 3,
+        [motion(sudden_change=(blink, "8.1"))] * 2 + [motion()],
+    )
 
     assert ruling["verdict"] == "fail"
-    assert ruling["failed_answers"] == 3
+    assert ruling["failed_answers"] == 2
+    assert still_failing(ruling) == [blink, blink]
 
 
-def test_a_time_range_is_measured_from_where_it_starts() -> None:
-    blink = "The screen pattern changes from 1.2-1.4 s mid-air; a real screen stays the same."
-    ruling = judged([sides()] * 3, [motion(real_motion=(blink, "1.6 s"))] * 3)
+def test_two_failing_answers_on_different_faults_pass_their_check() -> None:
+    # Two unrelated complaints 2 s apart are not agreement (round 5, Cocolab floss scene 4).
+    ruling = judged(
+        [sides()] * 3,
+        [motion(real_motion=FLOATS), motion(real_motion=FILLS), motion()],
+        same_fault=apart,
+    )
 
+    assert ruling["checks"]["real_motion"] == "pass"
     assert ruling["verdict"] == "pass"
+
+
+def test_two_of_three_failing_answers_on_one_fault_fail_their_check_on_that_fault() -> None:
+    def first_and_last(check: str, failing: list[dict[str, Any]]) -> dict[str, Any]:
+        return {"read": [], "groups": [{"asks": [1, 3], "fault": "floats"}, {"asks": [2]}]}
+
+    ruling = judged(
+        [sides()] * 3,
+        [motion(real_motion=FLOATS), motion(real_motion=FILLS), motion(real_motion=FLOATS)],
+        first_and_last,
+    )
+
+    assert ruling["checks"]["real_motion"] == "fail"
+    # The second answer's fault is one no other answer saw: it is outvoted.
+    assert still_failing(ruling) == [FLOATS, FLOATS]
+
+
+@pytest.mark.parametrize(
+    "groups",
+    [
+        pytest.param([{"asks": [0, 1]}], id="asks counted from 0"),
+        pytest.param([{"asks": [5, 6]}], id="asks never sent"),
+        pytest.param([], id="no groups"),
+        pytest.param([{"asks": [1]}], id="a failing answer left out"),
+        pytest.param([{"asks": [1, 3]}, {"asks": [2]}], id="a passing answer put in"),
+        pytest.param([{"asks": [1, 2]}, {"asks": [2]}], id="an answer in two groups"),
+    ],
+)
+def test_a_muddled_same_fault_reply_fails_the_check_on_its_votes(
+    groups: list[dict[str, Any]],
+) -> None:
+    # Never a silent pass: a reply that doesn't put each failing answer in one group is no
+    # answer, as when the call fails.
+    def muddled(check: str, failing: list[dict[str, Any]]) -> dict[str, Any]:
+        return {"read": [], "groups": groups}
+
+    ruling = judged(
+        [sides()] * 3, [motion(real_motion=FLOATS), motion(real_motion=FILLS), motion()], muddled
+    )
+
+    assert ruling["checks"]["real_motion"] == "fail"
+    assert "error" in ruling["agreement"]["real_motion"]
+    assert still_failing(ruling) == [FLOATS, FILLS]
+
+
+def test_when_the_same_fault_call_fails_two_failing_answers_still_fail_their_check() -> None:
+    def down(check: str, failing: list[dict[str, Any]]) -> dict[str, Any]:
+        raise TimeoutError("no answer")
+
+    ruling = judged(
+        [sides()] * 3, [motion(real_motion=FLOATS), motion(real_motion=FILLS), motion()], down
+    )
+
+    assert ruling["checks"]["real_motion"] == "fail"
+    assert still_failing(ruling) == [FLOATS, FILLS]
+    assert ruling["agreement"]["real_motion"] == {"error": "no answer"}
+
+
+def test_the_same_fault_call_is_made_only_for_a_motion_check_failed_by_two_answers() -> None:
+    asked: list[str] = []
+
+    def recorded(check: str, failing: list[dict[str, Any]]) -> dict[str, Any]:
+        asked.append(check)
+        return apart(check, failing)
+
+    # SIDES is voted on as before: its two answers on different faults still fail it.
+    ruling = judged(
+        [sides(HANDLE), sides("The mug's base melts at 1 s."), sides()],
+        [motion(real_motion=FLOATS), motion(sudden_change=FILLS), motion()],
+        recorded,
+    )
+
+    assert asked == []
+    assert ruling["checks"]["sides"] == "fail"
+
+
+def test_the_same_fault_call_is_handed_each_failing_answers_problem_and_when_it_ends() -> None:
+    handed: list[tuple[str, list[dict[str, Any]]]] = []
+
+    def recorded(check: str, failing: list[dict[str, Any]]) -> dict[str, Any]:
+        handed.append((check, failing))
+        return one_fault(check, failing)
+
+    judged(
+        [sides()] * 3,
+        [motion(), motion(sudden_change=(FILLS, "never")), motion(sudden_change=(FLOATS, "1.4"))],
+        recorded,
+    )
+
+    assert handed == [
+        (
+            "sudden_change",
+            [
+                {"ask": 2, "problem": FILLS, "back_to_normal_at": "never"},
+                {"ask": 3, "problem": FLOATS, "back_to_normal_at": "1.4"},
+            ],
+        )
+    ]
 
 
 def test_a_check_with_fewer_than_two_answers_is_not_checked() -> None:
@@ -165,6 +281,7 @@ def test_two_answers_settle_a_check_when_its_third_went_unchecked() -> None:
         "NEEDS_PHOTO_LABEL",
         "SIDES_FRAMES_PER_SECOND",
         "FRAMES_PER_SECOND",
+        "AGREE_ON_FAULT",
     ],
 )
 def test_the_wording_version_changes_whenever_what_the_judge_is_told_does(
@@ -178,7 +295,15 @@ def test_the_wording_version_changes_whenever_what_the_judge_is_told_does(
 
 
 @pytest.mark.parametrize(
-    "form", ["SidesVerdict", "MotionVerdict", "ClipCheckHandoff", "MotionCheckHandoff"]
+    "form",
+    [
+        "SidesVerdict",
+        "MotionVerdict",
+        "ClipCheckHandoff",
+        "MotionCheckHandoff",
+        "AgreeHandoff",
+        "Agreement",
+    ],
 )
 def test_the_wording_version_changes_whenever_an_answer_form_or_handoff_does(
     form: str, monkeypatch: pytest.MonkeyPatch
@@ -191,14 +316,21 @@ def test_the_wording_version_changes_whenever_an_answer_form_or_handoff_does(
     assert wording_version() != before
 
 
-def test_still_failing_lists_sides_problems_before_motions_and_leaves_out_what_was_let_go() -> None:
-    blink = "The ring at the rim vanishes at 8.0 s; a real one stays."
-    # SIDES and real_motion fail on 2 of 3; the blink is let go each time, and the third
-    # answer's does_what_was_ordered fail is outvoted.
+def test_the_wording_version_changes_whenever_a_same_fault_question_does(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    before = wording_version()
+    monkeypatch.setitem(clip_judge.AGREE_QUESTIONS, "real_motion", "does it move?")
+
+    assert wording_version() != before
+
+
+def test_still_failing_lists_sides_problems_before_motions_and_leaves_out_the_outvoted() -> None:
+    # SIDES and real_motion fail on 2 of 3; the third answer's does_what_was_ordered fail is
+    # outvoted.
     ruling = judged(
         [sides(HANDLE), sides(), sides(HANDLE)],
-        [motion(real_motion=FLOATS, sudden_change=(blink, "8.4"))] * 2
-        + [motion(does_what_was_ordered=FILLS)],
+        [motion(real_motion=FLOATS)] * 2 + [motion(does_what_was_ordered=FILLS)],
     )
 
     assert ruling["checks"] == {
@@ -210,46 +342,28 @@ def test_still_failing_lists_sides_problems_before_motions_and_leaves_out_what_w
     assert still_failing(ruling) == [HANDLE, HANDLE, FLOATS, FLOATS]
 
 
-# The HANDLE problem starts at 2.4 s. Two SIDES answers fail with a problem and a time it is
-# back to normal at; the clip fails unless the time is a bare one within half a second.
-NO_TIME = "The mug shows a second handle where its plain side should be."
-# Back 2.3 s after it started at 1.2: read from 3.4, it would look like 0.1 s.
-SPAN = "The handle melts into the side from 1.2 to about 3.4 s; a real one stays put."
-BLINK = "A logo appears on the case's back at 3 s and is gone by the next frame."
-FAILS: tuple[str, list[str]] = ("fail", [])
-LET_GO: tuple[str, list[str]] = ("pass", ["sides", "sides"])
+def test_still_failing_leaves_out_what_a_ruling_from_before_let_go() -> None:
+    # Rulings made before the forgive rule was gone are kept on clips, with what they let go.
+    blink = "The ring at the rim vanishes at 8.0 s; a real one stays."
+    ruling = {
+        "checks": {"sides": "pass", "real_motion": "fail"},
+        "answers": {
+            "sides": [sides()] * 3,
+            "motion": [motion(real_motion=FLOATS)] * 2 + [motion(real_motion=(blink, "8.4"))],
+        },
+        "let_go": [
+            {"check": "real_motion", "ask": 3, "problem": blink, "back_to_normal_at": "8.4"}
+        ],
+    }
+
+    assert still_failing(ruling) == [FLOATS, FLOATS]
 
 
-@pytest.mark.parametrize(
-    ("problem", "back", "ruled"),
-    [
-        pytest.param(HANDLE, "never", FAILS, id="never back to normal"),
-        pytest.param(NO_TIME, "0.1", FAILS, id="a problem that names no second"),
-        # A misread time: it can't be back before it went wrong.
-        pytest.param(HANDLE, "2.2", FAILS, id="back before the problem starts"),
-        pytest.param(HANDLE, "never; it stays from 2.4 s on", FAILS, id="never, whatever it names"),
-        pytest.param(SPAN, "3.5", FAILS, id="a span with an about is measured from its start"),
-        pytest.param(
-            HANDLE,
-            "Not back to normal; still fused at the last frame, 2.6 s",
-            FAILS,
-            id="a time in a sentence saying it isn't back",
-        ),
-        pytest.param(HANDLE, "about 2.6", FAILS, id="about a time"),
-        pytest.param(HANDLE, "2.6 or so", FAILS, id="a time or so"),
-        pytest.param(HANDLE, "2.6", LET_GO, id="a bare time"),
-        pytest.param(HANDLE, "2.6 s", LET_GO, id="a bare time with its unit"),
-        pytest.param(HANDLE, " 2.6s ", LET_GO, id="a bare time with its unit stuck on"),
-        pytest.param(HANDLE, "2.6 seconds", LET_GO, id="a bare time in seconds"),
-        pytest.param(BLINK, "3.2 s", LET_GO, id="sides are let go the same way as motions"),
-    ],
-)
-def test_a_sides_problem_is_let_go_only_at_a_bare_time_within_half_a_second_of_its_start(
-    problem: str, back: str, ruled: tuple[str, list[str]]
-) -> None:
-    ruling = judged([sides(problem, back)] * 2 + [sides()], [motion()] * 3)
+def test_a_sides_problem_back_to_normal_soon_still_fails_the_check() -> None:
+    blink = "A logo appears on the case's back at 3 s and is gone by the next frame."
+    ruling = judged([sides(blink, "3.1 s")] * 2 + [sides()], [motion()] * 3)
 
-    assert (ruling["verdict"], [note["check"] for note in ruling["let_go"]]) == ruled
+    assert ruling["checks"]["sides"] == "fail"
 
 
 # ---------------------------------------------------------------- the SIDES check as tested
