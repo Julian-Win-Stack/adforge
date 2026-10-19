@@ -1132,6 +1132,6 @@ def test_a_clean_picture_drawn_before_a_restart_is_used_not_drawn_again(mug_fixe
     ReferencePhoto.objects.update(drawn="")
     row = ReferencePhoto.objects.get()
 
-    assert clean_picture(last_step("starting_picture"), row) == drawn
+    assert clean_picture(row.scene, row) == drawn
     assert clean_pictures() == [drawn]
     assert ReferencePhoto.objects.get().drawn == drawn
