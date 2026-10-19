@@ -16,13 +16,22 @@ from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import Said
 from jobs import work
-from jobs.models import AgentFix, Fix, ProducedItem, Scene, SceneStep
+from jobs.models import BROLL_FIELDS, AgentFix, Fix, ProducedItem, Scene, SceneStep
 
-from .conftest import CLIP_MOTION_OK, PICTURE_OK, HeldSteps, facts_ok, motion_answer
+from .conftest import (
+    CLIP_MOTION_OK,
+    PICTURE_OK,
+    HeldSteps,
+    WorkerStopped,
+    facts_ok,
+    handoffs,
+    motion_answer,
+)
 from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing, judged
 from .test_producer_broll import (
     LINE_2,
     SHOWS,
+    calling,
     checked,  # noqa: F401 (a fixture)
     instructed,  # noqa: F401 (a fixture)
 )
@@ -526,6 +535,109 @@ def test_an_agent_that_stops_after_a_try_puts_the_scene_back_and_keeps_the_first
     assert first is not None
     used, _ = producer._clip_and_transcript(Scene.objects.get(number=2))
     assert used.file == first.file
+
+
+# --- When the worker restarts ----------------------------------------------------------------
+
+
+def said_to_camera_after_a_restart() -> AgentFix:
+    """Restart the worker; gives how the agent's fixing of scene 2 ended. The step it worked
+    in is failed, as every step running is, and its give-up kept: scene 2 is said to camera,
+    so no try the judge failed is in the ad."""
+    tasks.carry_on_after_the_worker_starts()
+    fixing = AgentFix.objects.get()
+    assert fixing.step.status == SceneStep.Status.FAILED
+    assert (fixing.finished_at is not None, fixing.said_to_camera) == (True, True)
+    scene = Scene.objects.get(number=2)
+    assert (scene.line, scene.shows) == (LINE_2, "")
+    assert work.waits_to_be_said_to_camera(scene)
+    return fixing
+
+
+def test_a_give_up_the_worker_stopped_before_keeping_is_kept_once_it_restarts(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_model.respond(
+        "check_clip_motion",
+        *judged(failing(FLOATS), failing(FLOATS)),
+        *judged(failing(FLOATS), failing(FLOATS)),
+    )
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[film_again()]),
+        turn(calls=[("say_to_camera", {"reason": "The stir never reads."})]),
+    )
+
+    def stopped(*_: object, **__: object) -> None:
+        raise WorkerStopped()
+
+    monkeypatch.setattr(work, "_ended", stopped)
+    with pytest.raises(WorkerStopped):
+        clip_of_scene_2(fake_model, steps, say)
+    monkeypatch.undo()
+
+    assert said_to_camera_after_a_restart().gave_up == "The stir never reads."
+
+
+def test_a_fixing_the_worker_stopped_in_is_given_up_and_the_scene_put_back(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond(
+        "check_clip_motion",
+        *judged(failing(FLOATS), failing(FLOATS)),
+        *judged(failing(FLOATS), failing(FLOATS)),
+    )
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[film_again(line=NEW_LINE, shows=STIRS, video_prompt=STIRS)]),
+        WorkerStopped(),
+    )
+    with pytest.raises(WorkerStopped):
+        clip_of_scene_2(fake_model, steps, say)
+    assert scene_row()[0] == NEW_LINE
+
+    assert said_to_camera_after_a_restart().gave_up
+
+
+def test_the_producer_never_takes_a_try_for_a_clip_already_made(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond(
+        "check_clip_motion",
+        *judged(failing(FLOATS), failing(FLOATS)),
+        *judged(failing(FLOATS), failing(FLOATS)),
+    )
+    fake_model.respond("fix_scene", turn(calls=[film_again()]), WorkerStopped())
+    with pytest.raises(WorkerStopped):
+        clip_of_scene_2(fake_model, steps, say)
+    fixing = said_to_camera_after_a_restart()
+    # The scene shows the mug again, as before it was said to camera, from the same picture
+    # and audio try 1 was filmed from.
+    before = fixing.camera_before
+    Scene.objects.filter(number=2).update(
+        shows=before["shows"], **{field: before[field] for field in BROLL_FIELDS}
+    )
+    asked = len(handoffs("make_broll_clip"))
+
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+
+    # Try 1 is no clip of the scene's to hand back: the scene, with a clip, changes only
+    # through the shop owner's notes.
+    made = ToolCall.objects.filter(tool="make_clip").latest("id")
+    assert "already made" not in made.result
+    assert made.result.startswith("Refused: scene 2 already has a clip")
+    assert len(handoffs("make_broll_clip")) == asked
 
 
 # --- In the background ---------------------------------------------------------------------

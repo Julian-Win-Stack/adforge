@@ -101,7 +101,7 @@ class FakeAgent:
                 fixing.save(update_fields=["passed"])
                 fixing_agent._finish(fixing)
                 return fixing_agent.outcome(fixing)
-        fixing_agent._give_up(fixing, self.gave_up or "it couldn't film the change well.")
+        fixing_agent.give_up(fixing, self.gave_up or "it couldn't film the change well.")
         return fixing_agent.outcome(fixing)
 
 

@@ -59,6 +59,7 @@ from jobs.work import (
 )
 
 from . import step_signals
+from .fixing_agent import AGENT as FIXING_AGENT
 from .loop import Agent, Refused, Tool
 from .models import ToolCall
 from .money import dollars
@@ -979,7 +980,10 @@ class MakeClip(Tool):
                 # With no note, any clip of the same picture and audio is already made, as
                 # before notes; a different note is a new clip.
                 **({"step__note": note} if note else {}),
-            ).order_by("version"),
+            )
+            # A try of the fixing agent's is a clip of the step it fixed, never one made here.
+            .exclude(step__tool_call__agent=FIXING_AGENT)
+            .order_by("version"),
         )
         if made is not None:
             assert made.step is not None, "a clip is made by a scene step"

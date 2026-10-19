@@ -26,6 +26,7 @@ from jobs.work import (
     agent_gave_up,
     check_fix,
     clip_tries,
+    end_the_agents_fixing,
     make_clip,
     make_line_audio,
     make_starting_picture,
@@ -573,6 +574,8 @@ def carry_on_after_the_worker_starts() -> None:
             )
         )
         for step in stopped:
+            # Before the step fails, so its scene is as the fixing agent's give-up leaves it.
+            end_the_agents_fixing(step)
             _fail(
                 step,
                 "The worker restarted while it was being made.",

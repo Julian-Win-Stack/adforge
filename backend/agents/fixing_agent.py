@@ -277,7 +277,7 @@ def _work(fixing: AgentFix) -> None:
     turns = 0
     while not _ended(fixing):
         if turns >= MOST_TURNS:
-            _give_up(fixing, f"The fixing agent stopped after {MOST_TURNS} turns.")
+            give_up(fixing, f"The fixing agent stopped after {MOST_TURNS} turns.")
             return
         turns += 1
         with tracing.agent_turn(AGENT), charged_to(_turns(fixing)):
@@ -395,7 +395,8 @@ def _stopped(fixing: AgentFix) -> None:
         fixing.save(update_fields=["passed", "finished_at"])
 
 
-def _give_up(fixing: AgentFix, reason: str) -> None:
+def give_up(fixing: AgentFix, reason: str) -> None:
+    """End the fixing as given up for `reason`: the scene is put back as it was before try 1."""
     fixing.gave_up = reason
     fixing.save(update_fields=["gave_up"])
     _finish(fixing)

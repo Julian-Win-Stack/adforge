@@ -2550,6 +2550,31 @@ def _ended(step: SceneStep) -> AgentFix:
     return ended
 
 
+# Why the fixing agent gave up on a scene whose step the worker stopped in the middle of.
+STOPPED_BY_A_RESTART = "The worker restarted while the fixing agent worked on the scene."
+
+
+def end_the_agents_fixing(step: SceneStep) -> None:
+    """For a clip step failed as the worker restarted in the middle of it: end the fixing
+    agent's work on it, if it took it, so no try the judge failed is in the ad. A fixing
+    still going is given up, its scene put back as it was before try 1, as no worker carries
+    it on. A give-up is then kept as its door keeps one, if it wasn't yet: door 1's scene said
+    to camera, or a fix's scene keeping its clip from before."""
+    from agents import fixing_agent
+
+    fixing = AgentFix.objects.filter(step=step).first()
+    if fixing is None:
+        return
+    if fixing.finished_at is None:
+        fixing_agent.give_up(fixing, STOPPED_BY_A_RESTART)
+    if agent_fix(step) is None or fixing.passed_id is not None:
+        return
+    if fixing.door == AgentFix.Door.OWNER:
+        AgentFix.objects.filter(pk=fixing.pk).update(kept=back_to_the_clip_before(step))
+    else:
+        _ended(step)
+
+
 def back_to_the_clip_before(step: SceneStep) -> ProducedItem | None:
     """For a fix row's step (door 2) the fixing agent ended with no try passed: the scene's
     clip from before the plan is its newest again, brought back for nothing when a try is

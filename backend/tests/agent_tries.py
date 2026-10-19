@@ -85,7 +85,7 @@ class FakeAgent:
                 return fixing_agent.outcome(fixing)
         fixing.picked = self.picks
         fixing.save(update_fields=["picked"])
-        fixing_agent._give_up(fixing, self.reason)
+        fixing_agent.give_up(fixing, self.reason)
         return fixing_agent.outcome(fixing)
 
 

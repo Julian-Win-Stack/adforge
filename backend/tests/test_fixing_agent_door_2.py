@@ -10,6 +10,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from adforge.retry import OutsideServiceDown
+from agents import tasks
 from agents.models import SystemNote
 from agents.producer import _latest_clip
 from chat.models import Message
@@ -17,7 +18,7 @@ from gateway.fake import FakeModel, turn
 from jobs import work
 from jobs.models import AgentFix, Fix, FixCheck, FixPlanScene, Scene, SceneStep
 
-from .conftest import HeldSteps, facts_ok, motion_answer
+from .conftest import HeldSteps, WorkerStopped, facts_ok, motion_answer
 from .fake_fixing_agent import FakeAgent, ScriptedTry, _ruling, install
 from .test_fix_wiring import decided, planning, plans, row, tap_yes
 from .test_fixing_agent import STIRS, film_again
@@ -241,5 +242,35 @@ def test_an_agent_that_stops_after_a_try_leaves_the_scene_as_it_was(
     latest = _latest_clip(scene)
     assert latest is not None and latest.file == before.file
     assert AgentFix.objects.get().finished_at is not None
+    planned.refresh_from_db()
+    assert planned.landed_at is None and planned.error
+
+
+def test_a_fix_the_worker_stopped_in_leaves_the_scene_as_it_was_once_it_restarts(
+    fake_model: FakeModel,
+    held: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    before = clip(2)
+    line = Scene.objects.get(number=2).line
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.answer_unscripted("check_clip_motion", motion_answer(failing(FLOATS)))
+    fake_model.respond(
+        "fix_scene", turn(calls=[film_again(line=NEW_LINE, video_prompt=STIRS)]), WorkerStopped()
+    )
+    planned = _a_fix_said_yes_to(fake_model, held, say, api, session_id)
+    with pytest.raises(WorkerStopped):
+        held.run_held()
+
+    tasks.carry_on_after_the_worker_starts()
+
+    scene = Scene.objects.get(number=2)
+    assert (scene.line, scene.status) == (line, Scene.Status.FINISHED)
+    latest = _latest_clip(scene)
+    assert latest is not None and latest.file == before.file
+    fixing = AgentFix.objects.get()
+    assert (fixing.gave_up, fixing.kept) == (work.STOPPED_BY_A_RESTART, latest)
     planned.refresh_from_db()
     assert planned.landed_at is None and planned.error
