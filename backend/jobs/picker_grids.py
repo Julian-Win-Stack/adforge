@@ -212,6 +212,28 @@ def _opens(content: bytes) -> bool:
     return True
 
 
+GRID_TILES = re.compile(r"^[^:]+: (.*) \(each labelled in its black bar\)$")
+
+
+def tiles_of(label: str) -> list[str]:
+    """The labels of the tiles in the grid labelled `label`, as `grids` labels it."""
+    found = GRID_TILES.match(label)
+    return found[1].split(", ") if found else []
+
+
+def without_tiles(lines: photos.ShownLines, tiles: list[str]) -> photos.ShownLines:
+    """`lines` without the lines naming `tiles`, for a picker that isn't shown them."""
+
+    def kept(text: str) -> str:
+        return "\n".join(line for line in text.splitlines() if line.partition(": ")[0] not in tiles)
+
+    return photos.ShownLines(
+        hidden_pictures=kept(lines.hidden_pictures),
+        official_photos=kept(lines.official_photos),
+        video_players=kept(lines.video_players),
+    )
+
+
 def grids(
     kind: str, tiles: list[tuple[str, bytes]], across: int, side: int
 ) -> list[tuple[str, bytes]]:

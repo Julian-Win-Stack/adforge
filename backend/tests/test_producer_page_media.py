@@ -8,10 +8,12 @@ from typing import Any
 
 import pytest
 from pytest_httpserver import HTTPServer
+from rest_framework.test import APIClient
 
 from adforge import file_store
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
+from gateway.types import BlockedBySafetyFilter, ModelRequest
 from jobs.models import Job
 
 from .conftest import (
@@ -22,7 +24,7 @@ from .conftest import (
     paid_for,
     photo,
 )
-from .test_producer_page import read_page_result, reading
+from .test_producer_page import notices, read_page_result, reading
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -433,4 +435,75 @@ def test_a_video_whose_frame_takes_too_long_is_listed_without_a_picture(
     assert (
         picker_call().handoff["video_players"].endswith("NO PICTURE (its frame couldn't be read)")
     )
+    assert "Kept 1 product photo." in read_page_result()
+
+
+def test_a_grid_the_models_safety_filter_blocks_is_left_out_and_the_rest_are_picked_from(
+    api: APIClient,
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    with_hidden_gallery(firecrawl, httpserver)
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    hidden_grid = "Hidden pictures: I40 (hidden), I41 (hidden) (each labelled in its black bar)"
+
+    def blocked_by_the_hidden_grid(request: ModelRequest[Any]) -> dict[str, Any]:
+        if hidden_grid in [image.label for image in request.images]:
+            raise BlockedBySafetyFilter("content_policy_violation")
+        return {**SHAMPOO_PICKED, "gallery_images": [8], "record_images": [1]}
+
+    fake_model.answer_unscripted("pick_photos", blocked_by_the_hidden_grid)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    # Shown everything, then without the last grid, which the filter lets through.
+    first, second = ModelCall.objects.filter(purpose="pick_photos").order_by("created_at")
+    assert [image["label"] for image in first.images] == [
+        *SCREENSHOT_PARTS,
+        OFFICIAL_R1,
+        hidden_grid,
+    ]
+    assert [image["label"] for image in second.images] == [*SCREENSHOT_PARTS, OFFICIAL_R1]
+    # Nor is the picker told of the pictures it isn't shown.
+    assert second.handoff["hidden_pictures"] == "(none: every numbered picture was drawn)"
+    assert second.handoff["official_photos"] == first.handoff["official_photos"]
+    assert (first.outcome, second.outcome) == ("failed", "succeeded")
+    assert "Kept 1 product photo." in read_page_result()
+    assert (
+        "info",
+        "The AI model's safety filter refused to look at some of the pictures beside the "
+        "page's screenshot (hidden pictures I40 and I41), so this product's photos were "
+        "picked without them.",
+    ) in notices(api, session_id)
+
+
+def test_when_every_grid_alone_is_blocked_the_photos_are_picked_off_the_screenshot_alone(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    with_hidden_gallery(firecrawl, httpserver)
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+
+    def blocked_by_any_grid(request: ModelRequest[Any]) -> dict[str, Any]:
+        if len(request.images) > len(SCREENSHOT_PARTS):
+            raise BlockedBySafetyFilter("content_policy_violation")
+        return {**SHAMPOO_PICKED, "gallery_images": [8]}
+
+    fake_model.answer_unscripted("pick_photos", blocked_by_any_grid)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    # Everything, without the hidden grid, without the official photos' grid, then neither.
+    asked = ModelCall.objects.filter(purpose="pick_photos").order_by("created_at")
+    assert [len(call.images) for call in asked] == [5, 4, 4, 3]
+    assert asked.last().handoff["official_photos"] == "(none)"  # type: ignore[union-attr]
     assert "Kept 1 product photo." in read_page_result()

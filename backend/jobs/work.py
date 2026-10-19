@@ -8,6 +8,7 @@ import json
 import logging
 import math
 import mimetypes
+import re
 import tempfile
 import wave
 from collections.abc import Callable, Iterator, Sequence
@@ -452,19 +453,24 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
                 Message.Level.INFO,
             )
         )
-    images, shown = _picker_images(job, record, read.marked.marks, read.marked.screenshot)
-    try:
-        picked = call_model(
+    marked = read.marked
+    images, shown = _picker_images(job, record, marked.marks, marked.screenshot)
+
+    def pick(images: list[Image], shown: photos.ShownLines) -> photos.PickedPhotos:
+        return call_model(
             job=job,
             purpose="pick_photos",
             instructions=photos.PICK_INSTRUCTIONS,
-            handoff=photos.handoff(record, read.marked.marks, read.marked.title, shown),
+            handoff=photos.handoff(record, marked.marks, marked.title, shown),
             output=photos.PickedPhotos,
             images=images,
             # A page read again, as after a worker stopped, isn't picked and paid for twice.
             pay_once=True,
         )
-    except (UnusableReply, OutsideServiceDown) as error:
+
+    try:
+        picked, left_out = _picked_past_the_safety_filter(pick, images, shown)
+    except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
         notices.append(
             (
                 f"Picking this product's photos off the page failed ({error}). {DECLARED_INSTEAD}",
@@ -472,6 +478,8 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
             )
         )
         return Picked(None, notices)
+    if left_out:
+        notices.append((_left_out_by_the_filter(left_out), Message.Level.INFO))
     if picked.page_blocked:
         notices.append((PAGE_BLOCKED, Message.Level.PROBLEM))
         return Picked(None, notices, blocked=True)
@@ -496,6 +504,56 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
     )
 
 
+def _picked_past_the_safety_filter(
+    pick: Callable[[list[Image], photos.ShownLines], photos.PickedPhotos],
+    images: list[Image],
+    shown: photos.ShownLines,
+) -> tuple[photos.PickedPhotos, list[str]]:
+    """The picker's answer, and the tiles of the grids left out to get it. A model's safety
+    filter refuses a whole call over one picture it objects to, often wrongly, so when it
+    refuses, the grids beside the screenshot are left out one at a time, last first, and
+    then all together. Raises BlockedBySafetyFilter when it refuses even the screenshot."""
+    try:
+        return pick(images, shown), []
+    except BlockedBySafetyFilter:
+        pass
+    grids = [image for image in images if not SCREENSHOT_PART.match(image.label)]
+    tries = [[grid] for grid in reversed(grids)]
+    if len(grids) > 1:
+        tries.append(grids)
+    for left in tries:
+        tiles = [tile for grid in left for tile in picker_grids.tiles_of(grid.label)]
+        try:
+            picked = pick(
+                [image for image in images if image not in left],
+                picker_grids.without_tiles(shown, tiles),
+            )
+        except BlockedBySafetyFilter:
+            if left is tries[-1]:
+                raise
+            continue
+        return picked, tiles
+    raise AssertionError("unreachable: the last try raises")  # pragma: no cover
+
+
+def _left_out_by_the_filter(tiles: list[str]) -> str:
+    """The notice saying which pictures beside the screenshot the picker went without."""
+    kinds = {"R": "official photos", "I": "hidden pictures", "V": "video players"}
+    named = []
+    for letter, kind in kinds.items():
+        numbers = [tile.split()[0] for tile in tiles if tile.startswith(letter)]
+        if numbers:
+            listed = (
+                f"{', '.join(numbers[:-1])} and {numbers[-1]}" if len(numbers) > 1 else numbers[0]
+            )
+            named.append(f"{kind} {listed}")
+    return (
+        "The AI model's safety filter refused to look at some of the pictures beside the "
+        f"page's screenshot ({'; '.join(named)}), so this product's photos were picked "
+        "without them."
+    )
+
+
 def _picked_videos(picked: photos.PickedPhotos, marks: dict[str, Any]) -> list[dict[str, Any]]:
     """The video players the picker picked, as the page script found them. Numbers of
     players it wasn't shown are dropped."""
@@ -503,6 +561,9 @@ def _picked_videos(picked: photos.PickedPhotos, marks: dict[str, Any]) -> list[d
     return [players[number] for number in picked.gallery_videos if number in players]
 
 
+# How each part of the screenshot is labelled for the picker, and how one is known.
+SCREENSHOT_PART_LABEL = "Part {} of {} (from {} px down the page):"
+SCREENSHOT_PART = re.compile(r"Part \d+ of \d+ \(from \d+ px down the page\):$")
 # The most pictures the picker's model takes in one call.
 MOST_PICKER_IMAGES = 50
 
@@ -521,7 +582,7 @@ def _picker_images(
     parts = photos.parts(screenshot)
     for number, (top, part) in enumerate(parts, 1):
         key = file_store.save(f"jobs/{job.pk}/firecrawl/part-{number}.jpg", part)
-        images.append(Image(f"Part {number} of {len(parts)} (from {top} px down the page):", key))
+        images.append(Image(SCREENSHOT_PART_LABEL.format(number, len(parts), top), key))
     shown = picker_grids.beside_the_screenshot(record, marks)
     for number, (label, grid) in enumerate(shown.grids, 1):
         key = file_store.save(f"jobs/{job.pk}/firecrawl/grid-{number}.jpg", grid)

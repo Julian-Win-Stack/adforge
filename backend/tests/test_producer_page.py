@@ -24,6 +24,7 @@ from agents.models import ToolCall
 from chat.models import Attachment
 from gateway.fake import FakeModel, Outcome, turn
 from gateway.models import ModelCall
+from gateway.types import BlockedBySafetyFilter
 from jobs.models import Job
 from jobs.page import DECLARED_DATA_HEADING
 from jobs.page_text import PRICES_HEADING
@@ -868,6 +869,12 @@ def test_a_page_with_no_product_record_is_picked_without_one(
             "Picking this product's photos off the page failed (The model provider was still "
             "down after 3 tries: 503 from the provider). ",
             id="the picker fails",
+        ),
+        pytest.param(
+            # Shown with the official photo's grid, then without it.
+            [BlockedBySafetyFilter("content_policy_violation")] * 2,
+            "Picking this product's photos off the page failed (content_policy_violation). ",
+            id="the model's safety filter blocks even the screenshot",
         ),
         pytest.param(
             [{**SHAMPOO_PICKED, "gallery_images": [], "more_images": []}],
