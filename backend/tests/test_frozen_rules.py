@@ -5,6 +5,7 @@ Each case names the grade that proved the rule. Not frozen on purpose: the camer
 the video prompt's opener, "One continuous shot" (#117) and the "while" sentence (round 2 N5
 not graded yet)."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -175,6 +176,34 @@ FROZEN = [
         id="A17 a person named in shows is in the clip (#5 s3 FAIL)",
     ),
 ]
+
+
+# The planner's ask for something of the product no photo shows, as Julian approved it for
+# the owner part loop (Oct 19, spec handoffs/owner-part-approval): not proven by grades yet,
+# pinned so it changes only when he says so.
+OWNER_PART_ASK = [
+    "For something of the product no photo shows, offer three answers: attach a photo of it; "
+    "describe how it looks in one sentence; or have you draw it from your own idea of it.",
+    "Say that they will see the scene's picture and say yes to it before its video is made.",
+    "For something of the product no photo shows: if they attach a photo, plan with it among "
+    "the scene's needs; if they describe it, give the scene an owner part from the shop "
+    "owner's words, its looks their sentence as they said it; if they say to draw it, give "
+    "the scene an owner part you invent, its looks one sentence of how such a thing "
+    "ordinarily looks: the only thing you may make up.",
+]
+
+
+@pytest.mark.parametrize("sentence", OWNER_PART_ASK)
+def test_the_owner_part_ask_is_in_the_planner_word_for_word(sentence: str) -> None:
+    assert sentence in PLANNER
+
+
+def test_the_owner_part_ask_names_no_product_and_no_example() -> None:
+    # CODING_STANDARDS.md: a rule must hold for products never tested. A name is capitalised
+    # and an example comes after "such as": the ask has neither past each sentence's start.
+    for sentence in OWNER_PART_ASK:
+        assert "such as" not in sentence
+        assert not re.search(r"(?<![.:]) [A-Z]", sentence), sentence
 
 
 @pytest.mark.parametrize(("prompt", "sentence"), FROZEN)
