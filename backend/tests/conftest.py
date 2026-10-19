@@ -128,15 +128,6 @@ PLAN: dict[str, Any] = {
 # The plan's 18 words take the fake voice 9 seconds: it speaks 2 words a second.
 
 
-# What the plan's critic answers about a B-roll scene when a test doesn't say.
-PLAN_SCENE_OK: dict[str, Any] = {
-    "decision": "checked",
-    "reason": "A photo shows it used this way, and it lasts the clip.",
-    "shown_how": "a photo shows it",
-    "fills_clip": True,
-}
-
-
 # What the planner says about a B-roll scene when a test doesn't say: it shows the mug at
 # its best, with no face in it, and needs nothing the main photo can't show.
 SHOWCASE: dict[str, Any] = {
@@ -365,8 +356,6 @@ def fake_model() -> Iterator[FakeModel]:
     # Once the ad has a clip, every message goes to the decider first: unless a test scripts
     # it, it passes each one on to the producer.
     fake.answer_unscripted("decide_fixes", lambda _: not_a_fix())
-    # The plan's critic passes every B-roll scene unless a test scripts it.
-    fake.answer_unscripted("check_plan_scene", lambda _: PLAN_SCENE_OK)
     with use_model(fake):
         yield fake
 

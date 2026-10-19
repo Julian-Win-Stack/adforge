@@ -72,7 +72,6 @@ from . import (
     page,
     page_text,
     photos,
-    plan_critic,
     reference_photos,
 )
 from .checks import (
@@ -658,24 +657,20 @@ def plan(job: Job) -> ProducerDecision:
     """Have the planner plan the ad from the page, the product photos and the conversation,
     and keep the plan. A decision to ask the user keeps nothing."""
     photos = list(job.photos.all())
-    handoff = PlanHandoff(
-        product_url=job.product_url,
-        page_text=page.for_model(job.page_text),
-        target_seconds=job.target_seconds,
-        photo_count=len(photos),
-        conversation=_conversation(job),
-    )
-    output = producer_decision_for(len(photos))
-    images = [Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos]
     decision = call_model(
         job=job,
         purpose="plan_ad",
         instructions=PLAN_INSTRUCTIONS,
-        handoff=handoff,
-        output=output,
-        images=images,
+        handoff=PlanHandoff(
+            product_url=job.product_url,
+            page_text=page.for_model(job.page_text),
+            target_seconds=job.target_seconds,
+            photo_count=len(photos),
+            conversation=_conversation(job),
+        ),
+        output=producer_decision_for(len(photos)),
+        images=[Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos],
     )
-    decision = plan_critic.checked(job, decision, handoff, output, images)
     planned = decision.plan
     if planned is None:
         return decision

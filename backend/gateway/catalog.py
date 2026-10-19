@@ -15,10 +15,6 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # gives it for the photos it picks.
     "note_face": "gpt-5.6-sol",
     "plan_ad": "gpt-5.6-sol",
-    # The plan's critic checks each B-roll scene, and the planner tries again with its notes
-    # (jobs/plan_critic.py): the planner's own model, as the round 5 prototype ran them.
-    "check_plan_scene": "gpt-5.6-sol",
-    "replan_ad": "gpt-5.6-sol",
     "fact_check": "gpt-5.6-terra",
     "rewrite_line": "gpt-5.6-sol",
     "shorten_script": "gpt-5.6-sol",
