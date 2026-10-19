@@ -67,6 +67,8 @@ def hidden_picture(firecrawl: FakeFirecrawl, n: int, **more: Any) -> dict[str, A
         "href": "",
         "x": 1800,
         "y": 167,
+        "nw": 1500,
+        "nh": 2000,
         "w": 763,
         "h": 942,
         "vis": 0,
@@ -333,7 +335,7 @@ def test_a_page_with_many_hidden_pictures_record_photos_and_videos_stays_under_5
     ]
     # 10 drawn pictures share the hidden pictures' box: their lines name the first 8.
     marks["imgs"] += [
-        hidden_picture(firecrawl, n, vis=1, shown=True, w=50, h=50) for n in range(200, 210)
+        hidden_picture(firecrawl, n, vis=1, shown=True, w=150, h=150) for n in range(200, 210)
     ]
     marks["vids"] = [
         player(n, "video", f"{shop}/cdn/v/{n}.mp4", poster=f"{shop}/cdn/p/{n}.png")
