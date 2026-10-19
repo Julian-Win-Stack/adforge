@@ -167,6 +167,20 @@ def test_two_of_three_failing_answers_on_one_fault_fail_their_check_on_that_faul
     assert still_failing(ruling) == [FLOATS, FLOATS]
 
 
+def test_a_group_counts_only_the_failing_answers_in_it() -> None:
+    # The call puts a passing answer in with a failing one: still only one failing answer.
+    def with_a_pass(check: str, failing: list[dict[str, Any]]) -> dict[str, Any]:
+        return {"read": [], "groups": [{"asks": [1, 3]}, {"asks": [2]}]}
+
+    ruling = judged(
+        [sides()] * 3,
+        [motion(real_motion=FLOATS), motion(real_motion=FILLS), motion()],
+        with_a_pass,
+    )
+
+    assert ruling["checks"]["real_motion"] == "pass"
+
+
 def test_when_the_same_fault_call_fails_two_failing_answers_still_fail_their_check() -> None:
     def down(check: str, failing: list[dict[str, Any]]) -> dict[str, Any]:
         raise TimeoutError("no answer")
