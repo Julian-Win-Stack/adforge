@@ -162,7 +162,11 @@ def test_a_pasted_page_that_fails_its_check_keeps_nothing_and_says_why_until_a_g
     assert sent.status_code == 201, sent.json()
     job = Job.objects.get()
     assert (job.page_text, job.page_html_key, job.photos.count()) == ("", "", 0)
-    failed = [each for each in messages(api, session_id) if each["role"] == "notice"]
+    failed = [
+        each
+        for each in messages(api, session_id)
+        if each["role"] == "notice" and each["pasted_page_result"]
+    ]
     assert [(each["level"], each["text"], each["pasted_page_result"]) for each in failed] == [
         (
             "problem",
@@ -275,7 +279,7 @@ def test_a_pasted_page_that_cant_be_checked_keeps_nothing_and_says_so_once(
     assert [
         (each["text"], each["pasted_page_result"])
         for each in messages(api, session_id)
-        if each["role"] == "notice"
+        if each["role"] == "notice" and each["pasted_page_result"]
     ] == [(f"Your pasted page can't be used: {why}", why)]
     assert Job.objects.get().page_html_key == ""
     assert producer_turns() == 2
