@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from agents import fixing_agent
 from gateway.catalog import MODEL_FOR_PURPOSE, SLOW_ANSWER_SECONDS
 from jobs import clip_judge
 from jobs.clip_judge import (
@@ -31,6 +32,7 @@ from jobs.scenes import (
     BEFORE_PICTURE_INSTRUCTIONS,
     BEFORE_PICTURE_JOB,
     BROLL_KIND_RULES,
+    BROLL_SHARED_RULES,
     MAIN_PHOTO_JOB,
     broll_prompt_instructions,
     broll_video_prompt,
@@ -373,3 +375,27 @@ def test_the_clip_judge_runs_as_proved() -> None:
         clip_judge.ASKS,
         clip_judge.FAILS_TO_FAIL,
     ) == (10, 5, 3, 2)
+
+
+# The fixing agent's own instructions: the prototype's, with changes A1-A8 as Julian approved
+# them (2026-10-19 16:55, "I'll go with your recommendations for question two and question
+# four"; handoffs/fixing-agent/spec.md, section 3). Pinned word for word: any change fails
+# here until he says so and the pinned copy changes with it.
+FIXING_AGENT_AS_APPROVED = (
+    Path(__file__).parent / "fixtures" / "fixing_agent_instructions.txt"
+).read_text()
+
+
+def test_the_fixing_agents_instructions_are_the_approved_ones_word_for_word() -> None:
+    assert fixing_agent.INSTRUCTIONS == FIXING_AGENT_AS_APPROVED
+
+
+def test_the_fixing_agent_is_told_the_apps_prompt_rules_unchanged() -> None:
+    told = fixing_agent.instructions()
+    assert told.startswith(FIXING_AGENT_AS_APPROVED)
+    assert BROLL_SHARED_RULES in told
+    assert all(rules in told for rules in BROLL_KIND_RULES.values())
+
+
+def test_the_fixing_agent_runs_on_the_deciders_model() -> None:
+    assert MODEL_FOR_PURPOSE["fix_scene"] == MODEL_FOR_PURPOSE["decide_fixes"] == "gpt-6.1-sol"

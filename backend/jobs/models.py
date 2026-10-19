@@ -1120,3 +1120,134 @@ class FixCheck(models.Model):
     def what(self) -> str:
         """What the fix made again: "picture" or "clip"."""
         return "picture" if self.step.kind == SceneStep.Kind.STARTING_PICTURE else "clip"
+
+
+class AgentFix(models.Model):
+    """The fixing agent's work on one B-roll scene (CONTEXT.md: door 1, door 2, try,
+    give-up): the scene's clip step it fixes, what failed, and how it ended. Every try it
+    films is one of its `tries`, each a version the shop owner can see and pick."""
+
+    class Door(models.TextChoices):
+        # The clip judge failed the scene's clip.
+        JUDGE = "judge"
+        # The shop owner's note about the scene, after their yes to the plan.
+        OWNER = "owner"
+
+    step = models.OneToOneField(
+        SceneStep,
+        on_delete=models.CASCADE,
+        related_name="agent_fix",
+        help_text="The scene's clip step the agent fixes: for door 1, the step whose clip the "
+        "judge failed; for door 2, the step made for the owner's fix.",
+    )
+    door = models.CharField(max_length=10, choices=Door.choices)
+    note = models.TextField(blank=True, help_text="For door 2, the shop owner's note.")
+    goal = models.TextField(
+        blank=True,
+        help_text="For door 2, one sentence in the owner's words saying what must be "
+        "different. Blank for door 1.",
+    )
+    first_clip = models.ForeignKey(
+        ProducedItem,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="Try 0: the clip the judge failed, or the one the owner noted.",
+    )
+    ruling = models.JSONField(
+        null=True, blank=True, help_text="The clip judge's ruling on try 0, as handed over."
+    )
+    scene_before = models.JSONField(
+        default=dict, help_text="The scene's row before try 1, put back on a give-up."
+    )
+    cap = models.PositiveSmallIntegerField(default=6, help_text="The most tries it may film.")
+    redraws = models.PositiveSmallIntegerField(
+        default=0, help_text="Start pictures in a row that failed their check since the last try."
+    )
+    said = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="What the agent said with its turns, each with how many tools it had called "
+        'before, and whether it called none: [{"at", "text", "no_call"}, ...].',
+    )
+    passed = models.ForeignKey(
+        ProducedItem,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The passing try's clip, the scene's clip now. Blank until one passes.",
+    )
+    gave_up = models.TextField(blank=True, help_text="The agent's reason, when it gave up.")
+    picked = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="On a give-up, the try the agent picks as best, for the owner to see marked.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self) -> str:
+        return f"Scene {self.step.scene.number} fixed by the agent ({self.door})"
+
+
+class AgentFixTry(models.Model):
+    """One try of the fixing agent: the scene row as filmed, both prompts, the start picture
+    and clip, and what the judge and, for door 2, the fix check said."""
+
+    agent_fix = models.ForeignKey(AgentFix, on_delete=models.CASCADE, related_name="tries")
+    number = models.PositiveSmallIntegerField(help_text="1, 2, 3... in the order filmed.")
+    tool_call = models.ForeignKey(
+        "agents.ToolCall",
+        on_delete=models.CASCADE,
+        related_name="+",
+        help_text="The agent's film_again call, which the try's work is charged to.",
+    )
+    step = models.ForeignKey(
+        SceneStep,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The try's clip step. Blank for a try whose picture kept failing its check.",
+    )
+    picture = models.ForeignKey(
+        ProducedItem, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+    )
+    clip = models.OneToOneField(
+        ProducedItem,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="agent_try",
+        help_text="The try's clip. Blank for a try whose picture kept failing its check.",
+    )
+    scene_row = models.JSONField(
+        default=dict,
+        help_text="The scene as filmed: line, shows, result, broll_kind, person_shown.",
+    )
+    new_picture = models.BooleanField(default=False)
+    picture_prompt = models.TextField(blank=True)
+    video_prompt = models.TextField(blank=True, help_text="As sent, with code's opener.")
+    why = models.TextField(blank=True, help_text="The agent's why, in plain words.")
+    would_ask_owner = models.TextField(blank=True, help_text="Nobody is asked: for the record.")
+    picture_problems = models.JSONField(
+        default=list, blank=True, help_text="What the picture check found in each failed picture."
+    )
+    fix_check = models.JSONField(
+        null=True,
+        blank=True,
+        help_text='For door 2, whether the owner\'s change is made: {"verdict", "reason"}.',
+    )
+    passed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["agent_fix", "number"]
+        constraints = [
+            models.UniqueConstraint(fields=["agent_fix", "number"], name="one_try_per_number")
+        ]
+
+    def __str__(self) -> str:
+        return f"Try {self.number}"

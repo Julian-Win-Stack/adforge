@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
+from typing import Literal
 
 from celery import shared_task
 from celery.signals import worker_ready
@@ -34,7 +35,7 @@ from jobs.work import (
     what_the_judge_did,
 )
 
-from . import loop, routing, run_plan, step_signals
+from . import fixing_agent, loop, routing, run_plan, step_signals
 from .loop import BLOCKED, EXPECTED_FAILURES, RunStopped, why_it_failed, why_it_failed_plainly
 from .money import dollars
 from .producer import PRODUCER, STEP_NAMES
@@ -435,6 +436,53 @@ def run_scene_step(step_id: int) -> None:
         tracing.flush()
         with transaction.atomic():
             _fail(step, why_it_failed(error, "the step"), why_it_failed_plainly(error))
+            _told_it_ended(step)
+
+
+@shared_task
+def run_fixing_agent(
+    step_id: int, door: Literal["judge", "owner"], note: str = "", goal: str | None = None
+) -> None:
+    """Have the fixing agent fix a scene's clip step in the background, as a fix plan's runner
+    does for the shop owner's note (door 2); door 1 runs the agent inside its clip step. Once
+    the agent is done, the door's own `fixing_agent.WHEN_DONE[door]` is handed the outcome.
+    Run again after a crash, the agent carries on from its checkpoints; a step that has ended
+    since is left as it is."""
+    step = SceneStep.objects.select_related("scene__job", "tool_call__session").get(pk=step_id)
+    if step.status != SceneStep.Status.RUNNING:
+        return
+    session = step.tool_call.session
+    try:
+        with (
+            _beating(
+                settings.STEP_HEARTBEAT_SECONDS,
+                lambda: SceneStep.objects.filter(pk=step_id).update(seen_at=timezone.now()),
+                f"Scene step {step_id}",
+            ),
+            charged_to(step.tool_call),
+            tracing.scene_step(
+                f"scene {step.scene.number}'s fix by the fixing agent",
+                session_id=str(session.pk),
+                trace_id=step.tool_call.trace_id,
+                parent_id=step.tool_call.observation_id,
+            ),
+        ):
+            outcome = fixing_agent.fix_scene(
+                step,
+                door=door,
+                failure=fixing_agent.Failure(note=note),
+                goal=goal,
+            )
+        tracing.flush()
+        when_done = fixing_agent.WHEN_DONE.get(door)
+        if when_done is not None:
+            when_done(step, outcome)
+    except Exception as error:
+        if not isinstance(error, EXPECTED_FAILURES):
+            logger.exception("The fixing agent failed on scene step %s", step_id)
+        tracing.flush()
+        with transaction.atomic():
+            _fail(step, why_it_failed(error, "the fixing agent"), why_it_failed_plainly(error))
             _told_it_ended(step)
 
 
