@@ -232,7 +232,7 @@ def _needs_a_yes(step: SceneStep) -> str:
             "ask them about it again. "
         )
     if owner_parts.drawn_from_words(step) is None:
-        drawn_from = "the shop owner's photo of it"
+        drawn_from = "the shop owner's photo of it."
     elif part.source == "owner's words":
         drawn_from = f'the shop owner\'s words: "{part.looks}"'
     else:
@@ -241,7 +241,7 @@ def _needs_a_yes(step: SceneStep) -> str:
         )
     return (
         f"The picture shows {part.what}, which no product photo shows, drawn from "
-        f"{drawn_from}. Its clip isn't made until the shop owner says yes to this picture. "
+        f"{drawn_from} Its clip isn't made until the shop owner says yes to this picture. "
         f"Ask them, in plain words, to look at {part.what} in it and say yes if it looks "
         "right, or say what to change, or send a photo of it, and wait for their answer. "
     )
