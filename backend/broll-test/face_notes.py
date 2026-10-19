@@ -64,7 +64,8 @@ def firecrawl_answers(product: str, link: str) -> tuple[dict[str, Any], bytes, d
 def picker_images(product: str, record: dict[str, Any] | None, screenshot: bytes) -> list[Image]:
     """As jobs.work._picker_images: the official photos R1, R2, ..., then the parts."""
     images: list[Image] = []
-    for url in photos.reference_urls(record) if record else []:
+    # The picker this was tested with showed at most 6 official photos.
+    for url in photos.record_photo_urls(record)[:6] if record else []:
         try:
             official = page.download(url, max_bytes=page.MAX_PHOTO_BYTES, what="product photo")
         except Exception:  # noqa: BLE001 - a guide only
@@ -95,7 +96,10 @@ def run(product: str) -> dict[str, Any]:
             purpose="pick_photos",
             instructions=INSTRUCTIONS,
             handoff=photos.handoff(
-                record, marks, str(answer.get("metadata", {}).get("title") or "")
+                record,
+                marks,
+                str(answer.get("metadata", {}).get("title") or ""),
+                photos.ShownLines(),
             ),
             output=PickedWithFaces,
             images=picker_images(product, record, screenshot),
