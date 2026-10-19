@@ -1404,6 +1404,7 @@ def test_a_scene_dropped_in_shortening_takes_its_overlay_and_a_moved_line_isnt_c
         "note_face",
         "note_face",
         "plan_ad",
+        "check_plan_scene",
         "draw_person",
         "design_voice",
         "measure_voice",

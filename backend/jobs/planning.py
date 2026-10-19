@@ -167,15 +167,20 @@ the sauce over a bowl of noodles"; for a talking scene, set it to null. A B-roll
 shows only what the page or the shop owner states, or the photos show: a picture is a \
 claim, just like a sentence. A B-roll scene films the product being used only in a way it \
 is shown how: a photo shows the product used that way, or the page's text or the shop \
-owner's own words say step by step how it is held and moved. A page that only names a \
-use, as a claim or in a list of uses, doesn't show how. A use anyone knows how to do with \
-such a product needs neither, such as pouring from a bottle or zipping up a jacket. For \
-any other use, ask the shop owner, as below. A claim about something the product, or a \
-part of it, does that a camera could see is a B-roll scene that shows it. A B-roll line \
-is about what is shown, when it can be filmed. A line that can't be filmed, such as "no \
-bleach", is still kept: the voice says it while the scene proves another claim the page \
-states, never acting the claim out, or, when no scene could, the person says it to \
-camera. A B-roll line has at least about 10 words.
+owner's own words say how it is held and moved: which hand holds it, what moves and what \
+it touches. Naming a use, listing its steps or describing it in general words doesn't \
+show how. An ordinary use anyone can picture from the words needs neither, such as \
+pouring from a bottle or zipping up a jacket: film its plain visible part. For a use \
+nobody could picture from the words, ask the shop owner, as below. A B-roll scene films \
+only what a still camera could watch happening from outside, the whole time. Something \
+that happens inside a closed or running thing, or out of sight, is never a scene: the \
+voice says it over another B-roll scene that proves its own line, or the person says it \
+to camera. A claim about something the product, or a part of it, does that a camera could \
+see is a B-roll scene that shows it. A B-roll line is about what is shown, when it can be \
+filmed. A line that can't be filmed, such as "no bleach", is still kept: the voice says \
+it while the scene proves another claim the page states, never acting the claim out, or, \
+when no scene could, the person says it to camera. A B-roll line has at least about 10 \
+words.
 """
     + BROLL_ONE_ACTION_INSTRUCTIONS
     + BROLL_FILLS_CLIP_INSTRUCTIONS
@@ -241,9 +246,9 @@ product isn't clearly seen, such as blush on a cheek, is enough.
 nor the shop owner says how it is used. Ask even if you could plan it only showing the product: \
 an ad for such a product shows it doing its job. A product that doesn't do a job you can \
 see, such as a bag, needs no "how to use": never ask for one.
-- The scene films the product being used in a way the page only names: no photo shows it \
-used that way, neither the page nor the shop owner says how it is held and moved, and it \
-isn't a use anyone knows how to do with such a product.
+- The scene films the product being used in a way it isn't shown how, and nobody could \
+picture it from the words: no photo shows it used that way and neither the page nor the \
+shop owner says how it is held and moved.
 - The scene ends on a result, what the product removes or prevents is a thin \
 film, haze, cloudiness or water spots on a surface such as glass, tile, a mirror or \
 chrome, and no photo shows that surface before and after. Ask even when everyone knows the \
@@ -260,15 +265,15 @@ line that can't be filmed.
 Then say in plain words what's missing and offer two answers: attach a photo of it (for \
 a missing "how to use", of the product being used; for a result, of it before and after: \
 without one, the ad shows no before and after of it; for a line nothing proves, of what \
-would prove it; for a use the page only names, of the product being used that way, or a \
-few words on how it is held and moved), or go ahead without one. Never \
+would prove it; for a use it isn't shown how, of the product being used that way, or one \
+sentence on how it is used), or go ahead without one. Never \
 choose for them. For a missing "how to use": if they go ahead without one, ask again: say \
 in plain words how you'd show it with what you have, for them to approve or change. Their \
 approval is their own words, and for a product that does a job, it gives the scene's \
 usage and result. For a result: if they go ahead without one, no scene shows that film, \
 before or after, and the voice says the claim over another B-roll that proves its own \
 line, or, when none does, the person says it to camera. For a line nothing proves: if they \
-go ahead without one, the person says that line to camera. For a use the page only names: \
+go ahead without one, the person says that line to camera. For a use it isn't shown how: \
 if they go ahead without one, the person says that line to camera, or the voice says it \
 over another B-roll scene that proves its own line. Never offer another way to \
 show it. \

@@ -219,31 +219,47 @@ def test_the_planner_films_a_use_only_when_it_is_shown_how_or_asks() -> None:
     # Round 5 cause 1 (runs/round-5/root-cause/1-planner-usage.md): a use the page only
     # named was taken as licence to film it any way, and the video model invented it.
     # Julian 2026-10-19 00:44: "film only what the page shows, else ask the owner" ... "I
-    # approve this one."
+    # approve this one." Round 2 (03:36, "i approve. but don't tell the owner to send the
+    # short video"): steps or general words let the washer and the flossing through, so only
+    # text saying how it is held and moved counts, and the owner is asked for a photo or one
+    # sentence. 03:39: "we can infer how it can be machine washed ... You don't need to ask
+    # this": an ordinary use anyone can picture from the words is never asked about.
     instructions = PLAN_INSTRUCTIONS
     assert (
         "A B-roll scene films the product being used only in a way it is shown how: a photo "
         "shows the product used that way, or the page's text or the shop owner's own words "
-        "say step by step how it is held and moved. A page that only names a use, as a claim "
-        "or in a list of uses, doesn't show how. A use anyone knows how to do with such a "
-        "product needs neither, such as pouring from a bottle or zipping up a jacket. For any "
-        "other use, ask the shop owner, as below."
+        "say how it is held and moved: which hand holds it, what moves and what it touches. "
+        "Naming a use, listing its steps or describing it in general words doesn't show how. "
+        "An ordinary use anyone can picture from the words needs neither, such as pouring "
+        "from a bottle or zipping up a jacket: film its plain visible part. For a use nobody "
+        "could picture from the words, ask the shop owner, as below."
     ) in instructions
     assert "Ask because of a scene that shows the product in only five cases" in instructions
     assert (
-        "- The scene films the product being used in a way the page only names: no photo "
-        "shows it used that way, neither the page nor the shop owner says how it is held and "
-        "moved, and it isn't a use anyone knows how to do with such a product."
+        "- The scene films the product being used in a way it isn't shown how, and nobody "
+        "could picture it from the words: no photo shows it used that way and neither the page "
+        "nor the shop owner says how it is held and moved."
     ) in instructions
     assert (
-        "for a use the page only names, of the product being used that way, or a few words "
-        "on how it is held and moved"
+        "for a use it isn't shown how, of the product being used that way, or one sentence on "
+        "how it is used"
     ) in instructions
     assert (
-        "For a use the page only names: if they go ahead without one, the person says that "
+        "For a use it isn't shown how: if they go ahead without one, the person says that "
         "line to camera, or the voice says it over another B-roll scene that proves its own "
         "line."
     ) in instructions
+
+
+def test_the_planner_films_only_what_a_still_camera_could_watch_from_outside() -> None:
+    # Round 1 re-plan (2026-10-19): water sprayed inside a dishwasher and shoes in a running
+    # washer, which the video model has to invent. Julian 03:36: "i approve".
+    assert (
+        "A B-roll scene films only what a still camera could watch happening from outside, the "
+        "whole time. Something that happens inside a closed or running thing, or out of sight, "
+        "is never a scene: the voice says it over another B-roll scene that proves its own "
+        "line, or the person says it to camera."
+    ) in PLAN_INSTRUCTIONS
 
 
 def test_the_planner_is_told_a_showcase_only_when_using_it_is_the_proof() -> None:
