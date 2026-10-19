@@ -2058,17 +2058,6 @@ def to_draw_again(check: FixCheck | None) -> bool:
     return redraws < fix_check.MOST_REDRAWS
 
 
-def change_not_made(clip: ProducedItem) -> str:
-    """Why the clip judge found the shop owner's change not made in `clip`, judged beside the
-    clip they complained about, or blank when it found it made or couldn't tell. A fixing
-    agent's try at a fix plan's fix row passes only when this is blank and the judge passed
-    the clip (fixing agent build, spec section 11); elsewhere the answer is only kept."""
-    settled = _the_clip_judges_answer(clip)
-    if settled.verdict != "failed":
-        return ""
-    return settled.reason or "the shop owner's change isn't made."
-
-
 def _the_clip_judges_answer(new: ProducedItem) -> fix_check.Settled:
     """What the clip judge's answers about `new` settled on the shop owner's change, asked
     beside the clip the step's fix was for (clip_judge.complained_about, the same `old`):

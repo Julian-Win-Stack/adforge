@@ -11,7 +11,7 @@ import pytest
 from django.db.models import Q, Sum
 
 from adforge.retry import OutsideServiceDown
-from agents import fixing_agent, producer, tasks
+from agents import producer, tasks
 from agents.fixing_agent import Failure, Outcome, Try, fix_scene
 from agents.models import ToolCall
 from agents.money import dollars
@@ -770,38 +770,3 @@ def test_the_producer_never_takes_a_try_for_a_clip_already_made(
     assert "already made" not in made.result
     assert made.result.startswith("Refused: scene 2 already has a clip")
     assert len(handoffs("make_broll_clip")) == asked
-
-
-# --- In the background ---------------------------------------------------------------------
-
-
-def test_the_fixing_agent_runs_in_the_background_and_hands_its_door_the_outcome(
-    fake_model: FakeModel, failed_clip: SceneStep, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    handed: list[tuple[SceneStep, Outcome]] = []
-    monkeypatch.setitem(
-        fixing_agent.WHEN_DONE, "owner", lambda step, done: handed.append((step, done))
-    )
-    SceneStep.objects.filter(pk=failed_clip.pk).update(status=SceneStep.Status.RUNNING)
-    first = failed_clip.produced.order_by("id").first()
-    failed_clip.fix = Fix.objects.create(
-        job=failed_clip.scene.job,
-        scene=failed_clip.scene,
-        fix=GOAL,
-        redo=Fix.Redo.CLIP,
-        estimate_usd=0,
-        asked=failed_clip.tool_call,
-    )
-    failed_clip.save(update_fields=["fix"])
-    AgentFix.objects.create(step=failed_clip, door="owner", note=NOTE, goal=GOAL, first_clip=first)
-    fake_model.respond("fix_scene", turn(calls=[film_again()]))
-    tasks.run_fixing_agent(failed_clip.pk, "owner", NOTE, GOAL)
-    [(step, done)] = handed
-    assert step == failed_clip and done.passed == done.tries[0].clip
-
-
-def test_a_step_that_has_ended_is_never_fixed_in_the_background(
-    fake_model: FakeModel, failed_clip: SceneStep
-) -> None:
-    tasks.run_fixing_agent(failed_clip.pk, "judge")
-    assert not AgentFix.objects.exists()

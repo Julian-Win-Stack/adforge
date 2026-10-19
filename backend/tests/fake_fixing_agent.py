@@ -83,10 +83,8 @@ class FakeAgent:
                 change=f"try {number}",
                 ruling=_ruling(scripted, before),
             )
-            # As the agent does: a try passes only when the judge passed it and found the
-            # change made.
-            passed = scripted.judge == "pass" and not work.change_not_made(clip)
-            AgentFixTry.objects.create(
+            settled = work._the_clip_judges_answer(clip)
+            made = AgentFixTry.objects.create(
                 agent_fix=fixing,
                 number=number,
                 tool_call=call,
@@ -94,8 +92,12 @@ class FakeAgent:
                 picture=before.picture,
                 clip=clip,
                 scene_row=fixing_agent._row(step.scene),
-                passed=passed,
+                fix_check={"verdict": settled.verdict, "reason": settled.reason},
             )
+            # As the agent does: a try passes only when the judge passed it and found the
+            # change made.
+            passed = fixing_agent._passes(made, clip)
+            AgentFixTry.objects.filter(pk=made.pk).update(passed=passed)
             if passed:
                 fixing.passed = clip
                 fixing.save(update_fields=["passed"])

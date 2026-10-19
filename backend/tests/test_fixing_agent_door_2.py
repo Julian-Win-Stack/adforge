@@ -29,7 +29,7 @@ from .conftest import (
     facts_ok,
     motion_answer,
 )
-from .fake_fixing_agent import FakeAgent, ScriptedTry, _ruling, install
+from .fake_fixing_agent import FakeAgent, ScriptedTry, install
 from .test_fix_wiring import decided, planning, plans, row, tap_yes
 from .test_fixing_agent import STIRS, film_again
 from .test_pick_from_tries import tap_use
@@ -123,20 +123,6 @@ def test_a_note_is_a_fix_whose_goal_the_agent_films_until_a_try_passes(
     # tries are listed as versions by the agent's own code, T1); the change was checked.
     assert work.versions(Scene.objects.get(number=2))[0].clip == before
     assert FixCheck.objects.get().verdict == "passed"
-
-
-def test_a_try_the_judge_passed_without_the_owners_change_is_not_passed() -> None:
-    passed_without_it = ScriptedTry(
-        change_made=False, still_wrong="The mug never leaves the table."
-    )
-    before = clip(2)
-    before.ruling = _ruling(passed_without_it, before)
-    assert work.change_not_made(before) == "The mug never leaves the table."
-    before.ruling = _ruling(ScriptedTry(), before)
-    assert work.change_not_made(before) == ""
-    # Judged without the clip it was compared with, the change can't fail a try.
-    del before.ruling["compared_with"]
-    assert work.change_not_made(before) == ""
 
 
 def test_the_agent_giving_up_keeps_the_scene_as_it_was_and_shows_the_tries(

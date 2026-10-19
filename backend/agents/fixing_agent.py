@@ -186,11 +186,6 @@ class Outcome:
     cost_usd: Decimal
 
 
-# What each door's caller does once the agent is done with a step it ran in the background
-# (agents.tasks.run_fixing_agent): handed the step and the outcome. Each door registers its own.
-WHEN_DONE: dict[str, Callable[[SceneStep, Outcome], None]] = {}
-
-
 def fix_scene(
     step: SceneStep,
     *,
