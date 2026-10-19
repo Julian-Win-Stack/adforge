@@ -107,7 +107,8 @@ shop owner asked, in their words; don't add how the scene ends or anything else 
 ask for.
 Some things can't be done yet. Changing how the person looks, or making a clip slower \
 (every clip plays at real-time speed), is a can't on the scene the note is about, with no \
-change. Changing the music, the voice or the number of scenes, using a video as an \
+change. Making the person in the B-roll match the ad's presenter is a fix, not a can't. \
+Changing the music, the voice or the number of scenes, using a video as an \
 example, or anything that isn't about the ad is a can't of the whole plan, in its cants, \
 with no scene and no look.
 The shop owner can send photos of their own things. For each photo you use, name the one \
