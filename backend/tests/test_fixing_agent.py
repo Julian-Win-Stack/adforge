@@ -4,14 +4,17 @@ is a version the shop owner can see and pick. The agent's turns, the judge, the 
 the clips are faked at the gateway (spec: handoffs/fixing-agent/spec.md)."""
 
 from collections.abc import Callable
+from decimal import Decimal
 from typing import Any
 
 import pytest
+from django.db.models import Q, Sum
 
 from adforge.retry import OutsideServiceDown
 from agents import fixing_agent, producer, tasks
 from agents.fixing_agent import Failure, Outcome, Try, fix_scene
 from agents.models import ToolCall
+from agents.money import dollars
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import Said
@@ -543,6 +546,50 @@ def test_a_try_whose_owners_change_isnt_made_fails_though_the_judge_passes_it(
     assert made.fix_check is not None and made.fix_check["verdict"] == "failed"
     assert outcome.passed is None and outcome.gave_up == "The stir never shows."
     assert f"Whether the owner's change is made: no. {STILL_HOVERS}" in told()[0]
+
+
+# --- Door 1 through the chat, the real agent on scripted turns ------------------------------
+
+
+def paid_for_the_step(step: SceneStep) -> Decimal:
+    """Every model call made for a clip step, the fixing agent's on it included."""
+    paid: Decimal = ModelCall.objects.filter(
+        Q(tool_call=step.tool_call) | Q(tool_call__agent_fix__step=step)
+    ).aggregate(cost=Sum("cost_usd"))["cost"]
+    return paid
+
+
+def test_through_the_chat_the_agent_films_until_a_try_passes(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond(
+        "check_clip_motion",
+        *judged(failing(FLOATS), failing(FLOATS)),
+        *judged(failing(FLOATS), failing(FLOATS)),
+    )
+    fake_model.respond(
+        "fix_scene", turn(calls=[film_again(video_prompt=POURS)]), turn(calls=[film_again()])
+    )
+
+    step = clip_of_scene_2(fake_model, steps, say)
+
+    step.refresh_from_db()
+    passed = AgentFix.objects.get(step=step).passed
+    assert passed is not None and passed.change == "try 2"
+    assert [version.label for version in work.versions(Scene.objects.get(number=2))] == [
+        "v1 first version (first clip)",
+        "v2 try 1",
+        "v3 try 2",
+    ]
+    used, _ = producer._clip_and_transcript(Scene.objects.get(number=2))
+    assert used == passed
+    # The producer is told what the step cost, the agent's turns and tries included.
+    assert step.status == SceneStep.Status.FINISHED
+    assert f"It cost {dollars(paid_for_the_step(step))}." in step.result
+    assert paid_for_the_step(step) > step.tool_call.cost_usd()
 
 
 # --- An old plan's new clip ----------------------------------------------------------------

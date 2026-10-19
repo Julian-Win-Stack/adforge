@@ -7,18 +7,28 @@ assembled; a give-up keeps the scene as it was and shows the shop owner the trie
 from collections.abc import Callable
 
 import pytest
+from django.db.models import Sum
 from rest_framework.test import APIClient
 
 from adforge.retry import OutsideServiceDown
 from agents import tasks
 from agents.models import SystemNote
+from agents.money import dollars
 from agents.producer import _latest_clip
 from chat.models import Message
 from gateway.fake import FakeModel, turn
+from gateway.models import ModelCall
 from jobs import work
 from jobs.models import AgentFix, Fix, FixCheck, FixPlanScene, Scene, SceneStep
 
-from .conftest import HeldSteps, WorkerStopped, facts_ok, motion_answer
+from .conftest import (
+    CLIP_FIXED,
+    CLIP_MOTION_OK,
+    HeldSteps,
+    WorkerStopped,
+    facts_ok,
+    motion_answer,
+)
 from .fake_fixing_agent import FakeAgent, ScriptedTry, _ruling, install
 from .test_fix_wiring import decided, planning, plans, row, tap_yes
 from .test_fixing_agent import STIRS, film_again
@@ -214,6 +224,47 @@ def test_after_the_agent_gave_up_the_shop_owner_can_tap_a_try_to_use_it(
 # --- The real agent, on scripted turns -----------------------------------------------------
 
 NEW_LINE = "Lift it, sip it: it holds 350 ml."
+
+
+def test_through_the_chat_the_agent_films_the_owners_change_until_a_try_passes(
+    fake_model: FakeModel,
+    held: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    ads_before = len(ads())
+    # Try 1: the judge finds the change not made; try 2 has it.
+    not_made = {
+        "old_shows": "The mug stays on the table.",
+        "new_shows": "The mug stays on the table.",
+        "verdict": "not fixed",
+        "still_wrong": "The mug never leaves the table.",
+    }
+    answers = iter([not_made] * 3)
+    fake_model.answer_unscripted(
+        "check_clip_motion",
+        lambda request: motion_answer(CLIP_MOTION_OK, next(answers, CLIP_FIXED))(request),
+    )
+    fake_model.respond(
+        "fix_scene", turn(calls=[film_again(video_prompt=STIRS)]), turn(calls=[film_again()])
+    )
+    planned = _a_fix_said_yes_to(fake_model, held, say, api, session_id)
+    held.run_held()
+
+    fixing = AgentFix.objects.get()
+    assert [each.fix_check["verdict"] for each in fixing.tries.order_by("number")] == [  # type: ignore[index]
+        "failed",
+        "passed",
+    ]
+    assert fixing.passed is not None and clip(2).file == fixing.passed.file
+    planned.refresh_from_db()
+    assert planned.landed_at is not None and planned.error == ""
+    assert len(ads()) == ads_before + 1
+    # The row's cost counts the agent's turns and tries.
+    agent = ModelCall.objects.filter(tool_call__agent_fix=fixing).aggregate(cost=Sum("cost_usd"))
+    assert planned.cost_usd() >= agent["cost"] > 0
+    assert SystemNote.objects.filter(text__contains=f"It cost {dollars(planned.cost_usd())}.")
 
 
 def test_an_agent_that_stops_after_a_try_leaves_the_scene_as_it_was(

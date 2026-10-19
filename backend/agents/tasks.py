@@ -223,8 +223,9 @@ def _picture_finished(step: SceneStep, picture: ProducedItem | None) -> str:
 
 
 def _cost(step: SceneStep) -> str:
-    """What the step's work cost, as a sentence to follow another."""
-    return f" It cost {dollars(step.tool_call.cost_usd())}."
+    """What the step's work cost, the fixing agent's work on it included, as a sentence to
+    follow another."""
+    return f" It cost {dollars(step.cost_usd())}."
 
 
 def _audio_finished(step: SceneStep, audio: ProducedItem | None) -> str:

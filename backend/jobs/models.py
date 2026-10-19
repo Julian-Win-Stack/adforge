@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Any
 
 from django.db import models
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 
@@ -435,7 +435,9 @@ class Fix(models.Model):
         from gateway.models import ModelCall
 
         cost: Decimal | None = (
-            ModelCall.objects.filter(tool_call__scene_steps__fix=self)
+            ModelCall.objects.filter(
+                Q(tool_call__scene_steps__fix=self) | Q(tool_call__agent_fix__step__fix=self)
+            )
             .distinct()
             .aggregate(cost=Sum("cost_usd"))["cost"]
         )
@@ -516,7 +518,10 @@ class FixPlan(models.Model):
         from gateway.models import ModelCall
 
         cost: Decimal | None = (
-            ModelCall.objects.filter(tool_call__scene_steps__plan_scene__plan=self)
+            ModelCall.objects.filter(
+                Q(tool_call__scene_steps__plan_scene__plan=self)
+                | Q(tool_call__agent_fix__step__plan_scene__plan=self)
+            )
             .distinct()
             .aggregate(cost=Sum("cost_usd"))["cost"]
         )
@@ -636,11 +641,16 @@ class FixPlanScene(models.Model):
         """What it has cost so far: every model call of the tool calls that started its
         steps, failed ones included, as they were paid for. A model call is charged to a tool
         call, not a step, so a tool call starting steps for more than one row would count on
-        each of them: every row's steps need tool calls of their own."""
+        each of them: every row's steps need tool calls of their own. The fixing agent's work
+        on a step of the row counts too: its turns and tries are charged to tool calls of its
+        own."""
         from gateway.models import ModelCall
 
         cost: Decimal | None = (
-            ModelCall.objects.filter(tool_call__scene_steps__plan_scene=self)
+            ModelCall.objects.filter(
+                Q(tool_call__scene_steps__plan_scene=self)
+                | Q(tool_call__agent_fix__step__plan_scene=self)
+            )
             .distinct()
             .aggregate(cost=Sum("cost_usd"))["cost"]
         )
@@ -894,6 +904,16 @@ class SceneStep(models.Model):
 
     def __str__(self) -> str:
         return f"Scene {self.scene.number} {self.kind} ({self.status})"
+
+    def cost_usd(self) -> Decimal:
+        """What the step's work cost: its tool call's model calls and, for a clip step the
+        fixing agent fixed, the agent's own, its turns and tries."""
+        from gateway.models import ModelCall
+
+        cost: Decimal | None = ModelCall.objects.filter(
+            Q(tool_call=self.tool_call_id) | Q(tool_call__agent_fix__step=self)
+        ).aggregate(cost=Sum("cost_usd"))["cost"]
+        return cost or Decimal(0)
 
     def shown_before(self, kind: str) -> ProducedItem | None:
         """The scene's newest item of `kind` made before the step started: what the shop owner
