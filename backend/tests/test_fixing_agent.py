@@ -361,6 +361,22 @@ def test_a_line_that_cant_be_voiced_is_refused_and_the_old_line_kept(
     assert scene_row()[0] == LINE_2
 
 
+def test_a_new_line_that_cant_be_heard_back_is_refused_before_any_picture_is_drawn(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond("transcribe_line", *[OutsideServiceDown("401 Unauthorized")] * 3)
+    edits = fake_model.edits
+    [answer] = refused_then_given_up(
+        fake_model, failed_clip, a_new_picture(line=NEW_LINE, shows=STIRS)
+    )
+    assert answer.startswith(
+        "Refused: the new line can't be voiced right now, so keep the scene's line as it is."
+    )
+    assert fake_model.edits == edits
+    assert scene_row()[:2] == (LINE_2, SHOWS)
+
+
 def test_a_refused_try_is_no_try(fake_model: FakeModel, failed_clip: SceneStep) -> None:
     refused_then_given_up(fake_model, failed_clip, film_again(video_prompt="Never spill."))
     assert [each.number for each in AgentFix.objects.get().tries.all()] == [1]

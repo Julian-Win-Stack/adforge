@@ -883,7 +883,12 @@ def _film_again(
             _fact_checked(scene)
         scene.save()
 
+    # The new line is voiced first, so a line refused costs no picture.
     picture, audio = _current(fixing)
+    if row is not None and row.step is not None and row.step.made_from is not None:
+        audio = row.step.made_from
+    elif "line" in changed:
+        audio = _voiced(fixing, call)
     shown: list[Image] = []
     if row is not None and row.picture is not None:
         picture = row.picture
@@ -892,10 +897,6 @@ def _film_again(
         if isinstance(drawn, str):
             return ToolResult(drawn, shown)
         picture = drawn
-    if row is not None and row.step is not None and row.step.made_from is not None:
-        audio = row.step.made_from
-    elif "line" in changed:
-        audio = _voiced(fixing, call)
 
     if row is None:
         step = _try_step(
@@ -1013,6 +1014,9 @@ def _fact_checked(scene: Scene) -> None:
     scene.fact_problems = []
 
 
+CANT_BE_VOICED = "the new line can't be voiced right now, so keep the scene's line as it is."
+
+
 def _voiced(fixing: AgentFix, call: ToolCall) -> ProducedItem:
     """The new line, said by the ad's voice, and heard back: refused when it can't be."""
     job = fixing.step.scene.job
@@ -1022,9 +1026,7 @@ def _voiced(fixing: AgentFix, call: ToolCall) -> ProducedItem:
         audio = work._speak_line(step)
     except Exception as error:
         _failed(step, str(error))
-        raise Refused(
-            "the new line can't be voiced right now, so keep the scene's line as it is."
-        ) from error
+        raise Refused(CANT_BE_VOICED) from error
     _done(step)
     assert audio.seconds is not None
     if audio.seconds > MOST_BROLL_SECONDS:
@@ -1033,7 +1035,12 @@ def _voiced(fixing: AgentFix, call: ToolCall) -> ProducedItem:
             f"{MOST_BROLL_SECONDS} s a clip lasts."
         )
     heard = _try_step(fixing, call, SceneStep.Kind.TRANSCRIPT, made_from=audio)
-    work.transcribe_line_audio(heard)
+    try:
+        work.transcribe_line_audio(heard)
+    except Exception as error:
+        # Never heard back, the line can't be cut to: as good as not voiced.
+        _failed(heard, str(error))
+        raise Refused(CANT_BE_VOICED) from error
     _done(heard)
     return audio
 
