@@ -102,6 +102,16 @@ export type Message = {
   tries?: MessageTries | null;
   /** The try the owner's tap of "Use this one" chose; null for any other message. */
   use_clip?: number | null;
+  /** True on code's notice that the page can't be read: the page panel is wanted, for the
+   * shop owner to paste the page text and attach its photos. False on code's notice that a
+   * new link was read while it was wanted. Null on any other message. */
+  wants_pasted_page?: boolean | null;
+  /** The shop owner's page text and photos, sent from the page panel, never typed. */
+  pasted_page?: boolean;
+  /** What code made of a pasted page: "accepted", or the one-line reason it can't be used.
+   * On the pasted message once it is checked, and on code's notice saying so. Null while it
+   * is being checked, and on any other message. */
+  pasted_page_result?: string | null;
 };
 
 /** One session, as the sidebar lists it. The name is blank until the first message names it. */
@@ -167,22 +177,25 @@ export async function getMessagesSince(sessionId: string, after: number): Promis
   return readJson<Message[]>(await fetch(`/api/sessions/${sessionId}/messages/?after=${after}`));
 }
 
+/** What a message is besides its words: a tap of a plan's yes button names the `plan`, and
+ * a tap of "Use this one" under a try names the try, `useClip`; the page panel's Done sends
+ * the page text and photos as a `pastedPage`. Each marks the message as never typed. */
+export type SendAs = { plan?: number; useClip?: number; pastedPage?: boolean };
+
 /** Say something in a session, with photos when there are any. The server takes it
- * straight away, even while the agent is working. A tap of a plan's yes button names the
- * `plan`, which marks the message as the button's, never typed; a tap of "Use this one"
- * under a try names the try, `useClip`. */
+ * straight away, even while the agent is working. */
 export async function sendMessage(
   sessionId: string,
   text: string,
   photos: File[],
-  plan?: number,
-  useClip?: number,
+  { plan, useClip, pastedPage }: SendAs = {},
 ): Promise<Sent> {
   let request: RequestInit;
-  if (photos.length > 0) {
+  if (photos.length > 0 || pastedPage) {
     const form = new FormData();
     form.append("text", text);
     for (const photo of photos) form.append("photos", photo);
+    if (pastedPage) form.append("pasted_page", "true");
     request = { method: "POST", body: form };
   } else {
     request = jsonRequest(
