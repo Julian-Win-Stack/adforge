@@ -178,7 +178,7 @@ def test_the_planner_asks_the_shop_owner_when_no_broll_could_prove_a_line() -> N
     # prove it, else ask the shop owner, else the person says it to camera. N3's thin film,
     # refused, became a filler B-roll ("over another B-roll"): now it is said to camera.
     instructions = PLAN_INSTRUCTIONS
-    assert "Ask because of a scene that shows the product in only four cases" in instructions
+    assert "Ask because of a scene that shows the product in only five cases" in instructions
     assert (
         "- A middle scene's line is one a camera could film, but no B-roll kind could prove "
         "it: nothing the page, the photos or the shop owner give shows it, and only a hand "
@@ -198,6 +198,51 @@ def test_the_planner_asks_the_shop_owner_when_no_broll_could_prove_a_line() -> N
     assert (
         "the voice says the claim over another B-roll that proves its own line, or, when none "
         "does, the person says it to camera."
+    ) in instructions
+
+
+def test_the_planner_is_told_the_one_action_lasts_the_whole_clip() -> None:
+    # Round 5 cause 2 (runs/round-5/root-cause): every one-moment action stretched over a
+    # 5-7 s clip broke, 37 clips and no exception. Julian 2026-10-19 00:44: "one rule is good
+    # and general (the action must fill the clip)" ... "I approve this one."
+    assert (
+        "That one action lasts the whole clip, which is as long as its line takes to say and "
+        "never under 5 seconds: by its own course, such as a steady pour or a walk, or by what "
+        "it naturally sets off in the same scene, such as a cushion tossed onto a sofa that "
+        "bounces and settles. An action that is over in a moment never gets a scene that ends "
+        "as the moment ends, and never gets a second action added to fill the time. When no "
+        "single action can last the whole clip, the person says that line to camera."
+    ) in PLAN_INSTRUCTIONS
+
+
+def test_the_planner_films_a_use_only_when_it_is_shown_how_or_asks() -> None:
+    # Round 5 cause 1 (runs/round-5/root-cause/1-planner-usage.md): a use the page only
+    # named was taken as licence to film it any way, and the video model invented it.
+    # Julian 2026-10-19 00:44: "film only what the page shows, else ask the owner" ... "I
+    # approve this one."
+    instructions = PLAN_INSTRUCTIONS
+    assert (
+        "A B-roll scene films the product being used only in a way it is shown how: a photo "
+        "shows the product used that way, or the page's text or the shop owner's own words "
+        "say step by step how it is held and moved. A page that only names a use, as a claim "
+        "or in a list of uses, doesn't show how. A use anyone knows how to do with such a "
+        "product needs neither, such as pouring from a bottle or zipping up a jacket. For any "
+        "other use, ask the shop owner, as below."
+    ) in instructions
+    assert "Ask because of a scene that shows the product in only five cases" in instructions
+    assert (
+        "- The scene films the product being used in a way the page only names: no photo "
+        "shows it used that way, neither the page nor the shop owner says how it is held and "
+        "moved, and it isn't a use anyone knows how to do with such a product."
+    ) in instructions
+    assert (
+        "for a use the page only names, of the product being used that way, or a few words "
+        "on how it is held and moved"
+    ) in instructions
+    assert (
+        "For a use the page only names: if they go ahead without one, the person says that "
+        "line to camera, or the voice says it over another B-roll scene that proves its own "
+        "line."
     ) in instructions
 
 
@@ -258,7 +303,7 @@ def test_the_planner_is_told_to_ask_for_a_before_and_after_nobody_could_picture(
     instructions = PLAN_INSTRUCTIONS
     # N3's shower cleaner was planned with a result nobody could picture and
     # no photo of it, so the video guessed; a dirty toilet scrubbed clean needed no photo.
-    assert "in only four cases" in instructions
+    assert "in only five cases" in instructions
     # N3's soap scum was judged common knowledge, so it never asked: what decides is whether
     # a camera can see it, not whether people know the word.
     assert "a thin film, haze, cloudiness or water spots" in instructions
