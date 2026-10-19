@@ -49,6 +49,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # looks at pictures and clip frames before it plans each scene's fix. The picture judges'
     # model, as it is proven at seeing what our pictures show (fix redesign, ticket 05).
     "decide_fixes": "gpt-6.1-sol",
+    # The fixing agent (agents/fixing_agent.py): owns one failed B-roll scene, films it again
+    # and reads the judge's answer, until a try passes or it gives up. The decider's model.
+    "fix_scene": "gpt-6.1-sol",
     # The B-roll clip judge's two checks (jobs/clip_judge.py). Tested on sol; the model check
     # of 2026-10-13 found luna matches it, at the edge, so stage 4 may move both to luna
     # (Claude Doc "Clip judge discussion", Results).

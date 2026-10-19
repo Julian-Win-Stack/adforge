@@ -49,7 +49,7 @@ from gateway.types import (
 )
 
 from . import assembly
-from .models import Fix, ProducedItem, SceneStep
+from .models import AgentFix, AgentFixTry, Fix, ProducedItem, SceneStep
 from .picture_check import ASKS as ASKS
 from .picture_check import FAILS_TO_FAIL as FAILS_TO_FAIL
 from .planning import ChatMessage
@@ -534,8 +534,16 @@ def complained_about(step: SceneStep) -> ProducedItem | None:
     with their photo of a thing that only shows during the clip, the clip they complained
     about: the one they saw last before the step started. None for any other step, or when
     the scene has no clip from before it."""
+    if step.kind != SceneStep.Kind.CLIP:
+        return None
+    agent_try = AgentFixTry.objects.filter(step=step).select_related("agent_fix").first()
+    if agent_try is not None:
+        # A try the fixing agent films for the shop owner's note is judged beside the clip
+        # they noted, try 0, whichever try it is.
+        fixing = agent_try.agent_fix
+        return fixing.first_clip if fixing.door == AgentFix.Door.OWNER else None
     fix = step.fix
-    if fix is None or step.kind != SceneStep.Kind.CLIP:
+    if fix is None:
         return None
     if fix.redo != Fix.Redo.CLIP and not during_the_clip(fix):
         return None

@@ -110,6 +110,7 @@ from .checks import (
 )
 from .models import (
     BROLL_FIELDS,
+    AgentFixTry,
     Fix,
     FixCheck,
     Job,
@@ -2922,9 +2923,17 @@ def _tried(made: ProducedItem) -> str:
     step = made.step
     if made.kind != ProducedItem.Kind.CLIP or step is None or step.kind != SceneStep.Kind.CLIP:
         return ""
+    if _the_agents_try(made):
+        # Named by its change, "try 2".
+        return ""
     if made not in _clip_tries(step) or not every_try_failed(step):
         return ""
     return try_name(made)
+
+
+def _the_agents_try(clip: ProducedItem) -> bool:
+    """Whether the fixing agent filmed `clip` as one of its tries."""
+    return AgentFixTry.objects.filter(clip=clip).exists()
 
 
 def _tries_were_shown(step: SceneStep) -> bool:
@@ -2956,7 +2965,8 @@ def _was_shown(made: ProducedItem) -> bool:
         return True
     if step.status != SceneStep.Status.FINISHED:
         return False
-    if made.kind != ProducedItem.Kind.CLIP:
+    if made.kind != ProducedItem.Kind.CLIP or _the_agents_try(made):
+        # Every try the fixing agent filmed is a version the shop owner can pick.
         return True
     tries = _clip_tries(step)
     if made not in tries:
