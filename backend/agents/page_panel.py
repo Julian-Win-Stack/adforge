@@ -26,7 +26,7 @@ from jobs.notices import post_notice
 from jobs.work import check_page, copy_page_text, keep_page, note_face
 
 from .models import SystemNote
-from .producer import FEWEST_SURE_PHOTOS
+from .producer import FEWEST_SURE_PHOTOS, listed_numbers
 
 # Why a pasted page whose check or copy couldn't be finished isn't used.
 CHECK_FAILED = "Checking it failed ({error}), so nothing was kept. Send it again to try again."
@@ -60,7 +60,7 @@ class _Kept:
 def _take(message: Message) -> None:
     job = Job.objects.get(session_id=message.session_id)
     if job.page_html_key:
-        _refuse(job, message, ALREADY_KEPT)
+        _refuse(job, message, ALREADY_KEPT, read=True)
         return
     attached = list(message.attachments.filter(kind=Attachment.Kind.PICTURE))
     # The pasted text stands in for the page at the shop's link, with its photos.
@@ -96,15 +96,17 @@ def _take(message: Message) -> None:
     _keep(job, message, _Kept(download, product_page, text, noted))
 
 
-def _refuse(job: Job, message: Message, why: str) -> None:
+def _refuse(job: Job, message: Message, why: str, *, read: bool = False) -> None:
     """Keep nothing of the pasted page, and say why in the chat, on the panel's message and
-    on the notice answering it."""
+    on the notice answering it. For a page already `read`, as when a worker stopped before
+    the chat was told, the notice also closes the page panel."""
     with transaction.atomic():
         post_notice(
             job,
             f"Your pasted page can't be used. {why}",
-            Message.Level.PROBLEM,
+            Message.Level.INFO if read else Message.Level.PROBLEM,
             pasted_page_result=why,
+            wants_pasted_page=False if read else None,
         )
         Message.objects.filter(pk=message.pk).update(pasted_page_result=why)
 
@@ -145,12 +147,13 @@ def _told(message: Message, kept: _Kept) -> str:
     photos are the product photos, and, with too few of them, to ask before planning."""
     count = len(kept.photos)
     files = {attached.file for attached, _ in kept.photos}
-    numbers = [
-        str(number)
-        for number, attached in enumerate(messages.owner_photos(message.session), 1)
-        if attached.message_id == message.pk and attached.file in files
-    ]
-    listed = numbers[0] if count == 1 else f"{', '.join(numbers[:-1])} and {numbers[-1]}"
+    listed = listed_numbers(
+        [
+            number
+            for number, attached in enumerate(messages.owner_photos(message.session), 1)
+            if attached.message_id == message.pk and attached.file in files
+        ]
+    )
     told = (
         f"The shop owner sent the product page's text ({len(message.text.split())} words) and "
         f"{count} photo{'s' if count != 1 else ''} through the page panel, as the page couldn't "

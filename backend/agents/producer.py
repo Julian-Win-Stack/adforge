@@ -323,7 +323,7 @@ class UsePhotos(Tool):
         if unsaid:
             raise Refused(
                 "say what each of the shop owner's photos shows: you left out owner photo"
-                f"{'s' if len(unsaid) > 1 else ''} {_listed_numbers(unsaid)}."
+                f"{'s' if len(unsaid) > 1 else ''} {listed_numbers(unsaid)}."
             )
         others = [number for number, shows in said.items() if shows == "something else"]
         kept = set(job.photos.values_list("file", flat=True))
@@ -348,7 +348,7 @@ class UsePhotos(Tool):
         if kept_before:
             told += (
                 f" Owner photo{'s' if len(kept_before) > 1 else ''} "
-                f"{_listed_numbers(kept_before)} {'were' if len(kept_before) > 1 else 'was'} "
+                f"{listed_numbers(kept_before)} {'were' if len(kept_before) > 1 else 'was'} "
                 "already added as a product photo before, and can't be taken out now: tell "
                 "the shop owner so."
             )
@@ -356,7 +356,7 @@ class UsePhotos(Tool):
             # Before the plan every photo is a product photo, so one of their own thing would
             # be planned as the product (Julian 17:55; test C9).
             told += (
-                f" Owner photo{'s' if len(others) > 1 else ''} {_listed_numbers(others)} "
+                f" Owner photo{'s' if len(others) > 1 else ''} {listed_numbers(others)} "
                 f"show{'' if len(others) > 1 else 's'} something else than the product, so "
                 f"{'they weren' if len(others) > 1 else 'it wasn'}'t added: tell the shop owner "
                 "it can't be used yet, and to send it with a note on a scene once the first "
@@ -375,7 +375,7 @@ def _owner_photos(count: int) -> str:
     )
 
 
-def _listed_numbers(numbers: list[int]) -> str:
+def listed_numbers(numbers: list[int]) -> str:
     said = [str(number) for number in numbers]
     return said[0] if len(said) == 1 else f"{', '.join(said[:-1])} and {said[-1]}"
 
@@ -410,11 +410,11 @@ class PlanAd(Tool):
         if shown is not None:
             _answered(call.session, since=shown, who_asked="they were shown the page's photos")
         # So are too few photos sent with a page pasted in the page panel.
-        pasted = _pasted_with_too_few_photos(job)
+        told = _told_of_too_few_pasted_photos(job)
         if (
-            pasted is not None
+            told is not None
             and not call.session.messages.filter(
-                role=Message.Role.USER, seq__gt=pasted.seq
+                role=Message.Role.USER, pasted_page=False, seq__gt=told.seq
             ).exists()
         ):
             raise Refused(
@@ -1677,6 +1677,19 @@ def _doubtful(blocked: bool, declared: bool, kept: int) -> str:
     if kept < FEWEST_SURE_PHOTOS:
         return f"only {_photos(kept)} was found on the page."
     return ""
+
+
+def _told_of_too_few_pasted_photos(job: Job) -> Message | None:
+    """Code's notice that a page pasted in the page panel was kept as the job's page, if
+    fewer than FEWEST_SURE_PHOTOS of its photos were kept as product photos: only what the
+    shop owner writes after it answers the question of too few photos. A message they typed
+    while the paste was checked, or another paste, doesn't."""
+    pasted = _pasted_with_too_few_photos(job)
+    if pasted is None or job.session is None:
+        return None
+    return job.session.messages.filter(
+        role=Message.Role.NOTICE, pasted_page_result=messages.PASTE_ACCEPTED, seq__gt=pasted.seq
+    ).first()
 
 
 def _pasted_with_too_few_photos(job: Job) -> Message | None:

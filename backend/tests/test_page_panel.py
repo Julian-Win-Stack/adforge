@@ -12,6 +12,8 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
 from adforge.retry import OutsideServiceDown
+from agents import page_panel
+from chat import messages as chat_messages
 from chat.api import (
     ATTACH_A_PHOTO,
     MAX_PASTED_PAGE_CHARACTERS,
@@ -21,7 +23,7 @@ from chat.api import (
     PASTE_THE_PAGE,
     PASTE_TOO_LONG,
 )
-from chat.models import Attachment, Message
+from chat.models import Attachment, Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
 from jobs.models import Job
 
@@ -144,6 +146,9 @@ def test_a_pasted_page_with_photos_is_kept_as_the_page_and_the_ad_is_planned_fro
     assert the_paste(api, session_id)["pasted_page_result"] == "accepted"
     # The producer was told by the app, never given the paste, and planned.
     assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
+    # The planner reads the paste as the page text, never as something the owner said.
+    (planned_from,) = handoffs("plan_ad")
+    assert all(PASTE not in said["text"] for said in planned_from["conversation"])
     told = given_as_text(given_to_the_producer(3))
     assert "Free shipping on orders over $50." not in told
     assert "sent the product page's text (22 words) and 2 photos through the page panel" in told
@@ -353,3 +358,58 @@ def test_a_page_pasted_while_the_producer_answers_a_question_is_kept_without_ano
 
     assert Job.objects.get().page_text == PASTE
     assert the_paste(api, session_id)["pasted_page_result"] == "accepted"
+
+
+def test_a_question_typed_while_a_one_photo_paste_is_checked_doesnt_answer_the_pause(
+    api: APIClient,
+    fake_model: FakeModel,
+    unreadable: str,
+    session_id: str,
+    paste: Callable[..., Any],
+    say: Callable[..., None],
+) -> None:
+    def checked_while_asked() -> dict[str, Any]:
+        say("How long will my ad be?")
+        return READABLE
+
+    fake_model.respond("check_page", checked_while_asked)
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]))
+    fake_model.answer_unscripted("produce", lambda _: turn(says="Go ahead with this photo?"))
+
+    paste(PASTE, ("front.png", FRONT))
+
+    assert results_of("plan_ad")[0].startswith("Refused: the shop owner hasn't answered")
+    assert not Job.objects.get().scenes.exists()
+
+
+def test_the_same_photo_attached_twice_with_a_pasted_page_is_kept_once(
+    api: APIClient,
+    fake_model: FakeModel,
+    unreadable: str,
+    session_id: str,
+    paste: Callable[..., Any],
+) -> None:
+    fake_model.respond("check_page", READABLE)
+    fake_model.answer_unscripted("produce", lambda _: turn(says="Go ahead with this photo?"))
+
+    paste(PASTE, ("front.png", FRONT), ("front-copy.png", FRONT))
+
+    assert Job.objects.get().photos.count() == 1
+    assert "Using your text as the page and this photo as the product photo." in [
+        each["text"] for each in messages(api, session_id)
+    ]
+
+
+def test_a_paste_found_after_the_page_was_kept_closes_the_panel(
+    api: APIClient, fake_model: FakeModel, unreadable: str, session_id: str
+) -> None:
+    # As when a worker stopped after keeping the page and before the chat was told.
+    session = Session.objects.get(pk=session_id)
+    chat_messages.add(session, role=Message.Role.USER, text=PASTE, pasted_page=True)
+    Job.objects.update(page_html_key="jobs/kept/page.html")
+
+    page_panel.take_pastes(session)
+
+    (said,) = [each for each in messages(api, session_id) if each["pasted_page_result"]][-1:]
+    assert (said["level"], said["wants_pasted_page"]) == ("info", False)
+    assert not chat_messages.page_panel_wanted(session)

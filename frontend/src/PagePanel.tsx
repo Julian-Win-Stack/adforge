@@ -373,7 +373,10 @@ export function PagePanel({
       )}
 
       <div className="page-panel-foot">
-        <span className="page-panel-hint" aria-live="polite">
+        <span
+          className={`page-panel-hint${!busy && tooLong(text) ? " over" : ""}`}
+          aria-live="polite"
+        >
           {busy ? (
             <span className="page-panel-checking">
               <span className="spinner" aria-hidden />

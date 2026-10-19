@@ -969,6 +969,7 @@ button:disabled {
   pointer-events: none;
 }
 
+.page-panel-hint.over,
 .page-panel-count.over {
   color: var(--danger);
 }

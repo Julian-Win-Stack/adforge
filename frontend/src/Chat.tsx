@@ -164,9 +164,9 @@ export function Chat({
     .find((message) => message.role !== "notice" && message.step?.state !== "made");
   // A pasted page is code's to check before the producer hears of it, and one the app can't
   // use never reaches the producer: the page panel says what is happening meanwhile.
-  const pasteUnaccepted =
+  const waitingOnAPaste =
     lastSaid?.pasted_page === true && !acceptedPastes(messages).has(lastSaid.seq);
-  const producerHasTheFloor = sessionId !== null && lastSaid?.role === "user" && !pasteUnaccepted;
+  const producerHasTheFloor = sessionId !== null && lastSaid?.role === "user" && !waitingOnAPaste;
   const offered = planOnOffer(messages);
   const cards = sceneCards(messages);
   // A plan on offer or a suggested note is a question to the owner: nothing runs until they

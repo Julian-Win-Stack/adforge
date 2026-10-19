@@ -124,6 +124,10 @@ class Agent:
     reads_system_notes: bool = False
 
 
+# What a trace shows for the page panel's message, rather than the whole page pasted.
+PASTED_PAGE_IN_TRACE = "[The page panel's pasted page]"
+
+
 def run(agent: Agent, session: Session, *, woken_by: Sequence[str] = ()) -> int:
     """Let `agent` work in `session` until it replies. Gives the number of the last message
     its last turn was given, so the caller can tell whether anything was said since.
@@ -132,7 +136,8 @@ def run(agent: Agent, session: Session, *, woken_by: Sequence[str] = ()) -> int:
     with tracing.message_work(
         agent.name,
         session_id=str(session.pk),
-        message=message.text if message else "",
+        # A whole pasted page is the page now, not something said: its trace names it.
+        message=(PASTED_PAGE_IN_TRACE if message.pasted_page else message.text) if message else "",
         trace_id=message.trace_id if message else "",
         woken_by=woken_by,
     ) as traced:
