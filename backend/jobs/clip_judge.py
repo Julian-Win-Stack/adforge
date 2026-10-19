@@ -345,7 +345,8 @@ class MotionPhotoFixVerdict(MotionVerdict):
 # Two failing answers are agreement only when they name the same fault (Change A, Julian's
 # yes 2026-10-18 21:48): in round 5 two unrelated complaints 2 s apart failed a clip Julian
 # passed. One text call reads a check's failing answers and groups them by fault. Its words,
-# its two-step answer form and each question's wording are the judge prototype's, as tested
+# its two-step answer form and each question's wording are the judge prototype's, as tested, but
+# its example is a made-up neutral pair, not a real clip's (Julian 2026-10-19 17:36)
 # (handoffs/round-5-prototypes/judge/work/agree.py; runs/round-5-prototypes/judge).
 AGREE_ON_FAULT = """\
 Several independent looks at the same short video clip each answered one question about \
@@ -357,9 +358,9 @@ time spans that overlap. A problem's time span runs from when it says it starts 
 ends or is back to normal ("never" means to the end of the clip). A single moment counts as a span \
 of that moment: "from 1.0 to 1.8 s" and "at 1.4 s" overlap; moments 0.1 s apart, like 0.8 s and \
 0.9 s, are the same moment. Different words for the same thing count as the same \
-("the tip merges with" and "the tip absorbs"). Two different things wrong with the clip, or the \
-same object with two different things happening to it, or the same kind of thing at times that \
-don't overlap, are different faults, even if both are real.
+("the cup tips over" and "the cup falls on its side"). Two different things wrong with the \
+clip, or the same object with two different things happening to it, or the same kind of \
+thing at times that don't overlap, are different faults, even if both are real.
 
 Work in two steps. First, for each answer write its object, its event and its time span. Then put \
 the answers in groups, one group per fault, every answer in exactly one group."""
