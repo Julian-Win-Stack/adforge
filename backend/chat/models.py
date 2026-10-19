@@ -148,6 +148,22 @@ class Message(models.Model):
         "failed every try of, the try they chose (#180): the marker, never typed. Null "
         "otherwise.",
     )
+    # The page panel's message, sent when the product page couldn't be read: its text is the
+    # page the shop owner pasted, and its photos the product's, kept by code as the page
+    # before any model reads it. A default in the database too, as for the step's fields.
+    pasted_page = models.BooleanField(
+        default=False,
+        db_default=False,
+        help_text="The shop owner's message from the page panel, with the page text they "
+        "pasted and its photos: the marker, never set by typing.",
+    )
+    pasted_page_result = models.TextField(
+        blank=True,
+        db_default="",
+        help_text="What became of a pasted page, on the page panel's message and on code's "
+        'notice answering it: "accepted" once kept as the page, else one line saying why it '
+        "can't be used. Blank on any other message, and on a pasted page not yet looked at.",
+    )
     routed_at = models.DateTimeField(
         null=True,
         blank=True,

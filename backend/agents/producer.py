@@ -383,6 +383,18 @@ class PlanAd(Tool):
         shown = job.tool_calls.filter(tool=ReadPage.name, asked_about="the photos").last()
         if shown is not None:
             _answered(call.session, since=shown, who_asked="they were shown the page's photos")
+        # So are too few photos sent with a page pasted in the page panel.
+        pasted = _pasted_with_too_few_photos(job)
+        if (
+            pasted is not None
+            and not call.session.messages.filter(
+                role=Message.Role.USER, seq__gt=pasted.seq
+            ).exists()
+        ):
+            raise Refused(
+                "the shop owner hasn't answered since they were told they sent too few photos "
+                "with their pasted page. Ask them, and wait for their answer."
+            )
         # Planning again before the shop owner has answered would pay for the same question.
         asked = job.tool_calls.filter(tool=self.name, asked_about="the plan").last()
         if asked is not None:
@@ -1639,6 +1651,21 @@ def _doubtful(blocked: bool, declared: bool, kept: int) -> str:
     if kept < FEWEST_SURE_PHOTOS:
         return f"only {_photos(kept)} was found on the page."
     return ""
+
+
+def _pasted_with_too_few_photos(job: Job) -> Message | None:
+    """The page panel's message whose pasted page was kept as the job's page, if fewer than
+    FEWEST_SURE_PHOTOS of its photos were kept as product photos."""
+    if job.session is None:
+        # A job started before sessions existed has no chat to paste in.
+        return None
+    pasted = job.session.messages.filter(
+        role=Message.Role.USER, pasted_page=True, pasted_page_result=messages.PASTE_ACCEPTED
+    ).last()
+    if pasted is None:
+        return None
+    sent = pasted.attachments.values_list("file", flat=True)
+    return pasted if job.photos.filter(file__in=sent).count() < FEWEST_SURE_PHOTOS else None
 
 
 def _show_photos(call: ToolCall, job: Job) -> None:

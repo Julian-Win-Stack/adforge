@@ -10,6 +10,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from adforge import file_store
+from agents import page_panel
 from agents.tasks import another_session_is_busy, hold_one_at_a_time_lock, wake_producer
 from gateway.gateway import IMAGE_TYPE_NAMES, IMAGE_TYPES
 from jobs import work
@@ -22,6 +23,8 @@ from .models import Attachment, Message, Session
 
 # As much as one message may say. Long enough for a brief pasted in one go.
 MAX_TEXT_CHARACTERS = 10_000
+# As much as the page panel's message may say: a whole product page pasted in one go.
+MAX_PASTED_PAGE_CHARACTERS = 200_000
 
 # What the user is told when another session is working: only one works at a time.
 ANOTHER_SESSION_IS_BUSY = "Another ad is being made right now. Please try again once it's finished."
@@ -32,6 +35,13 @@ PLAN_NO_LONGER_WAITS = "That plan isn't waiting for an answer any more. Look at 
 PLAN_ALREADY_SAID_YES = "You've already said yes to that plan."
 # What a tap of the yes button says, as the chat and the producer read it.
 TAPPED_YES = "Yes"
+
+# What the page panel is told when its message can't be taken.
+PASTE_THE_PAGE = "Paste the text of the product's page."
+PAGE_PANEL_NOT_WANTED = (
+    "The product page doesn't need pasting: send it in the chat as a normal message instead."
+)
+ATTACH_A_PHOTO = "Attach at least one photo of the product with the page's text."
 
 
 class AttachmentSerializer(serializers.ModelSerializer[Attachment]):
@@ -70,6 +80,8 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
             "plan",
             "tries",
             "use_clip",
+            "pasted_page",
+            "pasted_page_result",
         ]
 
     def get_step(self, message: Message) -> dict[str, object] | None:
@@ -164,8 +176,9 @@ class SendSerializer(serializers.Serializer[None]):
     """What the chat box sends: free text, photos, or both. There is no link field, no
     length field and no set of options to pick from."""
 
+    # Typed text is held to MAX_TEXT_CHARACTERS in `validate`: only a pasted page is longer.
     text = serializers.CharField(
-        max_length=MAX_TEXT_CHARACTERS, required=False, allow_blank=True, default=""
+        max_length=MAX_PASTED_PAGE_CHARACTERS, required=False, allow_blank=True, default=""
     )
     photos = serializers.ListField(
         child=serializers.FileField(), required=False, max_length=MAX_PHOTOS, default=list
@@ -183,6 +196,12 @@ class SendSerializer(serializers.Serializer[None]):
         help_text='The try of a clip the judge failed every try of whose "Use this one" '
         "button sent this. Never set by typing.",
     )
+    pasted_page = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="Sent by the page panel: the text is the product page the shop owner pasted, "
+        "and the photos are its photos. Never set by typing.",
+    )
 
     def validate_photos(self, photos: list[UploadedFile[bytes]]) -> list[UploadedFile[bytes]]:
         # The same formats and size the rest of the system keeps: what the models can read.
@@ -196,7 +215,16 @@ class SendSerializer(serializers.Serializer[None]):
         return photos
 
     def validate(self, data: dict[str, object]) -> dict[str, object]:
-        if not data["text"] and not data["photos"] and data["use_clip"] is None:
+        text = str(data["text"])
+        if data["pasted_page"]:
+            if not text.strip():
+                raise serializers.ValidationError({"text": PASTE_THE_PAGE})
+            return data
+        if len(text) > MAX_TEXT_CHARACTERS:
+            raise serializers.ValidationError(
+                {"text": f"Ensure this field has no more than {MAX_TEXT_CHARACTERS} characters."}
+            )
+        if not text and not data["photos"] and data["use_clip"] is None:
             raise serializers.ValidationError({"text": "Type something, or attach a photo."})
         return data
 
@@ -241,6 +269,9 @@ def _send(session: Session, request: Request) -> Response:
         hold_one_at_a_time_lock()
         if another_session_is_busy(session):
             return Response({"detail": ANOTHER_SESSION_IS_BUSY}, status=status.HTTP_409_CONFLICT)
+        pasted = sending.validated_data["pasted_page"]
+        if pasted and (refused_paste := _refuse_paste(session, photos)) is not None:
+            return Response({"detail": refused_paste}, status=status.HTTP_400_BAD_REQUEST)
         tapped = sending.validated_data["plan"]
         if tapped is not None and (refused := _refuse_tap(session, tapped)) is not None:
             return Response({"plan": refused}, status=status.HTTP_400_BAD_REQUEST)
@@ -271,6 +302,7 @@ def _send(session: Session, request: Request) -> Response:
             carrying=kept,
             plan=None if tapped is None else messages.PlanSignal(tapped, Message.PlanEvent.YES),
             chosen_clip=chosen.pk if chosen is not None else None,
+            pasted_page=pasted,
         )
         # Only once the message is saved: a producer about to stop either finds it, or has
         # already stopped, and one is started here.
@@ -309,6 +341,17 @@ def _chosen_try(session: Session, clip: int) -> ProducedItem:
     )
     work.check_try_to_use(chosen, waiting=waiting.chosen_clip if waiting is not None else None)
     return chosen
+
+
+def _refuse_paste(session: Session, photos: list[UploadedFile[bytes]]) -> str | None:
+    """Why the page panel's message in `session` is refused, or None to keep it: the chat
+    must be waiting for the page to be pasted, and the page must come with a photo. A page
+    with no photo can't be made into an ad until the whole product can be drawn from text."""
+    if not page_panel.page_panel_wanted(session):
+        return PAGE_PANEL_NOT_WANTED
+    if not photos:
+        return ATTACH_A_PHOTO
+    return None
 
 
 def _refuse_tap(session: Session, plan: int) -> str | None:

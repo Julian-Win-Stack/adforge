@@ -187,7 +187,8 @@ Decide "readable" if the text names one product and says what it is, enough to s
 short video ad from. Decide "unreadable" if the text is mostly empty, a loading screen, a \
 cookie wall, a bot check or an error page, or if it lists many products (a category, \
 collection or search page) instead of showing one. The link may have redirected: page_url \
-is the page actually read.
+is the page actually read. The text may instead have been pasted by the shop owner from the \
+page, when it couldn't be read from the link: judge it the same way.
 Give one sentence saying why, written for the shop owner."""
 
 logger = logging.getLogger(__name__)
@@ -338,36 +339,26 @@ def copy_page_text(
     """This product's own text: what a model copies out of the page about it, each sentence
     matched back to the page, then the prices in Firecrawl's `record` of it, then the product
     data the page declares without its prices: the record's are the only ones that count.
-    However little is kept is used. A failed copy call posts a notice and is raised: the
-    page isn't read."""
+    However little is kept is used. A failed copy call is raised: the page isn't read."""
     if download.markdown is not None:
         given = page_text.shorten_links(download.markdown)
         on_the_page = page_text.markdown_to_text(download.markdown)
     else:
         given = on_the_page = product_page.words
-    try:
-        copied = call_model(
-            job=job,
-            purpose="copy_page_text",
-            instructions=page_text.COPY_INSTRUCTIONS,
-            handoff=page_text.CopyHandoff(
-                product=product_page.name,
-                page_url=download.final_url,
-                shop_description=product_page.description or "(none)",
-                page_text=given,
-            ),
-            output=page_text.CopiedText,
-            # A page read again, as after a worker stopped, isn't copied and paid for twice.
-            pay_once=True,
-        )
-    except (UnusableReply, OutsideServiceDown) as error:
-        post_notice(
-            job,
-            f"Picking this product's own text out of the page failed ({error}), so the page "
-            "wasn't read and nothing was kept from it. Ask to read it again.",
-            Message.Level.PROBLEM,
-        )
-        raise
+    copied = call_model(
+        job=job,
+        purpose="copy_page_text",
+        instructions=page_text.COPY_INSTRUCTIONS,
+        handoff=page_text.CopyHandoff(
+            product=product_page.name,
+            page_url=download.final_url,
+            shop_description=product_page.description or "(none)",
+            page_text=given,
+        ),
+        output=page_text.CopiedText,
+        # A page read again, as after a worker stopped, isn't copied and paid for twice.
+        pay_once=True,
+    )
     prices = page_text.record_prices(record) if isinstance(record, dict) else ""
     copied_text = "\n".join(page_text.match_back(copied.passages, on_the_page))
     return copied_text + prices + page_text.without_prices(product_page.declared)
@@ -400,11 +391,20 @@ PAGE_BLOCKED = (
 
 def copy_and_pick(job: Job, read: PageRead, product_page: page.ProductPage) -> tuple[str, Picked]:
     """This product's own text and photos, copied and picked off the page at the same time.
-    A failed copy call is raised, as by copy_page_text."""
+    A failed copy call posts a notice and is raised: the page isn't read."""
     context = contextvars.copy_context()
     with ThreadPoolExecutor(max_workers=1) as pool:
         picking = pool.submit(context.run, _closing_its_connection, pick_photos, job, read)
-        text = copy_page_text(job, read.download, product_page, read.record)
+        try:
+            text = copy_page_text(job, read.download, product_page, read.record)
+        except (UnusableReply, OutsideServiceDown) as error:
+            post_notice(
+                job,
+                f"Picking this product's own text out of the page failed ({error}), so the "
+                "page wasn't read and nothing was kept from it. Ask to read it again.",
+                Message.Level.PROBLEM,
+            )
+            raise
     return text, picking.result()
 
 
@@ -3416,11 +3416,16 @@ def _conversation(job: Job, *, until: datetime | None = None) -> list[ChatMessag
     """What the user and the producer have said, for the models that plan and check the ad
     and plan its scenes: all of it, or what was said by `until`. Facts may come from the
     user's words; the producer's show what the user was answering. Notices are code's
-    words to the user, not the producer's, and are left out."""
+    words to the user, not the producer's, and are left out. So is the page the user pasted
+    in the page panel: it is the page text, checked as the page, not their words."""
     if job.session is None:
         # A job started before sessions existed has no conversation.
         return []
-    said = job.session.messages.exclude(role=Message.Role.NOTICE).prefetch_related("attachments")
+    said = (
+        job.session.messages.exclude(role=Message.Role.NOTICE)
+        .exclude(pasted_page=True)
+        .prefetch_related("attachments")
+    )
     if until is not None:
         said = said.filter(created_at__lte=until)
     return [

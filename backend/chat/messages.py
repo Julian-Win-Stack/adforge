@@ -13,6 +13,9 @@ from .models import Attachment, Message, Session
 # How long a session's name may be, once it is taken from the first message.
 NAME_LENGTH = 80
 
+# The result of the page panel's message once its pasted page is kept as the page.
+PASTE_ACCEPTED = "accepted"
+
 
 class AttachedFile(NamedTuple):
     """A file for a message to carry. It is already in the file store. `scene` is the
@@ -61,13 +64,16 @@ def add(
     plan: PlanSignal | None = None,
     tries_of: int | None = None,
     chosen_clip: int | None = None,
+    pasted_page: bool = False,
+    pasted_page_result: str = "",
 ) -> Message:
     """Say something in a session, with any files it carries, and name the session from
     the first thing the user types. A notice carries its `level`; nothing else does. A
     message about a scene's starting picture or clip carries its `step`, and one may
     suggest a note on a scene, and one about a fix plan carries its `plan`. One showing every
     try of a clip the judge failed names its clip step, `tries_of`, and the shop owner's tap
-    on one of them names the try chosen, `chosen_clip`.
+    on one of them names the try chosen, `chosen_clip`. The page panel's message is a
+    `pasted_page`; it and code's notice answering it carry the `pasted_page_result`.
 
     Messages are numbered 1, 2, 3... per session. The session row is locked while
     numbering, so messages always become visible in number order. Without that, a poll
@@ -93,6 +99,8 @@ def add(
             fix_plan_id=plan.plan if plan else None,
             tries_of_id=tries_of,
             chosen_clip_id=chosen_clip,
+            pasted_page=pasted_page,
+            pasted_page_result=pasted_page_result,
         )
         Attachment.objects.bulk_create(
             Attachment(

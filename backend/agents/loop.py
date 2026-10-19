@@ -421,7 +421,8 @@ def _conversation(
     so. Given as the agent's own "[Attached 1 picture]", it was copied as a reply with no
     picture on it. A notice is left out too: it is code telling the shop owner about a
     fallback, which the tool's result already told the agent, and given as the agent's own
-    words it would read as something it said.
+    words it would read as something it said. So is the page panel's message: code keeps
+    its pasted page as the page, and a system note tells the agent so.
 
     A system note comes where the agent was first given it, as a step does. The fix plan
     steps code runs are never the agent's, so it is told of them only by these notes."""
@@ -435,6 +436,7 @@ def _conversation(
             (message.created_at, message)
             for message in said
             if message.role != Message.Role.NOTICE
+            and not message.pasted_page
             and (message.text or message.role == Message.Role.USER)
         ),
         *((call.created_at, call) for call in session.tool_calls.filter(agent=agent.name)),
