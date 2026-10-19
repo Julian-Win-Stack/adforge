@@ -470,6 +470,19 @@ def dhash(content: bytes) -> int:
     return bits
 
 
+def fingerprint_of(content: bytes) -> int | None:
+    """The photo's fingerprint (dhash), or None when it can't be read as a photo."""
+    try:
+        return dhash(content)
+    except OSError, ValueError, Image.DecompressionBombError:
+        return None
+
+
+def alike(one: int, other: int) -> bool:
+    """Whether two fingerprints are of copies of one photo: at most MOST_BITS_APART apart."""
+    return (one ^ other).bit_count() <= MOST_BITS_APART
+
+
 class Copies:
     """Photos seen so far, to keep each photo once: two are copies when their links differ
     only in size, or their fingerprints differ in at most MOST_BITS_APART bits. Kept photos
@@ -497,13 +510,10 @@ class Copies:
         kept = self.kept_at_link(url)
         if kept is not None:
             return kept
-        try:
-            fingerprint = dhash(content)
-        except OSError, ValueError, Image.DecompressionBombError:
-            fingerprint = None
+        fingerprint = fingerprint_of(content)
         if fingerprint is not None:
             for kept_hash, number in self._hashes:
-                if (fingerprint ^ kept_hash).bit_count() <= MOST_BITS_APART:
+                if alike(fingerprint, kept_hash):
                     return number
         number = len(self._keys)
         self._keys[same_key(url)] = number

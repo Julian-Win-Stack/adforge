@@ -169,6 +169,21 @@ class ProductPhoto(models.Model):
             "such a photo is only used when no other shows what's needed."
         ),
     )
+    from_video = models.ForeignKey(
+        "ProductVideo",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="pictures",
+        help_text="The product video it was cut from, if it is a video picture.",
+    )
+    at_second = models.FloatField(
+        null=True, blank=True, help_text="A video picture's second in its video."
+    )
+    note = models.TextField(
+        blank=True,
+        help_text="A video picture's one line: what it shows that no other photo shows.",
+    )
 
     class Meta:
         ordering = ["job", "position"]
