@@ -19,7 +19,7 @@ from adforge import file_store
 from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Attachment, Message, Session
-from gateway.types import UnusableReply
+from gateway.types import AnswerTookTooLong, BlockedBySafetyFilter, UnusableReply
 from jobs import page, photos
 from jobs.models import Job, ProductPhoto
 from jobs.notices import post_notice
@@ -84,15 +84,15 @@ def _take(message: Message) -> None:
             _refuse(job, message, check.reason)
             return
         text = copy_page_text(job, download, product_page, record=None)
-    except (UnusableReply, OutsideServiceDown) as error:
+        copies = photos.Copies()
+        new = [each for each in attached if copies.is_new(each.file, file_store.read(each.file))]
+        # The shop owner's photo was never seen by the picker, so it is noted on its own.
+        noted = [(each, note_face(job, each.file, each.file)) for each in new]
+    except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter, AnswerTookTooLong) as error:
         # Left unanswered, the paste would be taken again on every message the shop owner
-        # sends: it is answered, and they send it again.
+        # sends, and stop the chat each time: it is answered, and they send it again.
         _refuse(job, message, CHECK_FAILED.format(error=error))
         return
-    copies = photos.Copies()
-    new = [each for each in attached if copies.is_new(each.file, file_store.read(each.file))]
-    # The shop owner's photo was never seen by the picker, so it is noted on its own.
-    noted = [(each, note_face(job, each.file, each.file)) for each in new]
     _keep(job, message, _Kept(download, product_page, text, noted))
 
 

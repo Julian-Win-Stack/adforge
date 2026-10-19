@@ -25,6 +25,7 @@ from chat.api import (
 )
 from chat.models import Attachment, Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
+from gateway.types import AnswerTookTooLong, BlockedBySafetyFilter
 from jobs.models import Job
 
 from .conftest import (
@@ -413,3 +414,35 @@ def test_a_paste_found_after_the_page_was_kept_closes_the_panel(
     (said,) = [each for each in messages(api, session_id) if each["pasted_page_result"]][-1:]
     assert (said["level"], said["wants_pasted_page"]) == ("info", False)
     assert not chat_messages.page_panel_wanted(session)
+
+
+@pytest.mark.parametrize(
+    "fails",
+    [
+        pytest.param(
+            BlockedBySafetyFilter("The provider's filter refused it."), id="safety filter"
+        ),
+        pytest.param(AnswerTookTooLong("check_page took too long."), id="too slow"),
+    ],
+)
+def test_a_pasted_page_whose_check_is_refused_is_answered_and_can_be_sent_again(
+    api: APIClient,
+    fake_model: FakeModel,
+    unreadable: str,
+    session_id: str,
+    paste: Callable[..., Any],
+    fails: Exception,
+) -> None:
+    fake_model.respond("check_page", fails, READABLE)
+    fake_model.answer_unscripted("produce", lambda _: turn(says="Got your page."))
+
+    first = paste(PASTE, ("front.png", FRONT), ("side.png", SIDE))
+    again = paste(PASTE, ("front.png", FRONT), ("side.png", SIDE))
+
+    assert (first.status_code, again.status_code) == (201, 201)
+    results = [
+        each["pasted_page_result"] for each in messages(api, session_id) if each["pasted_page"]
+    ]
+    assert results[0].startswith("Checking it failed (")
+    assert results[1] == "accepted"
+    assert not any(each["text"].startswith("I had to stop") for each in messages(api, session_id))

@@ -62,12 +62,12 @@ from .loop import Agent, Refused, Tool
 from .models import ToolCall
 from .money import dollars
 
-# What the producer is told when the product page can't be read, after why: the chat has asked
-# the shop owner for the page panel (ADR 0006).
 # What the chat shows the shop owner when the product page can't be read: plain words, as
 # the technical reason is the producer's, in its tool's result.
 PAGE_NOT_OPENED = "We couldn't open this page from its link."
 PAGE_TEXT_UNUSABLE = "This page opened, but its text can't be used."
+# What the producer is told when the product page can't be read, after why: the chat has asked
+# the shop owner for the page panel (ADR 0006).
 PASTE_IN_THE_PANEL = (
     "The chat has shown the shop owner why and opened a panel under it where they can paste "
     "the page's text and attach its photos. Tell them in one line that the page can't be read, "
