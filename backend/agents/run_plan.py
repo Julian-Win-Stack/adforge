@@ -648,20 +648,18 @@ def _say_it_wasnt_checked(row: FixPlanScene, check: FixCheck) -> None:
 def _say_what_the_judge_kept(row: FixPlanScene, step: SceneStep) -> None:
     """A fix's clip the clip judge couldn't check is kept, and the shop owner is told so by
     code, never silent (Julian 2026-10-14, "treat that as pass"; design thread, 05:15 Oct 17).
-    So is one it still failed, without the judge's words, unless it failed every try of it:
-    those are shown, to pick from (#180). Nothing for the producer (decision 20). A fix check
-    that failed or couldn't be had says so already."""
+    So is one it failed that the fixing agent couldn't take over. One the agent gave up on is
+    shown with every try, to pick from, and the scene keeps the clip it had before. Nothing
+    for the producer (decision 20). A fix check that failed or couldn't be had says so
+    already."""
     number = row.scene.number
-    tries = work.clip_tries(step)
+    if work.agent_fix(step) is not None:
+        return
     verdict = (work.kept_clip(step).ruling or {}).get("verdict")
     if verdict == "not_checked":
         text = f"Scene {number}'s new clip couldn't be checked, so it is kept unchecked."
-    elif verdict == "fail" and not work.every_try_failed(step):
-        # Only one try, its remake not made: nothing to pick from.
-        text = (
-            f"Scene {number}'s new clip was kept after {len(tries)} tries though the judge "
-            "still found a fault."
-        )
+    elif verdict == "fail":
+        text = f"Scene {number}'s new clip was kept though the judge found a fault."
     else:
         return
     post_notice(row.plan.job, text, Message.Level.INFO)

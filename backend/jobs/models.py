@@ -1018,8 +1018,9 @@ class ProducedItem(models.Model):
     remake = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
-        help_text="For a B-roll clip made again by code because the clip judge failed the one "
-        "before it (the auto-fix, #155): which remake of its step's clip it is, 1 or 2.",
+        help_text="For a B-roll clip the fixing agent filmed again because the clip judge "
+        "failed its step's first clip: which try it is, from 1. Older remakes by code (the "
+        "auto-fix, #155) are 1 or 2.",
     )
     motion_prompt = models.TextField(
         blank=True,
@@ -1054,6 +1055,69 @@ class ProducedItem(models.Model):
 
     def __str__(self) -> str:
         return f"{self.kind} v{self.version}"
+
+
+class AgentFix(models.Model):
+    """What the fixing agent did with a B-roll clip step whose first clip the clip judge
+    failed (door 1): every try it filmed is the step's clip with `remake` set, and this says
+    how it ended. A try the judge passed is the scene's clip. On a give-up the shop owner is
+    shown every try to pick from: a scene the producer made is said to camera, and a fix's
+    scene keeps the clip it had before."""
+
+    step = models.OneToOneField(
+        SceneStep,
+        on_delete=models.CASCADE,
+        related_name="agent_fix",
+        help_text="The clip step the agent took over.",
+    )
+    passed = models.ForeignKey(
+        ProducedItem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The try the judge passed. Blank when the agent gave up.",
+    )
+    gave_up = models.TextField(
+        blank=True, help_text="Why the agent gave up, in its words. Blank when a try passed."
+    )
+    picked = models.ForeignKey(
+        ProducedItem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="On a give-up, the try the agent would pick. Blank when it picked none.",
+    )
+    said_to_camera = models.BooleanField(
+        default=False, help_text="Whether the give-up had the scene said to camera."
+    )
+    kept = models.ForeignKey(
+        ProducedItem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="On a give-up of a fix's clip, the clip the scene had before, brought back.",
+    )
+    camera_before = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="On a give-up said to camera, what saying it changed, to put back when the "
+        "shop owner picks a try: the scene's shows, B-roll labels, shortened_from and "
+        "second_state, and the next scene's second_state.",
+    )
+    rows = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Each try's scene as filmed, by its clip's id: line, shows, result, "
+        "broll_kind, person_shown.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        ended = "passed" if self.passed_id else "gave up"
+        return f"Scene {self.step.scene.number} agent fix: {ended}"
 
 
 class FixCheck(models.Model):

@@ -487,14 +487,15 @@ function PlanYes({ onYes }: { onYes: () => Promise<void> }) {
 }
 
 /** Every try of a scene's clip the clip judge failed every try of, side by side, each with
- * what the judge still sees wrong in it. The one in the ad (`inAd`) says so; each other one
- * can be swapped in with one tap, for nothing. Once a newer clip replaced them all, none
- * can. */
+ * what the judge still sees wrong in it, the app's pick marked and why it stopped trying. The
+ * one in the ad (`inAd`) says so; while `onOffer`, each other one can be swapped in with one
+ * tap, for nothing. Once a newer clip replaced them all, none can. */
 function TriesView({
   text,
   tries,
   inAd,
   swapping,
+  onOffer,
   onUse,
 }: {
   text: string;
@@ -502,6 +503,7 @@ function TriesView({
   inAd: number | null;
   /** The try a tap chose, until the scene's clip is shown as it. */
   swapping: number | null;
+  onOffer: boolean;
   onUse: (clip: number) => Promise<void>;
 }) {
   const [sending, setSending] = useState<number | null>(null);
@@ -522,6 +524,7 @@ function TriesView({
   return (
     <div className="tries" role="group" aria-label={`Every try at scene ${tries.scene}'s clip`}>
       <p className="tries-title">{text}</p>
+      {tries.reason && <p className="tries-reason">Why it stopped trying: {tries.reason}</p>}
       {error && (
         <p role="alert" className="notice error inline">
           {error}
@@ -545,9 +548,10 @@ function TriesView({
             <span className="try-head">
               <strong>{each.name}</strong>
               {each.clip === inAd && <span className="try-badge">In the ad</span>}
+              {each.clip === tries.picked && <span className="try-badge pick">App's pick</span>}
             </span>
             <span className="try-problem">The judge saw: {each.problem}</span>
-            {inAd !== null && each.clip !== inAd && (
+            {onOffer && each.clip !== inAd && (
               <button
                 type="button"
                 className="try-use"
@@ -560,7 +564,7 @@ function TriesView({
           </li>
         ))}
       </ol>
-      {inAd === null && <p className="tries-gone">A newer clip of this scene is in the ad now.</p>}
+      {!onOffer && <p className="tries-gone">A newer clip of this scene is in the ad now.</p>}
     </div>
   );
 }

@@ -10,7 +10,7 @@ from decimal import Decimal
 import pytest
 
 from agents.money import dollars
-from agents.producer import Estimate, _estimate
+from agents.producer import Estimate, _estimate, _picture_only_estimate_usd
 from gateway.catalog import MODEL_FOR_PURPOSE, transcription_cost_usd
 from gateway.fake import FakeModel
 from jobs.models import Fix, FixPlan, ProducedItem, Scene, SceneStep
@@ -380,14 +380,16 @@ def test_a_transcription_is_estimated_to_the_millionth_of_a_dollar(
     assert len(f"{estimated:f}") <= len("0.000000")
 
 
-def test_a_broll_line_fix_is_estimated_with_the_judges_asks_and_up_to_two_remakes(
+def test_a_broll_line_fix_is_estimated_with_the_judges_asks_and_up_to_six_agent_tries(
     shown: ProducedItem,  # noqa: F811
 ) -> None:
     # The scene keeps its picture; the new line's 52
     # characters at Inworld's $25 a million are $0.0013; its 8 words take the fake voice 4
     # seconds, $0.000244 at Scribe's $0.22 an hour; a 5-second clip at Boreal's $0.0792 a
-    # second with the judge's 6 asks at $0.003 is $0.414, and up to 2 remakes with a prompt
-    # written at $0.07 (decider call 13) bring it up to $1.382.
+    # second with the judge's 6 asks at $0.003 is $0.414, and up to 6 tries of the fixing
+    # agent, each a new picture, that clip and the agent's turn at $0.07 (decider call 13).
     estimate = line_estimate(2, LINE_2_NEW)
 
-    assert estimate == (Decimal("0.415544"), Decimal("1.383544"))
+    picture = _picture_only_estimate_usd(Scene.objects.get(number=2))
+    each_try = picture + Decimal("0.414") + Decimal("0.07")
+    assert estimate == (Decimal("0.415544"), Decimal("0.415544") + 6 * each_try)

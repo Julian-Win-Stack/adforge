@@ -20,12 +20,14 @@ from gateway.types import BlockedBySafetyFilter, UnusableReply
 from jobs.models import FixCheck, Job, ProducedItem, Scene, SceneStep
 from jobs.picture_check import PictureKeptFailing
 from jobs.work import (
+    agent_fix,
+    agent_gave_up,
     check_fix,
-    every_try_failed,
+    clip_tries,
     make_clip,
     make_line_audio,
     make_starting_picture,
-    say_every_try_failed,
+    say_the_agent_gave_up,
     say_the_fix_check_failed,
     say_the_pictures_kept_failing,
     too_long_for_a_clip,
@@ -277,6 +279,16 @@ def _transcript_finished(step: SceneStep, transcript: ProducedItem | None) -> st
 def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
     assert clip is not None and clip.made_from is not None, "a clip is made from its audio"
     number = step.scene.number
+    ended = agent_fix(step)
+    if ended is not None and ended.said_to_camera:
+        return (
+            f"Background step finished: scene {number}'s clip failed the clip judge, and the "
+            f"fixing agent gave up on it after {len(clip_tries(step)) - 1} tries, saying: "
+            f'"{ended.gave_up}"{_cost(step)} Scene {number} is now a talking scene. Make its '
+            "starting picture again, then its audio and its clip. The chat showed the shop "
+            "owner every try, so they can tap one to use it instead, for nothing. Tell the "
+            "shop owner."
+        )
     # A B-roll clip made before every B-roll scene got a picture may have none.
     picture = f"starting picture version {clip.picture.version} and " if clip.picture else ""
     note = f', with its movement rewritten from the note "{step.note}"' if step.note else ""
@@ -332,6 +344,7 @@ STEP_WORK = {
     ),
     # Each clip is shown with its scene number as it is made, so the shop owner sees each
     # scene on its own before the whole ad is put together from them.
+    # One the fixing agent gave up on shows every try instead, in its own notice.
     SceneStep.Kind.CLIP: StepWork(
         make=make_clip,
         finished=_clip_finished,
@@ -341,7 +354,7 @@ STEP_WORK = {
                     Attachment.Kind.VIDEO, clip.file, step.scene.number, version_label(clip)
                 )
             ]
-            if clip
+            if clip and not agent_gave_up(step)
             else []
         ),
     ),
@@ -409,9 +422,9 @@ def run_scene_step(step_id: int) -> None:
             step.result = work.finished(step, made)
             step.finished_at = timezone.now()
             step.save(update_fields=["status", "result", "finished_at"])
-            # Right after the clip kept, once its step is finished, so its tries are versions.
-            if shown and step.kind == SceneStep.Kind.CLIP and step.shows and every_try_failed(step):
-                say_every_try_failed(step)
+            # Once its step is finished, so its tries are versions.
+            if step.kind == SceneStep.Kind.CLIP and step.shows and agent_gave_up(step):
+                say_the_agent_gave_up(step)
             # A fix plan's step is carried on by code, and never wakes the producer: a
             # fix's picture that passed its checks queues its clip here (decision 2).
             if step.plan_scene_id is not None:

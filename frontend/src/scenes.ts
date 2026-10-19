@@ -232,20 +232,24 @@ export function adFinished(messages: Message[]): boolean {
 }
 
 /** Which try a notice of every try of a scene's clip (the message numbered `seq`) shows in
- * the ad, and which one a tap of "Use this one" is swapping in. The one in the ad is the one
- * when the notice was read, then whichever the messages after it put there: the scene's
- * clip shown again as one of the tries, as after going back to it, is that try; any other
- * clip of the scene shown means a newer clip replaced them all: null, so none can be swapped
- * in. A tap's try is being swapped in until the scene's clip is shown, or a red notice says
- * it couldn't be. */
+ * the ad, which one a tap of "Use this one" is swapping in, and whether one can be swapped
+ * in. The one in the ad is the one when the notice was read, then whichever the messages
+ * after it put there: the scene's clip shown again as one of the tries, as after going back
+ * to it, is that try; any other clip of the scene shown means a newer clip replaced them
+ * all: null, so none can be swapped in. When the app gave up on the scene, so none was in
+ * the ad, the clip shown in its place leaves every try on offer until one is in the ad. A
+ * tap's try is being swapped in until the scene's clip is shown, or a red notice says it
+ * couldn't be. */
 export function tryInAd(
   messages: Message[],
   seq: number,
-): { inAd: number | null; swapping: number | null } {
+): { inAd: number | null; swapping: number | null; onOffer: boolean } {
   const at = messages.findIndex((one) => one.seq === seq);
   const tries = messages[at]?.tries;
-  if (!tries) return { inAd: null, swapping: null };
+  if (!tries) return { inAd: null, swapping: null, onOffer: false };
   let inAd = tries.in_ad;
+  let onOffer = tries.on_offer ?? inAd !== null;
+  let gaveUp = onOffer && inAd === null;
   let swapping: number | null = null;
   for (const later of messages.slice(at + 1)) {
     if (later.use_clip != null && tries.clips.some((one) => one.clip === later.use_clip)) {
@@ -254,9 +258,17 @@ export function tryInAd(
     if (later.role === "notice" && later.level === "problem") swapping = null;
     for (const attachment of later.attachments) {
       if (attachment.kind !== "video" || attachment.scene !== tries.scene) continue;
-      inAd = tries.clips.find((one) => one.url === attachment.url)?.clip ?? null;
+      const shown = tries.clips.find((one) => one.url === attachment.url)?.clip ?? null;
+      if (shown !== null) {
+        inAd = shown;
+        onOffer = true;
+        gaveUp = false;
+      } else if (!gaveUp) {
+        inAd = null;
+        onOffer = false;
+      }
       swapping = null;
     }
   }
-  return { inAd, swapping };
+  return { inAd, swapping, onOffer };
 }

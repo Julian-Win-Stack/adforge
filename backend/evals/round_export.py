@@ -163,9 +163,12 @@ def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, d
     )
     (base / "notes.json").write_text(json.dumps(_notes(job), indent=1))
 
+    from jobs.models import AgentFix
+
     results: dict[str, dict[str, Any]] = {}
     for scene in job.scenes.order_by("number"):
-        if not scene.shows:
+        # A scene the fixing agent gave up on is said to camera since, its tries kept.
+        if not scene.shows and not AgentFix.objects.filter(step__scene=scene).exists():
             continue
         found = _first_clip_step(scene)
         if found is None:
@@ -174,7 +177,9 @@ def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, d
         step, made = found
         first = made[0]
         tries = [first, *sorted((c for c in made if c.remake), key=lambda c: c.remake or 0)]
-        kept = next(c for c in tries if c.file == made[-1].file)
+        gave_up = AgentFix.objects.filter(step=step, passed__isnull=True).first()
+        # Nothing of a scene the agent gave up on is kept: the owner may pick a try.
+        kept = None if gave_up else next(c for c in tries if c.file == made[-1].file)
         where = base / f"scene-{scene.number}"
         where.mkdir(exist_ok=True)
         for clip in tries:
@@ -189,11 +194,12 @@ def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, d
             "ad_folder": folder,
             "scene": scene.number,
             "line": scene.line,
-            "shows": scene.shows,
-            "broll_kind": scene.broll_kind,
+            "shows": step.shows,
+            "broll_kind": step.broll_kind,
             "tries": [_clip(c) for c in tries],
-            "kept": _clip(kept),
-            "kept_is_remake": kept.remake is not None,
+            "kept": _clip(kept) if kept is not None else None,
+            "kept_is_remake": kept is not None and kept.remake is not None,
+            "gave_up": gave_up.gave_up if gave_up is not None else None,
             "costs": {"total": _redo_cost(step)},
         }
     return results
