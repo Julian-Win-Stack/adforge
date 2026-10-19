@@ -390,9 +390,38 @@ def test_the_fixing_agents_instructions_are_the_approved_ones_word_for_word() ->
     assert fixing_agent.INSTRUCTIONS == FIXING_AGENT_AS_APPROVED
 
 
+# What giving up does, as the agent is told it at each door, pinned word for word (Julian's
+# OK 2026-10-19 20:10): door 1's scene is said to camera, door 2's keeps its clip.
+GAVE_UP_AT_EACH_DOOR = {
+    "judge": "the line is then said to camera by the presenter.",
+    "owner": "the scene then keeps its clip as it was, and the shop owner is shown every try you "
+    "made and your reason.",
+}
+SAY_TO_CAMERA_FOR_A_NOTE = (
+    "Give up on filming this scene: it keeps its clip as it was, and the shop owner is shown "
+    "every try you made and your reason. Say why, and which try you think is best."
+)
+GIVEN_UP_AT_EACH_DOOR = {
+    "judge": "The scene is given up: its line will be said to camera.",
+    "owner": "The scene is given up: it keeps its clip as it was, and the shop owner is shown "
+    "every try you made and your reason.",
+}
+
+
+def test_the_fixing_agent_is_told_what_giving_up_does_at_each_door_word_for_word() -> None:
+    assert fixing_agent.GAVE_UP == GAVE_UP_AT_EACH_DOOR
+    assert fixing_agent.SAY_TO_CAMERA_FOR_A_NOTE == SAY_TO_CAMERA_FOR_A_NOTE
+    assert fixing_agent.GIVEN_UP == GIVEN_UP_AT_EACH_DOOR
+    for door, gave_up in GAVE_UP_AT_EACH_DOOR.items():
+        told = fixing_agent.instructions(door)
+        assert told.startswith(FIXING_AGENT_AS_APPROVED.replace("{gave_up}", gave_up))
+
+
 def test_the_fixing_agent_is_told_the_apps_prompt_rules_unchanged() -> None:
     told = fixing_agent.instructions()
-    assert told.startswith(FIXING_AGENT_AS_APPROVED)
+    assert told.startswith(
+        FIXING_AGENT_AS_APPROVED.replace("{gave_up}", GAVE_UP_AT_EACH_DOOR["judge"])
+    )
     assert BROLL_SHARED_RULES in told
     assert all(rules in told for rules in BROLL_KIND_RULES.values())
 

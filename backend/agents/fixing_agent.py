@@ -16,7 +16,7 @@ import json
 import re
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Any, ClassVar, Literal
 
@@ -35,6 +35,7 @@ from gateway.types import (
     Image,
     Said,
     Shown,
+    ToolSpec,
     ToolUse,
 )
 from jobs import auto_fix, clip_judge, picture_check, reference_photos, scenes, work
@@ -115,9 +116,8 @@ film_again you see the new start picture, the new clip's frames and the judge's 
 a fail, find what caused it (the plan, the picture, or what the video model can't do) and \
 change that cause, not only the words. Try to film it first: code refuses say_to_camera \
 until at least one new clip was made. When, after trying, you judge the scene can't be filmed \
-well, call say_to_camera with your reason: the line is then said to camera by the presenter. \
-That is an honest result, better than a bad clip. The judge can be wrong, but only a clip \
-the judge passes passes.
+well, call say_to_camera with your reason: {gave_up} That is an honest result, better than \
+a bad clip. The judge can be wrong, but only a clip the judge passes passes.
 
 The app's own prompt rules follow, for writing the two prompts. They hold for you too, with \
 two exceptions: you may write the video prompt second by second, with timings, when that \
@@ -125,14 +125,48 @@ helps; and a rule about following a producer's note does not apply.
 """
 
 
-def instructions() -> str:
-    """Everything the agent is told: its own instructions, then the app's B-roll prompt
-    rules, unchanged."""
+# What giving up does, as the agent is told it, by door: door 1's scene is said to camera;
+# door 2's keeps its clip as it was (spec section 2; Julian's OK 2026-10-19 20:10).
+GAVE_UP = {
+    AgentFix.Door.JUDGE: "the line is then said to camera by the presenter.",
+    AgentFix.Door.OWNER: "the scene then keeps its clip as it was, and the shop owner is shown "
+    "every try you made and your reason.",
+}
+# The say_to_camera tool's description for door 2; door 1's is the tool's own.
+SAY_TO_CAMERA_FOR_A_NOTE = (
+    "Give up on filming this scene: it keeps its clip as it was, and the shop owner is shown "
+    "every try you made and your reason. Say why, and which try you think is best."
+)
+# What say_to_camera answers, by door.
+GIVEN_UP = {
+    AgentFix.Door.JUDGE: "The scene is given up: its line will be said to camera.",
+    AgentFix.Door.OWNER: "The scene is given up: it keeps its clip as it was, and the shop "
+    "owner is shown every try you made and your reason.",
+}
+
+
+def instructions(door: str = AgentFix.Door.JUDGE) -> str:
+    """Everything the agent is told for `door`: its own instructions, saying what giving up
+    does there, then the app's B-roll prompt rules, unchanged."""
     kinds = "\n\n".join(
         f'When the B-roll kind is "{kind}":\n{rules}'
         for kind, rules in scenes.BROLL_KIND_RULES.items()
     )
-    return f"{INSTRUCTIONS}\n{scenes.BROLL_SHARED_RULES}\n\n{kinds}"
+    told = INSTRUCTIONS.replace("{gave_up}", GAVE_UP[AgentFix.Door(door)])
+    return f"{told}\n{scenes.BROLL_SHARED_RULES}\n\n{kinds}"
+
+
+def _tools(door: str) -> list[ToolSpec]:
+    """The agent's tools, say_to_camera described as giving up does at `door`."""
+    specs = [tool.spec() for tool in TOOLS]
+    if door != AgentFix.Door.OWNER:
+        return specs
+    return [
+        replace(spec, description=SAY_TO_CAMERA_FOR_A_NOTE)
+        if spec.name == SayToCamera.name
+        else spec
+        for spec in specs
+    ]
 
 
 # What a video prompt may not say: the video model ignores bans (A2).
@@ -280,9 +314,9 @@ def _work(fixing: AgentFix) -> None:
             turn = take_turn(
                 session=fixing.step.tool_call.session,
                 purpose=PURPOSE,
-                instructions=instructions(),
+                instructions=instructions(fixing.door),
                 conversation=_fit(_conversation(fixing)),
-                tools=[tool.spec() for tool in TOOLS],
+                tools=_tools(fixing.door),
                 since=fixing.created_at,
             )
         with transaction.atomic():
@@ -715,7 +749,7 @@ class SayToCamera(Tool):
         fixing.gave_up = self.reason
         fixing.picked = self.best_try
         fixing.save(update_fields=["gave_up", "picked"])
-        return "The scene is given up: its line will be said to camera."
+        return GIVEN_UP[AgentFix.Door(fixing.door)]
 
 
 TOOLS: list[type[Tool]] = [

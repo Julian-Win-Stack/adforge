@@ -637,6 +637,32 @@ def test_an_old_plans_new_clip_the_agent_fixes_with_a_new_line_lands(
     assert [cut["clip"] for cut in ads()[-1].cuts if cut["scene"] == 2] == [passed.pk]
 
 
+def test_an_agent_fixing_an_owners_note_is_told_giving_up_keeps_the_scenes_clip(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    not_made = {
+        "old_shows": "The hand hovers.",
+        "new_shows": "The hand hovers.",
+        "verdict": "not fixed",
+        "still_wrong": STILL_HOVERS,
+    }
+    fake_model.answer_unscripted(
+        "check_clip_motion", motion_answer(CLIP_MOTION_OK, owner_change=not_made)
+    )
+    owners_fix(
+        fake_model,
+        failed_clip,
+        film_again(),
+        ("say_to_camera", {"reason": "The stir never shows."}),
+    )
+    [turn_1, *_] = [each for each in fake_model.turns_taken if each.purpose == "fix_scene"]
+    assert fixing_agent.GAVE_UP[AgentFix.Door.OWNER] in turn_1.instructions
+    assert "said to camera" not in turn_1.instructions.split("The app's own prompt rules")[0]
+    said = [tool.description for tool in turn_1.tools if tool.name == "say_to_camera"]
+    assert said == [fixing_agent.SAY_TO_CAMERA_FOR_A_NOTE]
+    assert told()[-1].startswith(fixing_agent.GIVEN_UP[AgentFix.Door.OWNER])
+
+
 # --- When the agent stops ------------------------------------------------------------------
 
 
