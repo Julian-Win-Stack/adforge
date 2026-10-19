@@ -10,10 +10,12 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from agents import decider, loop, routing, run_plan
 from agents.models import SystemNote, ToolCall
+from chat import messages
 from chat.models import Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
 from gateway.types import StepFinished, Turn, UnusableReply
@@ -21,6 +23,7 @@ from jobs import fix_check, work
 from jobs.models import (
     FixCheck,
     FixPlan,
+    FixPlanScene,
     Job,
     ProducedItem,
     ReferencePhoto,
@@ -30,7 +33,7 @@ from jobs.models import (
 
 from .agent_tries import agent_films
 from .conftest import CLIP_SIDES_OK, MUG_SIDE, HeldSteps, producer_turns
-from .fixing import fixed
+from .fixing import fixed, owner_photo, plan_row, planned
 from .test_fix_check import HANDLE_HIDDEN, not_made
 from .test_fix_loop import TURN_REWRITE
 from .test_producer_auto_fix import FLOATS, REMADE, REMADE_AGAIN, failing
@@ -110,6 +113,23 @@ def given_to_the_producer(fake_model: FakeModel) -> list[str]:
         for each in produced[-1].handoff.conversation
         if isinstance(each, StepFinished) and each.text.startswith(loop.SYSTEM_NOTE)
     ]
+
+
+def stored(*rows: FixPlanScene, note: str) -> FixPlan:
+    """A plan stored before the fixing agent, with B-roll rows the decider no longer answers,
+    shown and waiting for its yes; its note was routed, as the chat routed it then."""
+    plan = planned(*rows, note=note)
+    Message.objects.filter(role="user", routed_at__isnull=True).update(routed_at=timezone.now())
+    return plan
+
+
+def mug_photo_sent(fake_model: FakeModel, say: Callable[..., None], text: str) -> dict[str, Any]:
+    """The shop owner's black mug photo sent in `text`, which the producer answers; the plan
+    row's photo of it, its thing only during the action."""
+    fake_model.respond("produce", turn(says="Thanks, I have your photo."))
+    say(text, ("mug.png", MUG_SIDE))
+    [sent] = messages.owner_photos(Session.objects.get())
+    return owner_photo(1, "black mug", sent.file, in_picture=False, during_action=True)
 
 
 def a_picture_note_planned(fake_model: FakeModel, say: Callable[..., None]) -> FixPlan:
@@ -332,20 +352,11 @@ def test_an_owner_photo_in_the_note_goes_with_the_clip_in_reference_mode(
     api: APIClient,
     session_id: str,
 ) -> None:
-    uses = [{"photo": 1, "in_picture": False, "during_action": True}]
-    fake_model.respond(
-        "decide_fixes",
-        planning(
-            ("look_at_owner_photo", {"photo": 1}),
-            ("look_at_clip", {"scene": 2, "version": None}),
-            decided(
-                row(2, "new_clip", "The hand pours tea into the black mug.", photos=uses),
-                photos=[{"photo": 1, "thing": "black mug", "clear": True}],
-            ),
-        ),
-    )
-    say("Pour the tea into my black mug in scene 2.", ("mug.png", MUG_SIDE))
-    [plan] = plans()
+    # A plan stored before the fixing agent: a new clip of a B-roll scene, with the photo.
+    note = "Pour the tea into my black mug in scene 2."
+    mug = mug_photo_sent(fake_model, say, note)
+    pours = plan_row(2, "new_clip", change="The hand pours tea into the black mug.", photos=[mug])
+    plan = stored(pours, note=note)
 
     tap_yes(api, session_id, plan)
 
@@ -692,16 +703,10 @@ def test_go_ahead_carries_on_only_the_scenes_it_names_when_two_checks_wait(
     api: APIClient,
     session_id: str,
 ) -> None:
-    fake_model.respond(
-        "decide_fixes",
-        planning(
-            ("look_at_picture", {"scene": 1}),
-            ("look_at_picture", {"scene": 2}),
-            decided(row(1, "new_picture", BRIGHTER), row(2, "new_picture", BRIGHTER)),
-        ),
-    )
-    say("Make the workshop brighter in scenes 1 and 2.")
-    tap_yes(api, session_id, plans()[-1])
+    # A plan stored before the fixing agent: a new picture of B-roll scene 2 beside scene 1's.
+    note = "Make the workshop brighter in scenes 1 and 2."
+    both = [plan_row(number, "new_picture", change=BRIGHTER) for number in (1, 2)]
+    tap_yes(api, session_id, stored(*both, note=note))
     fake_model.respond("choose_starting_picture", TALKING_CHOICE)
     fake_model.respond("choose_broll_picture", BROLL_CHOICE)
     fake_model.respond("check_fix", *[not_made(HANDLE_HIDDEN)] * 4)
@@ -769,15 +774,9 @@ def test_a_new_picture_keeps_the_movement_of_the_clip_it_replaces(
 ) -> None:
     # The live ad's fix 1: a picture note gave the clip a newly chosen action the shop owner
     # never asked for. Only a new clip chooses a new movement (design thread, 05:15 Oct 17).
-    fake_model.respond(
-        "decide_fixes",
-        planning(
-            ("look_at_picture", {"scene": 2}),
-            decided(row(2, "new_picture", "The mug is on a wooden table.")),
-        ),
-    )
-    say("In scene 2 put the mug on a wooden table.")
-    tap_yes(api, session_id, plans()[-1])
+    # A plan stored before the fixing agent: a new picture of a B-roll scene.
+    table = plan_row(2, "new_picture", change="The mug is on a wooden table.")
+    tap_yes(api, session_id, stored(table, note="In scene 2 put the mug on a wooden table."))
     fake_model.respond("choose_broll_picture", {**BROLL_CHOICE, "motion_prompt": LIFT})
 
     held.run_held()
@@ -797,20 +796,10 @@ def test_a_movement_note_with_a_photo_of_a_thing_in_the_picture_moves_as_the_not
 ) -> None:
     # A new clip whose photo's thing is in the picture is made a new picture, as the route
     # says; its clip still chooses its movement from the note (design thread, 05:15 Oct 17).
-    uses = [{"photo": 1, "in_picture": True, "during_action": True}]
-    fake_model.respond(
-        "decide_fixes",
-        planning(
-            ("look_at_owner_photo", {"photo": 1}),
-            ("look_at_picture", {"scene": 2}),
-            decided(
-                row(2, "new_clip", LIFT, photos=uses),
-                photos=[{"photo": 1, "thing": "black mug", "clear": True}],
-            ),
-        ),
-    )
-    say("In scene 2 the hand should lift my black mug to the camera.", ("mug.png", MUG_SIDE))
-    tap_yes(api, session_id, plans()[-1])
+    # A plan stored before the fixing agent: a new clip of a B-roll scene, with the photo.
+    note = "In scene 2 the hand should lift my black mug to the camera."
+    mug = {**mug_photo_sent(fake_model, say, note), "in_picture": True}
+    tap_yes(api, session_id, stored(plan_row(2, "new_clip", change=LIFT, photos=[mug]), note=note))
     fake_model.respond("choose_broll_picture", {**BROLL_CHOICE, "motion_prompt": LIFT})
 
     held.run_held()
@@ -830,7 +819,7 @@ def test_a_photos_thing_too_long_to_keep_is_refused_to_the_decider_which_names_i
 ) -> None:
     # A name longer than the reference photo keeps would fail the yes that uses it.
     uses = [{"photo": 1, "in_picture": False, "during_action": True}]
-    pours = row(2, "new_clip", "The hand pours tea into the black mug.", photos=uses)
+    pours = row(2, "fix", "The hand pours tea into the black mug.", photos=uses)
     fake_model.respond(
         "decide_fixes",
         planning(
@@ -902,15 +891,9 @@ def test_a_yes_that_fails_to_run_is_said_so_in_red_and_later_messages_route(
 def _a_picture_note_on_scene_2_said_yes_to(
     fake_model: FakeModel, say: Callable[..., None], api: APIClient, session_id: str
 ) -> None:
-    fake_model.respond(
-        "decide_fixes",
-        planning(
-            ("look_at_picture", {"scene": 2}),
-            decided(row(2, "new_picture", "The mug is on a wooden table.")),
-        ),
-    )
-    say("In scene 2 put the mug on a wooden table.")
-    tap_yes(api, session_id, plans()[-1])
+    # A plan stored before the fixing agent: a new picture of a B-roll scene.
+    table = plan_row(2, "new_picture", change="The mug is on a wooden table.")
+    tap_yes(api, session_id, stored(table, note="In scene 2 put the mug on a wooden table."))
     fake_model.respond("choose_broll_picture", BROLL_CHOICE)
 
 
@@ -928,15 +911,8 @@ def test_a_new_picture_keeps_the_movement_of_the_agents_try_the_judge_passed(
     fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 3)
     agent_films(monkeypatch, REMADE)
     held.run_held()
-    fake_model.respond(
-        "decide_fixes",
-        planning(
-            ("look_at_picture", {"scene": 2}),
-            decided(row(2, "new_picture", "The mug is on a marble counter.")),
-        ),
-    )
-    say("In scene 2 put the mug on a marble counter.")
-    tap_yes(api, session_id, plans()[-1])
+    counter = plan_row(2, "new_picture", change="The mug is on a marble counter.")
+    tap_yes(api, session_id, stored(counter, note="In scene 2 put the mug on a marble counter."))
     fake_model.respond("choose_broll_picture", BROLL_CHOICE)
 
     held.run_held()

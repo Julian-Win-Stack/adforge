@@ -16,7 +16,7 @@ import pytest
 
 from evals import grading_page, results, round_export
 from gateway.models import ModelCall
-from jobs.models import Job, ProducedItem, SceneStep
+from jobs.models import AgentFix, Job, ProducedItem, SceneStep
 
 from .test_producer_auto_fix import FLOATS, SPINS, remade_once, remade_twice  # noqa: F401
 from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
@@ -154,6 +154,7 @@ def test_a_first_clip_step_that_made_no_clip_is_passed_for_the_one_asked_again(
     again.pk = None
     again.save()
     ProducedItem.objects.filter(step=remade_once).update(step=again)
+    AgentFix.objects.filter(step=remade_once).update(step=again)
 
     scene = json.loads((exported(tmp_path) / "results.json").read_text())[f"{AD}:2"]
 
@@ -165,7 +166,8 @@ def test_a_broll_scene_with_no_clip_is_named_not_left_out_silently(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    ProducedItem.objects.filter(step=remade_once).update(step=None)
+    # Its first clip and the fixing agent's tries, each in a step of its own.
+    ProducedItem.objects.filter(scene=remade_once.scene, kind="clip").update(step=None)
 
     run = exported(tmp_path)
 

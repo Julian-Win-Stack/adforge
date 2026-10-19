@@ -71,19 +71,26 @@ the picture shows, and at its clip's frames for what happens or how things move.
 judge's findings on a clip are for notes about how things move, a product that flips to \
 another side, or the action not happening; don't look at them for anything else. Look at \
 each of the shop owner's photos you use.
-Then decide, for each scene the notes are about, the smallest thing to make again that \
-fixes it:
-- a new picture, when what the picture shows is wrong: the wrong side, the wrong thing on \
-screen, something that couldn't be real, a colour. "Zoom in" is a new picture, closer: the \
-camera never moves. A new picture gets a new clip made from it;
-- a new clip, when how things move or what happens is wrong;
-- a new line, when what the scene says should change: give the new line word for word. \
-A new line keeps the scene's starting picture: plan a new picture only when the shop owner \
-asks for something different on screen. When they ask for both on one scene, it is a new \
-picture with the new line in its line, and its change says only what must look different \
-on screen, never the words to say. \
-When the scene has an overlay, the few words drawn over it such as the price, and the new \
-line changes something it shows, give the new overlay too;
+Then decide, for each scene the notes are about, what changes in it:
+- a fix, in a scene that shows the product rather than the person talking. A fixing agent \
+then owns that scene until the change is made. It sees everything you can see, and it may \
+change what happens in the scene and how it ends, its starting picture, what is said in it, \
+its kind of B-roll, whether the person's face shows, and how close the camera is. It films \
+the scene again up to 6 times, each try checked for the shop owner's change, and never asks \
+the shop owner anything. When it can't film the change well, the scene stays as it was and \
+the shop owner is shown its tries. The fix's change is its goal: one sentence in the shop \
+owner's own words saying what must be different, with any words they give to say in it \
+word for word. When the scene has an overlay, the few words drawn over it such as the \
+price, and the fix changes something it shows, give the new overlay too;
+- in a scene where the person talks to camera, which the fixing agent doesn't film, a new \
+picture or a new line. A new picture, when what the picture shows is wrong: the wrong thing \
+on screen, something that couldn't be real, a colour. "Zoom in" is a new picture, closer: \
+the camera never moves. A new line, when what the scene says should change: give the new \
+line word for word. A new line keeps the scene's starting picture: plan a new picture only \
+when the shop owner asks for something different on screen. When they ask for both on one \
+scene, it is a new picture with the new line in its line, and its change says only what \
+must look different on screen, never the words to say. When the scene has an overlay and \
+the new line changes something it shows, give the new overlay too;
 - go back to version N, when they liked an earlier version better: say which number, after \
 looking at it;
 - no change, when the scene already shows what they ask, or a scene of the plan they \
@@ -529,11 +536,14 @@ class SceneDecision(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     scene: int
-    action: Literal["new_picture", "new_clip", "new_line", "go_back", "no_change"]
+    # The old new_clip is no answer any more: a B-roll scene's change is a fix, made by the
+    # fixing agent; a new picture or a new line is a talking scene's (fixing agent build, T3).
+    action: Literal["fix", "new_picture", "new_line", "go_back", "no_change"]
     change: str = Field(
-        description="What must be different, in plain words, never how to make it. For a new "
-        "picture with a new line, only what must look different, never the words to say. For no "
-        "change, why in one line; blank only when its can't says why."
+        description="What must be different, in plain words, never how to make it. For a fix, "
+        "its goal: one sentence in the shop owner's own words. For a new picture with a new "
+        "line, only what must look different, never the words to say. For no change, why in "
+        "one line; blank only when its can't says why."
     )
     line: str = Field(
         description="The new line word for word, for new_line, or for new_picture when the "
@@ -541,9 +551,9 @@ class SceneDecision(BaseModel):
     )
     overlay: str = Field(
         default="",
-        description="With a new line that changes something the scene's overlay shows, such "
-        f"as the price: the new overlay, {planning.MOST_OVERLAY_CHARACTERS} characters at "
-        "most. Blank keeps the overlay.",
+        description="With a fix or a new line that changes something the scene's overlay "
+        f"shows, such as the price: the new overlay, {planning.MOST_OVERLAY_CHARACTERS} "
+        "characters at most. Blank keeps the overlay.",
     )
     go_back_to: int | None = Field(description="The version's number, for go_back. Null otherwise.")
     cant: Literal["", "person_look", "slower", "talking_action"] = Field(
@@ -561,7 +571,7 @@ class SceneDecision(BaseModel):
             raise ValueError(
                 f"scene {self.scene} has a line, but only a new line or a new picture takes one"
             )
-        if self.overlay.strip() and not self.line.strip():
+        if self.overlay.strip() and not self.line.strip() and self.action != "fix":
             raise ValueError(f"scene {self.scene} has an overlay, but no new line to go with it")
         if len(" ".join(self.overlay.split())) > planning.MOST_OVERLAY_CHARACTERS:
             raise ValueError(
@@ -616,6 +626,7 @@ class Decide(Tool):
                 raise Refused(f"scene {decided.scene} is decided twice.")
             seen.add(decided.scene)
             scene = _scene(decided.scene)
+            _of_its_kind(scene, decided)
             self._looked(round, decided)
             for used in decided.photos:
                 if used.photo not in things:
@@ -683,6 +694,21 @@ class Decide(Tool):
                 f"look at scene {decided.scene}'s clip first: you say the photo's thing shows "
                 "there only during the action."
             )
+
+
+def _of_its_kind(scene: Scene, decided: SceneDecision) -> None:
+    """Refuse a fix of a scene where the person talks to camera, which the fixing agent
+    doesn't film, and a new picture or a new line of a B-roll scene, which the agent fixes."""
+    if decided.action == "fix" and not scene.shows:
+        raise Refused(
+            f"scene {decided.scene} shows the person talking to camera, which the fixing agent "
+            "doesn't film: change it with a new picture or a new line."
+        )
+    if decided.action in ("new_picture", "new_line") and scene.shows:
+        raise Refused(
+            f"scene {decided.scene} is a B-roll scene: its change is a fix, which the fixing "
+            "agent makes."
+        )
 
 
 def _looked_at(round: _Round, tool: str, **arguments: int) -> bool:

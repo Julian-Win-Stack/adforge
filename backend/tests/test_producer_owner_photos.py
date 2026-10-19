@@ -431,7 +431,7 @@ def test_a_note_per_photo_planned_together_takes_each_photo_by_its_number(
                         "scenes": [
                             {
                                 "scene": 2,
-                                "action": "new_picture",
+                                "action": "fix",
                                 "change": "In scene 2, the black mug and their own tea.",
                                 "line": "",
                                 "go_back_to": None,

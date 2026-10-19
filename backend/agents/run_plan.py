@@ -48,10 +48,12 @@ from .producer import (
     Estimate,
     _clip_estimate,
     _current_picture,
+    _each_call_usd,
     _estimate,
     _latest_clip,
     _line_estimate,
     _listed,
+    _picture_only_estimate_usd,
     _seconds_to_say,
     _use_the_photos,
     assemble_the_ad,
@@ -61,6 +63,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "FIX_PLAN",
+    "agent_gave_up",
     "carry_on_scene",
     "check_and_propose",
     "first_making",
@@ -75,10 +78,13 @@ __all__ = [
 # The agent name on the tool calls code makes for a plan's steps: the producer is given only
 # its own (loop._finished_steps), so it is never woken by them or given their results.
 FIX_PLAN = "fix_plan"
+# The fixing agent's purpose in the gateway's catalog (spec section 3).
+FIXING_AGENT_PURPOSE = "fix_scene"
 
 Action = FixPlanScene.Action
 
 _REDO = {
+    Action.FIX: Fix.Redo.SCENE,
     Action.NEW_PICTURE: Fix.Redo.PICTURE,
     Action.NEW_CLIP: Fix.Redo.CLIP,
     Action.NEW_LINE: Fix.Redo.LINE,
@@ -177,6 +183,16 @@ def _rule_cant(row: FixPlanScene) -> str:
     number = scene.number
     if _before_its_clip(scene):
         return f"Scene {number} has no clip yet, so its note goes into making it."
+    if row.action == Action.FIX and not scene.shows:
+        return (
+            f"Scene {number} shows the person talking, and the fixing agent only films scenes "
+            "that show the product. Its picture or its line can change instead."
+        )
+    if row.action == Action.FIX and not scene.broll_kind:
+        return (
+            f"Scene {number} was planned before scenes had their B-roll labels, so it can't be "
+            "filmed again by the fixing agent. Its picture can change instead."
+        )
     if row.action == Action.NEW_CLIP and not scene.shows:
         return (
             f"Scene {number} shows the person talking, and the movement of a talking clip "
@@ -270,11 +286,13 @@ def _row_estimate(row: FixPlanScene, counted: set[tuple[str, str]]) -> Estimate:
     row of the plan taking each thing from a photo, its clean picture, unless one was already
     drawn for the ad. `counted` holds the photos already counted."""
     scene = row.scene
-    if row.action == Action.GO_BACK:
+    if row.action == Action.FIX:
+        estimate = _fix_estimate(scene)
+    elif row.action == Action.GO_BACK:
         if not row.remakes_clip:
             return Estimate(Decimal(0), Decimal(0))
         return _quantized(_clip_estimate(scene, _audio_seconds(scene), from_note=False))
-    if row.line:
+    elif row.line:
         # A new picture asked for with a new line: both, then the clip. A new line keeps the
         # picture, or draws one for a scene that has none.
         new_picture = row.action == Action.NEW_PICTURE or _shown_picture(scene) is None
@@ -293,6 +311,26 @@ def _row_estimate(row: FixPlanScene, counted: set[tuple[str, str]]) -> Estimate:
         counted.add(key)
         clean += CLEAN_PICTURE_USD
     return Estimate(estimate.about + clean, estimate.up_to + clean)
+
+
+# The fixing agent's turns for one try: a look or two, then film_again. A GUESS, until real
+# runs of the agent in the app are recorded (fixing agent build, T3).
+AGENT_TURNS_PER_TRY = 3
+# The most tries the fixing agent makes of one scene (spec section 3, the money guard).
+MOST_TRIES = 6
+
+
+def _fix_estimate(scene: Scene) -> Estimate:
+    """What a fix row is estimated to cost: one try of the fixing agent (a new starting
+    picture, its clip and the clip judge's asks, which check the shop owner's change too, and
+    the agent's turns), up to MOST_TRIES of them."""
+    clip = _clip_estimate(scene, _audio_seconds(scene), from_note=False)
+    one_try = (
+        _picture_only_estimate_usd(scene)
+        + clip.about
+        + AGENT_TURNS_PER_TRY * _each_call_usd(scene, [FIXING_AGENT_PURPOSE])
+    )
+    return _quantized(Estimate(one_try, MOST_TRIES * one_try))
 
 
 def _quantized(estimate: Estimate) -> Estimate:
@@ -337,6 +375,8 @@ def _line_of(row: FixPlanScene) -> str:
 
 
 def _what(row: FixPlanScene) -> str:
+    if row.action == Action.FIX:
+        return "fixed by the fixing agent, to this goal"
     if row.action == Action.NEW_PICTURE and row.line:
         return f'new starting picture and new line, "{row.line}", then its clip'
     if row.action == Action.NEW_PICTURE:
@@ -489,6 +529,8 @@ def _made(row: FixPlanScene) -> str:
     """What the row makes, as "new starting picture"."""
     if row.action == Action.GO_BACK:
         return f"go back to version {row.go_back_to}"
+    if row.action == Action.FIX:
+        return "fix"
     if row.action == Action.NEW_PICTURE and row.line:
         return "new starting picture and new line"
     return {
@@ -618,7 +660,13 @@ def step_finished(step: SceneStep, check: FixCheck | None) -> None:
     if check is not None and check.verdict == FixCheck.Verdict.UNCHECKED:
         _say_it_wasnt_checked(row, check)
     passed = check is None or check.verdict == FixCheck.Verdict.PASSED
-    if step.kind == SceneStep.Kind.CLIP and step.scene.shows and passed:
+    # A fix row's clip is a try the judge passed: the fixing agent keeps no failed one.
+    if (
+        step.kind == SceneStep.Kind.CLIP
+        and step.scene.shows
+        and passed
+        and row.action != Action.FIX
+    ):
         _say_what_the_judge_kept(row, step)
     _carry_on(row)
     _assemble_once_landed(row.plan)
@@ -714,6 +762,9 @@ def _carry_on(row: FixPlanScene) -> None:
     running = set(
         scene.steps.filter(status=SceneStep.Status.RUNNING).values_list("kind", flat=True)
     )
+    if row.action == Action.FIX:
+        _carry_on_fix(row, scene, running)
+        return
     if row.action == Action.GO_BACK and row.brought_back is None:
         if running & {SceneStep.Kind.STARTING_PICTURE, SceneStep.Kind.CLIP}:
             return
@@ -784,6 +835,76 @@ def _carry_on(row: FixPlanScene) -> None:
         picture_step=picture.step,
         motion_prompt=_kept_motion(row, scene, picture),
     )
+
+
+def _carry_on_fix(row: FixPlanScene, scene: Scene, running: set[str]) -> None:
+    """A fix row (door 2): its scene is handed to the fixing agent, on a clip step of its own
+    made from the scene as the shop owner sees it, once the scene is free; the row lands once
+    a try passed and is the step's clip. A step that gave up or failed is the worker's to
+    end the row with (`agent_gave_up`, `step_failed`)."""
+    steps = row.steps.filter(kind=SceneStep.Kind.CLIP)
+    # The passing try is filmed in a step of the agent's own, so the row's step holds none.
+    if steps.filter(status=SceneStep.Status.FINISHED, agent_fix__passed__isnull=False).exists():
+        # The overlay the plan showed is drawn once the scene is fixed: a give-up keeps the
+        # scene as it was.
+        if row.overlay and scene.overlay != row.overlay:
+            scene.overlay = row.overlay
+            scene.save(update_fields=["overlay"])
+        _landed(row)
+        return
+    if steps.exists() or running:
+        return
+    picture = _shown_picture(scene)
+    if picture is None:
+        _failed(row, f"Scene {scene.number} has no starting picture for the fixing agent.")
+        return
+    audio = _audio(scene)
+    if audio is None or not _heard(audio):
+        _failed(row, f"Scene {scene.number}'s clip couldn't be made: its line has no audio.")
+        return
+    _start(
+        row,
+        scene,
+        SceneStep.Kind.CLIP,
+        note=row.change,
+        made_from=audio,
+        picture=picture,
+        picture_step=picture.step,
+    )
+
+
+def agent_gave_up(step: SceneStep, reason: str) -> None:
+    """The fixing agent gave up on a fix row's scene (door 2, spec section 5), once its step
+    is marked failed: the scene's clip from before the plan is its clip again, for nothing,
+    the shop owner is told in one line why, and shown every try to pick from (#180), and the
+    row ends with the agent's reason. The other scenes carry on to the new ad."""
+    row = step.plan_scene
+    assert row is not None, "a fix row's step runs one of its rows"
+    scene = Scene.objects.get(pk=step.scene_id)
+    before = step.shown_before(ProducedItem.Kind.CLIP)
+    made = work.versions(scene)
+    if before is not None and made and made[-1].clip != before:
+        back_to = next((version.number for version in made if version.clip == before), None)
+        work.bring_back_clip(before, back_to=back_to)
+    reason = " ".join(reason.split())
+    tried = bool(work.clip_tries(step))
+    post_notice(
+        row.plan.job,
+        f"Scene {scene.number} stays as it was: {reason}"
+        + (" Watch the tries, and tap one to use it instead." if tried else ""),
+        Message.Level.INFO,
+        tries_of=step.pk if tried else None,
+    )
+    row.error = reason
+    row.save(update_fields=["error"])
+    _note(
+        row.plan,
+        SystemNote.Kind.ERROR,
+        f"The fixing agent gave up on scene {scene.number}'s fix: {reason} The scene stays as "
+        "it was, and the chat showed the shop owner its tries.",
+    )
+    _assemble_once_landed(row.plan)
+    carry_on_scene(scene, but=row)
 
 
 def _kept_motion(row: FixPlanScene, scene: Scene, picture: ProducedItem) -> str:

@@ -64,7 +64,7 @@ def clip_of_scene_2(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., 
     made_ready(fake_model, steps, say, (2,))
     calling(fake_model, say, ("make_clip", {"scene": 2}))
     run(fake_model, steps)
-    return SceneStep.objects.filter(kind="clip", scene__number=2).order_by("id").first()
+    return SceneStep.objects.filter(kind="clip", scene__number=2).order_by("id")[0]
 
 
 def clips() -> list[int]:

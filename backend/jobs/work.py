@@ -2004,7 +2004,7 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
     # A picture fix's clip too, when the fix has the shop owner's photo of a thing that only
     # shows during the clip: the picture's check can't see it (design thread 22:42).
     clip = step.kind == SceneStep.Kind.CLIP and (
-        fix.redo == Fix.Redo.CLIP or bool(clip_judge.during_the_clip(fix))
+        fix.redo in (Fix.Redo.CLIP, Fix.Redo.SCENE) or bool(clip_judge.during_the_clip(fix))
     )
     if not (picture or clip):
         return None
@@ -2056,6 +2056,17 @@ def to_draw_again(check: FixCheck | None) -> bool:
         step = step.redraw_of
         redraws += 1
     return redraws < fix_check.MOST_REDRAWS
+
+
+def change_not_made(clip: ProducedItem) -> str:
+    """Why the clip judge found the shop owner's change not made in `clip`, judged beside the
+    clip they complained about, or blank when it found it made or couldn't tell. A fixing
+    agent's try at a fix plan's fix row passes only when this is blank and the judge passed
+    the clip (fixing agent build, spec section 11); elsewhere the answer is only kept."""
+    settled = _the_clip_judges_answer(clip)
+    if settled.verdict != "failed":
+        return ""
+    return settled.reason or "the shop owner's change isn't made."
 
 
 def _the_clip_judges_answer(new: ProducedItem) -> fix_check.Settled:
@@ -2397,12 +2408,49 @@ def make_clip(step: SceneStep) -> ProducedItem:
     Run again, as after a worker stopped, it pays for nothing already paid for: a clip
     asked for is waited for rather than asked for again, and one fetched is kept rather
     than fetched again."""
+    if step.fix is not None and step.fix.redo == Fix.Redo.SCENE:
+        return _fixed_by_the_agent(step)
     made = step.produced.order_by("id").first()
     if made is None:
         made = _make_clip(step)
     if step.shows and settings.QUALITY_CHECKS:
         return _auto_fixed(step, made)
     return made
+
+
+class AgentGaveUp(Exception):
+    """The fixing agent gave up on a fix plan's fix row: the scene stays as it was, and the
+    shop owner is shown its tries (door 2, fixing agent build T3)."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+def _fixed_by_the_agent(step: SceneStep) -> ProducedItem:
+    """A fix plan's fix row (door 2): the fixing agent owns the scene, from the shop owner's
+    note and the goal the decider wrote of it, until a try passes the clip judge and has the
+    change, or it gives up. Gives the passing try's clip; raises AgentGaveUp."""
+    # The agent works the job's steps, so it is imported when it is used, as tasks.py is.
+    from agents import fixing_agent
+
+    fix = step.fix
+    assert fix is not None, "a fix row's step has its Fix"
+    before = step.shown_before(ProducedItem.Kind.CLIP)
+    outcome = fixing_agent.fix_scene(
+        step,
+        door="owner",
+        failure=fixing_agent.Failure(
+            note="\n".join(note["text"] for note in fix.notes),
+            ruling=before.ruling if before is not None else None,
+            clip=before,
+        ),
+        goal=fix.fix,
+    )
+    if outcome.passed is None:
+        raise AgentGaveUp(outcome.gave_up or "it couldn't film the change well.")
+    passed: ProducedItem = outcome.passed
+    return passed
 
 
 def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
@@ -2593,9 +2641,10 @@ def _clip_tries(step: SceneStep) -> list[ProducedItem]:
     fixing agent filmed (each in a step of its own). A clip brought back as the one kept
     isn't another."""
     first = step.produced.filter(kind=ProducedItem.Kind.CLIP).order_by("id").first()
-    assert first is not None, "the step made its clip"
     filmed = AgentFixTry.objects.filter(agent_fix__step=step, clip__isnull=False).order_by("number")
-    return [first, *(each.clip for each in filmed.select_related("clip") if each.clip)]
+    tries = [each.clip for each in filmed.select_related("clip") if each.clip]
+    # A fix row's step (door 2) films nothing itself: its try 0 is the clip from before.
+    return [first, *tries] if first is not None else tries
 
 
 def try_name(clip: ProducedItem) -> str:

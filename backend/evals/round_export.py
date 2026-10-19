@@ -33,6 +33,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from django.db.models import Q
+
 BROLL_MADE = ("make_broll_clip", "collect_broll_clip")
 VIDEO_PROVIDERS = ("creatify", "heygen")
 SAFE_FOLDER = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -74,7 +76,13 @@ def _clip(clip: Any) -> dict[str, Any]:
 def _redo_cost(step: Any) -> float:
     """What the judge and the remakes cost on a clip step: its model calls, less making and
     collecting its first clip."""
-    calls = list(step.tool_call.model_calls.order_by("id")) if step.tool_call else []
+    from gateway.models import ModelCall
+
+    calls = list(
+        ModelCall.objects.filter(
+            Q(tool_call=step.tool_call) | Q(tool_call__agent_fix__step=step)
+        ).order_by("id")
+    )
     first_made = {
         made
         for purpose in BROLL_MADE
@@ -88,9 +96,16 @@ def _first_clip_step(scene: Any) -> tuple[Any, list[Any]] | None:
     clips oldest first; a step that failed before making one (and was asked again) is passed."""
     from jobs.models import ProducedItem, SceneStep
 
-    steps = SceneStep.objects.filter(scene=scene, kind=SceneStep.Kind.CLIP, fix__isnull=True)
+    steps = SceneStep.objects.filter(
+        scene=scene, kind=SceneStep.Kind.CLIP, fix__isnull=True
+    ).exclude(tool_call__agent="fixing_agent")
     for step in steps.order_by("id"):
-        made = list(step.produced.filter(kind=ProducedItem.Kind.CLIP).order_by("id"))
+        # The fixing agent films each try in a step of its own, charged to the agent's call.
+        made = list(
+            ProducedItem.objects.filter(kind=ProducedItem.Kind.CLIP, scene=scene)
+            .filter(Q(step=step) | Q(step__tool_call__agent_fix__step=step))
+            .order_by("id")
+        )
         if made:
             return step, made
     return None
