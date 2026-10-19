@@ -804,6 +804,15 @@ def _carry_on(row: FixPlanScene) -> None:
         if row.overlay and scene.overlay != row.overlay:
             scene.overlay = row.overlay
             scene.save(update_fields=["overlay"])
+    if row.steps.filter(
+        kind=SceneStep.Kind.CLIP,
+        status=SceneStep.Status.FINISHED,
+        agent_fix__passed__isnull=False,
+    ).exists():
+        # The judge failed the row's clip and a try of the fixing agent's passed: the try is
+        # the scene's clip, made for the scene as the agent left it.
+        _landed(row)
+        return
     picture = _picture(row, scene, running)
     if row.line and not _line_heard(row, scene, running):
         return

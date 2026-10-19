@@ -364,19 +364,13 @@ def _ended(fixing: AgentFix) -> bool:
 
 
 def _finish(fixing: AgentFix) -> None:
-    """End the fixing: a passing try's row stays the scene's and becomes `step`'s too; a
-    give-up puts the scene back as it was before try 1."""
+    """End the fixing: a passing try's row stays the scene's, carried by the try's own step
+    (the step fixed keeps the row its first clip says); a give-up puts the scene back as it
+    was before try 1."""
     if fixing.finished_at is not None:
         return
     with transaction.atomic():
-        if fixing.passed_id is not None:
-            scene = fixing.step.scene
-            scene.refresh_from_db()
-            step = fixing.step
-            for field, value in SceneStep.made_for(scene).items():
-                setattr(step, field, value)
-            step.save(update_fields=list(SceneStep.made_for(scene)))
-        else:
+        if fixing.passed_id is None:
             _put_back(fixing.step.scene, fixing.scene_before)
         fixing.finished_at = timezone.now()
         fixing.save(update_fields=["finished_at"])

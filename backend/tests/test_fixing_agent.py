@@ -27,7 +27,9 @@ from .conftest import (
     handoffs,
     motion_answer,
 )
-from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing, judged
+from .fixing import fixed as fixed_by_a_plan
+from .test_pick_from_tries import made_ad  # noqa: F401 (a fixture)
+from .test_producer_auto_fix import FLOATS, REMADE, clip_of_scene_2, failing, judged, rewrite
 from .test_producer_broll import (
     LINE_2,
     SHOWS,
@@ -35,6 +37,7 @@ from .test_producer_broll import (
     checked,  # noqa: F401 (a fixture)
     instructed,  # noqa: F401 (a fixture)
 )
+from .test_producer_picture_then_clip import ads
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -200,12 +203,24 @@ def new_line_passes(fake_model: FakeModel, failed_clip: SceneStep) -> Outcome:
     return fixed(failed_clip)
 
 
-def test_a_passing_tries_row_is_the_scenes_and_its_steps(
+def test_a_passing_tries_row_is_the_scenes_and_its_try_steps(
     new_line_passes: Outcome, failed_clip: SceneStep
 ) -> None:
     assert scene_row() == (NEW_LINE, STIRS, "", "showcase", "no face")
+    passed = new_line_passes.passed
+    assert passed is not None and passed.step is not None
+    assert (passed.step.line, passed.step.shows) == (NEW_LINE, STIRS)
+    # The step the agent fixed keeps the row its first clip was made for, as that clip says.
     failed_clip.refresh_from_db()
-    assert (failed_clip.line, failed_clip.shows) == (NEW_LINE, STIRS)
+    assert (failed_clip.line, failed_clip.shows) == (LINE_2, SHOWS)
+
+
+def test_going_back_to_the_first_clip_after_a_new_line_passed_makes_a_new_clip(
+    new_line_passes: Outcome,
+) -> None:
+    scene = Scene.objects.get(number=2)
+    assert not work.go_back_is_free(scene, 1)
+    assert work.go_back(scene, 1).clip_to_make
 
 
 def test_a_new_line_is_said_again_and_its_clip_speaks_it(
@@ -502,6 +517,44 @@ def test_a_try_whose_owners_change_isnt_made_fails_though_the_judge_passes_it(
     assert made.fix_check is not None and made.fix_check["verdict"] == "failed"
     assert outcome.passed is None and outcome.gave_up == "The stir never shows."
     assert f"Whether the owner's change is made: no. {STILL_HOVERS}" in told()[0]
+
+
+# --- An old plan's new clip ----------------------------------------------------------------
+
+SLOWER = "Pour the tea slower."
+
+
+def failing_first(clips: int) -> Callable[[Any], dict[str, Any]]:
+    """MOTION failing every answer about the first `clips` clips judged, passing after,
+    each with the shop owner's change made."""
+    failed = iter([failing(FLOATS)] * 3 * clips)
+
+    def answering(request: Any) -> dict[str, Any]:
+        return motion_answer(next(failed, CLIP_MOTION_OK))(request)
+
+    return answering
+
+
+def test_an_old_plans_new_clip_the_agent_fixes_with_a_new_line_lands(
+    made_ad: ProducedItem,  # noqa: F811
+    fake_model: FakeModel,
+    steps: HeldSteps,
+) -> None:
+    plan = fixed_by_a_plan(2, "new_clip", change=SLOWER, note=SLOWER)
+    fake_model.respond("rewrite_clip_prompt", rewrite(REMADE))
+    fake_model.answer_unscripted("check_clip_motion", failing_first(1))
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond(
+        "fix_scene", turn(calls=[film_again(line=NEW_LINE, shows=STIRS, video_prompt=STIRS)])
+    )
+
+    steps.run_held()
+
+    passed = AgentFix.objects.get().passed
+    assert passed is not None and scene_row()[0] == NEW_LINE
+    row = plan.scenes.get()
+    assert (row.landed_at is not None, row.error) == (True, "")
+    assert [cut["clip"] for cut in ads()[-1].cuts if cut["scene"] == 2] == [passed.pk]
 
 
 # --- When the agent stops ------------------------------------------------------------------
