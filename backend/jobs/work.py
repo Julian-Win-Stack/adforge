@@ -685,6 +685,7 @@ def plan(job: Job) -> ProducerDecision:
                 part=scene.part or "",
                 second_state=scene.second_state,
                 **scene.broll_details(),
+                owner_part=scene.owner_part.model_dump() if scene.owner_part else None,
             )
             for number, scene in enumerate(planned.scenes, start=1)
         )
