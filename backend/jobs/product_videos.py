@@ -1,9 +1,10 @@
 """Product videos: the videos the shop placed with the product photos in the product's
 gallery, as the photo picker picks them off the page. Each is kept with the job as a file
 with its first frame, frames spread over it and its length; or, when no file can be had, as
-its link with the page's poster or the player's thumbnail as its first frame. Nothing uses
-them yet."""
+its link with the page's poster or the player's thumbnail as its first frame. What a file
+says is written down as its transcript. Nothing uses them yet."""
 
+import logging
 import mimetypes
 import re
 import subprocess
@@ -16,9 +17,11 @@ from django.conf import settings
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
-from gateway.gateway import IMAGE_TYPES
+from gateway.gateway import IMAGE_TYPES, transcribe
 from jobs import page
 from jobs.models import Job, ProductVideo
+
+logger = logging.getLogger(__name__)
 
 # The biggest video file kept. A bigger one is kept as its link.
 MAX_VIDEO_BYTES = 50_000_000
@@ -36,6 +39,8 @@ _READ_ONLY_THE_FILE = [
     "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm",
 ]
 _TIMEOUT_SECONDS = 120
+# A video's transcript when nothing is said in it.
+MUSIC_ONLY = "music only"
 
 
 def save_videos(job: Job, players: Sequence[dict[str, Any]]) -> list[ProductVideo]:
@@ -178,3 +183,61 @@ def _still(src: str, poster: str, folder: str) -> str:
             extension = mimetypes.guess_extension(still.content_type) or ""
             return file_store.save(f"{folder}-first{extension}", still.content)
     return ""
+
+
+def transcribe_videos(job: Job) -> None:
+    """Write down the words said in each of the job's video files, through the app's
+    speech-to-text, as the video's transcript: MUSIC_ONLY when nothing is said. A video
+    whose sound can't be written down is left without one, and the page is read as ever."""
+    for video in job.videos.exclude(file=""):
+        try:
+            video.transcript = _transcript(job, video)
+        except Exception:
+            # The failed call is recorded with its error; the ad is planned without it.
+            logger.exception("Product video %s couldn't be written down", video.pk)
+            continue
+        video.save(update_fields=["transcript"])
+
+
+def _transcript(job: Job, video: ProductVideo) -> str:
+    with tempfile.TemporaryDirectory() as folder:
+        file = Path(folder) / f"video{Path(video.file).suffix}"
+        file.write_bytes(file_store.read(video.file))
+        # A video with no sound track has nothing said in it.
+        if not _has_sound(file):
+            return MUSIC_ONLY
+        sound = Path(folder) / "sound.wav"
+        _sound(file, sound)
+        audio_key = file_store.save(
+            f"jobs/{job.pk}/videos/{video.position}-sound.wav", sound.read_bytes()
+        )
+    heard = transcribe(job=job, purpose="transcribe_video", audio_key=audio_key)
+    return heard.text.strip() or MUSIC_ONLY
+
+
+def _has_sound(file: Path) -> bool:
+    probed = subprocess.run(
+        [settings.FFPROBE, "-v", "error", *_READ_ONLY_THE_FILE, "-select_streams", "a"]
+        + ["-show_entries", "stream=index", "-of", "csv=p=0", str(file)],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=_TIMEOUT_SECONDS,
+    )
+    if probed.returncode != 0:
+        raise RuntimeError(f"ffprobe failed: {probed.stderr[-2000:]}")
+    return bool(probed.stdout.strip())
+
+
+def _sound(file: Path, wav: Path) -> None:
+    """Write the video's sound to `wav`, as a mono WAV speech-to-text hears well."""
+    ran = subprocess.run(
+        [settings.FFMPEG, "-nostdin", "-hide_banner", "-loglevel", "error"]
+        + [*_READ_ONLY_THE_FILE, "-i", str(file), "-vn", "-ac", "1", "-ar", "16000"]
+        + ["-c:a", "pcm_s16le", str(wav)],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        timeout=_TIMEOUT_SECONDS,
+    )
+    if ran.returncode != 0:
+        raise RuntimeError(f"ffmpeg failed: {ran.stderr.decode(errors='replace')[-2000:]}")

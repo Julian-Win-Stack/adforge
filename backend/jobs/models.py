@@ -215,6 +215,13 @@ class ProductVideo(models.Model):
         help_text="Keys of frames spread over the file, first to last; none without a file.",
     )
     duration = models.FloatField(null=True, blank=True, help_text="Seconds; none without a file.")
+    transcript = models.TextField(
+        blank=True,
+        help_text=(
+            'The words said in the file, or "music only" when nothing is said; blank without '
+            "a file, or when it couldn't be written down."
+        ),
+    )
 
     class Meta:
         ordering = ["job", "position"]

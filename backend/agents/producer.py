@@ -30,7 +30,7 @@ from jobs.models import (
     SceneStep,
 )
 from jobs.notices import post_notice
-from jobs.product_videos import save_videos
+from jobs.product_videos import save_videos, transcribe_videos
 from jobs.work import (
     DECLARED_INSTEAD,
     SkippedPhoto,
@@ -226,8 +226,10 @@ class ReadPage(Tool):
                 declared = True
             elif skipped:
                 post_notice(job, _not_downloaded(skipped), Message.Level.PROBLEM)
-        # The gallery videos the picker picked, kept for later: nothing uses them yet.
+        # The gallery videos the picker picked, and what each says, kept for later: nothing
+        # uses them yet.
         save_videos(job, list(picked.videos))
+        transcribe_videos(job)
         # Only once every photo is kept: a worker that stops part-way through them leaves the
         # page unread, so the read run again keeps them all rather than the few already kept.
         keep_page(job, download, product_page, text)

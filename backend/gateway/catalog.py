@@ -61,6 +61,8 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "measure_voice": "inworld-tts-2",
     "speak_line": "inworld-tts-2",
     "transcribe_line": "scribe_v2",
+    # What a product video says: the same speech-to-text as a line's audio.
+    "transcribe_video": "scribe_v2",
     # A clip is asked for, then waited for and fetched: two calls, only the first paid. Each
     # kind has its own model: HeyGen's talking clips passed the blind-graded eval (#87) 8 of
     # 8; B-roll is Boreal-H3, on Creatify's own API (docs/broll-picture-logic.md, item 31).
@@ -82,6 +84,10 @@ SLOW_ANSWER_SECONDS: dict[str, float] = {
 }
 
 # US dollars per million tokens: (input, output). From OpenAI's pricing page.
+# The audio for these may have nothing said in it, as a product video's music: for every
+# other purpose, audio with no word heard is refused.
+NOTHING_SAID_IS_FINE = {"transcribe_video"}
+
 PRICE_PER_MILLION_TOKENS: dict[str, tuple[Decimal, Decimal]] = {
     "gpt-5-mini": (Decimal("0.25"), Decimal("2.00")),
     "gpt-6-luna": (Decimal("0.10"), Decimal("0.50")),
