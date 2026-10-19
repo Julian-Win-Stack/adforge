@@ -10,7 +10,6 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from adforge import file_store
-from agents import page_panel
 from agents.tasks import another_session_is_busy, hold_one_at_a_time_lock, wake_producer
 from gateway.gateway import IMAGE_TYPE_NAMES, IMAGE_TYPES
 from jobs import work
@@ -82,6 +81,7 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
             "use_clip",
             "pasted_page",
             "pasted_page_result",
+            "wants_pasted_page",
         ]
 
     def get_step(self, message: Message) -> dict[str, object] | None:
@@ -347,7 +347,7 @@ def _refuse_paste(session: Session, photos: list[UploadedFile[bytes]]) -> str | 
     """Why the page panel's message in `session` is refused, or None to keep it: the chat
     must be waiting for the page to be pasted, and the page must come with a photo. A page
     with no photo can't be made into an ad until the whole product can be drawn from text."""
-    if not page_panel.page_panel_wanted(session):
+    if not messages.page_panel_wanted(session):
         return PAGE_PANEL_NOT_WANTED
     if not photos:
         return ATTACH_A_PHOTO

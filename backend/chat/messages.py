@@ -66,13 +66,15 @@ def add(
     chosen_clip: int | None = None,
     pasted_page: bool = False,
     pasted_page_result: str = "",
+    wants_pasted_page: bool | None = None,
 ) -> Message:
     """Say something in a session, with any files it carries, and name the session from
     the first thing the user types. A notice carries its `level`; nothing else does. A
     message about a scene's starting picture or clip carries its `step`, and one may
     suggest a note on a scene, and one about a fix plan carries its `plan`. One showing every
     try of a clip the judge failed names its clip step, `tries_of`, and the shop owner's tap
-    on one of them names the try chosen, `chosen_clip`. The page panel's message is a
+    on one of them names the try chosen, `chosen_clip`. A notice about the product page says
+    whether it wants the page panel, `wants_pasted_page`. The page panel's message is a
     `pasted_page`; it and code's notice answering it carry the `pasted_page_result`.
 
     Messages are numbered 1, 2, 3... per session. The session row is locked while
@@ -101,6 +103,7 @@ def add(
             chosen_clip_id=chosen_clip,
             pasted_page=pasted_page,
             pasted_page_result=pasted_page_result,
+            wants_pasted_page=wants_pasted_page,
         )
         Attachment.objects.bulk_create(
             Attachment(
@@ -153,6 +156,23 @@ def owner_photos(session: Session) -> list[Attachment]:
             kind=Attachment.Kind.PICTURE,
         ).order_by("message__seq", "position")
     )
+
+
+def page_panel_wanted(session: Session) -> bool:
+    """Whether the chat should show the page panel: the latest notice about it asked for it,
+    as when the product page couldn't be read, no page has been read since, and no page the
+    shop owner pasted after it has been kept."""
+    latest = (
+        session.messages.filter(wants_pasted_page__isnull=False)
+        .order_by("-seq")
+        .values_list("seq", "wants_pasted_page")
+        .first()
+    )
+    if latest is None or not latest[1]:
+        return False
+    return not session.messages.filter(
+        seq__gt=latest[0], pasted_page_result=PASTE_ACCEPTED
+    ).exists()
 
 
 def _owner_photos_before(message: Message) -> int:

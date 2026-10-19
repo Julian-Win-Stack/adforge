@@ -88,6 +88,7 @@ def test_a_new_session_is_named_from_the_users_first_message(
         "use_clip": None,
         "pasted_page": False,
         "pasted_page_result": "",
+        "wants_pasted_page": None,
     }
 
 

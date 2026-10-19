@@ -62,6 +62,17 @@ from .loop import Agent, Refused, Tool
 from .models import ToolCall
 from .money import dollars
 
+# What the producer is told when the product page can't be read, after why: the chat has asked
+# the shop owner for the page panel (ADR 0006).
+PASTE_IN_THE_PANEL = (
+    "The chat has shown the shop owner why and opened a panel under it where they can paste "
+    "the page's text and attach its photos. Tell them in one line that the page can't be read, "
+    "and that they can paste its text and attach its photos in the panel below, or send a "
+    "working link to the product's own page."
+)
+# What the shop owner is told when a page is read while the page panel is open.
+PANEL_NOT_NEEDED = "The page from your new link was read, so there's no need to paste it."
+
 INSTRUCTIONS = """\
 You are the producer at AdForge. You make short vertical video ads for one product at a \
 time, in a chat with the shop owner who sells it. In each ad a person speaks to camera, \
@@ -87,6 +98,9 @@ Every fact about the product comes from its page or from the shop owner. You hav
 that searches the web, so never look anything up, infer or guess. When something you need \
 is missing or unclear, ask one short, specific question. When you can't do something, say \
 so plainly and say why.
+When a product page can't be read, the chat opens a panel where the shop owner can paste \
+the page's text and attach its photos. If they paste a page's text into the chat instead, \
+don't take facts from it: point them to the panel, which keeps it as the page.
 When a tool skips a product photo, tell the shop owner which photo and why. When a tool \
 fails or refuses, tell the shop owner honestly what happened.
 Once a scene has a clip, the app takes the shop owner's notes on the ad: another AI \
@@ -182,18 +196,24 @@ class ReadPage(Tool):
         try:
             read = fetch_page(job, self.link)
         except page.PageUnreadable as error:
-            return (
-                f"The page couldn't be read: {error} Ask the shop owner for a working link to "
-                "the product's own page."
+            post_notice(
+                job,
+                f"This page couldn't be read: {error}",
+                Message.Level.PROBLEM,
+                wants_pasted_page=True,
             )
+            return f"The page couldn't be read: {error} {PASTE_IN_THE_PANEL}"
         download = read.download
         product_page = page.parse(download)
         check = check_page(job, download, product_page)
         if check.decision == "unreadable":
-            return (
-                f"The page was read but can't be used: {check.reason} Ask the shop owner for "
-                "a link to the product's own page."
+            post_notice(
+                job,
+                f"This page was read but can't be used: {check.reason}",
+                Message.Level.PROBLEM,
+                wants_pasted_page=True,
             )
+            return f"The page was read but can't be used: {check.reason} {PASTE_IN_THE_PANEL}"
         # Before the photos: a page whose text can't be copied isn't read, and keeps nothing.
         # The photos are picked while the text is copied.
         try:
@@ -221,6 +241,8 @@ class ReadPage(Tool):
         # Only once every photo is kept: a worker that stops part-way through them leaves the
         # page unread, so the read run again keeps them all rather than the few already kept.
         keep_page(job, download, product_page, text)
+        if messages.page_panel_wanted(call.session):
+            post_notice(job, PANEL_NOT_NEEDED, Message.Level.INFO, wants_pasted_page=False)
         kept = job.photos.count()
         if kept == 0:
             post_notice(

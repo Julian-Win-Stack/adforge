@@ -46,7 +46,12 @@ class Message(models.Model):
     A message about a fix plan names it and what it says of it (`plan_event`): code's notice
     showing it, the shop owner's tap of its yes button, or code's notice that it is settled.
     So the chat can tell whether the plan's yes button is still on offer, from the messages
-    alone."""
+    alone.
+
+    A notice that the product page can't be read asks for the page panel, where the shop
+    owner pastes the page's text and attaches its photos (`wants_pasted_page`), and one that a
+    page was read after all says it is no longer needed. So the chat can tell whether to show
+    the panel, from the messages alone."""
 
     class Role(models.TextChoices):
         USER = "user"
@@ -163,6 +168,13 @@ class Message(models.Model):
         help_text="What became of a pasted page, on the page panel's message and on code's "
         'notice answering it: "accepted" once kept as the page, else one line saying why it '
         "can't be used. Blank on any other message, and on a pasted page not yet looked at.",
+    )
+    wants_pasted_page = models.BooleanField(
+        null=True,
+        blank=True,
+        help_text="True on code's notice that the product page can't be read, which asks for "
+        "the page panel; false on its notice that a page was read after all, so the panel is "
+        "no longer needed. Null for every other message.",
     )
     routed_at = models.DateTimeField(
         null=True,

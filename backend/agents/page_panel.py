@@ -34,27 +34,6 @@ CHECK_FAILED = "Checking it failed ({error}), so nothing was kept. Send it again
 ALREADY_KEPT = "The product's page is already read."
 
 
-def page_panel_wanted(session: Session) -> bool:
-    """Whether the chat is waiting for the shop owner to paste the product page: the app
-    asked for it, and no pasted page has been kept since."""
-    asked = _asked_to_paste(session)
-    return (
-        asked is not None
-        and not session.messages.filter(
-            seq__gt=asked, pasted_page_result=messages.PASTE_ACCEPTED
-        ).exists()
-    )
-
-
-def _asked_to_paste(session: Session) -> int | None:
-    """The number of the message that asks the shop owner to paste the product page, while
-    the ask stands, or None."""
-    # TODO(U2): the latest message whose `wants_pasted_page` isn't null, if it is true; U4
-    # wires it in. Until then the ask is taken to stand while the ad's page isn't read.
-    job = Job.objects.filter(session=session).first()
-    return 0 if job is not None and not job.page_html_key else None
-
-
 def take_pastes(session: Session) -> None:
     """Keep each page the shop owner pasted in the page panel that code hasn't looked at
     yet, oldest first, or say why it can't be used."""
