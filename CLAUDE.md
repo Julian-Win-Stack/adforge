@@ -12,6 +12,10 @@ Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-
 
 Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
+## Coding standards
+
+Prompt rules must be general, never hardcoded to tested cases: `CODING_STANDARDS.md`.
+
 ## Testing
 
 Focus on integration tests of the main end-to-end flows; unit tests only in support.
