@@ -4,32 +4,16 @@ made until the shop owner says yes to it in the scene's starting picture."""
 
 import re
 from collections.abc import Iterable
-from typing import Literal
 
 from django.db import transaction
 from django.utils import timezone
-from pydantic import BaseModel, field_validator
 
 from gateway.types import Handoff
 
 from . import reference_photos
 from .models import ProducedItem, ReferencePhoto, Scene, SceneStep
 from .picture_check import StartingPictureCheckHandoff
-
-
-class OwnerPart(BaseModel):
-    """An owner part as the scene keeps it."""
-
-    what: str
-    source: Literal["owner's words", "invented"]
-    looks: str
-
-    @field_validator("what", "looks")
-    @classmethod
-    def _not_empty(cls, text: str) -> str:
-        if not text.strip():
-            raise ValueError("This can't be empty.")
-        return text
+from .planning import OwnerPart as OwnerPart  # the planner plans it; scenes keep it as is
 
 
 def owner_part(scene: Scene | SceneStep) -> OwnerPart | None:
