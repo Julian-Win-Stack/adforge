@@ -721,7 +721,7 @@ def _already_made_picture(call: ToolCall, scene: Scene, made: SceneStep) -> str:
     assert made.photo is not None, "a finished starting picture was made from a photo"
     earlier = made.produced.order_by("version").last()
     assert earlier is not None, "a finished starting picture step made its picture"
-    current = _current_picture(scene)
+    current = scene.current_picture()
     with_note = "with this note" if made.note else "with no note"
     cost = dollars(made.tool_call.cost_usd())
     photo = f"Photo {made.photo.position} was used: {made.photo_reason}"
@@ -775,25 +775,6 @@ def _no_clip_being_made(scene: Scene) -> None:
             f"scene {scene.number}'s clip is still being made. You'll be told when it's "
             "ready; make its starting picture again then."
         )
-
-
-def _current_picture(scene: Scene) -> ProducedItem | None:
-    """The starting picture the scene's clip is made from: the newest version made for what
-    the scene shows as it stands, or brought back (#143). A line shortened to fit its clip
-    still shows what its picture was made for."""
-    made_for = SceneStep.made_for(scene, through="step__")
-    del made_for["step__line"]
-    return (
-        scene.produced.filter(
-            kind=ProducedItem.Kind.STARTING_PICTURE,
-            step__kind=SceneStep.Kind.STARTING_PICTURE,
-            step__status=SceneStep.Status.FINISHED,
-            step__line__in=[scene.line, *scene.shortened_from],
-            **made_for,
-        )
-        .order_by("version")
-        .last()
-    )
 
 
 class MakeLineAudio(Tool):
@@ -946,7 +927,7 @@ class MakeClip(Tool):
                 f"scene {scene.number} has no starting picture yet. Make its starting picture "
                 "first."
             )
-        picture = _current_picture(scene)
+        picture = scene.current_picture()
         if picture is None:
             raise Refused(
                 f"scene {scene.number}'s starting picture was made for an earlier line, or for "
@@ -1465,7 +1446,7 @@ def _start_step(
                 scene=scene,
                 kind=kind,
                 tool_call=call,
-                **SceneStep.made_for(scene),
+                **SceneStep.snapshot(scene),
                 note=note,
                 made_from=made_from,
                 picture=picture,

@@ -47,7 +47,6 @@ from .producer import (
     MILLIONTH,
     Estimate,
     _clip_estimate,
-    _current_picture,
     _estimate,
     _latest_clip,
     _line_estimate,
@@ -853,7 +852,7 @@ def _shown_picture(scene: Scene) -> ProducedItem | None:
     """The starting picture the shop owner sees in the scene: its newest version's, or, for
     a scene whose versions have none, the one made for what it shows as it stands."""
     made = work.versions(scene)
-    return (made[-1].picture if made else None) or _current_picture(scene)
+    return (made[-1].picture if made else None) or scene.current_picture()
 
 
 def _line_heard(row: FixPlanScene, scene: Scene, running: set[str]) -> bool:
@@ -916,7 +915,7 @@ def _start(
                 scene=scene,
                 kind=kind,
                 tool_call=_code_call(row, _TOOLS[kind]),
-                **SceneStep.made_for(scene),
+                **SceneStep.snapshot(scene),
                 note=note,
                 fix=row.fix,
                 plan_scene=row,
