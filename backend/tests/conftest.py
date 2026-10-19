@@ -328,6 +328,19 @@ def api() -> APIClient:
     return APIClient()
 
 
+def one_fault(request: ModelRequest[Any]) -> dict[str, Any]:
+    """The same-fault call's answer, unless a test scripts it: every failing answer names one
+    fault, so the check fails on them as it did before the vote."""
+    answers = request.handoff.answers  # type: ignore[attr-defined]
+    return {
+        "read": [
+            {"ask": each["ask"], "object": "it", "event": "fails", "time_span": "0 s"}
+            for each in answers
+        ],
+        "groups": [{"asks": [each["ask"] for each in answers], "fault": "One fault."}],
+    }
+
+
 @pytest.fixture
 def fake_model() -> Iterator[FakeModel]:
     fake = FakeModel()
@@ -339,6 +352,7 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
     fake.answer_unscripted("check_clip_sides", lambda _: CLIP_SIDES_OK)
     fake.answer_unscripted("check_clip_motion", motion_answer(CLIP_MOTION_OK))
+    fake.answer_unscripted("agree_on_fault", one_fault)
     # Once the ad has a clip, every message goes to the decider first: unless a test scripts
     # it, it passes each one on to the producer.
     fake.answer_unscripted("decide_fixes", lambda _: not_a_fix())

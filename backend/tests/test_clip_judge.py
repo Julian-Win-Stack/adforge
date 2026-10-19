@@ -1,8 +1,11 @@
 """The clip judge's ruling from its answers: each check fails a clip on 2 of its 3 answers,
-every failing answer counting (the half-second forgive rule is gone, Julian 2026-10-19). What it rules is what the auto-redo acts on: pass or fail, how
-many of the 6 answers failed, and each failed answer's problem and everything it saw."""
+every failing answer counting (the half-second forgive rule is gone, Julian 2026-10-19), and
+two failing MOTION answers agree only when they name the same fault. What it rules is what the
+auto-redo acts on: pass or fail, how many of the 6 answers failed, and each failed answer's
+problem and everything it saw."""
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +14,7 @@ from pydantic import create_model
 
 from gateway import catalog
 from jobs import clip_judge, fix_check
-from jobs.clip_judge import SIDES_CHECK, SidesVerdict, judged, still_failing, wording_version
+from jobs.clip_judge import SIDES_CHECK, SameFault, SidesVerdict, still_failing, wording_version
 
 PINNED = Path(__file__).parent / "fixtures"
 
@@ -46,6 +49,25 @@ def motion(**failing: tuple[str, str | None] | str) -> dict[str, Any]:
         given = failing.get(question)
         answer[question] = check(*given) if isinstance(given, tuple) else check(given)
     return answer
+
+
+def one_fault(check: str, failing: list[dict[str, Any]]) -> dict[str, Any]:
+    """The same-fault call's reply when every failing answer names one fault."""
+    return {"read": [], "groups": [{"asks": [each["ask"] for each in failing], "fault": "one"}]}
+
+
+def apart(check: str, failing: list[dict[str, Any]]) -> dict[str, Any]:
+    """Its reply when each failing answer names a fault of its own."""
+    return {"read": [], "groups": [{"asks": [each["ask"]], "fault": "own"} for each in failing]}
+
+
+def judged(
+    sides: Sequence[dict[str, Any] | None],
+    motion: Sequence[dict[str, Any] | None],
+    same_fault: SameFault = one_fault,
+) -> dict[str, Any]:
+    """The ruling, when the same-fault call says `same_fault`: by default, one fault."""
+    return clip_judge.judged(sides, motion, same_fault=same_fault)
 
 
 HANDLE = "The mug shows a second handle at 2.4 s where its plain side should be."
@@ -116,6 +138,88 @@ def test_a_thing_back_to_normal_soon_still_fails_the_check() -> None:
     assert ruling["verdict"] == "fail"
     assert ruling["failed_answers"] == 2
     assert still_failing(ruling) == [blink, blink]
+
+
+def test_two_failing_answers_on_different_faults_pass_their_check() -> None:
+    # Two unrelated complaints 2 s apart are not agreement (round 5, Cocolab floss scene 4).
+    ruling = judged(
+        [sides()] * 3,
+        [motion(real_motion=FLOATS), motion(real_motion=FILLS), motion()],
+        same_fault=apart,
+    )
+
+    assert ruling["checks"]["real_motion"] == "pass"
+    assert ruling["verdict"] == "pass"
+
+
+def test_two_of_three_failing_answers_on_one_fault_fail_their_check_on_that_fault() -> None:
+    def first_and_last(check: str, failing: list[dict[str, Any]]) -> dict[str, Any]:
+        return {"read": [], "groups": [{"asks": [1, 3], "fault": "floats"}, {"asks": [2]}]}
+
+    ruling = judged(
+        [sides()] * 3,
+        [motion(real_motion=FLOATS), motion(real_motion=FILLS), motion(real_motion=FLOATS)],
+        first_and_last,
+    )
+
+    assert ruling["checks"]["real_motion"] == "fail"
+    # The second answer's fault is one no other answer saw: it is outvoted.
+    assert still_failing(ruling) == [FLOATS, FLOATS]
+
+
+def test_when_the_same_fault_call_fails_two_failing_answers_still_fail_their_check() -> None:
+    def down(check: str, failing: list[dict[str, Any]]) -> dict[str, Any]:
+        raise TimeoutError("no answer")
+
+    ruling = judged(
+        [sides()] * 3, [motion(real_motion=FLOATS), motion(real_motion=FILLS), motion()], down
+    )
+
+    assert ruling["checks"]["real_motion"] == "fail"
+    assert still_failing(ruling) == [FLOATS, FILLS]
+    assert ruling["agreement"]["real_motion"] == {"error": "no answer"}
+
+
+def test_the_same_fault_call_is_made_only_for_a_motion_check_failed_by_two_answers() -> None:
+    asked: list[str] = []
+
+    def recorded(check: str, failing: list[dict[str, Any]]) -> dict[str, Any]:
+        asked.append(check)
+        return apart(check, failing)
+
+    # SIDES is voted on as before: its two answers on different faults still fail it.
+    ruling = judged(
+        [sides(HANDLE), sides("The mug's base melts at 1 s."), sides()],
+        [motion(real_motion=FLOATS), motion(sudden_change=FILLS), motion()],
+        recorded,
+    )
+
+    assert asked == []
+    assert ruling["checks"]["sides"] == "fail"
+
+
+def test_the_same_fault_call_is_handed_each_failing_answers_problem_and_when_it_ends() -> None:
+    handed: list[tuple[str, list[dict[str, Any]]]] = []
+
+    def recorded(check: str, failing: list[dict[str, Any]]) -> dict[str, Any]:
+        handed.append((check, failing))
+        return one_fault(check, failing)
+
+    judged(
+        [sides()] * 3,
+        [motion(), motion(sudden_change=(FILLS, "never")), motion(sudden_change=(FLOATS, "1.4"))],
+        recorded,
+    )
+
+    assert handed == [
+        (
+            "sudden_change",
+            [
+                {"ask": 2, "problem": FILLS, "back_to_normal_at": "never"},
+                {"ask": 3, "problem": FLOATS, "back_to_normal_at": "1.4"},
+            ],
+        )
+    ]
 
 
 def test_a_check_with_fewer_than_two_answers_is_not_checked() -> None:

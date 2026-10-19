@@ -54,6 +54,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # (Claude Doc "Clip judge discussion", Results).
     "check_clip_sides": "gpt-6.1-sol",
     "check_clip_motion": "gpt-6.1-sol",
+    # Whether two of a MOTION check's failing answers name the same fault: a text call of the
+    # judge's own model (the judge prototype, runs/round-5-prototypes/judge, 2026-10-18).
+    "agree_on_fault": "gpt-6.1-sol",
     "design_voice": "inworld-tts-2",
     "measure_voice": "inworld-tts-2",
     "speak_line": "inworld-tts-2",
