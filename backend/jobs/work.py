@@ -775,13 +775,7 @@ def plan(job: Job) -> ProducerDecision:
         job=job,
         purpose="plan_ad",
         instructions=PLAN_INSTRUCTIONS,
-        handoff=PlanHandoff(
-            product_url=job.product_url,
-            page_text=page.for_model(job.page_text),
-            target_seconds=job.target_seconds,
-            photo_count=len(photos),
-            conversation=_conversation(job),
-        ),
+        handoff=plan_handoff(job, job.page_text, len(photos)),
         output=producer_decision_for(len(photos)),
         images=[Image(label=f"Photo {photo.position}", key=photo.file) for photo in shown],
     )
@@ -824,6 +818,18 @@ def plan(job: Job) -> ProducerDecision:
         )
         job.photos.filter(position__in=planned.colour_photos).update(shows_product_colour=True)
     return decision
+
+
+def plan_handoff(job: Job, page_text: str, photo_count: int) -> PlanHandoff:
+    """What the planner is handed about the ad, with the product's own text from its page:
+    the planner's, and the video reader's, which thinks through the same plan."""
+    return PlanHandoff(
+        product_url=job.product_url,
+        page_text=page.for_model(page_text),
+        target_seconds=job.target_seconds,
+        photo_count=photo_count,
+        conversation=_conversation(job),
+    )
 
 
 def _photos_to_show(job: Job, photos: list[ProductPhoto]) -> list[ProductPhoto]:

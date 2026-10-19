@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from gateway.catalog import MODEL_FOR_PURPOSE, SLOW_ANSWER_SECONDS
-from jobs import clip_judge
+from jobs import clip_judge, video_reader
 from jobs.clip_judge import (
     FRAMES_PER_SECOND,
     MOTION_CHECK,
@@ -412,3 +412,25 @@ def test_the_photo_picker_is_told_of_the_pictures_beside_the_screenshot_as_teste
 )
 def test_the_photo_pickers_rules_name_no_shop(name: str) -> None:
     assert name.casefold() not in PICK_INSTRUCTIONS.casefold()
+
+
+# The video reader's job, added after the planner's own instructions (Julian 2026-10-19 23:29,
+# "go with the proposed line").
+READER_ADDED_JOB = (
+    "You are not planning the ad here and you ask the shop owner nothing. Think through the "
+    "plan you would make, then name only the video moments you would need as pictures, and why."
+)
+
+
+def test_the_video_reader_is_the_planners_instructions_and_its_one_added_job() -> None:
+    assert video_reader.INSTRUCTIONS == f"{PLAN_INSTRUCTIONS}\n\n{READER_ADDED_JOB}"
+    assert MODEL_FOR_PURPOSE["read_video"] == MODEL_FOR_PURPOSE["plan_ad"]
+
+
+@pytest.mark.parametrize(
+    "name",
+    # The shops the video reader was tested on (runs/video-frames-prototype/reader/).
+    ["Rare Beauty", "AirPods", "Helinox", "Levi's", "Greenies", "Lemi Shine", "Loop"],
+)
+def test_the_video_readers_added_job_names_no_shop_or_product(name: str) -> None:
+    assert name.casefold() not in video_reader.ADDED_JOB.casefold()

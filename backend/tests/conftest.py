@@ -350,6 +350,8 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("check_starting_picture", lambda _: PICTURE_OK)
     fake.answer_unscripted("check_fix", lambda request: with_owner_photo(FIX_MADE, request.output))
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
+    # A product video's reader needs none of its moments as pictures, unless a test says.
+    fake.answer_unscripted("read_video", lambda _: {"kept": [], "rejected": []})
     fake.answer_unscripted("check_clip_sides", lambda _: CLIP_SIDES_OK)
     fake.answer_unscripted("check_clip_motion", motion_answer(CLIP_MOTION_OK))
     fake.answer_unscripted("agree_on_fault", one_fault)

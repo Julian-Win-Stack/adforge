@@ -215,6 +215,26 @@ class ProductVideo(models.Model):
         help_text="Keys of frames spread over the file, first to last; none without a file.",
     )
     duration = models.FloatField(null=True, blank=True, help_text="Seconds; none without a file.")
+    frames_picked = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "The frames the file is thinned to, first to last, each as {key, second}; none "
+            "without a file."
+        ),
+    )
+    transcript = models.TextField(
+        blank=True,
+        help_text='The words spoken in it; "music only" when nothing is said. Blank with no file.',
+    )
+    read = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The video reader's answer: the moments it would need as pictures and the ones it "
+            "wouldn't; {\"error\": ...} when reading it failed; none when it wasn't read."
+        ),
+    )
 
     class Meta:
         ordering = ["job", "position"]
