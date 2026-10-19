@@ -749,6 +749,68 @@ button:disabled {
   cursor: default;
 }
 
+/* A page the owner pasted, as a short card in the chat instead of a page-long bubble. */
+.pasted-page {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(420px, 92%);
+  padding: 12px 14px;
+  border-radius: var(--radius-l);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+}
+
+.pasted-page-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  font-size: 14px;
+}
+
+.pasted-page-top span {
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.pasted-page-photos {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.pasted-page-photos img {
+  display: block;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-s);
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+
+.pasted-page-text {
+  max-height: 240px;
+  margin: 0;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.pasted-page-toggle {
+  align-self: flex-start;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.pasted-page-toggle:hover {
+  text-decoration: underline;
+}
+
 /* The page panel: when the page can't be read from its link, the shop owner pastes the page
    text and adds its photos here. It sits on the composer like the yes bar, in the same
    lime-edged card, and folds to one line to give the chat room. */
@@ -757,16 +819,26 @@ button:disabled {
   flex-direction: column;
   gap: 12px;
   width: min(820px, 100%);
-  max-height: min(62vh, 560px);
+  max-height: min(62vh, 580px);
   margin: 0 auto 10px;
   padding: 14px 14px 12px 16px;
-  overflow-y: auto;
   border-radius: var(--radius-l);
   border: 1px solid rgba(200, 240, 74, 0.35);
   background:
     linear-gradient(180deg, rgba(200, 240, 74, 0.07), rgba(200, 240, 74, 0.02) 60%), var(--surface);
   box-shadow: var(--shadow);
   animation: rise 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* The text and photos scroll; the title, the reason and Done stay in view. */
+.page-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  margin-right: -6px;
+  padding-right: 6px;
 }
 
 .page-panel.folded {
@@ -848,7 +920,7 @@ button:disabled {
 .page-panel-text textarea {
   display: block;
   width: 100%;
-  height: 168px;
+  height: 156px;
   min-height: 96px;
   padding: 12px 14px 26px;
   border-radius: var(--radius-m);
@@ -939,6 +1011,7 @@ button:disabled {
 .page-panel-drop {
   display: flex;
   flex: 1;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 10px;
@@ -956,15 +1029,40 @@ button:disabled {
     color 140ms;
 }
 
+.page-panel-drop > span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
 .page-panel-drop strong {
   color: var(--text);
   font-weight: 600;
 }
 
+.page-panel-drop-how {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.page-panel-drop-how.touch {
+  display: none;
+}
+
+@media (hover: none) {
+  .page-panel-drop-how.pointer {
+    display: none;
+  }
+
+  .page-panel-drop-how.touch {
+    display: inline;
+  }
+}
+
 .page-panel-drop.small {
   flex: 0 0 72px;
   min-width: 72px;
-  flex-direction: column;
   gap: 2px;
   padding: 6px;
   font-size: 11.5px;
@@ -1979,16 +2077,39 @@ button:disabled {
   }
 
   .page-panel {
-    max-height: 56vh;
+    gap: 10px;
+    max-height: 50vh;
     padding: 12px;
   }
 
+  .page-panel-sub {
+    font-size: 12.5px;
+  }
+
   .page-panel-text textarea {
-    height: 120px;
+    height: 104px;
+    min-height: 72px;
+  }
+
+  /* On a phone the photos run in one row that scrolls sideways. */
+  .page-panel-photos.has-photos {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .page-panel-thumb,
+  .page-panel-drop.small {
+    flex: 0 0 60px;
+    width: 60px;
+    min-width: 60px;
+    height: 60px;
+    min-height: 60px;
   }
 
   .page-panel-drop {
     min-width: 0;
+    min-height: 60px;
   }
 
   .scene-panel,

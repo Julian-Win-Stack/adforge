@@ -70,6 +70,9 @@ function server(start: Omit<Message, "seq">[]) {
       );
       return Response.json({ session: { id: "session-1", name: "Mug", created_at: NOW }, message });
     }
+    if (url.startsWith("/media/")) {
+      return new Response(url, { headers: { "Content-Type": "image/png" } });
+    }
     const after = Number(new URL(url, "http://x").searchParams.get("after") ?? 0);
     return Response.json(messages.filter((message) => message.seq > after));
   });
@@ -112,6 +115,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -250,7 +254,7 @@ test("a reopened chat reads the result off the pasted message itself", async () 
   expect(panel()).toBeNull();
 });
 
-test("a new link that reads fine takes the panel away; one that can't be read brings it back", async () => {
+test("a new link read fine takes the panel away; one that can't be read brings it back", async () => {
   const backend = server([said("user", "https://shop.example/p/mug"), cantRead()]);
   const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
   await openChat();
@@ -261,6 +265,7 @@ test("a new link that reads fine takes the panel away; one that can't be read br
   // Sent, not yet read: the panel stays until the app has the page.
   expect(panel()).not.toBeNull();
 
+  backend.post(said("notice", "Read https://shop.example/mug-2.", { wants_pasted_page: false }));
   backend.post(said("agent", "Read it. How long should the ad be?"));
   await poll();
   await waitFor(() => expect(panel()).toBeNull());
@@ -334,4 +339,120 @@ test("the panel folds away to make room for the chat, and opens again with the p
   expect(within(opened).queryByLabelText("Page text")).toBeNull();
   await user.click(within(opened).getByRole("button", { name: /^Paste your page/ }));
   expect(within(opened).getByLabelText("Page text")).toHaveProperty("value", PAGE);
+});
+
+test("no working dots while a pasted page is checked or after it can't be used; they come once it is accepted", async () => {
+  const backend = server([said("user", "https://shop.example/p/mug"), cantRead()]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  await openChat();
+  const opened = await screen.findByRole("region", { name: "Paste your product page" });
+  await user.click(within(opened).getByLabelText("Page text"));
+  await user.paste("Loading...");
+  await user.upload(within(opened).getByLabelText("Product photos"), [photo("front.png")]);
+  await user.click(within(opened).getByRole("button", { name: "Done" }));
+  await within(opened).findByText("Checking your page…");
+  expect(screen.queryByText("The producer is working")).toBeNull();
+
+  backend.post(said("notice", "That's a loading screen.", { pasted_page_result: "x" }));
+  await poll();
+  await within(opened).findByRole("alert");
+  expect(screen.queryByText("The producer is working")).toBeNull();
+
+  await user.clear(within(opened).getByLabelText("Page text"));
+  await user.paste(PAGE);
+  await user.click(within(opened).getByRole("button", { name: "Done" }));
+  backend.post(said("notice", "Using your text as the page.", { pasted_page_result: "accepted" }));
+  await poll();
+  await screen.findByText("The producer is working");
+});
+
+test("the pasted page shows in the chat as a short card, its text one tap away", async () => {
+  const long = Array.from({ length: 3000 }, (_, i) => `word${i}`).join(" ");
+  server([
+    said("user", "https://shop.example/p/mug"),
+    cantRead(),
+    said("user", long, {
+      pasted_page: true,
+      pasted_page_result: "accepted",
+      attachments: [
+        { position: 1, kind: "picture", url: "/media/front.png", scene: null },
+        { position: 2, kind: "picture", url: "/media/side.png", scene: null },
+      ],
+    }),
+  ]);
+  await openChat();
+  const card = await screen.findByRole("group", { name: "Your product page" });
+  expect(card.textContent).toContain("3,000 words");
+  expect(card.textContent).toContain("2 photos");
+  expect(within(card).queryByText(long)).toBeNull();
+  await userEvent.click(within(card).getByRole("button", { name: "Show the text" }));
+  expect(within(card).getByText(long)).toBeTruthy();
+});
+
+test("a reopened chat after a paste the app couldn't use puts that paste back in the panel", async () => {
+  const backend = server([
+    said("user", "https://shop.example/p/mug"),
+    cantRead(),
+    said("user", "Accept cookies", {
+      pasted_page: true,
+      pasted_page_result: "It's a cookie banner.",
+      attachments: [{ position: 1, kind: "picture", url: "/media/front.png", scene: null }],
+    }),
+  ]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  await openChat();
+  const opened = await screen.findByRole("region", { name: "Paste your product page" });
+  expect(within(opened).getByLabelText("Page text")).toHaveProperty("value", "Accept cookies");
+  expect(within(opened).getByAltText("front.png").getAttribute("src")).toBe("/media/front.png");
+
+  await user.clear(within(opened).getByLabelText("Page text"));
+  await user.paste(PAGE);
+  await user.click(within(opened).getByRole("button", { name: "Done" }));
+  await waitFor(() =>
+    expect(backend.sent.at(-1)).toEqual({ text: PAGE, photos: ["front.png"], pasted_page: "true" }),
+  );
+});
+
+test("text pasted but not yet sent is still there after a reload", async () => {
+  server([said("user", "https://shop.example/p/mug"), cantRead()]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  await openChat();
+  let opened = await screen.findByRole("region", { name: "Paste your product page" });
+  await user.click(within(opened).getByLabelText("Page text"));
+  await user.paste(PAGE);
+  cleanup();
+
+  await openChat();
+  opened = await screen.findByRole("region", { name: "Paste your product page" });
+  expect(within(opened).getByLabelText("Page text")).toHaveProperty("value", PAGE);
+});
+
+test("the same photo added twice is kept once", async () => {
+  server([said("user", "https://shop.example/p/mug"), cantRead()]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  await openChat();
+  const opened = await screen.findByRole("region", { name: "Paste your product page" });
+  await user.upload(within(opened).getByLabelText("Product photos"), [photo("front.png")]);
+  await user.upload(within(opened).getByLabelText("Product photos"), [photo("front.png")]);
+  expect(within(opened).getAllByAltText("front.png")).toHaveLength(1);
+});
+
+test("the hint says what is still missing, and the reason goes once the paste is changed", async () => {
+  const backend = server([said("user", "https://shop.example/p/mug"), cantRead()]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  await openChat();
+  const opened = await screen.findByRole("region", { name: "Paste your product page" });
+  await user.click(within(opened).getByLabelText("Page text"));
+  await user.paste("Accept cookies");
+  expect(within(opened).getByText("Add at least one photo.")).toBeTruthy();
+  await user.upload(within(opened).getByLabelText("Product photos"), [photo("front.png")]);
+  await user.click(within(opened).getByRole("button", { name: "Done" }));
+  backend.post(
+    said("notice", "It's a cookie banner.", { pasted_page_result: "It's a cookie banner." }),
+  );
+  await poll();
+  await within(opened).findByRole("alert");
+
+  await user.type(within(opened).getByLabelText("Page text"), " more");
+  expect(within(opened).queryByRole("alert")).toBeNull();
 });

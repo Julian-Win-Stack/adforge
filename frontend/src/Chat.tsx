@@ -19,8 +19,8 @@ import {
   type SendAs,
   type Sent,
 } from "./api";
-import { PagePanel } from "./PagePanel";
-import { pagePanel } from "./pagePanel";
+import { PagePanel, wordCount } from "./PagePanel";
+import { acceptedPastes, lastPastedPage, pagePanel } from "./pagePanel";
 import { ScenePanel } from "./ScenePanel";
 import { nextFollowing } from "./follow";
 import {
@@ -162,7 +162,11 @@ export function Chat({
   const lastSaid = [...messages]
     .reverse()
     .find((message) => message.role !== "notice" && message.step?.state !== "made");
-  const producerHasTheFloor = sessionId !== null && lastSaid?.role === "user";
+  // A pasted page is code's to check before the producer hears of it, and one the app can't
+  // use never reaches the producer: the page panel says what is happening meanwhile.
+  const pasteUnaccepted =
+    lastSaid?.pasted_page === true && !acceptedPastes(messages).has(lastSaid.seq);
+  const producerHasTheFloor = sessionId !== null && lastSaid?.role === "user" && !pasteUnaccepted;
   const offered = planOnOffer(messages);
   const cards = sceneCards(messages);
   // A plan on offer or a suggested note is a question to the owner: nothing runs until they
@@ -278,25 +282,31 @@ export function Chat({
                         )}
                         {message.role === "user" ? "You" : "Agent"}
                       </strong>
-                      {message.text &&
-                        (message.role === "user" ? (
-                          <p className="bubble">{message.text}</p>
-                        ) : (
-                          <p className="prose">{message.text}</p>
-                        ))}
-                      {message.attachments.length > 0 && (
-                        <div className="attachments">
-                          {message.attachments.map((attachment, index) => (
-                            <AttachmentView
-                              key={attachment.position}
-                              attachment={attachment}
-                              role={message.role}
-                              label={attachmentLabel(message, attachment, index)}
-                              cover={covers.get(attachment)?.url}
-                              finished={isFinishedAd(message, attachment)}
-                            />
-                          ))}
-                        </div>
+                      {message.pasted_page ? (
+                        <PastedPage message={message} />
+                      ) : (
+                        <>
+                          {message.text &&
+                            (message.role === "user" ? (
+                              <p className="bubble">{message.text}</p>
+                            ) : (
+                              <p className="prose">{message.text}</p>
+                            ))}
+                          {message.attachments.length > 0 && (
+                            <div className="attachments">
+                              {message.attachments.map((attachment, index) => (
+                                <AttachmentView
+                                  key={attachment.position}
+                                  attachment={attachment}
+                                  role={message.role}
+                                  label={attachmentLabel(message, attachment, index)}
+                                  cover={covers.get(attachment)?.url}
+                                  finished={isFinishedAd(message, attachment)}
+                                />
+                              ))}
+                            </div>
+                          )}
+                        </>
                       )}
                     </li>
                   ),
@@ -324,7 +334,9 @@ export function Chat({
           <div className="composer-wrap">
             {pageAsk && (
               <PagePanel
+                sessionId={sessionId as string}
                 state={pageAsk}
+                lastPasted={lastPastedPage(messages)}
                 onDone={(text, photos) => send(text, photos, { pastedPage: true })}
               />
             )}
@@ -347,6 +359,40 @@ export function Chat({
         <ScenePanel messages={messages} onSend={(text) => send(text, [])} />
       </div>
     </section>
+  );
+}
+
+/** A page the owner pasted in the page panel: a short card of what was sent, since a whole
+ * page as a chat bubble would fill the chat. Its text is one tap away. */
+function PastedPage({ message }: { message: Message }) {
+  const [open, setOpen] = useState(false);
+  const pictures = message.attachments.filter((attachment) => attachment.kind === "picture");
+  return (
+    <div className="pasted-page" role="group" aria-label="Your product page">
+      <div className="pasted-page-top">
+        <strong>Your product page</strong>
+        <span>
+          {wordCount(message.text)} · {pictures.length} photo{pictures.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      {pictures.length > 0 && (
+        <div className="pasted-page-photos">
+          {pictures.map((attachment) => (
+            <a key={attachment.position} href={attachment.url} target="_blank" rel="noreferrer">
+              <img
+                src={attachment.url}
+                alt={`Photo you attached (${attachment.position})`}
+                loading="lazy"
+              />
+            </a>
+          ))}
+        </div>
+      )}
+      {open && <p className="pasted-page-text">{message.text}</p>}
+      <button type="button" className="pasted-page-toggle" onClick={() => setOpen((was) => !was)}>
+        {open ? "Hide the text" : "Show the text"}
+      </button>
+    </div>
   );
 }
 

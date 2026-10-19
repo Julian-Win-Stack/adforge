@@ -102,9 +102,10 @@ export type Message = {
   tries?: MessageTries | null;
   /** The try the owner's tap of "Use this one" chose; null for any other message. */
   use_clip?: number | null;
-  /** On code's notice that the page can't be read: the page panel is wanted, for the shop
-   * owner to paste the page text and attach its photos. */
-  wants_pasted_page?: boolean;
+  /** True on code's notice that the page can't be read: the page panel is wanted, for the
+   * shop owner to paste the page text and attach its photos. False on code's notice that a
+   * new link was read while it was wanted. Null on any other message. */
+  wants_pasted_page?: boolean | null;
   /** The shop owner's page text and photos, sent from the page panel, never typed. */
   pasted_page?: boolean;
   /** What code made of a pasted page: "accepted", or the one-line reason it can't be used.
