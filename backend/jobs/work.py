@@ -3127,9 +3127,39 @@ def motion_of(clip: ProducedItem) -> str:
 def _was_shown(made: ProducedItem) -> bool:
     """Whether the shop owner was shown a scene's starting picture or clip: one its step
     finished with. Every clip a clip step made is, its first and each try the fixing agent
-    filmed of it, and any brought back."""
+    filmed of it, and any brought back. Of a step's clip the old auto-fix remade (a job
+    made before the fixing agent), only the one kept was, unless the chat showed every one
+    to pick from (#180)."""
     step = made.step
-    return step is None or step.status == SceneStep.Status.FINISHED
+    if step is None:
+        return True
+    if step.status != SceneStep.Status.FINISHED:
+        return False
+    remakes = _old_remakes(step) if made.kind == ProducedItem.Kind.CLIP else []
+    if not remakes:
+        return True
+    tries = [step.produced.filter(kind=ProducedItem.Kind.CLIP).order_by("id")[0], *remakes]
+    if made not in tries or _old_tries_were_shown(step, tries):
+        # Brought back, or shown to pick from.
+        return True
+    failed = [auto_fix.failed_answers(clip.ruling or {"verdict": "pass"}) for clip in tries]
+    return made == tries[-1] and auto_fix.clip_to_keep(failed) == len(tries) - 1
+
+
+def _old_remakes(step: SceneStep) -> list[ProducedItem]:
+    """The remakes the old auto-fix (#155) made of a clip step's clip the judge failed, kept
+    in the step itself, oldest first: none for a step made since, whose tries the fixing
+    agent films in steps of their own."""
+    return list(
+        step.produced.filter(kind=ProducedItem.Kind.CLIP, remake__isnull=False).order_by("remake")
+    )
+
+
+def _old_tries_were_shown(step: SceneStep, tries: list[ProducedItem]) -> bool:
+    """Whether the chat showed the shop owner every one of an old auto-fix's clips, the judge
+    failing each, to pick from (#180)."""
+    every_one_failed = all((clip.ruling or {}).get("verdict") == "fail" for clip in tries)
+    return every_one_failed and step.tries_shown.exists()
 
 
 def version_label(made: ProducedItem) -> str:

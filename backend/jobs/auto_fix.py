@@ -11,6 +11,15 @@ from .clip_judge import MOTION_QUESTIONS, left_out, still_failing
 MOST_TRIES = 6
 
 
+def clip_to_keep(failed_answers: list[int]) -> int:
+    """Which of the clips the old auto-fix (#155) made for a scene, in the order they were
+    made, it kept, given how many of the judge's answers each failed: the fewest, and the
+    newest of those tied (change 9, Clip judge discussion). Jobs made before the fixing agent
+    still hold such clips."""
+    fewest = min(failed_answers)
+    return max(i for i, failed in enumerate(failed_answers) if failed == fewest)
+
+
 def failed_answers(ruling: dict[str, Any]) -> int:
     """How many of the judge's answers about a clip failed. A clip the judge passed counts as
     failing none, whatever its answers, and so does one it couldn't check."""

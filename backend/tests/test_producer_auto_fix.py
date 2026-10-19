@@ -16,6 +16,7 @@ from chat.models import Attachment, Message
 from gateway.fake import FakeModel
 from jobs import auto_fix, work
 from jobs.models import AgentFix, ProducedItem, Scene, SceneStep
+from jobs.notices import post_notice
 from jobs.scenes import SAME_SIDE
 
 from .agent_tries import agent_films, agent_stops
@@ -316,3 +317,62 @@ def test_a_clip_is_estimated_up_to_every_try_the_agent_may_film(
         + producer._each_call_usd(scene, ["fix_scene"])
     )
     assert up_to - about == 6 * each_try
+
+
+# --- Jobs made before the fixing agent: the old auto-fix's remakes -------------------------
+
+FAILED = {"verdict": "fail", "failed_answers": 2, "failures": [], "checks": {}, "answers": {}}
+PASSED = {**FAILED, "verdict": "pass", "failed_answers": 0}
+
+
+def old_remakes(*rulings: dict[str, Any]) -> list[ProducedItem]:
+    """Scene 2's clip, made before the fixing agent: the judge failed it, and the old
+    auto-fix (#155) remade it once for each of `rulings`, each remake kept in the clip's own
+    step. Gives the first clip and each remake."""
+    first = ProducedItem.objects.get(kind="clip", scene__number=2)
+    ProducedItem.objects.filter(pk=first.pk).update(ruling=FAILED)
+    assert first.scene is not None
+    remakes = [
+        ProducedItem.objects.create(
+            job=first.job,
+            scene=first.scene,
+            step=first.step,
+            kind=ProducedItem.Kind.CLIP,
+            version=work._next_version(first.scene, ProducedItem.Kind.CLIP),
+            file=first.file,
+            seconds=first.seconds,
+            made_from=first.made_from,
+            picture=first.picture,
+            remake=number,
+            ruling=ruling,
+        )
+        for number, ruling in enumerate(rulings, start=1)
+    ]
+    first.refresh_from_db()
+    return [first, *remakes]
+
+
+def test_an_old_jobs_remakes_are_no_versions_but_the_one_kept(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    clip_of_scene_2(fake_model, steps, say)
+    *_, kept = old_remakes(FAILED, PASSED)
+
+    assert labels() == ["v1 first version"]
+    assert [version.clip for version in work.versions(Scene.objects.get(number=2))] == [kept]
+
+
+def test_an_old_jobs_remakes_shown_to_pick_from_are_each_a_version(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    step = clip_of_scene_2(fake_model, steps, say)
+    made = old_remakes(FAILED, FAILED)
+    post_notice(step.scene.job, "Watch them.", Message.Level.INFO, tries_of=step.pk)
+
+    assert [version.clip for version in work.versions(Scene.objects.get(number=2))] == made
