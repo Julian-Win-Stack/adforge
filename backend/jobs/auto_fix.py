@@ -4,7 +4,7 @@ discussion; Julian's yes 2026-10-13 05:03)."""
 
 from typing import Any
 
-from .clip_judge import MOTION_QUESTIONS, still_failing
+from .clip_judge import MOTION_QUESTIONS, left_out, still_failing
 
 # How many times a clip the judge fails is made again.
 MOST_REMAKES = 2
@@ -32,17 +32,17 @@ def failed_answers(ruling: dict[str, Any]) -> int:
 def faults(ruling: dict[str, Any]) -> list[str]:
     """Every problem behind the judge's failed checks of a clip, each once: SIDES first, then
     each MOTION question, each check's asks in order. Never one from an answer outvoted on its
-    check, or let go (Julian's yes, 2026-10-13 19:42)."""
+    check (Julian's yes, 2026-10-13 19:42)."""
     return list(dict.fromkeys(still_failing(ruling)))
 
 
 def judge_saw(ruling: dict[str, Any]) -> list[dict[str, Any]]:
     """Each of the judge's answers about a clip that failed one of its failed checks, each the
     same answer once: what it saw happen in the clip. A MOTION answer's question failed on its
-    own, outvoted on its check or let go, is left out of it, so no failed verdict the clip
-    wasn't failed for is handed over. What the answer saw happen stays whole."""
+    own or outvoted on its check (clip_judge.left_out) is left out of it, so no failed verdict
+    the clip wasn't failed for is handed over. What the answer saw happen stays whole."""
     failed = {name for name, verdict in ruling["checks"].items() if verdict == "fail"}
-    let_go = {(each["check"], each["ask"]) for each in ruling.get("let_go", [])}
+    left = left_out(ruling)
     seen: list[dict[str, Any]] = []
     for failure in ruling["failures"]:
         answer = failure["answer"]
@@ -51,7 +51,7 @@ def judge_saw(ruling: dict[str, Any]) -> list[dict[str, Any]]:
                 continue
         else:
             said_fail = {q for q in MOTION_QUESTIONS if answer[q]["verdict"] == "fail"}
-            counted = {q for q in said_fail if q in failed and (q, failure["ask"]) not in let_go}
+            counted = {q for q in said_fail if q in failed and (q, failure["ask"]) not in left}
             if not counted:
                 continue
             not_counted = said_fail - counted

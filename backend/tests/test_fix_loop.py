@@ -537,8 +537,9 @@ def test_a_fixs_redo_the_judge_fails_is_made_again_by_code_and_the_remake_makes_
     assert redo.file not in shown_clips()
     # Two prompts written at $0.006, two 5-second clips at Boreal's $0.0792 a second, and the
     # judge's 6 asks on each at $0.003, which check the fix too: all the step's, so the fix's.
-    assert notes(SystemNote.Kind.SCENE_DONE) == ["Scene 2's new clip is done. It cost $0.84."]
-    assert fix.cost_usd() == Decimal("0.840")
+    # The same-fault call on the first clip's failing answers is part of it.
+    assert notes(SystemNote.Kind.SCENE_DONE) == ["Scene 2's new clip is done. It cost $0.843."]
+    assert fix.cost_usd() == Decimal("0.843")
     charged = ModelCall.objects.filter(created_at__gte=step.started_at).exclude(purpose="produce")
     assert {call.tool_call_id for call in charged} == {step.tool_call_id}
     assert paid_for()[len(shown) :] == [
@@ -546,6 +547,7 @@ def test_a_fixs_redo_the_judge_fails_is_made_again_by_code_and_the_remake_makes_
         "make_broll_clip",
         "collect_broll_clip",
         *JUDGED_CLIP,
+        "agree_on_fault",
         "remake_clip_prompt",
         "make_broll_clip",
         "collect_broll_clip",

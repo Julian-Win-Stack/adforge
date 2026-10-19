@@ -288,8 +288,9 @@ everything is at the first frame; then every movement and change of the product,
 touching it, and of the one thing the action changes (a surface, a liquid, a level, hair, a \
 shape), step by step, with the time of the frame where you see it; and how everything is at the \
 last frame. Describe what is on the frames, not what the product is for or what usually happens. \
-Write only about the product, the hands that touch it, and the things the product is used on or \
-changes (a surface, a liquid, a level, hair, a shape). Nothing else in the frame is your concern.
+Everything in the frame is your concern, not only the product: write down anything else that \
+moves or changes too, and judge it in the questions as well. Anything that changes while nothing \
+acts on it is a fault.
 2. Then answer three questions, each "pass" or "fail".
 - real_motion: does every object and liquid move the way a real one would? Use the facts about \
 the product: a thick gel must move like a thick gel, a hard object must stay rigid.

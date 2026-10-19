@@ -141,10 +141,12 @@ def remade_once(
 def test_a_failed_clip_is_made_again_from_the_same_picture_and_judged_again(
     remade_once: SceneStep,
 ) -> None:
-    assert paid_for()[-(5 + 2 * len(JUDGED_CLIP)) :] == [
+    assert paid_for()[-(6 + 2 * len(JUDGED_CLIP)) :] == [
         "make_broll_clip",
         "collect_broll_clip",
         *JUDGED_CLIP,
+        # Its two failing answers are asked whether they name the same fault.
+        "agree_on_fault",
         "remake_clip_prompt",
         "make_broll_clip",
         "collect_broll_clip",
@@ -533,10 +535,12 @@ def test_a_remake_asked_for_when_the_worker_stopped_is_collected_not_asked_for_a
     # The remake paid for is waited for and collected, never asked for again.
     assert fake_model.clips_submitted == ["video-1", "video-2"]
     assert fake_model.clips_downloaded == ["video-1", "video-2"]
-    assert paid_for()[-(5 + 2 * len(JUDGED_CLIP)) :] == [
+    assert paid_for()[-(6 + 2 * len(JUDGED_CLIP)) :] == [
         "make_broll_clip",
         "collect_broll_clip",
         *JUDGED_CLIP,
+        # Its two failing answers are asked whether they name the same fault.
+        "agree_on_fault",
         "remake_clip_prompt",
         "make_broll_clip",
         "collect_broll_clip",

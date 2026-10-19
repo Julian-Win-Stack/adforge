@@ -25,7 +25,7 @@ import logging
 import math
 import subprocess
 import tempfile
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,7 +48,7 @@ from gateway.types import (
 )
 
 from . import assembly
-from .models import Fix, ProducedItem, SceneStep
+from .models import Fix, Job, ProducedItem, SceneStep
 from .picture_check import ASKS as ASKS
 from .picture_check import FAILS_TO_FAIL as FAILS_TO_FAIL
 from .planning import ChatMessage
@@ -188,6 +188,10 @@ class SidesVerdict(BaseModel):
 
 # ---------------------------------------------------------------- MOTION (proof arm PM, as tested)
 
+# Its scope sentence is general since Julian's yes 2026-10-19 03:37 ("general scope wording,
+# no list"): round 5's Olipop scene 3 presenter's shirt changed colour mid-clip while the old
+# sentence told the judge nothing but the product was its concern.
+
 MOTION_CHECK = """\
 You check a short video clip for a product ad before it is shown to the shop owner. You decide \
 whether everything in it moves and changes the way it would in real life, and whether it shows \
@@ -203,8 +207,9 @@ everything is at the first frame; then every movement and change of the product,
 touching it, and of the one thing the action changes (a surface, a liquid, a level, hair, a \
 shape), step by step, with the time of the frame where you see it; and how everything is at the \
 last frame. Describe what is on the frames, not what the product is for or what usually happens. \
-Write only about the product, the hands that touch it, and the things the product is used on or \
-changes (a surface, a liquid, a level, hair, a shape). Nothing else in the frame is your concern.
+Everything in the frame is your concern, not only the product: write down anything else that \
+moves or changes too, and judge it in the questions as well. Anything that changes while nothing \
+acts on it is a fault.
 2. Then answer three questions, each "pass" or "fail".
 - real_motion: does every object and liquid move the way a real one would? Use the facts about \
 the product: a thick gel must move like a thick gel, a hard object must stay rigid.
@@ -335,13 +340,93 @@ class MotionPhotoFixVerdict(MotionVerdict):
     owner_change: PhotoFixAnswer
 
 
+# ---------------------------------------------------------------- the same-fault vote
+
+# Two failing answers are agreement only when they name the same fault (Change A, Julian's
+# yes 2026-10-18 21:48): in round 5 two unrelated complaints 2 s apart failed a clip Julian
+# passed. One text call reads a check's failing answers and groups them by fault. Its words,
+# its two-step answer form and each question's wording are the judge prototype's, as tested
+# (handoffs/round-5-prototypes/judge/work/agree.py; runs/round-5-prototypes/judge).
+AGREE_ON_FAULT = """\
+Several independent looks at the same short video clip each answered one question about \
+it, and each said the clip fails. You get each failing answer's problem, as written, with its ask \
+number. Decide whether at least two of them describe the SAME fault.
+
+Same fault means all three of these: the same object or part, the same event happening to it, and \
+time spans that overlap. A problem's time span runs from when it says it starts to when it says it \
+ends or is back to normal ("never" means to the end of the clip). A single moment counts as a span \
+of that moment: "from 1.0 to 1.8 s" and "at 1.4 s" overlap; moments 0.1 s apart, like 0.8 s and \
+0.9 s, are the same moment. Different words for the same thing count as the same \
+("the tip merges with" and "the tip absorbs"). Two different things wrong with the clip, or the \
+same object with two different things happening to it, or the same kind of thing at times that \
+don't overlap, are different faults, even if both are real.
+
+Work in two steps. First, for each answer write its object, its event and its time span. Then put \
+the answers in groups, one group per fault, every answer in exactly one group."""
+
+AGREE_QUESTIONS = {
+    "real_motion": "does every object and liquid move the way a real one would?",
+    "sudden_change": "does anything suddenly appear, vanish or change into something else?",
+    "does_what_was_ordered": "does the clip show the action it was ordered to show?",
+}
+
+
+class AgreeHandoff(Handoff):
+    """The MOTION question the answers failed, and each failing answer's ask, problem and
+    back_to_normal_at."""
+
+    question: str
+    answers: list[dict[str, Any]]
+
+
+class OneFault(BaseModel):
+    ask: int
+    object: str = Field(description="The object or part the problem is about.")
+    event: str = Field(description="What the problem says happens to it.")
+    time_span: str = Field(description="From when to when, in seconds, as the problem says.")
+
+
+class FaultGroup(BaseModel):
+    asks: list[int] = Field(description="The ask numbers whose problems describe this one fault.")
+    fault: str = Field(description="The fault, in one sentence.")
+
+
+# The call's answer, filled in from the top: it reads each answer before it groups them.
+class Agreement(BaseModel):
+    read: list[OneFault]
+    groups: list[FaultGroup]
+
+
+def agree_on_fault(job: Job | None) -> SameFault:
+    """The same-fault call, paid for by `job`."""
+
+    def asked(check: str, failing: list[dict[str, Any]]) -> dict[str, Any]:
+        return call_model(
+            job=job,
+            purpose="agree_on_fault",
+            instructions=AGREE_ON_FAULT,
+            handoff=AgreeHandoff(question=f"{check}: {AGREE_QUESTIONS[check]}", answers=failing),
+            output=Agreement,
+            pay_once=True,
+        ).model_dump(mode="json")
+
+    return asked
+
+
 # ---------------------------------------------------------------- the ruling
 
 Verdict = Literal["pass", "fail", "not_checked"]
 
+# Which of a MOTION check's failing answers name the same fault: given the check's name and
+# each failing answer's ask, problem and back_to_normal_at, the reply of agree_on_fault.
+SameFault = Callable[[str, list[dict[str, Any]]], dict[str, Any]]
+
 
 def judged(
-    sides: Sequence[dict[str, Any] | None], motion: Sequence[dict[str, Any] | None]
+    sides: Sequence[dict[str, Any] | None],
+    motion: Sequence[dict[str, Any] | None],
+    *,
+    same_fault: SameFault,
 ) -> dict[str, Any]:
     """The judge's ruling on a clip from its answers, in the order asked: each a SidesVerdict
     or MotionVerdict as a dict, or None for an ask that went unchecked. Each check (SIDES, and
@@ -363,20 +448,37 @@ def judged(
     ]
     checks: dict[str, Verdict] = {}
     problems: dict[tuple[str, int], list[str]] = {}
+    agreement: dict[str, dict[str, Any]] = {}
     for name, usable in asked:
-        fails = 0
-        for ask, said in usable:
-            if said["verdict"] != "fail":
-                continue
-            fails += 1
+        failing = [(ask, said) for ask, said in usable if said["verdict"] == "fail"]
+        for ask, said in failing:
             which = "sides" if name == "sides" else "motion"
             problems.setdefault((which, ask), []).append(said["problem"])
+        agreed = len(failing) >= FAILS_TO_FAIL
+        if agreed and name != "sides":
+            try:
+                reply = same_fault(
+                    name,
+                    [
+                        {
+                            "ask": ask,
+                            "problem": said["problem"],
+                            "back_to_normal_at": said["back_to_normal_at"],
+                        }
+                        for ask, said in failing
+                    ],
+                )
+            except Exception as error:
+                # Never a silent pass: the check fails on its failing answers, as before the
+                # vote (handoff, judge-same-fault-vote).
+                logger.exception("The same-fault call on %s failed; the check fails as voted", name)
+                agreement[name] = {"error": str(error)}
+            else:
+                sharing = _sharing(reply, {ask for ask, _ in failing})
+                agreement[name] = {**reply, "sharing": sorted(sharing)}
+                agreed = bool(sharing)
         checks[name] = (
-            "fail"
-            if fails >= FAILS_TO_FAIL
-            else "not_checked"
-            if len(usable) < FAILS_TO_FAIL
-            else "pass"
+            "fail" if agreed else "not_checked" if len(usable) < FAILS_TO_FAIL else "pass"
         )
     failures = [
         {
@@ -400,8 +502,20 @@ def judged(
         "checks": checks,
         "failed_answers": len(failures),
         "failures": failures,
+        "agreement": agreement,
         "answers": {"sides": sides, "motion": motion},
     }
+
+
+def _sharing(reply: dict[str, Any], failing: set[int]) -> set[int]:
+    """The asks, of `failing`, that the same-fault call's `reply` puts in a group with
+    another: each names a fault at least one other answer names too."""
+    shared: set[int] = set()
+    for group in reply["groups"]:
+        asks = set(group["asks"]) & failing
+        if len(asks) >= FAILS_TO_FAIL:
+            shared |= asks
+    return shared
 
 
 def owner_change_answers(ruling: dict[str, Any]) -> list[dict[str, Any] | None]:
@@ -424,9 +538,8 @@ def _without_owner_change(answer: dict[str, Any] | None) -> dict[str, Any] | Non
 
 def still_failing(ruling: dict[str, Any]) -> list[str]:
     """The problems behind a ruling's failed checks, SIDES first, each check's in the order
-    asked: never one from an answer outvoted on its check, or let go by a ruling made before
-    the forgive rule was gone."""
-    let_go = {(each["check"], each["ask"]) for each in ruling.get("let_go", [])}
+    asked: never one from an answer outvoted on its check (left_out)."""
+    left = left_out(ruling)
     answers = ruling.get("answers", {})
     problems = []
     for name in ["sides", *MOTION_QUESTIONS]:
@@ -434,9 +547,26 @@ def still_failing(ruling: dict[str, Any]) -> list[str]:
             continue
         for ask, answer in enumerate(answers.get("sides" if name == "sides" else "motion", []), 1):
             said = answer and (answer if name == "sides" else answer[name])
-            if said and said["verdict"] == "fail" and (name, ask) not in let_go:
+            if said and said["verdict"] == "fail" and (name, ask) not in left:
                 problems.append(said["problem"])
     return problems
+
+
+def left_out(ruling: dict[str, Any]) -> set[tuple[str, int]]:
+    """Each check and ask whose failing answer doesn't count in a ruling's failed check: one
+    whose fault no other answer names, or one let go by a ruling made before the half-second
+    forgive rule was gone."""
+    left = {(each["check"], each["ask"]) for each in ruling.get("let_go", [])}
+    for name, agreed in ruling.get("agreement", {}).items():
+        if "sharing" not in agreed:
+            continue
+        motion = ruling["answers"]["motion"]
+        left |= {
+            (name, ask)
+            for ask, answer in enumerate(motion, 1)
+            if answer and answer[name]["verdict"] == "fail" and ask not in agreed["sharing"]
+        }
+    return left
 
 
 # ---------------------------------------------------------------- judging a clip
@@ -532,12 +662,18 @@ def judge_clip(
             sides,
             motion,
             clip,
+            same_fault=agree_on_fault(step.scene.job),
             compared_with=old,
             photos=bool(old and step.fix and during_the_clip(step.fix)),
         )
     except Exception as error:
         logger.exception("Scene %s's clip couldn't be judged", step.scene.number)
-        ruling = {**_ruling([None] * ASKS, [None] * ASKS, clip), "error": str(error)}
+        ruling = {
+            **_ruling(
+                [None] * ASKS, [None] * ASKS, clip, same_fault=agree_on_fault(step.scene.job)
+            ),
+            "error": str(error),
+        }
     clip.ruling = ruling
     clip.save(update_fields=["ruling"])
     return ruling
@@ -548,11 +684,12 @@ def _ruling(
     motion: list[dict[str, Any] | None],
     clip: ProducedItem,
     *,
+    same_fault: SameFault,
     compared_with: ProducedItem | None = None,
     photos: bool = False,
 ) -> dict[str, Any]:
     return {
-        **judged(sides, motion),
+        **judged(sides, motion, same_fault=same_fault),
         "wording": wording_version(fix=compared_with is not None, photos=photos),
         "models": {
             "sides": catalog.MODEL_FOR_PURPOSE["check_clip_sides"],
