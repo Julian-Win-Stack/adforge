@@ -623,8 +623,14 @@ def test_an_old_plans_new_clip_the_agent_fixes_with_a_new_line_lands(
 
     steps.run_held()
 
-    passed = AgentFix.objects.get().passed
+    fixing = AgentFix.objects.get()
+    passed = fixing.passed
     assert passed is not None and scene_row()[0] == NEW_LINE
+    # The shop owner's note goes with it, and the judge compares the try with the clip they
+    # noted.
+    assert (SLOWER in fixing.note, fixing.goal) == (True, SLOWER)
+    noted = fixing.step.shown_before(ProducedItem.Kind.CLIP)
+    assert noted is not None and (passed.ruling or {}).get("compared_with") == noted.pk
     row = plan.scenes.get()
     assert (row.landed_at is not None, row.error) == (True, "")
     assert [cut["clip"] for cut in ads()[-1].cuts if cut["scene"] == 2] == [passed.pk]

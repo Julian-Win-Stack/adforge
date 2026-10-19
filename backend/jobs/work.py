@@ -2477,12 +2477,18 @@ def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
         # The agent's module runs the scene's work, so it is imported where it is used.
         from agents import fixing_agent
 
+        fix = step.fix
         try:
             outcome = fixing_agent.fix_scene(
                 step,
                 door="judge",
-                failure=fixing_agent.Failure(ruling=_ruling(first)),
-                goal=None,
+                # An old plan's new clip: the shop owner's note and the change it asks for go
+                # with it, as the judge compares each try with the clip they noted.
+                failure=fixing_agent.Failure(
+                    ruling=_ruling(first),
+                    note="\n".join(note["text"] for note in fix.notes) if fix else "",
+                ),
+                goal=fix.fix if fix else None,
                 cap=fixing_agent.MOST_TRIES,
             )
         except Exception:

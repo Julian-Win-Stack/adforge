@@ -634,12 +634,15 @@ def complained_about(step: SceneStep) -> ProducedItem | None:
     the scene has no clip from before it."""
     if step.kind != SceneStep.Kind.CLIP:
         return None
-    agent_try = AgentFixTry.objects.filter(step=step).select_related("agent_fix").first()
+    agent_try = AgentFixTry.objects.filter(step=step).select_related("agent_fix__step").first()
     if agent_try is not None:
         # A try the fixing agent films for the shop owner's note is judged beside the clip
-        # they noted, try 0, whichever try it is.
+        # they noted, try 0, whichever try it is; a try at a fix's clip the judge failed
+        # (an old plan's new clip), as that fix's clips are.
         fixing = agent_try.agent_fix
-        return fixing.first_clip if fixing.door == AgentFix.Door.OWNER else None
+        if fixing.door == AgentFix.Door.OWNER:
+            return fixing.first_clip
+        step = fixing.step
     fix = step.fix
     if fix is None:
         return None
