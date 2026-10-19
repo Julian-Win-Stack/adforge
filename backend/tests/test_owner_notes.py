@@ -23,7 +23,7 @@ from jobs.models import FixPlan, Job, ProducedItem
 from jobs.planning import PlanHandoff, producer_decision_for
 
 from .conftest import HeldSteps, a_plan_with, colour_at, picture
-from .test_fix_loop import TURN_REWRITE
+from .fake_fixing_agent import FakeAgent, ScriptedTry, install
 from .test_fix_wiring import decided, planning, row, sort
 from .test_producer_broll import (
     assemble_through_the_chat,
@@ -55,11 +55,13 @@ def test_a_case_taps_yes_on_the_plan_shown_and_keeps_what_was_made(
     assembled: ProducedItem,  # noqa: F811
     steps: HeldSteps,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     chat = a_chat()
     start = since(chat)
     a_clip_note_planned(fake_model)
-    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
+    # After the yes the note is the fixing agent's (door 2), scripted to pass its first try.
+    install(monkeypatch, FakeAgent(tries=[ScriptedTry()]))
 
     turned = send_notes(chat, Notes([NOTE_2]))
     kept = record(chat, start, turned, {"id": "mug-turn", "ad": "mug", "wants": "a turn"}, tmp_path)
@@ -71,7 +73,8 @@ def test_a_case_taps_yes_on_the_plan_shown_and_keeps_what_was_made(
     assert plan.state == "confirmed"
     assert plan.confirmed_by == Message.objects.get(plan_event="yes")
     estimate = plan.scenes.get().estimate_usd
-    assert str(estimate) == "0.484000"
+    # One try of the fixing agent, up to six.
+    assert plan.estimate_up_to_usd() == 6 * estimate > 0
     # The plan is made from the owner's messages of this round, the note last.
     [kept_plan] = kept["plans"]
     assert kept_plan["notes"][-1] == NOTE_2
@@ -88,7 +91,7 @@ def test_a_case_taps_yes_on_the_plan_shown_and_keeps_what_was_made(
             "scenes": [
                 {
                     "scene": 2,
-                    "action": "new_clip",
+                    "action": "fix",
                     "change": TURN,
                     "line": "",
                     "go_back_to": None,
@@ -107,14 +110,12 @@ def test_a_case_taps_yes_on_the_plan_shown_and_keeps_what_was_made(
     ]
     clip = next(step for step in kept["steps"] if step["kind"] == "clip")
     assert clip["note"] == TURN
-    assert clip["motion_prompt"] == TURN_REWRITE["motion_prompt"]
-    assert clip["motion_prompt_before"] != clip["motion_prompt"]
     assert kept["new_ads_shown"] == 1
     assert json.loads((tmp_path / "record.json").read_text())["sent"] == turned.sent
     text = (tmp_path / "chat.md").read_text()
     assert f"**OWNER:** {NOTE_2}" in text
     assert f"- plan {plan.pk} (confirmed, yes)" in text
-    assert f"  - scene 2 new_clip: {TURN}" in text
+    assert f"  - scene 2 fix: {TURN}" in text
 
 
 def test_an_owner_who_says_no_has_nothing_made(
