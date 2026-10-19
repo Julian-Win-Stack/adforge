@@ -33,7 +33,7 @@ class FakeAgent:
         door: str,
         failure: fixing_agent.Failure,
         goal: str | None,
-        cap: int = 6,
+        cap: int = fixing_agent.MOST_TRIES,
     ) -> fixing_agent.Outcome:
         self.handed.append((step, door, failure, cap))
         # Kept as the real agent keeps its work: one AgentFix, each try filmed in a clip step

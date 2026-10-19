@@ -1,14 +1,9 @@
 """What the clip judge saw wrong in a B-roll clip, as the fixing agent is handed it when the
-judge fails a clip (door 1), and how many tries it may film at most."""
+judge fails a clip (door 1)."""
 
 from typing import Any
 
 from .clip_judge import MOTION_QUESTIONS, left_out, still_failing
-
-# The most tries the fixing agent may film of one scene: a guard on money and time only, as
-# the agent decides when to give up (Julian, Oct 19: "We cannot make that decision with the
-# code").
-MOST_TRIES = 6
 
 
 def clip_to_keep(failed_answers: list[int]) -> int:

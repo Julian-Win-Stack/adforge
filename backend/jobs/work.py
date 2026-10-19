@@ -2483,7 +2483,7 @@ def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
                 door="judge",
                 failure=fixing_agent.Failure(ruling=_ruling(first)),
                 goal=None,
-                cap=auto_fix.MOST_TRIES,
+                cap=fixing_agent.MOST_TRIES,
             )
         except Exception:
             # An agent that can't carry on doesn't fail the step: the first clip is kept.

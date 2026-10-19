@@ -17,7 +17,7 @@ from chat.models import Attachment, Message, Session
 from gateway import catalog
 from gateway.models import ModelCall
 from gateway.types import MusicHandoff, UnusableReply
-from jobs import auto_fix, clip_judge, fix_check, page, picture_check, reference_photos
+from jobs import clip_judge, fix_check, page, picture_check, reference_photos
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
 from jobs.models import (
     BROLL_FIELDS,
@@ -60,6 +60,8 @@ from jobs.work import (
 
 from . import step_signals
 from .fixing_agent import AGENT as FIXING_AGENT
+from .fixing_agent import MOST_TRIES
+from .fixing_agent import PURPOSE as FIXING_AGENT_PURPOSE
 from .loop import Agent, Refused, Tool
 from .models import ToolCall
 from .money import dollars
@@ -1215,8 +1217,9 @@ CALL_FALLBACK_USD = Decimal("0.07")
 MILLIONTH = Decimal("0.000001")
 _JUDGE_PURPOSES = ["check_clip_sides", "check_clip_motion"]
 _WRITER_PURPOSES = ["rewrite_clip_prompt"]
-# The fixing agent's turns, one at least for each try it films.
-_AGENT_PURPOSES = ["fix_scene"]
+# The fixing agent's turns for one try: a look or two, then film_again. A GUESS, until real
+# runs of the agent in the app are recorded (fixing agent build, T3).
+AGENT_TURNS_PER_TRY = 3
 
 
 def _estimate(scene: Scene, redo: Fix.Redo, fix: str) -> Estimate:
@@ -1264,9 +1267,12 @@ def picture_estimate(scene: Scene) -> Estimate:
 def _picture_only_estimate_usd(scene: Scene) -> Decimal:
     """What a new starting picture for the scene is estimated to cost: what its last one cost,
     its judge's looks included, or the fallback when that isn't recorded."""
-    last = scene.steps.filter(
-        kind=SceneStep.Kind.STARTING_PICTURE, status=SceneStep.Status.FINISHED
-    ).last()
+    last = (
+        scene.steps.filter(kind=SceneStep.Kind.STARTING_PICTURE, status=SceneStep.Status.FINISHED)
+        # A try's picture step is charged its whole try: its clip and judge too.
+        .exclude(tool_call__agent=FIXING_AGENT)
+        .last()
+    )
     paid: Decimal | None = None
     if last is not None:
         paid = last.tool_call.model_calls.exclude(purpose__in=_BEFORE_PICTURE_PURPOSES).aggregate(
@@ -1289,19 +1295,34 @@ def _clip_estimate(scene: Scene, audio_seconds: float, *, from_note: bool) -> Es
     cost: its video and, for a B-roll clip with quality checks on, the clip judge's asks; for
     a clip made from the shop owner's note, also the call writing its video prompt; its fix
     is checked by the clip judge's own asks (Julian 2026-10-14). It can cost up to that
-    plus, for each try the fixing agent can film once the judge fails it, a new starting
-    picture, its video, the judge's asks and the agent's turn (door 1)."""
+    plus every try the fixing agent can film once the judge fails it (door 1)."""
     video = clip_estimate_usd(audio_seconds, broll=bool(scene.shows))
     judged = bool(scene.shows) and settings.QUALITY_CHECKS
-    judge = 2 * clip_judge.ASKS * _each_call_usd(scene, _JUDGE_PURPOSES) if judged else 0
-    about = video + judge
+    about = video + _judge_usd(scene)
     if from_note:
         about += _each_call_usd(scene, _WRITER_PURPOSES)
-    each_try = (
-        _picture_only_estimate_usd(scene) + video + judge + _each_call_usd(scene, _AGENT_PURPOSES)
-    )
-    tries = auto_fix.MOST_TRIES * each_try if judged else Decimal(0)
+    tries = MOST_TRIES * agent_try_usd(scene, audio_seconds) if judged else Decimal(0)
     return Estimate(about, about + tries)
+
+
+def agent_try_usd(scene: Scene, audio_seconds: float) -> Decimal:
+    """What one try of the fixing agent at the scene is estimated to cost, for either door: a
+    new starting picture, its video covering `audio_seconds`, the clip judge's asks (which
+    check the shop owner's change too, for a fix) and the agent's turns."""
+    return (
+        _picture_only_estimate_usd(scene)
+        + clip_estimate_usd(audio_seconds, broll=bool(scene.shows))
+        + _judge_usd(scene)
+        + AGENT_TURNS_PER_TRY * _each_call_usd(scene, [FIXING_AGENT_PURPOSE])
+    )
+
+
+def _judge_usd(scene: Scene) -> Decimal:
+    """What the clip judge's asks about one of the scene's clips are estimated to cost: none
+    for a talking scene, or with quality checks off."""
+    if not (scene.shows and settings.QUALITY_CHECKS):
+        return Decimal(0)
+    return 2 * clip_judge.ASKS * _each_call_usd(scene, _JUDGE_PURPOSES)
 
 
 def _each_call_usd(scene: Scene, purposes: list[str]) -> Decimal:
@@ -1309,7 +1330,11 @@ def _each_call_usd(scene: Scene, purposes: list[str]) -> Decimal:
     for the scene's last clip, or else of those made for the ad, or the fallback when none
     is recorded."""
     paid = ModelCall.objects.filter(job=scene.job, purpose__in=purposes, cost_usd__gt=0)
-    last = scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.FINISHED).last()
+    last = (
+        scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.FINISHED)
+        .exclude(tool_call__agent=FIXING_AGENT)
+        .last()
+    )
     for calls in (paid.filter(tool_call=last.tool_call) if last else paid.none(), paid):
         average: Decimal | None = calls.aggregate(cost=Avg("cost_usd"))["cost"]
         if average:

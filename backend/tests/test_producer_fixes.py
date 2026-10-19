@@ -75,13 +75,13 @@ def broll_clip_usd(seconds: int, *, from_note: bool) -> tuple[Decimal, Decimal]:
     """Scene 2's new B-roll clip, about and up to: its video and the judge's 6 asks, the
     writer's call for a clip made from a note (not recorded yet, so at the fallback; its fix
     is checked by the judge's own asks), and up to 6 tries of the fixing agent, each a new
-    picture, a video, the judge and the agent's turn (not recorded yet, so at the
+    picture, a video, the judge and the agent's 3 turns (not recorded yet, so each at the
     fallback)."""
     video = seconds * BOREAL
     judge = 6 * judge_ask_usd(2)
     about = video + judge + (CALL_FALLBACK_USD if from_note else 0)
     picture = _picture_only_estimate_usd(Scene.objects.get(number=2))
-    return about, about + 6 * (picture + video + judge + CALL_FALLBACK_USD)
+    return about, about + 6 * (picture + video + judge + 3 * CALL_FALLBACK_USD)
 
 
 def owner_says(fake_model: FakeModel, say: Say, text: str, *calls: tuple[str, Any]) -> None:
@@ -289,11 +289,11 @@ def test_a_clip_fix_with_no_judge_ask_recorded_is_estimated_at_the_fallback_an_a
 
     # The judge's 6 asks, which check the fix too, and the writer's call, each at the
     # fallback, and up to 6 tries of the fixing agent, each a new picture, a video, the
-    # judge's 6 asks and the agent's turn.
+    # judge's 6 asks and the agent's 3 turns.
     video = 5 * BOREAL
     about = video + 7 * CALL_FALLBACK_USD
     picture = _picture_only_estimate_usd(Scene.objects.get(number=2))
-    up_to = about + 6 * (picture + video + 7 * CALL_FALLBACK_USD)
+    up_to = about + 6 * (picture + video + 9 * CALL_FALLBACK_USD)
     assert _estimate(Scene.objects.get(number=2), Fix.Redo.CLIP, FIX_2) == (about, up_to)
 
 

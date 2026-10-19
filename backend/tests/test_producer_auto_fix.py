@@ -6,15 +6,16 @@ model and the judge are faked at the gateway, and the agent by tests/agent_tries
 "Fixing agent", Julian's yes 2026-10-19 16:49: "we will always start with the agent")."""
 
 from collections.abc import Callable
+from decimal import Decimal
 from typing import Any
 
 import pytest
 from django.test import override_settings
 
-from agents import producer
+from agents import fixing_agent, producer
 from chat.models import Attachment, Message
 from gateway.fake import FakeModel
-from jobs import auto_fix, work
+from jobs import work
 from jobs.models import AgentFix, ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
 from jobs.scenes import SAME_SIDE
@@ -162,7 +163,7 @@ def test_a_failed_clip_is_handed_to_the_fixing_agent_at_once(
     ((handed, door, failure, cap),) = agent.handed
     first = ProducedItem.objects.filter(kind="clip", scene__number=2).order_by("id").first()
     assert first is not None
-    assert (handed, door, cap) == (step, "judge", auto_fix.MOST_TRIES)
+    assert (handed, door, cap) == (step, "judge", fixing_agent.MOST_TRIES)
     assert failure.ruling == first.ruling
     # No reword or remake by code comes first.
     assert "remake_clip_prompt" not in paid_for()
@@ -305,18 +306,13 @@ def test_a_clip_is_estimated_up_to_every_try_the_agent_may_film(
 ) -> None:
     scene = Scene.objects.get(number=2)
 
-    about, up_to = producer._clip_estimate(scene, 5.0, from_note=False)
+    estimate = producer._clip_estimate(scene, 5.0, from_note=False)
 
-    # Each try: a new picture, its video, the judge's asks and the agent's turn.
-    video = work.clip_estimate_usd(5.0, broll=True)
-    judge = about - video
-    each_try = (
-        producer._picture_only_estimate_usd(scene)
-        + video
-        + judge
-        + producer._each_call_usd(scene, ["fix_scene"])
-    )
-    assert up_to - about == 6 * each_try
+    # A 5-second clip at Boreal's $0.0792 a second is $0.396, and the judge's 6 asks at the
+    # $0.003 recorded are $0.018. Each try: a new picture at what scene 2's last one cost,
+    # $0.0215, that clip and judge, and the agent's 3 turns at the $0.07 fallback (none of
+    # its turns is recorded: the agent is faked here).
+    assert estimate == (Decimal("0.414"), Decimal("0.414") + 6 * Decimal("0.6455"))
 
 
 # --- Jobs made before the fixing agent: the old auto-fix's remakes -------------------------

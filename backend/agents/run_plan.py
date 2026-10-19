@@ -40,6 +40,7 @@ from jobs.models import (
 from jobs.notices import post_notice
 
 from . import step_signals
+from .fixing_agent import MOST_TRIES
 from .loop import Refused, why_it_failed
 from .models import SystemNote, ToolCall
 from .money import dollars
@@ -49,14 +50,13 @@ from .producer import (
     Estimate,
     _clip_estimate,
     _current_picture,
-    _each_call_usd,
     _estimate,
     _latest_clip,
     _line_estimate,
     _listed,
-    _picture_only_estimate_usd,
     _seconds_to_say,
     _use_the_photos,
+    agent_try_usd,
     assemble_the_ad,
 )
 
@@ -79,8 +79,6 @@ __all__ = [
 # The agent name on the tool calls code makes for a plan's steps: the producer is given only
 # its own (loop._finished_steps), so it is never woken by them or given their results.
 FIX_PLAN = "fix_plan"
-# The fixing agent's purpose in the gateway's catalog (spec section 3).
-FIXING_AGENT_PURPOSE = "fix_scene"
 
 Action = FixPlanScene.Action
 
@@ -314,23 +312,10 @@ def _row_estimate(row: FixPlanScene, counted: set[tuple[str, str]]) -> Estimate:
     return Estimate(estimate.about + clean, estimate.up_to + clean)
 
 
-# The fixing agent's turns for one try: a look or two, then film_again. A GUESS, until real
-# runs of the agent in the app are recorded (fixing agent build, T3).
-AGENT_TURNS_PER_TRY = 3
-# The most tries the fixing agent makes of one scene (spec section 3, the money guard).
-MOST_TRIES = 6
-
-
 def _fix_estimate(scene: Scene) -> Estimate:
-    """What a fix row is estimated to cost: one try of the fixing agent (a new starting
-    picture, its clip and the clip judge's asks, which check the shop owner's change too, and
-    the agent's turns), up to MOST_TRIES of them."""
-    clip = _clip_estimate(scene, _audio_seconds(scene), from_note=False)
-    one_try = (
-        _picture_only_estimate_usd(scene)
-        + clip.about
-        + AGENT_TURNS_PER_TRY * _each_call_usd(scene, [FIXING_AGENT_PURPOSE])
-    )
+    """What a fix row is estimated to cost: one try of the fixing agent, up to as many as it
+    may film."""
+    one_try = agent_try_usd(scene, _audio_seconds(scene))
     return _quantized(Estimate(one_try, MOST_TRIES * one_try))
 
 

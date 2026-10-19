@@ -44,12 +44,13 @@ from jobs.models import (
 )
 
 from . import loop, run_plan
+from .fixing_agent import MOST_TRIES
 from .loop import Agent, Refused, Tool, ToolResult
 from .models import ToolCall
 
 PURPOSE = "decide_fixes"
 
-INSTRUCTIONS = """\
+INSTRUCTIONS = f"""\
 You decide how to fix a short video ad from its shop owner's notes. The ad is made of \
 scenes: in some a person speaks a line to camera, in others the product is shown while the \
 person's voice says the line over it. Each scene has a starting picture and a clip made \
@@ -76,12 +77,12 @@ Then decide, for each scene the notes are about, what changes in it:
 then owns that scene until the change is made. It sees everything you can see, and it may \
 change what happens in the scene and how it ends, its starting picture, what is said in it, \
 its kind of B-roll, whether the person's face shows, and how close the camera is. It films \
-the scene again up to 6 times, each try checked for the shop owner's change, and never asks \
-the shop owner anything. When it can't film the change well, the scene stays as it was and \
-the shop owner is shown its tries. The fix's change is its goal: one sentence in the shop \
-owner's own words saying what must be different, with any words they give to say in it \
-word for word. When the scene has an overlay, the few words drawn over it such as the \
-price, and the fix changes something it shows, give the new overlay too;
+the scene again up to {MOST_TRIES} times, each try checked for the shop owner's change, \
+and never asks the shop owner anything. When it can't film the change well, the scene \
+stays as it was and the shop owner is shown its tries. The fix's change is its goal: one \
+sentence in the shop owner's own words saying what must be different, with any words they \
+give to say in it word for word. When the scene has an overlay, the few words drawn over \
+it such as the price, and the fix changes something it shows, give the new overlay too;
 - in a scene where the person talks to camera, which the fixing agent doesn't film, a new \
 picture or a new line. A new picture, when what the picture shows is wrong: the wrong thing \
 on screen, something that couldn't be real, a colour. "Zoom in" is a new picture, closer: \

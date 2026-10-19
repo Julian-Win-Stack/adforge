@@ -40,7 +40,7 @@ class FakeAgent:
         door: str,
         failure: fixing_agent.Failure,
         goal: str | None,
-        cap: int = 6,
+        cap: int = fixing_agent.MOST_TRIES,
     ) -> fixing_agent.Outcome:
         self.handed.append({"step": step.pk, "door": door, "failure": failure, "goal": goal})
         before = step.shown_before(ProducedItem.Kind.CLIP)

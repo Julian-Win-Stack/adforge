@@ -434,6 +434,16 @@ def test_a_new_start_picture_is_drawn_checked_and_filmed(
     ]
 
 
+def test_a_tries_picture_is_never_priced_as_a_picture_with_its_clip_and_judge(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    scene = Scene.objects.get(number=2)
+    before = producer._picture_only_estimate_usd(scene)
+    fake_model.respond("fix_scene", turn(calls=[a_new_picture()]))
+    fixed(failed_clip)
+    assert producer._picture_only_estimate_usd(scene) == before
+
+
 def test_a_picture_that_fails_its_check_is_drawn_again_without_counting_as_a_try(
     fake_model: FakeModel, failed_clip: SceneStep
 ) -> None:

@@ -1129,6 +1129,14 @@ class FixCheck(models.Model):
         return "picture" if self.step.kind == SceneStep.Kind.STARTING_PICTURE else "clip"
 
 
+def most_tries() -> int:
+    """The most tries the fixing agent may film of one scene, as the agent keeps it."""
+    # The agent works the jobs' models, so it is imported when it is used.
+    from agents.fixing_agent import MOST_TRIES
+
+    return MOST_TRIES
+
+
 class AgentFix(models.Model):
     """The fixing agent's work on one B-roll scene (CONTEXT.md: door 1, door 2, try,
     give-up): the scene's clip step it fixes, what failed, and how it ended. Every try it
@@ -1168,7 +1176,9 @@ class AgentFix(models.Model):
     scene_before = models.JSONField(
         default=dict, help_text="The scene's row before try 1, put back on a give-up."
     )
-    cap = models.PositiveSmallIntegerField(default=6, help_text="The most tries it may film.")
+    cap = models.PositiveSmallIntegerField(
+        default=most_tries, help_text="The most tries it may film."
+    )
     redraws = models.PositiveSmallIntegerField(
         default=0, help_text="Start pictures in a row that failed their check since the last try."
     )
