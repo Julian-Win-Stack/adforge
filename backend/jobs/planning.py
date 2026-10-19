@@ -628,12 +628,6 @@ class ProducerDecision(Judgement):
     decision: Literal["plan", "ask"]
     question: str | None = Field(description='The question for the shop owner, if "ask".')
     plan: Plan | None = Field(description='The plan, if "plan".')
-    lines_asked_about: list[str] = Field(
-        default_factory=list,
-        description='For "ask", each line, word for word as the person would say it, whose '
-        "scene needs what you ask for. Empty for a plan, and for a question about no line, "
-        "such as the price.",
-    )
 
     @model_validator(mode="after")
     def _plan_or_question(self) -> Self:
@@ -642,51 +636,6 @@ class ProducerDecision(Judgement):
         if self.decision == "ask" and (not self.question or self.plan is not None):
             raise ValueError('An "ask" decision needs a question and no plan.')
         return self
-
-
-# How alike a planned line must be to one the shop owner went ahead without, by the share of
-# words they have in common, for it to be that line said again: a line planned again is often
-# reworded a little.
-SAME_LINE_SHARE = 0.6
-
-
-def _words(line: str) -> set[str]:
-    return {word.strip(".,!?;:\"'()-").casefold() for word in line.split()} - {""}
-
-
-def same_line(line: str, other: str) -> bool:
-    ours, theirs = _words(line), _words(other)
-    return bool(ours | theirs) and len(ours & theirs) / len(ours | theirs) >= SAME_LINE_SHARE
-
-
-def said_to_camera(plan: Plan, lines: list[str]) -> Plan:
-    """The plan with each B-roll scene whose line is one of `lines` said to camera: the shop
-    owner went ahead without what would show it (Julian 2026-10-19 17:37). A second state
-    left with no first is a scene of its own."""
-    numbers = {
-        number
-        for number, scene in enumerate(plan.scenes, start=1)
-        if any(same_line(scene.line, line) for line in lines)
-    }
-    scenes = []
-    for number, scene in enumerate(plan.scenes, start=1):
-        if number in numbers:
-            scene = scene.model_copy(
-                update=dict(
-                    shows=None,
-                    broll_kind=None,
-                    person_shown=None,
-                    usage=None,
-                    result=None,
-                    needs=[],
-                    thin_film=False,
-                    second_state=False,
-                )
-            )
-        elif scene.second_state and number - 1 in numbers:
-            scene = scene.model_copy(update=dict(second_state=False))
-        scenes.append(scene)
-    return Plan.model_validate({**plan.model_dump(), "scenes": [s.model_dump() for s in scenes]})
 
 
 def producer_decision_for(photo_count: int) -> type[ProducerDecision]:

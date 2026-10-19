@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from jobs.planning import PLAN_INSTRUCTIONS, producer_decision_for, said_to_camera
+from jobs.planning import PLAN_INSTRUCTIONS, producer_decision_for
 
 from .conftest import FINISHING_STEP, PLAN, SHOWCASE, a_plan_with, broll
 
@@ -646,39 +646,3 @@ def test_a_plan_that_breaks_a_rule_cant_be_read(reply: dict[str, Any], broken_ru
         DECISION.model_validate(reply)
 
     assert broken_rule in str(refused.value)
-
-
-def test_a_first_state_said_to_camera_leaves_its_second_state_a_scene_of_its_own() -> None:
-    plan = DECISION.model_validate(a_plan_with_ways("broll", "second state")).plan
-    assert plan is not None
-
-    said = said_to_camera(plan, ["Holds 350 ml of hot tea or cold brew."])
-
-    assert [(scene.shows, scene.second_state) for scene in said.scenes] == [
-        (None, False),
-        (None, False),
-        (None, False),
-    ]
-
-
-def test_only_the_scene_with_the_line_gone_ahead_without_is_said_to_camera() -> None:
-    plan = DECISION.model_validate(a_plan_with_ways("broll", "second state")).plan
-    assert plan is not None
-    first, second, third = plan.scenes
-    plan = plan.model_copy(
-        update=dict(
-            scenes=[
-                first,
-                second,
-                third.model_copy(update=dict(line="A different line, all of it new.")),
-            ]
-        )
-    )
-
-    said = said_to_camera(plan, ["Holds 350 ml of hot tea or cold brew."])
-
-    assert [(scene.shows, scene.second_state) for scene in said.scenes] == [
-        (None, False),
-        (None, False),
-        ("the mug in a hand", False),
-    ]
