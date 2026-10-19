@@ -175,45 +175,101 @@ def test_no_photo_clearly_showing_the_product_asks_for_one(
     ) == [3]
 
 
-# What the planner asks when the page only names a use and shows nobody how it is done.
-ONLY_NAMED_USE = (
-    "Your page says the mug works as a pour-over brewer, but no photo shows it used that way "
-    "and the page doesn't say how. Could you attach a photo of it, or tell me in a few words "
-    "how it is held and poured, or should I go ahead without one?"
+# What the planner asks when nothing shows how the mug is used to brew, about scene 2's line.
+NOT_SHOWN_HOW = (
+    "Your page says the mug works as a pour-over brewer, but doesn't show how. Could you "
+    "attach a photo of it being done, or tell me in one sentence how, or should I go ahead "
+    "without one?"
 )
+BREW_LINE = "Hand-thrown, holds 350 ml, and brews pour-over coffee right in the mug."
+BREWS = "A hand pours hot water through coffee grounds into the mug."
+POURS = "A hand pours hot tea from the mug into a cup on a workbench."
 
 
-def test_a_use_the_page_only_names_is_asked_about_and_without_an_answer_is_said_to_camera(
-    fake_model: FakeModel, page_read: str, say: Callable[..., None], api: Any, session_id: str
-) -> None:
-    # Round 5 cause 1: a use the page only named was filmed any way the planner liked. Julian
-    # 2026-10-19 00:44: "film only what the page shows, else ask the owner".
-    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says=ONLY_NAMED_USE))
+def brewing_plan(*, line: str = BREW_LINE) -> dict[str, Any]:
+    """The mug plan with scene 2 brewing over `line` and scene 3 pouring tea, before the
+    price."""
+    first, _, last = PLAN["plan"]["scenes"]
+    brew = broll({"line": line, "shows": BREWS})
+    pour = broll({"line": "Pour a cup straight from it whenever the tea is ready.", "shows": POURS})
+    return a_plan_with(scenes=[first, brew, pour, last])
+
+
+@pytest.fixture
+def asked_how_it_brews(fake_model: FakeModel, page_read: str, say: Callable[..., None]) -> None:
+    """A chat whose planner asked how the mug brews, about scene 2's line."""
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says=NOT_SHOWN_HOW))
     fake_model.respond(
-        "plan_ad", asking(ONLY_NAMED_USE, "The page names the use but never shows how.")
+        "plan_ad",
+        {
+            **asking(NOT_SHOWN_HOW, "Nothing shows the mug brewing."),
+            "lines_asked_about": [BREW_LINE],
+        },
     )
     say("Plan it")
-    assert chat(api, session_id)[-1] == ("agent", ONLY_NAMED_USE)
-    assert not Job.objects.get().scenes.exists()
 
-    # They go ahead without one: the line is the person's, said to camera.
-    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
-    fake_model.respond("plan_ad", PLAN)
+
+def went_ahead_without(fake_model: FakeModel, plan: dict[str, Any]) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("plan_ad", {"went_ahead_without": True})]),
+        turn(says="Here's the plan."),
+    )
+    fake_model.respond("plan_ad", plan)
+
+
+def test_a_line_the_shop_owner_went_ahead_without_is_said_to_camera_whatever_the_plan(
+    fake_model: FakeModel, asked_how_it_brews: None, say: Callable[..., None]
+) -> None:
+    # Round 2 re-plan (2026-10-19): told "Go ahead without one.", the planner filmed Gaiam's
+    # board and Cocofloss's flossing anyway. Julian 17:37: the line goes to camera, in code.
+    went_ahead_without(fake_model, brewing_plan())
+
     say("Go ahead without one.")
 
     *_, planning = handoffs("plan_ad")
     assert planning["conversation"][-2:] == [
-        {"by": "producer", "text": ONLY_NAMED_USE},
+        {"by": "producer", "text": NOT_SHOWN_HOW},
         {"by": "user", "text": "Go ahead without one."},
     ]
-    # Every scene is said to camera: none shows anything over its line.
-    assert [scene.shows for scene in Job.objects.get().scenes.order_by("number")] == [""] * 3
+    brew, pour = Job.objects.get().scenes.filter(number__in=[2, 3]).order_by("number")
+    assert (brew.line, brew.shows, brew.broll_kind) == (BREW_LINE, "", "")
+    assert pour.shows == POURS
+
+
+def test_a_line_reworded_when_planned_again_still_goes_to_camera(
+    fake_model: FakeModel, asked_how_it_brews: None, say: Callable[..., None]
+) -> None:
+    reworded = "Hand-thrown, it holds 350 ml and brews pour-over coffee in the mug."
+    went_ahead_without(fake_model, brewing_plan(line=reworded))
+
+    say("Go ahead without one.")
+
+    brew = Job.objects.get().scenes.get(number=2)
+    assert (brew.line, brew.shows) == (reworded, "")
+    assert Job.objects.get().scenes.get(number=3).shows == POURS
+
+
+def test_going_ahead_without_is_refused_when_the_planner_asked_nothing(
+    fake_model: FakeModel, page_read: str, say: Callable[..., None]
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("plan_ad", {"went_ahead_without": True})]),
+        turn(says="Sorry."),
+    )
+
+    say("Plan it, and go ahead without anything")
+
+    (result,) = results_of("plan_ad")
+    assert result.startswith("Refused: the planner hasn't asked the shop owner for anything")
+    assert "plan_ad" not in paid_for()
 
 
 def test_a_use_a_photo_shows_is_planned_as_broll_without_asking(
     fake_model: FakeModel, page_read: str, say: Callable[..., None]
 ) -> None:
-    shows = "A hand pours hot tea from the mug into a cup on a workbench."
+    shows = POURS
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
     fake_model.respond("plan_ad", broll_plan(shows, [], [1]))
 
@@ -221,3 +277,40 @@ def test_a_use_a_photo_shows_is_planned_as_broll_without_asking(
 
     assert paid_for().count("plan_ad") == 1
     assert Job.objects.get().scenes.get(number=2).shows == shows
+
+
+POUR_LINE = "Pour a cup straight from it whenever the tea is ready."
+HOW_IT_POURS = (
+    "Thanks. Your page says it pours without dripping, but doesn't show how. Could you attach a "
+    "photo, or tell me in one sentence how, or should I go ahead without one?"
+)
+
+
+def test_only_the_lines_of_a_question_the_shop_owner_went_ahead_without_go_to_camera(
+    fake_model: FakeModel, asked_how_it_brews: None, say: Callable[..., None]
+) -> None:
+    # They go ahead without how it brews; then, asked how it pours, they say how.
+    fake_model.respond(
+        "produce",
+        turn(calls=[("plan_ad", {"went_ahead_without": True})]),
+        turn(says=HOW_IT_POURS),
+    )
+    fake_model.respond(
+        "plan_ad",
+        {
+            **asking(HOW_IT_POURS, "Nothing shows it poured."),
+            "lines_asked_about": [POUR_LINE],
+        },
+    )
+    say("Go ahead without one.")
+    fake_model.respond(
+        "produce",
+        turn(calls=[("plan_ad", {"went_ahead_without": False})]),
+        turn(says="Here's the plan."),
+    )
+    fake_model.respond("plan_ad", brewing_plan())
+    say("Hold it by the handle and tip it slowly over the cup.")
+
+    brew, pour = Job.objects.get().scenes.filter(number__in=[2, 3]).order_by("number")
+    assert brew.shows == ""
+    assert pour.shows == POURS

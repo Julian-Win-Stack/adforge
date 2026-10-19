@@ -362,6 +362,12 @@ class PlanAd(Tool):
 
     name = "plan_ad"
 
+    went_ahead_without: bool = Field(
+        default=False,
+        description="True when the planner asked the shop owner for a photo or a description "
+        "and they chose to go ahead without one. False otherwise.",
+    )
+
     def run(self, call: ToolCall) -> str:
         job = _with_its_page(call, "the ad is planned from it")
         if job.scenes.exists():
@@ -387,7 +393,12 @@ class PlanAd(Tool):
         asked = job.tool_calls.filter(tool=self.name, asked_about="the plan").last()
         if asked is not None:
             _answered(call.session, since=asked, who_asked="the planner asked them a question")
-        decision = plan(job)
+        elif self.went_ahead_without:
+            raise Refused(
+                "the planner hasn't asked the shop owner for anything, so there is nothing to "
+                "go ahead without. Plan the ad without it."
+            )
+        decision = plan(job, went_ahead_without=_went_ahead_without(job))
         if decision.question is not None:
             call.asked_about = "the plan"
             return (
@@ -396,6 +407,23 @@ class PlanAd(Tool):
                 "If they answer with a photo, add it with use_photos before planning again."
             )
         return _the_plan(job, decision.reason)
+
+
+def _went_ahead_without(job: Job) -> list[str]:
+    """Every line the planner asked the shop owner for a photo or a description of, when they
+    went ahead without one: each such planning call goes with the question the planner asked
+    just before it. Code says these lines to camera, whatever the plan (Julian 2026-10-19
+    17:37: "we will go with your advice")."""
+    lines: list[str] = []
+    for going_ahead in job.tool_calls.filter(tool=PlanAd.name):
+        if not going_ahead.arguments.get("went_ahead_without"):
+            continue
+        asked = job.model_calls.filter(
+            purpose="plan_ad", decision="ask", created_at__lt=going_ahead.created_at
+        ).last()
+        if asked is not None and asked.output:
+            lines.extend(asked.output.get("lines_asked_about", []))
+    return lines
 
 
 class CreatePerson(Tool):

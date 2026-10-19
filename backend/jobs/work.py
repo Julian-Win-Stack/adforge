@@ -138,6 +138,7 @@ from .planning import (
     PlanHandoff,
     ProducerDecision,
     producer_decision_for,
+    said_to_camera,
 )
 from .reference_photos import ReferencePhotoUnusable
 from .scenes import (
@@ -653,9 +654,10 @@ def note_face(job: Job, source: str, key: str) -> bool:
     return noted.has_face
 
 
-def plan(job: Job) -> ProducerDecision:
+def plan(job: Job, *, went_ahead_without: Sequence[str] = ()) -> ProducerDecision:
     """Have the planner plan the ad from the page, the product photos and the conversation,
-    and keep the plan. A decision to ask the user keeps nothing."""
+    and keep the plan, with each line in `went_ahead_without` said to camera: the shop owner
+    went ahead without what would show it. A decision to ask the user keeps nothing."""
     photos = list(job.photos.all())
     decision = call_model(
         job=job,
@@ -674,6 +676,7 @@ def plan(job: Job) -> ProducerDecision:
     planned = decision.plan
     if planned is None:
         return decision
+    planned = said_to_camera(planned, list(went_ahead_without))
     with transaction.atomic():
         Scene.objects.bulk_create(
             Scene(
@@ -709,7 +712,7 @@ def plan(job: Job) -> ProducerDecision:
             ]
         )
         job.photos.filter(position__in=planned.colour_photos).update(shows_product_colour=True)
-    return decision
+    return decision.model_copy(update=dict(plan=planned))
 
 
 PORTRAIT_PROMPT = """\
