@@ -163,6 +163,8 @@ function SceneCardView({
     status = "Being remade";
   } else if (card.making) {
     status = `${card.making.remaking ? "Remaking" : "Making"} the ${STEP_NOUN[card.making.kind]}`;
+  } else if (card.failed === "clip") {
+    // No badge: the red chat notice already tells the owner the clip couldn't be made.
   } else if (card.failed) {
     status = `Couldn't make the ${STEP_NOUN[card.failed]}`;
     tone = " failed";
