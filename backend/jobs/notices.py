@@ -24,6 +24,7 @@ def post_notice(
     tries_of: int | None = None,
     pasted_page_result: str = "",
     wants_pasted_page: bool | None = None,
+    wants_more_photos: bool = False,
 ) -> Message | None:
     """Tell the user, in the chat, that something fell back or failed, with any files that
     show it. `text` says three things: what failed, what was used instead, and what that
@@ -33,7 +34,8 @@ def post_notice(
     may suggest a note on a scene; one about a fix plan carries its `plan`; one showing every
     try of a clip the judge failed names its clip step, `tries_of`; one about the product page
     says whether it wants the page panel, `wants_pasted_page`; one answering the page panel's
-    message carries its `pasted_page_result`. Gives the message
+    message carries its `pasted_page_result`, and one keeping a pasted page with too few
+    photos `wants_more_photos`. Gives the message
     posted, or None for a job with no chat."""
     warning = {"level": level, "text": text, "at": timezone.now().isoformat()}
     # The job is read again under a lock, so a notice posted through another copy of the job
@@ -57,6 +59,7 @@ def post_notice(
                 tries_of=tries_of,
                 pasted_page_result=pasted_page_result,
                 wants_pasted_page=wants_pasted_page,
+                wants_more_photos=wants_more_photos,
             )
     job.warnings = locked.warnings
     return posted

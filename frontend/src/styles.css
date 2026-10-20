@@ -1121,6 +1121,22 @@ button:disabled {
   color: var(--text-3);
 }
 
+/* A quiet second choice beside the panel's main button. */
+.page-panel-plain {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.page-panel-plain:hover:not(:disabled) {
+  color: var(--text);
+}
+
 .page-panel-checking {
   display: inline-flex;
   align-items: center;

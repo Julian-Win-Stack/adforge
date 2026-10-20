@@ -393,3 +393,151 @@ export function PagePanel({
     </section>
   );
 }
+
+/** The page panel once a pasted page was kept with only one photo: the app asks whether to go
+ * ahead with it, and the shop owner can add more photos right here, or go ahead. It goes once
+ * they answer, here or in the chat. */
+export function MorePhotosPanel({
+  onSend,
+  onGoAhead,
+}: {
+  onSend: (photos: File[]) => Promise<void>;
+  onGoAhead: () => Promise<void>;
+}) {
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [sending, setSending] = useState(false);
+  const [refused, setRefused] = useState<string | null>(null);
+  const [skipped, setSkipped] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
+
+  function add(files: Iterable<File>) {
+    const all = Array.from(files);
+    const usable = all.filter((file) => PHOTO_TYPES.includes(file.type));
+    setSkipped(usable.length < all.length);
+    const same = (a: File, b: File) => a.name === b.name && a.size === b.size;
+    const fresh = usable.filter(
+      (file, index) =>
+        !photos.some((have) => same(have, file)) &&
+        usable.findIndex((other) => same(other, file)) === index,
+    );
+    if (fresh.length) setPhotos([...photos, ...fresh]);
+    setRefused(null);
+  }
+
+  async function answer(how: () => Promise<void>) {
+    setSending(true);
+    setRefused(null);
+    try {
+      await how();
+    } catch (e) {
+      setRefused(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
+      setSending(false);
+    }
+  }
+
+  return (
+    <section
+      className="page-panel"
+      aria-label="Add more product photos"
+      onPaste={(event) => add(event.clipboardData.files)}
+    >
+      <header className="page-panel-head">
+        <div>
+          <p className="page-panel-title">Add more photos?</p>
+          <p className="page-panel-sub">
+            Your page is in, with one photo. More angles make better scenes.
+          </p>
+        </div>
+      </header>
+
+      <div className="page-panel-body">
+        <input
+          ref={picker}
+          className="visually-hidden"
+          aria-label="More product photos"
+          type="file"
+          multiple
+          accept={PHOTO_TYPES.join(",")}
+          tabIndex={-1}
+          onChange={(event) => add(event.target.files ?? [])}
+        />
+        <div className={`page-panel-photos${photos.length ? " has-photos" : ""}`}>
+          {photos.map((photo, index) => (
+            <Thumb
+              key={`${photo.name}-${photo.size}-${index}`}
+              photo={{ name: photo.name, file: photo }}
+              onRemove={sending ? null : () => setPhotos(photos.filter((_, i) => i !== index))}
+            />
+          ))}
+          <div
+            role="button"
+            tabIndex={sending ? -1 : 0}
+            aria-disabled={sending}
+            aria-label="Add product photos"
+            className={`page-panel-drop${dragging ? " over" : ""}${photos.length ? " small" : ""}`}
+            onClick={() => !sending && picker.current?.click()}
+            onKeyDown={(event) => {
+              if (sending || (event.key !== "Enter" && event.key !== " ")) return;
+              event.preventDefault();
+              picker.current?.click();
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragging(false);
+              if (!sending) add(event.dataTransfer.files);
+            }}
+          >
+            <ImageIcon size={photos.length ? 18 : 22} />
+            {photos.length === 0 ? (
+              <span>
+                <strong>Add more photos</strong>
+                <span className="page-panel-drop-how pointer">
+                  Drop them here or click to choose
+                </span>
+                <span className="page-panel-drop-how touch">Tap to choose</span>
+              </span>
+            ) : (
+              <span>Add</span>
+            )}
+          </div>
+        </div>
+        {skipped && (
+          <p className="page-panel-skipped">Only photos can be added: JPG, PNG, WebP or GIF.</p>
+        )}
+      </div>
+
+      {refused && (
+        <p role="alert" className="notice error page-panel-error">
+          {refused}
+        </p>
+      )}
+
+      <div className="page-panel-foot">
+        <span className="page-panel-hint" aria-live="polite">
+          <button
+            type="button"
+            className="page-panel-plain"
+            disabled={sending}
+            onClick={() => answer(onGoAhead)}
+          >
+            Go ahead with one photo
+          </button>
+        </span>
+        <button
+          type="button"
+          className="yes-button"
+          disabled={sending || photos.length === 0}
+          onClick={() => answer(() => onSend(photos))}
+        >
+          {photos.length > 1 ? `Add ${photos.length} photos` : "Add photo"}
+        </button>
+      </div>
+    </section>
+  );
+}

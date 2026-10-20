@@ -43,3 +43,13 @@ export function acceptedPastes(messages: Message[]): Set<number> {
   }
   return accepted;
 }
+
+/** Whether the page panel stays open for more photos: code kept a pasted page with too few
+ * of them and asked, and the shop owner hasn't answered since. */
+export function morePhotosWanted(messages: Message[]): boolean {
+  const fromEnd = [...messages]
+    .reverse()
+    .findIndex((message) => message.wants_more_photos === true);
+  if (fromEnd === -1) return false;
+  return !messages.slice(messages.length - fromEnd).some((message) => message.role === "user");
+}

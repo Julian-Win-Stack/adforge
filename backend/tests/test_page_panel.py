@@ -144,6 +144,7 @@ def test_a_pasted_page_with_photos_is_kept_as_the_page_and_the_ad_is_planned_fro
         ("notice", "Using your text as the page and these 2 photos as the product photos.")
     ]
     assert confirmed[0]["pasted_page_result"] == "accepted"
+    assert confirmed[0]["wants_more_photos"] is False
     assert the_paste(api, session_id)["pasted_page_result"] == "accepted"
     # The producer was told by the app, never given the paste, and planned.
     assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
@@ -211,10 +212,14 @@ def test_a_pasted_page_with_one_photo_stops_before_planning_until_the_owner_answ
 
     paste(PASTE, ("front.png", FRONT))
 
-    assert "this photo as the product photo." in [
-        each["text"].removeprefix("Using your text as the page and ")
+    (confirmed,) = [
+        each
         for each in messages(api, session_id)
+        if each["role"] == "notice" and each["pasted_page_result"] == "accepted"
     ]
+    assert confirmed["text"].endswith("this photo as the product photo.")
+    # The page panel stays open for more photos until the owner answers.
+    assert confirmed["wants_more_photos"] is True
     told = given_as_text(given_to_the_producer(3))
     assert "owner photo 1 is the product photo" in told
     assert "go ahead with this photo or attach more" in told

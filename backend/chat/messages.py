@@ -67,6 +67,7 @@ def add(
     pasted_page: bool = False,
     pasted_page_result: str = "",
     wants_pasted_page: bool | None = None,
+    wants_more_photos: bool = False,
 ) -> Message:
     """Say something in a session, with any files it carries, and name the session from
     the first thing the user types. A notice carries its `level`; nothing else does. A
@@ -75,7 +76,8 @@ def add(
     try of a clip the judge failed names its clip step, `tries_of`, and the shop owner's tap
     on one of them names the try chosen, `chosen_clip`. A notice about the product page says
     whether it wants the page panel, `wants_pasted_page`. The page panel's message is a
-    `pasted_page`; it and code's notice answering it carry the `pasted_page_result`.
+    `pasted_page`; it and code's notice answering it carry the `pasted_page_result`, and a
+    notice keeping one with too few photos `wants_more_photos`.
 
     Messages are numbered 1, 2, 3... per session. The session row is locked while
     numbering, so messages always become visible in number order. Without that, a poll
@@ -104,6 +106,7 @@ def add(
             pasted_page=pasted_page,
             pasted_page_result=pasted_page_result,
             wants_pasted_page=wants_pasted_page,
+            wants_more_photos=wants_more_photos,
         )
         Attachment.objects.bulk_create(
             Attachment(

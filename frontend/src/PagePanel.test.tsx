@@ -517,3 +517,59 @@ test("a paste longer than the app takes says so before Done", async () => {
   expect(within(opened).getByText(/That's too long/)).toBeTruthy();
   expect(within(opened).getByRole("button", { name: "Done" })).toHaveProperty("disabled", true);
 });
+
+test("a page kept with one photo keeps the panel open for more photos until the owner answers", async () => {
+  const backend = server([
+    said("user", "https://shop.example/p/mug"),
+    cantRead(),
+    said("user", PAGE, { pasted_page: true, pasted_page_result: "accepted" }),
+    said("notice", "Using your text as the page and this photo as the product photo.", {
+      pasted_page_result: "accepted",
+      wants_more_photos: true,
+    }),
+    said("agent", "Only one photo came. Go ahead with it, or add more?"),
+  ]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  await openChat();
+  const asking = await screen.findByRole("region", { name: "Add more product photos" });
+  const add = within(asking).getByRole("button", { name: "Add photo" });
+  expect(add).toHaveProperty("disabled", true);
+
+  await user.upload(within(asking).getByLabelText("More product photos"), [
+    photo("back.png"),
+    photo("top.png"),
+  ]);
+  await user.click(within(asking).getByRole("button", { name: "Add 2 photos" }));
+
+  expect(backend.sent.at(-1)).toEqual({
+    text: "Here are more photos.",
+    photos: ["back.png", "top.png"],
+    pasted_page: null,
+  });
+  await waitFor(() =>
+    expect(screen.queryByRole("region", { name: "Add more product photos" })).toBeNull(),
+  );
+});
+
+test("going ahead with one photo, or answering in the chat, takes the photos panel away", async () => {
+  const backend = server([
+    said("user", "https://shop.example/p/mug"),
+    cantRead(),
+    said("user", PAGE, { pasted_page: true, pasted_page_result: "accepted" }),
+    said("notice", "Using your text as the page and this photo as the product photo.", {
+      pasted_page_result: "accepted",
+      wants_more_photos: true,
+    }),
+  ]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  await openChat();
+  const asking = await screen.findByRole("region", { name: "Add more product photos" });
+
+  await user.click(within(asking).getByRole("button", { name: "Go ahead with one photo" }));
+
+  expect(backend.sent.at(-1)?.text).toBe("Go ahead with this photo.");
+  await waitFor(() =>
+    expect(screen.queryByRole("region", { name: "Add more product photos" })).toBeNull(),
+  );
+  expect(panel()).toBeNull();
+});

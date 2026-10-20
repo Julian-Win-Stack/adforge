@@ -112,6 +112,9 @@ export type Message = {
    * On the pasted message once it is checked, and on code's notice saying so. Blank ("", or
    * null) while it is being checked, and on any other message. */
   pasted_page_result?: string | null;
+  /** True on code's notice that a pasted page was kept with too few photos: the page panel
+   * stays open for more photos until the shop owner answers. */
+  wants_more_photos?: boolean;
 };
 
 /** One session, as the sidebar lists it. The name is blank until the first message names it. */

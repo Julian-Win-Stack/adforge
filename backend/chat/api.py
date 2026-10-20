@@ -86,6 +86,7 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
             "pasted_page",
             "pasted_page_result",
             "wants_pasted_page",
+            "wants_more_photos",
         ]
 
     def get_step(self, message: Message) -> dict[str, object] | None:

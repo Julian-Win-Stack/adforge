@@ -19,8 +19,8 @@ import {
   type SendAs,
   type Sent,
 } from "./api";
-import { PagePanel, wordCount } from "./PagePanel";
-import { acceptedPastes, lastPastedPage, pagePanel } from "./pagePanel";
+import { MorePhotosPanel, PagePanel, wordCount } from "./PagePanel";
+import { acceptedPastes, lastPastedPage, morePhotosWanted, pagePanel } from "./pagePanel";
 import { ScenePanel } from "./ScenePanel";
 import { nextFollowing } from "./follow";
 import {
@@ -340,6 +340,12 @@ export function Chat({
                 state={pageAsk}
                 lastPasted={unacceptedPaste}
                 onDone={(text, photos) => send(text, photos, { pastedPage: true })}
+              />
+            )}
+            {!pageAsk && morePhotosWanted(messages) && (
+              <MorePhotosPanel
+                onSend={(photos) => send("Here are more photos.", photos)}
+                onGoAhead={() => send("Go ahead with this photo.", [])}
               />
             )}
             {waitsForYes(messages) && <YesBar onYes={() => send("Yes", [])} />}

@@ -133,6 +133,8 @@ def _keep(job: Job, message: Message, kept: _Kept) -> None:
             ),
             Message.Level.INFO,
             pasted_page_result=messages.PASTE_ACCEPTED,
+            # The panel stays open for more photos until the shop owner answers.
+            wants_more_photos=count < FEWEST_SURE_PHOTOS,
         )
         Message.objects.filter(pk=message.pk).update(pasted_page_result=messages.PASTE_ACCEPTED)
         SystemNote.objects.create(

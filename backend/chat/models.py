@@ -176,6 +176,12 @@ class Message(models.Model):
         "the page panel; false on its notice that a page was read after all, so the panel is "
         "no longer needed. Null for every other message.",
     )
+    wants_more_photos = models.BooleanField(
+        default=False,
+        db_default=False,
+        help_text="On code's notice that a pasted page was kept with too few photos: the page "
+        "panel stays open for more photos until the shop owner answers. False otherwise.",
+    )
     routed_at = models.DateTimeField(
         null=True,
         blank=True,
