@@ -8,7 +8,7 @@ import {
 } from "react";
 import { ApiError, type Message } from "./api";
 import { ChevronIcon, CloseIcon, ImageIcon } from "./icons";
-import type { PagePanelState } from "./pagePanel";
+import type { PagePanelState } from "./pagePanelState";
 
 const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 

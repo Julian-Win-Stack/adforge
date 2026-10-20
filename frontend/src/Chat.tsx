@@ -20,7 +20,7 @@ import {
   type Sent,
 } from "./api";
 import { MorePhotosPanel, PagePanel, wordCount } from "./PagePanel";
-import { acceptedPastes, lastPastedPage, morePhotosWanted, pagePanel } from "./pagePanel";
+import { acceptedPastes, lastPastedPage, morePhotosWanted, pagePanel } from "./pagePanelState";
 import { ScenePanel } from "./ScenePanel";
 import { nextFollowing } from "./follow";
 import {
