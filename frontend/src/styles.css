@@ -1243,10 +1243,12 @@ button:disabled {
 }
 
 .tries-title,
+.tries-reason,
 .tries-gone {
   margin: 0;
 }
 
+.tries-reason,
 .tries-gone {
   font-size: 13px;
   color: var(--text-2);
@@ -1297,6 +1299,11 @@ button:disabled {
   color: var(--on-accent);
   font-size: 12px;
   font-weight: 700;
+}
+
+.try-badge.pick {
+  background: var(--surface-3);
+  color: var(--text);
 }
 
 .try-problem {

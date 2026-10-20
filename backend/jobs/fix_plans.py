@@ -123,8 +123,8 @@ def _check(job: Job, row: FixPlanScene) -> None:
             f"Scene {number}: a new line carries the line, and only a new line or a new "
             "picture carries one."
         )
-    if row.overlay and not row.line:
-        raise ValueError(f"Scene {number}: a new overlay comes only with a new line.")
+    if row.overlay and not row.line and row.action != FixPlanScene.Action.FIX:
+        raise ValueError(f"Scene {number}: a new overlay comes only with a fix or a new line.")
     version = row.go_back_to
     if (row.action == FixPlanScene.Action.GO_BACK) != (version is not None) or (
         version is not None and version < 1
@@ -242,12 +242,16 @@ def _in_words(shown: PlanNotice) -> str:
     elif asked_cant:
         lines.append("We can't do that yet.")
     for scene in shown["scenes"]:
-        what = ACTIONS_IN_WORDS[FixPlanScene.Action(scene["action"])]
-        if scene["action"] == FixPlanScene.Action.GO_BACK:
-            what = f"go back to version {scene['go_back_to']}"
-        said = f"Scene {scene['scene']}, {what}"
-        if scene["change"]:
-            said += f": {scene['change']}"
+        if scene["action"] == FixPlanScene.Action.FIX:
+            # A fix reads as its goal: the fixing agent chooses what to make again.
+            said = f"Scene {scene['scene']}: {scene['change']}"
+        else:
+            what = ACTIONS_IN_WORDS[FixPlanScene.Action(scene["action"])]
+            if scene["action"] == FixPlanScene.Action.GO_BACK:
+                what = f"go back to version {scene['go_back_to']}"
+            said = f"Scene {scene['scene']}, {what}"
+            if scene["change"]:
+                said += f": {scene['change']}"
         if scene["line"]:
             said += f' New line: "{scene["line"]}"'
         if scene["overlay"]:

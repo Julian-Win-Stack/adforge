@@ -20,6 +20,7 @@ from agents.producer import (
     CALL_FALLBACK_USD,
     PICTURE_FALLBACK_USD,
     _estimate,
+    _picture_only_estimate_usd,
     picture_estimate,
 )
 from chat.models import Attachment
@@ -73,12 +74,14 @@ def judge_ask_usd(scene: int) -> Decimal:
 def broll_clip_usd(seconds: int, *, from_note: bool) -> tuple[Decimal, Decimal]:
     """Scene 2's new B-roll clip, about and up to: its video and the judge's 6 asks, the
     writer's call for a clip made from a note (not recorded yet, so at the fallback; its fix
-    is checked by the judge's own asks), and up to 2 remakes, each a video, the judge and the
-    writer."""
+    is checked by the judge's own asks), and up to 6 tries of the fixing agent, each a new
+    picture, a video, the judge and the agent's 3 turns (not recorded yet, so each at the
+    fallback)."""
     video = seconds * BOREAL
     judge = 6 * judge_ask_usd(2)
     about = video + judge + (CALL_FALLBACK_USD if from_note else 0)
-    return about, about + 2 * (video + judge + CALL_FALLBACK_USD)
+    picture = _picture_only_estimate_usd(Scene.objects.get(number=2))
+    return about, about + 6 * (picture + video + judge + 3 * CALL_FALLBACK_USD)
 
 
 def owner_says(fake_model: FakeModel, say: Say, text: str, *calls: tuple[str, Any]) -> None:
@@ -248,7 +251,7 @@ def test_a_clip_fix_is_estimated_at_its_video_the_judge_and_the_writer_at_the_fa
     shown: ProducedItem,
 ) -> None:
     # No clip was made from a note yet, so the writer's call is at the fallback; only scene
-    # 2's B-roll clip can be made again by the clip judge.
+    # 2's B-roll clip can be filmed again by the fixing agent.
     assert _estimate(Scene.objects.get(number=2), Fix.Redo.CLIP, FIX_2) == (
         broll_clip_usd(5, from_note=True)
     )
@@ -285,10 +288,12 @@ def test_a_clip_fix_with_no_judge_ask_recorded_is_estimated_at_the_fallback_an_a
     ModelCall.objects.filter(purpose__in=["check_clip_sides", "check_clip_motion"]).delete()
 
     # The judge's 6 asks, which check the fix too, and the writer's call, each at the
-    # fallback, and up to 2 remakes, each a video, the judge's 6 asks and the writer's call.
+    # fallback, and up to 6 tries of the fixing agent, each a new picture, a video, the
+    # judge's 6 asks and the agent's 3 turns.
     video = 5 * BOREAL
     about = video + 7 * CALL_FALLBACK_USD
-    up_to = about + 2 * (video + 7 * CALL_FALLBACK_USD)
+    picture = _picture_only_estimate_usd(Scene.objects.get(number=2))
+    up_to = about + 6 * (picture + video + 9 * CALL_FALLBACK_USD)
     assert _estimate(Scene.objects.get(number=2), Fix.Redo.CLIP, FIX_2) == (about, up_to)
 
 
@@ -619,7 +624,7 @@ def test_a_note_on_a_scene_with_its_clip_and_one_without_is_planned_and_made_bot
         planning(
             ("look_at_picture", {"scene": 1}),
             ("look_at_picture", {"scene": 2}),
-            decided(row(2, "new_picture", FIX_2), row(1, "new_picture", NOTE_1)),
+            decided(row(2, "fix", FIX_2), row(1, "new_picture", NOTE_1)),
         ),
     )
     owner_says(fake_model, say, f"{NOTE_1} {NOTE_2}", picture_with(1, NOTE_1))
@@ -631,7 +636,7 @@ def test_a_note_on_a_scene_with_its_clip_and_one_without_is_planned_and_made_bot
     assert last_step("starting_picture", 1).note == NOTE_1
     # The producer is told which scenes the plan covers, and which is its own to make.
     [told] = plan.system_notes.filter(kind="plan_shown").values_list("text", flat=True)
-    assert "Scene 2: new starting picture, then its clip" in told
+    assert "Scene 2: fixed by the fixing agent, to this goal" in told
     assert (
         "Scene 1 has no clip yet, so it isn't in the plan: the shop owner's note on it is "
         "yours to make it with."

@@ -120,13 +120,17 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
 
     def get_tries(self, message: Message) -> dict[str, object] | None:
         """Every try of a clip the judge failed every try of, as it stands now, with the one
-        in the ad, for a notice showing them to pick from (#180), or null."""
+        in the ad, whether one can be swapped in, and the fixing agent's pick and why it gave
+        up, for a notice showing them to pick from, or null."""
         if message.tries_of is None:
             return None
         shown = work.tries_shown(message.tries_of)
         return {
             "scene": shown.scene,
             "in_ad": shown.in_ad.pk if shown.in_ad is not None else None,
+            "on_offer": shown.on_offer,
+            "picked": shown.picked.pk if shown.picked is not None else None,
+            "reason": shown.reason,
             "clips": [
                 {
                     "clip": each.clip.pk,

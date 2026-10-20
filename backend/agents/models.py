@@ -19,6 +19,14 @@ class ToolCall(models.Model):
         help_text="The job the tool worked on. Blank for a tool that works on no job.",
     )
     agent = models.CharField(max_length=50, help_text='Which agent called it, such as "producer".')
+    agent_fix = models.ForeignKey(
+        "jobs.AgentFix",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="tool_calls",
+        help_text="For the fixing agent, the scene fix it called the tool for. Blank otherwise.",
+    )
     tool = models.CharField(max_length=50)
     call_id = models.CharField(
         max_length=200, help_text="The model's id for the call, which pairs it with its result."
