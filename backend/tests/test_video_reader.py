@@ -36,8 +36,8 @@ from .test_product_videos import picks_videos, player, tiny_mp4  # noqa: F401
 pytestmark = pytest.mark.django_db(transaction=True)
 
 ADDED_JOB = (
-    "You are not planning the ad here and you ask the shop owner nothing. Think through the "
-    "plan you would make, then name only the video moments you would need as pictures, and why."
+    "You ask the shop owner nothing. Before you plan, name the video moments you would need "
+    "as pictures, and why."
 )
 SAID = "Tap a dot on each cheek and blend it out with your fingertips."
 KEPT = {
