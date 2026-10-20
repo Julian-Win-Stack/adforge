@@ -50,10 +50,18 @@ def asking(question: str, reason: str) -> dict[str, Any]:
     return {"decision": "ask", "reason": reason, "question": question, "plan": None}
 
 
-def broll_plan(shows: str, needs: list[dict[str, Any]], colour_photos: list[int]) -> dict[str, Any]:
-    """The mug plan with its second scene showing `shows` and needing `needs`."""
+def broll_plan(
+    shows: str,
+    needs: list[dict[str, Any]],
+    colour_photos: list[int],
+    owner_part: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """The mug plan with its second scene showing `shows`, needing `needs` and with
+    `owner_part`."""
     scenes = [
-        broll({**scene, "shows": shows, "needs": needs}) if number == 2 else scene
+        broll({**scene, "shows": shows, "needs": needs, "owner_part": owner_part})
+        if number == 2
+        else scene
         for number, scene in enumerate(PLAN["plan"]["scenes"], start=1)
     ]
     return a_plan_with(scenes=scenes, colour_photos=colour_photos)
@@ -143,6 +151,59 @@ def test_a_photo_attached_as_the_answer_is_added_and_can_be_a_needed_photo(
         "text": "Here's one\n\n[Attached 1 picture]",
     }
     assert broll_labels()[1][-1] == [{"what": "the mug with tea in it", "photos": [3]}]
+    # A part a photo shows is drawn from the photo: nothing waits for the shop owner's yes.
+    assert Job.objects.get().scenes.get(number=2).owner_part is None
+
+
+# What the planner asks when the scene needs a part of the mug no photo shows: the three
+# answers, and the picture shown for a yes before its video.
+MISSING_PART = (
+    "To show the mug's lid being lifted, I need to know how its underside looks. You can "
+    "attach a photo of it, describe it in one sentence, or have me draw it. Either way you'll "
+    "see the scene's picture and say yes to it before its video is made."
+)
+THEIR_SENTENCE = "Matte grey clay with a cork ring around the edge."
+LID_LOOKS = "Smooth unglazed clay, a shade lighter than the mug."
+
+
+@pytest.mark.parametrize(
+    ("answer", "owner_part"),
+    [
+        pytest.param(
+            THEIR_SENTENCE,
+            {"what": "the lid's underside", "source": "owner's words", "looks": THEIR_SENTENCE},
+            id="described in their words",
+        ),
+        pytest.param(
+            "You draw it",
+            {"what": "the lid's underside", "source": "invented", "looks": LID_LOOKS},
+            id="drawn from the planner's idea",
+        ),
+    ],
+)
+def test_a_part_no_photo_shows_is_planned_from_the_answer_as_the_scenes_owner_part(
+    fake_model: FakeModel,
+    page_read: str,
+    say: Callable[..., None],
+    answer: str,
+    owner_part: dict[str, str],
+) -> None:
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says=MISSING_PART))
+    fake_model.respond("plan_ad", asking(MISSING_PART, "No photo shows the lid's underside."))
+    say("Plan it")
+
+    shows = "A hand lifts the lid off the mug."
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
+    fake_model.respond("plan_ad", broll_plan(shows, [], [1], owner_part=owner_part))
+    say(answer)
+
+    *_, planning = handoffs("plan_ad")
+    assert planning["conversation"][-2:] == [
+        {"by": "producer", "text": MISSING_PART},
+        {"by": "user", "text": answer},
+    ]
+    scenes = Job.objects.get().scenes.order_by("number")
+    assert [scene.owner_part for scene in scenes] == [None, owner_part, None]
 
 
 def test_no_photo_clearly_showing_the_product_asks_for_one(

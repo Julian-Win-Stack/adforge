@@ -315,6 +315,36 @@ def test_the_planner_is_told_a_scene_needs_only_how_a_thing_looks() -> None:
     assert "only how a thing looks" in needs["description"]
 
 
+def test_the_planner_offers_three_answers_for_something_of_the_product_no_photo_shows() -> None:
+    # Owner part loop (spec handoffs/owner-part-approval, Julian Oct 19, Q6 "the ask offers
+    # all three"): most shop owners have no photo of such a part, and "go ahead without it"
+    # lost every scene that needed it. They can now describe it or have it drawn, and approve
+    # the picture before its video is made.
+    instructions = PLAN_INSTRUCTIONS
+    assert (
+        "For something of the product no photo shows, offer three answers: attach a photo of "
+        "it; describe how it looks in one sentence; or have you draw it from your own idea of "
+        "it. Say that they will see the scene's picture and say yes to it before its video is "
+        "made."
+    ) in instructions
+    # The other three cases keep today's two answers.
+    assert "For the other cases, offer two answers: attach a photo of it" in instructions
+    assert (
+        "if they attach a photo, plan with it among the scene's needs; if they describe it, "
+        "give the scene an owner part from the shop owner's words, its looks their sentence "
+        "as they said it; if they say to draw it, give the scene an owner part you invent, "
+        "its looks one sentence of how such a thing ordinarily looks: the only thing you may "
+        "make up."
+    ) in instructions
+    # A part no photo shows is never drawn, except the one the shop owner will approve.
+    assert "parts of the product no photo shows, other than a scene's owner part" in instructions
+    owner_part = SCHEMA["PlannedScene"]["properties"]["owner_part"]
+    assert "described it or asked you to draw it" in owner_part["description"]
+    part = SCHEMA["OwnerPart"]["properties"]
+    assert part["source"]["enum"] == ["owner's words", "invented"]
+    assert "their sentence as they said it" in part["looks"]["description"]
+
+
 def test_the_planner_is_told_to_ask_for_a_before_and_after_nobody_could_picture() -> None:
     instructions = PLAN_INSTRUCTIONS
     # N3's shower cleaner was planned with a result nobody could picture and
@@ -409,11 +439,22 @@ def test_a_broll_scenes_blank_usage_and_result_are_read_as_empty() -> None:
 # --- A plan that can't be used ----------------------------------------------------------------
 
 
+# What the shop owner said a part no photo shows looks like, and the part as the planner
+# gives it from their words.
+THEIR_SENTENCE = "A pale wooden handle with a round brass cap."
+OWNER_PART = {"what": "the handle", "source": "owner's words", "looks": THEIR_SENTENCE}
+
+
 @pytest.mark.parametrize(
     "reply",
     [
         pytest.param(PLAN, id="three talking scenes"),
         pytest.param(broll_scene(), id="a showcase"),
+        pytest.param(broll_scene(owner_part=OWNER_PART), id="an owner part from their words"),
+        pytest.param(
+            broll_scene(owner_part={**OWNER_PART, "source": "invented"}),
+            id="an owner part the planner invents",
+        ),
         pytest.param(talking_scene(), id="a second talking scene"),
         pytest.param(a_plan_with_ways("broll", "second state"), id="two end states"),
     ],
@@ -474,6 +515,32 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
             broll_scene(person_shown=None),
             'A B-roll scene needs who is in it: "no face" or "has face".',
             id="a B-roll scene with no person label",
+        ),
+        pytest.param(
+            talking_scene(owner_part=OWNER_PART),
+            "A scene where the person talks to camera has no owner part.",
+            id="an owner part on a talking scene",
+        ),
+        pytest.param(
+            broll_scene(owner_part={**OWNER_PART, "looks": " "}),
+            "This can't be empty.",
+            id="an owner part with no looks",
+        ),
+        pytest.param(
+            broll_scene(owner_part={**OWNER_PART, "what": ""}),
+            "This can't be empty.",
+            id="an owner part that is nothing",
+        ),
+        pytest.param(
+            broll_scene(owner_part={**OWNER_PART, "source": "a photo"}),
+            "Input should be \"owner's words\" or 'invented'",
+            id="an owner part from neither",
+        ),
+        pytest.param(
+            broll_scene(owner_part=OWNER_PART, needs=[{"what": "The  Handle", "photos": [2]}]),
+            'Scene 2 has a photo of "the handle": a part a photo shows is a need, never an '
+            "owner part.",
+            id="an owner part a photo shows",
         ),
         pytest.param(
             broll_scene(broll_kind="looks good"),

@@ -232,6 +232,10 @@ _Avoid_: Reference picture, owner picture
 How every B-roll clip is made (Julian 2026-10-16): the video model gets the drawn starting picture as Image 1, told the clip starts like it, then the clean pictures of the reference photos that only show during the clip, each named with what it shows. A reference photo goes in as a picture of the thing alone, drawn from it; no raw photo is ever sent. One switch in code goes back to before, when a clip without such pictures was made from its starting picture as its exact first frame.
 _Avoid_: Reference picture mode, way 3
 
+**Owner part**:
+A thing of the product no photo shows, drawn from the shop owner's words or invented by the planner, that the shop owner must approve in the starting picture before the scene's clip is made. The planner asks for a photo of it, one sentence describing it, or leave to draw it and show it first. The scene keeps what the part is, where its looks come from and one sentence of how it looks, and when the shop owner said yes. It is one thing for the whole ad: a yes covers the part as it stands, its looks and its photos, on every scene that shows it and has no clip yet, so later pictures and fixes of it need no new yes; a correction (new words or a new photo) changes it on every such scene and needs a new yes.
+_Avoid_: Invented part, described part, part approval
+
 ### Not yet built
 
 Named so the words mean one thing when these are built. Nothing implements them today.

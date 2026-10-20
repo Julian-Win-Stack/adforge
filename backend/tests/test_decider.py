@@ -11,6 +11,7 @@ from typing import Any
 import PIL.Image
 import pytest
 from django.core.files.storage import default_storage
+from django.utils import timezone
 
 from adforge import file_store
 from agents import decider
@@ -246,6 +247,32 @@ def test_the_decider_is_told_the_ad_and_the_note_and_doesnt_look_at_the_judge_fo
     assert findings.name in fake_model.turns_taken[0].handoff.tools
     assert "about how things move" in " ".join(findings.description.split())
     assert not ToolCall.objects.filter(agent="decider", tool="judge_findings").exists()
+
+
+def test_an_approved_owner_part_is_told_as_settled(fake_model: FakeModel, ad: Job) -> None:
+    part = {"what": "the nozzle", "source": "invented", "looks": "A short white angled spout."}
+    scene = ad.scenes.get(number=2)
+    scene.owner_part = part
+    scene.save()
+    scene.steps.update(owner_part=part)
+    scene.owner_part_approved_at = timezone.now()
+    scene.owner_part_approved_picture = scene.produced.filter(kind="starting_picture").last()
+    scene.save()
+    note = _owner_says(ad, "In scene 2 the toilet should be white.")
+    fake_model.respond(
+        "decide_fixes",
+        turn(calls=[("sort_message", {"kind": "fix_note"})]),
+        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("decide", _decided([_row(2, "new_picture", "The toilet is white.")]))]),
+    )
+
+    decider.read(ad, [note])
+
+    the_ad, *_ = _given(fake_model, 0)
+    assert (
+        "Its owner part, which the shop owner said yes to: the nozzle. A short white angled "
+        "spout." in the_ad.text
+    )
 
 
 def test_going_back_needs_a_look_at_that_version(fake_model: FakeModel, ad: Job) -> None:

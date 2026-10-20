@@ -69,6 +69,7 @@ from . import (
     clip_judge,
     firecrawl,
     fix_check,
+    owner_parts,
     page,
     page_text,
     photos,
@@ -131,7 +132,6 @@ from .picture_check import (
     BrollRedoHandoff,
     PictureKeptFailing,
     Redo,
-    StartingPictureCheckHandoff,
     StartingPictureVerdict,
 )
 from .planning import (
@@ -684,6 +684,7 @@ def plan(job: Job) -> ProducerDecision:
                 part=scene.part or "",
                 second_state=scene.second_state,
                 **scene.broll_details(),
+                owner_part=scene.owner_part.model_dump() if scene.owner_part else None,
             )
             for number, scene in enumerate(planned.scenes, start=1)
         )
@@ -1572,7 +1573,7 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
     # thing, labelled to win wherever they disagree with another picture (option C, Julian
     # 2026-10-15 16:01): the main photo is then the picture after them.
     owners = [row for row in step.reference_photos.all() if row.use == ReferencePhoto.Use.PICTURE]
-    cleans = [clean_picture(step, row) for row in owners]
+    cleans = [clean_picture(scene, row) for row in owners]
     things = [row.thing for row in owners]
     if owners:
         images = [
@@ -1591,6 +1592,19 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
         ]
     during = [row.thing for row in _during_the_clip(step)]
     owner_rules = reference_photos.writer_rules(things, during, picks_photo=len(numbers) > 1)
+    # A part of the product no photo shows, drawn from its one sentence (owner part): the
+    # shop owner sees the picture and approves it before the clip is made.
+    part = owner_parts.drawn_from_words(step)
+    if part is not None:
+        owner_rules = "\n".join(
+            rule for rule in (owner_rules, owner_parts.writer_rule(part)) if rule
+        )
+    # Or drawn from the shop owner's photo of it, with what they said to change in it.
+    changed = owner_parts.photo_words(step)
+    if changed is not None:
+        owner_rules = "\n".join(
+            rule for rule in (owner_rules, owner_parts.photo_words_rule(*changed)) if rule
+        )
     # What the scene needs that the main photo can't show comes from a photo of its own,
     # sent to the picture model after the main photo, never to the video model: sent to it,
     # a shop photo's own scene leaked into the clip (graded #12).
@@ -1689,10 +1703,13 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
             else edit_picture(
                 job=job,
                 purpose="make_starting_picture",
-                prompt=(
-                    f"{reference_photos.picture_label(things)} {choice.prompt}"
-                    if owners
-                    else choice.prompt
+                prompt=" ".join(
+                    [
+                        *([reference_photos.picture_label(things)] if owners else []),
+                        *([owner_parts.picture_label(part)] if part is not None else []),
+                        *([owner_parts.photo_words_label(*changed)] if changed else []),
+                        choice.prompt,
+                    ]
                 ),
                 pictures=sent,
             )
@@ -1717,7 +1734,7 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
 CLEAN_PICTURE_LOCK = 3
 
 
-def clean_picture(step: SceneStep, row: ReferencePhoto) -> str:
+def clean_picture(scene: Scene, row: ReferencePhoto) -> str:
     """The clean picture of only `row`'s thing, drawn from the shop owner's photo (Julian
     2026-10-15 17:43) once per ad, by whichever step needs it first, and kept on every scene's
     row of the same photo and thing. It is checked as a starting picture is, beside the photo,
@@ -1730,7 +1747,7 @@ def clean_picture(step: SceneStep, row: ReferencePhoto) -> str:
     drawn is reused in turn, and each check answered from its record."""
     if row.drawn:
         return row.drawn
-    job = step.scene.job
+    job = scene.job
     with _one_job_at_a_time(CLEAN_PICTURE_LOCK, job):
         same = ReferencePhoto.objects.filter(scene__job=job, file=row.file, thing__iexact=row.thing)
         drawn = same.exclude(drawn="").values_list("drawn", flat=True).first()
@@ -1761,7 +1778,7 @@ def clean_picture(step: SceneStep, row: ReferencePhoto) -> str:
             except BlockedBySafetyFilter as error:
                 raise ReferencePhotoUnusable(
                     f"the picture model refused to draw the {row.thing} from the shop owner's "
-                    f"photo ({error}), so nothing more was made for scene {step.scene.number}. "
+                    f"photo ({error}), so nothing more was made for scene {scene.number}. "
                     f"Ask them for another photo of the {row.thing}.",
                     thing=row.thing,
                 ) from error
@@ -1779,7 +1796,7 @@ def clean_picture(step: SceneStep, row: ReferencePhoto) -> str:
         raise ReferencePhotoUnusable(
             f"the clean copy of the {row.thing} drawn from the shop owner's photo failed its "
             f"check all {len(failed)} times it was drawn ({found}), so nothing more was made "
-            f"for scene {step.scene.number}. Ask them for another photo of the {row.thing}, "
+            f"for scene {scene.number}. Ask them for another photo of the {row.thing}, "
             "showing it clearly.",
             thing=row.thing,
         )
@@ -1936,17 +1953,29 @@ def _check_broll_picture(step: SceneStep, picture: str) -> list[str]:
     check in the app to always turn it on")."""
     assert step.photo is not None, "a B-roll picture is drawn from its main photo"
     return judge_starting_picture(
-        step.scene.job, picture, step.photo.file, about=f"scene {step.scene.number}"
+        step.scene.job,
+        picture,
+        step.photo.file,
+        about=f"scene {step.scene.number}",
+        owner_part=owner_parts.drawn_from_words(step),
     )
 
 
-def judge_starting_picture(job: Job | None, picture: str, photo: str, *, about: str) -> list[str]:
+def judge_starting_picture(
+    job: Job | None,
+    picture: str,
+    photo: str,
+    *,
+    about: str,
+    owner_part: owner_parts.OwnerPart | None = None,
+) -> list[str]:
     """What is wrong with the starting picture at `picture`, from a judge shown the picture,
     then the shop photo at `photo` it was drawn from, for how the product is built: each
     problem its failing answers found, when FAILS_TO_FAIL of its ASKS answers
     fail it; nothing when it passes. An ask the safety filter blocks, or whose answer can't
     be had, counts as not checked: the picture is paid for, and failing it would pay for it
-    again. `about` names the picture in the log."""
+    again. `about` names the picture in the log. A picture that draws `owner_part` from its
+    sentence is checked with the sentence for that part, as no photo shows it."""
     passes = 0
     problems: list[str] = []
     # Asked until the answers settle it, so a picture two answers pass isn't asked a third.
@@ -1957,8 +1986,12 @@ def judge_starting_picture(job: Job | None, picture: str, photo: str, *, about: 
             verdict = call_model(
                 job=job,
                 purpose="check_starting_picture",
-                instructions=STARTING_PICTURE_CHECK,
-                handoff=StartingPictureCheckHandoff(ask=ask),
+                instructions=(
+                    STARTING_PICTURE_CHECK
+                    if owner_part is None
+                    else f"{STARTING_PICTURE_CHECK}\n\n{owner_parts.CHECK_RULE}"
+                ),
+                handoff=owner_parts.check_handoff(ask, owner_part),
                 output=StartingPictureVerdict,
                 images=[
                     Image(label="The picture to judge:", key=picture),
@@ -2910,7 +2943,7 @@ def _the_owners_things(step: SceneStep, during: list[ReferencePhoto]) -> list[Im
     """The clean pictures of the shop owner's things that only show during the clip, as a
     model writing its video prompt is shown them."""
     return [
-        Image(label=f"The shop owner's own {row.thing}", key=clean_picture(step, row))
+        Image(label=f"The shop owner's own {row.thing}", key=clean_picture(step.scene, row))
         for row in during
     ]
 
@@ -3469,7 +3502,7 @@ def _clip_handoff(
         # it, then the clean pictures of the shop owner's things that only show during the
         # clip. Their raw photos never go.
         return BrollClipHandoff(
-            example_pictures=[picture.file, *(clean_picture(step, row) for row in during)],
+            example_pictures=[picture.file, *(clean_picture(step.scene, row) for row in during)],
             seconds=seconds,
             prompt=(
                 f"{reference_photos.reference_mode_label([row.thing for row in during])} {prompt}"

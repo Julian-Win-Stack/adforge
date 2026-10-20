@@ -174,7 +174,7 @@ def clip_step_from(picture: ProducedItem) -> SceneStep:
         scene=scene,
         kind=SceneStep.Kind.CLIP,
         tool_call=ToolCall.objects.filter(agent="producer").latest("id"),
-        **SceneStep.made_for(scene),
+        **SceneStep.snapshot(scene),
         made_from=audio,
         picture=picture,
         picture_step=picture.step,
@@ -193,7 +193,7 @@ def test_there_is_no_going_back_while_the_scenes_picture_or_clip_is_being_made()
         scene=scene,
         kind=SceneStep.Kind.CLIP,
         tool_call=ToolCall.objects.latest("id"),
-        **SceneStep.made_for(scene),
+        **SceneStep.snapshot(scene),
     )
     with pytest.raises(work.SceneBusy):
         work.go_back(scene, 1)

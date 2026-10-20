@@ -792,7 +792,7 @@ def _pictures_sent(
     step = fixing.step
     job = step.scene.job
     owners = _owner_photos(step, ReferencePhoto.Use.PICTURE)
-    files = [work.clean_picture(step, row) for row in owners]
+    files = [work.clean_picture(step.scene, row) for row in owners]
     rows: list[dict[str, Any]] = [
         {"image": number, "job": reference_photos.picture_job(row.thing), "reference_photo": row.pk}
         for number, row in enumerate(owners, 1)
@@ -832,7 +832,7 @@ def _try_step(fixing: AgentFix, call: ToolCall, kind: str, **made: Any) -> Scene
         status=SceneStep.Status.FINISHED,
         tool_call=call,
         fix=fixing.step.fix,
-        **SceneStep.made_for(fixing.step.scene),
+        **SceneStep.snapshot(fixing.step.scene),
         **made,
     )
     step.reference_photos.set(fixing.step.reference_photos.all())

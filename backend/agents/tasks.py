@@ -17,7 +17,9 @@ from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.gateway import charged_to
 from gateway.types import BlockedBySafetyFilter, UnusableReply
+from jobs import owner_parts
 from jobs.models import FixCheck, Job, ProducedItem, Scene, SceneStep
+from jobs.notices import post_notice
 from jobs.picture_check import PictureKeptFailing
 from jobs.work import (
     AgentGaveUp,
@@ -221,7 +223,47 @@ def _picture_finished(step: SceneStep, picture: ProducedItem | None) -> str:
         f"Background step finished: scene {number}'s starting picture is ready "
         f"(version {picture.version}), and is shown to the shop owner in the chat. "
         f"Photo {step.photo.position} was used: "
-        f"{step.photo_reason}{_cost(step)} {unfinished}Tell the shop owner."
+        f"{step.photo_reason}{_cost(step)} {unfinished}{_needs_a_yes(step)}{_told_it_waits(step)}"
+        "Tell the shop owner."
+    )
+
+
+def _told_it_waits(step: SceneStep) -> str:
+    """What the producer is told when the chat has just told the shop owner which scenes wait
+    for their yes, as when this picture was the last thing being made."""
+    return "".join(
+        f"The chat told the shop owner that scene {scene.number} waits for their yes on "
+        f"{part.what} in its starting picture, so the ad can't be assembled yet: don't tell "
+        "them again. "
+        for scene, part in say_what_waits_on_the_shop_owner(step.scene.job, step)
+    )
+
+
+def _needs_a_yes(step: SceneStep) -> str:
+    """What the producer is told about a picture of an owner part, which the shop owner must
+    say yes to before its scene's clip is made, or blank for a picture of none. A part they
+    already said yes to, as drawn here, is settled: they aren't asked about it again."""
+    if step.owner_part is None:
+        return ""
+    part = owner_parts.OwnerPart.model_validate(step.owner_part)
+    if owner_parts.is_approved(step.scene):
+        return (
+            f"The picture shows {part.what}, which the shop owner already said yes to: don't "
+            "ask them about it again. "
+        )
+    if owner_parts.drawn_from_words(step) is None:
+        drawn_from = "the shop owner's photo of it."
+    elif part.source == "owner's words":
+        drawn_from = f'the shop owner\'s words: "{part.looks}"'
+    else:
+        drawn_from = (
+            f'a description made up for it, as the shop owner let us draw it: "{part.looks}"'
+        )
+    return (
+        f"The picture shows {part.what}, which no product photo shows, drawn from "
+        f"{drawn_from} Its clip isn't made until the shop owner says yes to this picture. "
+        f"Ask them, in plain words, to look at {part.what} in it and say yes if it looks "
+        "right, or say what to change, or send a photo of it, and wait for their answer. "
     )
 
 
@@ -304,12 +346,59 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
         if step.fix is not None
         else ""
     )
+    waiting = "".join(
+        f" The chat told the shop owner that scene {scene.number} waits for their yes on "
+        f"{part.what} in its starting picture, so the ad can't be assembled yet: don't tell "
+        "them again."
+        for scene, part in say_what_waits_on_the_shop_owner(step.scene.job, step)
+    )
     return (
         f"Background step finished: scene {number}'s clip is ready (version {clip.version}, "
         f"{clip.seconds:g} seconds), made from {picture}audio version "
         f"{clip.made_from.version}{note}.{_cost(step)}{what_the_judge_did(step, clip)} "
-        f"Scene {number} is finished.{fixed} "
+        f"Scene {number} is finished.{fixed}{waiting} "
         "Tell the shop owner."
+    )
+
+
+def say_what_waits_on_the_shop_owner(
+    job: Job, finishing: SceneStep | None = None
+) -> list[tuple[Scene, owner_parts.OwnerPart]]:
+    """Once every scene is finished but those waiting for the shop owner's yes on their owner
+    part, tell the shop owner in the chat which scenes wait and why, once each, ever. Gives
+    the scenes told of now, each with its part. `finishing` is the step whose end is being
+    told: it counts as done."""
+    running = SceneStep.objects.filter(status=SceneStep.Status.RUNNING)
+    if finishing is not None:
+        running = running.exclude(pk=finishing.pk)
+    scenes = list(job.scenes.order_by("number"))
+    waiting = [
+        (scene, part)
+        for scene in scenes
+        if scene.status != Scene.Status.FINISHED
+        and (part := owner_parts.owner_part(scene)) is not None
+        and not owner_parts.is_approved(scene)
+        and scene.current_picture() is not None
+        and not running.filter(scene=scene).exists()
+    ]
+    if len(waiting) + sum(scene.status == Scene.Status.FINISHED for scene in scenes) != len(scenes):
+        return []
+    # Read again: a notice posted since the job was read is in the stored warnings only.
+    told = {warning["text"] for warning in Job.objects.get(pk=job.pk).warnings}
+    newly = [(scene, part) for scene, part in waiting if _waits(scene, part) not in told]
+    for scene, part in newly:
+        post_notice(job, _waits(scene, part), Message.Level.INFO)
+    return newly
+
+
+def _waits(scene: Scene, part: owner_parts.OwnerPart) -> str:
+    """What the shop owner is told when the rest of the ad is made and `scene` waits."""
+    drawn = "from your words" if part.source == "owner's words" else "by us, as you asked"
+    return (
+        f"Scene {scene.number} waits for your yes on {part.what} in its starting picture: no "
+        f"photo showed it, so it was drawn {drawn}. Say yes if it looks right, or tell us what "
+        "to change, or send a photo of it. Every scene that isn't waiting on you is made, and "
+        "the ad is put together once this scene's clip is made."
     )
 
 

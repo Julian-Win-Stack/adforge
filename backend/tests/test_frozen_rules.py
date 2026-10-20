@@ -5,13 +5,14 @@ Each case names the grade that proved the rule. Not frozen on purpose: the camer
 the video prompt's opener, "One continuous shot" (#117) and the "while" sentence (round 2 N5
 not graded yet)."""
 
+import re
 from pathlib import Path
 
 import pytest
 
 from agents import fixing_agent
 from gateway.catalog import MODEL_FOR_PURPOSE, SLOW_ANSWER_SECONDS
-from jobs import clip_judge
+from jobs import clip_judge, owner_parts
 from jobs.clip_judge import (
     FRAMES_PER_SECOND,
     MOTION_CHECK,
@@ -177,6 +178,34 @@ FROZEN = [
         id="A17 a person named in shows is in the clip (#5 s3 FAIL)",
     ),
 ]
+
+
+# The planner's ask for something of the product no photo shows, for
+# the owner part loop (Oct 19, spec handoffs/owner-part-approval): not proven by grades yet,
+# pinned so it changes only when he says so.
+OWNER_PART_ASK = [
+    "For something of the product no photo shows, offer three answers: attach a photo of it; "
+    "describe how it looks in one sentence; or have you draw it from your own idea of it.",
+    "Say that they will see the scene's picture and say yes to it before its video is made.",
+    "For something of the product no photo shows: if they attach a photo, plan with it among "
+    "the scene's needs; if they describe it, give the scene an owner part from the shop "
+    "owner's words, its looks their sentence as they said it; if they say to draw it, give "
+    "the scene an owner part you invent, its looks one sentence of how such a thing "
+    "ordinarily looks: the only thing you may make up.",
+]
+
+
+@pytest.mark.parametrize("sentence", OWNER_PART_ASK)
+def test_the_owner_part_ask_is_in_the_planner_word_for_word(sentence: str) -> None:
+    assert sentence in PLANNER
+
+
+def test_the_owner_part_ask_names_no_product_and_no_example() -> None:
+    # CODING_STANDARDS.md: a rule must hold for products never tested. A name is capitalised
+    # and an example comes after "such as": the ask has neither past each sentence's start.
+    for sentence in OWNER_PART_ASK:
+        assert "such as" not in sentence
+        assert not re.search(r"(?<![.:]) [A-Z]", sentence), sentence
 
 
 @pytest.mark.parametrize(("prompt", "sentence"), FROZEN)
@@ -375,6 +404,96 @@ def test_the_clip_judge_runs_as_proved() -> None:
         clip_judge.ASKS,
         clip_judge.FAILS_TO_FAIL,
     ) == (10, 5, 3, 2)
+
+
+# The owner part (owner-part approval spec, Julian's design 2026-10-19): drawn from the shop
+# owner's one sentence, or the planner's, exactly as it says. Pinned so a change is seen; not
+# yet proved by a grade (the real picture test, T5, comes first).
+OWNER_PART = owner_parts.OwnerPart(what="PART", source="owner's words", looks="LOOKS")
+OWNER_PART_RULES = [
+    owner_parts.writer_rule(OWNER_PART),
+    owner_parts.writer_rule(OWNER_PART.model_copy(update={"source": "invented"})),
+    owner_parts.picture_label(OWNER_PART),
+    owner_parts.CHECK_RULE,
+]
+# Products and parts of the test ads, and the parts the rules were designed around: none may
+# be named in a rule every product gets (CODING_STANDARDS.md, no hardcoding).
+TESTED_PRODUCT_WORDS = [
+    "glow recipe",
+    "rare beauty",
+    "olipop",
+    "gaiam",
+    "native pet",
+    "pumpkin",
+    "cocolab",
+    "cocofloss",
+    "floss",
+    "blueland",
+    "loop",
+    "dr squatch",
+    "rothy",
+    "blush",
+    "dew drops",
+    "earplug",
+    "soap",
+    "applicator",
+    "doe-foot",
+    "wand",
+    "brush",
+    "tube",
+    "gel",
+    "lid",
+    "cap",
+    "fishwife",
+    "salmon",
+    "ember",
+    "hexclad",
+    "pan",
+    "goodr",
+    "sunglasses",
+    "true classic",
+    "polo",
+    "mug",
+    "toilet",
+]
+
+
+def test_the_owner_part_rules_are_unchanged() -> None:
+    writer, invented, label, check = OWNER_PART_RULES
+    assert writer == (
+        'One part of the product this scene shows, "PART", is in none of the pictures sent: '
+        "no photo shows it. How it looks comes only from the shop owner's own words: "
+        '"LOOKS" Draw it exactly as that sentence says, nothing more: write every look the '
+        "sentence gives it into the picture prompt, and never give it a colour, shape, size, "
+        "material, mark or detail the sentence doesn't, or take its look from another part "
+        "of the product. Code puts the sentence before your picture prompt too."
+    )
+    assert (
+        "comes only from a sentence written for the shop owner, who sees the picture and "
+        'approves it: "LOOKS"'
+    ) in invented
+    assert label == (
+        "The PART is in none of the pictures: draw it exactly as this says, and add nothing "
+        'to it: "LOOKS"'
+    )
+    assert check == (
+        'One part of the product, named in "owner_part", is in no shop photo: it was drawn '
+        "from the one sentence given there, which says how it looks. Use that sentence as you "
+        "use the shop photo: only to know what that part is and how it is built. Fail that "
+        "part only if it shows something a real one, built as the sentence says, can't have "
+        "there."
+    )
+
+
+@pytest.mark.parametrize("rule", OWNER_PART_RULES)
+def test_the_owner_part_rules_name_no_tested_product(rule: str) -> None:
+    words = set(re.findall(r"[a-z-]+", rule.casefold()))
+    named = [
+        word
+        for word in TESTED_PRODUCT_WORDS
+        if (word in rule.casefold() if " " in word else word in words)
+    ]
+    assert named == []
 
 
 # The fixing agent's own instructions: the prototype's, with changes A1-A8 as Julian approved

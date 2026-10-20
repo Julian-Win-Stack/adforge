@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field, StrictInt, field_validator, model_validat
 
 from gateway.types import LEAST_BROLL_SECONDS, Handoff, Judgement
 
+from .reference_photos import same_thing
+
 # How a B-roll scene's details are given, by the planner and by a rewrite alike.
 BROLL_DETAILS_INSTRUCTIONS = """\
 For each B-roll scene, also give:
@@ -195,8 +197,8 @@ such as a dropped item's unharmed other side: the drop scene ends with it lying 
 side up, and the next B-roll scene starts on the other side, never turning it over. Never \
 more than two scenes for one claim. Never show before and after pictures of bodies or \
 skin, a screen whose content you'd have to invent, a result the page doesn't state, or \
-parts of the product no photo shows. What B-roll can show depends on the kind of product. \
-As a guide (what it can show; only if the page says; never):
+parts of the product no photo shows, other than a scene's owner part. What B-roll can \
+show depends on the kind of product. As a guide (what it can show; only if the page says; never):
 - Beauty and skincare: a texture close-up (a dab on a fingertip), hands applying it, the \
 pack; only if the page gives the texture and how it's applied; never skin before and \
 after, skin problems or a visible result on skin.
@@ -262,12 +264,21 @@ nothing the page, the photos or the shop owner give shows it, and only a hand ho
 placing, setting down, standing up or pointing at the product would be left. A line a \
 camera can't film, such as "no bleach", is never asked about: it follows the rule for a \
 line that can't be filmed.
-Then say in plain words what's missing and offer two answers: attach a photo of it (for \
-a missing "how to use", of the product being used; for a result, of it before and after: \
-without one, the ad shows no before and after of it; for a line nothing proves, of what \
-would prove it; for a use it isn't shown how, of the product being used that way, or one \
-sentence on how it is used), or go ahead without one. Never \
-choose for them. For a missing "how to use": if they go ahead without one, ask again: say \
+Then say in plain words what's missing. For something of the product no photo shows, \
+offer three answers: attach a photo of it; describe how it looks in one sentence; or have \
+you draw it from your own idea of it. Say that they will see the scene's picture and say \
+yes to it before its video is made. For the other cases, offer two answers: attach a photo \
+of it (for a missing "how to use", of the product being used; for a result, of it before \
+and after: without one, the ad shows no before and after of it; for a line nothing \
+proves, of what would prove it; for a use it isn't shown how, of the product being used \
+that way, or one sentence on how it is used), or go ahead without one. Never choose for \
+them. For \
+something of the product no photo shows: if they attach a photo, plan with it among the \
+scene's needs; if they describe it, give the scene an owner part from the shop owner's \
+words, its looks their sentence as they said it; if they say to draw it, give the scene \
+an owner part you invent, its looks one sentence of how such a thing ordinarily looks: \
+the only thing you may make up. \
+For a missing "how to use": if they go ahead without one, ask again: say \
 in plain words how you'd show it with what you have, for them to approve or change. Their \
 approval is their own words, and for a product that does a job, it gives the scene's \
 usage and result. For a result: if they go ahead without one, no scene shows that film, \
@@ -502,6 +513,34 @@ Part = Literal[
 ]
 
 
+# Where an owner part's looks come from: the shop owner's own sentence, or the planner's
+# when they asked it to draw the part.
+OwnerPartSource = Literal["owner's words", "invented"]
+
+
+class OwnerPart(BaseModel):
+    """Something of the product no photo shows, drawn from the shop owner's words or invented
+    by the planner, that the shop owner approves in the starting picture before the scene's
+    clip is made."""
+
+    what: str = Field(description="What it is, in a few words.")
+    source: OwnerPartSource = Field(
+        description='"owner\'s words" when the shop owner described how it looks, "invented" '
+        "when they asked you to draw it."
+    )
+    looks: str = Field(
+        description="How it looks, in one sentence: the shop owner's, their sentence as they "
+        "said it, or yours when they asked you to draw it."
+    )
+
+    @field_validator("what", "looks")
+    @classmethod
+    def _not_empty(cls, text: str) -> str:
+        if not text.strip():
+            raise ValueError("This can't be empty.")
+        return text
+
+
 class PlannedScene(ScriptScene):
     part: Part | None = Field(
         default=None,
@@ -518,6 +557,12 @@ class PlannedScene(ScriptScene):
         description="A few words drawn along the top of the picture while this scene plays, "
         f"such as the price, {MOST_OVERLAY_CHARACTERS} characters at most, or null for none.",
     )
+    owner_part: OwnerPart | None = Field(
+        default=None,
+        description="For a B-roll scene that shows something of the product no photo shows, "
+        "after the shop owner described it or asked you to draw it: what it is, where its "
+        "looks come from and how it looks. Null otherwise, and when a photo shows it.",
+    )
 
     @field_validator("overlay")
     @classmethod
@@ -528,6 +573,12 @@ class PlannedScene(ScriptScene):
                 f"An overlay is a few words: {MOST_OVERLAY_CHARACTERS} characters at most."
             )
         return overlay
+
+    @model_validator(mode="after")
+    def _owner_part_is_filmed(self) -> Self:
+        if self.owner_part is not None and self.shows is None:
+            raise ValueError("A scene where the person talks to camera has no owner part.")
+        return self
 
 
 # How big the product is. Code owns the pose for each size (jobs.scenes.POSES), so a
@@ -591,6 +642,20 @@ class Plan(BaseModel):
         for number, scene in enumerate(self.scenes, start=1):
             if (too_many := scene.too_many_pictures(number)) is not None:
                 raise ValueError(too_many)
+        return self
+
+    @model_validator(mode="after")
+    def _owner_part_has_no_photo(self) -> Self:
+        # A part a photo shows is drawn from the photo: only a part no photo shows waits for
+        # the shop owner's yes.
+        for number, scene in enumerate(self.scenes, start=1):
+            if scene.owner_part is None:
+                continue
+            if any(same_thing(need.what, scene.owner_part.what) for need in scene.needs):
+                raise ValueError(
+                    f'Scene {number} has a photo of "{scene.owner_part.what}": a part a photo '
+                    "shows is a need, never an owner part."
+                )
         return self
 
     @model_validator(mode="after")

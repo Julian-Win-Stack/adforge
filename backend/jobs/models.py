@@ -181,9 +181,9 @@ class ProductPhoto(models.Model):
 
 
 # What the plan says about a B-roll scene: its kind, who is in it, how the product is
-# used, the result it ends on and what it needs that the main photo can't show. Blank for
-# a talking scene.
-BROLL_FIELDS = ["broll_kind", "person_shown", "usage", "result", "needs"]
+# used, the result it ends on, what it needs that the main photo can't show and its owner
+# part. Blank for a talking scene.
+BROLL_FIELDS = ["broll_kind", "person_shown", "usage", "result", "needs", "owner_part"]
 
 # Each B-roll field as a scene step keeps its copy: a step's own `result` is what the
 # producer is told when it finishes.
@@ -193,6 +193,7 @@ STEP_BROLL_FIELDS = {
     "usage": "usage",
     "result": "broll_result",
     "needs": "needs",
+    "owner_part": "owner_part",
 }
 
 
@@ -270,6 +271,30 @@ class Scene(models.Model):
         'numbers of the photos that show it, such as [{"what": "the gel", "photos": [3, 5]}]. '
         "Empty when the main photo is enough.",
     )
+    owner_part = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="A part of the product the B-roll scene shows that no photo shows (Owner "
+        "part, CONTEXT.md): what it is, whether its looks come from the shop owner's words or "
+        'were invented, and one sentence of how it looks, such as {"what": "the lid", '
+        '"source": "owner\'s words", "looks": "..."}. Blank when none.',
+    )
+    owner_part_approved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the shop owner said yes to the owner part in a starting picture. Blank "
+        "until then. The yes covers the part as it stands, its looks and its photos: a later "
+        "picture of it needs no new yes, and a correction clears it.",
+    )
+    owner_part_approved_picture = models.ForeignKey(
+        "ProducedItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The starting picture the shop owner said yes to the owner part in, of this "
+        "scene or another showing the same part. Blank until the yes.",
+    )
     fact_checked = models.BooleanField(
         default=False,
         help_text="The line, and what the scene shows, passed the fact check, or the user "
@@ -336,6 +361,25 @@ class Scene(models.Model):
         if not self.shows:
             self.broll_kind = self.person_shown = self.usage = self.result = ""
             self.needs = []
+            self.owner_part = None
+
+    def current_picture(self) -> ProducedItem | None:
+        """The starting picture the scene's clip is made from: the newest version made for what
+        the scene shows as it stands, or brought back (#143). A line shortened to fit its clip
+        still shows what its picture was made for."""
+        made_for = SceneStep.made_for(self, through="step__")
+        del made_for["step__line"]
+        return (
+            self.produced.filter(
+                kind=ProducedItem.Kind.STARTING_PICTURE,
+                step__kind=SceneStep.Kind.STARTING_PICTURE,
+                step__status=SceneStep.Status.FINISHED,
+                step__line__in=[self.line, *self.shortened_from],
+                **made_for,
+            )
+            .order_by("version")
+            .last()
+        )
 
 
 class Fix(models.Model):
@@ -684,8 +728,19 @@ class ReferencePhoto(models.Model):
         help_text="The clean picture of only the thing, drawn from the photo, in the file "
         "store. Blank until it is drawn.",
     )
+    words = models.TextField(
+        blank=True,
+        help_text="For a photo of an owner part: what the shop owner said to change in it, "
+        "with the photo or after, drawn into every picture of it. Blank for none.",
+    )
     added_by = models.ForeignKey(
-        Fix, on_delete=models.CASCADE, related_name="+", help_text="The fix that added it."
+        Fix,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The fix that added it. Blank when the shop owner's answer about an owner "
+        "part added it before any fix existed.",
     )
     dropped_by = models.ForeignKey(
         Fix,
@@ -771,6 +826,11 @@ class SceneStep(models.Model):
         default=list,
         blank=True,
         help_text="What the scene needed that the main photo can't show when the step started.",
+    )
+    owner_part = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="The scene's owner part when the step started. Blank for none.",
     )
     note = models.TextField(
         blank=True, help_text="What the producer asked for, beyond the line. Blank for nothing."
@@ -925,18 +985,28 @@ class SceneStep(models.Model):
         )
 
     @staticmethod
-    def made_for(scene: Scene, through: str = "") -> dict[str, Any]:
-        """What a step made for `scene` as it stands has: its line, what it shows and its
-        B-roll labels. A step is started with them, and they filter steps, or what steps
-        made `through` a relation to them, such as "step__", to those still up to date."""
+    def snapshot(scene: Scene) -> dict[str, Any]:
+        """What a step started for `scene` as it stands keeps of it: its line, what it shows
+        and its B-roll labels."""
         return {
-            f"{through}line": scene.line,
-            f"{through}shows": scene.shows,
-            **{
-                f"{through}{STEP_BROLL_FIELDS[field]}": getattr(scene, field)
-                for field in BROLL_FIELDS
-            },
+            "line": scene.line,
+            "shows": scene.shows,
+            **{STEP_BROLL_FIELDS[field]: getattr(scene, field) for field in BROLL_FIELDS},
         }
+
+    @staticmethod
+    def made_for(scene: Scene, through: str = "") -> dict[str, Any]:
+        """The filter for steps made for `scene` as it stands, or for what steps made
+        `through` a relation to them, such as "step__": those whose snapshot is still up to
+        date."""
+        made_for = {
+            f"{through}{field}": value for field, value in SceneStep.snapshot(scene).items()
+        }
+        if scene.owner_part is None:
+            # No owner part is SQL NULL, which an exact None doesn't match in a JSON field.
+            del made_for[f"{through}owner_part"]
+            made_for[f"{through}owner_part__isnull"] = True
+        return made_for
 
 
 class ProducedItem(models.Model):
