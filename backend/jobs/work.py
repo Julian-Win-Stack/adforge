@@ -11,7 +11,7 @@ import mimetypes
 import re
 import tempfile
 import wave
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
@@ -117,6 +117,7 @@ from .models import (
     Job,
     ProducedItem,
     ProductPhoto,
+    ProductVideo,
     ReferencePhoto,
     Scene,
     SceneStep,
@@ -703,6 +704,58 @@ def save_photos(
     return skipped
 
 
+# How far, in seconds, the reader's second may be from the picked frame it names: the
+# frames are shown to it labelled with their seconds, rounded.
+MOST_SECONDS_OFF = 0.5
+
+
+def save_video_pictures(
+    job: Job,
+    video: ProductVideo,
+    kept: Sequence[Mapping[str, Any]],
+    frames: Sequence[Mapping[str, Any]],
+) -> list[ProductPhoto]:
+    """Keep each moment the reader `kept` from the video ({second, shows, why}) as a video
+    picture: the picked frame at that second, of the video's picked `frames` ({key, second}),
+    as a product photo after every photo the job has, noted with what it `shows`. A moment
+    with no picked frame near its second, or whose frame is a copy of a photo from the page
+    or of a picture already kept, is left out. Each is given its Face note by a call of its
+    own, as a page photo the picker never saw is."""
+    seen = [
+        photos.fingerprint_of(file_store.read(photo.file))
+        for photo in job.photos.exclude(source_url="")
+    ]
+    position = max(job.photos.values_list("position", flat=True), default=0)
+    saved: list[ProductPhoto] = []
+    for moment in kept:
+        second = float(moment["second"])
+        frame = min(frames, key=lambda frame: abs(float(frame["second"]) - second), default=None)
+        if frame is None or abs(float(frame["second"]) - second) > MOST_SECONDS_OFF:
+            continue
+        content = file_store.read(str(frame["key"]))
+        fingerprint = photos.fingerprint_of(content)
+        if fingerprint is not None and any(
+            other is not None and photos.alike(fingerprint, other) for other in seen
+        ):
+            continue
+        seen.append(fingerprint)
+        position += 1
+        saved.append(
+            keep_photo(
+                job,
+                position,
+                content,
+                "image/jpeg",
+                source_url=video.source_url,
+                has_face=None,
+                from_video=video,
+                at_second=float(frame["second"]),
+                note=str(moment["shows"]),
+            )
+        )
+    return saved
+
+
 def _photo_at(url: str, as_given: str | None) -> page.Download:
     """The photo at `url`, else at `as_given`; the error from `url` if neither can be had."""
     try:
@@ -732,15 +785,28 @@ def keep_photo(
     *,
     source_url: str = "",
     has_face: bool | None = False,
+    from_video: ProductVideo | None = None,
+    at_second: float | None = None,
+    note: str = "",
 ) -> ProductPhoto:
     """Store a product photo with the job, with its Face note, or with None, noted by a call
-    of its own. An uploaded photo has no source link."""
+    of its own. An uploaded photo has no source link. A video picture is kept with the video
+    it was cut `from_video`, its second there and its one-line `note`."""
     extension = mimetypes.guess_extension(content_type) or ""
     key = file_store.save(f"jobs/{job.pk}/photos/{position}{extension}", content)
     if has_face is None:
-        has_face = note_face(job, source_url, key)
+        # A video's pictures share its link, so each is named by its second too.
+        source = source_url if from_video is None else f"{source_url} at {at_second:g} s"
+        has_face = note_face(job, source, key)
     return ProductPhoto.objects.create(
-        job=job, position=position, source_url=source_url, file=key, has_face=has_face
+        job=job,
+        position=position,
+        source_url=source_url,
+        file=key,
+        has_face=has_face,
+        from_video=from_video,
+        at_second=at_second,
+        note=note,
     )
 
 
