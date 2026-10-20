@@ -1,14 +1,15 @@
 """Product videos: the videos the shop placed with the product photos in the product's
 gallery, as the photo picker picks them off the page. Each is kept with the job as a file
-with its first frame, frames spread over it and its length; or, when no file can be had, as
-its link with the page's poster or the player's thumbnail as its first frame. Nothing uses
-them yet."""
+with its first frame, frames spread over it, its length and the frames it is thinned to
+(video_frames); or, when no file can be had, as its link with the page's poster or the
+player's thumbnail as its first frame. Nothing uses them yet."""
 
 import mimetypes
 import re
 import subprocess
 import tempfile
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,7 @@ from django.conf import settings
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
 from gateway.gateway import IMAGE_TYPES
-from jobs import page
+from jobs import page, video_frames
 from jobs.models import Job, ProductVideo
 
 # The biggest video file kept. A bigger one is kept as its link.
@@ -36,6 +37,7 @@ _READ_ONLY_THE_FILE = [
     "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm",
 ]
 _TIMEOUT_SECONDS = 120
+_SCENE_SCORE = re.compile(r"lavfi\.scene_score=([0-9.]+)")
 
 
 def save_videos(job: Job, players: Sequence[dict[str, Any]]) -> list[ProductVideo]:
@@ -77,13 +79,16 @@ def keep_video(job: Job, position: int, player: dict[str, Any]) -> ProductVideo:
         extension = mimetypes.guess_extension(download.content_type) or ".mp4"
         looked = _look_at(download.content, extension)
         if looked is not None:
-            duration, first, frames = looked
             video.file = file_store.save(f"{folder}{extension}", download.content)
-            video.duration = duration
-            video.first_frame = file_store.save(f"{folder}-first.jpg", first)
+            video.duration = looked.duration
+            video.first_frame = file_store.save(f"{folder}-first.jpg", looked.first)
             video.frames = [
                 file_store.save(f"{folder}-frame-{number}.jpg", frame)
-                for number, frame in enumerate(frames, 1)
+                for number, frame in enumerate(looked.frames, 1)
+            ]
+            video.frames_picked = [
+                {"key": file_store.save(f"{folder}-pick-{number}.jpg", frame), "second": second}
+                for number, (second, frame) in enumerate(looked.picked, 1)
             ]
     if not video.first_frame:
         video.first_frame = _still(src, poster, folder)
@@ -104,9 +109,18 @@ def _video_file(src: str) -> page.Download | None:
     return download
 
 
-def _look_at(content: bytes, extension: str) -> tuple[float, bytes, list[bytes]] | None:
-    """The video's length in seconds, its first frame and FRAMES frames spread over it, as
-    JPEGs; None if ffmpeg can't read it as a video."""
+@dataclass(frozen=True)
+class _Looked:
+    duration: float
+    first: bytes
+    frames: list[bytes]
+    # The video thinned (video_frames): each frame kept, with the second it is at.
+    picked: list[tuple[float, bytes]]
+
+
+def _look_at(content: bytes, extension: str) -> _Looked | None:
+    """The video's length in seconds, its first frame, FRAMES frames spread over it and the
+    frames it is thinned to, as JPEGs; None if ffmpeg can't read it as a video."""
     with tempfile.TemporaryDirectory() as folder:
         file = Path(folder) / f"video{extension}"
         file.write_bytes(content)
@@ -116,9 +130,14 @@ def _look_at(content: bytes, extension: str) -> tuple[float, bytes, list[bytes]]
                 return None
             first = _frame(file, first_frame_time(duration))
             frames = [_frame(file, at) for at in frame_times(duration)]
+            every_frame, scene_scores = _every_frame(file, Path(folder) / "frames")
         except RuntimeError, subprocess.TimeoutExpired:
             return None
-    return duration, first, frames
+        picked = [
+            (number / video_frames.FRAMES_PER_SECOND, every_frame[number].read_bytes())
+            for number in video_frames.thin(every_frame, scene_scores)
+        ]
+    return _Looked(duration, first, frames, picked)
 
 
 def first_frame_time(duration: float) -> float:
@@ -161,6 +180,30 @@ def _frame(file: Path, at: float) -> bytes:
     if ran.returncode != 0 or not ran.stdout:
         raise RuntimeError(f"ffmpeg failed: {ran.stderr.decode(errors='replace')[-2000:]}")
     return ran.stdout
+
+
+def _every_frame(file: Path, folder: Path) -> tuple[list[Path], list[float]]:
+    """The video's frames at full size, taken FRAMES_PER_SECOND times a second, as JPEG
+    files in `folder`, first to last; and ffmpeg's scene score between each frame and the
+    one before it."""
+    folder.mkdir()
+    scores = folder / "scene-scores.txt"
+    every = (
+        f"fps={video_frames.FRAMES_PER_SECOND},select='gte(scene,0)',"
+        f"metadata=print:key=lavfi.scene_score:file={scores}"
+    )
+    ran = subprocess.run(
+        [settings.FFMPEG, "-nostdin", "-hide_banner", "-loglevel", "error"]
+        + [*_READ_ONLY_THE_FILE, "-i", str(file), "-vf", every, "-fps_mode", "passthrough"]
+        + ["-q:v", "2", str(folder / "%05d.jpg")],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        timeout=_TIMEOUT_SECONDS,
+    )
+    frames = sorted(folder.glob("*.jpg"))
+    if ran.returncode != 0 or not frames:
+        raise RuntimeError(f"ffmpeg failed: {ran.stderr.decode(errors='replace')[-2000:]}")
+    return frames, [float(score) for score in _SCENE_SCORE.findall(scores.read_text())]
 
 
 def _still(src: str, poster: str, folder: str) -> str:

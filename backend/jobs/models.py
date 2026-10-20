@@ -215,6 +215,14 @@ class ProductVideo(models.Model):
         help_text="Keys of frames spread over the file, first to last; none without a file.",
     )
     duration = models.FloatField(null=True, blank=True, help_text="Seconds; none without a file.")
+    frames_picked = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "The file thinned to the frames worth looking at, first to last: each its key and "
+            "the second it is at; none without a file."
+        ),
+    )
 
     class Meta:
         ordering = ["job", "position"]
