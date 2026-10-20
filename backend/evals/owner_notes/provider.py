@@ -39,9 +39,9 @@ from .saved_ads import SavedAd, as_planned
 
 type Phase = Literal["first", "notes"]
 
-# The picture model allows 2 pictures a minute (reference/rate-limits.md), for every run on
-# the machine at once.
-PICTURE_GAP_SECONDS = 31.0
+# The picture model allows 20 pictures a minute on OpenAI (reference/rate-limits.md), for
+# every run on the machine at once.
+PICTURE_GAP_SECONDS = 3.1
 PICTURE_LOCK = Path(os.environ.get("OWNER_NOTES_PICTURE_LOCK", "/tmp/owner-notes-pictures.lock"))
 
 # What the clip judge answers: nothing wrong, and, asked about a fix's clip, the change made.

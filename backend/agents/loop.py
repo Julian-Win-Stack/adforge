@@ -36,6 +36,7 @@ from gateway.types import (
     ClipFailed,
     Happened,
     Image,
+    NotSetUp,
     Said,
     Shown,
     StepFinished,
@@ -61,6 +62,7 @@ EXPECTED_FAILURES = (
     ClipFailed,
     BlockedBySafetyFilter,
     ReferencePhotoUnusable,
+    NotSetUp,
 )
 
 # Asking again sends the same thing, so the run stops and the shop owner starts afresh.
@@ -325,6 +327,8 @@ def why_it_failed(error: Exception, stopped: str) -> str:
         return f"the video model couldn't make the clip ({error})."
     if isinstance(error, ReferencePhotoUnusable):
         return f"{error}"
+    if isinstance(error, NotSetUp):
+        return f"the app isn't set up for it ({error}). Trying again won't help."
     return f"an unexpected error stopped {stopped}. The details are in the server log."
 
 
@@ -347,6 +351,8 @@ def why_it_failed_plainly(error: Exception) -> str:
             f"your {error.thing} couldn't be drawn from your photo. Please send another photo "
             "of it."
         )
+    if isinstance(error, NotSetUp):
+        return f"the app isn't set up for it: {error}."
     return "something went wrong on our side."
 
 

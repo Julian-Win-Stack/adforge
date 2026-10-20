@@ -83,6 +83,11 @@ class BlockedBySafetyFilter(Exception):
     took for something it isn't. Asking again sends the same thing, so it isn't retried."""
 
 
+class NotSetUp(Exception):
+    """The app has no key for a service it needs, such as OpenAI's own API for pictures.
+    Asking again sends the same thing, so it isn't retried."""
+
+
 class ModelProvider(Protocol):
     """Talks to one model provider. Raises OutsideServiceDown for errors worth retrying,
     and UnusableReply for an answer that was billed but can't be used."""

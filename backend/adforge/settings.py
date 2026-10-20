@@ -117,8 +117,16 @@ def openai_account(environ: Mapping[str, str]) -> tuple[str, str]:
     return environ.get("OPENAI_API_KEY", ""), environ.get("OPENAI_BASE_URL", "")
 
 
-# Tests point the address at a local stand-in.
+def openai_pictures_account(environ: Mapping[str, str]) -> tuple[str, str]:
+    """The key and address pictures are drawn with: always OpenAI's own servers, never our
+    Azure copy, even when Azure answers every other call (Julian 2026-10-20: "always use
+    OpenAI API for image generation"). An empty key fails each picture, saying so."""
+    return environ.get("OPENAI_API_KEY", ""), environ.get("OPENAI_BASE_URL", "")
+
+
+# Tests point the addresses at a local stand-in.
 OPENAI_API_KEY, OPENAI_BASE_URL = openai_account(os.environ)
+OPENAI_PICTURES_KEY, OPENAI_PICTURES_BASE_URL = openai_pictures_account(os.environ)
 
 # Firecrawl reads product pages in a real browser. Empty means the page is read with a plain
 # download instead, and the user is told so.

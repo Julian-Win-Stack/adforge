@@ -28,6 +28,7 @@ from .types import (
     LoadedImage,
     ModelReply,
     ModelRequest,
+    NotSetUp,
     Picture,
     Said,
     StepFinished,
@@ -60,6 +61,17 @@ class OpenAIProvider:
             base_url=settings.OPENAI_BASE_URL or None,
             max_retries=0,
             timeout=catalog.ANSWER_SECONDS,
+        )
+        # Pictures are drawn on OpenAI's own servers, whichever answers the other calls.
+        self._pictures_client = (
+            openai.OpenAI(
+                api_key=settings.OPENAI_PICTURES_KEY,
+                base_url=settings.OPENAI_PICTURES_BASE_URL or None,
+                max_retries=0,
+                timeout=catalog.ANSWER_SECONDS,
+            )
+            if settings.OPENAI_PICTURES_KEY
+            else None
         )
 
     def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]:
@@ -153,7 +165,7 @@ class OpenAIProvider:
 
     def draw(self, *, model: str, prompt: str) -> Picture:
         try:
-            reply = self._client.images.generate(
+            reply = self._picture_client().images.generate(
                 model=model, prompt=prompt, size=_PORTRAIT_SIZE, quality="high"
             )
         except _WORTH_RETRYING as error:
@@ -164,7 +176,7 @@ class OpenAIProvider:
 
     def edit(self, *, model: str, prompt: str, pictures: Sequence[bytes]) -> Picture:
         try:
-            reply = self._client.images.edit(
+            reply = self._picture_client().images.edit(
                 model=model,
                 image=[
                     (f"picture-{number}", data, _picture_type(data))
@@ -179,6 +191,11 @@ class OpenAIProvider:
         except openai.BadRequestError as error:
             raise _blocked_or(error) from error
         return _picture(model, reply)
+
+    def _picture_client(self) -> openai.OpenAI:
+        if self._pictures_client is None:
+            raise NotSetUp("Pictures are drawn on OpenAI's own API, and OPENAI_API_KEY is not set")
+        return self._pictures_client
 
 
 def _editable(data: bytes) -> bytes:
