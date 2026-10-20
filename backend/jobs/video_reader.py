@@ -26,10 +26,10 @@ from jobs.work import plan_handoff
 
 logger = logging.getLogger(__name__)
 
-# Julian, 2026-10-19 23:29: "go with the proposed line".
+# Julian, 2026-10-20 02:23 ("Do these things"), after the Rare Beauty test kept nothing.
 ADDED_JOB = (
-    "You are not planning the ad here and you ask the shop owner nothing. Think through the "
-    "plan you would make, then name only the video moments you would need as pictures, and why."
+    "You ask the shop owner nothing. Before you plan, name the video moments you would need "
+    "as pictures, and why."
 )
 INSTRUCTIONS = f"{PLAN_INSTRUCTIONS}\n\n{ADDED_JOB}"
 # The most pictures the model is shown in one call, and the most grids of the video's frames

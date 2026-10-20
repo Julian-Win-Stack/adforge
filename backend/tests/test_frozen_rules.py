@@ -446,11 +446,11 @@ def test_the_photo_pickers_rules_name_no_shop(name: str) -> None:
     assert name.casefold() not in PICK_INSTRUCTIONS.casefold()
 
 
-# The video reader's job, added after the planner's own instructions (Julian 2026-10-19 23:29,
-# "go with the proposed line").
+# The video reader's job, added after the planner's own instructions (Julian 2026-10-20 02:23,
+# "Do these things").
 READER_ADDED_JOB = (
-    "You are not planning the ad here and you ask the shop owner nothing. Think through the "
-    "plan you would make, then name only the video moments you would need as pictures, and why."
+    "You ask the shop owner nothing. Before you plan, name the video moments you would need "
+    "as pictures, and why."
 )
 
 
