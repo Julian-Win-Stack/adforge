@@ -19,9 +19,11 @@ from django.conf import settings
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
+from chat.models import Message
 from gateway.gateway import IMAGE_TYPES, transcribe
 from jobs import page, video_frames
 from jobs.models import Job, ProductVideo
+from jobs.notices import post_notice
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +255,12 @@ def transcribe_videos(job: Job) -> list[str]:
             problems.append(
                 f"What the product's video {video.position} says couldn't be written down "
                 f"({error}), so the ad is planned without it."
+            )
+            post_notice(
+                job,
+                f"Your product's video {video.position} couldn't be heard, so the ad is "
+                "planned without what it says.",
+                Message.Level.PROBLEM,
             )
             continue
         video.save(update_fields=["transcript"])

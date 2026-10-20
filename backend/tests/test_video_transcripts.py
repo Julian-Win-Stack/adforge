@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 from django.conf import settings
 from pytest_httpserver import HTTPServer
+from rest_framework.test import APIClient
 
 from adforge import file_store
 from gateway.fake import FakeModel
@@ -18,6 +19,7 @@ from gateway.models import ModelCall
 from jobs.models import Job
 
 from .conftest import SHAMPOO_PHOTO_PATH, FakeFirecrawl, results_of
+from .test_producer_page import notices
 from .test_product_videos import picks_videos, player, read, tiny_mp4  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -155,6 +157,8 @@ def test_a_page_read_again_replaces_its_videos_transcripts(
 
 def test_a_video_whose_sound_cant_be_written_down_leaves_the_page_read(
     fake_model: FakeModel,
+    api: APIClient,
+    session_id: str,
     httpserver: HTTPServer,
     firecrawl: FakeFirecrawl,
     shampoo_page_url: str,
@@ -172,6 +176,11 @@ def test_a_video_whose_sound_cant_be_written_down_leaves_the_page_read(
         "What the product's video 1 says couldn't be written down (speech-to-text refused the "
         "audio), so the ad is planned without it."
     ) in results_of("read_page")[0]
+    # Never quietly: the shop owner, and any run's warnings, see it in red.
+    assert (
+        "problem",
+        "Your product's video 1 couldn't be heard, so the ad is planned without what it says.",
+    ) in notices(api, session_id)
     (video,) = Job.objects.get().videos.all()
     assert video.transcript == ""
     (heard,) = ModelCall.objects.filter(purpose="transcribe_video")

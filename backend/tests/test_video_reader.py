@@ -208,7 +208,7 @@ def test_the_owner_answering_the_planners_question_plans_again_without_reading_a
     ],
     ids=["the model fails", "an unexpected error", "only moments no frame shows"],
 )
-def test_a_video_that_cant_be_read_is_told_to_the_producer_only_and_the_ad_is_planned(
+def test_a_video_that_cant_be_read_is_told_in_red_and_the_ad_is_planned(
     fake_model: FakeModel,
     api: APIClient,
     session_id: str,
@@ -229,7 +229,13 @@ def test_a_video_that_cant_be_read_is_told_to_the_producer_only_and_the_ad_is_pl
         f"The product's video 1 couldn't be read ({video.read['error']}), so the ad is "
         "planned without it." in result
     )
-    assert not any("video" in text for _, text in notices(api, session_id))
+    # Never quietly: the shop owner, and any run's warnings, see it in red.
+    assert [notice for notice in notices(api, session_id) if "video" in notice[1]] == [
+        (
+            "problem",
+            "Your product's video 1 couldn't be read, so the ad is planned without its pictures.",
+        )
+    ]
     assert Job.objects.get().scenes.exists()
 
 

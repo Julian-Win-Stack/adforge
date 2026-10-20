@@ -13,12 +13,14 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from adforge import file_store
+from chat.models import Message
 from gateway.gateway import call_model
 from gateway.types import (
     Image,
 )
 from jobs import picker_grids
 from jobs.models import Job, ProductVideo
+from jobs.notices import post_notice
 from jobs.planning import PLAN_INSTRUCTIONS, PlanHandoff
 from jobs.work import plan_handoff
 
@@ -119,6 +121,12 @@ def read_videos(job: Job, page_text: str) -> list[str]:
             problems.append(
                 f"The product's video {video.position} couldn't be read ({error}), so the ad "
                 "is planned without it."
+            )
+            post_notice(
+                job,
+                f"Your product's video {video.position} couldn't be read, so the ad is "
+                "planned without its pictures.",
+                Message.Level.PROBLEM,
             )
         video.save(update_fields=["read"])
     return problems
