@@ -38,7 +38,7 @@ from .conftest import (
     paid_for,
     photo,
 )
-from .fixing import fixed
+from .fixing import fixed, plan_row, planned, say_yes
 from .test_fix_loop import TURN_REWRITE
 from .test_producer_broll import (
     BROLL_CHOICE,
@@ -539,44 +539,13 @@ def test_a_fixs_clip_is_judged_with_the_owners_note_and_their_yes_but_no_notice_
     fake_model: FakeModel,
     judged: ProducedItem,
     steps: HeldSteps,
-    say: Callable[..., None],
     session_id: str,
 ) -> None:
-    # The owner's note, planned by the decider and shown by code, and their typed yes: the
-    # fix's clip is started.
+    # The owner's note, planned and shown by code, and their typed yes: the fix's clip is
+    # started. A plan stored before the fixing agent: a new clip of a B-roll scene.
     note = "Scene 2: the hand just hovers, it should turn the mug all the way round."
     change = "The hand turns the mug all the way round on the workbench."
-    fake_model.respond(
-        "decide_fixes",
-        turn(
-            calls=[
-                ("sort_message", {"kind": "fix_note"}),
-                ("look_at_clip", {"scene": 2, "version": None}),
-                (
-                    "decide",
-                    {
-                        "scenes": [
-                            {
-                                "scene": 2,
-                                "action": "new_clip",
-                                "change": change,
-                                "line": "",
-                                "go_back_to": None,
-                                "cant": "",
-                                "photos": [],
-                            }
-                        ],
-                        "photos": [],
-                        "cants": [],
-                        "question": "",
-                    },
-                ),
-            ]
-        ),
-        turn(calls=[("sort_message", {"kind": "yes"})]),
-    )
-    say(note)
-    say("Yes, do that.")
+    say_yes(planned(plan_row(2, "new_clip", change=change), note=note), "Yes, do that.")
     assert [SceneStep.objects.get(pk=pk).kind for pk in steps.held] == ["clip"]
     # While it is being made, code posts a notice and the owner writes again.
     notice = "Scene 2's clip is taking longer than usual."

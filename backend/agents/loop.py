@@ -124,6 +124,10 @@ class Agent:
     reads_system_notes: bool = False
 
 
+# What a trace shows for the page panel's message, rather than the whole page pasted.
+PASTED_PAGE_IN_TRACE = "[The page panel's pasted page]"
+
+
 def run(agent: Agent, session: Session, *, woken_by: Sequence[str] = ()) -> int:
     """Let `agent` work in `session` until it replies. Gives the number of the last message
     its last turn was given, so the caller can tell whether anything was said since.
@@ -132,7 +136,8 @@ def run(agent: Agent, session: Session, *, woken_by: Sequence[str] = ()) -> int:
     with tracing.message_work(
         agent.name,
         session_id=str(session.pk),
-        message=message.text if message else "",
+        # A whole pasted page is the page now, not something said: its trace names it.
+        message=(PASTED_PAGE_IN_TRACE if message.pasted_page else message.text) if message else "",
         trace_id=message.trace_id if message else "",
         woken_by=woken_by,
     ) as traced:
@@ -227,9 +232,11 @@ def _refuse_as_stopped(call: ToolCall) -> None:
     call.save(update_fields=["result", "finished_at"])
 
 
-def settle(agent: Agent, call: ToolCall) -> None:
+def settle(agent: Agent, call: ToolCall, *, counted: bool = True) -> None:
     """Run the tool a checkpoint asked for, unless it is past the limit, and keep what it
-    handed back. A call the safety filter blocked is kept as failed, then stops the run."""
+    handed back. A call the safety filter blocked is kept as failed, then stops the run. A
+    call not `counted` against the limit is code's work, as the fixing agent's is, not an
+    answer to the shop owner's message."""
     blocked: BlockedBySafetyFilter | None = None
     with tracing.tool(call.tool, call.arguments) as traced:
         # Kept before the tool runs, for the scene steps it starts to find. A tool run again
@@ -237,7 +244,7 @@ def settle(agent: Agent, call: ToolCall) -> None:
         call.trace_id, call.observation_id = traced.ids()
         call.save(update_fields=["trace_id", "observation_id"])
         number = _calls_since_the_user_spoke(call.session, up_to=call)
-        if number > _limit():
+        if counted and number > _limit():
             call.result = (
                 f"Refused: this would be tool call {number} since the shop owner's last "
                 f"message, and the limit is {_limit()}. Nothing was done. Tell the shop owner "
@@ -391,8 +398,9 @@ def _limit() -> int:
 
 def _calls_since_the_user_spoke(session: Session, *, up_to: ToolCall | None = None) -> int:
     """How many tools every agent has called since the user's last message: all of them, or
-    those up to and including `up_to`."""
-    calls = session.tool_calls.all()
+    those up to and including `up_to`. The fixing agent's calls are code's work on a scene,
+    not an answer to the message, so they never count."""
+    calls = session.tool_calls.filter(agent_fix__isnull=True)
     if up_to is not None:
         calls = calls.filter(id__lte=up_to.pk)
     spoke = session.messages.filter(role=Message.Role.USER)
@@ -421,7 +429,8 @@ def _conversation(
     so. Given as the agent's own "[Attached 1 picture]", it was copied as a reply with no
     picture on it. A notice is left out too: it is code telling the shop owner about a
     fallback, which the tool's result already told the agent, and given as the agent's own
-    words it would read as something it said.
+    words it would read as something it said. So is the page panel's message: code keeps
+    its pasted page as the page, and a system note tells the agent so.
 
     A system note comes where the agent was first given it, as a step does. The fix plan
     steps code runs are never the agent's, so it is told of them only by these notes."""
@@ -435,6 +444,7 @@ def _conversation(
             (message.created_at, message)
             for message in said
             if message.role != Message.Role.NOTICE
+            and not message.pasted_page
             and (message.text or message.role == Message.Role.USER)
         ),
         *((call.created_at, call) for call in session.tool_calls.filter(agent=agent.name)),

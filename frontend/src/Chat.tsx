@@ -16,8 +16,11 @@ import {
   type MessageTries,
   type PlanNotice,
   type PlanScene,
+  type SendAs,
   type Sent,
 } from "./api";
+import { MorePhotosPanel, PagePanel, wordCount } from "./PagePanel";
+import { acceptedPastes, lastPastedPage, morePhotosWanted, pagePanel } from "./pagePanel";
 import { ScenePanel } from "./ScenePanel";
 import { nextFollowing } from "./follow";
 import {
@@ -144,10 +147,10 @@ export function Chat({
   }, [messages.length]);
 
   /** Says something. The first message of a new session is what creates the session. A
-   * plan's yes button names its `plan`, and a try's "Use this one" button the try. */
-  async function send(text: string, photos: File[], plan?: number, useClip?: number) {
+   * button's message says what it is (`as`). */
+  async function send(text: string, photos: File[], as: SendAs = {}) {
     const id = sessionId ?? (started.current ??= (await startSession()).id);
-    const sent = await sendMessage(id, text, photos, plan, useClip);
+    const sent = await sendMessage(id, text, photos, as);
     if (sessionId !== null) show([sent.message]);
     // A brand new session has no polling yet: opening it loads what was just said.
     onSent(sent);
@@ -159,7 +162,11 @@ export function Chat({
   const lastSaid = [...messages]
     .reverse()
     .find((message) => message.role !== "notice" && message.step?.state !== "made");
-  const producerHasTheFloor = sessionId !== null && lastSaid?.role === "user";
+  // A pasted page is code's to check before the producer hears of it, and one the app can't
+  // use never reaches the producer: the page panel says what is happening meanwhile.
+  const waitingOnAPaste =
+    lastSaid?.pasted_page === true && !acceptedPastes(messages).has(lastSaid.seq);
+  const producerHasTheFloor = sessionId !== null && lastSaid?.role === "user" && !waitingOnAPaste;
   const offered = planOnOffer(messages);
   const cards = sceneCards(messages);
   // A plan on offer or a suggested note is a question to the owner: nothing runs until they
@@ -170,6 +177,9 @@ export function Chat({
   const planWaits = offered !== null && offered.seq > (ownerSaidLast?.seq ?? 0);
   const waitingOnOwner =
     (planWaits || suggestedNotes(messages).size > 0) && !cards.some((card) => card.making !== null);
+  const pageAsk = pagePanel(messages);
+  const pasted = lastPastedPage(messages);
+  const unacceptedPaste = pasted && !acceptedPastes(messages).has(pasted.seq) ? pasted : null;
   const covers = new Map(
     cards.flatMap((card) => card.clips.map((clip) => [clip.file, clip.picture])),
   );
@@ -229,7 +239,7 @@ export function Chat({
                         plan={message.plan.notice}
                         onYes={
                           offered?.seq === message.seq
-                            ? () => send("Yes", [], offered.plan.plan)
+                            ? () => send("Yes", [], { plan: offered.plan.plan })
                             : null
                         }
                       />
@@ -240,7 +250,7 @@ export function Chat({
                         text={message.text}
                         tries={message.tries}
                         {...tryInAd(messages, message.seq)}
-                        onUse={(clip) => send("", [], undefined, clip)}
+                        onUse={(clip) => send("", [], { useClip: clip })}
                       />
                     </li>
                   ) : message.role === "notice" ? (
@@ -274,25 +284,31 @@ export function Chat({
                         )}
                         {message.role === "user" ? "You" : "Agent"}
                       </strong>
-                      {message.text &&
-                        (message.role === "user" ? (
-                          <p className="bubble">{message.text}</p>
-                        ) : (
-                          <p className="prose">{message.text}</p>
-                        ))}
-                      {message.attachments.length > 0 && (
-                        <div className="attachments">
-                          {message.attachments.map((attachment, index) => (
-                            <AttachmentView
-                              key={attachment.position}
-                              attachment={attachment}
-                              role={message.role}
-                              label={attachmentLabel(message, attachment, index)}
-                              cover={covers.get(attachment)?.url}
-                              finished={isFinishedAd(message, attachment)}
-                            />
-                          ))}
-                        </div>
+                      {message.pasted_page ? (
+                        <PastedPage message={message} />
+                      ) : (
+                        <>
+                          {message.text &&
+                            (message.role === "user" ? (
+                              <p className="bubble">{message.text}</p>
+                            ) : (
+                              <p className="prose">{message.text}</p>
+                            ))}
+                          {message.attachments.length > 0 && (
+                            <div className="attachments">
+                              {message.attachments.map((attachment, index) => (
+                                <AttachmentView
+                                  key={attachment.position}
+                                  attachment={attachment}
+                                  role={message.role}
+                                  label={attachmentLabel(message, attachment, index)}
+                                  cover={covers.get(attachment)?.url}
+                                  finished={isFinishedAd(message, attachment)}
+                                />
+                              ))}
+                            </div>
+                          )}
+                        </>
                       )}
                     </li>
                   ),
@@ -318,6 +334,20 @@ export function Chat({
           </div>
 
           <div className="composer-wrap">
+            {pageAsk && (
+              <PagePanel
+                sessionId={sessionId as string}
+                state={pageAsk}
+                lastPasted={unacceptedPaste}
+                onDone={(text, photos) => send(text, photos, { pastedPage: true })}
+              />
+            )}
+            {!pageAsk && morePhotosWanted(messages) && (
+              <MorePhotosPanel
+                onSend={(photos) => send("Here are more photos.", photos)}
+                onGoAhead={() => send("Go ahead with this photo.", [])}
+              />
+            )}
             {waitsForYes(messages) && <YesBar onYes={() => send("Yes", [])} />}
             <Composer
               text={draft}
@@ -337,6 +367,40 @@ export function Chat({
         <ScenePanel messages={messages} onSend={(text) => send(text, [])} />
       </div>
     </section>
+  );
+}
+
+/** A page the owner pasted in the page panel: a short card of what was sent, since a whole
+ * page as a chat bubble would fill the chat. Its text is one tap away. */
+function PastedPage({ message }: { message: Message }) {
+  const [open, setOpen] = useState(false);
+  const pictures = message.attachments.filter((attachment) => attachment.kind === "picture");
+  return (
+    <div className="pasted-page" role="group" aria-label="Your product page">
+      <div className="pasted-page-top">
+        <strong>Your product page</strong>
+        <span>
+          {wordCount(message.text)} · {pictures.length} photo{pictures.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      {pictures.length > 0 && (
+        <div className="pasted-page-photos">
+          {pictures.map((attachment) => (
+            <a key={attachment.position} href={attachment.url} target="_blank" rel="noreferrer">
+              <img
+                src={attachment.url}
+                alt={`Photo you attached (${attachment.position})`}
+                loading="lazy"
+              />
+            </a>
+          ))}
+        </div>
+      )}
+      {open && <p className="pasted-page-text">{message.text}</p>}
+      <button type="button" className="pasted-page-toggle" onClick={() => setOpen((was) => !was)}>
+        {open ? "Hide the text" : "Show the text"}
+      </button>
+    </div>
   );
 }
 
@@ -375,7 +439,9 @@ function YesBar({ onYes }: { onYes: () => Promise<void> }) {
   );
 }
 
+// A fix reads as its goal alone: the fixing agent chooses what is made again.
 const ACTIONS: Record<PlanScene["action"], string> = {
+  fix: "",
   new_picture: "New starting picture",
   new_clip: "New clip",
   new_line: "New line",
@@ -487,14 +553,15 @@ function PlanYes({ onYes }: { onYes: () => Promise<void> }) {
 }
 
 /** Every try of a scene's clip the clip judge failed every try of, side by side, each with
- * what the judge still sees wrong in it. The one in the ad (`inAd`) says so; each other one
- * can be swapped in with one tap, for nothing. Once a newer clip replaced them all, none
- * can. */
+ * what the judge still sees wrong in it, the app's pick marked and why it stopped trying. The
+ * one in the ad (`inAd`) says so; while `onOffer`, each other one can be swapped in with one
+ * tap, for nothing. Once a newer clip replaced them all, none can. */
 function TriesView({
   text,
   tries,
   inAd,
   swapping,
+  onOffer,
   onUse,
 }: {
   text: string;
@@ -502,6 +569,7 @@ function TriesView({
   inAd: number | null;
   /** The try a tap chose, until the scene's clip is shown as it. */
   swapping: number | null;
+  onOffer: boolean;
   onUse: (clip: number) => Promise<void>;
 }) {
   const [sending, setSending] = useState<number | null>(null);
@@ -522,6 +590,7 @@ function TriesView({
   return (
     <div className="tries" role="group" aria-label={`Every try at scene ${tries.scene}'s clip`}>
       <p className="tries-title">{text}</p>
+      {tries.reason && <p className="tries-reason">Why it stopped trying: {tries.reason}</p>}
       {error && (
         <p role="alert" className="notice error inline">
           {error}
@@ -545,9 +614,10 @@ function TriesView({
             <span className="try-head">
               <strong>{each.name}</strong>
               {each.clip === inAd && <span className="try-badge">In the ad</span>}
+              {each.clip === tries.picked && <span className="try-badge pick">App's pick</span>}
             </span>
             <span className="try-problem">The judge saw: {each.problem}</span>
-            {inAd !== null && each.clip !== inAd && (
+            {onOffer && each.clip !== inAd && (
               <button
                 type="button"
                 className="try-use"
@@ -560,7 +630,7 @@ function TriesView({
           </li>
         ))}
       </ol>
-      {inAd === null && <p className="tries-gone">A newer clip of this scene is in the ad now.</p>}
+      {!onOffer && <p className="tries-gone">A newer clip of this scene is in the ad now.</p>}
     </div>
   );
 }

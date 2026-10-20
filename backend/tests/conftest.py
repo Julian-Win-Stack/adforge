@@ -34,7 +34,7 @@ from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import ModelReply, ModelRequest, Turn, TurnReply, TurnRequest
 from jobs import fix_check
-from jobs.models import BROLL_FIELDS, Fix, Job, Scene
+from jobs.models import Fix, Job, Scene
 
 from . import ffmpeg_replay
 
@@ -141,7 +141,11 @@ SHOWCASE: dict[str, Any] = {
 
 def broll_labels() -> list[tuple[str, str, str, str, list[dict[str, Any]]]]:
     """Each stored scene's B-roll kind, person, usage, result and needs, in order."""
-    return list(Job.objects.get().scenes.values_list(*BROLL_FIELDS))
+    return list(
+        Job.objects.get().scenes.values_list(
+            "broll_kind", "person_shown", "usage", "result", "needs"
+        )
+    )
 
 
 def broll(scene: dict[str, Any]) -> dict[str, Any]:

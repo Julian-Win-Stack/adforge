@@ -16,7 +16,7 @@ import pytest
 
 from evals import grading_page, results, round_export
 from gateway.models import ModelCall
-from jobs.models import Job, ProducedItem, SceneStep
+from jobs.models import AgentFix, Job, ProducedItem, SceneStep
 
 from .test_producer_auto_fix import FLOATS, SPINS, remade_once, remade_twice  # noqa: F401
 from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
@@ -128,7 +128,7 @@ def test_the_numbers_of_a_graded_round_come_from_its_files(
     assert f"- {AD}: $" in report
 
 
-def test_a_first_clip_kept_over_its_remakes_has_no_kept_clip_to_grade(
+def test_a_scene_the_agent_gave_up_on_is_exported_with_every_try_and_no_kept_clip_to_grade(
     remade_twice: SceneStep,  # noqa: F811
     tmp_path: Path,
 ) -> None:
@@ -136,11 +136,13 @@ def test_a_first_clip_kept_over_its_remakes_has_no_kept_clip_to_grade(
 
     scene = json.loads((run / "results.json").read_text())[f"{AD}:2"]
     assert [t["remake"] for t in scene["tries"]] == [None, 1, 2]
-    assert (scene["kept"]["remake"], scene["kept_is_remake"]) == (None, False)
+    assert (scene["kept"], scene["kept_is_remake"]) == (None, False)
+    assert scene["gave_up"] == "Every try kept the same fault."
+    assert scene["shows"] == remade_twice.shows
     assert scene["tries"][1]["judge_saw"][0] == SPINS
     page = grading_page.page(run)
     assert f"{AD}__scene-2__kept" not in page
-    assert page.count("app kept this") == 1
+    assert "app kept this" not in page
 
 
 def test_a_first_clip_step_that_made_no_clip_is_passed_for_the_one_asked_again(
@@ -152,6 +154,7 @@ def test_a_first_clip_step_that_made_no_clip_is_passed_for_the_one_asked_again(
     again.pk = None
     again.save()
     ProducedItem.objects.filter(step=remade_once).update(step=again)
+    AgentFix.objects.filter(step=remade_once).update(step=again)
 
     scene = json.loads((exported(tmp_path) / "results.json").read_text())[f"{AD}:2"]
 
@@ -163,7 +166,8 @@ def test_a_broll_scene_with_no_clip_is_named_not_left_out_silently(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    ProducedItem.objects.filter(step=remade_once).update(step=None)
+    # Its first clip and the fixing agent's tries, each in a step of its own.
+    ProducedItem.objects.filter(scene=remade_once.scene, kind="clip").update(step=None)
 
     run = exported(tmp_path)
 

@@ -33,7 +33,7 @@ export type PlanPhoto = {
 /** What a fix plan changes in one scene, or why it can't. Amounts are dollars as strings. */
 export type PlanScene = {
   scene: number;
-  action: "new_picture" | "new_clip" | "new_line" | "go_back" | "no_change";
+  action: "fix" | "new_picture" | "new_clip" | "new_line" | "go_back" | "no_change";
   change: string;
   line: string;
   /** The scene's new overlay, for a new line that changes what it shows. Blank keeps it. */
@@ -66,7 +66,7 @@ export type MessagePlan = {
   notice: PlanNotice | null;
 };
 
-/** One try of a clip the clip judge failed every try of: its "Remake 1" name, its scene
+/** One try of a clip the clip judge failed every try of: its "Try 1" name, its scene
  * version label, and what the judge still sees wrong in it. */
 export type TryClip = {
   clip: number;
@@ -77,9 +77,17 @@ export type TryClip = {
 };
 
 /** Every try of a scene's clip the clip judge failed every try of, for the owner to pick
- * from, and the one in the ad when the notice was read (null once a newer clip replaced
- * them). */
-export type MessageTries = { scene: number; in_ad: number | null; clips: TryClip[] };
+ * from, and the one in the ad when the notice was read (null when none is). `on_offer` says
+ * whether a try can be swapped in then: one is in the ad, or the app gave up on the scene
+ * and none is yet. `picked` is the try the app would pick, and `reason` why it gave up. */
+export type MessageTries = {
+  scene: number;
+  in_ad: number | null;
+  on_offer?: boolean;
+  picked?: number | null;
+  reason?: string;
+  clips: TryClip[];
+};
 
 /** One turn in a session, from the user or the agent, or a notice the server posts when a
  * step fell back or failed, or a scene's picture or clip started. Only a notice has a level:
@@ -102,6 +110,19 @@ export type Message = {
   tries?: MessageTries | null;
   /** The try the owner's tap of "Use this one" chose; null for any other message. */
   use_clip?: number | null;
+  /** True on code's notice that the page can't be read: the page panel is wanted, for the
+   * shop owner to paste the page text and attach its photos. False on code's notice that a
+   * new link was read while it was wanted. Null on any other message. */
+  wants_pasted_page?: boolean | null;
+  /** The shop owner's page text and photos, sent from the page panel, never typed. */
+  pasted_page?: boolean;
+  /** What code made of a pasted page: "accepted", or the one-line reason it can't be used.
+   * On the pasted message once it is checked, and on code's notice saying so. Blank ("", or
+   * null) while it is being checked, and on any other message. */
+  pasted_page_result?: string | null;
+  /** True on code's notice that a pasted page was kept with too few photos: the page panel
+   * stays open for more photos until the shop owner answers. */
+  wants_more_photos?: boolean;
 };
 
 /** One session, as the sidebar lists it. The name is blank until the first message names it. */
@@ -167,22 +188,25 @@ export async function getMessagesSince(sessionId: string, after: number): Promis
   return readJson<Message[]>(await fetch(`/api/sessions/${sessionId}/messages/?after=${after}`));
 }
 
+/** What a message is besides its words: a tap of a plan's yes button names the `plan`, and
+ * a tap of "Use this one" under a try names the try, `useClip`; the page panel's Done sends
+ * the page text and photos as a `pastedPage`. Each marks the message as never typed. */
+export type SendAs = { plan?: number; useClip?: number; pastedPage?: boolean };
+
 /** Say something in a session, with photos when there are any. The server takes it
- * straight away, even while the agent is working. A tap of a plan's yes button names the
- * `plan`, which marks the message as the button's, never typed; a tap of "Use this one"
- * under a try names the try, `useClip`. */
+ * straight away, even while the agent is working. */
 export async function sendMessage(
   sessionId: string,
   text: string,
   photos: File[],
-  plan?: number,
-  useClip?: number,
+  { plan, useClip, pastedPage }: SendAs = {},
 ): Promise<Sent> {
   let request: RequestInit;
-  if (photos.length > 0) {
+  if (photos.length > 0 || pastedPage) {
     const form = new FormData();
     form.append("text", text);
     for (const photo of photos) form.append("photos", photo);
+    if (pastedPage) form.append("pasted_page", "true");
     request = { method: "POST", body: form };
   } else {
     request = jsonRequest(

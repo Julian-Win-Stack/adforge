@@ -653,7 +653,7 @@ def busy_producer_clip(number: int) -> SceneStep:
         scene=scene(number),
         kind=SceneStep.Kind.CLIP,
         tool_call=ToolCall.objects.filter(agent="producer").latest("id"),
-        **SceneStep.made_for(scene(number)),
+        **SceneStep.snapshot(scene(number)),
     )
 
 

@@ -178,7 +178,7 @@ def test_the_planner_asks_the_shop_owner_when_no_broll_could_prove_a_line() -> N
     # prove it, else ask the shop owner, else the person says it to camera. N3's thin film,
     # refused, became a filler B-roll ("over another B-roll"): now it is said to camera.
     instructions = PLAN_INSTRUCTIONS
-    assert "Ask because of a scene that shows the product in only four cases" in instructions
+    assert "Ask because of a scene that shows the product in only five cases" in instructions
     assert (
         "- A middle scene's line is one a camera could film, but no B-roll kind could prove "
         "it: nothing the page, the photos or the shop owner give shows it, and only a hand "
@@ -199,6 +199,67 @@ def test_the_planner_asks_the_shop_owner_when_no_broll_could_prove_a_line() -> N
         "the voice says the claim over another B-roll that proves its own line, or, when none "
         "does, the person says it to camera."
     ) in instructions
+
+
+def test_the_planner_is_told_the_one_action_lasts_the_whole_clip() -> None:
+    # Round 5 cause 2 (runs/round-5/root-cause): every one-moment action stretched over a
+    # 5-7 s clip broke, 37 clips and no exception. Julian 2026-10-19 00:44: "one rule is good
+    # and general (the action must fill the clip)" ... "I approve this one."
+    assert (
+        "That one action lasts the whole clip, which is as long as its line takes to say and "
+        "never under 5 seconds: by its own course, such as a steady pour or a walk, or by what "
+        "it naturally sets off in the same scene, such as a cushion tossed onto a sofa that "
+        "bounces and settles. An action that is over in a moment never gets a scene that ends "
+        "as the moment ends, and never gets a second action added to fill the time. When no "
+        "single action can last the whole clip, the person says that line to camera."
+    ) in PLAN_INSTRUCTIONS
+
+
+def test_the_planner_films_a_use_only_when_it_is_shown_how_or_asks() -> None:
+    # Round 5 cause 1 (runs/round-5/root-cause/1-planner-usage.md): a use the page only
+    # named was taken as licence to film it any way, and the video model invented it.
+    # Julian 2026-10-19 00:44: "film only what the page shows, else ask the owner" ... "I
+    # approve this one." Round 2 (03:36, "i approve. but don't tell the owner to send the
+    # short video"): steps or general words let the washer and the flossing through, so only
+    # text saying how it is held and moved counts, and the owner is asked for a photo or one
+    # sentence. 03:39: "we can infer how it can be machine washed ... You don't need to ask
+    # this": an ordinary use anyone can picture from the words is never asked about.
+    instructions = PLAN_INSTRUCTIONS
+    assert (
+        "A B-roll scene films the product being used only in a way it is shown how: a photo "
+        "shows the product used that way, or the page's text or the shop owner's own words "
+        "say how it is held and moved: which hand holds it, what moves and what it touches. "
+        "Naming a use, listing its steps or describing it in general words doesn't show how. "
+        "An ordinary use anyone can picture from the words needs neither, such as pouring "
+        "from a bottle or zipping up a jacket: film its plain visible part. For a use nobody "
+        "could picture from the words, ask the shop owner, as below."
+    ) in instructions
+    assert "Ask because of a scene that shows the product in only five cases" in instructions
+    assert (
+        "- The scene films the product being used in a way it isn't shown how, and nobody "
+        "could picture it from the words: no photo shows it used that way and neither the page "
+        "nor the shop owner says how it is held and moved."
+    ) in instructions
+    assert (
+        "for a use it isn't shown how, of the product being used that way, or one sentence on "
+        "how it is used"
+    ) in instructions
+    assert (
+        "For a use it isn't shown how: if they go ahead without one, the person says that "
+        "line to camera, or the voice says it over another B-roll scene that proves its own "
+        "line."
+    ) in instructions
+
+
+def test_the_planner_films_only_what_a_still_camera_could_watch_from_outside() -> None:
+    # Round 1 re-plan (2026-10-19): water sprayed inside a dishwasher and shoes in a running
+    # washer, which the video model has to invent. Julian 03:36: "i approve".
+    assert (
+        "A B-roll scene films only what a still camera could watch happening from outside, the "
+        "whole time. Something that happens inside a closed or running thing, or out of sight, "
+        "is never a scene: the voice says it over another B-roll scene that proves its own "
+        "line, or the person says it to camera."
+    ) in PLAN_INSTRUCTIONS
 
 
 def test_the_planner_is_told_a_showcase_only_when_using_it_is_the_proof() -> None:
@@ -254,11 +315,41 @@ def test_the_planner_is_told_a_scene_needs_only_how_a_thing_looks() -> None:
     assert "only how a thing looks" in needs["description"]
 
 
+def test_the_planner_offers_three_answers_for_something_of_the_product_no_photo_shows() -> None:
+    # Owner part loop (spec handoffs/owner-part-approval, Julian Oct 19, Q6 "the ask offers
+    # all three"): most shop owners have no photo of such a part, and "go ahead without it"
+    # lost every scene that needed it. They can now describe it or have it drawn, and approve
+    # the picture before its video is made.
+    instructions = PLAN_INSTRUCTIONS
+    assert (
+        "For something of the product no photo shows, offer three answers: attach a photo of "
+        "it; describe how it looks in one sentence; or have you draw it from your own idea of "
+        "it. Say that they will see the scene's picture and say yes to it before its video is "
+        "made."
+    ) in instructions
+    # The other three cases keep today's two answers.
+    assert "For the other cases, offer two answers: attach a photo of it" in instructions
+    assert (
+        "if they attach a photo, plan with it among the scene's needs; if they describe it, "
+        "give the scene an owner part from the shop owner's words, its looks their sentence "
+        "as they said it; if they say to draw it, give the scene an owner part you invent, "
+        "its looks one sentence of how such a thing ordinarily looks: the only thing you may "
+        "make up."
+    ) in instructions
+    # A part no photo shows is never drawn, except the one the shop owner will approve.
+    assert "parts of the product no photo shows, other than a scene's owner part" in instructions
+    owner_part = SCHEMA["PlannedScene"]["properties"]["owner_part"]
+    assert "described it or asked you to draw it" in owner_part["description"]
+    part = SCHEMA["OwnerPart"]["properties"]
+    assert part["source"]["enum"] == ["owner's words", "invented"]
+    assert "their sentence as they said it" in part["looks"]["description"]
+
+
 def test_the_planner_is_told_to_ask_for_a_before_and_after_nobody_could_picture() -> None:
     instructions = PLAN_INSTRUCTIONS
     # N3's shower cleaner was planned with a result nobody could picture and
     # no photo of it, so the video guessed; a dirty toilet scrubbed clean needed no photo.
-    assert "in only four cases" in instructions
+    assert "in only five cases" in instructions
     # N3's soap scum was judged common knowledge, so it never asked: what decides is whether
     # a camera can see it, not whether people know the word.
     assert "a thin film, haze, cloudiness or water spots" in instructions
@@ -348,11 +439,22 @@ def test_a_broll_scenes_blank_usage_and_result_are_read_as_empty() -> None:
 # --- A plan that can't be used ----------------------------------------------------------------
 
 
+# What the shop owner said a part no photo shows looks like, and the part as the planner
+# gives it from their words.
+THEIR_SENTENCE = "A pale wooden handle with a round brass cap."
+OWNER_PART = {"what": "the handle", "source": "owner's words", "looks": THEIR_SENTENCE}
+
+
 @pytest.mark.parametrize(
     "reply",
     [
         pytest.param(PLAN, id="three talking scenes"),
         pytest.param(broll_scene(), id="a showcase"),
+        pytest.param(broll_scene(owner_part=OWNER_PART), id="an owner part from their words"),
+        pytest.param(
+            broll_scene(owner_part={**OWNER_PART, "source": "invented"}),
+            id="an owner part the planner invents",
+        ),
         pytest.param(talking_scene(), id="a second talking scene"),
         pytest.param(a_plan_with_ways("broll", "second state"), id="two end states"),
     ],
@@ -413,6 +515,32 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
             broll_scene(person_shown=None),
             'A B-roll scene needs who is in it: "no face" or "has face".',
             id="a B-roll scene with no person label",
+        ),
+        pytest.param(
+            talking_scene(owner_part=OWNER_PART),
+            "A scene where the person talks to camera has no owner part.",
+            id="an owner part on a talking scene",
+        ),
+        pytest.param(
+            broll_scene(owner_part={**OWNER_PART, "looks": " "}),
+            "This can't be empty.",
+            id="an owner part with no looks",
+        ),
+        pytest.param(
+            broll_scene(owner_part={**OWNER_PART, "what": ""}),
+            "This can't be empty.",
+            id="an owner part that is nothing",
+        ),
+        pytest.param(
+            broll_scene(owner_part={**OWNER_PART, "source": "a photo"}),
+            "Input should be \"owner's words\" or 'invented'",
+            id="an owner part from neither",
+        ),
+        pytest.param(
+            broll_scene(owner_part=OWNER_PART, needs=[{"what": "The  Handle", "photos": [2]}]),
+            'Scene 2 has a photo of "the handle": a part a photo shows is a need, never an '
+            "owner part.",
+            id="an owner part a photo shows",
         ),
         pytest.param(
             broll_scene(broll_kind="looks good"),

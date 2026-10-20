@@ -138,6 +138,14 @@ _Avoid_: Off-screen image, lazy image
 A video the shop placed with the product photos in the product's gallery, picked off the page with them; reviews, creator videos and banners are not product videos. Kept with the job as its file with its first frame, frames spread over it and its length; when no file can be had (an embedded player, a stream, a dead link, over 50 MB) as its link, with the page's poster or the player's thumbnail as its first frame. Kept afresh when the page is read again. Nothing uses them yet.
 _Avoid_: Media, asset, clip (a clip is a made ad clip)
 
+**Page panel**:
+The panel in the chat where the shop owner pastes the product page's text and attaches its photos, shown when the page can't be read: it can't be fetched, or its text is a loading screen, cookie wall, bot check or error page. It stays open until the app has what it asked for, or a page is read from a new link. The normal chat stays open under it.
+_Avoid_: Shed, form, manual mode
+
+**Owner-pasted page**:
+Page text the shop owner pasted in the page panel. Code runs the same junk check on it as on a page, then keeps it as the page text, so the planner, the fact check and the line checks read it like a page that was read. The owner is the source of it.
+_Avoid_: Override, manual input, pasted facts
+
 **User-supplied fact**:
 Something the user states that the page does not, such as a promo code or a replacement line. Used as written and not fact checked, because the user is the source.
 _Avoid_: Override, manual input
@@ -213,8 +221,16 @@ A check on something already produced, such as a picture or a clip. On unless sw
 _Avoid_: QA, review, gate
 
 **Auto-fix**:
-What code does when the B-roll clip check fails a clip: the clip is made again from the same starting picture, its video prompt written again from what the check saw wrong (keeping the shop owner's fix, when the clip was made for one), at most twice. Each remake is checked too; the clip with the fewest failed answers is kept, the newest of those tied, and the producer is told once, when it's done. The shop owner isn't asked: no yes is needed for it. A first clip the check can't settle (too few answers) is kept as it is, and the shop owner is told it went unchecked.
-_Avoid_: Retry, redo (a redo is made for a fix)
+What happens when the B-roll clip check fails a scene's clip: the fixing agent takes the scene over at once. It sees the plan, the page, the shop photos, the place, the presenter and every try's frames with what the check said, decides what to change (the action, the result, the start picture, both prompts, the line), and films a new try; each try is checked too. It stops when the check passes a try, which is then the scene's clip, or when it judges the scene can't be filmed well, at most 6 tries in all. Every try is a version. When it gives up, a scene from the ad's first making is said to camera, and a fix's scene keeps the clip it had before; either way the shop owner is shown every try, each with what the check saw, the agent's pick marked and why it stopped, and can pick one with one tap, for nothing. The ad doesn't wait. The shop owner isn't asked anything first: no yes is needed for it. A first clip the check can't settle (too few answers) is kept as it is, and the shop owner is told it went unchecked.
+_Avoid_: Retry, redo (a redo is made for a fix), round (a round is one batch of owner notes)
+
+**Try**:
+One new clip of a scene the fixing agent films after the clip check failed it, with or without a new start picture. Numbered from 1; the clip the check failed first is the first clip. Every try is a version.
+_Avoid_: Round, remake, attempt
+
+**Version**:
+One starting picture and the clip made from it, as the shop owner was shown them, numbered from 1 in the order shown ("v2 black toilet"). A new picture starts one; a new clip of the same picture, each try, and anything brought back by going back is one of its own. The shop owner and the decider can go back to any version.
+_Avoid_: Variant (a variant is another job), copy
 
 **Reference photo**:
 A photo the shop owner attaches to a note, showing how something in a scene should look, such as the gel. The decider names the thing to take from it, such as "the black toilet", on the plan the shop owner says yes to. A clean picture of only that thing is drawn from the photo, and it wins over the product photos wherever they disagree, in every scene whose starting picture shows it, for every later fix until the shop owner says otherwise. The decider adds other scenes that show it unless the shop owner says it is only for the scenes they named. A photo too unclear to copy the thing from, or one sent before the ad is planned that isn't of the product, isn't used: the shop owner is asked for another, or to send it with a note. A fix with a reference photo is checked against it: the fix check and the clip check's question about the shop owner's change are shown the photo and say first what it shows. Where the decider answers the thing is in the starting picture, the starting picture is drawn again with it; where more of it shows during the action, the clip is made in reference mode with it. The shop owner isn't told which.
@@ -223,6 +239,10 @@ _Avoid_: Reference picture, owner picture
 **Reference mode**:
 How every B-roll clip is made (Julian 2026-10-16): the video model gets the drawn starting picture as Image 1, told the clip starts like it, then the clean pictures of the reference photos that only show during the clip, each named with what it shows. A reference photo goes in as a picture of the thing alone, drawn from it; no raw photo is ever sent. One switch in code goes back to before, when a clip without such pictures was made from its starting picture as its exact first frame.
 _Avoid_: Reference picture mode, way 3
+
+**Owner part**:
+A thing of the product no photo shows, drawn from the shop owner's words or invented by the planner, that the shop owner must approve in the starting picture before the scene's clip is made. The planner asks for a photo of it, one sentence describing it, or leave to draw it and show it first. The scene keeps what the part is, where its looks come from and one sentence of how it looks, and when the shop owner said yes. It is one thing for the whole ad: a yes covers the part as it stands, its looks and its photos, on every scene that shows it and has no clip yet, so later pictures and fixes of it need no new yes; a correction (new words or a new photo) changes it on every such scene and needs a new yes.
+_Avoid_: Invented part, described part, part approval
 
 ### Not yet built
 

@@ -10,7 +10,6 @@ drives the decider through the chat). Every outside service is faked at the gate
 runs for real on tiny clips."""
 
 from collections.abc import Callable
-from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -23,16 +22,16 @@ from agents.models import SystemNote
 from agents.money import dollars
 from chat.models import Message
 from gateway.fake import FakeModel, turn
-from gateway.models import ModelCall
+from jobs import work
 from jobs.models import Fix, FixPlan, Job, ProducedItem, Scene, SceneStep
 
+from .agent_tries import agent_films
 from .conftest import (
     CLIP_FIXED,
     CLIP_MOTION_OK,
     JUDGED_CLIP,
     HeldSteps,
     given_to_the_producer,
-    handoffs,
     paid_for,
     producer_turns,
     results_of,
@@ -392,7 +391,13 @@ def test_a_fixs_redo_that_fails_pays_for_no_clip_and_the_producer_is_told(
     steps.run_next()
 
     assert "make_broll_clip" not in paid_for()[len(shown) :]
-    assert SceneStep.objects.filter(kind="clip").latest("id").status == "failed"
+    assert (
+        SceneStep.objects.filter(kind="clip")
+        .exclude(tool_call__agent="fixing_agent")
+        .latest("id")
+        .status
+        == "failed"
+    )
     assert [ad.version for ad in ads()] == [1]
     # The chat is told nothing was made, and why in plain words, so it stops showing the
     # clip as being made.
@@ -494,16 +499,19 @@ def test_a_line_note_remakes_that_scene_for_its_new_line_and_captions_the_new_ad
     ]
 
 
-# --- 10. The clip judge fails the fix's redo: it is made again by code, in the same step ------
+# --- 10. The clip judge fails the fix's redo: the fixing agent films it again, in its step ----
 
 
-def test_a_fixs_redo_the_judge_fails_is_made_again_by_code_and_the_remake_makes_the_new_ad(
-    fake_model: FakeModel, steps: HeldSteps, shown: list[str]
+def test_a_fixs_redo_the_judge_fails_is_filmed_again_by_the_agent_and_its_try_makes_the_new_ad(
+    fake_model: FakeModel,
+    steps: HeldSteps,
+    shown: list[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fixed(2, "new_clip", change=TURN_FIX, note=HOVERS)
     assert held_kinds(steps) == [(2, "clip")]
     fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
-    # The judge fails the redo on 2 of its 3 asks, and passes the remake on all 3.
+    # The judge fails the redo on 2 of its 3 asks, and passes the agent's try on all 3.
     # A fix's clip: each answer also says the owner's change is made.
     fixed_ = {"owner_change": CLIP_FIXED}
     fake_model.respond(
@@ -512,43 +520,32 @@ def test_a_fixs_redo_the_judge_fails_is_made_again_by_code_and_the_remake_makes_
         half_turn() | fixed_,
         *[CLIP_MOTION_OK | fixed_] * 4,
     )
-    fake_model.respond("remake_clip_prompt", TURN_REMADE)
+    agent_films(monkeypatch, TURN_REMADE["motion_prompt"])
     steps.run_next()
 
-    # The redo and its remake are the step's, the remake the scene's clip: written from the
-    # redo's prompt and what the judge saw, keeping the shop owner's change word for word.
-    fix = Fix.objects.get()
-    step = SceneStep.objects.filter(kind="clip", scene__number=2).latest("id")
-    redo, remake = step.produced.order_by("id")
-    assert (redo.version, redo.remake, remake.version, remake.remake) == (2, None, 3, 1)
-    assert latest("clip", 2) == remake
-    assert remake.motion_prompt == TURN_REMADE["motion_prompt"]
-    (handed,) = handoffs("remake_clip_prompt")
-    assert (handed["owner_fix"], handed["motion_prompt"], handed["faults"]) == (
-        TURN_FIX,
-        TURN_REWRITE["motion_prompt"],
-        [HALF_TURN],
+    # The redo and the try are the step's, the try the scene's clip.
+    step = (
+        SceneStep.objects.filter(kind="clip", scene__number=2)
+        .exclude(tool_call__agent="fixing_agent")
+        .latest("id")
     )
-    # The new ad holds the remake, shown once; the chat never sees the clip the judge failed.
+    redo, tried = work.clip_tries(step)
+    assert (redo.version, redo.remake, tried.version, tried.remake) == (2, None, 3, 1)
+    assert latest("clip", 2) == tried
+    assert tried.motion_prompt == TURN_REMADE["motion_prompt"]
+    # The new ad holds the try, shown once; the chat never shows the clip the judge failed.
     assert [ad.version for ad in ads()] == [1, 2]
-    assert [cut["clip"] for cut in ads()[1].cuts][1] == remake.pk
+    assert [cut["clip"] for cut in ads()[1].cuts][1] == tried.pk
     assert Message.objects.filter(attachments__file=ads()[1].file).count() == 1
-    assert shown_clips().count(remake.file) == 1
+    assert shown_clips().count(tried.file) == 1
     assert redo.file not in shown_clips()
-    # Two prompts written at $0.006, two 5-second clips at Boreal's $0.0792 a second, and the
-    # judge's 6 asks on each at $0.003, which check the fix too: all the step's, so the fix's.
-    # The same-fault call on the first clip's failing answers is part of it.
-    assert notes(SystemNote.Kind.SCENE_DONE) == ["Scene 2's new clip is done. It cost $0.843."]
-    assert fix.cost_usd() == Decimal("0.843")
-    charged = ModelCall.objects.filter(created_at__gte=step.started_at).exclude(purpose="produce")
-    assert {call.tool_call_id for call in charged} == {step.tool_call_id}
     assert paid_for()[len(shown) :] == [
         "rewrite_clip_prompt",
         "make_broll_clip",
         "collect_broll_clip",
         *JUDGED_CLIP,
+        # The redo's two failing answers are asked whether they name the same fault.
         "agree_on_fault",
-        "remake_clip_prompt",
         "make_broll_clip",
         "collect_broll_clip",
         *JUDGED_CLIP,
@@ -609,7 +606,11 @@ def test_a_fixs_redo_the_video_service_fails_fails_its_step_and_planned_again_is
     asked_before = len(fake_model.clips_submitted)
     steps.run_next()
 
-    step = SceneStep.objects.filter(kind="clip", scene__number=2).latest("id")
+    step = (
+        SceneStep.objects.filter(kind="clip", scene__number=2)
+        .exclude(tool_call__agent="fixing_agent")
+        .latest("id")
+    )
     assert (step.status, step.reason) == ("failed", reason)
     assert notes(SystemNote.Kind.ERROR) == [f"Scene 2's new clip couldn't be made: {reason}"]
     assert plan.scenes.get().error == f"Scene 2's new clip couldn't be made: {reason}"
@@ -637,9 +638,9 @@ def test_a_fixs_redo_the_video_service_fails_fails_its_step_and_planned_again_is
     fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
     steps.run_next()
 
-    assert SceneStep.objects.filter(kind="clip", scene__number=2).latest("id").fix == (
-        again.scenes.get().fix
-    )
+    assert SceneStep.objects.filter(kind="clip", scene__number=2).exclude(
+        tool_call__agent="fixing_agent"
+    ).latest("id").fix == (again.scenes.get().fix)
     assert latest("clip", 2).version == 2
     assert [ad.version for ad in ads()] == [1, 2]
     assert len(fake_model.clips_submitted) - asked_before == videos_asked
