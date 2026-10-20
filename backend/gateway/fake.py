@@ -7,6 +7,8 @@ plain picture of its own from other pictures, designs a numbered voice, speaks a
 `words_per_second` with `pause_seconds` of silence before and after, and hears exactly the
 words it spoke. Script an error for their purpose
 to make one fail, or script a transcript for "transcribe_line" to have something else heard.
+A product video's sound, which the fake didn't speak, has nothing said in it unless a
+transcript is scripted for "transcribe_video".
 
 Music needs no script either: each piece asked for is a low hum as long as was asked, with
 its number written into it so each is its own. Script an error for "make_music" to make one
@@ -231,11 +233,14 @@ class FakeModel:
         return audio.getvalue()
 
     def transcribe(self, *, model: str, audio: bytes) -> Transcription:
-        script = self._scripts["transcribe_line"]
-        scripted = self._next("transcribe_line") if script else None
-        assert not isinstance(scripted, Turn), "'transcribe_line' was scripted a turn"
+        # Audio the fake didn't speak is a product video's sound.
+        purpose = "transcribe_line" if audio in self.heard else "transcribe_video"
+        script = self._scripts[purpose]
+        scripted = self._next(purpose) if script else None
+        assert not isinstance(scripted, Turn), f"{purpose!r} was scripted a turn"
         self.transcribed.append(audio)
-        text = scripted["text"] if scripted else self.heard[audio]
+        # Unscripted, a product video's sound has nothing said in it.
+        text = scripted["text"] if scripted else self.heard.get(audio, "")
         # Heard evenly spaced, at the pace the fake speaks.
         pace = 1 / self.words_per_second
         start = self.pause_seconds

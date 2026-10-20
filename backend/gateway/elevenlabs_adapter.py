@@ -48,13 +48,12 @@ class ElevenLabsProvider:
             for entry in heard.get("words") or []
             if entry.get("type") == "word"
         )
-        if not words or not heard.get("text"):
-            raise ValueError("ElevenLabs heard no words in the audio")
         # What ElevenLabs bills by. Measured from the audio if the reply doesn't say, so
         # a call already paid for is still kept.
         seconds = heard.get("audio_duration_secs")
         return Transcription(
-            text=heard["text"],
+            # Only sounds and no word heard is nothing said.
+            text=(heard.get("text") or "") if words else "",
             words=words,
             audio_seconds=float(seconds) if seconds is not None else _seconds(audio),
         )
