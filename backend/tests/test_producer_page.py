@@ -21,6 +21,7 @@ from werkzeug import Request, Response
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
 from agents.models import ToolCall
+from agents.producer import PAGE_NOT_OPENED, PASTE_IN_THE_PANEL
 from chat.models import Attachment
 from gateway.fake import FakeModel, Outcome, turn
 from gateway.models import ModelCall
@@ -265,8 +266,7 @@ def test_a_link_that_cant_be_read_says_why_and_pays_for_nothing(
     say(f"Make an ad for {link}")
 
     assert read_page_result() == (
-        f"The page couldn't be read: {why.format(url=link)} Ask the shop owner for a working "
-        "link to the product's own page."
+        f"The page couldn't be read: {why.format(url=link)} {PASTE_IN_THE_PANEL}"
     )
     assert len(httpserver.log) == requests_made
     assert paid_for() == []
@@ -288,7 +288,7 @@ def test_a_link_to_a_website_that_doesnt_exist_is_looked_up_once_and_not_read(
 
     assert read_page_result() == (
         "The page couldn't be read: shopp.example doesn't exist, so the link can't be opened. "
-        "Check it for typos. Ask the shop owner for a working link to the product's own page."
+        f"Check it for typos. {PASTE_IN_THE_PANEL}"
     )
     assert dns.lookups == ["shopp.example"]
     assert paid_for() == []
@@ -314,7 +314,7 @@ def test_a_link_that_redirects_to_a_private_network_address_is_not_followed(
 
     assert read_page_result() == (
         f"The page couldn't be read: {admin_url} leads to a private network address, which is "
-        "never fetched. Ask the shop owner for a working link to the product's own page."
+        f"never fetched. {PASTE_IN_THE_PANEL}"
     )
     assert [request.path for request, _ in httpserver.log] == ["/old-mug"]
     assert paid_for() == []
@@ -643,11 +643,12 @@ def test_a_page_the_shop_answers_firecrawl_404_for_cant_be_read_and_isnt_downloa
 
     assert read_page_result() == (
         f"The page couldn't be read: {shampoo_page_url} answered 404 Not Found, so trying "
-        "again won't help. Ask the shop owner for a working link to the product's own page."
+        f"again won't help. {PASTE_IN_THE_PANEL}"
     )
     assert "/products/detox-shampoo" not in [request.path for request, _ in httpserver.log]
     assert paid_for() == []
-    assert notices(api, session_id) == []
+    # The page panel's notice: test_unreadable_page.py.
+    assert [text for _, text in notices(api, session_id)] == [PAGE_NOT_OPENED]
 
 
 def test_a_failed_copy_call_leaves_the_page_unread_and_says_so(
@@ -707,8 +708,7 @@ def test_a_private_address_is_refused_before_firecrawl_is_asked(
 
     assert read_page_result() == (
         f"The page couldn't be read: {shampoo_page_url} leads to a private network address, "
-        "which is never fetched. Ask the shop owner for a working link to the product's own "
-        "page."
+        f"which is never fetched. {PASTE_IN_THE_PANEL}"
     )
     assert firecrawl.requests == []
     assert len(httpserver.log) == 0
