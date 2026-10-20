@@ -155,6 +155,41 @@ def test_a_picked_gallery_video_is_kept_with_its_first_frame_four_frames_and_len
     assert len({file_store.read(frame) for frame in video.frames}) == 4
 
 
+@pytest.mark.parametrize("breaks", ["thinning", "every frame"])
+def test_a_video_that_cant_be_thinned_is_kept_with_its_file_and_frames_but_not_read(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+    picks_videos: list[dict[str, Any]],
+    tiny_mp4: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+    breaks: str,
+) -> None:
+    def broken(*_: Any) -> Any:
+        raise subprocess.TimeoutExpired("ffmpeg", 120)
+
+    if breaks == "thinning":
+        monkeypatch.setattr(video_frames, "thin", broken)
+    else:
+        monkeypatch.setattr(product_videos, "_every_frame", broken)
+    httpserver.expect_request("/cdn/videos/gallery.mp4").respond_with_data(
+        tiny_mp4, content_type="video/mp4"
+    )
+    picks_videos.append(player(1, f"{firecrawl.shop}/cdn/videos/gallery.mp4"))
+
+    read(fake_model, say, shampoo_page_url)
+
+    assert "Kept 1 product photo." in results_of("read_page")[0]
+    (video,) = Job.objects.get().videos.all()
+    assert file_store.read(video.file) == tiny_mp4
+    assert video.duration == pytest.approx(2.0, abs=0.1)
+    assert len(video.frames) == product_videos.FRAMES
+    assert video.frames_picked == []
+    assert video.read is None
+
+
 def test_videos_with_no_file_to_keep_are_kept_as_links_with_a_first_frame_when_one_is_had(
     fake_model: FakeModel,
     httpserver: HTTPServer,

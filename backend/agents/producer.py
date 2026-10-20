@@ -443,7 +443,7 @@ class PlanAd(Tool):
                 f"Planning it cost {dollars(_spent(job, self.name))}.\n"
                 f"{_the_plan(job, planned.reason)}"
             )
-        if not job.photos.exists():
+        if not job.photos.filter(from_video=None).exists():
             raise Refused(
                 "the ad has no product photos yet, and every scene is made from one. Ask the "
                 "shop owner to attach at least one, then add it with use_photos."
@@ -1778,8 +1778,9 @@ def _page_checked(job: Job) -> bool:
 
 def _page_read(job: Job) -> bool:
     """Whether the job's page has been read successfully: it was found to show its product,
-    and the job has a product photo, from the page or from the shop owner."""
-    return _page_checked(job) and job.photos.exists()
+    and the job has a product photo, from the page or from the shop owner (a picture cut
+    from its video isn't enough on its own)."""
+    return _page_checked(job) and job.photos.filter(from_video=None).exists()
 
 
 def _with_its_page(call: ToolCall, needs_it: str) -> Job:

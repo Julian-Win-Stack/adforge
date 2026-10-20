@@ -89,11 +89,11 @@ SLOW_ANSWER_SECONDS: dict[str, float] = {
     "read_video": 600,
 }
 
-# US dollars per million tokens: (input, output). From OpenAI's pricing page.
 # The audio for these may have nothing said in it, as a product video's music: for every
 # other purpose, audio with no word heard is refused.
 NOTHING_SAID_IS_FINE = {"transcribe_video"}
 
+# US dollars per million tokens: (input, output). From OpenAI's pricing page.
 PRICE_PER_MILLION_TOKENS: dict[str, tuple[Decimal, Decimal]] = {
     "gpt-5-mini": (Decimal("0.25"), Decimal("2.00")),
     "gpt-6-luna": (Decimal("0.10"), Decimal("0.50")),

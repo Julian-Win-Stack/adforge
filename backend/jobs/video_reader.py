@@ -7,23 +7,22 @@ and never asks. Its answer is kept on the video."""
 
 import functools
 import hashlib
+import logging
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from adforge import file_store
-from adforge.retry import OutsideServiceDown
-from gateway.gateway import UnreadableImage, call_model
+from gateway.gateway import call_model
 from gateway.types import (
-    AnswerTookTooLong,
-    BlockedBySafetyFilter,
     Image,
-    UnusableReply,
 )
 from jobs import picker_grids
 from jobs.models import Job, ProductVideo
 from jobs.planning import PLAN_INSTRUCTIONS, PlanHandoff
 from jobs.work import plan_handoff
+
+logger = logging.getLogger(__name__)
 
 # Julian, 2026-10-19 23:29: "go with the proposed line".
 ADDED_JOB = (
@@ -113,14 +112,9 @@ def read_videos(job: Job, page_text: str) -> list[str]:
             continue
         try:
             video.read = _read(job, video, page_text)
-        except (
-            NoShownMoment,
-            UnusableReply,
-            OutsideServiceDown,
-            AnswerTookTooLong,
-            BlockedBySafetyFilter,
-            UnreadableImage,
-        ) as error:
+        except Exception as error:
+            # Whatever stops one video's read, the page is read and the ad planned without it.
+            logger.exception("Product video %s couldn't be read", video.pk)
             video.read = {"error": str(error)}
             problems.append(
                 f"The product's video {video.position} couldn't be read ({error}), so the ad "

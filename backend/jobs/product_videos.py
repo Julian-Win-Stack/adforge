@@ -136,14 +136,23 @@ def _look_at(content: bytes, extension: str) -> _Looked | None:
                 return None
             first = _frame(file, first_frame_time(duration))
             frames = [_frame(file, at) for at in frame_times(duration)]
-            every_frame, scene_scores = _every_frame(file, Path(folder) / "frames")
         except RuntimeError, subprocess.TimeoutExpired:
             return None
-        picked = [
+        return _Looked(duration, first, frames, _thinned(file, Path(folder) / "frames"))
+
+
+def _thinned(file: Path, folder: Path) -> list[tuple[float, bytes]]:
+    """The video thinned to the frames worth looking at, each with its second; none when
+    that fails, so the video is kept but not read."""
+    try:
+        every_frame, scene_scores = _every_frame(file, folder)
+        return [
             (number / video_frames.FRAMES_PER_SECOND, every_frame[number].read_bytes())
             for number in video_frames.thin(every_frame, scene_scores)
         ]
-    return _Looked(duration, first, frames, picked)
+    except Exception:
+        logger.exception("Product video %s couldn't be thinned", file)
+        return []
 
 
 def first_frame_time(duration: float) -> float:

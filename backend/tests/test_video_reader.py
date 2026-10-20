@@ -21,7 +21,15 @@ from jobs.models import Job, ProductVideo
 from jobs.planning import PLAN_INSTRUCTIONS
 from jobs.work import keep_photo
 
-from .conftest import PLAN, READABLE, FakeFirecrawl, paid_for, picture, results_of
+from .conftest import (
+    PLAN,
+    READABLE,
+    SHAMPOO_PHOTO_PATH,
+    FakeFirecrawl,
+    paid_for,
+    picture,
+    results_of,
+)
 from .test_producer_page import notices
 from .test_product_videos import picks_videos, player, tiny_mp4  # noqa: F401
 
@@ -190,13 +198,15 @@ def test_the_owner_answering_the_planners_question_plans_again_without_reading_a
     "fails",
     [
         UnusableReply("the answer could not be read", input_tokens=1, output_tokens=1),
+        # An error nobody planned for, such as the service refusing a picture's format.
+        RuntimeError("the service refused a picture's format"),
         # Moments only at seconds no frame was shown at.
         {
             "kept": [{"second": 5.0, "shows": "A hand.", "why": "A scene."}],
             "rejected": [{"second": 6.0, "why": "Nothing new."}],
         },
     ],
-    ids=["the model fails", "only moments no frame shows"],
+    ids=["the model fails", "an unexpected error", "only moments no frame shows"],
 )
 def test_a_video_that_cant_be_read_is_told_to_the_producer_only_and_the_ad_is_planned(
     fake_model: FakeModel,
@@ -287,3 +297,82 @@ def test_a_moment_no_frame_shows_is_dropped_and_the_others_are_kept(
     (video,) = Job.objects.get().videos.all()
     assert video.read == {**KEPT, "dropped": [{"second": 5.0}]}
     assert "couldn't be read" not in results_of("read_page")[0]
+
+
+def test_the_photo_counts_the_producer_hears_leave_out_the_video_pictures(
+    fake_model: FakeModel,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+    gallery_video: None,
+) -> None:
+    reader_answers(fake_model, KEPT)
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": shampoo_page_url, "target_seconds": None})]),
+        turn(says="The page has one photo. Go ahead with it?"),
+    )
+    fake_model.respond("check_page", READABLE)
+    say(f"Make an ad for {shampoo_page_url}")
+    assert Job.objects.get().photos.exclude(from_video=None).count() == 1
+
+    # The same link again, then one of the shop owner's photos added.
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": shampoo_page_url, "target_seconds": None})]),
+        turn(says="Already read."),
+    )
+    say(f"Make an ad for {shampoo_page_url}")
+    assert results_of("read_page")[-1].endswith("The ad has 1 product photo.")
+    fake_model.respond(
+        "produce",
+        turn(calls=[("use_photos", {"photos": [{"photo": 1, "shows": "the product"}]})]),
+        turn(says="Added."),
+    )
+    say("Here is another photo.", ("mine.png", picture(220, 220, (40, 90, 160))))
+    assert "The job now has 2 product photos." in results_of("use_photos")[-1]
+
+
+def test_a_page_whose_only_picture_is_from_its_video_waits_for_the_owners_photo(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    picks_videos: list[dict[str, Any]],  # noqa: F811
+    tiny_mp4: bytes,  # noqa: F811
+    thinned: None,
+    say: Callable[..., None],
+) -> None:
+    # The page's one photo is gone; its gallery video is there.
+    httpserver.expect_request(SHAMPOO_PHOTO_PATH).respond_with_data(
+        "<html>Gone</html>", content_type="text/html"
+    )
+    httpserver.expect_request("/cdn/videos/gallery.mp4").respond_with_data(
+        tiny_mp4, content_type="video/mp4"
+    )
+    picks_videos.append(player(1, f"{firecrawl.shop}/cdn/videos/gallery.mp4"))
+    link = httpserver.url_for("/products/detox-shampoo")
+    reader_answers(fake_model, KEPT)
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": link, "target_seconds": None})]),
+        turn(says="Please attach a photo."),
+    )
+    fake_model.respond("check_page", READABLE)
+    say(f"Make an ad for {link}")
+    assert list(Job.objects.get().photos.values_list("from_video", flat=True)) != [None]
+    assert Job.objects.get().photos.count() == 1
+
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Waiting."))
+    say("Go ahead.")
+
+    assert "plan_ad" not in paid_for()
+    assert "the ad has no product photos yet" in results_of("plan_ad")[-1]
+    # Nor does the page count as read: the link sent again is read again.
+    reader_answers(fake_model, KEPT)
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": link, "target_seconds": None})]),
+        turn(says="Please attach a photo."),
+    )
+    fake_model.respond("check_page", READABLE)
+    say(f"Try {link} again")
+    assert "was already read" not in results_of("read_page")[-1]
