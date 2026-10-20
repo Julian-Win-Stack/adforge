@@ -169,6 +169,21 @@ class ProductPhoto(models.Model):
             "such a photo is only used when no other shows what's needed."
         ),
     )
+    from_video = models.ForeignKey(
+        "ProductVideo",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="pictures",
+        help_text="The product video it was cut from, if it is a video picture.",
+    )
+    at_second = models.FloatField(
+        null=True, blank=True, help_text="A video picture's second in its video."
+    )
+    note = models.TextField(
+        blank=True,
+        help_text="A video picture's one line: what it shows that no other photo shows.",
+    )
 
     class Meta:
         ordering = ["job", "position"]
@@ -184,7 +199,8 @@ class ProductVideo(models.Model):
     """A video the shop placed with the product photos in the product's gallery, picked off
     the page with them. Kept as a file with a few frames, or, when no file can be had (an
     embedded player, a stream, a dead link, one too big), as its link with a first frame if
-    one is had. Nothing uses them yet."""
+    one is had. A file is thinned to the frames worth looking at, written down as its
+    transcript and read once for the moments the plan would need as video pictures."""
 
     class Kind(models.TextChoices):
         VIDEO = "video", "Video"  # A video the page plays itself.
@@ -215,6 +231,29 @@ class ProductVideo(models.Model):
         help_text="Keys of frames spread over the file, first to last; none without a file.",
     )
     duration = models.FloatField(null=True, blank=True, help_text="Seconds; none without a file.")
+    frames_picked = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "The file thinned to the frames worth looking at, first to last: each its key and "
+            "the second it is at; none without a file."
+        ),
+    )
+    transcript = models.TextField(
+        blank=True,
+        help_text=(
+            'The words said in the file, or "music only" when nothing is said; blank without '
+            "a file, or when it couldn't be written down."
+        ),
+    )
+    read = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The video reader's answer: the moments it would need as pictures and the ones it "
+            "wouldn't; {\"error\": ...} when reading it failed; none when it wasn't read."
+        ),
+    )
 
     class Meta:
         ordering = ["job", "position"]

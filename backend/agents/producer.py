@@ -37,8 +37,9 @@ from jobs.models import (
     SceneStep,
 )
 from jobs.notices import post_notice
-from jobs.product_videos import save_videos
+from jobs.product_videos import save_videos, transcribe_videos
 from jobs.reference_photos import ReferencePhotoUnusable
+from jobs.video_reader import read_videos
 from jobs.work import (
     DECLARED_INSTEAD,
     SkippedPhoto,
@@ -60,6 +61,7 @@ from jobs.work import (
     plan,
     run_checks,
     save_photos,
+    save_video_pictures,
     use_music_again,
     version_label,
     waits_to_be_said_to_camera,
@@ -200,7 +202,7 @@ class ReadPage(Tool):
             return (
                 f"{self.link} was already read for this ad, so nothing was read or paid for "
                 f"again. Reading it cost {dollars(_spent(job, self.name))}. The ad has "
-                f"{_photos(job.photos.count())}."
+                f"{_photos(job.photos.filter(from_video=None).count())}."
             )
         else:
             # The page before wasn't read successfully, so nothing has been made from it: the
@@ -273,14 +275,21 @@ class ReadPage(Tool):
                 declared = True
             elif skipped:
                 post_notice(job, _not_downloaded(skipped), Message.Level.PROBLEM)
-        # The gallery videos the picker picked, kept for later: nothing uses them yet.
+        # The gallery videos the picker picked, what each says, and each read for the moments
+        # the plan would need as pictures. One that can't be read is left out: the owner isn't
+        # told.
         save_videos(job, list(picked.videos))
+        unread_videos = transcribe_videos(job) + read_videos(job, text)
+        for video in job.videos.order_by("position"):
+            if moments := (video.read or {}).get("kept"):
+                save_video_pictures(job, video, moments, video.frames_picked)
         # Only once every photo is kept: a worker that stops part-way through them leaves the
         # page unread, so the read run again keeps them all rather than the few already kept.
         keep_page(job, download, product_page, text)
         if messages.page_panel_wanted(call.session):
             post_notice(job, PANEL_NOT_NEEDED, Message.Level.INFO, wants_pasted_page=False)
-        kept = job.photos.count()
+        # The pictures cut from its videos are the planner's, not news to the owner.
+        kept = job.photos.filter(from_video=None).count()
         if kept == 0:
             post_notice(
                 job,
@@ -292,6 +301,7 @@ class ReadPage(Tool):
         if download.final_url != self.link:
             told.append(f"The link led to {download.final_url}, so that is the page read.")
         told.append(f"Kept {_photos(kept)}.")
+        told += unread_videos
         if skipped:
             told.append(f"Skipped {len(skipped)} photo{'s' if len(skipped) != 1 else ''}:")
             told += [f"- {photo.url}: {photo.reason}" for photo in skipped]
@@ -374,7 +384,7 @@ class UsePhotos(Tool):
                 file=attached.file,
                 has_face=note_face(job, attached.file, attached.file),
             )
-        count = job.photos.count()
+        count = job.photos.filter(from_video=None).count()
         told = f"Added {added} of the shop owner's photos. The job now has {_photos(count)}."
         kept_before = [number for number in others if attached_photos[number - 1].file in kept]
         others = [number for number in others if number not in kept_before]
@@ -433,7 +443,7 @@ class PlanAd(Tool):
                 f"Planning it cost {dollars(_spent(job, self.name))}.\n"
                 f"{_the_plan(job, planned.reason)}"
             )
-        if not job.photos.exists():
+        if not job.photos.filter(from_video=None).exists():
             raise Refused(
                 "the ad has no product photos yet, and every scene is made from one. Ask the "
                 "shop owner to attach at least one, then add it with use_photos."
@@ -1768,8 +1778,9 @@ def _page_checked(job: Job) -> bool:
 
 def _page_read(job: Job) -> bool:
     """Whether the job's page has been read successfully: it was found to show its product,
-    and the job has a product photo, from the page or from the shop owner."""
-    return _page_checked(job) and job.photos.exists()
+    and the job has a product photo, from the page or from the shop owner (a picture cut
+    from its video isn't enough on its own)."""
+    return _page_checked(job) and job.photos.filter(from_video=None).exists()
 
 
 def _with_its_page(call: ToolCall, needs_it: str) -> Job:
@@ -1895,12 +1906,14 @@ def _pasted_with_too_few_photos(job: Job) -> Message | None:
 
 
 def _show_photos(call: ToolCall, job: Job) -> None:
-    """Show the shop owner the job's photos in the chat, as pictures on the agent's message."""
+    """Show the shop owner the job's photos in the chat, as pictures on the agent's message:
+    those from the page and their own, not the ones cut from the product's videos."""
     messages.add(
         call.session,
         role=Message.Role.AGENT,
         carrying=[
-            messages.AttachedFile(Attachment.Kind.PICTURE, photo.file) for photo in job.photos.all()
+            messages.AttachedFile(Attachment.Kind.PICTURE, photo.file)
+            for photo in job.photos.filter(from_video=None)
         ],
     )
 

@@ -399,6 +399,8 @@ def test_the_planner_is_handed_the_page_text_the_target_the_photo_count_and_the_
             {"by": "user", "text": f"Make me a 12 second ad for {product_page_url}"},
             {"by": "producer", "text": "Now I'll plan the ad."},
         ],
+        # The mug's page has no product videos, so none says anything.
+        "video_transcripts": [],
     }
 
 

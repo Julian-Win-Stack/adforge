@@ -15,6 +15,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # gives it for the photos it picks.
     "note_face": "gpt-5.6-sol",
     "plan_ad": "gpt-5.6-sol",
+    # Reads a product video for the moments the plan would need as pictures, thinking
+    # through the plan with the planner's own instructions, so on the planner's own model.
+    "read_video": "gpt-5.6-sol",
     "fact_check": "gpt-5.6-terra",
     "rewrite_line": "gpt-5.6-sol",
     "shorten_script": "gpt-5.6-sol",
@@ -62,6 +65,8 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "measure_voice": "inworld-tts-2",
     "speak_line": "inworld-tts-2",
     "transcribe_line": "scribe_v2",
+    # What a product video says: the same speech-to-text as a line's audio.
+    "transcribe_video": "scribe_v2",
     # A clip is asked for, then waited for and fetched: two calls, only the first paid. Each
     # kind has its own model: HeyGen's talking clips passed the blind-graded eval (#87) 8 of
     # 8; B-roll is Boreal-H3, on Creatify's own API (docs/broll-picture-logic.md, item 31).
@@ -80,7 +85,13 @@ ANSWER_SECONDS = 120
 SLOW_ANSWER_SECONDS: dict[str, float] = {
     "check_clip_sides": 600,
     "check_clip_motion": 600,
+    # Up to 50 pictures, 5 of them grids of 16 frames.
+    "read_video": 600,
 }
+
+# The audio for these may have nothing said in it, as a product video's music: for every
+# other purpose, audio with no word heard is refused.
+NOTHING_SAID_IS_FINE = {"transcribe_video"}
 
 # US dollars per million tokens: (input, output). From OpenAI's pricing page.
 PRICE_PER_MILLION_TOKENS: dict[str, tuple[Decimal, Decimal]] = {

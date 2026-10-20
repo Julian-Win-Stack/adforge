@@ -249,7 +249,12 @@ def test_the_first_version_gets_round_4s_scenes_in_the_planners_plan(tmp_path: P
         model="planner",
         instructions="",
         handoff=PlanHandoff(
-            product_url=ad.url, page_text="", target_seconds=None, photo_count=9, conversation=[]
+            product_url=ad.url,
+            page_text="",
+            target_seconds=None,
+            photo_count=9,
+            conversation=[],
+            video_transcripts=[],
         ),
         output=producer_decision_for(9),
     )
@@ -281,6 +286,7 @@ def test_the_first_version_keeps_round_4s_lines_through_the_fact_check(tmp_path:
             LineToCheck(scene=1, line="Rings again?"),
             LineToCheck(scene=2, line="It fights rings.", shows="A brush scrubs the ring."),
         ],
+        video_transcripts=[],
     )
     request: Any = SimpleNamespace(
         purpose="fact_check", handoff=handoff, output=fact_check_for([1, 2], showing=[2])

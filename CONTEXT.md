@@ -135,8 +135,12 @@ A picture on the product page that the screenshot can't show because a scroll bo
 _Avoid_: Off-screen image, lazy image
 
 **Product video**:
-A video the shop placed with the product photos in the product's gallery, picked off the page with them; reviews, creator videos and banners are not product videos. Kept with the job as its file with its first frame, frames spread over it and its length; when no file can be had (an embedded player, a stream, a dead link, over 50 MB) as its link, with the page's poster or the player's thumbnail as its first frame. Kept afresh when the page is read again. Nothing uses them yet.
+A video the shop placed with the product photos in the product's gallery, picked off the page with them; reviews, creator videos and banners are not product videos. Kept with the job as its file with its first frame, frames spread over it and its length; when no file can be had (an embedded player, a stream, a dead link, over 50 MB) as its link, with the page's poster or the player's thumbnail as its first frame. Kept afresh when the page is read again. A file is thinned to at most 80 frames worth looking at, and the **Transcript of a product video** (the words said in it, through speech-to-text; "music only" when nothing is said) is written down. Then the video reader reads it once, before the plan: the planner's own instructions and inputs with one job added, the transcript and the frames in grids labelled by second. It names the moments it would need as pictures, and those become **Video pictures**. The planner and the fact check get every transcript as the shop's own words, like the page text. The user sees nothing of this.
 _Avoid_: Media, asset, clip (a clip is a made ad clip)
+
+**Video picture**:
+A product photo cut from a product video at one second, kept because the video reader said no photo shows what it shows; it carries that one line, and the planner is shown it as "from the product's video at N s". It counts as a product photo everywhere (looks only), after the page's photos and before the user's. A moment that copies a page photo is not kept. Never a reference photo, and never shown to the user.
+_Avoid_: Frame, still, keyframe, video frame
 
 **Page panel**:
 The panel in the chat where the shop owner pastes the product page's text and attaches its photos, shown when the page can't be read: it can't be fetched, or its text is a loading screen, cookie wall, bot check or error page. It stays open until the app has what it asked for, or a page is read from a new link. The normal chat stays open under it.

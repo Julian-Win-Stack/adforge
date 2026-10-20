@@ -78,6 +78,7 @@ def plan_once(product: str, run: int) -> dict[str, Any]:
                 target_seconds=job.target_seconds,
                 photo_count=len(photos),
                 conversation=_conversation(job),
+                video_transcripts=[],
             ),
             output=producer_decision_for(len(photos)),
             images=[Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos],

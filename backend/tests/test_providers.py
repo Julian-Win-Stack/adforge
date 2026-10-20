@@ -437,19 +437,20 @@ def test_elevenlabs_is_tried_again_when_it_is_down_and_every_try_is_recorded(
     assert second.duration_ms is not None
 
 
-@pytest.mark.parametrize(
-    "reply",
-    [
-        {"language_code": "eng", "text": "", "audio_duration_secs": 1.0},
-        # Only a sound was heard: there is text, but not one word.
-        {
-            "language_code": "eng",
-            "text": "(laughs)",
-            "words": [{"text": "(laughs)", "type": "audio_event", "start": 0.1, "end": 0.9}],
-            "audio_duration_secs": 1.0,
-        },
-    ],
-)
+# ElevenLabs' replies when nothing is said: no text, or only a sound with no word in it.
+NO_WORDS = [
+    {"language_code": "eng", "text": "", "audio_duration_secs": 1.0},
+    # Only a sound was heard: there is text, but not one word.
+    {
+        "language_code": "eng",
+        "text": "(laughs)",
+        "words": [{"text": "(laughs)", "type": "audio_event", "start": 0.1, "end": 0.9}],
+        "audio_duration_secs": 1.0,
+    },
+]
+
+
+@pytest.mark.parametrize("reply", NO_WORDS)
 def test_a_transcript_with_no_words_is_refused(
     httpserver: HTTPServer, elevenlabs: ElevenLabsProvider, reply: dict[str, Any]
 ) -> None:
@@ -459,6 +460,22 @@ def test_a_transcript_with_no_words_is_refused(
     with use_model(elevenlabs), pytest.raises(ValueError, match="no words"):
         transcribe(job=None, purpose="transcribe_line", audio_key=key)
     assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
+
+
+@pytest.mark.parametrize("reply", NO_WORDS)
+def test_a_product_videos_sound_with_no_words_is_heard_as_nothing_said_and_still_billed(
+    httpserver: HTTPServer, elevenlabs: ElevenLabsProvider, reply: dict[str, Any]
+) -> None:
+    key = file_store.save("video-sound.wav", wav(1))
+    httpserver.expect_oneshot_request("/v1/speech-to-text", method="POST").respond_with_json(reply)
+
+    with use_model(elevenlabs):
+        transcription = transcribe(job=None, purpose="transcribe_video", audio_key=key)
+
+    assert (transcription.text, transcription.words) == ("", ())
+    heard_call = ModelCall.objects.get()
+    assert (heard_call.outcome, heard_call.audio_seconds) == ("succeeded", 1.0)
+    assert heard_call.cost_usd == Decimal("0.000061")
 
 
 def test_audio_whose_length_elevenlabs_doesnt_say_is_measured(

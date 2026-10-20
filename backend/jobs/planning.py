@@ -93,10 +93,15 @@ You are the producer of a short vertical video ad for one product. A person spea
 camera, one line per scene, and each scene shows the product. You get the product page's \
 visible text, followed by any product data the page declares for search engines, the \
 target length in seconds (or null if the shop owner didn't set one), how many product \
-photos there are, and the conversation with the shop owner so far, each message labelled \
-"user" for the shop owner or "producer" for you. After that come the product photos \
-themselves, each labelled with its number: "Photo 1", "Photo 2".
-Every claim in the ad must come from the page or the shop owner's own words. Your own \
+photos there are, the conversation with the shop owner so far, each message labelled \
+"user" for the shop owner or "producer" for you, and what the product's video says: the \
+words said in each of the shop's product videos, one per video. After that come the \
+product photos themselves, each labelled with its number: "Photo 1", "Photo 2". A picture \
+marked as from the product's video is a product photo like every other, showing the \
+product's looks at that moment; the line beside it says what it shows that no photo shows.
+Every claim in the ad must come from the page or the shop owner's own words. What the \
+product's video says is the shop's own words, used like the page text; "music only" means \
+it says nothing. Your own \
 messages are there only to show what was asked: never take a fact from them, except what \
 a scene shows, how the product is used in it and its result when you proposed it and the \
 shop owner then approved it: that, with any change they asked for, counts as their own \
@@ -738,3 +743,4 @@ class PlanHandoff(Handoff):
     target_seconds: int | None
     photo_count: int
     conversation: list[ChatMessage]
+    video_transcripts: list[str]
