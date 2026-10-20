@@ -41,7 +41,10 @@ You check the script of a short video ad against the product page it was written
 You get the page's visible text, followed by any product data the page declares for \
 search engines, the conversation with the shop owner so far, the colour the ad shows the \
 product in, and the lines to check, each with its scene number. Each message in the \
-conversation is labelled "user" for the shop owner or "producer" for the producer.
+conversation is labelled "user" for the shop owner or "producer" for the producer. You \
+also get what the product's video says: the words said in each of the shop's product \
+videos, one per video. What the product's video says counts as the shop's own words, like \
+the page's text.
 Some scenes don't show the person talking: they show something else while the line is \
 said, described in the scene's "shows", with how the product is used in it, its \
 "usage", and what you can see at its end, its "result". Check a "shows", a "usage" and a \
@@ -205,6 +208,7 @@ class FactCheckHandoff(Handoff):
     conversation: list[ChatMessage]
     product_colour: str
     lines: list[LineToCheck]
+    video_transcripts: list[str]
 
 
 class LineVerdict(BaseModel):

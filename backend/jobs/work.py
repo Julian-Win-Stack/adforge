@@ -843,7 +843,7 @@ def plan(job: Job) -> ProducerDecision:
         instructions=PLAN_INSTRUCTIONS,
         handoff=plan_handoff(job, job.page_text, len(photos)),
         output=producer_decision_for(len(photos)),
-        images=[Image(label=f"Photo {photo.position}", key=photo.file) for photo in shown],
+        images=[_labelled(photo) for photo in shown],
     )
     planned = decision.plan
     if planned is None:
@@ -895,14 +895,33 @@ def plan_handoff(job: Job, page_text: str, photo_count: int) -> PlanHandoff:
         target_seconds=job.target_seconds,
         photo_count=photo_count,
         conversation=_conversation(job),
+        video_transcripts=_video_transcripts(job),
     )
+
+
+def _labelled(photo: ProductPhoto) -> Image:
+    """A photo as the planner and the fact check are shown it: by its number, and a video
+    picture also by the second of the product's video it was cut at and what it shows."""
+    label = f"Photo {photo.position}"
+    if photo.from_video_id is not None:
+        label += f" (from the product's video at {photo.at_second:.1f} s: {photo.note})"
+    return Image(label=label, key=photo.file)
+
+
+def _video_transcripts(job: Job) -> list[str]:
+    """What each of the job's product videos says, in their order: one per video whose
+    words were had, "music only" when it says nothing."""
+    return list(job.videos.exclude(transcript="").values_list("transcript", flat=True))
 
 
 def _photos_to_show(job: Job, photos: list[ProductPhoto]) -> list[ProductPhoto]:
     """The job's photos a model can be shown in one call: at most clip_judge.MOST_PICTURES,
-    the page's first, then the shop owner's. When some are left out, the chat is told once
-    which."""
-    shown = sorted(photos, key=lambda photo: not photo.source_url)[: clip_judge.MOST_PICTURES]
+    the page's first, then those cut from its videos, then the shop owner's. When some are
+    left out, the chat is told once which."""
+    shown = sorted(
+        photos,
+        key=lambda photo: 1 if photo.from_video_id is not None else 0 if photo.source_url else 2,
+    )[: clip_judge.MOST_PICTURES]
     left_out = [f"{photo.position}" for photo in photos if photo not in shown]
     if not left_out:
         return shown
@@ -1149,9 +1168,10 @@ def _ask_fact_check(
             conversation=conversation,
             product_colour=job.product_colour,
             lines=lines,
+            video_transcripts=_video_transcripts(job),
         ),
         output=fact_check_for([line.scene for line in lines], showing=showing),
-        images=[Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos],
+        images=[_labelled(photo) for photo in photos],
         pay_once=pay_once,
     )
 
