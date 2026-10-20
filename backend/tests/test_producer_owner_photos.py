@@ -37,6 +37,7 @@ from jobs.models import (
 from jobs.scenes import SAME_SIDE
 
 from . import fixing
+from .agent_tries import agent_films
 from .conftest import (
     CLIP_FIXED,
     CLIP_MOTION_OK,
@@ -430,7 +431,7 @@ def test_a_note_per_photo_planned_together_takes_each_photo_by_its_number(
                         "scenes": [
                             {
                                 "scene": 2,
-                                "action": "new_picture",
+                                "action": "fix",
                                 "change": "In scene 2, the black mug and their own tea.",
                                 "line": "",
                                 "go_back_to": None,
@@ -715,8 +716,12 @@ def test_the_clip_judge_is_shown_the_shop_owners_photo_for_the_change(
     )
 
 
-def test_a_remake_after_the_judge_fails_stays_in_reference_mode(
-    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
+def test_a_try_after_the_judge_fails_stays_in_reference_mode(
+    fake_model: FakeModel,
+    shown: ProducedItem,
+    steps: HeldSteps,
+    say: Say,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     photos_sent(fake_model, say, OWNER_TEA)
     failing = {
@@ -726,14 +731,14 @@ def test_a_remake_after_the_judge_fails_stays_in_reference_mode(
     fixed = {"owner_photo_shows": OWNER_PHOTO_SHOWS, **CLIP_FIXED}
     fake_model.respond("check_clip_motion", *[{**failing, "owner_change": fixed}] * 3)
     fake_model.respond("rewrite_clip_prompt", REWRITE)
-    fake_model.respond("remake_clip_prompt", REWRITE)
+    agent_films(monkeypatch, REWRITE["motion_prompt"])
 
     fixing.say_yes(fixing.planned(tea_plan_row(), note=TEA_NOTE))
     steps.run_held()
 
-    # Scenes 2 and 3's first clips, then scene 2's fix and its remake once the judge failed it.
+    # Scenes 2 and 3's first clips, then scene 2's fix and the agent's try once the judge
+    # failed it.
     assert len(handoffs("make_broll_clip")) == 2 + 2
-    assert "remake_clip_prompt" in paid_for()
     remade = handoffs("make_broll_clip")[-1]
     assert remade["starting_picture"] is None
     assert len(remade["example_pictures"]) == 2

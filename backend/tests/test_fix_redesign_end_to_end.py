@@ -19,12 +19,14 @@ from jobs import work
 from jobs.models import FixCheck, Scene, SceneStep
 
 from .conftest import JUDGED_CLIP, HeldSteps, paid_for, producer_turns
+from .fixing import plan_row
 from .test_fix_wiring import (
     decided,
     given_to_the_producer,
     planning,
     plans,
     row,
+    stored,
     tap_yes,
 )
 from .test_producer_broll import BROLL_CHOICE, TALKING_CHOICE, checked  # noqa: F401 (a fixture)
@@ -61,12 +63,11 @@ def test_an_ad_is_fixed_by_a_picture_note_then_gone_back_then_given_a_new_line(
     first = work.versions(Scene.objects.get(number=2))[0]
     ads_before = len(ads())
 
-    # A picture note: the decider looks and plans, code shows the plan, nothing is made yet.
-    fake_model.respond(
-        "decide_fixes",
-        planning(("look_at_picture", {"scene": 2}), decided(row(2, "new_picture", TABLE))),
+    # A picture note: a plan stored before the fixing agent, of a new picture of B-roll
+    # scene 2; code shows the plan, nothing is made yet.
+    stored(
+        plan_row(2, "new_picture", change=TABLE), note="In scene 2 put the mug on a wooden table."
     )
-    say("In scene 2 put the mug on a wooden table.")
     [plan] = plans()
     assert Message.objects.filter(plan_event="shown", fix_plan=plan).exists()
     assert held.held == []
@@ -150,14 +151,9 @@ def test_a_note_asking_for_a_new_line_and_a_new_picture_on_one_scene_gets_both(
     session_id: str,
 ) -> None:
     turns, ads_before, old = producer_turns(), len(ads()), picture(2)
-    fake_model.respond(
-        "decide_fixes",
-        planning(
-            ("look_at_picture", {"scene": 2}),
-            decided(row(2, "new_picture", TABLE, line=NEW_LINE)),
-        ),
-    )
-    say(f'Scene 2 should say "{NEW_LINE}", with the mug on a wooden table.')
+    # A plan stored before the fixing agent: a new picture of B-roll scene 2, with its line.
+    note = f'Scene 2 should say "{NEW_LINE}", with the mug on a wooden table.'
+    stored(plan_row(2, "new_picture", change=TABLE, line=NEW_LINE), note=note)
     [plan] = plans()
     shown = Message.objects.get(plan_event="shown", fix_plan=plan)
     assert f'New line: "{NEW_LINE}"' in shown.text
@@ -186,11 +182,10 @@ def test_a_question_mid_fix_is_the_producers_with_the_notes_and_the_fix_carries_
     api: APIClient,
     session_id: str,
 ) -> None:
-    fake_model.respond(
-        "decide_fixes",
-        planning(("look_at_picture", {"scene": 2}), decided(row(2, "new_picture", TABLE))),
+    # A plan stored before the fixing agent: a new picture of B-roll scene 2.
+    stored(
+        plan_row(2, "new_picture", change=TABLE), note="In scene 2 put the mug on a wooden table."
     )
-    say("In scene 2 put the mug on a wooden table.")
     [plan] = plans()
     tap_yes(api, session_id, plan)
     fake_model.respond("choose_broll_picture", BROLL_CHOICE)

@@ -17,7 +17,7 @@ from chat.models import Attachment, Message, Session
 from gateway import catalog
 from gateway.models import ModelCall
 from gateway.types import MusicHandoff, UnusableReply
-from jobs import auto_fix, clip_judge, fix_check, page, picture_check, reference_photos
+from jobs import clip_judge, fix_check, page, picture_check, reference_photos
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
 from jobs.models import (
     BROLL_FIELDS,
@@ -53,11 +53,15 @@ from jobs.work import (
     save_photos,
     use_music_again,
     version_label,
+    waits_to_be_said_to_camera,
     why_the_checks_havent_passed,
     why_the_checks_passed,
 )
 
 from . import step_signals
+from .fixing_agent import AGENT as FIXING_AGENT
+from .fixing_agent import MOST_TRIES
+from .fixing_agent import PURPOSE as FIXING_AGENT_PURPOSE
 from .loop import Agent, Refused, Tool
 from .models import ToolCall
 from .money import dollars
@@ -978,7 +982,10 @@ class MakeClip(Tool):
                 # With no note, any clip of the same picture and audio is already made, as
                 # before notes; a different note is a new clip.
                 **({"step__note": note} if note else {}),
-            ).order_by("version"),
+            )
+            # A try of the fixing agent's is a clip of the step it fixed, never one made here.
+            .exclude(step__tool_call__agent=FIXING_AGENT)
+            .order_by("version"),
         )
         if made is not None:
             assert made.step is not None, "a clip is made by a scene step"
@@ -1209,7 +1216,10 @@ class Estimate(NamedTuple):
 CALL_FALLBACK_USD = Decimal("0.07")
 MILLIONTH = Decimal("0.000001")
 _JUDGE_PURPOSES = ["check_clip_sides", "check_clip_motion"]
-_WRITER_PURPOSES = ["rewrite_clip_prompt", "remake_clip_prompt"]
+_WRITER_PURPOSES = ["rewrite_clip_prompt"]
+# The fixing agent's turns for one try: a look or two, then film_again. A GUESS, until real
+# runs of the agent in the app are recorded (fixing agent build, T3).
+AGENT_TURNS_PER_TRY = 3
 
 
 def _estimate(scene: Scene, redo: Fix.Redo, fix: str) -> Estimate:
@@ -1257,9 +1267,12 @@ def picture_estimate(scene: Scene) -> Estimate:
 def _picture_only_estimate_usd(scene: Scene) -> Decimal:
     """What a new starting picture for the scene is estimated to cost: what its last one cost,
     its judge's looks included, or the fallback when that isn't recorded."""
-    last = scene.steps.filter(
-        kind=SceneStep.Kind.STARTING_PICTURE, status=SceneStep.Status.FINISHED
-    ).last()
+    last = (
+        scene.steps.filter(kind=SceneStep.Kind.STARTING_PICTURE, status=SceneStep.Status.FINISHED)
+        # A try's picture step is charged its whole try: its clip and judge too.
+        .exclude(tool_call__agent=FIXING_AGENT)
+        .last()
+    )
     paid: Decimal | None = None
     if last is not None:
         paid = last.tool_call.model_calls.exclude(purpose__in=_BEFORE_PICTURE_PURPOSES).aggregate(
@@ -1282,17 +1295,34 @@ def _clip_estimate(scene: Scene, audio_seconds: float, *, from_note: bool) -> Es
     cost: its video and, for a B-roll clip with quality checks on, the clip judge's asks; for
     a clip made from the shop owner's note, also the call writing its video prompt; its fix
     is checked by the clip judge's own asks (Julian 2026-10-14). It can cost up to that
-    plus, for each remake the clip judge can have made, its video, the judge's asks and the
-    call writing its prompt (decider call 13, 2026-10-13)."""
+    plus every try the fixing agent can film once the judge fails it (door 1)."""
     video = clip_estimate_usd(audio_seconds, broll=bool(scene.shows))
     judged = bool(scene.shows) and settings.QUALITY_CHECKS
-    judge = 2 * clip_judge.ASKS * _each_call_usd(scene, _JUDGE_PURPOSES) if judged else 0
-    writer = _each_call_usd(scene, _WRITER_PURPOSES)
-    about = video + judge
+    about = video + _judge_usd(scene)
     if from_note:
-        about += writer
-    remakes = auto_fix.MOST_REMAKES * (video + judge + writer) if judged else Decimal(0)
-    return Estimate(about, about + remakes)
+        about += _each_call_usd(scene, _WRITER_PURPOSES)
+    tries = MOST_TRIES * agent_try_usd(scene, audio_seconds) if judged else Decimal(0)
+    return Estimate(about, about + tries)
+
+
+def agent_try_usd(scene: Scene, audio_seconds: float) -> Decimal:
+    """What one try of the fixing agent at the scene is estimated to cost, for either door: a
+    new starting picture, its video covering `audio_seconds`, the clip judge's asks (which
+    check the shop owner's change too, for a fix) and the agent's turns."""
+    return (
+        _picture_only_estimate_usd(scene)
+        + clip_estimate_usd(audio_seconds, broll=bool(scene.shows))
+        + _judge_usd(scene)
+        + AGENT_TURNS_PER_TRY * _each_call_usd(scene, [FIXING_AGENT_PURPOSE])
+    )
+
+
+def _judge_usd(scene: Scene) -> Decimal:
+    """What the clip judge's asks about one of the scene's clips are estimated to cost: none
+    for a talking scene, or with quality checks off."""
+    if not (scene.shows and settings.QUALITY_CHECKS):
+        return Decimal(0)
+    return 2 * clip_judge.ASKS * _each_call_usd(scene, _JUDGE_PURPOSES)
 
 
 def _each_call_usd(scene: Scene, purposes: list[str]) -> Decimal:
@@ -1300,7 +1330,11 @@ def _each_call_usd(scene: Scene, purposes: list[str]) -> Decimal:
     for the scene's last clip, or else of those made for the ad, or the fallback when none
     is recorded."""
     paid = ModelCall.objects.filter(job=scene.job, purpose__in=purposes, cost_usd__gt=0)
-    last = scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.FINISHED).last()
+    last = (
+        scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.FINISHED)
+        .exclude(tool_call__agent=FIXING_AGENT)
+        .last()
+    )
     for calls in (paid.filter(tool_call=last.tool_call) if last else paid.none(), paid):
         average: Decimal | None = calls.aggregate(cost=Avg("cost_usd"))["cost"]
         if average:
@@ -1311,9 +1345,12 @@ def _each_call_usd(scene: Scene, purposes: list[str]) -> Decimal:
 def _before_its_clip(scene: Scene) -> None:
     """Refuse to change a scene that already has a clip: from then on it changes only through
     the shop owner's notes, which the app plans, shows them and makes once they say yes (fix
-    redesign, decisions 1 and 2). Checked once nothing already made can be handed back, so
-    what is free and changes nothing stays free."""
-    if scene.produced.filter(kind=ProducedItem.Kind.CLIP).exists():
+    redesign, decisions 1 and 2). A scene the fixing agent gave up on, said to camera, is
+    made again as a talking scene until it has its clip. Checked once nothing already made
+    can be handed back, so what is free and changes nothing stays free."""
+    if scene.produced.filter(kind=ProducedItem.Kind.CLIP).exists() and not (
+        waits_to_be_said_to_camera(scene)
+    ):
         raise Refused(
             f"scene {scene.number} already has a clip, so it changes only through the shop "
             "owner's notes: the app shows them a plan and makes it once they say yes."

@@ -379,7 +379,7 @@ test("a scene whose new picture failed its fix check waits for the owner, not be
   expect(answered.beingRemade).toBe(true);
 });
 
-function triesNotice(inAd: number | null): Message {
+function triesNotice(inAd: number | null, onOffer = inAd !== null): Message {
   return {
     ...message([]),
     role: "notice",
@@ -387,10 +387,13 @@ function triesNotice(inAd: number | null): Message {
     tries: {
       scene: 2,
       in_ad: inAd,
+      on_offer: onOffer,
+      picked: 12,
+      reason: "Each try spins.",
       clips: [
-        { clip: 11, name: "First try", version: "v1", url: "/t1.mp4", problem: "Floats." },
-        { clip: 12, name: "Remake 1", version: "v2", url: "/t2.mp4", problem: "Spins." },
-        { clip: 13, name: "Remake 2", version: "v3", url: "/t3.mp4", problem: "Spins." },
+        { clip: 11, name: "First clip", version: "v1", url: "/t1.mp4", problem: "Floats." },
+        { clip: 12, name: "Try 1", version: "v2", url: "/t2.mp4", problem: "Spins." },
+        { clip: 13, name: "Try 2", version: "v3", url: "/t3.mp4", problem: "Spins." },
       ],
     },
   };
@@ -405,22 +408,32 @@ test("the try in the ad is the one the notice was read with until something chan
   expect(tryInAd([message([clip(1, "/c1.mp4")]), notice], notice.seq)).toEqual({
     inAd: 11,
     swapping: null,
+    onOffer: true,
   });
 });
 
 test("a tap is being swapped in until the scene's clip is shown as that try", () => {
   const notice = triesNotice(11);
-  expect(tryInAd([notice, tap(12)], notice.seq)).toEqual({ inAd: 11, swapping: 12 });
+  expect(tryInAd([notice, tap(12)], notice.seq)).toEqual({
+    inAd: 11,
+    swapping: 12,
+    onOffer: true,
+  });
   expect(tryInAd([notice, tap(12), message([clip(2, "/t2.mp4")])], notice.seq)).toEqual({
     inAd: 12,
     swapping: null,
+    onOffer: true,
   });
 });
 
 test("a tap refused once acted on, said in red, is swapped in no more", () => {
   const notice = triesNotice(11);
   const refused = { ...message([]), role: "notice" as const, level: "problem" as const };
-  expect(tryInAd([notice, tap(12), refused], notice.seq)).toEqual({ inAd: 11, swapping: null });
+  expect(tryInAd([notice, tap(12), refused], notice.seq)).toEqual({
+    inAd: 11,
+    swapping: null,
+    onOffer: true,
+  });
 });
 
 test("the scene's clip shown again as a try, as when gone back to, is that try", () => {
@@ -431,5 +444,36 @@ test("the scene's clip shown again as a try, as when gone back to, is that try",
 test("a newer clip of the scene takes every try out of the ad; another scene's doesn't", () => {
   const notice = triesNotice(11);
   expect(tryInAd([notice, message([clip(3, "/c3.mp4")])], notice.seq).inAd).toBe(11);
-  expect(tryInAd([notice, message([clip(2, "/new.mp4")])], notice.seq).inAd).toBeNull();
+  expect(tryInAd([notice, message([clip(2, "/new.mp4")])], notice.seq)).toEqual({
+    inAd: null,
+    swapping: null,
+    onOffer: false,
+  });
+});
+
+test("when the app gave up, the clip shown in the tries' place leaves every try on offer", () => {
+  const notice = triesNotice(null, true);
+  const talking = message([clip(2, "/talking.mp4")]);
+  expect(tryInAd([notice], notice.seq)).toEqual({ inAd: null, swapping: null, onOffer: true });
+  expect(tryInAd([notice, talking], notice.seq)).toEqual({
+    inAd: null,
+    swapping: null,
+    onOffer: true,
+  });
+  // Once a try is in the ad, a newer clip takes them all out again.
+  const swapped = message([clip(2, "/t2.mp4")]);
+  expect(tryInAd([notice, talking, swapped], notice.seq)).toEqual({
+    inAd: 12,
+    swapping: null,
+    onOffer: true,
+  });
+  expect(tryInAd([notice, swapped, message([clip(2, "/new.mp4")])], notice.seq).onOffer).toBe(
+    false,
+  );
+});
+
+test("a notice read before tries were on offer is on offer while a try is in the ad", () => {
+  const notice = triesNotice(11);
+  delete notice.tries!.on_offer;
+  expect(tryInAd([notice], notice.seq).onOffer).toBe(true);
 });
