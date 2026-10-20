@@ -12,8 +12,8 @@ See the ads and my grades: https://julian-win-stack.github.io/adforge-gallery/
 
 ```mermaid
 flowchart TD
-    A[Product link] --> B[Page reader<br/>copies this product's text<br/>picks its photos and video moments]
-    B --> C[Planner<br/>asks the owner when it must]
+    A[Product link] --> B[Page reader<br/>this product's<br/>text and photos]
+    B --> C[Planner<br/>asks the owner<br/>when it must]
     C --> D[Fact check]
     D --> E[Voice]
     E --> F[Start pictures<br/>+ picture judge]
@@ -23,7 +23,7 @@ flowchart TD
     I --> G
     H -- pass --> J[Assembly]
     J --> K[First ad]
-    K --> L[Owner's note on a scene]
+    K --> L[Owner's note<br/>on a scene]
     L --> M[Decider agent<br/>with look tools]
     M --> N[Plan]
     N -- owner's yes --> P[Code runs it]
