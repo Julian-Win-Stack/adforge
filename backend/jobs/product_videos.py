@@ -3,7 +3,7 @@ gallery, as the photo picker picks them off the page. Each is kept with the job 
 with its first frame, frames spread over it, its length and the frames it is thinned to
 (video_frames); or, when no file can be had, as its link with the page's poster or the
 player's thumbnail as its first frame. What a file says is written down as its transcript.
-Nothing uses them yet."""
+The video reader (video_reader) reads them for the planner."""
 
 import logging
 import mimetypes
@@ -229,18 +229,25 @@ def _still(src: str, poster: str, folder: str) -> str:
     return ""
 
 
-def transcribe_videos(job: Job) -> None:
+def transcribe_videos(job: Job) -> list[str]:
     """Write down the words said in each of the job's video files, through the app's
     speech-to-text, as the video's transcript: MUSIC_ONLY when nothing is said. A video
-    whose sound can't be written down is left without one, and the page is read as ever."""
+    whose sound can't be written down is left without one, and the page is read as ever.
+    Gives back a line for the producer for each such video."""
+    problems: list[str] = []
     for video in job.videos.exclude(file=""):
         try:
             video.transcript = _transcript(job, video)
-        except Exception:
+        except Exception as error:
             # The failed call is recorded with its error; the ad is planned without it.
             logger.exception("Product video %s couldn't be written down", video.pk)
+            problems.append(
+                f"What the product's video {video.position} says couldn't be written down "
+                f"({error}), so the ad is planned without it."
+            )
             continue
         video.save(update_fields=["transcript"])
+    return problems
 
 
 def _transcript(job: Job, video: ProductVideo) -> str:

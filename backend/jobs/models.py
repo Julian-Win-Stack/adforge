@@ -199,7 +199,8 @@ class ProductVideo(models.Model):
     """A video the shop placed with the product photos in the product's gallery, picked off
     the page with them. Kept as a file with a few frames, or, when no file can be had (an
     embedded player, a stream, a dead link, one too big), as its link with a first frame if
-    one is had. Nothing uses them yet."""
+    one is had. A file is thinned to the frames worth looking at, written down as its
+    transcript and read once for the moments the plan would need as video pictures."""
 
     class Kind(models.TextChoices):
         VIDEO = "video", "Video"  # A video the page plays itself.

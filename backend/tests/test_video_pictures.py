@@ -187,7 +187,13 @@ def test_48_page_photos_and_5_video_pictures_show_the_planner_50_and_say_which_a
 
     work.plan(job)
 
-    assert images_shown("plan_ad") == [[f"Photo {position}" for position in range(1, 51)]]
+    assert images_shown("plan_ad") == [
+        [f"Photo {position}" for position in range(1, 49)]
+        + [
+            "Photo 49 (from the product's video at 0.2 s: Moment 0.2.)",
+            "Photo 50 (from the product's video at 0.6 s: Moment 0.6.)",
+        ]
+    ]
     job.refresh_from_db()
     assert [warning["text"] for warning in job.warnings] == [
         "The ad has 54 product photos, more than the 50 a model can be shown at once, so "

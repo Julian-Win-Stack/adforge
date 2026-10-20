@@ -53,6 +53,7 @@ from jobs.work import (
     plan,
     run_checks,
     save_photos,
+    save_video_pictures,
     use_music_again,
     version_label,
     why_the_checks_havent_passed,
@@ -160,7 +161,7 @@ class ReadPage(Tool):
             return (
                 f"{self.link} was already read for this ad, so nothing was read or paid for "
                 f"again. Reading it cost {dollars(_spent(job, self.name))}. The ad has "
-                f"{_photos(job.photos.count())}."
+                f"{_photos(job.photos.filter(from_video=None).count())}."
             )
         else:
             # The page before wasn't read successfully, so nothing has been made from it: the
@@ -231,12 +232,15 @@ class ReadPage(Tool):
         # the plan would need as pictures. One that can't be read is left out: the owner isn't
         # told.
         save_videos(job, list(picked.videos))
-        transcribe_videos(job)
-        unread_videos = read_videos(job, text)
+        unread_videos = transcribe_videos(job) + read_videos(job, text)
+        for video in job.videos.order_by("position"):
+            if moments := (video.read or {}).get("kept"):
+                save_video_pictures(job, video, moments, video.frames_picked)
         # Only once every photo is kept: a worker that stops part-way through them leaves the
         # page unread, so the read run again keeps them all rather than the few already kept.
         keep_page(job, download, product_page, text)
-        kept = job.photos.count()
+        # The pictures cut from its videos are the planner's, not news to the owner.
+        kept = job.photos.filter(from_video=None).count()
         if kept == 0:
             post_notice(
                 job,
@@ -1658,12 +1662,14 @@ def _doubtful(blocked: bool, declared: bool, kept: int) -> str:
 
 
 def _show_photos(call: ToolCall, job: Job) -> None:
-    """Show the shop owner the job's photos in the chat, as pictures on the agent's message."""
+    """Show the shop owner the job's photos in the chat, as pictures on the agent's message:
+    those from the page and their own, not the ones cut from the product's videos."""
     messages.add(
         call.session,
         role=Message.Role.AGENT,
         carrying=[
-            messages.AttachedFile(Attachment.Kind.PICTURE, photo.file) for photo in job.photos.all()
+            messages.AttachedFile(Attachment.Kind.PICTURE, photo.file)
+            for photo in job.photos.filter(from_video=None)
         ],
     )
 

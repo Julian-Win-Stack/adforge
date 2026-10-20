@@ -12,6 +12,7 @@ from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
 from agents import producer
+from chat.models import Attachment, Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import ModelRequest, UnusableReply
@@ -45,8 +46,9 @@ KEPT = {
 
 @pytest.fixture
 def thinned(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Each kept video file comes with its picked frames and transcript. Until the thinning
-    and the transcript are built, its stored frames stand in for the picked ones."""
+    """Each kept video file comes with its picked frames and its transcript: its stored
+    frames stand in for the picked ones (the thinning is tested in test_product_videos), and
+    every file says SAID (the transcript is tested in test_video_transcripts)."""
     saving = product_videos.save_videos
 
     def saved(job: Job, players: Any) -> list[ProductVideo]:
@@ -59,11 +61,15 @@ def thinned(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
                         video.frames, product_videos.frame_times(video.duration or 0), strict=True
                     )
                 ]
-                video.transcript = SAID
-                video.save(update_fields=["frames_picked", "transcript"])
+                video.save(update_fields=["frames_picked"])
         return videos
 
+    def heard(job: Job) -> list[str]:
+        job.videos.exclude(file="").update(transcript=SAID)
+        return []
+
     monkeypatch.setattr(producer, "save_videos", saved)
+    monkeypatch.setattr(producer, "transcribe_videos", heard)
     yield
 
 
@@ -128,14 +134,18 @@ def test_a_gallery_video_is_read_once_before_planning_with_the_planners_own_inst
     (call,) = ModelCall.objects.filter(purpose="read_video")
     plan_call = ModelCall.objects.get(purpose="plan_ad")
     # The same page and photos the planner gets, the conversation so far, and the video's
-    # own words.
+    # own words. The planner is also shown the moment the reader kept, after the page's photo.
     assert call.handoff == {
         **plan_call.handoff,
+        "photo_count": 1,
         "conversation": plan_call.handoff["conversation"][:1],
         "transcript": SAID,
     }
     photos = [image for image in call.images if image["label"].startswith("Photo ")]
-    assert photos == plan_call.images
+    assert photos == plan_call.images[:1]
+    assert [image["label"] for image in plan_call.images[1:]] == [
+        "Photo 2 (from the product's video at 0.8 s: The applicator placing a dot on a cheek.)"
+    ]
     (grid,) = call.images[len(photos) :]
     assert grid["label"] == (
         "The product's video, grid 1 of 1: 0.25 s, 0.75 s, 1.25 s, 1.75 s "
@@ -144,6 +154,12 @@ def test_a_gallery_video_is_read_once_before_planning_with_the_planners_own_inst
     (video,) = Job.objects.get().videos.all()
     assert video.read == {**KEPT, "dropped": []}
     assert results_of("plan_ad")
+    # The shop owner, asked about the page's one photo, is shown that photo only: the
+    # picture cut from the video is the planner's.
+    shown = Attachment.objects.filter(
+        message__role=Message.Role.AGENT, kind=Attachment.Kind.PICTURE
+    ).values_list("file", flat=True)
+    assert list(shown) == [Job.objects.get().photos.get(from_video=None).file]
 
 
 def test_the_owner_answering_the_planners_question_plans_again_without_reading_again(

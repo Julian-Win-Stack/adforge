@@ -168,6 +168,10 @@ def test_a_video_whose_sound_cant_be_written_down_leaves_the_page_read(
     read(fake_model, say, shampoo_page_url)
 
     assert "Kept 1 product photo." in results_of("read_page")[0]
+    assert (
+        "What the product's video 1 says couldn't be written down (speech-to-text refused the "
+        "audio), so the ad is planned without it."
+    ) in results_of("read_page")[0]
     (video,) = Job.objects.get().videos.all()
     assert video.transcript == ""
     (heard,) = ModelCall.objects.filter(purpose="transcribe_video")

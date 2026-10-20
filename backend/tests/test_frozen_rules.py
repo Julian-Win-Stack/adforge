@@ -460,7 +460,17 @@ def test_the_product_videos_lines_are_as_approved(prompt: str, line: str) -> Non
     "name",
     # The shops and products the video reader was tried on (runs/video-frames-prototype/reader/,
     # CODING_STANDARDS.md).
-    ["Rare Beauty", "blush", "applicator", "AirPods", "Helinox", "Levi", "Greenies", "Lemi", "Loop"],
+    [
+        "Rare Beauty",
+        "blush",
+        "applicator",
+        "AirPods",
+        "Helinox",
+        "Levi",
+        "Greenies",
+        "Lemi",
+        "Loop",
+    ],
 )
 def test_the_product_videos_lines_name_no_shop_or_product(name: str) -> None:
     for line in (
