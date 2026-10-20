@@ -230,6 +230,14 @@ class ProductVideo(models.Model):
             "a file, or when it couldn't be written down."
         ),
     )
+    read = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The video reader's answer: the moments it would need as pictures and the ones it "
+            "wouldn't; {\"error\": ...} when reading it failed; none when it wasn't read."
+        ),
+    )
 
     class Meta:
         ordering = ["job", "position"]

@@ -15,6 +15,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # gives it for the photos it picks.
     "note_face": "gpt-5.6-sol",
     "plan_ad": "gpt-5.6-sol",
+    # Reads a product video for the moments the plan would need as pictures, thinking
+    # through the plan with the planner's own instructions, so on the planner's own model.
+    "read_video": "gpt-5.6-sol",
     "fact_check": "gpt-5.6-terra",
     "rewrite_line": "gpt-5.6-sol",
     "shorten_script": "gpt-5.6-sol",
@@ -81,6 +84,8 @@ ANSWER_SECONDS = 120
 SLOW_ANSWER_SECONDS: dict[str, float] = {
     "check_clip_sides": 600,
     "check_clip_motion": 600,
+    # Up to 50 pictures, 5 of them grids of 16 frames.
+    "read_video": 600,
 }
 
 # US dollars per million tokens: (input, output). From OpenAI's pricing page.

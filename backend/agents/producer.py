@@ -31,6 +31,7 @@ from jobs.models import (
 )
 from jobs.notices import post_notice
 from jobs.product_videos import save_videos, transcribe_videos
+from jobs.video_reader import read_videos
 from jobs.work import (
     DECLARED_INSTEAD,
     SkippedPhoto,
@@ -226,10 +227,12 @@ class ReadPage(Tool):
                 declared = True
             elif skipped:
                 post_notice(job, _not_downloaded(skipped), Message.Level.PROBLEM)
-        # The gallery videos the picker picked, and what each says, kept for later: nothing
-        # uses them yet.
+        # The gallery videos the picker picked, what each says, and each read for the moments
+        # the plan would need as pictures. One that can't be read is left out: the owner isn't
+        # told.
         save_videos(job, list(picked.videos))
         transcribe_videos(job)
+        unread_videos = read_videos(job, text)
         # Only once every photo is kept: a worker that stops part-way through them leaves the
         # page unread, so the read run again keeps them all rather than the few already kept.
         keep_page(job, download, product_page, text)
@@ -245,6 +248,7 @@ class ReadPage(Tool):
         if download.final_url != self.link:
             told.append(f"The link led to {download.final_url}, so that is the page read.")
         told.append(f"Kept {_photos(kept)}.")
+        told += unread_videos
         if skipped:
             told.append(f"Skipped {len(skipped)} photo{'s' if len(skipped) != 1 else ''}:")
             told += [f"- {photo.url}: {photo.reason}" for photo in skipped]
