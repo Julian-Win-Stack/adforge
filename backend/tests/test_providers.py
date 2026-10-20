@@ -22,7 +22,7 @@ from werkzeug import Request, Response
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
-from adforge.settings import openai_account
+from adforge.settings import openai_account, openai_pictures_account
 from gateway import gateway
 from gateway.creatify_adapter import CreatifyProvider
 from gateway.elevenlabs_adapter import ElevenLabsProvider
@@ -213,6 +213,8 @@ def test_a_picture_is_made_from_other_pictures_through_openai(
 ) -> None:
     settings.OPENAI_API_KEY = "sk-test"
     settings.OPENAI_BASE_URL = httpserver.url_for("/v1")
+    settings.OPENAI_PICTURES_KEY = "sk-test"
+    settings.OPENAI_PICTURES_BASE_URL = httpserver.url_for("/v1")
     portrait = file_store.save("portrait.png", picture(720, 1280, (180, 150, 120)))
     # As big as a phone takes them: the picture model is sent the whole photo, not a copy
     # shrunk for looking at.
@@ -283,6 +285,8 @@ def test_a_picture_is_made_from_other_pictures_through_openai(
 def test_a_portrait_is_drawn_through_openai(httpserver: HTTPServer, settings: Settings) -> None:
     settings.OPENAI_API_KEY = "sk-test"
     settings.OPENAI_BASE_URL = httpserver.url_for("/v1")
+    settings.OPENAI_PICTURES_KEY = "sk-test"
+    settings.OPENAI_PICTURES_BASE_URL = httpserver.url_for("/v1")
     portrait = picture(720, 1280, (180, 150, 120))
     httpserver.expect_oneshot_request(
         "/v1/images/generations",
@@ -742,6 +746,8 @@ def test_a_gif_photo_is_sent_to_the_picture_model_as_a_png_of_its_first_frame(
     # (BrüMate can cooler, small run 2026-10-08).
     settings.OPENAI_API_KEY = "sk-test"
     settings.OPENAI_BASE_URL = httpserver.url_for("/v1")
+    settings.OPENAI_PICTURES_KEY = "sk-test"
+    settings.OPENAI_PICTURES_BASE_URL = httpserver.url_for("/v1")
     gif = file_store.save("photo.gif", picture(40, 30, (200, 20, 20), format="GIF"))
     made = picture(1152, 2048, (200, 180, 160))
     sent: list[Request] = []
@@ -1489,21 +1495,26 @@ def test_a_talking_clip_is_made_by_heygen_and_a_b_roll_clip_by_boreal_h3_on_crea
     ]
 
 
-def test_with_azure_set_up_a_portrait_is_drawn_by_the_same_model_on_azure(
+def test_with_azure_set_up_a_portrait_is_still_drawn_on_openai(
     httpserver: HTTPServer, settings: Settings
 ) -> None:
-    settings.OPENAI_API_KEY, settings.OPENAI_BASE_URL = openai_account(
-        {
-            "OPENAI_API_KEY": "sk-openai",
-            "AZURE_OPENAI_KEY": "azure-key",
-            "AZURE_OPENAI_BASE_URL": httpserver.url_for("/openai/v1/"),
-        }
+    # Pictures always go to OpenAI's own API, while Azure answers the other calls (Julian
+    # 2026-10-20: "always use OpenAI API for image generation").
+    environ = {
+        "OPENAI_API_KEY": "sk-openai",
+        "OPENAI_BASE_URL": httpserver.url_for("/v1"),
+        "AZURE_OPENAI_KEY": "azure-key",
+        "AZURE_OPENAI_BASE_URL": httpserver.url_for("/openai/v1/"),
+    }
+    settings.OPENAI_API_KEY, settings.OPENAI_BASE_URL = openai_account(environ)
+    settings.OPENAI_PICTURES_KEY, settings.OPENAI_PICTURES_BASE_URL = openai_pictures_account(
+        environ
     )
     portrait = picture(720, 1280, (180, 150, 120))
     httpserver.expect_oneshot_request(
-        "/openai/v1/images/generations",
+        "/v1/images/generations",
         method="POST",
-        headers={"Authorization": "Bearer azure-key"},
+        headers={"Authorization": "Bearer sk-openai"},
         json={
             "model": "gpt-image-2.5-sunburst",
             "prompt": "A potter in her thirties in a linen apron.",
@@ -1520,6 +1531,24 @@ def test_with_azure_set_up_a_portrait_is_drawn_by_the_same_model_on_azure(
         )
 
     assert file_store.read(key) == portrait
+    assert settings.OPENAI_API_KEY == "azure-key"
+
+
+def test_without_an_openai_key_a_picture_fails_saying_so(
+    httpserver: HTTPServer, settings: Settings
+) -> None:
+    # Never drawn on Azure instead: the owner is told why the picture failed.
+    settings.OPENAI_API_KEY = "azure-key"
+    settings.OPENAI_BASE_URL = httpserver.url_for("/openai/v1/")
+    settings.OPENAI_PICTURES_KEY, settings.OPENAI_PICTURES_BASE_URL = openai_pictures_account(
+        {"AZURE_OPENAI_KEY": "azure-key", "AZURE_OPENAI_BASE_URL": settings.OPENAI_BASE_URL}
+    )
+
+    with use_model(OpenAIProvider()), pytest.raises(ValueError, match="OPENAI_API_KEY"):
+        draw_picture(job=None, purpose="draw_person", prompt="A potter.")
+
+    assert httpserver.log == []
+    assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
 
 
 def test_without_both_azure_settings_openai_is_used() -> None:
@@ -1533,6 +1562,8 @@ def test_a_call_the_safety_filter_blocks_is_said_to_be_blocked(
 ) -> None:
     settings.OPENAI_API_KEY = "sk-test"
     settings.OPENAI_BASE_URL = httpserver.url_for("/v1")
+    settings.OPENAI_PICTURES_KEY = "sk-test"
+    settings.OPENAI_PICTURES_BASE_URL = httpserver.url_for("/v1")
     httpserver.expect_request("/v1/images/generations", method="POST").respond_with_json(
         {
             "error": {
@@ -1548,3 +1579,35 @@ def test_a_call_the_safety_filter_blocks_is_said_to_be_blocked(
     with use_model(OpenAIProvider()), pytest.raises(BlockedBySafetyFilter, match="blocked"):
         draw_picture(job=None, purpose="draw_person", prompt="A man's stubbled neck.")
     assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
+
+
+def test_the_app_says_at_start_where_pictures_and_other_calls_go(
+    settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    from django.apps import apps
+
+    settings.OPENAI_API_KEY = "azure-key"
+    settings.OPENAI_BASE_URL = "https://ours.openai.azure.com/openai/v1/"
+    settings.OPENAI_PICTURES_KEY = "sk-openai"
+    settings.OPENAI_PICTURES_BASE_URL = ""
+
+    apps.get_app_config("gateway").ready()
+
+    assert (
+        "Pictures are drawn on api.openai.com; text and vision calls go to "
+        "ours.openai.azure.com" in caplog.text
+    )
+
+
+def test_the_app_says_at_start_when_pictures_have_no_openai_key(
+    settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    from django.apps import apps
+
+    settings.OPENAI_API_KEY = "azure-key"
+    settings.OPENAI_BASE_URL = "https://ours.openai.azure.com/openai/v1/"
+    settings.OPENAI_PICTURES_KEY = ""
+
+    apps.get_app_config("gateway").ready()
+
+    assert "OPENAI_API_KEY is not set: every picture will fail" in caplog.text

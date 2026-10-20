@@ -317,6 +317,10 @@ def _isolated_outside_world(settings: Settings, tmp_path: Path) -> None:
     # Pages are read with the plain download, never by the real Firecrawl. A test that reads
     # through Firecrawl uses the `firecrawl` fixture's stand-in.
     settings.FIRECRAWL_API_KEY = ""
+    # Pictures are never drawn by the real OpenAI. A test that draws one points these at a
+    # stand-in.
+    settings.OPENAI_PICTURES_KEY = ""
+    settings.OPENAI_PICTURES_BASE_URL = ""
 
 
 @pytest.fixture(autouse=True)
