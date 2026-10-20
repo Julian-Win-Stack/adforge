@@ -1038,7 +1038,8 @@ test("a card says while its picture or clip is being made, until it is made or f
     state: "not_made",
   });
   await nextPoll();
-  await within(sceneCard(2)).findByText("Couldn't make the clip");
+  await waitFor(() => expect(within(sceneCard(2)).queryByText("Making the clip")).toBeNull());
+  expect(within(sceneCard(2)).queryByText("Couldn't make the clip")).toBeNull();
   expect(within(sceneCard(1)).queryByText("Making the picture")).toBeNull();
   expect(within(sceneCard(2)).queryByText("Making the clip")).toBeNull();
   expect(screen.getByRole("button", { name: /Scenes/ }).textContent).not.toContain("being made");
@@ -1392,8 +1393,8 @@ test("a redo that fails clears 'being remade' and says so, with the old clip kep
     state: "not_made",
   });
   await nextPoll();
-  await waitFor(() => expect(statusOf(2)).toBe("Couldn't make the clip"));
-  expect(statusOf(4)).toBe("Couldn't make the clip");
+  await waitFor(() => expect(statusOf(2)).toBeNull());
+  expect(statusOf(4)).toBeNull();
   expect(sceneCardsShown()).toEqual([
     ["Scene 1", "/media/c1.mp4"],
     ["Scene 2", "/media/c2.mp4"],
