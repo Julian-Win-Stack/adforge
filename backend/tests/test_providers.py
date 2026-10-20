@@ -43,7 +43,7 @@ from gateway.heygen_adapter import HeyGenProvider
 from gateway.inworld_adapter import InworldProvider
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
-from gateway.types import BlockedBySafetyFilter, ClipFailed, Word
+from gateway.types import BlockedBySafetyFilter, ClipFailed, NotSetUp, Word
 
 from .conftest import picture
 
@@ -1525,13 +1525,18 @@ def test_with_azure_set_up_a_portrait_is_still_drawn_on_openai(
         {"created": 1_789_849_905, "data": [{"b64_json": base64.b64encode(portrait).decode()}]}
     )
 
-    with use_model(OpenAIProvider()):
+    provider = OpenAIProvider()
+    with use_model(provider):
         key = draw_picture(
             job=None, purpose="draw_person", prompt="A potter in her thirties in a linen apron."
         )
 
     assert file_store.read(key) == portrait
-    assert settings.OPENAI_API_KEY == "azure-key"
+    # Text and vision calls still go to Azure.
+    assert (provider._client.api_key, str(provider._client.base_url)) == (
+        "azure-key",
+        httpserver.url_for("/openai/v1/"),
+    )
 
 
 def test_without_an_openai_key_a_picture_fails_saying_so(
@@ -1544,7 +1549,7 @@ def test_without_an_openai_key_a_picture_fails_saying_so(
         {"AZURE_OPENAI_KEY": "azure-key", "AZURE_OPENAI_BASE_URL": settings.OPENAI_BASE_URL}
     )
 
-    with use_model(OpenAIProvider()), pytest.raises(ValueError, match="OPENAI_API_KEY"):
+    with use_model(OpenAIProvider()), pytest.raises(NotSetUp, match="OPENAI_API_KEY"):
         draw_picture(job=None, purpose="draw_person", prompt="A potter.")
 
     assert httpserver.log == []

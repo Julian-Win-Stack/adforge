@@ -28,6 +28,7 @@ from .types import (
     LoadedImage,
     ModelReply,
     ModelRequest,
+    NotSetUp,
     Picture,
     Said,
     StepFinished,
@@ -164,7 +165,7 @@ class OpenAIProvider:
 
     def draw(self, *, model: str, prompt: str) -> Picture:
         try:
-            reply = self._pictures().images.generate(
+            reply = self._picture_client().images.generate(
                 model=model, prompt=prompt, size=_PORTRAIT_SIZE, quality="high"
             )
         except _WORTH_RETRYING as error:
@@ -175,7 +176,7 @@ class OpenAIProvider:
 
     def edit(self, *, model: str, prompt: str, pictures: Sequence[bytes]) -> Picture:
         try:
-            reply = self._pictures().images.edit(
+            reply = self._picture_client().images.edit(
                 model=model,
                 image=[
                     (f"picture-{number}", data, _picture_type(data))
@@ -191,11 +192,9 @@ class OpenAIProvider:
             raise _blocked_or(error) from error
         return _picture(model, reply)
 
-    def _pictures(self) -> openai.OpenAI:
+    def _picture_client(self) -> openai.OpenAI:
         if self._pictures_client is None:
-            raise ValueError(
-                "Pictures are drawn on OpenAI's own API, and OPENAI_API_KEY is not set"
-            )
+            raise NotSetUp("Pictures are drawn on OpenAI's own API, and OPENAI_API_KEY is not set")
         return self._pictures_client
 
 
