@@ -32,20 +32,20 @@ flowchart TD
 
 One line per box: the problem that made me add it.
 
-- **Page reader.** A sweatshirt ad stated a sweatpant's facts from the same page. The app now copies only this product's sentences, word for word, and code drops any sentence not on the page. Full story: [problem 1](#1-the-ad-stated-another-products-facts-so-i-rebuilt-the-page-reader).
-- **Planner asks the owner.** The app filmed uses the page only named in words, and the video model made them up. Now it films a use only when a photo or the words show how it is done, else it asks. Also where one clip became one movement: [problem 2](#2-several-actions-in-one-clip-break-the-physics-so-one-clip-is-one-movement) and [problem 6](#6-a-one-moment-action-stretched-over-a-five-second-clip).
-- **Fact check.** Every claim must come from the page or the owner. Lines get rewritten and shortened, so each one is checked against the page again.
-- **Voice.** Each line is spoken and timed word by word before any clip, so a scene ends after its last word. The first run cut a price in half on 13 lines in 12 ads.
-- **Start pictures.** Shop photos sent straight to the video model leaked their own scene into the clip (a runner's leg and a park path in a phone case drop). Every clip now starts from a drawn picture. Full story: [problem 5](#5-from-one-drawn-start-picture-to-the-owners-own-pictures-so-notes-steer-the-look).
-- **Picture judge.** The picture model drew a phone with its screen and camera on the same face, and the clip animated it. A judge now looks at each start picture beside the shop photo before any clip is paid for.
-- **Talking scenes.** HeyGen makes the talking clips from the line and the presenter's picture. Creatify makes every B-roll clip.
-- **Clip judge.** A bad clip ships if nobody looks. The judge checks each B-roll clip for a product that turns into a side it never showed, and for motion that can't happen.
-- **Fixing agent.** Remaking a failed clip from the same picture and plan repeated the fault. One agent now owns the scene until the judge passes it or it gives up. Why an agent and not another remake: [problem 4](#4-an-ad-cant-be-made-right-in-one-shot-so-a-fixing-agent-owns-the-scene).
-- **Assembly.** The mixer cut the last words of every ad. The voice is now padded and the mix cut at the ad's end.
-- **Decider agent.** A note is how the owner directs the AI to change one scene, in plain words. The chat agent that handled notes could not see a picture, so it guessed what a note meant. A note is free text about a picture, so matching it to a scene and a change needs looking, not rules. The decider has look tools and may not decide a scene it hasn't looked at. It only answers; code runs the plan after my yes. 166 of 170 replayed decisions matched mine. Full story: [problem 4](#4-an-ad-cant-be-made-right-in-one-shot-so-a-fixing-agent-owns-the-scene).
-- **Versions.** A fix can be worse than what it replaced. Every try is kept and the owner can go back for free. See [problem 4](#4-an-ad-cant-be-made-right-in-one-shot-so-a-fixing-agent-owns-the-scene).
+- **Page reader.** An ad stated another product's facts, so it keeps only this product's text. ([problem 1](#1-the-ad-stated-another-products-facts-so-i-rebuilt-the-page-reader))
+- **Planner.** The model invented uses the page only named, so it asks the owner. ([problem 2](#2-several-actions-in-one-clip-break-the-physics-so-one-clip-is-one-movement), [problem 6](#6-a-one-moment-action-stretched-over-a-five-second-clip))
+- **Fact check.** Every claim comes from the page or the owner, checked again after each rewrite.
+- **Voice.** Each line is spoken and timed before any clip, so a scene ends after its last word.
+- **Start pictures.** Shop photos leaked their scene into clips, so each starts from a drawing. ([problem 5](#5-from-one-drawn-start-picture-to-the-owners-own-pictures-so-notes-steer-the-look))
+- **Picture judge.** A drawn phone had screen and camera on one face, so each drawing is checked before paying.
+- **Clips.** HeyGen makes the talking clips, Creatify every B-roll clip.
+- **Clip judge.** Checks each B-roll clip for a product side it never showed, and motion that can't happen.
+- **Fixing agent.** Remakes repeated the fault, so one agent owns a failed scene until the judge passes it or it gives up. ([problem 4](#4-an-ad-cant-be-made-right-in-one-shot-so-a-fixing-agent-owns-the-scene))
+- **Assembly.** The mixer cut the last words of every ad, so the voice is padded and the mix ends with the ad.
+- **Decider agent.** The note handler couldn't see the picture, so it guessed. The decider looks, then proposes; code runs the plan after my yes. 166 of 170 replayed decisions matched mine.
+- **Versions.** A fix can be worse than before, so every try is kept and the owner can go back. ([problem 4](#4-an-ad-cant-be-made-right-in-one-shot-so-a-fixing-agent-owns-the-scene))
 
-How every judge looks: before it answers, it fills in a form of what it sees, in a fixed order (which side faces the camera, which parts are visible, what moved and when), and only then gives a verdict. I use this shape in the picture judge, the clip judge, the fix check and the owner photo check. The one before and after I have is thin: on our one known impossible picture, the plain question caught it 0 of 5 runs, the form 3 of 5, with no new wrong fails on 91 good pictures. One picture, so a design choice more than a proof.
+**How every judge looks.** Before it answers, it fills in a form of what it sees, in a fixed order (which side faces the camera, which parts are visible, what moved and when), and only then gives a verdict. I use this shape in the picture judge, the clip judge, the fix check and the owner photo check. The one before and after I have is thin: on our one known impossible picture, the plain question caught it 0 of 5 runs, the form 3 of 5, with no new wrong fails on 91 good pictures. One picture, so a design choice more than a proof.
 
 ## Hard problems
 
@@ -53,14 +53,21 @@ How every judge looks: before it answers, it fills in a form of what it sees, in
 
 - **What broke.** A sweatshirt ad described the fit of a pair of sweatpants. The pants were sold in a box on the same page, so the sentence really was on the page, and the fact check let it through.
 - **Why.** The reader kept everything on the page, and nothing said which product each part was about.
-- **What shipped.** The easy route was to let Firecrawl return every photo and video on the page. But it scrapes the whole HTML, so that list holds every review photo, every cross-sell picture and every useless video on the page. I wanted only this product's, so I tried several ways to filter the page and settled on this one, because it is the only one that ties every sentence and every photo to this product. Firecrawl returns the text, a full-page screenshot with a number on every picture, and the shop's own product record. One model picks this product's photo numbers off the screenshot. A cheap model copies this product's passages word for word, and code drops any sentence not found on the page, so nothing can be invented. Price comes only from the shop's record; if there is none, the planner asks.
+- **What shipped.** The easy route was to let Firecrawl return every photo and video on the page. But it scrapes the whole HTML, so that list holds every review photo, every cross-sell picture and every useless video on the page. I wanted only this product's, so I tried several ways to filter the page and settled on this one, because it is the only one that ties every sentence and every photo to this product.
+  - Firecrawl returns the text, a full-page screenshot with a number on every picture, and the shop's own product record.
+  - One model picks this product's photo numbers off the screenshot.
+  - A cheap model copies this product's passages word for word, and code drops any sentence not found on the page, so nothing can be invented.
+  - Price comes only from the shop's record; if there is none, the planner asks.
 - **Numbers.** Other-product sentences: 0 of 102 leaked on 70 pages, run twice, with 87% of useful sentences kept (copy test, 2026-10-02). Another product's photos: 1 of 15 hard pages, against 9 of 15 with the dropped AI filter.
 
 ### 2. Several actions in one clip break the physics, so one clip is one movement.
 
 - **What broke.** A hair tool clip asked for clamp, rotate and glide in 7 seconds, and the hair jumped from a flat clamp to a full curl. A toilet cleaner clip asked for squeeze, scrub, wait and flush, and the toilet flushed before the button was pressed.
 - **Why.** The video model can't make the change between the actions, so it jumps from the first state to the last and the physics breaks.
-- **What shipped.** I tried several ways to let the model handle more than one action and settled on this one, because it is the only rule the model can't bend: one movement per B-roll clip, no exceptions, in the planner, the prompt writer and the fact-check rewrite. The voice carries the other steps. A claim with two end states gets two clips joined by a cut. A finishing step (rinse, flush, dry) never gets its own scene.
+- **What shipped.** I tried several ways to let the model handle more than one action and settled on this one, because it is the only rule the model can't bend: one movement per B-roll clip, no exceptions, in the planner, the prompt writer and the fact-check rewrite.
+  - The voice carries the other steps.
+  - A claim with two end states gets two clips joined by a cut.
+  - A finishing step (rinse, flush, dry) never gets its own scene.
 - **Numbers.** Plans with 2 or more actions in a B-roll scene went from 18 of 54 to 3 of 56 to 0 of 61 (plan-only checks, 25 products, Claude's count, Oct 8). The 4-step toilet clip failed; the same toilet, scrub only in 5 seconds, I graded perfect (Oct 8).
 
 ### 3. Things I couldn't make the video model do yet, and the workaround for each.
@@ -75,27 +82,39 @@ This is a model limit or my prompting. I haven't spent much effort on these yet.
 
 - **What broke.** When the judge failed a clip, the app remade it and fed the judge's notes into the video prompt, up to three times. It still failed. A hair tool twist scene cost about $2.50 in remakes and never passed. Remade clips did the banned thing again.
 - **Why.** The notes turned into lists of bans, and video models don't follow bans. And every remake kept the same start picture and the same planned action, so the prompt was the only thing that could change.
-- **What shipped.** One agent owns the whole scene: action, framing, start picture, prompts, clip length, line and voice. It looks at the frames, writes only positive orders (code refuses ban words), and decides itself when to give up. Up to 6 tries per scene as a money guard. Every try becomes a version the owner can pick. On a give-up after a judge fail, the scene becomes a talking scene.
+- **What shipped.** One agent owns the whole scene: action, framing, start picture, prompts, clip length, line and voice.
+  - It looks at the frames, writes only positive orders (code refuses ban words), and decides itself when to give up.
+  - Up to 6 tries per scene as a money guard. Every try becomes a version the owner can pick.
+  - On a give-up after a judge fail, the scene becomes a talking scene.
 - **Numbers.** On 10 round-5 cases, 7 passed the judge and I passed 6 (prototype). In the real run every case ended in a judge pass or an honest give-up.
 - **Known hole.** The agent trusts the clip judge, and the judge still misses a lot of failures. When the judge passes a bad clip, the agent stops and the bad clip ships. 5 of the 10 cases went wrong that way.
 
 ### 5. From one drawn start picture to the owner's own pictures, so notes steer the look.
 
-- **What broke.** The B-roll API takes either one exact start picture or up to 9 example pictures, never both. The app started every clip from one drawn start picture and described the action. That worked on most ads, but a start picture shows one side of the product, so a clip that turns the product had to invent the other side. I also tried giving the model an end picture of the other side, but lining up a start picture, an end picture and the prompt so the clip passed my grading without breaking the physics was more than I could get right. And when an owner's note came with a reference picture, there was nowhere to put it. The one picture slot was taken by the start picture, and the owner's photo was not a start picture for that scene anyway.
+- **What broke.** The B-roll API takes either one exact start picture or up to 9 example pictures, never both.
+  - The app started every clip from one drawn start picture and described the action. That worked on most ads, but a start picture shows one side of the product, so a clip that turns the product had to invent the other side.
+  - I also tried giving the model an end picture of the other side, but lining up a start picture, an end picture and the prompt so the clip passed my grading without breaking the physics was more than I could get right.
+  - And when an owner's note came with a reference picture, there was nowhere to put it. The one picture slot was taken by the start picture, and the owner's photo was not a start picture for that scene anyway.
 - **Why.** One slot, two needs: the exact starting pose, and the looks only the owner's photos can show.
-- **What shipped.** Every B-roll clip now runs in example-picture mode. The drawn start picture goes in as the first example, with the order to start from it, and the owner's pictures come after it. The model doesn't start exactly on that picture, but very close to it, and that turned out to be enough. Before an owner's photo is used, the owner names the one thing in it and code draws a clean copy of only that thing, so the background and other objects don't leak in. This is an architecture change, not a prompt change: one path for every clip, and a place for the owner's pictures.
+- **What shipped.** Every B-roll clip now runs in example-picture mode.
+  - The drawn start picture goes in as the first example, with the order to start from it, and the owner's pictures come after it. The model doesn't start exactly on that picture, but very close to it, and that turned out to be enough.
+  - Before an owner's photo is used, the owner names the one thing in it and code draws a clean copy of only that thing, so the background and other objects don't leak in.
+  - This is an architecture change, not a prompt change: one path for every clip, and a place for the owner's pictures.
 
 ### 6. A one-moment action stretched over a five-second clip.
 
 - **What broke.** A tablet drop into a bottle takes half a second, but the shortest clip is 5 seconds. The hand held the tablet for 4 seconds, then a tablet appeared in the bottle while one stayed in the hand. In another ad a scoop refilled itself. The one-movement rule from problem 2 didn't catch this, because it was one movement.
 - **Why.** A clip is at least 5 seconds at real speed, with one action and a still camera. An action that is over in a moment leaves seconds, and the video model fills them with invented events.
-- **What shipped.** I iterated on this a lot and broke things along the way: remake prompts that said what not to do, splitting the moment into two clips, a critic that judged plans and failed many good ones. What I settled on is one planner rule: the one action must last the whole clip by its own course, or show its natural result. Otherwise it becomes a talking scene. It cost one good scene, a one-second swatch. Round 6 is the first run with the rule, so whether it holds is not proven yet.
+- **What shipped.** I iterated on this a lot and broke things along the way: remake prompts that said what not to do, splitting the moment into two clips, a critic that judged plans and failed many good ones.
+  - What I settled on is one planner rule: the one action must last the whole clip by its own course, or show its natural result. Otherwise it becomes a talking scene.
+  - It cost one good scene, a one-second swatch. Round 6 is the first run with the rule, so whether it holds is not proven yet.
 
 ## Numbers
 
 What a pass means: I watched the finished ad and nothing broke. No wrong claim, no impossible motion, no invented product side, no scene missing. It does not mean the ad would sell. A few of the passes are persuasive. Most are just correct.
 
-- **Whole ads that passed my grading.** Round 4: 7 of 10. Round 5: 8 of 15 new products. Round 6 (2026-10-20): 11 of 15 new products. Of the 4 round 6 fails, 2 ads were never made because the picture step refused every photo on the page, 1 came out as all talking scenes, 1 had B-roll that looked fake.
+- **Whole ads that passed my grading.** Round 4: 7 of 10. Round 5: 8 of 15 new products. Round 6 (2026-10-20): 11 of 15 new products.
+  - Of the 4 round 6 fails, 2 ads were never made because the picture step refused every photo on the page, 1 came out as all talking scenes, 1 had B-roll that looked fake.
 - **The 7 ads that failed round 5, run again in round 6:** 4 of 7 passed.
 - **Clip judge, on round 6 clips it had never seen.** I graded 45 clips the judge had ruled on. We disagreed on 14. It missed 5 clips I failed, 4 of them remakes it had passed. It failed 9 clips I passed.
 - **Fixing agent, round 6.** The judge sent it to 18 scenes. 7 came back with a clip I passed, though 4 of those I would have passed before it started. 4 came back with a clip I failed. 4 gave up and became talking scenes. 3 were killed by a worker restart.
