@@ -17,15 +17,21 @@ from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.gateway import charged_to
 from gateway.types import BlockedBySafetyFilter, UnusableReply
+from jobs import owner_parts
 from jobs.models import FixCheck, Job, ProducedItem, Scene, SceneStep
+from jobs.notices import post_notice
 from jobs.picture_check import PictureKeptFailing
 from jobs.work import (
+    AgentGaveUp,
+    agent_fix,
+    agent_gave_up,
     check_fix,
-    every_try_failed,
+    clip_tries,
+    end_the_agents_fixing,
     make_clip,
     make_line_audio,
     make_starting_picture,
-    say_every_try_failed,
+    say_the_agent_gave_up,
     say_the_fix_check_failed,
     say_the_pictures_kept_failing,
     too_long_for_a_clip,
@@ -34,7 +40,7 @@ from jobs.work import (
     what_the_judge_did,
 )
 
-from . import loop, routing, run_plan, step_signals
+from . import loop, page_panel, routing, run_plan, step_signals
 from .loop import BLOCKED, EXPECTED_FAILURES, RunStopped, why_it_failed, why_it_failed_plainly
 from .money import dollars
 from .producer import PRODUCER, STEP_NAMES
@@ -91,8 +97,10 @@ def run_producer(session_id: str) -> None:
 
 
 def _work_on(session: Session) -> int:
-    """Route what the shop owner sent, then let the producer work if it has something to
-    answer or a scene step's result to read. Gives the number of the last message read."""
+    """Keep any page the shop owner pasted in the page panel, and route what they sent, then
+    let the producer work if it has something to answer or a scene step's result to read.
+    Gives the number of the last message read."""
+    page_panel.take_pastes(session)
     if routing.route(session) or loop.unread_steps(PRODUCER, session).exists():
         return loop.run(PRODUCER, session, woken_by=_woken_by(session))
     return routing.last_seq(session)
@@ -106,8 +114,8 @@ def _woken_by(session: Session) -> list[str]:
 
 def _stop_unless_theres_more_to_read(session_id: str, read_up_to: int) -> bool:
     """Mark the producer stopped, unless the user said something after the messages up to
-    `read_up_to` it was last given or that code hasn't routed yet, or a scene step finished
-    that it hasn't been given. Both
+    `read_up_to` it was last given or that code hasn't routed yet, sent a pasted page code
+    hasn't looked at, or a scene step finished that it hasn't been given. Both
     happen under the session's lock, which a message sent and a step finished take before
     they look for a producer, so each is either found here or starts a new producer itself."""
     with transaction.atomic():
@@ -115,6 +123,8 @@ def _stop_unless_theres_more_to_read(session_id: str, read_up_to: int) -> bool:
         if session.messages.filter(role=Message.Role.USER, seq__gt=read_up_to).exists():
             return False
         if routing.unrouted_messages(session).exists():
+            return False
+        if page_panel.unlooked_at(session).exists():
             return False
         if loop.unread_steps(PRODUCER, session).exists():
             return False
@@ -213,13 +223,54 @@ def _picture_finished(step: SceneStep, picture: ProducedItem | None) -> str:
         f"Background step finished: scene {number}'s starting picture is ready "
         f"(version {picture.version}), and is shown to the shop owner in the chat. "
         f"Photo {step.photo.position} was used: "
-        f"{step.photo_reason}{_cost(step)} {unfinished}Tell the shop owner."
+        f"{step.photo_reason}{_cost(step)} {unfinished}{_needs_a_yes(step)}{_told_it_waits(step)}"
+        "Tell the shop owner."
+    )
+
+
+def _told_it_waits(step: SceneStep) -> str:
+    """What the producer is told when the chat has just told the shop owner which scenes wait
+    for their yes, as when this picture was the last thing being made."""
+    return "".join(
+        f"The chat told the shop owner that scene {scene.number} waits for their yes on "
+        f"{part.what} in its starting picture, so the ad can't be assembled yet: don't tell "
+        "them again. "
+        for scene, part in say_what_waits_on_the_shop_owner(step.scene.job, step)
+    )
+
+
+def _needs_a_yes(step: SceneStep) -> str:
+    """What the producer is told about a picture of an owner part, which the shop owner must
+    say yes to before its scene's clip is made, or blank for a picture of none. A part they
+    already said yes to, as drawn here, is settled: they aren't asked about it again."""
+    if step.owner_part is None:
+        return ""
+    part = owner_parts.OwnerPart.model_validate(step.owner_part)
+    if owner_parts.is_approved(step.scene):
+        return (
+            f"The picture shows {part.what}, which the shop owner already said yes to: don't "
+            "ask them about it again. "
+        )
+    if owner_parts.drawn_from_words(step) is None:
+        drawn_from = "the shop owner's photo of it."
+    elif part.source == "owner's words":
+        drawn_from = f'the shop owner\'s words: "{part.looks}"'
+    else:
+        drawn_from = (
+            f'a description made up for it, as the shop owner let us draw it: "{part.looks}"'
+        )
+    return (
+        f"The picture shows {part.what}, which no product photo shows, drawn from "
+        f"{drawn_from} Its clip isn't made until the shop owner says yes to this picture. "
+        f"Ask them, in plain words, to look at {part.what} in it and say yes if it looks "
+        "right, or say what to change, or send a photo of it, and wait for their answer. "
     )
 
 
 def _cost(step: SceneStep) -> str:
-    """What the step's work cost, as a sentence to follow another."""
-    return f" It cost {dollars(step.tool_call.cost_usd())}."
+    """What the step's work cost, the fixing agent's work on it included, as a sentence to
+    follow another."""
+    return f" It cost {dollars(step.cost_usd())}."
 
 
 def _audio_finished(step: SceneStep, audio: ProducedItem | None) -> str:
@@ -277,6 +328,16 @@ def _transcript_finished(step: SceneStep, transcript: ProducedItem | None) -> st
 def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
     assert clip is not None and clip.made_from is not None, "a clip is made from its audio"
     number = step.scene.number
+    ended = agent_fix(step)
+    if ended is not None and ended.said_to_camera:
+        return (
+            f"Background step finished: scene {number}'s clip failed the clip judge, and the "
+            f"fixing agent gave up on it after {len(clip_tries(step)) - 1} tries, saying: "
+            f'"{ended.gave_up}"{_cost(step)} Scene {number} is now a talking scene. Make its '
+            "starting picture again, then its audio and its clip. The chat showed the shop "
+            "owner every try, so they can tap one to use it instead, for nothing. Tell the "
+            "shop owner."
+        )
     # A B-roll clip made before every B-roll scene got a picture may have none.
     picture = f"starting picture version {clip.picture.version} and " if clip.picture else ""
     note = f', with its movement rewritten from the note "{step.note}"' if step.note else ""
@@ -285,12 +346,59 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
         if step.fix is not None
         else ""
     )
+    waiting = "".join(
+        f" The chat told the shop owner that scene {scene.number} waits for their yes on "
+        f"{part.what} in its starting picture, so the ad can't be assembled yet: don't tell "
+        "them again."
+        for scene, part in say_what_waits_on_the_shop_owner(step.scene.job, step)
+    )
     return (
         f"Background step finished: scene {number}'s clip is ready (version {clip.version}, "
         f"{clip.seconds:g} seconds), made from {picture}audio version "
         f"{clip.made_from.version}{note}.{_cost(step)}{what_the_judge_did(step, clip)} "
-        f"Scene {number} is finished.{fixed} "
+        f"Scene {number} is finished.{fixed}{waiting} "
         "Tell the shop owner."
+    )
+
+
+def say_what_waits_on_the_shop_owner(
+    job: Job, finishing: SceneStep | None = None
+) -> list[tuple[Scene, owner_parts.OwnerPart]]:
+    """Once every scene is finished but those waiting for the shop owner's yes on their owner
+    part, tell the shop owner in the chat which scenes wait and why, once each, ever. Gives
+    the scenes told of now, each with its part. `finishing` is the step whose end is being
+    told: it counts as done."""
+    running = SceneStep.objects.filter(status=SceneStep.Status.RUNNING)
+    if finishing is not None:
+        running = running.exclude(pk=finishing.pk)
+    scenes = list(job.scenes.order_by("number"))
+    waiting = [
+        (scene, part)
+        for scene in scenes
+        if scene.status != Scene.Status.FINISHED
+        and (part := owner_parts.owner_part(scene)) is not None
+        and not owner_parts.is_approved(scene)
+        and scene.current_picture() is not None
+        and not running.filter(scene=scene).exists()
+    ]
+    if len(waiting) + sum(scene.status == Scene.Status.FINISHED for scene in scenes) != len(scenes):
+        return []
+    # Read again: a notice posted since the job was read is in the stored warnings only.
+    told = {warning["text"] for warning in Job.objects.get(pk=job.pk).warnings}
+    newly = [(scene, part) for scene, part in waiting if _waits(scene, part) not in told]
+    for scene, part in newly:
+        post_notice(job, _waits(scene, part), Message.Level.INFO)
+    return newly
+
+
+def _waits(scene: Scene, part: owner_parts.OwnerPart) -> str:
+    """What the shop owner is told when the rest of the ad is made and `scene` waits."""
+    drawn = "from your words" if part.source == "owner's words" else "by us, as you asked"
+    return (
+        f"Scene {scene.number} waits for your yes on {part.what} in its starting picture: no "
+        f"photo showed it, so it was drawn {drawn}. Say yes if it looks right, or tell us what "
+        "to change, or send a photo of it. Every scene that isn't waiting on you is made, and "
+        "the ad is put together once this scene's clip is made."
     )
 
 
@@ -332,6 +440,7 @@ STEP_WORK = {
     ),
     # Each clip is shown with its scene number as it is made, so the shop owner sees each
     # scene on its own before the whole ad is put together from them.
+    # One the fixing agent gave up on shows every try instead, in its own notice.
     SceneStep.Kind.CLIP: StepWork(
         make=make_clip,
         finished=_clip_finished,
@@ -341,7 +450,7 @@ STEP_WORK = {
                     Attachment.Kind.VIDEO, clip.file, step.scene.number, version_label(clip)
                 )
             ]
-            if clip
+            if clip and not agent_gave_up(step)
             else []
         ),
     ),
@@ -409,9 +518,9 @@ def run_scene_step(step_id: int) -> None:
             step.result = work.finished(step, made)
             step.finished_at = timezone.now()
             step.save(update_fields=["status", "result", "finished_at"])
-            # Right after the clip kept, once its step is finished, so its tries are versions.
-            if shown and step.kind == SceneStep.Kind.CLIP and step.shows and every_try_failed(step):
-                say_every_try_failed(step)
+            # Once its step is finished, so its tries are versions.
+            if step.kind == SceneStep.Kind.CLIP and step.shows and agent_gave_up(step):
+                say_the_agent_gave_up(step)
             # A fix plan's step is carried on by code, and never wakes the producer: a
             # fix's picture that passed its checks queues its clip here (decision 2).
             if step.plan_scene_id is not None:
@@ -420,6 +529,17 @@ def run_scene_step(step_id: int) -> None:
             wake_producer(str(session.pk))
             # A fix plan's scene that waited for this one's step to finish carries on.
             run_plan.carry_on_scene(step.scene)
+    except AgentGaveUp as gave_up:
+        # The fixing agent gave up on a fix plan's fix row: code says so in the chat and keeps
+        # the scene as it was, in the same transaction, so nothing is said twice.
+        tracing.flush()
+        with transaction.atomic():
+            Job.objects.select_for_update().get(pk=step.scene.job_id)
+            step.status = SceneStep.Status.FAILED
+            step.reason = gave_up.reason
+            step.finished_at = timezone.now()
+            step.save(update_fields=["status", "reason", "finished_at"])
+            run_plan.agent_gave_up(step, gave_up.reason)
     except PictureKeptFailing as error:
         # It stops the whole run. The chat is shown why in the same transaction, so a step
         # run again after a crash never shows it twice.
@@ -500,6 +620,8 @@ def carry_on_after_the_worker_starts() -> None:
             )
         )
         for step in stopped:
+            # Before the step fails, so its scene is as the fixing agent's give-up leaves it.
+            end_the_agents_fixing(step)
             _fail(
                 step,
                 "The worker restarted while it was being made.",

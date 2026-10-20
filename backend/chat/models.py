@@ -46,7 +46,12 @@ class Message(models.Model):
     A message about a fix plan names it and what it says of it (`plan_event`): code's notice
     showing it, the shop owner's tap of its yes button, or code's notice that it is settled.
     So the chat can tell whether the plan's yes button is still on offer, from the messages
-    alone."""
+    alone.
+
+    A notice that the product page can't be read asks for the page panel, where the shop
+    owner pastes the page's text and attaches its photos (`wants_pasted_page`), and one that a
+    page was read after all says it is no longer needed. So the chat can tell whether to show
+    the panel, from the messages alone."""
 
     class Role(models.TextChoices):
         USER = "user"
@@ -147,6 +152,35 @@ class Message(models.Model):
         help_text='For the shop owner\'s tap of "Use this one" under a try of a clip the judge '
         "failed every try of, the try they chose (#180): the marker, never typed. Null "
         "otherwise.",
+    )
+    # The page panel's message, sent when the product page couldn't be read: its text is the
+    # page the shop owner pasted, and its photos the product's, kept by code as the page
+    # before any model reads it. A default in the database too, as for the step's fields.
+    pasted_page = models.BooleanField(
+        default=False,
+        db_default=False,
+        help_text="The shop owner's message from the page panel, with the page text they "
+        "pasted and its photos: the marker, never set by typing.",
+    )
+    pasted_page_result = models.TextField(
+        blank=True,
+        db_default="",
+        help_text="What became of a pasted page, on the page panel's message and on code's "
+        'notice answering it: "accepted" once kept as the page, else one line saying why it '
+        "can't be used. Blank on any other message, and on a pasted page not yet looked at.",
+    )
+    wants_pasted_page = models.BooleanField(
+        null=True,
+        blank=True,
+        help_text="True on code's notice that the product page can't be read, which asks for "
+        "the page panel; false on its notice that a page was read after all, so the panel is "
+        "no longer needed. Null for every other message.",
+    )
+    wants_more_photos = models.BooleanField(
+        default=False,
+        db_default=False,
+        help_text="On code's notice that a pasted page was kept with too few photos: the page "
+        "panel stays open for more photos until the shop owner answers. False otherwise.",
     )
     routed_at = models.DateTimeField(
         null=True,

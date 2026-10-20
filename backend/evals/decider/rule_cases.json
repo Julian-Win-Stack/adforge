@@ -15,7 +15,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "3": "new_picture"
+     "3": "fix"
     }
    }
   ],
@@ -106,7 +106,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "4": "new_picture"
+     "4": "fix"
     },
     "looks": [
      [
@@ -138,14 +138,14 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture"
+     "2": "fix"
     },
     "judge_findings": false
    }
   ],
   "expected_by": "claude",
   "past": {
-   "what this case checks": "a colour is a new picture"
+   "what this case checks": "a colour in a B-roll scene is a fix (was a new picture before the fixing agent)"
   }
  },
  {
@@ -164,13 +164,13 @@
    {
     "outcome": "planned",
     "scenes": {
-     "3": "new_clip"
+     "3": "fix"
     }
    }
   ],
   "expected_by": "claude",
   "past": {
-   "what this case checks": "how it moves is a new clip"
+   "what this case checks": "how it moves in a B-roll scene is a fix (was a new clip before the fixing agent)"
   }
  },
  {
@@ -189,13 +189,13 @@
    {
     "outcome": "planned",
     "scenes": {
-     "4": "new_line"
+     "4": "fix"
     }
    }
   ],
   "expected_by": "claude",
   "past": {
-   "what this case checks": "new words are a new line, word for word"
+   "what this case checks": "new words in a B-roll scene are a fix, its goal holding the words word for word (was a new line before the fixing agent)"
   }
  },
  {
@@ -239,13 +239,13 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture"
+     "2": "fix"
     }
    }
   ],
   "expected_by": "claude",
   "past": {
-   "what this case checks": "zoom in is a new picture: the camera never moves"
+   "what this case checks": "zoom in on a B-roll scene is a fix (was a new picture before the fixing agent)"
   }
  },
  {
@@ -264,7 +264,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_clip"
+     "2": "fix"
     },
     "looks": [
      [
@@ -276,7 +276,7 @@
   ],
   "expected_by": "claude",
   "past": {
-   "what this case checks": "how it moves is a new clip, after a look at the frames"
+   "what this case checks": "how it moves in a B-roll scene is a fix, after a look at the frames (was a new clip before the fixing agent)"
   }
  },
  {
@@ -592,7 +592,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture"
+     "2": "fix"
     }
    }
   ],
@@ -620,7 +620,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "3": "new_picture"
+     "3": "fix"
     },
     "thing_has": {
      "1": "toilet"
@@ -651,7 +651,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "3": "new_clip|new_picture"
+     "3": "fix"
     },
     "looks": [
      [
@@ -685,7 +685,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture"
+     "2": "fix"
     }
    }
   ],
@@ -713,7 +713,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "3": "new_picture"
+     "3": "fix"
     },
     "thing_has": {
      "1": "brush"
@@ -745,7 +745,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture"
+     "2": "fix"
     }
    }
   ],
@@ -829,8 +829,8 @@
    {
     "outcome": "planned",
     "scenes_include": {
-     "3": "new_clip|new_picture",
-     "4": "new_clip|new_picture"
+     "3": "fix",
+     "4": "fix"
     },
     "looks": [
      [
@@ -892,7 +892,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "3": "new_clip|new_picture"
+     "3": "fix"
     },
     "judge_findings": true
    }
@@ -918,7 +918,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "4": "new_clip|new_picture"
+     "4": "fix"
     },
     "judge_findings": true
    }
@@ -944,7 +944,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "3": "new_picture"
+     "3": "fix"
     },
     "judge_findings": false
    }
@@ -1148,14 +1148,14 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture",
-     "4": "new_picture"
+     "2": "fix",
+     "4": "fix"
     }
    },
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture"
+     "2": "fix"
     }
    }
   ],
@@ -1183,14 +1183,14 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture"
+     "2": "fix"
     }
    },
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture",
-     "4": "new_picture"
+     "2": "fix",
+     "4": "fix"
     }
    }
   ],
@@ -1218,7 +1218,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture"
+     "2": "fix"
     }
    },
    {
@@ -1249,7 +1249,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture"
+     "2": "fix"
     }
    },
    {
@@ -1280,7 +1280,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture"
+     "2": "fix"
     }
    },
    {
@@ -1311,7 +1311,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture"
+     "2": "fix"
     }
    },
    {
@@ -1342,13 +1342,13 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture"
+     "2": "fix"
     }
    },
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture"
+     "2": "fix"
     }
    }
   ],
@@ -1376,7 +1376,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture"
+     "2": "fix"
     }
    },
    {
@@ -1471,7 +1471,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "3": "new_picture"
+     "3": "fix"
     }
    }
   ],
@@ -1534,7 +1534,7 @@
    {
     "outcome": "planned",
     "scenes_include": {
-     "4": "new_picture"
+     "4": "fix"
     }
    }
   ],
@@ -1601,7 +1601,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "3": "new_clip|new_picture"
+     "3": "fix"
     },
     "change_lacks": {
      "3": [

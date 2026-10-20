@@ -33,6 +33,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from django.db.models import Q
+
 BROLL_MADE = ("make_broll_clip", "collect_broll_clip")
 VIDEO_PROVIDERS = ("creatify", "heygen")
 SAFE_FOLDER = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -74,7 +76,13 @@ def _clip(clip: Any) -> dict[str, Any]:
 def _redo_cost(step: Any) -> float:
     """What the judge and the remakes cost on a clip step: its model calls, less making and
     collecting its first clip."""
-    calls = list(step.tool_call.model_calls.order_by("id")) if step.tool_call else []
+    from gateway.models import ModelCall
+
+    calls = list(
+        ModelCall.objects.filter(
+            Q(tool_call=step.tool_call) | Q(tool_call__agent_fix__step=step)
+        ).order_by("id")
+    )
     first_made = {
         made
         for purpose in BROLL_MADE
@@ -88,9 +96,16 @@ def _first_clip_step(scene: Any) -> tuple[Any, list[Any]] | None:
     clips oldest first; a step that failed before making one (and was asked again) is passed."""
     from jobs.models import ProducedItem, SceneStep
 
-    steps = SceneStep.objects.filter(scene=scene, kind=SceneStep.Kind.CLIP, fix__isnull=True)
+    steps = SceneStep.objects.filter(
+        scene=scene, kind=SceneStep.Kind.CLIP, fix__isnull=True
+    ).exclude(tool_call__agent="fixing_agent")
     for step in steps.order_by("id"):
-        made = list(step.produced.filter(kind=ProducedItem.Kind.CLIP).order_by("id"))
+        # The fixing agent films each try in a step of its own, charged to the agent's call.
+        made = list(
+            ProducedItem.objects.filter(kind=ProducedItem.Kind.CLIP, scene=scene)
+            .filter(Q(step=step) | Q(step__tool_call__agent_fix__step=step))
+            .order_by("id")
+        )
         if made:
             return step, made
     return None
@@ -163,9 +178,12 @@ def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, d
     )
     (base / "notes.json").write_text(json.dumps(_notes(job), indent=1))
 
+    from jobs.models import AgentFix
+
     results: dict[str, dict[str, Any]] = {}
     for scene in job.scenes.order_by("number"):
-        if not scene.shows:
+        # A scene the fixing agent gave up on is said to camera since, its tries kept.
+        if not scene.shows and not AgentFix.objects.filter(step__scene=scene).exists():
             continue
         found = _first_clip_step(scene)
         if found is None:
@@ -174,7 +192,9 @@ def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, d
         step, made = found
         first = made[0]
         tries = [first, *sorted((c for c in made if c.remake), key=lambda c: c.remake or 0)]
-        kept = next(c for c in tries if c.file == made[-1].file)
+        gave_up = AgentFix.objects.filter(step=step, passed__isnull=True).first()
+        # Nothing of a scene the agent gave up on is kept: the owner may pick a try.
+        kept = None if gave_up else next(c for c in tries if c.file == made[-1].file)
         where = base / f"scene-{scene.number}"
         where.mkdir(exist_ok=True)
         for clip in tries:
@@ -189,11 +209,12 @@ def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, d
             "ad_folder": folder,
             "scene": scene.number,
             "line": scene.line,
-            "shows": scene.shows,
-            "broll_kind": scene.broll_kind,
+            "shows": step.shows,
+            "broll_kind": step.broll_kind,
             "tries": [_clip(c) for c in tries],
-            "kept": _clip(kept),
-            "kept_is_remake": kept.remake is not None,
+            "kept": _clip(kept) if kept is not None else None,
+            "kept_is_remake": kept is not None and kept.remake is not None,
+            "gave_up": gave_up.gave_up if gave_up is not None else None,
             "costs": {"total": _redo_cost(step)},
         }
     return results

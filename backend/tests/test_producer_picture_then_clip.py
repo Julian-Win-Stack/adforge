@@ -13,7 +13,6 @@ from django.db.models.signals import post_save
 
 from adforge.retry import OutsideServiceDown
 from agents import tasks
-from agents.models import ToolCall
 from agents.money import dollars
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
@@ -332,7 +331,7 @@ def test_a_step_that_cost_nothing_says_so(
     say: Callable[..., None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(ToolCall, "cost_usd", lambda _: Decimal(0))
+    monkeypatch.setattr(SceneStep, "cost_usd", lambda _: Decimal(0))
     picture_of(fake_model, steps, say, 1)
 
     assert " It cost $0.00." in picture_step(1).result

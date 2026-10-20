@@ -48,7 +48,7 @@ from gateway.types import (
 )
 
 from . import assembly
-from .models import Fix, Job, ProducedItem, SceneStep
+from .models import AgentFix, AgentFixTry, Fix, Job, ProducedItem, SceneStep
 from .picture_check import ASKS as ASKS
 from .picture_check import FAILS_TO_FAIL as FAILS_TO_FAIL
 from .planning import ChatMessage
@@ -632,10 +632,22 @@ def complained_about(step: SceneStep) -> ProducedItem | None:
     with their photo of a thing that only shows during the clip, the clip they complained
     about: the one they saw last before the step started. None for any other step, or when
     the scene has no clip from before it."""
-    fix = step.fix
-    if fix is None or step.kind != SceneStep.Kind.CLIP:
+    if step.kind != SceneStep.Kind.CLIP:
         return None
-    if fix.redo != Fix.Redo.CLIP and not during_the_clip(fix):
+    agent_try = AgentFixTry.objects.filter(step=step).select_related("agent_fix__step").first()
+    if agent_try is not None:
+        # A try the fixing agent films for the shop owner's note is judged beside the clip
+        # they noted, try 0, whichever try it is; a try at a fix's clip the judge failed
+        # (an old plan's new clip), as that fix's clips are.
+        fixing = agent_try.agent_fix
+        if fixing.door == AgentFix.Door.OWNER:
+            return fixing.first_clip
+        step = fixing.step
+    fix = step.fix
+    if fix is None:
+        return None
+    # A fix plan's fix row, filmed again by the fixing agent, is judged for the change too.
+    if fix.redo not in (Fix.Redo.CLIP, Fix.Redo.SCENE) and not during_the_clip(fix):
         return None
     return step.shown_before(ProducedItem.Kind.CLIP)
 

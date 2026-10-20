@@ -420,7 +420,7 @@ def test_the_planner_is_given_the_plan_instructions_and_the_decisions_schema(
     assert request["instructions"] == PLAN_INSTRUCTIONS
     sent = request["text"]["format"]["schema"]["$defs"]
     defined = producer_decision_for(2).model_json_schema()["$defs"]
-    assert set(sent) == set(defined) == {"Need", "Plan", "PlannedScene"}
+    assert set(sent) == set(defined) == {"Need", "OwnerPart", "Plan", "PlannedScene"}
     for model in defined:
         assert {
             name: field.get("description") for name, field in sent[model]["properties"].items()
