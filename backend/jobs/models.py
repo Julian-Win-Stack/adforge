@@ -180,6 +180,52 @@ class ProductPhoto(models.Model):
         return self.source_url
 
 
+class ProductVideo(models.Model):
+    """A video the shop placed with the product photos in the product's gallery, picked off
+    the page with them. Kept as a file with a few frames, or, when no file can be had (an
+    embedded player, a stream, a dead link, one too big), as its link with a first frame if
+    one is had. Nothing uses them yet."""
+
+    class Kind(models.TextChoices):
+        VIDEO = "video", "Video"  # A video the page plays itself.
+        IFRAME = "iframe", "Embedded player"  # Such as YouTube's or Vimeo's.
+
+    job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="videos")
+    position = models.PositiveSmallIntegerField()
+    source_url = models.CharField(
+        max_length=2000,
+        blank=True,
+        help_text="The player's video link on the page, which may not be a web link (blob:).",
+    )
+    kind = models.CharField(max_length=10, choices=Kind.choices)
+    file = models.CharField(
+        max_length=500, blank=True, help_text="Key in the file store; blank if no file was had."
+    )
+    first_frame = models.CharField(
+        max_length=500,
+        blank=True,
+        help_text=(
+            "Key of its opening picture: the file's, else the page's poster or the player's "
+            "thumbnail; blank if none was had."
+        ),
+    )
+    frames = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Keys of frames spread over the file, first to last; none without a file.",
+    )
+    duration = models.FloatField(null=True, blank=True, help_text="Seconds; none without a file.")
+
+    class Meta:
+        ordering = ["job", "position"]
+        constraints = [
+            models.UniqueConstraint(fields=["job", "position"], name="one_video_per_position")
+        ]
+
+    def __str__(self) -> str:
+        return self.source_url
+
+
 # What the plan says about a B-roll scene: its kind, who is in it, how the product is
 # used, the result it ends on, what it needs that the main photo can't show and its owner
 # part. Blank for a talking scene.

@@ -37,6 +37,7 @@ from jobs.models import (
     SceneStep,
 )
 from jobs.notices import post_notice
+from jobs.product_videos import save_videos
 from jobs.reference_photos import ReferencePhotoUnusable
 from jobs.work import (
     DECLARED_INSTEAD,
@@ -258,13 +259,22 @@ class ReadPage(Tool):
         if picked.urls is None:
             skipped = save_photos(job, product_page.photo_urls)
         else:
-            skipped = save_photos(job, picked.urls, merge_copies=True, faces=picked.faces)
+            skipped = save_photos(
+                job,
+                picked.urls,
+                merge_copies=True,
+                faces=picked.faces,
+                unnoted=picked.unnoted,
+                as_given=picked.as_given,
+            )
             if skipped and not job.photos.exclude(source_url="").exists():
                 post_notice(job, _none_kept(skipped), Message.Level.PROBLEM)
                 skipped = save_photos(job, product_page.photo_urls)
                 declared = True
             elif skipped:
                 post_notice(job, _not_downloaded(skipped), Message.Level.PROBLEM)
+        # The gallery videos the picker picked, kept for later: nothing uses them yet.
+        save_videos(job, list(picked.videos))
         # Only once every photo is kept: a worker that stops part-way through them leaves the
         # page unread, so the read run again keeps them all rather than the few already kept.
         keep_page(job, download, product_page, text)

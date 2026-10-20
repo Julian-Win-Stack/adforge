@@ -464,6 +464,36 @@ def test_the_planner_is_shown_every_product_photo_by_its_number(
     assert json.loads(handoff["text"]) == call.handoff
 
 
+def test_a_job_with_more_than_50_photos_is_planned_from_50_page_photos_first_saying_so(
+    fake_model: FakeModel, page_read: str, say: Callable[..., None]
+) -> None:
+    # The page's 2 photos, 5 the shop owner attached, then 46 more of the page's: 53 in all.
+    job = Job.objects.get()
+    for position in range(3, 54):
+        owners = position <= 7
+        keep_photo(
+            job,
+            position,
+            picture(100 + position, 100, (143, 170, 140)),
+            "image/png",
+            source_url="" if owners else f"https://shop.example/{position}.png",
+        )
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
+    fake_model.respond("plan_ad", PLAN)
+
+    say("Plan it")
+
+    (call,) = ModelCall.objects.filter(purpose="plan_ad")
+    assert [image["label"] for image in call.images] == [
+        f"Photo {position}" for position in [1, 2, *range(8, 54), 3, 4]
+    ]
+    job.refresh_from_db()
+    assert job.warnings[-1]["text"] == (
+        "The ad has 53 product photos, more than the 50 a model can be shown at once, so "
+        "photos 5, 6 and 7 are left out when it's planned or a line is rewritten."
+    )
+
+
 def test_the_planner_is_shown_each_photo_shrunk_to_fit_2048_pixels_and_the_kept_ones_are_unchanged(
     httpserver: HTTPServer,
     openai_server: Callable[..., None],

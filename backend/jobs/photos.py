@@ -12,7 +12,7 @@ import io
 import re
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from PIL import Image, ImageStat
@@ -73,7 +73,28 @@ show a person's face you could recognise. A body, a hand, an arm, lips or a face
 cut off or too small to recognise doesn't count.
 
 Last, page_blocked: true when the screenshots show a block, error, login or "verify you're \
-human" page instead of the shop's product page."""
+human" page instead of the shop's product page.
+
+Three more kinds of picture come with the screenshots:
+
+- Hidden pictures. Some numbered pictures could not be drawn in the screenshots because they \
+sit inside a scroll box or behind a carousel slide, so you only see their number in the lists. \
+Those are given to you as their own small pictures, labelled "I<n> (hidden)". The hidden-picture \
+list says which box each one sits in and which drawn pictures share that box: a hidden picture \
+that shares the gallery's box with gallery pictures is usually another gallery photo. Judge them \
+by the same rules and answer with their I numbers in gallery_images or more_images.
+
+- The official photos R1, R2, ... are no longer a guide only: when an official photo shows \
+this product and no picked I picture is the same photo, put its R number in record_images. \
+Leave out official photos of other products, bundles or line-ups by the same rules.
+
+- Video players V1, V2, ... are the page's videos, each shown as its poster or first frame, \
+with where it sits (box, position, and which pictures share its box). Answer gallery_videos \
+with the V numbers of videos that belong to THIS product's own photo gallery: placed with the \
+product photos, as one of the gallery's slides or thumbnails. Never a video in a reviews, \
+customer, creator, "shop the look", social or shoppable-video section, never a muted \
+background banner, never another product's video. When unsure, leave it out, and say why in \
+video_notes."""
 
 # A photo the picker never saw gets its Face note from a call of its own, worded as the
 # picker's note (tested on the 8 test products' 74 photos: backend/broll-test/face_notes.py).
@@ -84,12 +105,16 @@ away, cut off or too small to recognise doesn't count."""
 
 NO_RECORD = "Official record of the product: none was found for this page."
 
-# At most this many of the record's official photos are shown.
-MOST_REFERENCE_PHOTOS = 6
-# Variant values that pick a size rather than a look: they don't get a reference photo each.
-SIZE_KEYS = re.compile(
-    r"size|pack|count|quantity|qty|capacity|weight|volume|length|width|amount", re.I
-)
+# At most this many of the record's official photos are shown, each picture once.
+MOST_RECORD_PHOTOS = 24
+# The hidden pictures shown: the biggest this many, at least LEAST_HIDDEN_SIDE px a side on the
+# page, in page order.
+MOST_HIDDEN = 40
+LEAST_HIDDEN_SIDE = 100
+# The video players shown, in page order, each video once.
+MOST_VIDEOS = 20
+# A hidden picture's or video player's line names at most this many drawn pictures in its box.
+MOST_BOX_MATES = 8
 # The screenshot is cut into parts this tall, from the top, and at most this many are shown.
 PART_HEIGHT = 1_200
 MOST_PARTS = 14
@@ -99,6 +124,16 @@ LEAST_COLOUR_RANGE = 12
 LONGEST_TEXT_PIECE = 2_000
 # Two photos whose fingerprints differ in at most this many of their 256 bits are copies.
 MOST_BITS_APART = 12
+# A picture under this many pixels on either side is never a product photo.
+SMALLEST_PHOTO = 100
+# The size Shopify's image server was asked for in a file name, just before its type:
+# `_<w>x<h>`, `_x<h>` or one of its old size names, with any crop and pixel density (`@2x`)
+# after it.
+SHOPIFY_SIZE = re.compile(
+    r"_(?:\d+x\d*|x\d+|pico|icon|thumb|small|compact|medium|large|grande|original|master)"
+    r"(?:_crop_[a-z]+)?(?:@\dx)?(?=\.)",
+    re.I,
+)
 
 
 class PickHandoff(Handoff):
@@ -107,6 +142,9 @@ class PickHandoff(Handoff):
     page_title: str
     numbered_pictures: str
     numbered_text_pieces: str
+    hidden_pictures: str
+    official_photos: str
+    video_players: str
 
 
 class PickedPhotos(BaseModel):
@@ -121,6 +159,10 @@ class PickedPhotos(BaseModel):
     face_images: list[int]
     # Last, so the answers above come as the picker was tested with them.
     page_blocked: bool
+    # After it, as the picker was tested with them on hidden pictures and video players.
+    record_images: list[int] = []
+    gallery_videos: list[int] = []
+    video_notes: str = ""
 
 
 class FaceNoteHandoff(Handoff):
@@ -133,8 +175,11 @@ class FaceNote(BaseModel):
     has_face: bool
 
 
-def handoff(record: dict[str, Any] | None, marks: dict[str, Any], title: str) -> PickHandoff:
-    """What the picker is handed: the record, the page, and its numbered pictures and text."""
+def handoff(
+    record: dict[str, Any] | None, marks: dict[str, Any], title: str, shown: ShownLines
+) -> PickHandoff:
+    """What the picker is handed: the record, the page, its numbered pictures and text, and
+    the lines for the pictures shown beside the screenshot."""
     page_url = str(marks.get("url") or "")
     pictures = []
     for picture in numbered(marks):
@@ -153,27 +198,73 @@ def handoff(record: dict[str, Any] | None, marks: dict[str, Any], title: str) ->
         page_title=" ".join(title.split()),
         numbered_pictures="\n".join(pictures),
         numbered_text_pieces="\n\n".join(pieces),
+        hidden_pictures=shown.hidden_pictures or "(none: every numbered picture was drawn)",
+        official_photos=shown.official_photos or "(none)",
+        video_players=shown.video_players or "(none)",
     )
 
 
+class ShownLines(BaseModel):
+    """The lines naming the pictures shown beside the screenshot, one per picture shown."""
+
+    hidden_pictures: str = ""
+    official_photos: str = ""
+    video_players: str = ""
+
+
 def numbered(marks: dict[str, Any]) -> list[dict[str, Any]]:
-    """The pictures the marking script numbered: those a visitor can see."""
+    """The pictures the marking script numbered, those a visitor can see, that are big
+    enough to be a product photo."""
     return [
         picture
         for picture in marks.get("imgs") or []
-        if isinstance(picture, dict) and isinstance(picture.get("n"), int)
+        if isinstance(picture, dict)
+        and isinstance(picture.get("n"), int)
+        and not too_small(picture)
     ]
 
 
-def picked_links(picked: PickedPhotos, marks: dict[str, Any]) -> list[tuple[str, bool]]:
-    """The picked photos' links at their biggest size, gallery first, each with whether the
-    picker marked it with a face. Numbers the page didn't show are dropped, and so are marks
-    of pictures that weren't picked."""
+def too_small(picture: dict[str, Any]) -> bool:
+    """Whether a numbered picture is under SMALLEST_PHOTO px on a side, as the browser
+    loaded it. A picture of unknown size, as one not loaded yet (0 by 0), isn't, and nor is
+    one with a bigger size to fetch: in its srcset, or by taking a size off its link."""
+    width, height = picture.get("nw"), picture.get("nh")
+    if not isinstance(width, int) or not isinstance(height, int) or not width or not height:
+        return False
+    if best_url(picture) != _link(picture.get("src")):
+        return False
+    return min(width, height) < SMALLEST_PHOTO
+
+
+class PickedLink(NamedTuple):
+    """A picked photo's link at its biggest size, the link as the page or record gave it,
+    and whether the picker marked it with a face: None for an official photo, which it
+    doesn't note."""
+
+    url: str
+    as_given: str
+    has_face: bool | None
+
+
+def picked_links(
+    picked: PickedPhotos, marks: dict[str, Any], record_urls: list[str]
+) -> list[PickedLink]:
+    """The picked photos' links, the gallery's, then the rest of the page's, then the
+    record's official photos. Numbers the page or record didn't show are dropped, and so are
+    marks of pictures that weren't picked."""
     by_number = {picture["n"]: picture for picture in numbered(marks)}
     return [
-        (best_url(by_number[number]), number in picked.face_images)
+        PickedLink(
+            best_url(by_number[number]),
+            widest_url(by_number[number]),
+            number in picked.face_images,
+        )
         for number in [*picked.gallery_images, *picked.more_images]
         if number in by_number
+    ] + [
+        PickedLink(full_size(record_urls[number - 1]), record_urls[number - 1], None)
+        for number in picked.record_images
+        if 1 <= number <= len(record_urls)
     ]
 
 
@@ -199,40 +290,70 @@ def record_text(record: dict[str, Any]) -> str:
     )
 
 
-def reference_urls(record: dict[str, Any]) -> list[str]:
-    """The record's official photos: the first image of each look (its variant's values,
-    leaving out sizes), each picture once, then the product's own images, at most 6."""
-    looks: set[tuple[tuple[str, str], ...]] = set()
+def record_photo_urls(record: dict[str, Any]) -> list[str]:
+    """Every official photo in the record, each picture once: its variants' photos, then the
+    product's own, at most MOST_RECORD_PHOTOS. The picker knows them as R1, R2, ..."""
     names: set[str] = set()
     urls: list[str] = []
-    for variant in _variants(record):
-        values = variant.get("values")
-        look = tuple(
-            sorted(
-                (str(key), str(value))
-                for key, value in (values.items() if isinstance(values, dict) else [])
-                if not SIZE_KEYS.search(str(key))
-            )
-        )
-        if look in looks:
-            continue
-        for image in variant.get("images") or []:
-            url = _link(image.get("url") if isinstance(image, dict) else None)
-            if url and _name(url) not in names:
-                looks.add(look)
-                names.add(_name(url))
-                urls.append(url)
-                break
-        if len(urls) >= MOST_REFERENCE_PHOTOS:
-            return urls
-    for image in record.get("images") or []:
-        if len(urls) >= MOST_REFERENCE_PHOTOS:
-            break
+    images = [image for variant in _variants(record) for image in variant.get("images") or []]
+    for image in [*images, *(record.get("images") or [])]:
         url = _link(image.get("url") if isinstance(image, dict) else image)
         if url and _name(url) not in names:
             names.add(_name(url))
             urls.append(url)
-    return urls
+    return urls[:MOST_RECORD_PHOTOS]
+
+
+def hidden(marks: dict[str, Any]) -> list[dict[str, Any]]:
+    """The numbered pictures the screenshot couldn't draw that the picker is shown: the
+    MOST_HIDDEN biggest at least LEAST_HIDDEN_SIDE px a side, in page order."""
+    undrawn = [
+        picture
+        for picture in numbered(marks)
+        if picture.get("shown") is False
+        and _side(picture, "w") >= LEAST_HIDDEN_SIDE
+        and _side(picture, "h") >= LEAST_HIDDEN_SIDE
+    ]
+    biggest = sorted(undrawn, key=lambda p: -_side(p, "w") * _side(p, "h"))[:MOST_HIDDEN]
+    return sorted(biggest, key=lambda picture: picture["n"])
+
+
+def hidden_line(picture: dict[str, Any], marks: dict[str, Any]) -> str:
+    """What the picker is told of a hidden picture: how much of it shows, its size, where it
+    is, what hides it and which drawn pictures share its box."""
+    box = picture.get("box") or 0
+    mates = box_mates(marks, box)
+    return (
+        f"I{picture['n']} (hidden): {round(float(picture.get('vis') or 0) * 100)}% visible, "
+        f"{_side(picture, 'w')}x{_side(picture, 'h')} px at {_side(picture, 'y')} px down the "
+        "page, "
+        + (
+            f"cut off by box {box}, "
+            if box and picture.get("disp", True)
+            else "not displayed at all (a collapsed menu, popup or inactive tab), "
+        )
+        + (
+            f"box shared with drawn pictures {', '.join(mates)}"
+            if mates
+            else "no drawn picture shares its box"
+        )
+    )
+
+
+def box_mates(marks: dict[str, Any], box: int) -> list[str]:
+    """The drawn pictures in `box`, by their labels, at most MOST_BOX_MATES."""
+    if not box:
+        return []
+    return [
+        f"I{picture['n']}"
+        for picture in numbered(marks)
+        if picture.get("box") == box and picture.get("shown", True)
+    ][:MOST_BOX_MATES]
+
+
+def _side(picture: dict[str, Any], key: str) -> int:
+    value = picture.get(key)
+    return round(value) if isinstance(value, int | float) else 0
 
 
 def _variants(record: dict[str, Any]) -> list[dict[str, Any]]:
@@ -251,7 +372,7 @@ def _link(url: Any) -> str:
 def _name(url: str) -> str:
     """A picture's file name without its type or size part, so one picture at two sizes
     has one name."""
-    name = urlparse(url).path.rstrip("/").split("/")[-1]
+    name = urlparse(full_size(url)).path.rstrip("/").split("/")[-1]
     name = re.sub(r"\.[a-z0-9]{2,5}$", "", name, flags=re.I)
     name = re.sub(r"(_\d+x\d*|_\d+x|-\d+x\d+|\._[A-Z0-9_,]+_)$", "", name)
     return name.casefold()
@@ -275,6 +396,12 @@ def other_page(href: str, page_url: str) -> str:
 def best_url(picture: dict[str, Any]) -> str:
     """The link to a picture at its biggest size: the widest in its srcset, else its src,
     with any size the shop's image server was asked for taken off."""
+    return full_size(widest_url(picture))
+
+
+def widest_url(picture: dict[str, Any]) -> str:
+    """The link to the widest size of a picture its srcset offers, else its src, as the
+    page gives it."""
     url, widest = str(picture.get("src") or ""), 0
     # Split at a comma followed by a space: some image links hold commas.
     for candidate in re.split(r",\s+", str(picture.get("srcset") or "").strip()):
@@ -289,7 +416,7 @@ def best_url(picture: dict[str, Any]) -> str:
             widest, url = int(bits[1][:-1]), bits[0]
     if url.startswith("//"):
         url = "https:" + url
-    return full_size(url)
+    return url
 
 
 def full_size(url: str) -> str:
@@ -303,7 +430,7 @@ def full_size(url: str) -> str:
             for key, value in parse_qsl(parts.query, keep_blank_values=True)
             if key not in ("width", "height", "crop")
         ]
-        path = re.sub(r"_\d+x\d*(?=\.)", "", parts.path)
+        path = SHOPIFY_SIZE.sub("", parts.path)
         return urlunparse(parts._replace(path=path, query=urlencode(kept)))
     if "media-amazon.com" in parts.netloc:
         return urlunparse(parts._replace(path=re.sub(r"\._[^/]*_\.", ".", parts.path), query=""))
@@ -315,6 +442,15 @@ def same_key(url: str) -> str:
     `_<w>x<h>` size part taken off."""
     parts = urlparse(full_size(url))
     return parts.netloc + re.sub(r"_\d+x\d*(?=\.)", "", parts.path)
+
+
+def size_of(content: bytes) -> tuple[int, int] | None:
+    """A photo's width and height in pixels, or None when it can't be read as an image."""
+    try:
+        with Image.open(io.BytesIO(content)) as image:
+            return image.size
+    except OSError:
+        return None
 
 
 def dhash(content: bytes) -> int:

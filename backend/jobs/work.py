@@ -8,12 +8,13 @@ import json
 import logging
 import math
 import mimetypes
+import re
 import tempfile
 import wave
 from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -73,6 +74,7 @@ from . import (
     page,
     page_text,
     photos,
+    picker_grids,
     reference_photos,
 )
 from .checks import (
@@ -374,6 +376,14 @@ class Picked:
     faces: frozenset[str] = frozenset()
     # Whether the picker saw a block or error page instead of the shop's product page.
     blocked: bool = False
+    # The picked links the picker didn't note for a face: the record's official photos.
+    unnoted: frozenset[str] = frozenset()
+    # The video players the picker picked from the product's gallery, as the page script
+    # found them.
+    videos: tuple[dict[str, Any], ...] = ()
+    # Each picked link that was sized up, with the link as the page gave it: fetched instead
+    # when the biggest size can't be, as when a size-like word was the shop's own name.
+    as_given: dict[str, str] = field(default_factory=dict)
 
 
 DECLARED_INSTEAD = (
@@ -445,18 +455,24 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
                 Message.Level.INFO,
             )
         )
-    try:
-        picked = call_model(
+    marked = read.marked
+    images, shown = _picker_images(job, record, marked.marks, marked.screenshot)
+
+    def pick(images: list[Image], shown: photos.ShownLines) -> photos.PickedPhotos:
+        return call_model(
             job=job,
             purpose="pick_photos",
             instructions=photos.PICK_INSTRUCTIONS,
-            handoff=photos.handoff(record, read.marked.marks, read.marked.title),
+            handoff=photos.handoff(record, marked.marks, marked.title, shown),
             output=photos.PickedPhotos,
-            images=_picker_images(job, record, read.marked.screenshot),
+            images=images,
             # A page read again, as after a worker stopped, isn't picked and paid for twice.
             pay_once=True,
         )
-    except (UnusableReply, OutsideServiceDown) as error:
+
+    try:
+        picked, left_out = _picked_past_the_safety_filter(pick, images, shown)
+    except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
         notices.append(
             (
                 f"Picking this product's photos off the page failed ({error}). {DECLARED_INSTEAD}",
@@ -464,10 +480,15 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
             )
         )
         return Picked(None, notices)
+    if left_out:
+        notices.append((_left_out_by_the_filter(left_out), Message.Level.INFO))
     if picked.page_blocked:
         notices.append((PAGE_BLOCKED, Message.Level.PROBLEM))
         return Picked(None, notices, blocked=True)
-    links = photos.picked_links(picked, read.marked.marks)
+    links = photos.picked_links(
+        picked, read.marked.marks, photos.record_photo_urls(record) if record else []
+    )
+    videos = tuple(_picked_videos(picked, read.marked.marks))
     if not links:
         notices.append(
             (
@@ -475,42 +496,108 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
                 Message.Level.PROBLEM,
             )
         )
-        return Picked(None, notices)
+        return Picked(None, notices, videos=videos)
     return Picked(
-        [url for url, _ in links],
+        [link.url for link in links],
         notices,
-        frozenset(url for url, has_face in links if has_face),
+        frozenset(link.url for link in links if link.has_face),
+        unnoted=frozenset(link.url for link in links if link.has_face is None),
+        videos=videos,
+        as_given={link.url: link.as_given for link in links if link.as_given != link.url},
     )
 
 
-def _picker_images(job: Job, record: dict[str, Any] | None, screenshot: bytes) -> list[Image]:
-    """The pictures the picker is shown: the record's official photos, R1, R2, ..., then the
-    screenshot's parts, top to bottom. Kept with the job's Firecrawl answers, so a read run
-    again shows the same files and pays for nothing twice."""
-    shown = job.firecrawl.get("picker_images")
-    if shown is not None:
-        return [Image(label, key) for label, key in shown]
-    images: list[Image] = []
-    for url in photos.reference_urls(record) if record else []:
+def _picked_past_the_safety_filter(
+    pick: Callable[[list[Image], photos.ShownLines], photos.PickedPhotos],
+    images: list[Image],
+    shown: photos.ShownLines,
+) -> tuple[photos.PickedPhotos, list[str]]:
+    """The picker's answer, and the tiles of the grids left out to get it. A model's safety
+    filter refuses a whole call over one picture it objects to, often wrongly, so when it
+    refuses, the grids beside the screenshot are left out one at a time, last first, and
+    then all together. Raises BlockedBySafetyFilter when it refuses even the screenshot."""
+    try:
+        return pick(images, shown), []
+    except BlockedBySafetyFilter:
+        pass
+    grids = [image for image in images if not SCREENSHOT_PART.match(image.label)]
+    tries = [[grid] for grid in reversed(grids)]
+    if len(grids) > 1:
+        tries.append(grids)
+    for left in tries:
+        tiles = [tile for grid in left for tile in picker_grids.tiles_of(grid.label)]
         try:
-            official = page.download(url, max_bytes=page.MAX_PHOTO_BYTES, what="product photo")
-        except page.PageUnreadable, OutsideServiceDown:
-            continue  # A guide only: the picker does without it.
-        if official.content_type not in IMAGE_TYPES:
+            picked = pick(
+                [image for image in images if image not in left],
+                picker_grids.without_tiles(shown, tiles),
+            )
+        except BlockedBySafetyFilter:
+            if left is tries[-1]:
+                raise
             continue
-        number = len(images) + 1
-        extension = mimetypes.guess_extension(official.content_type) or ""
-        key = file_store.save(
-            f"jobs/{job.pk}/firecrawl/official-{number}{extension}", official.content
-        )
-        images.append(Image(f"R{number}", key))
+        return picked, tiles
+    raise AssertionError("unreachable: the last try raises")  # pragma: no cover
+
+
+def _left_out_by_the_filter(tiles: list[str]) -> str:
+    """The notice saying which pictures beside the screenshot the picker went without."""
+    kinds = {"R": "official photos", "I": "hidden pictures", "V": "video players"}
+    named = []
+    for letter, kind in kinds.items():
+        numbers = [tile.split()[0] for tile in tiles if tile.startswith(letter)]
+        if numbers:
+            listed = (
+                f"{', '.join(numbers[:-1])} and {numbers[-1]}" if len(numbers) > 1 else numbers[0]
+            )
+            named.append(f"{kind} {listed}")
+    return (
+        "The AI model's safety filter refused to look at some of the pictures beside the "
+        f"page's screenshot ({'; '.join(named)}), so this product's photos were picked "
+        "without them."
+    )
+
+
+def _picked_videos(picked: photos.PickedPhotos, marks: dict[str, Any]) -> list[dict[str, Any]]:
+    """The video players the picker picked, as the page script found them. Numbers of
+    players it wasn't shown are dropped."""
+    players = {player["n"]: player for player in picker_grids.videos(marks)}
+    return [players[number] for number in picked.gallery_videos if number in players]
+
+
+# How each part of the screenshot is labelled for the picker, and how one is known.
+SCREENSHOT_PART_LABEL = "Part {} of {} (from {} px down the page):"
+SCREENSHOT_PART = re.compile(r"Part \d+ of \d+ \(from \d+ px down the page\):$")
+# The most pictures the picker's model takes in one call.
+MOST_PICKER_IMAGES = 50
+
+
+def _picker_images(
+    job: Job, record: dict[str, Any] | None, marks: dict[str, Any], screenshot: bytes
+) -> tuple[list[Image], photos.ShownLines]:
+    """The pictures the picker is shown, and the lines naming those beside the screenshot:
+    the screenshot's parts, top to bottom, then the grids of the record's official photos,
+    the hidden pictures and the video players. Kept with the job's Firecrawl answers, so a
+    read run again shows the same files and pays for nothing twice."""
+    kept, lines = job.firecrawl.get("picker_images"), job.firecrawl.get("picker_lines")
+    if kept is not None and lines is not None:
+        return [Image(label, key) for label, key in kept], photos.ShownLines(**lines)
+    images: list[Image] = []
     parts = photos.parts(screenshot)
     for number, (top, part) in enumerate(parts, 1):
         key = file_store.save(f"jobs/{job.pk}/firecrawl/part-{number}.jpg", part)
-        images.append(Image(f"Part {number} of {len(parts)} (from {top} px down the page):", key))
+        images.append(Image(SCREENSHOT_PART_LABEL.format(number, len(parts), top), key))
+    shown = picker_grids.beside_the_screenshot(record, marks)
+    for number, (label, grid) in enumerate(shown.grids, 1):
+        key = file_store.save(f"jobs/{job.pk}/firecrawl/grid-{number}.jpg", grid)
+        images.append(Image(label, key))
+    if len(images) > MOST_PICKER_IMAGES:
+        raise ValueError(
+            f"The picker can be shown {MOST_PICKER_IMAGES} pictures, not {len(images)}"
+        )
     job.firecrawl["picker_images"] = [[image.label, image.key] for image in images]
+    job.firecrawl["picker_lines"] = shown.lines.model_dump()
     job.save(update_fields=["firecrawl"])
-    return images
+    return images, shown.lines
 
 
 def keep_page(job: Job, download: page.Download, product_page: page.ProductPage, text: str) -> None:
@@ -556,12 +643,16 @@ def save_photos(
     *,
     merge_copies: bool = False,
     faces: frozenset[str] | None = None,
+    unnoted: frozenset[str] = frozenset(),
+    as_given: dict[str, str] | None = None,
 ) -> list[SkippedPhoto]:
     """Download and keep each photo, after any the job already has, up to MAX_PHOTOS. With
     `merge_copies`, a photo that is a copy of one already kept, at another size or under
     another name, is left out, and the one kept has a face if either does. `faces` are the
-    links the picker marked with a face; without them, each photo kept is given its Face note
-    by a call of its own. Gives back each one that was skipped, with why."""
+    links the picker marked with a face; without them, or for the `unnoted` links it didn't
+    note, each photo kept is given its Face note by a call of its own. A link that can't be
+    fetched is fetched `as_given` instead, when that names another link for it. Gives back
+    each one that was skipped, with why."""
     # A read run again after a crash starts the page's photos afresh, so each is kept once.
     # Photos the user attached are theirs, and stay.
     job.photos.exclude(source_url="").delete()
@@ -576,7 +667,7 @@ def save_photos(
             _merge_face(kept[copy], url, faces)
             continue
         try:
-            photo = page.download(url, max_bytes=page.MAX_PHOTO_BYTES, what="product photo")
+            photo = _photo_at(url, (as_given or {}).get(url))
         except (page.PageUnreadable, OutsideServiceDown) as error:
             skipped.append(SkippedPhoto(url, str(error).rstrip(".") + "."))
             continue
@@ -590,17 +681,39 @@ def save_photos(
                 )
             )
             continue
+        size = photos.size_of(photo.content)
+        if size is not None and min(size) < photos.SMALLEST_PHOTO:
+            skipped.append(
+                SkippedPhoto(
+                    url, f"It's only {size[0]} by {size[1]} px, too small to be a product photo."
+                )
+            )
+            continue
         if merge_copies and (copy := copies.copy_of(url, photo.content)) is not None:
             _merge_face(kept[copy], url, faces)
             continue
         saved += 1
-        has_face = url in faces if faces is not None else None
+        has_face = url in faces if faces is not None and url not in unnoted else None
         kept.append(
             keep_photo(
                 job, saved, photo.content, photo.content_type, source_url=url, has_face=has_face
             )
         )
     return skipped
+
+
+def _photo_at(url: str, as_given: str | None) -> page.Download:
+    """The photo at `url`, else at `as_given`; the error from `url` if neither can be had."""
+    try:
+        return page.download(url, max_bytes=page.MAX_PHOTO_BYTES, what="product photo")
+    except page.PageUnreadable, OutsideServiceDown:
+        if not as_given:
+            raise
+        try:
+            return page.download(as_given, max_bytes=page.MAX_PHOTO_BYTES, what="product photo")
+        except page.PageUnreadable, OutsideServiceDown:
+            pass
+        raise
 
 
 def _merge_face(kept: ProductPhoto, url: str, faces: frozenset[str] | None) -> None:
@@ -656,6 +769,7 @@ def plan(job: Job) -> ProducerDecision:
     """Have the planner plan the ad from the page, the product photos and the conversation,
     and keep the plan. A decision to ask the user keeps nothing."""
     photos = list(job.photos.all())
+    shown = _photos_to_show(job, photos)
     decision = call_model(
         job=job,
         purpose="plan_ad",
@@ -668,7 +782,7 @@ def plan(job: Job) -> ProducerDecision:
             conversation=_conversation(job),
         ),
         output=producer_decision_for(len(photos)),
-        images=[Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos],
+        images=[Image(label=f"Photo {photo.position}", key=photo.file) for photo in shown],
     )
     planned = decision.plan
     if planned is None:
@@ -710,6 +824,26 @@ def plan(job: Job) -> ProducerDecision:
         )
         job.photos.filter(position__in=planned.colour_photos).update(shows_product_colour=True)
     return decision
+
+
+def _photos_to_show(job: Job, photos: list[ProductPhoto]) -> list[ProductPhoto]:
+    """The job's photos a model can be shown in one call: at most clip_judge.MOST_PICTURES,
+    the page's first, then the shop owner's. When some are left out, the chat is told once
+    which."""
+    shown = sorted(photos, key=lambda photo: not photo.source_url)[: clip_judge.MOST_PICTURES]
+    left_out = [f"{photo.position}" for photo in photos if photo not in shown]
+    if not left_out:
+        return shown
+    listed = left_out[0] if len(left_out) == 1 else f"{', '.join(left_out[:-1])} and {left_out[-1]}"
+    text = (
+        f"The ad has {len(photos)} product photos, more than the {clip_judge.MOST_PICTURES} a "
+        f"model can be shown at once, so photo{'s' if len(left_out) > 1 else ''} {listed} "
+        f"{'are' if len(left_out) > 1 else 'is'} left out when it's planned or a line is "
+        "rewritten."
+    )
+    if all(warning["text"] != text for warning in job.warnings):
+        post_notice(job, text, Message.Level.INFO)
+    return shown
 
 
 PORTRAIT_PROMPT = """\
@@ -990,7 +1124,10 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
         output=rewritten_scene_for(
             scene.number, shows_something=bool(scene.shows), photo_count=len(photos)
         ),
-        images=[Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos]
+        images=[
+            Image(label=f"Photo {photo.position}", key=photo.file)
+            for photo in _photos_to_show(job, photos)
+        ]
         if scene.shows
         else [],
     )

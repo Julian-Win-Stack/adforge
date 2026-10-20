@@ -8,9 +8,10 @@ import PIL.Image
 import PIL.ImageDraw
 import pytest
 
+from jobs import picker_grids
 from jobs.page import DECLARED_DATA_HEADING
 from jobs.page_text import PRICES_HEADING, match_back, record_prices, without_prices
-from jobs.photos import Copies, best_url
+from jobs.photos import Copies, ShownLines, best_url, record_photo_urls, too_small
 
 from .conftest import photo
 
@@ -190,6 +191,26 @@ CLOUDINARY = "https://res.cloudinary.com/shop/image/upload"
             id="Shopify's size in the file name",
         ),
         pytest.param(
+            {"src": "https://shop.com/cdn/shop/products/front_120x120_crop_center.jpg?v=17"},
+            "https://shop.com/cdn/shop/products/front.jpg?v=17",
+            id="Shopify's size and crop in the file name",
+        ),
+        pytest.param(
+            {"src": "https://cdn.shopify.com/s/files/1/front_300x@2x.png?v=17"},
+            "https://cdn.shopify.com/s/files/1/front.png?v=17",
+            id="Shopify's size at twice the pixels",
+        ),
+        pytest.param(
+            {"src": "https://shop.com/cdn/shop/products/front_grande.jpg?v=17"},
+            "https://shop.com/cdn/shop/products/front.jpg?v=17",
+            id="Shopify's old size name",
+        ),
+        pytest.param(
+            {"src": "https://shop.com/cdn/shop/products/front_x600.jpg?v=17"},
+            "https://shop.com/cdn/shop/products/front.jpg?v=17",
+            id="Shopify asked for a height only",
+        ),
+        pytest.param(
             {"src": "https://m.media-amazon.com/images/I/71Q2x._AC_SX300_.jpg"},
             "https://m.media-amazon.com/images/I/71Q2x.jpg",
             id="Amazon's size part",
@@ -263,6 +284,14 @@ SHOPIFY = "https://cdn.shopify.com/s/files/1/front"
             id="the same name with a _600x size part",
         ),
         pytest.param(
+            [
+                (f"{SHOPIFY}.jpg?v=1", photo(1)),
+                (f"{SHOPIFY}_120x120_crop_center.jpg?v=1", photo(2)),
+            ],
+            1,
+            id="the same name with a size and crop part",
+        ),
+        pytest.param(
             [("https://shop.com/front.png", photo(1)), ("https://shop.com/side.png", photo(2))],
             2,
             id="two different photos",
@@ -289,3 +318,96 @@ SHOPIFY = "https://cdn.shopify.com/s/files/1/front"
 def test_copies_of_one_photo_are_kept_once(photos: list[tuple[str, bytes]], kept: int) -> None:
     copies = Copies()
     assert sum(copies.is_new(url, content) for url, content in photos) == kept
+
+
+def test_a_record_photo_at_two_sizes_is_one_official_photo() -> None:
+    record = {
+        "images": [
+            "https://cdn.shopify.com/s/files/1/front_120x120_crop_center.jpg?v=1",
+            "https://cdn.shopify.com/s/files/1/front.jpg?v=1",
+            "https://cdn.shopify.com/s/files/1/side.jpg?v=1",
+        ]
+    }
+    assert record_photo_urls(record) == [
+        "https://cdn.shopify.com/s/files/1/front_120x120_crop_center.jpg?v=1",
+        "https://cdn.shopify.com/s/files/1/side.jpg?v=1",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("picture", "small"),
+    [
+        pytest.param(
+            {"src": "https://shop.com/img/icon.png", "nw": 99, "nh": 400}, True, id="99 px wide"
+        ),
+        pytest.param(
+            {"src": "https://shop.com/img/front.png", "nw": 100, "nh": 100},
+            False,
+            id="100 px on each side",
+        ),
+        pytest.param(
+            {"src": "https://shop.com/img/front.png", "nw": 0, "nh": 0},
+            False,
+            id="not loaded yet, so of unknown size",
+        ),
+        pytest.param(
+            {
+                "src": "https://shop.com/img/front-80.jpg",
+                "srcset": "https://shop.com/img/front-80.jpg 80w, "
+                "https://shop.com/img/front-1600.jpg 1600w",
+                "nw": 80,
+                "nh": 100,
+            },
+            False,
+            id="loaded small, with a bigger size in its srcset",
+        ),
+    ],
+)
+def test_a_picture_under_100_px_on_a_side_is_too_small(
+    picture: dict[str, Any], small: bool
+) -> None:
+    assert too_small(picture) is small
+
+
+def test_tiles_are_packed_into_labelled_grids_of_at_most_across_by_across() -> None:
+    tiles = [(f"I{n} (hidden)", photo(n)) for n in range(1, 11)]
+
+    packed = picker_grids.grids("Hidden pictures", tiles, 3, 400)
+
+    assert [label for label, _ in packed] == [
+        "Hidden pictures: I1 (hidden), I2 (hidden), I3 (hidden), I4 (hidden), I5 (hidden), "
+        "I6 (hidden), I7 (hidden), I8 (hidden), I9 (hidden) (each labelled in its black bar)",
+        "Hidden pictures: I10 (hidden) (each labelled in its black bar)",
+    ]
+    assert picker_grids.tiles_of(packed[1][0]) == ["I10 (hidden)"]
+    with (
+        PIL.Image.open(io.BytesIO(packed[0][1])) as full,
+        PIL.Image.open(io.BytesIO(packed[1][1])) as one_row,
+    ):
+        # Three tiles across with a gap on each side of each; three rows, then one.
+        assert full.width == one_row.width == 3 * 400 + 4 * 8
+        assert full.height > 3 * 400 > one_row.height > 400
+
+
+@pytest.mark.django_db
+def test_more_pictures_than_the_picker_takes_is_refused_before_it_is_asked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from chat.models import Session
+    from jobs import work
+    from jobs.models import Job
+
+    from .conftest import FIRECRAWL_SCREENSHOT
+
+    job = Job.objects.create(session=Session.objects.create(), product_url="https://shop.example/p")
+    # Three screenshot parts and 48 grids: one more than the model takes.
+    monkeypatch.setattr(
+        picker_grids,
+        "beside_the_screenshot",
+        lambda record, marks: picker_grids.Shown(
+            grids=[(f"Grid {n}", photo(n)) for n in range(48)], lines=ShownLines()
+        ),
+    )
+
+    with pytest.raises(ValueError, match="50 pictures, not 51"):
+        work._picker_images(job, None, {}, FIRECRAWL_SCREENSHOT)

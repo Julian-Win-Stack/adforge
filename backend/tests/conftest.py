@@ -422,7 +422,7 @@ def screenshot(width: int, height: int) -> bytes:
 FIRECRAWL_SCREENSHOT = screenshot(480, 2_600)
 
 
-def photo(seed: int, width: int = 64, height: int = 80) -> bytes:
+def photo(seed: int, width: int = 112, height: int = 140) -> bytes:
     """A photo of its own: random dots, so no two seeds look alike to the copy check, and
     one seed looks the same at every size."""
     dots = random.Random(seed).randbytes(16 * 20 * 3)
