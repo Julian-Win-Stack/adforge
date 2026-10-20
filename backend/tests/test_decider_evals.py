@@ -142,7 +142,7 @@ def test_a_case_is_played_and_everything_it_did_is_kept(
         "expect": [
             {
                 "outcome": "planned",
-                "scenes": {"2": "new_picture"},
+                "scenes": {"2": "fix"},
                 "thing_has": {"1": "white"},
                 "looks": [["look_at_picture", 2]],
                 "judge_findings": False,
@@ -152,7 +152,7 @@ def test_a_case_is_played_and_everything_it_did_is_kept(
     }
     uses = [{"photo": 1, "in_picture": True, "during_action": False}]
     plan = _decided(
-        [_row(2, "new_picture", "The toilet is the shop owner's black toilet.", photos=uses)],
+        [_row(2, "fix", "The toilet is the shop owner's black toilet.", photos=uses)],
         photos=[{"photo": 1, "thing": "black toilet", "clear": True}],
     )
     fake_model.respond(
@@ -180,7 +180,7 @@ def test_a_case_is_played_and_everything_it_did_is_kept(
     assert [each["outcome"] for each in result["turns"]] == ["planned", "yes"]
     first = result["turns"][0]
     assert first["decide"]["photos"] == [{"photo": 1, "thing": "black toilet", "clear": True}]
-    assert [row["action"] for row in first["plan"]["scenes"]] == ["new_picture"]
+    assert [row["action"] for row in first["plan"]["scenes"]] == ["fix"]
     # The decide made before any look was refused by code, and that is kept.
     assert [each["tool"] for each in result["refused"]] == ["decide"]
     assert result["refused"][0]["result"].startswith("Refused: look at scene 2 first")
@@ -387,14 +387,14 @@ def test_a_picture_looked_at_twice_is_shown_once_on_the_page(
 
 def test_expected_answers_that_leave_room_are_checked_as_such() -> None:
     decided = _decided(
-        [_row(2, "new_picture", "Black.", cant="slower"), _row(4, "new_clip", "Faster.")],
+        [_row(2, "fix", "Black.", cant="slower"), _row(4, "fix", "Faster.")],
         photos=[{"photo": 1, "thing": "Black toilet seat", "clear": False}],
     )
     plan = {
         "question": "",
         "scenes": [
-            {"scene": 2, "action": "new_picture", "go_back_to": None, "photos": []},
-            {"scene": 4, "action": "new_clip", "go_back_to": None, "photos": []},
+            {"scene": 2, "action": "fix", "go_back_to": None, "photos": []},
+            {"scene": 4, "action": "fix", "go_back_to": None, "photos": []},
         ],
     }
     result = {
@@ -405,8 +405,8 @@ def test_expected_answers_that_leave_room_are_checked_as_such() -> None:
     case = {
         "expect": [
             {
-                "scenes_include": {"2": "new_picture|new_clip"},
-                "scenes": {"2": "new_picture"},
+                "scenes_include": {"2": "fix|no_change"},
+                "scenes": {"2": "fix"},
                 "scene_cants_include": ["slower"],
                 "thing_has": {"1": "seat"},
                 "clear": {"1": False},
@@ -464,7 +464,7 @@ def test_a_change_that_adds_what_the_owner_never_asked_for_is_caught() -> None:
         "scenes": [
             {
                 "scene": 3,
-                "action": "new_clip",
+                "action": "fix",
                 "change": "The gel goes on the brush first; the scene ends with the bowl clean.",
                 "go_back_to": None,
                 "photos": [],

@@ -212,7 +212,9 @@ def _chose(job: Job, message: Message, clip: ProducedItem) -> bool:
                 Message.Level.PROBLEM,
             )
             return _routed(message, producer=False)
-        run_plan.swapped_in(clip.step)
+        tried = work.tried_at(clip)
+        assert tried is not None, "a try is of a clip step"
+        run_plan.swapped_in(tried)
     return _routed(message, producer=False)
 
 

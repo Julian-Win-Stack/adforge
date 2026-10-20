@@ -26,7 +26,6 @@ from jobs.scenes import (
     CLIP_FROM_NOTE_RULES,
     SAME_SIDE,
     broll_prompt_instructions,
-    clip_from_judge_instructions,
     clip_from_note_instructions,
 )
 
@@ -477,16 +476,3 @@ def test_a_note_naming_a_movement_beats_the_one_movement_rule_only_in_a_note_rew
     # note: the proven rules a scene's prompts are first written with stay as they are.
     for kind in BROLL_KIND_RULES:
         assert "wins over the rules above" not in broll_prompt_instructions(kind)
-
-
-@pytest.mark.parametrize("again", [False, True])
-def test_a_judge_remake_keeps_the_movements_the_owners_note_names(again: bool) -> None:
-    # The review of the build (Oct 18): a judge remake of a note clip was told the same
-    # one-movement rule, so it could drop the gel the owner asked for again.
-    told = clip_from_judge_instructions("does a job", again=again)
-
-    assert (
-        'When "owner_fix" names movements to film, film them in its order: there it wins over '
-        'the rules above on one movement, putting the product on, and what "shows" '
-        "describes."
-    ) in told

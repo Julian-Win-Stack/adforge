@@ -14,7 +14,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "3": "new_clip|new_picture"
+     "3": "fix"
     }
    }
   ],
@@ -70,13 +70,13 @@
    {
     "outcome": "planned",
     "scenes": {
-     "3": "new_clip|new_picture"
+     "3": "fix"
     }
    },
    {
     "outcome": "planned",
     "scenes": {
-     "4": "new_clip|new_picture"
+     "4": "fix"
     }
    }
   ],
@@ -131,7 +131,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture"
+     "2": "fix"
     }
    }
   ],
@@ -159,7 +159,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "3": "new_picture"
+     "3": "fix"
     }
    }
   ],
@@ -190,7 +190,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_clip"
+     "2": "fix"
     }
    },
    {
@@ -221,7 +221,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "4": "new_picture|new_clip"
+     "4": "fix"
     },
     "scene_cants": {
      "4": "slower"
@@ -252,7 +252,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_clip"
+     "2": "fix"
     },
     "looks": [
      [
@@ -286,7 +286,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_clip"
+     "2": "fix"
     }
    }
   ],
@@ -314,7 +314,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture"
+     "2": "fix"
     }
    }
   ],
@@ -370,7 +370,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture",
+     "2": "fix",
      "5": "new_line"
     }
    }
@@ -514,8 +514,8 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture|new_clip",
-     "4": "new_picture|new_clip"
+     "2": "fix",
+     "4": "fix"
     }
    }
   ],
@@ -602,7 +602,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "4": "new_picture"
+     "4": "fix"
     }
    }
   ],
@@ -633,7 +633,7 @@
    {
     "outcome": "planned",
     "scenes_include": {
-     "3": "new_picture"
+     "3": "fix"
     },
     "looks": [
      [
@@ -670,7 +670,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_clip|new_picture"
+     "2": "fix"
     }
    }
   ],
@@ -742,7 +742,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "3": "new_picture"
+     "3": "fix"
     }
    },
    {
@@ -751,7 +751,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "3": "new_picture"
+     "3": "fix"
     }
    },
    {
@@ -796,7 +796,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "3": "new_picture"
+     "3": "fix"
     }
    },
    {
@@ -805,7 +805,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "3": "new_picture"
+     "3": "fix"
     }
    }
   ],
@@ -840,13 +840,13 @@
    {
     "outcome": "planned",
     "scenes": {
-     "4": "new_picture"
+     "4": "fix"
     }
    },
    {
     "outcome": "planned",
     "scenes": {
-     "4": "new_picture"
+     "4": "fix"
     },
     "thing_has": {
      "1": "seat"
@@ -880,7 +880,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "2": "new_picture"
+     "2": "fix"
     }
    }
   ],
@@ -974,7 +974,7 @@
    {
     "outcome": "planned",
     "scenes": {
-     "3": "new_clip|new_picture"
+     "3": "fix"
     },
     "looks": [
      [
@@ -1011,7 +1011,7 @@
    {
     "outcome": "planned",
     "scenes_include": {
-     "3": "new_picture"
+     "3": "fix"
     }
    }
   ],

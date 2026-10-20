@@ -97,7 +97,7 @@ def _scene_card(ad: str, result: dict[str, Any]) -> str:
         label = "First clip" if clip.get("remake") is None else f"Remake {clip['remake']}"
         badge = (
             '<span class="kept">app kept this</span>'
-            if clip.get("remake") == kept.get("remake") and len(result["tries"]) > 1
+            if kept and clip.get("remake") == kept.get("remake") and len(result["tries"]) > 1
             else ""
         )
         saw = "".join(f"<li>{_esc(p)}</li>" for p in clip.get("judge_saw") or [])

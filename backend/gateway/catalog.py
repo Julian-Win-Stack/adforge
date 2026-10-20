@@ -25,8 +25,6 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "choose_broll_picture": "gpt-5.6-sol",
     # A B-roll scene's video prompt written again from a note, by the same model that wrote it.
     "rewrite_clip_prompt": "gpt-5.6-sol",
-    # And again after the clip judge failed the clip it was made from (the auto-fix, #155).
-    "remake_clip_prompt": "gpt-5.6-sol",
     "make_starting_picture": "gpt-image-2.5-sunburst",
     # A clean picture of only the thing a shop owner's photo is taken for (Reference photo,
     # CONTEXT.md), drawn as starting pictures are.
@@ -49,6 +47,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # looks at pictures and clip frames before it plans each scene's fix. The picture judges'
     # model, as it is proven at seeing what our pictures show (fix redesign, ticket 05).
     "decide_fixes": "gpt-6.1-sol",
+    # The fixing agent (agents/fixing_agent.py): owns one failed B-roll scene, films it again
+    # and reads the judge's answer, until a try passes or it gives up. The decider's model.
+    "fix_scene": "gpt-6.1-sol",
     # The B-roll clip judge's two checks (jobs/clip_judge.py). Tested on sol; the model check
     # of 2026-10-13 found luna matches it, at the edge, so stage 4 may move both to luna
     # (Claude Doc "Clip judge discussion", Results).

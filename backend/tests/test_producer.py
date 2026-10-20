@@ -13,6 +13,7 @@ from rest_framework.test import APIClient
 
 from adforge import file_store
 from agents.models import ToolCall
+from agents.producer import PASTE_IN_THE_PANEL
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
@@ -160,8 +161,8 @@ def _serve_page_without_photos(httpserver: HTTPServer, fake_model: FakeModel) ->
     [
         pytest.param(
             _serve_cookie_wall,
-            "The page was read but can't be used: The page is only a cookie banner. Ask the "
-            "shop owner for a link to the product's own page.",
+            "The page was read but can't be used: The page is only a cookie banner. "
+            + PASTE_IN_THE_PANEL,
             id="the page isn't one product's",
         ),
         pytest.param(

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from agents import fixing_agent
 from gateway.catalog import MODEL_FOR_PURPOSE, SLOW_ANSWER_SECONDS
 from jobs import clip_judge, owner_parts
 from jobs.clip_judge import (
@@ -32,6 +33,7 @@ from jobs.scenes import (
     BEFORE_PICTURE_INSTRUCTIONS,
     BEFORE_PICTURE_JOB,
     BROLL_KIND_RULES,
+    BROLL_SHARED_RULES,
     MAIN_PHOTO_JOB,
     broll_prompt_instructions,
     broll_video_prompt,
@@ -492,3 +494,56 @@ def test_the_owner_part_rules_name_no_tested_product(rule: str) -> None:
         if (word in rule.casefold() if " " in word else word in words)
     ]
     assert named == []
+
+
+# The fixing agent's own instructions: the prototype's, with changes A1-A8 as Julian approved
+# them (2026-10-19 16:55, "I'll go with your recommendations for question two and question
+# four"; handoffs/fixing-agent/spec.md, section 3). Pinned word for word: any change fails
+# here until he says so and the pinned copy changes with it.
+FIXING_AGENT_AS_APPROVED = (
+    Path(__file__).parent / "fixtures" / "fixing_agent_instructions.txt"
+).read_text()
+
+
+def test_the_fixing_agents_instructions_are_the_approved_ones_word_for_word() -> None:
+    assert fixing_agent.INSTRUCTIONS == FIXING_AGENT_AS_APPROVED
+
+
+# What giving up does, as the agent is told it at each door, pinned word for word (Julian's
+# OK 2026-10-19 20:10): door 1's scene is said to camera, door 2's keeps its clip.
+GAVE_UP_AT_EACH_DOOR = {
+    "judge": "the line is then said to camera by the presenter.",
+    "owner": "the scene keeps its clip as it was, and the shop owner is shown every try and "
+    "your reason.",
+}
+SAY_TO_CAMERA_FOR_A_NOTE = (
+    "Give up on filming this scene: it keeps its clip as it was, and the shop owner is shown "
+    "every try and your reason. Say why, and which try you think is best."
+)
+GIVEN_UP_AT_EACH_DOOR = {
+    "judge": "The scene is given up: its line will be said to camera.",
+    "owner": "The scene is given up: it keeps its clip as it was, and the shop owner is shown "
+    "every try and your reason.",
+}
+
+
+def test_the_fixing_agent_is_told_what_giving_up_does_at_each_door_word_for_word() -> None:
+    assert fixing_agent.GAVE_UP == GAVE_UP_AT_EACH_DOOR
+    assert fixing_agent.SAY_TO_CAMERA_FOR_A_NOTE == SAY_TO_CAMERA_FOR_A_NOTE
+    assert fixing_agent.GIVEN_UP == GIVEN_UP_AT_EACH_DOOR
+    for door, gave_up in GAVE_UP_AT_EACH_DOOR.items():
+        told = fixing_agent.instructions(door)
+        assert told.startswith(FIXING_AGENT_AS_APPROVED.replace("{gave_up}", gave_up))
+
+
+def test_the_fixing_agent_is_told_the_apps_prompt_rules_unchanged() -> None:
+    told = fixing_agent.instructions()
+    assert told.startswith(
+        FIXING_AGENT_AS_APPROVED.replace("{gave_up}", GAVE_UP_AT_EACH_DOOR["judge"])
+    )
+    assert BROLL_SHARED_RULES in told
+    assert all(rules in told for rules in BROLL_KIND_RULES.values())
+
+
+def test_the_fixing_agent_runs_on_the_deciders_model() -> None:
+    assert MODEL_FOR_PURPOSE["fix_scene"] == MODEL_FOR_PURPOSE["decide_fixes"] == "gpt-6.1-sol"

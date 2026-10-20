@@ -4,7 +4,7 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, StrictInt, field_validator, model_validator
 
-from gateway.types import Handoff, Judgement
+from gateway.types import LEAST_BROLL_SECONDS, Handoff, Judgement
 
 from .reference_photos import same_thing
 
@@ -73,6 +73,18 @@ doing it stays, joined by "while". The one verb is what a hand or the product do
 camera move, such as the camera pushing in. Still pick only ONE action. Write that one \
 action the way the page words it. If the page says something happens while doing it, keep \
 that part.
+"""
+
+# How long a B-roll scene's one action lasts, for the planner only. Round 5 cause 2: every
+# one-moment action stretched over a 5-7 s clip broke, 37 clips and no exception. Julian
+# 2026-10-19 00:44: "the action must fill the clip" ... "I approve this one."
+BROLL_FILLS_CLIP_INSTRUCTIONS = f"""\
+That one action lasts the whole clip, which is as long as its line takes to say and never \
+under {LEAST_BROLL_SECONDS} seconds: by its own course, such as a steady pour or a walk, \
+or by what it naturally sets off in the same scene, such as a cushion tossed onto a sofa \
+that bounces and settles. An action that is over in a moment never gets a scene that ends \
+as the moment ends, and never gets a second action added to fill the time. When no single \
+action can last the whole clip, the person says that line to camera.
 """
 
 PLAN_INSTRUCTIONS = (
@@ -155,14 +167,25 @@ camera, never a B-roll of the product only held, placed, set down, stood up or p
 B-roll scene, set shows to what the scene shows, in plain words, such as "a hand pours \
 the sauce over a bowl of noodles"; for a talking scene, set it to null. A B-roll scene \
 shows only what the page or the shop owner states, or the photos show: a picture is a \
-claim, just like a sentence. A claim about something the product, or a part of it, does \
-that a camera could see is a B-roll scene that shows it. A B-roll line is about what is \
-shown, when it can be filmed. A line that can't be filmed, such as "no bleach", is still \
-kept: the voice says it while the scene proves another claim the page states, never \
-acting the claim out, or, when no scene could, the person says it to camera. A B-roll \
-line has at least about 10 words.
+claim, just like a sentence. A B-roll scene films the product being used only in a way it \
+is shown how: a photo shows the product used that way, or the page's text or the shop \
+owner's own words say how it is held and moved: which hand holds it, what moves and what \
+it touches. Naming a use, listing its steps or describing it in general words doesn't \
+show how. An ordinary use anyone can picture from the words needs neither, such as \
+pouring from a bottle or zipping up a jacket: film its plain visible part. For a use \
+nobody could picture from the words, ask the shop owner, as below. A B-roll scene films \
+only what a still camera could watch happening from outside, the whole time. Something \
+that happens inside a closed or running thing, or out of sight, is never a scene: the \
+voice says it over another B-roll scene that proves its own line, or the person says it \
+to camera. A claim about something the product, or a part of it, does that a camera could \
+see is a B-roll scene that shows it. A B-roll line is about what is shown, when it can be \
+filmed. A line that can't be filmed, such as "no bleach", is still kept: the voice says \
+it while the scene proves another claim the page states, never acting the claim out, or, \
+when no scene could, the person says it to camera. A B-roll line has at least about 10 \
+words.
 """
     + BROLL_ONE_ACTION_INSTRUCTIONS
+    + BROLL_FILLS_CLIP_INSTRUCTIONS
     + """\
 A scene's result is what the camera sees when its one action ends. When a claim needs two \
 end states, give each its own B-roll scene, back to back, each with its own line and its \
@@ -215,7 +238,7 @@ itself or is missing something else the ad needs, so that planning would mean gu
 Also decide "ask" when no photo clearly shows the product: ask them to attach one. A \
 photo where the product is small beside pictures of other products, such as a chart of the \
 devices it works with, or half hidden by text, doesn't clearly show it.
-Ask because of a scene that shows the product in only four cases, and nothing else:
+Ask because of a scene that shows the product in only five cases, and nothing else:
 - The scene needs something of the product that no photo shows and the video would \
 have to guess, such as what a serum looks like out of the bottle or a gel coming out of \
 its tube. Ordinary things around the product are never missing: a phone, a hand, a \
@@ -225,6 +248,9 @@ product isn't clearly seen, such as blush on a cheek, is enough.
 nor the shop owner says how it is used. Ask even if you could plan it only showing the product: \
 an ad for such a product shows it doing its job. A product that doesn't do a job you can \
 see, such as a bag, needs no "how to use": never ask for one.
+- The scene films the product being used in a way it isn't shown how, and nobody could \
+picture it from the words: no photo shows it used that way and neither the page nor the \
+shop owner says how it is held and moved.
 - The scene ends on a result, what the product removes or prevents is a thin \
 film, haze, cloudiness or water spots on a surface such as glass, tile, a mirror or \
 chrome, and no photo shows that surface before and after. Ask even when everyone knows the \
@@ -244,7 +270,9 @@ you draw it from your own idea of it. Say that they will see the scene's picture
 yes to it before its video is made. For the other cases, offer two answers: attach a photo \
 of it (for a missing "how to use", of the product being used; for a result, of it before \
 and after: without one, the ad shows no before and after of it; for a line nothing \
-proves, of what would prove it), or go ahead without one. Never choose for them. For \
+proves, of what would prove it; for a use it isn't shown how, of the product being used \
+that way, or one sentence on how it is used), or go ahead without one. Never choose for \
+them. For \
 something of the product no photo shows: if they attach a photo, plan with it among the \
 scene's needs; if they describe it, give the scene an owner part from the shop owner's \
 words, its looks their sentence as they said it; if they say to draw it, give the scene \
@@ -256,7 +284,9 @@ approval is their own words, and for a product that does a job, it gives the sce
 usage and result. For a result: if they go ahead without one, no scene shows that film, \
 before or after, and the voice says the claim over another B-roll that proves its own \
 line, or, when none does, the person says it to camera. For a line nothing proves: if they \
-go ahead without one, the person says that line to camera. Never offer another way to \
+go ahead without one, the person says that line to camera. For a use it isn't shown how: \
+if they go ahead without one, the person says that line to camera, or the voice says it \
+over another B-roll scene that proves its own line. Never offer another way to \
 show it. \
 Ask the shop owner one short, specific question, and set plan to null.
 Give one sentence saying why: for a plan, why this many scenes; for a question, why you \

@@ -18,7 +18,6 @@ from gateway import catalog
 from gateway.models import ModelCall
 from gateway.types import MusicHandoff, UnusableReply
 from jobs import (
-    auto_fix,
     clip_judge,
     fix_check,
     owner_parts,
@@ -62,14 +61,33 @@ from jobs.work import (
     save_photos,
     use_music_again,
     version_label,
+    waits_to_be_said_to_camera,
     why_the_checks_havent_passed,
     why_the_checks_passed,
 )
 
 from . import step_signals
+from .fixing_agent import AGENT as FIXING_AGENT
+from .fixing_agent import MOST_TRIES
+from .fixing_agent import PURPOSE as FIXING_AGENT_PURPOSE
 from .loop import Agent, Refused, Tool
 from .models import ToolCall
 from .money import dollars
+
+# What the chat shows the shop owner when the product page can't be read: plain words, as
+# the technical reason is the producer's, in its tool's result.
+PAGE_NOT_OPENED = "We couldn't open this page from its link."
+PAGE_TEXT_UNUSABLE = "This page opened, but its text can't be used."
+# What the producer is told when the product page can't be read, after why: the chat has asked
+# the shop owner for the page panel (ADR 0006).
+PASTE_IN_THE_PANEL = (
+    "The chat has shown the shop owner why and opened a panel under it where they can paste "
+    "the page's text and attach its photos. Tell them in one line that the page can't be read, "
+    "and that they can paste its text and attach its photos in the panel below, or send a "
+    "working link to the product's own page."
+)
+# What the shop owner is told when a page is read while the page panel is open.
+PANEL_NOT_NEEDED = "The page from your new link was read, so there's no need to paste it."
 
 INSTRUCTIONS = """\
 You are the producer at AdForge. You make short vertical video ads for one product at a \
@@ -96,6 +114,9 @@ Every fact about the product comes from its page or from the shop owner. You hav
 that searches the web, so never look anything up, infer or guess. When something you need \
 is missing or unclear, ask one short, specific question. When you can't do something, say \
 so plainly and say why.
+When a product page can't be read, the chat opens a panel where the shop owner can paste \
+the page's text and attach its photos. If they paste a page's text into the chat instead, \
+don't take facts from it: point them to the panel, which keeps it as the page.
 When a tool skips a product photo, tell the shop owner which photo and why. When a tool \
 fails or refuses, tell the shop owner honestly what happened.
 Once a scene has a clip, the app takes the shop owner's notes on the ad: another AI \
@@ -202,18 +223,24 @@ class ReadPage(Tool):
         try:
             read = fetch_page(job, self.link)
         except page.PageUnreadable as error:
-            return (
-                f"The page couldn't be read: {error} Ask the shop owner for a working link to "
-                "the product's own page."
+            post_notice(
+                job,
+                PAGE_NOT_OPENED,
+                Message.Level.PROBLEM,
+                wants_pasted_page=True,
             )
+            return f"The page couldn't be read: {error} {PASTE_IN_THE_PANEL}"
         download = read.download
         product_page = page.parse(download)
         check = check_page(job, download, product_page)
         if check.decision == "unreadable":
-            return (
-                f"The page was read but can't be used: {check.reason} Ask the shop owner for "
-                "a link to the product's own page."
+            post_notice(
+                job,
+                f"{PAGE_TEXT_UNUSABLE} {check.reason}",
+                Message.Level.PROBLEM,
+                wants_pasted_page=True,
             )
+            return f"The page was read but can't be used: {check.reason} {PASTE_IN_THE_PANEL}"
         # Before the photos: a page whose text can't be copied isn't read, and keeps nothing.
         # The photos are picked while the text is copied.
         try:
@@ -241,6 +268,8 @@ class ReadPage(Tool):
         # Only once every photo is kept: a worker that stops part-way through them leaves the
         # page unread, so the read run again keeps them all rather than the few already kept.
         keep_page(job, download, product_page, text)
+        if messages.page_panel_wanted(call.session):
+            post_notice(job, PANEL_NOT_NEEDED, Message.Level.INFO, wants_pasted_page=False)
         kept = job.photos.count()
         if kept == 0:
             post_notice(
@@ -317,7 +346,7 @@ class UsePhotos(Tool):
         if unsaid:
             raise Refused(
                 "say what each of the shop owner's photos shows: you left out owner photo"
-                f"{'s' if len(unsaid) > 1 else ''} {_listed_numbers(unsaid)}."
+                f"{'s' if len(unsaid) > 1 else ''} {listed_numbers(unsaid)}."
             )
         others = [number for number, shows in said.items() if shows == "something else"]
         kept = set(job.photos.values_list("file", flat=True))
@@ -342,7 +371,7 @@ class UsePhotos(Tool):
         if kept_before:
             told += (
                 f" Owner photo{'s' if len(kept_before) > 1 else ''} "
-                f"{_listed_numbers(kept_before)} {'were' if len(kept_before) > 1 else 'was'} "
+                f"{listed_numbers(kept_before)} {'were' if len(kept_before) > 1 else 'was'} "
                 "already added as a product photo before, and can't be taken out now: tell "
                 "the shop owner so."
             )
@@ -350,7 +379,7 @@ class UsePhotos(Tool):
             # Before the plan every photo is a product photo, so one of their own thing would
             # be planned as the product (Julian 17:55; test C9).
             told += (
-                f" Owner photo{'s' if len(others) > 1 else ''} {_listed_numbers(others)} "
+                f" Owner photo{'s' if len(others) > 1 else ''} {listed_numbers(others)} "
                 f"show{'' if len(others) > 1 else 's'} something else than the product, so "
                 f"{'they weren' if len(others) > 1 else 'it wasn'}'t added: tell the shop owner "
                 "it can't be used yet, and to send it with a note on a scene once the first "
@@ -369,7 +398,7 @@ def _owner_photos(count: int) -> str:
     )
 
 
-def _listed_numbers(numbers: list[int]) -> str:
+def listed_numbers(numbers: list[int]) -> str:
     said = [str(number) for number in numbers]
     return said[0] if len(said) == 1 else f"{', '.join(said[:-1])} and {said[-1]}"
 
@@ -403,6 +432,18 @@ class PlanAd(Tool):
         shown = job.tool_calls.filter(tool=ReadPage.name, asked_about="the photos").last()
         if shown is not None:
             _answered(call.session, since=shown, who_asked="they were shown the page's photos")
+        # So are too few photos sent with a page pasted in the page panel.
+        told = _told_of_too_few_pasted_photos(job)
+        if (
+            told is not None
+            and not call.session.messages.filter(
+                role=Message.Role.USER, pasted_page=False, seq__gt=told.seq
+            ).exists()
+        ):
+            raise Refused(
+                "the shop owner hasn't answered since they were told they sent too few photos "
+                "with their pasted page. Ask them, and wait for their answer."
+            )
         # Planning again before the shop owner has answered would pay for the same question.
         asked = job.tool_calls.filter(tool=self.name, asked_about="the plan").last()
         if asked is not None:
@@ -996,7 +1037,10 @@ class MakeClip(Tool):
                 # With no note, any clip of the same picture and audio is already made, as
                 # before notes; a different note is a new clip.
                 **({"step__note": note} if note else {}),
-            ).order_by("version"),
+            )
+            # A try of the fixing agent's is a clip of the step it fixed, never one made here.
+            .exclude(step__tool_call__agent=FIXING_AGENT)
+            .order_by("version"),
         )
         if made is not None:
             assert made.step is not None, "a clip is made by a scene step"
@@ -1350,7 +1394,10 @@ class Estimate(NamedTuple):
 CALL_FALLBACK_USD = Decimal("0.07")
 MILLIONTH = Decimal("0.000001")
 _JUDGE_PURPOSES = ["check_clip_sides", "check_clip_motion"]
-_WRITER_PURPOSES = ["rewrite_clip_prompt", "remake_clip_prompt"]
+_WRITER_PURPOSES = ["rewrite_clip_prompt"]
+# The fixing agent's turns for one try: a look or two, then film_again. A GUESS, until real
+# runs of the agent in the app are recorded (fixing agent build, T3).
+AGENT_TURNS_PER_TRY = 3
 
 
 def _estimate(scene: Scene, redo: Fix.Redo, fix: str) -> Estimate:
@@ -1398,9 +1445,12 @@ def picture_estimate(scene: Scene) -> Estimate:
 def _picture_only_estimate_usd(scene: Scene) -> Decimal:
     """What a new starting picture for the scene is estimated to cost: what its last one cost,
     its judge's looks included, or the fallback when that isn't recorded."""
-    last = scene.steps.filter(
-        kind=SceneStep.Kind.STARTING_PICTURE, status=SceneStep.Status.FINISHED
-    ).last()
+    last = (
+        scene.steps.filter(kind=SceneStep.Kind.STARTING_PICTURE, status=SceneStep.Status.FINISHED)
+        # A try's picture step is charged its whole try: its clip and judge too.
+        .exclude(tool_call__agent=FIXING_AGENT)
+        .last()
+    )
     paid: Decimal | None = None
     if last is not None:
         paid = last.tool_call.model_calls.exclude(purpose__in=_BEFORE_PICTURE_PURPOSES).aggregate(
@@ -1423,17 +1473,34 @@ def _clip_estimate(scene: Scene, audio_seconds: float, *, from_note: bool) -> Es
     cost: its video and, for a B-roll clip with quality checks on, the clip judge's asks; for
     a clip made from the shop owner's note, also the call writing its video prompt; its fix
     is checked by the clip judge's own asks (Julian 2026-10-14). It can cost up to that
-    plus, for each remake the clip judge can have made, its video, the judge's asks and the
-    call writing its prompt (decider call 13, 2026-10-13)."""
+    plus every try the fixing agent can film once the judge fails it (door 1)."""
     video = clip_estimate_usd(audio_seconds, broll=bool(scene.shows))
     judged = bool(scene.shows) and settings.QUALITY_CHECKS
-    judge = 2 * clip_judge.ASKS * _each_call_usd(scene, _JUDGE_PURPOSES) if judged else 0
-    writer = _each_call_usd(scene, _WRITER_PURPOSES)
-    about = video + judge
+    about = video + _judge_usd(scene)
     if from_note:
-        about += writer
-    remakes = auto_fix.MOST_REMAKES * (video + judge + writer) if judged else Decimal(0)
-    return Estimate(about, about + remakes)
+        about += _each_call_usd(scene, _WRITER_PURPOSES)
+    tries = MOST_TRIES * agent_try_usd(scene, audio_seconds) if judged else Decimal(0)
+    return Estimate(about, about + tries)
+
+
+def agent_try_usd(scene: Scene, audio_seconds: float) -> Decimal:
+    """What one try of the fixing agent at the scene is estimated to cost, for either door: a
+    new starting picture, its video covering `audio_seconds`, the clip judge's asks (which
+    check the shop owner's change too, for a fix) and the agent's turns."""
+    return (
+        _picture_only_estimate_usd(scene)
+        + clip_estimate_usd(audio_seconds, broll=bool(scene.shows))
+        + _judge_usd(scene)
+        + AGENT_TURNS_PER_TRY * _each_call_usd(scene, [FIXING_AGENT_PURPOSE])
+    )
+
+
+def _judge_usd(scene: Scene) -> Decimal:
+    """What the clip judge's asks about one of the scene's clips are estimated to cost: none
+    for a talking scene, or with quality checks off."""
+    if not (scene.shows and settings.QUALITY_CHECKS):
+        return Decimal(0)
+    return 2 * clip_judge.ASKS * _each_call_usd(scene, _JUDGE_PURPOSES)
 
 
 def _each_call_usd(scene: Scene, purposes: list[str]) -> Decimal:
@@ -1441,7 +1508,11 @@ def _each_call_usd(scene: Scene, purposes: list[str]) -> Decimal:
     for the scene's last clip, or else of those made for the ad, or the fallback when none
     is recorded."""
     paid = ModelCall.objects.filter(job=scene.job, purpose__in=purposes, cost_usd__gt=0)
-    last = scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.FINISHED).last()
+    last = (
+        scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.FINISHED)
+        .exclude(tool_call__agent=FIXING_AGENT)
+        .last()
+    )
     for calls in (paid.filter(tool_call=last.tool_call) if last else paid.none(), paid):
         average: Decimal | None = calls.aggregate(cost=Avg("cost_usd"))["cost"]
         if average:
@@ -1452,9 +1523,12 @@ def _each_call_usd(scene: Scene, purposes: list[str]) -> Decimal:
 def _before_its_clip(scene: Scene) -> None:
     """Refuse to change a scene that already has a clip: from then on it changes only through
     the shop owner's notes, which the app plans, shows them and makes once they say yes (fix
-    redesign, decisions 1 and 2). Checked once nothing already made can be handed back, so
-    what is free and changes nothing stays free."""
-    if scene.produced.filter(kind=ProducedItem.Kind.CLIP).exists():
+    redesign, decisions 1 and 2). A scene the fixing agent gave up on, said to camera, is
+    made again as a talking scene until it has its clip. Checked once nothing already made
+    can be handed back, so what is free and changes nothing stays free."""
+    if scene.produced.filter(kind=ProducedItem.Kind.CLIP).exists() and not (
+        waits_to_be_said_to_camera(scene)
+    ):
         raise Refused(
             f"scene {scene.number} already has a clip, so it changes only through the shop "
             "owner's notes: the app shows them a plan and makes it once they say yes."
@@ -1780,6 +1854,34 @@ def _doubtful(blocked: bool, declared: bool, kept: int) -> str:
     if kept < FEWEST_SURE_PHOTOS:
         return f"only {_photos(kept)} was found on the page."
     return ""
+
+
+def _told_of_too_few_pasted_photos(job: Job) -> Message | None:
+    """Code's notice that a page pasted in the page panel was kept as the job's page, if
+    fewer than FEWEST_SURE_PHOTOS of its photos were kept as product photos: only what the
+    shop owner writes after it answers the question of too few photos. A message they typed
+    while the paste was checked, or another paste, doesn't."""
+    pasted = _pasted_with_too_few_photos(job)
+    if pasted is None or job.session is None:
+        return None
+    return job.session.messages.filter(
+        role=Message.Role.NOTICE, pasted_page_result=messages.PASTE_ACCEPTED, seq__gt=pasted.seq
+    ).first()
+
+
+def _pasted_with_too_few_photos(job: Job) -> Message | None:
+    """The page panel's message whose pasted page was kept as the job's page, if fewer than
+    FEWEST_SURE_PHOTOS of its photos were kept as product photos."""
+    if job.session is None:
+        # A job started before sessions existed has no chat to paste in.
+        return None
+    pasted = job.session.messages.filter(
+        role=Message.Role.USER, pasted_page=True, pasted_page_result=messages.PASTE_ACCEPTED
+    ).last()
+    if pasted is None:
+        return None
+    sent = pasted.attachments.values_list("file", flat=True)
+    return pasted if job.photos.filter(file__in=sent).count() < FEWEST_SURE_PHOTOS else None
 
 
 def _show_photos(call: ToolCall, job: Job) -> None:

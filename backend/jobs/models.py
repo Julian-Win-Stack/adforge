@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Any
 
 from django.db import models
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 
@@ -392,6 +392,8 @@ class Fix(models.Model):
         CLIP = "clip"
         PICTURE = "picture"
         LINE = "line"
+        # The whole scene, by the fixing agent: a fix plan's fix row (fixing agent build, T3).
+        SCENE = "scene"
 
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="fixes")
     scene = models.ForeignKey(Scene, on_delete=models.CASCADE, related_name="fixes")
@@ -403,7 +405,8 @@ class Fix(models.Model):
         max_length=10,
         choices=Redo.choices,
         help_text="Which step is made again for it: the clip, the starting picture (and then "
-        "the clip), or the line. The shop owner isn't told.",
+        "the clip), the line, or the whole scene, by the fixing agent. The shop owner isn't "
+        "told.",
     )
     notes = models.JSONField(
         default=list,
@@ -476,7 +479,9 @@ class Fix(models.Model):
         from gateway.models import ModelCall
 
         cost: Decimal | None = (
-            ModelCall.objects.filter(tool_call__scene_steps__fix=self)
+            ModelCall.objects.filter(
+                Q(tool_call__scene_steps__fix=self) | Q(tool_call__agent_fix__step__fix=self)
+            )
             .distinct()
             .aggregate(cost=Sum("cost_usd"))["cost"]
         )
@@ -557,7 +562,10 @@ class FixPlan(models.Model):
         from gateway.models import ModelCall
 
         cost: Decimal | None = (
-            ModelCall.objects.filter(tool_call__scene_steps__plan_scene__plan=self)
+            ModelCall.objects.filter(
+                Q(tool_call__scene_steps__plan_scene__plan=self)
+                | Q(tool_call__agent_fix__step__plan_scene__plan=self)
+            )
             .distinct()
             .aggregate(cost=Sum("cost_usd"))["cost"]
         )
@@ -569,6 +577,9 @@ class FixPlanScene(models.Model):
     why it can't (fix redesign, flow step 5)."""
 
     class Action(models.TextChoices):
+        # A B-roll scene handed to the fixing agent with its goal, in `change` (T3). The new
+        # clip below, and a B-roll scene's new picture or new line, are only stored plans'.
+        FIX = "fix"
         NEW_PICTURE = "new_picture"
         NEW_CLIP = "new_clip"
         NEW_LINE = "new_line"
@@ -581,7 +592,7 @@ class FixPlanScene(models.Model):
     change = models.TextField(
         blank=True,
         help_text="What changes, in plain words: the note the step's prompt writer is given "
-        "(decision 7), never a prompt.",
+        "(decision 7), never a prompt. For a fix, its goal, which the fixing agent is given.",
     )
     line = models.TextField(blank=True, help_text="The new line, for a new line. Blank else.")
     # A default in the database too, so a worker still on code from before this field can
@@ -674,11 +685,16 @@ class FixPlanScene(models.Model):
         """What it has cost so far: every model call of the tool calls that started its
         steps, failed ones included, as they were paid for. A model call is charged to a tool
         call, not a step, so a tool call starting steps for more than one row would count on
-        each of them: every row's steps need tool calls of their own."""
+        each of them: every row's steps need tool calls of their own. The fixing agent's work
+        on a step of the row counts too: its turns and tries are charged to tool calls of its
+        own."""
         from gateway.models import ModelCall
 
         cost: Decimal | None = (
-            ModelCall.objects.filter(tool_call__scene_steps__plan_scene=self)
+            ModelCall.objects.filter(
+                Q(tool_call__scene_steps__plan_scene=self)
+                | Q(tool_call__agent_fix__step__plan_scene=self)
+            )
             .distinct()
             .aggregate(cost=Sum("cost_usd"))["cost"]
         )
@@ -949,6 +965,16 @@ class SceneStep(models.Model):
     def __str__(self) -> str:
         return f"Scene {self.scene.number} {self.kind} ({self.status})"
 
+    def cost_usd(self) -> Decimal:
+        """What the step's work cost: its tool call's model calls and, for a clip step the
+        fixing agent fixed, the agent's own, its turns and tries."""
+        from gateway.models import ModelCall
+
+        cost: Decimal | None = ModelCall.objects.filter(
+            Q(tool_call=self.tool_call_id) | Q(tool_call__agent_fix__step=self)
+        ).aggregate(cost=Sum("cost_usd"))["cost"]
+        return cost or Decimal(0)
+
     def shown_before(self, kind: str) -> ProducedItem | None:
         """The scene's newest item of `kind` made before the step started: what the shop owner
         saw last, so an item the step made, or brought back, is never it."""
@@ -1088,8 +1114,9 @@ class ProducedItem(models.Model):
     remake = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
-        help_text="For a B-roll clip made again by code because the clip judge failed the one "
-        "before it (the auto-fix, #155): which remake of its step's clip it is, 1 or 2.",
+        help_text="For a B-roll clip the fixing agent filmed again because the clip judge "
+        "failed its step's first clip: which try it is, from 1. Older remakes by code (the "
+        "auto-fix, #155) are 1 or 2.",
     )
     motion_prompt = models.TextField(
         blank=True,
@@ -1190,3 +1217,170 @@ class FixCheck(models.Model):
     def what(self) -> str:
         """What the fix made again: "picture" or "clip"."""
         return "picture" if self.step.kind == SceneStep.Kind.STARTING_PICTURE else "clip"
+
+
+def most_tries() -> int:
+    """The most tries the fixing agent may film of one scene, as the agent keeps it."""
+    # The agent works the jobs' models, so it is imported when it is used.
+    from agents.fixing_agent import MOST_TRIES
+
+    return MOST_TRIES
+
+
+class AgentFix(models.Model):
+    """The fixing agent's work on one B-roll scene (CONTEXT.md: door 1, door 2, try,
+    give-up): the scene's clip step it fixes, what failed, and how it ended. Every try it
+    films is one of its `tries`, each a version the shop owner can see and pick."""
+
+    class Door(models.TextChoices):
+        # The clip judge failed the scene's clip.
+        JUDGE = "judge"
+        # The shop owner's note about the scene, after their yes to the plan.
+        OWNER = "owner"
+
+    step = models.OneToOneField(
+        SceneStep,
+        on_delete=models.CASCADE,
+        related_name="agent_fix",
+        help_text="The scene's clip step the agent fixes: for door 1, the step whose clip the "
+        "judge failed; for door 2, the step made for the owner's fix.",
+    )
+    door = models.CharField(max_length=10, choices=Door.choices)
+    note = models.TextField(blank=True, help_text="For door 2, the shop owner's note.")
+    goal = models.TextField(
+        blank=True,
+        help_text="For door 2, one sentence in the owner's words saying what must be "
+        "different. Blank for door 1.",
+    )
+    first_clip = models.ForeignKey(
+        ProducedItem,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="Try 0: the clip the judge failed, or the one the owner noted.",
+    )
+    ruling = models.JSONField(
+        null=True, blank=True, help_text="The clip judge's ruling on try 0, as handed over."
+    )
+    scene_before = models.JSONField(
+        default=dict, help_text="The scene's row before try 1, put back on a give-up."
+    )
+    cap = models.PositiveSmallIntegerField(
+        default=most_tries, help_text="The most tries it may film."
+    )
+    redraws = models.PositiveSmallIntegerField(
+        default=0, help_text="Start pictures in a row that failed their check since the last try."
+    )
+    said = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="What the agent said with its turns, each with how many tools it had called "
+        'before, and whether it called none: [{"at", "text", "no_call"}, ...].',
+    )
+    passed = models.ForeignKey(
+        ProducedItem,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The passing try's clip, the scene's clip now. Blank until one passes.",
+    )
+    gave_up = models.TextField(blank=True, help_text="The agent's reason, when it gave up.")
+    picked = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="On a give-up, the try the agent picks as best, for the owner to see marked.",
+    )
+    said_to_camera = models.BooleanField(
+        default=False, help_text="Whether a door 1 give-up had the scene said to camera."
+    )
+    kept = models.ForeignKey(
+        ProducedItem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="On a give-up of a fix's clip, the clip the scene had before, brought back.",
+    )
+    camera_before = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="On a give-up said to camera, what saying it changed, to put back when the "
+        "shop owner picks a try: the scene's shows, B-roll labels, shortened_from and "
+        "second_state, and the next scene's second_state.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self) -> str:
+        return f"Scene {self.step.scene.number} fixed by the agent ({self.door})"
+
+    @property
+    def picked_clip(self) -> ProducedItem | None:
+        """On a give-up, the clip of the try the agent picks as best."""
+        if self.picked is None:
+            return None
+        chosen = self.tries.filter(number=self.picked).select_related("clip").first()
+        return chosen.clip if chosen is not None else None
+
+
+class AgentFixTry(models.Model):
+    """One try of the fixing agent: the scene row as filmed, both prompts, the start picture
+    and clip, and what the judge and, for door 2, the fix check said."""
+
+    agent_fix = models.ForeignKey(AgentFix, on_delete=models.CASCADE, related_name="tries")
+    number = models.PositiveSmallIntegerField(help_text="1, 2, 3... in the order filmed.")
+    tool_call = models.ForeignKey(
+        "agents.ToolCall",
+        on_delete=models.CASCADE,
+        related_name="+",
+        help_text="The agent's film_again call, which the try's work is charged to.",
+    )
+    step = models.ForeignKey(
+        SceneStep,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The try's clip step. Blank for a try whose picture kept failing its check.",
+    )
+    picture = models.ForeignKey(
+        ProducedItem, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+    )
+    clip = models.OneToOneField(
+        ProducedItem,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="agent_try",
+        help_text="The try's clip. Blank for a try whose picture kept failing its check.",
+    )
+    scene_row = models.JSONField(
+        default=dict,
+        help_text="The scene as filmed: line, shows, result, broll_kind, person_shown.",
+    )
+    new_picture = models.BooleanField(default=False)
+    picture_prompt = models.TextField(blank=True)
+    video_prompt = models.TextField(blank=True, help_text="As sent, with code's opener.")
+    why = models.TextField(blank=True, help_text="The agent's why, in plain words.")
+    would_ask_owner = models.TextField(blank=True, help_text="Nobody is asked: for the record.")
+    picture_problems = models.JSONField(
+        default=list, blank=True, help_text="What the picture check found in each failed picture."
+    )
+    fix_check = models.JSONField(
+        null=True,
+        blank=True,
+        help_text='For door 2, whether the owner\'s change is made: {"verdict", "reason"}.',
+    )
+    passed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["agent_fix", "number"]
+        constraints = [
+            models.UniqueConstraint(fields=["agent_fix", "number"], name="one_try_per_number")
+        ]
+
+    def __str__(self) -> str:
+        return f"Try {self.number}"
