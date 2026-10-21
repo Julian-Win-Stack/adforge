@@ -141,7 +141,7 @@ Every model call the app makes, and what checks it: [docs/decision-map.md](docs/
 
 - The clip judge is far from perfect. It still misses failures and fails good clips (it caught only 1 of 5 bad phone case clips), and the fixing agent depends on it, so a judge mistake becomes the agent's mistake.
 - The picture judge misses a wrong background object, such as a toilet that isn't a normal toilet (0 of 5).
-- HeyGen ignores movement text, so an action in a talking scene is a "can't". A photo can't change the presenter either.
+- In a talking scene, made with HeyGen, I can't change the presenter or direct a specific moment yet.
 - A note can turn a B-roll scene into a talking scene, but not the other way. A talking scene can't become a B-roll scene yet. Easy to build, I ran out of time.
 - B-roll quality is not good enough yet. A clip often doesn't show the result the voice claims, such as "94% saw fewer wrinkles".
 - In practice it behaves more like a pipeline than it is one. The producer almost always picks the same order, and a note that arrives while a step is running doesn't stop that step, so it finishes and is paid for.
