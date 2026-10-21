@@ -76,7 +76,7 @@ One line per box: the problem that made me add it.
 
 This is a model limit or my prompting. I haven't spent much effort on these yet. For now the planner avoids them.
 
-- **Holding a thin thing.** A piece of floss between two hands changed shape, doubled, and turned into a ribbon. Every try failed my grading. No solution yet. The app still films it and the clip still fails.
+- **Flossing.** I can't make a B-roll clip of someone flossing yet without breaking the physics or adding motion that can't happen.
 - **Turning while sliding.** A hair tool has to twist as it glides down the hair. Every try failed, with a different prompt each time. Workaround: none yet. Written down as a limit.
 - **Changing from one state to another.** A bag strap went on and off with no real movement in between. Workaround: the planner never films the change itself. It films the before and the after as two clips with a cut. I graded that version perfect.
 
