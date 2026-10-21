@@ -1,6 +1,6 @@
 # AdForge
 
-A chat app that turns a product page into a short video ad. A presenter talks, B-roll shows the product being used, and the shop owner fixes any scene by writing a note.
+A chat agent that turns a product page into a short video ad. A presenter talks, B-roll shows the product being used, and the shop owner fixes any scene by writing a note.
 
 Watch it work: https://www.loom.com/share/23d2f242ad414ea4ba889d0310d5a38d
 
