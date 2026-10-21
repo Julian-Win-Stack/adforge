@@ -115,14 +115,16 @@ This is a model limit or my prompting. I haven't spent much effort on these yet.
 
 What a pass means: I watched the finished ad and nothing broke. No wrong claim, no impossible motion, no invented product side, no scene missing. It does not mean the ad would sell. A few of the passes are persuasive. Most are just correct.
 
-- **Whole ads that passed my grading.** Round 4: 7 of 10. Round 5: 8 of 15 new products. Round 6 (2026-10-20): 11 of 15 new products.
-  - Of the 4 fails of round 6, 2 ads were never made because the picture step refused every photo on the page, 1 came out as all talking scenes, 1 had B-roll that looked fake.
-- **The 7 ads that failed round 5, run again in round 6:** 4 of 7 passed.
-- **Clip judge, on round 6 clips it had never seen.** I graded 45 clips the judge had ruled on. We disagreed on 14. It missed 5 clips I failed, 4 of them remakes it had passed. It failed 9 clips I passed.
-- **Fixing agent, round 6.** The judge sent it to 18 scenes. 7 came back with a clip I passed, though 4 of those I would have passed before it started. 4 came back with a clip I failed. 4 gave up and became talking scenes. 3 were killed by a worker restart.
-- **Owner notes, round 6.** I sent notes on 2 scenes. The first note fixed 1. The other was a talking scene, which a note can't change yet.
-- **Picture judge:** caught 6 of 10 kinds of wrong picture, failed 0 of 52 good ones.
-- **Fact check:** not measured.
+A round is one batch of ads made from real product pages after a set of changes, then graded by me. New products are ones the app had never been tested on.
+
+- **Most ads pass now.** 11 of 15 new products in round 6 (2026-10-20), up from 8 of 15 in round 5 and 7 of 10 in round 4.
+  - Of the 4 fails of round 6, 2 ads were never made: the app found no page photo showing the product alone in the right colour, so it wouldn't draw it. 1 came out as all talking scenes, 1 had B-roll that looked fake.
+- **About half the old fails now pass.** The 7 ads that failed round 5, run again in round 6: 4 of 7 passed.
+- **The clip judge is the weak spot.** On 45 round 6 clips it had never seen, it passed 5 clips I failed and failed 9 clips I passed.
+- **The fixing agent helps less than it looks.** The judge sent it 18 scenes. 7 came back with a clip I passed, but for 4 of those the clip was already fine and the judge was wrong. 4 came back with a clip I failed. 4 gave up and became talking scenes. 3 were cut off when the app restarted mid-run.
+- **Owner notes: too few to say.** I sent notes on 2 scenes. The first note fixed 1. The other was a talking scene, which a note can't change yet.
+- **The picture judge leaves good pictures alone, but misses some bad ones.** It caught 6 of 10 kinds of wrong picture and failed 0 of 52 good ones.
+- **The fact check is untested.** Not measured.
 
 Each part's own number sits in its problem section above.
 
