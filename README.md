@@ -35,10 +35,10 @@ There is no fixed order in code. The producer agent picks these steps as tools a
 One line per box: the problem that made me add it.
 
 - **Page reader.** An ad stated another product's facts, so it keeps only this product's text. ([problem 2](#2-the-ad-stated-another-products-facts-so-i-rebuilt-the-page-reader))
-- **Planner.** The model invented uses the page only named, so it asks the owner. ([problem 3](#3-several-actions-in-one-clip-break-the-physics-so-one-clip-is-one-movement), [problem 6](#6-a-one-moment-action-stretched-over-a-five-second-clip))
+- **Planner.** The model invented uses the page only named, so it asks the owner. ([problem 3](#3-several-actions-in-one-clip-break-the-physics-so-one-clip-is-one-movement), [problem 4](#4-a-one-moment-action-stretched-over-a-five-second-clip))
 - **Fact check.** Every claim comes from the page or the owner, checked again after each rewrite.
 - **Voice.** Each line is spoken and timed before any clip, so a scene ends after its last word.
-- **Start pictures.** Shop photos leaked their scene into clips, so each starts from a drawing. ([problem 5](#5-from-one-drawn-start-picture-to-the-owners-own-pictures-so-notes-steer-the-look))
+- **Start pictures.** Shop photos leaked their scene into clips, so each starts from a drawing. ([problem 6](#6-from-one-drawn-start-picture-to-the-owners-own-pictures-so-notes-steer-the-look))
 - **Picture judge.** A drawn phone had screen and camera on one face, so each drawing is checked before paying.
 - **Clips.** HeyGen makes the talking clips, Creatify every B-roll clip.
 - **Clip judge.** Checks each B-roll clip for a product side it never showed, and motion that can't happen.
@@ -83,7 +83,15 @@ One line per box: the problem that made me add it.
   - A finishing step (rinse, flush, dry) never gets its own scene.
 - **Numbers.** Plans with 2 or more actions in a B-roll scene went from 18 of 54 to 3 of 56 to 0 of 61 (plan-only checks, 25 products, Claude's count, Oct 8). The 4-step toilet clip failed; the same toilet, scrub only in 5 seconds, I graded perfect (Oct 8).
 
-### 4. Things I couldn't make the video model do yet, and the workaround for each.
+### 4. A one-moment action stretched over a five-second clip.
+
+- **What broke.** The one-movement rule from problem 3 caused this. One action per clip, and a clip is at least 5 seconds, so a quick action has to fill the whole clip. A tablet drop into a bottle takes half a second. The hand held the tablet for 4 seconds, then a tablet appeared in the bottle while one stayed in the hand. In another ad a scoop refilled itself.
+- **Why.** An action that is over in a moment leaves seconds empty, and the video model fills them with invented events.
+- **What shipped.** I iterated on this a lot and broke things along the way: remake prompts that said what not to do, splitting the moment into two clips, a critic that judged plans and failed many good ones.
+  - What I settled on is one planner rule: the one action must last the whole clip by its own course, or show its natural result. Otherwise it becomes a talking scene.
+  - It cost one good scene, a one-second swatch. Round 6 is the first run with the rule, so whether it holds is not proven yet.
+
+### 5. Things I couldn't make the video model do yet, and the workaround for each.
 
 This is a model limit or my prompting. I haven't spent much effort on these yet. For now the planner avoids them.
 
@@ -91,7 +99,7 @@ This is a model limit or my prompting. I haven't spent much effort on these yet.
 - **Turning while sliding.** A hair tool has to twist as it glides down the hair. Every try failed, with a different prompt each time. Workaround: none yet. Written down as a limit.
 - **Changing from one state to another.** A bag strap went on and off with no real movement in between. Workaround: the planner never films the change itself. It films the before and the after as two clips with a cut. I graded that version perfect.
 
-### 5. From one drawn start picture to the owner's own pictures, so notes steer the look.
+### 6. From one drawn start picture to the owner's own pictures, so notes steer the look.
 
 - **What broke.** The B-roll API takes either one exact start picture or up to 9 example pictures, never both.
   - The app started every clip from one drawn start picture and described the action. That worked on most ads, but a start picture shows one side of the product, so a clip that turns the product had to invent the other side.
@@ -102,14 +110,6 @@ This is a model limit or my prompting. I haven't spent much effort on these yet.
   - The drawn start picture goes in as the first example, with the order to start from it, and the owner's pictures come after it. The model doesn't start exactly on that picture, but very close to it, and that turned out to be enough.
   - Before an owner's photo is used, the owner names the one thing in it and code draws a clean copy of only that thing, so the background and other objects don't leak in.
   - This is an architecture change, not a prompt change: one path for every clip, and a place for the owner's pictures.
-
-### 6. A one-moment action stretched over a five-second clip.
-
-- **What broke.** A tablet drop into a bottle takes half a second, but the shortest clip is 5 seconds. The hand held the tablet for 4 seconds, then a tablet appeared in the bottle while one stayed in the hand. In another ad a scoop refilled itself. The one-movement rule from problem 3 didn't catch this, because it was one movement.
-- **Why.** A clip is at least 5 seconds at real speed, with one action and a still camera. An action that is over in a moment leaves seconds, and the video model fills them with invented events.
-- **What shipped.** I iterated on this a lot and broke things along the way: remake prompts that said what not to do, splitting the moment into two clips, a critic that judged plans and failed many good ones.
-  - What I settled on is one planner rule: the one action must last the whole clip by its own course, or show its natural result. Otherwise it becomes a talking scene.
-  - It cost one good scene, a one-second swatch. Round 6 is the first run with the rule, so whether it holds is not proven yet.
 
 ## Numbers
 
