@@ -139,7 +139,6 @@ Every model call the app makes, and what checks it: [docs/decision-map.md](docs/
 
 ## Limitations and what I'd test next
 
-- Some shops can't be read at all. 12 of 126 pages gave no photos (TikTok Shop, Chewy, Target, Temu). Because of this I built a way in: the owner pastes the page text and photos, and the ad starts from those.
 - The clip judge is not perfect yet. It still misses failures and fails good clips, and the fixing agent depends on it, so a judge mistake becomes the agent's mistake.
 - The picture judge misses a wrong background object, such as a toilet that isn't a normal toilet (0 of 5).
 - With example pictures, the clip judge caught only 1 of the 5 bad phone case clips I failed.
@@ -149,6 +148,7 @@ Every model call the app makes, and what checks it: [docs/decision-map.md](docs/
 - In practice it behaves more like a pipeline than it is one. The producer almost always picks the same order, and a note that arrives while a step is running doesn't stop that step, so it finishes and is paid for.
 - Round 6 found run problems: with 22 ads in parallel the machine ran out of memory. A step killed mid-run stays "running" forever, and a scene can be marked finished before its judge ends, so only a fresh session recovers. 10 ads needed a fresh restart.
 - Also from round 6: a fix plan with no changes never reassembles the ad; page reads hit Firecrawl's rate limit; safety filters refused a makeup sponge picture.
+- Some shops can't be read at all. 12 of 126 pages gave no photos (TikTok Shop, Chewy, Target, Temu). Because of this I built a way in: the owner pastes the page text and photos, and the ad starts from those.
 
 What I'd test next: the fact check. Nobody knows yet whether it actually catches wrong claims or fails silently. The 22 test cases are built and not graded.
 
