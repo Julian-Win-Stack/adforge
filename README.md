@@ -146,7 +146,6 @@ Every model call the app makes, and what checks it: [docs/decision-map.md](docs/
 - B-roll quality is not good enough yet. A clip often doesn't show the result the voice claims, such as "94% saw fewer wrinkles".
 - In practice it behaves more like a pipeline than it is one. The producer almost always picks the same order, and a note that arrives while a step is running doesn't stop that step, so it finishes and is paid for.
 - Running 22 ads at once on my laptop ran it out of memory. That exposed two app bugs: a step killed mid-run stays "running" forever, and a scene can be marked finished before its judge ends. Only a fresh session recovers. 10 ads needed a restart.
-- Also from round 6: a fix plan with no changes never reassembles the ad; page reads hit Firecrawl's rate limit; safety filters refused a makeup sponge picture.
 - Some shops can't be read at all. 12 of 126 pages gave no photos (TikTok Shop, Chewy, Target, Temu). Because of this I built a way in: the owner pastes the page text and photos, and the ad starts from those.
 
 What I'd test next: the fact check. Nobody knows yet whether it actually catches wrong claims or fails silently. The 22 test cases are built and not graded.
