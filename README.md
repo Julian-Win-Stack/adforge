@@ -30,6 +30,8 @@ flowchart TD
     P --> Q[New version<br/>old ones kept]
 ```
 
+There is no fixed order in code. The producer agent picks these steps as tools and decides what to do next, and every rule that matters lives in a tool that refuses, not in the instructions ([ADR 1](docs/adr/0001-agent-loop-with-safety-in-the-tools.md)). The fixing agent and the decider agent are the other two agents.
+
 One line per box: the problem that made me add it.
 
 - **Page reader.** An ad stated another product's facts, so it keeps only this product's text. ([problem 1](#1-the-ad-stated-another-products-facts-so-i-rebuilt-the-page-reader))
@@ -142,6 +144,7 @@ Every model call the app makes, and what checks it: [docs/decision-map.md](docs/
 - HeyGen ignores movement text, so an action in a talking scene is a "can't". A photo can't change the presenter either.
 - A note can turn a B-roll scene into a talking scene, but not the other way. A talking scene can't become a B-roll scene yet. Easy to build, I ran out of time.
 - B-roll quality is not good enough yet. A clip often doesn't show the result the voice claims, such as "94% saw fewer wrinkles".
+- In practice it behaves more like a pipeline than it is one. The producer almost always picks the same order, and a note that arrives while a step is running doesn't stop that step, so it finishes and is paid for.
 - Round 6 found run problems: with 22 ads in parallel the machine ran out of memory. A step killed mid-run stays "running" forever, and a scene can be marked finished before its judge ends, so only a fresh session recovers. 10 ads needed a fresh restart.
 - Also from round 6: a fix plan with no changes never reassembles the ad; page reads hit Firecrawl's rate limit; safety filters refused a makeup sponge picture.
 
