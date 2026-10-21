@@ -96,7 +96,7 @@ This is a model limit or my prompting. I haven't spent much effort on these yet.
 - **What broke.** The B-roll API takes either one exact start picture or up to 9 example pictures, never both.
   - The app started every clip from one drawn start picture and described the action. That worked on most ads, but a start picture shows one side of the product, so a clip that turns the product had to invent the other side.
   - I also tried giving the model an end picture of the other side, but lining up a start picture, an end picture and the prompt so the clip passed my grading without breaking the physics was more than I could get right.
-  - And when an owner's note came with a reference picture, there was nowhere to put it. The one picture slot was taken by the start picture, and the owner's photo was not a start picture for that scene anyway.
+  - After the first ad, the shop owner can write a note on any scene to change it, for example "show our lid, like in this photo", and attach their own photos. When a note came with a photo, there was nowhere to put it. The one picture slot was taken by the start picture, and the owner's photo was not a start picture for that scene anyway.
 - **Why.** One slot, two needs: the exact starting pose, and the looks only the owner's photos can show.
 - **What shipped.** Every B-roll clip now runs in example-picture mode.
   - The drawn start picture goes in as the first example, with the order to start from it, and the owner's pictures come after it. The model doesn't start exactly on that picture, but very close to it, and that turned out to be enough.
