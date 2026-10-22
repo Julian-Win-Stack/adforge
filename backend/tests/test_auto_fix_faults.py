@@ -1,7 +1,8 @@
-"""What the auto-fix (#155) hands the model writing a failed clip's video prompt again: the
-problems of the judge's checks that failed, never one from an answer outvoted on its check
-(only 1 of 3 asks failed it) or let go, and the judge's answers that saw them (Julian's yes,
-2026-10-13 19:42). The rulings are the clip judge's own, from hand-written answers."""
+"""What the fixing agent is handed about a clip the judge failed: the problems of the judge's
+checks that failed, never one a ruling from before let go or its vote outvoted, and the
+judge's answers that saw them (Julian's yes, 2026-10-13 19:42). The rulings are the clip
+judge's own, from hand-written answers: one ask per check since Julian's "drop the vote"
+(2026-10-22); rulings made while each check was asked 3 times are still kept on clips."""
 
 from typing import Any
 
@@ -39,19 +40,8 @@ def motion(**failed: str) -> dict[str, Any]:
     }
 
 
-def judged(
-    sides: list[dict[str, Any]], motion: list[dict[str, Any]], *apart: int
-) -> dict[str, Any]:
-    """The ruling, when every check's failing answers name one fault, but those of the asks
-    `apart`, each a fault of its own."""
-    return clip_judge.judged(
-        sides,
-        motion,
-        same_fault=lambda _, failing: {
-            "groups": [{"asks": [each["ask"] for each in failing if each["ask"] not in apart]}]
-            + [{"asks": [ask]} for ask in apart]
-        },
-    )
+def judged(sides: list[dict[str, Any]], motion: list[dict[str, Any]]) -> dict[str, Any]:
+    return clip_judge.judged(sides, motion)
 
 
 def sides(problem: str) -> dict[str, Any]:
@@ -59,37 +49,17 @@ def sides(problem: str) -> dict[str, Any]:
     return {**SIDES_OK, "verdict": "fail", "problem": problem, "back_to_normal_at": "never"}
 
 
-def test_a_motion_question_failed_by_one_ask_of_three_is_left_out() -> None:
-    # Two asks see the teapot float, so real_motion fails; only the first sees the mug spin,
-    # so sudden_change passes 2 to 1.
-    ruling = judged(
-        [SIDES_OK] * 3,
-        [motion(real_motion=FLOATS, sudden_change=SPINS), motion(real_motion=FLOATS), motion()],
-    )
+def test_every_question_the_one_answer_fails_is_handed_over_with_all_it_saw() -> None:
+    ruling = judged([SIDES_OK], [motion(real_motion=FLOATS, sudden_change=SPINS)])
 
-    assert faults(ruling) == [FLOATS]
-    # The first ask's answer is handed over without the question it was outvoted on.
-    first_seen = {
-        "look": LOOK,
-        "ordered_action": "Pour tea into the mug.",
-        "seen_action": "Tea is poured into the mug.",
-        "real_motion": {"verdict": "fail", "problem": FLOATS, "back_to_normal_at": "never"},
-        "does_what_was_ordered": PASSED,
-    }
-    second_seen = {**first_seen, "sudden_change": PASSED}
-    assert judge_saw(ruling) == [first_seen, second_seen]
+    assert faults(ruling) == [FLOATS, SPINS]
+    assert judge_saw(ruling) == [motion(real_motion=FLOATS, sudden_change=SPINS)]
 
 
-def test_an_answer_whose_only_fail_was_outvoted_isnt_handed_over() -> None:
-    # SIDES: one ask of three sees a second handle, so SIDES passes. MOTION: the third ask
-    # alone sees the lid jump, while the first two see the teapot float.
-    ruling = judged(
-        [sides(TURNS), SIDES_OK, SIDES_OK],
-        [motion(real_motion=FLOATS), motion(real_motion=FLOATS), motion(sudden_change=JUMPS)],
-    )
+def test_a_clip_the_judge_passed_hands_nothing_over() -> None:
+    ruling = judged([SIDES_OK], [motion()])
 
-    assert faults(ruling) == [FLOATS]
-    assert judge_saw(ruling) == [motion(real_motion=FLOATS)]
+    assert (faults(ruling), judge_saw(ruling)) == ([], [])
 
 
 def test_a_fail_a_ruling_from_before_let_go_on_a_failed_question_is_left_out() -> None:
@@ -122,27 +92,21 @@ def test_a_fail_a_ruling_from_before_let_go_on_a_failed_question_is_left_out() -
     ]
 
 
-def test_a_fail_no_other_answer_shares_on_a_failed_question_is_left_out() -> None:
-    # All three asks fail real_motion, but the second on a fault of its own: the spin.
+def test_a_fail_a_ruling_from_the_vote_found_no_other_answer_naming_is_left_out() -> None:
+    # Made while each check was asked 3 times: all three fail real_motion, but the same-fault
+    # vote found the second's fault, the spin, named by no other answer.
     ruling = judged(
         [SIDES_OK] * 3,
         [motion(real_motion=FLOATS), motion(real_motion=SPINS), motion(real_motion=FLOATS)],
-        2,
     )
+    ruling["agreement"] = {"real_motion": {"groups": [], "sharing": [1, 3]}}
 
     assert faults(ruling) == [FLOATS]
     assert judge_saw(ruling) == [motion(real_motion=FLOATS)]
 
 
 def test_every_failed_check_is_handed_over_sides_first_each_problem_once() -> None:
-    ruling = judged(
-        [sides(TURNS), sides(TURNS), SIDES_OK],
-        [
-            motion(real_motion=FLOATS, sudden_change=JUMPS),
-            motion(real_motion=FLOATS, sudden_change=JUMPS),
-            motion(),
-        ],
-    )
+    ruling = judged([sides(TURNS)], [motion(real_motion=FLOATS, sudden_change=JUMPS)])
 
     assert faults(ruling) == [TURNS, FLOATS, JUMPS]
     assert judge_saw(ruling) == [sides(TURNS), motion(real_motion=FLOATS, sudden_change=JUMPS)]
