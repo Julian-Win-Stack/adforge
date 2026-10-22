@@ -642,6 +642,7 @@ def test_a_script_where_the_person_talks_throughout_is_checked_without_the_photo
     assert images_shown("fact_check") == [[]]
 
 
+# Each rule is tested in tests/test_check_answers.py; one case here goes through the chat.
 @pytest.mark.parametrize(
     ("plan", "verdict", "told"),
     [
@@ -650,30 +651,6 @@ def test_a_script_where_the_person_talks_throughout_is_checked_without_the_photo
             shows_wrong("The page doesn't mention tea.", passing=(1, 3)),
             'Scene 2 has no "shows": only its line can be wrong.',
             id="a talking scene's shows found wrong",
-        ),
-        pytest.param(
-            PLAN,
-            shows_wrong("The page doesn't mention tea.", passing=(1, 3), wrong="both"),
-            'Scene 2 has no "shows": only its line can be wrong.',
-            id="a talking scene's line and shows found wrong",
-        ),
-        pytest.param(
-            showing("the mug turned in a hand"),
-            {
-                **FACTS_OK,
-                "lines": [
-                    *facts_ok(1, 3)["lines"],
-                    {
-                        "scene": 2,
-                        "verdict": "wrong",
-                        "wrong": None,
-                        "problem": "Unsupported.",
-                        "page_says": "Nothing.",
-                    },
-                ],
-            },
-            'A "wrong" line needs what is wrong, its problem and what the page says.',
-            id="wrong without saying what",
         ),
     ],
 )
@@ -965,28 +942,15 @@ def test_a_rewrite_of_a_line_the_person_says_is_shown_no_photos(
     assert images_shown("rewrite_line") == [[]]
 
 
+# The other B-roll rules are tested in tests/test_check_answers.py. This case goes through the
+# chat, as only it shows the rewrite is read against the job's own photos.
 @pytest.mark.parametrize(
     ("rewrite", "told"),
     [
         pytest.param(
-            {**DOES_A_JOB, "result": None},
-            'A "does a job" scene needs its result: what you can see at its end.',
-            id="a job without its result",
-        ),
-        pytest.param(
             {**DOES_A_JOB, "needs": [{"what": "the glaze up close", "photos": [3]}]},
             "There's no photo 3: the job has 2.",
             id="a photo the job doesn't have",
-        ),
-        pytest.param(
-            {
-                **DOES_A_JOB,
-                "person_shown": "has face",
-                "needs": [{"what": f"detail {n}", "photos": [2]} for n in range(1, 5)],
-            },
-            "Scene 2 would send 6 pictures (the main photo, one for each of its 4 needs and "
-            "the presenter's portrait): 5 at most.",
-            id="too many pictures",
         ),
     ],
 )
@@ -1470,16 +1434,10 @@ def test_a_checked_line_put_over_what_another_scene_shows_is_fact_checked_again(
     ]
 
 
+# Each rule is tested in tests/test_check_answers.py; one case here goes through the chat.
 @pytest.mark.parametrize(
     ("kept", "broken_rule"),
     [
-        pytest.param(
-            [2, 3],
-            "The first scene is the person talking to camera",
-            id="opening on a scene that shows the product",
-        ),
-        pytest.param([1, 3, 2], "Give the lines in the order they play", id="out of order"),
-        pytest.param([1, 1], "Give the lines in the order they play", id="a scene twice"),
         pytest.param([1, 4], "There's no scene 4: the script has 3.", id="a scene not sent"),
     ],
 )

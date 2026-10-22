@@ -285,19 +285,11 @@ def refused_then_given_up(fake_model: FakeModel, step: SceneStep, *calls: Any) -
     return told()[: len(calls)]
 
 
-@pytest.mark.parametrize(
-    ("prompt", "bans"),
-    [
-        ("The tea pours. Nothing spills.", "nothing"),
-        ("The tea pours and doesn't spill, with no drips.", "n't, no"),
-        ("Avoid spills; never tip the mug.", "avoid, never"),
-    ],
-)
-def test_a_video_prompt_with_bans_is_refused(
-    fake_model: FakeModel, failed_clip: SceneStep, prompt: str, bans: str
-) -> None:
+# Which words are bans is tested in tests/test_fixing_agent_rules.py.
+def test_a_video_prompt_with_bans_is_refused(fake_model: FakeModel, failed_clip: SceneStep) -> None:
+    prompt = "The tea pours and doesn't spill, with no drips."
     [answer] = refused_then_given_up(fake_model, failed_clip, film_again(video_prompt=prompt))
-    assert answer.startswith(f"Refused: the video prompt has bans ({bans}).")
+    assert answer.startswith("Refused: the video prompt has bans (n't, no).")
 
 
 def test_a_line_the_fact_check_fails_is_refused_with_its_reason(
