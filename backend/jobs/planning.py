@@ -41,9 +41,9 @@ hand holding it: the action is said in words only. Give each need with the numbe
 photos that show it. The main \
 photo is picked from the product photos, one showing the product in its colour when one \
 does; leave needs empty when it's enough. A needed photo may be any of the photos, even \
-one where the product isn't clearly seen. Never name a photo that shows the product in another colour than the \
-ad's. A scene's clip is sent at most 5 pictures: the main photo, one for each need, \
-and the presenter's portrait when it "has face".
+one where the product isn't clearly seen. Never name a photo that shows the product only \
+in another colour than the ad's. A scene's clip is sent at most 5 pictures: the main \
+photo, one for each need, and the presenter's portrait when it "has face".
 """
 
 # What a B-roll scene films, for the planner and a rewrite alike. Graded #8 toilet (4

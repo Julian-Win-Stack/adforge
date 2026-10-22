@@ -930,6 +930,24 @@ def _video_transcripts(job: Job) -> list[str]:
     return list(job.videos.exclude(transcript="").values_list("transcript", flat=True))
 
 
+def _photos_to_pick_from(job: Job, room: int) -> list[ProductPhoto]:
+    """The product photos a starting picture's writer picks its photo from, at most `room`,
+    in order: every one when they fit, else those in the ad's colour first, then the page's,
+    those cut from its videos and the shop owner's. A job keeps up to page.MAX_PHOTOS page
+    photos, more with its video pictures, and a model takes at most clip_judge.MOST_PICTURES
+    pictures in one ask."""
+    photos = list(job.photos.order_by("position"))
+    kept = sorted(
+        photos,
+        key=lambda photo: (
+            not photo.shows_product_colour,
+            1 if photo.from_video_id is not None else 0 if photo.source_url else 2,
+            photo.position,
+        ),
+    )[:room]
+    return [photo for photo in photos if photo in kept]
+
+
 def _photos_to_show(job: Job, photos: list[ProductPhoto]) -> list[ProductPhoto]:
     """The job's photos a model can be shown in one call: at most clip_judge.MOST_PICTURES,
     the page's first, then those cut from its videos, then the shop owner's. When some are
@@ -1168,10 +1186,14 @@ def _ask_fact_check(
         for need in scene.needs
         for number in need["photos"]
     }
+    # A plan may mark no photo in the ad's colour: then every photo that fits is shown.
+    marked = job.photos.filter(shows_product_colour=True).exists()
     photos = (
         job.photos.filter(Q(shows_product_colour=True) | Q(position__in=needed)).order_by(
             "position"
         )
+        if showing and marked
+        else _photos_to_pick_from(job, clip_judge.MOST_PICTURES)
         if showing
         else []
     )
@@ -1737,9 +1759,10 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
     job = scene.job
     portrait = latest(job, ProducedItem.Kind.PORTRAIT)
     assert portrait is not None, "the tool refuses a scene whose person isn't made"
-    # Every product photo, the plan's marks of those in the ad's colour only advice
-    # (Julian 2026-10-22): a product seen only in a pack or line-up is still made.
-    photos = list(job.photos.order_by("position"))
+    # Every product photo that fits beside the portrait, the plan's marks of those in the ad's
+    # colour only advice (Julian 2026-10-22): a product seen only in a pack or line-up is
+    # still made.
+    photos = _photos_to_pick_from(job, clip_judge.MOST_PICTURES - 1)
     numbers = [photo.position for photo in photos]
     note = step.note
     failed = the_try_before(step)
@@ -1813,8 +1836,13 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
     scene = step.scene
     job = scene.job
     before = _before_picture(step)
-    # Every product photo, the plan's marks of those in the ad's colour only advice.
-    photos = list(job.photos.order_by("position"))
+    # Every product photo that fits beside the scene's other pictures, the plan's marks of
+    # those in the ad's colour only advice: the shop owner's things, the needs' photos, the
+    # portrait, the before-picture and a redo's last picture.
+    owners_count = step.reference_photos.filter(use=ReferencePhoto.Use.PICTURE).count()
+    photos = _photos_to_pick_from(
+        job, clip_judge.MOST_PICTURES - owners_count - MOST_NEEDS_PHOTOS - 3
+    )
     numbers = [photo.position for photo in photos]
     images = [Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos]
     pictures = [PictureJob(image=1, job=MAIN_PHOTO_JOB)]

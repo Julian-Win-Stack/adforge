@@ -630,10 +630,13 @@ def restart_dead_producers() -> None:
         wake_producer(str(session_id))
 
 
-def _end_stopped(steps: Iterable[SceneStep], reason: str) -> list[SceneStep]:
+def _end_stopped(
+    steps: Iterable[SceneStep], reason: str, tell: Callable[[SceneStep], None] | None = None
+) -> list[SceneStep]:
     """Fail each of `steps` whose work stopped for `reason`, as the fixing agent's give-up
-    leaves its scene, and tell the chat. Each on its own: one that can't be ended is logged
-    and left, and the rest are still ended. Gives the steps failed."""
+    leaves its scene, tell the chat, and `tell` whoever started it, together. Each on its
+    own: one whose fixing can't be ended is still failed, with a red notice, so it never
+    stays running; the rest are ended either way. Gives the steps failed."""
     stopped = []
     for step in steps:
         try:
@@ -644,9 +647,26 @@ def _end_stopped(steps: Iterable[SceneStep], reason: str) -> list[SceneStep]:
                 # leaves it.
                 end_the_agents_fixing(step)
                 _fail(step, reason, "it was stopped partway.")
+                if tell is not None:
+                    tell(step)
         except Exception:
             logger.exception("Scene step %s couldn't be ended", step.pk)
-            continue
+            try:
+                with transaction.atomic():
+                    if not _still_running(step):
+                        continue
+                    _fail(step, reason, "it was stopped partway.")
+                    post_notice(
+                        step.scene.job,
+                        f"{_step_name(step).capitalize()} stopped partway, and the fixing "
+                        "agent's tries on it couldn't be wrapped up. Make it again.",
+                        Message.Level.PROBLEM,
+                    )
+                    if tell is not None:
+                        tell(step)
+            except Exception:
+                logger.exception("Scene step %s couldn't be failed either", step.pk)
+                continue
         stopped.append(step)
     return stopped
 
@@ -655,15 +675,15 @@ def _end_stopped(steps: Iterable[SceneStep], reason: str) -> list[SceneStep]:
 def fail_dead_steps() -> None:
     """Fail every scene step whose worker was killed: one taken, whose heartbeat hasn't been
     seen for STEP_FAILED_AFTER_SECONDS. Nothing else ever ends it, and while it runs its
-    scene can't be made again (round 6). Its producer is told, as for any failed step. Run
-    every minute."""
+    scene can't be made again (round 6). Its producer is told, as for any failed step, in
+    the same transaction. Run every minute."""
     dead_since = timezone.now() - timedelta(seconds=settings.STEP_FAILED_AFTER_SECONDS)
     dead = SceneStep.objects.filter(
         status=SceneStep.Status.RUNNING, taken_at__isnull=False, seen_at__lt=dead_since
     ).select_related("scene", "tool_call")
-    for step in _end_stopped(dead, "Its work stopped partway, and it was never heard from again."):
-        with transaction.atomic():
-            _told_it_ended(step)
+    _end_stopped(
+        dead, "Its work stopped partway, and it was never heard from again.", _told_it_ended
+    )
 
 
 def carry_on_after_the_worker_starts() -> None:
@@ -683,13 +703,18 @@ def carry_on_after_the_worker_starts() -> None:
             "The worker restarted while it was being made.",
         )
         # Every step is failed first, so a fix plan's scene isn't carried on while another
-        # of its steps still looks running.
+        # of its steps still looks running. Each on its own, so one that can't carry on
+        # leaves the rest failed and told.
         for step in stopped:
-            if step.plan_scene_id is not None:
-                run_plan.step_failed(step)
-            else:
-                sessions.add(step.tool_call.session_id)
-                run_plan.carry_on_scene(step.scene)
+            try:
+                with transaction.atomic():
+                    if step.plan_scene_id is not None:
+                        run_plan.step_failed(step)
+                    else:
+                        sessions.add(step.tool_call.session_id)
+                        run_plan.carry_on_scene(step.scene)
+            except Exception:
+                logger.exception("Scene step %s's end couldn't be carried on", step.pk)
         for session in Session.objects.filter(pk__in=sessions):
             if another_session_is_busy(session):
                 continue

@@ -12,14 +12,26 @@ import PIL.ImageDraw
 import pytest
 from django.utils import timezone
 from pytest_httpserver import HTTPServer
+from rest_framework.test import APIClient
 
-from agents import fixing_agent, tasks
+from agents import fixing_agent, run_plan, tasks
 from agents.models import ToolCall
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import work
-from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneStep
+from jobs.models import (
+    AgentFix,
+    AgentFixTry,
+    Job,
+    ProducedItem,
+    ProductPhoto,
+    ProductVideo,
+    Scene,
+    SceneStep,
+)
+from jobs.picture_check import PictureKeptFailing
 from jobs.planning import producer_decision_for
+from jobs.product_videos import save_videos
 
 from .conftest import MUG_FRONT, PLAN, HeldSteps, WorkerStopped, a_plan_with
 from .test_fixing_agent import film_again
@@ -30,6 +42,7 @@ from .test_producer_broll import (
     made_ready,
     run,
 )
+from .test_producer_scenes import step_messages
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -46,6 +59,13 @@ def striped() -> bytes:
 
 
 MUG_BACK = striped()
+
+CHOICE: dict[str, Any] = {
+    "photo": 1,
+    "photo_reason": "The side view shows the glaze best.",
+    "prompt": "She holds the cream mug from the left up beside her face, in her workshop.",
+    "prompt_reason": "Holding it up by her face introduces the mug as the line does.",
+}
 
 
 def last_result(tool: str) -> str:
@@ -154,7 +174,7 @@ def test_a_try_killed_mid_judge_is_cleaned_up_as_the_worker_starts(
     assert AgentFix.objects.get().finished_at is not None
 
 
-def test_a_step_the_cleanup_cant_end_doesnt_stop_the_others(
+def test_a_step_whose_fixing_cant_be_ended_is_still_failed_with_a_red_notice(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
@@ -178,8 +198,39 @@ def test_a_step_the_cleanup_cant_end_doesnt_stop_the_others(
 
     first.refresh_from_db()
     second.refresh_from_db()
-    assert first.status == SceneStep.Status.RUNNING
+    assert first.status == SceneStep.Status.FAILED
     assert second.status == SceneStep.Status.FAILED
+    assert any(
+        warning["level"] == "problem"
+        and warning["text"].startswith("Scene 1's clip stopped partway, and the fixing agent")
+        for warning in Job.objects.get().warnings
+    )
+
+
+def test_one_step_whose_end_cant_carry_on_leaves_the_others_ended(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    made_ready(fake_model, steps, say, (1, 3))
+    calling(fake_model, say, ("make_clip", {"scene": 1}), ("make_clip", {"scene": 3}))
+    steps.held.clear()
+    first, second = SceneStep.objects.filter(kind="clip", status="running").order_by("id")
+    carrying_on = run_plan.carry_on_scene
+
+    def broken_for_the_first(scene: Scene) -> None:
+        if scene.pk == first.scene_id:
+            raise KeyError("something unforeseen")
+        carrying_on(scene)
+
+    monkeypatch.setattr(run_plan, "carry_on_scene", broken_for_the_first)
+    fake_model.respond("produce", turn(says="Both stopped."))
+    tasks.carry_on_after_the_worker_starts()
+
+    assert SceneStep.objects.get(pk=first.pk).status == SceneStep.Status.FAILED
+    assert SceneStep.objects.get(pk=second.pk).status == SceneStep.Status.FAILED
 
 
 # --- A step whose worker was killed is failed once its heartbeat stops ---------------------
@@ -271,6 +322,76 @@ def test_a_step_failed_as_dead_that_finishes_after_all_stays_failed(
     assert Scene.objects.get(number=1).status == Scene.Status.PLANNED
 
 
+def test_a_step_failed_as_dead_whose_work_then_fails_says_so_once(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    made_ready(fake_model, steps, say, (1,))
+    calling(fake_model, say, ("make_clip", {"scene": 1}))
+    (step_id,) = steps.held
+
+    def failed_as_dead_then_raises(step: SceneStep) -> ProducedItem | None:
+        SceneStep.objects.filter(pk=step.pk).update(seen_at=timezone.now() - timedelta(minutes=6))
+        fake_model.respond("produce", turn(says="Scene 1's clip stopped."))
+        tasks.fail_dead_steps()
+        raise RuntimeError("the video service broke too")
+
+    monkeypatch.setitem(
+        tasks.STEP_WORK,
+        SceneStep.Kind.CLIP,
+        dataclasses.replace(tasks.STEP_WORK[SceneStep.Kind.CLIP], make=failed_as_dead_then_raises),
+    )
+    steps.run_next()
+
+    step = SceneStep.objects.get(pk=step_id)
+    assert step.status == SceneStep.Status.FAILED
+    assert step.reason == "Its work stopped partway, and it was never heard from again."
+    not_made = [
+        text for _, _, text, _ in step_messages(api, session_id) if "couldn't be made" in text
+    ]
+    assert not_made == ["Scene 1's clip couldn't be made: it was stopped partway."]
+
+
+@pytest.mark.parametrize(
+    "stopped",
+    [PictureKeptFailing(1, [("picture.png", ["wrong"])]), work.AgentGaveUp("No try worked.")],
+    ids=["pictures kept failing", "fixing agent gave up"],
+)
+def test_a_step_failed_as_dead_that_stops_the_run_or_gives_up_stays_failed(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+    stopped: Exception,
+) -> None:
+    made_ready(fake_model, steps, say, (1,))
+    calling(fake_model, say, ("make_clip", {"scene": 1}))
+    (step_id,) = steps.held
+
+    def failed_as_dead_then_stops(step: SceneStep) -> ProducedItem | None:
+        SceneStep.objects.filter(pk=step.pk).update(seen_at=timezone.now() - timedelta(minutes=6))
+        fake_model.respond("produce", turn(says="Scene 1's clip stopped."))
+        tasks.fail_dead_steps()
+        raise stopped
+
+    monkeypatch.setitem(
+        tasks.STEP_WORK,
+        SceneStep.Kind.CLIP,
+        dataclasses.replace(tasks.STEP_WORK[SceneStep.Kind.CLIP], make=failed_as_dead_then_stops),
+    )
+    steps.run_next()
+
+    step = SceneStep.objects.get(pk=step_id)
+    assert step.status == SceneStep.Status.FAILED
+    assert step.reason == "Its work stopped partway, and it was never heard from again."
+
+
 # --- A page read again only adds photos -----------------------------------------------------
 
 
@@ -326,6 +447,53 @@ def test_a_plan_may_name_no_photo_in_the_ads_colour() -> None:
     assert plan.plan is not None and plan.plan.colour_photos == []
 
 
+def test_a_video_with_no_link_is_kept_once_when_the_page_is_read_again(
+    checked: None,  # noqa: F811
+) -> None:
+    job = Job.objects.get()
+    player = {"src": "", "poster": "", "kind": "iframe"}
+    ProductVideo.objects.create(job=job, position=1, source_url="", kind="iframe")
+
+    assert save_videos(job, [player, {**player, "poster": "https://example.com/p.jpg"}]) == []
+    assert job.videos.count() == 1
+
+
+def test_with_more_photos_than_a_model_takes_the_colour_photos_are_still_shown(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    job = Job.objects.get()
+    # A page with as many photos as a job keeps, plus video pictures, and the one photo in
+    # the ad's colour last.
+    job.photos.update(shows_product_colour=False)
+    front = job.photos.get(position=1)
+    for position in range(3, 56):
+        ProductPhoto.objects.create(
+            job=job,
+            position=position,
+            file=front.file,
+            source_url=f"https://example.com/{position}.png",
+            shows_product_colour=position == 55,
+        )
+    fake_model.respond(
+        "produce",
+        turn(calls=[("make_starting_picture", {"scene": 1, "note": None})]),
+        turn(says="On it."),
+    )
+    say("Make scene 1's starting picture")
+    fake_model.respond("choose_starting_picture", {**CHOICE, "photo": 55})
+    fake_model.respond("produce", turn(says="It's ready."))
+    steps.run_held()
+
+    step = SceneStep.objects.get(kind="starting_picture")
+    assert step.status == SceneStep.Status.FINISHED, step.reason
+    asked = ModelCall.objects.get(purpose="choose_starting_picture")
+    assert len(asked.images) == 50
+    assert {"label": "Photo 55", "key": front.file} in asked.images
+
+
 def test_a_starting_picture_is_made_with_no_photo_marked_in_the_ads_colour(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
@@ -335,12 +503,7 @@ def test_a_starting_picture_is_made_with_no_photo_marked_in_the_ads_colour(
     job = Job.objects.get()
     # Every photo shows the product in a pack or beside its other colours, so none is marked.
     job.photos.update(shows_product_colour=False)
-    choice: dict[str, Any] = {
-        "photo": 2,
-        "photo_reason": "The side view shows the glaze best.",
-        "prompt": "She holds the cream mug from the left up beside her face, in her workshop.",
-        "prompt_reason": "Holding it up by her face introduces the mug as the line does.",
-    }
+    choice: dict[str, Any] = {**CHOICE, "photo": 2}
     fake_model.respond(
         "produce",
         turn(calls=[("make_starting_picture", {"scene": 1, "note": None})]),

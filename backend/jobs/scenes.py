@@ -23,7 +23,7 @@ COLOUR_PICK = (
 SEVERAL_ITEMS = (
     "When the photo picked shows more than one item, such as a pack, a set, a line-up or the "
     "product in several colours, the picture prompt says which one item to take, by where it "
-    'is in the photo and how it looks, such as "the grey pair in the middle", in the ad\'s '
+    'is in the photo and how it looks, such as "the round one on the right", in the ad\'s '
     "colour when the photo has it, and the picture shows only that item."
 )
 
