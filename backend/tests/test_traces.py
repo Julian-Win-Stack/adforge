@@ -328,9 +328,10 @@ def test_pictures_and_audio_given_to_or_made_by_a_model_are_shown_in_the_trace(
     calls = {found.name: found for trace in traces.all() for found in trace.find(kind="generation")}
     assert kinds_of_file(calls["draw_person"].value("output")["made"]) == ["image/png"]
     assert kinds_of_file(calls["measure_voice"].value("output")["made"]) == ["audio/wav"]
-    # The photos it chooses between, then the portrait and the chosen photo it is made from.
+    # The portrait and the photos it chooses between, then the portrait and the chosen photo
+    # it is made from.
     assert (
-        kinds_of_file(calls["choose_starting_picture"].value("input")["shown"]) == ["image/png"] * 2
+        kinds_of_file(calls["choose_starting_picture"].value("input")["shown"]) == ["image/png"] * 3
     )
     made = calls["make_starting_picture"]
     assert kinds_of_file(made.value("input")["shown"]) == ["image/png"] * 2

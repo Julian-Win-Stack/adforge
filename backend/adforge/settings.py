@@ -98,9 +98,17 @@ PRODUCER_DEAD_AFTER_SECONDS = 120.0
 # session may start.
 STEP_HEARTBEAT_SECONDS = 30.0
 STEP_DEAD_AFTER_SECONDS = 120.0
+# How long a step a worker took can go unseen before it is failed, so its scene can be made
+# again: its worker was killed. Its heartbeat beats on a thread of its own, so a long paid
+# render keeps it seen (Julian 2026-10-22, 5 minutes).
+STEP_FAILED_AFTER_SECONDS = 300.0
 CELERY_BEAT_SCHEDULE = {
     "restart-dead-producers": {
         "task": "agents.tasks.restart_dead_producers",
+        "schedule": 60.0,
+    },
+    "fail-dead-steps": {
+        "task": "agents.tasks.fail_dead_steps",
         "schedule": 60.0,
     },
 }

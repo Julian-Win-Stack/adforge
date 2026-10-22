@@ -172,7 +172,8 @@ def first_making(plan: FixPlan) -> list[FixPlanScene]:
 
 
 def _before_its_clip(scene: Scene) -> bool:
-    return not scene.produced.filter(kind=ProducedItem.Kind.CLIP).exists()
+    """Whether the scene has no clip yet: one a step that failed kept doesn't count."""
+    return _latest_clip(scene) is None
 
 
 def _rule_cant(row: FixPlanScene) -> str:

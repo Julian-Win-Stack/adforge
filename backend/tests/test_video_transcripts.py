@@ -130,7 +130,7 @@ def test_a_video_without_a_file_gets_no_transcript_and_no_call(
     assert not [record for record in caplog.records if record.name == "jobs.product_videos"]
 
 
-def test_a_page_read_again_replaces_its_videos_transcripts(
+def test_a_page_read_again_keeps_its_videos_transcripts(
     fake_model: FakeModel,
     httpserver: HTTPServer,
     firecrawl: FakeFirecrawl,
@@ -143,16 +143,15 @@ def test_a_page_read_again_replaces_its_videos_transcripts(
         "<html>Gone</html>", content_type="text/html"
     )
     gallery_video(httpserver, firecrawl, picks_videos, mp4_with_sound)
-    fake_model.respond(
-        "transcribe_video", {"text": "Lathers in seconds."}, {"text": "Rinses clean."}
-    )
+    fake_model.respond("transcribe_video", {"text": "Lathers in seconds."})
     link = httpserver.url_for("/products/detox-shampoo")
 
     read(fake_model, say, link, times=2)
 
+    # The video kept by the first read is written down once, and keeps what it says.
     (video,) = Job.objects.get().videos.all()
-    assert video.transcript == "Rinses clean."
-    assert ModelCall.objects.filter(purpose="transcribe_video").count() == 2
+    assert video.transcript == "Lathers in seconds."
+    assert ModelCall.objects.filter(purpose="transcribe_video").count() == 1
 
 
 def test_a_video_whose_sound_cant_be_written_down_leaves_the_page_read(

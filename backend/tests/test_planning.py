@@ -108,7 +108,7 @@ def test_the_planner_is_told_how_to_plan_each_broll_scene() -> None:
         "pick the colour with the most photos where the product is clearly seen; on a tie, "
         "the colour of Photo 1"
     ) in instructions
-    assert "Never name a photo that shows the product in another colour" in instructions
+    assert "Never name a photo that shows the product only in another colour" in instructions
     # Only the presenter's face: item 27. "Showcase when unsure" made filler B-roll of a hand
     # holding or setting down the product, and every one failed (round 2, #12 s2, #8 s4, N3).
     assert '"showcase" when unsure' not in instructions
@@ -675,11 +675,6 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
             a_plan_with(product_size="medium"),
             "Input should be 'tiny', 'handheld' or 'large'",
             id="a size that isn't one of the three",
-        ),
-        pytest.param(
-            a_plan_with(colour_photos=[]),
-            "List should have at least 1 item",
-            id="no photo showing the colour",
         ),
         pytest.param(
             a_plan_with(colour_photos=[1, 3]),

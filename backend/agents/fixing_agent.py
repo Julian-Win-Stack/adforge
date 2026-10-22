@@ -526,7 +526,7 @@ def _intro(fixing: AgentFix) -> str:
     )
     numbering = "; ".join(
         f"Image {row['image']} = {row['job']}"
-        for row in _pictures_sent(fixing, scene.person_shown, colour[0])[1]
+        for row in _pictures_sent(fixing, scene.person_shown, (colour or every)[0])[1]
     )
     if fixing.door == AgentFix.Door.OWNER:
         failed = (
@@ -545,7 +545,11 @@ def _intro(fixing: AgentFix) -> str:
             f"{planned.prompt if planned else ''}",
             f"Its video prompt was:\n{work.motion_of(first)}",
             f"Its line takes {seconds:.2f} s to say, so its clip is {clip_seconds} s.",
-            f"Shop photos: {every}; those in the ad's colour, which may be Image 1: {colour}.",
+            f"Shop photos, any of which may be Image 1: {every}; those showing the product in "
+            f"the ad's colour, {job.product_colour}: {colour}. For a new start picture, pick "
+            "Image 1 from those in the ad's colour; only when none suits, or there are none, "
+            "take another where the product is clearly seen. The product's look and colour come "
+            f"only from that photo: never change them or make one up. {scenes.SEVERAL_ITEMS}",
             "A new start picture is drawn from these pictures, in this order: "
             f'{numbering}. That order is for the face setting the scene has now: a "has face" '
             'scene sends the presenter\'s portrait just before the place, a "no face" scene '
@@ -718,7 +722,8 @@ class FilmAgain(Tool):
         "current one."
     )
     photo: int | None = Field(
-        description="With a new picture: the shop photo that is Image 1, from the colour photos."
+        description="With a new picture: the shop photo that is Image 1, one in the ad's colour "
+        "when one suits."
     )
     picture_prompt: str | None = Field(
         description="With a new picture: the picture model's prompt, written from scratch, "
@@ -884,11 +889,9 @@ def _refuse_what_breaks_the_rules(fixing: AgentFix, asked: FilmAgain, scene: Sce
         raise Refused(f"the video prompt has bans ({', '.join(found)}). Say what happens instead.")
     if asked.new_picture and not (asked.photo and asked.picture_prompt):
         raise Refused("a new picture needs photo and picture_prompt.")
-    colour = list(
-        scene.job.photos.filter(shows_product_colour=True).values_list("position", flat=True)
-    )
-    if asked.new_picture and asked.photo not in colour:
-        raise Refused(f"Image 1 must be a photo in the ad's colour: {colour}.")
+    every = list(scene.job.photos.values_list("position", flat=True))
+    if asked.new_picture and asked.photo not in every:
+        raise Refused(f"Image 1 must be one of the shop photos: {every}.")
     if not asked.new_picture and asked.person_shown != scene.person_shown:
         raise Refused("showing or hiding the face changes the picture: draw a new one.")
     if asked.broll_kind != "does a job" and asked.result.strip():
