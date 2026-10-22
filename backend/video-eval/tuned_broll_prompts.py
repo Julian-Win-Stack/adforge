@@ -51,7 +51,10 @@ def rerun(call: ModelCall, pin_photo: bool) -> BrollPictureChoice:
         purpose="choose_broll_picture",
         instructions=TUNED_BROLL_PICTURE_INSTRUCTIONS,
         handoff=handoff,
-        output=starting_picture_choice_for(handoff.colour_photos, BrollPictureChoice),
+        output=starting_picture_choice_for(
+            [int(i["label"].split()[1]) for i in call.images if i["label"].startswith("Photo ")],
+            BrollPictureChoice,
+        ),
         images=[Image(label=i["label"], key=i["key"]) for i in call.images],
     )
 

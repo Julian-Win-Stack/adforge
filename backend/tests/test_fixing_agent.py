@@ -924,3 +924,14 @@ def test_a_give_up_kept_already_is_left_as_it_is_when_the_worker_restarts(
 
     again = AgentFix.objects.get()
     assert (again.camera_before, again.kept_id) == (kept.camera_before, kept.kept_id)
+
+
+def test_a_new_picture_from_a_photo_the_job_doesnt_have_is_refused(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    [answer] = refused_then_given_up(
+        fake_model,
+        failed_clip,
+        film_again(new_picture=True, photo=3, picture_prompt="The mug on the counter."),
+    )
+    assert answer.startswith("Refused: Image 1 must be one of the shop photos: [1, 2].")
