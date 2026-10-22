@@ -410,6 +410,8 @@ def test_the_clip_judge_runs_as_proved() -> None:
 
 # The photo picker's lines for hidden pictures, every record photo and video players, as the
 # 126-page test proved them (runs/photo-video-pick-test/run.py, Julian's yes 2026-10-19 20:53).
+# Gallery videos: every one in the gallery, picked by where it sits, not by its frame (Julian
+# 2026-10-22 03:01, "it's just a prompt change").
 PICKER_SHOWN_BESIDE_AS_TESTED = """\
 Three more kinds of picture come with the screenshots:
 
@@ -426,11 +428,14 @@ Leave out official photos of other products, bundles or line-ups by the same rul
 
 - Video players V1, V2, ... are the page's videos, each shown as its poster or first frame, \
 with where it sits (box, position, and which pictures share its box). Answer gallery_videos \
-with the V numbers of videos that belong to THIS product's own photo gallery: placed with the \
-product photos, as one of the gallery's slides or thumbnails. Never a video in a reviews, \
-customer, creator, "shop the look", social or shoppable-video section, never a muted \
-background banner, never another product's video. When unsure, leave it out, and say why in \
-video_notes."""
+with the V numbers of every video that sits in THIS product's own photo gallery: placed with \
+the product photos, as one of the gallery's slides or thumbnails. Where a video sits decides, \
+not what its frame shows: the frame only tells the players apart and is not used to judge what \
+the video shows, which a later step does by watching it. So the rules above about other \
+products and about leaving a picture out when unsure are for pictures only: never leave out a \
+gallery video because its frame looks like another product, shade or version. Never a video \
+in a reviews, customer, creator, "shop the look", social or shoppable-video section, and never \
+a muted background banner. Say in video_notes why you left out each video you did not pick."""
 
 
 def test_the_photo_picker_is_told_of_the_pictures_beside_the_screenshot_as_tested() -> None:
