@@ -1,0 +1,13 @@
+#cloud-config
+# What a new cloud machine runs on its first start (deploy/README.md): Docker, the repo in
+# /srv/adforge, and the nightly database backup. The keys (deploy/.env) and the lock
+# (deploy/gate.caddy) are put on it afterwards, never here.
+package_update: true
+packages:
+  - git
+  - ca-certificates
+  - curl
+runcmd:
+  - curl -fsSL https://get.docker.com | sh
+  - git clone https://github.com/Julian-Win-Stack/adforge.git /srv/adforge
+  - echo '30 9 * * * root /srv/adforge/deploy/backup.sh >> /var/log/adforge-backup.log 2>&1' > /etc/cron.d/adforge-backup

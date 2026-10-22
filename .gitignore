@@ -84,3 +84,6 @@ docs/runs/second-run-review/check/**/*.jpg
 
 # Redis snapshots a local redis-server writes
 dump.rdb
+
+# The cloud machine's lock (deploy/README.md)
+deploy/gate.caddy
