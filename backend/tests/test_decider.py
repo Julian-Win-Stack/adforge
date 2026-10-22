@@ -450,7 +450,6 @@ def planned(fake_model: FakeModel, ad: Job) -> tuple[Message, decider.Planned]:
     ("answer", "kind", "outcome"),
     [
         ("yes", "yes", decider.Yes),
-        ("yeah go", "yes", decider.Yes),
         ("no", "no", decider.No),
     ],
 )

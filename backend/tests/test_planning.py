@@ -457,6 +457,28 @@ OWNER_PART = {"what": "the handle", "source": "owner's words", "looks": THEIR_SE
         ),
         pytest.param(talking_scene(), id="a second talking scene"),
         pytest.param(a_plan_with_ways("broll", "second state"), id="two end states"),
+        # The main photo, three needed photos and the presenter's portrait.
+        pytest.param(
+            broll_scene(
+                person_shown="has face",
+                needs=[{"what": f"part {n}", "photos": [1]} for n in range(1, 4)],
+            ),
+            id="a scene sending five pictures",
+        ),
+        pytest.param(
+            broll_scene(
+                broll_kind="shows the problem",
+                thin_film=True,
+                needs=[{"what": "the cloudy film", "photos": [2]}],
+            ),
+            id="a thin film with a photo of it",
+        ),
+        pytest.param(
+            a_plan_with(
+                scenes=[{"line": "Meet the stoneware MUG."}, {"line": "Yours for $24.00."}]
+            ),
+            id="the name said in other capitals",
+        ),
     ],
 )
 def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:

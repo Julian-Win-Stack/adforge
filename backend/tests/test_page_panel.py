@@ -258,21 +258,6 @@ def test_a_pasted_page_with_no_photo_or_no_text_is_refused(
     assert not Message.objects.filter(pasted_page=True).exists()
 
 
-def test_a_whole_page_pasted_may_be_longer_than_a_typed_message(
-    fake_model: FakeModel, unreadable: str, paste: Callable[..., Any]
-) -> None:
-    fake_model.respond("check_page", READABLE)
-    fake_model.respond("produce", turn(says="Got your page."))
-    long_page = "\n".join([PASTE] * 400)
-    assert MAX_TEXT_CHARACTERS < len(long_page) <= MAX_PASTED_PAGE_CHARACTERS
-
-    sent = paste(long_page, ("front.png", FRONT), ("side.png", SIDE))
-    too_long = paste("m" * (MAX_PASTED_PAGE_CHARACTERS + 1), ("front.png", FRONT))
-
-    assert sent.status_code == 201, sent.json()
-    assert too_long.status_code == 400
-
-
 def test_a_pasted_page_that_cant_be_checked_keeps_nothing_and_says_so_once(
     api: APIClient,
     fake_model: FakeModel,
@@ -307,6 +292,8 @@ def test_a_pasted_page_counts_each_line_end_once_and_says_plainly_when_too_long(
     lines = MAX_PASTED_PAGE_CHARACTERS // 10
     just_fits = "\r\n".join(["Mug line."] * lines)
     assert len(just_fits) > MAX_PASTED_PAGE_CHARACTERS >= len(just_fits.replace("\r\n", "\n"))
+    # A whole page pasted may be longer than a typed message.
+    assert len(just_fits.replace("\r\n", "\n")) > MAX_TEXT_CHARACTERS
 
     too_long = paste(just_fits + "\r\nOne more line.", ("front.png", FRONT))
     sent = paste(just_fits, ("front.png", FRONT), ("side.png", SIDE))

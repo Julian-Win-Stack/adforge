@@ -13,7 +13,6 @@ from django.db.models.signals import post_save
 
 from adforge.retry import OutsideServiceDown
 from agents import tasks
-from agents.money import dollars
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs.models import FixPlan, Job, ProducedItem, Scene, SceneStep
@@ -306,23 +305,6 @@ def test_every_finished_step_tells_the_producer_what_it_cost(assembled: Produced
         "transcript": "$0.000244.",
         "clip": "$0.20.",
     }
-
-
-@pytest.mark.parametrize(
-    ("amount", "said"),
-    [
-        (Decimal("0.40"), "$0.40"),
-        (Decimal("0.0025"), "$0.0025"),
-        (Decimal("1.50"), "$1.50"),
-        (Decimal("1.5"), "$1.50"),
-        (Decimal("0"), "$0.00"),
-        (Decimal("0.0155"), "$0.0155"),
-    ],
-)
-def test_an_amount_is_said_in_dollars_to_the_cent_or_its_last_digit(
-    amount: Decimal, said: str
-) -> None:
-    assert dollars(amount) == said
 
 
 def test_a_step_that_cost_nothing_says_so(

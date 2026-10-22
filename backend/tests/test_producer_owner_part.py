@@ -320,15 +320,6 @@ def other_scenes_clipped(fake_model: FakeModel, steps: HeldSteps, say: Callable[
     run(fake_model, steps)
 
 
-@pytest.mark.usefixtures("pictured")
-def test_every_other_scene_is_made_while_the_scene_waits(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    other_scenes_clipped(fake_model, steps, say)
-
-    assert (clips_of(1), clips_of(2), clips_of(3)) == (1, 0, 1)
-
-
 def waits_notices() -> list[str]:
     return list(
         Message.objects.filter(role="notice", text__contains="waits for your yes").values_list(
@@ -367,6 +358,8 @@ def test_the_shop_owners_yes_after_another_scenes_clip_still_reaches_the_produce
     # After the ad's first clip, the shop owner's messages are sorted first: a yes to the
     # part is no note on a clip, so it is the producer's to answer.
     other_scenes_clipped(fake_model, steps, say)
+    # Every other scene is made while the scene waits.
+    assert (clips_of(1), clips_of(2), clips_of(3)) == (1, 0, 1)
 
     yes(fake_model, steps, say)
 
