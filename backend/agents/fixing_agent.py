@@ -588,7 +588,7 @@ def judge_words(ruling: dict[str, Any] | None) -> str:
         moments = (first.get("look") or {}).get("moments") or []
         if moments:
             lines.append(
-                "Second by second (one of its three looks): "
+                "Second by second: "
                 + " ".join(f"{m['time']:g}s {m['what_happens']}" for m in moments)
             )
     return "\n".join(lines)

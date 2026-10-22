@@ -124,7 +124,7 @@ def _ruling(scripted: ScriptedTry, before: ProducedItem) -> dict[str, Any]:
         "compared_with": before.pk,
         "answers": {
             "sides": [],
-            "motion": [{"verdict": scripted.judge, "owner_change": owner_change}] * 3,
+            "motion": [{"verdict": scripted.judge, "owner_change": owner_change}],
         },
     }
 

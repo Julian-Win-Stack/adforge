@@ -6,8 +6,8 @@ judge's own, from hand-written answers: one ask per check since Julian's "drop t
 
 from typing import Any
 
-from jobs import clip_judge
 from jobs.auto_fix import faults, judge_saw
+from jobs.clip_judge import judged
 
 FLOATS = "The teapot rises at 1.2 s with no hand on it. A real one stays on the bench."
 SPINS = "The mug spins at 2 s and shows its back. A real one keeps its front to the camera."
@@ -38,10 +38,6 @@ def motion(**failed: str) -> dict[str, Any]:
             for question, problem in failed.items()
         },
     }
-
-
-def judged(sides: list[dict[str, Any]], motion: list[dict[str, Any]]) -> dict[str, Any]:
-    return clip_judge.judged(sides, motion)
 
 
 def sides(problem: str) -> dict[str, Any]:
@@ -95,11 +91,21 @@ def test_a_fail_a_ruling_from_before_let_go_on_a_failed_question_is_left_out() -
 def test_a_fail_a_ruling_from_the_vote_found_no_other_answer_naming_is_left_out() -> None:
     # Made while each check was asked 3 times: all three fail real_motion, but the same-fault
     # vote found the second's fault, the spin, named by no other answer.
-    ruling = judged(
-        [SIDES_OK] * 3,
-        [motion(real_motion=FLOATS), motion(real_motion=SPINS), motion(real_motion=FLOATS)],
-    )
-    ruling["agreement"] = {"real_motion": {"groups": [], "sharing": [1, 3]}}
+    answers = [motion(real_motion=FLOATS), motion(real_motion=SPINS), motion(real_motion=FLOATS)]
+    ruling = {
+        "checks": {"sides": "pass", "real_motion": "fail"},
+        "failures": [
+            {
+                "check": "motion",
+                "ask": ask,
+                "problems": [said["real_motion"]["problem"]],
+                "answer": said,
+            }
+            for ask, said in enumerate(answers, 1)
+        ],
+        "answers": {"sides": [SIDES_OK] * 3, "motion": answers},
+        "agreement": {"real_motion": {"groups": [], "sharing": [1, 3]}},
+    }
 
     assert faults(ruling) == [FLOATS]
     assert judge_saw(ruling) == [motion(real_motion=FLOATS)]

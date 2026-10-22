@@ -146,7 +146,7 @@ class Settled:
 def settle_all(answers: Sequence[dict[str, Any] | None]) -> Settled:
     """`settle` over answers all asked at once, in ask order, keeping every answer had: each
     was paid for. Most of them must agree: the clip judge asks once (clip_judge.ASKS), so its
-    one answer settles it."""
+    one answer settles it; a ruling made while it asked 3 times settles on 2, as it did."""
     settled = settle(
         lambda number: answers[number - 1], asks=len(answers), needed=len(answers) // 2 + 1
     )
