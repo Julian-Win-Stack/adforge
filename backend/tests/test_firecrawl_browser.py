@@ -4,6 +4,7 @@ since the page is served locally."""
 
 import io
 import json
+import re
 import socket
 import threading
 import time
@@ -91,7 +92,14 @@ GALLERY_JS += ".forEach((cell) => cell.classList.add('built')); } };"
 def browser_page() -> Iterator[Page]:
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
-        yield browser.new_page(viewport=WINDOW)
+        page = browser.new_page(viewport=WINDOW)
+        # The pages are served here; what they link to elsewhere (a YouTube embed) is never
+        # fetched, so the tests don't need the network or wait on it.
+        page.route(
+            re.compile(r"^(?!https?://(localhost|127\.0\.0\.1)[:/])"),
+            lambda route: route.abort(),
+        )
+        yield page
         browser.close()
 
 
