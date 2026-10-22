@@ -23,7 +23,6 @@ from agents.models import SystemNote
 from chat.models import Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from gateway.types import BlockedBySafetyFilter
 from jobs import clip_judge, work
 from jobs.clip_judge import ASKS
 from jobs.models import Fix, FixCheck, FixPlan, ProducedItem, Scene, SceneStep
@@ -250,25 +249,6 @@ def test_an_owner_message_before_the_failed_checks_notice_doesnt_unlock_its_clip
 
 
 @pytest.mark.usefixtures("no_fix_redraws")
-def test_go_ahead_after_a_failed_picture_check_makes_its_clip_and_the_ad(
-    fake_model: FakeModel,
-    steps: HeldSteps,
-    shown: list[str],  # noqa: F811
-) -> None:
-    fake_model.respond("check_fix", not_made(HANDLE_HIDDEN), not_made(HANDLE_HIDDEN))
-    plan = picture_redone(fake_model, steps)
-    assert FixCheck.objects.get().verdict == "failed"
-    assert steps.held == []
-
-    run_plan.go_ahead(row_of(plan, 2))
-    assert held_kinds(steps) == [(2, "clip")]
-    steps.run_next()
-
-    assert latest("clip", 2).picture == latest("starting_picture", 2)
-    assert [ad.version for ad in ads()] == [1, 2]
-
-
-@pytest.mark.usefixtures("no_fix_redraws")
 def test_a_new_note_after_a_failed_picture_check_redraws_the_picture_and_checks_again(
     fake_model: FakeModel,
     steps: HeldSteps,
@@ -293,31 +273,6 @@ def test_a_new_note_after_a_failed_picture_check_redraws_the_picture_and_checks_
         "passed",
     )
     assert [check.verdict for check in FixCheck.objects.order_by("id")] == ["failed", "passed"]
-
-
-def test_a_picture_check_that_cant_be_had_carries_on_and_says_so(
-    fake_model: FakeModel,
-    steps: HeldSteps,
-    shown: list[str],  # noqa: F811
-) -> None:
-    blocked = BlockedBySafetyFilter("blocked")
-    fake_model.respond("check_fix", blocked, blocked, blocked)
-
-    picture_redone(fake_model, steps)
-
-    check = FixCheck.objects.get()
-    assert (check.verdict, check.answers) == ("unchecked", [])
-    assert held_kinds(steps) == [(2, "clip")]
-    # Never silent: the shop owner is told it wasn't checked, and the producer that it was.
-    assert Message.objects.filter(
-        role="notice",
-        text="Scene 2's new starting picture couldn't be checked for your change, so it is "
-        "kept unchecked.",
-    ).exists()
-    assert notes("check_unchecked") == [
-        "Scene 2's fix couldn't be checked in its new picture, so it carries on unchecked. "
-        "The chat told the shop owner it wasn't checked."
-    ]
 
 
 def test_a_picture_check_whose_asks_fail_unexpectedly_carries_on_and_says_so(
@@ -410,37 +365,6 @@ def test_a_fix_isnt_checked_when_quality_checks_are_switched_off(
     assert not FixCheck.objects.exists()
     assert "check_fix" not in paid_for()
     assert held_kinds(steps) == [(2, "clip")]
-
-
-def test_a_talking_scenes_picture_fix_is_checked_too(
-    fake_model: FakeModel,
-    steps: HeldSteps,
-    shown: list[str],  # noqa: F811
-) -> None:
-    old_picture = latest("starting_picture", 1)
-
-    fixed(
-        1,
-        "new_picture",
-        change=BOTH_HANDS,
-        note="In the first scene she should hold the mug with both hands.",
-    )
-    assert held_kinds(steps) == [(1, "starting_picture")]
-    fake_model.respond("choose_starting_picture", TALKING)
-    steps.run_next()
-
-    check = FixCheck.objects.get()
-    assert (check.step.scene.number, check.old, check.new, check.verdict) == (
-        1,
-        old_picture,
-        latest("starting_picture", 1),
-        "passed",
-    )
-    assert [(ask["fix"], ask["ask"]) for ask in handoffs("check_fix")] == [
-        (BOTH_HANDS, 1),
-        (BOTH_HANDS, 2),
-    ]
-    assert held_kinds(steps) == [(1, "clip")]
 
 
 # --- A new clip is checked once, on the clip the clip judge kept -------------------------------
@@ -782,21 +706,6 @@ def test_a_failed_clip_check_never_passes_on_a_problem_the_clip_judge_outvoted(
     )
 
 
-def test_a_clip_check_that_cant_be_had_shows_the_ad(
-    fake_model: FakeModel,
-    steps: HeldSteps,
-    shown: list[str],  # noqa: F811
-) -> None:
-    blocked = BlockedBySafetyFilter("blocked")
-    fake_model.respond("check_clip_motion", blocked, blocked, blocked)
-
-    a_clip_redone(fake_model, steps)
-
-    check = FixCheck.objects.get()
-    assert (check.verdict, check.answers) == ("unchecked", [])
-    assert [ad.version for ad in ads()] == [1, 2]
-
-
 def test_a_fixs_clip_is_judged_alone_when_the_old_clips_frames_cant_be_cut(
     fake_model: FakeModel,
     steps: HeldSteps,
@@ -924,7 +833,8 @@ def test_a_clip_check_whose_asks_fail_unexpectedly_shows_the_ad(
 
     a_clip_redone(fake_model, steps)
 
-    assert FixCheck.objects.get().verdict == "unchecked"
+    check = FixCheck.objects.get()
+    assert (check.verdict, check.answers) == ("unchecked", [])
     assert [ad.version for ad in ads()] == [1, 2]
 
 

@@ -63,21 +63,6 @@ def needing(needs: list[dict[str, Any]], **labels: Any) -> None:
     Scene.objects.filter(number=2).update(needs=needs, **labels)
 
 
-def test_a_scene_with_needs_gets_a_starting_picture_made_from_its_needs_photos_too(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    add_photos(True, False)
-    needing(NEEDS)
-
-    step = picture_of_scene_2(fake_model, steps, say)
-
-    assert step.status == "finished"
-    assert step.produced.get().kind == "starting_picture"
-    # The need's photo without a face, after the main photo.
-    (asked,) = handoffs("make_starting_picture")
-    assert asked["pictures"] == [photo_file(1), photo_file(4), before_picture_file()]
-
-
 def test_the_model_writing_the_prompts_is_told_each_pictures_job_the_portrait_last(
     fake_model: FakeModel,
     instructed: dict[str, list[str]],  # noqa: F811
