@@ -23,8 +23,6 @@ from .test_producer_fixes import (
     shown,  # noqa: F401 (a fixture)
 )
 
-pytestmark = pytest.mark.django_db(transaction=True)
-
 # Another AI reads the notes and code shows the plan with a yes button (decisions 1, 4, 15).
 THE_APP_TAKES_THE_NOTES = (
     "Once a scene has a clip, the app takes the shop owner's notes on the ad: another AI "
@@ -79,6 +77,8 @@ def test_a_notes_sentence_is_in_the_producers_instructions_word_for_word(sentenc
     assert sentence in " ".join(INSTRUCTIONS.split())
 
 
+# Only this test runs the chat, so only it has the database.
+@pytest.mark.django_db(transaction=True)
 def test_the_producers_model_is_given_the_notes_instructions(
     fake_model: FakeModel,
     shown: ProducedItem,  # noqa: F811

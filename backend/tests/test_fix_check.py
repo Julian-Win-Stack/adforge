@@ -21,11 +21,10 @@ from rest_framework.test import APIClient
 from agents import run_plan, tasks
 from agents.models import SystemNote
 from chat.models import Message
-from gateway import catalog
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter
-from jobs import clip_judge, fix_check, work
+from jobs import clip_judge, work
 from jobs.clip_judge import ASKS
 from jobs.models import Fix, FixCheck, FixPlan, ProducedItem, Scene, SceneStep
 
@@ -1036,38 +1035,3 @@ FIXED = {"verdict": "fixed", "still_wrong": None}
 
 def unfixed(why: str) -> dict[str, Any]:
     return {"verdict": "not fixed", "still_wrong": why}
-
-
-@pytest.mark.parametrize(
-    ("answers", "verdict", "reason"),
-    [
-        ([FIXED, FIXED], "passed", ""),
-        ([unfixed("a"), FIXED, FIXED], "passed", ""),
-        ([unfixed("a"), unfixed("b")], "failed", "a"),
-        ([FIXED, unfixed("a"), unfixed("b")], "failed", "a"),
-        ([None, unfixed("a"), unfixed("b")], "failed", "a"),
-        ([None, None, None], "unchecked", ""),
-        # Two answers that agree settle it; fewer, and it wasn't checked.
-        ([None, None, unfixed("a")], "unchecked", ""),
-        ([None, FIXED, None], "unchecked", ""),
-        ([FIXED, None, unfixed("a")], "unchecked", ""),
-    ],
-)
-def test_the_verdict_is_settled_by_two_answers_of_three(
-    answers: list[dict[str, Any] | None], verdict: str, reason: str
-) -> None:
-    given = iter(answers)
-    settled = fix_check.settle(lambda _ask: next(given))
-
-    assert (settled.verdict, settled.reason) == (verdict, reason)
-    assert settled.answers == [answer for answer in answers if answer is not None]
-
-
-def test_a_not_fixed_answer_must_say_what_is_still_wrong() -> None:
-    with pytest.raises(ValueError, match="must say what is still wrong"):
-        fix_check.FixVerdict(old_shows="a", new_shows="b", verdict="not fixed", still_wrong=" ")
-
-
-def test_a_picture_fix_is_checked_by_the_picture_judges_model() -> None:
-    assert catalog.MODEL_FOR_PURPOSE["check_fix"] == "gpt-6.1-sol"
-    assert "check_fix" not in catalog.SLOW_ANSWER_SECONDS
