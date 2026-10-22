@@ -9,15 +9,34 @@ from gateway.types import Handoff
 
 from .planning import ChatMessage, ProductSize
 
-STARTING_PICTURE_INSTRUCTIONS = """\
+# Which photo a starting picture takes the product from (Julian 2026-10-22 19:17): the plan's
+# marks of the photos in the ad's colour are advice, never a gate, so a product whose photos
+# all show it in a pack, a set or beside its other colours is still made. Its colour always
+# comes from a photo, never from words.
+COLOUR_PICK = (
+    '"colour_photos" names the photos that show the product in the ad\'s colour, '
+    '"product_colour": pick one of them. Only when none of them suits, or "colour_photos" is '
+    "empty, pick another photo where the product is clearly seen, in that colour if one shows "
+    "it. The product's look and colour come only from the photo picked: never change them or "
+    "make one up."
+)
+SEVERAL_ITEMS = (
+    "When the photo picked shows more than one item, such as a pack, a set, a line-up or the "
+    "product in several colours, the picture prompt says which one item to take, by where it "
+    'is in the photo and how it looks, such as "the grey pair in the middle", in the ad\'s '
+    "colour when the photo has it, and the picture shows only that item."
+)
+
+STARTING_PICTURE_INSTRUCTIONS = f"""\
 You plan the starting picture for one scene of a short vertical video ad. In the scene, the \
 person in the portrait holds the product and says the scene's line to camera. The picture \
 is made by a picture model from two pictures: the portrait first, then one product photo. \
 A video model then animates it to say the line, so it is the scene's first frame.
 You are shown the portrait and the product photos you may pick from, each labelled with \
-its number. Every one shows the product in the ad's colour.
+its number. {COLOUR_PICK}
 Pick the photo whose view of the product suits the line best: for a line about a detail, \
-a photo that shows that detail. Then write the picture model's prompt: use the person from \
+a photo that shows that detail. {SEVERAL_ITEMS}
+Then write the picture model's prompt: use the person from \
 the first picture, with the same face, hair and clothes, and the product from the second, \
 exactly as it looks, with any label or print unchanged and facing the camera. Pose them \
 with the product exactly as "pose" says: it is set from how big the product really is, so \
@@ -33,15 +52,16 @@ Use the conversation with the shop owner for their wishes about how the ad looks
 about the product come only from what you are shown.
 Give a one-sentence reason for the photo and one for the prompt, written for the shop owner."""
 
-BROLL_PICTURE_INSTRUCTIONS = """\
+BROLL_PICTURE_INSTRUCTIONS = f"""\
 You plan the starting picture for one scene of a short vertical video ad. The scene doesn't \
 show the person talking to camera: it shows what the scene's "shows" describes, while the \
 person's voice says the scene's line over it. The picture is made by a picture model from \
 two pictures: the portrait first, then one product photo. A video model then animates it, \
 with no sound, so it is the scene's first frame.
 You are shown the portrait and the product photos you may pick from, each labelled with \
-its number. Every one shows the product in the ad's colour.
-Pick the photo whose view of the product suits what the scene shows best. Then write the \
+its number. {COLOUR_PICK}
+Pick the photo whose view of the product suits what the scene shows best. {SEVERAL_ITEMS}
+Then write the \
 picture model's prompt: the product from the second picture, exactly as it looks, with any \
 label or print unchanged; the scene as "shows" describes it and nothing more; the setting \
 and light of the portrait's; the person from the first picture only if "shows" needs them, \
@@ -99,7 +119,8 @@ presenter from the portrait, with the same face, hair and clothes. When it is "n
 face is seen. Any hand is fine. When "shows" names a person or a hand, they are in the \
 clip, doing what it says.
 - The product is shown, not described: the pictures show how it looks, so don't describe \
-its shape, colours or brand name in words.
+its shape, colours or brand name in words, except to say which one item of Image 1 to \
+take.
 - Never write "no speech", "no sound" or "no text".
 - Never ask for two things that can't both be true at once, of the product or the scene, \
 such as "upright" and "nozzle pointing down", or "squeeze" and "no gel". Check every order \
@@ -121,8 +142,8 @@ order, each named by its number ("Image 1") and used only for its job. A video m
 animates the picture into one clip, and the clip's sound is replaced by the voice.
 You are shown the product photos you may pick from, each labelled with its number, then a \
 photo of what the scene needs that they can't show, if it needs anything, and the presenter's \
-portrait when the scene shows their face. Every photo in "colour_photos" shows the product in \
-the ad's colour. Pick the one whose view of the product suits the scene best: it is Image 1.
+portrait when the scene shows their face. {COLOUR_PICK} Pick the one whose view of the \
+product suits the scene best: it is Image 1. {SEVERAL_ITEMS}
 Then write the picture model's prompt and the video model's prompt, following these rules:
 - Take only the product from Image 1, exactly as it looks, with any label or print \
 unchanged. Nothing else from that photo: not its background, setting or people. The setting \
@@ -466,11 +487,6 @@ def need_job(need: NeedPhoto) -> str:
     return f"{job}; ignore the person in it" if need.has_face else job
 
 
-class NotAColourPhoto(ValueError):
-    """The model writing a starting picture's prompts picked a photo that doesn't show the
-    product in the ad's colour."""
-
-
 class StartingPictureChoice(BaseModel):
     photo: int = Field(description="The number of the product photo to make the picture from.")
     photo_reason: str = Field(description="One sentence saying why that photo suits the line.")
@@ -500,13 +516,13 @@ class BrollPictureChoice(StartingPictureChoice):
 
 
 def starting_picture_choice_for[Choice: StartingPictureChoice](
-    colour_photos: list[int], choice: type[Choice]
+    photos: list[int], choice: type[Choice]
 ) -> type[Choice]:
-    """`choice` for a job whose photos in the ad's colour are `colour_photos`. A photo
-    that isn't one of them fails while the answer is read, like any other broken answer.
-    With only one, the model isn't asked which (case C12b): code fills it in."""
-    if len(colour_photos) == 1:
-        (only,) = colour_photos
+    """`choice` for a job whose product photos shown to the model are numbered `photos`. A
+    photo that isn't one of them fails while the answer is read, like any other broken
+    answer. With only one, the model isn't asked which (case C12b): code fills it in."""
+    if len(photos) == 1:
+        (only,) = photos
 
         class OnlyPhotoForJob(choice):  # type: ignore[valid-type,misc]
             photo: SkipJsonSchema[int] = only
@@ -515,12 +531,11 @@ def starting_picture_choice_for[Choice: StartingPictureChoice](
 
     class StartingPictureChoiceForJob(choice):  # type: ignore[valid-type,misc]
         @model_validator(mode="after")
-        def _a_photo_in_the_colour(self) -> Self:
-            if self.photo not in colour_photos:
-                shown = ", ".join(str(number) for number in colour_photos)
-                raise NotAColourPhoto(
-                    f"Photo {self.photo} isn't one showing the product in the ad's colour: "
-                    f"those are {shown}."
+        def _a_photo_shown(self) -> Self:
+            if self.photo not in photos:
+                shown = ", ".join(str(number) for number in photos)
+                raise ValueError(
+                    f"Photo {self.photo} isn't one of the product photos: those are {shown}."
                 )
             return self
 

@@ -201,15 +201,15 @@ def test_48_page_photos_and_5_video_pictures_show_the_planner_50_and_say_which_a
     ]
 
 
-def test_a_page_read_again_drops_its_video_pictures_with_its_videos_and_keeps_the_new_ones(
+def test_a_page_read_again_keeps_its_video_and_its_video_pictures(
     gallery_video: ProductVideo,
     fake_model: FakeModel,
     shampoo_page_url: str,
     say: Callable[..., None],
 ) -> None:
     job = gallery_video.job
-    fake_model.respond("note_face", *[{"has_face": False}] * 3)
-    save_video_pictures(
+    fake_model.respond("note_face", *[{"has_face": False}] * 2)
+    pictures = save_video_pictures(
         job,
         gallery_video,
         [kept(0.4, "The bottle opened."), kept(1.6, "In use.")],
@@ -220,16 +220,16 @@ def test_a_page_read_again_drops_its_video_pictures_with_its_videos_and_keeps_th
 
     read(fake_model, say, shampoo_page_url)
 
+    # A read only adds what the job doesn't have: the video and its pictures stay, numbers
+    # and all.
     (again,) = job.videos.all()
-    assert again.pk != gallery_video.pk
-    assert [(photo.position, photo.from_video) for photo in job.photos.all()] == [(1, None)]
-    (saved,) = save_video_pictures(
-        job, again, [kept(0.4, "The bottle opened.")], frames((0.4, OPENED))
-    )
-    assert (saved.position, saved.from_video) == (2, again)
+    assert again.pk == gallery_video.pk
+    assert [(photo.pk, photo.position) for photo in job.photos.exclude(from_video=None)] == [
+        (picture.pk, picture.position) for picture in pictures
+    ]
 
 
-def test_videos_kept_again_drop_their_video_pictures(
+def test_videos_kept_again_keep_their_video_pictures(
     gallery_video: ProductVideo, fake_model: FakeModel
 ) -> None:
     job = gallery_video.job
@@ -240,5 +240,6 @@ def test_videos_kept_again_drop_their_video_pictures(
 
     save_videos(job, [])
 
-    assert not job.photos.exclude(from_video=None).exists()
-    assert job.photos.count() == 1
+    assert job.videos.get() == gallery_video
+    assert job.photos.exclude(from_video=None).count() == 1
+    assert job.photos.count() == 2
