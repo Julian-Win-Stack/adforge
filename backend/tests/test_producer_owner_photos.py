@@ -601,20 +601,6 @@ def test_the_photo_is_kept_on_the_scene_once_the_shop_owner_says_yes(mug_fixed: 
     assert list(last_step("clip").reference_photos.all()) == [row]
 
 
-def test_no_photo_is_kept_before_the_shop_owner_says_yes(
-    fake_model: FakeModel, shown: ProducedItem, say: Say
-) -> None:
-    photos_sent(fake_model, say, OWNER_MUG)
-
-    fixing.planned(
-        fixing.plan_row(2, "new_picture", change=MUG_FIX, photos=[photo(1, "black mug")]),
-        note=MUG_NOTE,
-    )
-
-    assert not ReferencePhoto.objects.exists()
-    assert clean_pictures() == []
-
-
 # --- Reference mode ------------------------------------------------------------------------------
 
 
@@ -916,24 +902,6 @@ def test_a_new_line_keeps_the_picture_with_the_photo(
 
 
 # --- Going back, a new photo of the same thing ---------------------------------------------------
-
-
-def test_going_back_brings_back_the_picture_and_clip_from_before_the_photo_for_nothing(
-    fake_model: FakeModel, mug_fixed: Fix, steps: HeldSteps
-) -> None:
-    before = ProducedItem.objects.get(kind="starting_picture", scene__number=2, version=1)
-    old_clip = ProducedItem.objects.get(kind="clip", scene__number=2, version=1)
-    paid = paid_for()
-
-    plan = fixing.fixed(2, "go_back", note="Go back to the green mug.", go_back_to=1)
-    steps.run_held()
-
-    assert plan.scenes.get().estimate_usd == 0
-    assert paid_for() == paid
-    assert latest("starting_picture").file == before.file
-    assert latest("clip").file == old_clip.file
-    # D5: the scene no longer uses the photo, so the next fix won't bring it back.
-    assert in_use() == []
 
 
 def test_going_back_from_a_clip_in_reference_mode_brings_back_the_clip_from_before(

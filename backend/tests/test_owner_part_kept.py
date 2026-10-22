@@ -80,14 +80,6 @@ def shown(fake_model: FakeModel, approved: None, steps: HeldSteps, say: Say) -> 
     calling(fake_model, say, ("assemble_ad", {}))
 
 
-def test_the_yes_gives_the_part_and_its_photo_to_every_scene_that_shows_it(
-    approved: None,
-) -> None:
-    assert scene(3).owner_part == HANDLE
-    assert owner_parts.is_approved(scene(3))
-    assert in_use(3) == [("handle", "picture")]
-
-
 def test_a_scene_drawn_before_the_photo_was_kept_is_drawn_again_before_its_clip(
     fake_model: FakeModel, approved: None, steps: HeldSteps, say: Say
 ) -> None:

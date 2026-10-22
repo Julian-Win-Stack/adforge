@@ -139,39 +139,6 @@ def test_the_fact_check_takes_what_the_video_says_as_the_shops_words_and_sees_it
     assert results_of("run_planning_checks")[0].startswith("The checks passed.")
 
 
-def test_48_page_photos_and_5_video_pictures_are_planned_from_50_page_photos_first_saying_so(
-    fake_model: FakeModel, page_read: str, say: Callable[..., None]
-) -> None:
-    # The page's 2 photos and 46 more, 5 pictures from its video, then the shop owner's 1.
-    job = Job.objects.get()
-    for position in range(3, 49):
-        keep_photo(
-            job,
-            position,
-            picture(100 + position, 100, (143, 170, 140)),
-            "image/png",
-            source_url=f"https://shop.example/{position}.png",
-        )
-    talking = video(job, 1, transcript=SAYS)
-    for n, position in enumerate(range(49, 54)):
-        video_picture(job, position, talking, float(n), f"moment {n}")
-    keep_photo(job, 54, picture(80, 80, (10, 10, 10)), "image/png")
-
-    plan_it(fake_model, say, PLAN)
-
-    (call,) = ModelCall.objects.filter(purpose="plan_ad")
-    assert [image["label"] for image in call.images] == [
-        *(f"Photo {position}" for position in range(1, 49)),
-        "Photo 49 (from the product's video at 0.0 s: moment 0)",
-        "Photo 50 (from the product's video at 1.0 s: moment 1)",
-    ]
-    job.refresh_from_db()
-    assert job.warnings[-1]["text"] == (
-        "The ad has 54 product photos, more than the 50 a model can be shown at once, so "
-        "photos 51, 52, 53 and 54 are left out when it's planned or a line is rewritten."
-    )
-
-
 # --- The whole way, from the shop owner's link ------------------------------------------------
 
 

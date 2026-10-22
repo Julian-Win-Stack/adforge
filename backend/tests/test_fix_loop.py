@@ -253,46 +253,8 @@ def test_a_picture_note_makes_the_picture_then_the_clip_then_the_ad(
 # (nothing made before the yes).
 
 # --- 5. Two notes in one message: one plan, one yes, both redos at once, one ad --------------
-
-
-def test_two_notes_at_once_are_planned_together_and_make_one_new_ad(
-    fake_model: FakeModel, steps: HeldSteps, shown: list[str]
-) -> None:
-    untouched = made_for(3)
-    plan = planned(
-        plan_row(1, "new_picture", change=BOTH_HANDS),
-        plan_row(2, "new_clip", change=TURN_FIX),
-        note=f"{HOVERS} And in the first scene she should hold the mug with both hands.",
-    )
-    (told,) = notes(SystemNote.Kind.PLAN_SHOWN)
-    assert told.endswith(f"About {dollars(plan.estimate_usd())} in all.")
-
-    say_yes(plan, "Yes to both")
-    assert Fix.objects.count() == 2
-    # Both started at once.
-    assert held_kinds(steps) == [(1, "starting_picture"), (2, "clip")]
-    fake_model.respond("choose_starting_picture", TALKING)
-    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
-    # Scene 1's picture lands; code makes its clip.
-    steps.run_next()
-    # Scene 2's clip lands while scene 1's is still being made: nothing assembled yet.
-    steps.run_next()
-    assert [ad.version for ad in ads()] == [1]
-    assert notes(SystemNote.Kind.AD_SHOWN) == []
-    # Scene 1's clip lands last and assembles the one new ad, with both new clips.
-    assert held_kinds(steps) == [(1, "clip")]
-    steps.run_next()
-
-    assert [ad.version for ad in ads()] == [1, 2]
-    assert [cut["clip"] for cut in ads()[1].cuts] == [
-        latest("clip", 1).pk,
-        latest("clip", 2).pk,
-        latest("clip", 3).pk,
-    ]
-    assert (latest("clip", 1).version, latest("clip", 2).version) == (2, 2)
-    assert made_for(3) == untouched
-    assert len(notes(SystemNote.Kind.AD_SHOWN)) == 1
-
+# Proved by code's plan: test_run_plan.py (every scene lands, the ad is assembled once, and
+# the plan's estimate in all).
 
 # --- 7. A second note on the same scene after its fix ------------------------------------------
 

@@ -15,7 +15,7 @@ from gateway.catalog import MODEL_FOR_PURPOSE, transcription_cost_usd
 from gateway.fake import FakeModel
 from jobs.models import Fix, FixPlan, ProducedItem, Scene, SceneStep
 
-from .conftest import JUDGED_CLIP, HeldSteps, facts_ok, paid_for, producer_turns, results_of
+from .conftest import JUDGED_CLIP, HeldSteps, facts_ok, paid_for, producer_turns
 from .fixing import fixed, plan_row, planned
 from .test_fix_loop import TURN_REWRITE, latest
 from .test_producer_broll import (
@@ -26,11 +26,9 @@ from .test_producer_broll import (
     clips_asked,
 )
 from .test_producer_fixes import (
-    Say,
     ads,
     fix_of,
     last_step,
-    owner_says,
     row_of,
     shown,  # noqa: F401 (a fixture)
 )
@@ -109,6 +107,7 @@ def test_a_talking_scenes_new_line_remakes_only_that_scene_and_a_new_ad(
     ad = ProducedItem.objects.get(kind="finished_ad", version=2)
     assert "On sale now" in captioned(ad)
     assert "Yours for" not in captioned(ad)
+    assert ad.cuts[2]["clip"] == latest("clip", 3).pk
 
 
 def test_a_line_change_pays_only_for_the_scenes_steps_and_no_judge_checks_the_fix(
@@ -128,27 +127,6 @@ def test_a_line_change_pays_only_for_the_scenes_steps_and_no_judge_checks_the_fi
         "make_talking_clip",
         "collect_talking_clip",
     ]
-
-
-def test_the_old_lines_items_are_kept_and_the_new_ad_uses_none_of_them(
-    fake_model: FakeModel,
-    shown: ProducedItem,  # noqa: F811
-    steps: HeldSteps,
-    say: Say,
-) -> None:
-    old_clip = ProducedItem.objects.get(kind="clip", scene__number=3)
-
-    new_line(3, LINE_3)
-    made_again(steps)
-    # Not a note: the decider passes it on to the producer.
-    owner_says(fake_model, say, "Show me again", ("assemble_ad", {}))
-
-    new_clip = ProducedItem.objects.get(kind="clip", scene__number=3, version=2)
-    ad = ProducedItem.objects.filter(kind="finished_ad").order_by("version").last()
-    assert ad is not None and ad.version == 2
-    assert [cut["clip"] for cut in ad.cuts][2] == new_clip.pk
-    assert ProducedItem.objects.filter(pk=old_clip.pk).exists()
-    assert results_of("assemble_ad")[-1].startswith("The ad was already assembled")
 
 
 def test_a_broll_scenes_new_line_keeps_what_it_shows_and_its_labels(

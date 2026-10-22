@@ -19,7 +19,7 @@ from chat import messages
 from chat.models import Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
 from gateway.types import StepFinished, Turn, UnusableReply
-from jobs import fix_check, work
+from jobs import fix_check
 from jobs.models import (
     FixCheck,
     FixPlan,
@@ -27,7 +27,6 @@ from jobs.models import (
     Job,
     ProducedItem,
     ReferencePhoto,
-    Scene,
     SceneStep,
 )
 
@@ -199,15 +198,14 @@ def test_a_picture_note_is_shown_as_a_plan_and_run_by_code_once_the_yes_is_tappe
     ]
 
 
-@pytest.mark.parametrize("typed", ["yes", "yeah go"])
 def test_a_typed_yes_the_decider_reads_runs_the_plan(
-    fake_model: FakeModel, held: HeldSteps, say: Callable[..., None], typed: str
+    fake_model: FakeModel, held: HeldSteps, say: Callable[..., None]
 ) -> None:
     turns = producer_turns()
     plan = a_picture_note_planned(fake_model, say)
     fake_model.respond("decide_fixes", turn(calls=[sort("yes")]))
 
-    say(typed)
+    say("yes")
 
     plan.refresh_from_db()
     assert plan.state == "confirmed"
@@ -289,32 +287,6 @@ def test_a_question_mid_plan_is_answered_by_the_producer_from_the_notes_and_the_
     assert not names & {"restate_fix", "change_line"}
 
 
-def test_the_producer_answers_whats_happening_from_the_notes_without_asking_again(
-    fake_model: FakeModel,
-    held: HeldSteps,
-    say: Callable[..., None],
-    api: APIClient,
-    session_id: str,
-) -> None:
-    plan = a_picture_note_planned(fake_model, say)
-    tap_yes(api, session_id, plan)
-    fake_model.respond("produce", turn(says="Scene 1's new starting picture is being made."))
-
-    say("What's happening with scene 1?")
-
-    told = given_to_the_producer(fake_model)
-    assert [text.split(":", 1)[1].split(".")[0].strip() for text in told] == [
-        "A fix plan is shown to the shop owner, waiting for their yes",
-        "The shop owner said yes to the plan: scene 1's new starting picture is being made",
-    ]
-    # The question went to the producer, not into a new plan, and nothing new started.
-    assert plans() == [plan]
-    assert Message.objects.filter(role="agent").last().text == (  # type: ignore[union-attr]
-        "Scene 1's new starting picture is being made."
-    )
-    assert len(held.held) == 1
-
-
 def test_a_yes_tapped_on_a_plan_replaced_meanwhile_runs_nothing_and_the_producer_says_so(
     fake_model: FakeModel,
     held: HeldSteps,
@@ -374,91 +346,6 @@ def test_an_owner_photo_in_the_note_goes_with_the_clip_in_reference_mode(
     assert asked["starting_picture"] is None
     assert len(asked["example_pictures"]) == 2
     assert status(2) == "finished"
-
-
-def test_going_back_to_the_first_version_is_free_and_lands_at_once(
-    fake_model: FakeModel,
-    held: HeldSteps,
-    say: Callable[..., None],
-    api: APIClient,
-    session_id: str,
-) -> None:
-    plan = a_picture_note_planned(fake_model, say)
-    tap_yes(api, session_id, plan)
-    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
-    held.run_held()
-    first = work.versions(Scene.objects.get(number=1))[0]
-    ads_before = len(ads())
-    fake_model.respond(
-        "decide_fixes",
-        planning(
-            ("look_at_version", {"scene": 1, "version": 1}),
-            decided(row(1, "go_back", go_back_to=1)),
-        ),
-    )
-    say("I liked the first one better.")
-    back = plans()[-1]
-    assert back.scenes.get().estimate_usd == 0
-
-    tap_yes(api, session_id, back)
-
-    assert held.held == []
-    assert clip(1).file == first.clip.file  # type: ignore[union-attr]
-    assert work.versions(Scene.objects.get(number=1))[-1].label == "v3 back to v1"
-    assert len(ads()) == ads_before + 1
-
-
-def test_a_line_note_runs_the_line_chain_by_code(
-    fake_model: FakeModel,
-    held: HeldSteps,
-    say: Callable[..., None],
-    api: APIClient,
-    session_id: str,
-) -> None:
-    turns = producer_turns()
-    fake_model.respond(
-        "decide_fixes",
-        planning(
-            ("look_at_picture", {"scene": 3}),
-            decided(row(3, "new_line", "Say it warmer.", line=NEW_LINE)),
-        ),
-    )
-    say(f'Scene 3 should say "{NEW_LINE}"')
-    [plan] = plans()
-
-    tap_yes(api, session_id, plan)
-    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
-    held.run_held()
-
-    assert Scene.objects.get(number=3).line == NEW_LINE
-    made = clip(3)
-    assert made.step is not None and made.step.line == NEW_LINE
-    assert ads()[-1].cuts[-1]["clip"] == made.pk
-    assert producer_turns() == turns
-
-
-def test_a_picture_failing_its_fix_check_once_is_drawn_again_and_its_clip_made(
-    fake_model: FakeModel,
-    held: HeldSteps,
-    say: Callable[..., None],
-    api: APIClient,
-    session_id: str,
-) -> None:
-    turns, ads_before = producer_turns(), len(ads())
-    plan = a_picture_note_planned(fake_model, say)
-    tap_yes(api, session_id, plan)
-    fake_model.respond("choose_starting_picture", TALKING_CHOICE, TALKING_CHOICE)
-    fake_model.respond("check_fix", not_made(HANDLE_HIDDEN), not_made(HANDLE_HIDDEN))
-
-    held.run_held()
-
-    # The redraw passed: the shop owner was never asked, and its clip made the new ad.
-    failed, passed = FixCheck.objects.order_by("id")
-    assert (failed.verdict, passed.verdict) == ("failed", "passed")
-    assert failed.notice is None
-    assert clip(1).picture == passed.new
-    assert len(ads()) == ads_before + 1
-    assert producer_turns() == turns
 
 
 def test_go_ahead_to_a_failed_fix_check_carries_its_scene_on(

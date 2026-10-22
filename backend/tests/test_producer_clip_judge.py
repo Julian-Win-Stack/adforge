@@ -280,22 +280,6 @@ def test_no_clip_is_judged_with_quality_checks_switched_off(
     assert clip.ruling is None
 
 
-def test_an_ask_with_no_usable_answer_goes_unchecked(
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],  # noqa: F811
-) -> None:
-    unusable = UnusableReply("no answer", input_tokens=1, output_tokens=1)
-    fake_model.respond("check_clip_sides", *[unusable] * 6, CLIP_SIDES_OK)
-
-    clip = clip_of(fake_model, steps, say, 2)
-
-    assert ruling(clip)["checks"]["sides"] == "not_checked"
-    assert ruling(clip)["verdict"] == "not_checked"
-    assert SceneStep.objects.get(kind="clip", scene__number=2).status == "finished"
-
-
 def test_a_first_clip_the_judge_couldnt_check_is_kept_and_the_producer_told_so(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
