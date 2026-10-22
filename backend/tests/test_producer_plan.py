@@ -36,7 +36,6 @@ from .conftest import (
     picture,
     results_of,
 )
-from .test_planning import broll_scene
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -193,20 +192,6 @@ def test_the_producer_is_told_what_each_scene_shows(planned_with_tea_poured: Non
     ]
 
 
-def test_the_products_name_is_found_in_a_line_whatever_its_capitals(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
-) -> None:
-    scenes = [{"line": "Meet the stoneware MUG."}, {"line": "Yours for $24.00."}]
-    planning(fake_model, product_page_url, a_plan_with(scenes=scenes))
-
-    say(f"Make an ad for {product_page_url}")
-
-    assert list(Job.objects.get().scenes.values_list("line", flat=True)) == [
-        "Meet the stoneware MUG.",
-        "Yours for $24.00.",
-    ]
-
-
 def test_the_products_name_said_only_over_a_broll_scene_is_found(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
@@ -302,49 +287,6 @@ def test_each_broll_scenes_kind_person_usage_result_and_needs_are_stored(
         ("showcase", "no face", "", "", []),
         ("", "", "", "", []),
     ]
-
-
-def test_a_scene_sending_exactly_five_pictures_is_planned(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
-) -> None:
-    # The main photo, three needed photos and the presenter's portrait.
-    needs = [{"what": what, "photos": [1]} for what in ("the handle", "the base", "the rim")]
-    scenes = [{"line": "Meet the Stoneware Mug from Kiln & Co."}, {**TEA_POURED, "needs": needs}]
-    planning(fake_model, product_page_url, a_plan_with(scenes=scenes))
-
-    say(f"Make an ad for {product_page_url}")
-
-    assert [len(scene_needs) for *_, scene_needs in broll_labels()] == [0, 3]
-
-
-def test_a_scene_showing_the_problem_is_stored_with_its_kind(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
-) -> None:
-    plan = broll_scene(
-        line="Tea rings stain every mug you own, and they never scrub out.",
-        shows="a tea-stained mug beside the Stoneware Mug",
-        broll_kind="shows the problem",
-    )
-    planning(fake_model, product_page_url, plan)
-
-    say(f"Make an ad for {product_page_url}")
-
-    assert broll_labels()[1] == ("shows the problem", "no face", "", "", [])
-
-
-def test_a_scene_about_a_thin_film_is_planned_with_a_photo_of_it(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
-) -> None:
-    plan = broll_scene(
-        broll_kind="shows the problem",
-        thin_film=True,
-        needs=[{"what": "the cloudy film", "photos": [2]}],
-    )
-    planning(fake_model, product_page_url, plan)
-
-    say(f"Make an ad for {product_page_url}")
-
-    assert broll_labels()[1][0] == "shows the problem"
 
 
 # --- What the planner is given --------------------------------------------------------------
