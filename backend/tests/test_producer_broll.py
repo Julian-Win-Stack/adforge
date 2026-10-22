@@ -342,11 +342,15 @@ def test_the_model_planning_the_picture_is_given_only_its_kinds_rules(
 
 def test_a_scene_with_no_face_is_planned_from_the_photos_alone(ready: None) -> None:
     job = Job.objects.get()
-    # Photo 2 shows the mug in cream, and the ad's colour is sage green.
+    # Every product photo, Photo 2 too, which shows the mug in cream while the ad's colour is
+    # sage green: the writer is told which are in the ad's colour (colour_photos).
     assert ModelCall.objects.get(purpose="choose_broll_picture").images == [
         {"label": "Photo 1", "key": job.photos.get(position=1).file},
+        {"label": "Photo 2", "key": job.photos.get(position=2).file},
         {"label": "The before-picture", "key": before_picture_file()},
     ]
+    (planned,) = handoffs("choose_broll_picture")
+    assert planned["colour_photos"] == [1]
 
 
 def test_a_scene_with_no_face_sends_the_image_maker_the_main_photo_alone(ready: None) -> None:
@@ -385,6 +389,7 @@ def test_a_scene_with_a_face_is_planned_from_the_photos_and_the_portrait(
     job = Job.objects.get()
     assert ModelCall.objects.get(purpose="choose_broll_picture").images == [
         {"label": "Photo 1", "key": job.photos.get(position=1).file},
+        {"label": "Photo 2", "key": job.photos.get(position=2).file},
         {"label": "The portrait", "key": job.produced.get(kind="portrait").file},
         {"label": "The before-picture", "key": before_picture_file()},
     ]

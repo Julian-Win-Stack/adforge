@@ -699,11 +699,6 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
             id="a size that isn't one of the three",
         ),
         pytest.param(
-            a_plan_with(colour_photos=[]),
-            "List should have at least 1 item",
-            id="no photo showing the colour",
-        ),
-        pytest.param(
             a_plan_with(colour_photos=[1, 3]),
             "There's no photo 3: the job has 2.",
             id="a photo after the last one",

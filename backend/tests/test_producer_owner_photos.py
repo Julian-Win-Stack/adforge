@@ -533,8 +533,9 @@ def test_with_three_of_the_shop_owners_things_the_product_photo_is_still_photo_1
     instructed: dict[str, list[str]],  # noqa: F811 (the fixture)
 ) -> None:
     # Case C12b, replayed free: three things drawn in first made the product photo Image 4,
-    # and the writer, told so, answered "photo" with 4. With one photo in the ad's colour it
-    # is no longer asked which.
+    # and the writer, told so, answered "photo" with 4. With one product photo it is no
+    # longer asked which.
+    Job.objects.get().photos.filter(position=2).delete()
     photos_sent(fake_model, say, OWNER_MUG, OWNER_TEA, OWNER_COASTER)
     asked: list[dict[str, Any]] = []
 
@@ -566,7 +567,7 @@ def test_the_writer_of_the_prompts_is_told_the_shop_owners_pictures_win(
     mug_fixed: Fix,
 ) -> None:
     assert instructed["choose_broll_picture"][-1].endswith(
-        reference_photos.writer_rules(["black mug"], [], picks_photo=False)
+        reference_photos.writer_rules(["black mug"], [], picks_photo=True)
     )
 
 

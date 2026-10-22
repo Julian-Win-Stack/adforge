@@ -50,17 +50,24 @@ MUSIC_ONLY = "music only"
 
 def save_videos(job: Job, players: Sequence[dict[str, Any]]) -> list[ProductVideo]:
     """Keep each picked video player, as the page script lists it (src, poster, kind), in
-    the order given, once per video. A page read again keeps its videos afresh."""
-    job.videos.all().delete()
+    the order given, once per video. A page read again only adds the videos the job doesn't
+    have yet, after those it has: one at a link already kept is left out, and so is one with
+    no link while the job keeps one with none, which can't be told apart. Gives back the
+    videos added."""
+    had = list(job.videos.values_list("source_url", flat=True))
+    seen: set[str] = {src for src in had if src}
+    position = max(job.videos.values_list("position", flat=True), default=0)
     kept: list[ProductVideo] = []
-    seen: set[str] = set()
     for player in players:
         src, poster = str(player.get("src") or ""), str(player.get("poster") or "")
         found_by = src or poster
         if not found_by or found_by in seen or not _storable(src):
             continue
+        if not src and "" in had:
+            continue
         seen.add(found_by)
-        kept.append(keep_video(job, len(kept) + 1, player))
+        position += 1
+        kept.append(keep_video(job, position, player))
     return kept
 
 
@@ -246,7 +253,8 @@ def transcribe_videos(job: Job) -> list[str]:
     whose sound can't be written down is left without one, and the page is read as ever.
     Gives back a line for the producer for each such video."""
     problems: list[str] = []
-    for video in job.videos.exclude(file=""):
+    # Once each: a video kept by an earlier read of the page was written down then.
+    for video in job.videos.exclude(file="").filter(transcript=""):
         try:
             video.transcript = _transcript(job, video)
         except Exception as error:

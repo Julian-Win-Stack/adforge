@@ -74,9 +74,9 @@ def test_the_model_writing_the_prompts_is_told_each_pictures_job_the_portrait_la
 
     step = picture_of_scene_2(fake_model, steps, say)
 
-    # Shown the photos it may pick from, then the need's, then the portrait.
+    # Shown every product photo it may pick from, then the need's, then the portrait.
     assert ModelCall.objects.get(purpose="choose_broll_picture").images == [
-        {"label": "Photo 1", "key": photo_file(1)},
+        *({"label": f"Photo {number}", "key": photo_file(number)} for number in (1, 2, 3, 4)),
         {"label": "Photo 4", "key": photo_file(4)},
         {"label": "The portrait", "key": portrait_file()},
         {"label": "The before-picture", "key": before_picture_file()},

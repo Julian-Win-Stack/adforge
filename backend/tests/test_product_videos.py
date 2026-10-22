@@ -254,8 +254,9 @@ def test_a_page_read_again_keeps_its_videos_once(
     read(fake_model, say, link)
 
     assert len(results_of("read_page")) == 2
+    # Only what the job doesn't have is added: the video kept the first time stays as it is.
     (again,) = Job.objects.get().videos.all()
-    assert again.pk != first
+    assert again.pk == first
     assert file_store.read(again.file) == tiny_mp4
 
 

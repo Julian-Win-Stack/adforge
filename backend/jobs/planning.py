@@ -39,9 +39,9 @@ photo that shows it.
 looks like out of the tube. Never an action, a pose or a movement, such as a drop or a \
 hand holding it: the action is said in words only. Give each need with the numbers of the \
 photos that show it. The main \
-photo is one of the photos showing the product in its colour; leave needs empty when it's \
-enough. A needed photo may be any of the photos, even one where the product isn't \
-clearly seen. Never name a photo that shows the product in another colour than the \
+photo is picked from the product photos, one showing the product in its colour when one \
+does; leave needs empty when it's enough. A needed photo may be any of the photos, even \
+one where the product isn't clearly seen. Never name a photo that shows the product in another colour than the \
 ad's. A scene's clip is sent at most 5 pictures: the main photo, one for each need, \
 and the presenter's portrait when it "has face".
 """
@@ -144,10 +144,11 @@ something worth showing as well as saying, such as the price or the product's na
 otherwise set it to null. An overlay states only what the page or the shop owner states, \
 like a line. Name the product's \
 colour as the photos show it, in plain words such as "sage green", and give the numbers \
-of the photos that show the product in that colour. Leave out any photo that shows \
-another product next to this one, even one from the same brand or range, such as a \
-line-up, a set, a routine or a comparison, and any photo where this product can't be \
-clearly seen. If the product comes in several \
+of the photos that show the product in that colour. A photo counts whenever this product \
+is clearly seen in it in that colour, even beside other items, such as in a pack, a set, \
+a line-up or beside its other colours: the picture is told which item to take. Leave out \
+a photo where this product can't be clearly seen, and give none when no photo shows it \
+clearly in that colour. If the product comes in several \
 colours, don't ask which: pick the colour with the most photos where the product is \
 clearly seen; on a tie, the colour of Photo 1, the first photo. Say how big the product is, judged \
 from the photos you chose: "tiny" if it fits on a fingertip, such as earrings, earbuds or \
@@ -605,8 +606,10 @@ class Plan(BaseModel):
     product_colour: str = Field(
         description='The product\'s colour as the photos show it, such as "sage green".'
     )
+    # Advice for the picture's photo, never a gate: it may be empty (Julian 2026-10-22).
     colour_photos: list[StrictInt] = Field(
-        min_length=1, description="The numbers of the photos showing the product in that colour."
+        description="The numbers of the photos showing the product in that colour; empty when "
+        "none shows it clearly."
     )
     product_size: ProductSize = Field(
         description='How big the product is: "tiny" fits on a fingertip, "handheld" is held '

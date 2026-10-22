@@ -343,7 +343,7 @@ def test_a_step_that_breaks_while_showing_its_picture_isnt_left_running(
     )
 
 
-def test_a_photo_not_in_the_ads_colour_is_never_used(
+def test_a_photo_the_job_doesnt_have_is_never_used(
     api: APIClient,
     fake_model: FakeModel,
     checked: None,
@@ -351,9 +351,7 @@ def test_a_photo_not_in_the_ads_colour_is_never_used(
     session_id: str,
     say: Callable[..., None],
 ) -> None:
-    # Both photos show the mug in the ad's colour, so the model picks one: there is no
-    # Photo 3.
-    Job.objects.get().photos.update(shows_product_colour=True)
+    # The job has photos 1 and 2: there is no Photo 3.
     making(fake_model, (1, None))
     say("Make scene 1's starting picture")
     fake_model.respond("choose_starting_picture", {**CHOICE, "photo": 3})
@@ -363,23 +361,21 @@ def test_a_photo_not_in_the_ads_colour_is_never_used(
 
     step = SceneStep.objects.get()
     assert step.status == "failed"
-    assert "Photo 3 isn't one showing the product in the ad's colour: those are 1, 2." in (
-        step.reason
-    )
+    assert "Photo 3 isn't one of the product photos: those are 1, 2." in step.reason
     assert "make_starting_picture" not in paid_for()
     assert step_messages(api, session_id)[-1][2] == (
-        "Scene 1's starting picture couldn't be made: the model picked a photo that doesn't "
-        "show the product in the ad's colour."
+        "Scene 1's starting picture couldn't be made: a model gave an answer we couldn't use."
     )
 
 
-def test_with_one_photo_in_the_ads_colour_the_model_isnt_asked_which_and_it_is_used(
+def test_with_one_product_photo_the_model_isnt_asked_which_and_it_is_used(
     fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
+    Job.objects.get().photos.filter(position=2).delete()
     making(fake_model, (1, None))
     say("Make scene 1's starting picture")
-    # Only Photo 1 shows the mug in sage green: asked for the photo anyway, a model once
-    # answered with another number, and nothing was made (case C12b).
+    # With only Photo 1 to pick: asked for the photo anyway, a model once answered with
+    # another number, and nothing was made (case C12b).
     asked: list[dict[str, Any]] = []
 
     def answer(request: ModelRequest[Any]) -> dict[str, Any]:
@@ -443,10 +439,12 @@ def test_the_photo_and_prompt_are_chosen_from_the_line_and_the_picture_made_from
         "by": "user",
         "text": "Make scene 2's starting picture in the garden",
     }
-    # Shown the portrait and only the photos in the ad's colour: the cream photo 2 isn't.
+    # Shown the portrait and every product photo, the cream photo 2 too: "colour_photos" says
+    # which show the ad's colour.
     assert ModelCall.objects.get(purpose="choose_starting_picture").images == [
         {"label": "The portrait", "key": portrait.file},
         {"label": "Photo 1", "key": front.file},
+        {"label": "Photo 2", "key": job.photos.get(position=2).file},
     ]
     assert handoffs("make_starting_picture") == [
         {"prompt": CHOICE["prompt"], "pictures": [portrait.file, front.file]}
