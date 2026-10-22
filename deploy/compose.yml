@@ -1,0 +1,104 @@
+# The whole app on one cloud machine (deploy/README.md). The same services as the root
+# docker-compose.yml, served the way a public machine needs: gunicorn instead of runserver,
+# the built page and the media files served by Caddy, and nothing but Caddy reachable from
+# outside. Run from the repo root: docker compose -f deploy/compose.yml up -d
+name: adforge
+
+x-backend: &backend
+  build:
+    context: ..
+    dockerfile: deploy/backend.Dockerfile
+  image: adforge-backend
+  restart: unless-stopped
+  # deploy/.env on the machine: the keys from .env.example plus the cloud settings in
+  # deploy/README.md. Never committed.
+  env_file: .env
+  environment:
+    DJANGO_SETTINGS_MODULE: adforge.cloud_settings
+    DATABASE_URL: postgres://adforge:adforge@db:5432/adforge
+    CELERY_BROKER_URL: redis://redis:6379/0
+    MEDIA_ROOT: /app/media
+  volumes:
+    - media:/app/media
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_started
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: adforge
+      POSTGRES_PASSWORD: adforge
+      POSTGRES_DB: adforge
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U adforge"]
+      interval: 2s
+      retries: 30
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+
+  backend:
+    <<: *backend
+    command: >-
+      sh -c "python manage.py migrate
+      && gunicorn adforge.wsgi:application --bind 0.0.0.0:8000
+      --workers 3 --threads 8 --timeout 300 --access-logfile -"
+    # Only this machine can call the API directly, for scripts run on it. Everyone else goes
+    # through Caddy and its lock.
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  # ONE worker, always: when a worker starts, every step still running is marked dead
+  # (agents/tasks.py, carry_on_after_the_worker_starts). A second worker, or a restart while
+  # steps run, kills live work. deploy/deploy.sh refuses to restart it while anything runs.
+  worker:
+    <<: *backend
+    command: >-
+      celery -A adforge worker --loglevel=info
+      --concurrency ${WORKER_CONCURRENCY:-48}
+      --max-memory-per-child ${WORKER_MAX_MEMORY_KB:-1500000}
+    # Celery finishes what it's doing before it stops, up to this long.
+    stop_grace_period: 10m
+
+  # Runs the tasks that repeat on a schedule, such as starting dead producers again.
+  beat:
+    <<: *backend
+    command: celery -A adforge beat --loglevel=info --schedule /tmp/celerybeat-schedule
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/web.Dockerfile
+    image: adforge-web
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in deploy/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      # The lock (deploy/README.md). Lives only on the machine, never committed.
+      - ./gate.caddy:/etc/caddy/gate.caddy:ro
+      - media:/srv/media:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  redisdata:
+  media:
+  caddydata:
+  caddyconfig:

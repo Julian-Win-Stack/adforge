@@ -1,0 +1,6 @@
+# Only the frontend and the Caddyfile go into the web image.
+*
+!frontend/
+!deploy/Caddyfile
+frontend/node_modules/
+frontend/dist/
