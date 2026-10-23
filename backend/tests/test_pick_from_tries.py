@@ -18,7 +18,7 @@ from agents.tasks import wake_producer
 from chat.models import Attachment, Message, Session
 from gateway.fake import FakeModel, turn
 from jobs import work
-from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
+from jobs.models import BROLL_FIELDS, AgentFix, Job, ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
 
 from .agent_tries import agent_films
@@ -130,7 +130,7 @@ def test_the_producer_is_told_the_agent_gave_up_and_the_last_try_is_in_the_ad(
     step = SceneStep.objects.filter(kind="clip", scene__number=2).order_by("id").first()
     assert step is not None
     assert (
-        "and the fixing agent gave up after 2 tries, so its last try is in the ad. The chat "
+        "and the fixing agent gave up after 2 tries, so the last try is in the ad. The chat "
         "showed the shop owner every try, so they can tap one to use it instead, for nothing. "
         "Scene 2 is finished."
     ) in step.result
@@ -545,3 +545,39 @@ def test_a_tap_on_an_old_jobs_remake_shown_before_the_fixing_agent_swaps_it_in(
 
     assert sent.status_code == 201, sent.json()
     assert current_clip(2).file == made[1].file
+
+
+# --- A give-up from before 2026-10-23, said to camera, still swaps -------------------------------
+
+
+def said_to_camera_as_before() -> None:
+    """Have scene 2's give-up stand as one from before 2026-10-23 left it: the scene said to
+    camera, nothing kept, and what saying it changed kept to put back."""
+    scene = Scene.objects.get(number=2)
+    after = Scene.objects.get(number=3)
+    camera_before = {
+        "shows": scene.shows,
+        **{field: getattr(scene, field) for field in BROLL_FIELDS},
+        "shortened_from": scene.shortened_from,
+        "second_state": scene.second_state,
+        "next_second_state": after.second_state,
+    }
+    scene.change_line(scene.line, shows="")
+    scene.save()
+    AgentFix.objects.update(said_to_camera=True, kept=None, camera_before=camera_before)
+
+
+def test_a_tap_on_a_give_up_said_to_camera_before_shows_the_product_again(
+    failed_ad: ProducedItem, api: APIClient, session_id: str
+) -> None:
+    _, try_1, _ = tries()
+    said_to_camera_as_before()
+    notice = the_tries_notice(api, session_id)["tries"]
+    assert (notice["in_ad"], notice["on_offer"]) == (None, True)
+
+    sent = tap_use(api, session_id, try_1)
+
+    assert sent.status_code == 201, sent.json()
+    scene = Scene.objects.get(number=2)
+    assert (scene.shows, scene.broll_kind) == (SHOWS, "showcase")
+    assert current_clip(2).file == try_1.file

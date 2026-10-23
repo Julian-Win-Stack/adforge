@@ -40,6 +40,8 @@ from .test_producer_broll import (
     calling,
     checked,  # noqa: F401 (a fixture)
     instructed,  # noqa: F401 (a fixture)
+    made_ready,
+    run,
 )
 from .test_producer_picture_then_clip import ads
 
@@ -762,9 +764,14 @@ def test_a_give_up_keeps_the_last_try_as_it_was_filmed_new_line_and_all(
         turn(calls=[film_again(line=NEW_LINE, shows=STIRS, video_prompt=STIRS)]),
         turn(calls=[("give_up", {"reason": "The stir never reads."})]),
     )
+    made_ready(fake_model, steps, say, (2,))
+    # The old line has a fact problem left: try 1's new line, checked, has none.
+    Scene.objects.filter(number=2).update(fact_problems=["unsettled"])
 
-    step = clip_of_scene_2(fake_model, steps, say)
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    run(fake_model, steps)
 
+    step = SceneStep.objects.filter(kind="clip", scene__number=2).order_by("id")[0]
     # The scene is a B-roll scene still, as try 1 filmed it, and try 1 is its clip: it says
     # the scene's line, so the ad is assembled from it with nothing made again.
     fixing = AgentFix.objects.get()
@@ -773,14 +780,55 @@ def test_a_give_up_keeps_the_last_try_as_it_was_filmed_new_line_and_all(
     assert scene_clip() == try_1
     assert scene_row() == (NEW_LINE, STIRS, "", "showcase", "no face")
     scene = Scene.objects.get(number=2)
-    assert (scene.status, scene.fact_checked) == (Scene.Status.FINISHED, True)
+    assert (scene.status, scene.fact_checked, scene.fact_problems) == (
+        Scene.Status.FINISHED,
+        True,
+        [],
+    )
     assert work._says_the_line_as_it_stands(scene, try_1)
     assert told()[-1].startswith(fixing_agent.GIVEN_UP[AgentFix.Door.JUDGE])
     assert step.status == SceneStep.Status.FINISHED
-    assert "so its last try is in the ad" in step.result
+    assert "so the last try is in the ad" in step.result
 
 
 # --- When the worker restarts ----------------------------------------------------------------
+
+
+def test_a_try_the_worker_stopped_while_it_was_judged_is_passed_over_and_the_clip_made_again(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    # Try 1, with a new line, is filmed; the worker stops as the judge watches it, so it is
+    # no try: its clip is never judged.
+    fake_model.respond(
+        "check_clip_motion", *judged(failing(FLOATS), failing(FLOATS)), WorkerStopped()
+    )
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond(
+        "fix_scene", turn(calls=[film_again(line=NEW_LINE, shows=STIRS, video_prompt=STIRS)])
+    )
+    with pytest.raises(WorkerStopped):
+        step = clip_of_scene_2(fake_model, steps, say)
+    step = SceneStep.objects.filter(kind="clip", scene__number=2).order_by("id")[0]
+    first = work.clip_tries(step)[0]
+
+    tasks.carry_on_after_the_worker_starts()
+
+    # No try was filmed: the first clip, judged, is kept on top of the unjudged one, with the
+    # scene's line as it was, but its step failed, so the scene waits for its clip again, as
+    # after any clip step a restart failed (making it again is PR #206's dead-end fix).
+    fixing = AgentFix.objects.get()
+    assert (fixing.said_to_camera, fixing.gave_up) == (False, work.STOPPED_BY_A_RESTART)
+    assert fixing.kept is not None and fixing.kept.file == first.file
+    assert "verdict" in (fixing.kept.ruling or {})
+    assert scene_clip() == fixing.kept
+    assert scene_row() == (LINE_2, SHOWS, "", "showcase", "no face")
+    assert Scene.objects.get(number=2).status == Scene.Status.PLANNED
+    assert "gave up after 0 tries, so the first clip is in the ad" in work.what_the_judge_did(
+        step, fixing.kept
+    )
 
 
 def last_try_kept_after_a_restart() -> AgentFix:
