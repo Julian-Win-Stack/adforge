@@ -588,7 +588,7 @@ def judge_words(ruling: dict[str, Any] | None) -> str:
         moments = (first.get("look") or {}).get("moments") or []
         if moments:
             lines.append(
-                "Second by second (one of its three looks): "
+                "Second by second: "
                 + " ".join(f"{m['time']:g}s {m['what_happens']}" for m in moments)
             )
     return "\n".join(lines)
@@ -996,7 +996,7 @@ def _as_sent(step: SceneStep, picture: ProducedItem, audio: ProducedItem, motion
 
 def _passes(row: AgentFixTry, clip: ProducedItem) -> bool:
     """Whether a try passes: the judge passed it and, for door 2, its fix check didn't fail
-    (a check too few answers settled leaves it passing, as the judge's own)."""
+    (a check no answer settled leaves it passing, as the judge's own)."""
     if (clip.ruling or {}).get("verdict") == "fail":
         return False
     return (row.fix_check or {}).get("verdict") != "failed"

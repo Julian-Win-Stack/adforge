@@ -56,11 +56,6 @@ def rewrite(prompt: str) -> dict[str, Any]:
     return {"motion_prompt": prompt, "motion_prompt_reason": "It keeps the teapot in the hand."}
 
 
-def judged(*answers: dict[str, Any]) -> list[dict[str, Any]]:
-    """The judge's three MOTION answers about one clip: `answers`, then passes."""
-    return [*answers, *[CLIP_MOTION_OK] * (3 - len(answers))]
-
-
 def clip_of_scene_2(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> SceneStep:
     """Have the producer make scene 2's clip, showing the mug; gives its step."""
     made_ready(fake_model, steps, say, (2,))
@@ -106,8 +101,8 @@ def fixed_on_try_2(
     mug spinning, and its second passes."""
     fake_model.respond(
         "check_clip_motion",
-        *judged(failing(FLOATS), failing(FLOATS)),
-        *judged(failing(SPINS), failing(SPINS)),
+        failing(FLOATS),
+        failing(SPINS),
     )
     agent_films(monkeypatch, REMADE, REMADE_AGAIN)
     return clip_of_scene_2(fake_model, steps, say)
@@ -123,7 +118,7 @@ def remade_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> SceneStep:
     """Scene 2's first clip fails on the teapot floating; the agent's first try passes."""
-    fake_model.respond("check_clip_motion", *judged(failing(FLOATS), failing(FLOATS)))
+    fake_model.respond("check_clip_motion", failing(FLOATS))
     agent_films(monkeypatch, REMADE)
     return clip_of_scene_2(fake_model, steps, say)
 
@@ -136,13 +131,13 @@ def remade_twice(
     say: Callable[..., None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> SceneStep:
-    """Scene 2's first clip fails 2 answers on the teapot floating, and each of the agent's
-    two tries 3, on the mug spinning; then it gives up, picking its first try."""
+    """Scene 2's first clip fails on the teapot floating, and each of the agent's two tries on
+    the mug spinning; then it gives up, picking its first try."""
     fake_model.respond(
         "check_clip_motion",
-        *judged(failing(FLOATS), failing(FLOATS)),
-        *[failing(SPINS)] * 3,
-        *[failing(SPINS)] * 3,
+        failing(FLOATS),
+        failing(SPINS),
+        failing(SPINS),
     )
     agent_films(monkeypatch, REMADE, REMADE_AGAIN, picks=1)
     return clip_of_scene_2(fake_model, steps, say)
@@ -155,7 +150,7 @@ def test_a_failed_clip_is_handed_to_the_fixing_agent_at_once(
     say: Callable[..., None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake_model.respond("check_clip_motion", *judged(failing(FLOATS), failing(FLOATS)))
+    fake_model.respond("check_clip_motion", failing(FLOATS))
     agent = agent_films(monkeypatch, REMADE)
 
     step = clip_of_scene_2(fake_model, steps, say)
@@ -237,7 +232,7 @@ def test_a_talking_scene_is_never_judged_or_handed_to_the_agent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Answers that would fail a clip, were one judged.
-    fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 3)
+    fake_model.respond("check_clip_motion", failing(FLOATS))
     agent = agent_films(monkeypatch, REMADE)
     made_ready(fake_model, steps, say, (1,))
     calling(fake_model, say, ("make_clip", {"scene": 1}))
@@ -260,7 +255,7 @@ def test_with_quality_checks_off_no_judge_or_agent_runs(
     say: Callable[..., None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 3)
+    fake_model.respond("check_clip_motion", failing(FLOATS))
     agent = agent_films(monkeypatch, REMADE)
 
     clip_of_scene_2(fake_model, steps, say)
@@ -277,7 +272,7 @@ def test_an_agent_that_cant_carry_on_keeps_the_first_clip_and_finishes_the_step(
     say: Callable[..., None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake_model.respond("check_clip_motion", *judged(failing(FLOATS), failing(FLOATS)))
+    fake_model.respond("check_clip_motion", failing(FLOATS))
     agent_stops(monkeypatch, RuntimeError("the model fell over"))
 
     step = clip_of_scene_2(fake_model, steps, say)
@@ -308,11 +303,11 @@ def test_a_clip_is_estimated_up_to_every_try_the_agent_may_film(
 
     estimate = producer._clip_estimate(scene, 5.0, from_note=False)
 
-    # A 5-second clip at Boreal's $0.0792 a second is $0.396, and the judge's 6 asks at the
-    # $0.003 recorded are $0.018. Each try: a new picture at what scene 2's last one cost,
+    # A 5-second clip at Boreal's $0.0792 a second is $0.396, and the judge's 2 asks at the
+    # $0.003 recorded are $0.006. Each try: a new picture at what scene 2's last one cost,
     # $0.0215, that clip and judge, and the agent's 3 turns at the $0.07 fallback (none of
     # its turns is recorded: the agent is faked here).
-    assert estimate == (Decimal("0.414"), Decimal("0.414") + 6 * Decimal("0.6455"))
+    assert estimate == (Decimal("0.402"), Decimal("0.402") + 6 * Decimal("0.6335"))
 
 
 # --- Jobs made before the fixing agent: the old auto-fix's remakes -------------------------
