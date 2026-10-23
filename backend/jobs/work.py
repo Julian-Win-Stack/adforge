@@ -2571,9 +2571,9 @@ def _fit_its_clip(step: SceneStep, audio: ProducedItem) -> None:
     scene.save(update_fields=["line", "shortened_from", "status"])
 
 
-def _say_it_to_camera(scene: Scene, *, told: bool = True) -> None:
+def _say_it_to_camera(scene: Scene) -> None:
     """Have the person say a B-roll scene's line to camera, as it stands, and tell the user
-    why, when `told`: its line is too long for a B-roll clip. A talking scene shows no second
+    why: its line is too long for a B-roll clip. A talking scene shows no second
     state, and the scene after it no longer follows the first state it was made from."""
     with transaction.atomic():
         scene.change_line(scene.line, shows="")
@@ -2583,8 +2583,6 @@ def _say_it_to_camera(scene: Scene, *, told: bool = True) -> None:
             update_fields=["shows", *BROLL_FIELDS, "shortened_from", "second_state", "status"]
         )
         scene.job.scenes.filter(number=scene.number + 1).update(second_state=False)
-        if not told:
-            return
         post_notice(
             scene.job,
             f"Scene {scene.number} couldn't be made as a product shot because its line is too "
@@ -2715,8 +2713,8 @@ def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
     which films the scene again, try after try, until the judge passes a try or it gives up;
     every try is a version of the scene. A try the judge passed is the scene's clip. On a
     give-up the shop owner is shown every try to pick from (`say_the_agent_gave_up`): a scene
-    the producer made is said to camera, and a fix's scene keeps the clip it had before, so a
-    clip the judge failed is never in the ad unless the shop owner picks it.
+    the producer made keeps its last try in the ad (Julian, 2026-10-23), and a fix's scene
+    keeps the clip it had before.
 
     Run again, as after a worker stopped, it pays for nothing already paid for: a clip judged
     is kept, the agent carries on from its checkpoints, and how it ended is read back."""
@@ -2784,18 +2782,16 @@ def agent_gave_up(step: SceneStep) -> bool:
 
 def _ended(step: SceneStep) -> AgentFix:
     """Keep how the fixing agent ended with `step`: a try passed, or it gave up, when the
-    scene is said to camera or keeps its clip from before, all at once. A give-up kept
-    already is left as it is, so it can be kept again whenever it may not have been."""
+    scene keeps its last try or its clip from before, all at once. A give-up kept already is
+    left as it is, so it can be kept again whenever it may not have been."""
     with transaction.atomic():
         ended = AgentFix.objects.select_for_update().get(step=step)
         if ended.passed_id is not None or ended.said_to_camera or ended.kept_id is not None:
             return ended
         scene = Scene.objects.select_for_update().get(pk=step.scene_id)
         before = _before_the_fix(step)
-        if said_to_camera_on_give_up(step):
-            ended.camera_before = _said_to_camera_from(scene)
-            ended.said_to_camera = True
-            _say_it_to_camera(scene, told=False)
+        if keeps_the_last_try_on_give_up(step):
+            ended.kept = _as_the_last_try_filmed_it(scene)
         elif (
             before is not None
             and before.clip is not None
@@ -2807,10 +2803,36 @@ def _ended(step: SceneStep) -> AgentFix:
     return ended
 
 
-def said_to_camera_on_give_up(step: SceneStep) -> bool:
-    """Whether the fixing agent giving up on `step` has its scene said to camera: a clip step
-    of its own, not a fix's, whose scene keeps its clip from before."""
+def keeps_the_last_try_on_give_up(step: SceneStep) -> bool:
+    """Whether the fixing agent giving up on `step` keeps its last try in the ad: a clip step
+    of its own, not a fix's, whose scene keeps its clip from before. Such a scene was said to
+    camera until Julian's 2026-10-23 "remove that rule"."""
     return step.fix_id is None and step.plan_scene_id is None
+
+
+def _as_the_last_try_filmed_it(scene: Scene) -> ProducedItem:
+    """For a give-up that keeps the last try: the scene, put back by the give-up as it was
+    before try 1, is as its newest clip was filmed again, so that clip says its line and shows
+    what it shows, as when a try passes. Gives that clip: the last try, or the first clip when
+    no try was filmed."""
+    newest = _newest_clip(scene)
+    assert newest is not None, "the step made its clip"
+    filmed = AgentFixTry.objects.filter(clip=newest).first()
+    if filmed is not None:
+        row = filmed.scene_row
+        was = (scene.line, scene.shows, scene.result)
+        scene.change_line(
+            row["line"],
+            row["shows"],
+            broll={field: row[field] for field in ("result", "broll_kind", "person_shown")},
+        )
+        # A try's new line, or what it shows, was fact checked before it was filmed.
+        if (scene.line, scene.shows, scene.result) != was:
+            scene.fact_checked = True
+            scene.fact_problems = []
+    scene.status = Scene.Status.FINISHED
+    scene.save()
+    return newest
 
 
 # Why the fixing agent gave up on a scene whose step the worker stopped in the middle of.
@@ -2821,8 +2843,8 @@ def end_the_agents_fixing(step: SceneStep) -> None:
     """For a clip step failed as the worker restarted in the middle of it: end the fixing
     agent's work on it, if it took it, so no try the judge failed is in the ad. A fixing
     still going is given up, its scene put back as it was before try 1, as no worker carries
-    it on. A give-up is then kept as its door keeps one, if it wasn't yet: door 1's scene said
-    to camera, or a fix's scene keeping its clip from before."""
+    it on. A give-up is then kept as its door keeps one, if it wasn't yet: door 1's scene
+    keeping its last try, or a fix's scene keeping its clip from before."""
     from agents import fixing_agent
 
     fixing = AgentFix.objects.filter(step=step).first()
@@ -2894,22 +2916,11 @@ def _newest_clip(scene: Scene) -> ProducedItem | None:
     return scene.produced.filter(kind=ProducedItem.Kind.CLIP).order_by("id").last()
 
 
-def _said_to_camera_from(scene: Scene) -> dict[str, Any]:
-    """What saying a B-roll scene's line to camera changes, as it stands before, to put back."""
-    after = scene.job.scenes.filter(number=scene.number + 1).first()
-    return {
-        "shows": scene.shows,
-        **{field: getattr(scene, field) for field in BROLL_FIELDS},
-        "shortened_from": scene.shortened_from,
-        "second_state": scene.second_state,
-        "next_second_state": after.second_state if after is not None else None,
-    }
-
-
 def _shown_again_for(scene: Scene, clip: ProducedItem) -> None:
     """Undo the say to camera of a scene the fixing agent gave up on, still said to camera,
     as one of its tries, `clip`, is gone back to: the scene shows what it showed before, as
-    the try filmed it, and the scene after it follows it again."""
+    the try filmed it, and the scene after it follows it again. Only a give-up from before
+    2026-10-23 said its scene to camera."""
     step = tried_at(clip)
     ended = agent_fix(step) if step is not None else None
     if step is None or scene.shows or ended is None or not ended.said_to_camera:
@@ -3012,6 +3023,10 @@ def tries_shown(step: SceneStep) -> TriesShown:
     labels = {version.clip.pk: version.label for version in made if version.clip is not None}
     tries = _tries_shown(step)
     current = made[-1].clip if made else None
+    # A clip that no longer says the scene's line, changed since, isn't the ad's any more.
+    scene = Scene.objects.get(pk=step.scene_id)
+    if current is not None and not _says_the_line_as_it_stands(scene, current):
+        current = None
     in_ad = next(
         (clip for clip in tries if current is not None and current.file == clip.file),
         None,
@@ -3047,20 +3062,25 @@ def _as_the_give_up_left_it(step: SceneStep) -> bool:
     if ended.said_to_camera:
         return not scene.shows and scene.line == step.line
     made = versions(scene)
-    return ended.kept is not None and bool(made) and made[-1].clip == ended.kept
+    return (
+        ended.kept is not None
+        and bool(made)
+        and made[-1].clip == ended.kept
+        and _says_the_line_as_it_stands(scene, ended.kept)
+    )
 
 
 def say_the_agent_gave_up(step: SceneStep) -> None:
     """Show the shop owner every try of a B-roll clip the fixing agent gave up on, to pick
-    from, by code, never silent: the judge failed each, and the scene is said to camera, or
-    keeps the clip it had before. The notice ends the step in the chat: nothing else shows
-    for it."""
+    from, by code, never silent: the judge failed each, and the scene keeps its last try, or
+    the clip it had before (or, for a give-up from before 2026-10-23, is said to camera). The
+    notice ends the step in the chat: nothing else shows for it."""
     ended = agent_fix(step)
     assert ended is not None and ended.passed_id is None, "the agent gave up on the step"
     number = step.scene.number
     if ended.said_to_camera:
         meanwhile = f"so scene {number}'s line will be said to camera instead"
-    elif ended.kept is not None:
+    elif ended.kept is not None and ended.kept not in _clip_tries(step):
         meanwhile = f"so scene {number} keeps the clip it had before"
     else:
         meanwhile = "so the last try is in the ad"
@@ -3158,7 +3178,13 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
     if ended.passed is not None:
         passed = ended.passed.remake
         return f"{failed}, so the fixing agent filmed it again, and the judge passed try {passed}."
-    return f"{failed}, and the fixing agent gave up after {len(_clip_tries(step)) - 1} tries."
+    gave_up = f"{failed}, and the fixing agent gave up after {len(_clip_tries(step)) - 1} tries"
+    if ended.kept is not None and ended.kept in _clip_tries(step):
+        return (
+            f"{gave_up}, so its last try is in the ad. The chat showed the shop owner every try, "
+            "so they can tap one to use it instead, for nothing."
+        )
+    return f"{gave_up}."
 
 
 def _ruling(clip: ProducedItem) -> dict[str, Any]:

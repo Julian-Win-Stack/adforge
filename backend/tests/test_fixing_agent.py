@@ -19,7 +19,7 @@ from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import Said
 from jobs import work
-from jobs.models import BROLL_FIELDS, AgentFix, Fix, ProducedItem, Scene, SceneStep
+from jobs.models import AgentFix, Fix, ProducedItem, Scene, SceneStep
 
 from .conftest import (
     CLIP_MOTION_OK,
@@ -244,7 +244,7 @@ def given_up(fake_model: FakeModel, failed_clip: SceneStep) -> Outcome:
     fake_model.respond(
         "fix_scene",
         turn(calls=[film_again(line=NEW_LINE, shows=STIRS, video_prompt=STIRS)]),
-        turn(calls=[("say_to_camera", {"reason": "The stir never reads.", "best_try": 1})]),
+        turn(calls=[("give_up", {"reason": "The stir never reads.", "best_try": 1})]),
     )
     fake_model.respond("check_clip_motion", failing(FLOATS), failing(FLOATS))
     return fixed(failed_clip)
@@ -278,7 +278,7 @@ def refused_then_given_up(fake_model: FakeModel, step: SceneStep, *calls: Any) -
         "fix_scene",
         *[turn(calls=[call]) for call in calls],
         turn(calls=[film_again()]),
-        turn(calls=[("say_to_camera", {"reason": "It can't be filmed."})]),
+        turn(calls=[("give_up", {"reason": "It can't be filmed."})]),
     )
     fake_model.respond("check_clip_motion", failing(FLOATS), failing(FLOATS))
     fixed(step)
@@ -344,12 +344,8 @@ def test_a_result_on_a_scene_that_doesnt_do_a_job_is_refused(
     assert answer.startswith('Refused: only a "does a job" scene has a result.')
 
 
-def test_saying_it_to_camera_before_filming_is_refused(
-    fake_model: FakeModel, failed_clip: SceneStep
-) -> None:
-    [answer] = refused_then_given_up(
-        fake_model, failed_clip, ("say_to_camera", {"reason": "Too hard."})
-    )
+def test_giving_up_before_filming_is_refused(fake_model: FakeModel, failed_clip: SceneStep) -> None:
+    [answer] = refused_then_given_up(fake_model, failed_clip, ("give_up", {"reason": "Too hard."}))
     assert answer.startswith("Refused: try to film it at least once")
 
 
@@ -395,13 +391,13 @@ def test_the_seventh_try_is_refused_and_the_agent_told_to_give_up(
     fake_model.respond(
         "fix_scene",
         *[turn(calls=[film_again()]) for _ in range(7)],
-        turn(calls=[("say_to_camera", {"reason": "Six tries failed."})]),
+        turn(calls=[("give_up", {"reason": "Six tries failed."})]),
     )
     fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 18)
     outcome = fixed(failed_clip)
     assert len(outcome.tries) == 6
     assert told()[6].startswith(
-        "Refused: you have filmed all 6 tries. Call say_to_camera with your reason"
+        "Refused: you have filmed all 6 tries. Call give_up with your reason"
     )
     assert told()[6].endswith("Tries left: 0 of 6.")
     assert outcome.gave_up == "Six tries failed."
@@ -540,7 +536,7 @@ def test_a_try_whose_owners_change_isnt_made_fails_though_the_judge_passes_it(
         fake_model,
         failed_clip,
         film_again(),
-        ("say_to_camera", {"reason": "The stir never shows."}),
+        ("give_up", {"reason": "The stir never shows."}),
     )
     [made] = outcome.tries
     assert made.ruling["verdict"] == "pass"  # type: ignore[index]
@@ -649,7 +645,7 @@ def test_an_agent_fixing_an_old_plans_new_clip_is_told_giving_up_keeps_the_scene
     fake_model.respond(
         "fix_scene",
         turn(calls=[film_again()]),
-        turn(calls=[("say_to_camera", {"reason": "The pour never slows."})]),
+        turn(calls=[("give_up", {"reason": "The pour never slows."})]),
     )
 
     steps.run_held()
@@ -678,13 +674,13 @@ def test_an_agent_fixing_an_owners_note_is_told_giving_up_keeps_the_scenes_clip(
         fake_model,
         failed_clip,
         film_again(),
-        ("say_to_camera", {"reason": "The stir never shows."}),
+        ("give_up", {"reason": "The stir never shows."}),
     )
     [turn_1, *_] = [each for each in fake_model.turns_taken if each.purpose == "fix_scene"]
     assert fixing_agent.GAVE_UP[AgentFix.Door.OWNER] in turn_1.instructions
     assert "said to camera" not in turn_1.instructions.split("The app's own prompt rules")[0]
-    said = [tool.description for tool in turn_1.tools if tool.name == "say_to_camera"]
-    assert said == [fixing_agent.SAY_TO_CAMERA_FOR_A_NOTE]
+    said = [tool.description for tool in turn_1.tools if tool.name == "give_up"]
+    assert said == [fixing_agent.GIVE_UP_FOR_A_NOTE]
     assert told()[-1].startswith(fixing_agent.GIVEN_UP[AgentFix.Door.OWNER])
 
 
@@ -741,28 +737,64 @@ def test_a_step_run_again_after_the_agent_stopped_keeps_the_first_clip(
     step = clip_of_scene_2(fake_model, steps, say)
     first = step.produced.order_by("id").first()
 
-    # Run again, it finds the agent stopped with no try passed and no give-up: the scene is
-    # not said to camera, and the first clip stays.
+    # Run again, it finds the agent stopped with no try passed and no give-up: the first
+    # clip stays.
     assert first is not None and work._auto_fixed(step, first).file == first.file
     fixing = AgentFix.objects.get()
-    assert (fixing.said_to_camera, fixing.camera_before) == (False, {})
+    assert (fixing.said_to_camera, fixing.kept_id) == (False, None)
     assert scene_row() == (LINE_2, SHOWS, "", "showcase", "no face")
+
+
+def test_a_give_up_keeps_the_last_try_as_it_was_filmed_new_line_and_all(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond(
+        "check_clip_motion",
+        *judged(failing(FLOATS), failing(FLOATS)),
+        *judged(failing(FLOATS), failing(FLOATS)),
+    )
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[film_again(line=NEW_LINE, shows=STIRS, video_prompt=STIRS)]),
+        turn(calls=[("give_up", {"reason": "The stir never reads."})]),
+    )
+
+    step = clip_of_scene_2(fake_model, steps, say)
+
+    # The scene is a B-roll scene still, as try 1 filmed it, and try 1 is its clip: it says
+    # the scene's line, so the ad is assembled from it with nothing made again.
+    fixing = AgentFix.objects.get()
+    (try_1,) = [each.clip for each in fixing.tries.all()]
+    assert (fixing.said_to_camera, fixing.kept) == (False, try_1)
+    assert scene_clip() == try_1
+    assert scene_row() == (NEW_LINE, STIRS, "", "showcase", "no face")
+    scene = Scene.objects.get(number=2)
+    assert (scene.status, scene.fact_checked) == (Scene.Status.FINISHED, True)
+    assert work._says_the_line_as_it_stands(scene, try_1)
+    assert told()[-1].startswith(fixing_agent.GIVEN_UP[AgentFix.Door.JUDGE])
+    assert step.status == SceneStep.Status.FINISHED
+    assert "so its last try is in the ad" in step.result
 
 
 # --- When the worker restarts ----------------------------------------------------------------
 
 
-def said_to_camera_after_a_restart() -> AgentFix:
+def last_try_kept_after_a_restart() -> AgentFix:
     """Restart the worker; gives how the agent's fixing of scene 2 ended. The step it worked
-    in is failed, as every step running is, and its give-up kept: scene 2 is said to camera,
-    so no try the judge failed is in the ad."""
+    in is failed, as every step running is, and its give-up kept: scene 2 keeps its last try,
+    finished, still showing the product."""
     tasks.carry_on_after_the_worker_starts()
     fixing = AgentFix.objects.get()
     assert fixing.step.status == SceneStep.Status.FAILED
-    assert (fixing.finished_at is not None, fixing.said_to_camera) == (True, True)
+    assert (fixing.finished_at is not None, fixing.said_to_camera) == (True, False)
     scene = Scene.objects.get(number=2)
-    assert (scene.line, scene.shows) == (LINE_2, "")
-    assert work.waits_to_be_said_to_camera(scene)
+    assert (scene.shows != "", scene.status) == (True, Scene.Status.FINISHED)
+    assert not work.waits_to_be_said_to_camera(scene)
+    assert fixing.kept == scene_clip()
     return fixing
 
 
@@ -781,7 +813,7 @@ def test_a_give_up_the_worker_stopped_before_keeping_is_kept_once_it_restarts(
     fake_model.respond(
         "fix_scene",
         turn(calls=[film_again()]),
-        turn(calls=[("say_to_camera", {"reason": "The stir never reads."})]),
+        turn(calls=[("give_up", {"reason": "The stir never reads."})]),
     )
 
     def stopped(*_: object, **__: object) -> None:
@@ -792,7 +824,7 @@ def test_a_give_up_the_worker_stopped_before_keeping_is_kept_once_it_restarts(
         clip_of_scene_2(fake_model, steps, say)
     monkeypatch.undo()
 
-    assert said_to_camera_after_a_restart().gave_up == "The stir never reads."
+    assert last_try_kept_after_a_restart().gave_up == "The stir never reads."
 
 
 def test_a_fixing_the_worker_stopped_in_is_given_up_and_the_scene_put_back(
@@ -816,7 +848,11 @@ def test_a_fixing_the_worker_stopped_in_is_given_up_and_the_scene_put_back(
         clip_of_scene_2(fake_model, steps, say)
     assert scene_row()[0] == NEW_LINE
 
-    assert said_to_camera_after_a_restart().gave_up
+    fixing = last_try_kept_after_a_restart()
+    # Try 1, filmed with the new line, is the clip kept: the scene says its line again.
+    assert fixing.gave_up and fixing.kept is not None
+    assert scene_row()[:2] == (NEW_LINE, STIRS)
+    assert work._says_the_line_as_it_stands(Scene.objects.get(number=2), fixing.kept)
 
 
 def test_the_producer_never_takes_a_try_for_a_clip_already_made(
@@ -833,13 +869,7 @@ def test_the_producer_never_takes_a_try_for_a_clip_already_made(
     fake_model.respond("fix_scene", turn(calls=[film_again()]), WorkerStopped())
     with pytest.raises(WorkerStopped):
         clip_of_scene_2(fake_model, steps, say)
-    fixing = said_to_camera_after_a_restart()
-    # The scene shows the mug again, as before it was said to camera, from the same picture
-    # and audio try 1 was filmed from.
-    before = fixing.camera_before
-    Scene.objects.filter(number=2).update(
-        shows=before["shows"], **{field: before[field] for field in BROLL_FIELDS}
-    )
+    last_try_kept_after_a_restart()
     asked = len(handoffs("make_broll_clip"))
 
     calling(fake_model, say, ("make_clip", {"scene": 2}))
@@ -921,14 +951,15 @@ def test_a_give_up_kept_already_is_left_as_it_is_when_the_worker_restarts(
     fake_model.respond(
         "fix_scene",
         turn(calls=[film_again()]),
-        turn(calls=[("say_to_camera", {"reason": "The stir never reads."})]),
+        turn(calls=[("give_up", {"reason": "The stir never reads."})]),
     )
     step = clip_of_scene_2(fake_model, steps, say)
     kept = AgentFix.objects.get()
-    assert kept.said_to_camera and kept.camera_before
+    assert (kept.said_to_camera, kept.kept) == (False, scene_clip())
 
     # The worker restarted after the give-up was kept, before the step finished.
     work.end_the_agents_fixing(step)
 
     again = AgentFix.objects.get()
-    assert (again.camera_before, again.kept_id) == (kept.camera_before, kept.kept_id)
+    assert again.kept_id == kept.kept_id
+    assert scene_clip() == kept.kept

@@ -182,7 +182,8 @@ def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, d
 
     results: dict[str, dict[str, Any]] = {}
     for scene in job.scenes.order_by("number"):
-        # A scene the fixing agent gave up on is said to camera since, its tries kept.
+        # A scene the fixing agent gave up on before 2026-10-23 is said to camera since, its
+        # tries kept.
         if not scene.shows and not AgentFix.objects.filter(step__scene=scene).exists():
             continue
         found = _first_clip_step(scene)
@@ -193,8 +194,10 @@ def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, d
         first = made[0]
         tries = [first, *sorted((c for c in made if c.remake), key=lambda c: c.remake or 0)]
         gave_up = AgentFix.objects.filter(step=step, passed__isnull=True).first()
-        # Nothing of a scene the agent gave up on is kept: the owner may pick a try.
-        kept = None if gave_up else next(c for c in tries if c.file == made[-1].file)
+        # A give-up keeps its last try since 2026-10-23; one before said the scene to camera,
+        # keeping nothing.
+        said = gave_up is not None and gave_up.said_to_camera
+        kept = None if said else next(c for c in tries if c.file == made[-1].file)
         where = base / f"scene-{scene.number}"
         where.mkdir(exist_ok=True)
         for clip in tries:
