@@ -20,7 +20,7 @@ from gateway.models import ModelCall
 from gateway.types import Said
 from jobs import work
 from jobs.clip_judge import ASKS
-from jobs.models import BROLL_FIELDS, AgentFix, Fix, ProducedItem, Scene, SceneStep
+from jobs.models import AgentFix, Fix, ProducedItem, Scene, SceneStep
 
 from .conftest import (
     CLIP_MOTION_OK,
@@ -748,8 +748,8 @@ def test_a_give_up_keeps_the_last_try_as_it_was_filmed_new_line_and_all(
 ) -> None:
     fake_model.respond(
         "check_clip_motion",
-        *judged(failing(FLOATS), failing(FLOATS)),
-        *judged(failing(FLOATS), failing(FLOATS)),
+        failing(FLOATS),
+        failing(FLOATS),
     )
     fake_model.respond("fact_check", facts_ok(2))
     fake_model.respond(
@@ -795,9 +795,7 @@ def test_a_try_the_worker_stopped_while_it_was_judged_is_passed_over_and_the_cli
 ) -> None:
     # Try 1, with a new line, is filmed; the worker stops as the judge watches it, so it is
     # no try: its clip is never judged.
-    fake_model.respond(
-        "check_clip_motion", *judged(failing(FLOATS), failing(FLOATS)), WorkerStopped()
-    )
+    fake_model.respond("check_clip_motion", failing(FLOATS), WorkerStopped())
     fake_model.respond("fact_check", facts_ok(2))
     fake_model.respond(
         "fix_scene", turn(calls=[film_again(line=NEW_LINE, shows=STIRS, video_prompt=STIRS)])
