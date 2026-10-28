@@ -4,7 +4,7 @@ or the shop owner sent a note about it (door 2). The agent sees the plan, the pa
 photos, the place, the failed clip's frames and what the judge or the owner said; it decides
 what to change (the action, the result, the kind, the face, the framing, the start picture,
 both prompts, the line), films again with the app's own steps, and reads the judge's answer.
-It repeats until a try passes, or it calls say_to_camera. Every try is a version the shop
+It repeats until a try passes, or it calls give_up. Every try is a version the shop
 owner can see and pick.
 
 Nothing is kept in memory between turns: each turn is rebuilt from the AgentFix row and the
@@ -111,13 +111,13 @@ product is really used), write it in would_ask_owner and carry on as best you ca
 
 How you work: you are shown the scene, the plan, the page, the start picture, the failed \
 clip's frames (5 a second) and what the judge found. Look at anything else you need. Then \
-call film_again with the whole scene as it should be, or say_to_camera. After each \
+call film_again with the whole scene as it should be, or give_up. After each \
 film_again you see the new start picture, the new clip's frames and the judge's verdict. On \
 a fail, find what caused it (the plan, the picture, or what the video model can't do) and \
-change that cause, not only the words. Try to film it first: code refuses say_to_camera \
-until at least one new clip was made. When, after trying, you judge the scene can't be filmed \
-well, call say_to_camera with your reason: {gave_up} That is an honest result, better than \
-a bad clip. The judge can be wrong, but only a clip the judge passes passes.
+change that cause, not only the words. Try to film it first: code refuses give_up until at \
+least one new clip was made. When, after trying, you judge the scene can't be filmed well, \
+call give_up with your reason: {gave_up} The judge can be wrong, but only a clip the judge \
+passes passes.
 
 The app's own prompt rules follow, for writing the two prompts. They hold for you too, with \
 two exceptions: you may write the video prompt second by second, with timings, when that \
@@ -125,30 +125,34 @@ helps; and a rule about following a producer's note does not apply.
 """
 
 
-# What giving up does, as the agent is told it, by door: door 1's scene is said to camera;
-# door 2's keeps its clip as it was (spec section 2; Julian's OK 2026-10-19 20:10).
+# What giving up does, as the agent is told it, by door: door 1's scene keeps its last try
+# (Julian, 2026-10-23: "remove that rule - switching to talking scene"); door 2's keeps its
+# clip as it was (spec section 2; Julian's OK 2026-10-19 20:10).
 GAVE_UP = {
-    AgentFix.Door.JUDGE: "the line is then said to camera by the presenter.",
+    AgentFix.Door.JUDGE: "the last try stays in the ad, and the shop owner is shown every try "
+    "and your reason.",
     AgentFix.Door.OWNER: "the scene keeps its clip as it was, and the shop owner is shown every "
     "try and your reason.",
 }
-# The say_to_camera tool's description for door 2; door 1's is the tool's own.
-SAY_TO_CAMERA_FOR_A_NOTE = (
+# The give_up tool's description for door 2; door 1's is the tool's own.
+GIVE_UP_FOR_A_NOTE = (
     "Give up on filming this scene: it keeps its clip as it was, and the shop owner is shown "
     "every try and your reason. Say why, and which try you think is best."
 )
-# What say_to_camera answers, by door.
+# What give_up answers, by door.
 GIVEN_UP = {
-    AgentFix.Door.JUDGE: "The scene is given up: its line will be said to camera.",
+    AgentFix.Door.JUDGE: "The scene is given up: its last try stays in the ad, and the shop "
+    "owner is shown every try and your reason.",
     AgentFix.Door.OWNER: "The scene is given up: it keeps its clip as it was, and the shop "
     "owner is shown every try and your reason.",
 }
 
 
 def _gives_up_as(fixing: AgentFix) -> AgentFix.Door:
-    """Which door's giving up `fixing` is told of: door 1's on a step of its own, said to
-    camera; else door 2's, as a fix's step keeps its clip from before whichever door took it."""
-    if fixing.door == AgentFix.Door.JUDGE and work.said_to_camera_on_give_up(fixing.step):
+    """Which door's giving up `fixing` is told of: door 1's on a step of its own, keeping its
+    last try; else door 2's, as a fix's step keeps its clip from before whichever door took
+    it."""
+    if fixing.door == AgentFix.Door.JUDGE and work.keeps_the_last_try_on_give_up(fixing.step):
         return AgentFix.Door.JUDGE
     return AgentFix.Door.OWNER
 
@@ -165,14 +169,12 @@ def instructions(door: str = AgentFix.Door.JUDGE) -> str:
 
 
 def _tools(door: str) -> list[ToolSpec]:
-    """The agent's tools, say_to_camera described as giving up does at `door`."""
+    """The agent's tools, give_up described as giving up does at `door`."""
     specs = [tool.spec() for tool in TOOLS]
     if door != AgentFix.Door.OWNER:
         return specs
     return [
-        replace(spec, description=SAY_TO_CAMERA_FOR_A_NOTE)
-        if spec.name == SayToCamera.name
-        else spec
+        replace(spec, description=GIVE_UP_FOR_A_NOTE) if spec.name == GiveUp.name else spec
         for spec in specs
     ]
 
@@ -459,7 +461,7 @@ def _fit(conversation: list[Happened]) -> list[Happened]:
     return list(reversed(kept))
 
 
-REMINDER = "Answer with a tool call: a look, film_again or say_to_camera."
+REMINDER = "Answer with a tool call: a look, film_again or give_up."
 
 
 def _conversation(fixing: AgentFix) -> list[Happened]:
@@ -741,11 +743,11 @@ class FilmAgain(Tool):
         return film_again(_fixing_of(call), self, call)
 
 
-class SayToCamera(Tool):
-    """Give up on filming this scene: its line is said to camera by the presenter, and the
-    shop owner is shown every try. Say why, and which try you think is best."""
+class GiveUp(Tool):
+    """Give up on filming this scene: its last try stays in the ad, and the shop owner is
+    shown every try. Say why, and which try you think is best."""
 
-    name: ClassVar[str] = "say_to_camera"
+    name: ClassVar[str] = "give_up"
     reason: str
     best_try: int | None = Field(
         default=None,
@@ -756,7 +758,7 @@ class SayToCamera(Tool):
         fixing = _fixing_of(call)
         filmed = list(fixing.tries.filter(clip__isnull=False).values_list("number", flat=True))
         if not filmed:
-            raise Refused("try to film it at least once before saying it to camera.")
+            raise Refused("try to film it at least once before giving up.")
         if self.best_try is not None and self.best_try not in filmed:
             raise Refused(f"best_try is one of the tries filmed: {filmed}.")
         fixing.gave_up = self.reason
@@ -771,7 +773,7 @@ TOOLS: list[type[Tool]] = [
     LookAtPresenter,
     LookAtTry,
     FilmAgain,
-    SayToCamera,
+    GiveUp,
 ]
 
 AGENT_SPEC = loop.Agent(name=AGENT, purpose=PURPOSE, instructions="", tools=TOOLS)
@@ -881,7 +883,7 @@ def film_again(fixing: AgentFix, asked: FilmAgain, call: ToolCall) -> ToolResult
 def _refuse_what_breaks_the_rules(fixing: AgentFix, asked: FilmAgain, scene: Scene) -> None:
     if fixing.tries.count() >= fixing.cap:
         raise Refused(
-            f"you have filmed all {fixing.cap} tries. Call say_to_camera with your reason, "
+            f"you have filmed all {fixing.cap} tries. Call give_up with your reason, "
             "and the try you think is best."
         )
     found = sorted({match.group(0).lower() for match in BANNED.finditer(asked.video_prompt)})

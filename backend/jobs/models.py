@@ -1384,7 +1384,9 @@ class AgentFix(models.Model):
         help_text="On a give-up, the try the agent picks as best, for the owner to see marked.",
     )
     said_to_camera = models.BooleanField(
-        default=False, help_text="Whether a door 1 give-up had the scene said to camera."
+        default=False,
+        help_text="Whether a door 1 give-up had the scene said to camera, as one did before "
+        "2026-10-23; one since keeps its last try.",
     )
     kept = models.ForeignKey(
         ProducedItem,
@@ -1392,7 +1394,8 @@ class AgentFix(models.Model):
         null=True,
         blank=True,
         related_name="+",
-        help_text="On a give-up of a fix's clip, the clip the scene had before, brought back.",
+        help_text="On a give-up, the clip kept in the ad: for a fix's clip, the clip the scene "
+        "had before, brought back; for a door 1 give-up since 2026-10-23, the last try.",
     )
     camera_before = models.JSONField(
         default=dict,

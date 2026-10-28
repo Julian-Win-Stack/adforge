@@ -329,6 +329,8 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
     assert clip is not None and clip.made_from is not None, "a clip is made from its audio"
     number = step.scene.number
     ended = agent_fix(step)
+    # Only a give-up from before 2026-10-23, run again, is said to camera: one since keeps
+    # its last try, and its scene is finished as below.
     if ended is not None and ended.said_to_camera:
         return (
             f"Background step finished: scene {number}'s clip failed the clip judge, and the "

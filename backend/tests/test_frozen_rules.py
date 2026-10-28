@@ -580,7 +580,9 @@ def test_the_owner_part_rules_name_no_tested_product(rule: str) -> None:
 
 # The fixing agent's own instructions: the prototype's, with changes A1-A8 as Julian approved
 # them (2026-10-19 16:55, "I'll go with your recommendations for question two and question
-# four"; handoffs/fixing-agent/spec.md, section 3). Pinned word for word: any change fails
+# four"; handoffs/fixing-agent/spec.md, section 3), its give-up tool named give_up and "That
+# is an honest result, better than a bad clip." dropped once a give-up keeps its last try
+# (Julian, 2026-10-23 19:35, "go with your picks"). Pinned word for word: any change fails
 # here until he says so and the pinned copy changes with it.
 FIXING_AGENT_AS_APPROVED = (
     Path(__file__).parent / "fixtures" / "fixing_agent_instructions.txt"
@@ -592,18 +594,20 @@ def test_the_fixing_agents_instructions_are_the_approved_ones_word_for_word() ->
 
 
 # What giving up does, as the agent is told it at each door, pinned word for word (Julian's
-# OK 2026-10-19 20:10): door 1's scene is said to camera, door 2's keeps its clip.
+# OK 2026-10-19 20:10; door 1's since 2026-10-23 19:35): door 1's scene keeps its last try,
+# door 2's keeps its clip.
 GAVE_UP_AT_EACH_DOOR = {
-    "judge": "the line is then said to camera by the presenter.",
+    "judge": "the last try stays in the ad, and the shop owner is shown every try and your reason.",
     "owner": "the scene keeps its clip as it was, and the shop owner is shown every try and "
     "your reason.",
 }
-SAY_TO_CAMERA_FOR_A_NOTE = (
+GIVE_UP_FOR_A_NOTE = (
     "Give up on filming this scene: it keeps its clip as it was, and the shop owner is shown "
     "every try and your reason. Say why, and which try you think is best."
 )
 GIVEN_UP_AT_EACH_DOOR = {
-    "judge": "The scene is given up: its line will be said to camera.",
+    "judge": "The scene is given up: its last try stays in the ad, and the shop owner is "
+    "shown every try and your reason.",
     "owner": "The scene is given up: it keeps its clip as it was, and the shop owner is shown "
     "every try and your reason.",
 }
@@ -611,7 +615,7 @@ GIVEN_UP_AT_EACH_DOOR = {
 
 def test_the_fixing_agent_is_told_what_giving_up_does_at_each_door_word_for_word() -> None:
     assert fixing_agent.GAVE_UP == GAVE_UP_AT_EACH_DOOR
-    assert fixing_agent.SAY_TO_CAMERA_FOR_A_NOTE == SAY_TO_CAMERA_FOR_A_NOTE
+    assert fixing_agent.GIVE_UP_FOR_A_NOTE == GIVE_UP_FOR_A_NOTE
     assert fixing_agent.GIVEN_UP == GIVEN_UP_AT_EACH_DOOR
     for door, gave_up in GAVE_UP_AT_EACH_DOOR.items():
         told = fixing_agent.instructions(door)
