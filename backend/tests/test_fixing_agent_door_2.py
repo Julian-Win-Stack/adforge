@@ -19,6 +19,7 @@ from chat.models import Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import work
+from jobs.clip_judge import ASKS
 from jobs.models import AgentFix, Fix, FixCheck, FixPlanScene, Scene, SceneStep
 
 from .conftest import (
@@ -227,7 +228,7 @@ def test_through_the_chat_the_agent_films_the_owners_change_until_a_try_passes(
         "verdict": "not fixed",
         "still_wrong": "The mug never leaves the table.",
     }
-    answers = iter([not_made] * 3)
+    answers = iter([not_made] * ASKS)
     fake_model.answer_unscripted(
         "check_clip_motion",
         lambda request: motion_answer(CLIP_MOTION_OK, next(answers, CLIP_FIXED))(request),
