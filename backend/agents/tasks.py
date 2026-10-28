@@ -1,6 +1,6 @@
 import logging
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
@@ -340,6 +340,9 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
             "owner every try, so they can tap one to use it instead, for nothing. Tell the "
             "shop owner."
         )
+    # Finished here, in the transaction that finishes the step, never as its first clip is kept:
+    # a step that stops before then leaves its scene unfinished, as a picture's does.
+    Scene.objects.filter(pk=step.scene_id).update(status=Scene.Status.FINISHED)
     # A B-roll clip made before every B-roll scene got a picture may have none.
     picture = f"starting picture version {clip.picture.version} and " if clip.picture else ""
     note = f', with its movement rewritten from the note "{step.note}"' if step.note else ""
@@ -473,6 +476,9 @@ def run_scene_step(step_id: int) -> None:
     # is left as it is, so nothing is shown or paid for twice.
     if step.status != SceneStep.Status.RUNNING:
         return
+    # Taken: from now on its heartbeat says whether it is alive (see fail_dead_steps).
+    now = timezone.now()
+    SceneStep.objects.filter(pk=step_id).update(taken_at=now, seen_at=now)
     session = step.tool_call.session
     work = STEP_WORK[SceneStep.Kind(step.kind)]
     try:
@@ -500,6 +506,10 @@ def run_scene_step(step_id: int) -> None:
             # The job, then the chat, as every writer of a plan locks them: a notice said
             # here locks the job after the chat's message, so the job is locked first.
             Job.objects.select_for_update().get(pk=step.scene.job_id)
+            # Failed as dead while it worked, as when its heartbeat stopped for a while: the
+            # producer was told then, and its scene may be made again, so it is left failed.
+            if not _still_running(step):
+                return
             shown = work.shown(step, made)
             if shown:
                 messages.add(
@@ -537,6 +547,8 @@ def run_scene_step(step_id: int) -> None:
         tracing.flush()
         with transaction.atomic():
             Job.objects.select_for_update().get(pk=step.scene.job_id)
+            if not _still_running(step):
+                return
             step.status = SceneStep.Status.FAILED
             step.reason = gave_up.reason
             step.finished_at = timezone.now()
@@ -547,6 +559,8 @@ def run_scene_step(step_id: int) -> None:
         # run again after a crash never shows it twice.
         tracing.flush()
         with transaction.atomic():
+            if not _still_running(step):
+                return
             say_the_pictures_kept_failing(step.scene.job, error)
             _stop(step, str(error))
             _told_it_ended(step)
@@ -556,8 +570,20 @@ def run_scene_step(step_id: int) -> None:
             logger.exception("Scene step %s failed", step_id)
         tracing.flush()
         with transaction.atomic():
+            if not _still_running(step):
+                return
             _fail(step, why_it_failed(error, "the step"), why_it_failed_plainly(error))
             _told_it_ended(step)
+
+
+def _still_running(step: SceneStep) -> bool:
+    """Whether the step is still running, its row locked until the transaction ends, so it
+    can't be failed as dead while it finishes, nor finished once it was."""
+    return (
+        SceneStep.objects.select_for_update()
+        .filter(pk=step.pk, status=SceneStep.Status.RUNNING)
+        .exists()
+    )
 
 
 def _told_it_ended(step: SceneStep) -> None:
@@ -606,6 +632,62 @@ def restart_dead_producers() -> None:
         wake_producer(str(session_id))
 
 
+def _end_stopped(
+    steps: Iterable[SceneStep], reason: str, tell: Callable[[SceneStep], None] | None = None
+) -> list[SceneStep]:
+    """Fail each of `steps` whose work stopped for `reason`, as the fixing agent's give-up
+    leaves its scene, tell the chat, and `tell` whoever started it, together. Each on its
+    own: one whose fixing can't be ended is still failed, with a red notice, so it never
+    stays running; the rest are ended either way. Gives the steps failed."""
+    stopped = []
+    for step in steps:
+        try:
+            with transaction.atomic():
+                if not _still_running(step):
+                    continue
+                # Before the step fails, so its scene is as the fixing agent's give-up
+                # leaves it.
+                end_the_agents_fixing(step)
+                _fail(step, reason, "it was stopped partway.")
+                if tell is not None:
+                    tell(step)
+        except Exception:
+            logger.exception("Scene step %s couldn't be ended", step.pk)
+            try:
+                with transaction.atomic():
+                    if not _still_running(step):
+                        continue
+                    _fail(step, reason, "it was stopped partway.")
+                    post_notice(
+                        step.scene.job,
+                        f"{_step_name(step).capitalize()} stopped partway, and the fixing "
+                        "agent's tries on it couldn't be wrapped up. Make it again.",
+                        Message.Level.PROBLEM,
+                    )
+                    if tell is not None:
+                        tell(step)
+            except Exception:
+                logger.exception("Scene step %s couldn't be failed either", step.pk)
+                continue
+        stopped.append(step)
+    return stopped
+
+
+@shared_task
+def fail_dead_steps() -> None:
+    """Fail every scene step whose worker was killed: one taken, whose heartbeat hasn't been
+    seen for STEP_FAILED_AFTER_SECONDS. Nothing else ever ends it, and while it runs its
+    scene can't be made again (round 6). Its producer is told, as for any failed step, in
+    the same transaction. Run every minute."""
+    dead_since = timezone.now() - timedelta(seconds=settings.STEP_FAILED_AFTER_SECONDS)
+    dead = SceneStep.objects.filter(
+        status=SceneStep.Status.RUNNING, taken_at__isnull=False, seen_at__lt=dead_since
+    ).select_related("scene", "tool_call")
+    _end_stopped(
+        dead, "Its work stopped partway, and it was never heard from again.", _told_it_ended
+    )
+
+
 def carry_on_after_the_worker_starts() -> None:
     """Deal with whatever the worker was doing when it stopped. There is one worker, so as
     it starts nothing from before can still be running. Each scene step still marked running
@@ -616,27 +698,25 @@ def carry_on_after_the_worker_starts() -> None:
     with transaction.atomic():
         hold_one_at_a_time_lock()
         sessions = set(Session.objects.filter(producer_running=True).values_list("pk", flat=True))
-        stopped = list(
+        stopped = _end_stopped(
             SceneStep.objects.filter(status=SceneStep.Status.RUNNING).select_related(
                 "scene", "tool_call"
-            )
+            ),
+            "The worker restarted while it was being made.",
         )
-        for step in stopped:
-            # Before the step fails, so its scene is as the fixing agent's give-up leaves it.
-            end_the_agents_fixing(step)
-            _fail(
-                step,
-                "The worker restarted while it was being made.",
-                "it was stopped partway.",
-            )
         # Every step is failed first, so a fix plan's scene isn't carried on while another
-        # of its steps still looks running.
+        # of its steps still looks running. Each on its own, so one that can't carry on
+        # leaves the rest failed and told.
         for step in stopped:
-            if step.plan_scene_id is not None:
-                run_plan.step_failed(step)
-            else:
-                sessions.add(step.tool_call.session_id)
-                run_plan.carry_on_scene(step.scene)
+            try:
+                with transaction.atomic():
+                    if step.plan_scene_id is not None:
+                        run_plan.step_failed(step)
+                    else:
+                        sessions.add(step.tool_call.session_id)
+                        run_plan.carry_on_scene(step.scene)
+            except Exception:
+                logger.exception("Scene step %s's end couldn't be carried on", step.pk)
         for session in Session.objects.filter(pk__in=sessions):
             if another_session_is_busy(session):
                 continue

@@ -15,7 +15,7 @@ from gateway.models import ModelCall
 from jobs import fix_check
 from jobs.models import FixCheck, FixPlanScene, SceneStep
 
-from .conftest import PICTURE_OK, HeldSteps
+from .conftest import PICTURE_OK, HeldSteps, producer_turns
 from .test_fix_check import HANDLE_HIDDEN, not_made
 from .test_fix_loop import HANDLE_SHOWING
 from .test_producer_broll import TALKING_CHOICE, checked  # noqa: F401 (a fixture)
@@ -56,7 +56,7 @@ def fails(fake_model: FakeModel, times: int, still_wrong: str = STILL_DARK) -> N
 def test_a_picture_that_fails_its_fix_check_is_drawn_again_told_why_and_its_clip_made(
     fake_model: FakeModel, held: HeldSteps
 ) -> None:
-    ads_before = len(ads())
+    turns, ads_before = producer_turns(), len(ads())
     plan = propose(row(1, "new_picture", change=BRIGHTER))
     say_yes(plan)
     fake_model.respond("choose_starting_picture", TALKING_CHOICE, TALKING_CHOICE)
@@ -85,6 +85,8 @@ def test_a_picture_that_fails_its_fix_check_is_drawn_again_told_why_and_its_clip
     assert status(1) == "finished"
     assert one.landed_at is not None
     assert len(ads()) == ads_before + 1
+    # The redraw woke no producer turn: code drew it again by itself.
+    assert producer_turns() == turns
 
 
 def test_a_picture_failing_its_fix_check_every_try_asks_the_shop_owner_once(

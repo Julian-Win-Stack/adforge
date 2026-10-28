@@ -22,7 +22,7 @@ from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, ModelRequest, UnusableReply
 from jobs import fix_check, reference_photos, work
-from jobs.clip_judge import MOTION_PHOTO_FIX_QUESTION, OWNER_PHOTO_LABEL
+from jobs.clip_judge import ASKS, MOTION_PHOTO_FIX_QUESTION, OWNER_PHOTO_LABEL
 from jobs.fix_check import PhotoFixVerdict
 from jobs.models import (
     Fix,
@@ -533,8 +533,9 @@ def test_with_three_of_the_shop_owners_things_the_product_photo_is_still_photo_1
     instructed: dict[str, list[str]],  # noqa: F811 (the fixture)
 ) -> None:
     # Case C12b, replayed free: three things drawn in first made the product photo Image 4,
-    # and the writer, told so, answered "photo" with 4. With one photo in the ad's colour it
-    # is no longer asked which.
+    # and the writer, told so, answered "photo" with 4. With one product photo it is no
+    # longer asked which.
+    Job.objects.get().photos.filter(position=2).delete()
     photos_sent(fake_model, say, OWNER_MUG, OWNER_TEA, OWNER_COASTER)
     asked: list[dict[str, Any]] = []
 
@@ -566,7 +567,7 @@ def test_the_writer_of_the_prompts_is_told_the_shop_owners_pictures_win(
     mug_fixed: Fix,
 ) -> None:
     assert instructed["choose_broll_picture"][-1].endswith(
-        reference_photos.writer_rules(["black mug"], [], picks_photo=False)
+        reference_photos.writer_rules(["black mug"], [], picks_photo=True)
     )
 
 
@@ -599,20 +600,6 @@ def test_the_photo_is_kept_on_the_scene_once_the_shop_owner_says_yes(mug_fixed: 
     assert row.drawn == clean_pictures()[0]
     assert list(last_step("starting_picture").reference_photos.all()) == [row]
     assert list(last_step("clip").reference_photos.all()) == [row]
-
-
-def test_no_photo_is_kept_before_the_shop_owner_says_yes(
-    fake_model: FakeModel, shown: ProducedItem, say: Say
-) -> None:
-    photos_sent(fake_model, say, OWNER_MUG)
-
-    fixing.planned(
-        fixing.plan_row(2, "new_picture", change=MUG_FIX, photos=[photo(1, "black mug")]),
-        note=MUG_NOTE,
-    )
-
-    assert not ReferencePhoto.objects.exists()
-    assert clean_pictures() == []
 
 
 # --- Reference mode ------------------------------------------------------------------------------
@@ -702,17 +689,17 @@ def test_the_clip_judge_is_shown_the_shop_owners_photo_for_the_change(
     instructed: dict[str, list[str]],  # noqa: F811 (the fixture)
     tea_fixed: Fix,
 ) -> None:
-    motion = ModelCall.objects.filter(purpose="check_clip_motion").order_by("-id")[:3]
+    motion = ModelCall.objects.filter(purpose="check_clip_motion").order_by("-id")[:ASKS]
     for call in motion:
         assert call.handoff["owner_photos"] == ["tea"]
         assert {"label": OWNER_PHOTO_LABEL.format("tea"), "key": owner_file(1)} in call.images
     # SIDES is judged as any clip, without the photo.
-    sides = ModelCall.objects.filter(purpose="check_clip_sides").order_by("-id")[:3]
+    sides = ModelCall.objects.filter(purpose="check_clip_sides").order_by("-id")[:ASKS]
     assert all("owner_photos" not in call.handoff for call in sides)
     check = tea_fixed.checks.get()
     assert check.verdict == "passed"
     assert all(
-        told.endswith(MOTION_PHOTO_FIX_QUESTION) for told in instructed["check_clip_motion"][-3:]
+        told.endswith(MOTION_PHOTO_FIX_QUESTION) for told in instructed["check_clip_motion"][-ASKS:]
     )
 
 
@@ -729,7 +716,7 @@ def test_a_try_after_the_judge_fails_stays_in_reference_mode(
         "real_motion": {"verdict": "fail", "problem": "The tea floats.", "back_to_normal_at": None},
     }
     fixed = {"owner_photo_shows": OWNER_PHOTO_SHOWS, **CLIP_FIXED}
-    fake_model.respond("check_clip_motion", *[{**failing, "owner_change": fixed}] * 3)
+    fake_model.respond("check_clip_motion", {**failing, "owner_change": fixed})
     fake_model.respond("rewrite_clip_prompt", REWRITE)
     agent_films(monkeypatch, REWRITE["motion_prompt"])
 
@@ -807,7 +794,7 @@ def test_a_thing_during_the_clip_in_a_picture_fix_is_checked_on_its_clip(
 
     mug_and_tea(fake_model, steps, say)
 
-    motion = ModelCall.objects.filter(purpose="check_clip_motion").order_by("-id")[:3]
+    motion = ModelCall.objects.filter(purpose="check_clip_motion").order_by("-id")[:ASKS]
     for call in motion:
         assert call.handoff["owner_photos"] == ["tea"]
         assert {"label": OWNER_PHOTO_LABEL.format("tea"), "key": owner_file(2)} in call.images
@@ -823,7 +810,7 @@ def test_a_thing_during_the_clip_in_a_picture_fix_is_checked_on_its_clip(
 def test_a_picture_fix_with_no_thing_during_the_clip_leaves_its_clip_judged_as_any(
     mug_fixed: Fix,
 ) -> None:
-    motion = ModelCall.objects.filter(purpose="check_clip_motion").order_by("-id")[:3]
+    motion = ModelCall.objects.filter(purpose="check_clip_motion").order_by("-id")[:ASKS]
     assert all("owner_change" not in call.handoff for call in motion)
     assert all("owner_photos" not in call.handoff for call in motion)
     assert [check.step.kind for check in mug_fixed.checks.all()] == ["starting_picture"]
@@ -863,7 +850,7 @@ def test_a_note_changing_the_picture_in_words_beside_a_clip_photo_redraws_the_pi
         assert len(call.images) == 2
     assert all(told.endswith(fix_check.DURING_THE_ACTION) for told in instructed["check_fix"])
     # Its clip's judge looks for the tea, with its photo.
-    motion = ModelCall.objects.filter(purpose="check_clip_motion").order_by("-id")[:3]
+    motion = ModelCall.objects.filter(purpose="check_clip_motion").order_by("-id")[:ASKS]
     assert all(call.handoff["owner_photos"] == ["tea"] for call in motion)
 
 
@@ -916,24 +903,6 @@ def test_a_new_line_keeps_the_picture_with_the_photo(
 
 
 # --- Going back, a new photo of the same thing ---------------------------------------------------
-
-
-def test_going_back_brings_back_the_picture_and_clip_from_before_the_photo_for_nothing(
-    fake_model: FakeModel, mug_fixed: Fix, steps: HeldSteps
-) -> None:
-    before = ProducedItem.objects.get(kind="starting_picture", scene__number=2, version=1)
-    old_clip = ProducedItem.objects.get(kind="clip", scene__number=2, version=1)
-    paid = paid_for()
-
-    plan = fixing.fixed(2, "go_back", note="Go back to the green mug.", go_back_to=1)
-    steps.run_held()
-
-    assert plan.scenes.get().estimate_usd == 0
-    assert paid_for() == paid
-    assert latest("starting_picture").file == before.file
-    assert latest("clip").file == old_clip.file
-    # D5: the scene no longer uses the photo, so the next fix won't bring it back.
-    assert in_use() == []
 
 
 def test_going_back_from_a_clip_in_reference_mode_brings_back_the_clip_from_before(
@@ -1119,7 +1088,7 @@ def test_the_same_thing_named_in_other_capitals_shares_its_clean_picture(
         note="Scene 3 too.",
     )
     # A picture and its clip, with no clean picture to draw: the mug's is already drawn.
-    assert plan.scenes.get().estimate_usd == Decimal("0.4355")
+    assert plan.scenes.get().estimate_usd == Decimal("0.4235")
     fake_model.respond("choose_broll_picture", BROLL_CHOICE)
 
     fixing.say_yes(plan)

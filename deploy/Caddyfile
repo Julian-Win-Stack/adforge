@@ -1,0 +1,26 @@
+# The only door into the app from outside. SITE_ADDRESS is the machine's name
+# (deploy/.env); Caddy gets it an https certificate by itself.
+{$SITE_ADDRESS} {
+	# The lock: a password box, or nothing when the firewall does the locking
+	# (deploy/README.md). Mounted from the machine, never committed.
+	import /etc/caddy/gate.caddy
+
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+
+	# The photos, pictures and clips the app saves, read straight from the media volume.
+	handle /media/* {
+		root * /srv
+		file_server
+	}
+
+	# The page itself. Any other path is the page's own, so it gets index.html.
+	handle {
+		root * /srv/site
+		try_files {path} /index.html
+		file_server
+	}
+
+	encode zstd gzip
+}

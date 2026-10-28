@@ -108,7 +108,7 @@ def test_the_planner_is_told_how_to_plan_each_broll_scene() -> None:
         "pick the colour with the most photos where the product is clearly seen; on a tie, "
         "the colour of Photo 1"
     ) in instructions
-    assert "Never name a photo that shows the product in another colour" in instructions
+    assert "Never name a photo that shows the product only in another colour" in instructions
     # Only the presenter's face: item 27. "Showcase when unsure" made filler B-roll of a hand
     # holding or setting down the product, and every one failed (round 2, #12 s2, #8 s4, N3).
     assert '"showcase" when unsure' not in instructions
@@ -457,6 +457,28 @@ OWNER_PART = {"what": "the handle", "source": "owner's words", "looks": THEIR_SE
         ),
         pytest.param(talking_scene(), id="a second talking scene"),
         pytest.param(a_plan_with_ways("broll", "second state"), id="two end states"),
+        # The main photo, three needed photos and the presenter's portrait.
+        pytest.param(
+            broll_scene(
+                person_shown="has face",
+                needs=[{"what": f"part {n}", "photos": [1]} for n in range(1, 4)],
+            ),
+            id="a scene sending five pictures",
+        ),
+        pytest.param(
+            broll_scene(
+                broll_kind="shows the problem",
+                thin_film=True,
+                needs=[{"what": "the cloudy film", "photos": [2]}],
+            ),
+            id="a thin film with a photo of it",
+        ),
+        pytest.param(
+            a_plan_with(
+                scenes=[{"line": "Meet the stoneware MUG."}, {"line": "Yours for $24.00."}]
+            ),
+            id="the name said in other capitals",
+        ),
     ],
 )
 def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
@@ -675,11 +697,6 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
             a_plan_with(product_size="medium"),
             "Input should be 'tiny', 'handheld' or 'large'",
             id="a size that isn't one of the three",
-        ),
-        pytest.param(
-            a_plan_with(colour_photos=[]),
-            "List should have at least 1 item",
-            id="no photo showing the colour",
         ),
         pytest.param(
             a_plan_with(colour_photos=[1, 3]),

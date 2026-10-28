@@ -253,46 +253,8 @@ def test_a_picture_note_makes_the_picture_then_the_clip_then_the_ad(
 # (nothing made before the yes).
 
 # --- 5. Two notes in one message: one plan, one yes, both redos at once, one ad --------------
-
-
-def test_two_notes_at_once_are_planned_together_and_make_one_new_ad(
-    fake_model: FakeModel, steps: HeldSteps, shown: list[str]
-) -> None:
-    untouched = made_for(3)
-    plan = planned(
-        plan_row(1, "new_picture", change=BOTH_HANDS),
-        plan_row(2, "new_clip", change=TURN_FIX),
-        note=f"{HOVERS} And in the first scene she should hold the mug with both hands.",
-    )
-    (told,) = notes(SystemNote.Kind.PLAN_SHOWN)
-    assert told.endswith(f"About {dollars(plan.estimate_usd())} in all.")
-
-    say_yes(plan, "Yes to both")
-    assert Fix.objects.count() == 2
-    # Both started at once.
-    assert held_kinds(steps) == [(1, "starting_picture"), (2, "clip")]
-    fake_model.respond("choose_starting_picture", TALKING)
-    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
-    # Scene 1's picture lands; code makes its clip.
-    steps.run_next()
-    # Scene 2's clip lands while scene 1's is still being made: nothing assembled yet.
-    steps.run_next()
-    assert [ad.version for ad in ads()] == [1]
-    assert notes(SystemNote.Kind.AD_SHOWN) == []
-    # Scene 1's clip lands last and assembles the one new ad, with both new clips.
-    assert held_kinds(steps) == [(1, "clip")]
-    steps.run_next()
-
-    assert [ad.version for ad in ads()] == [1, 2]
-    assert [cut["clip"] for cut in ads()[1].cuts] == [
-        latest("clip", 1).pk,
-        latest("clip", 2).pk,
-        latest("clip", 3).pk,
-    ]
-    assert (latest("clip", 1).version, latest("clip", 2).version) == (2, 2)
-    assert made_for(3) == untouched
-    assert len(notes(SystemNote.Kind.AD_SHOWN)) == 1
-
+# Proved by code's plan: test_run_plan.py (every scene lands, the ad is assembled once, and
+# the plan's estimate in all).
 
 # --- 7. A second note on the same scene after its fix ------------------------------------------
 
@@ -511,15 +473,10 @@ def test_a_fixs_redo_the_judge_fails_is_filmed_again_by_the_agent_and_its_try_ma
     fixed(2, "new_clip", change=TURN_FIX, note=HOVERS)
     assert held_kinds(steps) == [(2, "clip")]
     fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
-    # The judge fails the redo on 2 of its 3 asks, and passes the agent's try on all 3.
-    # A fix's clip: each answer also says the owner's change is made.
+    # The judge fails the redo, and passes the agent's try. A fix's clip: each answer also
+    # says the owner's change is made.
     fixed_ = {"owner_change": CLIP_FIXED}
-    fake_model.respond(
-        "check_clip_motion",
-        half_turn() | fixed_,
-        half_turn() | fixed_,
-        *[CLIP_MOTION_OK | fixed_] * 4,
-    )
+    fake_model.respond("check_clip_motion", half_turn() | fixed_, CLIP_MOTION_OK | fixed_)
     agent_films(monkeypatch, TURN_REMADE["motion_prompt"])
     steps.run_next()
 
@@ -544,8 +501,6 @@ def test_a_fixs_redo_the_judge_fails_is_filmed_again_by_the_agent_and_its_try_ma
         "make_broll_clip",
         "collect_broll_clip",
         *JUDGED_CLIP,
-        # The redo's two failing answers are asked whether they name the same fault.
-        "agree_on_fault",
         "make_broll_clip",
         "collect_broll_clip",
         *JUDGED_CLIP,

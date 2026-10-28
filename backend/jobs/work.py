@@ -653,19 +653,32 @@ def save_photos(
     links the picker marked with a face; without them, or for the `unnoted` links it didn't
     note, each photo kept is given its Face note by a call of its own. A link that can't be
     fetched is fetched `as_given` instead, when that names another link for it. Gives back
-    each one that was skipped, with why."""
-    # A read run again after a crash starts the page's photos afresh, so each is kept once.
-    # Photos the user attached are theirs, and stay.
-    job.photos.exclude(source_url="").delete()
+    each one that was skipped, with why.
+
+    A page read again, as after a crash or by a second read of the same page, only adds the
+    photos the job doesn't have yet: one at a link already kept, or with `merge_copies` a
+    copy of one already kept, is left out. Photos already kept are never deleted or changed,
+    so their numbers and what the plan marked on them stay."""
+    page_photos = job.photos.exclude(source_url="").filter(from_video=None).order_by("position")
     saved = job.photos.aggregate(last=Max("position"))["last"] or 0
+    links = set(page_photos.values_list("source_url", flat=True))
     copies = photos.Copies()
     kept: list[ProductPhoto] = []
+    if merge_copies:
+        for had in page_photos:
+            if copies.copy_of(had.source_url, file_store.read(had.file)) is None:
+                kept.append(had)
+    already = len(kept)
+    count = page_photos.count()
     skipped = []
     for url in urls:
-        if len(kept) >= page.MAX_PHOTOS:
+        if count >= page.MAX_PHOTOS:
             break
+        if url in links:
+            continue
         if merge_copies and (copy := copies.kept_at_link(url)) is not None:
-            _merge_face(kept[copy], url, faces)
+            if copy >= already:
+                _merge_face(kept[copy], url, faces)
             continue
         try:
             photo = _photo_at(url, (as_given or {}).get(url))
@@ -691,9 +704,12 @@ def save_photos(
             )
             continue
         if merge_copies and (copy := copies.copy_of(url, photo.content)) is not None:
-            _merge_face(kept[copy], url, faces)
+            if copy >= already:
+                _merge_face(kept[copy], url, faces)
             continue
         saved += 1
+        count += 1
+        links.add(url)
         has_face = url in faces if faces is not None and url not in unnoted else None
         kept.append(
             keep_photo(
@@ -912,6 +928,24 @@ def _video_transcripts(job: Job) -> list[str]:
     """What each of the job's product videos says, in their order: one per video whose
     words were had, "music only" when it says nothing."""
     return list(job.videos.exclude(transcript="").values_list("transcript", flat=True))
+
+
+def _photos_to_pick_from(job: Job, room: int) -> list[ProductPhoto]:
+    """The product photos a starting picture's writer picks its photo from, at most `room`,
+    in order: every one when they fit, else those in the ad's colour first, then the page's,
+    those cut from its videos and the shop owner's. A job keeps up to page.MAX_PHOTOS page
+    photos, more with its video pictures, and a model takes at most clip_judge.MOST_PICTURES
+    pictures in one ask."""
+    photos = list(job.photos.order_by("position"))
+    kept = sorted(
+        photos,
+        key=lambda photo: (
+            not photo.shows_product_colour,
+            1 if photo.from_video_id is not None else 0 if photo.source_url else 2,
+            photo.position,
+        ),
+    )[:room]
+    return [photo for photo in photos if photo in kept]
 
 
 def _photos_to_show(job: Job, photos: list[ProductPhoto]) -> list[ProductPhoto]:
@@ -1152,10 +1186,14 @@ def _ask_fact_check(
         for need in scene.needs
         for number in need["photos"]
     }
+    # A plan may mark no photo in the ad's colour: then every photo that fits is shown.
+    marked = job.photos.filter(shows_product_colour=True).exists()
     photos = (
         job.photos.filter(Q(shows_product_colour=True) | Q(position__in=needed)).order_by(
             "position"
         )
+        if showing and marked
+        else _photos_to_pick_from(job, clip_judge.MOST_PICTURES)
         if showing
         else []
     )
@@ -1721,7 +1759,10 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
     job = scene.job
     portrait = latest(job, ProducedItem.Kind.PORTRAIT)
     assert portrait is not None, "the tool refuses a scene whose person isn't made"
-    photos = list(job.photos.filter(shows_product_colour=True))
+    # Every product photo that fits beside the portrait, the plan's marks of those in the ad's
+    # colour only advice (Julian 2026-10-22): a product seen only in a pack or line-up is
+    # still made.
+    photos = _photos_to_pick_from(job, clip_judge.MOST_PICTURES - 1)
     numbers = [photo.position for photo in photos]
     note = step.note
     failed = the_try_before(step)
@@ -1734,7 +1775,7 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
         line=step.line,
         script=list(job.scenes.values_list("line", flat=True)),
         product_colour=job.product_colour,
-        colour_photos=numbers,
+        colour_photos=[photo.position for photo in photos if photo.shows_product_colour],
         person_looks=job.person_looks,
         pose=pose_for(job.product_size),
         note=note or None,
@@ -1778,7 +1819,8 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
 
 def _make_broll_picture(step: SceneStep) -> ProducedItem:
     """Make a B-roll scene's starting picture: the model writing the scene's prompts, told the
-    shared rules and its kind's, picks the main photo from the photos in the ad's colour and
+    shared rules and its kind's, picks the main photo from the product photos, told which are
+    in the ad's colour, and
     writes the picture's prompt and the clip's. The picture is made from the main photo, then
     a photo for each of the scene's needs, then the presenter's portrait when the scene shows
     their face. It is checked before any clip is paid for; one that fails is drawn again from
@@ -1794,7 +1836,13 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
     scene = step.scene
     job = scene.job
     before = _before_picture(step)
-    photos = list(job.photos.filter(shows_product_colour=True))
+    # Every product photo that fits beside the scene's other pictures, the plan's marks of
+    # those in the ad's colour only advice: the shop owner's things, the needs' photos, the
+    # portrait, the before-picture and a redo's last picture.
+    owners_count = step.reference_photos.filter(use=ReferencePhoto.Use.PICTURE).count()
+    photos = _photos_to_pick_from(
+        job, clip_judge.MOST_PICTURES - owners_count - MOST_NEEDS_PHOTOS - 3
+    )
     numbers = [photo.position for photo in photos]
     images = [Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos]
     pictures = [PictureJob(image=1, job=MAIN_PHOTO_JOB)]
@@ -1866,7 +1914,7 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
         pictures=pictures,
         before_picture=before.text,
         product_colour=job.product_colour,
-        colour_photos=numbers,
+        colour_photos=[photo.position for photo in photos if photo.shows_product_colour],
         person_looks=job.person_looks,
         note=step.note or None,
         conversation=_conversation(job, until=step.started_at),
@@ -3062,7 +3110,7 @@ def tries_shown(step: SceneStep) -> TriesShown:
                 clip=clip,
                 name=try_name(clip).capitalize(),
                 version=labels.get(clip.pk, ""),
-                # The first only: the judge's asks word the same fault again and again.
+                # The first only, SIDES' before MOTION's: one problem per try.
                 problem=next(iter(clip_judge.still_failing(_ruling(clip))), ""),
             )
             for clip in tries
@@ -3290,7 +3338,6 @@ def _make_clip(step: SceneStep, *, remake: int = 0, motion: str = "") -> Produce
             motion_prompt=motion,
             change=change_made_for(step),
         )
-        Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
     return clip
 
 
@@ -3475,10 +3522,13 @@ def _was_shown(made: ProducedItem) -> bool:
 def _old_remakes(step: SceneStep) -> list[ProducedItem]:
     """The remakes the old auto-fix (#155) made of a clip step's clip the judge failed, kept
     in the step itself, oldest first: none for a step made since, whose tries the fixing
-    agent films in steps of their own."""
-    return list(
-        step.produced.filter(kind=ProducedItem.Kind.CLIP, remake__isnull=False).order_by("remake")
-    )
+    agent films in steps of their own. A try's own step holds only its try, numbered as a
+    remake but no remake of a first clip in its step: it has none."""
+    clips = step.produced.filter(kind=ProducedItem.Kind.CLIP)
+    first = clips.order_by("id").first()
+    if first is None or first.remake is not None:
+        return []
+    return list(clips.filter(remake__isnull=False).order_by("remake"))
 
 
 def _old_tries_were_shown(step: SceneStep, tries: list[ProducedItem]) -> bool:

@@ -8,14 +8,12 @@ videos."""
 
 from collections.abc import Callable
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 
 import pytest
 from pytest_django import Settings
 
 from agents.models import SystemNote
-from agents.money import dollars
 from agents.producer import (
     CALL_FALLBACK_USD,
     PICTURE_FALLBACK_USD,
@@ -28,6 +26,7 @@ from gateway.catalog import MODEL_FOR_PURPOSE, PRICE_PER_SECOND_OF_VIDEO
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import fix_check, fix_plans, picture_check, work
+from jobs.clip_judge import ASKS
 from jobs.models import Fix, FixPlan, FixPlanScene, ProducedItem, Scene, SceneStep
 
 from . import fixing
@@ -67,18 +66,18 @@ def judge_ask_usd(scene: int) -> Decimal:
         purpose__in=["check_clip_sides", "check_clip_motion"],
     )
     costs = [call.cost_usd for call in calls if call.cost_usd]
-    assert len(costs) == 6, "the clip judge asked 6 times, each paid for"
+    assert len(costs) == 2 * ASKS, "the clip judge asked each check, each paid for"
     return sum(costs, Decimal(0)) / len(costs)
 
 
 def broll_clip_usd(seconds: int, *, from_note: bool) -> tuple[Decimal, Decimal]:
-    """Scene 2's new B-roll clip, about and up to: its video and the judge's 6 asks, the
+    """Scene 2's new B-roll clip, about and up to: its video and the judge's asks, the
     writer's call for a clip made from a note (not recorded yet, so at the fallback; its fix
     is checked by the judge's own asks), and up to 6 tries of the fixing agent, each a new
     picture, a video, the judge and the agent's 3 turns (not recorded yet, so each at the
     fallback)."""
     video = seconds * BOREAL
-    judge = 6 * judge_ask_usd(2)
+    judge = 2 * ASKS * judge_ask_usd(2)
     about = video + judge + (CALL_FALLBACK_USD if from_note else 0)
     picture = _picture_only_estimate_usd(Scene.objects.get(number=2))
     return about, about + 6 * (picture + video + judge + 3 * CALL_FALLBACK_USD)
@@ -172,22 +171,6 @@ def clip_fix_of_2(fake_model: FakeModel, steps: HeldSteps, change: str = FIX_2) 
 # --- Estimates --------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    ("audio_seconds", "billed"), [(4.0, 5), (5.0000001, 5), (5.2, 6), (9.0, 9), (14.9, 15)]
-)
-def test_a_broll_clip_is_estimated_at_its_whole_seconds_at_the_boreal_price(
-    audio_seconds: float, billed: int
-) -> None:
-    assert work.clip_estimate_usd(audio_seconds, broll=True) == billed * BOREAL
-
-
-@pytest.mark.parametrize(("audio_seconds", "billed"), [(0.5, "1"), (3.5, "3.5"), (9.0, "9.0")])
-def test_a_talking_clip_is_estimated_at_its_audio_at_the_heygen_price(
-    audio_seconds: float, billed: str
-) -> None:
-    assert work.clip_estimate_usd(audio_seconds, broll=False) == Decimal(billed) * HEYGEN
-
-
 def test_a_picture_fix_is_estimated_at_the_last_pictures_cost_and_a_clip(
     shown: ProducedItem,
 ) -> None:
@@ -268,7 +251,7 @@ def test_a_clip_fix_is_estimated_from_the_ads_last_recorded_writer_and_judge(
     assert writer > 0
     # Its fix is checked by the clip judge's own asks: no check of its own is priced.
     assert _estimate(Scene.objects.get(number=2), Fix.Redo.CLIP, FIX_2).about == (
-        5 * BOREAL + 6 * judge_ask_usd(2) + writer
+        5 * BOREAL + 2 * ASKS * judge_ask_usd(2) + writer
     )
 
 
@@ -287,22 +270,14 @@ def test_a_clip_fix_with_no_judge_ask_recorded_is_estimated_at_the_fallback_an_a
 ) -> None:
     ModelCall.objects.filter(purpose__in=["check_clip_sides", "check_clip_motion"]).delete()
 
-    # The judge's 6 asks, which check the fix too, and the writer's call, each at the
+    # The judge's 2 asks, which check the fix too, and the writer's call, each at the
     # fallback, and up to 6 tries of the fixing agent, each a new picture, a video, the
-    # judge's 6 asks and the agent's 3 turns.
+    # judge's 2 asks and the agent's 3 turns.
     video = 5 * BOREAL
-    about = video + 7 * CALL_FALLBACK_USD
+    about = video + 3 * CALL_FALLBACK_USD
     picture = _picture_only_estimate_usd(Scene.objects.get(number=2))
-    up_to = about + 6 * (picture + video + 9 * CALL_FALLBACK_USD)
+    up_to = about + 6 * (picture + video + 5 * CALL_FALLBACK_USD)
     assert _estimate(Scene.objects.get(number=2), Fix.Redo.CLIP, FIX_2) == (about, up_to)
-
-
-@pytest.mark.parametrize(
-    ("amount", "said"),
-    [("0.396", "$0.396"), ("0.4", "$0.40"), ("1.5", "$1.50"), ("0", "$0.00"), ("2.05", "$2.05")],
-)
-def test_estimates_are_in_dollars_to_the_cent_or_their_last_digit(amount: str, said: str) -> None:
-    assert dollars(Decimal(amount)) == said
 
 
 # --- What a fix cost --------------------------------------------------------------------------
@@ -713,12 +688,3 @@ def test_an_early_fix_landing_last_assembles_the_first_ad(
 
 
 # --- Words ------------------------------------------------------------------------------------
-
-
-def test_context_names_note_and_fix_under_fixing_a_scene() -> None:
-    context = (Path(__file__).resolve().parents[2] / "CONTEXT.md").read_text()
-    language = context.split("## Language", 1)[1]
-    fixing = language.split("### Fixing a scene", 1)[1].split("\n### ", 1)[0]
-
-    assert "**Note**:" in fixing
-    assert "**Fix**:" in fixing

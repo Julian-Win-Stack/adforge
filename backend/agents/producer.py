@@ -280,8 +280,9 @@ class ReadPage(Tool):
         # told.
         save_videos(job, list(picked.videos))
         unread_videos = transcribe_videos(job) + read_videos(job, text)
+        # Once each: a video whose pictures an earlier read of the page kept keeps them.
         for video in job.videos.order_by("position"):
-            if moments := (video.read or {}).get("kept"):
+            if (moments := (video.read or {}).get("kept")) and not video.pictures.exists():
                 save_video_pictures(job, video, moments, video.frames_picked)
         # Only once every photo is kept: a worker that stops part-way through them leaves the
         # page unread, so the read run again keeps them all rather than the few already kept.
@@ -1546,9 +1547,7 @@ def _before_its_clip(scene: Scene) -> None:
     redesign, decisions 1 and 2). A scene the fixing agent gave up on, said to camera, is
     made again as a talking scene until it has its clip. Checked once nothing already made
     can be handed back, so what is free and changes nothing stays free."""
-    if scene.produced.filter(kind=ProducedItem.Kind.CLIP).exists() and not (
-        waits_to_be_said_to_camera(scene)
-    ):
+    if _latest_clip(scene) is not None and not (waits_to_be_said_to_camera(scene)):
         raise Refused(
             f"scene {scene.number} already has a clip, so it changes only through the shop "
             "owner's notes: the app shows them a plan and makes it once they say yes."
@@ -1812,8 +1811,12 @@ def _the_plan(job: Job, reason: str) -> str:
             _script(job),
             _overlays(job),
             f"The product's name, said to camera: {job.product_name}",
-            f"The product's colour: {job.product_colour}, shown in photos "
-            f"{', '.join(str(number) for number in colour_photos)}."
+            f"The product's colour: {job.product_colour}, shown in "
+            + (
+                f"photos {', '.join(str(number) for number in colour_photos)}."
+                if colour_photos
+                else "no photo clearly."
+            )
             # A job planned before the plan said the size or the gender has neither.
             + (f" Its size: {job.product_size}." if job.product_size else ""),
             "The person: "

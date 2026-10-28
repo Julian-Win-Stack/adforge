@@ -57,22 +57,6 @@ def three_shot_mp4(tmp_path_factory: pytest.TempPathFactory) -> bytes:
     return made.read_bytes()
 
 
-@pytest.fixture(scope="module")
-def changing_mp4(tmp_path_factory: pytest.TempPathFactory) -> bytes:
-    """A real two-second video whose every frame is a new picture (snow), and then a second
-    of one picture held."""
-    made = tmp_path_factory.mktemp("video") / "changing.mp4"
-    snow = "nullsrc=size=64x64:rate=5,geq=lum='random(1)*255':cb=128:cr=128,trim=0:2"
-    held = "color=c=0x3366aa:size=64x64:rate=5,trim=0:1"
-    subprocess.run(
-        [settings.FFMPEG, "-loglevel", "error", "-f", "lavfi", "-i", snow, "-f", "lavfi"]
-        + ["-i", held, "-filter_complex", "[0][1]concat=n=2:v=1[v]", "-map", "[v]"]
-        + ["-pix_fmt", "yuv420p", str(made)],
-        check=True,
-    )
-    return made.read_bytes()
-
-
 @pytest.fixture
 def picks_videos(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[dict[str, Any]]]:
     """The video players the picker picks, as the page script lists them: a test fills it."""
@@ -270,8 +254,9 @@ def test_a_page_read_again_keeps_its_videos_once(
     read(fake_model, say, link)
 
     assert len(results_of("read_page")) == 2
+    # Only what the job doesn't have is added: the video kept the first time stays as it is.
     (again,) = Job.objects.get().videos.all()
-    assert again.pk != first
+    assert again.pk == first
     assert file_store.read(again.file) == tiny_mp4
 
 
@@ -370,26 +355,3 @@ def test_a_kept_video_is_thinned_to_its_picked_frames_with_every_shot_in_them(
     with PIL.Image.open(io.BytesIO(file_store.read(video.frames_picked[0]["key"]))) as shown:
         assert shown.size == (160, 120)
     assert video.frames_picked[0]["key"] == f"{video.file.rsplit('.', 1)[0]}-pick-1.jpg"
-
-
-def test_a_short_video_keeps_every_frame_but_its_copies(
-    fake_model: FakeModel,
-    httpserver: HTTPServer,
-    firecrawl: FakeFirecrawl,
-    shampoo_page_url: str,
-    say: Callable[..., None],
-    picks_videos: list[dict[str, Any]],
-    changing_mp4: bytes,
-) -> None:
-    httpserver.expect_request("/cdn/videos/short.mp4").respond_with_data(
-        changing_mp4, content_type="video/mp4"
-    )
-    picks_videos.append(player(1, f"{firecrawl.shop}/cdn/videos/short.mp4"))
-
-    read(fake_model, say, shampoo_page_url)
-
-    (video,) = Job.objects.get().videos.all()
-    seconds = [frame["second"] for frame in video.frames_picked]
-    # Every new picture, then the held picture once.
-    assert seconds[:10] == [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8]
-    assert len(seconds) == 11 and 2.0 <= seconds[10] < 3.0

@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("jobs", "0056_video_context"),
+        ("jobs", "0057_scenestep_taken_at"),
     ]
 
     operations = [

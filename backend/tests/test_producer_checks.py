@@ -9,8 +9,7 @@ import pytest
 
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from jobs.checks import fits_target, most_words, most_words_in_a_line
-from jobs.models import Job, Scene
+from jobs.models import Job
 from jobs.work import keep_photo
 
 from .conftest import (
@@ -643,6 +642,7 @@ def test_a_script_where_the_person_talks_throughout_is_checked_without_the_photo
     assert images_shown("fact_check") == [[]]
 
 
+# Each rule is tested in tests/test_check_answers.py; one case here goes through the chat.
 @pytest.mark.parametrize(
     ("plan", "verdict", "told"),
     [
@@ -651,30 +651,6 @@ def test_a_script_where_the_person_talks_throughout_is_checked_without_the_photo
             shows_wrong("The page doesn't mention tea.", passing=(1, 3)),
             'Scene 2 has no "shows": only its line can be wrong.',
             id="a talking scene's shows found wrong",
-        ),
-        pytest.param(
-            PLAN,
-            shows_wrong("The page doesn't mention tea.", passing=(1, 3), wrong="both"),
-            'Scene 2 has no "shows": only its line can be wrong.',
-            id="a talking scene's line and shows found wrong",
-        ),
-        pytest.param(
-            showing("the mug turned in a hand"),
-            {
-                **FACTS_OK,
-                "lines": [
-                    *facts_ok(1, 3)["lines"],
-                    {
-                        "scene": 2,
-                        "verdict": "wrong",
-                        "wrong": None,
-                        "problem": "Unsupported.",
-                        "page_says": "Nothing.",
-                    },
-                ],
-            },
-            'A "wrong" line needs what is wrong, its problem and what the page says.',
-            id="wrong without saying what",
         ),
     ],
 )
@@ -966,28 +942,15 @@ def test_a_rewrite_of_a_line_the_person_says_is_shown_no_photos(
     assert images_shown("rewrite_line") == [[]]
 
 
+# The other B-roll rules are tested in tests/test_check_answers.py. This case goes through the
+# chat, as only it shows the rewrite is read against the job's own photos.
 @pytest.mark.parametrize(
     ("rewrite", "told"),
     [
         pytest.param(
-            {**DOES_A_JOB, "result": None},
-            'A "does a job" scene needs its result: what you can see at its end.',
-            id="a job without its result",
-        ),
-        pytest.param(
             {**DOES_A_JOB, "needs": [{"what": "the glaze up close", "photos": [3]}]},
             "There's no photo 3: the job has 2.",
             id="a photo the job doesn't have",
-        ),
-        pytest.param(
-            {
-                **DOES_A_JOB,
-                "person_shown": "has face",
-                "needs": [{"what": f"detail {n}", "photos": [2]} for n in range(1, 5)],
-            },
-            "Scene 2 would send 6 pictures (the main photo, one for each of its 4 needs and "
-            "the presenter's portrait): 5 at most.",
-            id="too many pictures",
         ),
     ],
 )
@@ -1471,16 +1434,10 @@ def test_a_checked_line_put_over_what_another_scene_shows_is_fact_checked_again(
     ]
 
 
+# Each rule is tested in tests/test_check_answers.py; one case here goes through the chat.
 @pytest.mark.parametrize(
     ("kept", "broken_rule"),
     [
-        pytest.param(
-            [2, 3],
-            "The first scene is the person talking to camera",
-            id="opening on a scene that shows the product",
-        ),
-        pytest.param([1, 3, 2], "Give the lines in the order they play", id="out of order"),
-        pytest.param([1, 1], "Give the lines in the order they play", id="a scene twice"),
         pytest.param([1, 4], "There's no scene 4: the script has 3.", id="a scene not sent"),
     ],
 )
@@ -1503,46 +1460,6 @@ def test_a_shortened_script_that_breaks_the_rules_changes_nothing(
 
 
 # --- The rules on their own ------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("words_per_second", "most"),
-    [pytest.param(2.0, 36, id="whole words"), pytest.param(2.1, 37, id="a part word over")],
-)
-def test_a_line_may_have_the_whole_words_the_voice_says_within_18_seconds(
-    words_per_second: float, most: int
-) -> None:
-    assert most_words_in_a_line(words_per_second) == most
-
-
-@pytest.mark.parametrize(("seconds", "fits"), [(17.0, True), (17.1, False), (9.0, True)])
-def test_a_script_fits_a_15_second_target_up_to_2_seconds_over_it(
-    seconds: float, fits: bool
-) -> None:
-    # The guess at the ad's length misses by up to about 2 seconds either way: a script only
-    # a little over is left alone, and a shorter one always fits.
-    assert fits_target(seconds, 15) is fits
-
-
-def test_a_script_is_shortened_to_the_words_said_within_the_target_and_2_seconds() -> None:
-    assert most_words(15, 2.0) == 34
-
-
-@pytest.mark.parametrize(
-    ("shows", "status"),
-    [
-        pytest.param("", "planned", id="shows something else"),
-        pytest.param(POUR, "finished", id="shows the same"),
-    ],
-)
-def test_a_finished_scene_is_planned_again_only_when_what_it_shows_changes(
-    shows: str, status: str
-) -> None:
-    scene = Scene(line=SAID_OVER, shows=POUR, status=Scene.Status.FINISHED)
-
-    scene.change_line(SAID_OVER, shows)
-
-    assert scene.status == status
 
 
 def test_a_first_state_rewritten_for_the_person_to_say_leaves_no_second_state(

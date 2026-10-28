@@ -24,7 +24,6 @@ from jobs.notices import post_notice
 from .agent_tries import agent_films
 from .conftest import (
     CLIP_FIXED,
-    CLIP_MOTION_OK,
     HeldSteps,
     handoffs,
     motion_answer,
@@ -57,8 +56,6 @@ from .test_producer_picture_then_clip import ads
 pytestmark = pytest.mark.django_db(transaction=True)
 
 GAVE_UP = "Each try keeps the mug turning; I can't film it holding still."
-# The same fault, as the judge's second ask words it.
-FLOATS_TOO = "From 1.2 s the teapot hangs in the air with nothing holding it."
 
 
 def every_try_fails(fake_model: FakeModel, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -67,10 +64,8 @@ def every_try_fails(fake_model: FakeModel, monkeypatch: pytest.MonkeyPatch) -> N
     fake_model.respond(
         "check_clip_motion",
         failing(FLOATS),
-        failing(FLOATS_TOO),
-        CLIP_MOTION_OK,
-        *[failing(SPINS)] * 3,
-        *[failing(SPINS)] * 3,
+        failing(SPINS),
+        failing(SPINS),
     )
     agent_films(monkeypatch, REMADE, REMADE_AGAIN, reason=GAVE_UP, picks=1)
 
@@ -162,7 +157,7 @@ def test_the_chat_shows_every_try_with_the_judges_problem_and_the_agents_pick_an
     # The notice ends the clip's step in the chat.
     assert notice["step"] == {"scene": 2, "kind": "clip", "state": "made"}
     shown_first = notice["tries"]["clips"][0]["problem"]
-    assert shown_first in (FLOATS, FLOATS_TOO)
+    assert shown_first == FLOATS
     assert notice["tries"] == {
         "scene": 2,
         "in_ad": try_2.pk,

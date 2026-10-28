@@ -1027,6 +1027,12 @@ class SceneStep(models.Model):
         "STEP_HEARTBEAT_SECONDS while it works. A running step that hasn't been seen for "
         "STEP_DEAD_AFTER_SECONDS has died, and no longer keeps its session busy.",
     )
+    taken_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When a worker started its work, from when its heartbeat beats. Blank while "
+        "it waits for a worker.",
+    )
     finished_at = models.DateTimeField(
         null=True, blank=True, help_text="When it finished or failed. Blank while it runs."
     )

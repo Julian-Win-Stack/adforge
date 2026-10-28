@@ -23,6 +23,7 @@ talking clips and B-roll ones alike, and its clip scripts are keyed "make_clip" 
 "collect_clip" to have a clip still being made when asked, {"state": "failed", "error": ...}
 to have it fail, or an error for "make_clip" or "collect_clip"."""
 
+import functools
 import io
 import itertools
 import math
@@ -386,8 +387,10 @@ def _silence_frames(seconds: float, rate: int) -> bytes:
     return b"\0\0" * round(seconds * rate)
 
 
+@functools.cache
 def _tone_frames(seconds: float, rate: int, *, hertz: int) -> bytes:
-    """A steady tone at `hertz`, loud enough to be heard over silence."""
+    """A steady tone at `hertz`, loud enough to be heard over silence. Kept once made: a
+    test suite asks for the same few tones thousands of times."""
     return b"".join(
         round(8000 * math.sin(2 * math.pi * hertz * i / rate)).to_bytes(2, "little", signed=True)
         for i in range(round(seconds * rate))
