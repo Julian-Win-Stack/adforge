@@ -3072,7 +3072,7 @@ def tries_shown(step: SceneStep) -> TriesShown:
                 clip=clip,
                 name=try_name(clip).capitalize(),
                 version=labels.get(clip.pk, ""),
-                # The first only: the judge's asks word the same fault again and again.
+                # The first only, SIDES' before MOTION's: one problem per try.
                 problem=next(iter(clip_judge.still_failing(_ruling(clip))), ""),
             )
             for clip in tries

@@ -364,10 +364,10 @@ def test_a_broll_line_fix_is_estimated_with_the_judges_asks_and_up_to_six_agent_
     # The scene keeps its picture; the new line's 52
     # characters at Inworld's $25 a million are $0.0013; its 8 words take the fake voice 4
     # seconds, $0.000244 at Scribe's $0.22 an hour; a 5-second clip at Boreal's $0.0792 a
-    # second with the judge's 6 asks at $0.003 is $0.414, and up to 6 tries of the fixing
+    # second with the judge's 2 asks at $0.003 is $0.402, and up to 6 tries of the fixing
     # agent, each a new picture, that clip and the agent's 3 turns at $0.07 (decider call 13).
     estimate = line_estimate(2, LINE_2_NEW)
 
     picture = _picture_only_estimate_usd(Scene.objects.get(number=2))
-    each_try = picture + Decimal("0.414") + 3 * Decimal("0.07")
-    assert estimate == (Decimal("0.415544"), Decimal("0.415544") + 6 * each_try)
+    each_try = picture + Decimal("0.402") + 3 * Decimal("0.07")
+    assert estimate == (Decimal("0.403544"), Decimal("0.403544") + 6 * each_try)

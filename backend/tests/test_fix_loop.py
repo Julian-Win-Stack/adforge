@@ -473,15 +473,10 @@ def test_a_fixs_redo_the_judge_fails_is_filmed_again_by_the_agent_and_its_try_ma
     fixed(2, "new_clip", change=TURN_FIX, note=HOVERS)
     assert held_kinds(steps) == [(2, "clip")]
     fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
-    # The judge fails the redo on 2 of its 3 asks, and passes the agent's try on all 3.
-    # A fix's clip: each answer also says the owner's change is made.
+    # The judge fails the redo, and passes the agent's try. A fix's clip: each answer also
+    # says the owner's change is made.
     fixed_ = {"owner_change": CLIP_FIXED}
-    fake_model.respond(
-        "check_clip_motion",
-        half_turn() | fixed_,
-        half_turn() | fixed_,
-        *[CLIP_MOTION_OK | fixed_] * 4,
-    )
+    fake_model.respond("check_clip_motion", half_turn() | fixed_, CLIP_MOTION_OK | fixed_)
     agent_films(monkeypatch, TURN_REMADE["motion_prompt"])
     steps.run_next()
 
@@ -506,8 +501,6 @@ def test_a_fixs_redo_the_judge_fails_is_filmed_again_by_the_agent_and_its_try_ma
         "make_broll_clip",
         "collect_broll_clip",
         *JUDGED_CLIP,
-        # The redo's two failing answers are asked whether they name the same fault.
-        "agree_on_fault",
         "make_broll_clip",
         "collect_broll_clip",
         *JUDGED_CLIP,

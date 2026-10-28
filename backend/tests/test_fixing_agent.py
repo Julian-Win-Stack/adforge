@@ -19,6 +19,7 @@ from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import Said
 from jobs import work
+from jobs.clip_judge import ASKS
 from jobs.models import BROLL_FIELDS, AgentFix, Fix, ProducedItem, Scene, SceneStep
 
 from .conftest import (
@@ -33,7 +34,7 @@ from .conftest import (
 )
 from .fixing import fixed as fixed_by_a_plan
 from .test_pick_from_tries import made_ad  # noqa: F401 (a fixture)
-from .test_producer_auto_fix import FLOATS, REMADE, clip_of_scene_2, failing, judged, rewrite
+from .test_producer_auto_fix import FLOATS, REMADE, clip_of_scene_2, failing, rewrite
 from .test_producer_broll import (
     LINE_2,
     SHOWS,
@@ -104,7 +105,7 @@ def passed_on_try_2(fake_model: FakeModel, failed_clip: SceneStep) -> Outcome:
         turn(calls=[film_again(video_prompt=POURS)]),
         turn(calls=[film_again()]),
     )
-    fake_model.respond("check_clip_motion", failing(FLOATS), failing(FLOATS))
+    fake_model.respond("check_clip_motion", failing(FLOATS))
     return fixed(failed_clip)
 
 
@@ -246,7 +247,7 @@ def given_up(fake_model: FakeModel, failed_clip: SceneStep) -> Outcome:
         turn(calls=[film_again(line=NEW_LINE, shows=STIRS, video_prompt=STIRS)]),
         turn(calls=[("say_to_camera", {"reason": "The stir never reads.", "best_try": 1})]),
     )
-    fake_model.respond("check_clip_motion", failing(FLOATS), failing(FLOATS))
+    fake_model.respond("check_clip_motion", failing(FLOATS))
     return fixed(failed_clip)
 
 
@@ -280,7 +281,7 @@ def refused_then_given_up(fake_model: FakeModel, step: SceneStep, *calls: Any) -
         turn(calls=[film_again()]),
         turn(calls=[("say_to_camera", {"reason": "It can't be filmed."})]),
     )
-    fake_model.respond("check_clip_motion", failing(FLOATS), failing(FLOATS))
+    fake_model.respond("check_clip_motion", failing(FLOATS))
     fixed(step)
     return told()[: len(calls)]
 
@@ -560,8 +561,8 @@ def test_through_the_chat_the_agent_films_until_a_try_passes(
 ) -> None:
     fake_model.respond(
         "check_clip_motion",
-        *judged(failing(FLOATS), failing(FLOATS)),
-        *judged(failing(FLOATS), failing(FLOATS)),
+        failing(FLOATS),
+        failing(FLOATS),
     )
     fake_model.respond(
         "fix_scene", turn(calls=[film_again(video_prompt=POURS)]), turn(calls=[film_again()])
@@ -593,7 +594,7 @@ SLOWER = "Pour the tea slower."
 def failing_first(clips: int) -> Callable[[Any], dict[str, Any]]:
     """MOTION failing every answer about the first `clips` clips judged, passing after,
     each with the shop owner's change made."""
-    failed = iter([failing(FLOATS)] * 3 * clips)
+    failed = iter([failing(FLOATS)] * ASKS * clips)
 
     def answering(request: Any) -> dict[str, Any]:
         return motion_answer(next(failed, CLIP_MOTION_OK))(request)
@@ -691,8 +692,8 @@ def test_an_agent_that_stops_after_a_try_puts_the_scene_back_and_keeps_the_first
 ) -> None:
     fake_model.respond(
         "check_clip_motion",
-        *judged(failing(FLOATS), failing(FLOATS)),
-        *judged(failing(FLOATS), failing(FLOATS)),
+        failing(FLOATS),
+        failing(FLOATS),
     )
     fake_model.respond("fact_check", facts_ok(2))
     fake_model.respond(
@@ -721,8 +722,8 @@ def test_a_step_run_again_after_the_agent_stopped_keeps_the_first_clip(
 ) -> None:
     fake_model.respond(
         "check_clip_motion",
-        *judged(failing(FLOATS), failing(FLOATS)),
-        *judged(failing(FLOATS), failing(FLOATS)),
+        failing(FLOATS),
+        failing(FLOATS),
     )
     fake_model.respond("fact_check", facts_ok(2))
     fake_model.respond(
@@ -767,8 +768,8 @@ def test_a_give_up_the_worker_stopped_before_keeping_is_kept_once_it_restarts(
 ) -> None:
     fake_model.respond(
         "check_clip_motion",
-        *judged(failing(FLOATS), failing(FLOATS)),
-        *judged(failing(FLOATS), failing(FLOATS)),
+        failing(FLOATS),
+        failing(FLOATS),
     )
     fake_model.respond(
         "fix_scene",
@@ -795,8 +796,8 @@ def test_a_fixing_the_worker_stopped_in_is_given_up_and_the_scene_put_back(
 ) -> None:
     fake_model.respond(
         "check_clip_motion",
-        *judged(failing(FLOATS), failing(FLOATS)),
-        *judged(failing(FLOATS), failing(FLOATS)),
+        failing(FLOATS),
+        failing(FLOATS),
     )
     fake_model.respond("fact_check", facts_ok(2))
     fake_model.respond(
@@ -819,8 +820,8 @@ def test_the_producer_never_takes_a_try_for_a_clip_already_made(
 ) -> None:
     fake_model.respond(
         "check_clip_motion",
-        *judged(failing(FLOATS), failing(FLOATS)),
-        *judged(failing(FLOATS), failing(FLOATS)),
+        failing(FLOATS),
+        failing(FLOATS),
     )
     fake_model.respond("fix_scene", turn(calls=[film_again()]), WorkerStopped())
     with pytest.raises(WorkerStopped):
@@ -907,8 +908,8 @@ def test_a_give_up_kept_already_is_left_as_it_is_when_the_worker_restarts(
 ) -> None:
     fake_model.respond(
         "check_clip_motion",
-        *judged(failing(FLOATS), failing(FLOATS)),
-        *judged(failing(FLOATS), failing(FLOATS)),
+        failing(FLOATS),
+        failing(FLOATS),
     )
     fake_model.respond(
         "fix_scene",
