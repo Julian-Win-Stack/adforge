@@ -35,7 +35,7 @@ from jobs.product_videos import save_videos
 
 from .conftest import MUG_FRONT, PLAN, HeldSteps, WorkerStopped, a_plan_with
 from .test_fixing_agent import film_again
-from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing, judged
+from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing
 from .test_producer_broll import (
     calling,
     checked,  # noqa: F401 (a fixture)
@@ -140,7 +140,7 @@ def killed_mid_judge_of_try_1(
 ) -> SceneStep:
     """Scene 2's clip failed by the judge, the fixing agent films try 1, and the worker is
     killed while the judge asks about try 1: no handler of the app runs."""
-    fake_model.respond("check_clip_motion", *judged(failing(FLOATS), failing(FLOATS)))
+    fake_model.respond("check_clip_motion", failing(FLOATS))
     fake_model.respond("check_clip_motion", WorkerStopped())
     fake_model.respond("fix_scene", turn(calls=[film_again()]))
     with monkeypatch.context() as kill:
