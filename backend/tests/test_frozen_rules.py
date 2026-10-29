@@ -37,7 +37,7 @@ from jobs.scenes import (
     BEFORE_PICTURE_INSTRUCTIONS,
     BEFORE_PICTURE_JOB,
     BROLL_KIND_RULES,
-    BROLL_SHARED_RULES,
+    BROLL_VIDEO_PROMPT_RULES,
     MAIN_PHOTO_JOB,
     PERSON_IN_ROOM_PROMPT,
     ROOM_ALONE_PROMPT,
@@ -661,7 +661,9 @@ def test_the_owner_part_rules_name_no_tested_product(rule: str) -> None:
 # them (2026-10-19 16:55, "I'll go with your recommendations for question two and question
 # four"; handoffs/fixing-agent/spec.md, section 3), its give-up tool named give_up and "That
 # is an honest result, better than a bad clip." dropped once a give-up keeps its last try
-# (Julian, 2026-10-23 19:35, "go with your picks"). Pinned word for word: any change fails
+# (Julian, 2026-10-23 19:35, "go with your picks"); every start picture line taken out or
+# said of what the clip is sent (spec #210 point 19, #242: Claude's wording, not approved
+# yet). Pinned word for word: any change fails
 # here until he says so and the pinned copy changes with it.
 FIXING_AGENT_AS_APPROVED = (
     Path(__file__).parent / "fixtures" / "fixing_agent_instructions.txt"
@@ -728,11 +730,15 @@ def test_the_fixing_agent_is_told_what_giving_up_does_at_each_door_word_for_word
         assert fixing_agent.instructions(door).startswith(as_approved(door))
 
 
-def test_the_fixing_agent_is_told_the_apps_prompt_rules_unchanged() -> None:
+def test_the_fixing_agent_is_told_the_apps_video_prompt_rules_with_no_start_picture() -> None:
+    # The app's video prompt rules and each kind's, as said of a clip made from what it is
+    # sent: the picture model's rules are not the agent's (spec #210 point 19).
     told = fixing_agent.instructions()
     assert told.startswith(as_approved("judge"))
-    assert BROLL_SHARED_RULES in told
-    assert all(rules in told for rules in BROLL_KIND_RULES.values())
+    assert fixing_agent.for_a_sent_clip(BROLL_VIDEO_PROMPT_RULES) in told
+    assert all(fixing_agent.for_a_sent_clip(rules) in told for rules in BROLL_KIND_RULES.values())
+    assert "picture model" not in told and "starting picture" not in told.casefold()
+    assert "start picture" not in told
 
 
 def test_the_fixing_agent_runs_on_the_picture_judges_model() -> None:

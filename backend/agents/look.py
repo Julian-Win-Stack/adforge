@@ -401,13 +401,13 @@ def _try_of(scene: Scene, number: int) -> tuple[str, str, list[Image]]:
     parts = try_parts(fixing, number)
     if parts is None:
         raise Refused(f"scene {scene.number}'s newest fix has tries 0 to {fixing.tries.count()}.")
-    picture, clip, ruling = parts
+    clip, ruling = parts
     label = f"Scene {scene.number}, try {number}"
-    sent, shown = try_shown(label, picture, clip)
+    sent, shown = try_shown(label, clip)
     if sent:
         said = f"What its clip was sent, then the clip's frames. {sent}"
     else:
-        said = "Its start picture, then the frames of the clip made from it." if picture else ""
+        said = "The frames of its clip." if clip is not None else ""
         if clip is not None and (prompt := video_prompt(clip)):
             said += f" The clip's video prompt: {prompt}"
     if not shown:
