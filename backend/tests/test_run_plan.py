@@ -33,6 +33,7 @@ from jobs.models import (
 )
 
 from .conftest import HeldSteps, paid_for, producer_turns, said_yes_to_a_fix
+from .test_cut_and_send import RECOLOUR_OK
 from .test_fix_check import HANDLE_HIDDEN, not_made
 from .test_fix_loop import TURN_REWRITE
 from .test_producer_broll import BROLL_CHOICE, TALKING_CHOICE, checked  # noqa: F401 (a fixture)
@@ -442,12 +443,15 @@ def test_a_note_clip_is_sent_codes_speed_line_and_labels_and_never_an_item_since
     fake_model: FakeModel, held: HeldSteps
 ) -> None:
     first = library.sent_list_of(clip(2))
-    assert first is not None and len(first.pictures) > 1
-    dropped = first.pictures[-1].library_number
+    assert first is not None
+    # The front its clip was sent, excluded since.
+    dropped = first.pictures[0].library_number
     assert dropped is not None
     two = scene(2)
     two.excluded = [dropped]
     two.save(update_fields=["excluded"])
+    # The next front, sent in its place, is recoloured to the clip's colour.
+    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
 
     say_yes(propose(row(2, "new_clip", change=TURN)))
     fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
@@ -458,10 +462,12 @@ def test_a_note_clip_is_sent_codes_speed_line_and_labels_and_never_an_item_since
     assert dropped not in [picture.library_number for picture in sent.pictures]
     lines = sent.prompt.splitlines()
     assert lines[0] == SPEED_LINE
-    assert lines[1 : 1 + len(sent.pictures)] == [
-        cut_and_send.image_line(two.job, picture, None) for picture in sent.pictures
+    # Code's line for each picture, the recoloured one in its own colour, then the rewrite.
+    assert [line.split(" is ")[0] for line in lines[1 : 1 + len(sent.pictures)]] == [
+        f"Image {picture.image}" for picture in sent.pictures
     ]
-    assert lines[-1] == TURN_REWRITE["motion_prompt"]
+    assert lines[1].endswith(", in sage-green.")
+    assert lines[-2:] == [cut_and_send.RECOLOURED_LINE, TURN_REWRITE["motion_prompt"]]
 
 
 def test_going_back_after_a_line_change_sends_what_the_version_was_sent_and_says_so(

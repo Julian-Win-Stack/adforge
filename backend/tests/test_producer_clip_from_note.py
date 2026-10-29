@@ -18,7 +18,7 @@ from agents.producer import _clip_and_transcript
 from gateway.catalog import MODEL_FOR_PURPOSE
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
-from jobs import work
+from jobs import cut_and_send, work
 from jobs.models import FixPlanScene, ProducedItem, Scene, SceneStep
 from jobs.scenes import (
     BROLL_KIND_RULES,
@@ -118,7 +118,8 @@ def test_the_rewrite_is_handed_the_old_prompts_the_scene_the_note_and_the_conver
         "person_shown": "no face",
         "usage": "",
         "result": "",
-        "motion_prompt": sent_prompt(),
+        # The words alone: code writes the speed line and labels again (spec #210 point 16).
+        "motion_prompt": cut_and_send.words_of(sent_prompt()),
         "note": HOVERS,
     }
     said = [message["text"] for message in handoff["conversation"]]
@@ -146,7 +147,7 @@ def test_a_rewrite_of_a_clip_made_from_references_is_shown_the_pictures_it_was_s
     ]
     (handoff,) = handoffs("rewrite_clip_prompt")
     assert "picture_prompt" not in handoff
-    assert handoff["motion_prompt"] == sent.prompt
+    assert handoff["motion_prompt"] == cut_and_send.words_of(sent.prompt)
     assert handoff["note"] == HOVERS
     assert instructed["rewrite_clip_prompt"] == [
         f"{BROLL_SHARED_RULES}\n{BROLL_KIND_RULES['showcase']}\n{CLIP_FROM_REFERENCES_RULES}"
@@ -158,8 +159,10 @@ def test_the_new_prompt_is_sent_to_the_video_model_with_the_rules_code_adds(
 ) -> None:
     clip_with_note(fake_model, steps, HOVERS, REWRITE)
 
-    # The rewrite is the whole prompt, sent with the first clip's pictures as they were.
-    assert clips_asked("prompt") == [sent_prompt(), NEW_MOTION]
+    # The rewrite's words, after code's speed line and labels, sent with the first clip's
+    # pictures as they were.
+    codes = sent_prompt().removesuffix(cut_and_send.words_of(sent_prompt()))
+    assert clips_asked("prompt") == [sent_prompt(), f"{codes}{NEW_MOTION}"]
     first, again = clips_asked("example_pictures")
     assert again == first
 
@@ -239,7 +242,7 @@ def test_a_different_note_makes_a_new_clip(
     # Each rewrite improves the clip in the ad: the second starts from the first note's
     # movement, not the first clip's (#180).
     assert [handoff["motion_prompt"] for handoff in handoffs("rewrite_clip_prompt")] == [
-        sent_prompt(),
+        cut_and_send.words_of(sent_prompt()),
         REWRITE["motion_prompt"],
     ]
 
@@ -406,7 +409,7 @@ def test_a_rewrite_answered_before_the_worker_stopped_isnt_paid_for_again(
     assert ModelCall.objects.filter(purpose="rewrite_clip_prompt").count() == 1
     assert paid_for().count("make_broll_clip") == 2
     assert SceneStep.objects.get(pk=step_id).status == "finished"
-    assert clips_asked("prompt")[-1] == NEW_MOTION
+    assert clips_asked("prompt")[-1].endswith(f"\n{NEW_MOTION}")
 
 
 # --- Pure logic -------------------------------------------------------------------------------
