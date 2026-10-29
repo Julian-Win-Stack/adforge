@@ -211,6 +211,7 @@ def test_make_it_shorter_by_removing_a_scene_renumbers_the_rest_and_pays_for_not
     say: Say,
 ) -> None:
     third = Scene.objects.get(number=3)
+    removed_clip = ProducedItem.objects.get(kind="clip", scene__number=2).file
     owner_says(fake_model, say, "Make it shorter.", ("remove_scene", {"scene": 2}))
 
     assert list(Scene.objects.order_by("number").values_list("number", "line")) == [
@@ -226,6 +227,7 @@ def test_make_it_shorter_by_removing_a_scene_renumbers_the_rest_and_pays_for_not
     shown_clips = Attachment.objects.filter(kind="video", scene__isnull=False)
     assert set(shown_clips.values_list("scene", flat=True)) == {1, 2}
     assert shown_clips.filter(scene=2, file__in=third.produced.values("file")).exists()
+    assert Attachment.objects.get(file=removed_clip).scene is None
     paid_before = len(paid_for())
 
     owner_says(fake_model, say, "Go on", ("assemble_ad", {}))
