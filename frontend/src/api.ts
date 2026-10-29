@@ -122,8 +122,6 @@ export type Message = {
    * was read. The answer comes through the producer, never the card. Null on any other
    * message. */
   question?: { scene: number; text: string; open: boolean } | null;
-  /** The try the owner's tap of "Use this one" chose; null for any other message. */
-  use_clip?: number | null;
   /** True on code's notice that the page can't be read: the page panel is wanted, for the
    * shop owner to paste the page text and attach its photos. False on code's notice that a
    * new link was read while it was wanted. Null on any other message. */
@@ -211,10 +209,9 @@ export async function getMessagesSince(sessionId: string, after: number): Promis
   return { messages, paused: response.headers.get("X-Session-Paused") === "true" };
 }
 
-/** What a message is besides its words: a tap of "Use this one" under a try names the try,
- * `useClip`; the page panel's Done sends the page text and photos as a `pastedPage`. Each
- * marks the message as never typed. */
-export type SendAs = { useClip?: number; pastedPage?: boolean };
+/** What a message is besides its words: the page panel's Done sends the page text and photos
+ * as a `pastedPage`, never typed. */
+export type SendAs = { pastedPage?: boolean };
 
 /** Say something in a session, with photos or videos when there are any. The server takes it
  * straight away, even while the agent is working. */
@@ -222,7 +219,7 @@ export async function sendMessage(
   sessionId: string,
   text: string,
   photos: File[],
-  { useClip, pastedPage }: SendAs = {},
+  { pastedPage }: SendAs = {},
 ): Promise<Sent> {
   let request: RequestInit;
   if (photos.length > 0 || pastedPage) {
@@ -234,9 +231,51 @@ export async function sendMessage(
     if (pastedPage) form.append("pasted_page", "true");
     request = { method: "POST", body: form };
   } else {
-    request = jsonRequest("POST", useClip !== undefined ? { text, use_clip: useClip } : { text });
+    request = jsonRequest("POST", { text });
   }
   return readJson<Sent>(await fetch(`/api/sessions/${sessionId}/messages/`, request));
+}
+
+/** One clip of a scene as its card shows it (backend jobs/card_versions.py): every clip the
+ * scene was shown, tries included, in one numbering, with what the clip judge said of it,
+ * whether it is the one in the ad, and whether it can go in the ad for nothing (`free`: it
+ * still says the scene's line). `picture` is its first frame, null for a clip made from no
+ * starting picture. */
+export type CardVersion = {
+  number: number;
+  label: string;
+  url: string;
+  picture: string | null;
+  verdict: "pass" | "fail" | "unsure" | "not_checked";
+  /** What the judge saw wrong, when it failed the clip; blank otherwise. */
+  problem: string;
+  in_ad: boolean;
+  free: boolean;
+  sent?: SentList | null;
+};
+
+/** A scene's clips, as its card shows them. */
+export type SceneVersions = { scene: number; versions: CardVersion[] };
+
+/** Each scene's clips as they stand now, for its card. */
+export async function getSceneVersions(sessionId: string): Promise<SceneVersions[]> {
+  return readJson<SceneVersions[]>(await fetch(`/api/sessions/${sessionId}/scenes/`));
+}
+
+/** Put a scene's version in the ad, for nothing: the server swaps it in, tells the producer
+ * and assembles the ad again once one was shown. Gives the scene's clips as they stand
+ * after. Refused, with the server's reason, when it can't be. */
+export async function putVersionInAd(
+  sessionId: string,
+  scene: number,
+  version: number,
+): Promise<SceneVersions> {
+  return readJson<SceneVersions>(
+    await fetch(
+      `/api/sessions/${sessionId}/scenes/${scene}/use/`,
+      jsonRequest("POST", { version }),
+    ),
+  );
 }
 
 /** The pause button: the producer starts nothing new until the owner writes. Steps waiting

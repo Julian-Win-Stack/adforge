@@ -246,10 +246,7 @@ def test_after_the_scenes_line_changed_its_tries_cant_be_swapped_in(
 
     assert (sent.status_code, sent.json()) == (
         409,
-        {
-            "detail": "v2 was made for an older line of scene 2, so it can't go in the ad for "
-            "free."
-        },
+        {"detail": "v2 was made for an older line of scene 2, so it can't go in the ad for free."},
     )
     notice = the_tries_notice(api, session_id)["tries"]
     assert (notice["in_ad"], notice["on_offer"]) == (None, False)

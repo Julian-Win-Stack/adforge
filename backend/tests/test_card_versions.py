@@ -14,6 +14,7 @@ from rest_framework.test import APIClient
 
 from adforge import file_store
 from agents.models import SystemNote, ToolCall
+from chat import sent as sent_lists
 from chat.models import Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
 from jobs.models import AgentFix, OwnerQuestion, ProducedItem, Scene
@@ -68,6 +69,7 @@ def test_the_card_shows_every_try_in_one_numbering_with_the_judges_verdict_and_t
             "problem": problem,
             "in_ad": clip == try_2,
             "free": clip != try_2,
+            "sent": sent_lists.shown(clip),
         }
         for number, label, clip, problem in (
             (1, "v1 first version (first clip)", first, FLOATS),

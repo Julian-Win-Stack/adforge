@@ -1,7 +1,14 @@
 // @vitest-environment node
 import { expect, test } from "vitest";
-import type { Attachment, Message, SceneStep } from "./api";
-import { notesMessage, sceneCards, sceneNotes, suggestedNotes, tryInAd } from "./scenes";
+import type { Attachment, CardVersion, Message, SceneStep } from "./api";
+import {
+  noVersionPassed,
+  notesMessage,
+  sceneCards,
+  sceneNotes,
+  suggestedNotes,
+  versionOnShow,
+} from "./scenes";
 import { EMPTY_SENT_LIST, sentListFixture } from "./sentListFixture";
 
 let seq = 0;
@@ -274,83 +281,35 @@ function triesNotice(inAd: number | null, onOffer = inAd !== null): Message {
   };
 }
 
-function tap(clip: number): Message {
-  return { ...message([]), role: "user", text: "Use it", use_clip: clip };
+function cardVersion(number: number, more: Partial<CardVersion> = {}): CardVersion {
+  return {
+    number,
+    label: `v${number}`,
+    url: `/c${number}.mp4`,
+    picture: null,
+    verdict: "fail",
+    problem: "",
+    in_ad: false,
+    free: true,
+    ...more,
+  };
 }
 
-test("the try in the ad is the one the notice was read with until something changes it", () => {
-  const notice = triesNotice(11);
-  expect(tryInAd([message([clip(1, "/c1.mp4")]), notice], notice.seq)).toEqual({
-    inAd: 11,
-    swapping: null,
-    onOffer: true,
-  });
+test("a card plays the version previewed, else the one in the ad, else none it knows", () => {
+  const versions = [cardVersion(1), cardVersion(2, { in_ad: true })];
+  expect(versionOnShow(versions, 1)?.number).toBe(1);
+  expect(versionOnShow(versions, null)?.number).toBe(2);
+  // A preview of a version the scene no longer has falls back to the one in the ad.
+  expect(versionOnShow(versions, 7)?.number).toBe(2);
+  expect(versionOnShow([cardVersion(1)], null)).toBeNull();
 });
 
-test("a tap is being swapped in until the scene's clip is shown as that try", () => {
-  const notice = triesNotice(11);
-  expect(tryInAd([notice, tap(12)], notice.seq)).toEqual({
-    inAd: 11,
-    swapping: 12,
-    onOffer: true,
-  });
-  expect(tryInAd([notice, tap(12), message([clip(2, "/t2.mp4")])], notice.seq)).toEqual({
-    inAd: 12,
-    swapping: null,
-    onOffer: true,
-  });
-});
-
-test("a tap refused once acted on, said in red, is swapped in no more", () => {
-  const notice = triesNotice(11);
-  const refused = { ...message([]), role: "notice" as const, level: "problem" as const };
-  expect(tryInAd([notice, tap(12), refused], notice.seq)).toEqual({
-    inAd: 11,
-    swapping: null,
-    onOffer: true,
-  });
-});
-
-test("the scene's clip shown again as a try, as when gone back to, is that try", () => {
-  const notice = triesNotice(11);
-  expect(tryInAd([notice, message([clip(2, "/t3.mp4")])], notice.seq).inAd).toBe(13);
-});
-
-test("a newer clip of the scene takes every try out of the ad; another scene's doesn't", () => {
-  const notice = triesNotice(11);
-  expect(tryInAd([notice, message([clip(3, "/c3.mp4")])], notice.seq).inAd).toBe(11);
-  expect(tryInAd([notice, message([clip(2, "/new.mp4")])], notice.seq)).toEqual({
-    inAd: null,
-    swapping: null,
-    onOffer: false,
-  });
-});
-
-test("when the app gave up, the clip shown in the tries' place leaves every try on offer", () => {
-  const notice = triesNotice(null, true);
-  const talking = message([clip(2, "/talking.mp4")]);
-  expect(tryInAd([notice], notice.seq)).toEqual({ inAd: null, swapping: null, onOffer: true });
-  expect(tryInAd([notice, talking], notice.seq)).toEqual({
-    inAd: null,
-    swapping: null,
-    onOffer: true,
-  });
-  // Once a try is in the ad, a newer clip takes them all out again.
-  const swapped = message([clip(2, "/t2.mp4")]);
-  expect(tryInAd([notice, talking, swapped], notice.seq)).toEqual({
-    inAd: 12,
-    swapping: null,
-    onOffer: true,
-  });
-  expect(tryInAd([notice, swapped, message([clip(2, "/new.mp4")])], notice.seq).onOffer).toBe(
-    false,
-  );
-});
-
-test("a notice read before tries were on offer is on offer while a try is in the ad", () => {
-  const notice = triesNotice(11);
-  delete notice.tries!.on_offer;
-  expect(tryInAd([notice], notice.seq).onOffer).toBe(true);
+test("no version passed only when the check failed every clip it looked at", () => {
+  expect(noVersionPassed([cardVersion(1), cardVersion(2)])).toBe(true);
+  expect(noVersionPassed([cardVersion(1), cardVersion(2, { verdict: "pass" })])).toBe(false);
+  expect(noVersionPassed([cardVersion(1), cardVersion(2, { verdict: "unsure" })])).toBe(false);
+  expect(noVersionPassed([cardVersion(1, { verdict: "not_checked" })])).toBe(false);
+  expect(noVersionPassed([])).toBe(false);
 });
 
 test("a clip that carries its sent list shows the pictures in sent order with their labels, and the pieces", () => {
