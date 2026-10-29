@@ -176,6 +176,32 @@ CREATIFY_TIMEOUT_SECONDS = 120.0
 # "auto" has Creatify rewrite each B-roll prompt the way Boreal-H3 was evaluated with;
 # "none" sends it as written.
 CREATIFY_PROMPT_ENHANCEMENT = os.environ.get("CREATIFY_PROMPT_ENHANCEMENT", "auto")
+# How many pieces of page videos one B-roll clip is sent at most, as Video 1, 2, 3. One is
+# the normal case; more is proposed only (spec #210 audit item 7, not approved yet).
+BROLL_MOST_PIECES = 1
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+# Where videos are watched. Tests point it at a local stand-in.
+GEMINI_BASE_URL = os.environ.get("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com")
+# A request holding its video inline must stay under 20 MB in all (Gemini's video
+# understanding page, "Pass video data inline"); a video that would make it bigger is put
+# in Gemini's file store first and named by its link.
+GEMINI_INLINE_REQUEST_BYTES = 20_000_000
+# How often to ask whether a video put in Gemini's file store is ready to watch, and for
+# how long before it counts as Gemini being down.
+GEMINI_FILE_POLL_SECONDS = 2.0
+GEMINI_FILE_WAIT_SECONDS = 300.0
+# How sharply Gemini looks at each frame, and how hard it thinks: as in the watcher test
+# (runs/watcher-test/run.py, Oct 27 2026).
+GEMINI_MEDIA_RESOLUTION = "MEDIA_RESOLUTION_HIGH"
+GEMINI_THINKING_LEVEL = "HIGH"
+# A video is watched cut to this many px on its short side, never made bigger, with its
+# sound, looked at this many frames a second (spec #210 point 3, as in the watcher test).
+WATCH_VIDEO_SHORT_SIDE = 480
+WATCH_VIDEO_FRAMES_PER_SECOND = 1.0
+# A page video longer than this many seconds is not watched, and the owner is told which
+# (requirement 23, Julian Oct 27 2026 04:28: "ok. 3 min"). Length is the only cut: no byte cap.
+WATCH_VIDEO_MOST_SECONDS = 180
 
 # Langfuse, where every agent turn, tool call and model call is sent to be looked at as a
 # tree. Tracing is off unless both keys are set.

@@ -26,11 +26,11 @@ from .conftest import (
     MUG_FRONT,
     MUG_SIDE,
     READABLE,
-    SHAMPOO_PICKED,
     FakeFirecrawl,
     handoffs,
     paid_for,
     results_of,
+    shampoo_picked,
 )
 from .test_producer_page import notices, reading, serve_the_other_photos
 from .test_producer_restarts import WorkerStopped, the_producer_died, the_worker_stops
@@ -77,12 +77,9 @@ def test_the_picker_marks_which_picked_photos_have_a_face(
     fake_model.respond("check_page", READABLE)
     fake_model.respond(
         "pick_photos",
-        {
-            **SHAMPOO_PICKED,
-            "gallery_images": [8, 10, 16],
-            "more_images": [15],
-            "face_images": face_images,
-        },
+        shampoo_picked(
+            {"gallery_images": [8, 10, 16], "more_images": [15], "face_images": face_images}
+        ),
     )
 
     say(f"Make an ad for {shampoo_page_url}")
