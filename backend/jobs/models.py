@@ -1116,6 +1116,12 @@ class ProducedItem(models.Model):
         # The place the ad's B-roll scenes happen in, before any starts: every B-roll
         # starting picture is drawn from it.
         BEFORE_PICTURE = "before_picture"
+        # The before-picture's room alone, with nothing of any scene in it: for the
+        # scenes nobody is seen in (spec #210 point 12; spec 2 item 53).
+        ROOM_ALONE = "room_alone"
+        # The presenter standing straight and still in the room alone, nothing else
+        # happening: for the scenes the presenter is seen in (spec #210 point 12).
+        PERSON_IN_ROOM = "person_in_room"
 
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="produced")
     scene = models.ForeignKey(
@@ -1155,7 +1161,8 @@ class ProducedItem(models.Model):
         related_name="+",
         help_text="What it was made from: for a line's audio, the voice that spoke it; for a "
         "transcript, the audio it was heard in; for a clip, the audio it speaks; for a "
-        "finished ad, the music under its voice.",
+        "finished ad, the music under its voice; for the room alone, the before-picture; for "
+        "the person-in-room picture, the room alone.",
     )
     picture = models.ForeignKey(
         "self",

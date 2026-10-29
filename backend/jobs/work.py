@@ -151,7 +151,9 @@ from .scenes import (
     BROLL_PICTURE_INSTRUCTIONS,
     MAIN_PHOTO_JOB,
     MOST_NEEDS_PHOTOS,
+    PERSON_IN_ROOM_PROMPT,
     PORTRAIT_JOB,
+    ROOM_ALONE_PROMPT,
     STARTING_PICTURE_INSTRUCTIONS,
     BeforePictureHandoff,
     BeforePicturePlan,
@@ -1749,10 +1751,14 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
     is made from the conversation as it was when the step started, so it is answered from
     its record, and a picture made but not kept is kept rather than made again."""
     made = step.produced.first()
+    if step.broll_kind:
+        made = made or _make_broll_picture(step)
+        # Drawn by the first B-roll starting picture made, as the before-picture is; never
+        # sent to a starting picture.
+        person_and_room(step)
+        return made
     if made is not None:
         return made
-    if step.broll_kind:
-        return _make_broll_picture(step)
     # A talking scene, or a B-roll one planned before the plan gave B-roll scenes their
     # labels, as every scene was made before.
     scene = step.scene
@@ -2161,6 +2167,82 @@ def _before_picture(step: SceneStep) -> ProducedItem:
         )
         return ProducedItem.objects.create(
             job=job, kind=ProducedItem.Kind.BEFORE_PICTURE, file=file, text=plan.prompt
+        )
+
+
+# Which Postgres advisory lock stands for "one person-in-room picture and one room alone per
+# ad", with the job's.
+PERSON_AND_ROOM_LOCK = 4
+
+
+def person_and_room(step: SceneStep) -> tuple[ProducedItem, ProducedItem]:
+    """The ad's person-in-room picture and its room alone (spec #210 point 12): the room alone
+    is the before-picture's room with nothing of any scene in it, for the scenes nobody is
+    seen in (spec 2 item 53); the person-in-room picture is the presenter, from the portrait,
+    standing straight and still in that room, nothing else happening, for the scenes they are
+    seen in. Each is drawn once per ad, after the plan, with the picture model ordered as
+    ROOM_ALONE_PROMPT and PERSON_IN_ROOM_PROMPT say, and shown in the chat once. Gives back
+    the person-in-room picture, then the room alone.
+
+    Run again, as after a worker stopped, it pays for nothing already paid for."""
+    job = step.scene.job
+    before = _before_picture(step)
+    with _one_job_at_a_time(PERSON_AND_ROOM_LOCK, job):
+        room = latest(job, ProducedItem.Kind.ROOM_ALONE) or _draw_once(
+            job, ProducedItem.Kind.ROOM_ALONE, "make_room_alone", ROOM_ALONE_PROMPT, before
+        )
+        person = latest(job, ProducedItem.Kind.PERSON_IN_ROOM)
+        if person is None:
+            portrait = latest(job, ProducedItem.Kind.PORTRAIT)
+            assert portrait is not None, "the tool refuses a scene whose person isn't made"
+            person = _draw_once(
+                job,
+                ProducedItem.Kind.PERSON_IN_ROOM,
+                "make_person_in_room",
+                PERSON_IN_ROOM_PROMPT,
+                room,
+                portrait=portrait,
+            )
+        _show_once(job, [person, room])
+    return person, room
+
+
+def _draw_once(
+    job: Job,
+    kind: ProducedItem.Kind,
+    purpose: str,
+    prompt: str,
+    room: ProducedItem,
+    *,
+    portrait: ProducedItem | None = None,
+) -> ProducedItem:
+    """Have the picture model draw `kind` from the portrait, if given, then `room`, as
+    `prompt` orders, unless it was drawn before the worker stopped, and keep it."""
+    pictures = [*([portrait.file] if portrait else []), room.file]
+    paid_for = _paid_calls(job, purpose).filter(handoff={"prompt": prompt, "pictures": pictures})
+    drawn = paid_for.last()
+    file = (
+        drawn.output["file"]
+        if drawn is not None and drawn.output is not None
+        else edit_picture(job=job, purpose=purpose, prompt=prompt, pictures=pictures)
+    )
+    return ProducedItem.objects.create(job=job, kind=kind, file=file, made_from=room)
+
+
+def _show_once(job: Job, made: list[ProducedItem]) -> None:
+    """Show the chat each of `made` it wasn't shown yet, as the portrait is shown."""
+    if job.session is None:
+        return
+    unseen = [
+        item
+        for item in made
+        if not Attachment.objects.filter(message__session=job.session, file=item.file).exists()
+    ]
+    if unseen:
+        messages.add(
+            job.session,
+            role=Message.Role.AGENT,
+            carrying=[messages.AttachedFile(Attachment.Kind.PICTURE, item.file) for item in unseen],
         )
 
 
