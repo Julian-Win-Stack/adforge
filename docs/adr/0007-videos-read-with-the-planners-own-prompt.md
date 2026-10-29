@@ -1,5 +1,7 @@
 # Product videos are read by a separate call with the planner's own prompt
 
+Status: superseded by [0009](0009-videos-watched-whole-by-the-watcher.md) (spec #210, Oct 2026).
+
 Shops often put the product opened, its inside, its before and after or the product in use only in
 their gallery video, never in a photo, so the planner could not plan those scenes (round 5: a blush
 whose applicator shows only in its video got no B-roll). Each product video with a file is now

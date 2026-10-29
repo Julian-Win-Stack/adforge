@@ -7,10 +7,15 @@ Numbering, the contract the planner and cut-and-send build on:
 - moments are numbered per video, from 1, in time order.
 
 Every fixed value set is one Literal here, so changing one is a one-line edit with no
-migration: the database keeps the values as plain text."""
+migration: the database keeps the values as plain text. The set is checked strictly where a
+value comes in (a model's answer, a record being stored), and leniently where a stored record
+is read back (`_STORED`): a value the set no longer holds comes back as it was kept, with a log
+line, so rows written before a value was renamed or removed stay readable. Code that reads a
+stored shape must take a fixed value it doesn't know as just another value."""
 
+import logging
 from collections.abc import Sequence
-from typing import Annotated, Literal, Self, get_args
+from typing import Annotated, Any, Literal, Self, get_args
 
 from django.db import transaction
 from django.db.models import Max
@@ -20,29 +25,58 @@ from pydantic import (
     ConfigDict,
     Field,
     StringConstraints,
+    ValidationError,
+    ValidationInfo,
+    ValidatorFunctionWrapHandler,
+    WrapValidator,
     model_validator,
 )
 
+from gateway.types import MOST_PIECE_SECONDS, PieceTrim
 from jobs.models import Job, LibraryItem, ProducedItem, ProductVideo
+
+logger = logging.getLogger(__name__)
+
+# The validation context a stored record is read back with: see the module doc.
+_STORED = {"stored": True}
+
+
+def _lenient_when_stored(
+    value: Any, handler: ValidatorFunctionWrapHandler, info: ValidationInfo
+) -> Any:
+    """A fixed value checked against its set, or, read back from a stored record, kept as it
+    was when the set no longer holds it."""
+    try:
+        return handler(value)
+    except ValidationError:
+        if not (info.context or {}).get("stored") or not isinstance(value, str | int):
+            raise
+        logger.warning("a stored record holds %r, which its value set no longer has", value)
+        return value
+
+
+Fixed = WrapValidator(_lenient_when_stored)
 
 # The picker's fixed fields (#210 point 2). Not approved yet: the look-frame rule (audit
 # item 9) may change these.
-Kind = Literal["side", "state", "content", "in-use", "result", "line-up", "chart"]
-Side = Literal["front", "back", "side", "top", "none"]
-Alone = Literal["yes", "no"]
-KINDS, SIDES, ALONE = get_args(Kind), get_args(Side), get_args(Alone)
+Kind = Annotated[Literal["side", "state", "content", "in-use", "result", "line-up", "chart"], Fixed]
+Side = Annotated[Literal["front", "back", "side", "top", "none"], Fixed]
+Alone = Annotated[Literal["yes", "no"], Fixed]
+KINDS, SIDES, ALONE = (get_args(get_args(fixed)[0]) for fixed in (Kind, Side, Alone))
 
-# The video API's limits on one clip's call (#210 point 13).
+# The video API's limits on one clip's call (#210 point 13). Its limit on pieces is the
+# gateway's, where the call is checked.
 VIDEO_API_MOST_PICTURES = 9
-VIDEO_API_MOST_PIECE_SECONDS = 15
+VIDEO_API_MOST_PIECE_SECONDS = MOST_PIECE_SECONDS
 
 # The sent list's fixed values (#210 points 11, 13, 14, 8). Not approved yet: the planner's
 # `for` values (audit item 11).
-For = Literal["content", "result", "in-use", "place", "person", "state"]
-Tier = Literal[1, 2, 3, 4]
-Drawn = Literal["person_in_room", "room"]
-Trim = Literal["moment_over_limit", "pieces_over_limit"]
-RecolourOutcome = Literal["done", "fell_back"]
+For = Annotated[Literal["content", "result", "in-use", "place", "person", "state"], Fixed]
+Tier = Annotated[Literal[1, 2, 3, 4], Fixed]
+Drawn = Annotated[Literal["person_in_room", "room"], Fixed]
+# Owned by the gateway, where a piece is handed to the video API with its trim.
+Trim = Annotated[PieceTrim, Fixed]
+RecolourOutcome = Annotated[Literal["done", "fell_back"], Fixed]
 
 
 class _Shape(BaseModel):
@@ -59,6 +93,8 @@ def _one_word(colour: str) -> str:
 
 Colour = Annotated[str, AfterValidator(_one_word)]
 Sentence = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+# A file store key: kept exactly as given, never stripped.
+Key = Annotated[str, StringConstraints(min_length=1)]
 
 
 class PictureLabel(_Shape):
@@ -96,7 +132,7 @@ class OwnerPhoto(_Shape):
     `original` the file store key of the photo as sent."""
 
     came_from: Literal["owner_photo"] = "owner_photo"
-    original: Sentence
+    original: Key
 
 
 class LookFrame(_Shape):
@@ -140,7 +176,7 @@ class LibraryEntry(PictureLabel):
     """One library item: a picture or look frame the app knows about for one job."""
 
     number: int = Field(ge=1)
-    file: Sentence
+    file: Key
     source: Source
 
     @model_validator(mode="after")
@@ -213,7 +249,9 @@ def keep_watch(video: ProductVideo, watch: VideoWatch) -> None:
 
 def watch_of(video: ProductVideo) -> VideoWatch | None:
     """What the watcher saw in `video`, read back through its schema; None when unwatched."""
-    return None if video.watched is None else VideoWatch.model_validate(video.watched)
+    return (
+        None if video.watched is None else VideoWatch.model_validate(video.watched, context=_STORED)
+    )
 
 
 class PictureRef(_Shape):
@@ -233,7 +271,7 @@ class PictureRef(_Shape):
         alias="for", description="For a tier 2 pick, what it is for, if it was given one."
     )
     label: Sentence
-    file: Sentence = Field(description="Key of the file that went, in the file store.")
+    file: Key = Field(description="Key of the file that went, in the file store.")
 
     @model_validator(mode="after")
     def _a_library_item_or_the_drawn_picture(self) -> Self:
@@ -270,9 +308,10 @@ class SentPiece(_Shape):
     trim: Trim | None = Field(
         description="moment_over_limit: the moment ran past the video API's limit and was cut "
         "to its first seconds; pieces_over_limit: the pieces ran past it together and the last "
-        "was cut to fit. None for the moment's own seconds."
+        "was cut to fit; video_ended: the moment ran past its video's end and was cut there. "
+        "None for the moment's own seconds."
     )
-    file: Sentence = Field(description="Key of the cut piece in the file store.")
+    file: Key = Field(description="Key of the cut piece in the file store.")
 
     @property
     def seconds(self) -> float:
@@ -343,7 +382,7 @@ def keep_sent_list(item: ProducedItem, sent: SentList) -> None:
 
 def sent_list_of(item: ProducedItem) -> SentList | None:
     """What the clip `item` was sent, read back through its schema; None when not recorded."""
-    return None if item.sent is None else SentList.model_validate(item.sent)
+    return None if item.sent is None else SentList.model_validate(item.sent, context=_STORED)
 
 
 def add_to_library(job: Job, file: str, label: PictureLabel, source: Source) -> LibraryEntry:
@@ -367,7 +406,8 @@ def entry(row: LibraryItem) -> LibraryEntry:
             "file": row.file,
             **{field: getattr(row, field) for field in PictureLabel.model_fields},
             "source": row.source,
-        }
+        },
+        context=_STORED,
     )
 
 

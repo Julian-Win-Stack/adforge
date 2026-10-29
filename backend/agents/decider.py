@@ -30,7 +30,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from adforge import file_store, tracing
 from chat import messages
 from chat.models import Attachment, Message, Session
-from gateway.gateway import take_turn
 from gateway.types import Happened, Image, Said, Shown, ToolUse
 from jobs import clip_judge, fix_plans, owner_parts, planning, work
 from jobs.models import (
@@ -769,13 +768,15 @@ def read(job: Job, said: Sequence[Message]) -> Outcome:
             ):
                 raise NoDecision("it hit the decider's limit of tools for one message")
             with tracing.agent_turn(DECIDER_NAME):
-                turn = take_turn(
+                turn = loop.take_a_turn(
                     session=session,
+                    job=job,
                     purpose=PURPOSE,
                     instructions=INSTRUCTIONS,
                     conversation=[*_conversation(round), *reminders],
                     tools=[tool.spec() for tool in DECIDER.tools],
                     since=round.started,
+                    done="your message was read",
                 )
                 if not turn.calls:
                     if reminded == MOST_REMINDERS:

@@ -2,8 +2,9 @@
 object storage means changing the STORAGES setting, not the code that calls this."""
 
 from collections.abc import Callable
+from pathlib import Path
 
-from django.core.files.base import ContentFile
+from django.core.files.base import ContentFile, File
 from django.core.files.storage import default_storage
 
 
@@ -11,6 +12,12 @@ def save(name: str, data: bytes) -> str:
     """Store `data` and return the key to find it again. Never overwrites: if `name` is
     already taken, the key gets a unique suffix."""
     return default_storage.save(name, ContentFile(data))
+
+
+def save_file(name: str, path: Path) -> str:
+    """Store the file at `path`, read as it is copied, never whole in memory; as `save`."""
+    with path.open("rb") as given:
+        return default_storage.save(name, File(given))
 
 
 def save_once(name: str, make: Callable[[], bytes], *, whole: Callable[[bytes], bool]) -> str:
