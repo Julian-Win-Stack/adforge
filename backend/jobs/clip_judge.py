@@ -197,36 +197,6 @@ class MotionFixVerdict(MotionVerdict):
     owner_change: FixAnswer
 
 
-# For a clip fix that takes things from the shop owner's photos (Julian 2026-10-15 19:34, the
-# one exception to the freeze): MOTION is also shown each photo, named, and looks at it first.
-# Every other clip is judged as before, and this never counts in the clip's verdict.
-MOTION_PHOTO_FIX_QUESTION = """\
-The shop owner also sent photos of their own things for this change, named in \
-"owner_photos" in the order shown, after the shop photos. In owner_change, before anything \
-else, write what the shop owner's photos show about each named thing. Each named thing in \
-the new clip should look like it does in its photo, whatever the old clip or the shop photos \
-show; one that doesn't is not fixed."""
-
-OWNER_PHOTO_LABEL = "The shop owner's photo of their {}:"
-
-
-# FixAnswer with what the shop owner's photos show first.
-class PhotoFixAnswer(BaseModel):
-    owner_photo_shows: str = Field(
-        description="What the shop owner's photos show about each named thing."
-    )
-    old_shows: str = Field(description="What the old clip does about the owner's change.")
-    new_shows: str = Field(description="What the new clip does about the owner's change.")
-    verdict: Literal["fixed", "not fixed"]
-    still_wrong: str | None = Field(
-        description="When it isn't fixed: what is still wrong, in one sentence. Null when it is."
-    )
-
-
-class MotionPhotoFixVerdict(MotionVerdict):
-    owner_change: PhotoFixAnswer
-
-
 # ---------------------------------------------------------------- a clip with its sent list
 
 # A clip that carries the sent list its video API got (#210 point 18, #228) is judged against
@@ -411,12 +381,6 @@ class SentMotionFixCheckHandoff(SentMotionCheckHandoff):
     """And, for a clip made again for the shop owner's clip fix, their change word for word."""
 
     owner_change: str
-
-
-class SentMotionPhotoFixCheckHandoff(SentMotionFixCheckHandoff):
-    """And the things the shop owner's photos for the fix are taken for, in the order shown."""
-
-    owner_photos: list[str]
 
 
 # ---------------------------------------------------------------- the ruling
@@ -650,15 +614,10 @@ def _asked_against_sent(
     pictures: dict[str, Any] | None = (clip.ruling or {}).get("pictures")
     fresh = not pictures or "references" not in pictures
     old = complained_about(step)
-    photos: list[dict[str, Any]] = []
-    owners = [
-        Image(label=OWNER_PHOTO_LABEL.format(each["thing"]), key=str(each["file"]))
-        for each in photos
-    ]
     if fresh:
         references = sent_references(sent)
         beside = len(references)
-        beside_each_clip = MOST_PICTURES - (MOST_PICTURES - beside - len(owners)) // 2
+        beside_each_clip = MOST_PICTURES - (MOST_PICTURES - beside) // 2
         old_frames = _frames_beside(old, beside=beside_each_clip, cut=True) if old else None
         pictures = {
             **cut_pictures(clip.file, beside=beside, sets=("sides",)),
@@ -669,9 +628,7 @@ def _asked_against_sent(
         }
     else:
         assert pictures is not None
-        beside_each_clip = (
-            MOST_PICTURES - (MOST_PICTURES - len(pictures["references"]) - len(owners)) // 2
-        )
+        beside_each_clip = MOST_PICTURES - (MOST_PICTURES - len(pictures["references"])) // 2
         old_frames = _frames_beside(old, beside=beside_each_clip, cut=False) if old else None
     assert pictures is not None
     if old is not None and old_frames is None:
@@ -724,12 +681,6 @@ def _asked_against_sent(
             "wording": wording_version(),
         }, [first]
 
-    with_photos = fixing and bool(owners)
-    motion_shown = (
-        [*shown, *owners, *_frames_shown(pictures["frames"], old=old_frames)]
-        if with_photos
-        else [*shown, *_frames_shown(pictures["frames"], old=old_frames)]
-    )
     asks = [
         _Ask(
             "check_clip_product",
@@ -744,24 +695,15 @@ def _asked_against_sent(
     ] + [
         _Ask(
             "check_clip_motion",
-            f"{MOTION_FROM_REFERENCES}\n\n{MOTION_FIX_QUESTION}\n\n{MOTION_PHOTO_FIX_QUESTION}"
-            if with_photos
-            else f"{MOTION_FROM_REFERENCES}\n\n{MOTION_FIX_QUESTION}"
+            f"{MOTION_FROM_REFERENCES}\n\n{MOTION_FIX_QUESTION}"
             if fixing
             else MOTION_FROM_REFERENCES,
-            SentMotionPhotoFixCheckHandoff(
-                ask=ask,
-                **told,
-                owner_change=owner_change_of(step),
-                owner_photos=[str(each["thing"]) for each in photos],
-            )
-            if with_photos
-            else SentMotionFixCheckHandoff(ask=ask, **told, owner_change=owner_change_of(step))
+            SentMotionFixCheckHandoff(ask=ask, **told, owner_change=owner_change_of(step))
             if fixing
             else SentMotionCheckHandoff(ask=ask, **told),
-            MotionPhotoFixVerdict if with_photos else MotionFixVerdict if fixing else MotionVerdict,
-            motion_shown,
-            references=len(shown) + (len(owners) if with_photos else 0),
+            MotionFixVerdict if fixing else MotionVerdict,
+            [*shown, *_frames_shown(pictures["frames"], old=old_frames)],
+            references=len(shown),
             frames=_times(pictures["frames"]),
         )
         for ask in range(1, ASKS + 1)
@@ -794,11 +736,7 @@ def _asked_against_sent(
         **({"refused_frames": blind} if blind else {}),
     }
     ruling["answers"]["references"] = first.answer
-    # Judged in the photo form only while a shop owner's photo was still shown.
-    ruling["wording"] = wording_version(
-        fix=fixing,
-        photos=with_photos and not all(each.without_owner_photos for each in motion),
-    )
+    ruling["wording"] = wording_version(fix=fixing)
     # The first question's own refusal is told by the notice above, not as the clip's.
     return ruling, answers
 
@@ -810,10 +748,7 @@ def _sent_ruling_facts(
     pictures it was shown, the behaviour note it was told and, for a fix's clip, the clip it
     was compared with."""
     return {
-        "wording": wording_version(
-            fix=compared_with is not None,
-            photos=False,
-        ),
+        "wording": wording_version(fix=compared_with is not None),
         "models": {
             purpose.removeprefix("check_clip_"): catalog.MODEL_FOR_PURPOSE[purpose]
             for purpose in ("check_clip_references", "check_clip_product", "check_clip_motion")
@@ -934,8 +869,8 @@ def _frames_beside(old: ProducedItem, *, beside: int, cut: bool) -> list[dict[st
 @dataclass(frozen=True)
 class _Ask:
     """One ask of one check: what it is asked for, told, handed and shown, and answers as.
-    The first `references` pictures shown are the reference pictures beside the clip: the
-    shop photo, the photos of what the scene needs and the shop owner's photos."""
+    The first `references` pictures shown are the reference pictures beside the clip: what
+    its video API was sent."""
 
     purpose: str
     instructions: str
@@ -958,8 +893,6 @@ class _Answered:
     answer: dict[str, Any] | None
     not_shown: list[str]
     refused: bool = False
-    # Asked as a fix with no shop owner's photo, as the filter refused every one of them.
-    without_owner_photos: bool = False
     # The seconds of the clip it was answered without, the filter refusing them.
     blind: tuple[float, ...] = ()
     # Whether the answer came but broke its form.
@@ -973,29 +906,28 @@ def _answer(step: SceneStep, ask: _Ask) -> _Answered:
     never are, as a check that didn't see part of the clip can't pass it."""
     references = ask.images[: ask.references]
 
-    def asking(shown: list[Image]) -> tuple[dict[str, Any], bool]:
-        instructions, handoff, output = _as_shown(ask, shown)
+    def asking(shown: list[Image]) -> dict[str, Any]:
         answer: BaseModel = call_model(
             job=step.scene.job,
             purpose=ask.purpose,
-            instructions=instructions,
-            handoff=handoff,
-            output=output,
+            instructions=ask.instructions,
+            handoff=ask.handoff,
+            output=ask.output,
             images=shown,
             pay_once=True,
         )
-        return answer.model_dump(mode="json"), output is not ask.output
+        return answer.model_dump(mode="json")
 
     try:
         try:
-            (answer, without), left_out = past_the_safety_filter(
+            answer, left_out = past_the_safety_filter(
                 asking, ask.images, may_leave_out=lambda image: image in references
             )
         except BlockedBySafetyFilter:
             if not ask.frames:
                 raise
             return _past_refused_frames(asking, ask)
-        return _Answered(answer, [named(image) for image in left_out], without_owner_photos=without)
+        return _Answered(answer, [named(image) for image in left_out])
     except Exception as error:
         logger.warning(
             "%s ask %s about scene %s's clip went unchecked: %s",
@@ -1023,9 +955,7 @@ def _answer(step: SceneStep, ask: _Ask) -> _Answered:
 MOST_FRAME_PROBES = 16
 
 
-def _past_refused_frames(
-    asking: Callable[[list[Image]], tuple[dict[str, Any], bool]], ask: _Ask
-) -> _Answered:
+def _past_refused_frames(asking: Callable[[list[Image]], dict[str, Any]], ask: _Ask) -> _Answered:
     """`ask` answered without the pictures of the clip's frames the safety filter refuses,
     found by halving: the first half of a group holding one is shown alone beside the rest,
     a refused half halved again, down to single pictures, the other half asked about when the
@@ -1071,10 +1001,9 @@ def _past_refused_frames(
     blind = refused or clip
     shown = [image for image in clip if image not in blind]
     answer: dict[str, Any] | None = None
-    without = False
     if shown:
         try:
-            answer, without = asking([*rest, *shown])
+            answer = asking([*rest, *shown])
         except BlockedBySafetyFilter:
             blind = clip
     if answer is None:
@@ -1082,7 +1011,6 @@ def _past_refused_frames(
     return _Answered(
         answer,
         [],
-        without_owner_photos=without,
         blind=tuple(sorted(t for image in blind for t in times[image.key])),
     )
 
@@ -1099,24 +1027,6 @@ def _refuses(asking: Callable[[list[Image]], object], shown: list[Image]) -> boo
     except BlockedBySafetyFilter:
         return True
     return False
-
-
-def _as_shown(ask: _Ask, shown: list[Image]) -> tuple[str, Handoff, type[BaseModel]]:
-    """What `ask` is told, handed and answers as when it is shown `shown`: a fix's ask with
-    the shop owner's photos names only those still shown, and with none of them left, is
-    asked as a fix without photos is."""
-    handoff = ask.handoff
-    if not isinstance(handoff, SentMotionPhotoFixCheckHandoff):
-        return ask.instructions, handoff, ask.output
-    labels = {image.label for image in shown}
-    kept = [thing for thing in handoff.owner_photos if OWNER_PHOTO_LABEL.format(thing) in labels]
-    if kept:
-        return ask.instructions, handoff.model_copy(update={"owner_photos": kept}), ask.output
-    return (
-        f"{MOTION_FROM_REFERENCES}\n\n{MOTION_FIX_QUESTION}",
-        SentMotionFixCheckHandoff(**handoff.model_dump(exclude={"owner_photos"})),
-        MotionFixVerdict,
-    )
 
 
 def named(image: Image) -> str:
@@ -1400,13 +1310,12 @@ def _every_frame(video: Path, folder: Path, per_second: int) -> list[tuple[Path,
     return [(file, round(i / per_second, 2)) for i, file in enumerate(files)]
 
 
-def wording_version(*, fix: bool = False, photos: bool = False) -> str:
+def wording_version(*, fix: bool = False) -> str:
     """A version of everything the judge is told, kept with each ruling: the first question,
     PRODUCT and MOTION's words, the behaviour note's frame, how many frames a second each check
     is shown, the sent list's labels and its handoffs and answer forms. It changes whenever
     any of them does. For a fix's clip (`fix`), also the question about the owner's change,
-    the labels of the two clips, its handoff and its answer form, and, with the shop owner's
-    photos (`photos`), their question, label, handoff and form."""
+    the labels of the two clips, its handoff and its answer form."""
     told = [
         f"product {PRODUCT_FRAMES_PER_SECOND} frames a second, motion and the first question "
         f"{FRAMES_PER_SECOND}, at most {PIECE_FRAMES_SHOWN} of the pieces' frames",
@@ -1438,15 +1347,6 @@ def wording_version(*, fix: bool = False, photos: bool = False) -> str:
             *(
                 json.dumps(form.model_json_schema(), sort_keys=True)
                 for form in (SentMotionFixCheckHandoff, MotionFixVerdict)
-            ),
-        ]
-    if fix and photos:
-        told += [
-            MOTION_PHOTO_FIX_QUESTION,
-            OWNER_PHOTO_LABEL,
-            *(
-                json.dumps(form.model_json_schema(), sort_keys=True)
-                for form in (SentMotionPhotoFixCheckHandoff, MotionPhotoFixVerdict)
             ),
         ]
     return hashlib.sha256("\n".join(told).encode()).hexdigest()[:10]
