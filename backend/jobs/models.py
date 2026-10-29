@@ -488,6 +488,15 @@ class Scene(models.Model):
         "then. The yes holds while the part and its photos are the same as the picture was "
         "drawn from; a correction clears it.",
     )
+    owner_part_approved_by = models.ForeignKey(
+        "chat.Message",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The shop owner's message whose yes the producer kept for the owner part's "
+        "picture (spec #247 point 12). Blank until then, and whenever the yes is.",
+    )
     fact_checked = models.BooleanField(
         default=False,
         help_text="The line, and what the scene shows, passed the fact check, or the user "

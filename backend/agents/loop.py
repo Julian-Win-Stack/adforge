@@ -200,6 +200,10 @@ class Tool(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     name: ClassVar[str]
+    # Whether the agent's turn ends once the tool has done what it was asked, as asking the
+    # shop owner a question does: the turn's other calls still run, and then the agent takes
+    # no further turn until something new comes (spec #247 point 5).
+    ends_the_turn: ClassVar[bool] = False
 
     def run(self, call: ToolCall) -> str | ToolResult:
         """Do the work and say what happened. What it says is the result the agent is given,
@@ -244,6 +248,11 @@ class Agent:
     # Whether each of its tools takes a required `why`, kept on the call's row (spec #247
     # point 7): the producer's do.
     asks_why: bool = False
+
+    @property
+    def turn_enders(self) -> set[str]:
+        """The names of its tools that end its turn (`Tool.ends_the_turn`)."""
+        return {tool.name for tool in self.tools if tool.ends_the_turn}
 
     def tool_specs(self) -> list[ToolSpec]:
         return [tool.spec(asks_why=self.asks_why) for tool in self.tools]
@@ -685,10 +694,19 @@ def _nothing_to_answer_since_its_last_turn(
     if given is None:
         return False
     gained = conversation[len(given) :]
-    return (
-        conversation[: len(given)] == given
-        and bool(gained)
-        and all(isinstance(each, Said) and each.by == "agent" for each in gained)
+    if conversation[: len(given)] != given or not gained:
+        return False
+    if all(isinstance(each, Said) and each.by == "agent" for each in gained):
+        return True
+    # A turn that ended with a call, as asking the shop owner, waits as a reply does.
+    return all(
+        (isinstance(each, Said) and each.by == "agent") or isinstance(each, ToolUse)
+        for each in gained
+    ) and any(
+        isinstance(each, ToolUse)
+        and each.tool in agent.turn_enders
+        and ToolAnswer.kind_of(each.result) == "made"
+        for each in gained
     )
 
 

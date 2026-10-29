@@ -47,10 +47,16 @@ ANSWER_FROM_THOSE = (
     "costs, and don't repeat what the chat already showed them."
 )
 NEVER_SAY_DONE = (
-    "Never say a change is done before the app says so, and never say it is right: you can't "
-    "see pictures or videos."
+    "Never say a change is done before the app says so, and never say it is right before your "
+    "look has said so."
 )
-CANT = "What you can't do, said plainly the same way each time: see pictures or videos."
+# The producer sees through its look (spec #247 point 2).
+CANT = (
+    "You can't see pictures or videos yourself. When you need to know what a scene's clip, an "
+    "earlier version, a library picture or a try of a fix shows, call look with one question: "
+    "it is shown them, with what the clip was sent, and tells you in words what it sees, what "
+    "is wrong, its root cause and a direction. It decides nothing: you do."
+)
 # A photo of something else than the product, sent before the plan (Julian 17:55).
 NOT_A_PRODUCT_PHOTO = (
     "Before the ad is planned, every photo they send is a product photo: if they send one of "

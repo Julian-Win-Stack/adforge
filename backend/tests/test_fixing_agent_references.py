@@ -25,6 +25,7 @@ from jobs.library import (
     PagePhoto,
     PictureLabel,
     Recolour,
+    Recoloured,
     VideoWatch,
     WatchedMoment,
     add_to_library,
@@ -168,12 +169,14 @@ def test_the_agent_films_again_with_library_items_and_a_moment(
     # the agent's own prompt.
     assert asked["prompt"].split("\n") == [
         SPEED_LINE,
-        "Image 1: The mug from the front.",
-        "Image 2, made white: The black mug from the back. Used for how the product is in this "
-        "scene.",
-        "Image 3: A hand lifts the mug's lid. Used for how the product is held or used.",
+        "Image 1 is the mug from the front.",
+        # The recoloured item keeps its label; its line ends on the item's own colour.
+        "Image 2 is the black mug from the back, used for how the product is in this scene, "
+        "in white.",
+        "Image 3 is a hand lifts the mug's lid, used for how the product is held or used.",
         f"Image 4 is {ROOM_LABEL}.",
         f"Video 1 is {PIECE_LABEL}.",
+        fixing_agent.RECOLOURED_LINE,
         PROMPT,
     ]
     # The try's clip carries its sent list.
@@ -227,6 +230,11 @@ def test_the_agent_films_again_with_library_items_and_a_moment(
             {"new_picture": True, "photo": 1, "picture_prompt": "A mug."},
             "a try sent references is filmed from them",
         ),
+        (
+            {"pictures": [{"number": 1, "used_for": "state"}], "piece": None},
+            {},
+            "library item 1 is the front photo, which every clip is sent as Image 1",
+        ),
     ],
 )
 def test_references_naming_what_the_library_doesnt_hold_are_refused_with_no_clip_or_try(
@@ -266,7 +274,7 @@ def test_more_pictures_than_the_video_api_takes_are_cut_at_9_and_said_in_red(
         )
     # No photo the plan names shows the ad's colour: nothing to take it from.
     job.photos.update(shows_product_colour=False)
-    named = [1, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    named = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     fake_model.respond(
         "fix_scene",
         turn(
@@ -285,18 +293,18 @@ def test_more_pictures_than_the_video_api_takes_are_cut_at_9_and_said_in_red(
     fixed(failed_clip)
 
     [asked] = fake_model.broll_clips_asked[asked_before:]
-    assert asked["example_pictures"] == [item(job, n) for n in named[:9]]
+    # The front photo, then the first 8 picks.
+    assert asked["example_pictures"] == [item(job, n) for n in [1, *named[:8]]]
     assert asked["reference_videos"] == []
     row = AgentFixTry.objects.get()
     assert row.clip is not None
     sent = sent_list_of(row.clip)
     assert sent is not None
-    # The tenth pick, the room (tier 3, after the picks) and the back photo (tier 4) are past
-    # the cap.
+    # The last two picks and the room (tier 3, after the picks) are past the cap.
     assert [(left.library_number, left.tier) for left in sent.left_out] == [
+        (10, 2),
         (11, 2),
         (None, 3),
-        (2, 4),
     ]
     # No piece: the clip is in the ad's colour.
     assert sent.colour == "-".join(job.product_colour.lower().split())
@@ -368,3 +376,62 @@ def test_a_try_after_place_edit_is_sent_the_scenes_own_place(
     assert sent is not None
     [place] = [p for p in sent.pictures if p.tier == 3]
     assert (place.drawn, place.file) == ("room", own.file)
+
+
+def test_a_picture_named_with_its_own_recoloured_version_is_refused(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    job = failed_clip.scene.job
+    version = add_to_library(
+        job,
+        file_store.save("recoloured_2.png", picture(30, 40, (240, 240, 240))),
+        WHITE,
+        Recoloured(of=2, colour="white"),
+    )
+    named = {
+        "pictures": [
+            {"number": 2, "used_for": "state"},
+            {"number": version.number, "used_for": "result"},
+        ],
+        "piece": None,
+    }
+    fake_model.respond(
+        "fix_scene", turn(calls=[with_references(named)]), turn(calls=[film_again()])
+    )
+
+    fixed(failed_clip)
+
+    refused_call, filmed = ToolCall.objects.filter(tool="film_again").order_by("id")
+    assert refused_call.result.startswith(
+        f"Refused: library items 2 and {version.number} are the same picture"
+    )
+    assert [row.tool_call_id for row in AgentFixTry.objects.all()] == [filmed.pk]
+
+
+def test_references_with_a_face_after_a_room_only_place_edit_are_refused(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    fake_model.respond("check_recolour", RECOLOUR_OK)
+    fake_model.respond(
+        "fix_scene",
+        turn(
+            calls=[
+                (
+                    "place_edit",
+                    {"picture": "room", "edit": "Clear the table.", "new_place": None},
+                )
+            ]
+        ),
+        turn(calls=[with_references(person_shown="has face")]),
+        turn(calls=[with_references()]),
+    )
+    asked_before = len(fake_model.broll_clips_asked)
+
+    fixed(failed_clip)
+
+    refused_call, filmed = ToolCall.objects.filter(tool="film_again").order_by("id")
+    assert refused_call.result.startswith("Refused: the scene's newest place is its own")
+    assert "call place_edit with picture person_in_room first" in refused_call.result
+    # No clip and no try for the refused call: the one try is the next call's, in its own room.
+    assert [row.tool_call_id for row in AgentFixTry.objects.all()] == [filmed.pk]
+    assert len(fake_model.broll_clips_asked) == asked_before + 1

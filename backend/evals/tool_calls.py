@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from adforge import file_store
+from agents import look
 from agents.loop import FAILED, REFUSED, ToolAnswer
 from agents.models import ToolCall
 from chat.models import Session
@@ -25,7 +26,7 @@ from gateway.models import ModelCall
 # agent called, so no tool call of the record.
 TURNS = "take_turn"
 # The gateway purpose of the producer's look (spec #247 point 2): its answer is words.
-LOOK = "look"
+LOOK = look.PURPOSE
 
 
 class Pictures:
@@ -59,11 +60,15 @@ def said_before(session: Session) -> dict[str, str]:
     """The words an agent said in the turn that made each tool call, by the call's id: each
     turn's model call records what it said and the calls it made."""
     said: dict[str, str] = {}
-    turns = ModelCall.objects.filter(
-        session=session, outcome=ModelCall.Outcome.SUCCEEDED, output__has_key="calls"
-    ).order_by("created_at", "id")
-    for turn in turns:
-        output: dict[str, Any] = turn.output or {}
+    outputs = (
+        ModelCall.objects.filter(
+            session=session, outcome=ModelCall.Outcome.SUCCEEDED, output__has_key="calls"
+        )
+        .order_by("created_at", "id")
+        .values_list("output", flat=True)
+    )
+    for output in outputs:
+        assert output is not None  # it has the key "calls"
         for call in output.get("calls") or []:
             said[call["call_id"]] = output.get("says") or ""
     return said
@@ -78,7 +83,7 @@ def tool_call(call: ToolCall, pictures: Pictures, said: str = "") -> dict[str, A
         "why": call.why,
         "arguments": call.arguments,
         "said": said,
-        "answer": ToolAnswer.of(call).kind if call.finished else "",
+        "answer": (call.answer or ToolAnswer.kind_of(call.result)) if call.finished else "",
         "result": call.result,
         "refused": call.result.startswith((REFUSED, FAILED)),
         "fold_line": call.fold_line,
@@ -86,6 +91,7 @@ def tool_call(call: ToolCall, pictures: Pictures, said: str = "") -> dict[str, A
             {"label": shown["label"], "file": pictures.keep(shown["label"], shown["key"])}
             for shown in call.pictures
         ],
+        # ToolCall.cost_usd(), summed from the model calls already loaded (no second query).
         "cost_usd": str(sum((c.cost_usd or Decimal(0) for c in model_calls), Decimal(0))),
         "created_at": call.created_at.isoformat(),
         "finished_at": call.finished_at.isoformat() if call.finished_at else None,
