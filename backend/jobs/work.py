@@ -3861,11 +3861,15 @@ def _bring_back(scene: Scene, number: int) -> GoneBack:
                 role=Message.Role.AGENT,
                 carrying=[
                     messages.AttachedFile(
-                        kind, made.file, scene.number, top.label, clip=made if is_clip else None
+                        kind,
+                        made.file,
+                        scene.number,
+                        top.label,
+                        clip=made if kind == Attachment.Kind.VIDEO else None,
                     )
-                    for kind, made, is_clip in (
-                        (Attachment.Kind.PICTURE, picture, False),
-                        (Attachment.Kind.VIDEO, clip, True),
+                    for kind, made in (
+                        (Attachment.Kind.PICTURE, picture),
+                        (Attachment.Kind.VIDEO, clip),
                     )
                     if made is not None
                 ],

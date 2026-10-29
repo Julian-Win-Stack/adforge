@@ -1,9 +1,11 @@
 """The one piece of code that touches files. Local disk for now (MEDIA_ROOT); moving to
 object storage means changing the STORAGES setting, not the code that calls this."""
 
+import io
 from collections.abc import Callable
 from pathlib import Path
 
+import PIL.Image
 from django.core.files.base import ContentFile, File
 from django.core.files.storage import default_storage
 
@@ -39,3 +41,17 @@ def read(key: str) -> bytes:
 
 def url(key: str) -> str:
     return default_storage.url(key)
+
+
+def exists(key: str) -> bool:
+    return bool(default_storage.exists(key))
+
+
+def whole_picture(data: bytes) -> bool:
+    """Whether `data` decodes as a whole picture, not one a stopped worker left half-saved: a
+    `whole` check for `save_once`."""
+    try:
+        PIL.Image.open(io.BytesIO(data)).load()
+    except OSError, PIL.Image.DecompressionBombError:
+        return False
+    return True
