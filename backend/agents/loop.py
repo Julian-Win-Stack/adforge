@@ -201,8 +201,8 @@ class Tool(BaseModel):
 
     name: ClassVar[str]
     # Whether the agent's turn ends once the tool has done what it was asked, as asking the
-    # shop owner a question does: the agent takes no further turn until something new comes,
-    # and any call it asked for after this one in the same turn is refused (spec #247 point 5).
+    # shop owner a question does: the turn's other calls still run, and then the agent takes
+    # no further turn until something new comes (spec #247 point 5).
     ends_the_turn: ClassVar[bool] = False
 
     def run(self, call: ToolCall) -> str | ToolResult:
@@ -249,6 +249,11 @@ class Agent:
     # point 7): the producer's do.
     asks_why: bool = False
 
+    @property
+    def turn_enders(self) -> set[str]:
+        """The names of its tools that end its turn (`Tool.ends_the_turn`)."""
+        return {tool.name for tool in self.tools if tool.ends_the_turn}
+
     def tool_specs(self) -> list[ToolSpec]:
         return [tool.spec(asks_why=self.asks_why) for tool in self.tools]
 
@@ -286,7 +291,7 @@ def _work(agent: Agent, session: Session) -> int:
     # A tool that was running when the last worker stopped runs again first: the agent
     # can't take another turn until every tool it asked for has handed back a result.
     for call in session.tool_calls.filter(agent=agent.name, finished_at__isnull=True):
-        _settle_unless_the_turn_ended(agent, call)
+        settle(agent, call)
     while True:
         conversation, read_up_to, steps, notes = _conversation(agent, session)
         conversation = without_refused_pictures(session, agent.purpose, conversation)
@@ -353,49 +358,7 @@ def _work(agent: Agent, session: Session) -> int:
                 if _stopped_since_the_user_spoke(session):
                     _refuse_as_stopped(call)
                 else:
-                    _settle_unless_the_turn_ended(agent, call, new=True)
-
-
-def _settle_unless_the_turn_ended(agent: Agent, call: ToolCall, *, new: bool = False) -> None:
-    """Settle `call`, unless a call before it in the same turn ended the turn: then it is
-    refused, having done nothing."""
-    ended = _turn_ended_by(agent, call)
-    if ended is None:
-        settle(agent, call, new=new)
-        return
-    call.result = (
-        f"{REFUSED} your {ended.tool} call earlier in this turn ended it, so this call waits "
-        "for what comes next. Nothing was done."
-    )
-    call.answer = "cant"
-    call.finished_at = timezone.now()
-    call.save(update_fields=["result", "answer", "finished_at"])
-
-
-def _turn_ended_by(agent: Agent, call: ToolCall) -> ToolCall | None:
-    """The call earlier in `call`'s turn whose tool ended the turn, or None. Two calls are in
-    the same turn when the agent's model took no turn between them."""
-    enders = [tool.name for tool in agent.tools if tool.ends_the_turn]
-    if not enders:
-        return None
-    earlier = (
-        call.session.tool_calls.filter(
-            agent=agent.name, tool__in=enders, answer="made", id__lt=call.pk
-        )
-        .order_by("id")
-        .last()
-    )
-    if (
-        earlier is None
-        or ModelCall.objects.filter(
-            session=call.session,
-            purpose=agent.purpose,
-            created_at__gt=earlier.created_at,
-            created_at__lt=call.created_at,
-        ).exists()
-    ):
-        return None
-    return earlier
+                    settle(agent, call, new=True)
 
 
 def _why_apart(agent: Agent, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -736,13 +699,12 @@ def _nothing_to_answer_since_its_last_turn(
     if all(isinstance(each, Said) and each.by == "agent" for each in gained):
         return True
     # A turn that ended with a call, as asking the shop owner, waits as a reply does.
-    enders = {tool.name for tool in agent.tools if tool.ends_the_turn}
     return all(
         (isinstance(each, Said) and each.by == "agent") or isinstance(each, ToolUse)
         for each in gained
     ) and any(
         isinstance(each, ToolUse)
-        and each.tool in enders
+        and each.tool in agent.turn_enders
         and ToolAnswer.kind_of(each.result) == "made"
         for each in gained
     )
