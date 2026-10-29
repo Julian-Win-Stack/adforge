@@ -10,17 +10,19 @@ tiny videos and ffmpeg runs for real."""
 from collections.abc import Callable
 
 import pytest
+from django.db.models import Sum
 from rest_framework.test import APIClient
 
 from agents import tasks
 from agents.models import ToolCall
+from agents.money import dollars
 from chat.models import Attachment, Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import library, work
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 
-from .conftest import HeldSteps, paid_for, sent_list_in_the_store
+from .conftest import HeldSteps, paid_for, results_of, sent_list_in_the_store
 from .fixing import fixed
 from .test_producer_broll import checked  # noqa: F401 (a fixture)
 from .test_producer_picture_restore import (  # noqa: F401 (a fixture)
@@ -311,3 +313,84 @@ def test_a_long_change_is_shown_with_its_whole_label(
     assert len(long) > 300
     assert clip(2).step.status == SceneStep.Status.FINISHED  # type: ignore[union-attr]
     assert shown_labels(2)[-1] == f"v2 {long}"
+
+
+# --- The producer's swap: use_version (spec #247 point 5, ticket #259) -------------------------
+
+
+def use_version(fake_model: FakeModel, say: Callable[..., None], text: str, number: int) -> str:
+    """The shop owner sends `text`; the producer calls use_version on scene 3, then replies.
+    Gives what the tool handed back."""
+    fake_model.respond(
+        "produce",
+        turn(calls=[("use_version", {"scene": SCENE, "version": number})]),
+        turn(says="Done."),
+    )
+    say(text)
+    return results_of("use_version")[-1]
+
+
+def test_going_back_to_the_first_version_through_the_chat_pays_nothing_and_assembles_the_ad(
+    fake_model: FakeModel, say: Callable[..., None], steps: HeldSteps
+) -> None:
+    paid, ads_before = paid_for(), len(ads())
+
+    answer = use_version(fake_model, say, f"Go back to the first version of scene {SCENE}.", 1)
+
+    assert answer.startswith(
+        f"Scene {SCENE} uses v1 first version again, as v4 back to v1: its clip was brought "
+        "back, and nothing was made or paid for. The ad was assembled again with it (version "
+        f"{ads_before + 1}, "
+    )
+    assert answer.endswith("Tell them in one line what changed: it cost nothing.")
+    # Nothing made, judged or paid for; nothing started.
+    assert paid_for() == paid
+    assert steps.held == []
+    assert status(SCENE) == "finished"
+    assert len(ads()) == ads_before + 1
+    scene_cut = next(cut for cut in ads()[-1].cuts if cut["scene"] == SCENE)
+    assert ProducedItem.objects.get(pk=scene_cut["clip"]).file == item("clip", 1).file
+    assert shown_labels()[-2:] == ["v4 back to v1"] * 2
+
+    # Asked again, the version is already in use: nothing changes.
+    again = use_version(fake_model, say, "Use the first one.", 4)
+    assert again == (
+        f"Scene {SCENE}'s clip in use is already the one of v4 back to v1, so nothing changed."
+    )
+    assert len(ads()) == ads_before + 1
+
+
+def test_a_version_whose_clip_no_longer_says_the_line_isnt_used(
+    fake_model: FakeModel, say: Callable[..., None], steps: HeldSteps
+) -> None:
+    change_the_line(fake_model, steps)
+    versions_before, paid = len(work.versions(the_scene())), paid_for()
+
+    answer = use_version(fake_model, say, "Go back to version 2.", 2)
+
+    assert answer == (
+        f"Refused: scene {SCENE}'s v2 {HIGHER} has no clip that still says the scene's line as it "
+        "stands, in the person's voice, so it can't be used for nothing. Make the scene's stale "
+        "steps again instead. Nothing was done."
+    )
+    assert (len(work.versions(the_scene())), paid_for()) == (versions_before, paid)
+    assert use_version(fake_model, say, "Version 9.", 9) == (
+        f"Refused: scene {SCENE} has versions 1 to {versions_before}, not 9. Nothing was done."
+    )
+
+
+def test_cost_so_far_adds_up_every_model_call_by_part(
+    fake_model: FakeModel, say: Callable[..., None]
+) -> None:
+    fake_model.respond("produce", turn(calls=[("cost_so_far", {})]), turn(says="Done."))
+    say("What has it cost so far?")
+
+    (answer,) = results_of("cost_so_far")
+    # Every call up to the tool's: the producer's reply after it came later.
+    before_the_reply = ModelCall.objects.exclude(pk=ModelCall.objects.latest("id").pk)
+    total = before_the_reply.aggregate(total=Sum("cost_usd"))["total"]
+    assert answer.startswith(f"The ad has cost {dollars(total)} so far: scene 1 $")
+    assert "scene 2 $" in answer and f"scene {SCENE} $" in answer
+    assert "plan_ad $" in answer and "create_person $" in answer
+    # Its own turn's cost too, the one that asked included.
+    assert "your own turns $" in answer

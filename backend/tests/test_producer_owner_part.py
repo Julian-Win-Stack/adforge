@@ -488,11 +488,12 @@ def test_a_correction_naming_a_photo_the_chat_hasnt_got_is_refused(
 
 
 @pytest.mark.usefixtures("pictured")
-def test_a_correction_once_the_clip_is_made_is_refused(
+def test_a_correction_once_the_clip_is_made_draws_the_part_again_and_waits_for_a_new_yes(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     yes(fake_model, steps, say)
 
+    # Nothing locks once a scene has a clip (spec #247 point 5): the correction is drawn.
     owner_says(
         fake_model,
         say,
@@ -501,6 +502,10 @@ def test_a_correction_once_the_clip_is_made_is_refused(
     )
 
     (result,) = results_of("correct_owner_part")
-    assert result.startswith("Refused: scene 2 already has a clip")
-    assert owner_parts.owner_part(scene_2()) == owner_parts.OwnerPart(**PART)
-    assert owner_parts.is_approved(scene_2())
+    assert "until they say yes to it" in result
+    assert owner_parts.owner_part(scene_2()).looks == "A round pink lid."  # type: ignore[union-attr]
+    assert not owner_parts.is_approved(scene_2())
+    # The clip made before waits for the new yes: no clip of the new picture is made.
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    assert results_of("make_clip")[-1].startswith("Refused:")
+    assert clips_of(2) == 1

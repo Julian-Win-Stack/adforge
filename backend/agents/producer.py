@@ -9,7 +9,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.db import IntegrityError, transaction
-from django.db.models import Avg, Max, QuerySet, Sum
+from django.db.models import Avg, Max, Q, QuerySet, Sum
 from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -68,7 +68,10 @@ from jobs.work import (
     DECLARED_INSTEAD,
     NoPlaceYet,
     NoPresenterYet,
+    NoSuchVersion,
+    SceneBusy,
     SkippedPhoto,
+    TryNotOnOffer,
     assemble_ad,
     bring_back_clip,
     bring_back_picture,
@@ -80,7 +83,11 @@ from jobs.work import (
     drawn_for,
     edit_scene_place,
     fetch_page,
+    go_back,
+    go_back_is_free,
     keep_page,
+    keep_the_clip_before_it_failed,
+    kept_before_it_failed,
     latest,
     moments_by_video,
     music_mood,
@@ -95,10 +102,12 @@ from jobs.work import (
     save_photos,
     scene_place,
     show_once,
+    tries_shown,
+    try_name,
     use_music_again,
+    use_try,
     version_label,
     versions,
-    waits_to_be_said_to_camera,
     why_the_checks_havent_passed,
     why_the_checks_passed,
 )
@@ -152,6 +161,11 @@ Each says which steps the change made stale; nothing is made again by itself. Ru
 planning checks on what changed, make again only the stale steps the change needs with the \
 scene tools, then assemble the ad. Once it is shown, tell the shop owner in one line what \
 changed and what it cost.
+Every version of a scene is kept. use_version puts an earlier version back in the ad for \
+nothing, and keep_try puts in one of the tries the fixing agent filmed of a clip; once an ad \
+has been shown, each assembles it again. create_music again in another mood makes new \
+music for the ad; assemble the ad again to put it in. cost_so_far says what the ad has \
+cost so far, by part.
 The person and the place can change at any step too: remake_person makes the presenter \
 again, their look, their voice or both, with your instruction on top of the standard \
 prompt; set_place gives a scene that shows the product a place of its own, drawn new or a \
@@ -1058,7 +1072,6 @@ class MakeStartingPicture(Tool):
         if made is not None:
             return _already_made_picture(call, scene, made)
         _no_clip_being_made(scene)
-        _before_its_clip(scene)
         _start_step(
             call,
             scene,
@@ -1162,7 +1175,7 @@ def _already_made_picture(call: ToolCall, scene: Scene, made: SceneStep) -> str:
     """For a starting picture already made for the scene's line with the same note: say so
     if it is the scene's picture, or bring it back as the scene's picture if a newer one was
     made since, with nothing paid again (#143, Julian 2026-10-11, "same inputs, never pay
-    twice"). Bringing it back changes the ad, so it is refused once the scene has a clip."""
+    twice"). Bringing it back plans a finished scene again: its clip is made from the picture."""
     # A newer picture being made would land on top of it.
     if scene.steps.filter(
         kind=SceneStep.Kind.STARTING_PICTURE, status=SceneStep.Status.RUNNING
@@ -1194,7 +1207,6 @@ def _already_made_picture(call: ToolCall, scene: Scene, made: SceneStep) -> str:
             f"nothing was made or paid for again. Making it cost {cost}. {photo}{unclipped}"
         )
     _no_clip_being_made(scene)
-    _before_its_clip(scene)
     # Shown again together, so the scene's card shows the picture its clip is made from.
     with transaction.atomic():
         again, was_finished = bring_back_picture(earlier)
@@ -1266,7 +1278,6 @@ class MakeLineAudio(Tool):
                 f"(version {made.version}), so nothing was made or paid for again. Making it "
                 f"cost {dollars(made.step.tool_call.cost_usd())}."
             )
-        _before_its_clip(scene)
         _start_step(
             call,
             scene,
@@ -1317,7 +1328,6 @@ class TranscribeLineAudio(Tool):
                 f"again. Transcribing it cost {dollars(heard.step.tool_call.cost_usd())}. It "
                 f'was heard as: "{heard.text}"'
             )
-        _before_its_clip(scene)
         _start_step(
             call,
             scene,
@@ -1421,6 +1431,16 @@ class MakeClip(Tool):
             .exclude(step__tool_call__agent=FIXING_AGENT)
             .order_by("version"),
         )
+        in_the_ad = _current_clip_in_use(scene) if made is None and not note else None
+        if in_the_ad is not None:
+            # Nothing it is made from changed (spec #247 point 9): what exists is handed back,
+            # whoever made it, as a try the fixing agent kept, which the lookup above leaves out.
+            Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
+            return (
+                f"Scene {scene.number}'s clip (version {in_the_ad.version}) is already made for "
+                "the scene as it stands, so nothing was made or paid for again. Scene "
+                f"{scene.number} is finished."
+            )
         if made is not None:
             assert made.step is not None, "a clip is made by a scene step"
             made_from = "from this starting picture" if picture is not None else "from this plan"
@@ -1438,7 +1458,6 @@ class MakeClip(Tool):
             # video paid again (Julian 2026-10-11, "Reuse A's clip").
             back = ""
             if made != _latest_clip(scene):
-                _before_its_clip(scene)
                 # Shown again together, so the scene's card shows the clip the ad now uses.
                 with transaction.atomic():
                     again = bring_back_clip(made)
@@ -1466,7 +1485,6 @@ class MakeClip(Tool):
                 f"again.{back} Making it cost {dollars(made.step.tool_call.cost_usd())}. "
                 f"Scene {scene.number} is finished."
             )
-        _before_its_clip(scene)
         _start_step(
             call,
             scene,
@@ -2145,7 +2163,6 @@ class CorrectOwnerPart(Tool):
                 raise Refused(f"the chat has {_owner_photos(len(attached))}.")
             file = attached[self.photo - 1].file
         _no_clip_being_made(scene)
-        _before_its_clip(scene)
         try:
             if file is not None:
                 owner_parts.photo_correction(scene, file, words)
@@ -2292,6 +2309,176 @@ def _spent_since_the_ad_before(session: Session, ad: ProducedItem) -> str:
         f" The changes since ad version {before.version} cost {dollars(spent or Decimal(0))}:"
         " tell the shop owner in one line what changed and what it cost."
     )
+
+
+class UseVersion(Tool):
+    """Use one of a scene's versions again, numbered as the scene's card and read_ad number
+    them (v1 is its first), for nothing: its clip is brought back as the scene's newest
+    version, with nothing made, judged or paid for, and once an ad has been shown it is
+    assembled again with it. Only a version whose clip still says the scene's line as it
+    stands, in the person's voice: for another, make the scene's steps again instead."""
+
+    name = "use_version"
+    # Spends nothing.
+    runs_while_paused = True
+
+    scene: int = Field(description="The number of the scene.")
+    version: int = Field(description="The number of the version to use: 1 for v1, and so on.")
+
+    def run(self, call: ToolCall) -> str:
+        scene = _a_planned_scene(call, self.scene)
+        number = scene.number
+        made = versions(scene)
+        if not 1 <= self.version <= len(made):
+            raise Refused(
+                f"scene {number} has versions 1 to {len(made)}, not {self.version}."
+                if made
+                else f"scene {number} has no versions yet: none of its clips has been made."
+            )
+        chosen = made[self.version - 1]
+        if not go_back_is_free(scene, self.version):
+            raise Refused(
+                f"scene {number}'s {chosen.label} has no clip that still says the scene's line "
+                "as it stands, in the person's voice, so it can't be used for nothing. Make the "
+                "scene's stale steps again instead."
+            )
+        in_use = _current_clip_in_use(scene)
+        if in_use is not None and chosen.clip is not None and in_use.file == chosen.clip.file:
+            return (
+                f"Scene {number}'s clip in use is already the one of {chosen.label}, so nothing "
+                "changed."
+            )
+        try:
+            gone = go_back(scene, self.version)
+        except SceneBusy as busy:
+            raise Refused(
+                f"{busy}. You'll be told when it's ready; use the version then."
+            ) from busy
+        return (
+            f"Scene {number} uses {chosen.label} again, as {gone.version.label}: its clip was "
+            f"brought back, and nothing was made or paid for.{_assembled_again(call)}"
+        )
+
+
+class KeepTry(Tool):
+    """Put one of the tries at a scene's clip in the ad instead of the one there, for nothing:
+    its first clip or a try the fixing agent filmed after the clip judge failed it, as the chat
+    showed the shop owner every try to pick from; or, as try 0, the clip a clip step made
+    before it ended without finishing the scene. Once an ad has been shown it is assembled
+    again with it."""
+
+    name = "keep_try"
+    # Spends nothing.
+    runs_while_paused = True
+
+    scene: int = Field(description="The number of the scene.")
+    try_number: int = Field(description="Which try: 0 for the first clip, 1 for try 1, and so on.")
+
+    def run(self, call: ToolCall) -> str:
+        scene = _a_planned_scene(call, self.scene)
+        number = scene.number
+        unfinished = kept_before_it_failed(scene)
+        if unfinished is not None and self.try_number == 0:
+            try:
+                keep_the_clip_before_it_failed(unfinished)
+            except (SceneBusy, NoSuchVersion) as refused:
+                raise Refused(f"{refused}.") from refused
+            return (
+                f"Scene {number}'s clip (version {unfinished.version}), made before its step "
+                "ended, is the scene's clip now: nothing was made or paid for, and scene "
+                f"{number} is finished.{_assembled_again(call)}"
+            )
+        step = (
+            scene.steps.filter(kind=SceneStep.Kind.CLIP, tries_shown__isnull=False)
+            .distinct()
+            .order_by("id")
+            .last()
+        )
+        if step is None:
+            raise Refused(
+                f"scene {number} has no tries to pick from: there are tries only of a clip the "
+                "clip judge failed and the fixing agent filmed again. Use use_version for its "
+                "versions."
+            )
+        shown = tries_shown(step)
+        picked = next(
+            (each.clip for each in shown.tries if (each.clip.remake or 0) == self.try_number),
+            None,
+        )
+        if picked is None:
+            names = _listed([each.name.lower() for each in shown.tries])
+            raise Refused(f"scene {number}'s tries are its {names}, not {self.try_number}.")
+        try:
+            use_try(picked)
+        except TryNotOnOffer as refused:
+            raise Refused(str(refused)) from refused
+        # A try swapped in moves the scene past any question its fixing agent asked about it.
+        owner_answers.withdraw(scene)
+        return (
+            f"Scene {number}'s {try_name(picked)} is in the ad now, as "
+            f"{versions(scene)[-1].label}: nothing was made or paid for."
+            f"{_assembled_again(call)}"
+        )
+
+
+def _assembled_again(call: ToolCall) -> str:
+    """Once an ad has been shown, assemble it again from the scenes as they stand and say so,
+    as a sentence to follow another; or say why it wasn't. Blank before the first ad: the
+    producer assembles that one once every scene is made."""
+    job = _the_job(call)
+    if job is None or not job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).exists():
+        return ""
+    try:
+        ad, _ = assemble_the_ad(call.session, job)
+    except Refused as held:
+        return f" The ad wasn't assembled again yet: {held} Assemble it once it can be."
+    return (
+        f" The ad was assembled again with it (version {ad.version}, {ad.seconds:g} seconds) "
+        "and shown to the shop owner. Tell them in one line what changed: it cost nothing."
+    )
+
+
+class CostSoFar(Tool):
+    """What the ad has cost so far, in all and by part: each scene's steps, with the fixing
+    agent's work on them; each of your other tools; and your own turns. Costs nothing."""
+
+    name = "cost_so_far"
+    # Reads what is kept; spends nothing.
+    runs_while_paused = True
+
+    def run(self, call: ToolCall) -> str:
+        paid = call.session.model_calls.all()
+        total = _summed(paid)
+        job = _the_job(call)
+        scenes = list(job.scenes.order_by("number")) if job is not None else []
+        by_scene = {
+            scene.number: _summed(
+                paid.filter(
+                    Q(tool_call__scene_steps__scene=scene)
+                    | Q(tool_call__agent_fix__step__scene=scene)
+                ).distinct()
+            )
+            for scene in scenes
+        }
+        rest = (
+            paid.exclude(purpose=PRODUCER.purpose)
+            .filter(tool_call__agent=PRODUCER.name, tool_call__scene_steps__isnull=True)
+            .values_list("tool_call__tool")
+            .annotate(cost=Sum("cost_usd"))
+            .order_by("tool_call__tool")
+        )
+        parts = [
+            *(f"scene {number} {dollars(cost)}" for number, cost in by_scene.items()),
+            *(f"{tool} {dollars(cost or Decimal(0))}" for tool, cost in rest),
+            f"your own turns {dollars(_summed(paid.filter(purpose=PRODUCER.purpose)))}",
+        ]
+        return f"The ad has cost {dollars(total)} so far: {_listed(parts)}."
+
+
+def _summed(calls: QuerySet[ModelCall]) -> Decimal:
+    """What `calls` cost, together."""
+    cost: Decimal | None = calls.aggregate(cost=Sum("cost_usd"))["cost"]
+    return cost or Decimal(0)
 
 
 class ReadAd(Tool):
@@ -2619,20 +2806,6 @@ def _each_call_usd(scene: Scene, purposes: list[str]) -> Decimal:
     return CALL_FALLBACK_USD
 
 
-def _before_its_clip(scene: Scene) -> None:
-    """Refuse to change a scene that already has a clip: from then on it changes only through
-    the shop owner's notes, which the app plans, shows them and makes once they say yes (fix
-    redesign, decisions 1 and 2). A scene the fixing agent gave up on, said to camera, is
-    made again as a talking scene until it has its clip. Checked once nothing already made
-    can be handed back, so what is free and changes nothing stays free."""
-    # A plan edit made its clip stale (spec #247 point 9): the scene is made again.
-    if stale.current_clip(scene) is not None and not (waits_to_be_said_to_camera(scene)):
-        raise Refused(
-            f"scene {scene.number} already has a clip, so it changes only through the shop "
-            "owner's notes: the app shows them a plan and makes it once they say yes."
-        )
-
-
 def _use_the_photos(fix: Fix) -> None:
     """Once the shop owner has said yes to the fix, its scene uses its photos from now on
     (D1), each in place of any it used of the same thing (D3), and stops using those it
@@ -2716,6 +2889,20 @@ def _scenes(numbers: list[int]) -> str:
 def _listed(items: list[str]) -> str:
     """ "a", "a and b", or "a, b and c"."""
     return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
+
+
+def _current_clip_in_use(scene: Scene) -> ProducedItem | None:
+    """The scene's newest clip, when it is made for the scene as it stands, with the shop
+    owner's photos it uses now, and no clip is being made: the clip a scene tool asked for an
+    unchanged clip hands back."""
+    newest = _latest_clip(scene)
+    if (
+        newest is None
+        or newest != stale.current_clip(scene)
+        or scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING).exists()
+    ):
+        return None
+    return _clip_with_the_photos_in_use(scene, scene.produced.filter(pk=newest.pk))
 
 
 def _latest_clip(scene: Scene) -> ProducedItem | None:
@@ -3056,11 +3243,14 @@ PRODUCER = Agent(
         TranscribeLineAudio,
         MakeClip,
         FixScene,
+        KeepTry,
+        UseVersion,
         SetReferences,
         ApproveOwnerPart,
         CorrectOwnerPart,
         AskOwner,
         AssembleAd,
+        CostSoFar,
         Look,
         ReadAd,
         ReadEarlierCall,

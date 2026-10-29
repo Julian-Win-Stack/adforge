@@ -88,11 +88,6 @@ BLOCKED = (
 )
 
 
-class RunStopped(Exception):
-    """A scene step stopped the run, saying why. The producer takes no turn until the user
-    speaks again."""
-
-
 class Refused(Exception):
     """A tool won't do what it was asked, and has done nothing: it would break one of the
     rules, or what it works on doesn't exist yet. Says why, for the agent."""
@@ -325,19 +320,6 @@ def _work(agent: Agent, session: Session) -> int:
         # Built with it, so what it says has the conversation's steps.
         snapshot = agent.snapshot(session) if agent.snapshot else ""
         conversation = without_refused_pictures(session, agent.purpose, conversation)
-        if _stopped_since_the_user_spoke(session):
-            stopping = [
-                step
-                for step in steps
-                if step.status == SceneStep.Status.STOPPED and step.producer_read_at is None
-            ]
-            _read(steps, notes)
-            if stopping:
-                raise RunStopped(
-                    f"{stopping[0].reason}. The pictures and why each failed are above"
-                )
-            # Said once already: a step finishing since doesn't start the run again.
-            return read_up_to
         if _nothing_to_answer_since_its_last_turn(agent, session, conversation):
             # Its last turn was given all of them, before a worker stopped past its reply.
             _read(steps, notes)
@@ -845,9 +827,6 @@ def _conversation(
     return conversation, max((message.seq for message in said), default=0), read + unread, notes
 
 
-# Why the calls left of a turn aren't run once a scene step stopped the run.
-STOPPED_THE_RUN = "a scene step stopped the run."
-
 # What a tool that spends answers while the shop owner's pause holds (spec #247 point 14),
 # and every call left of a turn asked for before the agent was told of the pause: "starts
 # nothing" is the tools' rule, not only the agent's instructions.
@@ -873,11 +852,9 @@ def _held_by_the_pause(agent: Agent, call: ToolCall) -> bool:
 
 
 def _held_since_the_user_spoke(session: Session) -> str | None:
-    """Why the calls left of the agent's turn are refused unrun, or None to run them: a scene
-    step stopped the run since the user's last message, or the shop owner paused and the
-    agent hasn't been given the pause's note yet, so it reads it before anything more runs."""
-    if _stopped_since_the_user_spoke(session):
-        return STOPPED_THE_RUN
+    """Why the calls left of the agent's turn are refused unrun, or None to run them: the
+    shop owner paused and the agent hasn't been given the pause's note yet, so it reads it
+    before anything more runs."""
     if paused(session) and unread_pause_notes(session).exists():
         return PAUSED
     return None
@@ -886,15 +863,6 @@ def _held_since_the_user_spoke(session: Session) -> str | None:
 def unread_pause_notes(session: Session) -> QuerySet[SystemNote]:
     """The notes of the shop owner's pause the producer hasn't been given yet."""
     return session.system_notes.filter(kind=SystemNote.Kind.PAUSED, read_at__isnull=True)
-
-
-def _stopped_since_the_user_spoke(session: Session) -> bool:
-    """Whether a scene step stopped the run since the user's last message."""
-    stopped = SceneStep.objects.filter(tool_call__session=session, status=SceneStep.Status.STOPPED)
-    spoke = session.messages.filter(role=Message.Role.USER).order_by("seq").last()
-    if spoke is not None:
-        stopped = stopped.filter(finished_at__gt=spoke.created_at)
-    return stopped.exists()
 
 
 def unread_steps(agent: Agent, session: Session) -> QuerySet[SceneStep]:
