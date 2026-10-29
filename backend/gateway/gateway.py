@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, cast
 import PIL.Image
 import PIL.ImageOps
 from django.conf import settings
+from django.db import connection
 from django.utils import timezone
 from pydantic import BaseModel
 
@@ -583,11 +584,38 @@ def _picture_made(
                 raise
             _say_pictures_moved_to_azure(job, session, refused)
 
-    def on_azure() -> _Made[str]:
+    # One picture at a time across every worker, each after Azure's pace allows: pictures
+    # made at once would otherwise all see the same last call and go together. The wait is
+    # outside the call's record, so its time isn't counted as the call's.
+    with _one_azure_picture_at_a_time():
         _wait_for_azures_pace()
-        return _kept(purpose, model, make(provider, True))
+        return _recorded(
+            job,
+            purpose,
+            model,
+            AZURE_PICTURES,
+            handoff,
+            lambda: _kept(purpose, model, make(provider, True)),
+            session=session,
+        )
 
-    return _recorded(job, purpose, model, AZURE_PICTURES, handoff, on_azure, session=session)
+
+# The Postgres advisory lock held while a picture is drawn on Azure: a number none of the
+# app's other advisory locks use (agents/tasks.py, jobs/work.py).
+AZURE_PICTURES_LOCK = 5
+
+
+@contextmanager
+def _one_azure_picture_at_a_time() -> Iterator[None]:
+    """Hold the lock that lets one picture at a time be drawn on Azure, in every worker. It
+    is held by the database connection, so a worker that dies lets it go."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_lock(%s)", [AZURE_PICTURES_LOCK])
+    try:
+        yield
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_unlock(%s)", [AZURE_PICTURES_LOCK])
 
 
 def _refused_for_money_before(session: Session | None) -> bool:

@@ -71,11 +71,12 @@ EXPECTED_FAILURES = (
     RefusedForMoney,
 )
 
-# Why a picture OpenAI refused for money failed: the account is out of money, and with no
-# Azure copy of the picture model set up, nothing draws it instead (Julian 2026-10-29).
+# Why a picture refused for money failed: the account it was asked of is out of money, and
+# nothing else could draw it: Azure's copy of the picture model isn't set up, or refused for
+# money too (Julian 2026-10-29).
 OUT_OF_MONEY = (
-    "OpenAI refused to draw it because our OpenAI account is out of money (its spend limit "
-    "or quota is reached), and no Azure copy of the picture model is set up to draw it instead"
+    "the AI service refused to draw it because our account there is out of money (its spend "
+    "limit or quota is reached), and nothing else could draw it instead"
 )
 
 # Asking again sends the same thing, so the run stops and the shop owner starts afresh.

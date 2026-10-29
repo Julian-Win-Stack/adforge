@@ -219,7 +219,7 @@ class OpenAIProvider:
                     "Pictures are drawn on Azure once OpenAI refuses for money, and "
                     "AZURE_OPENAI_KEY or AZURE_OPENAI_BASE_URL is not set"
                 )
-            return self._azure_pictures_client, settings.AZURE_PICTURES_DEPLOYMENT
+            return self._azure_pictures_client, settings.AZURE_PICTURES_DEPLOYMENT or model
         if self._pictures_client is None:
             raise NotSetUp("Pictures are drawn on OpenAI's own API, and OPENAI_API_KEY is not set")
         return self._pictures_client, model
@@ -234,12 +234,21 @@ def _asked(ask: Callable[[], ImagesResponse]) -> ImagesResponse:
         if _out_of_money(error):
             raise RefusedForMoney(str(error)) from error
         if isinstance(error, _WORTH_RETRYING):
-            raise OutsideServiceDown(str(error)) from error
+            raise OutsideServiceDown(str(error), retry_after=_retry_after(error)) from error
         if isinstance(error, openai.BadRequestError):
             raise _blocked_or(error) from error
         raise
     except _WORTH_RETRYING as error:
         raise OutsideServiceDown(str(error)) from error
+
+
+def _retry_after(error: openai.APIStatusError) -> float | None:
+    """How many seconds the service said to wait before asking again, if it said: Azure
+    paces its picture deployment this way."""
+    try:
+        return float(error.response.headers["retry-after"])
+    except KeyError, ValueError:
+        return None
 
 
 def _out_of_money(error: openai.APIStatusError) -> bool:
