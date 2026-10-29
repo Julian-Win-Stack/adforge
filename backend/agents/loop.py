@@ -805,14 +805,8 @@ def _held_since_the_user_spoke(session: Session) -> str | None:
 
 
 def unread_pause_notes(session: Session) -> QuerySet[SystemNote]:
+    """The notes of the shop owner's pause the producer hasn't been given yet."""
     return session.system_notes.filter(kind=SystemNote.Kind.PAUSED, read_at__isnull=True)
-
-
-def unread_notes(agent: Agent, session: Session) -> QuerySet[SystemNote]:
-    """The system notes `agent` hasn't been given yet: none for an agent that reads none."""
-    if not agent.reads_system_notes:
-        return SystemNote.objects.none()
-    return session.system_notes.filter(read_at__isnull=True)
 
 
 def _stopped_since_the_user_spoke(session: Session) -> bool:
