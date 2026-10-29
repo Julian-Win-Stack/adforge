@@ -367,6 +367,9 @@ BROLL_FIELDS = ["broll_kind", "person_shown", "usage", "result", "needs", "owner
 # for, whenever what the scene shows changes. Kept out of BROLL_FIELDS: a step snapshots them
 # too, but only a clip is made for them (jobs.stale), never a starting picture.
 PLANNED_FOR_THE_ACTION = ["scene_pictures", "piece"]
+# What a scene step keeps of its scene that only its clip is made from (spec #247 point 9:
+# a new reference list makes the clip stale, never the starting picture or the audio).
+CLIP_ONLY_INPUTS = [*PLANNED_FOR_THE_ACTION, "excluded"]
 
 # Each B-roll field as a scene step keeps its copy: a step's own `result` is what the
 # producer is told when it finishes.
@@ -475,6 +478,13 @@ class Scene(models.Model):
         help_text="The video piece the planner named for the B-roll scene: the page video's "
         'position and the moment\'s number in it, such as {"video": 1, "moment": 2}. Null '
         "when none.",
+    )
+    excluded = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The library numbers never sent for this scene, whatever tier would take "
+        "them, as the producer's set_references named them (spec #247 point 5), such as "
+        "[3, 7]. A version of an item is excluded with it. Empty for none.",
     )
     owner_part = models.JSONField(
         null=True,
@@ -1084,6 +1094,12 @@ class SceneStep(models.Model):
         blank=True,
         help_text="The scene's video piece when the step started. Null for none.",
     )
+    excluded = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The library numbers the scene excluded when the step started: never sent "
+        "for it.",
+    )
     note = models.TextField(
         blank=True, help_text="What the producer asked for, beyond the line. Blank for nothing."
     )
@@ -1250,26 +1266,27 @@ class SceneStep(models.Model):
             "line": scene.line,
             "shows": scene.shows,
             **{STEP_BROLL_FIELDS[field]: getattr(scene, field) for field in BROLL_FIELDS},
-            **{field: getattr(scene, field) for field in PLANNED_FOR_THE_ACTION},
+            **{field: getattr(scene, field) for field in CLIP_ONLY_INPUTS},
         }
 
     @staticmethod
     def picture_made_for(scene: Scene, through: str = "") -> dict[str, Any]:
         """`made_for` for a starting picture: what the scene shows and its B-roll labels,
-        never its line or its reference list."""
-        made_for = SceneStep.made_for(scene, through)
-        for field in ["line", *PLANNED_FOR_THE_ACTION]:
-            made_for.pop(f"{through}{field}", None)
-            made_for.pop(f"{through}{field}__isnull", None)
+        never its line or what only its clip is made from."""
+        made_for = SceneStep.made_for(scene, through, picture=True)
+        del made_for[f"{through}line"]
         return made_for
 
     @staticmethod
-    def made_for(scene: Scene, through: str = "") -> dict[str, Any]:
+    def made_for(scene: Scene, through: str = "", *, picture: bool = False) -> dict[str, Any]:
         """The filter for steps made for `scene` as it stands, or for what steps made
         `through` a relation to them, such as "step__": those whose snapshot is still up to
-        date."""
+        date. With `picture`, for a starting picture: what only the clip is made from left
+        out, so a new reference list leaves the picture as it is."""
         made_for = {
-            f"{through}{field}": value for field, value in SceneStep.snapshot(scene).items()
+            f"{through}{field}": value
+            for field, value in SceneStep.snapshot(scene).items()
+            if not (picture and field in CLIP_ONLY_INPUTS)
         }
         # No owner part or piece is SQL NULL, which an exact None doesn't match in a JSON
         # field.

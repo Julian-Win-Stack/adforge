@@ -21,7 +21,7 @@ def references_as_the_scene_has_them(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("jobs", "0072_scene_step_cancelled"),
+        ("jobs", "0075_scene_exclude_list"),
     ]
 
     operations = [

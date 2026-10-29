@@ -136,12 +136,39 @@ def test_a_prompt_and_two_library_items_make_a_checked_library_item_with_the_pro
     assert "made by the producer from items 1, 2" in library_text(library)
 
 
-def sent_for(scene: Scene, *named: int) -> list[tuple[int, int | None]]:
-    """What a first clip of `scene` is sent, (tier, library number) per picture, with the
-    library items `named` as its references: as set_references keeps a scene's pictures (spec
-    #247 point 5, References), in the field the planner's picks are kept in."""
-    scene.scene_pictures = [{"number": number, "for": "content"} for number in named]
-    scene.save(update_fields=["scene_pictures"])
+def sent_for(
+    fake_model: FakeModel, say: Say, scene: Scene, *named: int
+) -> list[tuple[int, int | None]]:
+    """What a first clip of `scene` is sent, (tier, library number) per picture, once the
+    producer's set_references names the library items `named` as its pictures (spec #247
+    point 5, References)."""
+    fake_model.respond(
+        "produce",
+        turn(
+            calls=[
+                (
+                    "set_references",
+                    {
+                        "scene": scene.number,
+                        "pictures": [{"number": number, "for": "content"} for number in named],
+                        "piece": None,
+                        "exclude": None,
+                    },
+                )
+            ]
+        ),
+        turn(says="Done."),
+    )
+    say(f"Use those pictures for scene {scene.number}.")
+    answer = ToolCall.objects.filter(tool="set_references").latest("id")
+    assert answer.answer == "made", answer.result
+    scene.refresh_from_db()
+    return planned(scene)
+
+
+def planned(scene: Scene) -> list[tuple[int, int | None]]:
+    """What a first clip of `scene` is sent as its references stand, (tier, library number)
+    per picture."""
     step = scene.steps.create(
         kind=SceneStep.Kind.CLIP,
         tool_call=ToolCall.objects.filter(tool="make_picture").latest("id"),
@@ -155,7 +182,11 @@ def sent_for(scene: Scene, *named: int) -> list[tuple[int, int | None]]:
 
 def a_scene(job: Job, number: int) -> Scene:
     return Scene.objects.create(
-        job=job, number=number, line="It cleans in one wash.", shows="The bottle on a shelf."
+        job=job,
+        number=number,
+        line="It cleans in one wash.",
+        shows="The bottle on a shelf.",
+        fact_checked=True,
     )
 
 
@@ -177,8 +208,8 @@ def test_a_made_side_is_sent_only_to_a_scene_whose_references_name_it_never_as_a
     made = library_of(library)[2]
     assert (made.kind, made.side) == ("side", "back")
 
-    assert (2, made.number) in sent_for(a_scene(library, 1), made.number)
-    assert made.number not in [number for _, number in sent_for(a_scene(library, 2))]
+    assert (2, made.number) in sent_for(fake_model, say, a_scene(library, 1), made.number)
+    assert made.number not in [number for _, number in planned(a_scene(library, 2))]
 
 
 def holding_the_part(job: Job, number: int, part: int) -> Scene:
@@ -208,15 +239,18 @@ def test_a_picture_made_from_an_owner_parts_picture_goes_only_to_the_scenes_hold
     made = library_of(library)[3]
     holding, other = holding_the_part(library, 1, part=3), a_scene(library, 2)
 
-    # Named for a scene without the part, it is refused: by the hard list when it is named,
+    # Named for a scene without the part, it is refused: by set_references when it is named,
     # and by cut-and-send were it sent.
     with pytest.raises(Refused, match="library item 4 shows an owner part"):
         hard_list.refuse_part_picture_elsewhere(other, [made.number])
+    with pytest.raises(AssertionError, match="library item 4 shows an owner part"):
+        sent_for(fake_model, say, other, made.number)
+    other.scene_pictures = [{"number": made.number, "for": "content"}]
+    other.save(update_fields=["scene_pictures"])
     with pytest.raises(ValueError, match="library item 4 shows the owner part"):
-        sent_for(other, made.number)
+        planned(other)
     # Named for a scene holding it, it goes, in tier 2.
-    hard_list.refuse_part_picture_elsewhere(holding, [made.number])
-    assert (2, made.number) in sent_for(holding, made.number)
+    assert (2, made.number) in sent_for(fake_model, say, holding, made.number)
 
 
 def test_a_reference_with_a_product_only_version_is_drawn_from_that_version(
