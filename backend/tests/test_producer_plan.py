@@ -476,7 +476,7 @@ def test_a_plan_that_breaks_the_rules_is_handed_back_keeps_nothing_and_is_still_
 
     result = plan_ad_result()
     assert result.startswith(
-        "Failed: a model's answer couldn't be used (gpt-5.6-sol gave an answer for plan_ad "
+        "Failed: a model's answer couldn't be used (gpt-6.1-sol gave an answer for plan_ad "
         "that could not be read:"
     )
     assert broken_rule in result
@@ -490,11 +490,11 @@ def test_a_plan_that_breaks_the_rules_is_handed_back_keeps_nothing_and_is_still_
     )
     assert job.person_gender == ""
     assert not job.photos.filter(shows_product_colour=True).exists()
-    # Both bad plans are still paid for: 1,200 x $4.00/M in + 300 x $20.00/M out each.
+    # Both bad plans are still paid for: 1,200 x $2.00/M in + 300 x $10.00/M out each.
     plan_calls = ModelCall.objects.filter(purpose="plan_ad").order_by("id")
     assert [(call.outcome, call.cost_usd) for call in plan_calls] == [
-        ("failed", Decimal("0.0108")),
-        ("failed", Decimal("0.0108")),
+        ("failed", Decimal("0.0054")),
+        ("failed", Decimal("0.0054")),
     ]
     # Nothing is made from a plan that broke the rules.
     assert paid_for() == [

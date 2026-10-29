@@ -477,6 +477,72 @@ def past_the_safety_filter[Answer](
     raise refused
 
 
+# The most probes made to find which of a call's pictures the safety filter refuses, besides
+# the one call on what is left (#228 review S2): halving finds one refused picture of 25-50 in
+# about 5, two in about 14; the watcher's search of a refused video has the same cap (#210
+# point 3). Pictures still unsorted when it is reached count as refused.
+MOST_REFUSED_PROBES = 16
+
+
+def refused_by_halving[Picture](
+    refuses: Callable[[list[Picture]], bool], pictures: list[Picture]
+) -> list[Picture]:
+    """The `pictures`, all of them together refused by the safety filter, that it refuses,
+    found by halving (requirement 22): the first half of a group holding one is probed alone,
+    a refused half halved again, down to single pictures, the other half probed when the
+    first held one, at most MOST_REFUSED_PROBES probes. `refuses` probes a group: whether
+    the filter refuses it. A picture left alone in a group known to hold one is refused
+    without a probe, so pictures refused only together are named wrongly: the last one."""
+    refused: list[Picture] = []
+    # Groups known to hold a refused picture (all of them, to start: they were refused), and
+    # groups not known either way.
+    holding: list[list[Picture]] = [pictures]
+    unknown: list[list[Picture]] = []
+    probes = 0
+    while holding or unknown:
+        if holding:
+            group = holding.pop(0)
+            if len(group) == 1:
+                refused += group
+                continue
+            first, second = _halves(group)
+            if probes == MOST_REFUSED_PROBES:
+                refused += group
+                continue
+            probes += 1
+            if refuses(first):
+                # The second half is not known either way once the first holds one.
+                holding.append(first)
+                unknown.append(second)
+            else:
+                holding.append(second)
+            continue
+        group = unknown.pop(0)
+        if probes == MOST_REFUSED_PROBES:
+            refused += group
+            continue
+        probes += 1
+        if refuses(group):
+            holding.append(group)
+    return [picture for picture in pictures if picture in refused]
+
+
+def refused_by_filter[Picture](
+    ask: Callable[[list[Picture]], object], shown: list[Picture]
+) -> bool:
+    """Whether the safety filter refuses `ask` showing `shown`."""
+    try:
+        ask(shown)
+    except BlockedBySafetyFilter:
+        return True
+    return False
+
+
+def _halves[Picture](pictures: list[Picture]) -> tuple[list[Picture], list[Picture]]:
+    middle = (len(pictures) + 1) // 2
+    return pictures[:middle], pictures[middle:]
+
+
 def watch_video[Out: BaseModel](
     *,
     job: Job | None,

@@ -138,7 +138,7 @@ def test_a_line_too_long_for_its_clip_is_shortened_and_the_producer_told_to_make
 
     assert told == (
         "Background step finished: scene 2's line's audio takes 15.5 seconds to say, too long "
-        f"for any clip. It cost $0.010475. {SHORTENED}"
+        f"for any clip. It cost $0.007475. {SHORTENED}"
     )
     scene = Scene.objects.get(number=2)
     assert (scene.line, scene.shows, scene.fact_checked) == (SHORTER, SHOWS, True)

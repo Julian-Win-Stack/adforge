@@ -82,8 +82,8 @@ def test_the_producer_reads_the_page_its_given_and_tells_the_user_what_it_found(
     assert "Kept 2 product photos" in checkpoint.result
     # Checking the page cost 1,000 tokens in and 100 out on gpt-5-mini, $0.00045, copying
     # its text the same on gpt-6-luna, $0.00015, and noting each of its 2 photos' faces and
-    # labelling each for the library the same on gpt-5.6-sol, $0.006 a call.
-    assert checkpoint.cost_usd() == Decimal("0.0246")
+    # labelling each for the library the same on gpt-6.1-sol, $0.003 a call.
+    assert checkpoint.cost_usd() == Decimal("0.0126")
     # The producer's second turn was given what the tool produced.
     assert given_to_the_producer(2)[-1] == {
         "kind": "tool_use",
@@ -231,7 +231,7 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
     first, _check, _copy, _front, _side, _front_label, _side_label, second = [
         request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
     ]
-    assert first["model"] == "gpt-5.6-sol"
+    assert first["model"] == "gpt-6.1-sol"
     assert first["input"] == [
         {"role": "user", "content": f"Make me a 15 second ad for {product_page_url}"}
     ]
@@ -298,8 +298,8 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
         ("openai", "succeeded", None),
         ("openai", "succeeded", None),
     ]
-    # gpt-5.6-sol: 1,200 x $4.00/M in + 300 x $20.00/M out = $0.0048 + $0.006.
-    assert [turn.cost_usd for turn in turns] == [Decimal("0.0108"), Decimal("0.0108")]
+    # gpt-6.1-sol: 1,200 x $2.00/M in + 300 x $10.00/M out = $0.0024 + $0.003.
+    assert [turn.cost_usd for turn in turns] == [Decimal("0.0054"), Decimal("0.0054")]
 
 
 def test_the_real_openai_code_tells_the_producer_a_step_finished_as_the_system_not_the_user(
@@ -315,7 +315,7 @@ def test_the_real_openai_code_tells_the_producer_a_step_finished_as_the_system_n
     reply = OpenAIProvider().take_turn(
         TurnRequest(
             purpose="produce",
-            model="gpt-5.6-sol",
+            model="gpt-6.1-sol",
             instructions="You are the producer.",
             handoff=TurnHandoff(
                 conversation=[Said(by="user", text="Make it"), StepFinished(text=finished)],

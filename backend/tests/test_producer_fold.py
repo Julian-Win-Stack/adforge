@@ -68,7 +68,7 @@ def last_turn_tokens() -> int:
 
 def fold_past(settings: Settings, tokens: int) -> None:
     """Set the fold point to `tokens` of the producer model's window."""
-    settings.FOLD_PAST_SHARE_OF_WINDOW = tokens / catalog.max_input_tokens("gpt-5.6-sol")
+    settings.FOLD_PAST_SHARE_OF_WINDOW = tokens / catalog.max_input_tokens(catalog.PRODUCER_MODEL)
 
 
 def call(tool: str) -> ToolCall:
@@ -254,7 +254,7 @@ def test_the_ad_as_it_stands_is_given_last_and_any_part_is_read_again_in_full(
     assert "Scene 1" in snapshot and "v1 first version" in snapshot
     assert "library items 14, 4, 9, 11, 12, 13, the person in the room, 2, 3" in snapshot
     assert "left out: library item 5" in snapshot
-    assert "It cost $0.216694." in snapshot
+    assert "It cost $0.213694." in snapshot
     assert "Scene 2: no version yet. It cost $0.00." in snapshot
     # Not in the conversation itself, which stays as it happened.
     assert snapshot.splitlines()[0] not in json.dumps(given_to_the_producer(producer_turns()))
