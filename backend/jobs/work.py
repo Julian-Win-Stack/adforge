@@ -117,6 +117,7 @@ from .checks import (
 from .library import PictureLabel, watch_of
 from .models import (
     BROLL_FIELDS,
+    PLANNED_FOR_THE_ACTION,
     AgentFix,
     AgentFixTry,
     Fix,
@@ -1386,6 +1387,7 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
                 "shortened_from",
                 "shows",
                 *BROLL_FIELDS,
+                *PLANNED_FOR_THE_ACTION,
                 "status",
                 "fact_problems",
                 "second_state",
@@ -1712,6 +1714,7 @@ def _shorten(job: Job, words_per_second: float) -> None:
                         "part",
                         "second_state",
                         *BROLL_FIELDS,
+                        *PLANNED_FOR_THE_ACTION,
                         "status",
                         "fact_checked",
                         "fact_problems",
@@ -2993,7 +2996,14 @@ def _say_it_to_camera(scene: Scene) -> None:
         scene.shortened_from = []
         scene.second_state = False
         scene.save(
-            update_fields=["shows", *BROLL_FIELDS, "shortened_from", "second_state", "status"]
+            update_fields=[
+                "shows",
+                *BROLL_FIELDS,
+                *PLANNED_FOR_THE_ACTION,
+                "shortened_from",
+                "second_state",
+                "status",
+            ]
         )
         scene.job.scenes.filter(number=scene.number + 1).update(second_state=False)
         post_notice(
