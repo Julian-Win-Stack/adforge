@@ -21,11 +21,13 @@ from jobs.models import SceneStep
 
 from .conftest import (
     HeldSteps,
+    ScriptedProducer,
     chat,
     given_to_the_producer,
     paid_for,
     producer_turns,
     results_of,
+    scripted_turns,
 )
 from .test_producer_scenes import CHOICE
 
@@ -364,3 +366,69 @@ def test_pausing_while_another_session_works_holds_and_cancels_but_starts_no_pro
     assert producer_turns() == turns
     assert [step_of(scene).status for scene in (1, 2, 3)] == ["cancelled"] * 3
     assert api.get(f"/api/sessions/{session_id}/").json()["paused"] is True
+
+
+# --- Whole-build check C (spec #247 Testing Decisions, ticket #266) --------------------------
+
+
+def test_the_scripted_producer_paused_with_two_steps_queued_and_one_running_re_calls_one_after(
+    api: APIClient,
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    checked: None,
+    session_id: str,
+) -> None:
+    producer.told(
+        "Make every scene's starting picture",
+        [
+            picture_call(1, "Scene 1 opens the ad."),
+            picture_call(2, "Scene 2 shows the mug in use."),
+            picture_call(3, "Scene 3 closes on the price."),
+        ],
+        "I've started every scene's picture.",
+    )
+    taken_by_the_worker(1)
+    paid = paid_for()
+
+    # The shop owner presses pause: the producer, woken by it, tries a scene tool, which
+    # answers paused, and says one line.
+    fake_model.respond(
+        "produce",
+        *scripted_turns(
+            picture_call(2, "Scene 2 still needs its picture."),
+            "Paused. Scene 1's picture is finishing. What should change?",
+        ),
+    )
+    assert pause(api, session_id)["paused"] is True
+    assert fake_model.left("produce") == 0
+
+    # Two queued steps cancelled, the running one kept; the note names each and what it was
+    # for; the scene tool answered paused and started nothing.
+    assert [step_of(scene).status for scene in (1, 2, 3)] == ["running", "cancelled", "cancelled"]
+    cancelled, running = notes_given(producer_turns() - 1)[-1].split("Still running")
+    for scene, why in ((2, "Scene 2 shows the mug in use."), (3, "Scene 3 closes on the price.")):
+        assert f"scene {scene}'s starting picture" in cancelled and why in cancelled
+    assert "scene 1's starting picture" in running
+    assert results_of("make_starting_picture")[-1].startswith("Refused: paused")
+    assert SceneStep.objects.count() == 3
+    assert producer.said()[-1] == "Paused. Scene 1's picture is finishing. What should change?"
+
+    # The running step finishes and is kept; the woken producer's scene tool still answers
+    # paused; the cancelled steps are never worked on.
+    fake_model.respond("choose_starting_picture", CHOICE)
+    producer.woken(picture_call(3, "Scene 3 still needs its picture."), "Scene 1 is ready.")
+    producer.steps.run_held()
+    assert [step_of(scene).status for scene in (1, 2, 3)] == ["finished", "cancelled", "cancelled"]
+    assert results_of("make_starting_picture")[-1].startswith("Refused: paused")
+    # Only scene 1's picture was paid for: chosen, then drawn.
+    assert paid_for()[len(paid) :] == ["choose_starting_picture", "make_starting_picture"]
+
+    # The shop owner writes: the pause ends, and the producer re-calls the one still needed.
+    producer.told(
+        "Go on, but only scene 2",
+        picture_call(2, "The owner wants scene 2 after all."),
+        "Making scene 2's picture again.",
+    )
+    assert results_of("make_starting_picture")[-1].startswith("Started scene 2's starting picture")
+    assert step_of(2).status == "running"
+    assert api.get(f"/api/sessions/{session_id}/").json()["paused"] is False

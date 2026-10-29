@@ -8,13 +8,17 @@ ad has a talking scene, two B-roll scenes, each made from the sent list cut-and-
 for it and never from a starting picture (spec #210 points 13-19), and a talking scene to end
 on."""
 
+import importlib.util
 from collections.abc import Callable
 from typing import Any
 
 import pytest
+from pytest_django import Settings
 from rest_framework.test import APIClient
 
 from adforge.file_store import read
+from agents.models import ToolCall
+from agents.snapshot import AD_AS_IT_STANDS
 from chat.sent import NOTHING_SENT
 from gateway.fake import FakeModel, turn
 from gateway.types import Turn
@@ -28,15 +32,25 @@ from .conftest import (
     READABLE,
     SENT_LIST_JUDGED,
     HeldSteps,
+    ScriptedProducer,
     broll,
     chat,
     colour_at,
     facts_ok,
+    given_to_the_producer,
     handoffs,
+    lines,
     loudness,
     paid_for,
+    producer_turns,
     results_of,
 )
+from .test_producer_broll import BROLL_PLAN
+from .test_producer_fold import fold_past, last_turn_tokens
+from .test_producer_fold import sized as sized  # a fixture
+
+# The lines of the mug's plan with scene 2 showing the mug.
+BROLL_LINES = [scene["line"] for scene in BROLL_PLAN["plan"]["scenes"]]
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -498,3 +512,197 @@ def test_each_clip_in_the_chat_carries_what_it_was_sent(
         ]
     )
     assert shown[2]["prompt"] == handoffs("make_broll_clip")[0]["prompt"]
+
+
+# --- Spec #247: the first message, the plan first, the fold, nothing of the old path ----------
+
+
+def first_ad_from_one_link(producer: ScriptedProducer, fake_model: FakeModel, link: str) -> None:
+    """The shop owner sends the mug's link and nothing else, and the producer, scripted, goes
+    the usual way to the finished ad (spec #247 point 3): read the page, plan, the person,
+    the checks, the music, then every scene's steps as the worker finishes each, and the ad
+    assembled. Scene 2 shows the mug, so its clip is judged."""
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", BROLL_PLAN)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3))
+    fake_model.respond("choose_starting_picture", TALKING, TALKING)
+    producer.told(
+        link,
+        ("read_page", {"link": link, "target_seconds": None}),
+        ("plan_ad", {}),
+        ("create_person", {}),
+        ("run_planning_checks", NO_CHOICES),
+        ("create_music", {"mood": "light upbeat lo-fi"}),
+        [
+            ("make_starting_picture", {"scene": 1, "note": None}),
+            ("make_starting_picture", {"scene": 3, "note": None}),
+            *every_scene("make_line_audio"),
+        ],
+        "I'm making your ad.",
+    )
+    # The worker makes each step; the producer, woken as each finishes, starts the next.
+    producer.woken("Scene 1's picture is made.")
+    producer.woken("Scene 3's picture is made.")
+    for scene in (1, 2, 3):
+        producer.woken(("transcribe_line_audio", {"scene": scene}))
+    for scene in (1, 2, 3):
+        producer.woken(("make_clip", {"scene": scene}))
+    producer.woken("Scene 1 is made.")
+    producer.woken("Scene 2 is made.")
+    producer.woken(("assemble_ad", {}), "Here's your ad!")
+
+
+# What a picture, an audio or a clip is paid for under.
+MAKES = {
+    "draw_person",
+    "make_starting_picture",
+    "speak_line",
+    "make_talking_clip",
+    "make_broll_clip",
+    "make_before_picture",
+    "make_room_alone",
+    "make_person_in_room",
+}
+
+
+def test_one_link_with_no_instructions_makes_the_whole_ad_with_no_question_and_no_plan_card(
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    product_page_url: str,
+    api: APIClient,
+    session_id: str,
+) -> None:
+    first_ad_from_one_link(producer, fake_model, product_page_url)
+
+    job = Job.objects.get()
+    (ad,) = job.produced.filter(kind="finished_ad")
+    assert [cut["scene"] for cut in ad.cuts] == [1, 2, 3]
+    # Every B-roll clip is judged: scene 2's, once.
+    assert paid_for().count("check_clip_motion") == 1
+    # Nobody asked the shop owner anything: one message from them, and no question.
+    assert not ToolCall.objects.filter(tool="ask_owner").exists()
+    messages = api.get(f"/api/sessions/{session_id}/messages/").json()
+    assert [message["role"] for message in messages].count("user") == 1
+    # No plan card: nothing the chat is sent is a plan to say yes to.
+    assert all("plan" not in message for message in messages)
+    assert "I'm making your ad." in producer.said()
+    assert producer.said()[-1] == "Here's your ad!"
+    # The ad is shown in the chat.
+    assert any(
+        attachment["kind"] == "video" and attachment["scene"] is None
+        for message in messages
+        for attachment in message["attachments"]
+    )
+
+
+def test_show_me_the_plan_first_shows_the_plan_and_makes_nothing_until_the_next_message(
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    product_page_url: str,
+) -> None:
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", BROLL_PLAN)
+
+    producer.told(
+        f"{product_page_url} Show me the plan before you make anything.",
+        ("read_page", {"link": product_page_url, "target_seconds": None}),
+        ("plan_ad", {}),
+        lambda: turn(says="Here's the plan:\n" + "\n".join(lines())),
+    )
+
+    # The plan is shown, in the producer's words.
+    assert producer.said()[-1] == "Here's the plan:\n" + "\n".join(BROLL_LINES)
+    # No picture, audio or clip is made: no person drawn, no voice, no scene step.
+    assert MAKES.isdisjoint(paid_for())
+    assert fake_model.pictures_drawn_on == fake_model.spoken == fake_model.clips_submitted == []
+    assert producer.steps.held == []
+    assert not Job.objects.get().produced.exists()
+
+    # The next message carries on from the plan.
+    fake_model.respond("fact_check", facts_ok(1, 2, 3))
+    producer.told(
+        "Looks good, make it",
+        ("create_person", {}),
+        ("run_planning_checks", NO_CHOICES),
+        every_scene("make_line_audio"),
+    )
+    assert "draw_person" in paid_for()
+    assert len(producer.steps.held) == 3
+
+
+def test_past_half_the_window_a_long_session_folds_its_oldest_calls_and_the_next_turn_fits(
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    product_page_url: str,
+    sized: None,
+    settings: Settings,
+) -> None:
+    first_ad_from_one_link(producer, fake_model, product_page_url)
+    assert not ToolCall.objects.exclude(fold_line="").exists()
+    # The fold point is set where the whole first ad, given in full, just reaches it, as a
+    # small setting stands in for half the model's window.
+    point = last_turn_tokens()
+    fold_past(settings, point)
+    said_before = producer.said()
+
+    producer.told("How much has it cost?", ("cost_so_far", {}), "It has cost a few dollars.")
+
+    # The oldest calls folded to one line each, kept on the row: the page read and the plan,
+    # whose whole answers are long. A call whose answer is one sentence would only grow as a
+    # line, so it stays whole, and so do the newest calls.
+    folded = {call.tool for call in ToolCall.objects.exclude(fold_line="")}
+    assert {"read_page", "plan_ad"} <= folded
+    assert folded.isdisjoint({"make_line_audio", "make_clip", "assemble_ad", "cost_so_far"})
+    (read_page,) = ToolCall.objects.filter(tool="read_page")
+    assert read_page.fold_line.startswith("read_page: made") and "\n" not in read_page.fold_line
+    # Nothing is deleted: the row keeps its whole answer.
+    assert len(read_page.result) > len(read_page.fold_line)
+    assert ToolCall.objects.get(tool="assemble_ad").fold_line == ""
+    # The producer's next turn was given the folded line, and the ad as it stands, last.
+    (given,) = [
+        each["result"]
+        for each in given_to_the_producer(producer_turns())
+        if each.get("tool") == "read_page"
+    ]
+    assert given.startswith(read_page.fold_line)
+    last = handoffs("produce")[-1]
+    assert last["snapshot"].startswith(AD_AS_IT_STANDS)
+    # It fits: the turn after the fold is under the fold point.
+    assert last_turn_tokens() < point
+    # The shop owner sees nothing of it.
+    assert producer.said() == [*said_before, "It has cost a few dollars."]
+
+
+def test_nothing_of_the_old_path_remains_a_note_after_the_ad_is_the_producers_to_answer(
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    product_page_url: str,
+    api: APIClient,
+    session_id: str,
+) -> None:
+    first_ad_from_one_link(producer, fake_model, product_page_url)
+    paid_before = paid_for()
+
+    # A note once the ad has its clips, then a yes sent as the old plan card sent it.
+    producer.told("Scene 2 should feel calmer.", "Shall I make scene 2's action calmer?")
+    fake_model.respond("produce", turn(says="I'll make it calmer."))
+    sent = api.post(
+        f"/api/sessions/{session_id}/messages/", {"text": "Yes", "plan": 1}, format="json"
+    )
+    assert sent.status_code == 201, sent.json()
+
+    # Neither was routed to another agent: the producer's own turns answered both, as words,
+    # and nothing else was paid for.
+    assert fake_model.left("produce") == 0
+    assert producer.said()[-2:] == ["Shall I make scene 2's action calmer?", "I'll make it calmer."]
+    assert paid_for() == paid_before
+    assert given_to_the_producer(producer_turns())[-2:] == [
+        {"kind": "said", "by": "agent", "text": "Shall I make scene 2's action calmer?"},
+        {"kind": "said", "by": "user", "text": "Yes"},
+    ]
+    # The old path's code is gone, not skipped.
+    for module in ("agents.routing", "agents.run_plan", "agents.decider", "jobs.fix_plans"):
+        assert importlib.util.find_spec(module) is None, module
+    # The chat is sent no plan and no yes to tap.
+    messages = api.get(f"/api/sessions/{session_id}/messages/").json()
+    assert all("plan" not in message for message in messages)

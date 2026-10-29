@@ -347,7 +347,7 @@ def test_a_look_asked_wrongly_is_a_cant_saying_why_and_nothing_is_paid(
     assert not ModelCall.objects.filter(purpose=look.PURPOSE).exists()
 
 
-def test_a_try_made_from_a_start_picture_is_told_its_video_prompt(
+def test_a_try_with_no_sent_list_is_shown_its_frames_and_told_its_video_prompt(
     fake_model: FakeModel, ad: Job, owner_asks: Callable[..., None]
 ) -> None:
     failed = ad.scenes.get(number=2).produced.filter(kind=ProducedItem.Kind.CLIP).latest("id")
@@ -362,7 +362,9 @@ def test_a_try_made_from_a_start_picture_is_told_its_video_prompt(
     )
 
     looked = _look_call()
-    assert _labels(looked)[0] == "Scene 2, try 0, start picture"
+    # No start picture is shown or said (spec #210 point 19): its clip's frames only.
+    assert _labels(looked)[0].startswith("Scene 2, try 0, clip, Frames at")
+    assert "start picture" not in looked.handoff["shown"]
     assert "The clip's video prompt: A hand squeezes the press, take 2." in looked.handoff["shown"]
     assert "The judge's verdict: fail." in looked.handoff["shown"]
 

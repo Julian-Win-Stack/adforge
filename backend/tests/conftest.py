@@ -1174,7 +1174,8 @@ def checked(fake_model: FakeModel, planned: None, say: Callable[..., None]) -> N
 # One step of a producer's script: a tool call (tool, arguments) is a turn making that one
 # call; a list of them is one turn making them all; a string is what it says to the shop
 # owner, a turn that calls nothing and so ends its work; a Turn, or a callable making one when
-# the turn is taken (to read what an earlier call handed back), is taken as it is.
+# the turn is taken (to read what an earlier call handed back), is taken as it is, and may end
+# the script.
 type ScriptStep = (
     str | tuple[str, dict[str, Any]] | list[tuple[str, dict[str, Any]]] | Turn | Callable[[], Turn]
 )
@@ -1186,7 +1187,8 @@ SCRIPTED_REPLY = "On it."
 def scripted_turns(
     *script: ScriptStep, reply: str = SCRIPTED_REPLY
 ) -> list[Turn | Callable[[], Turn]]:
-    """The producer's turns for `script`, ending with `reply` when the script ends on a call."""
+    """The producer's turns for `script`, ending with `reply` when the script ends on a tool
+    call or a list of them."""
     turns: list[Turn | Callable[[], Turn]] = []
     for step in script:
         if isinstance(step, str):
@@ -1197,7 +1199,7 @@ def scripted_turns(
             turns.append(turn(calls=step))
         else:
             turns.append(step)
-    if not script or not isinstance(script[-1], str):
+    if not script or isinstance(script[-1], tuple | list):
         turns.append(turn(says=reply))
     return turns
 

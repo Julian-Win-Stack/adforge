@@ -8,6 +8,7 @@ deleted: every row keeps its whole answer.
 A fold is decided from the stored rows, when the turn that passed the point is kept, and
 written with it, so every rebuild of the conversation comes out the same."""
 
+import json
 import logging
 import re
 from decimal import Decimal
@@ -57,10 +58,14 @@ def fold_if_past(session: Session, agent: str, purpose: str) -> list[ToolCall]:
         )
     )
     share: float = settings.FOLD_SHARE_OF_CALLS
-    # At least one while any is whole, so the last whole call folds too.
-    folding = whole[: max(1, int(len(whole) * share))] if whole else []
+    # The oldest share of the calls still whole fold, but for those whose line is no shorter
+    # than the call given in full, as a call with a one-sentence answer would only grow: they
+    # stay whole. At least one call is looked at while any is whole.
+    oldest = whole[: max(1, int(len(whole) * share))] if whole else []
+    lines = {each.pk: fold_line(each) for each in oldest}
+    folding = [each for each in oldest if _folding_shrinks(each, lines[each.pk])]
     for each in folding:
-        each.fold_line = fold_line(each)
+        each.fold_line = lines[each.pk]
         each.save(update_fields=["fold_line"])
     if folding:
         logger.info(
@@ -75,7 +80,7 @@ def fold_if_past(session: Session, agent: str, purpose: str) -> list[ToolCall]:
     else:
         logger.warning(
             "Session %s: the %s's last turn took %s input tokens, past its fold point of %s, "
-            "and it has no tool call left to fold",
+            "and none of its oldest tool calls given in full is shorter folded",
             session.pk,
             agent,
             last.input_tokens,
@@ -99,12 +104,21 @@ def fold_line(call: ToolCall) -> str:
     return f"{call.tool}{where}: {kind} ({said}); cost {dollars(_cost(call))}."
 
 
-def as_folded(call: ToolCall) -> str:
-    """What the agent is given of a folded call in place of its whole answer: its line, and
-    how to read the answer again."""
+def _folding_shrinks(call: ToolCall, line: str) -> bool:
+    """Whether `call` given as `line` is shorter than given in full: its arguments, its
+    answer and any picture it handed back, against its why and the folded line."""
+    if call.pictures:
+        return True
+    given = len(json.dumps(call.arguments)) + len(call.result)
+    return len(as_folded(call, line)) < given
+
+
+def as_folded(call: ToolCall, line: str = "") -> str:
+    """What the agent is given of a folded call in place of its whole answer: its line (its
+    fold line unless `line` is given), and how to read the answer again."""
     return (
-        f"{call.fold_line} Folded to one line; read_earlier_call with call id {call.call_id} "
-        "gives its whole answer."
+        f"{line or call.fold_line} Folded to one line; read_earlier_call with call id "
+        f"{call.call_id} gives its whole answer."
     )
 
 
