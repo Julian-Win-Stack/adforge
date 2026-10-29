@@ -12,11 +12,12 @@ from collections.abc import Callable, Iterator
 
 import pytest
 from django.db.models.signals import post_save
+from django.utils import timezone
 from pytest_django import Settings
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
-from agents.fold import fold_point
+from agents.fold import fold_if_past, fold_point
 from agents.models import ToolCall
 from agents.tasks import restart_dead_producers
 from chat.models import Session
@@ -323,3 +324,44 @@ def test_the_producers_window_is_its_models_unless_the_azure_deployments_is_lowe
     settings.FOLD_PAST_SHARE_OF_WINDOW = 0.5
 
     assert fold_point("produce") == window // 2
+
+
+# --- The fold rule (unit, in support) ---------------------------------------------------------
+
+
+def test_short_oldest_calls_never_hold_back_long_newer_ones_from_folding(
+    settings: Settings,
+) -> None:
+    session = Session.objects.create()
+    # Ten calls whose one-sentence answers would only grow as a line, then four long ones.
+    for number in range(14):
+        long = number >= 10
+        ToolCall.objects.create(
+            session=session,
+            agent="producer",
+            tool="read_ad" if long else "make_line_audio",
+            call_id=f"call_{number}",
+            arguments={} if long else {"scene": 1},
+            result=("A long answer. " * 13_000) if long else "Started in the background.",
+            answer="made",
+            finished_at=timezone.now(),
+        )
+    point = fold_point("produce")
+    ModelCall.objects.create(
+        session=session,
+        purpose="produce",
+        provider="fake",
+        model=catalog.MODEL_FOR_PURPOSE["produce"],
+        attempt=1,
+        handoff={},
+        output={},
+        outcome=ModelCall.Outcome.SUCCEEDED,
+        input_tokens=point + 1,
+        duration_ms=10,
+    )
+
+    # Past the point turn after turn, the long calls fold, oldest first; the short stay whole.
+    folded = [len(fold_if_past(session, "producer", "produce")) for _ in range(3)]
+
+    assert folded == [2, 1, 1]
+    assert set(ToolCall.objects.exclude(fold_line="").values_list("tool", flat=True)) == {"read_ad"}
