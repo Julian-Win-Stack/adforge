@@ -320,6 +320,14 @@ def _checked_page() -> PageCheck:
     )
 
 
+def _checked_or_unusable() -> PageCheck | UnusableReply:
+    """The page check, or the UnusableReply it raised."""
+    try:
+        return _checked_page()
+    except UnusableReply as unusable:
+        return unusable
+
+
 def _instructions_sent(httpserver: HTTPServer) -> list[str]:
     return [
         request.get_json()["instructions"]
@@ -338,8 +346,9 @@ def test_a_whole_answer_that_breaks_a_rule_is_asked_again_once_told_why(
     openai_server(openai_answer({**READABLE, "decision": "maybe"}), openai_answer(READABLE))
 
     with asking_again_once():
-        checked = _checked_page()
+        checked = _checked_or_unusable()
 
+    assert isinstance(checked, PageCheck)
     assert checked.decision == "readable"
     first, again = _instructions_sent(httpserver)
     assert DECISION_RULE not in first
@@ -370,22 +379,24 @@ def test_a_whole_answer_that_breaks_a_rule_is_asked_again_once_told_why(
 def test_an_answer_that_breaks_no_rule_but_cant_be_used_is_not_asked_again(
     httpserver: HTTPServer, openai_server: Callable[..., None], reply: dict[str, Any]
 ) -> None:
-    openai_server(reply)
+    # Asked again, the model would answer.
+    openai_server(reply, openai_answer(READABLE))
 
-    with asking_again_once(), pytest.raises(UnusableReply):
-        _checked_page()
+    with asking_again_once():
+        checked = _checked_or_unusable()
 
+    assert isinstance(checked, UnusableReply)
     assert len(_instructions_sent(httpserver)) == 1
 
 
 def test_a_whole_answer_that_breaks_a_rule_is_not_asked_again_outside_a_producers_tool_call(
     httpserver: HTTPServer, openai_server: Callable[..., None]
 ) -> None:
-    openai_server(openai_answer({**READABLE, "decision": "maybe"}))
+    openai_server(openai_answer({**READABLE, "decision": "maybe"}), openai_answer(READABLE))
 
-    with pytest.raises(UnusableReply):
-        _checked_page()
+    checked = _checked_or_unusable()
 
+    assert isinstance(checked, UnusableReply)
     assert len(_instructions_sent(httpserver)) == 1
 
 

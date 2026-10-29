@@ -679,7 +679,8 @@ def _run(agent: Agent, call: ToolCall) -> ToolAnswer:
     except Exception as error:
         if not isinstance(error, EXPECTED_FAILURES):
             logger.exception("The %s tool failed for checkpoint %s", call.tool, call.pk)
-        if isinstance(error, AnswerBrokeItsRules):
+        # Asked again inside its agent's tool call, the answer broke a rule twice.
+        if agent.asks_again_once and isinstance(error, AnswerBrokeItsRules):
             _say_it_broke_a_rule_twice(call, error)
         return ToolAnswer.cant(f"{FAILED} {why_it_failed(error, 'the tool')}")
 

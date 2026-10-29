@@ -436,9 +436,6 @@ def call_model[Out: BaseModel](
     except AnswerBrokeItsRules as broke:
         if not _asks_again.get():
             raise
-        logger.warning(
-            "%s's answer broke a rule of its output, so it is asked again: %s", purpose, broke
-        )
         return ask(
             dataclasses.replace(
                 request, instructions=f"{instructions}\n\n{ANSWER_AGAIN.format(error=broke)}"

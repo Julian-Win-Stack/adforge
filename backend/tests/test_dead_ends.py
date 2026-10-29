@@ -18,6 +18,7 @@ from agents import fixing_agent, tasks
 from agents.models import ToolCall
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
+from gateway.types import UnusableReply
 from jobs import work
 from jobs.models import (
     AgentFix,
@@ -741,3 +742,23 @@ def test_dead_end_a_paid_answer_the_validator_rejects_twice_is_a_failed_answer_s
     )
     assert planned.answer == "made", planned.result
     assert Job.objects.get().scenes.count() == 3
+
+
+def test_a_paid_answer_the_model_refused_is_not_asked_again_nor_said_in_red(
+    api: APIClient,
+    session_id: str,
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    page_read: str,
+) -> None:
+    # A refusal broke no rule of the answer: telling the model a rule wouldn't help.
+    refused = UnusableReply("the model refused", input_tokens=1_000, output_tokens=100)
+    fake_model.respond("plan_ad", refused, PLAN)
+    red_before = len(red_in_the_chat(api, session_id))
+
+    producer.told("Plan it", ("plan_ad", {}), ("plan_ad", {}), "Here's the plan.")
+
+    failed, planned = ToolCall.objects.filter(tool="plan_ad").order_by("id")
+    assert failed.result == "Failed: a model's answer couldn't be used (the model refused)."
+    assert red_in_the_chat(api, session_id)[red_before:] == []
+    assert planned.answer == "made", planned.result
