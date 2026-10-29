@@ -902,7 +902,7 @@ def test_a_slow_purpose_that_takes_too_long_is_given_up_on_and_not_asked_again(
 def test_only_the_purposes_named_slow_get_their_own_time_to_answer(
     httpserver: HTTPServer, openai_server: Callable[..., None], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(catalog, "SLOW_ANSWER_SECONDS", {"check_clip_sides": SLOW_ANSWER_SECONDS})
+    monkeypatch.setattr(catalog, "SLOW_ANSWER_SECONDS", {"check_clip_motion": SLOW_ANSWER_SECONDS})
     _answers_after(httpserver, STALLED_SECONDS)
 
     _check_page([])

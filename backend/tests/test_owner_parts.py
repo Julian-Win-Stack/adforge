@@ -389,25 +389,6 @@ def test_a_correction_after_the_yes_needs_a_new_yes_on_every_scene_showing_the_p
     assert not owner_parts.is_approved(Scene.objects.get(number=2))
 
 
-def test_the_shop_owners_change_to_their_photo_goes_into_every_later_picture(
-    call: ToolCall,
-) -> None:
-    two = a_broll_scene(call, 2, owner_part=APPLICATOR)
-    a_broll_scene(call, 3, owner_part=APPLICATOR)
-    a_photo_of_the_part(two)
-    owner_parts.words_correction(two, PINK)
-    two.refresh_from_db()
-    a_part_picture(two)
-    owner_parts.approve(two)
-
-    three = Scene.objects.get(number=3)
-    assert owner_parts.is_approved(three)
-    step = a_step(three, call)
-    assert owner_parts.drawn_from_words(step) is None
-    changed = owner_parts.photo_words(step)
-    assert changed is not None and changed[1] == PINK
-
-
 def test_a_yes_leaves_a_scene_whose_clip_is_made_as_it_is(call: ToolCall) -> None:
     two = a_broll_scene(call, 2, owner_part=APPLICATOR)
     four = a_broll_scene(

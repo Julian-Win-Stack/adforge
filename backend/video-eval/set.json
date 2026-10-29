@@ -1,5 +1,5 @@
 {
-  "note": "The fixed test set. 'picture' and 'audio' are keys under /app/media (the app's file store). 'motion_prompt' is the B-roll scene's saved motion prompt as of the first run; NOTHING_MADE_UP is added by the script as the app does. 'choose_call' is the gateway_modelcall id of the saved choose_broll_picture call the tuned prompts are regenerated from.",
+  "note": "The fixed test set. 'picture' and 'audio' are keys under /app/media (the app's file store). 'motion_prompt' is the B-roll scene's saved motion prompt as of the first run; 'choose_call' is the gateway_modelcall id of the saved B-roll picture call (the old choose_broll_picture purpose, removed in #241) the tuned prompts were made from.",
   "scenes": [
     {"id": "B1", "job": "eb52304c", "scene": 3, "kind": "broll", "why": "whole chair spins, wheels too (CSV run 14)",
      "picture": "make_starting_picture_ofNOysE.png", "audio": "speak_line_LPUaXn3.wav", "audio_seconds": 6.42, "old_clip": "clip_y6WeAcR.mp4", "choose_call": 1298,

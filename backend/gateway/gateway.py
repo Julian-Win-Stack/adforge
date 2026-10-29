@@ -1143,7 +1143,6 @@ VERDICT_SCORES: dict[str, dict[str, tuple[str, ...]]] = {
     "check_cut_out": {"cut_out_alone_and_unchanged": ()},
     "check_made_picture": {"made_picture_as_meant_and_unchanged": ()},
     "check_part_picture": {"part_picture_as_said": ()},
-    "check_clip_sides": {"clip_sides_real": ()},
     "check_clip_product": {"clip_matches_product": ()},
     "check_clip_references": {"references_enough": ()},
     "check_clip_motion": {

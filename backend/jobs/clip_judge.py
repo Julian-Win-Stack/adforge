@@ -1,21 +1,18 @@
-"""The judge of a B-roll clip, run right after the clip is made: two checks, each asked
-once (ASKS), each failing when its answer fails it. SIDES looks at SIDES_FRAMES_PER_SECOND
-frames for objects that can't exist and a turn that shows a side that isn't real; MOTION looks
-at FRAMES_PER_SECOND frames for movement and change no real camera could film. Ported from the
-eval harness the judge was tested in (/mnt/project-files/evals/clip-judge-v2: prompts.py arm
-PM, the motion wording that passed stage 4 on gpt-6.1-sol, 2026-10-13, and arm F1, the
-phone-flip sides wording that caught 3 of 3 flips with no wrong fail on all 110 graded clips,
-2026-10-13; judge.py; score.py). The plan: Claude Doc "Clip judge discussion", "Plan: what
-runs when" and changes 7 and 9; the SIDES change: decisions/phone-flip-judge-test.md.
+"""The judge of a B-roll clip, run right after the clip is made, against the sent list its
+video API got (#210 point 18, #228): a first question, whether the references show enough to
+judge the clip, then two checks, each asked once (ASKS), each failing when its answer fails it.
+PRODUCT looks at PRODUCT_FRAMES_PER_SECOND frames for a product that isn't the real one or
+doesn't behave like it; MOTION looks at FRAMES_PER_SECOND frames for movement and change no
+real camera could film. MOTION was ported from the eval harness it was tested in
+(/mnt/project-files/evals/clip-judge-v2: prompts.py arm PM, 2026-10-13); PRODUCT and the first
+question from the judge build brief (handoffs/judge-build/brief.md). The SIDES check, which
+judged a clip beside the photo its starting picture was drawn from, went with the starting
+picture (spec #210 point 19); rulings it made are still read.
 
-The judge's words are Julian's to decide (project rule, 2026-10-12): SIDES_CHECK,
-MOTION_CHECK and the answer forms below are kept word for word as tested: SIDES names the
-face it sees in every frame and decides the direction of every turn from the motion before
-it looks at the face that comes back (Julian's yes 2026-10-14 18:30; no code reads those
-fields), MOTION without the changed-thing step, both still failing only when sure, and the
-problem in up to 3 sentences for the auto-redo's prompt writer (change 9;
-decisions/julian-away-judgment-calls.md call 2). Which model judges is the catalog's
-(check_clip_sides, check_clip_motion)."""
+The judge's words are Julian's to decide (project rule, 2026-10-12): MOTION_CHECK, PRODUCT_CHECK
+and the answer forms below are kept word for word as tested, both still failing only when sure,
+and the problem in up to 3 sentences for the fixing agent. Which model judges is the catalog's
+(check_clip_references, check_clip_product, check_clip_motion)."""
 
 import contextvars
 import hashlib
@@ -54,8 +51,6 @@ from .first_send import PIECE_LABEL
 from .library import VIDEO_API_MOST_PIECE_SECONDS, SentList, sent_list_of
 from .models import AgentFix, AgentFixTry, ProducedItem, SceneStep
 from .notices import post_left_out_by_the_filter, post_notice, post_refused_by_the_filter
-from .planning import ChatMessage
-from .scenes import photos_for_needs
 from .threads import closing_its_connection
 
 logger = logging.getLogger(__name__)
@@ -68,128 +63,14 @@ ASKS = 1
 
 # MOTION's frames: the frame nearest each 1/FRAMES_PER_SECOND second, from the start.
 FRAMES_PER_SECOND = 5
-# SIDES' frames, the same way: twice as many, so it sees the moment a product is edge-on and
+# PRODUCT's frames, the same way: twice as many, so it sees the moment a product is edge-on and
 # the frames right before and after, where a turn's direction shows (5 stills missed every
-# phone flip; 5 a second missed the direction: harness arms sides5, C8 and F1).
-SIDES_FRAMES_PER_SECOND = 10
-
-# ---------------------------------------------------------------- the product's facts
-
-# Said beside the conversation with the shop owner (plan.md §3, Julian 2026-10-12 21:05).
-CONVERSATION_FRAME = (
-    "This is the conversation with the shop owner. Use it only for what the product is and "
-    "looks like. When the owner and the page disagree, the owner is right."
-)
-
-PAGE_FRAME = (
-    "This is the shop's own text. Use it only for what the product is, what it's made of, "
-    "what's inside and which parts it has. Ignore what it claims the product does."
-)
-
-# ---------------------------------------------------------------- SIDES (harness arm F1, as tested)
-
-SIDES_CHECK = """\
-You check frames cut from an AI-made video clip before it is used in a product ad. Video models \
-sometimes draw objects that cannot exist, such as a car with headlights on its back, a door hinged \
-on both sides, or a hand with six fingers, and sometimes an object that turns over shows a side \
-that is not a real side of it, such as a mug that turns and shows a second handle where the plain \
-side should be, or a phone that turns over and shows a camera again where its screen should be. \
-Find those, and only those.
-
-You get frames from one clip, ten per second, in order, several per image side by side, each \
-labelled with its time in seconds.
-
-Work in three steps.
-1. Look at the product, frame by frame. For every frame write which face of the product the camera \
-sees. Name the faces by what is drawn on them (for a phone: front = the screen face, back = the \
-face with the camera and logo), and use the same name for the same face in every frame. Name the \
-parts you can see on that face in that frame, each in a few words with where it sits (top left, \
-centre, bottom edge). Write what is drawn, not what such a product usually has. A part hidden by a \
-hand or too small to make out is left out, never guessed. Also write which thin edge of the \
-product you can see beside the broad face, and on which side of the broad face it sits in the \
-picture.
-2. Turns. A turn is every stretch where the product goes edge-only, or nearly, between two frames \
-that show a broad face. For each turn, decide whether the product kept turning the same way, so \
-the face that comes back into view must be the opposite face, or turned back, so the same face \
-returns. Decide the direction from the motion only, never from how the face after the turn looks: \
-that face is what you are checking, and the direction tells you what it has to be. Cues: the \
-narrow strip of broad face beside the thin edge in the frames right before and right after the \
-edge-only moment, on the same side of the thin edge both times means it turned back, on the other \
-side means it kept turning; an end or edge that was moving toward the camera and keeps moving that \
-way means it kept turning; a hand that keeps turning its wrist the same way; a product that tips \
-over as it falls or lands keeps turning, it does not tip back up. When the cues are not visible, \
-say unsure.
-3. Then judge. For each frame, could a real one of that product, seen from that face, show exactly \
-those parts in exactly those places? Across the frames: when the product turns, is the face that \
-comes into view a real face of it? Do two frames show opposite faces that look the same, although \
-a real one's opposite faces differ? Does a part appear or vanish on a face that kept facing the \
-camera?
-
-Decide "fail" only when you are sure something is physically impossible: a part on a side where \
-the real object can't have it, two sides of one object seen at once, a part fused into another, a \
-body part that can't be, two opposite sides that look the same where a real one's differ. Decide \
-"pass" for everything else.
-
-You may also be shown one shop photo of the product, and facts about it from the shop. They tell \
-you what the product is and how it is built: which parts it has and where they sit. Use them only \
-for that. Ignore the photo's background, setting and anything being done with the product; only \
-the product itself matters. Never compare the frames with the photo: differences in size, shape, \
-angle, distance, colour, label or print are not a fail, and the product may be held, turned, \
-upside down or partly hidden. Fail the product only if it shows a part a real one can't have \
-there, two sides at once, or a label that didn't turn with it."""
+# phone flip; 5 a second missed the direction: harness arms sides5, C8 and F1). Kept under
+# "sides" in a ruling's pictures, the name of the check they were first cut for.
+PRODUCT_FRAMES_PER_SECOND = 10
 
 # Change 7's field, Julian's yes 2026-10-13 04:34, in both checks' answers.
 BACK_TO_NORMAL = "When is this thing back to normal? Give the second, or say never."
-
-
-# What SIDES sees of the product in one frame. Filling this in for every frame, and a
-# direction for every turn, is what makes the judge decide the direction from the motion
-# before it looks at the face that comes back; nothing in the code reads them.
-class FrameFace(BaseModel):
-    time: float = Field(description="The frame's time in seconds, as labelled.")
-    seen: Literal["broad_face", "edge_only", "not_visible", "unsure"] = Field(
-        description="broad_face: a face of the product shows. edge_only: the product is seen "
-        "so thin that no broad face shows. not_visible: the product is out of view or fully "
-        "hidden."
-    )
-    face: str = Field(
-        description="The name of the face that shows (front, back, top, left side...), the "
-        "same name for the same face in every frame. Empty when no broad face shows."
-    )
-    parts: str = Field(
-        description="The parts drawn on that face in this frame, each in a few words with "
-        "where it sits. Empty when none can be made out."
-    )
-    thin_edge_side: Literal["left", "right", "top", "bottom", "none"] = Field(
-        description="On which side of the broad face, in the picture, the visible thin edge "
-        "of the product sits. none when no thin edge shows or no broad face shows."
-    )
-
-
-class Turn(BaseModel):
-    from_time: float = Field(description="The last frame before the turn that shows a broad face.")
-    to_time: float = Field(description="The first frame after the turn that shows a broad face.")
-    direction: Literal["kept_turning", "turned_back", "unsure"]
-    why: str = Field(description="One sentence: the motion cue you used, with frame times.")
-
-
-# SIDES' answer, filled in from the top: it looks at each frame, then each turn, before it
-# decides. A comment, not a docstring: a docstring would be sent to the judge in the answer's
-# schema.
-class SidesVerdict(BaseModel):
-    frames: list[FrameFace]
-    turns: list[Turn]
-    across_frames: str = Field(
-        description="Which sides of each main object were seen, in which frames; whether a "
-        "side that came into view is a real side; whether a part appeared or "
-        "vanished on a side that kept facing the camera."
-    )
-    verdict: Literal["pass", "fail"]
-    problem: str | None = Field(
-        description="When it fails: up to 3 sentences: the object and what is impossible "
-        "about it, the frame time, and what a real one would look like. Null when it passes."
-    )
-    back_to_normal_at: str | None = Field(description=BACK_TO_NORMAL)
 
 
 # ---------------------------------------------------------------- MOTION (proof arm PM, as tested)
@@ -352,7 +233,7 @@ class MotionPhotoFixVerdict(MotionVerdict):
 # exactly that: the sent pictures, each piece's frames and the prompt, then the clip. Its words
 # are the judge build brief's (handoffs/judge-build/brief.md, section 3), word for word from the
 # hand test's harness (runs/hand-rounds/judge-test/run.py): PRODUCT replaces SIDES, and MOTION
-# keeps today's words but for its last paragraph. A clip with no sent list is judged as above.
+# keeps today's words but for its last paragraph.
 
 PRODUCT_CHECK = """\
 You check an AI-made video clip before it is used in a product ad. The video API that made the \
@@ -387,7 +268,7 @@ Differences in colour, size, angle, distance, lighting, background, or small pri
 are not a fault by themselves. The person, the place and the camera are not your question."""
 
 
-# A comment, not a docstring, for the same reason as SidesVerdict's.
+# A comment, not a docstring: a docstring would be sent to the judge in the answer's schema.
 class ClipFrame(BaseModel):
     time: float = Field(description="The frame's time in seconds, as labelled.")
     product_shows: str = Field(
@@ -542,8 +423,9 @@ class SentMotionPhotoFixCheckHandoff(SentMotionFixCheckHandoff):
 
 Verdict = Literal["pass", "fail", "unsure", "not_checked"]
 
-# The first check of a ruling: SIDES for a clip judged with no sent list, PRODUCT for one
-# judged against its sent list (#228). A ruling's answers keep each under its own name.
+# The first check of a ruling: PRODUCT, for a clip judged against its sent list (#228); SIDES
+# in a ruling made before every B-roll clip had one, which is still read. A ruling's answers
+# keep each under its own name.
 FIRST_CHECKS = ("sides", "product")
 
 
@@ -551,11 +433,11 @@ def judged(
     first: Sequence[dict[str, Any] | None],
     motion: Sequence[dict[str, Any] | None],
     *,
-    first_check: Literal["sides", "product"] = "sides",
+    first_check: Literal["sides", "product"] = "product",
     blind: Iterable[tuple[str, int]] = (),
 ) -> dict[str, Any]:
-    """The judge's ruling on a clip from its answers, in the order asked: each a SidesVerdict
-    (or, with `first_check` "product", a ProductVerdict) or MotionVerdict as a dict, or None
+    """The judge's ruling on a clip from its answers, in the order asked: each a ProductVerdict
+    (or, in a ruling made before, a SIDES answer) or MotionVerdict as a dict, or None
     for an ask that went unchecked. Each check (SIDES or PRODUCT, and each MOTION question) is
     settled by itself: it fails when an answer fails it; it is unsure when an answer says
     unsure, or when an ask in `blind` (its check and ask) answered without some of the clip's
@@ -649,8 +531,8 @@ def _without_owner_change(answer: dict[str, Any] | None) -> dict[str, Any] | Non
 
 
 def still_failing(ruling: dict[str, Any]) -> list[str]:
-    """The problems behind a ruling's failed checks, SIDES (or PRODUCT) first, each check's in
-    the order asked: never one a ruling made before left out (left_out)."""
+    """The problems behind a ruling's failed checks, PRODUCT (or an old ruling's SIDES) first,
+    each check's in the order asked: never one a ruling made before left out (left_out)."""
     left = left_out(ruling)
     answers = ruling.get("answers", {})
     problems = []
@@ -690,48 +572,10 @@ def left_out(ruling: dict[str, Any]) -> set[tuple[str, int]]:
 # side in time order are joined into one picture.
 MOST_PICTURES = 50
 # How the pictures are labelled for the judge.
-SHOP_PHOTO_LABEL = "The shop photo of the product:"
-NEEDS_PHOTO_LABEL = "A shop photo of {}:"
 FRAMES_LABEL = "Frames from the clip, in order:"
 # On a fix's clip, MOTION's frames of each clip.
 OLD_FRAMES_LABEL = "Frames from the old clip, the one the owner complained about, in order:"
 NEW_FRAMES_LABEL = "Frames from the new clip, in order:"
-# At most this many photos of what a scene needs are shown beside the main one (plan.md §3).
-NEEDS_PHOTOS_SHOWN = 5
-
-
-class ClipCheckHandoff(Handoff):
-    """Which of a check's asks about one clip this is, from 1; the facts about the product:
-    what it is, from the plan and the shop's own text; and the conversation with the shop
-    owner, for what the product is and looks like, with, for a fix's clip, what the producer
-    restated the owner's notes as asking for (plan.md §3, Julian 2026-10-12 21:19). The number
-    only keeps each ask's answer apart, so one asked again after the worker stopped isn't paid
-    for twice. The judge never sees the clip's prompts or line."""
-
-    ask: int
-    facts: str
-    about_the_conversation: str = CONVERSATION_FRAME
-    conversation: list[ChatMessage]
-    what_the_agent_understood_from_the_owner: str | None
-
-
-class MotionCheckHandoff(ClipCheckHandoff):
-    """And the scene's order: what the clip should show."""
-
-    order: str
-
-
-class MotionFixCheckHandoff(MotionCheckHandoff):
-    """And, for a clip made again for the shop owner's clip fix, their change word for word,
-    for the question about it."""
-
-    owner_change: str
-
-
-class MotionPhotoFixCheckHandoff(MotionFixCheckHandoff):
-    """And the things the shop owner's photos for the fix are taken for, in the order shown."""
-
-    owner_photos: list[str]
 
 
 def complained_about(step: SceneStep) -> ProducedItem | None:
@@ -761,51 +605,14 @@ def owner_change_of(step: SceneStep) -> str:
     return step.fix_goal
 
 
-def judge_clip(
-    step: SceneStep, clip: ProducedItem, *, conversation: list[ChatMessage]
-) -> dict[str, Any]:
-    """Judge the B-roll clip `step` made, keeping the ruling on the clip and giving it: see
-    `judged`, plus "wording" (wording_version()), "models" (each check's) and "pictures" (what
-    it was shown of the clip). `conversation` is what was said with the shop owner when the
-    step started. Its pictures are cut once and kept on the clip before any ask, so a clip
-    judged again after the worker stopped is shown the same pictures, and pays for no answer
-    twice. A clip that can't be judged at all, for a reason nobody expected, is kept as not
-    checked, with "error" saying why, in a ruling of the same shape: the clip is paid for.
-
-    A clip made for the shop owner's clip fix is judged the same way, and each MOTION ask is
-    also shown the clip they complained about (complained_about) and asked whether their
-    change is made: each answer's "owner_change", which never counts in the verdict. Its
-    ruling's "compared_with" is that clip's id. When that clip's frames can't be cut, the
-    clip is judged as any other, and the fix is left unchecked.
-
-    A clip that carries its sent list is judged against it instead (_judge_against_sent)."""
+def judge_clip(step: SceneStep, clip: ProducedItem) -> dict[str, Any]:
+    """Judge the B-roll clip `step` made against the sent list its video API got, keeping the
+    ruling on the clip and giving it (_judge_against_sent). Every B-roll clip keeps its sent
+    list before it is judged (spec #210 point 19): it has no starting picture to be judged
+    beside."""
     sent = sent_list_of(clip)
-    if sent is not None:
-        return _judge_against_sent(step, clip, sent)
-    answered: list[_Answered] = []
-    try:
-        sides, motion, old = _asked(step, clip, conversation)
-        answered = [*sides, *motion]
-        ruling = {
-            **_ruling(
-                [each.answer for each in sides],
-                [each.answer for each in motion],
-                clip,
-                compared_with=old,
-                photos=False,
-            ),
-            **_past_the_filter(sides, motion),
-        }
-    except Exception as error:
-        logger.exception("Scene %s's clip couldn't be judged", step.scene.number)
-        ruling = {
-            **_ruling([None] * ASKS, [None] * ASKS, clip),
-            "error": str(error),
-        }
-    clip.ruling = ruling
-    clip.save(update_fields=["ruling"])
-    _say_what_the_filter_refused(step, answered, ruling["verdict"])
-    return ruling
+    assert sent is not None, "a B-roll clip keeps its sent list before it is judged"
+    return _judge_against_sent(step, clip, sent)
 
 
 def _judge_against_sent(step: SceneStep, clip: ProducedItem, sent: SentList) -> dict[str, Any]:
@@ -816,7 +623,7 @@ def _judge_against_sent(step: SceneStep, clip: ProducedItem, sent: SentList) -> 
     (REFERENCES_QUESTION) asks whether those show enough to judge the clip's action: when they
     don't, the ruling is "unsure" with "cannot_tell" saying what the references never show,
     neither check is asked, the clip is kept and the shop owner is told to check it themselves.
-    Else PRODUCT and MOTION are asked, as judge_clip asks SIDES and MOTION, and an unsure check
+    Else PRODUCT and MOTION are each asked ASKS times, all at once, and an unsure check
     keeps the clip for the shop owner to decide. The ruling also gives "behaviour" (the note it
     was told) and, in "pictures", "references" (what it was shown of the sent list)."""
     answered: list[_Answered] = []
@@ -914,7 +721,7 @@ def _asked_against_sent(
             "cannot_tell": first.answer["references_never_show"],
             **facts,
             # Only the first question was asked, so the version is the plain one.
-            "wording": wording_version(sent=True),
+            "wording": wording_version(),
         }, [first]
 
     with_photos = fixing and bool(owners)
@@ -983,13 +790,12 @@ def _asked_against_sent(
             blind=[(check, ask) for check, ask, _ in blinded],
         ),
         **facts,
-        **_past_the_filter(product, motion, first_check="product"),
+        **_past_the_filter(product, motion),
         **({"refused_frames": blind} if blind else {}),
     }
     ruling["answers"]["references"] = first.answer
     # Judged in the photo form only while a shop owner's photo was still shown.
     ruling["wording"] = wording_version(
-        sent=True,
         fix=fixing,
         photos=with_photos and not all(each.without_owner_photos for each in motion),
     )
@@ -1005,7 +811,6 @@ def _sent_ruling_facts(
     was compared with."""
     return {
         "wording": wording_version(
-            sent=True,
             fix=compared_with is not None,
             photos=False,
         ),
@@ -1065,13 +870,11 @@ def _times(pictures: list[dict[str, Any]]) -> tuple[tuple[float, ...], ...]:
     return tuple(tuple(picture["times"]) for picture in pictures)
 
 
-def _past_the_filter(
-    sides: list[_Answered], motion: list[_Answered], *, first_check: str = "sides"
-) -> dict[str, Any]:
+def _past_the_filter(product: list[_Answered], motion: list[_Answered]) -> dict[str, Any]:
     """What a ruling says of the safety filter (requirement 22), when it refused anything:
     "not_shown", each ask answered without reference pictures it refused, and which;
     "refused_by_the_filter", each ask it refused over the clip itself, unchecked."""
-    asked = [(first_check, ask, each) for ask, each in enumerate(sides, 1)] + [
+    asked = [("product", ask, each) for ask, each in enumerate(product, 1)] + [
         ("motion", ask, each) for ask, each in enumerate(motion, 1)
     ]
     not_shown = [
@@ -1106,126 +909,6 @@ def _say_what_the_filter_refused(
             else "the clip judge couldn't check all of it and it is kept as it is: check it "
             "yourself",
         )
-
-
-def _ruling(
-    sides: list[dict[str, Any] | None],
-    motion: list[dict[str, Any] | None],
-    clip: ProducedItem,
-    *,
-    compared_with: ProducedItem | None = None,
-    photos: bool = False,
-) -> dict[str, Any]:
-    return {
-        **judged(sides, motion),
-        "wording": wording_version(fix=compared_with is not None, photos=photos),
-        "models": {
-            "sides": catalog.MODEL_FOR_PURPOSE["check_clip_sides"],
-            "motion": catalog.MODEL_FOR_PURPOSE["check_clip_motion"],
-        },
-        "pictures": (clip.ruling or {}).get("pictures"),
-        **({"compared_with": compared_with.pk} if compared_with is not None else {}),
-    }
-
-
-def _asked(
-    step: SceneStep, clip: ProducedItem, conversation: list[ChatMessage]
-) -> tuple[list[_Answered], list[_Answered], ProducedItem | None]:
-    """Each check's answers about `clip`, in the order asked, all asked at once, and, for a
-    fix's clip, the clip MOTION was shown beside it, if any."""
-    planned = step.picture_step
-    assert planned is not None and planned.photo is not None, (
-        "a B-roll clip is made from a starting picture drawn from its main photo"
-    )
-    photo = planned.photo.file
-    needs = _needs_photos(step)
-    beside = 1 + len(needs)
-    pictures = (clip.ruling or {}).get("pictures")
-    old = complained_about(step)
-    # A clip fix with the shop owner's photos has MOTION shown them too.
-    photos: list[dict[str, Any]] = []
-    owners = [
-        Image(label=OWNER_PHOTO_LABEL.format(each["thing"]), key=str(each["file"]))
-        for each in photos
-    ]
-    # MOTION shows a fix's clip beside the old one: each gets half the room, so each clip's
-    # frames have this many other pictures beside them.
-    beside_each_clip = MOST_PICTURES - (MOST_PICTURES - beside - len(owners)) // 2
-    # None yet, cut before SIDES went to SIDES_FRAMES_PER_SECOND (then "stills"), or cut by
-    # the old fix check, which kept only "frames".
-    fresh = not pictures or pictures.keys() != {"sides", "frames"}
-    # The old clip's frames are cut only with the new clip's, so both are cut to share.
-    old_frames = (
-        _frames_beside(old, beside=beside_each_clip, cut=fresh) if old is not None else None
-    )
-    if fresh and old_frames is None:
-        pictures = cut_pictures(clip.file, beside=beside)
-    elif fresh:
-        pictures = cut_pictures(clip.file, beside=beside, sets=("sides",)) | cut_pictures(
-            clip.file, beside=beside_each_clip, sets=("frames",)
-        )
-    assert pictures is not None
-    if old is not None and old_frames is None:
-        logger.warning("Scene %s's fix is judged without the old clip", step.scene.number)
-    clip.ruling = {"pictures": pictures}
-    clip.save(update_fields=["ruling"])
-    owner: dict[str, Any] = {
-        "conversation": conversation,
-        "what_the_agent_understood_from_the_owner": (
-            owner_change_of(step) if old is not None else None
-        ),
-    }
-    fixing = old_frames is not None
-    with_photos = fixing and bool(owners)
-    motion = [
-        _Ask(
-            "check_clip_motion",
-            f"{MOTION_CHECK}\n\n{MOTION_FIX_QUESTION}\n\n{MOTION_PHOTO_FIX_QUESTION}"
-            if with_photos
-            else f"{MOTION_CHECK}\n\n{MOTION_FIX_QUESTION}"
-            if fixing
-            else MOTION_CHECK,
-            MotionPhotoFixCheckHandoff(
-                **told,
-                owner_change=owner_change_of(step),
-                owner_photos=[str(each["thing"]) for each in photos],
-            )
-            if with_photos
-            else MotionFixCheckHandoff(**told, owner_change=owner_change_of(step))
-            if fixing
-            else MotionCheckHandoff(**told),
-            MotionPhotoFixVerdict if with_photos else MotionFixVerdict if fixing else MotionVerdict,
-            _shown(
-                photo,
-                [*needs, *owners] if with_photos else needs,
-                pictures["frames"],
-                old=old_frames,
-            ),
-            references=beside + len(owners) if with_photos else beside,
-        )
-        for told in (
-            {"ask": ask, "facts": _facts(step, with_use=True), "order": step.shows, **owner}
-            for ask in range(1, ASKS + 1)
-        )
-    ]
-    asks = [
-        _Ask(
-            "check_clip_sides",
-            SIDES_CHECK,
-            ClipCheckHandoff(ask=ask, facts=_facts(step, with_use=False), **owner),
-            SidesVerdict,
-            _shown(photo, needs, pictures["sides"]),
-            references=beside,
-        )
-        for ask in range(1, ASKS + 1)
-    ] + motion
-    with ThreadPoolExecutor(max_workers=len(asks)) as pool:
-        asked = [
-            pool.submit(contextvars.copy_context().run, closing_its_connection, _answer, step, each)
-            for each in asks
-        ]
-        answers = [each.result() for each in asked]
-    return answers[:ASKS], answers[ASKS:], old if fixing else None
 
 
 def _frames_beside(old: ProducedItem, *, beside: int, cut: bool) -> list[dict[str, Any]] | None:
@@ -1423,22 +1106,15 @@ def _as_shown(ask: _Ask, shown: list[Image]) -> tuple[str, Handoff, type[BaseMod
     the shop owner's photos names only those still shown, and with none of them left, is
     asked as a fix without photos is."""
     handoff = ask.handoff
-    if not isinstance(handoff, (MotionPhotoFixCheckHandoff, SentMotionPhotoFixCheckHandoff)):
+    if not isinstance(handoff, SentMotionPhotoFixCheckHandoff):
         return ask.instructions, handoff, ask.output
     labels = {image.label for image in shown}
     kept = [thing for thing in handoff.owner_photos if OWNER_PHOTO_LABEL.format(thing) in labels]
     if kept:
         return ask.instructions, handoff.model_copy(update={"owner_photos": kept}), ask.output
-    unphotographed = handoff.model_dump(exclude={"owner_photos"})
-    if isinstance(handoff, SentMotionPhotoFixCheckHandoff):
-        return (
-            f"{MOTION_FROM_REFERENCES}\n\n{MOTION_FIX_QUESTION}",
-            SentMotionFixCheckHandoff(**unphotographed),
-            MotionFixVerdict,
-        )
     return (
-        f"{MOTION_CHECK}\n\n{MOTION_FIX_QUESTION}",
-        MotionFixCheckHandoff(**unphotographed),
+        f"{MOTION_FROM_REFERENCES}\n\n{MOTION_FIX_QUESTION}",
+        SentMotionFixCheckHandoff(**handoff.model_dump(exclude={"owner_photos"})),
         MotionFixVerdict,
     )
 
@@ -1447,53 +1123,6 @@ def named(image: Image) -> str:
     """A reference picture as a notice names it: its label, as words in a sentence."""
     label = image.label.rstrip(":")
     return label[:1].lower() + label[1:]
-
-
-def _facts(step: SceneStep, *, with_use: bool) -> str:
-    """The facts about the product the judge is told (context_text in the harness's
-    prompts.py, with the colour and size the app knows too): its name, colour and size; for
-    MOTION, how the scene uses it and what that changes; the parts the scene needs; and the
-    shop's own text."""
-    job = step.scene.job
-    lines = [f"Product: {job.product_name}"]
-    if job.product_colour:
-        lines.append(f"Colour: {job.product_colour}")
-    if job.product_size:
-        lines.append(f"Size: {job.product_size}")
-    if with_use and step.usage:
-        lines.append(f"How the product is used in this scene: {step.usage}")
-    if with_use and step.broll_result:
-        lines.append(f"What that use changes: {step.broll_result}")
-    needs = "; ".join(need["what"] for need in step.needs if need.get("what"))
-    if needs:
-        lines.append(f"Parts of the product this scene needs to show: {needs}")
-    if job.page_text:
-        lines.append(f"\n{PAGE_FRAME}\n<shop text>\n{job.page_text}\n</shop text>")
-    return "\n".join(lines)
-
-
-def _needs_photos(step: SceneStep) -> list[Image]:
-    """A shop photo of each thing the scene needs that the main photo can't show, chosen as
-    for its starting picture, at most NEEDS_PHOTOS_SHOWN, labelled with what it shows."""
-    photos = {photo.position: photo for photo in step.scene.job.photos.all()}
-    faces = {position: photo.has_face for position, photo in photos.items()}
-    return [
-        Image(label=NEEDS_PHOTO_LABEL.format(" and ".join(need.what)), key=photos[need.photo].file)
-        for need in photos_for_needs(step.needs, faces, NEEDS_PHOTOS_SHOWN)
-    ]
-
-
-def _shown(
-    photo: str,
-    needs: list[Image],
-    pictures: list[dict[str, Any]],
-    *,
-    old: list[dict[str, Any]] | None = None,
-) -> list[Image]:
-    """The shop photo, the photos of what the scene needs, then the pictures of the clip in
-    order, each labelled with the time of each frame in it; with `old`, the pictures of the
-    clip a fix was made for come before them."""
-    return [Image(label=SHOP_PHOTO_LABEL, key=photo), *needs, *_frames_shown(pictures, old=old)]
 
 
 def _frames_shown(
@@ -1685,14 +1314,14 @@ def references_said(sent: SentList) -> str:
     return " ".join(said)
 
 
-PICTURE_SETS = {"sides": SIDES_FRAMES_PER_SECOND, "frames": FRAMES_PER_SECOND}
+PICTURE_SETS = {"sides": PRODUCT_FRAMES_PER_SECOND, "frames": FRAMES_PER_SECOND}
 
 
 def cut_pictures(
     clip: str, *, beside: int, sets: Iterable[str] = PICTURE_SETS
 ) -> dict[str, list[dict[str, Any]]]:
     """The pictures the judge is shown of the clip at `clip`, kept in the file store, each
-    with the time in seconds of each frame in it: "sides" for SIDES, SIDES_FRAMES_PER_SECOND
+    with the time in seconds of each frame in it: "sides" for PRODUCT, PRODUCT_FRAMES_PER_SECOND
     a second; "frames" for MOTION, FRAMES_PER_SECOND a second, which the fix check shows too
     (frames.py in the harness). `sets` names the ones wanted, both unless told. Frames that
     wouldn't fit in one ask beside `beside` other pictures are joined side by side, as few in
@@ -1771,57 +1400,15 @@ def _every_frame(video: Path, folder: Path, per_second: int) -> list[tuple[Path,
     return [(file, round(i / per_second, 2)) for i, file in enumerate(files)]
 
 
-def wording_version(*, fix: bool = False, photos: bool = False, sent: bool = False) -> str:
-    """A version of everything the judge is told, kept with each ruling: its instructions,
-    the frames around the shop's text and the conversation, what it is handed, how many
-    frames a second each check is shown and how they are labelled, and its answer forms. It
-    changes whenever any of them does. For a fix's clip (`fix`), also the question about the
-    owner's change, the labels of the two clips, its handoff and its answer form; a clip
-    judged without them keeps the version it had before they were written. For a clip judged
-    against its sent list (`sent`), the first question, PRODUCT and MOTION's words for it, the
-    behaviour note's frame, the sent list's labels and its handoffs and answer forms."""
-    if sent:
-        return _sent_wording_version(fix=fix, photos=photos)
+def wording_version(*, fix: bool = False, photos: bool = False) -> str:
+    """A version of everything the judge is told, kept with each ruling: the first question,
+    PRODUCT and MOTION's words, the behaviour note's frame, how many frames a second each check
+    is shown, the sent list's labels and its handoffs and answer forms. It changes whenever
+    any of them does. For a fix's clip (`fix`), also the question about the owner's change,
+    the labels of the two clips, its handoff and its answer form, and, with the shop owner's
+    photos (`photos`), their question, label, handoff and form."""
     told = [
-        f"sides {SIDES_FRAMES_PER_SECOND} frames a second, motion {FRAMES_PER_SECOND}",
-        SIDES_CHECK,
-        MOTION_CHECK,
-        PAGE_FRAME,
-        CONVERSATION_FRAME,
-        SHOP_PHOTO_LABEL,
-        NEEDS_PHOTO_LABEL,
-        FRAMES_LABEL,
-        *(
-            json.dumps(form.model_json_schema(), sort_keys=True)
-            for form in (ClipCheckHandoff, MotionCheckHandoff, SidesVerdict, MotionVerdict)
-        ),
-    ]
-    if fix:
-        told += [
-            MOTION_FIX_QUESTION,
-            OLD_FRAMES_LABEL,
-            NEW_FRAMES_LABEL,
-            *(
-                json.dumps(form.model_json_schema(), sort_keys=True)
-                for form in (MotionFixCheckHandoff, MotionFixVerdict)
-            ),
-        ]
-    # With the shop owner's photos, also their question, label, handoff and form.
-    if fix and photos:
-        told += [
-            MOTION_PHOTO_FIX_QUESTION,
-            OWNER_PHOTO_LABEL,
-            *(
-                json.dumps(form.model_json_schema(), sort_keys=True)
-                for form in (MotionPhotoFixCheckHandoff, MotionPhotoFixVerdict)
-            ),
-        ]
-    return hashlib.sha256("\n".join(told).encode()).hexdigest()[:10]
-
-
-def _sent_wording_version(*, fix: bool, photos: bool) -> str:
-    told = [
-        f"product {SIDES_FRAMES_PER_SECOND} frames a second, motion and the first question "
+        f"product {PRODUCT_FRAMES_PER_SECOND} frames a second, motion and the first question "
         f"{FRAMES_PER_SECOND}, at most {PIECE_FRAMES_SHOWN} of the pieces' frames",
         REFERENCES_QUESTION,
         PRODUCT_CHECK,

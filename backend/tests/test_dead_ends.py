@@ -29,7 +29,6 @@ from jobs.models import (
     Scene,
     SceneStep,
 )
-from jobs.picture_check import PictureKeptFailing
 from jobs.planning import producer_decision_for
 from jobs.product_videos import save_videos
 
@@ -104,8 +103,8 @@ def test_a_clip_step_that_stops_after_its_first_clip_leaves_its_scene_to_make_ag
     # Scene 2 shows the mug: its clip is made and kept, then the judge runs.
     calling(fake_model, say, ("make_clip", {"scene": 2}))
     if stop == "worker_restart":
-        fake_model.respond("check_clip_sides", WorkerStopped())
-        fake_model.respond("check_clip_motion", WorkerStopped())
+        # The judge's first question, asked before its checks.
+        fake_model.respond("check_clip_references", WorkerStopped())
         with pytest.raises(WorkerStopped):
             steps.run_next()
         # Kept, but the step still runs, so the scene isn't finished.
@@ -397,41 +396,6 @@ def test_a_step_failed_as_dead_whose_work_then_fails_says_so_once(
     assert not_made == ["Scene 1's clip couldn't be made: it was stopped partway."]
 
 
-@pytest.mark.parametrize(
-    "stopped",
-    [PictureKeptFailing(1, [("picture.png", ["wrong"])])],
-    ids=["pictures kept failing"],
-)
-def test_a_step_failed_as_dead_that_stops_the_run_or_gives_up_stays_failed(
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
-    stopped: Exception,
-) -> None:
-    made_ready(fake_model, steps, say, (1,))
-    calling(fake_model, say, ("make_clip", {"scene": 1}))
-    (step_id,) = steps.held
-
-    def failed_as_dead_then_stops(step: SceneStep) -> ProducedItem | None:
-        SceneStep.objects.filter(pk=step.pk).update(seen_at=timezone.now() - timedelta(minutes=6))
-        fake_model.respond("produce", turn(says="Scene 1's clip stopped."))
-        tasks.fail_dead_steps()
-        raise stopped
-
-    monkeypatch.setitem(
-        tasks.STEP_WORK,
-        SceneStep.Kind.CLIP,
-        dataclasses.replace(tasks.STEP_WORK[SceneStep.Kind.CLIP], make=failed_as_dead_then_stops),
-    )
-    steps.run_next()
-
-    step = SceneStep.objects.get(pk=step_id)
-    assert step.status == SceneStep.Status.FAILED
-    assert step.reason == "Its work stopped partway, and it was never heard from again."
-
-
 # --- A page read again only adds photos -----------------------------------------------------
 
 
@@ -572,60 +536,6 @@ def test_a_starting_picture_is_made_with_no_photo_marked_in_the_ads_colour(
     assert [image["label"] for image in asked.images] == ["The portrait", "Photo 1", "Photo 2"]
 
 
-# --- A starting picture that kept failing its check is an answer, never a stop ---------------
-
-
-def test_a_picture_that_kept_failing_its_check_is_an_answer_and_the_run_goes_on(
-    api: APIClient,
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-    session_id: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    failing_pictures = PictureKeptFailing(
-        1, [("pictures/1.png", ["The mug floats."]), ("pictures/2.png", ["Two handles."])]
-    )
-
-    def kept_failing(step: SceneStep) -> ProducedItem | None:
-        raise failing_pictures
-
-    monkeypatch.setitem(
-        tasks.STEP_WORK,
-        SceneStep.Kind.STARTING_PICTURE,
-        dataclasses.replace(tasks.STEP_WORK[SceneStep.Kind.STARTING_PICTURE], make=kept_failing),
-    )
-    calling(fake_model, say, ("make_starting_picture", {"scene": 1, "note": None}))
-    # The producer is woken with the answer, and acts on it: no stopped run.
-    fake_model.respond(
-        "produce",
-        turn(calls=[("make_line_audio", {"scene": 1})]),
-        turn(says="Scene 1's picture kept failing; what should change?"),
-    )
-    steps.run_next()
-
-    step = SceneStep.objects.get(kind="starting_picture", scene__number=1)
-    assert step.status == SceneStep.Status.FAILED
-    assert step.result == (
-        "Background step failed: scene 1's starting picture couldn't be made: scene 1's "
-        "starting picture failed its check all 2 times it was drawn. The chat showed the shop "
-        "owner every picture drawn and what the check found in each. Change the picture with "
-        "make_starting_picture and a note saying what to change, or make the scene show the "
-        "product instead with edit_scene. Tell the shop owner what went wrong."
-    )
-    assert last_result("make_line_audio").startswith("Started scene 1's audio")
-    # One red notice, with every picture and what was found in each.
-    red = [
-        message
-        for message in api.get(f"/api/sessions/{session_id}/messages/").json()
-        if message["level"] == "problem" and "starting picture" in message["text"]
-    ]
-    assert len(red) == 1
-    assert "Picture 1: The mug floats.\nPicture 2: Two handles." in red[0]["text"]
-    assert len(red[0]["attachments"]) == 2
-
-
 # --- Whole-build check C (spec #247 Testing Decisions, ticket #266): each dead end of the Oct
 # 21 audit, driven by the scripted producer, is a tool answer with the reason, never a stop. --
 
@@ -723,56 +633,6 @@ def test_dead_end_a_step_with_no_heartbeat_is_failed_and_the_producer_starts_it_
     assert Scene.objects.get(number=2).status == Scene.Status.FINISHED
     producer.told("Put it together", ("assemble_ad", {}), "Here's your ad.")
     assert ProducedItem.objects.filter(kind="finished_ad").exists(), last_result("assemble_ad")
-
-
-def test_dead_end_a_talking_picture_that_kept_failing_its_check_is_an_answer_to_act_on(
-    api: APIClient,
-    producer: ScriptedProducer,
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    session_id: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    work_of = tasks.STEP_WORK[SceneStep.Kind.STARTING_PICTURE]
-    pictures = [
-        ("pictures/1.png", ["The mug floats."]),
-        ("pictures/2.png", ["Two handles."]),
-        ("pictures/3.png", ["The mug is blue."]),
-    ]
-
-    def failing_the_first_time(step: SceneStep) -> ProducedItem | None:
-        if not SceneStep.objects.filter(status=SceneStep.Status.FAILED).exists():
-            raise PictureKeptFailing(1, pictures)
-        return work_of.make(step)
-
-    monkeypatch.setitem(
-        tasks.STEP_WORK,
-        SceneStep.Kind.STARTING_PICTURE,
-        dataclasses.replace(work_of, make=failing_the_first_time),
-    )
-    producer.told(
-        "Make scene 1's picture",
-        ("make_starting_picture", {"scene": 1, "note": None}),
-        "Making scene 1's picture.",
-    )
-    # Woken with the answer, the producer changes the picture with a note: no stopped run.
-    fake_model.respond("choose_starting_picture", CHOICE)
-    producer.woken(
-        ("make_starting_picture", {"scene": 1, "note": "One handle, and the mug on the table."}),
-        "Scene 1's picture kept failing its check, so I'm drawing it differently.",
-    )
-
-    failed, again = SceneStep.objects.filter(kind="starting_picture").order_by("id")
-    assert failed.status == SceneStep.Status.FAILED
-    assert "failed its check all 3 times it was drawn" in failed.result
-    assert "Change the picture with make_starting_picture and a note" in failed.result
-    assert "make the scene show the product instead with edit_scene" in failed.result
-    (red,) = [text for text in red_in_the_chat(api, session_id) if "starting picture" in text]
-    assert "Picture 3: The mug is blue." in red
-    assert last_result("make_starting_picture").startswith("Started scene 1's starting picture")
-    producer.steps_run()
-    again.refresh_from_db()
-    assert again.status == SceneStep.Status.FINISHED
 
 
 ON_SALE = "Yours today for just $19.00, on sale."

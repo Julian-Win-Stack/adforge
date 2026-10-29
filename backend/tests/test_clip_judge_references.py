@@ -112,11 +112,10 @@ def test_the_judge_is_shown_what_the_clip_was_sent_then_the_clip_and_told_how_it
     [kept] = sent
     behaviour = Job.objects.get().product_behaviour
     assert behaviour
-    # The first question, then the two checks: the old SIDES check is not asked.
+    # The first question, then the two checks.
     assert paid_for().count("check_clip_references") == 1
     assert paid_for().count("check_clip_product") == 1
     assert paid_for().count("check_clip_motion") == 1
-    assert "check_clip_sides" not in paid_for()
     for purpose in ("check_clip_references", "check_clip_product", "check_clip_motion"):
         [shown] = labels_shown(purpose)
         # The sent pictures in their order, then each piece's frames, at most 10 in all,

@@ -103,8 +103,11 @@ model's own variance. If the guards fail at random in the baseline, runs go to t
 The old first-run clips count as a third baseline sample for B-roll (same request). Not for
 talking: those used an older motion prompt.
 
-The prompt variants are in `backend/video-eval/tuned_prompts.py`; the arms in
-`backend/video-eval/arms.json`.
+The talking prompt variants are in `backend/video-eval/tuned_prompts.py`; the arms in
+`backend/video-eval/arms.json`. The tuned B-roll prompts and their text check
+(`tuned_broll_prompts.py`, `tuned_broll_prompts.json`, `tuned_broll_check.md`) were removed with
+the B-roll starting picture (#241), since a B-roll clip is now made from its sent list; they are
+in git history, and the `tuned` arm now sends each scene's saved motion prompt.
 
 ## How it runs
 
@@ -112,7 +115,6 @@ Scripts in `backend/video-eval/` (only `backend/` is mounted in the container). 
 grading files go to `backend/media/video-eval/`, which git ignores.
 
 ```
-docker compose exec -T backend python video-eval/tuned_broll_prompts.py      # text check
 docker compose exec -T backend python video-eval/heygen_clips.py --arm heygen --runs 2
 docker compose exec -T backend python video-eval/blind.py --arms baseline,tuned,1080p,heygen
 ```

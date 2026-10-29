@@ -21,7 +21,6 @@ from gateway.types import BlockedBySafetyFilter, UnusableReply
 from jobs import owner_answers, owner_parts, stale
 from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
-from jobs.picture_check import PictureKeptFailing
 from jobs.work import (
     agent_fix,
     agent_gave_up,
@@ -32,7 +31,6 @@ from jobs.work import (
     make_line_audio,
     make_starting_picture,
     say_the_agent_gave_up,
-    say_the_pictures_kept_failing,
     too_long_for_a_clip,
     transcribe_line_audio,
     version_label,
@@ -521,17 +519,6 @@ def run_scene_step(step_id: int) -> None:
             _asked(traced, step, prompt=_prompt_given(step))
             _finish(step, work, made, session, traced)
         tracing.flush()
-    except PictureKeptFailing as error:
-        # An answer, never a stop (spec #247 point 8): the chat is shown every picture and why
-        # each failed, in the same transaction, so a step run again after a crash never shows
-        # it twice, and the producer is told its ways on.
-        tracing.flush()
-        with transaction.atomic():
-            if not _still_running(step):
-                return
-            say_the_pictures_kept_failing(step.scene.job, error)
-            _fail(step, f"{error}.", None, _pictures_ways_on(step))
-            _told_it_ended(step)
     except Asks as asks:
         # The step's work needs one answer before it can make anything: its question goes
         # back to whoever started it as the step's answer, not as a failure (spec #247 point 6).
@@ -697,17 +684,6 @@ def _ended_partway_ways_on(step: SceneStep) -> str:
     return (
         f"Start it again with {STEP_TOOLS[SceneStep.Kind(step.kind)]} for scene {number}, or "
         f"skip it: {skip}. "
-    )
-
-
-def _pictures_ways_on(step: SceneStep) -> str:
-    """The ways on from a starting picture that failed its check every time it was drawn (spec
-    #247 point 8), as a sentence to follow another: the chat showed each picture."""
-    other = "the person talking" if step.scene.shows else "show the product instead"
-    return (
-        "The chat showed the shop owner every picture drawn and what the check found in each. "
-        "Change the picture with make_starting_picture and a note saying what to change, or "
-        f"make the scene {other} with edit_scene. "
     )
 
 
