@@ -269,7 +269,7 @@ def test_when_the_producers_own_model_fails_the_chat_is_told_why(
     assert chat(api, session_id)[-1] == ("agent", "Sure. What's the link to your product's page?")
 
 
-def test_a_picture_the_safety_filter_blocks_stops_the_run_and_asks_for_another_product(
+def test_a_plan_the_safety_filter_blocks_even_without_photos_stops_the_run_and_asks_for_another(
     api: APIClient,
     fake_model: FakeModel,
     page_read: str,
@@ -277,11 +277,18 @@ def test_a_picture_the_safety_filter_blocks_stops_the_run_and_asks_for_another_p
     say: Callable[..., None],
 ) -> None:
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]))
-    fake_model.respond(
-        "plan_ad", BlockedBySafetyFilter("Image processing blocked due to content policy")
-    )
+
+    def blocked(_: object) -> dict[str, object]:
+        raise BlockedBySafetyFilter("Image processing blocked due to content policy")
+
+    fake_model.answer_unscripted("plan_ad", blocked)
 
     say("Plan it")
+
+    # Asked with both photos, without each, then without both: the page's words are refused.
+    assert [
+        len(call.images) for call in ModelCall.objects.filter(purpose="plan_ad").order_by("id")
+    ] == [2, 1, 1, 0]
 
     assert chat(api, session_id)[-1] == (
         "agent",

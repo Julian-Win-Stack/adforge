@@ -40,6 +40,7 @@ from gateway.gateway import (
     draw_picture,
     edit_picture,
     make_music,
+    past_the_safety_filter,
     speak,
     submit_broll_clip,
     submit_clip,
@@ -125,7 +126,7 @@ from .models import (
     Scene,
     SceneStep,
 )
-from .notices import post_notice
+from .notices import left_out_by_the_filter, post_notice
 from .picture_check import (
     ASKS,
     FAILS_TO_FAIL,
@@ -513,31 +514,23 @@ def _picked_past_the_safety_filter(
     images: list[Image],
     shown: photos.ShownLines,
 ) -> tuple[photos.PickedPhotos, list[str]]:
-    """The picker's answer, and the tiles of the grids left out to get it. A model's safety
-    filter refuses a whole call over one picture it objects to, often wrongly, so when it
-    refuses, the grids beside the screenshot are left out one at a time, last first, and
-    then all together. Raises BlockedBySafetyFilter when it refuses even the screenshot."""
-    try:
-        return pick(images, shown), []
-    except BlockedBySafetyFilter:
-        pass
-    grids = [image for image in images if not SCREENSHOT_PART.match(image.label)]
-    tries = [[grid] for grid in reversed(grids)]
-    if len(grids) > 1:
-        tries.append(grids)
-    for left in tries:
-        tiles = [tile for grid in left for tile in picker_grids.tiles_of(grid.label)]
-        try:
-            picked = pick(
-                [image for image in images if image not in left],
-                picker_grids.without_tiles(shown, tiles),
-            )
-        except BlockedBySafetyFilter:
-            if left is tries[-1]:
-                raise
-            continue
-        return picked, tiles
-    raise AssertionError("unreachable: the last try raises")  # pragma: no cover
+    """The picker's answer, and the tiles of the grids left out to get it: the grids beside
+    the screenshot may be left out past the safety filter, never the screenshot itself, and
+    the picker isn't told of a grid's pictures it isn't shown. Raises BlockedBySafetyFilter
+    when it refuses even the screenshot."""
+
+    def tiles(grids: list[Image]) -> list[str]:
+        return [tile for grid in grids for tile in picker_grids.tiles_of(grid.label)]
+
+    def without(kept: list[Image]) -> photos.ShownLines:
+        return picker_grids.without_tiles(shown, tiles([i for i in images if i not in kept]))
+
+    picked, left = past_the_safety_filter(
+        lambda kept: pick(kept, without(kept)),
+        images,
+        may_leave_out=lambda image: not SCREENSHOT_PART.match(image.label),
+    )
+    return picked, tiles(left)
 
 
 def _left_out_by_the_filter(tiles: list[str]) -> str:
@@ -851,15 +844,21 @@ def plan(job: Job) -> ProducerDecision:
     """Have the planner plan the ad from the page, the product photos and the conversation,
     and keep the plan. A decision to ask the user keeps nothing."""
     photos = list(job.photos.all())
-    shown = _photos_to_show(job, photos)
-    decision = call_model(
-        job=job,
-        purpose="plan_ad",
-        instructions=PLAN_INSTRUCTIONS,
-        handoff=plan_handoff(job, job.page_text, len(photos)),
-        output=producer_decision_for(len(photos)),
-        images=[_labelled(photo) for photo in shown],
+    shown = {_labelled(photo): photo for photo in _photos_to_show(job, photos)}
+    decision, left_out = past_the_safety_filter(
+        lambda images: call_model(
+            job=job,
+            purpose="plan_ad",
+            instructions=PLAN_INSTRUCTIONS,
+            handoff=plan_handoff(job, job.page_text, len(photos)),
+            output=producer_decision_for(len(photos)),
+            images=images,
+        ),
+        list(shown),
     )
+    if left_out:
+        named = [f"photo {shown[image].position}" for image in left_out]
+        post_notice(job, left_out_by_the_filter(named, "the ad was planned"), Message.Level.PROBLEM)
     planned = decision.plan
     if planned is None:
         return decision
@@ -1787,26 +1786,39 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
     ]
     choice: StartingPictureChoice
     if step.shows:
-        broll = call_model(
-            job=job,
-            purpose="choose_broll_picture",
-            instructions=BROLL_PICTURE_INSTRUCTIONS,
-            handoff=BrollPictureHandoff(**handoff.model_dump(), shows=step.shows),
-            output=starting_picture_choice_for(numbers, BrollPictureChoice),
-            images=images,
-            pay_once=True,
+        broll = _chosen_past_the_safety_filter(
+            scene,
+            lambda shown, kept: call_model(
+                job=job,
+                purpose="choose_broll_picture",
+                instructions=BROLL_PICTURE_INSTRUCTIONS,
+                handoff=BrollPictureHandoff(
+                    **handoff.model_dump(),
+                    shows=step.shows,
+                ).model_copy(update=_colour_photos_kept(handoff.colour_photos, kept)),
+                output=starting_picture_choice_for(kept, BrollPictureChoice),
+                images=shown,
+                pay_once=True,
+            ),
+            images,
+            numbers,
         )
         step.motion_prompt = broll.motion_prompt
         choice, prompt = broll, with_nothing_made_up(broll.prompt)
     else:
-        choice = call_model(
-            job=job,
-            purpose="choose_starting_picture",
-            instructions=STARTING_PICTURE_INSTRUCTIONS,
-            handoff=handoff,
-            output=starting_picture_choice_for(numbers, StartingPictureChoice),
-            images=images,
-            pay_once=True,
+        choice = _chosen_past_the_safety_filter(
+            scene,
+            lambda shown, kept: call_model(
+                job=job,
+                purpose="choose_starting_picture",
+                instructions=STARTING_PICTURE_INSTRUCTIONS,
+                handoff=handoff.model_copy(update=_colour_photos_kept(handoff.colour_photos, kept)),
+                output=starting_picture_choice_for(kept, StartingPictureChoice),
+                images=shown,
+                pay_once=True,
+            ),
+            images,
+            numbers,
         )
         prompt = choice.prompt
     step.photo = job.photos.get(position=choice.photo)
@@ -1815,6 +1827,48 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
     step.prompt_reason = choice.prompt_reason
     step.save(update_fields=["photo", "photo_reason", "prompt", "prompt_reason", "motion_prompt"])
     return _keep_starting_picture(step, prompt, [portrait.file, step.photo.file])
+
+
+# How a product photo is labelled for a model that picks one of them.
+PHOTO_LABEL = re.compile(r"Photo (\d+)")
+
+
+def _chosen_past_the_safety_filter[Choice](
+    scene: Scene,
+    ask: Callable[[list[Image], list[int]], Choice],
+    images: list[Image],
+    numbers: list[int],
+) -> Choice:
+    """The answer of a model that picks a scene's photo from the product photos `numbers`
+    among `images`, past its safety filter: the product photos it refuses are left out, at
+    least one kept, and the chat is told in red which. `ask` is handed the pictures to show
+    and the numbers of the photos it may pick among them."""
+
+    def photo(image: Image) -> int | None:
+        found = PHOTO_LABEL.fullmatch(image.label)
+        return int(found.group(1)) if found else None
+
+    choice, left_out = past_the_safety_filter(
+        lambda shown: ask(shown, [n for n in numbers if n in {photo(i) for i in shown}]),
+        images,
+        may_leave_out=lambda image: photo(image) is not None,
+        fewest_kept=1,
+    )
+    if left_out:
+        post_notice(
+            scene.job,
+            left_out_by_the_filter(
+                [f"photo {photo(image)}" for image in left_out],
+                f"scene {scene.number}'s starting picture was planned",
+            ),
+            Message.Level.PROBLEM,
+        )
+    return choice
+
+
+def _colour_photos_kept(colour_photos: list[int], kept: list[int]) -> dict[str, list[int]]:
+    """The photos in the ad's colour among those a model is shown, as a handoff update."""
+    return {"colour_photos": [number for number in colour_photos if number in kept]}
 
 
 def _make_broll_picture(step: SceneStep) -> ProducedItem:
@@ -1948,15 +2002,24 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
             instructions = f"{instructions}\n{REDO_RULES}"
             asked = BrollRedoHandoff(**dict(handoff), redo=redo[0])
             shown = [*images, Image(label="The last picture", key=redo[1])]
-        choice = call_model(
-            job=job,
-            purpose="choose_broll_picture",
-            instructions=instructions,
-            handoff=asked,
-            output=starting_picture_choice_for(numbers, BrollPictureChoice),
-            images=shown,
-            pay_once=True,
-        )
+
+        def write(
+            kept_images: list[Image],
+            kept: list[int],
+            instructions: str = instructions,
+            asked: BrollPromptHandoff = asked,
+        ) -> BrollPictureChoice:
+            return call_model(
+                job=job,
+                purpose="choose_broll_picture",
+                instructions=instructions,
+                handoff=asked.model_copy(update=_colour_photos_kept(asked.colour_photos, kept)),
+                output=starting_picture_choice_for(kept, BrollPictureChoice),
+                images=kept_images,
+                pay_once=True,
+            )
+
+        choice = _chosen_past_the_safety_filter(scene, write, shown, numbers)
         _plan_broll_picture(step, choice, pictures[len(owners) :], needs, portrait is not None)
         if owners:
             step.pictures_sent = [
