@@ -29,7 +29,7 @@ from .agent_tries import agent_films
 from .conftest import (
     CLIP_FIXED,
     CLIP_MOTION_OK,
-    JUDGED_CLIP,
+    SENT_LIST_JUDGED,
     HeldSteps,
     given_to_the_producer,
     paid_for,
@@ -159,7 +159,6 @@ def test_a_clip_note_makes_only_that_scenes_clip_again_and_a_new_ad(
 ) -> None:
     first_ad = ads()[0]
     untouched = made_for(1, 3)
-    picture_2 = latest("starting_picture", 2)
     old_clip_2 = latest("clip", 2)
 
     plan = planned(plan_row(2, "new_clip", change=TURN_FIX), note=HOVERS)
@@ -180,11 +179,12 @@ def test_a_clip_note_makes_only_that_scenes_clip_again_and_a_new_ad(
     assert fix.confirmed_by is not None and fix.confirmed_by.text == "Yes, do that."
     new_clip_2 = latest("clip", 2)
     assert new_clip_2.version == 2
-    assert new_clip_2.picture == picture_2
+    # Made from its sent list: scene 2 shows the product, so it has no starting picture
+    # (spec #210 point 19).
+    assert new_clip_2.picture is None
     assert new_clip_2.step.fix == fix  # type: ignore[union-attr]
-    # Scenes 1 and 3, and scene 2's picture and audio, are as they were.
+    # Scenes 1 and 3, and scene 2's audio, are as they were.
     assert made_for(1, 3) == untouched
-    assert latest("starting_picture", 2) == picture_2
     # The new ad, from scene 1's and 3's old clips and scene 2's new one, assembled by code.
     assert [ad.version for ad in ads()] == [1, 2]
     new_ad = ads()[1]
@@ -207,7 +207,7 @@ def test_a_clip_note_makes_only_that_scenes_clip_again_and_a_new_ad(
         "rewrite_clip_prompt",
         "make_broll_clip",
         "collect_broll_clip",
-        *JUDGED_CLIP,
+        *SENT_LIST_JUDGED,
     ]
 
 
@@ -225,8 +225,10 @@ def test_a_picture_note_makes_the_picture_then_the_clip_then_the_ad(
     steps.run_next()
 
     # The new picture plans the scene again, and passed its checks, so code makes its clip,
-    # with no note: the ad can't be assembled from the old clip meanwhile.
-    assert latest("starting_picture", 2).version == 2
+    # with no note: the ad can't be assembled from the old clip meanwhile. It is the scene's
+    # first: a scene showing the product had none (spec #210 point 19; what a picture note on
+    # such a scene does is #242's).
+    assert latest("starting_picture", 2).version == 1
     assert Scene.objects.get(number=2).status == "planned"
     assert held_kinds(steps) == [(2, "clip")]
     owner_says(fake_model, say, "Is it ready?", ("assemble_ad", {}))
@@ -405,7 +407,7 @@ def test_a_fixs_redo_run_again_after_the_worker_stopped_pays_and_shows_everythin
         "rewrite_clip_prompt",
         "make_broll_clip",
         "collect_broll_clip",
-        *JUDGED_CLIP,
+        *SENT_LIST_JUDGED,
     ]
     assert [ad.version for ad in ads()] == [1, 2]
     assert Message.objects.filter(attachments__file=ads()[1].file).count() == 1
@@ -500,10 +502,10 @@ def test_a_fixs_redo_the_judge_fails_is_filmed_again_by_the_agent_and_its_try_ma
         "rewrite_clip_prompt",
         "make_broll_clip",
         "collect_broll_clip",
-        *JUDGED_CLIP,
+        *SENT_LIST_JUDGED,
         "make_broll_clip",
         "collect_broll_clip",
-        *JUDGED_CLIP,
+        *SENT_LIST_JUDGED,
     ]
 
 

@@ -32,7 +32,6 @@ from .conftest import (
     results_of,
 )
 from .test_producer_broll import (
-    BROLL_CHOICE,
     DOES_A_JOB,
     calling,
     checked,  # noqa: F401 (a fixture)
@@ -40,6 +39,7 @@ from .test_producer_broll import (
     run,
 )
 from .test_producer_restarts import WorkerStopped, the_producer_died, the_worker_stops
+from .test_recolour import RECOLOUR_OK
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 # Every test starts from a chat whose ad is planned with scene 2 showing the mug, has its
@@ -60,8 +60,10 @@ def with_an_owner_part(checked: None) -> None:  # noqa: F811
 
 @pytest.fixture
 def pictured(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> None:
-    """Scene 2 has its starting picture and its audio, heard, and its part its own picture,
-    shown to the shop owner."""
+    """Scene 2 has its audio, heard, and its part its own picture, shown to the shop owner (it
+    has no starting picture: spec #210 point 19). A picture its clip is sent recoloured passes
+    its check."""
+    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
     made_ready(fake_model, steps, say, (2,))
     owner_parts.draw_part_picture(scene_2())
 
@@ -129,27 +131,7 @@ def corrected(
     )
 
 
-def drawn_again(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> None:
-    """Scene 2's starting picture drawn again, for the part as it stands now."""
-    fake_model.respond(
-        "produce",
-        turn(calls=[("make_starting_picture", {"scene": 2, "note": None})]),
-        turn(says="On it."),
-    )
-    say("Go on")
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
-    run(fake_model, steps)
-
-
 # --- The picture shown, and the clip held ------------------------------------------------------
-
-
-@pytest.mark.usefixtures("pictured")
-def test_the_producer_is_told_the_yes_is_on_the_parts_picture_not_the_starting_picture() -> None:
-    (picture_ready,) = [text for text in step_results() if "starting picture is ready" in text]
-
-    assert "waits for the shop owner's yes on the picture of the lid itself" in picture_ready
-    assert "don't ask them about this picture" in picture_ready
 
 
 @pytest.mark.usefixtures("pictured")
@@ -262,8 +244,8 @@ def test_the_shop_owners_words_draw_the_parts_picture_again_and_show_it_again(
     (result,) = results_of("correct_owner_part")
     assert f"library picture {after.number}" in result
     assert "until they say yes to it" in result
-    # The starting picture isn't the yes's: it is drawn again only before the clip.
-    assert pictures_of_scene_2() == 1
+    # Nothing else is drawn: a B-roll scene has no starting picture (spec #210 point 19).
+    assert pictures_of_scene_2() == 0
 
 
 @pytest.mark.usefixtures("pictured")
@@ -344,7 +326,7 @@ def test_a_photo_the_part_cant_be_drawn_from_has_the_shop_owner_asked_for_anothe
     (result,) = results_of("correct_owner_part")
     assert result.startswith("Refused: the lid couldn't be drawn")
     assert "Ask them for another photo" in result
-    assert pictures_of_scene_2() == 1
+    assert pictures_of_scene_2() == 0
 
 
 @pytest.mark.usefixtures("pictured")
@@ -357,7 +339,7 @@ def test_a_correction_needs_words_or_a_photo(
 
     (result,) = results_of("correct_owner_part")
     assert result.startswith("Refused:")
-    assert pictures_of_scene_2() == 1
+    assert pictures_of_scene_2() == 0
 
 
 @pytest.mark.usefixtures("pictured")
@@ -367,7 +349,6 @@ def test_three_rounds_of_corrections_then_a_yes_make_the_clip(
     number = part_item().number
     for colour in ["pink", "blue", "green"]:
         corrected(fake_model, steps, say, f"A round {colour} lid with a small knob on top.")
-        drawn_again(fake_model, steps, say)
         calling(fake_model, say, ("make_clip", {"scene": 2}))
         assert results_of("make_clip")[-1].startswith("Refused: scene 2 shows the lid")
 
@@ -377,8 +358,11 @@ def test_three_rounds_of_corrections_then_a_yes_make_the_clip(
     assert part_item().number == number
     assert len(handoffs("make_part_picture")) == 4
     assert clips_of(2) == 1
+    # Sent the part's newest picture, with no starting picture (spec #210 point 19).
     clip = Job.objects.get().produced.get(kind="clip", scene__number=2)
-    assert clip.picture is not None and clip.picture.version == 4
+    assert clip.picture is None
+    assert clip.sent is not None
+    assert part_item().number in [picture["library_number"] for picture in clip.sent["pictures"]]
 
 
 # --- The rest of the ad --------------------------------------------------------------------------
@@ -496,7 +480,7 @@ def test_a_correction_naming_a_photo_the_chat_hasnt_got_is_refused(
 
     (result,) = results_of("correct_owner_part")
     assert result.startswith("Refused: the chat has ")
-    assert pictures_of_scene_2() == 1
+    assert pictures_of_scene_2() == 0
 
 
 @pytest.mark.usefixtures("pictured")

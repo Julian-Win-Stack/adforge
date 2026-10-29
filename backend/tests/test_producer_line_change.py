@@ -10,7 +10,7 @@ from decimal import Decimal
 import pytest
 
 from agents.money import dollars
-from agents.producer import Estimate, _estimate, _picture_only_estimate_usd
+from agents.producer import Estimate, _estimate
 from gateway.catalog import MODEL_FOR_PURPOSE, transcription_cost_usd
 from gateway.fake import FakeModel
 from jobs.models import Fix, FixPlan, ProducedItem, Scene, SceneStep
@@ -252,8 +252,8 @@ def test_a_clip_fix_said_yes_to_while_a_new_line_is_made_is_made_on_the_new_line
 
     made = last_step("clip", 2)
     assert (made.line, made.note, made.fix) == (LINE_2_NEW, SLOWER_2, fix_of(clip, 2))
-    # Both keep the scene's starting picture.
-    assert last_step("starting_picture", 2).fix is None
+    # Neither draws a picture: a B-roll scene has none (spec #210 point 19).
+    assert not SceneStep.objects.filter(kind="starting_picture", scene__number=2).exists()
     assert {step.fix for step in SceneStep.objects.filter(kind="clip", fix__isnull=False)} == {
         fix_of(line, 2),
         fix_of(clip, 2),
@@ -359,13 +359,12 @@ def test_a_transcription_is_estimated_to_the_millionth_of_a_dollar(
 def test_a_broll_line_fix_is_estimated_with_the_judges_asks_and_up_to_six_agent_tries(
     shown: ProducedItem,  # noqa: F811
 ) -> None:
-    # The scene keeps its picture; the new line's 52
+    # The scene has no picture (spec #210 point 19); the new line's 52
     # characters at Inworld's $25 a million are $0.0013; its 8 words take the fake voice 4
     # seconds, $0.000244 at Scribe's $0.22 an hour; a 5-second clip at Boreal's $0.0792 a
     # second with the judge's 2 asks at $0.003 is $0.402, and up to 6 tries of the fixing
-    # agent, each a new picture, that clip and the agent's 3 turns at $0.07 (decider call 13).
+    # agent, each that clip and the agent's 3 turns at $0.07 (decider call 13).
     estimate = line_estimate(2, LINE_2_NEW)
 
-    picture = _picture_only_estimate_usd(Scene.objects.get(number=2))
-    each_try = picture + Decimal("0.402") + 3 * Decimal("0.07")
+    each_try = Decimal("0.402") + 3 * Decimal("0.07")
     assert estimate == (Decimal("0.403544"), Decimal("0.403544") + 6 * each_try)

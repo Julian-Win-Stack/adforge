@@ -150,20 +150,6 @@ def test_a_try_whose_clip_has_a_sent_list_is_shown_by_its_references_then_its_fr
     ] == [[shown.key for shown in given.pictures]] * 2
 
 
-def test_a_try_whose_clip_has_no_sent_list_is_shown_by_its_start_picture(
-    fake_model: FakeModel, failed_clip: SceneStep
-) -> None:
-    given, look = looks_at_try_0(fake_model, failed_clip)
-
-    for labels in (
-        [picture.label for picture in given.pictures],
-        [picture["label"] for picture in look.pictures],
-    ):
-        assert labels[0] == "Try 0, start picture"
-        assert labels[1:] and all(label.startswith("Try 0, clip, ") for label in labels[1:])
-    assert look.result.startswith("Try 0. ")
-
-
 # --- A try the judge passes ------------------------------------------------------------------
 
 

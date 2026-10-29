@@ -65,6 +65,8 @@ REFERENCES = {
     "pictures": [{"number": 2, "used_for": "state"}, {"number": 7, "used_for": "in-use"}],
     "piece": {"video": 1, "moment": 1},
 }
+# A try after a refused one, sent a white photo.
+WHITE_ONLY = {"pictures": [{"number": 3, "used_for": "state"}], "piece": None}
 
 
 @pytest.fixture
@@ -247,8 +249,10 @@ def test_references_naming_what_the_library_doesnt_hold_are_refused_with_no_clip
     fake_model.respond(
         "fix_scene",
         turn(calls=[with_references(references, **changes)]),
-        turn(calls=[film_again()]),
+        turn(calls=[with_references(WHITE_ONLY)]),
     )
+    # The try after it is sent the black side photo too, recoloured.
+    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
     asked_before = len(fake_model.broll_clips_asked)
 
     fixed(failed_clip)
@@ -258,7 +262,7 @@ def test_references_naming_what_the_library_doesnt_hold_are_refused_with_no_clip
     # The refusal spent no try and made no clip: try 1 is the next call's, its one clip.
     assert [(row.number, row.tool_call_id) for row in AgentFixTry.objects.all()] == [(1, filmed.pk)]
     assert len(fake_model.broll_clips_asked) == asked_before + 1
-    assert not ModelCall.objects.filter(purpose="recolour_picture").exists()
+    assert not ModelCall.objects.filter(purpose="recolour_picture", tool_call=refused_call).exists()
 
 
 def test_more_pictures_than_the_video_api_takes_are_cut_at_9_and_said_in_red(
@@ -396,8 +400,9 @@ def test_a_picture_named_with_its_own_recoloured_version_is_refused(
         "piece": None,
     }
     fake_model.respond(
-        "fix_scene", turn(calls=[with_references(named)]), turn(calls=[film_again()])
+        "fix_scene", turn(calls=[with_references(named)]), turn(calls=[with_references(WHITE_ONLY)])
     )
+    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
 
     fixed(failed_clip)
 

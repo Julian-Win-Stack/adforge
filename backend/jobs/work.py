@@ -4047,13 +4047,13 @@ def _keep_the_cut(step: SceneStep, sending: cut_and_send.Sending) -> None:
 
 def _planned_sending(step: SceneStep) -> cut_and_send.Sending:
     """What cut-and-send sends a clip of `step` from its plan: the scene's planned pictures and
-    piece, then the clean pictures of the shop owner's things that show during the clip, from
-    the library, picked for what the clip acts on. Not approved yet: the owner's things go as
+    piece, then the clean pictures of the shop owner's things it shows (_owners_things_sent),
+    from the library, picked for what the clip acts on. Not approved yet: the owner's things go as
     "content" picks (their `for`), after the planner's."""
     job = step.scene.job
     part = owner_parts.owner_part(step.scene)
     things = []
-    for row in _during_the_clip(step):
+    for row in _owners_things_sent(step):
         if part is not None and reference_photos.same_thing(row.thing, part.what):
             # The owner part's photo enters the library as the part's picture (#234).
             continue
@@ -4064,7 +4064,14 @@ def _planned_sending(step: SceneStep) -> cut_and_send.Sending:
     return cut_and_send.planned_sending(step, also=things)
 
 
-# What the shop owner's things that show during a B-roll clip are sent for, as tier-2 picks.
+def _owners_things_sent(step: SceneStep) -> list[ReferencePhoto]:
+    """The shop owner's photos a B-roll clip of the step is sent, as the step started: those
+    of things in the picture and those of things that only show during the clip, alike, as
+    the clip has no starting picture to draw any into (spec #210 point 19)."""
+    return list(step.reference_photos.all())
+
+
+# What the shop owner's things that show in a B-roll clip are sent for, as tier-2 picks.
 # Not approved yet: one value for every such thing.
 OWNER_THINGS_FOR: library.For = "content"
 
@@ -4077,7 +4084,7 @@ def _sent_to_improve(step: SceneStep) -> library.SentList:
     made = versions(step.scene)
     improves = made[-1].clip if made else None
     sent = library.sent_list_of(improves) if improves is not None else None
-    if sent is not None and not _during_the_clip(step):
+    if sent is not None and not _owners_things_sent(step):
         return sent
     return cut_and_send.labelled_sent_list(
         step.scene.job,
@@ -4370,11 +4377,12 @@ def go_back(scene: Scene, number: int) -> GoneBack:
     original too (decision 8, Julian 2026-10-16 22:40): its starting picture brought back,
     free, and its clip too when it still says the scene's line as it stands, so nothing is
     made, checked or paid for. When the line changed since, only the picture is brought back
-    and the scene waits for a clip made from it. The scene's photos in use become those the
+    and the scene waits for a clip made from it; a scene showing the product, which has no
+    picture, waits for a clip made from its sent list. The scene's photos in use become those the
     version was made with, so a photo dropped is a version gone back to. The chat is shown
     what was brought back. A try of a scene the fixing agent gave up on, said to camera since,
     has the scene show what the try was made for again. Refuses a version the scene doesn't
-    have, one with no picture whose clip no longer says the line, and while the scene's
+    have, a talking one with no picture whose clip no longer says the line, and while the scene's
     picture or clip is being made."""
     with transaction.atomic():
         Scene.objects.select_for_update().get(pk=scene.pk)
@@ -4400,7 +4408,9 @@ def _bring_back(scene: Scene, number: int) -> GoneBack:
         if earlier.clip is not None:
             _shown_again_for(scene, earlier.clip)
         free = earlier.clip is not None and _says_the_line_as_it_stands(scene, earlier.clip)
-        if earlier.picture is None and not free:
+        # A scene showing the product has no starting picture: its clip is made again from
+        # its sent list (spec #210 point 19).
+        if earlier.picture is None and not free and not scene.shows:
             raise NothingToBringBack(
                 f"scene {scene.number}'s version {number} has no starting picture, and its "
                 "clip no longer says the scene's line"
@@ -4495,7 +4505,7 @@ def _rewrite_motion_prompt(step: SceneStep) -> None:
     sent = library.sent_list_of(improves) if improves is not None else None
     # A B-roll clip has no starting picture (spec #210 point 19): its references are rebuilt
     # with the shop owner's things among them, which it is then shown as its own pictures.
-    rebuilt = step.picture is None and (sent is None or bool(during))
+    rebuilt = step.picture is None and (sent is None or bool(_owners_things_sent(step)))
     if rebuilt:
         sent = _sent_to_improve(step)
     handoff: ClipFromNoteHandoff | ClipFromReferencesHandoff

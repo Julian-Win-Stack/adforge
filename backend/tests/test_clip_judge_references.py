@@ -16,6 +16,7 @@ from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
+from gateway.types import BlockedBySafetyFilter, ModelRequest
 from jobs import clip_judge, work
 from jobs.auto_fix import faults as judge_faults
 from jobs.clip_judge import judged, still_failing
@@ -40,10 +41,24 @@ from .test_producer_broll import (
 )
 from .test_producer_clip_judge import clip_of, ruling
 from .test_producer_page import notices
-from .test_safety_filter_judges import refusing
 from .test_safety_filter_split import labels_shown
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+def refusing(
+    refused: Callable[[str], bool], answer: Callable[[ModelRequest[Any]], dict[str, Any]]
+) -> Callable[[ModelRequest[Any]], dict[str, Any]]:
+    """A model whose safety filter refuses any call showing a picture whose label `refused`
+    picks out, and otherwise answers with `answer`."""
+
+    def answering(request: ModelRequest[Any]) -> dict[str, Any]:
+        if any(refused(image.label) for image in request.images):
+            raise BlockedBySafetyFilter("content_policy_violation")
+        return answer(request)
+
+    return answering
+
 
 # What the judge is told the references never show, when it can't tell.
 NEVER_SHOWN = "the press's chamber with garlic inside it"
