@@ -14,11 +14,11 @@ from chat.models import Message
 from gateway.fake import FakeModel, turn
 from gateway.types import ToolUse
 from jobs import work
-from jobs.models import AgentFix, SceneStep
+from jobs.models import AgentFix, Scene, SceneStep
 
 from .conftest import HeldSteps, WorkerStopped
 from .test_fixing_agent import POURS, failed_clip, film_again, fixed, told  # noqa: F401
-from .test_producer_auto_fix import FLOATS, failing
+from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing
 from .test_producer_broll import assemble_through_the_chat, checked  # noqa: F401 (a fixture)
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -75,7 +75,7 @@ def test_an_ask_parks_the_fix_and_the_ad_finishes_with_the_last_try(
     step = fixing.step
     step.refresh_from_db()
     assert (
-        "and after 1 tries the fixing agent asked the shop owner a question about it, shown on "
+        "and after 1 try the fixing agent asked the shop owner a question about it, shown on "
         "the scene's card, so the last try is in the ad until they answer it."
     ) in step.result
 
@@ -107,12 +107,43 @@ def test_a_worker_restart_leaves_the_parked_fix_parked(
     turns = fix_turns(fake_model)
 
     again = fixed(failed_clip)
-    work.end_the_agents_fixing(failed_clip)
 
     assert fix_turns(fake_model) == turns
     assert again.parked and again.gave_up == fixing_agent.ASKED_THE_OWNER
     assert work.open_question(failed_clip.scene) is not None
     assert ToolCall.objects.get(tool="ask_owner").finished_at is None
+
+
+def test_a_step_a_restart_failed_after_an_ask_with_a_try_keeps_the_question_open(
+    fake_model: FakeModel,
+    failed_clip: SceneStep,  # noqa: F811
+) -> None:
+    fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 3)
+    fake_model.respond(
+        "fix_scene", turn(calls=[film_again(video_prompt=POURS)]), turn(calls=[ask()])
+    )
+    fixed(failed_clip)
+
+    work.end_the_agents_fixing(failed_clip)
+
+    failed_clip.scene.refresh_from_db()
+    assert failed_clip.scene.status != Scene.Status.PLANNED
+    assert work.open_question(failed_clip.scene) is not None
+
+
+def test_a_step_a_restart_failed_after_an_ask_with_no_try_withdraws_the_question(
+    fake_model: FakeModel,
+    failed_clip: SceneStep,  # noqa: F811
+) -> None:
+    asked_on_the_first_turn(fake_model, failed_clip)
+
+    work.end_the_agents_fixing(failed_clip)
+
+    # The scene's clip is made again, so no card shows a question for the fix that failed.
+    failed_clip.scene.refresh_from_db()
+    assert failed_clip.scene.status == Scene.Status.PLANNED
+    assert work.open_question(failed_clip.scene) is None
+    assert not work.is_parked(AgentFix.objects.get())
 
 
 def test_an_ask_the_worker_stopped_before_settling_parks_the_fix_on_its_restart(
@@ -187,3 +218,35 @@ def test_an_agent_fixing_an_owners_note_has_no_ask_and_is_told_never_to_ask() ->
     assert "call ask_owner" in told_at["judge"]
     assert "Never ask the shop owner anything." in told_at["owner"]
     assert "call ask_owner" not in told_at["owner"]
+
+
+def test_an_agent_fixing_an_owners_note_that_asks_anyway_is_refused_and_parks_nothing(
+    fake_model: FakeModel,
+    failed_clip: SceneStep,  # noqa: F811
+) -> None:
+    from .test_fixing_agent import owners_fix
+
+    outcome = owners_fix(fake_model, failed_clip, ask(), film_again())
+
+    assert told()[0] == "Refused: the shop owner can't be asked in this fix. Nothing was done."
+    assert not outcome.parked
+    assert work.open_question(failed_clip.scene) is None
+    assert [each.number for each in outcome.tries] == [1]
+
+
+def test_the_producer_is_told_plainly_of_an_ask_before_any_try(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond("check_clip_motion", failing(FLOATS))
+    fake_model.respond("fix_scene", turn(calls=[ask()]))
+
+    step = clip_of_scene_2(fake_model, steps, say)
+
+    step.refresh_from_db()
+    assert (
+        "and before filming a try the fixing agent asked the shop owner a question about it, "
+        "shown on the scene's card, so the first clip is in the ad until they answer it."
+    ) in step.result
