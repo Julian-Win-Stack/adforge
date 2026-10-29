@@ -2272,10 +2272,14 @@ def clean_picture(scene: Scene, row: ReferencePhoto) -> str:
     """The clean picture of only `row`'s thing, drawn from the shop owner's photo once per ad
     (see _clean_picture), which joins the job's library as that photo, labelled, the first
     time it is drawn: unless it is a photo of the scene's owner part, whose picture enters
-    the library as the part's (#234). Gives its key in the file store."""
+    the library as the part's own (jobs.owner_parts.draw_part_picture). Gives its key in the
+    file store."""
     drawn = _clean_picture(scene, row)
     part = owner_parts.owner_part(scene)
-    if part is None or not reference_photos.same_thing(row.thing, part.what):
+    if part is not None and reference_photos.same_thing(row.thing, part.what):
+        return drawn
+    # The photo's product-only version is in the library already, as its own item.
+    if drawn != library_items.product_only_cut_out(scene.job, row.file):
         library_items.add_owner_photo(scene.job, row.file, drawn, f"the shop owner's {row.thing}")
     return drawn
 
@@ -2298,7 +2302,12 @@ def _clean_picture(scene: Scene, row: ReferencePhoto) -> str:
     with _one_job_at_a_time(CLEAN_PICTURE_LOCK, job):
         same = ReferencePhoto.objects.filter(scene__job=job, file=row.file, thing__iexact=row.thing)
         drawn = same.exclude(drawn="").values_list("drawn", flat=True).first()
+        # A photo of the product the shop owner sent before the plan, cut out already as its
+        # product-only version (checked beside the photo), isn't cut out again for a note.
+        if not drawn and _names_the_product(job, row.thing):
+            drawn = library_items.product_only_cut_out(job, row.file)
         if drawn:
+            same.update(drawn=drawn)
             row.drawn = drawn
             return drawn
         try:
@@ -2328,6 +2337,13 @@ def _clean_picture(scene: Scene, row: ReferencePhoto) -> str:
         same.update(drawn=file)
         row.drawn = file
         return file
+
+
+def _names_the_product(job: Job, thing: str) -> bool:
+    """Whether `thing` names the product itself: every word of it is a word of the product's
+    name, as the plan gives it."""
+    words = set(re.findall(r"\w+", reference_photos.name_of(thing).casefold()))
+    return bool(words) and words <= set(re.findall(r"\w+", job.product_name.casefold()))
 
 
 def _owner_photo_check(job: Job, row: ReferencePhoto) -> cut_out.Check:

@@ -142,14 +142,22 @@ def add_owner_photo(job: Job, original: str, file: str, shows: str) -> LibraryEn
 
 
 def label_photo(
-    job: Job, key: str, source: str, shows: str, *, named: str, product_text: str | None = None
+    job: Job,
+    key: str,
+    source: str,
+    shows: str,
+    *,
+    named: str,
+    product_text: str | None = None,
+    then: str = "It is tried again when photos are next added.",
 ) -> PictureLabel | None:
     """The picker's fixed fields for the photo at `key` in the file store, which the picker
     never saw, from the labelling call: its answer's schema holds the label's rules, so an
     answer that breaks one is a failed call, never kept. `source` names the photo by where it
     came from, so a photo stored again under a new key pays for nothing twice. When the call
     fails, a red notice naming the photo as `named` says why, and None is given back. It is
-    given the product's own text off its page: `product_text`, else the job's."""
+    given the product's own text off its page: `product_text`, else the job's. The notice
+    ends with `then`: when it is tried again."""
     try:
         return call_model(
             job=job,
@@ -172,8 +180,7 @@ def label_photo(
         post_notice(
             job,
             f"Saying what {named} shows failed ({why}), so it isn't in the ad's picture "
-            "library and can't be sent to the video model. It is tried again when photos are "
-            "next added.",
+            f"library and can't be sent to the video model. {then}",
             Message.Level.PROBLEM,
         )
         return None
@@ -324,6 +331,16 @@ def to_send(job: Job, item: LibraryEntry) -> LibraryEntry:
     then map each choice through `to_send`, then recolour what it gives."""
     version = _in_the_library(job, ProductOnly(of=item.number))
     return item if version is None else version
+
+
+def product_only_cut_out(job: Job, original: str) -> str | None:
+    """The product-only version of the shop owner's photo `original`, as they sent it, when
+    it has one: the product cut out of it already. None when it has none."""
+    item = _in_the_library(job, OwnerPhoto(original=original), original)
+    if item is None:
+        return None
+    version = to_send(job, item)
+    return None if version is item else version.file
 
 
 def library_text(job: Job) -> str:

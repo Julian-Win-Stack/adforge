@@ -1,6 +1,7 @@
 """The producer: the agent the user talks to. What it is told to do, and its tools."""
 
 import re
+from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal, NamedTuple
 
@@ -136,20 +137,21 @@ those, such as what is happening with a scene or what it costs, and don't repeat
 chat already showed them. Never say a change is done before the app says so, and never say \
 it is right: you can't see pictures or videos.
 A scene may show a part of the product that no photo shows, drawn from the shop owner's \
-words, or from a description made up for it when they let us draw it. Its clip isn't made \
-until they say yes to that part in the scene's starting picture, shown to them in the \
-chat: ask them, and wait. Only when they say yes to that picture in their own words, call \
-approve_owner_part. When they say what to change or send a photo of the part, call \
-correct_owner_part, and ask them again once the new picture is shown. Never take silence, \
-a question or a yes to something else as their yes, and never decide for them. Every other \
-scene goes on meanwhile. The waiting scene has no clip yet, so what they say about its \
-picture is yours to act on, even once other scenes have clips.
+words, or from a description made up for it when they let us draw it. The part gets a \
+picture of its own, shown to them in the chat, and the clip of a scene showing it isn't \
+made until they say yes to that picture: ask them, and wait. Only when they say yes to that \
+picture in their own words, call approve_owner_part. When they say what to change or send a \
+photo of the part, call correct_owner_part, which draws the part's picture again and shows \
+it, and ask them again. Never take silence, a question or a yes to something else as their \
+yes, and never decide for them. Every other scene goes on meanwhile. The waiting scene has \
+no clip yet, so what they say about the part's picture is yours to act on, even once other \
+scenes have clips.
 What you can't do, said plainly the same way each time: see pictures or videos. Before \
 the ad is planned, every photo they send is a product photo: if they send one of something \
 else, don't add it, and tell them to send it with a note on a scene once the first version \
 is made. Slower can't be done: every clip plays at real-time speed.
 A part of the product drawn from the shop owner's words or made up is settled once they \
-say yes to it in a starting picture: never ask them for a photo of it or how it looks again.
+say yes to its picture: never ask them for a photo of it or how it looks again.
 Keep your messages short and friendly, written for someone who isn't technical."""
 
 
@@ -483,7 +485,22 @@ class PlanAd(Tool):
                 f"Why: {decision.reason} Ask them, and plan again once they have answered. "
                 "If they answer with a photo, add it with use_photos before planning again."
             )
-        return _the_plan(job, decision.reason)
+        return _the_plan(job, decision.reason) + _parts_drawn(job)
+
+
+def _parts_drawn(job: Job) -> str:
+    """Draw the picture of each part of the product the plan shows that no photo shows, each
+    shown to the shop owner (spec #210 point 20), and say what the producer does next."""
+    said = ""
+    tried: list[object] = []
+    for scene in job.scenes.filter(owner_part__isnull=False).order_by("number"):
+        part = owner_parts.owner_part(scene)
+        # One drawn, or tried, for an earlier scene holding the same part is this one's too.
+        if part is None or scene.owner_part in tried or owner_parts.picture_is_current(scene):
+            continue
+        tried.append(scene.owner_part)
+        said += "\n" + _part_drawn(scene, part, "The clip of every scene showing it isn't made")
+    return said
 
 
 class CreatePerson(Tool):
@@ -1029,7 +1046,14 @@ class MakeClip(Tool):
                 f"scene {scene.number}'s starting picture was drawn before the shop owner's "
                 f"photo of the {missing} was kept for it. Make its starting picture again first."
             )
-        hard_list.refuse_clip_before_the_owners_yes(call, scene)
+        part = hard_list.waiting_owner_part(scene)
+        if part is not None:
+            # Marks what the producer waits on, as "the photos" does for planning.
+            call.asked_about = "the owner part"
+            if not owner_parts.picture_is_current(scene):
+                # Drawn now, as when the part changed since the plan: the clip still waits.
+                return _part_drawn(scene, part, "Its clip isn't made")
+            hard_list.refuse_clip_before_the_owners_yes(scene, part, _library_picture(scene))
         audio = _current_audio(scene)
         if not scene.produced.filter(
             kind=ProducedItem.Kind.TRANSCRIPT,
@@ -1120,10 +1144,10 @@ class MakeClip(Tool):
 
 
 class ApproveOwnerPart(Tool):
-    """Keep the shop owner's yes to the part of the product a scene's starting picture shows
-    that no photo shows, so the scene's clip can be made. Call it only when they said yes to
-    that picture in their own words: never on silence, a question or a change they asked
-    for, and never decide for them."""
+    """Keep the shop owner's yes to the picture of a part of the product a scene shows that
+    no photo shows, so the clip of every scene showing it can be made. Call it only when they
+    said yes to that picture in their own words: never on silence, a question or a change
+    they asked for, and never decide for them."""
 
     name = "approve_owner_part"
 
@@ -1137,38 +1161,40 @@ class ApproveOwnerPart(Tool):
                 f"scene {scene.number} shows no part the shop owner has to say yes to, so its "
                 "clip is made as usual."
             )
-        _no_picture_being_made(scene)
-        picture = scene.current_picture()
-        if picture is None:
+        if not owner_parts.picture_is_current(scene):
             raise Refused(
-                f"scene {scene.number} has no starting picture of {part.what} as it is now. Make "
-                "its starting picture, and ask the shop owner once it is shown to them."
+                f"scene {scene.number} has no picture of {part.what} as it is now. Make its "
+                "clip, which draws the picture and shows it to the shop owner, and ask them "
+                "once it is shown."
             )
         if owner_parts.is_approved(scene):
             return (
-                f"The shop owner already said yes to {part.what} in scene {scene.number}'s "
-                f"starting picture (version {picture.version}). Make its clip."
+                f"The shop owner already said yes to the picture of {part.what} "
+                f"({_library_picture(scene)}). Make scene {scene.number}'s clip."
             )
+        drawn = scene.owner_part_drawn
+        assert drawn is not None, "a current picture was drawn"
         if not call.session.messages.filter(
-            role=Message.Role.USER, created_at__gt=picture.created_at
+            role=Message.Role.USER,
+            created_at__gt=datetime.fromisoformat(str(drawn["shown_at"])),
         ).exists():
             raise Refused(
-                f"the shop owner hasn't answered since scene {scene.number}'s starting picture "
-                f"(version {picture.version}) was shown to them. Ask them, and wait for their "
+                f"the shop owner hasn't answered since the picture of {part.what} "
+                f"({_library_picture(scene)}) was shown to them. Ask them, and wait for their "
                 "answer."
             )
         owner_parts.approve(scene)
         return (
-            f"Kept the shop owner's yes to {part.what} in scene {scene.number}'s starting "
-            f"picture (version {picture.version}). Make its clip."
+            f"Kept the shop owner's yes to the picture of {part.what} "
+            f"({_library_picture(scene)}). Make scene {scene.number}'s clip."
         )
 
 
 class CorrectOwnerPart(Tool):
-    """Start drawing a scene's starting picture again, once the shop owner said what to change
-    in the part of the product it shows that no photo shows, or sent a photo of that part.
-    Works in the background and hands back at once; you are told when the new picture is
-    ready, and it is shown to them for their yes."""
+    """Draw the picture of a part of the product a scene shows that no photo shows again,
+    once the shop owner said what to change in it, or sent a photo of that part. The part
+    is one thing for the whole ad: every scene showing it without a clip yet takes the
+    change. The new picture is shown to them for their yes."""
 
     name = "correct_owner_part"
 
@@ -1203,7 +1229,6 @@ class CorrectOwnerPart(Tool):
             if not 1 <= self.photo <= len(attached):
                 raise Refused(f"the chat has {_owner_photos(len(attached))}.")
             file = attached[self.photo - 1].file
-        _no_picture_being_made(scene)
         _no_clip_being_made(scene)
         _before_its_clip(scene)
         try:
@@ -1214,32 +1239,38 @@ class CorrectOwnerPart(Tool):
         except ReferencePhotoUnusable as unusable:
             raise Refused(str(unusable)) from unusable
         scene.refresh_from_db()
-        _start_step(
-            call,
-            scene,
-            SceneStep.Kind.STARTING_PICTURE,
-            busy=f"scene {scene.number}'s starting picture is already being made. You'll be "
-            "told when it's ready.",
-            # Their words go to the picture as its note too, as any change asked for does.
-            note=words,
-        )
+        call.asked_about = "the owner part"
+        return _part_drawn(scene, part, "The clip of every scene showing it isn't made")
+
+
+def _part_drawn(scene: Scene, part: owner_parts.OwnerPart, waits: str) -> str:
+    """Draw the picture of the scene's owner part as it stands, shown to the shop owner, and
+    say what the producer does next: ask them about it. `waits` starts the sentence saying
+    which clips wait."""
+    try:
+        owner_parts.draw_part_picture(scene)
+    except owner_parts.PartPictureFailed as failed:
         return (
-            f"Started drawing scene {scene.number}'s starting picture again, with {part.what} "
-            "as the shop owner asked. It isn't made yet: you'll be told when it's ready, and "
-            "it is shown to them for their yes."
+            f"Scene {scene.number} shows {part.what}, which no photo shows, and making its "
+            f"picture failed: {failed}. The chat told the shop owner. {waits} until they say "
+            "yes to a picture of it: ask them how it looks or for a photo of it, and correct "
+            "it with correct_owner_part."
         )
+    return (
+        f"Scene {scene.number} shows {part.what}, which no photo shows: its picture was drawn "
+        f"({_library_picture(scene)}) and shown to the shop owner in the chat. {waits} until "
+        f"they say yes to it. Ask them, in plain words, to look at {part.what} and say yes if "
+        "it looks right, or say what to change, or send a photo of it, and wait for their "
+        "answer."
+    )
 
 
-def _no_picture_being_made(scene: Scene) -> None:
-    """Refuse while the scene's starting picture is being made: what the shop owner answered
-    was about the picture before it."""
-    if scene.steps.filter(
-        kind=SceneStep.Kind.STARTING_PICTURE, status=SceneStep.Status.RUNNING
-    ).exists():
-        raise Refused(
-            f"scene {scene.number}'s starting picture is being made. You'll be told when it's "
-            "ready; ask the shop owner about it once it is shown to them."
-        )
+def _library_picture(scene: Scene) -> str:
+    """The scene's owner part's picture, by its library number, such as "library picture 7"."""
+    scene.refresh_from_db()
+    item = owner_parts.part_picture(scene)
+    assert item is not None, "the part has its picture"
+    return f"library picture {item.number}"
 
 
 class AssembleAd(Tool):

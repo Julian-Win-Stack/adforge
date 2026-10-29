@@ -9,6 +9,7 @@ wish that live in code. Each is a tool answer, a can't with the reason, never a 
 Nothing else is a code refusal of a wish. A new guard is added only after a graded failure,
 as a tool answer with a reason, and lives here only if it refuses a wish."""
 
+from typing import NoReturn
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from django.conf import settings
@@ -20,7 +21,6 @@ from jobs.library import VIDEO_API_MOST_PICTURES, LeftOut
 from jobs.models import Job, Scene
 
 from .loop import Refused
-from .models import ToolCall
 
 # What the producer is told to tell the shop owner of another product's page.
 ANOTHER_PRODUCT = "start a new ad for that"
@@ -64,20 +64,24 @@ def _product_address(link: str) -> tuple[str, str, str]:
     return host, parts.path.rstrip("/") or "/", urlencode(query)
 
 
-def refuse_clip_before_the_owners_yes(call: ToolCall, scene: Scene) -> None:
-    """Refuse a clip of `scene` while its owner part, the part no photo shows, waits for the
-    shop owner's yes on its starting picture (spec #210 point 20). Marks the call as waiting
-    on the shop owner."""
+def waiting_owner_part(scene: Scene) -> owner_parts.OwnerPart | None:
+    """The scene's owner part, the part no photo shows, while it waits for the shop owner's
+    yes on its picture (spec #210 point 20): no clip of the scene is made until then. None
+    when the scene has none, or the yes is given."""
     part = owner_parts.owner_part(scene)
-    if part is None or owner_parts.is_approved(scene):
-        return
-    # Marks what the producer waits on, as "the photos" does for planning.
-    call.asked_about = "the owner part"
+    return None if part is None or owner_parts.is_approved(scene) else part
+
+
+def refuse_clip_before_the_owners_yes(
+    scene: Scene, part: owner_parts.OwnerPart, picture: str
+) -> NoReturn:
+    """Refuse a clip of `scene` while `part` waits for the shop owner's yes on its
+    `picture`, named as the library names it."""
     raise Refused(
-        f"scene {scene.number}'s starting picture shows {part.what}, which no photo shows, "
-        "and its clip isn't made until the shop owner says yes to it in this picture. They "
-        "were shown it in the chat: ask them, in plain words, to say yes if it looks right, or "
-        "say what to change, or send a photo of it, and wait for their answer."
+        f"scene {scene.number} shows {part.what}, which no photo shows, and its clip isn't "
+        f"made until the shop owner says yes to the part's picture ({picture}). They were "
+        "shown it in the chat: ask them, in plain words, to say yes if it looks right, or say "
+        "what to change, or send a photo of it, and wait for their answer."
     )
 
 

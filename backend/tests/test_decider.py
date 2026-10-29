@@ -20,7 +20,8 @@ from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.fake import FakeModel, turn
 from gateway.types import Happened, Said, ToolUse
-from jobs import fix_plans
+from jobs import fix_plans, owner_parts
+from jobs.library import OwnerPart, PictureLabel, add_to_library
 from jobs.models import (
     AgentFix,
     AgentFixTry,
@@ -364,9 +365,18 @@ def test_an_approved_owner_part_is_told_as_settled(fake_model: FakeModel, ad: Jo
     scene.owner_part = part
     scene.save()
     scene.steps.update(owner_part=part)
+    # The part's own picture, in the library, said yes to.
+    item = add_to_library(
+        ad,
+        "nozzle.png",
+        PictureLabel(kind="side", side="side", alone="yes", colour="white", label="The nozzle."),
+        OwnerPart(part="nozzle"),
+    )
+    scene.owner_part_picture = ad.library.get(number=item.number)
+    scene.owner_part_drawn = {"part": part, "photos": [], "shown_at": timezone.now().isoformat()}
     scene.owner_part_approved_at = timezone.now()
-    scene.owner_part_approved_picture = scene.produced.filter(kind="starting_picture").last()
     scene.save()
+    assert owner_parts.is_approved(scene)
     note = _owner_says(ad, "In scene 2 the toilet should be white.")
     fake_model.respond(
         "decide_fixes",

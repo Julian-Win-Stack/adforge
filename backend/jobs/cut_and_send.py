@@ -6,8 +6,9 @@ clip is sent, the same way every time, before every send. No AI prunes or combin
   a page photo (`image_1`). Tier 2: the picks, the planner's scene pictures in its order or
   the fixing agent's named references, no cap. Tier 3: the drawn picture of the place, the
   presenter in the room or the room alone, the scene's own when it has one
-  (work.scene_place). Tier 4: the other side pictures (back, side, top) in library order,
-  whatever they came from (an owner part's picture too).
+  (work.scene_place). The scene's owner part picture, when it holds one, goes last in tier 2
+  (owner_parts.part_picture), and no other scene is sent it. Tier 4: the other side
+  pictures (back, side, top) in library order, but owner parts'.
   States and pack sizes are in no tier: they go only when picked. The first
   VIDEO_API_MOST_PICTURES are sent; the rest are left out, their tier the reason, so a tier-4
   photo never pushes out a pick. A sender chooses among the library's originals only, and
@@ -38,7 +39,7 @@ from typing import Literal
 from chat.models import Message
 from gateway.types import ReferenceVideo
 
-from . import library_items, library_sheets, work
+from . import library_items, library_sheets, owner_parts, work
 from .first_send import FirstSendScene, drawn_label, write_first_send_prompt
 from .library import (
     VIDEO_API_MOST_PICTURES,
@@ -420,12 +421,18 @@ def _in_tiers(
         if pick.number not in everything:
             raise ValueError(f"library item {pick.number} isn't in the ad's library")
         take(2, _original_of(everything, everything[pick.number]), pick.for_)
+    # The scene's owner part, as it stands: a picture the scene holds, so a scene picture.
+    if (part := owner_parts.part_picture(scene)) is not None:
+        take(2, _original_of(everything, part))
     drawn, place = work.scene_place(scene, person_shown)
     if place is None:
         _say_no_place(job, scene, drawn)
     else:
         taken.append(_Taken(3, None, None, drawn, None, _drawn_label(job, drawn), place.file))
     for item in originals:
+        # An owner part's picture goes only to the scenes holding the part, as tier 2.
+        if item.source.came_from == "owner_part":
+            continue
         if item.kind == "side" and item.side in OTHER_SIDES:
             take(4, item)
     return taken

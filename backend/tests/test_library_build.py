@@ -20,9 +20,10 @@ from adforge.retry import OutsideServiceDown
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import ModelRequest
+from jobs import work
 from jobs.library import LibraryEntry, OwnerPhoto, PagePhoto, library_of
 from jobs.library_items import MOST_PRODUCT_TEXT, add_kept_photos, add_owner_photo
-from jobs.models import Job, ProductPhoto
+from jobs.models import Job, ProductPhoto, ReferencePhoto, Scene
 from jobs.photos import PICK_INSTRUCTIONS
 from jobs.threads import closing_its_connection
 
@@ -120,6 +121,41 @@ def test_the_first_message_builds_a_library_of_every_page_photo_and_the_owners_p
         target="",
         label="The amber bottle on a bathroom shelf, cap off.",
     )
+
+
+@pytest.mark.parametrize(
+    ("thing", "cut_out_again"),
+    [
+        pytest.param("shampoo", False, id="the product: its cut-out reused"),
+        pytest.param("towel", True, id="another thing in the photo: cut out on its own"),
+    ],
+)
+def test_the_owners_photo_cut_out_already_is_cut_out_again_only_for_another_thing(
+    fake_model: FakeModel,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    say: Say,
+    thing: str,
+    cut_out_again: bool,
+) -> None:
+    first_message(fake_model, say, labelled_page)
+    Job.objects.update(product_name="Detox Shampoo")
+    job = Job.objects.get()
+    (product_only,) = [item for item in library_of(job) if item.source.came_from == "product_only"]
+    scene = Scene.objects.create(job=job, number=1, line="It lathers.", shows="It lathers.")
+    # A note on a scene uses the photo the shop owner sent before the plan.
+    row = ReferencePhoto.objects.create(
+        scene=scene,
+        file=job.photos.get(position=6).file,
+        thing=thing,
+        use=ReferencePhoto.Use.PICTURE,
+    )
+
+    drawn = work.clean_picture(scene, row)
+
+    cut = ModelCall.objects.filter(purpose="make_reference_photo_picture").count()
+    assert (cut, drawn != product_only.file) == ((1, True) if cut_out_again else (0, False))
+    # The product's cut-out is in the library once.
+    assert len(library_of(job)) == (8 if cut_out_again else 7)
 
 
 def test_the_labelling_call_is_given_the_pickers_label_rules_and_the_photo(

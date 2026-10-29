@@ -463,21 +463,30 @@ class Scene(models.Model):
         'were invented, and one sentence of how it looks, such as {"what": "the lid", '
         '"source": "owner\'s words", "looks": "..."}. Blank when none.',
     )
-    owner_part_approved_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="When the shop owner said yes to the owner part in a starting picture. Blank "
-        "until then. The yes covers the part as it stands, its looks and its photos: a later "
-        "picture of it needs no new yes, and a correction clears it.",
-    )
-    owner_part_approved_picture = models.ForeignKey(
-        "ProducedItem",
+    owner_part_picture = models.ForeignKey(
+        "LibraryItem",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="+",
-        help_text="The starting picture the shop owner said yes to the owner part in, of this "
-        "scene or another showing the same part. Blank until the yes.",
+        help_text="The owner part's own picture, the job's library item of the part (an "
+        "OwnerPart item, one per part, drawn again in place by a correction). Blank until "
+        "it is drawn.",
+    )
+    owner_part_drawn = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="What the owner part's picture was last drawn from for this scene: the part, "
+        "its photos as [file, use, words] and when the picture was shown, such as "
+        '{"part": {...}, "photos": [], "shown_at": "..."}. The picture is the part\'s as it '
+        "stands while the part and its photos are the same. Blank until it is drawn.",
+    )
+    owner_part_approved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the shop owner said yes to the owner part's picture. Blank until "
+        "then. The yes holds while the part and its photos are the same as the picture was "
+        "drawn from; a correction clears it.",
     )
     fact_checked = models.BooleanField(
         default=False,
