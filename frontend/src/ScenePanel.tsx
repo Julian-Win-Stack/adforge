@@ -227,6 +227,7 @@ function SceneCardView({
         )}
       </div>
       {clip?.sent && <SentView sent={clip.sent} />}
+      {card.question && <QuestionView question={card.question} />}
       {suggested && (
         <span
           className="scene-note-suggested"
@@ -237,6 +238,25 @@ function SceneCardView({
       )}
       <NoteBox name={name} note={note} onNote={onNote} />
     </article>
+  );
+}
+
+/** The fixing agent's question for the owner, text only: the answer comes through the
+ * producer. Where the card is narrow it is cut short, and a tap shows it whole. */
+function QuestionView({ question }: { question: string }) {
+  const [whole, setWhole] = useState(false);
+  return (
+    <div className="scene-question" role="note" aria-label="Question for you">
+      <button
+        type="button"
+        className="scene-question-text"
+        aria-expanded={whole}
+        title={question}
+        onClick={() => setWhole(!whole)}
+      >
+        <span className="scene-question-title">Question for you</span> {question}
+      </button>
+    </div>
   );
 }
 
@@ -290,11 +310,7 @@ function SentView({ sent }: { sent: ClipSent }) {
           ))}
         </ul>
       )}
-      {problems.length > 0 && (
-        <p className="scene-sent-problem">
-          {problems.join(" ")}
-        </p>
-      )}
+      {problems.length > 0 && <p className="scene-sent-problem">{problems.join(" ")}</p>}
     </div>
   );
 }

@@ -41,6 +41,12 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # A clean picture of only the thing a shop owner's photo is taken for (Reference photo,
     # CONTEXT.md), drawn as starting pictures are.
     "make_reference_photo_picture": "gpt-image-2.5-sunburst",
+    # The product-only version of a library photo that shows the product with other things
+    # (spec #210 point 6): drawn as the clean picture of a shop owner's thing is.
+    "make_product_only": "gpt-image-2.5-sunburst",
+    # The cut-out check (spec #210 point 6): the product-only version, or the clean picture of
+    # a shop owner's thing, beside the photo it was cut from. The picture judges' model.
+    "check_cut_out": "gpt-6.1-sol",
     # Whether the thing in the shop owner's photo is in a scene's starting picture, belongs in
     # it from the start, or only shows during the clip: the starting picture's judge, as it is
     # proven at seeing what our pictures show (Julian 2026-10-15, D10).
@@ -57,6 +63,11 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "recolour_picture": "gpt-image-2.5-sunburst",
     "check_recolour": "gpt-6.1-sol",
     "make_person_in_room": "gpt-image-2.5-sunburst",
+    # The fixing agent's place_edit (#237), for one scene: a small edit of its room or
+    # person-in-room picture, or a new room drawn fresh and the presenter standing in it.
+    "edit_scene_place": "gpt-image-2.5-sunburst",
+    "draw_scene_room": "gpt-image-2.5-sunburst",
+    "make_scene_person_in_room": "gpt-image-2.5-sunburst",
     # Judges the starting picture beside its shop photo. With the photo, sol caught 7 of Julian's
     # 10 wrong pictures and failed none of 88 good ones; luna missed the bent neck, the bag clasp
     # and the logo (evals/picture-judge/wrong-pictures-and-photo-test.md; Julian 10 Oct 23:05).

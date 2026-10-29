@@ -1872,6 +1872,34 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+/* The fixing agent's question for the owner, under the clip: text only, answered in the chat. */
+.scene-question {
+  margin: 0;
+  padding: 4px 6px;
+  border-left: 2px solid var(--danger);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.scene-question-text {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.scene-question-title {
+  font-weight: 600;
+  color: var(--danger);
+}
+
 /* The owner's note on a scene. Every note is sent together from the bar under the cards. */
 .scene-form {
   flex: 1;
@@ -2109,6 +2137,28 @@ button:disabled {
   }
 
   .scene-cards > li:has(.scene-note:focus) .scene-sent {
+    display: none;
+  }
+
+  .scene-question {
+    padding: 2px 4px;
+    font-size: 10px;
+    line-height: 13px;
+  }
+
+  /* In the strip the question is cut short until tapped; tapped again, it is short again. */
+  .scene-question-text {
+    cursor: pointer;
+  }
+
+  .scene-question-text[aria-expanded="false"] {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    overflow: hidden;
+  }
+
+  .scene-cards > li:has(.scene-note:focus) .scene-question {
     display: none;
   }
 

@@ -51,6 +51,13 @@ OWNER_LABEL: dict[str, Any] = {
     "target": "",
     "label": "The amber bottle on a bathroom shelf, cap off.",
 }
+# The same, alone on a plain background: it needs no product-only version (spec #210 point 6),
+# so it adds one item.
+OWNER_ALONE: dict[str, Any] = {
+    **OWNER_LABEL,
+    "alone": "yes",
+    "label": "The amber bottle with its cap off, alone on a plain background.",
+}
 
 
 def first_message(
@@ -91,13 +98,16 @@ def test_the_first_message_builds_a_library_of_every_page_photo_and_the_owners_p
         (4, "page_photo", "state", "The amber bottle with its cap off, the pump showing."),
         (5, "page_photo", "in-use", "A hand pressing the pump, the shampoo coming out."),
         (6, "owner_photo", "state", "The amber bottle on a bathroom shelf, cap off."),
+        # The owner's photo shows other things: its product-only version, labelled by the
+        # labelling call's default answer.
+        (7, "product_only", "side", "The product from the front, alone on a plain background."),
     ]
     photos = list(job.photos.order_by("position"))
     items = library_of(job)
     assert [item.source for item in items[:5]] == [
         PagePhoto(photo=photo.position) for photo in photos[:5]
     ]
-    assert [item.file for item in items] == [photo.file for photo in photos]
+    assert [item.file for item in items[:6]] == [photo.file for photo in photos]
     owners = items[5]
     assert owners == LibraryEntry(
         number=6,
@@ -121,7 +131,7 @@ def test_the_labelling_call_is_given_the_pickers_label_rules_and_the_photo(
 
     def labelling(request: ModelRequest[Any]) -> dict[str, Any]:
         asked.append(request)
-        return OWNER_LABEL
+        return OWNER_ALONE
 
     fake_model.answer_unscripted("label_photo", labelling)
 
@@ -191,13 +201,13 @@ def test_a_photo_whose_labelling_answer_broke_the_rules_is_asked_again_when_phot
         ),
         turn(says="Added."),
     )
-    fake_model.respond("label_photo", OWNER_LABEL)
+    fake_model.respond("label_photo", OWNER_ALONE)
 
     say("Here's one more of mine.", ("my-other-bottle.png", photo(202)))
 
     owners = [item for item in library_of(Job.objects.get()) if item.number > 5]
     assert [(item.number, item.label) for item in owners] == [
-        (6, OWNER_LABEL["label"]),
+        (6, OWNER_ALONE["label"]),
         (7, LABELLED["label"]),
     ]
     assert ModelCall.objects.filter(purpose="label_photo").count() == 3
@@ -218,7 +228,7 @@ def test_an_owner_photo_added_later_joins_at_the_next_number_and_the_others_keep
     labelled_page: str,  # noqa: F811 (the fixture)
     say: Say,
 ) -> None:
-    first_message(fake_model, say, labelled_page)
+    first_message(fake_model, say, labelled_page, OWNER_ALONE)
     before = library_of(Job.objects.get())
     fake_model.respond(
         "produce",

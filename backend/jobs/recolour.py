@@ -2,18 +2,21 @@
 library picture with the product in another colour, the colour of a reference picture's
 product, and checks it.
 
-`recolour(job, number, colour, reference=...)`: the picture model is shown item `number` and
-the colour reference, item `reference`, and told to make the product in the first the exact
-colour of the product in the second, changing nothing else; no colour is named to it. The
-picture made is checked by one ask, and drawn again while it fails, at most twice
+`recolour(job, number, colour, reference=..., scene=...)`: the picture model is shown item
+`number` and the colour reference, item `reference`, and told to make the product in the
+first the exact colour of the product in the second, changing nothing else; no colour is
+named to it. The picture made is checked by one ask, and drawn again while it fails, at most twice
 (jobs.checked_pictures). One that passes enters the library beside the original, as a
 Recoloured item in `colour`, made once per colour: asked again, the item is handed back and
 nothing is paid. When every try fails, or the picture model refuses twice, the original is
-handed back, with a red notice saying so.
+handed back, with a red notice saying so, naming the scene it was asked for: once per
+picture and colour, as the next scene to ask for it gets the same.
 
 Which reference to use, and when to recolour, is cut-and-send's: this step takes both as
 given. Run again, as after a worker stopped, it pays for nothing already paid for: each
-picture made is reused in turn, and each check answered from its record."""
+picture made, and each refusal, is taken again in turn, and each check answered from its
+record. An outage, of the picture model or of the check, is raised, so the step can be run
+again later, rather than failing a try."""
 
 import logging
 from dataclasses import dataclass
@@ -21,12 +24,10 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
-from adforge.retry import OutsideServiceDown
 from chat.models import Message
 from gateway.gateway import UnreadableImage, call_model, edit_picture
 from gateway.models import ModelCall
 from gateway.types import (
-    AnswerTookTooLong,
     BlockedBySafetyFilter,
     Handoff,
     Image,
@@ -35,7 +36,7 @@ from gateway.types import (
 )
 
 from .checked_pictures import made_and_checked
-from .job_locks import LIBRARY_LOCK, RECOLOUR_LOCK, one_job_at_a_time
+from .job_locks import LIBRARY_LOCK, RECOLOUR_LOCK, one_at_a_time, one_job_at_a_time
 from .library import LibraryEntry, PictureLabel, Recolour, Recoloured, add_to_library, entry
 from .models import Job
 from .notices import post_notice
@@ -109,13 +110,13 @@ class RecolourVerdict(BaseModel):
         return self
 
 
-# Why the check couldn't be made, in plain words, by what went wrong.
+# Why the check couldn't be made, in plain words, by what went wrong: each fails the
+# picture, as asking again would go the same way. An outage (OutsideServiceDown,
+# AnswerTookTooLong) is raised instead, as the picture model's is.
 _WHY_UNCHECKED: dict[type[Exception], str] = {
     UnusableReply: "the check's answer couldn't be used",
-    OutsideServiceDown: "the AI service didn't answer the check",
     UnreadableImage: "a picture couldn't be read for the check",
     BlockedBySafetyFilter: "the check's safety filter refused the pictures",
-    AnswerTookTooLong: "the check took too long to answer",
 }
 
 
@@ -128,28 +129,32 @@ class Recolouring:
     record: Recolour
 
 
-def recolour(job: Job, number: int, colour: str, *, reference: int) -> Recolouring:
+def recolour(job: Job, number: int, colour: str, *, reference: int, scene: int) -> Recolouring:
     """Item `number` of `job`'s library with its product made `colour`, the colour of the
-    product in item `reference`: the Recoloured item already made in `colour`, else one made
-    and checked now, else, when every try failed, item `number` itself, which is said in a
-    red notice."""
-    with one_job_at_a_time(RECOLOUR_LOCK, job):
+    product in item `reference`, for scene `scene`: the Recoloured item already made in
+    `colour`, else one made and checked now, else, when every try failed, item `number`
+    itself, which a red notice says the first time."""
+    # Only the same picture in the same colour waits: the ad's other recolours go on.
+    with one_at_a_time(RECOLOUR_LOCK, f"{job.pk}:{number}:{colour}"):
         original = _item(job, number)
         if (made := _made_before(job, number, colour)) is not None:
             return _done(made)
         to_send = [original.file, _item(job, reference).file]
-        paid = _paid_pictures(job, to_send)
+        tried = _tried_before(job, to_send)
 
         def make(tries: int) -> str:
-            if tries < len(paid):
-                return paid[tries]
+            if tries < len(tried):
+                before = tried[tries]
+                if isinstance(before, BlockedBySafetyFilter):
+                    raise before
+                return before
             return edit_picture(
                 job=job, purpose="recolour_picture", prompt=RECOLOUR_PROMPT, pictures=to_send
             )
 
         checked = made_and_checked(make, lambda file: _check(job, [*to_send, file]))
         if checked.file is None:
-            _say_it_fell_back(job, original, colour, checked.problems)
+            _say_it_fell_back(job, original, colour, scene, checked.problems)
             return Recolouring(
                 picture=original,
                 record=Recolour(of=number, colour=colour, outcome="fell_back", made=None),
@@ -183,13 +188,24 @@ def _done(made: LibraryEntry) -> Recolouring:
     )
 
 
-def _paid_pictures(job: Job, pictures: list[str]) -> list[str]:
-    """Each recoloured picture made from `pictures` before, oldest first."""
+# How a call the picture model's safety filter refused is recorded (gateway._recorded).
+_REFUSED = f"{BlockedBySafetyFilter.__name__}: "
+
+
+def _tried_before(job: Job, pictures: list[str]) -> list[str | BlockedBySafetyFilter]:
+    """Each try at recolouring from `pictures` made before, oldest first: the picture made,
+    or the safety filter's refusal. A call that failed any other way made no try."""
     handoff = PictureEditHandoff(prompt=RECOLOUR_PROMPT, pictures=pictures).model_dump()
-    calls = job.model_calls.filter(
-        purpose="recolour_picture", outcome=ModelCall.Outcome.SUCCEEDED, handoff=handoff
-    ).order_by("created_at", "id")
-    return [str(call.output["file"]) for call in calls if call.output is not None]
+    calls = job.model_calls.filter(purpose="recolour_picture", handoff=handoff).order_by(
+        "created_at", "id"
+    )
+    tried: list[str | BlockedBySafetyFilter] = []
+    for call in calls:
+        if call.outcome == ModelCall.Outcome.SUCCEEDED and call.output is not None:
+            tried.append(str(call.output["file"]))
+        elif call.error.startswith(_REFUSED):
+            tried.append(BlockedBySafetyFilter(call.error.removeprefix(_REFUSED)))
+    return tried
 
 
 def _check(job: Job, pictures: list[str]) -> str | None:
@@ -217,15 +233,29 @@ def _check(job: Job, pictures: list[str]) -> str | None:
     return None if verdict.verdict == "pass" else verdict.problem
 
 
-def _say_it_fell_back(job: Job, original: LibraryEntry, colour: str, problems: list[str]) -> None:
-    """The red notice for a recolour every try failed: what failed, what goes instead, and
-    what that means for the ad."""
+def _say_it_fell_back(
+    job: Job, original: LibraryEntry, colour: str, scene: int, problems: list[str]
+) -> None:
+    """The red notice for a recolour every try failed, the first time it fails: what failed,
+    what goes instead, and what that means for the ad. A later scene asking for the same
+    picture in the same colour gets the same, and isn't told again."""
+    opening = _fell_back_opening(original, colour)
+    if any(warning["text"].startswith(opening) for warning in job.warnings):
+        return
     found = " ".join(f"Try {tries}: {problem}" for tries, problem in enumerate(problems, 1))
     post_notice(
         job,
-        f'Making picture {original.number} of the ad\'s picture library ("{original.label}") '
-        f"{colour} failed every time it was tried, so the picture goes to the video model in "
-        f"its own colour, {original.colour}: a clip made with it may show the product in two "
-        f"colours. {found}",
+        f"{opening}, for scene {scene}: it failed every time it was tried, so the picture goes "
+        f"to the video model in its own colour, {original.colour}, for this scene and any other "
+        f"that sends it in {colour}. A clip made with it may show the product in two colours. "
+        f"{found}",
         Message.Level.PROBLEM,
+    )
+
+
+def _fell_back_opening(original: LibraryEntry, colour: str) -> str:
+    """How the notice of a recolour that fell back starts: the picture and the colour."""
+    return (
+        f"Picture {original.number} of the ad's picture library (\"{original.label}\") couldn't "
+        f"be made {colour}"
     )

@@ -42,6 +42,9 @@ scene takes from it: "content" is what the product takes in or acts on, "result"
 scene ends, "in-use" how the product is held or used, "place" where it happens, "person" \
 who does it, and "state" how the product is in this scene. A picture without "used_for" is \
 there for how the product looks.
+Each picture also has its "colour", the colour the product is in that picture. A picture may \
+have been recoloured after its label was written, so when a line says the product's colour, \
+it says the picture's "colour", never a colour word from its label.
 Write two things:
 - "labels": one for each picture in "pictures", in their order. Code writes "Image N is" \
 before each and a full stop after, so write only the rest of that line: what the picture \
@@ -73,6 +76,7 @@ Words = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 class LabelledPicture(Handoff):
     image: int
     label: str
+    colour: str
     used_for: For | None
 
 
@@ -112,14 +116,28 @@ def _drawn_line(picture: SentPicture) -> str:
     return f"Image {picture.image} is {DRAWN_LABELS[picture.drawn]}."
 
 
+def _colours(job: Job, library: Sequence[SentPicture]) -> dict[int, str]:
+    """Each library picture's colour, by its image number: its library item's own colour,
+    which a recoloured item's label may not say (Julian, tickets thread, Oct 29: the label is
+    kept, the colour field holds the new colour)."""
+    numbers: dict[int, int] = {}
+    for picture in library:
+        assert picture.library_number is not None, "a library picture has its number"
+        numbers[picture.image] = picture.library_number
+    held = dict(job.library.filter(number__in=numbers.values()).values_list("number", "colour"))
+    return {image: held[number] for image, number in numbers.items()}
+
+
 def write_first_send_prompt(
     job: Job, pictures: Sequence[SentPicture], pieces: Sequence[SentPiece], scene: FirstSendScene
 ) -> str:
     """The prompt a clip is first sent with: SPEED_LINE, then a line for each picture in
-    order (the model's from its label for a library picture, DRAWN_LABELS' for the drawn
-    one), then one for each piece, then the model's one sentence, each on its own line."""
+    order (the model's from its label and its library item's colour for a library picture,
+    DRAWN_LABELS' for the drawn one), then one for each piece, then the model's one
+    sentence, each on its own line."""
     library = [picture for picture in pictures if picture.drawn is None]
     drawn = [_drawn_line(picture) for picture in pictures if picture.drawn is not None]
+    colours = _colours(job, library)
     answer = call_model(
         job=job,
         purpose="write_first_send_prompt",
@@ -127,7 +145,12 @@ def write_first_send_prompt(
         handoff=FirstSendHandoff(
             scene=scene,
             pictures=[
-                LabelledPicture(image=picture.image, label=picture.label, used_for=picture.for_)
+                LabelledPicture(
+                    image=picture.image,
+                    label=picture.label,
+                    colour=colours[picture.image],
+                    used_for=picture.for_,
+                )
                 for picture in library
             ],
             drawn=drawn[0] if drawn else None,

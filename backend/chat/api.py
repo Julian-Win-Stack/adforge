@@ -75,6 +75,7 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
     suggested_note = serializers.SerializerMethodField()
     plan = serializers.SerializerMethodField()
     tries = serializers.SerializerMethodField()
+    question = serializers.SerializerMethodField()
     # The try a tap of "Use this one" chose (#180); null for any other message.
     use_clip: serializers.PrimaryKeyRelatedField[ProducedItem] = serializers.PrimaryKeyRelatedField(
         source="chosen_clip", read_only=True
@@ -93,6 +94,7 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
             "suggested_note",
             "plan",
             "tries",
+            "question",
             "use_clip",
             "pasted_page",
             "pasted_page_result",
@@ -154,6 +156,19 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
             ],
         }
 
+    def get_question(self, message: Message) -> dict[str, object] | None:
+        """The fixing agent's question for the shop owner, for its scene's card: its scene,
+        the agent's words, and whether it still waits for an answer, as it stands now; null
+        for any message but the notice saying it was asked."""
+        asked = message.owner_question
+        if asked is None:
+            return None
+        return {
+            "scene": asked.scene.number,
+            "text": asked.question,
+            "open": asked.answered_at is None,
+        }
+
 
 class SessionSerializer(serializers.ModelSerializer[Session]):
     class Meta:
@@ -186,7 +201,9 @@ def session(request: Request, session_id: str) -> Response:
         found.name = rename.validated_data["name"]
         found.save(update_fields=["name"])
         return Response(SessionSerializer(found).data)
-    history = found.messages.select_related("fix_plan").prefetch_related("attachments__clip")
+    history = found.messages.select_related("fix_plan", "owner_question__scene").prefetch_related(
+        "attachments__clip"
+    )
     return Response(
         {**SessionSerializer(found).data, "messages": MessageSerializer(history, many=True).data}
     )
@@ -271,7 +288,7 @@ def session_messages(request: Request, session_id: str) -> Response:
     poll.is_valid(raise_exception=True)
     newer = (
         found.messages.filter(seq__gt=poll.validated_data["after"])
-        .select_related("fix_plan")
+        .select_related("fix_plan", "owner_question__scene")
         .prefetch_related("attachments__clip")
     )
     return Response(MessageSerializer(newer, many=True).data)

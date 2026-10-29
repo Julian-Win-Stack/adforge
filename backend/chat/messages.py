@@ -68,6 +68,7 @@ def add(
     plan: PlanSignal | None = None,
     tries_of: int | None = None,
     chosen_clip: int | None = None,
+    owner_question: int | None = None,
     pasted_page: bool = False,
     pasted_page_result: str = "",
     wants_pasted_page: bool | None = None,
@@ -78,7 +79,8 @@ def add(
     message about a scene's starting picture or clip carries its `step`, and one may
     suggest a note on a scene, and one about a fix plan carries its `plan`. One showing every
     try of a clip the judge failed names its clip step, `tries_of`, and the shop owner's tap
-    on one of them names the try chosen, `chosen_clip`. A notice about the product page says
+    on one of them names the try chosen, `chosen_clip`. The notice saying the fixing agent
+    asked the shop owner a question names it, `owner_question`. A notice about the product page says
     whether it wants the page panel, `wants_pasted_page`. The page panel's message is a
     `pasted_page`; it and code's notice answering it carry the `pasted_page_result`, and a
     notice keeping one with too few photos `wants_more_photos`.
@@ -107,6 +109,7 @@ def add(
             fix_plan_id=plan.plan if plan else None,
             tries_of_id=tries_of,
             chosen_clip_id=chosen_clip,
+            owner_question_id=owner_question,
             pasted_page=pasted_page,
             pasted_page_result=pasted_page_result,
             wants_pasted_page=wants_pasted_page,
