@@ -1,7 +1,9 @@
 """A picture the producer makes (spec #247 point 5, Julian Q11): drawn by the picture model
 from the producer's own prompt, with library items as references, checked once the way a
 cut-out is (jobs.cut_out.check_made_picture), and stored as a new library item with the
-label the producer gives, so a drawn or combined picture is a reference like any other.
+label the producer gives, so a drawn or combined picture is a reference like any other that
+the producer may name for a scene; it is sent only where it is named (never as cut-and-send's
+tier 4), and one made from an owner part's picture only to the scenes holding that part.
 Combining several sides into one picture is one use of it. Its other fixed fields (kind,
 side, alone, colour) come from the labelling call, told what the producer says it shows.
 
@@ -16,7 +18,7 @@ from gateway.models import ModelCall
 from .cut_out import Unchecked, check_made_picture
 from .job_locks import LIBRARY_LOCK, one_job_at_a_time
 from .library import LibraryEntry, Made, add_to_library, entry
-from .library_items import label_photo
+from .library_items import label_photo, to_send
 from .models import Job
 
 PURPOSE = "make_picture"
@@ -41,12 +43,14 @@ def make_picture(
     Made again under the same producer call (`paid_under`, its id), as after a worker
     stopped, it pays for nothing twice: the picture already drawn is reused, its check and
     label answered from their records, and the item already stored handed back."""
-    pictures = [reference.file for reference in references]
+    # Each reference as a sender sends it: its product-only version when it has one.
+    sent = [to_send(job, reference) for reference in references]
+    pictures = [reference.file for reference in sent]
     file = _paid_for(job, prompt, pictures, paid_under) or _drawn(job, prompt, pictures)
     said = check_made_picture(
         job,
         file,
-        [(reference.file, reference.label) for reference in references],
+        [(reference.file, reference.label) for reference in sent],
         asked=prompt,
         label=label,
     )

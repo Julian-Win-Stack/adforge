@@ -39,9 +39,11 @@ from . import cut_out, library_items, reference_photos
 from .job_locks import LIBRARY_LOCK, PART_PICTURE_LOCK, one_job_at_a_time
 from .library import (
     LibraryEntry,
+    Made,
     OwnerPhoto,
     PagePhoto,
     PictureLabel,
+    ProductOnly,
     Recoloured,
     add_to_library,
     entry,
@@ -91,6 +93,33 @@ def part_picture(scene: Scene) -> LibraryEntry | None:
         return None
     assert scene.owner_part_picture is not None
     return entry(scene.owner_part_picture)
+
+
+def parts_shown(item: LibraryEntry, library: dict[int, LibraryEntry]) -> set[int]:
+    """The library numbers of the owner parts' pictures `item` shows: itself when it is one,
+    and any it is a version of or was made from (a made picture drawn from a part's picture
+    is that part's picture too). `library` is the job's library by number."""
+    match item.source:
+        case PartSource():
+            return {item.number}
+        case ProductOnly(of=of) | Recoloured(of=of):
+            return parts_shown(library[of], library)
+        case Made(references=references):
+            return {n for ref in references for n in parts_shown(library[ref], library)}
+        case _:
+            return set()
+
+
+def part_not_held(
+    scene: Scene, item: LibraryEntry, library: dict[int, LibraryEntry]
+) -> LibraryEntry | None:
+    """The owner part's picture `item` shows that `scene` doesn't hold, if it shows one: an
+    owner part's picture, or one made from it, goes only to the scenes holding that part,
+    whose clip waits for the shop owner's yes (spec #247 point 13). None when `item` may go
+    to `scene`."""
+    held = scene.owner_part_picture.number if scene.owner_part_picture is not None else None
+    elsewhere = sorted(parts_shown(item, library) - {held})
+    return library[elsewhere[0]] if elsewhere else None
 
 
 def _photo_list(rows: Iterable[ReferencePhoto], what: str) -> list[list[str]]:
