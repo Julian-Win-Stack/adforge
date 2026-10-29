@@ -19,6 +19,19 @@ class GatewayConfig(AppConfig):
             logger.warning(
                 "Pictures are drawn on %s; text and vision calls go to %s", pictures, others
             )
+            if settings.AZURE_PICTURES_KEY:
+                logger.warning(
+                    "Once OpenAI refuses a picture for money, that session's pictures are "
+                    "drawn on %s (deployment %s), at most %s a minute",
+                    _host(settings.AZURE_PICTURES_BASE_URL),
+                    settings.AZURE_PICTURES_DEPLOYMENT,
+                    settings.AZURE_PICTURES_PER_MINUTE,
+                )
+            else:
+                logger.warning(
+                    "AZURE_OPENAI_KEY or AZURE_OPENAI_BASE_URL is not set: a picture OpenAI "
+                    "refuses for money fails, as nothing draws it instead"
+                )
         else:
             logger.warning(
                 "OPENAI_API_KEY is not set: every picture will fail (pictures are only drawn "

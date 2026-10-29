@@ -4,6 +4,7 @@ a notice is written by code and says exactly what happened."""
 
 from collections.abc import Sequence
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -97,5 +98,24 @@ def post_refused_by_the_filter(job: Job, what: str, then: str) -> None:
     """Tell the chat in red, with its warning line, that a model's safety filter refused to
     look at `what` (see refused_by_the_filter). Told once, as post_left_out_by_the_filter."""
     text = refused_by_the_filter(what, then)
+    if all(warning["text"] != text for warning in job.warnings):
+        post_notice(job, text, Message.Level.PROBLEM)
+
+
+def pictures_moved_to_azure() -> str:
+    """The notice for a session whose pictures move to our Azure copy of the picture model,
+    because OpenAI refused one for money (Julian 2026-10-29)."""
+    return (
+        "OpenAI refused to draw a picture because our OpenAI account is out of money (its "
+        "spend limit or quota is reached), so this session's pictures are drawn on our Azure "
+        "copy of the same picture model from now on. Azure draws at most "
+        f"{settings.AZURE_PICTURES_PER_MINUTE} a minute, so pictures may take longer."
+    )
+
+
+def post_pictures_moved_to_azure(job: Job) -> None:
+    """Tell the chat in red, with its warning line, that the session's pictures are drawn on
+    Azure from now on (see pictures_moved_to_azure). Told once."""
+    text = pictures_moved_to_azure()
     if all(warning["text"] != text for warning in job.warnings):
         post_notice(job, text, Message.Level.PROBLEM)

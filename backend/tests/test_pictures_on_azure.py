@@ -1,0 +1,169 @@
+"""Pictures fall back to our Azure copy of the picture model when OpenAI refuses to draw for
+money (#247 point 19a), driven through the chat: the producer's model is faked at the
+gateway to make scene 1's starting picture, and the fake picture model refuses as told."""
+
+from collections.abc import Callable
+
+import pytest
+from pytest_django import Settings
+from rest_framework.test import APIClient
+
+from chat.models import Session
+from gateway import gateway
+from gateway.fake import FakeModel, turn
+from gateway.models import ModelCall
+from gateway.types import BlockedBySafetyFilter, RefusedForMoney
+from jobs.models import Job, SceneStep
+
+from .conftest import HeldSteps, chat
+from .test_producer_scenes import CHOICE, making
+
+# Each request commits on its own, as on the real server, and so does the producer's work.
+pytestmark = pytest.mark.django_db(transaction=True)
+
+OUT_OF_MONEY = RefusedForMoney(
+    "Error code: 429 - You exceeded your current quota, please check your plan and billing "
+    "details. (insufficient_quota)"
+)
+
+
+@pytest.fixture(autouse=True)
+def azure_set_up(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Azure's copy of the picture model is set up, and every wait for its pace is noted
+    rather than slept."""
+    settings.AZURE_PICTURES_KEY = "azure-key"
+    settings.AZURE_PICTURES_BASE_URL = "https://ours.openai.azure.com/openai/v1/"
+    waited: list[float] = []
+    monkeypatch.setattr(gateway, "_wait", waited.append)
+    return waited
+
+
+def make_scene_1(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], note: str | None = None
+) -> None:
+    making(fake_model, (1, note))
+    say("Make scene 1's starting picture" if note is None else note)
+    fake_model.respond("choose_starting_picture", CHOICE)
+    fake_model.respond("produce", turn(says="Done."))
+    steps.run_held()
+
+
+def red_lines(api: APIClient, session_id: str) -> list[str]:
+    return [
+        message["text"]
+        for message in api.get(f"/api/sessions/{session_id}/messages/").json()
+        if message["level"] == "problem"
+    ]
+
+
+def test_pictures_openai_refuses_for_money_are_drawn_on_azure_from_then_on(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    drawn_before = len(fake_model.pictures_drawn_on)
+    red_before = len(red_lines(api, session_id))
+    warned_before = len(Job.objects.get().warnings)
+    fake_model.respond("make_starting_picture", OUT_OF_MONEY)
+
+    make_scene_1(fake_model, steps, say)
+
+    # The refused picture is drawn on Azure at once, so the scene still gets its picture.
+    assert SceneStep.objects.get().status == "finished"
+    assert fake_model.pictures_drawn_on[drawn_before:] == ["openai", "azure"]
+    # The owner is told in red, and the ad's warnings keep the same line.
+    (told,) = red_lines(api, session_id)[red_before:]
+    assert "out of money" in told and "Azure" in told
+    assert [warning["text"] for warning in Job.objects.get().warnings[warned_before:]] == [told]
+
+    make_scene_1(fake_model, steps, say, note="Smiling more.")
+
+    # The next picture goes straight to Azure, and the owner isn't told again.
+    assert fake_model.pictures_drawn_on[drawn_before:] == ["openai", "azure", "azure"]
+    assert red_lines(api, session_id)[red_before:] == [told]
+    assert [
+        (call.provider, call.outcome)
+        for call in ModelCall.objects.filter(purpose="make_starting_picture").order_by("id")
+    ] == [("fake", "failed"), ("azure", "succeeded"), ("azure", "succeeded")]
+
+
+def test_another_sessions_pictures_stay_on_openai(
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond("make_starting_picture", OUT_OF_MONEY)
+    make_scene_1(fake_model, steps, say)
+    other = Job.objects.create(
+        session=Session.objects.create(), product_url="https://shop.example/products/mug"
+    )
+    drawn_before = len(fake_model.pictures_drawn_on)
+
+    with gateway.use_model(fake_model):
+        gateway.draw_picture(job=other, purpose="draw_person", prompt="A potter.")
+
+    assert fake_model.pictures_drawn_on[drawn_before:] == ["openai"]
+
+
+def test_a_picture_the_safety_filter_refuses_isnt_drawn_on_azure(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    drawn_before = len(fake_model.pictures_drawn_on)
+    fake_model.respond("make_starting_picture", BlockedBySafetyFilter("content_filter"))
+    make_scene_1(fake_model, steps, say)
+
+    make_scene_1(fake_model, steps, say, note="Smiling more.")
+
+    assert fake_model.pictures_drawn_on[drawn_before:] == ["openai", "openai"]
+    assert not any("Azure" in text for _, text in chat(api, session_id))
+
+
+def test_pictures_on_azure_are_paced_to_azures_limit(
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    settings: Settings,
+    azure_set_up: list[float],
+) -> None:
+    settings.AZURE_PICTURES_PER_MINUTE = 1
+    fake_model.respond("make_starting_picture", OUT_OF_MONEY)
+    make_scene_1(fake_model, steps, say)
+    assert azure_set_up == []
+
+    make_scene_1(fake_model, steps, say, note="Smiling more.")
+
+    # One a minute: the second waits out what is left of the minute since the first.
+    (waited,) = azure_set_up
+    assert 30 < waited <= 60
+
+
+def test_without_azure_set_up_a_picture_refused_for_money_fails_saying_so(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
+    settings: Settings,
+) -> None:
+    settings.AZURE_PICTURES_KEY = ""
+    drawn_before = len(fake_model.pictures_drawn_on)
+    fake_model.respond("make_starting_picture", OUT_OF_MONEY)
+
+    make_scene_1(fake_model, steps, say)
+
+    step = SceneStep.objects.get()
+    assert step.status == "failed"
+    assert "out of money" in step.reason
+    assert fake_model.pictures_drawn_on[drawn_before:] == ["openai"]
+    assert any("out of money" in text for text in red_lines(api, session_id))

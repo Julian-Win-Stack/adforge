@@ -224,7 +224,7 @@ class OwnerNotesProvider:
 
     # Pictures.
 
-    def draw(self, *, model: str, prompt: str) -> Picture:
+    def draw(self, *, model: str, prompt: str, on_azure: bool = False) -> Picture:
         if self.phase == "first":
             # The portrait: round 4's first talking scene's picture shows the person. The
             # before-picture: its first B-roll scene's shows the place.
@@ -234,15 +234,19 @@ class OwnerNotesProvider:
                 data=(scenes or self.ad.scenes)[0].picture, input_tokens=0, output_tokens=0
             )
         with _one_picture_at_a_time():
-            picture: Picture = self.real.draw(model=model, prompt=prompt)
+            picture: Picture = self.real.draw(model=model, prompt=prompt, on_azure=on_azure)
             return picture
 
-    def edit(self, *, model: str, prompt: str, pictures: Sequence[bytes]) -> Picture:
+    def edit(
+        self, *, model: str, prompt: str, pictures: Sequence[bytes], on_azure: bool = False
+    ) -> Picture:
         if self.phase == "first":
             number = _running_scene()
             return Picture(data=self.ad.scene(number).picture, input_tokens=0, output_tokens=0)
         with _one_picture_at_a_time():
-            picture: Picture = self.real.edit(model=model, prompt=prompt, pictures=pictures)
+            picture: Picture = self.real.edit(
+                model=model, prompt=prompt, pictures=pictures, on_azure=on_azure
+            )
             return picture
 
     # Voices, transcripts and music: the fake's.

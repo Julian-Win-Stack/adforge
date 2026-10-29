@@ -103,6 +103,9 @@ class FakeModel:
         self.pause_seconds = 0.0
         self.voices = 0
         self.edits = 0
+        # Where each picture was drawn, in turn: "openai", or "azure" once OpenAI refused for
+        # money.
+        self.pictures_drawn_on: list[str] = []
         # Every script the fake has been asked to speak, so a test can show that work paid
         # for once was not paid for again.
         self.spoken: list[str] = []
@@ -196,7 +199,8 @@ class FakeModel:
             return outcome()
         return outcome
 
-    def draw(self, *, model: str, prompt: str) -> Picture:
+    def draw(self, *, model: str, prompt: str, on_azure: bool = False) -> Picture:
+        self.pictures_drawn_on.append("azure" if on_azure else "openai")
         self._fail_if_scripted("draw_person")
         portrait = io.BytesIO()
         PIL.Image.new("RGB", (72, 128), "tan").save(portrait, format="PNG")
@@ -206,7 +210,10 @@ class FakeModel:
             output_tokens=self.OUTPUT_TOKENS,
         )
 
-    def edit(self, *, model: str, prompt: str, pictures: Sequence[bytes]) -> Picture:
+    def edit(
+        self, *, model: str, prompt: str, pictures: Sequence[bytes], on_azure: bool = False
+    ) -> Picture:
+        self.pictures_drawn_on.append("azure" if on_azure else "openai")
         self._fail_if_scripted("make_starting_picture")
         self.edits += 1
         made = io.BytesIO()
