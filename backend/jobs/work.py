@@ -3446,7 +3446,8 @@ def end_the_agents_fixing(step: SceneStep) -> None:
     still going is given up, its scene put back as it was before try 1, as no worker carries
     it on. A give-up is then kept as its door keeps one, if it wasn't yet: door 1's scene
     keeping its last try, or a fix's scene keeping its clip from before. A door 1 scene with
-    no try filmed is planned again, as the step's own clip fails with it."""
+    no try filmed is planned again, as the step's own clip fails with it, and a question its
+    fix was parked on is withdrawn."""
     from agents import fixing_agent
 
     fixing = AgentFix.objects.filter(step=step).first()
@@ -3461,9 +3462,11 @@ def end_the_agents_fixing(step: SceneStep) -> None:
         return
     ended = _ended(step)
     # The step fails, so a clip of its own is no clip of the ad's: only a try, filmed in a step
-    # of its own, is. With no try filmed, the scene waits for its clip to be made again.
+    # of its own, is. With no try filmed, the scene waits for its clip to be made again, and a
+    # question the fix was parked on is withdrawn: no answer can resume a fix whose step failed.
     if ended.kept is not None and ended.kept.step_id == step.pk:
         Scene.objects.get(pk=step.scene_id).plan_again()
+        OwnerQuestion.objects.filter(agent_fix=ended, answered_at__isnull=True).delete()
 
 
 def back_to_the_clip_before(step: SceneStep) -> ProducedItem | None:
@@ -3707,23 +3710,29 @@ def say_the_agent_gave_up(step: SceneStep) -> None:
     if is_parked(ended):
         _say_the_agent_asked(step, ended)
         return
-    if ended.said_to_camera:
-        meanwhile = f"so scene {number}'s line will be said to camera instead"
-    elif _kept_a_try(step, ended):
-        meanwhile = f"so {_what_is_kept(step)} is in the ad"
-    elif ended.kept is not None:
-        meanwhile = f"so scene {number} keeps the clip it had before"
-    else:
-        meanwhile = "so the last try is in the ad"
     capped = ", and the fixing agent filmed as many tries as it may" if ended.ended_by_cap else ""
     post_notice(
         step.scene.job,
         f"The clip judge found a problem in all {len(_clip_tries(step))} tries at scene "
-        f"{number}'s clip{capped}, {meanwhile}. Watch them, and tap one to use it instead.",
+        f"{number}'s clip{capped}, so {_in_the_ad_meanwhile(step, ended)}. Watch them, and tap "
+        "one to use it instead.",
         Message.Level.INFO,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
         tries_of=step.pk,
     )
+
+
+def _in_the_ad_meanwhile(step: SceneStep, ended: AgentFix) -> str:
+    """What a give-up, or a fix parked on a question, left in the ad for the scene, as a
+    clause for the chat: "the last try is in the ad", or the like."""
+    number = step.scene.number
+    if ended.said_to_camera:
+        return f"scene {number}'s line will be said to camera instead"
+    if _kept_a_try(step, ended):
+        return f"{_what_is_kept(step)} is in the ad"
+    if ended.kept is not None:
+        return f"scene {number} keeps the clip it had before"
+    return "the last try is in the ad"
 
 
 def _say_the_agent_asked(step: SceneStep, ended: AgentFix) -> None:
@@ -3731,16 +3740,11 @@ def _say_the_agent_asked(step: SceneStep, ended: AgentFix) -> None:
     not approved yet): the scene has a question for the shop owner, what is in the ad until
     they answer, and where the question is."""
     number = step.scene.number
-    if _kept_a_try(step, ended):
-        meanwhile = f"{_what_is_kept(step)} is in the ad"
-    elif ended.kept is not None:
-        meanwhile = f"scene {number} keeps the clip it had before"
-    else:
-        meanwhile = "the last try is in the ad"
     post_notice(
         step.scene.job,
-        f"The fixing agent has a question for you about scene {number}'s clip, so {meanwhile} "
-        f"until you answer it. The question is on scene {number}'s card.",
+        f"The fixing agent has a question for you about scene {number}'s clip, so "
+        f"{_in_the_ad_meanwhile(step, ended)} until you answer it. The question is on scene "
+        f"{number}'s card.",
         Message.Level.PROBLEM,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
         owner_question=ended.owner_question.pk,
@@ -3839,9 +3843,10 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
         return f"{failed}, so the fixing agent filmed it again, and the judge passed try {passed}."
     filmed = len(_clip_tries(step)) - 1
     if is_parked(ended):
+        tried = {0: "before filming a try", 1: "after 1 try"}.get(filmed, f"after {filmed} tries")
         asked = (
-            f"{failed}, and after {filmed} tries the fixing agent asked the shop owner a "
-            "question about it, shown on the scene's card"
+            f"{failed}, and {tried} the fixing agent asked the shop owner a question about it, "
+            "shown on the scene's card"
         )
         if _kept_a_try(step, ended):
             return f"{asked}, so {_what_is_kept(step)} is in the ad until they answer it."
