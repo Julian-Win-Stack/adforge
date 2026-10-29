@@ -1,13 +1,19 @@
 import base64
 import io
 import json
+import subprocess
+import tempfile
 import time
 from collections.abc import Callable, Sequence
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import PIL.Image
 import pytest
+from django.conf import settings as django_settings
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from pydantic import ValidationError
 from pytest_django import Settings
 from pytest_httpserver import HTTPServer
@@ -26,10 +32,11 @@ from gateway.gateway import (
     submit_clip,
 )
 from gateway.models import ModelCall
-from gateway.types import AnswerTookTooLong, Image, UnusableReply
+from gateway.types import AnswerTookTooLong, Image, ReferenceVideo, UnusableReply
+from jobs.product_videos import PieceWanted, cut_pieces
 from jobs.work import PageCheck, PageCheckHandoff
 
-from .conftest import READABLE, openai_answer, openai_reply, picture
+from .conftest import READABLE, openai_answer, openai_reply, picture, video
 
 pytestmark = pytest.mark.django_db
 
@@ -286,6 +293,7 @@ def test_a_b_roll_clip_from_a_starting_picture_is_sent_its_picture_seconds_and_p
         {
             "starting_picture": file_store.read(pictures_kept[0]),
             "example_pictures": [],
+            "reference_videos": [],
             "seconds": 7,
             "prompt": "Tea is poured into the mug.",
         }
@@ -355,6 +363,282 @@ def test_a_b_roll_clip_boreal_h3_cant_make_is_refused_before_anything_is_sent(
 
     with pytest.raises(ValidationError, match=why):
         _broll(**named)
+
+    assert fake_model.broll_clips_asked == []
+    assert not ModelCall.objects.exists()
+
+
+# --- A piece of a page video, sent beside the example pictures --------------------------------
+# ffmpeg cuts it for real from a tiny video; the fake video model keeps what it was sent.
+
+
+@pytest.fixture(scope="module")
+def page_video_file(tmp_path_factory: pytest.TempPathFactory) -> bytes:
+    """A real 24-second video, 32 by 48 px at 5 frames a second, with sound, that brightens
+    as it plays: about 10 brightness a second (see `brightness_at`)."""
+    made = tmp_path_factory.mktemp("page-video") / "page.mp4"
+    brightening = "nullsrc=s=32x48:r=5,format=yuv420p,geq=lum='16+T*9':cb=128:cr=128"
+    subprocess.run(
+        [django_settings.FFMPEG, "-loglevel", "error", "-f", "lavfi", "-i", brightening]
+        + ["-f", "lavfi", "-i", "sine=frequency=440"]
+        + ["-t", "24", "-pix_fmt", "yuv420p", "-shortest", str(made)],
+        check=True,
+    )
+    return made.read_bytes()
+
+
+def brightness_at(data: bytes, seconds: float) -> float:
+    """How bright a video is `seconds` in, 0 to 255."""
+    with tempfile.TemporaryDirectory() as folder:
+        file = Path(folder) / "video.mp4"
+        file.write_bytes(data)
+        frame = subprocess.run(
+            [django_settings.FFMPEG, "-v", "error", "-i", str(file), "-ss", f"{seconds:g}"]
+            + ["-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+            capture_output=True,
+            timeout=60,
+            check=True,
+        ).stdout
+    return sum(frame) / len(frame)
+
+
+@pytest.fixture
+def page_video(page_video_file: bytes) -> str:
+    """The page video kept in the file store, by its key."""
+    return file_store.save("jobs/1/videos/1.mp4", page_video_file)
+
+
+def test_a_piece_cut_from_a_page_video_is_sent_with_the_seconds_it_was_cut_at(
+    fake_model: FakeModel, pictures_kept: list[str], page_video: str, page_video_file: bytes
+) -> None:
+    cut = cut_pieces([PieceWanted(video=page_video, start=2, end=5)])
+    submit_broll_clip(
+        job=None,
+        purpose="make_broll_clip",
+        starting_picture_key=None,
+        example_picture_keys=pictures_kept[:2],
+        reference_videos=cut.sent,
+        seconds=5,
+        prompt="Tea is poured into the mug.",
+    )
+
+    (asked,) = fake_model.broll_clips_asked
+    (piece,) = asked["reference_videos"]
+    assert (piece["start"], piece["end"], piece["seconds"], piece["trimmed_from"]) == (
+        2,
+        5,
+        3,
+        None,
+    )
+    # The file sent is the cut piece itself: the page video's seconds 2 to 5.
+    assert video(piece["file"])[2] == pytest.approx(3, abs=0.25)
+    assert brightness_at(piece["file"], 0) == pytest.approx(
+        brightness_at(page_video_file, 2), abs=3
+    )
+    assert brightness_at(piece["file"], 2.8) == pytest.approx(
+        brightness_at(page_video_file, 4.8), abs=3
+    )
+    assert asked["example_pictures"] == [file_store.read(key) for key in pictures_kept[:2]]
+
+
+def test_a_piece_cut_again_is_the_same_file_so_its_clip_is_found_by_its_handoff(
+    page_video: str,
+) -> None:
+    wanted = [PieceWanted(video=page_video, start=2, end=5)]
+
+    first, again = cut_pieces(wanted).sent, cut_pieces(wanted).sent
+
+    assert first == again
+
+
+def test_a_piece_left_half_written_is_cut_again(page_video: str) -> None:
+    wanted = [PieceWanted(video=page_video, start=2, end=5)]
+    (piece,) = cut_pieces(wanted).sent
+    # A worker stopped while the piece was being saved.
+    half = file_store.read(piece.file)[:100]
+    default_storage.delete(piece.file)
+    default_storage.save(piece.file, ContentFile(half))
+
+    (again,) = cut_pieces(wanted).sent
+
+    assert video(file_store.read(again.file))[2] == pytest.approx(3, abs=0.25)
+
+
+def test_a_moment_over_15_seconds_is_cut_to_its_first_15_and_says_it_was_trimmed(
+    fake_model: FakeModel, pictures_kept: list[str], page_video: str
+) -> None:
+    submit_broll_clip(
+        job=None,
+        purpose="make_broll_clip",
+        starting_picture_key=None,
+        example_picture_keys=pictures_kept[:1],
+        reference_videos=cut_pieces([PieceWanted(video=page_video, start=3, end=23)]).sent,
+        seconds=5,
+        prompt="Tea is poured into the mug.",
+    )
+
+    (piece,) = fake_model.broll_clips_asked[-1]["reference_videos"]
+    assert (piece["start"], piece["end"], piece["seconds"], piece["trimmed_from"]) == (
+        3,
+        18,
+        15,
+        23,
+    )
+    # Cut, never sped up: fifteen seconds of the page video play in fifteen.
+    assert video(piece["file"])[2] == pytest.approx(15, abs=0.25)
+
+
+def test_pieces_over_15_seconds_in_all_have_the_last_trimmed_to_fit(
+    fake_model: FakeModel, pictures_kept: list[str], page_video: str, settings: Settings
+) -> None:
+    settings.BROLL_MOST_PIECES = 3
+    cut = cut_pieces(
+        [
+            PieceWanted(video=page_video, start=0, end=10),
+            PieceWanted(video=page_video, start=12, end=22),
+        ]
+    )
+    submit_broll_clip(
+        job=None,
+        purpose="make_broll_clip",
+        starting_picture_key=None,
+        example_picture_keys=pictures_kept[:1],
+        reference_videos=cut.sent,
+        seconds=5,
+        prompt="Tea is poured into the mug.",
+    )
+
+    sent = fake_model.broll_clips_asked[-1]["reference_videos"]
+    assert [(piece["start"], piece["end"], piece["trimmed_from"]) for piece in sent] == [
+        (0, 10, None),
+        (12, 17, 22),
+    ]
+    assert [video(piece["file"])[2] for piece in sent] == [
+        pytest.approx(10, abs=0.25),
+        pytest.approx(5, abs=0.25),
+    ]
+    assert cut.left_out == []
+
+
+def test_one_piece_is_sent_and_one_more_is_left_out_saying_why(page_video: str) -> None:
+    first = PieceWanted(video=page_video, start=0, end=4)
+    second = PieceWanted(video=page_video, start=6, end=9)
+
+    cut = cut_pieces([first, second])
+
+    assert [(piece.start, piece.end) for piece in cut.sent] == [(0, 4)]
+    assert [(left.wanted, left.reason) for left in cut.left_out] == [
+        (second, "a clip is sent at most 1 of the pieces wanted")
+    ]
+
+
+def test_a_piece_with_under_2_seconds_of_room_left_is_left_out_saying_why(
+    page_video: str, settings: Settings
+) -> None:
+    settings.BROLL_MOST_PIECES = 3
+    last = PieceWanted(video=page_video, start=16, end=20)
+
+    cut = cut_pieces([PieceWanted(video=page_video, start=0, end=14), last])
+
+    assert [(piece.start, piece.end) for piece in cut.sent] == [(0, 14)]
+    assert [(left.wanted, left.reason) for left in cut.left_out] == [
+        (last, "the pieces before it fill the 15 seconds of video a clip is sent")
+    ]
+
+
+def test_a_moment_under_2_seconds_is_sent_as_the_2_seconds_from_its_start(
+    page_video: str,
+) -> None:
+    (piece,) = cut_pieces([PieceWanted(video=page_video, start=7, end=8)]).sent
+
+    assert (piece.start, piece.end, piece.trimmed_from) == (7, 9, None)
+    assert video(file_store.read(piece.file))[2] == pytest.approx(2, abs=0.25)
+
+
+def test_a_moment_under_2_seconds_at_the_videos_end_is_sent_as_its_last_2_seconds(
+    page_video: str,
+) -> None:
+    (piece,) = cut_pieces([PieceWanted(video=page_video, start=23.5, end=24)]).sent
+
+    assert (piece.start, piece.end) == (22, 24)
+
+
+def test_a_video_under_2_seconds_is_left_out_saying_why(tmp_path: Path) -> None:
+    made = tmp_path / "short.mp4"
+    subprocess.run(
+        [django_settings.FFMPEG, "-loglevel", "error", "-f", "lavfi"]
+        + ["-i", "testsrc=size=32x48:rate=5"]
+        + ["-t", "1", "-pix_fmt", "yuv420p", str(made)],
+        check=True,
+    )
+    wanted = PieceWanted(video=file_store.save("short.mp4", made.read_bytes()), start=0, end=1)
+
+    cut = cut_pieces([wanted])
+
+    assert cut.sent == []
+    assert [(left.wanted, left.reason) for left in cut.left_out] == [
+        (wanted, "its video is shorter than 2 seconds")
+    ]
+
+
+def test_a_clip_sent_a_piece_is_billed_for_the_pieces_seconds_too(
+    fake_model: FakeModel, pictures_kept: list[str], page_video: str
+) -> None:
+    submit_broll_clip(
+        job=None,
+        purpose="make_broll_clip",
+        starting_picture_key=None,
+        example_picture_keys=pictures_kept[:1],
+        reference_videos=cut_pieces([PieceWanted(video=page_video, start=2, end=5)]).sent,
+        seconds=7,
+        prompt="Tea is poured into the mug.",
+    )
+
+    submitted = ModelCall.objects.get()
+    # 0.4 credits a second made, and 0.4 a second of reference video sent (spec #210).
+    assert (submitted.video_seconds, submitted.cost_usd) == (7, 10 * Decimal("0.0792"))
+    # The record says which piece was sent, and from which seconds of which video.
+    (piece,) = submitted.handoff["reference_videos"]
+    assert (piece["video"], piece["start"], piece["end"], piece["trimmed_from"]) == (
+        page_video,
+        2,
+        5,
+        None,
+    )
+
+
+def _piece(start: float, end: float) -> ReferenceVideo:
+    return ReferenceVideo.model_construct(
+        file="piece.mp4", video="page.mp4", start=start, end=end, trimmed_from=None
+    )
+
+
+@pytest.mark.parametrize(
+    ("start", "pieces", "why"),
+    [
+        pytest.param(True, [(0, 5)], "takes no reference videos", id="with a starting picture"),
+        pytest.param(False, [(0, 10), (10, 16)], "at most 15 seconds", id="16 seconds in all"),
+        pytest.param(False, [(0, 1)], "2 to 15 seconds long", id="a 1-second piece"),
+        pytest.param(False, [(0, 16)], "2 to 15 seconds long", id="a 16-second piece"),
+    ],
+)
+def test_reference_videos_boreal_h3_cant_take_are_refused_before_anything_is_sent(
+    fake_model: FakeModel,
+    pictures_kept: list[str],
+    start: bool,
+    pieces: list[tuple[float, float]],
+    why: str,
+) -> None:
+    with pytest.raises(ValidationError, match=why):
+        submit_broll_clip(
+            job=None,
+            purpose="make_broll_clip",
+            starting_picture_key=pictures_kept[0] if start else None,
+            example_picture_keys=[] if start else pictures_kept[:1],
+            reference_videos=[_piece(*piece) for piece in pieces],
+            seconds=5,
+            prompt="Tea is poured into the mug.",
+        )
 
     assert fake_model.broll_clips_asked == []
     assert not ModelCall.objects.exists()

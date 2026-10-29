@@ -176,6 +176,9 @@ CREATIFY_TIMEOUT_SECONDS = 120.0
 # "auto" has Creatify rewrite each B-roll prompt the way Boreal-H3 was evaluated with;
 # "none" sends it as written.
 CREATIFY_PROMPT_ENHANCEMENT = os.environ.get("CREATIFY_PROMPT_ENHANCEMENT", "auto")
+# How many pieces of page videos one B-roll clip is sent at most, as Video 1, 2, 3. One is
+# the normal case; more is proposed only (spec #210 audit item 7, not approved yet).
+BROLL_MOST_PIECES = 1
 
 # Langfuse, where every agent turn, tool call and model call is sent to be looked at as a
 # tree. Tracing is off unless both keys are set.

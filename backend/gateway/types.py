@@ -328,15 +328,51 @@ MOST_BROLL_SECONDS = 15
 MOST_EXAMPLE_PICTURES = 5
 
 
+# Boreal-H3 takes reference videos of 2 to 15 seconds, and no more than 15 seconds of them
+# in all (spec #210, point 14).
+LEAST_PIECE_SECONDS = 2
+MOST_PIECE_SECONDS = 15
+
+
+class ReferenceVideo(Handoff):
+    """A piece of a page video, sent beside the example pictures to show how the product
+    moves: the cut piece by its key in the file store, the page video it was cut from, also
+    by its key, and the seconds of that video it holds. `trimmed_from` is the end second the
+    piece was asked to reach when it was cut shorter to fit the video model's limit, so the
+    record can say so; None when it holds every second asked for."""
+
+    file: str = Field(min_length=1)
+    video: str = Field(min_length=1)
+    start: float = Field(ge=0)
+    end: float
+    trimmed_from: float | None = None
+
+    @property
+    def seconds(self) -> float:
+        return self.end - self.start
+
+    @model_validator(mode="after")
+    def _within_the_window(self) -> Self:
+        # A hair either way, as seconds counted in floats can be, isn't out of it.
+        if not LEAST_PIECE_SECONDS - 1e-6 <= self.seconds <= MOST_PIECE_SECONDS + 1e-6:
+            raise ValueError(
+                f"a reference video is {LEAST_PIECE_SECONDS} to {MOST_PIECE_SECONDS} seconds "
+                f"long, and this one is {self.seconds:g}"
+            )
+        return self
+
+
 class BrollClipHandoff(Handoff):
     """A B-roll clip to make, with no sound, each picture by its key in the file store: from
     a starting picture, its exact first frame, or from example pictures that show how things
-    look, never both. How long it is, in whole seconds, and the prompt saying what happens."""
+    look, never both; with example pictures, any pieces of page videos that show how the
+    product moves. How long it is, in whole seconds, and the prompt saying what happens."""
 
     starting_picture: str | None = Field(default=None, min_length=1)
     example_pictures: list[Annotated[str, Field(min_length=1)]] = Field(
         default_factory=list, max_length=MOST_EXAMPLE_PICTURES
     )
+    reference_videos: list[ReferenceVideo] = Field(default_factory=list)
     seconds: int = Field(ge=LEAST_BROLL_SECONDS, le=MOST_BROLL_SECONDS)
     prompt: str = Field(min_length=1)
 
@@ -349,7 +385,27 @@ class BrollClipHandoff(Handoff):
             )
         if self.starting_picture is None and not self.example_pictures:
             raise ValueError("a B-roll clip needs a starting picture or example pictures")
+        if self.starting_picture is not None and self.reference_videos:
+            raise ValueError(
+                "a B-roll clip made from a starting picture takes no reference videos: they go "
+                "beside example pictures"
+            )
+        sent = sum(piece.seconds for piece in self.reference_videos)
+        if sent > MOST_PIECE_SECONDS + 1e-6:
+            raise ValueError(
+                f"a B-roll clip takes at most {MOST_PIECE_SECONDS} seconds of reference video "
+                f"in all, and this one is sent {sent:g}"
+            )
         return self
+
+    @model_serializer(mode="wrap")
+    def _no_videos_left_out(self, dump: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        # A clip sent no piece is recorded exactly as before pieces could be sent, so a clip
+        # asked for then is still found by its handoff, and not paid for again.
+        dumped: dict[str, Any] = dump(self)
+        if not self.reference_videos:
+            dumped.pop("reference_videos", None)
+        return dumped
 
 
 class ClipCollectHandoff(Handoff):
@@ -395,6 +451,16 @@ class ClipProvider(ClipCollector, Protocol):
         ...
 
 
+@dataclass(frozen=True)
+class LoadedVideo:
+    """A ReferenceVideo read from the file store, ready to send: the piece's file, what kind
+    of file it is, and the piece as it was handed over."""
+
+    data: bytes
+    media_type: str
+    piece: ReferenceVideo
+
+
 class BrollClipProvider(ClipCollector, Protocol):
     """Makes B-roll clips, with no sound."""
 
@@ -405,9 +471,11 @@ class BrollClipProvider(ClipCollector, Protocol):
         example_pictures: Sequence[bytes],
         seconds: int,
         prompt: str,
+        reference_videos: Sequence[LoadedVideo] = (),
     ) -> str:
         """Ask for a `seconds`-long clip as `prompt` says, starting on `starting_picture`, or
-        with things looking as in `example_pictures`. Returns its id."""
+        with things looking as in `example_pictures` and moving as in `reference_videos`.
+        Returns its id."""
         ...
 
 

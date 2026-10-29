@@ -10,7 +10,10 @@ exact first frame (`image_url`), or from up to 9 example pictures (`reference_im
 the first 5 free; mixing the two is refused. With a starting picture the video takes its
 shape, and Boreal-H3 takes no other; with example pictures it is set with `aspect_ratio`.
 
-Pictures are sent as links, so each is put on fal's storage first. As fal's own Python
+Pieces of page videos go beside example pictures as reference videos
+(`reference_video_urls`), 2 to 15 seconds each and no more than 15 in all (spec #210).
+
+Pictures and videos are sent as links, so each is put on fal's storage first. As fal's own Python
 client uses it and as it replied on 2026-09-27 (docs/real-api-replies.md):
 `POST /storage/auth/token?storage_type=fal-cdn-v3` hands our key a token and the `base_url`
 to store files at; `POST {base_url}/files/upload` with the token, the file and its name
@@ -26,7 +29,7 @@ from django.conf import settings
 
 from adforge.retry import OutsideServiceDown
 
-from .types import ClipFailed, ClipStatus
+from .types import ClipFailed, ClipStatus, LoadedVideo
 
 MODEL = "boreal-h3"
 # Creatify's statuses for a task it has finished with.
@@ -58,6 +61,7 @@ class CreatifyProvider:
         example_pictures: Sequence[bytes],
         seconds: int,
         prompt: str,
+        reference_videos: Sequence[LoadedVideo] = (),
     ) -> str:
         body: dict[str, Any] = {
             "model": MODEL,
@@ -67,13 +71,20 @@ class CreatifyProvider:
             "prompt_enhancement": settings.CREATIFY_PROMPT_ENHANCEMENT,
         }
         if starting_picture is not None:
-            body["image_url"] = self._store(starting_picture, "starting-picture")
+            body["image_url"] = self._store(
+                starting_picture, "starting-picture", _picture_type(starting_picture)
+            )
         else:
             # Any picture's shape works: the video's is set here (shape check, 2026-10-03).
             body["aspect_ratio"] = "9:16"
             body["reference_image_urls"] = [
-                self._store(picture, f"example-picture-{number}")
+                self._store(picture, f"example-picture-{number}", _picture_type(picture))
                 for number, picture in enumerate(example_pictures, start=1)
+            ]
+        if reference_videos:
+            body["reference_video_urls"] = [
+                self._store(video.data, f"reference-video-{number}", video.media_type)
+                for number, video in enumerate(reference_videos, start=1)
             ]
         created = self._send("POST", "/api/boreal/", paid=True, json=body)
         return str(created["id"])
@@ -97,9 +108,10 @@ class CreatifyProvider:
     def download(self, *, url: str) -> bytes:
         return _unkeyed("GET", url, "Creatify's clip link", follow_redirects=True).content
 
-    def _store(self, picture: bytes, name: str) -> str:
-        """Put a picture in fal's storage, named `name` and its format. Gives the link to it."""
-        extension = _extension(picture)
+    def _store(self, data: bytes, name: str, media_type: str) -> str:
+        """Put a picture or a video in fal's storage, as the `media_type` it is, named `name`
+        and that type's extension. Gives the link to it."""
+        extension = media_type.split("/")[1]
         try:
             token = self._fal.post(
                 f"{settings.FAL_STORAGE_URL}/storage/auth/token",
@@ -113,10 +125,10 @@ class CreatifyProvider:
             "POST",
             f"{given['base_url']}/files/upload",
             "fal's storage",
-            content=picture,
+            content=data,
             headers={
                 "Authorization": f"{given['token_type']} {given['token']}",
-                "Content-Type": f"image/{extension}",
+                "Content-Type": media_type,
                 "X-Fal-File-Name": f"{name}.{extension}",
             },
         )
@@ -186,7 +198,7 @@ def _detail(response: httpx.Response) -> str | None:
     return None if detail is None else str(detail)
 
 
-def _extension(picture: bytes) -> str:
-    """png or jpeg: what the picture's bytes hold."""
+def _picture_type(picture: bytes) -> str:
+    """image/png or image/jpeg: what the picture's bytes hold."""
     with PIL.Image.open(io.BytesIO(picture)) as opened:
-        return (opened.format or "png").lower()
+        return f"image/{(opened.format or 'png').lower()}"

@@ -3763,6 +3763,7 @@ def _ask_for_clip(job: Job, making: str, handoff: ClipHandoff | BrollClipHandoff
             example_picture_keys=handoff.example_pictures,
             seconds=handoff.seconds,
             prompt=handoff.prompt,
+            reference_videos=handoff.reference_videos,
         )
     return submit_clip(
         job=job,

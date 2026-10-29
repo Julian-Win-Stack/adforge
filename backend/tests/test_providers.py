@@ -43,7 +43,7 @@ from gateway.heygen_adapter import HeyGenProvider
 from gateway.inworld_adapter import InworldProvider
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
-from gateway.types import BlockedBySafetyFilter, ClipFailed, NotSetUp, Word
+from gateway.types import BlockedBySafetyFilter, ClipFailed, NotSetUp, ReferenceVideo, Word
 
 from .conftest import picture
 
@@ -639,15 +639,29 @@ def creatify(httpserver: HTTPServer, settings: Settings) -> CreatifyProvider:
 
 
 def asking_creatify(
-    *, start: bytes | None = STARTING_PICTURE, examples: Sequence[bytes] = (), seconds: int = 7
+    *,
+    start: bytes | None = STARTING_PICTURE,
+    examples: Sequence[bytes] = (),
+    pieces: Sequence[bytes] = (),
+    seconds: int = 7,
 ) -> str:
     """Ask for a B-roll clip of pictures kept in the file store: from a starting picture, or
-    from example pictures when there is none."""
+    from example pictures when there is none, with each piece of video, three seconds of a
+    page video each."""
     return submit_broll_clip(
         job=None,
         purpose="make_broll_clip",
         starting_picture_key=None if start is None else file_store.save("start.png", start),
         example_picture_keys=[file_store.save("example", data) for data in examples],
+        reference_videos=[
+            ReferenceVideo(
+                file=file_store.save("piece.mp4", data),
+                video="page.mp4",
+                start=3 * number,
+                end=3 * number + 3,
+            )
+            for number, data in enumerate(pieces)
+        ],
         seconds=seconds,
         prompt=PROMPT,
     )
@@ -826,6 +840,39 @@ def test_a_b_roll_clip_from_example_pictures_is_asked_for_upright_with_each_in_o
     assert [(file["type"], file["held"]) for file in stored] == [
         ("image/png", EXAMPLE_PICTURES[0]),
         ("image/jpeg", EXAMPLE_PICTURES[1]),
+    ]
+
+
+def test_pieces_of_video_are_sent_as_reference_videos_beside_the_example_pictures(
+    creatify: CreatifyProvider, tasked: list[dict[str, Any]], stored: list[dict[str, Any]]
+) -> None:
+    pieces = [b"\0\0\0\x18ftypisom the first piece", b"\0\0\0\x18ftypisom the second"]
+
+    with use_model(creatify):
+        asking_creatify(start=None, examples=EXAMPLE_PICTURES, pieces=pieces, seconds=5)
+
+    (body,) = tasked
+    # The rest of the call is as it is without them.
+    assert body == {
+        "model": "boreal-h3",
+        "resolution": "768p",
+        "duration": 5,
+        "prompt": PROMPT,
+        "prompt_enhancement": "auto",
+        "aspect_ratio": "9:16",
+        "reference_image_urls": [
+            stored_link(1, "example-picture-1.png"),
+            stored_link(2, "example-picture-2.jpeg"),
+        ],
+        "reference_video_urls": [
+            stored_link(3, "reference-video-1.mp4"),
+            stored_link(4, "reference-video-2.mp4"),
+        ],
+    }
+    # Each is put on fal's storage as the video it is, never opened as a picture.
+    assert [(file["name"], file["type"], file["held"]) for file in stored[2:]] == [
+        ("reference-video-1.mp4", "video/mp4", pieces[0]),
+        ("reference-video-2.mp4", "video/mp4", pieces[1]),
     ]
 
 
