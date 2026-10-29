@@ -777,8 +777,7 @@ def _kept_copy(kept_for: Mapping[str, ProductPhoto], group: Sequence[str]) -> Pr
     return next((kept_for[key] for key in map(photos.same_key, group) if key in kept_for), None)
 
 
-# How far, in seconds, the reader's second may be from the picked frame it names: the
-# frames are shown to it labelled with their seconds, rounded.
+# How far, in seconds, a look frame's second may be from the pulled frame it names.
 MOST_SECONDS_OFF = 0.5
 
 
@@ -788,11 +787,11 @@ def save_video_pictures(
     kept: Sequence[Mapping[str, Any]],
     frames: Sequence[Mapping[str, Any]],
 ) -> list[ProductPhoto]:
-    """Keep each moment the reader `kept` from the video ({second, shows, why}) as a video
-    picture: the picked frame at that second, of the video's picked `frames` ({key, second}),
-    as a product photo after every photo the job has, noted with what it `shows`. A moment
-    with no picked frame near its second, or whose frame is a copy of a photo from the page
-    or of a picture already kept, is left out. Each is given its Face note by a call of its
+    """Keep each look frame the watcher `kept` from the video ({second, shows}) as a video
+    picture: the pulled frame at that second, of the video's pulled `frames` ({key, second}),
+    as a product photo after every photo the job has, noted with what it `shows`. A frame
+    with no pulled frame near its second, or that is a copy of a photo from the page or of a
+    picture already kept, is left out. Each is given its Face note by a call of its
     own, as a page photo the picker never saw is."""
     seen = [
         photos.fingerprint_of(file_store.read(photo.file))

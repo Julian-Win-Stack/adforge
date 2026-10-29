@@ -26,6 +26,7 @@ Oct 27 2026), whose calls this one follows:
   Gemini deletes it itself after 48 hours."""
 
 import base64
+import hashlib
 import json
 import time
 from typing import Any
@@ -61,6 +62,11 @@ _SAFETY_FINISHES = frozenset(
 )
 
 
+# How long a video put in Gemini's file store is watched from there again (a retry, or the same
+# video watched again) rather than uploaded again: under the 48 hours Gemini keeps it.
+_REUSE_STORED_SECONDS = 47 * 3600
+
+
 class GeminiFailed(Exception):
     """Gemini refused a request for a reason of its own that asking again won't change, such
     as a request it can't read. Not its safety filter: that is BlockedBySafetyFilter."""
@@ -77,6 +83,9 @@ class GeminiProvider:
             headers={"x-goog-api-key": self._key},
             timeout=catalog.ANSWER_SECONDS,
         )
+        # The `fileData` of each video already in Gemini's file store, by its bytes' hash,
+        # with when it was made ready.
+        self._stored_videos: dict[str, tuple[dict[str, str], float]] = {}
 
     def watch[Out: BaseModel](self, request: VideoRequest[Out]) -> ModelReply[Out]:
         if not self._key:
@@ -100,9 +109,14 @@ class GeminiProvider:
         return _reply(request, _checked(response).json())
 
     def _stored(self, request: VideoRequest[Any]) -> dict[str, str]:
-        """Put the video in Gemini's file store and wait until it can be watched. Gives the
-        part's `fileData`: its media type and link."""
+        """Put the video in Gemini's file store and wait until it can be watched, unless it
+        is there already. Gives the part's `fileData`: its media type and link."""
         video = request.video
+        digest = hashlib.sha256(video.data).hexdigest()
+        if (kept := self._stored_videos.get(digest)) and (
+            time.monotonic() - kept[1] < _REUSE_STORED_SECONDS
+        ):
+            return kept[0]
         started = self._send(
             "POST",
             "/upload/v1beta/files",
@@ -134,7 +148,9 @@ class GeminiProvider:
                 )
             time.sleep(settings.GEMINI_FILE_POLL_SECONDS)
             stored = self._send("GET", f"/v1beta/{stored['name']}").json()
-        return {"mimeType": video.media_type, "fileUri": stored["uri"]}
+        file_data = {"mimeType": video.media_type, "fileUri": stored["uri"]}
+        self._stored_videos[digest] = (file_data, time.monotonic())
+        return file_data
 
     def _send(self, method: str, url: str, **sending: Any) -> httpx.Response:
         try:

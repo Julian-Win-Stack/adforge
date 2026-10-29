@@ -241,8 +241,11 @@ function SceneCardView({
 }
 
 /** What the clip on show was made from: the pictures sent, small with their labels in the
- * order they went, the video pieces, and in red what didn't go as planned. */
+ * order they went, the video pieces, and in red what didn't go as planned. Where the card is
+ * too narrow for the labels, a tapped picture's label shows under the pictures. */
 function SentView({ sent }: { sent: ClipSent }) {
+  const [chosen, setChosen] = useState<number | null>(null);
+  const chosenPicture = sent.pictures.find(({ image }) => image === chosen);
   const problems = [
     ...(sent.leftOut.length > 0 ? [`Left out: ${sent.leftOut.join(" ")}`] : []),
     ...sent.notRecoloured.map(
@@ -254,11 +257,23 @@ function SentView({ sent }: { sent: ClipSent }) {
       <ol className="scene-sent-pictures" aria-label="Pictures sent">
         {sent.pictures.map(({ image, label, url }) => (
           <li key={image} title={label}>
-            <img src={url} alt={`Image ${image}: ${label}`} loading="lazy" />
+            <button
+              type="button"
+              className="scene-sent-picture"
+              aria-pressed={chosen === image}
+              onClick={() => setChosen(chosen === image ? null : image)}
+            >
+              <img src={url} alt={`Image ${image}: ${label}`} loading="lazy" />
+            </button>
             <span className="scene-sent-label">{label}</span>
           </li>
         ))}
       </ol>
+      {chosenPicture && (
+        <p className="scene-sent-chosen">
+          Image {chosenPicture.image}: {chosenPicture.label}
+        </p>
+      )}
       {sent.pieces.length > 0 && (
         <ul className="scene-sent-pieces" aria-label="Video pieces sent">
           {sent.pieces.map(({ number, url, start, end }) => (
@@ -276,7 +291,7 @@ function SentView({ sent }: { sent: ClipSent }) {
         </ul>
       )}
       {problems.length > 0 && (
-        <p className="scene-sent-problem" title={problems.join(" ")}>
+        <p className="scene-sent-problem">
           {problems.join(" ")}
         </p>
       )}

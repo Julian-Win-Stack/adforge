@@ -27,7 +27,7 @@ from django.conf import settings
 from adforge.retry import OutsideServiceDown
 
 from . import page, photos
-from .product_videos import MAX_VIDEO_BYTES, YOUTUBE_ID, YOUTUBE_THUMBNAIL
+from .product_videos import YOUTUBE_ID, YOUTUBE_THUMBNAIL
 
 # Official photos and video frames go 2 by 2 in tiles this many px a side; hidden pictures,
 # which are many, 3 by 3 in smaller tiles.
@@ -38,6 +38,9 @@ VIDEO_GRID = (2, 600)
 FETCHING_TOGETHER = 8
 # ffmpeg may take at most this long to get a video's first frame.
 FRAME_SECONDS = 120
+# The biggest video fetched only for its first frame, for the picker to see: a bigger one is
+# listed without a picture. Not a cap on the videos kept (product_videos.NEVER_ENDING_BYTES).
+FRAME_VIDEO_BYTES = 50_000_000
 # Embedded players whose video file the page doesn't link to: their first frame can't be got.
 NO_FRAME_PLAYERS = re.compile(r"vimeo|wistia|vidyard|tolstoy|videowise", re.I)
 
@@ -155,7 +158,7 @@ def first_frame(player: dict[str, Any]) -> tuple[bytes | None, str]:
     if NO_FRAME_PLAYERS.search(src):
         return None, "embedded player"
     try:
-        video = page.download(src, max_bytes=MAX_VIDEO_BYTES, what="product video")
+        video = page.download(src, max_bytes=FRAME_VIDEO_BYTES, what="product video")
     except page.PageUnreadable, OutsideServiceDown:
         return None, "video couldn't be fetched"
     frame = _frame_at_half_a_second(video.content)

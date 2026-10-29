@@ -463,18 +463,54 @@ def _watchable(video_key: str) -> str:
             given = Path(folder) / "given"
             made = Path(folder) / "watched.mp4"
             given.write_bytes(file_store.read(video_key))
-            subprocess.run(
-                [settings.FFMPEG, "-nostdin", "-hide_banner", "-loglevel", "error"]
-                + ["-i", str(given), "-map", "0:v:0", "-map", "0:a:0?", "-vf", scale]
-                + ["-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-pix_fmt", "yuv420p"]
-                + ["-c:a", "aac", "-b:a", "64k", "-movflags", "+faststart", str(made)],
-                check=True,
-                capture_output=True,
-                timeout=600,
-            )
+            try:
+                subprocess.run(
+                    [settings.FFMPEG, "-nostdin", "-hide_banner", "-loglevel", "error"]
+                    + ["-i", str(given), "-map", "0:v:0", "-map", "0:a:0?", "-vf", scale]
+                    + ["-c:v", "libx264", "-preset", "veryfast", "-crf", "28"]
+                    + ["-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k"]
+                    + ["-movflags", "+faststart", str(made)],
+                    check=True,
+                    capture_output=True,
+                    timeout=600,
+                )
+            except subprocess.CalledProcessError as error:
+                said = error.stderr.decode(errors="replace").strip()[-2000:]
+                raise VideoNotWatchable(
+                    f"ffmpeg couldn't cut the video {video_key} to be watched: {said}"
+                ) from error
+            except subprocess.TimeoutExpired as error:
+                raise VideoNotWatchable(
+                    f"ffmpeg took over {error.timeout:g} s to cut the video {video_key}"
+                ) from error
             return made.read_bytes()
 
-    return file_store.save_once(name, cut, whole=bool)
+    return file_store.save_once(name, cut, whole=_whole_mp4)
+
+
+class VideoNotWatchable(Exception):
+    """A video ffmpeg can't cut to be watched (no picture in it, a broken file, or too long a
+    cut), with what ffmpeg said."""
+
+
+def _whole_mp4(data: bytes) -> bool:
+    """Whether `data` is an MP4 written to its end: its top-level boxes run exactly to the
+    last byte. A cut a stopped worker left half-saved ends inside a box."""
+    at = 0
+    while at < len(data):
+        if at + 8 > len(data):
+            return False
+        size = int.from_bytes(data[at : at + 4], "big")
+        if size == 1:  # The size is the 64-bit one after the box's type.
+            if at + 16 > len(data):
+                return False
+            size = int.from_bytes(data[at + 8 : at + 16], "big")
+        elif size == 0:  # The last box, running to the end.
+            return True
+        if size < 8:
+            return False
+        at += size
+    return at == len(data) > 0
 
 
 def draw_picture(*, job: Job | None, purpose: str, prompt: str) -> str:
@@ -561,7 +597,7 @@ def transcribe(*, job: Job | None, purpose: str, audio_key: str) -> Transcriptio
 
     def hear() -> _Made[Transcription]:
         heard = provider.transcribe(model=model, audio=file_store.read(handoff.audio))
-        if not heard.words and purpose not in catalog.NOTHING_SAID_IS_FINE:
+        if not heard.words:
             raise ValueError(f"{provider.name} heard no words in the audio")
         return _Made(
             result=heard,
