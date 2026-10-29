@@ -209,14 +209,16 @@ def plan_once(case: Case, run: int) -> dict[str, Any]:
             purpose="plan_ad",
             instructions=PLAN_INSTRUCTIONS,
             handoff=PlanHandoff(
-                product_url=case.url,
-                page_text=page.for_model(page_text(case)),
-                target_seconds=None,
-                photo_count=len(keys),
-                conversation=conversation,
+                moments="",
+                library_pictures=len(keys),
+                pictures_not_shown=0,
                 video_transcripts=[],
+                page_text=page.for_model(page_text(case)),
+                product_url=case.url,
+                target_seconds=None,
+                conversation=conversation,
             ),
-            output=producer_decision_for(len(keys), library=(), moments={}),
+            output=producer_decision_for(library=range(1, len(keys) + 1), moments={}),
             images=[Image(label=f"Photo {n}", key=key) for n, key in enumerate(keys, start=1)],
         )
         planned = decision.plan

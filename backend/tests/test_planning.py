@@ -15,12 +15,11 @@ from jobs.planning import PLAN_INSTRUCTIONS, producer_decision_for
 
 from .conftest import FINISHING_STEP, PLAN, SHOWCASE, a_plan_with, broll
 
-# The decision for a job with the mug's 2 photos, as the planner is asked for it.
-# Its library holds 12 pictures, and its one page video was watched into 2 moments.
-PHOTO_COUNT = 2
+# The decision for a job, as the planner is asked for it: its library holds 12 pictures,
+# and its one page video was watched into 2 moments.
 LIBRARY = range(1, 13)
 MOMENTS = {1: 2}
-DECISION = producer_decision_for(PHOTO_COUNT, library=LIBRARY, moments=MOMENTS)
+DECISION = producer_decision_for(library=LIBRARY, moments=MOMENTS)
 # What the planner is told of each field, as its schema is given to the model.
 SCHEMA = DECISION.model_json_schema()["$defs"]
 
@@ -134,7 +133,7 @@ def test_the_planner_is_told_how_to_plan_each_broll_scene() -> None:
     # docs/broll-picture-logic.md.
     assert (
         "pick the colour with the most photos where the product is clearly seen; on a tie, "
-        "the colour of Photo 1"
+        "the colour of picture 1"
     ) in instructions
     assert "Never name a photo that shows the product only in another colour" in instructions
     # Only the presenter's face: item 27. "Showcase when unsure" made filler B-roll of a hand
@@ -654,9 +653,9 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
             id="a showcase with a result",
         ),
         pytest.param(
-            broll_scene(needs=[{"what": "the handle", "photos": [3]}]),
-            "There's no photo 3: the job has 2.",
-            id="a need naming a photo after the last one",
+            broll_scene(needs=[{"what": "the handle", "photos": [13]}]),
+            "There's no picture 13 in the library.",
+            id="a need naming a picture after the last one",
         ),
         pytest.param(
             broll_scene(needs=[{"what": "the handle", "photos": []}]),
@@ -765,14 +764,14 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
             id="a size that isn't one of the three",
         ),
         pytest.param(
-            a_plan_with(colour_photos=[1, 3]),
-            "There's no photo 3: the job has 2.",
-            id="a photo after the last one",
+            a_plan_with(colour_photos=[1, 13]),
+            "There's no picture 13 in the library.",
+            id="a picture after the last one",
         ),
         pytest.param(
             a_plan_with(colour_photos=[0]),
-            "There's no photo 0: the job has 2.",
-            id="a photo before the first one",
+            "There's no picture 0 in the library.",
+            id="a picture before the first one",
         ),
         pytest.param(
             a_plan_with(colour_photos=["1"]),

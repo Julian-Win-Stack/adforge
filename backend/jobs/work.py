@@ -73,6 +73,7 @@ from . import (
     fix_check,
     library,
     library_items,
+    library_sheets,
     owner_parts,
     page,
     page_text,
@@ -146,6 +147,7 @@ from .picture_check import (
 from .planning import (
     PLAN_INSTRUCTIONS,
     ChatMessage,
+    Need,
     PlanHandoff,
     ProducerDecision,
     producer_decision_for,
@@ -931,29 +933,29 @@ def note_face(job: Job, source: str, key: str) -> bool:
 
 
 def plan(job: Job) -> ProducerDecision:
-    """Have the planner plan the ad from the page, the product photos and the conversation,
-    and keep the plan. A decision to ask the user keeps nothing."""
-    photos = list(job.photos.all())
-    shown = {_labelled(photo): photo for photo in _photos_to_show(job, photos)}
+    """Have the planner plan the ad from the video moments, the library's sheets, the page and
+    the conversation, and keep the plan. A decision to ask the user keeps nothing."""
+    sheets = library_sheets.sheets_of(job)
+    library_sheets.tell_not_shown(job, sheets)
+    library, moments = _library_numbers(job), _moments_by_video(job)
     decision, left_out = past_the_safety_filter(
         lambda images: call_model(
             job=job,
             purpose="plan_ad",
             instructions=PLAN_INSTRUCTIONS,
-            handoff=plan_handoff(job, job.page_text, len(photos)),
-            output=producer_decision_for(
-                len(photos), library=_library_numbers(job), moments=_moments_by_video(job)
-            ),
+            handoff=plan_handoff(job, job.page_text, sheets),
+            output=producer_decision_for(library=library, moments=moments),
             images=images,
         ),
-        list(shown),
+        sheets.images,
     )
     if left_out:
-        named = [f"photo {shown[image].position}" for image in left_out]
+        named = [image.label.partition(" (")[0].lower() for image in left_out]
         post_left_out_by_the_filter(job, named, "the ad was planned")
     planned = decision.plan
     if planned is None:
         return decision
+    photos_of = _photos_of_pictures(job)
     with transaction.atomic():
         Scene.objects.bulk_create(
             Scene(
@@ -964,7 +966,7 @@ def plan(job: Job) -> ProducerDecision:
                 overlay=" ".join((scene.overlay or "").split()),
                 part=scene.part or "",
                 second_state=scene.second_state,
-                **scene.broll_details(),
+                **{**scene.broll_details(), "needs": photos_of.needs(scene.needs)},
                 owner_part=scene.owner_part.model_dump() if scene.owner_part else None,
                 scene_pictures=[
                     picture.model_dump(by_alias=True) for picture in scene.scene_pictures
@@ -995,10 +997,14 @@ def plan(job: Job) -> ProducerDecision:
                 "status",
             ]
         )
-        # A photo left out past the safety filter was never seen, so never marked.
-        job.photos.filter(position__in=planned.colour_photos).exclude(
-            position__in=[shown[image].position for image in left_out]
+        # A picture left out past the safety filter was never seen, so never marked.
+        unseen = sheets.numbers_on(left_out)
+        job.photos.filter(
+            position__in=photos_of.photos(
+                [number for number in planned.colour_photos if number not in unseen]
+            )
         ).update(shows_product_colour=True)
+    photos_of.tell(job)
     return decision
 
 
@@ -1016,17 +1022,67 @@ def _moments_by_video(job: Job) -> dict[int, int]:
     }
 
 
-def plan_handoff(job: Job, page_text: str, photo_count: int) -> PlanHandoff:
-    """What the planner is handed about the ad, with the product's own text from its page:
-    the planner's, and the video reader's, which thinks through the same plan."""
+def plan_handoff(job: Job, page_text: str, sheets: library_sheets.Sheets) -> PlanHandoff:
+    """What the planner is handed about the ad beside the library's `sheets`, with the
+    product's own text from its page: the video moments first."""
     return PlanHandoff(
-        product_url=job.product_url,
-        page_text=page.for_model(page_text),
-        target_seconds=job.target_seconds,
-        photo_count=photo_count,
-        conversation=_conversation(job),
+        moments=library_sheets.moments_text(job),
+        library_pictures=sheets.library_pictures,
+        pictures_not_shown=sheets.not_shown,
         video_transcripts=_video_transcripts(job),
+        page_text=page.for_model(page_text),
+        product_url=job.product_url,
+        target_seconds=job.target_seconds,
+        conversation=_conversation(job),
     )
+
+
+@dataclass
+class _PhotosOfPictures:
+    """The product photo, by position, of each library picture a plan or a rewrite names
+    for its needs and colour photos, and the pictures named that have none."""
+
+    positions: dict[int, int]
+    without_a_photo: list[int] = field(default_factory=list)
+
+    def photos(self, numbers: Sequence[int]) -> list[int]:
+        """The positions of the photos library pictures `numbers` are, in order, each once:
+        a picture with no product photo is left out and noted."""
+        kept: list[int] = []
+        for number in numbers:
+            position = self.positions.get(number)
+            if position is None:
+                if number not in self.without_a_photo:
+                    self.without_a_photo.append(number)
+            elif position not in kept:
+                kept.append(position)
+        return kept
+
+    def needs(self, needs: Sequence[Need]) -> list[dict[str, Any]]:
+        """`needs` as a Scene stores them, by photo position: a need whose pictures have no
+        product photo is left out."""
+        stored = [{**need.model_dump(), "photos": self.photos(need.photos)} for need in needs]
+        return [need for need in stored if need["photos"]]
+
+    def tell(self, job: Job) -> None:
+        """Tell the chat in red, with its warning line, of the pictures named that have no
+        product photo, so a starting picture can't be made from them."""
+        if not self.without_a_photo:
+            return
+        named = ", ".join(str(number) for number in sorted(self.without_a_photo))
+        post_notice(
+            job,
+            f"Library picture{'s' if len(self.without_a_photo) > 1 else ''} {named} "
+            f"{'have' if len(self.without_a_photo) > 1 else 'has'} no product photo a starting "
+            "picture can be made from, so the scenes that need "
+            f"{'them' if len(self.without_a_photo) > 1 else 'it'} are made without "
+            f"{'them' if len(self.without_a_photo) > 1 else 'it'}.",
+            Message.Level.PROBLEM,
+        )
+
+
+def _photos_of_pictures(job: Job) -> _PhotosOfPictures:
+    return _PhotosOfPictures(library_sheets.photo_positions(job))
 
 
 def _labelled(photo: ProductPhoto) -> Image:
@@ -1060,29 +1116,6 @@ def _photos_to_pick_from(job: Job, room: int) -> list[ProductPhoto]:
         ),
     )[:room]
     return [photo for photo in photos if photo in kept]
-
-
-def _photos_to_show(job: Job, photos: list[ProductPhoto]) -> list[ProductPhoto]:
-    """The job's photos a model can be shown in one call: at most clip_judge.MOST_PICTURES,
-    the page's first, then those cut from its videos, then the shop owner's. When some are
-    left out, the chat is told once which."""
-    shown = sorted(
-        photos,
-        key=lambda photo: 1 if photo.from_video_id is not None else 0 if photo.source_url else 2,
-    )[: clip_judge.MOST_PICTURES]
-    left_out = [f"{photo.position}" for photo in photos if photo not in shown]
-    if not left_out:
-        return shown
-    listed = left_out[0] if len(left_out) == 1 else f"{', '.join(left_out[:-1])} and {left_out[-1]}"
-    text = (
-        f"The ad has {len(photos)} product photos, more than the {clip_judge.MOST_PICTURES} a "
-        f"model can be shown at once, so photo{'s' if len(left_out) > 1 else ''} {listed} "
-        f"{'are' if len(left_out) > 1 else 'is'} left out when it's planned or a line is "
-        "rewritten."
-    )
-    if all(warning["text"] != text for warning in job.warnings):
-        post_notice(job, text, Message.Level.INFO)
-    return shown
 
 
 PORTRAIT_PROMPT = """\
@@ -1340,9 +1373,14 @@ def _to_check(scene: Scene) -> LineToCheck:
 
 def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> None:
     """Have the scene rewritten whole: its line, what it shows and its B-roll details. A
-    scene that shows something is rewritten seeing the job's photos, to say what it needs."""
-    photos = list(job.photos.all())
-    colour_photos = [photo.position for photo in photos if photo.shows_product_colour]
+    scene that shows something is rewritten seeing the library's sheets, as the planner does,
+    to say what it needs."""
+    sheets = library_sheets.sheets_of(job)
+    photos_of = _photos_of_pictures(job)
+    marked = set(job.photos.filter(shows_product_colour=True).values_list("position", flat=True))
+    colour_photos = [number for number, at in photos_of.positions.items() if at in marked]
+    if scene.shows:
+        library_sheets.tell_not_shown(job, sheets)
     rewrite = call_model(
         job=job,
         purpose="rewrite_line",
@@ -1351,7 +1389,8 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
             page_text=page.for_model(job.page_text),
             conversation=conversation,
             product_colour=job.product_colour,
-            photo_count=len(photos),
+            library_pictures=sheets.library_pictures,
+            pictures_not_shown=sheets.not_shown,
             colour_photos=colour_photos,
             script=[_to_check(each) for each in job.scenes.all()],
             scene=scene.number,
@@ -1366,17 +1405,19 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
             ],
         ),
         output=rewritten_scene_for(
-            scene.number, shows_something=bool(scene.shows), photo_count=len(photos)
+            scene.number,
+            shows_something=bool(scene.shows),
+            library=_library_numbers(job),
         ),
-        images=[
-            Image(label=f"Photo {photo.position}", key=photo.file)
-            for photo in _photos_to_show(job, photos)
-        ]
-        if scene.shows
-        else [],
+        images=sheets.images if scene.shows else [],
     )
     scene.fact_problems[-1]["rewritten"] = True
-    scene.change_line(rewrite.line, rewrite.shows or "", broll=rewrite.broll_details())
+    scene.change_line(
+        rewrite.line,
+        rewrite.shows or "",
+        broll={**rewrite.broll_details(), "needs": photos_of.needs(rewrite.needs)},
+    )
+    photos_of.tell(job)
     with transaction.atomic():
         if rewrite.shows is None:
             # A talking scene shows no second state, and the scene after it no longer follows
