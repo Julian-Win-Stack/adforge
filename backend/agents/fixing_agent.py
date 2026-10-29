@@ -1309,14 +1309,27 @@ END_RESULT_ONLY = (
 
 class EndResultOnly(FilmAgain):
     """Film only the end state the action leads to, with the action already done: you write
-    the scene yourself, every field, with what it shows as that end state. Code adds a fixed
-    line saying so before your video prompt, then films it as film_again does and has the
-    judge watch it."""
+    the scene yourself, every field, with what it shows as that end state. Its start picture
+    shows that end state too, so draw a new one unless the current one already shows it. Code
+    adds a fixed line saying so before your video prompt, then films it as film_again does and
+    has the judge watch it."""
 
+    # The clip's first frame is a redraw of its start picture, until the start picture is
+    # retired (spec #210 point 19): so here the picture shows the end state, not the moment
+    # before the action.
     name: ClassVar[str] = "end_result_only"
     shows: str = Field(
         description="The end state the clip holds on, in one sentence: the product and what "
         "the action left."
+    )
+    new_picture: bool = Field(
+        description="True to draw a new start picture of the end state from picture_prompt; "
+        "false only when the current one already shows that end state."
+    )
+    picture_prompt: str | None = Field(
+        description="With a new picture: the picture model's prompt, written from scratch, "
+        "showing the end state with the action already done, naming each image by its number "
+        "and job."
     )
 
     def run(self, call: ToolCall) -> ToolResult:
