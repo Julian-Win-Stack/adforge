@@ -9,6 +9,8 @@ from .models import Job
 
 # The job's library: what is checked, labelled and added to it (jobs.library_items).
 LIBRARY_LOCK = 5
+# The product-only versions of the library's photos: which are made (jobs.library_items).
+PRODUCT_ONLY_LOCK = 6
 # One library picture recoloured one colour (jobs.recolour): made, checked and added once.
 RECOLOUR_LOCK = 7
 

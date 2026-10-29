@@ -26,7 +26,7 @@ from jobs import (
     reference_photos,
 )
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
-from jobs.library_items import add_kept_photos
+from jobs.library_items import add_kept_photos, add_product_only_versions
 from jobs.models import (
     BROLL_FIELDS,
     PLANNED_FOR_THE_ACTION,
@@ -282,7 +282,7 @@ class ReadPage(Tool):
                 post_notice(job, _not_downloaded(skipped), Message.Level.PROBLEM)
         # The job's library starts from the page's photos, labelled, before the videos' look
         # frames join it.
-        add_kept_photos(job, product_text=text)
+        add_kept_photos(job, product_text=text, product_only=False)
         # The gallery videos the picker picked, each watched for its moments, look frames,
         # colour and words (jobs.watcher). One that can't be watched is told in red.
         save_videos(job, list(picked.videos))
@@ -290,6 +290,9 @@ class ReadPage(Tool):
         # Only once every photo is kept: a worker that stops part-way through them leaves the
         # page unread, so the read run again keeps them all rather than the few already kept.
         keep_page(job, download, product_page, text)
+        # Each look photo that shows other things gets its product-only version, once the
+        # page is kept: it is slow, and a picture model down never stops the page's read.
+        add_product_only_versions(job)
         if messages.page_panel_wanted(call.session):
             post_notice(job, PANEL_NOT_NEEDED, Message.Level.INFO, wants_pasted_page=False)
         # The pictures cut from its videos are the planner's, not news to the owner.

@@ -248,6 +248,15 @@ BEFORE_PICTURE_PLAN: dict[str, Any] = {
 }
 
 # The B-roll starting picture judge's answer, when it finds nothing that can't exist.
+# What the cut-out check answers when a test doesn't say: the thing alone and unchanged.
+CUT_OUT_OK: dict[str, Any] = {
+    "photo_shows": "The product from the front, its label facing the camera.",
+    "cut_out_shows": "Only the product, unchanged, on a plain grey background.",
+    "verdict": "pass",
+    "problem": None,
+}
+
+
 PICTURE_OK: dict[str, Any] = {
     "objects": [
         {
@@ -451,6 +460,7 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("note_face", lambda _: NO_FACE)
     fake.answer_unscripted("label_photo", lambda _: LABELLED)
     fake.answer_unscripted("check_starting_picture", lambda _: PICTURE_OK)
+    fake.answer_unscripted("check_cut_out", lambda _: CUT_OUT_OK)
     fake.answer_unscripted("check_fix", lambda request: with_owner_photo(FIX_MADE, request.output))
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
     # A product video's watcher sees the product and nothing else in it, unless a test says.

@@ -14,14 +14,15 @@ from jobs.library_items import library_text
 from jobs.models import Job
 from jobs.recolour import recolour
 
-from .test_library_build import OWNER_LABEL, first_message
+from .test_library_build import OWNER_ALONE, first_message
 from .test_picker_labels import labelled_page, notices  # noqa: F401 (a fixture)
 from .test_recolour import RECOLOUR_BAD, RECOLOUR_OK
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
-# The shop owner's photo shows the product in red: the colour reference.
-RED_OWNER_PHOTO = {**OWNER_LABEL, "colour": "red", "label": "The red bottle on a shelf."}
+# The shop owner's photo shows the product in red, alone (so it needs no product-only
+# version): the colour reference.
+RED_OWNER_PHOTO = {**OWNER_ALONE, "colour": "red", "label": "The red bottle on a shelf."}
 
 
 def test_a_page_photo_recoloured_to_the_owners_photos_colour_joins_the_library(
