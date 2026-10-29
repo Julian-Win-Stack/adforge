@@ -49,7 +49,7 @@ def _style() -> str:
 
 
 def _when(at: str | None) -> str:
-    return at.replace("T", " ")[:19] if at else "not finished"
+    return at.replace("T", " ")[:19] + " UTC" if at else "not finished"
 
 
 def _chip(answer: str, refused: bool) -> str:
@@ -133,7 +133,8 @@ def page(run: Path, ad: str) -> str:
   <header>
     <h1>{TITLE}: {_esc(ad)}</h1>
     <p class="lead">Every tool call of the ad {cut}, in call order: {len(calls)} calls,
-    ${cost}.</p>
+    ${cost} of the tool calls' own model calls (the agents' turns are not included; costs.json
+    has the ad's whole cost).</p>
     <p><a class="back" href="../grading.html#{_esc(ad)}">Back to the round</a></p>
   </header>
   {f'<ol class="calls">{items}</ol>' if items else '<p class="muted">No tool calls.</p>'}
