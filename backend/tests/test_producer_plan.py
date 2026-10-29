@@ -14,9 +14,10 @@ import pytest
 from pytest_httpserver import HTTPServer
 
 from adforge import file_store
-from gateway.fake import FakeModel, turn
+from gateway.fake import FakeModel, meanwhile, turn
 from gateway.models import ModelCall
-from jobs.models import Job
+from jobs.library import PagePhoto, PictureLabel, VideoWatch, add_to_library, keep_watch
+from jobs.models import Job, ProductVideo
 from jobs.planning import PLAN_INSTRUCTIONS, producer_decision_for
 from jobs.work import keep_photo
 
@@ -361,8 +362,19 @@ def test_the_planner_is_given_the_plan_instructions_and_the_decisions_schema(
     request = the_plan_request(httpserver)
     assert request["instructions"] == PLAN_INSTRUCTIONS
     sent = request["text"]["format"]["schema"]["$defs"]
-    defined = producer_decision_for(2).model_json_schema()["$defs"]
-    assert set(sent) == set(defined) == {"Need", "OwnerPart", "Plan", "PlannedScene"}
+    defined = producer_decision_for(2, library=(), moments={}).model_json_schema()["$defs"]
+    assert (
+        set(sent)
+        == set(defined)
+        == {
+            "Need",
+            "OwnerPart",
+            "Plan",
+            "PlannedScene",
+            "ScenePicture",
+            "ScenePiece",
+        }
+    )
     for model in defined:
         assert {
             name: field.get("description") for name, field in sent[model]["properties"].items()
@@ -536,3 +548,186 @@ def test_a_photo_models_cant_read_is_handed_back_saying_why_and_the_planner_isnt
     )
     assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face"]
     assert not job.scenes.exists()
+
+
+# --- Scene pictures by library number and the piece by moment number (#223) -----------------
+
+# Stands in for the library build and the watcher (#220, #221): the job's library holds 12
+# pictures, numbered 1 to 12, and its one page video has two moments.
+LIBRARY_SIZE = 12
+WATCHED_VIDEO: dict[str, Any] = {
+    "moments": [
+        {
+            "number": 1,
+            "start": 1.0,
+            "end": 6.0,
+            "happens": "Tea is poured into the mug.",
+            "on_screen": "The mug on a table, a teapot pouring, steam rising.",
+        },
+        {
+            "number": 2,
+            "start": 7.0,
+            "end": 10.0,
+            "happens": "The mug is lifted by its handle.",
+            "on_screen": "One hand round the handle, the mug full.",
+        },
+    ],
+    "look_frames": [3.0],
+    "colour": "green",
+    "transcript": "",
+}
+
+# The planner's note on how the mug behaves, one short paragraph.
+BEHAVES = (
+    "The mug holds a hot drink poured into it and keeps its shape and glaze; it is lifted by "
+    "its handle and nothing comes out of it."
+)
+
+
+def the_library_and_its_video_are_ready() -> None:
+    """The job's library and its watched page video, made while the producer works."""
+    job = Job.objects.get()
+    for number in range(1, LIBRARY_SIZE + 1):
+        add_to_library(
+            job,
+            f"jobs/{job.pk}/library/{number}.png",
+            PictureLabel(kind="side", side="front", alone="yes", colour="green", label="The mug."),
+            PagePhoto(photo=1),
+        )
+    video = ProductVideo.objects.create(job=job, position=1, kind=ProductVideo.Kind.VIDEO)
+    keep_watch(video, VideoWatch.model_validate(WATCHED_VIDEO))
+
+
+def planning_from_the_library(
+    fake_model: FakeModel, link: str, *replies: dict[str, Any], plans: int = 1
+) -> None:
+    """Script the producer to read `link`, then, once the library is ready, plan the ad
+    `plans` times, the planner answering `replies` in turn."""
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": link, "target_seconds": None})]),
+        meanwhile(
+            the_library_and_its_video_are_ready,
+            turn(says="Now I'll plan the ad.", calls=[("plan_ad", {})]),
+        ),
+        *(turn(calls=[("plan_ad", {})]) for _ in range(plans - 1)),
+        turn(says="Here's the plan."),
+    )
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", *replies)
+
+
+TEA_POURED_FROM_THE_VIDEO: dict[str, Any] = {
+    **TEA_POURED,
+    "needs": [],
+    "scene_pictures": [{"number": 4, "for": "in-use"}, {"number": 9, "for": "result"}],
+    "piece": {"video": 1, "moment": 1},
+}
+LIFTED_FULL: dict[str, Any] = {
+    **ON_THE_SHELF,
+    "shows": "a hand lifts the full mug by its handle",
+    "scene_pictures": [{"number": 7, "for": "state"}],
+    "piece": None,
+}
+
+
+def a_library_plan(*broll_scenes: dict[str, Any], **changes: Any) -> dict[str, Any]:
+    """A plan whose middle scenes are `broll_scenes`, with the behaviour note."""
+    scenes = [
+        {"line": "Meet the Stoneware Mug from Kiln & Co."},
+        *broll_scenes,
+        {"line": "Yours for $24.00."},
+    ]
+    return a_plan_with(scenes=scenes, product_behaviour=BEHAVES, **changes)
+
+
+def test_each_broll_scene_keeps_its_scene_pictures_and_its_piece_and_the_job_its_behaviour(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    planning_from_the_library(
+        fake_model, product_page_url, a_library_plan(TEA_POURED_FROM_THE_VIDEO, LIFTED_FULL)
+    )
+
+    say(f"Make an ad for {product_page_url}")
+
+    job = Job.objects.get()
+    assert list(job.scenes.values_list("number", "scene_pictures", "piece")) == [
+        (1, [], None),
+        (
+            2,
+            [{"number": 4, "for": "in-use"}, {"number": 9, "for": "result"}],
+            {"video": 1, "moment": 1},
+        ),
+        (3, [{"number": 7, "for": "state"}], None),
+        (4, [], None),
+    ]
+    assert job.product_behaviour == BEHAVES
+
+
+def test_a_scene_naming_twelve_pictures_is_planned_with_all_twelve(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    # The only cap is the video API's 9, applied when the clip is sent: the planner never
+    # counts. Its old needs list is no longer capped at 5 pictures either.
+    twelve = [{"number": number, "for": "in-use"} for number in range(1, LIBRARY_SIZE + 1)]
+    scene = {
+        **TEA_POURED_FROM_THE_VIDEO,
+        "scene_pictures": twelve,
+        "needs": [{"what": f"detail {number}", "photos": [1]} for number in range(1, 6)],
+    }
+    planning_from_the_library(fake_model, product_page_url, a_library_plan(scene))
+
+    say(f"Make an ad for {product_page_url}")
+
+    (stored,) = Job.objects.get().scenes.filter(number=2).values_list("scene_pictures", flat=True)
+    assert stored == twelve
+
+
+def test_a_plan_naming_a_picture_or_a_moment_the_job_doesnt_have_is_refused(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    beyond = {**TEA_POURED_FROM_THE_VIDEO, "scene_pictures": [{"number": 13, "for": "result"}]}
+    no_such_moment = {**TEA_POURED_FROM_THE_VIDEO, "piece": {"video": 1, "moment": 3}}
+    planning_from_the_library(
+        fake_model,
+        product_page_url,
+        a_library_plan(beyond),
+        a_library_plan(no_such_moment),
+        plans=2,
+    )
+
+    say(f"Make an ad for {product_page_url}")
+
+    first, second = results_of("plan_ad")
+    assert "Scene 2 names picture 13: the library holds pictures 1 to 12." in first
+    assert "Scene 2 names moment 3 of video 1: that video has moments 1 to 2." in second
+    assert not Job.objects.get().scenes.exists()
+
+
+def test_a_plan_filming_the_same_action_in_two_scenes_is_refused_and_planned_again(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    poured_again = {
+        **TEA_POURED_FROM_THE_VIDEO,
+        "line": "Fill it to the brim with tea and it stays light in one hand.",
+        "shows": "Hot tea poured into the mug, steam rising.",
+    }
+    planning_from_the_library(
+        fake_model,
+        product_page_url,
+        a_library_plan(TEA_POURED_FROM_THE_VIDEO, poured_again),
+        a_library_plan(TEA_POURED_FROM_THE_VIDEO, LIFTED_FULL),
+        plans=2,
+    )
+
+    say(f"Make an ad for {product_page_url}")
+
+    refused, planned = results_of("plan_ad")
+    assert "Scenes 2 and 3 film the same action: give each B-roll scene a different one." in refused
+    assert planned.startswith("Planned 4 scenes.")
+    assert list(Job.objects.get().scenes.values_list("shows", flat=True)) == [
+        "",
+        TEA_POURED_FROM_THE_VIDEO["shows"],
+        LIFTED_FULL["shows"],
+        "",
+    ]

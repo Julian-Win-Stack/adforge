@@ -114,7 +114,7 @@ from .checks import (
     script_seconds,
     shortened_script_for,
 )
-from .library import PictureLabel
+from .library import PictureLabel, watch_of
 from .models import (
     BROLL_FIELDS,
     AgentFix,
@@ -938,7 +938,9 @@ def plan(job: Job) -> ProducerDecision:
             purpose="plan_ad",
             instructions=PLAN_INSTRUCTIONS,
             handoff=plan_handoff(job, job.page_text, len(photos)),
-            output=producer_decision_for(len(photos)),
+            output=producer_decision_for(
+                len(photos), library=_library_numbers(job), moments=_moments_by_video(job)
+            ),
             images=images,
         ),
         list(shown),
@@ -961,12 +963,17 @@ def plan(job: Job) -> ProducerDecision:
                 second_state=scene.second_state,
                 **scene.broll_details(),
                 owner_part=scene.owner_part.model_dump() if scene.owner_part else None,
+                scene_pictures=[
+                    picture.model_dump(by_alias=True) for picture in scene.scene_pictures
+                ],
+                piece=scene.piece.model_dump() if scene.piece else None,
             )
             for number, scene in enumerate(planned.scenes, start=1)
         )
         job.product_name = planned.product_name
         job.product_colour = planned.product_colour
         job.product_size = planned.product_size
+        job.product_behaviour = planned.product_behaviour
         job.person_gender = planned.person_gender
         job.person_looks = planned.person_looks
         job.person_voice = planned.person_voice
@@ -977,6 +984,7 @@ def plan(job: Job) -> ProducerDecision:
                 "product_name",
                 "product_colour",
                 "product_size",
+                "product_behaviour",
                 "person_gender",
                 "person_looks",
                 "person_voice",
@@ -989,6 +997,20 @@ def plan(job: Job) -> ProducerDecision:
             position__in=[shown[image].position for image in left_out]
         ).update(shows_product_colour=True)
     return decision
+
+
+def _library_numbers(job: Job) -> set[int]:
+    """The numbers of the pictures in `job`'s library, which a plan's scenes name."""
+    return set(job.library.values_list("number", flat=True))
+
+
+def _moments_by_video(job: Job) -> dict[int, int]:
+    """How many moments each of `job`'s watched page videos has, by the video's number."""
+    return {
+        video.position: len(watched.moments)
+        for video in job.videos.filter(watched__isnull=False)
+        if (watched := watch_of(video)) is not None
+    }
 
 
 def plan_handoff(job: Job, page_text: str, photo_count: int) -> PlanHandoff:

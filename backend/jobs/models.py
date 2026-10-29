@@ -116,6 +116,12 @@ class Job(models.Model):
     person_voice = models.TextField(
         blank=True, help_text="The producer's description of the person's voice."
     )
+    product_behaviour = models.TextField(
+        blank=True,
+        help_text="How the product behaves, one short paragraph the planner writes from the "
+        "page text and the video moments, for the clip judge and the fixing agent. Blank "
+        "before the plan, and for an ad planned before it was asked for.",
+    )
     script_format = models.CharField(
         max_length=30,
         blank=True,
@@ -428,6 +434,20 @@ class Scene(models.Model):
         help_text="What a B-roll scene needs that the main photo can't show, each with the "
         'numbers of the photos that show it, such as [{"what": "the gel", "photos": [3, 5]}]. '
         "Empty when the main photo is enough.",
+    )
+    scene_pictures = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The B-roll scene's scene pictures the planner named, in its order, each by "
+        'library number with what it is for (jobs.library.For), such as [{"number": 4, '
+        '"for": "in-use"}]. Empty for a talking scene and for one planned before them.',
+    )
+    piece = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="The video piece the planner named for the B-roll scene: the page video's "
+        'position and the moment\'s number in it, such as {"video": 1, "moment": 2}. Null '
+        "when none.",
     )
     owner_part = models.JSONField(
         null=True,

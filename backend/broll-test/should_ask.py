@@ -216,7 +216,7 @@ def plan_once(case: Case, run: int) -> dict[str, Any]:
                 conversation=conversation,
                 video_transcripts=[],
             ),
-            output=producer_decision_for(len(keys)),
+            output=producer_decision_for(len(keys), library=(), moments={}),
             images=[Image(label=f"Photo {n}", key=key) for n, key in enumerate(keys, start=1)],
         )
         planned = decision.plan

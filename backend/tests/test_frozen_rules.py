@@ -183,6 +183,32 @@ FROZEN = [
         'When "shows" names a person or a hand, they are in the clip, doing what it says.',
         id="A17 a person named in shows is in the clip (#5 s3 FAIL)",
     ),
+    # Spec #210 point 10 (Julian, Oct 27-28): the planner's rules for what its scenes film and
+    # how its picks are sent. Not proven by grades yet, pinned so they change only when he says.
+    pytest.param(
+        PLANNER,
+        "Give each B-roll scene a different action: never film the same action in two scenes.",
+        id="#210-10 a different action per B-roll scene",
+    ),
+    pytest.param(
+        PLANNER,
+        "The video moments show how the product is really used: plan from them.",
+        id="#210-10 plan from the moments",
+    ),
+    pytest.param(
+        PLANNER,
+        "Plan only actions the product really does: ones the page, the shop owner's words or a "
+        "video moment shows it doing.",
+        id="#210-10 only actions the product really does (requirement 9)",
+    ),
+    pytest.param(
+        PLANNER,
+        "Each B-roll clip is sent its pictures in this order: the product's front photo, then "
+        "the scene pictures you name, in your order, then the picture of the person in the "
+        "place, then the product's other sides. So the scene pictures you name always come "
+        "right after the front photo, before anything else the clip is sent.",
+        id="#210-10 the planner is told the send order (audit item 13)",
+    ),
 ]
 
 
