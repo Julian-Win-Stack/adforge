@@ -1581,7 +1581,20 @@ class AgentFixTry(models.Model):
     new_picture = models.BooleanField(default=False)
     picture_prompt = models.TextField(blank=True)
     video_prompt = models.TextField(blank=True, help_text="As sent, with code's opener.")
-    why = models.TextField(blank=True, help_text="The agent's why, in plain words.")
+    why = models.TextField(
+        blank=True,
+        help_text="The agent's why, in plain words: tries filmed before root_cause and move.",
+    )
+    root_cause = models.TextField(
+        blank=True,
+        help_text="What the agent found caused the last fail, written on every try (spec #210 "
+        "US 33): for the record only.",
+    )
+    move = models.TextField(
+        blank=True,
+        help_text="What the agent changed this try to fix that cause (spec #210 US 33): for the "
+        "record only.",
+    )
     would_ask_owner = models.TextField(blank=True, help_text="Nobody is asked: for the record.")
     picture_problems = models.JSONField(
         default=list, blank=True, help_text="What the picture check found in each failed picture."
