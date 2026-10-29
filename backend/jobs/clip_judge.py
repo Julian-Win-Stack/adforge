@@ -859,6 +859,7 @@ TRIMMED = {
     "moment_over_limit": f"the moment ran past the video model's {VIDEO_API_MOST_PIECE_SECONDS} s",
     "pieces_over_limit": f"the pieces ran past the video model's {VIDEO_API_MOST_PIECE_SECONDS} s "
     "together",
+    "video_ended": "the moment ran past its video's end",
 }
 
 
@@ -877,7 +878,8 @@ def references_said(sent: SentList) -> str:
             said.append(
                 f"Video {piece.number} is {cut}, cut to {piece.start:g} s to {piece.end:g} s "
                 f"of its {piece.moment_start:g} s to {piece.moment_end:g} s because "
-                f"{TRIMMED[piece.trim]}."
+                # A stored trim the set no longer holds is said as it was kept.
+                f"{TRIMMED.get(piece.trim, piece.trim)}."
             )
     if sent.pieces:
         said.append("Each video is shown as its frames, only for the movement, not the look.")

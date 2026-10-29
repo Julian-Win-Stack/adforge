@@ -174,7 +174,7 @@ def test_a_decider_turn_refused_over_a_picture_is_taken_again_without_it(
         refused_over(
             current,
             turn(calls=[("sort_message", {"kind": "fix_note"})]),
-            turn(calls=[("look_at_picture", {"scene": 2})]),
+            turn(calls=[("look_at_references", {"scene": 2})]),
             turn(calls=[("decide", _decided([_row(2, "fix", "The toilet is white.")]))]),
         ),
     )
@@ -185,7 +185,7 @@ def test_a_decider_turn_refused_over_a_picture_is_taken_again_without_it(
     *_, refused, again = turns_for(fake_model, "decide_fixes")
     assert current in labels(refused)
     assert current not in labels(again)
-    assert result_of(again, "look_at_picture").splitlines()[-1] == (
+    assert result_of(again, "look_at_references").splitlines()[-1] == (
         f"{current} isn't shown: the AI model's safety filter refused to look at it. "
         "Carry on without it."
     )
