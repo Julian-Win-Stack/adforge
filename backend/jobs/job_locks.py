@@ -9,6 +9,8 @@ from .models import Job
 
 # The job's library: what is checked, labelled and added to it (jobs.library_items).
 LIBRARY_LOCK = 5
+# A library picture recoloured (jobs.recolour): made, checked and added once per colour.
+RECOLOUR_LOCK = 7
 
 
 @contextmanager

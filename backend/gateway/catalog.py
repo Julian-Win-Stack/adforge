@@ -51,6 +51,11 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # The before-picture's room alone, then the presenter standing in it: drawn once per ad
     # from it and the portrait, as the before-picture is.
     "make_room_alone": "gpt-image-2.5-sunburst",
+    # A library picture recoloured to a colour reference's colour (spec #210 point 8), on
+    # the picture model that cleans the shop owner's photos, and its check, on the picture
+    # judges' model.
+    "recolour_picture": "gpt-image-2.5-sunburst",
+    "check_recolour": "gpt-6.1-sol",
     "make_person_in_room": "gpt-image-2.5-sunburst",
     # Judges the starting picture beside its shop photo. With the photo, sol caught 7 of Julian's
     # 10 wrong pictures and failed none of 88 good ones; luna missed the bent neck, the bag clasp
