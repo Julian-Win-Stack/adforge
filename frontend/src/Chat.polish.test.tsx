@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import { Chat } from "./Chat";
@@ -274,4 +274,52 @@ test("once a session has started, the message box asks for a message, not a prod
   expect(screen.getByRole("textbox", { name: "Message" }).getAttribute("placeholder")).toBe(
     "Write a message or answer the producer...",
   );
+});
+
+/** The scrolling thread, sized as a real browser would lay it out: `height` of messages in a
+ * `view`-tall window. jsdom lays nothing out, so the sizes are set by hand. */
+function sizedThread(height: number, view: number) {
+  const el = screen.getByRole("list", { name: "Conversation" }).closest(".thread") as HTMLElement;
+  Object.defineProperty(el, "scrollHeight", { configurable: true, value: height });
+  Object.defineProperty(el, "clientHeight", { configurable: true, value: view });
+  const scrollTo = vi.fn();
+  el.scrollTo = scrollTo as unknown as HTMLElement["scrollTo"];
+  return { el, scrollTo };
+}
+
+/** The reader scrolls the thread to `top`. */
+function scrollThread(el: HTMLElement, top: number) {
+  el.scrollTop = top;
+  fireEvent.scroll(el);
+}
+
+const arrow = () => screen.queryByRole("button", { name: "Scroll to the newest message" });
+
+test("the down arrow shows only while the reader is scrolled up, and goes once they're back down", async () => {
+  await session([said("user", "https://shop.example/shoes"), said("agent", "On it.")]);
+  const { el } = sizedThread(2000, 500);
+
+  scrollThread(el, 1500);
+  expect(arrow()).toBeNull();
+
+  scrollThread(el, 600);
+  expect(arrow()).toBeTruthy();
+
+  scrollThread(el, 1490);
+  expect(arrow()).toBeNull();
+});
+
+test("clicking the down arrow glides to the newest message and follows it again", async () => {
+  await session([said("user", "https://shop.example/shoes"), said("agent", "On it.")]);
+  const { el, scrollTo } = sizedThread(2000, 500);
+  scrollThread(el, 1500);
+  scrollThread(el, 600);
+
+  await userEvent.click(arrow() as HTMLElement);
+
+  expect(scrollTo).toHaveBeenCalledWith({ top: 2000, behavior: "smooth" });
+  expect(arrow()).toBeNull();
+  // The glide's own scroll events, still short of the bottom, don't bring the arrow back.
+  scrollThread(el, 900);
+  expect(arrow()).toBeNull();
 });

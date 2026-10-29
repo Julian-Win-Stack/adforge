@@ -690,9 +690,34 @@ button:disabled {
 /* ---------- Composer ---------- */
 
 .composer-wrap {
+  position: relative;
   flex-shrink: 0;
   padding: 0 24px 18px;
   background: linear-gradient(to top, var(--bg) 70%, transparent);
+}
+
+/* The down arrow that takes a reader who scrolled up back to the newest message. It floats
+   over the bottom of the thread, centred just above the composer. */
+.to-bottom {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  transition: background 150ms;
+}
+
+.to-bottom:hover {
+  background: var(--surface-3);
 }
 
 /* The page panel's accent button. */
