@@ -86,16 +86,15 @@ def turn(says: str = "", *, calls: Sequence[tuple[str, dict[str, Any]]] = ()) ->
 
 
 def _as_the_tools_take(outcome: Turn, tools: Sequence[ToolSpec]) -> Turn:
-    """`outcome` without the `why` of each call to a tool offered that asks for none, as a
-    real model given those tools' shapes would send it. A call to a tool not offered is
-    left as it is."""
-    asks_none = {spec.name for spec in tools if "why" not in spec.arguments.model_fields}
+    """`outcome` as a real model given these tools' shapes would send it: for an agent whose
+    tools ask for no `why`, its calls without one. An agent whose tools ask for one keeps it
+    on every call, a call to a tool it made up too."""
+    if any("why" in spec.arguments.model_fields for spec in tools):
+        return outcome
     return Turn(
         says=outcome.says,
         calls=tuple(
-            call
-            if call.tool not in asks_none
-            else ToolRequest(
+            ToolRequest(
                 call_id=call.call_id,
                 tool=call.tool,
                 arguments={key: value for key, value in call.arguments.items() if key != "why"},
