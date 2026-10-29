@@ -324,7 +324,8 @@ def _as_try(row: AgentFixTry, fixing: AgentFix) -> Try:
         video_prompt=row.video_prompt,
         ruling=row.clip.ruling if row.clip is not None else None,
         fix_check=row.fix_check,
-        why=row.why,
+        # A try filmed since #229 writes its root cause and move in place of a why.
+        why=row.why or f"{row.root_cause} {row.move}".strip(),
         would_ask_owner=row.would_ask_owner,
         cost_usd=row.tool_call.cost_usd(),
         picked=fixing.picked == row.number,
@@ -508,28 +509,60 @@ def _put_back(scene: Scene, row: dict[str, Any]) -> None:
 
 def _fit(conversation: list[Happened]) -> list[Happened]:
     """Keep the newest pictures under MOST_PICTURES; older ones are dropped with a note. What
-    the agent opened in the library stays for the whole fix (spec #210 point 22): it takes
-    its room first, and is never dropped."""
-    room = MOST_PICTURES - sum(
-        len(each.pictures)
-        for each in conversation
-        if isinstance(each, ToolUse) and each.tool == LookAtLibrary.name
-    )
+    the agent opened in the library stays for the whole fix (spec #210 point 22), each look
+    shown once, on its newest copy, within LIBRARY_ROOM (look_at_library refuses a look past
+    it), so the newest try's frames always have their room and a turn never holds more than
+    MOST_PICTURES."""
+    library_room = _library_room()
+    room = MOST_PICTURES
+    seen: set[tuple[str, ...]] = set()
     kept: list[Happened] = []
     for each in reversed(conversation):
+        if isinstance(each, ToolUse) and each.pictures and each.tool == LookAtLibrary.name:
+            keys = tuple(picture.key for picture in each.pictures)
+            if keys in seen:
+                each = each.model_copy(
+                    update={"pictures": [], "result": f"{each.result} {SHOWN_LATER}"}
+                )
+            elif len(keys) <= library_room:
+                seen.add(keys)
+                library_room -= len(keys)
+                room -= len(keys)
+            else:
+                # Only when the room was made smaller since the look: never past MOST_PICTURES.
+                each = each.model_copy(
+                    update={"pictures": [], "result": f"{each.result} {NOT_SHOWN}"}
+                )
+        kept.append(each)
+    fitted: list[Happened] = []
+    for each in kept:
         if isinstance(each, ToolUse) and each.pictures and each.tool != LookAtLibrary.name:
             if len(each.pictures) <= room:
                 room -= len(each.pictures)
             else:
                 each = each.model_copy(
-                    update={
-                        "pictures": [],
-                        "result": f"{each.result} (Its pictures aren't shown any more: look "
-                        "again to see them.)",
-                    }
+                    update={"pictures": [], "result": f"{each.result} {NOT_SHOWN}"}
                 )
-        kept.append(each)
-    return list(reversed(kept))
+        fitted.append(each)
+    return list(reversed(fitted))
+
+
+# The share of a turn's MOST_PICTURES kept for what the agent opened in the library, the rest
+# for the tries' pictures (not approved yet: one setting).
+LIBRARY_SHARE = 0.5
+
+
+def _library_room() -> int:
+    """How many of a turn's pictures may be library pictures the agent opened."""
+    return int(MOST_PICTURES * LIBRARY_SHARE)
+
+
+NOT_SHOWN = "(Its pictures aren't shown any more: look again to see them.)"
+SHOWN_LATER = "(Its pictures are shown where you opened it again, later.)"
+LIBRARY_FULL = (
+    "the library pictures you have open fill the room kept for them, so nothing more can be "
+    "opened in this scene's fix: work from what you have open, or open one of those again."
+)
 
 
 REMINDER = "Answer with a tool call: a look, a move or give_up."
@@ -654,10 +687,10 @@ def _intro(fixing: AgentFix) -> str:
     )
 
 
-def sent_list_words(sent: library.SentList) -> str:
+def sent_list_words(sent: library.SentList, whose: str = "the failed clip") -> str:
     """What a clip was sent, as a list in words: each picture with its library number and
     label, each piece with its video and moment, what was left out and why, and the prompt."""
-    lines = [f"What the failed clip was sent, every picture in {sent.colour}:"]
+    lines = [f"What {whose} was sent, every picture in {sent.colour}:"]
     for picture in sent.pictures:
         named = (
             f"library item {picture.library_number}"
@@ -752,9 +785,15 @@ def judge_words(ruling: dict[str, Any] | None) -> str:
     verdict = ruling.get("verdict", "not judged")
     lines = [f"The judge's verdict: {verdict}. Checks: {json.dumps(ruling.get('checks', {}))}."]
     if verdict == "fail":
+        # A PRODUCT fail in its fixed form first, then every other failed check's faults.
         fixed_form = _product_faults(ruling)
-        lines += fixed_form or [
-            f"- It found: {fault}" for fault in dict.fromkeys(auto_fix.faults(ruling))
+        others = (
+            {**ruling, "checks": {**ruling.get("checks", {}), "product": "pass"}}
+            if fixed_form
+            else ruling
+        )
+        lines += fixed_form + [
+            f"- It found: {fault}" for fault in dict.fromkeys(auto_fix.faults(others))
         ]
     motion = (ruling.get("answers") or {}).get("motion") or []
     if motion and isinstance(motion[0], dict):
@@ -926,7 +965,7 @@ def _try_shown(
                 clip_judge.piece_frames(piece.file), f"{label}, Video {piece.number}"
             )
         ]
-        return clip_judge.references_said(sent), [
+        return sent_list_words(sent, f"{label}'s clip"), [
             *clip_judge.sent_pictures(sent, label),
             *pieces,
             *clip_frames,
@@ -956,9 +995,12 @@ class LookAtLibrary(Tool):
             if not found:
                 raise Refused(f"there is no library item {self.item}.")
             [item] = found
-            return ToolResult(
-                f"Library item {library_items.library_line(item)}",
-                [Image(label=f"Library item {item.number}: {item.label}", key=item.file)],
+            return _within_the_room(
+                call,
+                ToolResult(
+                    f"Library item {library_items.library_line(item)}",
+                    [Image(label=f"Library item {item.number}: {item.label}", key=item.file)],
+                ),
             )
         assert self.video is not None and self.moment is not None
         video = job.videos.filter(position=self.video).first()
@@ -976,12 +1018,36 @@ class LookAtLibrary(Tool):
             {**frame, "times": [round(moment.start + t, 3) for t in frame["times"]]}
             for frame in clip_judge.piece_frames(part)
         ]
-        return ToolResult(
-            f"{named}, {moment.start:g} s to {moment.end:g} s: {moment.happens} On screen: "
-            f"{moment.on_screen} Its frames, each at its second in the video, "
-            f"{PIECE_LABEL}.",
-            [Image(label=each.label, key=each.key) for each in _four_to_a_picture(frames, named)],
+        return _within_the_room(
+            call,
+            ToolResult(
+                f"{named}, {moment.start:g} s to {moment.end:g} s: {moment.happens} On screen: "
+                f"{moment.on_screen} Its frames, each at its second in the video, "
+                f"{PIECE_LABEL}.",
+                [
+                    Image(label=each.label, key=each.key)
+                    for each in _four_to_a_picture(frames, named)
+                ],
+            ),
         )
+
+
+def _within_the_room(call: ToolCall, opened: ToolResult) -> ToolResult:
+    """`opened`, unless its pictures would take the library pictures the agent has open past
+    LIBRARY_ROOM: then refused, in words. A look at one already open is always let through,
+    as it is shown once."""
+    fixing = _fixing_of(call)
+    looks = {
+        tuple(picture["key"] for picture in each.pictures)
+        for each in _calls(fixing).filter(tool=LookAtLibrary.name, finished_at__isnull=False)
+        if each.pictures
+    }
+    keys = tuple(picture.key for picture in opened.pictures)
+    if keys in looks:
+        return opened
+    if sum(len(each) for each in looks) + len(keys) > _library_room():
+        raise Refused(LIBRARY_FULL)
+    return opened
 
 
 class FilmAgain(Tool):

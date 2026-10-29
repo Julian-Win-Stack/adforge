@@ -14,7 +14,8 @@ from agents import fixing_agent
 from agents.fixing_agent import Failure, fix_scene
 from agents.models import ToolCall
 from gateway.fake import FakeModel, turn
-from gateway.types import Said, ToolUse
+from gateway.types import Said, Shown, ToolUse
+from jobs import clip_judge
 from jobs.clip_judge import ASKS
 from jobs.library import (
     LookFrame,
@@ -164,8 +165,16 @@ def test_after_a_judge_fail_the_first_message_holds_fault_sent_list_library_and_
         assert f"Image {each.image}: {named}. {each.label}" in said
     for cut in sent.pieces:
         assert f"Video {cut.number}: page video {cut.video}, moment {cut.moment}," in said
-    for left in sent.left_out:
-        assert f"Left out: library item {left.library_number}. {left.label}" in said
+    # Whole lines: a piece trimmed to fit, the left-out picture's reason, a fallen-back recolour.
+    assert (
+        "Video 2: page video 2, moment 1, 3 s to 13 s, cut from its 3 s to 15 s because the "
+        "pieces ran past the video model's 15 s together. only for the movement, not the look"
+    ) in said.splitlines()
+    assert (
+        "Left out: library item 5. The garlic press, closed, seen from the top. (past the video "
+        "model's 9 pictures, another side photo)"
+    ) in said.splitlines()
+    assert "Library item 2 couldn't be made red, so it went as it was." in said.splitlines()
     assert sent.prompt in said
     # The library as a text list, numbered as the job's library is, with no pictures.
     job = failed_clip.scene.job
@@ -197,6 +206,18 @@ def test_a_product_fault_is_given_in_its_fixed_form() -> None:
     assert FIXED_FORM in fixing_agent.judge_words(FAILED)
 
 
+def test_a_clip_failing_product_and_motion_is_given_both_faults() -> None:
+    lid = "The lid floats off by itself."
+    ruling = clip_judge.judged([PRODUCT_FAULT], [failing(lid)], first_check="product")
+    assert ruling["checks"]["product"] == ruling["checks"]["real_motion"] == "fail"
+
+    words = fixing_agent.judge_words(ruling).splitlines()
+
+    assert words.index(FIXED_FORM) < words.index(f"- It found: {lid}")
+    # The PRODUCT fault is said once, in its fixed form only.
+    assert not any(str(PRODUCT_FAULT["fault"]) in line for line in words if "It found" in line)
+
+
 # --- The look tool ------------------------------------------------------------------------
 
 LOOK_AT_7 = ("look_at_library", {"item": 7, "video": None, "moment": None})
@@ -214,8 +235,9 @@ def looked(conversation: list[Any]) -> list[ToolUse]:
 def test_the_agent_opens_a_look_frame_and_a_moment_and_they_stay_in_its_context(
     fake_model: FakeModel, failed_clip: SceneStep, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # So few pictures fit a turn that later looks would push the first ones out.
-    monkeypatch.setattr(fixing_agent, "MOST_PICTURES", 4)
+    # So few pictures fit a turn that later looks would push the first ones out: 4 are kept
+    # for the library, the item's 1 and the moment's 3.
+    monkeypatch.setattr(fixing_agent, "MOST_PICTURES", 8)
     fake_model.respond(
         "fix_scene",
         turn(calls=[LOOK_AT_7]),
@@ -245,6 +267,14 @@ def test_the_agent_opens_a_look_frame_and_a_moment_and_they_stay_in_its_context(
     # Three turns later, and after, both looks still show their pictures.
     turns = fix_turns(fake_model)
     for later in turns[4:]:
+        assert (
+            sum(
+                len(each.pictures)
+                for each in later.handoff.conversation
+                if isinstance(each, ToolUse)
+            )
+            <= 8
+        )
         kept = looked(later.handoff.conversation)
         assert [[shown.key for shown in each.pictures] for each in kept] == [
             [each["key"] for each in item.pictures],
@@ -349,3 +379,82 @@ def test_every_try_records_the_agents_root_cause_and_move(
             "Use the page video's pour for the movement.",
         ),
     ]
+
+
+# --- The library's room in a turn ---------------------------------------------------------
+
+
+def test_a_look_opened_again_shows_its_pictures_once(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[LOOK_AT_MOMENT]),
+        turn(calls=[LOOK_AT_MOMENT]),
+        turn(calls=[film_again()]),
+    )
+    fixed(failed_clip)
+
+    first, second = looked(fix_turns(fake_model)[-1].handoff.conversation)
+    assert first.pictures == [] and fixing_agent.SHOWN_LATER in first.result
+    assert second.pictures
+    assert not ToolCall.objects.filter(
+        tool="look_at_library", result__startswith="Refused"
+    ).exists()
+
+
+def test_a_look_past_the_librarys_room_is_refused_in_words_and_the_newest_try_stays(
+    fake_model: FakeModel, failed_clip: SceneStep, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 3 of a turn's pictures are the library's: the moment's 3 fit, item 7 then doesn't.
+    monkeypatch.setattr(fixing_agent, "LIBRARY_SHARE", 3 / fixing_agent.MOST_PICTURES)
+    fake_model.respond("check_clip_motion", *[failing(SHUT)] * ASKS)
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[film_again()]),
+        turn(calls=[LOOK_AT_MOMENT]),
+        turn(calls=[LOOK_AT_7]),
+        turn(calls=[("give_up", {"reason": "The lid never shuts.", "best_try": 1})]),
+    )
+
+    fixed(failed_clip)
+
+    refused = ToolCall.objects.get(tool="look_at_library", arguments__item=7)
+    assert refused.result.startswith(f"Refused: {fixing_agent.LIBRARY_FULL}")
+    assert not COUNTED.search(fixing_agent.LIBRARY_FULL)
+    last = fix_turns(fake_model)[-1].handoff.conversation
+    shown = [each for each in last if isinstance(each, ToolUse)]
+    assert sum(len(each.pictures) for each in shown) <= fixing_agent.MOST_PICTURES
+    # The newest try's pictures, its frames, are still shown beside the open moment.
+    newest = [each for each in shown if each.tool == "film_again"][-1]
+    assert newest.pictures
+    assert looked(last)[0].pictures
+
+
+def test_the_library_keeps_half_a_turns_pictures() -> None:
+    assert fixing_agent.LIBRARY_SHARE == 0.5
+    assert fixing_agent._library_room() == fixing_agent.MOST_PICTURES // 2
+
+
+def test_a_turn_never_holds_more_than_its_pictures_and_keeps_the_newest_try() -> None:
+    def used(tool: str, n: int, tag: str) -> ToolUse:
+        return ToolUse(
+            call_id=tag,
+            tool=tool,
+            arguments={},
+            result=tag,
+            pictures=[Shown(label=f"{tag} {i}", key=f"{tag}-{i}") for i in range(n)],
+        )
+
+    conversation: list[Any] = [
+        used("look_at_try", 20, "try0"),
+        *(used("look_at_library", 3, f"look{i}") for i in range(20)),
+        used("film_again", 15, "try1"),
+    ]
+
+    fitted = [each for each in fixing_agent._fit(conversation) if isinstance(each, ToolUse)]
+
+    assert sum(len(each.pictures) for each in fitted) <= fixing_agent.MOST_PICTURES
+    assert len(fitted[-1].pictures) == 15
+    kept = [each for each in fitted if each.tool == "look_at_library" and each.pictures]
+    assert sum(len(each.pictures) for each in kept) <= fixing_agent._library_room()

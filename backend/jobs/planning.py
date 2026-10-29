@@ -40,12 +40,12 @@ on, is a thin film, haze, cloudiness or water spots on a surface. Then its needs
 photo that shows it.
 - Its needs: only how a thing looks that the main photo can't show, such as what a gel \
 looks like out of the tube. Never an action, a pose or a movement, such as a drop or a \
-hand holding it: the action is said in words only. Give each need with the numbers of the \
-photos that show it. The main \
+hand holding it: the action is said in words only. Give each need with the library numbers \
+of the pictures that show it. The main \
 photo is picked from the product photos, one showing the product in its colour when one \
-does; leave needs empty when it's enough. A needed photo may be any of the photos, even \
-one where the product isn't clearly seen. Never name a photo that shows the product only \
-in another colour than the ad's.
+does; leave needs empty when it's enough. A needed picture may be any of the library's \
+pictures, even one where the product isn't clearly seen. Never name a photo that shows the \
+product only in another colour than the ad's.
 """
 
 # The rewrite's own cap on what its needs send (jobs.checks): the plan has none (#210
@@ -86,7 +86,7 @@ person talks to camera.
 - Its video piece: when a video moment shows the scene's action, that moment by its video \
 and moment number, named the first time you plan the scene. Never give seconds. Null when \
 no moment shows it.
-The video moments show how the product is really used: plan from them. Plan only actions \
+Plan only actions \
 the product really does: ones the page, the shop owner's words or a video moment shows it \
 doing. Give each B-roll scene a different action: never film the same action in two \
 scenes.
@@ -141,14 +141,19 @@ action can last the whole clip, the person says that line to camera.
 PLAN_INSTRUCTIONS = (
     """\
 You are the producer of a short vertical video ad for one product. A person speaks to \
-camera, one line per scene, and each scene shows the product. You get the product page's \
-visible text, followed by any product data the page declares for search engines, the \
-target length in seconds (or null if the shop owner didn't set one), how many product \
-photos there are, the conversation with the shop owner so far, each message labelled \
-"user" for the shop owner or "producer" for you, and what the product's video says: the \
-words said in each of the shop's product videos, one per video. After that come the \
-product photos themselves, each labelled with its number: "Photo 1", "Photo 2". A picture \
-marked as from the product's video is a product photo like every other, showing the \
+camera, one line per scene, and each scene shows the product. You get, first, the moments \
+of the shop's product videos, one a line: the video's number, the moment's number, its \
+seconds, what happens and what is on screen, each moment one action. The video moments \
+show how the product is really used: plan from them. Then how many pictures the library \
+holds, the library being every picture the app has of the product, and how many of them \
+you aren't shown; what the product's video says: the words said in each of the shop's \
+product videos, one per video; the product page's visible text, followed by any product \
+data the page declares for search engines; the target length in seconds (or null if the \
+shop owner didn't set one); and the conversation with the shop owner so far, each message \
+labelled "user" for the shop owner or "producer" for you. After that come the library's \
+pictures, several to a sheet, each with its library number and its label written under it. \
+Name a picture by its library number, everywhere you name one. A picture marked as from \
+the product's video is a product photo like every other, showing the \
 product's looks at that moment; the line beside it says what it shows that no photo shows.
 Every claim in the ad must come from the page or the shop owner's own words. What the \
 product's video says is the shop's own words, used like the page text; "music only" means \
@@ -194,26 +199,25 @@ overlay, a few words drawn along the top of the picture while it plays, when the
 something worth showing as well as saying, such as the price or the product's name; \
 otherwise set it to null. An overlay states only what the page or the shop owner states, \
 like a line. Name the product's \
-colour as the photos show it, in plain words such as "sage green", and give the numbers \
-of the photos that show the product in that colour. A photo counts whenever this product \
+colour as the photos show it, in plain words such as "sage green", and give the library \
+numbers of the pictures that show the product in that colour. A photo counts whenever this product \
 is clearly seen in it in that colour, even beside other items, such as in a pack, a set, \
 a line-up or beside its other colours: the picture is told which item to take. Leave out \
 a photo where this product can't be clearly seen, and give none when no photo shows it \
 clearly in that colour. If the product comes in several \
 colours, don't ask which: pick the colour with the most photos where the product is \
-clearly seen; on a tie, the colour of Photo 1, the first photo. Say how big the product is, judged \
-from the photos you chose: "tiny" if it fits on a fingertip, such as earrings, earbuds or \
-a ring; "handheld" if it's held in one or two hands, such as a bottle, a bag, a power bank \
-or a rolled-up mat; "large" if it can't be held, such as a chair, a treadmill or a \
-mattress. The size decides how the person is posed with the product in every scene where \
-they talk to camera, so judge it by what a person could really hold. Describe the person \
-who presents the ad: whether they are a man or a woman, how they look, for a portrait, \
-and how their voice sounds, for a voice designed to match. The portrait and the voice are \
-made separately from these words, and both are of the same person, so the looks and the \
-voice must agree with the gender you set and with each other. Describe only the person \
-and where they are: never the product, anything they hold, any animal, or what they do in \
-a scene. Choose someone who suits the product and its buyers, and never a real, famous \
-person. Set question to null.
+clearly seen; on a tie, the colour of picture 1, the library's first. Say how big the product \
+is, judged from the photos you chose: "tiny" if it fits on a fingertip, such as earrings, \
+earbuds or a ring; "handheld" if it's held in one or two hands, such as a bottle, a bag, a power \
+bank or a rolled-up mat; "large" if it can't be held, such as a chair, a treadmill or a \
+mattress. The size decides how the person is posed with the product in every scene where they \
+talk to camera, so judge it by what a person could really hold. Describe the person who presents \
+the ad: whether they are a man or a woman, how they look, for a portrait, and how their voice \
+sounds, for a voice designed to match. The portrait and the voice are made separately from these \
+words, and both are of the same person, so the looks and the voice must agree with the gender \
+you set and with each other. Describe only the person and where they are: never the product, \
+anything they hold, any animal, or what they do in a scene. Choose someone who suits the product \
+and its buyers, and never a real, famous person. Set question to null.
 The first scene is always the person talking to camera. The last scene is the person \
 talking to camera, or a B-roll scene that proves its line. Every scene between them is a \
 B-roll scene that proves its line, as the B-roll kinds below allow: it shows the product \
@@ -380,7 +384,7 @@ MOST_PICTURES = 5
 class Need(BaseModel):
     what: str = Field(description='What the scene needs, in a few words, such as "the gel".')
     photos: list[StrictInt] = Field(
-        min_length=1, description="The numbers of the photos that show it."
+        min_length=1, description="The library numbers of the pictures that show it."
     )
 
     @field_validator("what")
@@ -541,16 +545,16 @@ def same_action(shows: str) -> str:
     return " ".join(word for word in words if word not in {"a", "an", "the"})
 
 
-def photos_missing(scene: ScriptScene, photo_count: int) -> str | None:
-    """Why a scene's needs name a photo the job doesn't have, or None."""
-    return photo_missing([number for need in scene.needs for number in need.photos], photo_count)
+def needs_missing(scene: ScriptScene, library: Collection[int]) -> str | None:
+    """Why a scene's needs name a picture the library doesn't hold, or None."""
+    return pictures_missing([number for need in scene.needs for number in need.photos], library)
 
 
-def photo_missing(numbers: list[int], photo_count: int) -> str | None:
-    """Why `numbers` name a photo the job doesn't have, or None."""
+def pictures_missing(numbers: list[int], library: Collection[int]) -> str | None:
+    """Why `numbers` name a picture the library `library` doesn't hold, or None."""
     for number in numbers:
-        if not 1 <= number <= photo_count:
-            return f"There's no photo {number}: the job has {photo_count}."
+        if number not in library:
+            return f"There's no picture {number} in the library."
     return None
 
 
@@ -718,8 +722,8 @@ class Plan(BaseModel):
     )
     # Advice for the picture's photo, never a gate: it may be empty (Julian 2026-10-22).
     colour_photos: list[StrictInt] = Field(
-        description="The numbers of the photos showing the product in that colour; empty when "
-        "none shows it clearly."
+        description="The library numbers of the pictures showing the product in that colour; "
+        "empty when none shows it clearly."
     )
     product_size: ProductSize = Field(
         description='How big the product is: "tiny" fits on a fingertip, "handheld" is held '
@@ -842,12 +846,12 @@ class ProducerDecision(Judgement):
 
 
 def producer_decision_for(
-    photo_count: int, *, library: Collection[int], moments: Mapping[int, int]
+    *, library: Collection[int], moments: Mapping[int, int]
 ) -> type[ProducerDecision]:
-    """The producer's decision for a job with `photo_count` photos, the library numbers in
-    `library` and, for each watched page video by its number, how many moments it has. A plan
-    naming a photo, a library picture or a moment the job doesn't have fails while the answer
-    is read, like any other broken plan."""
+    """The producer's decision for a job with the library numbers in `library` and, for each
+    watched page video by its number, how many moments it has. A plan naming a library
+    picture or a moment the job doesn't have fails while the answer is read, like any other
+    broken plan."""
 
     class ProducerDecisionForJob(ProducerDecision):
         @model_validator(mode="after")
@@ -855,8 +859,8 @@ def producer_decision_for(
             if self.plan is None:
                 return self
             for missing in (
-                photo_missing(self.plan.colour_photos, photo_count),
-                *(photos_missing(scene, photo_count) for scene in self.plan.scenes),
+                pictures_missing(self.plan.colour_photos, library),
+                *(needs_missing(scene, library) for scene in self.plan.scenes),
                 *(
                     picture_missing(number, scene, library)
                     for number, scene in enumerate(self.plan.scenes, start=1)
@@ -908,9 +912,12 @@ class ChatMessage(Handoff):
 
 
 class PlanHandoff(Handoff):
-    product_url: str
-    page_text: str
-    target_seconds: int | None
-    photo_count: int
-    conversation: list[ChatMessage]
+    # In the order the planner reads them: the moments first (#210 point 9).
+    moments: str
+    library_pictures: int
+    pictures_not_shown: int
     video_transcripts: list[str]
+    page_text: str
+    product_url: str
+    target_seconds: int | None
+    conversation: list[ChatMessage]

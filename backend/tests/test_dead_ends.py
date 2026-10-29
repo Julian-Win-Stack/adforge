@@ -449,7 +449,7 @@ def test_a_page_read_again_adds_only_the_photos_the_job_doesnt_have(
 
 
 def test_a_plan_may_name_no_photo_in_the_ads_colour() -> None:
-    plan = producer_decision_for(2, library=(), moments={}).model_validate(
+    plan = producer_decision_for(library=(1, 2), moments={}).model_validate(
         a_plan_with(colour_photos=[])
     )
     assert plan.plan is not None and plan.plan.colour_photos == []
