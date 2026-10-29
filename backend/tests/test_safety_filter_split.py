@@ -27,7 +27,6 @@ from .conftest import (  # noqa: F401 (FakeFirecrawl for the fixtures)
 from .test_producer_page import notices
 from .test_producer_scenes import CHOICE, making
 from .test_product_videos import picks_videos, player, tiny_mp4  # noqa: F401 (fixtures)
-from .test_video_reader import KEPT, gallery_video, read_and_plan, thinned  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -122,32 +121,6 @@ def test_a_photo_the_planners_safety_filter_refuses_is_left_out_and_the_ad_is_pl
     assert chat(api, session_id)[-1] == ("agent", "Here's the plan.")
 
 
-def test_a_photo_the_video_readers_safety_filter_refuses_is_left_out_and_the_video_is_read(
-    api: APIClient,
-    fake_model: FakeModel,
-    shampoo_page_url: str,
-    session_id: str,
-    say: Callable[..., None],
-    gallery_video: None,  # noqa: F811
-) -> None:
-    fake_model.answer_unscripted("read_video", refused_over("Photo 1", KEPT))
-
-    read_and_plan(fake_model, say, shampoo_page_url, PLAN)
-
-    grid = (
-        "The product's video, grid 1 of 1: 0.25 s, 0.75 s, 1.25 s, 1.75 s "
-        "(each labelled in its black bar)"
-    )
-    # Shown everything, then without the grid, last first, then without the photo.
-    assert labels_shown("read_video") == [["Photo 1", grid], ["Photo 1"], [grid]]
-    (video,) = Job.objects.get().videos.all()
-    assert video.read == {**KEPT, "dropped": []}
-    ((level, said),) = refusals(api, session_id)
-    assert level == "problem" and "photo 1" in said and "video 1" in said
-    assert said in [warning["text"] for warning in Job.objects.get().warnings]
-    assert Job.objects.get().scenes.exists()
-
-
 def test_a_photo_the_picture_choosers_safety_filter_refuses_is_left_out_and_the_picture_made(
     api: APIClient,
     fake_model: FakeModel,
@@ -177,31 +150,6 @@ def test_a_photo_the_picture_choosers_safety_filter_refuses_is_left_out_and_the_
     ((level, said),) = refusals(api, session_id)
     assert level == "problem" and "photo 2" in said and "scene 2" in said
     assert said in [warning["text"] for warning in job.warnings]
-
-
-def test_moments_in_a_grid_the_video_readers_safety_filter_refuses_are_never_kept(
-    api: APIClient,
-    fake_model: FakeModel,
-    shampoo_page_url: str,
-    session_id: str,
-    say: Callable[..., None],
-    gallery_video: None,  # noqa: F811
-) -> None:
-    grid = (
-        "The product's video, grid 1 of 1: 0.25 s, 0.75 s, 1.25 s, 1.75 s "
-        "(each labelled in its black bar)"
-    )
-    # Read without the grid, it still names moments at the grid's seconds.
-    fake_model.answer_unscripted("read_video", refused_over(grid, KEPT))
-
-    read_and_plan(fake_model, say, shampoo_page_url, PLAN)
-
-    assert labels_shown("read_video") == [["Photo 1", grid], ["Photo 1"]]
-    (video,) = Job.objects.get().videos.all()
-    assert video.read is not None and set(video.read) == {"error"}
-    ((level, said),) = refusals(api, session_id)
-    assert level == "problem" and "0.25 s" in said and "video 1" in said
-    assert Job.objects.get().scenes.exists()
 
 
 def test_when_the_planners_filter_refuses_two_photos_the_ad_is_planned_without_any(
@@ -272,3 +220,59 @@ def test_a_picture_chooser_refused_over_every_photo_is_never_asked_with_none(
             "blocked it.",
         )
     ]
+
+
+def test_a_plan_made_again_past_the_same_refusal_tells_the_chat_once(
+    api: APIClient,
+    fake_model: FakeModel,
+    five_photos_page: str,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    question = {
+        "decision": "ask",
+        "reason": "The page sells two sizes.",
+        "question": "Which size should the ad sell?",
+        "plan": None,
+    }
+    answers = [question, PLAN]
+    fake_model.answer_unscripted(
+        "plan_ad", lambda request: refused_over("Photo 1", answers[0])(request)
+    )
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": five_photos_page, "target_seconds": None})]),
+        turn(calls=[("plan_ad", {})]),
+        turn(says="Which size?"),
+    )
+    fake_model.respond("check_page", READABLE)
+    say(f"Make an ad for {five_photos_page}")
+    answers.pop(0)
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
+
+    say("The big one.")
+
+    assert Job.objects.get().status == Job.Status.PLANNED
+    assert len(refusals(api, session_id)) == 1
+
+
+def test_a_photo_the_planner_wasnt_shown_is_never_marked_in_the_ads_colour(
+    fake_model: FakeModel,
+    five_photos_page: str,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": five_photos_page, "target_seconds": None})]),
+        turn(calls=[("plan_ad", {})]),
+        turn(says="Here's the plan."),
+    )
+    fake_model.respond("check_page", READABLE)
+    # The plan names photos 1 and 2 as in the ad's colour, though it never saw photo 2.
+    colours = {**PLAN, "plan": {**PLAN["plan"], "colour_photos": [1, 2]}}
+    fake_model.answer_unscripted("plan_ad", refused_over("Photo 2", colours))
+
+    say(f"Make an ad for {five_photos_page}")
+
+    marked = Job.objects.get().photos.filter(shows_product_colour=True)
+    assert list(marked.values_list("position", flat=True)) == [1]

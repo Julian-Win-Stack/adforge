@@ -7,6 +7,7 @@ has the script shortened to their target, and every scene is made and assembled.
 ad has a talking scene, two B-roll scenes, each made from its starting picture, and a
 talking scene to end on."""
 
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -14,15 +15,18 @@ import pytest
 from rest_framework.test import APIClient
 
 from adforge.file_store import read
+from chat.sent import NOTHING_SENT
 from gateway.fake import FakeModel, turn
 from gateway.types import Turn
-from jobs.models import Job
+from jobs.library import SentList, keep_sent_list
+from jobs.models import Job, ProducedItem
 
 from .conftest import (
     JUDGED_CLIP,
     NO_CHOICES,
     PLAN,
     READABLE,
+    SENT_LIST_FIXTURE,
     HeldSteps,
     broll,
     chat,
@@ -475,3 +479,34 @@ def test_the_ad_with_a_scene_needing_a_photo_pays_for_each_thing_once(
         "make_talking_clip",
         "collect_talking_clip",
     ]
+
+
+def test_each_clip_in_the_chat_carries_what_it_was_sent(
+    ad_made_through_the_chat: None, api: APIClient, session_id: str
+) -> None:
+    def clips_shown() -> list[dict[str, Any]]:
+        conversation = api.get(f"/api/sessions/{session_id}/").json()["messages"]
+        return [
+            attachment
+            for message in conversation
+            for attachment in message["attachments"]
+            if attachment["kind"] == "video" and attachment["scene"] is not None
+        ]
+
+    # Made before cut-and-send keeps a sent list, so each says nothing was sent.
+    assert clips_shown()
+    assert all(clip["sent"] == NOTHING_SENT for clip in clips_shown())
+
+    # Once a clip holds its sent list, the chat shows it on that clip.
+    fixture = json.loads(SENT_LIST_FIXTURE.read_text())
+    first = clips_shown()[0]
+    made = ProducedItem.objects.get(
+        kind=ProducedItem.Kind.CLIP, file=first["url"].removeprefix("/media/")
+    )
+    keep_sent_list(made, SentList.model_validate(fixture))
+
+    shown = clips_shown()[0]["sent"]
+    assert [each["label"] for each in shown["pictures"]] == [
+        each["label"] for each in fixture["pictures"]
+    ]
+    assert shown["left_out"][0]["library_number"] == 5

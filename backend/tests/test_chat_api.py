@@ -1,10 +1,13 @@
 """The chat, tested the way the browser uses it: start a session, send a message, attach a
 photo, poll for what is new, rename, and come back to the whole conversation."""
 
+import io
+import json
 from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
+import PIL.Image
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, connection
@@ -17,10 +20,20 @@ from agents.models import ToolCall
 from chat import messages
 from chat.api import MAX_TEXT_CHARACTERS
 from chat.models import Attachment, Message, Session
+from chat.sent import CARD_PICTURE_SIDE, NOTHING_SENT
 from gateway.fake import FakeModel, turn
-from jobs.models import Job, Scene, SceneStep
+from jobs import library
+from jobs.library import SentList
+from jobs.models import Job, ProducedItem, Scene, SceneStep
 
-from .conftest import MUG_FRONT, MUG_SIDE, picture, served
+from .conftest import (
+    MUG_FRONT,
+    MUG_SIDE,
+    SENT_LIST_FIXTURE,
+    picture,
+    sent_list_in_the_store,
+    served,
+)
 
 # Each request commits on its own, as on the real server. The default wraps the whole test
 # in one transaction, which would hide code that only works inside one.
@@ -352,9 +365,25 @@ def test_an_agent_message_can_carry_a_picture_a_sound_and_a_video(
             "url": "/media/portrait.png",
             "scene": None,
             "version": "",
+            "sent": None,
         },
-        {"position": 2, "kind": "sound", "url": "/media/voice.mp3", "scene": None, "version": ""},
-        {"position": 3, "kind": "video", "url": "/media/ad.mp4", "scene": None, "version": ""},
+        {
+            "position": 2,
+            "kind": "sound",
+            "url": "/media/voice.mp3",
+            "scene": None,
+            "version": "",
+            "sent": None,
+        },
+        # The finished ad is no scene's clip, so nothing it was sent is shown.
+        {
+            "position": 3,
+            "kind": "video",
+            "url": "/media/ad.mp4",
+            "scene": None,
+            "version": "",
+            "sent": None,
+        },
     ]
 
 
@@ -386,7 +415,17 @@ def test_a_reopened_session_says_which_scene_each_file_and_step_message_is_about
         ({"scene": 2, "kind": "clip", "state": "started"}, []),
         (
             {"scene": 2, "kind": "clip", "state": "made"},
-            [{"position": 1, "kind": "video", "url": "/media/clip.mp4", "scene": 2, "version": ""}],
+            # Shown without its clip, as before the chat kept which clip it was.
+            [
+                {
+                    "position": 1,
+                    "kind": "video",
+                    "url": "/media/clip.mp4",
+                    "scene": 2,
+                    "version": "",
+                    "sent": NOTHING_SENT,
+                }
+            ],
         ),
     ]
 
@@ -494,3 +533,82 @@ def test_a_scene_step_whose_worker_died_no_longer_keeps_its_session_busy(
     taken = send(waiting, "Make me an ad for my mug")
 
     assert taken.status_code == 201, taken.json()
+
+
+def _a_clip(session: Session, *, sent: SentList | None) -> ProducedItem:
+    """Scene 2's clip of a job in `session`, holding `sent` as what it was sent."""
+    job = Job.objects.create(session=session, product_url="https://shop.example/products/mug")
+    scene = Scene.objects.create(job=job, number=2, line="It holds 350 ml.")
+    clip = ProducedItem.objects.create(
+        job=job,
+        scene=scene,
+        kind=ProducedItem.Kind.CLIP,
+        file=file_store.save("clip.mp4", b"scene 2's clip"),
+    )
+    if sent is not None:
+        library.keep_sent_list(clip, sent)
+    return clip
+
+
+def test_a_clip_in_the_chat_carries_what_it_was_sent(
+    api: APIClient, start_session: Callable[..., str], send: Callable[..., Any], settings: Settings
+) -> None:
+    session_id = start_session()
+    send(session_id, "Make me an ad for my mug")
+    session = Session.objects.get(pk=session_id)
+    clip = _a_clip(session, sent=sent_list_in_the_store())
+    messages.add(
+        session,
+        role=Message.Role.AGENT,
+        carrying=[messages.AttachedFile(Attachment.Kind.VIDEO, clip.file, 2, "v1", clip=clip)],
+    )
+
+    polled = api.get(f"/api/sessions/{session_id}/messages/?after=1").json()
+
+    sent = polled[0]["attachments"][0]["sent"]
+    fixture = json.loads(SENT_LIST_FIXTURE.read_text())
+    # What the clip was sent, as the fixture has it, with a link beside each file.
+    without_links = {
+        **sent,
+        **{
+            part: [{k: v for k, v in each.items() if k != "url"} for each in sent[part]]
+            for part in ("pictures", "pieces", "left_out")
+        },
+    }
+    assert without_links == fixture
+    assert [each["label"] for each in sent["pictures"]] == [
+        each["label"] for each in fixture["pictures"]
+    ]
+    assert [each["library_number"] for each in sent["left_out"]] == [5]
+    # Each picture's link is one the browser can open, to a copy small enough for a card.
+    for each in [*sent["pictures"], *sent["left_out"]]:
+        shown = PIL.Image.open(io.BytesIO(served(each["url"], settings)))
+        assert max(shown.size) <= CARD_PICTURE_SIDE
+        assert shown.size[0] / shown.size[1] == pytest.approx(1600 / 1200, rel=0.01)
+    for each in sent["pieces"]:
+        assert served(each["url"], settings) == b"a piece of a product video"
+
+
+def test_a_clip_made_before_its_sent_list_was_kept_carries_an_empty_one(
+    api: APIClient, start_session: Callable[..., str], send: Callable[..., Any]
+) -> None:
+    session_id = start_session()
+    send(session_id, "Make me an ad for my mug")
+    session = Session.objects.get(pk=session_id)
+    clip = _a_clip(session, sent=None)
+    messages.add(
+        session,
+        role=Message.Role.AGENT,
+        carrying=[messages.AttachedFile(Attachment.Kind.VIDEO, clip.file, 2, "v1", clip=clip)],
+    )
+
+    polled = api.get(f"/api/sessions/{session_id}/messages/?after=1").json()
+
+    assert polled[0]["attachments"][0]["sent"] == {
+        "colour": "",
+        "pictures": [],
+        "pieces": [],
+        "left_out": [],
+        "recolours": [],
+        "prompt": "",
+    }

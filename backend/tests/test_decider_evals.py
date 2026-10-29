@@ -144,7 +144,7 @@ def test_a_case_is_played_and_everything_it_did_is_kept(
                 "outcome": "planned",
                 "scenes": {"2": "fix"},
                 "thing_has": {"1": "white"},
-                "looks": [["look_at_picture", 2]],
+                "looks": [["look_at_references", 2]],
                 "judge_findings": False,
             },
             {"outcome": "yes"},
@@ -159,7 +159,7 @@ def test_a_case_is_played_and_everything_it_did_is_kept(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
         turn(calls=[("decide", plan)]),
-        turn(calls=[("look_at_picture", {"scene": 2}), ("look_at_owner_photo", {"photo": 1})]),
+        turn(calls=[("look_at_references", {"scene": 2}), ("look_at_owner_photo", {"photo": 1})]),
         turn(calls=[("decide", plan)]),
         turn(calls=[("sort_message", {"kind": "yes"})]),
     )
@@ -372,8 +372,8 @@ def test_a_picture_looked_at_twice_is_shown_once_on_the_page(
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("look_at_picture", {"scene": 2})]),
-        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("look_at_references", {"scene": 2})]),
+        turn(calls=[("look_at_references", {"scene": 2})]),
         turn(calls=[("decide", _decided([_row(2, "new_picture", "Brighter.")]))]),
     )
     out = tmp_path / "run"

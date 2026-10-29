@@ -134,7 +134,7 @@ def mug_photo_sent(fake_model: FakeModel, say: Callable[..., None], text: str) -
 def a_picture_note_planned(fake_model: FakeModel, say: Callable[..., None]) -> FixPlan:
     fake_model.respond(
         "decide_fixes",
-        planning(("look_at_picture", {"scene": 1}), decided(row(1, "new_picture", BRIGHTER))),
+        planning(("look_at_references", {"scene": 1}), decided(row(1, "new_picture", BRIGHTER))),
     )
     say("Scene 1 looks dark. Make the workshop brighter.")
     [plan] = plans()
@@ -409,7 +409,7 @@ def test_the_decider_is_told_of_a_failed_fix_check_and_go_ahead_needs_one(
     fake_model.respond(
         "decide_fixes",
         planning(
-            ("look_at_picture", {"scene": 1}),
+            ("look_at_references", {"scene": 1}),
             decided(row(1, "new_picture", "The handle faces the camera.")),
         ),
     )
@@ -566,7 +566,7 @@ def test_a_note_on_a_scene_planned_again_after_its_fix_check_failed_no_longer_wa
     fake_model.respond(
         "decide_fixes",
         planning(
-            ("look_at_picture", {"scene": 1}),
+            ("look_at_references", {"scene": 1}),
             decided(row(1, "new_picture", "The handle faces the camera.")),
         ),
     )
@@ -635,7 +635,9 @@ def test_a_typed_yes_sent_before_the_plan_was_shown_runs_nothing(
         "decide_fixes",
         meanwhile(
             typed_yes,
-            planning(("look_at_picture", {"scene": 1}), decided(row(1, "new_picture", BRIGHTER))),
+            planning(
+                ("look_at_references", {"scene": 1}), decided(row(1, "new_picture", BRIGHTER))
+            ),
         ),
         turn(calls=[sort("yes")]),
     )

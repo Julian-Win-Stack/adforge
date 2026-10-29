@@ -42,6 +42,7 @@ from .conftest import (
     CLIP_FIXED,
     CLIP_MOTION_OK,
     FACTS_OK,
+    FIX_MADE,
     LABELLED,
     NO_CHOICES,
     OWNER_PHOTO_SHOWS,
@@ -49,8 +50,10 @@ from .conftest import (
     HeldSteps,
     broll,
     handoffs,
+    motion_answer,
     paid_for,
     picture,
+    with_owner_photo,
 )
 from .test_producer_broll import (
     BROLL_CHOICE,
@@ -425,7 +428,7 @@ def test_a_note_per_photo_planned_together_takes_each_photo_by_its_number(
                 ("sort_message", {"kind": "fix_note"}),
                 ("look_at_owner_photo", {"photo": 1}),
                 ("look_at_owner_photo", {"photo": 2}),
-                ("look_at_picture", {"scene": 2}),
+                ("look_at_references", {"scene": 2}),
                 (
                     "decide",
                     {
@@ -590,6 +593,41 @@ def test_the_fix_check_is_shown_the_shop_owners_photo_and_looks_at_it_first(
     assert list(PhotoFixVerdict.model_fields)[0] == "owner_photo_shows"
 
 
+def test_a_shop_owners_photo_the_fix_checks_filter_refuses_is_left_out_and_the_fix_checked(
+    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
+) -> None:
+    """Requirement 22: the fix check is asked again without the photo, as a fix with no photo
+    is, and answers on the old and new pictures; the chat is told in red."""
+    label = "The shop owner's photo of their black mug:"
+
+    def refusing(request: ModelRequest[Any]) -> dict[str, Any]:
+        if label in [image.label for image in request.images]:
+            raise BlockedBySafetyFilter("content_policy_violation")
+        return with_owner_photo(FIX_MADE, request.output)
+
+    fake_model.answer_unscripted("check_fix", refusing)
+    photos_sent(fake_model, say, OWNER_MUG)
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    fixing.fixed(2, "new_picture", note=MUG_NOTE, change=MUG_FIX, photos=[photo(1, "black mug")])
+    steps.run_held()
+
+    asked = ModelCall.objects.filter(purpose="check_fix").order_by("id")
+    with_it = ["The old picture:", "The new picture:", label]
+    assert [[image["label"] for image in call.images] for call in asked] == [
+        with_it,
+        with_it[:2],
+    ] * 2
+    assert all("owner_photos" not in call.handoff for call in asked[1::2])
+    check = Fix.objects.get().checks.get()
+    assert check.verdict == "passed"
+    assert [answer["not_shown"] for answer in check.answers] == [
+        ["the shop owner's photo of their black mug"]
+    ] * 2
+    (said,) = [text for text in problems() if "safety filter" in text]
+    assert "the shop owner's photo of their black mug" in said and "scene 2's fix" in said
+    assert said in [warning["text"] for warning in Job.objects.get().warnings]
+
+
 def test_the_photo_is_kept_on_the_scene_once_the_shop_owner_says_yes(mug_fixed: Fix) -> None:
     row = ReferencePhoto.objects.get()
     assert (row.scene.number, row.thing, row.use, row.added_by) == (
@@ -702,6 +740,36 @@ def test_the_clip_judge_is_shown_the_shop_owners_photo_for_the_change(
     assert all(
         told.endswith(MOTION_PHOTO_FIX_QUESTION) for told in instructed["check_clip_motion"][-ASKS:]
     )
+
+
+def test_a_shop_owners_photo_the_clip_judges_filter_refuses_is_left_out_of_the_clip_fix_check(
+    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
+) -> None:
+    """Requirement 22: MOTION is asked again without the photo, no longer told of it, and its
+    answer about the change still settles the fix; the chat is told in red."""
+    label = OWNER_PHOTO_LABEL.format("tea")
+    answering = motion_answer(CLIP_MOTION_OK)
+
+    def refusing(request: ModelRequest[Any]) -> dict[str, Any]:
+        if label in [image.label for image in request.images]:
+            raise BlockedBySafetyFilter("content_policy_violation")
+        return answering(request)
+
+    fake_model.answer_unscripted("check_clip_motion", refusing)
+    photos_sent(fake_model, say, OWNER_TEA)
+    fake_model.respond("rewrite_clip_prompt", REWRITE)
+    fixing.say_yes(fixing.planned(tea_plan_row(), note=TEA_NOTE))
+    steps.run_held()
+
+    *_, first, then = ModelCall.objects.filter(purpose="check_clip_motion").order_by("id")
+    assert label in [image["label"] for image in first.images]
+    assert [image for image in then.images if image["label"] != label] == then.images
+    assert len(then.images) == len(first.images) - 1
+    assert then.handoff["owner_photos"] == []
+    fix = Fix.objects.get()
+    assert fix.checks.get().verdict == "passed"
+    (said,) = [text for text in problems() if "safety filter" in text]
+    assert "the shop owner's photo of their tea" in said and "scene 2's clip" in said
 
 
 def test_a_try_after_the_judge_fails_stays_in_reference_mode(

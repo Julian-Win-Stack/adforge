@@ -24,6 +24,7 @@ from django.conf import settings
 from django.db import connection, transaction
 from django.db.models import Max, Q, QuerySet
 from django.utils import timezone
+from pydantic import ValidationError
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown, with_retries
@@ -71,6 +72,7 @@ from . import (
     clip_judge,
     firecrawl,
     fix_check,
+    library,
     library_items,
     owner_parts,
     page,
@@ -113,6 +115,7 @@ from .checks import (
     script_seconds,
     shortened_script_for,
 )
+from .library import PictureLabel
 from .models import (
     BROLL_FIELDS,
     AgentFix,
@@ -127,7 +130,7 @@ from .models import (
     Scene,
     SceneStep,
 )
-from .notices import left_out_by_the_filter, post_notice
+from .notices import post_left_out_by_the_filter, post_notice, post_refused_by_the_filter
 from .picture_check import (
     ASKS,
     FAILS_TO_FAIL,
@@ -163,6 +166,7 @@ from .scenes import (
     BrollSceneToDraw,
     ClipFromNoteChoice,
     ClipFromNoteHandoff,
+    ClipFromReferencesHandoff,
     NeedPhoto,
     PictureJob,
     StartingPictureChoice,
@@ -170,6 +174,7 @@ from .scenes import (
     broll_prompt_instructions,
     broll_video_prompt,
     clip_from_note_instructions,
+    clip_from_references_instructions,
     need_job,
     photos_for_needs,
     pose_for,
@@ -388,7 +393,7 @@ class Picked:
     # when the biggest size can't be, as when a size-like word was the shop's own name.
     as_given: dict[str, str] = field(default_factory=dict)
     # The picker's fixed fields for each picked link it labelled.
-    labels: dict[str, photos.PickedPicture] = field(default_factory=dict)
+    labels: dict[str, PictureLabel] = field(default_factory=dict)
     # Each picked link's copy group: every picked link the picker gave the same copy group,
     # in pick order. A link it gave no label is a group of its own.
     copies: dict[str, tuple[str, ...]] = field(default_factory=dict)
@@ -489,7 +494,7 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
         )
         return Picked(None, notices)
     if left_out:
-        notices.append((_left_out_by_the_filter(left_out), Message.Level.INFO))
+        notices.append((_left_out_by_the_filter(left_out), Message.Level.PROBLEM))
     if picked.page_blocked:
         notices.append((PAGE_BLOCKED, Message.Level.PROBLEM))
         return Picked(None, notices, blocked=True)
@@ -522,36 +527,42 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
 
 def _labels_and_copies(
     picked: photos.PickedPhotos, links: list[photos.PickedLink]
-) -> tuple[dict[str, photos.PickedPicture], dict[str, tuple[str, ...]], list[str]]:
-    """Each picked link's fields from the picker, by the picture's mark (the first mark's for
-    a link picked twice), each link's copy group, and the marks of the pictures it picked
-    but gave no fields."""
+) -> tuple[dict[str, PictureLabel], dict[str, tuple[str, ...]], list[str]]:
+    """Each picked link's label from the picker, from the last of its marks with fields
+    that keep the library's rules; each link's copy group, by that mark's; and the first
+    mark of each link left with no such fields."""
     by_mark = {picture.picture: picture for picture in picked.pictures}
-    labels: dict[str, photos.PickedPicture] = {}
-    groups: dict[int, list[str]] = {}
-    unlabelled: list[str] = []
+    labels: dict[str, PictureLabel] = {}
+    group_of: dict[str, int] = {}
     for link in links:
         found = by_mark.get(link.mark)
         if found is None:
-            unlabelled.append(link.mark)
             continue
-        labels.setdefault(link.url, found)
-        group = groups.setdefault(found.copy_group, [])
-        if link.url not in group:
-            group.append(link.url)
+        try:
+            labels[link.url] = found.label_of()
+        except ValidationError:
+            continue
+        group_of[link.url] = found.copy_group
+    groups: dict[int, list[str]] = {}
+    for url, group in group_of.items():
+        groups.setdefault(group, []).append(url)
     copies = {
-        link.url: tuple(groups[labels[link.url].copy_group]) if link.url in labels else (link.url,)
+        link.url: tuple(groups[group_of[link.url]]) if link.url in group_of else (link.url,)
         for link in links
     }
-    return labels, copies, unlabelled
+    unlabelled: dict[str, str] = {}
+    for link in links:
+        if link.url not in labels:
+            unlabelled.setdefault(link.url, link.mark)
+    return labels, copies, list(unlabelled.values())
 
 
 def _kept_unlabelled(marks: list[str]) -> str:
-    """The notice naming the picked pictures the picker said nothing about."""
+    """The notice naming the picked pictures kept without the picker's fields."""
     listed = f"{', '.join(marks[:-1])} and {marks[-1]}" if len(marks) > 1 else marks[0]
     return (
         f"The photo picker kept picture{'s' if len(marks) > 1 else ''} {listed} off the page "
-        "without saying what each shows (its kind, side, colour and label), so "
+        "without usable fields saying what each shows (its kind, side, colour and label), so "
         f"{'they are' if len(marks) > 1 else 'it is'} kept unlabelled and may each be kept "
         "twice if the page has another copy."
     )
@@ -684,7 +695,7 @@ def save_photos(
     urls: list[str],
     *,
     copies: Mapping[str, Sequence[str]] | None = None,
-    labels: Mapping[str, photos.PickedPicture] | None = None,
+    labels: Mapping[str, PictureLabel] | None = None,
     faces: frozenset[str] | None = None,
     unnoted: frozenset[str] = frozenset(),
     as_given: dict[str, str] | None = None,
@@ -778,8 +789,7 @@ def _kept_copy(kept_for: Mapping[str, ProductPhoto], group: Sequence[str]) -> Pr
     return next((kept_for[key] for key in map(photos.same_key, group) if key in kept_for), None)
 
 
-# How far, in seconds, the reader's second may be from the picked frame it names: the
-# frames are shown to it labelled with their seconds, rounded.
+# How far, in seconds, a look frame's second may be from the pulled frame it names.
 MOST_SECONDS_OFF = 0.5
 
 
@@ -789,11 +799,11 @@ def save_video_pictures(
     kept: Sequence[Mapping[str, Any]],
     frames: Sequence[Mapping[str, Any]],
 ) -> list[ProductPhoto]:
-    """Keep each moment the reader `kept` from the video ({second, shows, why}) as a video
-    picture: the picked frame at that second, of the video's picked `frames` ({key, second}),
-    as a product photo after every photo the job has, noted with what it `shows`. A moment
-    with no picked frame near its second, or whose frame is a copy of a photo from the page
-    or of a picture already kept, is left out. Each is given its Face note by a call of its
+    """Keep each look frame the watcher `kept` from the video ({second, shows}) as a video
+    picture: the pulled frame at that second, of the video's pulled `frames` ({key, second}),
+    as a product photo after every photo the job has, noted with what it `shows`. A frame
+    with no pulled frame near its second, or that is a copy of a photo from the page or of a
+    picture already kept, is left out. Each is given its Face note by a call of its
     own, as a page photo the picker never saw is."""
     seen = [
         photos.fingerprint_of(file_store.read(photo.file))
@@ -862,7 +872,7 @@ def keep_photo(
     from_video: ProductVideo | None = None,
     at_second: float | None = None,
     note: str = "",
-    picked_as: photos.PickedPicture | None = None,
+    picked_as: PictureLabel | None = None,
     copy_links: Sequence[str] = (),
 ) -> ProductPhoto:
     """Store a product photo with the job, with its Face note, or with None, noted by a call
@@ -934,7 +944,7 @@ def plan(job: Job) -> ProducerDecision:
     )
     if left_out:
         named = [f"photo {shown[image].position}" for image in left_out]
-        post_notice(job, left_out_by_the_filter(named, "the ad was planned"), Message.Level.PROBLEM)
+        post_left_out_by_the_filter(job, named, "the ad was planned")
     planned = decision.plan
     if planned is None:
         return decision
@@ -973,7 +983,10 @@ def plan(job: Job) -> ProducerDecision:
                 "status",
             ]
         )
-        job.photos.filter(position__in=planned.colour_photos).update(shows_product_colour=True)
+        # A photo left out past the safety filter was never seen, so never marked.
+        job.photos.filter(position__in=planned.colour_photos).exclude(
+            position__in=[shown[image].position for image in left_out]
+        ).update(shows_product_colour=True)
     return decision
 
 
@@ -1931,13 +1944,10 @@ def _chosen_past_the_safety_filter[Choice](
         fewest_kept=1,
     )
     if left_out:
-        post_notice(
+        post_left_out_by_the_filter(
             scene.job,
-            left_out_by_the_filter(
-                [f"photo {photo(image)}" for image in left_out],
-                f"scene {scene.number}'s starting picture was planned",
-            ),
-            Message.Level.PROBLEM,
+            [f"photo {photo(image)}" for image in left_out],
+            f"scene {scene.number}'s starting picture was planned",
         )
     return choice
 
@@ -2208,7 +2218,13 @@ def _clean_picture(scene: Scene, row: ReferencePhoto) -> str:
                     thing=row.thing,
                 ) from error
             problems = (
-                judge_starting_picture(job, file, row.file, about=f"the shop owner's {row.thing}")
+                judge_starting_picture(
+                    job,
+                    file,
+                    row.file,
+                    about=f"the shop owner's {row.thing}",
+                    named=f"the clean picture of the shop owner's {row.thing}",
+                )
                 if settings.QUALITY_CHECKS
                 else []
             )
@@ -2392,6 +2408,7 @@ def judge_starting_picture(
     photo: str,
     *,
     about: str,
+    named: str = "",
     owner_part: owner_parts.OwnerPart | None = None,
 ) -> list[str]:
     """What is wrong with the starting picture at `picture`, from a judge shown the picture,
@@ -2400,40 +2417,64 @@ def judge_starting_picture(
     fail it; nothing when it passes. An ask the safety filter blocks, or whose answer can't
     be had, counts as not checked: the picture is paid for, and failing it would pay for it
     again. `about` names the picture in the log. A picture that draws `owner_part` from its
-    sentence is checked with the sentence for that part, as no photo shows it."""
+    sentence is checked with the sentence for that part, as no photo shows it.
+
+    A shop photo the safety filter refuses is left out, and the picture judged without it;
+    the chat is told in red, naming the picture as `named` does (its starting picture, by
+    `about`, unless told). A job of None, as in an eval, has no chat."""
+    named = named or f"{about}'s starting picture"
+    shop_photo = Image(label="The shop photo:", key=photo)
     passes = 0
     problems: list[str] = []
+    left_out: list[Image] = []
+    refused = False
     # Asked until the answers settle it, so a picture two answers pass isn't asked a third.
     for ask in range(1, ASKS + 1):
         if passes > ASKS - FAILS_TO_FAIL or len(problems) >= FAILS_TO_FAIL:
             break
         try:
-            verdict = call_model(
-                job=job,
-                purpose="check_starting_picture",
-                instructions=(
-                    STARTING_PICTURE_CHECK
-                    if owner_part is None
-                    else f"{STARTING_PICTURE_CHECK}\n\n{owner_parts.CHECK_RULE}"
+            # The shop photo the safety filter refuses is left out, and the picture judged
+            # without it (requirement 22); the picture judged never is.
+            handoff = owner_parts.check_handoff(ask, owner_part)
+            verdict, left = past_the_safety_filter(
+                lambda shown: call_model(
+                    job=job,
+                    purpose="check_starting_picture",
+                    instructions=(
+                        STARTING_PICTURE_CHECK
+                        if owner_part is None
+                        else f"{STARTING_PICTURE_CHECK}\n\n{owner_parts.CHECK_RULE}"
+                    ),
+                    handoff=handoff,  # noqa: B023 (asked before the next loop)
+                    output=StartingPictureVerdict,
+                    images=shown,
+                    pay_once=True,
                 ),
-                handoff=owner_parts.check_handoff(ask, owner_part),
-                output=StartingPictureVerdict,
-                images=[
-                    Image(label="The picture to judge:", key=picture),
-                    Image(label="The shop photo:", key=photo),
-                ],
-                pay_once=True,
+                [Image(label="The picture to judge:", key=picture), shop_photo],
+                may_leave_out=lambda image: image == shop_photo,
             )
+            left_out += left
         except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
             logger.warning(
                 "Ask %s about %s's starting picture went unchecked: %s", ask, about, error
             )
+            refused = refused or isinstance(error, BlockedBySafetyFilter)
             continue
         if verdict.verdict == "pass":
             passes += 1
         else:
             assert verdict.problem is not None, "a failing answer says why"
             problems.append(verdict.problem)
+    if job is not None and left_out:
+        post_left_out_by_the_filter(job, ["the shop photo"], f"{named} was checked")
+    if job is not None and refused:
+        post_refused_by_the_filter(
+            job,
+            named,
+            "it is kept unchecked: check it yourself"
+            if passes + len(problems) == 0
+            else "some of its checks couldn't be made",
+        )
     return problems if len(problems) >= FAILS_TO_FAIL else []
 
 
@@ -2476,9 +2517,11 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
         return None
     if picture:
         job = fix.job
+        refused = _FilterRefused()
         settled = fix_check.settle(
-            lambda ask: _ask_about_the_fix(job, fix, ask, old.file, made.file)
+            lambda ask: _ask_about_the_fix(job, fix, ask, old.file, made.file, refused)
         )
+        _say_what_the_filter_refused(fix, refused)
     else:
         settled = _the_clip_judges_answer(made)
     return FixCheck.objects.create(
@@ -2527,12 +2570,26 @@ def _the_clip_judges_answer(new: ProducedItem) -> fix_check.Settled:
     return fix_check.settle_all(clip_judge.owner_change_answers(ruling))
 
 
-def _ask_about_the_fix(job: Job, fix: Fix, ask: int, old: str, new: str) -> dict[str, Any] | None:
+@dataclass
+class _FilterRefused:
+    """What the safety filter refused while a fix was checked (requirement 22): the shop
+    owner's photos left out of an ask, by name, and whether it refused an ask even without
+    them, over the pictures checked."""
+
+    left_out: list[str] = field(default_factory=list)
+    refused: bool = False
+
+
+def _ask_about_the_fix(
+    job: Job, fix: Fix, ask: int, old: str, new: str, refused: _FilterRefused
+) -> dict[str, Any] | None:
     """Ask the judge once whether the new picture at `new` has the change `fix` asks for,
     shown the old picture at `old` first and, for a fix that takes things from the shop
     owner's photos, each photo after the new picture, named (Julian 2026-10-15 19:34). Gives
     its answer, or None when none could be had: the picture is paid for, and failing it on no
-    answer would hold up its clip."""
+    answer would hold up its clip. A shop owner's photo the safety filter refuses is left out
+    and the judge asked again without it, as a fix without that photo is: the answer's
+    "not_shown" names each, and `refused` gathers what the filter refused."""
     images = [
         Image(label="The old picture:", key=old),
         Image(label="The new picture:", key=new),
@@ -2540,10 +2597,52 @@ def _ask_about_the_fix(job: Job, fix: Fix, ask: int, old: str, new: str) -> dict
     # Only things drawn into the picture: one that shows during the clip is never in a still,
     # and its clip's judge looks for it.
     photos = [photo for photo in fix.photos if photo["use"] == ReferencePhoto.Use.PICTURE]
+    owners = [
+        Image(label=f"The shop owner's photo of their {photo['thing']}:", key=str(photo["file"]))
+        for photo in photos
+    ]
     during = [str(photo["thing"]) for photo in clip_judge.during_the_clip(fix)]
-    if not photos and during:
-        return _fix_answer(
-            job,
+
+    def asking(shown: list[Image]) -> dict[str, Any]:
+        things = [
+            str(photo["thing"])
+            for photo, image in zip(photos, owners, strict=True)
+            if image in shown
+        ]
+        return _fix_question(job, fix, ask, shown, things, during).model_dump()
+
+    try:
+        answer, left = past_the_safety_filter(
+            asking, [*images, *owners], may_leave_out=lambda image: image in owners
+        )
+    except Exception as error:
+        logger.warning(
+            "Ask %s about the fix %r went unchecked: %s",
+            ask,
+            fix.fix,
+            error,
+            # Expected when a model or the service misbehaves; anything else is a bug to see.
+            exc_info=not isinstance(
+                error, (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter, AnswerTookTooLong)
+            ),
+        )
+        refused.refused = refused.refused or isinstance(error, BlockedBySafetyFilter)
+        return None
+    if not left:
+        return answer
+    not_shown = [clip_judge.named(image) for image in left]
+    refused.left_out += not_shown
+    return {**answer, "not_shown": not_shown}
+
+
+def _fix_question(
+    job: Job, fix: Fix, ask: int, images: list[Image], things: list[str], during: list[str]
+) -> fix_check.FixVerdict | fix_check.PhotoFixVerdict:
+    """The judge's answer about the fix, shown `images`: the old and new pictures, then the
+    shop owner's photos of `things`, in order; told of the things `during` the clip."""
+    if not things and during:
+        return call_model(
+            job=job,
             purpose="check_fix",
             instructions=f"{fix_check.FIX_CHECK}\n\n{fix_check.DURING_THE_ACTION}",
             handoff=fix_check.DuringTheActionHandoff(
@@ -2551,19 +2650,20 @@ def _ask_about_the_fix(job: Job, fix: Fix, ask: int, old: str, new: str) -> dict
             ),
             output=fix_check.FixVerdict,
             images=images,
+            pay_once=True,
         )
-    if not photos:
-        return _fix_answer(
-            job,
+    if not things:
+        return call_model(
+            job=job,
             purpose="check_fix",
             instructions=fix_check.FIX_CHECK,
             handoff=fix_check.FixCheckHandoff(fix=fix.fix, ask=ask),
             output=fix_check.FixVerdict,
             images=images,
+            pay_once=True,
         )
-    things = [str(photo["thing"]) for photo in photos]
-    return _fix_answer(
-        job,
+    return call_model(
+        job=job,
         purpose="check_fix",
         instructions="\n\n".join(
             [
@@ -2576,54 +2676,25 @@ def _ask_about_the_fix(job: Job, fix: Fix, ask: int, old: str, new: str) -> dict
             fix=fix.fix, ask=ask, owner_photos=things, during_the_action=during
         ),
         output=fix_check.PhotoFixVerdict,
-        images=[
-            *images,
-            *(
-                Image(
-                    label=f"The shop owner's photo of their {photo['thing']}:",
-                    key=str(photo["file"]),
-                )
-                for photo in photos
-            ),
-        ],
+        images=images,
+        pay_once=True,
     )
 
 
-def _fix_answer(
-    job: Job,
-    *,
-    purpose: str,
-    instructions: str,
-    handoff: fix_check.FixCheckHandoff,
-    output: type[fix_check.FixVerdict] | type[fix_check.PhotoFixVerdict],
-    images: list[Image],
-) -> dict[str, Any] | None:
-    """One answer of the judge checking a fix, or None when none could be had, whatever went
-    wrong, as the clip judge's asks: what it checks is already paid for, and failing it on
-    no answer would fail that too."""
-    try:
-        verdict = call_model(
-            job=job,
-            purpose=purpose,
-            instructions=instructions,
-            handoff=handoff,
-            output=output,
-            images=images,
-            pay_once=True,
+def _say_what_the_filter_refused(fix: Fix, refused: _FilterRefused) -> None:
+    """Tell the chat in red of every picture the safety filter refused while `fix` was
+    checked."""
+    number = fix.scene.number
+    if refused.left_out:
+        post_left_out_by_the_filter(
+            fix.job, list(dict.fromkeys(refused.left_out)), f"scene {number}'s fix was checked"
         )
-    except Exception as error:
-        logger.warning(
-            "Ask %s about the fix %r went unchecked: %s",
-            handoff.ask,
-            handoff.fix,
-            error,
-            # Expected when a model or the service misbehaves; anything else is a bug to see.
-            exc_info=not isinstance(
-                error, (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter, AnswerTookTooLong)
-            ),
+    if refused.refused:
+        post_refused_by_the_filter(
+            fix.job,
+            f"scene {number}'s new starting picture",
+            "some of the checks of your change couldn't be made",
         )
-        return None
-    return verdict.model_dump()
 
 
 def say_the_fix_check_failed(check: FixCheck) -> None:
@@ -2644,8 +2715,8 @@ def say_the_fix_check_failed(check: FixCheck) -> None:
         Message.Level.PROBLEM,
         # Without their scene's number, so the scene's card keeps showing its newest.
         carrying=[
-            messages.AttachedFile(kind, check.old.file),
-            messages.AttachedFile(kind, check.new.file),
+            messages.AttachedFile(kind, check.old.file, clip=None if picture else check.old),
+            messages.AttachedFile(kind, check.new.file, clip=None if picture else check.new),
         ],
         suggested=messages.SuggestedNote(number, check.reason),
     )
@@ -3519,6 +3590,8 @@ def bring_back_clip(
             motion_prompt=clip.motion_prompt,
             change=_gone_back(back_to) or clip.change,
             back_to=back_to,
+            # The same file, so what it was sent.
+            sent=clip.sent,
         )
         Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
     return again
@@ -3797,10 +3870,12 @@ def _bring_back(scene: Scene, number: int) -> GoneBack:
                 scene.job.session,
                 role=Message.Role.AGENT,
                 carrying=[
-                    messages.AttachedFile(kind, made.file, scene.number, top.label)
-                    for kind, made in (
-                        (Attachment.Kind.PICTURE, picture),
-                        (Attachment.Kind.VIDEO, clip),
+                    messages.AttachedFile(
+                        kind, made.file, scene.number, top.label, clip=made if is_clip else None
+                    )
+                    for kind, made, is_clip in (
+                        (Attachment.Kind.PICTURE, picture, False),
+                        (Attachment.Kind.VIDEO, clip, True),
                     )
                     if made is not None
                 ],
@@ -3848,18 +3923,43 @@ def _rewrite_motion_prompt(step: SceneStep) -> None:
     """Write a B-roll clip step's video prompt again from its note, keeping it on the step: a
     model told the same rules as the one that wrote the scene's prompts, and that the starting
     picture stays, is handed the picture's prompt, the movement of the clip it improves on,
-    the scene and the note, and shown the picture. The producer never writes a prompt (Julian
-    2026-10-11 21:00).
+    the scene and the note, and shown the picture. When the clip it improves on was made from
+    references (spec #210 point 21), it is told those stay, handed the prompt that clip was
+    sent and shown the pictures it was sent, with their labels. The producer never writes a
+    prompt (Julian 2026-10-11 21:00).
 
     Run again, as after a worker stopped, it pays for nothing already paid for: the answer for
     the same handoff is answered from its record."""
     job = step.scene.job
-    planned = step.picture_step
-    assert step.picture is not None and planned is not None, (
-        "the tool makes a B-roll clip from a note only from its starting picture's step"
-    )
     during = _during_the_clip(step)
-    instructions = clip_from_note_instructions(step.broll_kind)
+    made = versions(step.scene)
+    improves = made[-1].clip if made else None
+    sent = library.sent_list_of(improves) if improves is not None else None
+    handoff: ClipFromNoteHandoff | ClipFromReferencesHandoff
+    if sent is not None:
+        instructions = clip_from_references_instructions(step.broll_kind)
+        handoff = ClipFromReferencesHandoff(
+            **_note_scene(step),
+            motion_prompt=sent.prompt,
+            conversation=_conversation(job, until=step.started_at),
+        )
+        shown = [
+            Image(label=f"Image {picture.image}: {picture.label}", key=picture.file)
+            for picture in sent.pictures
+        ]
+    else:
+        planned = step.picture_step
+        assert step.picture is not None and planned is not None, (
+            "the tool makes a B-roll clip from a note only from its starting picture's step"
+        )
+        instructions = clip_from_note_instructions(step.broll_kind)
+        handoff = ClipFromNoteHandoff(
+            **_note_scene(step),
+            picture_prompt=planned.prompt,
+            motion_prompt=_movement_to_improve(step, planned),
+            conversation=_conversation(job, until=step.started_at),
+        )
+        shown = [Image(label="The starting picture", key=step.picture.file)]
     if during:
         rules = reference_photos.during_clip_rules([row.thing for row in during])
         instructions = f"{instructions}\n{rules}"
@@ -3867,28 +3967,27 @@ def _rewrite_motion_prompt(step: SceneStep) -> None:
         job=job,
         purpose="rewrite_clip_prompt",
         instructions=instructions,
-        handoff=ClipFromNoteHandoff(
-            scene=step.scene.number,
-            line=step.line,
-            shows=step.shows,
-            broll_kind=step.broll_kind,
-            person_shown=step.person_shown,
-            usage=step.usage,
-            result=step.broll_result,
-            picture_prompt=planned.prompt,
-            motion_prompt=_movement_to_improve(step, planned),
-            note=step.note,
-            conversation=_conversation(job, until=step.started_at),
-        ),
+        handoff=handoff,
         output=ClipFromNoteChoice,
-        images=[
-            Image(label="The starting picture", key=step.picture.file),
-            *_the_owners_things(step, during),
-        ],
+        images=[*shown, *_the_owners_things(step, during)],
         pay_once=True,
     )
     step.motion_prompt = rewrite.motion_prompt
     step.save(update_fields=["motion_prompt"])
+
+
+def _note_scene(step: SceneStep) -> dict[str, Any]:
+    """The scene and the note, as a rewrite of its clip's video prompt is handed them."""
+    return {
+        "scene": step.scene.number,
+        "line": step.line,
+        "shows": step.shows,
+        "broll_kind": step.broll_kind,
+        "person_shown": step.person_shown,
+        "usage": step.usage,
+        "result": step.broll_result,
+        "note": step.note,
+    }
 
 
 def _movement_to_improve(step: SceneStep, planned: SceneStep) -> str:

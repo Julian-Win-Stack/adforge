@@ -21,9 +21,11 @@ from rest_framework.test import APIClient
 from agents import run_plan, tasks
 from agents.models import SystemNote
 from chat.models import Message
+from chat.sent import NOTHING_SENT
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from jobs import clip_judge, work
+from gateway.types import BlockedBySafetyFilter
+from jobs import clip_judge, library, work
 from jobs.clip_judge import ASKS
 from jobs.models import Fix, FixCheck, FixPlan, ProducedItem, Scene, SceneStep
 
@@ -38,6 +40,7 @@ from .conftest import (
     motion_answer,
     paid_for,
     results_of,
+    sent_list_in_the_store,
 )
 from .fixing import fixed, plan_row, planned, say_yes
 from .test_end_to_end import TALKING, ad_made_through_the_chat  # noqa: F401 (a fixture)
@@ -299,6 +302,26 @@ def test_a_picture_check_whose_asks_fail_unexpectedly_carries_on_and_says_so(
     ]
 
 
+def test_a_picture_the_fix_checks_filter_refuses_to_look_at_carries_on_and_says_so_in_red(
+    fake_model: FakeModel,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+) -> None:
+    """Requirement 22: the old and new pictures are what it checks, never left out, so a
+    refusal over them leaves the fix unchecked, and the chat is told in red why."""
+    refused = BlockedBySafetyFilter("content_policy_violation")
+    fake_model.respond("check_fix", refused, refused, refused)
+
+    picture_redone(fake_model, steps)
+
+    assert FixCheck.objects.get().verdict == "unchecked"
+    assert held_kinds(steps) == [(2, "clip")]
+    (said,) = Message.objects.filter(
+        role="notice", level="problem", text__contains="safety filter"
+    ).values_list("text", flat=True)
+    assert "scene 2's new starting picture" in said
+
+
 def test_a_not_fixed_answer_with_no_reason_is_no_answer_but_is_still_paid_for(
     fake_model: FakeModel,
     steps: HeldSteps,
@@ -469,6 +492,8 @@ def test_a_fixs_new_clip_that_fails_its_check_shows_both_clips_and_no_new_ad(
         "check_clip_motion", motion_answer(CLIP_MOTION_OK, not_made(HOVERING))
     )
     old_clip = latest("clip", 2)
+    sent = sent_list_in_the_store()
+    library.keep_sent_list(old_clip, sent)
 
     plan = a_clip_redone(fake_model, steps)
 
@@ -487,6 +512,12 @@ def test_a_fixs_new_clip_that_fails_its_check_shows_both_clips_and_no_new_ad(
         old_clip.file.rsplit("/", 1)[-1],
         new_clip.file.rsplit("/", 1)[-1],
     ]
+    # Each clip shows what it was sent: the old one its sent list, the new one none yet.
+    old_shown, new_shown = (file["sent"] for file in notice["attachments"])
+    assert [each["label"] for each in old_shown["pictures"]] == [
+        each.label for each in sent.pictures
+    ]
+    assert new_shown == NOTHING_SENT
     assert notice["suggested_note"] == {"scene": 2, "text": HOVERING}
     assert notes(SystemNote.Kind.CHECK_FAILED) == [
         f"Scene 2's new clip (v2 {TURN_FIX}) may not have the change, so the new ad waits: "

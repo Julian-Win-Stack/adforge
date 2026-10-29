@@ -74,3 +74,28 @@ def left_out_by_the_filter(pictures: Sequence[str], done: str) -> str:
         f"The AI model's safety filter refused to look at {named}, so {done} without "
         f"{'it' if len(pictures) == 1 else 'them'}."
     )
+
+
+def post_left_out_by_the_filter(job: Job, pictures: Sequence[str], done: str) -> None:
+    """Tell the chat in red, with its warning line, that a model's safety filter refused
+    work until `pictures` were left out of it (see left_out_by_the_filter). Told once: the
+    same work made again past the same refusal, as on a redraw or a run again after a
+    worker stopped, adds nothing."""
+    text = left_out_by_the_filter(pictures, done)
+    if all(warning["text"] != text for warning in job.warnings):
+        post_notice(job, text, Message.Level.PROBLEM)
+
+
+def refused_by_the_filter(what: str, then: str) -> str:
+    """The notice for work a model's safety filter refused over `what` itself, which can't be
+    left out of it (requirement 22): `then` says what happened instead, such as "it is kept
+    unchecked"."""
+    return f"The AI model's safety filter refused to look at {what}, so {then}."
+
+
+def post_refused_by_the_filter(job: Job, what: str, then: str) -> None:
+    """Tell the chat in red, with its warning line, that a model's safety filter refused to
+    look at `what` (see refused_by_the_filter). Told once, as post_left_out_by_the_filter."""
+    text = refused_by_the_filter(what, then)
+    if all(warning["text"] != text for warning in job.warnings):
+        post_notice(job, text, Message.Level.PROBLEM)

@@ -21,6 +21,8 @@ take their place (#221)."""
 import logging
 from typing import assert_never
 
+from pydantic import ValidationError
+
 from adforge.retry import OutsideServiceDown
 from chat.models import Message
 from gateway.gateway import UnreadableImage, call_model
@@ -111,10 +113,11 @@ def add_owner_photo(job: Job, original: str, file: str, shows: str) -> LibraryEn
 def label_photo(job: Job, key: str, source: str, shows: str, *, named: str) -> PictureLabel | None:
     """The picker's fixed fields for the photo at `key` in the file store, which the picker
     never saw, from the labelling call. `source` names the photo by where it came from, so
-    a photo stored again under a new key pays for nothing twice. When the call fails, a red
-    notice naming it as `named` says so and gives back None."""
+    a photo stored again under a new key pays for nothing twice. When the call fails, or its
+    answer breaks the label's rules (jobs.library.PictureLabel), a red notice naming it as
+    `named` says so and gives back None."""
     try:
-        answered = call_model(
+        return call_model(
             job=job,
             purpose="label_photo",
             instructions=photos.LABEL_INSTRUCTIONS,
@@ -127,13 +130,15 @@ def label_photo(job: Job, key: str, source: str, shows: str, *, named: str) -> P
             images=[Image("Photo", key)],
             pay_once=True,
             images_may_move=True,
-        )
+        ).label_of()
     except (
         UnusableReply,
         OutsideServiceDown,
         UnreadableImage,
         BlockedBySafetyFilter,
         AnswerTookTooLong,
+        # An answer that breaks the label's own rules, which the library checks.
+        ValidationError,
     ) as error:
         post_notice(
             job,
@@ -143,7 +148,6 @@ def label_photo(job: Job, key: str, source: str, shows: str, *, named: str) -> P
             Message.Level.PROBLEM,
         )
         return None
-    return PictureLabel.model_validate(answered.model_dump())
 
 
 def library_text(job: Job) -> str:

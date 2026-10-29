@@ -199,11 +199,12 @@ class ProductPhoto(models.Model):
         blank=True,
         help_text="yes when it shows the product alone on a plain background, else no.",
     )
-    colour = models.CharField(
-        max_length=40, blank=True, help_text="The product's colour in it, one short word."
+    # Text, not a capped field: a model's answer has no length limit, and a value too long
+    # for its column would stop the page read at this photo on every try.
+    colour = models.TextField(
+        blank=True, help_text="The product's colour in it, one word (two joined by a hyphen)."
     )
-    target = models.CharField(
-        max_length=200,
+    target = models.TextField(
         blank=True,
         help_text="In a line-up, where this product stands among the others; else blank.",
     )
@@ -233,9 +234,9 @@ class ProductPhoto(models.Model):
 class ProductVideo(models.Model):
     """A video the shop placed with the product photos in the product's gallery, picked off
     the page with them. Kept as a file with a few frames, or, when no file can be had (an
-    embedded player, a stream, a dead link, one too big), as its link with a first frame if
-    one is had. A file is thinned to the frames worth looking at, written down as its
-    transcript and read once for the moments the plan would need as video pictures."""
+    embedded player, a stream, a dead link, one that never ends), as its link with a first
+    frame if one is had. A file is watched once (jobs.watcher): its moments, look frames, colour and
+    the words said in it, its transcript."""
 
     class Kind(models.TextChoices):
         VIDEO = "video", "Video"  # A video the page plays itself.
@@ -266,27 +267,11 @@ class ProductVideo(models.Model):
         help_text="Keys of frames spread over the file, first to last; none without a file.",
     )
     duration = models.FloatField(null=True, blank=True, help_text="Seconds; none without a file.")
-    frames_picked = models.JSONField(
-        default=list,
-        blank=True,
-        help_text=(
-            "The file thinned to the frames worth looking at, first to last: each its key and "
-            "the second it is at; none without a file."
-        ),
-    )
     transcript = models.TextField(
         blank=True,
         help_text=(
-            'The words said in the file, or "music only" when nothing is said; blank without '
-            "a file, or when it couldn't be written down."
-        ),
-    )
-    read = models.JSONField(
-        null=True,
-        blank=True,
-        help_text=(
-            "The video reader's answer: the moments it would need as pictures and the ones it "
-            "wouldn't; {\"error\": ...} when reading it failed; none when it wasn't read."
+            'The words said in the file, as the watcher heard them, or "music only" when '
+            "nothing is said; blank when it wasn't watched or was thrown out."
         ),
     )
     watched = models.JSONField(
@@ -295,6 +280,13 @@ class ProductVideo(models.Model):
         help_text=(
             "What the watcher saw in the file, as jobs.library.VideoWatch: its numbered "
             "moments, look frames, colour and transcript. None when it wasn't watched."
+        ),
+    )
+    thrown_out = models.TextField(
+        blank=True,
+        help_text=(
+            "Why the video was left out of the ad: it doesn't show this product, or it is "
+            "too long to watch; blank when it was kept or not watched yet."
         ),
     )
 
@@ -311,8 +303,8 @@ class ProductVideo(models.Model):
 class LibraryItem(models.Model):
     """One picture or look frame the app knows about for a job (jobs.library.LibraryEntry),
     with its library number, which never changes for the job. Its fixed fields are plain
-    text here: jobs.library's schema checks them on the way in and out, so a value set can
-    change there without a migration."""
+    text here: jobs.library's schema checks them strictly on the way in and leniently on
+    the way out, so a value set can change there without a migration."""
 
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="library")
     number = models.PositiveIntegerField(

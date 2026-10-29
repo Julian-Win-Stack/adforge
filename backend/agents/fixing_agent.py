@@ -28,7 +28,7 @@ from django.utils import timezone
 from pydantic import Field
 
 from adforge import file_store, tracing
-from gateway.gateway import charged_to, edit_picture, take_turn
+from gateway.gateway import charged_to, edit_picture
 from gateway.types import (
     MOST_BROLL_SECONDS,
     BrollClipHandoff,
@@ -39,7 +39,7 @@ from gateway.types import (
     ToolSpec,
     ToolUse,
 )
-from jobs import auto_fix, clip_judge, picture_check, reference_photos, scenes, work
+from jobs import auto_fix, clip_judge, library, picture_check, reference_photos, scenes, work
 from jobs.models import AgentFix, AgentFixTry, ProducedItem, ReferencePhoto, Scene, SceneStep
 
 from . import loop
@@ -185,6 +185,11 @@ ENDED_BY_CAP = (
 )
 
 
+# What a call is told once the fixing has ended, by a pass, a give-up or the tries cap,
+# never naming a count.
+ENDED = "the scene's fixing has ended."
+
+
 # What a video prompt may not say: the video model ignores bans (A2).
 BANNED = re.compile(
     r"\b(not|no|never|without|nothing|nobody|none|neither|nor|avoid|avoids|avoiding)\b|n't\b",
@@ -323,19 +328,21 @@ def _started(step: SceneStep, door: str, failure: Failure, goal: str | None, cap
 def _work(fixing: AgentFix) -> None:
     # A tool that was running when the last worker stopped runs again first.
     for call in _calls(fixing).filter(finished_at__isnull=True):
-        _settle(fixing, call)
+        _settle_unless_ended(fixing, call)
     # A worker that stopped after the last try was filmed ends the fixing as it would have.
     _end_at_the_cap(fixing)
     # No limit on the agent's turns (spec #210, point 24): only the tries cap ends it.
     while not _ended(fixing):
         with tracing.agent_turn(AGENT), charged_to(_turns(fixing)):
-            turn = take_turn(
+            turn = loop.take_a_turn(
                 session=fixing.step.tool_call.session,
+                job=fixing.step.scene.job,
                 purpose=PURPOSE,
                 instructions=instructions(_gives_up_as(fixing)),
                 conversation=_fit(_conversation(fixing)),
                 tools=_tools(_gives_up_as(fixing)),
                 since=fixing.created_at,
+                done=f"the fixing of scene {fixing.step.scene.number} carried on",
             )
         with transaction.atomic():
             at = _calls(fixing).count()
@@ -358,12 +365,7 @@ def _work(fixing: AgentFix) -> None:
                 for asked in turn.calls
             ]
         for call in calls:
-            if _ended(fixing):
-                call.result = "Refused: the scene's fixing has ended. Nothing was done."
-                call.finished_at = timezone.now()
-                call.save(update_fields=["result", "finished_at"])
-            else:
-                _settle(fixing, call)
+            _settle_unless_ended(fixing, call)
     _finish(fixing)
 
 
@@ -391,6 +393,16 @@ def _turns(fixing: AgentFix) -> ToolCall:
 def _calls(fixing: AgentFix) -> QuerySet[ToolCall]:
     """Every tool the agent called, in order."""
     return fixing.tool_calls.exclude(tool=TURNS).order_by("created_at", "id")
+
+
+def _settle_unless_ended(fixing: AgentFix, call: ToolCall) -> None:
+    """Settle the call, or, once the fixing has ended, refuse it with nothing done."""
+    if _ended(fixing):
+        call.result = f"Refused: {ENDED} Nothing was done."
+        call.finished_at = timezone.now()
+        call.save(update_fields=["result", "finished_at"])
+    else:
+        _settle(fixing, call)
 
 
 def _settle(fixing: AgentFix, call: ToolCall) -> None:
@@ -483,16 +495,20 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
     words and tools in the order they happened."""
     first = fixing.first_clip
     assert first is not None, "the fixing started with try 0"
-    shown = [Shown(label="Try 0, start picture", key=first.picture.file)] if first.picture else []
+    sent, shown = _try_shown("Try 0", first.picture, first)
     happened: list[Happened] = [
         Said(by="user", text=_intro(fixing)),
         ToolUse(
             call_id="try-0",
             tool=LookAtTry.name,
             arguments={"number": 0},
-            result="Try 0: the scene as it failed in the ad. Its start picture, then its "
-            "clip's frames.",
-            pictures=[*shown, *_frames(first, "Try 0, clip")],
+            result="Try 0: the scene as it failed in the ad. "
+            + (
+                f"What its clip was sent, then the clip's frames. {sent}"
+                if sent
+                else "Its start picture, then its clip's frames."
+            ),
+            pictures=[Shown(label=each.label, key=each.key) for each in shown],
         ),
     ]
     said = list(fixing.said)
@@ -687,8 +703,9 @@ class LookAtPresenter(Tool):
 
 
 class LookAtTry(Tool):
-    """See a try again: its start picture, its clip's frames and the judge's words. Try 0 is
-    the scene as it failed in the ad."""
+    """See a try again: what its clip was sent (the pictures with their labels and the video
+    pieces' frames), or its start picture for a clip made from one, then its clip's frames
+    and the judge's words. Try 0 is the scene as it failed in the ad."""
 
     name: ClassVar[str] = "look_at_try"
     number: int
@@ -708,12 +725,32 @@ class LookAtTry(Tool):
             picture, clip = row.picture, row.clip
             ruling = clip.ruling if clip is not None else None
         label = f"Try {self.number}"
-        shown = [Image(label=f"{label}, start picture", key=picture.file)] if picture else []
-        if clip is not None:
-            shown += [
-                Image(label=each.label, key=each.key) for each in _frames(clip, f"{label}, clip")
-            ]
-        return ToolResult(f"{label}. {judge_words(ruling)}", shown)
+        sent, shown = _try_shown(label, picture, clip)
+        said = (
+            f"{label}: what its clip was sent, then the clip's frames. {sent}"
+            if sent
+            else f"{label}."
+        )
+        return ToolResult(f"{said} {judge_words(ruling)}", shown)
+
+
+def _try_shown(
+    label: str, picture: ProducedItem | None, clip: ProducedItem | None
+) -> tuple[str, list[Image]]:
+    """What a look at a try shows, and what code says of what its clip was sent: when its
+    clip carries a sent list (spec #210 point 21), the pictures it was sent with their labels
+    and each piece's frames, then the clip's frames; else its start picture, then the clip's
+    frames, with nothing said."""
+    sent = library.sent_list_of(clip) if clip is not None else None
+    frames = [] if clip is None else _frames(clip, f"{label}, clip")
+    clip_frames = [Image(label=each.label, key=each.key) for each in frames]
+    if sent is not None:
+        return clip_judge.references_said(sent), [
+            *clip_judge.references_shown(sent, label),
+            *clip_frames,
+        ]
+    shown = [Image(label=f"{label}, start picture", key=picture.file)] if picture else []
+    return "", [*shown, *clip_frames]
 
 
 class FilmAgain(Tool):
@@ -894,6 +931,10 @@ def film_again(fixing: AgentFix, asked: FilmAgain, call: ToolCall) -> ToolResult
 
 
 def _refuse_what_breaks_the_rules(fixing: AgentFix, asked: FilmAgain, scene: Scene) -> None:
+    # A new try past the cap, as a worker restarted mid-turn could start: the fixing ends at
+    # the cap, so it is refused as any call after the end is.
+    if fixing.tries.count() >= fixing.cap:
+        raise Refused(ENDED)
     found = sorted({match.group(0).lower() for match in BANNED.finditer(asked.video_prompt)})
     if found:
         raise Refused(f"the video prompt has bans ({', '.join(found)}). Say what happens instead.")

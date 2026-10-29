@@ -141,7 +141,6 @@ def test_the_labelling_call_is_given_the_pickers_label_rules_and_the_photo(
     "changed",
     [
         pytest.param({"kind": "packshot"}, id="kind outside its set"),
-        pytest.param({"colour": "light amber"}, id="colour of two words"),
         pytest.param({"kind": "side", "target": "the bottle on the left"}, id="target, no line-up"),
         pytest.param({"label": " "}, id="no label"),
     ],
@@ -156,12 +155,20 @@ def test_a_labelling_answer_that_breaks_the_fields_rules_leaves_the_photo_out_in
 ) -> None:
     first_message(fake_model, say, labelled_page, {**OWNER_LABEL, **changed})
 
-    (labelling,) = ModelCall.objects.filter(purpose="label_photo")
-    assert labelling.outcome == ModelCall.Outcome.FAILED
     assert [item.source.came_from for item in library_of(Job.objects.get())] == ["page_photo"] * 5
     (problem,) = [text for level, text in notices(api, session_id) if level == "problem"]
     assert problem.startswith("Saying what a photo the shop owner sent shows failed")
     assert [warning["text"] for warning in Job.objects.get().warnings] == [problem]
+
+
+def test_a_colour_of_two_words_from_the_labelling_call_is_kept_joined_by_a_hyphen(
+    fake_model: FakeModel,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    say: Say,
+) -> None:
+    first_message(fake_model, say, labelled_page, {**OWNER_LABEL, "colour": "Light Amber"})
+
+    assert library_of(Job.objects.get())[5].colour == "light-amber"
 
 
 def test_an_owner_photo_added_later_joins_at_the_next_number_and_the_others_keep_theirs(

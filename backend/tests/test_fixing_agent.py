@@ -36,6 +36,7 @@ from .conftest import (
     paid_for,
 )
 from .fixing import fixed as fixed_by_a_plan
+from .sent_lists import holding_the_fixture
 from .test_pick_from_tries import made_ad  # noqa: F401 (a fixture)
 from .test_producer_auto_fix import FLOATS, REMADE, clip_of_scene_2, failing, rewrite
 from .test_producer_broll import (
@@ -97,6 +98,60 @@ def fixed(step: SceneStep, **kwargs: Any) -> Outcome:
     clip = step.produced.order_by("id").first()
     assert clip is not None
     return fix_scene(step, door="judge", failure=Failure(ruling=clip.ruling), goal=None, **kwargs)
+
+
+# --- Looking at a try ------------------------------------------------------------------------
+
+
+def looks_at_try_0(fake_model: FakeModel, step: SceneStep) -> tuple[ToolUse, ToolCall]:
+    """The agent looks at try 0 and films once: the try 0 it was given first, and its look."""
+    fake_model.respond(
+        "fix_scene", turn(calls=[("look_at_try", {"number": 0})]), turn(calls=[film_again()])
+    )
+    fixed(step)
+    [first, *_] = [each for each in fake_model.turns_taken if each.purpose == "fix_scene"]
+    given = first.handoff.conversation[1]
+    assert isinstance(given, ToolUse)
+    return given, ToolCall.objects.get(agent="fixing_agent", tool="look_at_try")
+
+
+def test_a_try_whose_clip_has_a_sent_list_is_shown_by_its_references_then_its_frames(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    clip = failed_clip.produced.order_by("id").first()
+    assert clip is not None
+    sent = holding_the_fixture(clip)
+
+    given, look = looks_at_try_0(fake_model, failed_clip)
+
+    for labels in (
+        [picture.label for picture in given.pictures],
+        [picture["label"] for picture in look.pictures],
+    ):
+        assert labels[:9] == [f"Try 0, Image {each.image}: {each.label}" for each in sent.pictures]
+        rest = labels[9:]
+        pieces = [label for label in rest if label.startswith("Try 0, Video ")]
+        frames = [label for label in rest if label.startswith("Try 0, clip, ")]
+        assert pieces and frames and rest == pieces + frames
+        assert not any("start picture" in label for label in labels)
+    said = " ".join(look.result.split())
+    assert said.startswith("Try 0: what its clip was sent, then the clip's frames.")
+    assert "Left out of the clip: The garlic press, closed, seen from the top." in said
+    assert "What its clip was sent" in given.result
+
+
+def test_a_try_whose_clip_has_no_sent_list_is_shown_by_its_start_picture(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    given, look = looks_at_try_0(fake_model, failed_clip)
+
+    for labels in (
+        [picture.label for picture in given.pictures],
+        [picture["label"] for picture in look.pictures],
+    ):
+        assert labels[0] == "Try 0, start picture"
+        assert labels[1:] and all(label.startswith("Try 0, clip, ") for label in labels[1:])
+    assert look.result.startswith("Try 0. ")
 
 
 # --- A try the judge passes ------------------------------------------------------------------
@@ -494,6 +549,63 @@ def test_a_worker_that_stopped_as_the_cap_ended_the_fix_ends_it_on_its_restart(
 
     assert len(fake_model.turns_taken) == turns
     assert ([each.number for each in outcome.tries], outcome.ended_by_cap) == ([1], True)
+
+
+def test_a_worker_stopped_while_the_judge_watched_the_last_try_films_no_try_past_the_cap(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    fake_model.respond("fix_scene", turn(calls=[film_again(video_prompt=POURS), film_again()]))
+    fake_model.respond("check_clip_motion", WorkerStopped(), *[failing(FLOATS)] * 3)
+    with pytest.raises(WorkerStopped):
+        fixed(failed_clip, cap=1)
+
+    outcome = fixed(failed_clip, cap=1)
+
+    assert ([each.number for each in outcome.tries], outcome.ended_by_cap) == ([1], True)
+    assert scene_clip() == clip_of(outcome.tries[0])
+    assert told()[-1] == "Refused: the scene's fixing has ended. Nothing was done."
+
+
+def test_a_give_up_after_the_last_try_in_a_restarted_turn_leaves_the_cap_on_the_record(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[film_again(), ("give_up", {"reason": "Tried enough.", "best_try": 1})]),
+    )
+    fake_model.respond("check_clip_motion", WorkerStopped(), *[failing(FLOATS)] * 3)
+    with pytest.raises(WorkerStopped):
+        fixed(failed_clip, cap=1)
+
+    outcome = fixed(failed_clip, cap=1)
+
+    assert (outcome.gave_up, outcome.ended_by_cap) == (fixing_agent.ENDED_BY_CAP, True)
+    assert AgentFix.objects.get().picked is None
+    assert told()[-1] == "Refused: the scene's fixing has ended. Nothing was done."
+
+
+def test_a_worker_stopped_as_the_cap_ended_the_fix_films_no_later_try_of_that_turn(
+    fake_model: FakeModel, failed_clip: SceneStep, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_model.respond("fix_scene", turn(calls=[film_again(video_prompt=POURS), film_again()]))
+    fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 3)
+    give_up = fixing_agent.give_up
+
+    def stops_once(*args: Any) -> None:
+        monkeypatch.setattr(fixing_agent, "give_up", give_up)
+        raise WorkerStopped()
+
+    monkeypatch.setattr(fixing_agent, "give_up", stops_once)
+    with pytest.raises(WorkerStopped):
+        fixed(failed_clip, cap=1)
+
+    outcome = fixed(failed_clip, cap=1)
+
+    assert ([each.number for each in outcome.tries], outcome.ended_by_cap) == ([1], True)
+    assert scene_clip() == clip_of(outcome.tries[0])
+    answer = told()[-1]
+    assert answer == "Refused: the scene's fixing has ended. Nothing was done."
+    assert not COUNTED.search(answer)
 
 
 def test_a_scene_the_cap_ended_keeps_its_last_try_and_the_chat_says_the_cap_ended_it(

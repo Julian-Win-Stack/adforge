@@ -24,7 +24,7 @@ from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 from werkzeug import Request, Response
 
-from adforge import celery_app
+from adforge import celery_app, file_store
 from agents import tasks
 from agents.models import ToolCall
 from chat.models import Message, Session
@@ -34,6 +34,7 @@ from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import ModelReply, ModelRequest, Turn, TurnReply, TurnRequest
 from jobs import fix_check
+from jobs.library import SentList
 from jobs.models import Fix, Job, Scene
 
 from . import ffmpeg_replay
@@ -388,6 +389,17 @@ def api() -> APIClient:
     return APIClient()
 
 
+# What the watcher writes for a video, unless a test says: it shows the product, and no
+# moment, look frame or word.
+NOTHING_WATCHED: dict[str, Any] = {
+    "shows_this_product": True,
+    "moments": [],
+    "look_frames": [],
+    "colour": "black",
+    "transcript": "",
+}
+
+
 @pytest.fixture
 def fake_model() -> Iterator[FakeModel]:
     fake = FakeModel()
@@ -398,8 +410,8 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("check_starting_picture", lambda _: PICTURE_OK)
     fake.answer_unscripted("check_fix", lambda request: with_owner_photo(FIX_MADE, request.output))
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
-    # A product video's reader needs none of its moments as pictures, unless a test says.
-    fake.answer_unscripted("read_video", lambda _: {"kept": [], "rejected": []})
+    # A product video's watcher sees the product and nothing else in it, unless a test says.
+    fake.answer_unscripted("watch_video", lambda _: NOTHING_WATCHED)
     fake.answer_unscripted("check_clip_sides", lambda _: CLIP_SIDES_OK)
     fake.answer_unscripted("check_clip_motion", motion_answer(CLIP_MOTION_OK))
     # Once the ad has a clip, every message goes to the decider first: unless a test scripts
@@ -684,6 +696,20 @@ def handoffs(purpose: str) -> list[dict[str, Any]]:
         .order_by("created_at", "id")
         .values_list("handoff", flat=True)
     )
+
+
+SENT_LIST_FIXTURE = Path(__file__).parent / "fixtures" / "sent_list.json"
+
+
+def sent_list_in_the_store() -> SentList:
+    """The sent-list fixture, with each of its pictures in the file store as big as a phone
+    takes them and each piece as a file of its own."""
+    sent = SentList.model_validate(json.loads(SENT_LIST_FIXTURE.read_text()))
+    for each in [*sent.pictures, *sent.left_out]:
+        file_store.save(each.file, picture(1600, 1200, (236, 229, 206), "JPEG"))
+    for piece in sent.pieces:
+        file_store.save(piece.file, b"a piece of a product video")
+    return sent
 
 
 def served(link: str, settings: Settings) -> bytes:
