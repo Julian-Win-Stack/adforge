@@ -1258,11 +1258,16 @@ def _part_drawn(scene: Scene, part: owner_parts.OwnerPart, waits: str) -> str:
     try:
         owner_parts.draw_part_picture(scene)
     except owner_parts.PartPictureFailed as failed:
+        then = (
+            "It is drawn again when its clip is next asked for."
+            if failed.retried
+            else "Ask them how it looks or for a photo of it, and correct it with "
+            "correct_owner_part."
+        )
         return (
             f"Scene {scene.number} shows {part.what}, which no photo shows, and making its "
             f"picture failed: {failed}. The chat told the shop owner. {waits} until they say "
-            "yes to a picture of it: ask them how it looks or for a photo of it, and correct "
-            "it with correct_owner_part."
+            f"yes to a picture of it. {then}"
         )
     return (
         f"Scene {scene.number} shows {part.what}, which no photo shows: its picture was drawn "

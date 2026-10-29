@@ -390,7 +390,7 @@ def say_what_waits_on_the_shop_owner(
 
 def _waits(scene: Scene, part: owner_parts.OwnerPart) -> str:
     """What the shop owner is told when the rest of the ad is made and `scene` waits."""
-    drawn = "from your words" if part.source == "owner's words" else "by us, as you asked"
+    drawn = owner_parts.drawn_by(part)
     return (
         f"Scene {scene.number} waits for your yes on the picture of {part.what}: no photo "
         f"showed it, so it was drawn {drawn}. Say yes if it looks right, or tell us what "

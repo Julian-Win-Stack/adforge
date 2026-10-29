@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from adforge.retry import OutsideServiceDown
 from agents.models import ToolCall
 from chat.models import Message
 from gateway.fake import FakeModel, turn
@@ -332,3 +333,88 @@ def test_a_picture_that_keeps_failing_its_check_is_said_in_red_until_the_part_is
     )
     (item,) = part_items()
     assert f"library picture {item.number}" in results_of("correct_owner_part")[-1]
+
+
+def test_a_picture_service_down_keeps_the_plan_and_draws_the_part_when_the_clip_is_asked_for(
+    fake_model: FakeModel, page_read: str, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    drawing = fake_model.edit
+
+    def down(**asked: Any) -> Any:
+        raise OutsideServiceDown("the picture service answered 503")
+
+    fake_model.edit = down  # type: ignore[method-assign]
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
+    fake_model.respond("plan_ad", PART_PLAN)
+    say("Plan it")
+
+    (planned,) = results_of("plan_ad")
+    assert not planned.startswith("Failed")
+    assert "making its picture failed" in planned
+    assert "drawn again when its clip is next asked for" in planned
+    assert Job.objects.get().scenes.count() == 3
+    (red,) = Message.objects.filter(role="notice", level="problem", text__contains="the lid")
+    assert "tried again" in red.text
+    assert red.text in [warning["text"] for warning in Job.objects.get().warnings]
+    assert part_items() == []
+
+    fake_model.edit = drawing  # type: ignore[method-assign]
+    fake_model.respond(
+        "produce",
+        turn(calls=[("create_person", {})]),
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(says="The script is checked."),
+    )
+    fake_model.respond("fact_check", FACTS_OK)
+    say("Make the person and check the script")
+    made_ready(fake_model, steps, say, (2,))
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+
+    (item,) = part_items()
+    assert f"library picture {item.number}" in results_of("make_clip")[-1]
+    assert not owner_parts.is_approved(scene(2))
+
+
+# Scene 3 given the same part in other words, as the planner writes each scene's part.
+TWO_SENTENCES: dict[str, Any] = {
+    **PART_PLAN,
+    "plan": {
+        **PART_PLAN["plan"],
+        "scenes": [
+            *PART_PLAN["plan"]["scenes"][:2],
+            {
+                **PART_PLAN["plan"]["scenes"][2],
+                "owner_part": {**PART, "looks": "A square black lid with no knob."},
+            },
+        ],
+    },
+}
+
+
+def test_one_part_in_two_sentences_is_drawn_once_and_a_yes_holds_for_the_sentence_drawn(
+    fake_model: FakeModel, page_read: str, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("plan_ad", {})]),
+        turn(calls=[("create_person", {})]),
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(says="Here's the plan."),
+    )
+    fake_model.respond("plan_ad", TWO_SENTENCES)
+    fake_model.respond("fact_check", FACTS_OK)
+    say("Plan it, make the person and check the script")
+
+    # Drawn once, from scene 2's sentence, which scene 3 takes.
+    (drawing,) = handoffs("make_part_picture")
+    assert PART["looks"] in drawing["prompt"]
+    assert len(part_notices()) == 1
+    assert owner_parts.owner_part(scene(3)).looks == PART["looks"]  # type: ignore[union-attr]
+    (item,) = part_items()
+    assert owner_parts.part_picture(scene(3)) == item
+
+    owner_says(fake_model, say, "Yes, that lid is right.", ("approve_owner_part", {"scene": 3}))
+
+    for number in (2, 3):
+        assert owner_parts.is_approved(scene(number))
+        assert owner_parts.owner_part(scene(number)).looks == PART["looks"]  # type: ignore[union-attr]
