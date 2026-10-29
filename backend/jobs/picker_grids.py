@@ -17,7 +17,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import PIL.Image
 import PIL.ImageDraw
@@ -34,6 +34,12 @@ from .product_videos import YOUTUBE_ID, YOUTUBE_THUMBNAIL
 RECORD_GRID = (2, 600)
 HIDDEN_GRID = (3, 400)
 VIDEO_GRID = (2, 600)
+# Each kind of grid by its name, the start of its label, in the order the picker is shown them.
+GRID_SHAPES = {
+    "Official photos": RECORD_GRID,
+    "Hidden pictures": HIDDEN_GRID,
+    "Video players": VIDEO_GRID,
+}
 # Pictures are fetched this many at a time.
 FETCHING_TOGETHER = 8
 # ffmpeg may take at most this long to get a video's first frame.
@@ -86,9 +92,9 @@ def beside_the_screenshot(record: dict[str, Any] | None, marks: dict[str, Any]) 
         video_lines.append(player_line(player, marks, frame is not None, how))
     return Shown(
         grids=[
-            *grids("Official photos", record_tiles, *RECORD_GRID),
-            *grids("Hidden pictures", hidden_tiles, *HIDDEN_GRID),
-            *grids("Video players", video_tiles, *VIDEO_GRID),
+            *grids("Official photos", record_tiles, *GRID_SHAPES["Official photos"]),
+            *grids("Hidden pictures", hidden_tiles, *GRID_SHAPES["Hidden pictures"]),
+            *grids("Video players", video_tiles, *GRID_SHAPES["Video players"]),
         ],
         lines=photos.ShownLines(
             hidden_pictures="\n".join(hidden_lines),
@@ -272,24 +278,23 @@ def grid(
     `side` px a side with its label on a black bar: above it, or with `label_under` under it,
     the label wrapped onto as many lines as it takes, every bar in the grid as tall as the
     tallest."""
-    font_size = max(22, side // 14) if not label_under else max(18, side // 22)
+    font_size = _font_size(side, label_under=label_under)
     font = PIL.ImageFont.load_default(size=font_size)
     draw = PIL.ImageDraw.Draw(PIL.Image.new("RGB", (1, 1)))
     texts = [
         _wrapped(label, font, side - 16, draw) if label_under else [label] for label, _ in tiles
     ]
     line = font_size + 6
-    bar = max(len(lines) for lines in texts) * line + 8 if texts else 0
+    bar = _bar(max(len(lines) for lines in texts), font_size) if texts else 0
     rows = (len(tiles) + across - 1) // across
-    gap = 8
     sheet = PIL.Image.new(
         "RGB",
-        (across * side + (across + 1) * gap, rows * (side + bar) + (rows + 1) * gap),
+        (across * side + (across + 1) * _GAP, rows * (side + bar) + (rows + 1) * _GAP),
         "#888",
     )
     draw = PIL.ImageDraw.Draw(sheet)
     for k, ((_, content), lines) in enumerate(zip(tiles, texts, strict=True)):
-        x, y = gap + (k % across) * (side + gap), gap + (k // across) * (side + bar + gap)
+        x, y = _corner(k, across, side, bar)
         top = y + side if label_under else y
         draw.rectangle((x, top, x + side - 1, top + bar - 1), fill="black")
         for n, text in enumerate(lines):
@@ -307,6 +312,54 @@ def grid(
     saved = io.BytesIO()
     sheet.save(saved, "JPEG", quality=85)
     return saved.getvalue()
+
+
+# The grey gap between and around a grid's tiles, in px.
+_GAP = 8
+
+
+def _font_size(side: int, *, label_under: bool) -> int:
+    return max(18, side // 22) if label_under else max(22, side // 14)
+
+
+def _bar(lines: int, font_size: int) -> int:
+    """How tall a black bar holding `lines` lines of labels is, in px."""
+    return lines * (font_size + 6) + 8
+
+
+def _corner(k: int, across: int, side: int, bar: int) -> tuple[int, int]:
+    """Where the `k`th tile of a grid, its bar included, starts."""
+    return _GAP + (k % across) * (side + _GAP), _GAP + (k // across) * (side + bar + _GAP)
+
+
+class CutTile(NamedTuple):
+    """A tile cut back out of the picker's grid: the grid's kind, its label and its picture."""
+
+    kind: str
+    label: str
+    picture: bytes
+
+
+def kind_of(label: str) -> str:
+    """The kind of the picker's grid labelled `label`, as `grids` labels it."""
+    return label.partition(": ")[0]
+
+
+def tiles_cut_from(label: str, content: bytes) -> list[CutTile]:
+    """The tiles of the picker's grid labelled `label`, as `grids` drew it, each picture cut
+    back out of `content` without its bar, for a grid drawn again with fewer of them."""
+    kind = kind_of(label)
+    across, side = GRID_SHAPES[kind]
+    # A label over a picture is one line on its bar, as `grid` draws it.
+    bar = _bar(1, _font_size(side, label_under=False))
+    cut = []
+    with PIL.Image.open(io.BytesIO(content)) as sheet:
+        for k, tile in enumerate(tiles_of(label)):
+            x, y = _corner(k, across, side, bar)
+            saved = io.BytesIO()
+            sheet.crop((x, y + bar, x + side, y + bar + side)).save(saved, "JPEG", quality=95)
+            cut.append(CutTile(kind, tile, saved.getvalue()))
+    return cut
 
 
 def _wrapped(

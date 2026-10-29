@@ -1533,7 +1533,7 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
     assert json.loads(check["input"])["page_url"] == product_page_url
     assert "Stoneware Mug" in json.loads(check["input"])["page_text"]
     assert check["text"]["format"]["type"] == "json_schema"
-    assert plan["model"] == "gpt-5.6-sol"
+    assert plan["model"] == "gpt-6.1-sol"
     # The plan's moments come first in its message, the page's text after the library's sheet.
     [message] = plan["input"]
     assert list(json.loads(message["content"][0]["text"]))[0] == "moments"

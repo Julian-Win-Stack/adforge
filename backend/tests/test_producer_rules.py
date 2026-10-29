@@ -789,7 +789,7 @@ def test_reading_the_same_page_again_hands_back_what_was_read_and_pays_nothing(
     again = results_of("read_page")[1]
     assert again.startswith(
         f"{page_read} was already read for this ad, so nothing was read or paid for again. "
-        "Reading it cost $0.0246. The ad has 2 product photos."
+        "Reading it cost $0.0126. The ad has 2 product photos."
     )
     assert paid_for() == [
         "check_page",
@@ -957,7 +957,7 @@ def test_planning_again_hands_back_the_plan_and_pays_nothing(
     assert results_of("plan_ad") == [
         plan,
         "The ad was already planned, so nothing was planned or paid for again. Planning it "
-        f"cost $0.006.\n{plan}",
+        f"cost $0.003.\n{plan}",
     ]
     assert paid_for() == [
         "check_page",
