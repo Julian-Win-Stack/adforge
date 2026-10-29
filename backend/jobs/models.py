@@ -285,8 +285,8 @@ class ProductVideo(models.Model):
     thrown_out = models.TextField(
         blank=True,
         help_text=(
-            "Why the video was thrown out of the ad once watched, such as it not showing this "
-            "product; blank when it was kept or not watched."
+            "Why the video was left out of the ad: it doesn't show this product, or it is "
+            "too long to watch; blank when it was kept or not watched yet."
         ),
     )
 

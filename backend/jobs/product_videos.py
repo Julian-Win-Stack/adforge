@@ -21,18 +21,25 @@ from django.conf import settings
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
+from chat.models import Message
 from gateway.gateway import IMAGE_TYPES
 from gateway.types import LEAST_PIECE_SECONDS, MOST_PIECE_SECONDS, PieceTrim, ReferenceVideo
 from jobs import page
 from jobs.models import Job, ProductVideo
+from jobs.notices import post_notice
 from jobs.threads import closing_its_connection
 
 logger = logging.getLogger(__name__)
 
 # Not a cap on videos: length is the only cut (requirement 23, Julian Oct 27 2026 04:41, "no
-# byte cap"; WATCH_VIDEO_MOST_SECONDS). This only stops a link that never ends, such as a
-# live stream, from filling the memory: one bigger is kept as its link.
+# byte cap"; WATCH_VIDEO_MOST_SECONDS). These only stop a link that never ends, such as a
+# live stream, from filling the disk or holding up the page read: a video fetched to a file
+# past this many bytes or seconds is kept as its link, and the owner is told.
 NEVER_ENDING_BYTES = 2_000_000_000
+NEVER_ENDING_SECONDS = 600
+# Seeking this close to a video's end finds no frame: the last frame starts one frame's
+# length before the end, and a slow video's frames are far apart.
+LAST_FRAME_MARGIN = 0.5
 # How many frames, spread over a video, are kept with it.
 FRAMES = 4
 # Where YouTube keeps a video's thumbnail, by the video's id.
@@ -105,34 +112,53 @@ def keep_video(job: Job, position: int, player: dict[str, Any]) -> ProductVideo:
     folder = f"jobs/{job.pk}/videos/{position}"
     video = ProductVideo(job=job, position=position, source_url=src, kind=kind)
     # An embedded player's link is its web page, never a file.
-    if kind == ProductVideo.Kind.VIDEO and (download := _video_file(src)) is not None:
-        extension = mimetypes.guess_extension(download.content_type) or ".mp4"
-        looked = _look_at(download.content, extension)
-        if looked is not None:
-            video.file = file_store.save(f"{folder}{extension}", download.content)
-            video.duration = looked.duration
-            video.first_frame = file_store.save(f"{folder}-first.jpg", looked.first)
-            video.frames = [
-                file_store.save(f"{folder}-frame-{number}.jpg", frame)
-                for number, frame in enumerate(looked.frames, 1)
-            ]
+    if kind == ProductVideo.Kind.VIDEO:
+        with tempfile.TemporaryDirectory() as fetched_to:
+            given = Path(fetched_to) / "video"
+            content_type = _video_file(job, position, src, given)
+            if content_type is not None:
+                extension = mimetypes.guess_extension(content_type) or ".mp4"
+                file = given.rename(given.with_suffix(extension))
+                looked = _look_at(file)
+                if looked is not None:
+                    video.file = file_store.save_file(f"{folder}{extension}", file)
+                    video.duration = looked.duration
+                    video.first_frame = file_store.save(f"{folder}-first.jpg", looked.first)
+                    video.frames = [
+                        file_store.save(f"{folder}-frame-{number}.jpg", frame)
+                        for number, frame in enumerate(looked.frames, 1)
+                    ]
     if not video.first_frame:
         video.first_frame = _still(src, poster, folder)
     video.save()
     return video
 
 
-def _video_file(src: str) -> page.Download | None:
-    """The video file at `src`, or None when there is none to keep: a link that isn't a web
-    link (blob:), won't download, never ends (NEVER_ENDING_BYTES), or isn't a video file (a
-    stream's playlist, a web page)."""
+def _video_file(job: Job, position: int, src: str, file: Path) -> str | None:
+    """Fetch the video file at `src` into `file` and give back its type, or None when there
+    is none to keep: a link that isn't a web link (blob:), won't download, or isn't a video
+    file (a stream's playlist, a web page). One that never ends (NEVER_ENDING_BYTES,
+    NEVER_ENDING_SECONDS) is left out, and the owner is told which."""
     try:
-        download = page.download(src, max_bytes=NEVER_ENDING_BYTES, what="product video")
+        fetched = page.download_to(
+            src,
+            file,
+            max_bytes=NEVER_ENDING_BYTES,
+            most_seconds=NEVER_ENDING_SECONDS,
+            what="product video",
+        )
+    except page.TooLongToFetch as error:
+        logger.warning("Product video %s left out: %s", position, error)
+        post_notice(
+            job,
+            f"Your page's video {position} ({src}) couldn't be fetched whole, so it is left "
+            f"out of the ad: {error}",
+            Message.Level.INFO,
+        )
+        return None
     except page.PageUnreadable, OutsideServiceDown:
         return None
-    if not download.content_type.startswith("video/"):
-        return None
-    return download
+    return fetched.content_type if fetched.content_type.startswith("video/") else None
 
 
 @dataclass(frozen=True)
@@ -142,21 +168,18 @@ class _Looked:
     frames: list[bytes]
 
 
-def _look_at(content: bytes, extension: str) -> _Looked | None:
+def _look_at(file: Path) -> _Looked | None:
     """The video's length in seconds, its first frame and FRAMES frames spread over it, as
     JPEGs; None if ffmpeg can't read it as a video."""
-    with tempfile.TemporaryDirectory() as folder:
-        file = Path(folder) / f"video{extension}"
-        file.write_bytes(content)
-        try:
-            duration = _duration(file)
-            if duration is None:
-                return None
-            first = _frame(file, first_frame_time(duration))
-            frames = [_frame(file, at) for at in frame_times(duration)]
-        except RuntimeError, subprocess.TimeoutExpired:
+    try:
+        duration = _duration(file)
+        if duration is None:
             return None
-        return _Looked(duration, first, frames)
+        first = _frame(file, first_frame_time(duration))
+        frames = [_frame(file, at) for at in frame_times(duration)]
+    except RuntimeError, subprocess.TimeoutExpired:
+        return None
+    return _Looked(duration, first, frames)
 
 
 def first_frame_time(duration: float) -> float:
@@ -186,12 +209,19 @@ def _duration(file: Path) -> float | None:
     return duration if probed.returncode == 0 and duration > 0 else None
 
 
-def frame_of(video: ProductVideo, second: float) -> bytes:
-    """The frame `second` seconds into the video's file, at its full size, as a JPEG."""
+def frame_second(video: ProductVideo, second: float) -> float:
+    """The second a frame is pulled at for `second`: never in the video's last
+    LAST_FRAME_MARGIN seconds, where seeking finds no frame to pull."""
+    return max(0.0, min(second, (video.duration or 0) - LAST_FRAME_MARGIN))
+
+
+def frames_of(video: ProductVideo, seconds: Sequence[float]) -> list[bytes]:
+    """The frames at `seconds` into the video's file (each at its frame_second), at full
+    size, as JPEGs, pulled from one copy of the file."""
     with tempfile.TemporaryDirectory() as folder:
         file = Path(folder) / f"video{Path(video.file).suffix}"
         file.write_bytes(file_store.read(video.file))
-        return _frame(file, second)
+        return [_frame(file, frame_second(video, second)) for second in seconds]
 
 
 def _frame(file: Path, at: float) -> bytes:
