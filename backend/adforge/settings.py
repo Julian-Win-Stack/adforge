@@ -135,6 +135,10 @@ def openai_pictures_account(environ: Mapping[str, str]) -> tuple[str, str]:
 # Tests point the addresses at a local stand-in.
 OPENAI_API_KEY, OPENAI_BASE_URL = openai_account(os.environ)
 OPENAI_PICTURES_KEY, OPENAI_PICTURES_BASE_URL = openai_pictures_account(os.environ)
+# How much of its reasoning an agent's model is asked to summarise on each turn, kept on the
+# turn's record and its trace (spec #247 point 16): "auto", "concise" or "detailed". Empty
+# asks for none, for a deployment that refuses it.
+OPENAI_REASONING_SUMMARY = os.environ.get("OPENAI_REASONING_SUMMARY", "auto")
 
 # Firecrawl reads product pages in a real browser. Empty means the page is read with a plain
 # download instead, and the user is told so.
@@ -208,6 +212,9 @@ WATCH_VIDEO_MOST_SECONDS = 180
 LANGFUSE_PUBLIC_KEY = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
 LANGFUSE_SECRET_KEY = os.environ.get("LANGFUSE_SECRET_KEY", "")
 LANGFUSE_BASE_URL = os.environ.get("LANGFUSE_BASE_URL", "https://cloud.langfuse.com")
+# Which machine's traces they are, so Langfuse keeps each box's apart, such as "azure" on the
+# Azure box: lowercase letters, digits, "-" and "_", not starting with "langfuse".
+LANGFUSE_ENVIRONMENT = os.environ.get("LANGFUSE_ENVIRONMENT", "development")
 
 # How often to ask whether a clip is made yet. One usually takes under a minute, but it is
 # paid for, so it is waited for however long it takes: past this, the shop owner is told

@@ -51,21 +51,50 @@ def _client() -> Langfuse:
     if _override is not None:
         return _override
     return _from_settings(
-        settings.LANGFUSE_PUBLIC_KEY, settings.LANGFUSE_SECRET_KEY, settings.LANGFUSE_BASE_URL
+        settings.LANGFUSE_PUBLIC_KEY,
+        settings.LANGFUSE_SECRET_KEY,
+        settings.LANGFUSE_BASE_URL,
+        settings.LANGFUSE_ENVIRONMENT,
     )
 
 
 # Made the first time it is needed, in the process that uses it: Celery forks its workers,
 # and the thread that sends traces doesn't survive a fork.
 @cache
-def _from_settings(public_key: str, secret_key: str, base_url: str) -> Langfuse:
-    return Langfuse(
+def _from_settings(public_key: str, secret_key: str, base_url: str, environment: str) -> Langfuse:
+    return new_client(
         # Named even when off, or the client looks for keys in the environment itself.
         public_key=public_key or "off",
         secret_key=secret_key or "off",
         base_url=base_url,
+        environment=environment,
         tracing_enabled=bool(public_key and secret_key),
     )
+
+
+def new_client(**options: Any) -> Langfuse:
+    """A Langfuse client with `options`, sending everything in the settings' environment
+    unless they name another. Tests make theirs with it, as the app does."""
+    return Langfuse(**{"environment": settings.LANGFUSE_ENVIRONMENT, **options})
+
+
+def say_if_off() -> None:
+    """Say, as a warning line, when tracing is off because a Langfuse key is missing: a box
+    that should be traced and isn't is never left to find out (no silent fallbacks)."""
+    missing = [
+        name
+        for name, key in [
+            ("LANGFUSE_PUBLIC_KEY", settings.LANGFUSE_PUBLIC_KEY),
+            ("LANGFUSE_SECRET_KEY", settings.LANGFUSE_SECRET_KEY),
+        ]
+        if not key
+    ]
+    if missing:
+        logger.warning(
+            "Langfuse tracing is off: %s %s not set, so nothing is traced",
+            " and ".join(missing),
+            "are" if len(missing) > 1 else "is",
+        )
 
 
 class Traced:
@@ -100,6 +129,20 @@ class Traced:
                 self._observation.update(**fields)
         except Exception:
             logger.exception("Couldn't update a part of a trace")
+
+    def score(self, name: str, value: str, *, comment: str | None = None) -> None:
+        """Score the part with a verdict, such as a judge's "pass" or "fail", under `name`."""
+        try:
+            if self._observation is not None:
+                score(
+                    name,
+                    value,
+                    trace_id=self._observation.trace_id,
+                    observation_id=self._observation.id,
+                    comment=comment,
+                )
+        except Exception:
+            logger.exception("Couldn't score a part of a trace")
 
     def made(
         self,
@@ -332,6 +375,29 @@ def _files(keys: Sequence[str]) -> list[LangfuseMedia]:
         except Exception:
             logger.exception("Couldn't read %s to trace it", key)
     return files
+
+
+def score(
+    name: str,
+    value: str,
+    *,
+    trace_id: str,
+    observation_id: str = "",
+    comment: str | None = None,
+) -> None:
+    """Score a part of a trace, given by its trace ID and its own ID, or the whole trace,
+    with a verdict under `name`: a judge's, or a person's grade given later."""
+    try:
+        _client().create_score(
+            name=name,
+            value=value,
+            trace_id=trace_id,
+            observation_id=observation_id or None,
+            data_type="CATEGORICAL",
+            comment=comment,
+        )
+    except Exception:
+        logger.exception("Couldn't send the score %s", name)
 
 
 def flush() -> None:

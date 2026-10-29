@@ -14,6 +14,7 @@ from typing import Any, cast
 
 import httpx
 import pytest
+from django.apps import apps
 from django.conf import settings as django_settings
 from django.db.models.signals import post_save, pre_save
 from langfuse import Langfuse
@@ -29,13 +30,29 @@ from agents.models import ToolCall
 from agents.producer import PRODUCER
 from agents.tasks import restart_dead_producers
 from gateway.fake import FakeModel, turn
-from gateway.gateway import submit_broll_clip, watch_video
+from gateway.gateway import call_model, submit_broll_clip, watch_video
 from gateway.models import ModelCall, SystemPrompt
-from gateway.types import Handoff
+from gateway.types import Handoff, Judgement
+from jobs.clip_judge import MotionFixVerdict, ProductVerdict
+from jobs.fix_check import FixVerdict
 from jobs.models import SceneStep
+from jobs.picture_check import StartingPictureVerdict
 from jobs.product_videos import PieceWanted, cut_pieces
 
-from .conftest import READABLE, HeldSteps, a_video, chat, picture, results_of
+from .conftest import (
+    CLIP_FIXED,
+    CLIP_MOTION_OK,
+    CLIP_PRODUCT_OK,
+    FIX_MADE,
+    PICTURE_OK,
+    READABLE,
+    HeldSteps,
+    a_video,
+    chat,
+    openai_turn,
+    picture,
+    results_of,
+)
 
 # The fixture for a chat with a clip made, and those it is built on, for pytest to find.
 from .test_producer_clip import clipped, pictured, ready, spoken  # noqa: F401
@@ -53,6 +70,7 @@ class Seen:
     name: str
     kind: str
     trace_id: str
+    span_id: str
     attributes: dict[str, Any]
     inside: list[Seen] = field(default_factory=list)
 
@@ -92,12 +110,35 @@ class Seen:
         return "\n".join(lines)
 
 
+@dataclass(frozen=True)
+class Score:
+    """A score sent to Langfuse, as it shows on the part it scores."""
+
+    name: str
+    value: Any
+    comment: str | None
+
+
 class Traces:
     """Everything sent to Langfuse, kept in memory."""
 
-    def __init__(self, exporter: InMemorySpanExporter, client: Langfuse) -> None:
+    def __init__(
+        self, exporter: InMemorySpanExporter, client: Langfuse, ingested: list[dict[str, Any]]
+    ) -> None:
         self._exporter = exporter
         self._client = client
+        self._ingested = ingested
+
+    def scores(self, part: Seen) -> list[Score]:
+        """Every score sent for `part`, in the order sent."""
+        self._client.flush()
+        return [
+            Score(body["name"], body["value"], body.get("comment"))
+            for event in self._ingested
+            if event["type"] == "score-create"
+            for body in [event["body"]]
+            if (body.get("traceId"), body.get("observationId")) == (part.trace_id, part.span_id)
+        ]
 
     def all(self) -> list[Seen]:
         """Every part sent at the top of a trace, in the order they began. A trace can have
@@ -123,34 +164,46 @@ def _seen(span: ReadableSpan) -> Seen:
         span.name,
         str(attributes.get("langfuse.observation.type")),
         format(span.context.trace_id, "032x"),
+        format(span.context.span_id, "016x"),
         attributes,
     )
 
 
 @pytest.fixture(scope="session")
-def _langfuse() -> tuple[InMemorySpanExporter, Langfuse]:
+def _langfuse() -> tuple[InMemorySpanExporter, Langfuse, list[dict[str, Any]]]:
     exporter = InMemorySpanExporter()
-    # Pictures, audio and clips are uploaded apart from the trace. Here, Langfuse answers
-    # that it has each one already, so nothing is uploaded.
-    uploaded = httpx.MockTransport(
-        lambda _: httpx.Response(200, json={"mediaId": "", "uploadUrl": None})
-    )
-    client = Langfuse(
+    ingested: list[dict[str, Any]] = []
+
+    # Scores are sent apart from the trace: they are kept here. Pictures, audio and clips
+    # are uploaded apart from it too: here, Langfuse answers that it has each one already,
+    # so nothing is uploaded.
+    def answer(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/ingestion"):
+            ingested.extend(json.loads(request.content)["batch"])
+            return httpx.Response(207, json={"successes": [], "errors": []})
+        return httpx.Response(200, json={"mediaId": "", "uploadUrl": None})
+
+    uploaded = httpx.MockTransport(answer)
+    # Made as the app makes its own, with the settings' environment.
+    client = tracing.new_client(
         public_key="pk-lf-test",
         secret_key="sk-lf-test",
         base_url="http://langfuse.test",
         span_exporter=exporter,
         httpx_client=httpx.Client(transport=uploaded),
     )
-    return exporter, client
+    return exporter, client, ingested
 
 
 @pytest.fixture
-def traces(_langfuse: tuple[InMemorySpanExporter, Langfuse]) -> Iterator[Traces]:
-    exporter, client = _langfuse
+def traces(
+    _langfuse: tuple[InMemorySpanExporter, Langfuse, list[dict[str, Any]]],
+) -> Iterator[Traces]:
+    exporter, client, ingested = _langfuse
     exporter.clear()
+    ingested.clear()
     with tracing.use_client(client):
-        yield Traces(exporter, client)
+        yield Traces(exporter, client, ingested)
 
 
 def test_a_messages_work_is_one_trace_of_turns_the_tools_they_asked_for_and_model_calls(
@@ -217,6 +270,39 @@ def test_an_agents_turn_is_shown_with_its_system_prompt_and_the_tools_it_was_off
     ]
 
 
+def test_an_agents_turn_is_shown_with_the_summary_of_its_reasoning_its_tokens_and_cost(
+    traces: Traces,
+    httpserver: HTTPServer,
+    openai_server: Callable[..., None],
+    say: Callable[..., None],
+) -> None:
+    openai_server(
+        openai_turn(
+            "Send me your product page.",
+            reasoning=["The owner said hello.", "I need their product page first."],
+        )
+    )
+
+    say("Hi")
+
+    (asked,) = [request.get_json() for request, _ in httpserver.log]
+    assert asked["reasoning"] == {"summary": "auto"}
+    (trace,) = traces.all()
+    (produce,) = trace.find(name="produce", kind="generation")
+    assert produce.value("output") == {
+        "output": {
+            "says": "Send me your product page.",
+            "calls": [],
+            "reasoning": "The owner said hello.\n\nI need their product page first.",
+        }
+    }
+    # The stand-in OpenAI bills 1,200 tokens in and 300 out.
+    assert produce.value("usage_details") == {"input": 1_200, "output": 300}
+    (recorded,) = ModelCall.objects.filter(purpose="produce")
+    assert recorded.cost_usd is not None
+    assert produce.value("cost_details") == {"total": float(recorded.cost_usd)}
+
+
 def test_an_ads_system_prompt_is_stored_once_and_again_only_when_its_text_changes(
     fake_model: FakeModel,
     session_id: str,
@@ -243,6 +329,53 @@ def test_an_ads_system_prompt_is_stored_once_and_again_only_when_its_text_change
     ]
     assert first is not None
     assert [tool["name"] for tool in first.tools] == [tool.name for tool in PRODUCER.tools]
+
+
+def test_every_part_of_a_trace_is_sent_in_the_environment_settings_name(
+    traces: Traces, page_read: str
+) -> None:
+    (trace,) = traces.all()
+
+    environment = django_settings.LANGFUSE_ENVIRONMENT
+    # Langfuse's own when none is set.
+    assert environment not in ("", "default")
+    assert {part.attributes["langfuse.environment"] for part in trace.find()} == {environment}
+
+
+@pytest.mark.parametrize(
+    ("public_key", "secret_key", "missing"),
+    [
+        ("", "", "LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY are"),
+        ("pk-lf-test", "", "LANGFUSE_SECRET_KEY is"),
+        ("", "sk-lf-test", "LANGFUSE_PUBLIC_KEY is"),
+    ],
+)
+def test_the_app_warns_as_it_starts_when_tracing_is_off_for_a_missing_key(
+    settings: Settings,
+    caplog: pytest.LogCaptureFixture,
+    public_key: str,
+    secret_key: str,
+    missing: str,
+) -> None:
+    settings.LANGFUSE_PUBLIC_KEY = public_key
+    settings.LANGFUSE_SECRET_KEY = secret_key
+
+    apps.get_app_config("gateway").ready()
+
+    assert f"Langfuse tracing is off: {missing} not set, so nothing is traced" in [
+        record.getMessage() for record in caplog.records if record.levelname == "WARNING"
+    ]
+
+
+def test_the_app_says_nothing_of_tracing_as_it_starts_when_both_keys_are_set(
+    settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    settings.LANGFUSE_PUBLIC_KEY = "pk-lf-test"
+    settings.LANGFUSE_SECRET_KEY = "sk-lf-test"
+
+    apps.get_app_config("gateway").ready()
+
+    assert not [record for record in caplog.records if "Langfuse" in record.getMessage()]
 
 
 def test_each_message_starts_a_new_trace_under_one_fixed_name_grouped_with_its_chat_session(
@@ -620,3 +753,80 @@ def test_a_video_watched_is_shown_in_the_trace_as_it_was_sent(
     assert call.value("input")["handoff"] == {"product_name": "Stoneware Mug"}
     assert kinds_of_file(call.value("input")["shown"]) == ["video/mp4"]
     assert call.value("output")["output"] == {"moments": ["The lid is twisted off."]}
+
+
+class Asked(Handoff):
+    ask: int
+
+
+SUDDEN_CHANGE = "The mug's handle jumps to the other side at 2 s."
+
+
+@pytest.mark.parametrize(
+    ("purpose", "output", "answer", "scored"),
+    [
+        (
+            "check_starting_picture",
+            StartingPictureVerdict,
+            {**PICTURE_OK, "verdict": "fail", "problem": "The handle is inside the mug."},
+            [Score("starting_picture_real", "fail", "The handle is inside the mug.")],
+        ),
+        ("check_fix", FixVerdict, FIX_MADE, [Score("fix_made", "fixed", None)]),
+        (
+            "check_clip_product",
+            ProductVerdict,
+            {**CLIP_PRODUCT_OK, "verdict": "unsure"},
+            [Score("clip_matches_product", "unsure", None)],
+        ),
+        (
+            "check_clip_motion",
+            MotionFixVerdict,
+            {
+                **CLIP_MOTION_OK,
+                "sudden_change": {
+                    "verdict": "fail",
+                    "problem": SUDDEN_CHANGE,
+                    "back_to_normal_at": None,
+                },
+                "owner_change": CLIP_FIXED,
+            },
+            [
+                Score("clip_real_motion", "pass", None),
+                Score("clip_no_sudden_change", "fail", SUDDEN_CHANGE),
+                Score("clip_does_what_was_ordered", "pass", None),
+                Score("clip_owner_change_made", "fixed", None),
+            ],
+        ),
+    ],
+)
+def test_a_judges_verdict_is_a_score_on_its_call_named_after_what_it_measures(
+    traces: Traces,
+    fake_model: FakeModel,
+    purpose: str,
+    output: type[BaseModel],
+    answer: dict[str, Any],
+    scored: list[Score],
+) -> None:
+    fake_model.respond(purpose, answer)
+
+    call_model(
+        job=None, purpose=purpose, instructions="Judge it.", handoff=Asked(ask=1), output=output
+    )
+
+    (call,) = [found for trace in traces.all() for found in trace.find(kind="generation")]
+    assert traces.scores(call) == scored
+
+
+def test_a_call_that_judges_nothing_is_not_scored(traces: Traces, fake_model: FakeModel) -> None:
+    fake_model.respond("check_page", READABLE)
+
+    call_model(
+        job=None,
+        purpose="check_page",
+        instructions="Is it readable?",
+        handoff=Asked(ask=1),
+        output=Judgement,
+    )
+
+    (call,) = [found for trace in traces.all() for found in trace.find(kind="generation")]
+    assert traces.scores(call) == []

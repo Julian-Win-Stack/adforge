@@ -6,7 +6,7 @@ import socket
 import subprocess
 import tempfile
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import timedelta
 from itertools import groupby
@@ -969,12 +969,18 @@ def openai_answer(answer: dict[str, Any]) -> dict[str, Any]:
     return openai_reply({"type": "output_text", "text": json.dumps(answer), "annotations": []})
 
 
-def openai_turn(says: str = "", *calls: tuple[str, str, dict[str, Any]]) -> dict[str, Any]:
-    """An agent's turn as OpenAI sends it: what it says, then each tool it calls, given as
-    (call id, tool, arguments)."""
+def openai_turn(
+    says: str = "", *calls: tuple[str, str, dict[str, Any]], reasoning: Sequence[str] = ()
+) -> dict[str, Any]:
+    """An agent's turn as OpenAI sends it: the summary of its reasoning, in parts, when it
+    gives one, then what it says, then each tool it calls, given as (call id, tool,
+    arguments)."""
     reply = openai_reply({"type": "output_text", "text": says, "annotations": []})
     if not says:
         reply["output"] = []
+    if reasoning:
+        summary = [{"type": "summary_text", "text": part} for part in reasoning]
+        reply["output"].insert(0, {"type": "reasoning", "id": "rs_1", "summary": summary})
     reply["output"] += [
         {
             "type": "function_call",

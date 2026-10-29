@@ -272,9 +272,11 @@ def take_turn(
 
     def take() -> _Made[Turn]:
         reply = provider.take_turn(request)
+        # Kept with what the turn did, so its record and its trace show why it chose.
+        reasoning = {"reasoning": reply.reasoning} if reply.reasoning else {}
         return _Made(
             result=reply.turn,
-            output=_turn_output(reply.turn),
+            output={**_turn_output(reply.turn), **reasoning},
             bill=_Bill(
                 cost_usd=catalog.cost_usd(request.model, reply.input_tokens, reply.output_tokens),
                 input_tokens=reply.input_tokens,
@@ -996,8 +998,43 @@ def _told_in_trace(system_prompt: SystemPrompt | None) -> dict[str, Any]:
     return {"instructions": system_prompt.instructions, **tools}
 
 
+# Each judge's verdicts, sent to Langfuse as scores on its call (spec #247 point 16), by its
+# purpose: each score's name, after what it measures, and where its verdict is in the judge's
+# answer. A verdict an answer doesn't hold, as a fix's question on any other clip, is no score.
+_VERDICT_SCORES: dict[str, dict[str, tuple[str, ...]]] = {
+    "check_starting_picture": {"starting_picture_real": ()},
+    "check_fix": {"fix_made": ()},
+    "check_clip_sides": {"clip_sides_real": ()},
+    "check_clip_product": {"clip_matches_product": ()},
+    "check_clip_references": {"references_enough": ()},
+    "check_clip_motion": {
+        "clip_real_motion": ("real_motion",),
+        "clip_no_sudden_change": ("sudden_change",),
+        "clip_does_what_was_ordered": ("does_what_was_ordered",),
+        "clip_owner_change_made": ("owner_change",),
+    },
+}
+# Where a judge's answer says what is wrong, beside its verdict: the score's comment.
+_WHAT_IS_WRONG = ("problem", "fault", "still_wrong", "references_never_show")
+
+
+def _scores(purpose: str, output: Any) -> list[tuple[str, str, str | None]]:
+    """The scores a judge's answer gives, each its name, its verdict and what is wrong."""
+    scores = []
+    for name, path in _VERDICT_SCORES.get(purpose, {}).items():
+        said = output
+        for key in path:
+            said = said.get(key) if isinstance(said, dict) else None
+        if not isinstance(said, dict) or not isinstance(said.get("verdict"), str):
+            continue
+        wrong = next((said[key] for key in _WHAT_IS_WRONG if said.get(key)), None)
+        scores.append((name, said["verdict"], wrong))
+    return scores
+
+
 def _send_to_trace(traced: tracing.Traced, call: ModelCall) -> None:
-    """Send what a model call's record holds to its trace."""
+    """Send what a model call's record holds to its trace, and any verdicts in it as scores
+    on it."""
     made = call.output.get("file") if isinstance(call.output, dict) else None
     measured = {
         "characters": call.characters,
@@ -1021,6 +1058,8 @@ def _send_to_trace(traced: tracing.Traced, call: ModelCall) -> None:
             **{name: value for name, value in measured.items() if value is not None},
         },
     )
+    for name, verdict, wrong in _scores(call.purpose, call.output):
+        traced.score(name, verdict, comment=wrong)
 
 
 def _answered_before(
