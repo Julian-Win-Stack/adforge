@@ -770,7 +770,9 @@ def _carry_on(row: FixPlanScene) -> None:
     if row.action == Action.FIX:
         _carry_on_fix(row, scene, running)
         return
-    if row.action == Action.GO_BACK and row.brought_back is None:
+    # A scene showing the product brings back no picture: once its clip step started, it has
+    # gone back, and going back again would plan the scene again under its new clip.
+    if row.action == Action.GO_BACK and row.brought_back is None and not row.steps.exists():
         if running & {SceneStep.Kind.STARTING_PICTURE, SceneStep.Kind.CLIP}:
             return
         try:

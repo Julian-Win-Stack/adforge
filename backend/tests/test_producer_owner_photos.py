@@ -15,13 +15,14 @@ from typing import Any
 import pytest
 from pytest_django import Settings
 
+from agents import fixing_agent
 from agents.models import SystemNote
 from agents.producer import CLEAN_PICTURE_USD
 from chat.models import Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, ModelRequest, UnusableReply
-from jobs import reference_photos
+from jobs import cut_and_send, library, library_items, reference_photos
 from jobs.clip_judge import (
     ASKS,
     MOTION_FIX_QUESTION,
@@ -30,7 +31,9 @@ from jobs.clip_judge import (
     OWNER_PHOTO_LABEL,
     wording_version,
 )
+from jobs.first_send import SPEED_LINE
 from jobs.models import (
+    AgentFix,
     Fix,
     FixPlan,
     FixPlanScene,
@@ -40,6 +43,7 @@ from jobs.models import (
     Scene,
     SceneStep,
 )
+from jobs.planning import ScenePicture
 
 from . import fixing
 from .agent_tries import agent_films
@@ -454,9 +458,34 @@ def test_a_thing_during_the_clip_is_sent_with_the_clips_pictures_as_its_clean_pi
     assert sent["starting_picture"] is None
     assert clean in sent["example_pictures"]
     assert owner_file(1) not in sent["example_pictures"]
-    assert sent["prompt"] == REWRITE["motion_prompt"]
+    # Code's speed line and labels, then the rewrite's words (spec #210 point 16).
+    assert sent["prompt"].startswith(f"{SPEED_LINE}\nImage 1 is ")
+    assert sent["prompt"].endswith(f"\n{REWRITE['motion_prompt']}")
     assert not ProducedItem.objects.filter(kind="starting_picture", scene__number=2).exists()
     assert in_use() == [("tea", "clip")]
+
+
+def test_the_shop_owners_thing_is_sent_in_its_own_colour_never_recoloured(
+    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
+) -> None:
+    # The tea is its own colour: it isn't the product, so nothing makes it the clip's.
+    fake_model.answer_unscripted(
+        "label_photo",
+        lambda request: {
+            **LABELLED,
+            "colour": "amber" if "the shop owner's tea" in request.handoff.shows else "sage-green",
+        },
+    )
+    photos_sent(fake_model, say, OWNER_TEA)
+    fake_model.respond("rewrite_clip_prompt", REWRITE)
+    fixing.say_yes(fixing.planned(tea_plan_row(), note=TEA_NOTE))
+    steps.run_held()
+
+    (clean,) = clean_pictures()
+    assert clean in handoffs("make_broll_clip")[-1]["example_pictures"]
+    assert handoffs("recolour_picture") == []
+    sent = library.sent_list_of(latest("clip"))
+    assert sent is not None and sent.recolours == []
 
 
 def test_the_clip_prompt_writer_is_told_of_the_shop_owners_thing_and_shown_it(
@@ -553,6 +582,13 @@ def test_a_try_after_the_judge_fails_still_sends_the_shop_owners_thing(
     remade = handoffs("make_broll_clip")[-1]
     assert remade["starting_picture"] is None
     assert clean_pictures()[0] in remade["example_pictures"]
+    # A try sent the agent's own references sends the shop owner's thing after its picks.
+    fix = AgentFix.objects.get()
+    front = cut_and_send.front_of(library_items.originals(fix.step.scene.job))
+    assert front is not None
+    picked = [ScenePicture(number=front.number, for_="in-use")]
+    sent = fixing_agent._references_sent(fix, picked, [], "The tea pours.", "no face")
+    assert clean_pictures()[0] in [picture.file for picture in sent.pictures]
 
 
 # --- Several photos on one note ------------------------------------------------------------------

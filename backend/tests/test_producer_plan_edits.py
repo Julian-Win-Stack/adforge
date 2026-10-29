@@ -24,7 +24,6 @@ from jobs.models import AgentFix, ProducedItem, Scene, SceneStep
 
 from .conftest import NO_CHOICES, HeldSteps, facts_ok, paid_for
 from .test_producer_broll import (
-    BROLL_CHOICE,
     TALKING_CHOICE,
     checked,  # noqa: F401 (a fixture)
     run,
@@ -109,10 +108,11 @@ def test_make_every_scene_broll_marks_the_clips_stale_and_the_new_clips_make_a_n
     # said so; scene 2's clip still stands.
     assert all(scene.shows for scene in Scene.objects.all())
     first, third = ToolCall.objects.filter(tool="edit_scene").order_by("id")
-    every_step = "starting picture, audio, transcript and clip are stale"
+    # A scene showing the product has no starting picture to make again (spec #210 point 19).
+    every_step = "audio, transcript and clip are stale"
     assert f"Scene 1's {every_step}" in first.result
     assert f"Scene 3's {every_step}" in third.result
-    made_again = ["starting_picture", "line_audio", "transcript", "clip"]
+    made_again = ["line_audio", "transcript", "clip"]
     assert [stale.stale_steps(scene) for scene in Scene.objects.order_by("number")] == [
         made_again,
         [],
@@ -123,13 +123,10 @@ def test_make_every_scene_broll_marks_the_clips_stale_and_the_new_clips_make_a_n
     # The scripted producer has them checked and made again, then assembles.
     fake_model.respond("fact_check", facts_ok(1, 3))
     owner_says(fake_model, say, "Go on", ("run_planning_checks", NO_CHOICES))
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE, BROLL_CHOICE)
     owner_says(
         fake_model,
         say,
         "Go on",
-        ("make_starting_picture", {"scene": 1, "note": None}),
-        ("make_starting_picture", {"scene": 3, "note": None}),
         ("make_line_audio", {"scene": 1}),
         ("make_line_audio", {"scene": 3}),
     )

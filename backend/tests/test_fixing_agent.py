@@ -387,8 +387,11 @@ def test_a_line_the_fact_check_fails_is_refused_with_its_reason(
     assert scene_row()[0] == LINE_2
 
 
-# "Showing or hiding the face without a new picture is refused" is deleted: a try has no
-# start picture (spec #210 point 19), so a face is the drawn picture cut-and-send sends.
+def test_showing_the_face_needs_no_new_picture_as_the_clip_has_none(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    [answer] = refused_then_given_up(fake_model, failed_clip, film_again(person_shown="has face"))
+    assert answer.startswith("Try 1.\nChanged: person_shown.")
 
 
 def test_a_result_on_a_scene_that_doesnt_do_a_job_is_refused(

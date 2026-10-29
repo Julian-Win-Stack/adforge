@@ -28,9 +28,18 @@ from .conftest import (
     photo,
     results_of,
 )
+from .test_cut_and_send import RECOLOUR_OK
 from .test_producer_broll import BROLL_CHOICE, DOES_A_JOB, calling, made_ready, run
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+@pytest.fixture(autouse=True)
+def recolours_pass(fake_model: FakeModel) -> None:
+    """The owner part is part of the product, so it is recoloured to the clip's colour like
+    the product's photos (cut_and_send.in_their_own_colour); each recolour passes its check."""
+    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
+
 
 PART = {
     "what": "the lid",

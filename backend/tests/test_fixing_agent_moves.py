@@ -212,7 +212,12 @@ def test_end_result_only_films_the_end_state_and_records_the_move(
             calls=[
                 (
                     "end_result_only",
-                    {**film_again()[1], "root_cause": CAUSE, "shows": FULL, "video_prompt": FULL},
+                    {
+                        **film_again()[1],
+                        "root_cause": CAUSE,
+                        "shows": FULL,
+                        "video_prompt": FULL,
+                    },
                 )
             ]
         ),
@@ -224,8 +229,8 @@ def test_end_result_only_films_the_end_state_and_records_the_move(
     assert made.clip is not None and outcome.passed == made.clip
     assert (outcome.tries[0].tool, made.root_cause) == ("end_result_only", CAUSE)
     assert scene_row()[1] == FULL
-    # No start picture: the clip is made from what it is sent (spec #210 point 19).
-    assert made.picture is None and made.clip.picture is None
+    # No start picture is drawn (spec #210 point 19): the clip is made from its sent list.
+    assert made.picture is None and made.clip.sent is not None
     # Code adds its fixed line before the agent's own words, as the clip was sent them.
     assert f"{fixing_agent.END_RESULT_ONLY} {FULL}" in made.video_prompt
     assert f"{fixing_agent.END_RESULT_ONLY} {FULL}" in made.step.motion_prompt
