@@ -34,6 +34,7 @@ from adforge.retry import OutsideServiceDown, with_retries
 from . import catalog
 from .models import ModelCall, SystemPrompt
 from .types import (
+    EDITING_FOR,
     AgentProvider,
     BlockedBySafetyFilter,
     BrollClipHandoff,
@@ -571,7 +572,13 @@ def edit_picture(*, job: Job | None, purpose: str, prompt: str, pictures: Sequen
 
     def edit(provider: PictureProvider, on_azure: bool) -> Picture:
         given = [file_store.read(key) for key in handoff.pictures]
-        return provider.edit(model=model, prompt=handoff.prompt, pictures=given, on_azure=on_azure)
+        editing = EDITING_FOR.set(purpose)
+        try:
+            return provider.edit(
+                model=model, prompt=handoff.prompt, pictures=given, on_azure=on_azure
+            )
+        finally:
+            EDITING_FOR.reset(editing)
 
     return _picture_made(job, purpose, model, handoff, edit)
 

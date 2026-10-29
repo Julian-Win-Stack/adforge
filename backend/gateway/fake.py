@@ -8,7 +8,9 @@ Pictures, voices and transcripts need no script: the fake draws a plain portrait
 plain picture of its own from other pictures, designs a numbered voice, speaks at
 `words_per_second` with `pause_seconds` of silence before and after, and hears exactly the
 words it spoke. Script an error for their purpose
-to make one fail, or script a transcript for "transcribe_line" to have something else heard.
+to make one fail (a picture made from other pictures also fails on one scripted for
+"make_starting_picture", whatever its purpose), or script a transcript for
+"transcribe_line" to have something else heard.
 
 Music needs no script either: each piece asked for is a low hum as long as was asked, with
 its number written into it so each is its own. Script an error for "make_music" to make one
@@ -40,6 +42,7 @@ from django.conf import settings
 from pydantic import BaseModel, ValidationError
 
 from .types import (
+    EDITING_FOR,
     ClipStatus,
     LoadedPiece,
     ModelReply,
@@ -214,7 +217,12 @@ class FakeModel:
         self, *, model: str, prompt: str, pictures: Sequence[bytes], on_azure: bool = False
     ) -> Picture:
         self.pictures_drawn_on.append("azure" if on_azure else "openai")
-        self._fail_if_scripted("make_starting_picture")
+        # An error scripted for the edit's own purpose, else, as older tests script any
+        # edit's, for the starting picture's.
+        purpose = EDITING_FOR.get()
+        self._fail_if_scripted(
+            purpose if purpose is not None and self._scripts[purpose] else "make_starting_picture"
+        )
         self.edits += 1
         made = io.BytesIO()
         # Each picture made is its own, as a real model's would be.

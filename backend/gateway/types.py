@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Protocol, Self
 
@@ -254,6 +255,11 @@ class AgentProvider(Protocol):
 
 class PortraitHandoff(Handoff):
     prompt: str = Field(min_length=1)
+
+
+# The purpose a picture is being made from other pictures for, while the provider makes it:
+# what a stand-in provider for tests knows the picture by.
+EDITING_FOR: ContextVar[str | None] = ContextVar("editing_for", default=None)
 
 
 class PictureEditHandoff(Handoff):
