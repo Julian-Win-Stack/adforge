@@ -93,7 +93,7 @@ def test_a_starting_picture_is_made_in_the_background_and_the_producer_tells_the
         "kind": "step_finished",
         "text": "Background step finished: scene 1's starting picture is ready (version 1), "
         f"and is shown to the shop owner in the chat. Photo 1 was used: {CHOICE['photo_reason']} "
-        "It cost $0.0155. Tell the shop owner.",
+        "It cost $0.0125. Tell the shop owner.",
     }
     shown, told = api.get(f"/api/sessions/{session_id}/messages/").json()[-2:]
     # Shown with no words, carrying its scene number.
@@ -582,12 +582,12 @@ def test_a_starting_picture_already_made_is_handed_back_and_charges_nothing(
     assert paid_for() == paid
     assert steps.held == []
     assert SceneStep.objects.count() == 1
-    # The choice, 1,000 tokens in at $4/M and 100 out at $20/M, and the picture, 500 words in
+    # The choice, 1,000 tokens in at $2/M and 100 out at $10/M, and the picture, 500 words in
     # at $5/M, 500 pictures in at $8/M and 100 out at $30/M.
     assert results_of("make_starting_picture")[-1] == (
         "Scene 1's starting picture was already made for this line with no note (version 1), "
         "and the shop owner has seen it, so nothing was made or paid for again. Making it cost "
-        f"$0.0155. Photo 1 was used: {CHOICE['photo_reason']}"
+        f"$0.0125. Photo 1 was used: {CHOICE['photo_reason']}"
     )
 
 

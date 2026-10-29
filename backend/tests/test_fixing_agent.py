@@ -1084,8 +1084,8 @@ def test_the_ad_snapshot_counts_a_fixed_scenes_money_once(new_line_passes: Outco
     # its try's steps, which share the try's tool call.
     (scene_2,) = [line for line in snapshot.splitlines() if line.startswith("Scene 2:")]
     # Scene 2's steps' calls (its clip made from its sent list: spec #210 point 19) come to
-    # $0.855075, and the agent's turn to $0.003.
-    assert scene_2.endswith("It cost $0.858075.")
+    # $0.849075, and the agent's turn to $0.003.
+    assert scene_2.endswith("It cost $0.852075.")
 
 
 def test_a_picture_the_scene_excludes_is_refused_and_no_try_is_spent(

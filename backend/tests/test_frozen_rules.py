@@ -713,6 +713,35 @@ def test_the_fixing_agent_runs_on_the_picture_judges_model() -> None:
     assert MODEL_FOR_PURPOSE["fix_scene"] == "gpt-6.1-sol"
 
 
+# Julian, Oct 29 2026 19:12: every gpt-5.6-sol job moves to gpt-6.1-sol, with no comparison
+# test.
+MOVED_TO_6_1_SOL = (
+    "produce",
+    "look",
+    "pick_photos",
+    "note_face",
+    "label_photo",
+    "plan_ad",
+    "rewrite_line",
+    "shorten_script",
+    "shorten_line",
+    "lengthen_line",
+    "choose_starting_picture",
+    "rewrite_clip_prompt",
+    "write_first_send_prompt",
+    "plan_before_picture",
+)
+
+
+@pytest.mark.parametrize("purpose", MOVED_TO_6_1_SOL)
+def test_each_job_that_was_on_gpt_5_6_sol_runs_on_gpt_6_1_sol(purpose: str) -> None:
+    assert MODEL_FOR_PURPOSE[purpose] == "gpt-6.1-sol"
+
+
+def test_no_job_runs_on_gpt_5_6_sol() -> None:
+    assert "gpt-5.6-sol" not in MODEL_FOR_PURPOSE.values()
+
+
 # The first-send prompt (#210 point 16, decided; Julian's words in the decision record). It
 # retires the frozen opener's "The camera stays still." and "A n-second video at real-time
 # speed." (A1, now the speed line), the same-side sentence (A18) and reference mode's "Image 1
