@@ -123,13 +123,9 @@ def check_and_propose(
         if row.cant or row.action == Action.NO_CHANGE:
             row.estimate_usd = row.estimate_up_to_usd = Decimal(0)
             continue
-        if row.action == Action.NEW_CLIP and any(photo["in_picture"] for photo in row.photos):
-            row.action = Action.NEW_PICTURE
-            row.new_movement = True
-        if row.action == Action.NEW_LINE and any(photo["in_picture"] for photo in row.photos):
-            # A new line keeps its starting picture, but a photo of a thing in it changes how
-            # it looks: a new picture, with the new line.
-            row.action = Action.NEW_PICTURE
+        # A photo of the shop owner's is used only in a scene that shows the product, which has
+        # no starting picture: every photo is sent with its clip (spec #210 point 19), so the
+        # row's clip or line stays as asked.
         if row.action == Action.GO_BACK:
             assert row.go_back_to is not None, "a go back names its version"
             row.remakes_clip = not work.go_back_is_free(row.scene, row.go_back_to)
@@ -215,11 +211,14 @@ def _rule_cant(row: FixPlanScene) -> str:
         if row.go_back_to is None or not 1 <= row.go_back_to <= count:
             has = "only version 1" if count == 1 else f"versions 1 to {count}"
             return f"Scene {number} has {has}, so there is no version {row.go_back_to}."
-        if work.versions(scene)[row.go_back_to - 1].picture is None and not (
-            work.go_back_is_free(scene, row.go_back_to)
+        if (
+            work.versions(scene)[row.go_back_to - 1].picture is None
+            and not scene.shows
+            and not work.go_back_is_free(scene, row.go_back_to)
         ):
-            # A B-roll scene made from example pictures: its clip no longer says the line,
-            # and there is no picture to make a new one from (work.NothingToBringBack).
+            # A talking version with no picture: its clip no longer says the line, and there
+            # is no picture to make a new one from (work.NothingToBringBack). A scene that
+            # shows the product makes its new clip from the version's sent list.
             return (
                 f"Scene {number}'s version {row.go_back_to} can't be brought back: its clip no "
                 "longer says the scene's line, and it has no starting picture to make a new "
@@ -242,8 +241,7 @@ def _photo_cant(row: FixPlanScene) -> str:
             f"Scene {number} was planned before scenes had their B-roll labels, so your photos "
             "can't be used in it."
         )
-    # A new line's clip takes a photo of a thing only during it; with one of a thing in its
-    # picture, the row is made a new picture after this.
+    # A new line's or a new clip's clip is sent the photo, whatever it shows.
     if row.action == Action.GO_BACK:
         return (
             f"Scene {number}'s change is going back to a version, and a photo changes how "
@@ -293,8 +291,11 @@ def _row_estimate(row: FixPlanScene, counted: set[tuple[str, str]]) -> Estimate:
         return _quantized(_clip_estimate(scene, _audio_seconds(scene), from_note=False))
     elif row.line:
         # A new picture asked for with a new line: both, then the clip. A new line keeps the
-        # picture, or draws one for a scene that has none.
-        new_picture = row.action == Action.NEW_PICTURE or _shown_picture(scene) is None
+        # picture, or draws one for a talking scene that has none; a scene that shows the
+        # product never has one (spec #210 point 19).
+        new_picture = row.action == Action.NEW_PICTURE or (
+            not scene.shows and _shown_picture(scene) is None
+        )
         estimate = _quantized(_line_estimate(scene, f'"{row.line}"', new_picture=new_picture))
     else:
         estimate = _estimate(scene, _REDO[Action(row.action)], row.change)
@@ -795,10 +796,11 @@ def _carry_on(row: FixPlanScene) -> None:
         # the scene's clip, made for the scene as the agent left it.
         _landed(row)
         return
-    picture = _picture(row, scene, running)
+    from_sent_list = _from_its_sent_list(row, scene)
+    picture = None if from_sent_list else _picture(row, scene, running)
     if row.line and not _line_heard(row, scene, running):
         return
-    if picture is None:
+    if picture is None and not from_sent_list:
         return
     clips = row.steps.filter(
         kind=SceneStep.Kind.CLIP,
@@ -806,7 +808,7 @@ def _carry_on(row: FixPlanScene) -> None:
         produced__isnull=False,
         **SceneStep.made_for(scene),
     )
-    if row.action == Action.NEW_PICTURE:
+    if picture is not None and row.action == Action.NEW_PICTURE:
         clips = clips.filter(picture_step=picture.step)
     if clips.exists():
         _landed(row)
@@ -824,9 +826,16 @@ def _carry_on(row: FixPlanScene) -> None:
         note=row.change if row.action == Action.NEW_CLIP else "",
         made_from=audio,
         picture=picture,
-        picture_step=picture.step,
+        picture_step=picture.step if picture is not None else None,
         motion_prompt=_kept_motion(row, scene, picture),
     )
+
+
+def _from_its_sent_list(row: FixPlanScene, scene: Scene) -> bool:
+    """Whether the row's clip is made from the scene's sent list, with no starting picture:
+    a new clip, a new line's clip or a go back's in a scene that shows the product (spec #210
+    point 19). A new picture for such a scene still draws one (#242)."""
+    return bool(scene.shows) and row.action in (Action.NEW_CLIP, Action.NEW_LINE, Action.GO_BACK)
 
 
 def _carry_on_fix(row: FixPlanScene, scene: Scene, running: set[str]) -> None:
@@ -846,10 +855,9 @@ def _carry_on_fix(row: FixPlanScene, scene: Scene, running: set[str]) -> None:
         return
     if steps.exists() or running:
         return
+    # A clip made from its sent list has no starting picture (spec #210 point 19); one made
+    # before has the one the shop owner sees.
     picture = _shown_picture(scene)
-    if picture is None:
-        _failed(row, f"Scene {scene.number} has no starting picture for the fixing agent.")
-        return
     audio = _audio(scene)
     if audio is None or not _heard(audio):
         _failed(row, f"Scene {scene.number}'s clip couldn't be made: its line has no audio.")
@@ -863,7 +871,7 @@ def _carry_on_fix(row: FixPlanScene, scene: Scene, running: set[str]) -> None:
         note=row.change,
         made_from=audio,
         picture=picture,
-        picture_step=picture.step,
+        picture_step=picture.step if picture is not None else None,
         # Door 2's input goes on the step, so the fixing agent never reads the Fix row.
         owner_note="\n".join(note["text"] for note in fix.notes) or fix.fix,
         fix_goal=fix.fix,
@@ -901,7 +909,7 @@ def agent_gave_up(step: SceneStep, reason: str) -> None:
     carry_on_scene(scene, but=row)
 
 
-def _kept_motion(row: FixPlanScene, scene: Scene, picture: ProducedItem) -> str:
+def _kept_motion(row: FixPlanScene, scene: Scene, picture: ProducedItem | None) -> str:
     """For a new picture's or a new line's clip in a scene that shows the product, how the
     clip it replaces moved: only a new clip chooses a new movement (live ad fix 1; design
     thread, 05:15 Oct 17), a new clip made a new picture for its photo too. Blank otherwise,

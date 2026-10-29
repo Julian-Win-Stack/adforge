@@ -459,6 +459,21 @@ NOTHING_WATCHED: dict[str, Any] = {
 }
 
 
+# The first-send writer's sentence, when a test doesn't say.
+FIRST_SEND_SENTENCE = "A hand uses the product in the room until the job is done."
+
+
+def first_send_written(request: ModelRequest[Any]) -> dict[str, Any]:
+    """What the first-send writer answers when a test doesn't say: each picture's label as its
+    line's words, and FIRST_SEND_SENTENCE."""
+    handoff: Any = request.handoff
+    labels = [
+        f"{label[:1].lower()}{label[1:]}".rstrip(". ")
+        for label in (picture.label for picture in handoff.pictures)
+    ]
+    return {"labels": labels, "sentence": FIRST_SEND_SENTENCE}
+
+
 @pytest.fixture
 def fake_model() -> Iterator[FakeModel]:
     fake = FakeModel()
@@ -477,6 +492,8 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("check_clip_motion", motion_answer(CLIP_MOTION_OK))
     fake.answer_unscripted("check_clip_references", lambda _: REFERENCES_ENOUGH)
     fake.answer_unscripted("check_clip_product", lambda _: CLIP_PRODUCT_OK)
+    # Each B-roll clip's first-send prompt (#224), when a test doesn't say.
+    fake.answer_unscripted("write_first_send_prompt", first_send_written)
     # Once the ad has a clip, every message goes to the decider first: unless a test scripts
     # it, it passes each one on to the producer.
     fake.answer_unscripted("decide_fixes", lambda _: not_a_fix())
@@ -729,6 +746,8 @@ def results_of(tool: str) -> list[str]:
 
 # What judging one B-roll clip pays for (jobs/clip_judge.py), as paid_for lists it.
 JUDGED_CLIP = ["check_clip_sides", "check_clip_motion"]
+# The clip judge's asks of a clip with a sent list, as paid_for lists them (#228).
+SENT_LIST_JUDGED = ["check_clip_references", "check_clip_product", "check_clip_motion"]
 # The order paid_for lists a clip judge's asks in: a clip with a sent list asks its first
 # question before its checks (#228).
 _JUDGE_ORDER = ["check_clip_references", "check_clip_product", *JUDGED_CLIP]

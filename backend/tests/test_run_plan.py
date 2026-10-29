@@ -202,14 +202,15 @@ def test_the_same_photo_already_in_use_cant_change_anything() -> None:
     )
 
 
-def test_a_new_clip_with_a_photo_of_a_thing_in_the_picture_is_a_new_picture() -> None:
+def test_a_new_clip_with_a_photo_of_a_thing_in_the_picture_stays_a_new_clip() -> None:
+    # Spec #210 point 19: the scene has no starting picture; the photo is sent with its clip.
     photo = owner_photo(1, "black mug", in_picture=True)
 
     plan = propose(row(2, "new_clip", change="A black mug.", photos=[photo]))
 
     two = rows_of(plan)[2]
-    assert (two.action, two.cant) == ("new_picture", "")
-    assert two.estimate_usd == _estimate(scene(2), Fix.Redo.PICTURE, "").about + (Decimal("0.10"))
+    assert (two.action, two.cant) == ("new_clip", "")
+    assert two.estimate_usd == _estimate(scene(2), Fix.Redo.CLIP, "").about + (Decimal("0.10"))
 
 
 def amounts(estimate: Estimate) -> tuple[Decimal, Decimal]:
@@ -409,14 +410,14 @@ def test_a_new_line_keeps_the_scenes_starting_picture(
     assert producer_turns() == turns
 
 
-def test_a_new_line_in_a_broll_scene_keeps_its_picture_and_how_its_clip_moves(
+def test_a_new_line_in_a_broll_scene_keeps_how_its_clip_moves(
     fake_model: FakeModel, held: HeldSteps
 ) -> None:
     # The clip the shop owner has moves as their earlier note asked.
     say_yes(propose(row(2, "new_clip", change=TURN)))
     fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
     held.run_held()
-    kept, moved = picture(2), work.motion_of(clip(2))
+    moved = work.motion_of(clip(2))
     assert moved == TURN_REWRITE["motion_prompt"]
 
     say_yes(propose(row(2, "new_line", change="Say it warmer.", line="A warm mug for cold days.")))
@@ -424,39 +425,33 @@ def test_a_new_line_in_a_broll_scene_keeps_its_picture_and_how_its_clip_moves(
 
     made = clip(2)
     assert made.step is not None and made.step.line == "A warm mug for cold days."
-    assert made.picture == kept and made.step.picture_step == kept.step
     assert work.motion_of(made) == moved
+    # Spec #210 point 19: made from its sent list, with no starting picture.
+    assert made.picture is None and made.sent is not None
     assert not SceneStep.objects.filter(
         scene__number=2, kind="starting_picture", plan_scene__isnull=False
     ).exists()
     assert status(2) == "finished"
 
 
-def test_a_new_line_on_a_scene_with_no_starting_picture_draws_one(
+def test_a_new_line_on_a_scene_showing_the_product_draws_no_picture_nor_pays_for_one(
     fake_model: FakeModel, held: HeldSteps
 ) -> None:
-    # A B-roll scene made from example pictures, before every B-roll scene had a picture.
-    ProducedItem.objects.filter(scene__number=2, kind=ProducedItem.Kind.CLIP).update(picture=None)
-    SceneStep.objects.filter(scene__number=2, kind=SceneStep.Kind.STARTING_PICTURE).update(
-        status=SceneStep.Status.STOPPED
-    )
+    # Spec #210 point 19: a scene that shows the product never has a starting picture.
     line = "A warm mug for cold days."
     plan = propose(row(2, "new_line", change="Say it warmer.", line=line))
-    # The picture it draws is in its estimate.
     assert rows_of(plan)[2].estimate_usd == _line_estimate(
-        scene(2), f'"{line}"', new_picture=True
+        scene(2), f'"{line}"', new_picture=False
     ).about.quantize(Decimal("0.000001"))
 
     say_yes(plan)
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
     held.run_held()
 
-    drawn = SceneStep.objects.get(
+    assert not SceneStep.objects.filter(
         scene__number=2, kind="starting_picture", plan_scene__isnull=False
-    )
-    assert (drawn.line, drawn.note) == (line, "")
+    ).exists()
     made = clip(2)
-    assert made.picture is not None and made.picture.step == drawn
+    assert made.picture is None and made.step is not None and made.step.line == line
     assert status(2) == "finished"
 
 
@@ -749,26 +744,24 @@ def test_a_second_plan_on_a_scene_runs_once_the_first_plans_step_is_done(
     assert rows_of(second)[2].steps.filter(kind="clip", status="finished").count() == 1
 
 
-def test_a_thing_in_the_picture_and_more_during_the_action_is_drawn_in_and_sent_to_the_clip(
+def test_a_thing_in_the_picture_and_more_during_the_action_is_sent_to_the_clip(
     held: HeldSteps,
 ) -> None:
     photo = owner_photo(1, "black mug", in_picture=True, during_action=True)
     plan = propose(row(2, "new_clip", change="A black mug.", photos=[photo]))
-    assert rows_of(plan)[2].action == "new_picture"
+    assert rows_of(plan)[2].action == "new_clip"
 
     say_yes(plan)
 
-    used = ReferencePhoto.objects.filter(scene__number=2).order_by("use")
-    assert [(each.file, each.thing, each.use) for each in used] == [
-        ("owner/1.jpg", "black mug", "clip"),
-        ("owner/1.jpg", "black mug", "picture"),
-    ]
+    used = ReferencePhoto.objects.filter(scene__number=2)
+    assert {(each.file, each.thing) for each in used} == {("owner/1.jpg", "black mug")}
     step = SceneStep.objects.get(pk=held.held[0])
-    assert step.kind == "starting_picture"
+    assert step.kind == "clip"
     assert set(step.reference_photos.all()) == set(used)
 
 
-def test_a_photo_of_a_thing_in_the_picture_on_a_new_line_makes_a_new_picture_too() -> None:
+def test_a_photo_of_a_thing_in_the_picture_on_a_new_line_keeps_it_a_new_line() -> None:
+    # Spec #210 point 19: the scene has no starting picture; the photo is sent with its clip.
     plan = propose(
         row(
             2,
@@ -780,10 +773,8 @@ def test_a_photo_of_a_thing_in_the_picture_on_a_new_line_makes_a_new_picture_too
     )
 
     two = rows_of(plan)[2]
-    assert (two.action, two.line, two.cant) == ("new_picture", "A warm mug.", "")
-    assert two.estimate_usd == _line_estimate(
-        scene(2), '"A warm mug."', new_picture=True
-    ).about + Decimal("0.10")
+    assert (two.action, two.line, two.cant) == ("new_line", "A warm mug.", "")
+    assert two.estimate_usd == _line_estimate(scene(2), '"A warm mug."').about + Decimal("0.10")
 
 
 def test_a_photo_of_a_thing_only_during_the_clip_on_a_new_line_keeps_the_picture() -> None:
@@ -841,20 +832,31 @@ def a_new_voice() -> None:
     )
 
 
-def test_going_back_to_a_version_with_no_picture_whose_clip_is_out_of_date_cant_be_made() -> None:
-    # A B-roll scene made from example pictures has no starting picture.
-    ProducedItem.objects.filter(scene__number=2, kind=ProducedItem.Kind.CLIP).update(picture=None)
-    SceneStep.objects.filter(scene__number=2, kind=SceneStep.Kind.STARTING_PICTURE).update(
+def test_going_back_to_a_talking_version_with_no_picture_and_an_old_clip_cant_be_made() -> None:
+    ProducedItem.objects.filter(scene__number=3, kind=ProducedItem.Kind.CLIP).update(picture=None)
+    SceneStep.objects.filter(scene__number=3, kind=SceneStep.Kind.STARTING_PICTURE).update(
         status=SceneStep.Status.STOPPED
     )
     a_new_voice()
 
-    plan = propose(row(2, "go_back", change="The first one.", go_back_to=1))
+    plan = propose(row(3, "go_back", change="The first one.", go_back_to=1))
 
-    assert rows_of(plan)[2].cant == (
-        "Scene 2's version 1 can't be brought back: its clip no longer says the scene's line, "
+    assert rows_of(plan)[3].cant == (
+        "Scene 3's version 1 can't be brought back: its clip no longer says the scene's line, "
         "and it has no starting picture to make a new clip from."
     )
+
+
+def test_going_back_to_an_out_of_date_version_of_a_broll_scene_remakes_its_clip() -> None:
+    # Spec #210 point 19: it has no starting picture; its new clip is made from its sent list.
+    two = scene(2)
+    two.change_line("A warm mug for cold days.")
+    two.save(update_fields=["line", "shortened_from", "status"])
+
+    plan = propose(row(2, "go_back", change="The first one.", go_back_to=1))
+
+    assert rows_of(plan)[2].cant == ""
+    assert rows_of(plan)[2].remakes_clip
 
 
 def test_a_go_back_planned_for_nothing_isnt_paid_for_once_it_would_cost(

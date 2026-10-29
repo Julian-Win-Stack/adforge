@@ -151,20 +151,6 @@ def test_a_try_whose_clip_has_a_sent_list_is_shown_by_its_references_then_its_fr
     ] == [[shown.key for shown in given.pictures]] * 2
 
 
-def test_a_try_whose_clip_has_no_sent_list_is_shown_by_its_start_picture(
-    fake_model: FakeModel, failed_clip: SceneStep
-) -> None:
-    given, look = looks_at_try_0(fake_model, failed_clip)
-
-    for labels in (
-        [picture.label for picture in given.pictures],
-        [picture["label"] for picture in look.pictures],
-    ):
-        assert labels[0] == "Try 0, start picture"
-        assert labels[1:] and all(label.startswith("Try 0, clip, ") for label in labels[1:])
-    assert look.result.startswith("Try 0. ")
-
-
 # --- A try the judge passes ------------------------------------------------------------------
 
 
@@ -1279,7 +1265,9 @@ def test_the_ad_snapshot_counts_a_fixed_scenes_money_once(new_line_passes: Outco
     # Every model call of the scene's work once: its steps', the fixing agent's turns and
     # its try's steps, which share the try's tool call.
     (scene_2,) = [line for line in snapshot.splitlines() if line.startswith("Scene 2:")]
-    assert scene_2.endswith("It cost $0.867575.")
+    # Scene 2's steps' calls (its clip made from its sent list: spec #210 point 19) come to
+    # $0.855075, and the agent's turn to $0.003.
+    assert scene_2.endswith("It cost $0.858075.")
 
 
 def test_a_picture_the_scene_excludes_is_refused_and_no_try_is_spent(

@@ -18,19 +18,17 @@ from gateway.fake import FakeModel
 from jobs import work
 from jobs.models import AgentFix, ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
-from jobs.scenes import SAME_SIDE
 
 from .agent_tries import agent_films, agent_stops
 from .conftest import CLIP_MOTION_OK, HeldSteps, paid_for
 from .test_producer_broll import (
-    IMAGE_1,
-    MOTION,
     calling,
     checked,  # noqa: F401 (a fixture)
     clips_asked,
     instructed,  # noqa: F401 (a fixture)
     made_ready,
     run,
+    sent_prompt,
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -200,12 +198,9 @@ def test_every_try_is_a_version_and_the_one_the_judge_passed_is_the_scenes_clip(
         try_1,
         try_2,
     ]
-    # Each try filmed as the agent asked, from the same picture.
-    assert clips_asked("prompt") == [
-        f"{IMAGE_1}A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} "
-        f"{prompt}"
-        for prompt in (MOTION, REMADE, REMADE_AGAIN)
-    ]
+    # Each try filmed as the agent asked, from the same sent list (spec #210: code's speed
+    # line and labels, then the agent's words; no starting picture).
+    assert clips_asked("prompt") == [sent_prompt(), sent_prompt(REMADE), sent_prompt(REMADE_AGAIN)]
     assert AgentFix.objects.get().passed == try_2
 
 
@@ -323,11 +318,12 @@ def test_a_clip_is_estimated_up_to_every_try_the_agent_may_film(
 
     estimate = producer._clip_estimate(scene, 5.0, from_note=False)
 
-    # A 5-second clip at Boreal's $0.0792 a second is $0.396, and the judge's 2 asks at the
-    # $0.003 recorded are $0.006. Each try: a new picture at what scene 2's last one cost,
-    # $0.0215, that clip and judge, and the agent's 3 turns at the $0.07 fallback (none of
+    # A 5-second clip at Boreal's $0.0792 a second is $0.396, and the judge's 3 asks (its
+    # first question, then PRODUCT and MOTION) at the $0.003 recorded are $0.009. Each try:
+    # that clip and judge, no new picture (scene 2 shows the product, so its clips are made
+    # from its sent list, spec #210), and the agent's 3 turns at the $0.07 fallback (none of
     # its turns is recorded: the agent is faked here).
-    assert estimate == (Decimal("0.402"), Decimal("0.402") + 6 * Decimal("0.6335"))
+    assert estimate == (Decimal("0.405"), Decimal("0.405") + 6 * Decimal("0.615"))
 
 
 # --- Jobs made before the fixing agent: the old auto-fix's remakes -------------------------

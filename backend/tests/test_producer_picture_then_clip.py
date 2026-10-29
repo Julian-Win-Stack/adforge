@@ -7,6 +7,7 @@ gateway, but the clips are real tiny videos and ffmpeg runs for real."""
 
 from collections.abc import Callable
 from decimal import Decimal
+from typing import Any
 
 import pytest
 from django.db.models.signals import post_save
@@ -27,10 +28,38 @@ from .test_producer_broll import (
     checked,  # noqa: F401 (a fixture)
     picture_of,
 )
-from .test_producer_broll_picture_check import FIXED_CHOICE, FUSED_HANDLE, impossible
 from .test_producer_restarts import WorkerStopped, the_worker_stops
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("checked")]
+
+
+# A judge's answer and fix, as the B-roll picture check gave them (its tests are gone: a
+# B-roll scene has no starting picture, spec #210 point 19).
+def impossible(problem: str) -> dict[str, Any]:
+    """The judge's answer for a picture with an object that can't exist."""
+    return {
+        "objects": [
+            {
+                "name": "mug",
+                "side_facing_camera": "the front",
+                "parts_seen": "a handle on each side, one fused into the rim",
+                "a_real_one_could_look_like_this": False,
+                "why": "A handle can't grow out of the rim.",
+            }
+        ],
+        "verdict": "fail",
+        "problem": problem,
+    }
+
+
+FUSED_HANDLE = "The mug's handle is fused into its rim; a real handle joins the side."
+
+# The prompts written again to fix it.
+FIXED_CHOICE: dict[str, Any] = {
+    **BROLL_CHOICE,
+    "prompt": "The mug upright on a workbench, its handle rising straight from its side.",
+}
+
 
 HIGHER = "Hold it higher."
 
@@ -185,54 +214,55 @@ def test_a_picture_that_keeps_failing_its_check_leaves_the_scene_finished(
     assert clip(2) == old
 
 
+# Scene 3 talks: a scene showing the product has no starting picture (spec #210 point 19).
 def test_two_new_pictures_in_a_row_each_get_their_clip_and_the_scene_ends_on_the_latest(
     fake_model: FakeModel, steps: HeldSteps, assembled: ProducedItem
 ) -> None:
-    a_new_picture_said_yes_to(fake_model, 2, HIGHER)
+    a_new_picture_said_yes_to(fake_model, 3, HIGHER)
     # The second is said yes to while the first picture is still being made.
-    a_new_picture_said_yes_to(fake_model, 2, "Pour the tea slower.")
+    a_new_picture_said_yes_to(fake_model, 3, "Pour the tea slower.")
     assert held_kinds(steps) == ["starting_picture"]
 
     steps.run_next()
 
     # The first picture's clip is made before the second picture is started.
     assert held_kinds(steps) == ["clip"]
-    assert SceneStep.objects.get(pk=steps.held[0]).picture == picture(2)
+    assert SceneStep.objects.get(pk=steps.held[0]).picture == picture(3)
     steps.run_held()
 
-    assert picture(2).version == 3
-    assert clip(2).picture == picture(2)
-    assert status(2) == "finished"
+    assert picture(3).version == 3
+    assert clip(3).picture == picture(3)
+    assert status(3) == "finished"
 
 
 def test_no_new_picture_is_started_while_the_scenes_clip_is_being_made(
     fake_model: FakeModel, steps: HeldSteps, assembled: ProducedItem
 ) -> None:
     # So a clip of an older picture can never finish the scene after a newer picture.
-    a_new_picture_said_yes_to(fake_model, 2)
+    a_new_picture_said_yes_to(fake_model, 3)
     steps.run_next()
     assert held_kinds(steps) == ["clip"]
 
-    a_new_picture_said_yes_to(fake_model, 2, "Pour slower.")
+    a_new_picture_said_yes_to(fake_model, 3, "Pour slower.")
 
     assert held_kinds(steps) == ["clip"]
-    assert picture(2).version == 2
+    assert picture(3).version == 2
     steps.run_next()
-    assert status(2) == "finished"
-    assert clip(2).picture == picture(2)
-    assert picture(2).version == 2
+    assert status(3) == "finished"
+    assert clip(3).picture == picture(3)
+    assert picture(3).version == 2
     # Once the clip is made, the newer picture is started, and its own clip after it.
     assert held_kinds(steps) == ["starting_picture"]
     steps.run_held()
-    assert picture(2).version == 3
-    assert clip(2).picture == picture(2)
-    assert status(2) == "finished"
+    assert picture(3).version == 3
+    assert clip(3).picture == picture(3)
+    assert status(3) == "finished"
 
 
 def test_a_worker_stopping_as_the_picture_is_kept_leaves_the_scene_finished(
     fake_model: FakeModel, steps: HeldSteps, assembled: ProducedItem
 ) -> None:
-    a_new_picture_said_yes_to(fake_model, 2)
+    a_new_picture_said_yes_to(fake_model, 3)
 
     with (
         the_worker_stops(post_save, ProducedItem, when=lambda item: item.version == 2),
@@ -241,8 +271,8 @@ def test_a_worker_stopping_as_the_picture_is_kept_leaves_the_scene_finished(
         steps.run_next()
     tasks.carry_on_after_the_worker_starts()
 
-    assert picture_step(2).status == "failed"
-    assert status(2) == "finished"
+    assert picture_step(3).status == "failed"
+    assert status(3) == "finished"
     assert steps.held == []
 
 
@@ -284,10 +314,10 @@ def test_a_scene_already_planned_again_isnt_said_to_be_no_longer_finished(
 def test_a_scenes_first_picture_leaves_it_planned_and_says_nothing_of_unfinishing(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    picture_of(fake_model, steps, say, 2)
+    picture_of(fake_model, steps, say, 3)
 
-    assert status(2) == "planned"
-    assert "no longer finished" not in picture_step(2).result
+    assert status(3) == "planned"
+    assert "no longer finished" not in picture_step(3).result
 
 
 # --- What each step cost ------------------------------------------------------------------------

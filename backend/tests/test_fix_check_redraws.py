@@ -5,8 +5,6 @@ its own fix check, against the picture the shop owner complained about. The scen
 are faked at the gateway, the clips are real tiny videos and ffmpeg runs for real; the
 producer's model is never scripted."""
 
-from typing import Any
-
 import pytest
 
 from agents import run_plan, tasks
@@ -15,9 +13,8 @@ from gateway.models import ModelCall
 from jobs import fix_check
 from jobs.models import FixCheck, FixPlanScene, SceneStep
 
-from .conftest import PICTURE_OK, HeldSteps, producer_turns
+from .conftest import HeldSteps, producer_turns
 from .test_fix_check import HANDLE_HIDDEN, not_made
-from .test_fix_loop import HANDLE_SHOWING
 from .test_producer_broll import TALKING_CHOICE, checked  # noqa: F401 (a fixture)
 from .test_producer_picture_then_clip import (
     ads,
@@ -132,45 +129,9 @@ def test_a_picture_failing_its_fix_check_every_try_asks_the_shop_owner_once(
     assert len(ads()) == ads_before + 1
 
 
-def test_a_broll_redraw_is_told_the_fix_checks_reason_and_shown_the_picture_that_failed(
-    fake_model: FakeModel, held: HeldSteps
-) -> None:
-    plan = propose(row(2, "new_picture", change="The mug's handle faces the camera."))
-    say_yes(plan)
-    fake_model.respond("choose_broll_picture", HANDLE_SHOWING, HANDLE_SHOWING)
-    fails(fake_model, 1, HANDLE_HIDDEN)
-
-    held.run_held()
-
-    first, again = picture_steps(rows_of(plan)[2])
-    failed_picture = first.produced.get()
-    writes = asked("choose_broll_picture")
-    assert "redo" not in writes[-2].handoff
-    redo: dict[str, Any] = writes[-1].handoff["redo"]
-    assert redo["problems"] == [HANDLE_HIDDEN]
-    assert redo["picture_prompt"] == first.prompt
-    assert redo["video_prompt"] == first.motion_prompt
-    assert writes[-1].images[-1] == {"label": "The last picture", "key": failed_picture.file}
-    assert status(2) == "finished"
-    assert clip(2).picture == again.produced.get()
-
-
-def test_a_redraw_whose_picture_check_fails_is_still_told_the_fix_checks_reason(
-    fake_model: FakeModel, held: HeldSteps
-) -> None:
-    plan = propose(row(2, "new_picture", change="The mug's handle faces the camera."))
-    say_yes(plan)
-    fake_model.respond("choose_broll_picture", *[HANDLE_SHOWING] * 3)
-    fails(fake_model, 1, HANDLE_HIDDEN)
-    # The redraw's first picture fails its own picture check, by two answers of three.
-    wrong = {**PICTURE_OK, "verdict": "fail", "problem": "The mug floats."}
-    fake_model.respond("check_starting_picture", PICTURE_OK, PICTURE_OK, wrong, wrong)
-
-    held.run_held()
-
-    redo = asked("choose_broll_picture")[-1].handoff["redo"]
-    # Each failing answer of the picture check is a problem of its own.
-    assert redo["problems"] == [HANDLE_HIDDEN, "The mug floats.", "The mug floats."]
+# Spec #210 point 19: a scene that shows the product has no starting picture the shop owner
+# saw, so a new picture for it has nothing to be checked against; the B-roll redraw tests were
+# deleted (a B-roll new_picture is #242's).
 
 
 def test_a_newer_plan_while_the_picture_is_drawn_again_stops_the_redraws(

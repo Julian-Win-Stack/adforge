@@ -227,6 +227,8 @@ def test_the_first_version_is_made_from_round_4s_pictures_and_clips(
         assemble_through_the_chat(fake_model, steps, say)
 
     made = ProducedItem.objects.filter(scene__number=2)
-    assert read(made.get(kind=ProducedItem.Kind.STARTING_PICTURE).file) == ad.scene(2).picture
+    # Spec #210 point 19: scene 2 shows the product, so no starting picture is drawn for it;
+    # its clip is still round 4's own.
+    assert not made.filter(kind=ProducedItem.Kind.STARTING_PICTURE).exists()
     # The fake's own clips for the talking scenes are red and lime.
     assert colour_at(read(made.get(kind=ProducedItem.Kind.CLIP).file), 1.0) == "yellow"

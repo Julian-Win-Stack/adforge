@@ -29,8 +29,10 @@ clip is sent, the same way every time, before every send. No AI prunes or combin
 
 `planned_sending(step)` is the first send's: the scene's planned pictures and piece.
 `first_sent_list(step, sending)` writes the first send's prompt (jobs.first_send) and gives
-the clip's SentList, to keep on the clip with library.keep_sent_list. A retry builds its
-own: `sending.sent_list(prompt)` with the fixing agent's prompt.
+the clip's SentList, to keep on the clip with library.keep_sent_list. A send whose words
+are written by another (the fixing agent's try, a clip remade from a note on a clip sent no
+list) is `labelled_sent_list(job, sending, words)`: code puts the speed line and a label for
+each picture and piece before the words (point 23).
 
 Run again, as after a worker stopped, it pays for nothing twice: pieces are cut once and
 recolours made once per picture and colour."""
@@ -44,9 +46,16 @@ from chat.models import Message
 from gateway.types import ReferenceVideo
 
 from . import library_items, library_sheets, owner_parts, scene_references, work
-from .first_send import FirstSendScene, drawn_label, write_first_send_prompt
+from .first_send import (
+    PIECE_LABEL,
+    SPEED_LINE,
+    FirstSendScene,
+    drawn_label,
+    write_first_send_prompt,
+)
 from .library import (
     VIDEO_API_MOST_PICTURES,
+    VIDEO_API_MOST_PIECE_SECONDS,
     Drawn,
     For,
     LeftOut,
@@ -159,13 +168,14 @@ class _Taken:
     file: str
 
 
-def planned_sending(step: SceneStep) -> Sending:
-    """What the first send of `step`'s clip is sent: its scene's planned pictures and piece."""
+def planned_sending(step: SceneStep, *, also: Sequence[ScenePicture] = ()) -> Sending:
+    """What the first send of `step`'s clip is sent: its scene's planned pictures and piece,
+    then the pictures `also` names, after the planned ones in tier 2."""
     scene = step.scene
     return cut_and_send(
         scene,
         person_shown=step.person_shown,
-        picks=[ScenePicture.model_validate(picture) for picture in scene.scene_pictures],
+        picks=[*(ScenePicture.model_validate(picture) for picture in scene.scene_pictures), *also],
         pieces=[] if scene.piece is None else [ScenePiece.model_validate(scene.piece)],
     )
 
@@ -186,6 +196,59 @@ def first_sent_list(step: SceneStep, sending: Sending) -> SentList:
         ),
     )
     return sending.sent_list(prompt)
+
+
+# What a picture's `for` adds to its label in a prompt code writes (labelled_sent_list),
+# in the words the first-send writer is told them in.
+FOR_WORDS: dict[str, str] = {
+    "content": "what the product takes in or acts on",
+    "result": "how the scene ends",
+    "in-use": "how the product is held or used",
+    "place": "where it happens",
+    "person": "who does it",
+    "state": "how the product is in this scene",
+}
+
+
+def labelled_sent_list(job: Job, sending: Sending, words: str) -> SentList:
+    """The SentList of a clip sent `sending` with `words` written by another than the
+    first-send writer: SPEED_LINE, then code's label for each picture (its label, and what
+    the scene takes from it) and each piece, then `words` (spec #210 points 16, 23)."""
+    words = words.strip()
+    if words.startswith(SPEED_LINE):
+        words = words.removeprefix(SPEED_LINE).strip()
+    lines = [SPEED_LINE]
+    for picture in sending.pictures:
+        said = (
+            drawn_label(job, picture.drawn)
+            if picture.drawn is not None
+            else _as_a_label(picture.label)
+        )
+        if picture.for_ is not None:
+            said = f"{said}, for {FOR_WORDS[picture.for_]}"
+        lines.append(f"Image {picture.image} is {said}.")
+    lines += [f"Video {piece.number} is {PIECE_LABEL}." for piece in sending.pieces]
+    return sending.sent_list("\n".join([*lines, *([words] if words else [])]))
+
+
+def _as_a_label(label: str) -> str:
+    """A library label as the words after "Image N is": lower case first, no full stop."""
+    said = label.strip().rstrip(". ")
+    return f"{said[:1].lower()}{said[1:]}"
+
+
+def planned_piece_seconds(scene: Scene) -> float:
+    """How many seconds of video the scene's planned piece sends, before anything is cut: its
+    moment's seconds, at most the video API's most (an estimate's, not the cut's)."""
+    if scene.piece is None:
+        return 0.0
+    piece = ScenePiece.model_validate(scene.piece)
+    video = scene.job.videos.filter(position=piece.video).first()
+    watch = watch_of(video) if video is not None else None
+    if watch is None or not 1 <= piece.moment <= len(watch.moments):
+        return 0.0
+    moment = watch.moments[piece.moment - 1]
+    return min(moment.end - moment.start, float(VIDEO_API_MOST_PIECE_SECONDS))
 
 
 def cut_and_send(

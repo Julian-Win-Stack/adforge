@@ -10,16 +10,15 @@ from decimal import Decimal
 import pytest
 
 from agents.money import dollars
-from agents.producer import Estimate, _estimate, _picture_only_estimate_usd
+from agents.producer import Estimate, _estimate
 from gateway.catalog import MODEL_FOR_PURPOSE, transcription_cost_usd
 from gateway.fake import FakeModel
 from jobs.models import Fix, FixPlan, ProducedItem, Scene, SceneStep
 
-from .conftest import JUDGED_CLIP, HeldSteps, facts_ok, paid_for, producer_turns
+from .conftest import SENT_LIST_JUDGED, HeldSteps, facts_ok, paid_for, producer_turns
 from .fixing import fixed, plan_row, planned
 from .test_fix_loop import TURN_REWRITE, latest
 from .test_producer_broll import (
-    IMAGE_1,
     SHOWS,
     TALKING_CHOICE,
     checked,  # noqa: F401 (a fixture)
@@ -160,20 +159,19 @@ def test_a_broll_scenes_new_line_pays_for_its_steps_the_judge_and_no_before_pict
     new_line(2, LINE_2_NEW, NOTE_2)
     made_again(steps)
 
-    # The picture is kept; the new clip is judged as any B-roll clip is, and a new line isn't
-    # checked against the fix (#131).
+    # No picture is drawn; the new clip is made from the scene's sent list and judged as any
+    # B-roll clip is, and a new line isn't checked against the fix (#131, spec #210 point 19).
     assert paid_for()[paid:] == [
         "speak_line",
         "transcribe_line",
+        "write_first_send_prompt",
         "make_broll_clip",
         "collect_broll_clip",
-        *JUDGED_CLIP,
+        *SENT_LIST_JUDGED,
     ]
-    # The new clip is in reference mode, the starting picture it kept as Image 1.
     assert clips_asked("starting_picture")[-1] is None
-    assert clips_asked("example_pictures")[-1] == [latest("starting_picture", 2).file]
-    assert latest("starting_picture", 2).version == 1
-    assert clips_asked("prompt")[-1].startswith(IMAGE_1)
+    assert clips_asked("example_pictures")[-1] == clips_asked("example_pictures")[0]
+    assert not ProducedItem.objects.filter(kind="starting_picture", scene__number=2).exists()
 
 
 def test_a_new_broll_line_too_long_to_say_cant_be_made(
@@ -254,8 +252,8 @@ def test_a_clip_fix_said_yes_to_while_a_new_line_is_made_is_made_on_the_new_line
 
     made = last_step("clip", 2)
     assert (made.line, made.note, made.fix) == (LINE_2_NEW, SLOWER_2, fix_of(clip, 2))
-    # Both keep the scene's starting picture.
-    assert last_step("starting_picture", 2).fix is None
+    # Neither draws a picture: a B-roll scene has none (spec #210 point 19).
+    assert not SceneStep.objects.filter(kind="starting_picture", scene__number=2).exists()
     assert {step.fix for step in SceneStep.objects.filter(kind="clip", fix__isnull=False)} == {
         fix_of(line, 2),
         fix_of(clip, 2),
@@ -361,13 +359,13 @@ def test_a_transcription_is_estimated_to_the_millionth_of_a_dollar(
 def test_a_broll_line_fix_is_estimated_with_the_judges_asks_and_up_to_six_agent_tries(
     shown: ProducedItem,  # noqa: F811
 ) -> None:
-    # The scene keeps its picture; the new line's 52
+    # The scene has no picture (spec #210 point 19); the new line's 52
     # characters at Inworld's $25 a million are $0.0013; its 8 words take the fake voice 4
     # seconds, $0.000244 at Scribe's $0.22 an hour; a 5-second clip at Boreal's $0.0792 a
-    # second with the judge's 2 asks at $0.003 is $0.402, and up to 6 tries of the fixing
-    # agent, each a new picture, that clip and the agent's 3 turns at $0.07 (decider call 13).
+    # second with the judge's 3 asks (its first question, then PRODUCT and MOTION) at $0.003
+    # is $0.405, and up to 6 tries of the fixing agent, each that clip and the agent's 3 turns
+    # at $0.07 (decider call 13).
     estimate = line_estimate(2, LINE_2_NEW)
 
-    picture = _picture_only_estimate_usd(Scene.objects.get(number=2))
-    each_try = picture + Decimal("0.402") + 3 * Decimal("0.07")
-    assert estimate == (Decimal("0.403544"), Decimal("0.403544") + 6 * each_try)
+    each_try = Decimal("0.405") + 3 * Decimal("0.07")
+    assert estimate == (Decimal("0.406544"), Decimal("0.406544") + 6 * each_try)

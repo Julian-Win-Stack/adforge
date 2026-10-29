@@ -823,7 +823,12 @@ def rewrote_scene_2_whole(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
     """A chat whose scene 2's usage the page doesn't state, rewritten whole, which passed."""
-    checking(fake_model, product_page_url, doing_a_job())
+    # Scene 2 picks library item 2, the page's photo 2, for its glaze (spec #210 point 11).
+    checking(
+        fake_model,
+        product_page_url,
+        doing_a_job(needs=[], scene_pictures=[{"number": 2, "for": "content"}]),
+    )
     fake_model.respond(
         "fact_check",
         shows_wrong("The page doesn't say tea is poured in.", passing=(1, 3)),
@@ -845,8 +850,8 @@ def test_a_broll_scenes_details_and_needed_photos_are_handed_to_the_fact_check_a
         "result": RESULT,
     }
     # Each fact check is shown photo 1, in the ad's sage green (photo 2 shows the mug in
-    # cream), and each B-roll scene's needed photos: scene 2 first needed photo 2, and its
-    # rewrite needs none.
+    # cream), and each B-roll scene's pictures: scene 2 first picked photo 2, and its rewrite
+    # picks none.
     assert images_shown("fact_check") == [["Photo 1", "Photo 2"], ["Photo 1"]]
     # The rewrite is shown the library's sheets, as the planner is, and told how many
     # pictures it holds and which show the colour, so it can give back what its scene needs.
@@ -1050,7 +1055,12 @@ def test_a_rewrite_that_breaks_the_broll_rules_cant_be_used(
 def test_a_scene_showing_something_unsupported_can_be_rewritten_for_the_person_to_say(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], shows: str | None
 ) -> None:
-    checking(fake_model, product_page_url, doing_a_job())
+    # Scene 2 picks library item 2, the page's photo 2, for its glaze (spec #210 point 11).
+    checking(
+        fake_model,
+        product_page_url,
+        doing_a_job(needs=[], scene_pictures=[{"number": 2, "for": "content"}]),
+    )
     fake_model.respond(
         "fact_check",
         shows_wrong("The page doesn't say tea is poured in.", passing=(1, 3)),

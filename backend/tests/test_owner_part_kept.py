@@ -12,11 +12,10 @@ import pytest
 
 from agents import decider, producer
 from gateway.fake import FakeModel
-from jobs import owner_parts, work
+from jobs import owner_parts
 from jobs.models import ReferencePhoto, Scene
 
-from . import fixing
-from .conftest import HeldSteps, given_to_the_producer, handoffs, producer_turns, results_of
+from .conftest import HeldSteps, handoffs
 from .test_producer_broll import BROLL_CHOICE, calling, instructed, run  # noqa: F401
 from .test_producer_owner_photos import (  # noqa: F401 (fixtures)
     OWNER_MUG,
@@ -28,6 +27,7 @@ from .test_producer_owner_photos import (  # noqa: F401 (fixtures)
     owner_file,
     photos_sent,
 )
+from .test_recolour import RECOLOUR_OK
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -66,111 +66,28 @@ def approved(
     owner_parts.approve(scene(2))
 
 
-def drawn_again(fake_model: FakeModel, steps: HeldSteps, say: Say, number: int) -> None:
-    calling(fake_model, say, ("make_starting_picture", {"scene": number, "note": None}))
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
-    run(fake_model, steps)
+# Spec #210 point 19: a scene that shows the product gets no starting picture, so none is
+# drawn again with the approved part. The tests of drawing it again before the clip, of a later
+# fix drawing it with the part (and the part's looks for the prompt writer), and of going back
+# to a picture drawn before the photo were deleted: the part reaches the clip on its sent list.
 
 
-@pytest.fixture
-def shown(fake_model: FakeModel, approved: None, steps: HeldSteps, say: Say) -> None:
-    """The first ad, made and shown, scene 3 drawn again with the part's photo first."""
-    drawn_again(fake_model, steps, say, 3)
-    calling(fake_model, say, *[("make_clip", {"scene": number}) for number in (1, 2, 3)])
-    run(fake_model, steps)
-    calling(fake_model, say, ("assemble_ad", {}))
-
-
-def test_a_scene_drawn_before_the_photo_was_kept_is_drawn_again_before_its_clip(
+def test_a_scene_planned_with_the_approved_part_sends_its_clip_the_parts_picture(
     fake_model: FakeModel, approved: None, steps: HeldSteps, say: Say
 ) -> None:
+    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
     calling(fake_model, say, ("make_clip", {"scene": 3}))
+    run(fake_model, steps)
 
-    assert results_of("make_clip") == [
-        "Refused: scene 3's starting picture was drawn before the shop owner's photo of the "
-        "handle was kept for it. Make its starting picture again first. Nothing was done."
-    ]
-
-    drawn_again(fake_model, steps, say, 3)
-
-    # The clean picture drawn for scene 2 is sent first, not drawn again.
+    # The part's clean picture is sent, recoloured to the clip's colour.
     (clean,) = clean_pictures()
-    assert handoffs("make_starting_picture")[-1]["pictures"][0] == clean
-    assert owner_parts.is_approved(scene(3))
-    # The producer is told the shop owner already said yes to the part, not to ask again.
-    picture_ready = [
-        each["text"]
-        for each in given_to_the_producer(producer_turns())
-        if each["kind"] == "step_finished" and "scene 3's starting picture is ready" in each["text"]
-    ][-1]
-    assert "the handle, which the shop owner already said yes to" in picture_ready
-    assert "Its clip isn't made until" not in picture_ready
-
-
-def test_a_later_fix_of_the_scene_draws_it_with_the_approved_part(
-    fake_model: FakeModel, shown: None, steps: HeldSteps
-) -> None:
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
-    fixing.fixed(
-        3, "new_picture", note="Make it brighter.", change="In scene 3, the shelf is brighter."
-    )
-    steps.run_held()
-
-    step = last_step("starting_picture", 3)
-    assert step.fix is not None
-    assert step.owner_part == HANDLE
-    assert [row.thing for row in step.reference_photos.all()] == ["handle"]
-    (clean,) = clean_pictures()
-    assert handoffs("make_starting_picture")[-1]["pictures"][0] == clean
-    # The fix's picture is of the part the shop owner said yes to: no new yes is needed.
-    assert owner_parts.is_approved(scene(3))
-
-
-def test_going_back_before_the_photo_sets_it_aside_and_forward_uses_it_again(
-    shown: None,
-) -> None:
-    labels = [version.label for version in work.versions(scene(3))]
-    assert labels[:2] == ["v1 first version", "v2 first version"]
-
-    work.go_back(scene(3), 1)
-
-    assert in_use(3) == []
-
-    work.go_back(scene(3), 2)
-
-    assert in_use(3) == [("handle", "picture")]
+    (recoloured,) = handoffs("recolour_picture")
+    assert recoloured["pictures"][0] == clean
+    assert "recolour_picture.png" in handoffs("make_broll_clip")[-1]["example_pictures"]
+    assert handoffs("make_broll_clip")[-1]["starting_picture"] is None
     assert owner_parts.is_approved(scene(3))
 
 
 def test_the_producer_and_the_decider_never_ask_again_about_an_approved_part() -> None:
     for instructions in (producer.INSTRUCTIONS, decider.INSTRUCTIONS):
         assert "never ask them for a photo of it or how it looks" in " ".join(instructions.split())
-
-
-def test_a_later_fix_of_a_part_drawn_from_words_gives_the_prompt_writer_its_looks(
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811 (the fixture)
-    instructed: dict[str, list[str]],  # noqa: F811
-    steps: HeldSteps,
-    say: Say,
-) -> None:
-    Scene.objects.filter(number=2).update(owner_part=HANDLE)
-    calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
-    made_ready(fake_model, steps, say)
-    owner_parts.draw_part_picture(scene(2))
-    owner_parts.approve(scene(2))
-    calling(fake_model, say, *[("make_clip", {"scene": number}) for number in (1, 2, 3)])
-    run(fake_model, steps)
-    calling(fake_model, say, ("assemble_ad", {}))
-
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
-    fixing.fixed(
-        2, "new_picture", note="Make it brighter.", change="In scene 2, the shelf is brighter."
-    )
-    steps.run_held()
-
-    step = last_step("starting_picture", 2)
-    assert step.fix is not None
-    told = instructed["choose_broll_picture"][-1]
-    assert owner_parts.writer_rule(owner_parts.OwnerPart(**HANDLE)) in told
-    assert HANDLE["looks"] in told

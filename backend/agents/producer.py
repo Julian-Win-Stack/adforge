@@ -138,9 +138,11 @@ what to do next. Before a tool that takes a while, say in one short sentence wha
 about to do. When there is nothing left to do, reply to them; when you need the shop \
 owner, ask them with ask_owner.
 The usual order is: read the page, plan the ad, create the person, run the planning \
-checks, create the music, then, for each scene, make its starting picture and its line's \
-audio, which can run at the same time, transcribe the audio once it's ready, and once the \
-picture is made and the audio heard, make the scene's clip, which finishes the scene. \
+checks, create the music, then, for each scene, make its starting picture, when it has \
+one, and its line's audio, which can run at the same time, transcribe the audio once it's \
+ready, and once the picture is made and the audio heard, make the scene's clip, which \
+finishes the scene. A scene that shows the product has no starting picture: its clip is made \
+once its audio is heard. \
 Once every scene is finished, assemble the ad, which shows it to the shop owner. When a \
 tool hands back something to ask the shop owner, ask it with ask_owner and wait for their \
 answer before passing their choice to a tool.
@@ -1001,6 +1003,14 @@ class CreateMusic(Tool):
         )
 
 
+# Why a scene that shows the product gets no starting picture: its clip is made from the
+# product's pictures and videos (spec #210 point 19).
+NO_STARTING_PICTURE = (
+    "scene {scene} shows the product, so it has no starting picture: its clip is made from "
+    "the product's own pictures and videos. Make its clip once its audio is heard."
+)
+
+
 class MakeStartingPicture(Tool):
     """Start making a scene's starting picture, made from the portrait and the product photo
     that suits the scene best: the person holding the product, or, for a scene that shows
@@ -1018,6 +1028,9 @@ class MakeStartingPicture(Tool):
 
     def run(self, call: ToolCall) -> str:
         scene = _a_checked_scene(call, self.scene)
+        if scene.shows:
+            # Spec #210 point 19: a B-roll clip is made from its sent list.
+            raise Refused(NO_STARTING_PICTURE.format(scene=scene.number))
         if latest(scene.job, ProducedItem.Kind.PORTRAIT) is None:
             raise Refused(
                 "the person hasn't been made yet, and the picture shows them. Create the "
@@ -1314,10 +1327,10 @@ class TranscribeLineAudio(Tool):
 class MakeClip(Tool):
     """Start making a scene's clip: its starting picture animated to speak its line's audio,
     the same audio that was transcribed, or, for a scene that shows the product rather than
-    the person talking, animated with that audio laid over it. A scene whose clip is made is
-    finished. Works in the
-    background and hands back at once; you are told when the clip is ready. Only once the
-    scene's starting picture is made and its audio transcribed, for the line as it stands."""
+    the person talking, filmed from the product's own pictures and videos with that audio
+    laid over it. A scene whose clip is made is finished. Works in the background and hands
+    back at once; you are told when the clip is ready. Only once its audio is transcribed and,
+    for a scene with a starting picture, the picture is made, for the line as it stands."""
 
     name = "make_clip"
 
@@ -1337,7 +1350,7 @@ class MakeClip(Tool):
             _refuse_unless_movement_can_change(
                 scene,
                 talking="Its starting picture or its line can change instead.",
-                unlabelled="Make its starting picture again with the note instead.",
+                unlabelled="Its line can change instead.",
             )
         for kind in [
             SceneStep.Kind.STARTING_PICTURE,
@@ -1349,30 +1362,11 @@ class MakeClip(Tool):
                     f"scene {scene.number}'s {STEP_NAMES[kind]} is still being made. You'll be "
                     "told when it's ready; make the clip then."
                 )
-        # A picture step is finished with its picture made. One made before every B-roll
-        # scene got a picture may have none: its scene's picture is made again.
-        picture_steps = scene.steps.filter(
-            kind=SceneStep.Kind.STARTING_PICTURE,
-            status=SceneStep.Status.FINISHED,
-            produced__isnull=False,
-        )
-        if not picture_steps.exists():
+        picture = None if scene.shows else self._starting_picture(scene)
+        if scene.shows and latest(scene.job, ProducedItem.Kind.PORTRAIT) is None:
             raise Refused(
-                f"scene {scene.number} has no starting picture yet. Make its starting picture "
-                "first."
-            )
-        picture = scene.current_picture()
-        if picture is None:
-            raise Refused(
-                f"scene {scene.number}'s starting picture was made for an earlier line, or for "
-                "what the scene showed before, and the scene has changed since. Make its "
-                "starting picture again first."
-            )
-        missing = owner_parts.photo_drawn_without(scene, picture)
-        if missing is not None:
-            raise Refused(
-                f"scene {scene.number}'s starting picture was drawn before the shop owner's "
-                f"photo of the {missing} was kept for it. Make its starting picture again first."
+                "the person hasn't been made yet, and the clip is sent the presenter in the "
+                "ad's place. Create the person first."
             )
         part = hard_list.waiting_owner_part(scene)
         if part is not None:
@@ -1393,8 +1387,8 @@ class MakeClip(Tool):
                 "transcribed yet, and a clip is only made from audio that was heard saying the "
                 "line. Transcribe it first."
             )
-        picture_step = picture.step
-        assert picture_step is not None, "a starting picture is made by a scene step"
+        picture_step = picture.step if picture is not None else None
+        assert picture is None or picture_step is not None, "a picture is made by a step"
         made = _clip_with_the_photos_in_use(
             scene,
             scene.produced.filter(
@@ -1402,10 +1396,15 @@ class MakeClip(Tool):
                 step__status=SceneStep.Status.FINISHED,
                 made_from=audio,
                 # Any version of the picture: one brought back is the same picture (#143). A
-                # clip made before clips kept their picture step has only its picture.
-                picture__step=picture_step,
-                # Made from the references as they stand: a new list makes the clip stale.
-                **_made_for_its_references(scene),
+                # clip made before clips kept their picture step has only its picture. Made
+                # from the references as they stand: a new list makes the clip stale. A B-roll
+                # clip, made from its sent list, has no picture: any made for the scene's plan
+                # as it stands (its references with it) is the same clip.
+                **(
+                    {"picture__step": picture_step, **_made_for_its_references(scene)}
+                    if picture_step is not None
+                    else _made_for_the_plan(scene)
+                ),
                 # With no note, any clip of the same picture and audio is already made, as
                 # before notes; a different note is a new clip.
                 **({"step__note": note} if note else {}),
@@ -1416,7 +1415,7 @@ class MakeClip(Tool):
         )
         if made is not None:
             assert made.step is not None, "a clip is made by a scene step"
-            made_from = "from this starting picture"
+            made_from = "from this starting picture" if picture is not None else "from this plan"
             with_note = " with this note" if note else ""
             # A clip being made will be the scene's newest, whichever this one is.
             if scene.steps.filter(
@@ -1475,6 +1474,45 @@ class MakeClip(Tool):
             f"Started scene {scene.number}'s clip. It isn't made yet: you'll be told when it's "
             "ready."
         )
+
+    @staticmethod
+    def _starting_picture(scene: Scene) -> ProducedItem:
+        """The starting picture a talking scene's clip is made from; refused when there is
+        none for the scene as it stands."""
+        # A picture step is finished with its picture made. One made before every B-roll
+        # scene got a picture may have none: its scene's picture is made again.
+        picture_steps = scene.steps.filter(
+            kind=SceneStep.Kind.STARTING_PICTURE,
+            status=SceneStep.Status.FINISHED,
+            produced__isnull=False,
+        )
+        if not picture_steps.exists():
+            raise Refused(
+                f"scene {scene.number} has no starting picture yet. Make its starting picture "
+                "first."
+            )
+        picture = scene.current_picture()
+        if picture is None:
+            raise Refused(
+                f"scene {scene.number}'s starting picture was made for an earlier line, or for "
+                "what the scene showed before, and the scene has changed since. Make its "
+                "starting picture again first."
+            )
+        missing = owner_parts.photo_drawn_without(scene, picture)
+        if missing is not None:
+            raise Refused(
+                f"scene {scene.number}'s starting picture was drawn before the shop owner's "
+                f"photo of the {missing} was kept for it. Make its starting picture again first."
+            )
+        return picture
+
+
+def _made_for_the_plan(scene: Scene) -> dict[str, Any]:
+    """The filter for clips whose step was made for the scene as it stands, its line aside:
+    the audio a clip speaks holds its line."""
+    made_for = SceneStep.made_for(scene, through="step__")
+    del made_for["step__line"]
+    return made_for
 
 
 class FixScene(Tool):
@@ -2084,7 +2122,7 @@ class CorrectOwnerPart(Tool):
         if part is None:
             raise Refused(
                 f"scene {scene.number} shows no part drawn without a photo, so there is nothing "
-                "of it to correct. Make its starting picture again with a note instead."
+                "of it to correct. Make its clip again with a note instead."
             )
         words = normalised_note(self.words)
         if not words and self.photo is None:
@@ -2431,7 +2469,10 @@ class Estimate(NamedTuple):
 # ask of the clip judge on gpt-6.1-sol (decider call 13, 2026-10-13).
 CALL_FALLBACK_USD = Decimal("0.07")
 MILLIONTH = Decimal("0.000001")
-_JUDGE_PURPOSES = ["check_clip_sides", "check_clip_motion"]
+# The clip judge's asks about a B-roll clip, made from its sent list (spec #210 point 19):
+# its first question once, then PRODUCT and MOTION each ASKS times.
+_JUDGE_PURPOSES = ["check_clip_references", "check_clip_product", "check_clip_motion"]
+_JUDGE_ASKS = 1 + 2 * clip_judge.ASKS
 _WRITER_PURPOSES = ["rewrite_clip_prompt"]
 # The fixing agent's turns for one try: a look or two, then film_again. A GUESS, until real
 # runs of the agent in the app are recorded (fixing agent build, T3).
@@ -2512,7 +2553,7 @@ def _clip_estimate(scene: Scene, audio_seconds: float, *, from_note: bool) -> Es
     a clip made from the shop owner's note, also the call writing its video prompt; its fix
     is checked by the clip judge's own asks (Julian 2026-10-14). It can cost up to that
     plus every try the fixing agent can film once the judge fails it (door 1)."""
-    video = clip_estimate_usd(audio_seconds, broll=bool(scene.shows))
+    video = _clip_video_usd(scene, audio_seconds)
     judged = bool(scene.shows) and settings.QUALITY_CHECKS
     about = video + _judge_usd(scene)
     if from_note:
@@ -2521,13 +2562,25 @@ def _clip_estimate(scene: Scene, audio_seconds: float, *, from_note: bool) -> Es
     return Estimate(about, about + tries)
 
 
+def _clip_video_usd(scene: Scene, audio_seconds: float) -> Decimal:
+    """What the video of a clip of the scene covering `audio_seconds` is billed: a B-roll
+    clip's with the seconds of its planned piece sent beside it."""
+    broll = bool(scene.shows)
+    return clip_estimate_usd(
+        audio_seconds,
+        broll=broll,
+        piece_seconds=cut_and_send.planned_piece_seconds(scene) if broll else 0.0,
+    )
+
+
 def agent_try_usd(scene: Scene, audio_seconds: float) -> Decimal:
     """What one try of the fixing agent at the scene is estimated to cost, for either door: a
-    new starting picture, its video covering `audio_seconds`, the clip judge's asks (which
-    check the shop owner's change too, for a fix) and the agent's turns."""
+    new starting picture (none for a scene showing the product: its clip is made from the
+    product's own pictures, spec #210), its video covering `audio_seconds`, the clip judge's
+    asks (which check the shop owner's change too, for a fix) and the agent's turns."""
     return (
-        _picture_only_estimate_usd(scene)
-        + clip_estimate_usd(audio_seconds, broll=bool(scene.shows))
+        (Decimal(0) if scene.shows else _picture_only_estimate_usd(scene))
+        + _clip_video_usd(scene, audio_seconds)
         + _judge_usd(scene)
         + AGENT_TURNS_PER_TRY * _each_call_usd(scene, [FIXING_AGENT_PURPOSE])
     )
@@ -2538,7 +2591,7 @@ def _judge_usd(scene: Scene) -> Decimal:
     for a talking scene, or with quality checks off."""
     if not (scene.shows and settings.QUALITY_CHECKS):
         return Decimal(0)
-    return 2 * clip_judge.ASKS * _each_call_usd(scene, _JUDGE_PURPOSES)
+    return _JUDGE_ASKS * _each_call_usd(scene, _JUDGE_PURPOSES)
 
 
 def _each_call_usd(scene: Scene, purposes: list[str]) -> Decimal:

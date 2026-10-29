@@ -70,6 +70,7 @@ from . import (
     assembly,
     auto_fix,
     clip_judge,
+    cut_and_send,
     cut_out,
     firecrawl,
     fix_check,
@@ -153,6 +154,7 @@ from .planning import (
     Need,
     PlanHandoff,
     ProducerDecision,
+    ScenePicture,
     producer_decision_for,
 )
 from .reference_photos import ReferencePhotoUnusable
@@ -182,7 +184,6 @@ from .scenes import (
     StartingPictureChoice,
     StartingPictureHandoff,
     broll_prompt_instructions,
-    broll_video_prompt,
     clip_from_note_instructions,
     clip_from_references_instructions,
     need_job,
@@ -1441,13 +1442,14 @@ def _ask_fact_check(
     record."""
     showing = [line.scene for line in lines if line.shows]
     # What a scene shows may be supported by how the product looks in its photos: those in
-    # the ad's colour, and those the scenes need. A script where the person talks
-    # throughout is checked on text alone.
+    # the ad's colour, and those the scenes picked from the library (spec #210 point 11). A
+    # script where the person talks throughout is checked on text alone.
+    positions = library_sheets.photo_positions(job) if showing else {}
     needed = {
-        number
+        positions[picture["number"]]
         for scene in job.scenes.filter(number__in=showing)
-        for need in scene.needs
-        for number in need["photos"]
+        for picture in scene.scene_pictures
+        if picture["number"] in positions
     }
     # A plan may mark no photo in the ad's colour: then every photo that fits is shown.
     marked = job.photos.filter(shows_product_colour=True).exists()
@@ -2017,23 +2019,14 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
     line best and writes the prompt, then the picture is made from the portrait and that
     photo. For a scene that shows the product rather than the person talking, the picture
     shows what the scene shows, and the model also writes the clip's motion prompt. Gives
-    back the picture, kept as the scene's next version. A B-roll step also makes sure the ad
-    has its room alone and its person-in-room picture (`person_and_room`).
+    back the picture, kept as the scene's next version.
 
     Run again, as after a worker stopped, it pays for nothing already paid for: the choice
     is made from the conversation as it was when the step started, so it is answered from
     its record, and a picture made but not kept is kept rather than made again."""
     made = step.produced.first()
     if step.broll_kind:
-        made = made or _make_broll_picture(step)
-        # Drawn by the first B-roll starting picture made, as the before-picture is; never
-        # sent to a starting picture, so one that can't be drawn leaves the scene's picture
-        # made, and is said in the chat.
-        try:
-            person_and_room(step)
-        except PlaceNotDrawn as not_drawn:
-            say_the_place_wasnt_drawn(step.scene.job, not_drawn)
-        return made
+        return made or _make_broll_picture(step)
     if made is not None:
         return made
     # A talking scene, or a B-roll one planned before the plan gave B-roll scenes their
@@ -2817,14 +2810,13 @@ class PlaceNotDrawn(Exception):
 
 def say_the_place_wasnt_drawn(job: Job, failed: PlaceNotDrawn) -> None:
     """Tell the chat, in red, that one of the ad's pictures of its place, or the presenter in a
-    scene's own place, couldn't be drawn: nothing sends it yet, so the scenes are made as
-    usual, and the next B-roll starting picture draws it again."""
+    scene's own place, couldn't be drawn: the clip being made is sent no picture of its place
+    (cut-and-send says so for its scene), and the next B-roll clip draws it again."""
     logger.error("Job %s: %s", job.pk, failed, exc_info=failed.__cause__)
     post_notice(
         job,
         f"The {PLACE_PICTURE_NAMES[failed.kind]} couldn't be drawn, so the ad doesn't have it "
-        "yet. Nothing in the ad uses it yet, so every scene is made as usual. It is drawn "
-        "again when the next scene showing the product gets its picture.",
+        "yet. It is drawn again when the next scene showing the product gets its clip.",
         Message.Level.PROBLEM,
     )
 
@@ -4329,22 +4321,25 @@ def _make_clip(
 ) -> ProducedItem:
     """make_clip's clip, made and kept: its first, or its `remake`th remake, moving as `motion`
     says; or, given the `sent` list cut-and-send or the fixing agent built, made from what it
-    lists, which the clip keeps."""
+    lists. A B-roll clip is sent what cut-and-send builds for it (`broll_sent_list`) unless
+    given one, never a starting picture, and keeps that sent list before it is shown
+    anywhere."""
     scene = step.scene
     job = scene.job
     picture, audio = step.picture, step.made_from
     assert audio is not None, "a clip step starts with its audio"
-    assert picture is not None or step.picture_step is not None or sent is not None, (
-        "and its picture, or its plan, or its sent list"
-    )
+    assert picture is not None or step.shows, "a talking clip is made from its picture"
     assert audio.seconds is not None, "a line's audio is measured when it's made"
     if step.note and not step.motion_prompt and not remake and sent is None:
         _rewrite_motion_prompt(step)
-    handoff = (
-        _clip_handoff(step, picture, audio, motion=motion)
-        if sent is None
-        else sent_handoff(step, audio, sent)
-    )
+    handoff: ClipHandoff | BrollClipHandoff
+    if step.shows:
+        _too_long_for_a_broll_clip(audio.seconds)
+        if sent is None:
+            sent = broll_sent_list(step, motion=motion)
+        handoff = sent_handoff(step, audio, sent)
+    else:
+        handoff = _clip_handoff(step, picture, audio)
     making, collecting = _clip_purposes(step)
 
     def tell_its_slow() -> None:
@@ -4388,8 +4383,127 @@ def _make_clip(
             change=change_made_for(step),
         )
         if sent is not None:
+            # Kept with the clip, before it is shown anywhere, so its card shows what it was
+            # sent.
             library.keep_sent_list(clip, sent)
     return clip
+
+
+def broll_sent_list(step: SceneStep, *, motion: str = "") -> library.SentList:
+    """What a B-roll clip of `step` is sent (spec #210 points 13-17), built by cut-and-send,
+    never with a starting picture: the scene's planned pictures and piece, with the first-send
+    writer's prompt; with `motion`, the words of the fixing agent's try, labelled by code; for
+    a clip made from a note, the references of the clip it improves on, with the prompt
+    written again from the note. The ad's presenter in the room and its room alone are drawn
+    first, once per ad, as the clip is sent one of them.
+
+    Run again, as after a worker stopped, it pays for nothing already paid for."""
+    job = step.scene.job
+    try:
+        person_and_room(step)
+    except PlaceNotDrawn as not_drawn:
+        # Sent no picture of its place, as cut-and-send says for the scene.
+        say_the_place_wasnt_drawn(job, not_drawn)
+    if step.note:
+        improved = _sent_to_improve(step)
+        return improved.model_copy(update={"prompt": step.motion_prompt or improved.prompt})
+    sending = _planned_sending(step)
+    _keep_the_cut(step, sending)
+    if motion:
+        return cut_and_send.labelled_sent_list(job, sending, motion)
+    return cut_and_send.first_sent_list(step, sending)
+
+
+def _keep_the_cut(step: SceneStep, sending: cut_and_send.Sending) -> None:
+    """Keep on the clip step, until it finishes, what the producer is told of the cut of its
+    clip to the video API's limits (agents.hard_list.cut_answer): its finished answer says it.
+    Blank when nothing was cut."""
+    from agents import hard_list
+
+    step.result = hard_list.cut_answer(step.scene.number, sending)
+    step.save(update_fields=["result"])
+
+
+def _planned_sending(step: SceneStep) -> cut_and_send.Sending:
+    """What cut-and-send sends a clip of `step` from its plan: the scene's planned pictures and
+    piece, then the clean pictures of the shop owner's things it shows (_owners_things_sent),
+    from the library, picked for what the clip acts on. Not approved yet: the owner's things go as
+    "content" picks (their `for`), after the planner's."""
+    job = step.scene.job
+    part = owner_parts.owner_part(step.scene)
+    things = []
+    for row in _owners_things_sent(step):
+        if part is not None and reference_photos.same_thing(row.thing, part.what):
+            # The owner part's photo enters the library as the part's picture (#234).
+            continue
+        drawn = clean_picture(step.scene, row)
+        item = library_items.add_owner_photo(job, row.file, drawn, f"the shop owner's {row.thing}")
+        if item is not None:
+            things.append(ScenePicture(number=item.number, for_=OWNER_THINGS_FOR))
+    return cut_and_send.planned_sending(step, also=things)
+
+
+def _owners_things_sent(step: SceneStep) -> list[ReferencePhoto]:
+    """The shop owner's photos a B-roll clip of the step is sent, as the step started: those
+    of things in the picture and those of things that only show during the clip, alike, as
+    the clip has no starting picture to draw any into (spec #210 point 19)."""
+    return list(step.reference_photos.all())
+
+
+# What the shop owner's things that show in a B-roll clip are sent for, as tier-2 picks.
+# Not approved yet: one value for every such thing.
+OWNER_THINGS_FOR: library.For = "content"
+
+
+def _sent_to_improve(step: SceneStep) -> library.SentList:
+    """What a note's B-roll clip starts from: the sent list of the clip it improves on, as it
+    was; or, when the shop owner's things show during the clip, or for a clip made before
+    clips kept their sent lists, the scene's planned references (the things among them)
+    labelled by code with how that clip moved."""
+    made = versions(step.scene)
+    improves = made[-1].clip if made else None
+    sent = library.sent_list_of(improves) if improves is not None else None
+    if sent is not None and not _owners_things_sent(step):
+        return sent
+    return cut_and_send.labelled_sent_list(
+        step.scene.job,
+        _planned_sending(step),
+        motion_of(improves) if improves is not None else step.motion_prompt,
+    )
+
+
+def sent_handoff(step: SceneStep, audio: ProducedItem, sent: library.SentList) -> BrollClipHandoff:
+    """The video model's handoff for a B-roll clip of `step` sent `sent`: its pictures in
+    order, its pieces as reference videos, its prompt, and the fewest whole seconds that cover
+    the line's `audio`."""
+    assert audio.seconds is not None, "a line's audio is measured when it's made"
+    _too_long_for_a_broll_clip(audio.seconds)
+    videos = dict(step.scene.job.videos.values_list("position", "file"))
+    return BrollClipHandoff(
+        example_pictures=[picture.file for picture in sent.pictures],
+        reference_videos=[
+            ReferenceVideo(
+                file=piece.file,
+                video=videos[piece.video],
+                start=piece.start,
+                end=piece.end,
+                trim=piece.trim,
+            )
+            for piece in sent.pieces
+        ],
+        seconds=_broll_clip_seconds(audio.seconds),
+        prompt=sent.prompt,
+    )
+
+
+def _too_long_for_a_broll_clip(audio_seconds: float) -> None:
+    """Raise ClipFailed for a line longer than the longest B-roll clip, before anything is
+    paid for."""
+    if audio_seconds > MOST_BROLL_SECONDS:
+        raise ClipFailed(
+            f"its line takes {round(audio_seconds, 1):g} seconds to say, and the B-roll video "
+            f"model makes clips of at most {MOST_BROLL_SECONDS} seconds"
+        )
 
 
 def bring_back_clip(
@@ -4642,11 +4756,12 @@ def go_back(scene: Scene, number: int) -> GoneBack:
     original too (decision 8, Julian 2026-10-16 22:40): its starting picture brought back,
     free, and its clip too when it still says the scene's line as it stands, so nothing is
     made, checked or paid for. When the line changed since, only the picture is brought back
-    and the scene waits for a clip made from it. The scene's photos in use become those the
+    and the scene waits for a clip made from it; a scene showing the product, which has no
+    picture, waits for a clip made from its sent list. The scene's photos in use become those the
     version was made with, so a photo dropped is a version gone back to. The chat is shown
     what was brought back. A try of a scene the fixing agent gave up on, said to camera since,
     has the scene show what the try was made for again. Refuses a version the scene doesn't
-    have, one with no picture whose clip no longer says the line, and while the scene's
+    have, a talking one with no picture whose clip no longer says the line, and while the scene's
     picture or clip is being made."""
     with transaction.atomic():
         Scene.objects.select_for_update().get(pk=scene.pk)
@@ -4672,7 +4787,9 @@ def _bring_back(scene: Scene, number: int) -> GoneBack:
         if earlier.clip is not None:
             _shown_again_for(scene, earlier.clip)
         free = earlier.clip is not None and _says_the_line_as_it_stands(scene, earlier.clip)
-        if earlier.picture is None and not free:
+        # A scene showing the product has no starting picture: its clip is made again from
+        # its sent list (spec #210 point 19).
+        if earlier.picture is None and not free and not scene.shows:
             raise NothingToBringBack(
                 f"scene {scene.number}'s version {number} has no starting picture, and its "
                 "clip no longer says the scene's line"
@@ -4765,6 +4882,11 @@ def _rewrite_motion_prompt(step: SceneStep) -> None:
     made = versions(step.scene)
     improves = made[-1].clip if made else None
     sent = library.sent_list_of(improves) if improves is not None else None
+    # A B-roll clip has no starting picture (spec #210 point 19): its references are rebuilt
+    # with the shop owner's things among them, which it is then shown as its own pictures.
+    rebuilt = step.picture is None and (sent is None or bool(_owners_things_sent(step)))
+    if rebuilt:
+        sent = _sent_to_improve(step)
     handoff: ClipFromNoteHandoff | ClipFromReferencesHandoff
     if sent is not None:
         instructions = clip_from_references_instructions(step.broll_kind)
@@ -4799,7 +4921,7 @@ def _rewrite_motion_prompt(step: SceneStep) -> None:
         instructions=instructions,
         handoff=handoff,
         output=ClipFromNoteChoice,
-        images=[*shown, *_the_owners_things(step, during)],
+        images=[*shown, *([] if rebuilt else _the_owners_things(step, during))],
         pay_once=True,
     )
     step.motion_prompt = rewrite.motion_prompt
@@ -4866,91 +4988,22 @@ def _clip_purposes(step: SceneStep) -> tuple[str, str]:
     return "make_talking_clip", "collect_talking_clip"
 
 
-# Every B-roll clip is made in reference mode, its drawn starting picture sent as Image 1
-# (Julian 2026-10-16 19:14). False goes back to before: a clip is made from its starting
-# picture as its first frame, and in reference mode only with the shop owner's things that
-# only show during it.
-EVERY_BROLL_CLIP_IN_REFERENCE_MODE = True
-
-
 def _clip_handoff(
-    step: SceneStep, picture: ProducedItem | None, audio: ProducedItem, *, motion: str = ""
-) -> ClipHandoff | BrollClipHandoff:
-    """What the video model is asked for: a clip speaking the audio, or, for a scene that
-    shows the product, a silent one that moves as the picture's step planned, in the fewest
-    whole seconds that cover the audio, starting like its starting picture. Raises ClipFailed
-    for a line longer than the longest B-roll clip, before anything is paid for."""
+    step: SceneStep, picture: ProducedItem | None, audio: ProducedItem
+) -> ClipHandoff:
+    """What the talking video model is asked for: a clip of the scene's starting picture
+    speaking the audio. A B-roll clip's is `sent_handoff`'s."""
     assert audio.seconds is not None, "a line's audio is measured when it's made"
-    if not step.shows:
-        assert picture is not None, "a talking scene's clip is made from its picture"
-        return ClipHandoff(
-            picture=picture.file,
-            audio=audio.file,
-            # The talking video model makes the clip as long as the audio, whatever it is
-            # asked for, so this is only the seconds it is billed for: at least the shortest
-            # clip a handoff takes.
-            seconds=max(audio.seconds, LEAST_CLIP_SECONDS),
-            motion_prompt=talking_motion_prompt(step.scene.job.product_size),
-        )
-    # A clip step started before clip steps kept their picture step has only its picture.
-    planned = step.picture_step or (picture.step if picture else None)
-    assert planned is not None, "a starting picture is made by a scene step"
-    if audio.seconds > MOST_BROLL_SECONDS:
-        raise ClipFailed(
-            f"its line takes {round(audio.seconds, 1):g} seconds to say, and the B-roll video "
-            f"model makes clips of at most {MOST_BROLL_SECONDS} seconds"
-        )
-    seconds = _broll_clip_seconds(audio.seconds)
-    assert picture is not None, "a B-roll scene's clip is made from its starting picture"
-    # A clip made from a note has its own prompt, written again from the picture's.
-    # A remade clip has its own, written again from what the judge saw wrong.
-    motion = motion or step.motion_prompt or planned.motion_prompt
-    during = _during_the_clip(step)
-    # A scene planned before it had its B-roll labels is moved as before. A labelled scene's
-    # prompt is sent as written, after its look and length: the real photo of the product
-    # keeps it true. Only a labelled scene takes the shop owner's photos.
-    prompt = broll_video_prompt(motion, seconds) if planned.way else with_nothing_made_up(motion)
-    if during or EVERY_BROLL_CLIP_IN_REFERENCE_MODE:
-        # Reference mode (Julian 2026-10-15 17:21, 19:38; every B-roll clip since 2026-10-16
-        # 19:14): the drawn starting picture goes first, as Image 1, told the clip starts like
-        # it, then the clean pictures of the shop owner's things that only show during the
-        # clip. Their raw photos never go.
-        return BrollClipHandoff(
-            example_pictures=[picture.file, *(clean_picture(step.scene, row) for row in during)],
-            seconds=seconds,
-            prompt=(
-                f"{reference_photos.reference_mode_label([row.thing for row in during])} {prompt}"
-            ),
-        )
-    return BrollClipHandoff(starting_picture=picture.file, seconds=seconds, prompt=prompt)
-
-
-def sent_handoff(step: SceneStep, audio: ProducedItem, sent: SentList) -> BrollClipHandoff:
-    """What the video model is asked for when a B-roll clip is made from a sent list: its
-    pictures in order as example pictures, its pieces as reference videos, and its prompt,
-    in the fewest whole seconds that cover the audio. Raises ClipFailed, as _clip_handoff
-    does, for a line longer than the longest B-roll clip."""
-    assert audio.seconds is not None, "a line's audio is measured when it's made"
-    if audio.seconds > MOST_BROLL_SECONDS:
-        raise ClipFailed(
-            f"its line takes {round(audio.seconds, 1):g} seconds to say, and the B-roll video "
-            f"model makes clips of at most {MOST_BROLL_SECONDS} seconds"
-        )
-    videos = {video.position: video.file for video in step.scene.job.videos.all()}
-    return BrollClipHandoff(
-        example_pictures=[picture.file for picture in sent.pictures],
-        reference_videos=[
-            ReferenceVideo(
-                file=piece.file,
-                video=videos[piece.video],
-                start=piece.start,
-                end=piece.end,
-                trim=piece.trim,
-            )
-            for piece in sent.pieces
-        ],
-        seconds=_broll_clip_seconds(audio.seconds),
-        prompt=sent.prompt,
+    assert not step.shows, "a B-roll clip is sent its sent list (sent_handoff)"
+    assert picture is not None, "a talking scene's clip is made from its picture"
+    return ClipHandoff(
+        picture=picture.file,
+        audio=audio.file,
+        # The talking video model makes the clip as long as the audio, whatever it is asked
+        # for, so this is only the seconds it is billed for: at least the shortest clip a
+        # handoff takes.
+        seconds=max(audio.seconds, LEAST_CLIP_SECONDS),
+        motion_prompt=talking_motion_prompt(step.scene.job.product_size),
     )
 
 
@@ -4961,13 +5014,16 @@ def _broll_clip_seconds(audio_seconds: float) -> int:
     return max(LEAST_BROLL_SECONDS, math.ceil(audio_seconds - 1e-6))
 
 
-def clip_estimate_usd(audio_seconds: float, *, broll: bool) -> Decimal:
+def clip_estimate_usd(audio_seconds: float, *, broll: bool, piece_seconds: float = 0.0) -> Decimal:
     """What a scene's clip covering `audio_seconds` of its line is billed, before it is made:
-    a B-roll clip's whole seconds at the B-roll video model's price, a talking clip's audio
-    at the talking one's, as the clip's handoff asks for them (see _clip_handoff)."""
+    a B-roll clip's whole seconds and the `piece_seconds` of video it is sent, each at the
+    B-roll video model's price per second, as it is billed (gateway.submit_broll_clip); a
+    talking clip's audio at the talking one's (see _clip_handoff)."""
     making = "make_broll_clip" if broll else "make_talking_clip"
     seconds = (
-        _broll_clip_seconds(audio_seconds) if broll else max(audio_seconds, LEAST_CLIP_SECONDS)
+        _broll_clip_seconds(audio_seconds) + piece_seconds
+        if broll
+        else max(audio_seconds, LEAST_CLIP_SECONDS)
     )
     return catalog.video_cost_usd(catalog.MODEL_FOR_PURPOSE[making], seconds)
 

@@ -144,8 +144,8 @@ def _joined_frames(frames: list[dict[str, str]]) -> dict[str, str]:
 
 def scene_facts(scene: Scene) -> str:
     """The scene as it stands, written by code: its kind, line and overlay, what it shows,
-    its current clip's video prompt, a settled owner part, the shop owner's photos it uses and
-    its versions."""
+    the plan's pictures and video piece for it, its current clip's video prompt, a settled
+    owner part, the shop owner's photos it uses and its versions."""
     versions = work.versions(scene)
     current = versions[-1] if versions else None
     # The overlay is read with the line it goes with.
@@ -162,13 +162,18 @@ def scene_facts(scene: Scene) -> str:
             *([f"What it ends on: {scene.result}"] if scene.result else []),
             *(
                 [
-                    "What it needs: "
+                    "Its pictures: "
                     + "; ".join(
-                        f"{need['what']} (product photos {', '.join(map(str, need['photos']))})"
-                        for need in scene.needs
+                        f"library item {picture['number']} (for {picture['for']})"
+                        for picture in scene.scene_pictures
                     )
                 ]
-                if scene.needs
+                if scene.scene_pictures
+                else []
+            ),
+            *(
+                [f"Its video piece: video {scene.piece['video']}, moment {scene.piece['moment']}"]
+                if scene.piece
                 else []
             ),
         ]

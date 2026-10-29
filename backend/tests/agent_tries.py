@@ -62,7 +62,7 @@ class FakeAgent:
                 SceneStep.Kind.CLIP,
                 made_from=audio,
                 picture=picture,
-                picture_step=picture.step,
+                picture_step=picture.step if picture is not None else None,
                 motion_prompt=motion,
             )
             clip = work._make_clip(tried, motion=motion)

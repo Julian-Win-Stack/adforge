@@ -19,7 +19,7 @@ from jobs.cut_and_send import Excluded
 from jobs.library import PictureLabel, ProductOnly, add_to_library, library_of
 from jobs.models import Job, Scene, SceneStep
 
-from .conftest import HeldSteps, results_of
+from .conftest import HeldSteps, given_to_the_producer, producer_turns, results_of
 from .test_cut_and_send import BACK, IN_USE, RECOLOUR_OK, SIDE, label, page_photo
 from .test_producer_broll import (
     calling,
@@ -354,3 +354,27 @@ def test_the_same_references_again_change_nothing(
     answer = set_references(fake_model, say, exclude=[library["side"]])
 
     assert "Nothing changed: the scene had these references already." in answer
+
+
+def test_the_producer_is_told_with_the_clip_what_its_cut_left_out(
+    fake_model: FakeModel, say: Callable[..., None], steps: HeldSteps, library: dict[str, int]
+) -> None:
+    job = Job.objects.get()
+    in_use = [page_photo(job, green(IN_USE)) for _ in range(8)]
+    set_references(
+        fake_model, say, pictures=[{"number": number, "for": "in-use"} for number in in_use]
+    )
+    made_ready(fake_model, steps, say, (2,))
+
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    run(fake_model, steps)
+
+    # Image 1 and the 8 picks fill the 9: the side is cut, and the clip's answer says so.
+    finished = [
+        each["text"]
+        for turn in range(1, producer_turns() + 1)
+        for each in given_to_the_producer(turn)
+        if each["kind"] == "step_finished" and "scene 2's clip is ready" in each["text"]
+    ]
+    assert finished
+    assert f"library item {library['side']}" in finished[-1]

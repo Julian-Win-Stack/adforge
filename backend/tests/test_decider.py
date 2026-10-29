@@ -131,6 +131,8 @@ def ad() -> Job:
         person_shown=Scene.PersonShown.NO_FACE,
         usage="Squeeze the gel on, scrub, rinse.",
         result="The bowl shines.",
+        scene_pictures=[{"number": 4, "for": "in-use"}],
+        piece={"video": 1, "moment": 2},
     )
     _version(scrubbing, call, 1)
     _version(scrubbing, call, 2, note="black toilet")
@@ -348,6 +350,9 @@ def test_the_decider_is_told_the_ad_and_the_note_and_doesnt_look_at_the_judge_fo
     assert 'Line: "Meet the gel."\nOverlay: "$9.99"' in the_ad.text
     assert 'Line: "One wipe and it shines."\nOverlay: "Shines in one wipe"' in the_ad.text
     assert "How the product is used: Squeeze the gel on, scrub, rinse." in the_ad.text
+    # The plan's pictures and piece for the scene (spec #210 point 11), not its old needs.
+    assert "Its pictures: library item 4 (for in-use)" in the_ad.text
+    assert "Its video piece: video 1, moment 2" in the_ad.text
     assert "The current clip's video prompt: A hand scrubs the toilet, take 2." in the_ad.text
     assert "Versions: v1 first version; v2 black toilet (the current version)" in the_ad.text
     assert said.text == "In scene 2 the toilet should be white."

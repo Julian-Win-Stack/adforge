@@ -166,6 +166,8 @@ def write_first_send_prompt(
             videos=len(pieces),
         ),
         output=_answer_for(len(library)),
+        # A clip step run again, as after a worker stopped, is answered from the record.
+        pay_once=True,
     )
     written = dict(
         zip(

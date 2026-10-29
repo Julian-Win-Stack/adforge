@@ -18,7 +18,6 @@ from agents.producer import (
     CALL_FALLBACK_USD,
     PICTURE_FALLBACK_USD,
     _estimate,
-    _picture_only_estimate_usd,
     picture_estimate,
 )
 from chat.models import Attachment
@@ -30,7 +29,7 @@ from jobs.clip_judge import ASKS
 from jobs.models import Fix, FixPlan, FixPlanScene, ProducedItem, Scene, SceneStep
 
 from . import fixing
-from .conftest import HeldSteps, WorkerStopped, paid_for, results_of
+from .conftest import SENT_LIST_JUDGED, HeldSteps, WorkerStopped, paid_for, results_of
 from .fixing import fixed, plan_row, planned, say_yes
 from .test_fix_wiring import decided, planning, row
 from .test_producer_broll import (
@@ -55,6 +54,9 @@ REWRITE: dict[str, Any] = {
 }
 BOREAL = PRICE_PER_SECOND_OF_VIDEO[MODEL_FOR_PURPOSE["make_broll_clip"]]
 HEYGEN = PRICE_PER_SECOND_OF_VIDEO[MODEL_FOR_PURPOSE["make_talking_clip"]]
+# The clip judge's asks about a clip made from its sent list: its first question once, then
+# PRODUCT and MOTION each ASKS times.
+JUDGE_ASKS = 1 + 2 * ASKS
 
 Say = Callable[..., None]
 
@@ -62,25 +64,23 @@ Say = Callable[..., None]
 def judge_ask_usd(scene: int) -> Decimal:
     """What one of the clip judge's asks cost on average for the scene's last clip."""
     calls = ModelCall.objects.filter(
-        tool_call=last_step("clip", scene).tool_call,
-        purpose__in=["check_clip_sides", "check_clip_motion"],
+        tool_call=last_step("clip", scene).tool_call, purpose__in=SENT_LIST_JUDGED
     )
     costs = [call.cost_usd for call in calls if call.cost_usd]
-    assert len(costs) == 2 * ASKS, "the clip judge asked each check, each paid for"
+    assert len(costs) == JUDGE_ASKS, "the clip judge asked each check, each paid for"
     return sum(costs, Decimal(0)) / len(costs)
 
 
 def broll_clip_usd(seconds: int, *, from_note: bool) -> tuple[Decimal, Decimal]:
     """Scene 2's new B-roll clip, about and up to: its video and the judge's asks, the
     writer's call for a clip made from a note (not recorded yet, so at the fallback; its fix
-    is checked by the judge's own asks), and up to 6 tries of the fixing agent, each a new
-    picture, a video, the judge and the agent's 3 turns (not recorded yet, so each at the
-    fallback)."""
+    is checked by the judge's own asks), and up to 6 tries of the fixing agent, each a video
+    (no starting picture: spec #210 point 19), the judge and the agent's 3 turns (not
+    recorded yet, so each at the fallback)."""
     video = seconds * BOREAL
-    judge = 2 * ASKS * judge_ask_usd(2)
+    judge = JUDGE_ASKS * judge_ask_usd(2)
     about = video + judge + (CALL_FALLBACK_USD if from_note else 0)
-    picture = _picture_only_estimate_usd(Scene.objects.get(number=2))
-    return about, about + 6 * (picture + video + judge + 3 * CALL_FALLBACK_USD)
+    return about, about + 6 * (video + judge + 3 * CALL_FALLBACK_USD)
 
 
 def owner_says(fake_model: FakeModel, say: Say, text: str, *calls: tuple[str, Any]) -> None:
@@ -194,27 +194,8 @@ def test_a_picture_fix_is_estimated_at_the_last_pictures_cost_and_a_clip(
     assert picture_estimate(scene) == (paid + 4 * HEYGEN, paid + redraws + 4 * HEYGEN)
 
 
-def test_a_broll_picture_fix_leaves_out_the_ads_shared_pictures_of_its_place(
-    shown: ProducedItem,
-) -> None:
-    picture = last_step("starting_picture", 2)
-    drew_them = picture.tool_call.model_calls.filter(
-        purpose__in=["make_before_picture", "make_room_alone", "make_person_in_room"]
-    )
-    assert drew_them.count() == 3, "scene 2's picture drew the ad's pictures of its place"
-    kept = picture.tool_call.model_calls.exclude(
-        purpose__in=[
-            "plan_before_picture",
-            "make_before_picture",
-            "make_room_alone",
-            "make_person_in_room",
-        ]
-    )
-
-    cost = sum((call.cost_usd or Decimal(0) for call in kept), Decimal(0))
-    about, up_to = broll_clip_usd(5, from_note=False)
-    redraws = fix_check.MOST_REDRAWS * (cost + picture_check.ASKS * CALL_FALLBACK_USD)
-    assert picture_estimate(Scene.objects.get(number=2)) == (cost + about, cost + redraws + up_to)
+# Spec #210 point 19: the test of a B-roll picture fix's estimate leaving out the ad's shared
+# pictures of its place was deleted: a scene that shows the product has no starting picture.
 
 
 def test_a_picture_with_no_recorded_cost_is_estimated_at_the_fallback(
@@ -260,7 +241,7 @@ def test_a_clip_fix_is_estimated_from_the_ads_last_recorded_writer_and_judge(
     assert writer > 0
     # Its fix is checked by the clip judge's own asks: no check of its own is priced.
     assert _estimate(Scene.objects.get(number=2), Fix.Redo.CLIP, FIX_2).about == (
-        5 * BOREAL + 2 * ASKS * judge_ask_usd(2) + writer
+        5 * BOREAL + JUDGE_ASKS * judge_ask_usd(2) + writer
     )
 
 
@@ -277,15 +258,15 @@ def test_with_quality_checks_off_a_clip_fix_is_estimated_without_the_judge_or_th
 def test_a_clip_fix_with_no_judge_ask_recorded_is_estimated_at_the_fallback_an_ask(
     shown: ProducedItem,
 ) -> None:
-    ModelCall.objects.filter(purpose__in=["check_clip_sides", "check_clip_motion"]).delete()
+    ModelCall.objects.filter(purpose__in=SENT_LIST_JUDGED).delete()
 
-    # The judge's 2 asks, which check the fix too, and the writer's call, each at the
-    # fallback, and up to 6 tries of the fixing agent, each a new picture, a video, the
-    # judge's 2 asks and the agent's 3 turns.
+    # The judge's 3 asks (its first question, then PRODUCT and MOTION), which check the fix
+    # too, and the writer's call, each at the fallback, and up to 6 tries of the fixing agent,
+    # each a video (no starting picture: spec #210 point 19), the judge's 3 asks and the
+    # agent's 3 turns.
     video = 5 * BOREAL
-    about = video + 3 * CALL_FALLBACK_USD
-    picture = _picture_only_estimate_usd(Scene.objects.get(number=2))
-    up_to = about + 6 * (picture + video + 5 * CALL_FALLBACK_USD)
+    about = video + 4 * CALL_FALLBACK_USD
+    up_to = about + 6 * (video + 6 * CALL_FALLBACK_USD)
     assert _estimate(Scene.objects.get(number=2), Fix.Redo.CLIP, FIX_2) == (about, up_to)
 
 

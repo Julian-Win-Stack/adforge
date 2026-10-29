@@ -15,6 +15,7 @@ from rest_framework.test import APIClient
 
 from adforge import file_store
 from agents.tasks import wake_producer
+from chat import sent as sent_lists
 from chat.models import Attachment, Message, Session
 from gateway.fake import FakeModel, turn
 from jobs import work
@@ -171,6 +172,7 @@ def test_the_chat_shows_every_try_with_the_judges_problem_and_the_agents_pick_an
                 "version": version,
                 "url": file_store.url(clip.file),
                 "problem": problem,
+                "sent": sent_lists.shown(clip),
             }
             for clip, name, version, problem in (
                 (first, "First clip", "v1 first version (first clip)", shown_first),
@@ -179,6 +181,9 @@ def test_the_chat_shows_every_try_with_the_judges_problem_and_the_agents_pick_an
             )
         ],
     }
+    # Each try carries what it was sent, so the scene's card shows the one kept in the ad.
+    assert try_2.sent is not None
+    assert notice["tries"]["clips"][2]["sent"]["prompt"] == try_2.sent["prompt"]
     # No B-roll clip of scene 2 is shown in the chat but in the notice.
     tried = {clip.file for clip in tries()}
     assert not Attachment.objects.filter(kind="video", scene=2, file__in=tried).exists()
@@ -295,11 +300,11 @@ def test_a_tap_while_the_scene_is_being_made_is_refused_until_its_ready(
     failed_ad: ProducedItem, api: APIClient, session_id: str
 ) -> None:
     _, try_1, _ = tries()
-    # Its picture is being drawn again.
-    drawn = SceneStep.objects.filter(kind="starting_picture", scene__number=2).last()
-    assert drawn is not None
+    # Its clip is being made again (it has no starting picture: spec #210 point 19).
+    making = SceneStep.objects.filter(kind="clip", scene__number=2).last()
+    assert making is not None
     SceneStep.objects.create(
-        scene=drawn.scene, kind=drawn.kind, tool_call=drawn.tool_call, line=drawn.line
+        scene=making.scene, kind=making.kind, tool_call=making.tool_call, line=making.line
     )
 
     sent = tap_use(api, session_id, try_1)
@@ -411,12 +416,12 @@ def test_going_back_to_a_try_after_the_line_changed_keeps_the_newer_line(
 
     tap_yes(api, session_id, plans()[-1])
 
-    # The try's picture is brought back, the product shown again, with the newer line.
+    # The try's sent list is planned to be sent again, the product shown again, with the
+    # newer line: its clip is made again (it has no starting picture: spec #210 point 19).
     scene.refresh_from_db()
     assert (scene.line, scene.shows) == (newer, SHOWS)
-    top = work.versions(scene)[-1]
-    assert top.picture is not None and top.picture.file == try_1.picture.file  # type: ignore[union-attr]
-    assert top.clip is None
+    (back,) = plans()[-1].scenes.all()
+    assert (back.cant, back.remakes_clip) == ("", True)
 
 
 SLOWER = "Pour the tea slower."
@@ -436,7 +441,8 @@ def test_a_note_after_a_tap_has_the_rewrite_start_from_the_swapped_in_clips_move
     fake_model.respond("rewrite_clip_prompt", rewrite(REMADE_AGAIN))
     steps.run_next()
 
-    assert handoffs("rewrite_clip_prompt")[-1]["motion_prompt"] == REMADE
+    # The swapped-in try's prompt, as it was sent with its pictures.
+    assert handoffs("rewrite_clip_prompt")[-1]["motion_prompt"].endswith(REMADE)
 
 
 # --- A fix's clip the agent gave up on keeps the clip from before -----------------------------

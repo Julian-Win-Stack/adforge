@@ -15,7 +15,7 @@ from gateway.fake import FakeModel, turn
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 
 from .conftest import (
-    JUDGED_CLIP,
+    SENT_LIST_JUDGED,
     HeldSteps,
     WorkerStopped,
     facts_ok,
@@ -24,7 +24,6 @@ from .conftest import (
     paid_for,
 )
 from .test_producer_broll import (
-    BROLL_CHOICE,
     LINE_2,
     SHOWS,
     TALKING_CHOICE,
@@ -194,16 +193,10 @@ def test_no_clip_is_paid_for_until_the_audio_fits(
 ) -> None:
     fake_model.respond("shorten_line", {"line": SHORTER})
     fake_model.respond("fact_check", facts_ok(2))
-    calling(
-        fake_model,
-        say,
-        ("make_starting_picture", {"scene": 2, "note": None}),
-        ("make_line_audio", {"scene": 2}),
-    )
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    calling(fake_model, say, ("make_line_audio", {"scene": 2}))
     run(fake_model, steps)
     # The producer, told to make its audio again, does, then transcribes it and makes its
-    # clip from the starting picture it has.
+    # clip from its sent list (no starting picture: spec #210 point 19).
     audio_of_scene_2(fake_model, steps, say)
     calling(fake_model, say, ("transcribe_line_audio", {"scene": 2}))
     run(fake_model, steps)
@@ -211,23 +204,20 @@ def test_no_clip_is_paid_for_until_the_audio_fits(
     run(fake_model, steps)
 
     assert since_planning() == [
-        "plan_before_picture",
-        "make_before_picture",
-        "choose_broll_picture",
-        "make_starting_picture",
-        "check_starting_picture",
-        "check_starting_picture",
-        # The ad's room alone and the presenter standing in it, once.
-        "make_room_alone",
-        "make_person_in_room",
         "speak_line",
         "shorten_line",
         "fact_check",
         "speak_line",
         "transcribe_line",
+        # The ad's place, then its room alone and the presenter standing in it, once.
+        "plan_before_picture",
+        "make_before_picture",
+        "make_room_alone",
+        "make_person_in_room",
+        "write_first_send_prompt",
         "make_broll_clip",
         "collect_broll_clip",
-        *JUDGED_CLIP,
+        *SENT_LIST_JUDGED,
     ]
     # The shorter line takes 7.75 seconds to say.
     assert clips_asked("seconds") == [8]

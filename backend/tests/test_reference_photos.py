@@ -46,13 +46,6 @@ def test_the_clean_pictures_are_numbered_first_and_each_said_to_win() -> None:
     )
 
 
-def test_in_reference_mode_the_clip_starts_like_image_1_and_the_clean_pictures_follow() -> None:
-    assert reference_photos.reference_mode_label(["green gel"]) == (
-        "Image 1 is how the clip starts: the clip starts exactly like Image 1. Image 2 is the "
-        "shop owner's own green gel: wherever it disagrees with another picture, follow Image 2."
-    )
-
-
 def test_the_clean_picture_prompt_never_copies_a_face_or_invents_a_side() -> None:
     prompt = reference_photos.clean_picture_prompt("apron")
     assert prompt.startswith("A clean photo of only the apron in this photo")

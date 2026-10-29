@@ -21,16 +21,15 @@ from chat.models import Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, ModelRequest, UnusableReply
-from jobs import fix_check, reference_photos, work
+from jobs import reference_photos
 from jobs.clip_judge import (
     ASKS,
-    MOTION_CHECK,
     MOTION_FIX_QUESTION,
+    MOTION_FROM_REFERENCES,
     MOTION_PHOTO_FIX_QUESTION,
     OWNER_PHOTO_LABEL,
     wording_version,
 )
-from jobs.fix_check import PhotoFixVerdict
 from jobs.models import (
     Fix,
     FixPlan,
@@ -41,7 +40,6 @@ from jobs.models import (
     Scene,
     SceneStep,
 )
-from jobs.scenes import SAME_SIDE
 
 from . import fixing
 from .agent_tries import agent_films
@@ -50,7 +48,6 @@ from .conftest import (
     CLIP_MOTION_OK,
     CUT_OUT_OK,
     FACTS_OK,
-    FIX_MADE,
     LABELLED,
     NO_CHOICES,
     OWNER_PHOTO_SHOWS,
@@ -61,7 +58,6 @@ from .conftest import (
     motion_answer,
     paid_for,
     picture,
-    with_owner_photo,
 )
 from .test_producer_broll import (
     BROLL_CHOICE,
@@ -72,8 +68,18 @@ from .test_producer_broll import (
     instructed,  # noqa: F401 (a fixture)
     run,
 )
+from .test_recolour import RECOLOUR_OK
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+@pytest.fixture(autouse=True)
+def recolours_pass(fake_model: FakeModel) -> None:
+    """Every photo is labelled the clip's colour, the shop owner's things too, so none is
+    recoloured; one that is passes its check."""
+    fake_model.answer_unscripted("label_photo", lambda _: {**LABELLED, "colour": "sage-green"})
+    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
+
 
 # The cut-out check failing a clean picture.
 CUT_OUT_FAILS: dict[str, Any] = {
@@ -263,85 +269,6 @@ def routes(fake_model: FakeModel, settings: Settings) -> dict[tuple[str, str], s
     return answers
 
 
-def test_with_the_fallback_a_scene_whose_new_line_kept_its_picture_is_still_routed(
-    fake_model: FakeModel,
-    shown: ProducedItem,
-    say: Say,
-    steps: HeldSteps,
-    routes: dict[tuple[str, str], str],
-) -> None:
-    # The scene's line changed and its picture was kept: no picture is made for the new line.
-    fixing.fixed(2, "new_line", note="Change scene 2's line.", change="A new line.", line=LINE)
-    steps.run_held()
-    photos_sent(fake_model, say, OWNER_MUG)
-
-    plan = fixing.planned(
-        fixing.plan_row(
-            2,
-            "new_clip",
-            change=MUG_FIX,
-            photos=[photo(1, "black mug", in_picture=False, during_action=True)],
-        ),
-        note=MUG_NOTE,
-    )
-
-    # The route call still looks at the picture the shop owner sees, and puts the mug in it.
-    assert len(handoffs("route_reference_photo")) == 1
-    assert plan.scenes.get().action == "new_picture"
-
-
-# The route call's "in the picture" keeps the decider's "more during the action"; "from the
-# start" is in the picture only.
-@pytest.mark.parametrize(
-    ("answer", "during_action"), [("in_the_picture", True), ("belongs_from_the_start", False)]
-)
-def test_with_the_fallback_a_thing_the_route_call_puts_in_the_picture_is_a_new_picture(
-    fake_model: FakeModel,
-    shown: ProducedItem,
-    say: Say,
-    routes: dict[tuple[str, str], str],
-    answer: str,
-    during_action: bool,
-) -> None:
-    # D6: a thing to add from the start, sent to the clip, would pop in mid-clip.
-    routes[("black mug", SHOWS)] = answer
-    picture_2 = latest("starting_picture")
-    photos_sent(fake_model, say, OWNER_MUG)
-
-    # The decider said a new clip, the mug only during the action; the route call finds it
-    # belongs in the picture.
-    plan = fixing.planned(
-        fixing.plan_row(
-            2,
-            "new_clip",
-            change=MUG_FIX,
-            photos=[photo(1, "black mug", in_picture=False, during_action=True)],
-        ),
-        note=MUG_NOTE,
-    )
-
-    row = plan.scenes.get()
-    assert row.action == "new_picture"
-    assert (row.photos[0]["in_picture"], row.photos[0]["during_action"]) == (True, during_action)
-    asked = handoffs("route_reference_photo")[0]
-    assert asked == {
-        "thing": "black mug",
-        "scene_shows": SHOWS,
-        "change": MUG_FIX,
-        "pictures": "The starting picture is first; the shop owner's photo is second.",
-    }
-    call = ModelCall.objects.filter(purpose="route_reference_photo").first()
-    assert call is not None and call.images == [
-        {"label": "The starting picture:", "key": picture_2.file},
-        {"label": "The shop owner's photo:", "key": owner_file(1)},
-    ]
-    # The clean picture is counted once, in the estimate the shop owner is shown.
-    assert row.estimate_usd > CLEAN_PICTURE_USD
-    # Nothing is drawn or kept before their yes.
-    assert clean_pictures() == []
-    assert not ReferencePhoto.objects.exists()
-
-
 def test_with_the_fallback_and_no_answer_from_the_route_call_the_deciders_answers_stand(
     fake_model: FakeModel, shown: ProducedItem, say: Say, routes: dict[tuple[str, str], str]
 ) -> None:
@@ -365,66 +292,12 @@ def test_with_the_fallback_and_no_answer_from_the_route_call_the_deciders_answer
     assert (row.photos[0]["in_picture"], row.photos[0]["during_action"]) == (False, True)
 
 
-def test_with_the_fallback_a_photo_the_thing_cant_be_seen_in_cant_be_used_and_makes_nothing(
-    fake_model: FakeModel, shown: ProducedItem, say: Say, routes: dict[tuple[str, str], str]
-) -> None:
-    # D8, from the owner photos test's C16: a blurry photo was drawn as a guess, so the
-    # route call says first whether the thing can be copied from it (design thread 22:15).
-    routes[("black mug", SHOWS)] = "unclear"
-    photos_sent(fake_model, say, OWNER_MUG)
-
-    plan = fixing.planned(
-        fixing.plan_row(2, "new_picture", change=MUG_FIX, photos=[photo(1, "black mug")]),
-        note=MUG_NOTE,
-    )
-
-    assert plan.scenes.get().cant == (
-        "Owner photo 1 doesn't show the black mug clearly enough to copy its look. Send a "
-        "clearer photo of the black mug."
-    )
-    fixing.say_yes(plan)
-    assert not Fix.objects.exists()
-    assert handoffs("make_reference_photo_picture") == []
-
-
 def test_the_route_call_looks_at_the_photo_and_is_lenient_about_it() -> None:
     fields = list(reference_photos.RouteAnswer.model_fields)
     assert fields[:3] == ["photo_shows", "clear_enough", "unclear_why"]
     instructions = " ".join(reference_photos.ROUTE_INSTRUCTIONS.split())
     assert "An ordinary phone photo is clear enough" in instructions
     assert "answer no only when you can't really see the thing" in instructions
-
-
-def test_the_route_call_is_answered_from_its_record_when_planned_again(
-    fake_model: FakeModel, shown: ProducedItem, say: Say, routes: Any
-) -> None:
-    photos_sent(fake_model, say, OWNER_MUG)
-    for _ in range(2):
-        fixing.planned(
-            fixing.plan_row(2, "new_picture", change=MUG_FIX, photos=[photo(1, "black mug")]),
-            note=MUG_NOTE,
-        )
-
-    assert ModelCall.objects.filter(purpose="route_reference_photo").count() == 1
-
-
-def test_a_route_answer_kept_in_an_older_form_counts_as_no_answer(
-    fake_model: FakeModel, shown: ProducedItem, say: Say, routes: Any
-) -> None:
-    routes[("tea", SHOWS)] = "appears_during_the_clip"
-    photos_sent(fake_model, say, OWNER_TEA)
-    fixing.planned(tea_plan_row(in_picture=True), note=TEA_NOTE)
-    assert ModelCall.objects.filter(purpose="route_reference_photo").count() == 1
-    # As kept before the answer had "clear_enough" (owner photos test, 23:53).
-    ModelCall.objects.filter(purpose="route_reference_photo").update(
-        output={"where": "in_the_picture"}
-    )
-
-    plan = fixing.planned(tea_plan_row(in_picture=True), note=TEA_NOTE)
-
-    # No answer could be had, so the decider's own answers stand: the tea in the picture.
-    row = plan.scenes.get()
-    assert (row.action, row.cant, row.photos[0]["in_picture"]) == ("new_picture", "", True)
 
 
 # --- The photo numbers of the chat ------------------------------------------------------------
@@ -493,91 +366,6 @@ def mug_fixed(fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say:
     return Fix.objects.get()
 
 
-def test_the_new_starting_picture_is_drawn_with_the_clean_picture_first_labelled_to_win(
-    fake_model: FakeModel, mug_fixed: Fix
-) -> None:
-    (clean,) = clean_pictures()
-    # The clean picture is drawn from the shop owner's photo alone, and never copies a face.
-    drawing = handoffs("make_reference_photo_picture")[0]
-    assert drawing == {
-        "prompt": reference_photos.clean_picture_prompt("black mug"),
-        "pictures": [owner_file(1)],
-    }
-    assert "Never copy any person's face." in drawing["prompt"]
-    # Its check is the cut-out check, asked once, beside the shop owner's photo.
-    (checked,) = ModelCall.objects.filter(purpose="check_cut_out")
-    assert [image["key"] for image in checked.images] == [clean, owner_file(1)]
-    assert checked.handoff["keep"] == "the shop owner's black mug"
-    step = last_step("starting_picture")
-    planned = handoffs("choose_broll_picture")[-1]
-    assert planned["pictures"][0] == {
-        "image": 1,
-        "job": "the shop owner's own black mug: wherever it disagrees with another picture, "
-        "follow this one",
-    }
-    assert planned["pictures"][1]["image"] == 2
-    asked = ModelCall.objects.filter(purpose="choose_broll_picture").last()
-    assert asked is not None and asked.images[0] == {
-        "label": "The shop owner's own black mug",
-        "key": clean,
-    }
-    drawn = handoffs("make_starting_picture")[-1]
-    assert drawn["prompt"].startswith(
-        "Image 1 is the shop owner's own black mug: wherever it disagrees with another "
-        "picture, follow Image 1. "
-    )
-    assert drawn["pictures"][0] == clean
-    assert step.pictures_sent[0]["reference_photo"] == ReferencePhoto.objects.get().pk
-    # The clip of the new picture is made from it alone, as any clip: the mug is in its
-    # picture, so no clean picture goes with it.
-    sent = handoffs("make_broll_clip")[-1]
-    assert sent["starting_picture"] is None
-    assert sent["example_pictures"] == [latest("starting_picture").file]
-    assert sent["prompt"].startswith(
-        "Image 1 is how the clip starts: the clip starts exactly like Image 1. A "
-    )
-
-
-OWNER_COASTER = ("my-coaster.png", picture(60, 80, (90, 60, 30)))
-
-
-def test_with_three_of_the_shop_owners_things_the_product_photo_is_still_photo_1(
-    fake_model: FakeModel,
-    shown: ProducedItem,
-    steps: HeldSteps,
-    say: Say,
-    instructed: dict[str, list[str]],  # noqa: F811 (the fixture)
-) -> None:
-    # Case C12b, replayed free: three things drawn in first made the product photo Image 4,
-    # and the writer, told so, answered "photo" with 4. With one product photo it is no
-    # longer asked which.
-    Job.objects.get().photos.filter(position=2).delete()
-    photos_sent(fake_model, say, OWNER_MUG, OWNER_TEA, OWNER_COASTER)
-    asked: list[dict[str, Any]] = []
-
-    def answer(request: ModelRequest[Any]) -> dict[str, Any]:
-        asked.append(request.output.model_json_schema())
-        return {key: value for key, value in BROLL_CHOICE.items() if key != "photo"}
-
-    fake_model.answer_unscripted("choose_broll_picture", answer)
-    fixing.fixed(
-        2,
-        "new_picture",
-        change=MUG_FIX,
-        photos=[photo(1, "black mug"), photo(2, "tea"), photo(3, "coaster")],
-    )
-    steps.run_held()
-
-    assert "photo" not in asked[0]["properties"]
-    assert "Image 4" not in instructed["choose_broll_picture"][-1]
-    step = last_step("starting_picture")
-    assert step.status == "finished"
-    assert step.photo is not None and step.photo.position == 1
-    drawn = handoffs("make_starting_picture")[-1]
-    assert drawn["pictures"][3] == Job.objects.get().photos.get(position=1).file
-    assert "Image 4 is the product photo. " in drawn["prompt"]
-
-
 def test_the_writer_of_the_prompts_is_told_the_shop_owners_pictures_win(
     instructed: dict[str, list[str]],  # noqa: F811 (the fixture)
     mug_fixed: Fix,
@@ -585,59 +373,6 @@ def test_the_writer_of_the_prompts_is_told_the_shop_owners_pictures_win(
     assert instructed["choose_broll_picture"][-1].endswith(
         reference_photos.writer_rules(["black mug"], [], picks_photo=True)
     )
-
-
-def test_the_fix_check_is_shown_the_shop_owners_photo_and_looks_at_it_first(
-    mug_fixed: Fix,
-) -> None:
-    asked = ModelCall.objects.filter(purpose="check_fix").order_by("id")
-    first = asked.first()
-    assert first is not None
-    assert first.handoff["owner_photos"] == ["black mug"]
-    assert first.images[2] == {
-        "label": "The shop owner's photo of their black mug:",
-        "key": owner_file(1),
-    }
-    check = mug_fixed.checks.get()
-    assert check.verdict == "passed"
-    assert check.answers[0]["owner_photo_shows"] == OWNER_PHOTO_SHOWS
-    # It writes what the photo shows before anything else.
-    assert list(PhotoFixVerdict.model_fields)[0] == "owner_photo_shows"
-
-
-def test_a_shop_owners_photo_the_fix_checks_filter_refuses_is_left_out_and_the_fix_checked(
-    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
-) -> None:
-    """Requirement 22: the fix check is asked again without the photo, as a fix with no photo
-    is, and answers on the old and new pictures; the chat is told in red."""
-    label = "The shop owner's photo of their black mug:"
-
-    def refusing(request: ModelRequest[Any]) -> dict[str, Any]:
-        if label in [image.label for image in request.images]:
-            raise BlockedBySafetyFilter("content_policy_violation")
-        return with_owner_photo(FIX_MADE, request.output)
-
-    fake_model.answer_unscripted("check_fix", refusing)
-    photos_sent(fake_model, say, OWNER_MUG)
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
-    fixing.fixed(2, "new_picture", note=MUG_NOTE, change=MUG_FIX, photos=[photo(1, "black mug")])
-    steps.run_held()
-
-    asked = ModelCall.objects.filter(purpose="check_fix").order_by("id")
-    with_it = ["The old picture:", "The new picture:", label]
-    assert [[image["label"] for image in call.images] for call in asked] == [
-        with_it,
-        with_it[:2],
-    ] * 2
-    assert all("owner_photos" not in call.handoff for call in asked[1::2])
-    check = Fix.objects.get().checks.get()
-    assert check.verdict == "passed"
-    assert [answer["not_shown"] for answer in check.answers] == [
-        ["the shop owner's photo of their black mug"]
-    ] * 2
-    (said,) = [text for text in problems() if "safety filter" in text]
-    assert "the shop owner's photo of their black mug" in said and "scene 2's fix" in said
-    assert said in [warning["text"] for warning in Job.objects.get().warnings]
 
 
 def test_a_shop_owners_photo_the_clean_pictures_check_refuses_is_named_as_theirs(
@@ -707,50 +442,19 @@ def tea_fixed(fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say:
     return Fix.objects.get()
 
 
-def test_a_thing_during_the_clip_makes_it_in_reference_mode_from_the_starting_picture(
+def test_a_thing_during_the_clip_is_sent_with_the_clips_pictures_as_its_clean_picture(
     tea_fixed: Fix,
 ) -> None:
     (clean,) = clean_pictures()
     sent = handoffs("make_broll_clip")[-1]
-    # Locked rule 1 as changed (Julian 19:38): the drawn starting picture goes first, then the
-    # clean picture; never a raw photo, and never both ways at once.
+    # No starting picture (spec #210 point 19): the clip's sent list, the clean picture of the
+    # tea among its pictures, never the raw photo; the prompt the rewrite wrote from the note.
     assert sent["starting_picture"] is None
-    assert sent["example_pictures"] == [latest("starting_picture").file, clean]
+    assert clean in sent["example_pictures"]
     assert owner_file(1) not in sent["example_pictures"]
-    assert sent["prompt"].startswith(
-        "Image 1 is how the clip starts: the clip starts exactly like Image 1. Image 2 is the "
-        "shop owner's own tea: wherever it disagrees with another picture, follow Image 2. A "
-    )
-    assert f"The camera stays still. {SAME_SIDE} {REWRITE['motion_prompt']}" in sent["prompt"]
-    # The starting picture isn't drawn again.
-    assert latest("starting_picture").version == 1
+    assert sent["prompt"] == REWRITE["motion_prompt"]
+    assert not ProducedItem.objects.filter(kind="starting_picture", scene__number=2).exists()
     assert in_use() == [("tea", "clip")]
-
-
-@pytest.fixture
-def reference_mode_off(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The one-line switch back to before (Julian 2026-10-16 19:08)."""
-    monkeypatch.setattr(work, "EVERY_BROLL_CLIP_IN_REFERENCE_MODE", False)
-
-
-def test_with_reference_mode_switched_off_only_a_thing_during_the_clip_makes_it_so(
-    reference_mode_off: None, tea_fixed: Fix
-) -> None:
-    (clean,) = clean_pictures()
-    first, remade = handoffs("make_broll_clip")[0], handoffs("make_broll_clip")[-1]
-    # Before the tea, the clip was made from its starting picture as its first frame.
-    assert (first["starting_picture"], first["example_pictures"]) == (
-        latest("starting_picture").file,
-        [],
-    )
-    assert not first["prompt"].startswith("Image 1")
-    # With the tea, in reference mode as the owner-photos build made it.
-    assert remade["starting_picture"] is None
-    assert remade["example_pictures"] == [latest("starting_picture").file, clean]
-    assert remade["prompt"].startswith(
-        "Image 1 is how the clip starts: the clip starts exactly like Image 1. Image 2 is the "
-        "shop owner's own tea"
-    )
 
 
 def test_the_clip_prompt_writer_is_told_of_the_shop_owners_thing_and_shown_it(
@@ -758,7 +462,8 @@ def test_the_clip_prompt_writer_is_told_of_the_shop_owners_thing_and_shown_it(
 ) -> None:
     call = ModelCall.objects.filter(purpose="rewrite_clip_prompt").last()
     assert call is not None
-    assert call.images[1] == {"label": "The shop owner's own tea", "key": clean_pictures()[0]}
+    # The owner's thing is one of the clip's sent pictures (spec #210 point 19), shown with them.
+    assert clean_pictures()[0] in [image["key"] for image in call.images]
 
 
 def test_the_clip_judge_is_shown_the_shop_owners_photo_for_the_change(
@@ -808,10 +513,11 @@ def test_a_shop_owners_photo_the_clip_judges_filter_refuses_is_left_out_of_the_c
     assert len(then.images) == len(first.images) - 1
     assert "owner_photos" not in then.handoff
     assert instructed["check_clip_motion"][-2].endswith(MOTION_PHOTO_FIX_QUESTION)
-    assert instructed["check_clip_motion"][-1] == f"{MOTION_CHECK}\n\n{MOTION_FIX_QUESTION}"
+    without_photo = f"{MOTION_FROM_REFERENCES}\n\n{MOTION_FIX_QUESTION}"
+    assert instructed["check_clip_motion"][-1] == without_photo
     new = latest("clip")
     assert new.ruling is not None
-    assert new.ruling["wording"] == wording_version(fix=True)
+    assert new.ruling["wording"] == wording_version(fix=True, sent=True)
     assert "owner_photo_shows" not in new.ruling["answers"]["motion"][0]["owner_change"]
     fix = Fix.objects.get()
     assert fix.checks.get().verdict == "passed"
@@ -819,7 +525,7 @@ def test_a_shop_owners_photo_the_clip_judges_filter_refuses_is_left_out_of_the_c
     assert "the shop owner's photo of their tea" in said and "scene 2's clip" in said
 
 
-def test_a_try_after_the_judge_fails_stays_in_reference_mode(
+def test_a_try_after_the_judge_fails_still_sends_the_shop_owners_thing(
     fake_model: FakeModel,
     shown: ProducedItem,
     steps: HeldSteps,
@@ -844,8 +550,7 @@ def test_a_try_after_the_judge_fails_stays_in_reference_mode(
     assert len(handoffs("make_broll_clip")) == 2 + 2
     remade = handoffs("make_broll_clip")[-1]
     assert remade["starting_picture"] is None
-    assert len(remade["example_pictures"]) == 2
-    assert remade["prompt"].startswith("Image 1 is how the clip starts")
+    assert clean_pictures()[0] in remade["example_pictures"]
 
 
 # --- Several photos on one note ------------------------------------------------------------------
@@ -870,121 +575,6 @@ def mug_and_tea(fake_model: FakeModel, steps: HeldSteps, say: Say) -> None:
     steps.run_held()
 
 
-def test_one_note_with_two_photos_takes_one_thing_from_each(
-    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
-) -> None:
-    mug_and_tea(fake_model, steps, say)
-
-    mug, tea = clean_pictures()
-    # The mug is drawn into the picture; the tea only goes to the clip.
-    assert handoffs("make_starting_picture")[-1]["pictures"][0] == mug
-    assert tea not in handoffs("make_starting_picture")[-1]["pictures"]
-    sent = handoffs("make_broll_clip")[-1]
-    assert sent["example_pictures"] == [latest("starting_picture").file, tea]
-    assert sorted(in_use()) == [("black mug", "picture"), ("tea", "clip")]
-
-
-def test_a_picture_fix_check_looks_only_at_things_drawn_into_the_picture(
-    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
-) -> None:
-    # The tea only shows during the clip: it is never in a still, so the picture's check
-    # isn't told to look for it.
-    mug_and_tea(fake_model, steps, say)
-
-    asked = ModelCall.objects.filter(purpose="check_fix").order_by("id")
-    assert asked.exists()
-    for call in asked:
-        assert call.handoff["owner_photos"] == ["black mug"]
-        # It is told the tea isn't expected in a still (design thread 23:54).
-        assert call.handoff["during_the_action"] == ["tea"]
-        assert [image["key"] for image in call.images[2:]] == [owner_file(1)]
-
-
-def test_a_thing_during_the_clip_in_a_picture_fix_is_checked_on_its_clip(
-    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
-) -> None:
-    # The tea only shows during the clip, so the picture's check can't see it: the clip made
-    # from the new picture is asked about it, with its photo (Julian 20:25, "we always check
-    # whether the owner's words are applied right"; design thread 22:42).
-    old_clip = latest("clip")
-
-    mug_and_tea(fake_model, steps, say)
-
-    motion = ModelCall.objects.filter(purpose="check_clip_motion").order_by("-id")[:ASKS]
-    for call in motion:
-        assert call.handoff["owner_photos"] == ["tea"]
-        assert {"label": OWNER_PHOTO_LABEL.format("tea"), "key": owner_file(2)} in call.images
-        assert {"label": OWNER_PHOTO_LABEL.format("black mug"), "key": owner_file(1)} not in (
-            call.images
-        )
-    picture_check, clip_check = Fix.objects.get(scene__number=2).checks.order_by("id")
-    assert (picture_check.step.kind, clip_check.step.kind) == ("starting_picture", "clip")
-    assert (clip_check.old, clip_check.verdict) == (old_clip, "passed")
-    assert latest("clip").ruling["compared_with"] == old_clip.pk  # type: ignore[index]
-
-
-def test_a_picture_fix_with_no_thing_during_the_clip_leaves_its_clip_judged_as_any(
-    mug_fixed: Fix,
-) -> None:
-    motion = ModelCall.objects.filter(purpose="check_clip_motion").order_by("-id")[:ASKS]
-    assert all("owner_change" not in call.handoff for call in motion)
-    assert all("owner_photos" not in call.handoff for call in motion)
-    assert [check.step.kind for check in mug_fixed.checks.all()] == ["starting_picture"]
-    assert "compared_with" not in (latest("clip").ruling or {})
-
-
-def test_a_note_changing_the_picture_in_words_beside_a_clip_photo_redraws_the_picture(
-    fake_model: FakeModel,
-    shown: ProducedItem,
-    steps: HeldSteps,
-    say: Say,
-    instructed: dict[str, list[str]],  # noqa: F811 (the fixture)
-) -> None:
-    # "A dark walnut bench, and our tea": the tea only shows during the clip, but the bench is
-    # a change to the picture, so it is drawn again (review follow-up, design thread 23:54).
-    photos_sent(fake_model, say, OWNER_TEA)
-    fix = "In scene 2, the bench is dark walnut and the tea looks like the shop owner's."
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
-    fake_model.respond("rewrite_clip_prompt", REWRITE)
-
-    fixing.fixed(
-        2,
-        "new_picture",
-        note="Put it on a dark walnut bench, and use our tea.",
-        change=fix,
-        photos=[photo(1, "tea", in_picture=False, during_action=True)],
-    )
-    asked = Fix.objects.get()
-    assert (asked.redo, asked.photos[0]["use"]) == ("picture", "clip")
-    steps.run_held()
-
-    checked = ModelCall.objects.filter(purpose="check_fix").order_by("id")
-    assert checked.exists()
-    for call in checked:
-        assert call.handoff["during_the_action"] == ["tea"]
-        assert "owner_photos" not in call.handoff
-        assert len(call.images) == 2
-    assert all(told.endswith(fix_check.DURING_THE_ACTION) for told in instructed["check_fix"])
-    # Its clip's judge looks for the tea, with its photo.
-    motion = ModelCall.objects.filter(purpose="check_clip_motion").order_by("-id")[:ASKS]
-    assert all(call.handoff["owner_photos"] == ["tea"] for call in motion)
-
-
-def test_a_picture_fix_with_no_photo_is_checked_as_before(
-    fake_model: FakeModel,
-    shown: ProducedItem,
-    steps: HeldSteps,
-    instructed: dict[str, list[str]],  # noqa: F811 (the fixture)
-) -> None:
-    brighter(fake_model, steps)
-
-    asked = ModelCall.objects.filter(purpose="check_fix")
-    assert asked.exists()
-    for call in asked:
-        assert set(call.handoff) == {"fix", "ask", "pictures"}
-    assert all(told == fix_check.FIX_CHECK for told in instructed["check_fix"])
-
-
 # --- The photo stays with the scene (D1) --------------------------------------------------------
 
 
@@ -998,24 +588,6 @@ def test_a_later_fix_on_the_scene_draws_it_with_the_photo_again_without_drawing_
     assert in_use() == [("black mug", "picture")]
     # The check of that fix has no photo of its own: it is asked as any.
     assert "owner_photos" not in handoffs("check_fix")[-1]
-
-
-def test_a_new_line_keeps_the_picture_with_the_photo(
-    fake_model: FakeModel, mug_fixed: Fix, steps: HeldSteps
-) -> None:
-    line = LINE
-    with_the_mug = latest("starting_picture")
-    drawn = len(handoffs("make_starting_picture"))
-
-    fixing.fixed(2, "new_line", note="Change scene 2's line.", change="A new line.", line=line)
-    steps.run_held()
-
-    assert Scene.objects.get(number=2).line == line
-    # Julian, 2026-10-17: a new line keeps the starting picture, the owner's mug in it.
-    assert len(handoffs("make_starting_picture")) == drawn
-    assert latest("starting_picture") == with_the_mug
-    assert latest("clip").picture == with_the_mug
-    assert latest("clip").step.line == line  # type: ignore[union-attr]
 
 
 # --- Going back, a new photo of the same thing ---------------------------------------------------
@@ -1194,25 +766,6 @@ def test_two_scenes_using_the_same_photo_share_one_clean_picture(
 
     assert len(clean_pictures()) == 1
     assert {row.drawn for row in ReferencePhoto.objects.all()} == set(clean_pictures())
-
-
-def test_the_same_thing_named_in_other_capitals_shares_its_clean_picture(
-    fake_model: FakeModel, mug_fixed: Fix, steps: HeldSteps
-) -> None:
-    fix = "In scene 3, the mug looks like the shop owner's Black mug."
-    plan = fixing.planned(
-        fixing.plan_row(3, "new_picture", change=fix, photos=[photo(1, "Black mug")]),
-        note="Scene 3 too.",
-    )
-    # A picture and its clip, with no clean picture to draw: the mug's is already drawn.
-    assert plan.scenes.get().estimate_usd == Decimal("0.4235")
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
-
-    fixing.say_yes(plan)
-    steps.run_held()
-
-    assert len(clean_pictures()) == 1
-    assert handoffs("make_starting_picture")[-1]["pictures"][0] == clean_pictures()[0]
 
 
 def test_a_clean_picture_drawn_before_a_restart_is_used_not_drawn_again(mug_fixed: Fix) -> None:

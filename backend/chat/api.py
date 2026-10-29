@@ -141,9 +141,9 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
         }
 
     def get_tries(self, message: Message) -> dict[str, object] | None:
-        """Every try of a clip the judge failed every try of, as it stands now, with the one
-        in the ad, whether one can be swapped in, and the fixing agent's pick and why it gave
-        up, for a notice showing them to pick from, or null."""
+        """Every try of a clip the judge failed every try of, as it stands now, each with what
+        it was sent, with the one in the ad, whether one can be swapped in, and the fixing
+        agent's pick and why it gave up, for a notice showing them to pick from, or null."""
         if message.tries_of is None:
             return None
         shown = work.tries_shown(message.tries_of)
@@ -160,6 +160,9 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
                     "version": each.version,
                     "url": file_store.url(each.clip.file),
                     "problem": each.problem,
+                    # The kept try is never posted as a file of its own (a give-up's notice
+                    # ends its step), so the card reads what it was sent here.
+                    "sent": sent_lists.shown(each.clip),
                 }
                 for each in shown.tries
             ],

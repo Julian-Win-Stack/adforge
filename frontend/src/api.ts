@@ -128,6 +128,8 @@ export type TryClip = {
   version: string;
   url: string;
   problem: string;
+  /** What the try was sent to the video API, as a clip's attachment carries it. */
+  sent?: SentList | null;
 };
 
 /** Every try of a scene's clip the clip judge failed every try of, for the owner to pick
