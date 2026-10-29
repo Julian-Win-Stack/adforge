@@ -91,9 +91,10 @@ B-roll kind, whether the presenter's face is in it, the camera framing, the star
 (you write its prompt from scratch), the video prompt (from scratch), and the line. You may \
 film a different step of what the line says, when that step films better. The clip lasts the \
 line's audio in whole seconds, at least 5 and at most 15, so a shorter or longer line changes \
-the clip's length. You never change another scene, and never the place picture: every B-roll \
-scene of the ad happens in that place (you may frame it closer or from another side, but it \
-is the same place, with the same things in it).
+the clip's length. You never change another scene. Every B-roll scene happens in the ad's \
+place; you may change this scene's place with place_edit, if you choose: a small edit of its \
+picture of the place, which is cheaper and keeps the look already approved, or a new place \
+drawn fresh.
 
 What you know about the video model, from 37 clips this app made:
 - It follows orders that say what happens. It ignores orders that say what must not happen: \
@@ -129,8 +130,9 @@ product is really used), write it in would_ask_owner and carry on as best you ca
 How you work: you are shown the scene, the plan, the page, what the failed clip was sent \
 (or its start picture), the failed clip's frames (5 a second), what the judge found, the \
 ad's picture library as a list and how the product behaves. Look at anything else you need: \
-look_at_library opens one library item, or one moment of a page video, by its number. Then \
-call film_again with the whole scene as it should be, or give_up. After each \
+look_at_library opens one library item, or one moment of a page video, by its number; \
+place_edit shows you the scene's new place before anything is filmed. Then call \
+film_again with the whole scene as it should be, or give_up. After each \
 film_again you see the new start picture, the new clip's frames and the judge's verdict. On \
 a fail, find what caused it (the plan, the pictures, or what the video model can't do) and \
 change that cause, not only the words. {WORDS_THEN_REFERENCES} On every try, write the \
@@ -966,6 +968,60 @@ class LookAtLibrary(Tool):
         )
 
 
+class PlaceEdit(Tool):
+    """Change where this scene happens, for this scene only: the other scenes keep the ad's
+    place. Either make a small edit of the scene's picture of its place (edit), or have a new
+    place drawn fresh (new_place). The small edit is cheaper and keeps the look already
+    approved. A scene showing the presenter's face is sent the presenter in the room; one
+    showing nobody, the room alone. You are shown the new picture and nothing is filmed:
+    look at it, change it again, or call film_again, which sends it."""
+
+    name: ClassVar[str] = "place_edit"
+    picture: Literal["person_in_room", "room"] = Field(
+        description="Which picture of the place: the presenter in the room, or the room alone."
+    )
+    edit: str | None = Field(
+        description="A small change to the scene's picture of its place, in your words, such "
+        "as what to clear away or move; null for a new place."
+    )
+    new_place: str | None = Field(
+        description="The new place, described in your words, to be drawn fresh; null for an edit."
+    )
+
+    def run(self, call: ToolCall) -> ToolResult:
+        return place_edit(_fixing_of(call), self)
+
+
+# What place_edit calls each picture of a scene's place it makes.
+PLACE_NAMES = {
+    "person_in_room": "picture of the presenter in its place",
+    "room": "picture of its place on its own",
+}
+
+
+def place_edit(fixing: AgentFix, asked: PlaceEdit) -> ToolResult:
+    """The scene's own picture of its place, made as the agent wrote it: an edit of the one it
+    has now, or a new place drawn fresh (#237). Shown to the agent; nothing films."""
+    words = [each for each in (asked.edit, asked.new_place) if each is not None]
+    if len(words) != 1 or not words[0].strip():
+        raise Refused("write either an edit or a new place, not both.")
+    scene = fixing.step.scene
+    try:
+        made = (
+            [work.edit_scene_place(scene, asked.picture, asked.edit)]
+            if asked.edit is not None
+            else work.new_scene_place(scene, asked.picture, words[0])
+        )
+    except work.NoPlaceYet as missing:
+        raise Refused(f"the ad has no {PLACE_NAMES[asked.picture]} yet.") from missing
+    named = f"Scene {scene.number}'s own {PLACE_NAMES[asked.picture]}"
+    return ToolResult(
+        f"{named}, for this scene only: the other scenes keep the ad's. Nothing was filmed: "
+        "look at it, change it again, or call film_again, which sends it.",
+        [Image(label=named, key=made[-1].file)],
+    )
+
+
 class FilmAgain(Tool):
     """Film this scene again as you write it here: code saves your scene row, draws a new
     start picture when you ask for one and checks it, makes the clip and has the judge watch
@@ -1038,6 +1094,7 @@ TOOLS: list[type[Tool]] = [
     LookAtPresenter,
     LookAtTry,
     LookAtLibrary,
+    PlaceEdit,
     FilmAgain,
     GiveUp,
 ]
@@ -1061,7 +1118,8 @@ def _pictures_sent(
 ) -> tuple[list[str], list[dict[str, Any]]]:
     """The pictures the picture model gets, as the app sends them: the shop owner's things
     first, then the main photo, the scene's needs photos, the portrait for a face, the place
-    last. Gives the files and the pictures_sent rows."""
+    last: the scene's own, when place_edit made it one, else the ad's before-picture.
+    Gives the files and the pictures_sent rows."""
     step = fixing.step
     job = step.scene.job
     owners = _owner_photos(step, ReferencePhoto.Use.PICTURE)
@@ -1081,6 +1139,14 @@ def _pictures_sent(
         assert portrait is not None, "a scene with a face has its presenter"
         files.append(portrait.file)
         rows.append({"image": len(rows) + 1, "job": scenes.PORTRAIT_JOB, "portrait": True})
+    # The scene's own place, when place_edit made it one (#237), else the ad's.
+    _, own = work.scene_place(step.scene, person_shown)
+    if own is not None and own.scene_id == step.scene_id:
+        files.append(own.file)
+        rows.append(
+            {"image": len(rows) + 1, "job": scenes.BEFORE_PICTURE_JOB, "scene_place": own.pk}
+        )
+        return files, rows
     place = work.latest(job, ProducedItem.Kind.BEFORE_PICTURE)
     assert place is not None, "every B-roll picture is drawn in the ad's place"
     files.append(place.file)
