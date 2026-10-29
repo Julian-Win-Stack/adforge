@@ -3,7 +3,7 @@
 import re
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Literal, NamedTuple
+from typing import Any, Literal, NamedTuple
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -24,7 +24,9 @@ from jobs import (
     owner_parts,
     page,
     picture_check,
+    plan_edits,
     reference_photos,
+    stale,
 )
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
 from jobs.library_items import add_kept_photos, add_product_only_versions
@@ -40,6 +42,7 @@ from jobs.models import (
     SceneStep,
 )
 from jobs.notices import post_notice
+from jobs.planning import BrollKind, Part, PersonShown
 from jobs.product_videos import save_videos
 from jobs.reference_photos import ReferencePhotoUnusable
 from jobs.watcher import watch_videos
@@ -110,6 +113,12 @@ picture is made and the audio heard, make the scene's clip, which finishes the s
 Once every scene is finished, assemble the ad, which shows it to the shop owner. When a \
 tool hands back something to ask the shop owner, ask it in your reply and wait for their \
 answer before passing their choice to a tool.
+The plan can change at any step: edit_scene changes any of a scene's fields, and \
+add_scene, remove_scene and reorder_scenes change which scenes play and in what order. \
+Each says which steps the change made stale; nothing is made again by itself. Run the \
+planning checks on what changed, make again only the stale steps the change needs with the \
+scene tools, then assemble the ad. Once it is shown, tell the shop owner in one line what \
+changed and what it cost.
 Scene tools start their work in the background and hand back at once, before anything is \
 made. Tell the shop owner the work has started, then carry on or reply: don't call the tool \
 again to see whether it has finished. When a step finishes or fails, you are told in a \
@@ -768,7 +777,9 @@ class MakeStartingPicture(Tool):
         # A picture made with other photos of the shop owner's is another picture.
         made = _with_the_photos_in_use(
             scene,
-            steps.filter(status=SceneStep.Status.FINISHED, note=note, **SceneStep.made_for(scene))
+            steps.filter(
+                status=SceneStep.Status.FINISHED, note=note, **SceneStep.picture_made_for(scene)
+            )
             .filter(produced__isnull=False)
             .distinct(),
         )
@@ -1143,6 +1154,170 @@ class MakeClip(Tool):
         )
 
 
+class _SceneFields(Tool):
+    """What a plan edit can give a scene, each null to leave it as it is."""
+
+    line: str | None = Field(
+        default=None,
+        description="The scene's new line, exactly what the person says. Null keeps it.",
+    )
+    shows: str | None = Field(
+        default=None,
+        description="What the scene shows while the voice says the line, in plain words, for "
+        "a scene that shows the product rather than the person talking; an empty string has "
+        "the person say the line to camera. Null keeps it.",
+    )
+    broll_kind: BrollKind | None = Field(
+        default=None,
+        description='For a scene that shows the product: "does a job", "shows the problem" '
+        'or "showcase". Null keeps it.',
+    )
+    person_shown: PersonShown | None = Field(
+        default=None,
+        description='For a scene that shows the product: "has face" when the presenter\'s '
+        'face is in it, "no face" when it isn\'t. Null keeps it.',
+    )
+    usage: str | None = Field(
+        default=None,
+        description="For a scene that shows the product: how the product is used in it, from "
+        "the page; an empty string when it isn't used. Null keeps it.",
+    )
+    result: str | None = Field(
+        default=None,
+        description='For a "does a job" scene: the result you can see at its end; an empty '
+        "string for the other kinds. Null keeps it.",
+    )
+    part: Part | None = Field(
+        default=None, description="The part of the script the scene plays. Null keeps it."
+    )
+    overlay: str | None = Field(
+        default=None,
+        description="The few words drawn along the top while the scene plays; an empty string "
+        "for none. Null keeps it.",
+    )
+
+    def _fields(self) -> dict[str, Any]:
+        return {name: getattr(self, name) for name in plan_edits.EDITABLE}
+
+
+class EditScene(_SceneFields):
+    """Change any of a scene's fields in the plan: its line, whether it shows the product or
+    the person talking and what it shows, its labels, its part, its overlay. Hands back which
+    of the scene's steps the change made stale; nothing is made again until you call the
+    scene tools for it. A changed line, or a change to what the scene shows, is checked
+    against the page again: run the planning checks before making anything for it."""
+
+    name = "edit_scene"
+
+    scene: int = Field(description="The number of the scene.")
+
+    def run(self, call: ToolCall) -> str:
+        scene = _a_planned_scene(call, self.scene)
+        try:
+            edited = plan_edits.edit_scene(scene, self._fields())
+        except plan_edits.CantEdit as cant:
+            raise Refused(str(cant)) from None
+        if not edited.changed:
+            return f"Scene {scene.number} already is as asked, so nothing was changed."
+        return _plan_edited(scene.job, edited)
+
+
+class AddScene(_SceneFields):
+    """Add a scene to the plan at the number you give, the scenes from there on moved one
+    later. It has nothing made yet: run the planning checks on it, then make its steps."""
+
+    name = "add_scene"
+
+    at: int = Field(description="The new scene's number: 1 to one past the last scene.")
+
+    def run(self, call: ToolCall) -> str:
+        job = _a_planned_job(call)
+        if not self.line:
+            raise Refused("a new scene needs its line: what the person says in it.")
+        try:
+            edited = plan_edits.add_scene(job, self.at, self._fields())
+        except plan_edits.CantEdit as cant:
+            raise Refused(str(cant)) from None
+        return _plan_edited(job, edited)
+
+
+class RemoveScene(Tool):
+    """Take a scene out of the plan, the scenes after it moved one earlier. What was made and
+    paid for it is kept, out of the ad."""
+
+    name = "remove_scene"
+
+    scene: int = Field(description="The number of the scene.")
+
+    def run(self, call: ToolCall) -> str:
+        scene = _a_planned_scene(call, self.scene)
+        try:
+            edited = plan_edits.remove_scene(scene)
+        except plan_edits.CantEdit as cant:
+            raise Refused(str(cant)) from None
+        return _plan_edited(scene.job, edited)
+
+
+class ReorderScenes(Tool):
+    """Play the scenes in a new order. Nothing made for them goes stale."""
+
+    name = "reorder_scenes"
+
+    order: list[int] = Field(
+        description="Every scene's number as it is now, once each, in the order they are to "
+        "play, such as [2, 1, 3]."
+    )
+
+    def run(self, call: ToolCall) -> str:
+        job = _a_planned_job(call)
+        try:
+            edited = plan_edits.reorder(job, self.order)
+        except plan_edits.CantEdit as cant:
+            raise Refused(str(cant)) from None
+        return _plan_edited(job, edited)
+
+
+def _a_planned_job(call: ToolCall) -> Job:
+    job = _the_job(call)
+    if job is None or not job.scenes.exists():
+        raise Refused("the ad hasn't been planned yet, so there is no plan to change.")
+    return job
+
+
+def _a_planned_scene(call: ToolCall, number: int) -> Scene:
+    job = _a_planned_job(call)
+    scene = job.scenes.filter(number=number).first()
+    if scene is None:
+        raise Refused(f"the ad has no scene {number}: its scenes are 1 to {job.scenes.count()}.")
+    return scene
+
+
+def _plan_edited(job: Job, edited: plan_edits.Edited) -> str:
+    """What the producer is told of a plan edit: what changed, what it made stale, what is to
+    be checked, and the plan as it stands."""
+    said = [
+        "Changed the plan: "
+        + "; ".join(
+            f"scene {number} {_listed(fields)}"
+            if fields[0] in ("added", "removed", "moved")
+            else f"scene {number}'s {_listed(fields)}"
+            for number, fields in edited.changed.items()
+        )
+        + "."
+    ]
+    said += edited.also
+    said += edited.stale or ["Nothing made for the ad is stale."]
+    if edited.to_check:
+        said.append(
+            f"The planning checks haven't checked {_scenes(edited.to_check)} against the page: "
+            "run them before making anything for it."
+        )
+    said.append(
+        "Make again what you decide the change needs with the scene tools, then assemble the ad."
+    )
+    return "\n".join([" ".join(said), _script(job), _overlays(job)])
+
+
 class ApproveOwnerPart(Tool):
     """Keep the shop owner's yes to the picture of a part of the product a scene shows that
     no photo shows, so the clip of every scene showing it can be made. Call it only when they
@@ -1316,8 +1491,31 @@ class AssembleAd(Tool):
             f"Assembled the ad (version {ad.version}, {ad.seconds:g} seconds) from each scene's "
             "clip, cut to where its words are said, with captions of the words as spoken, the "
             "music under the voice and each scene's overlay, and showed it to the shop owner "
-            f"in the chat. {_listed(plays)}. Tell the shop owner."
+            f"in the chat. {_listed(plays)}.{_spent_since_the_ad_before(call.session, ad)} "
+            "Tell the shop owner."
         )
+
+
+def _spent_since_the_ad_before(session: Session, ad: ProducedItem) -> str:
+    """What every model call of the session cost since the ad before `ad` was assembled, the
+    producer's own turns too, as a sentence to follow another (spec #247 point 10: after a
+    change the shop owner is told in one line what it cost). Blank for the first ad."""
+    before = (
+        ProducedItem.objects.filter(
+            job=ad.job, kind=ProducedItem.Kind.FINISHED_AD, version__lt=ad.version
+        )
+        .order_by("version")
+        .last()
+    )
+    if before is None:
+        return ""
+    spent: Decimal | None = session.model_calls.filter(created_at__gt=before.created_at).aggregate(
+        cost=Sum("cost_usd")
+    )["cost"]
+    return (
+        f" The changes since ad version {before.version} cost {dollars(spent or Decimal(0))}:"
+        " tell the shop owner in one line what changed and what it cost."
+    )
 
 
 def assemble_the_ad(session: Session, job: Job, made_for: str = "") -> tuple[ProducedItem, bool]:
@@ -1587,7 +1785,8 @@ def _before_its_clip(scene: Scene) -> None:
     redesign, decisions 1 and 2). A scene the fixing agent gave up on, said to camera, is
     made again as a talking scene until it has its clip. Checked once nothing already made
     can be handed back, so what is free and changes nothing stays free."""
-    if _latest_clip(scene) is not None and not (waits_to_be_said_to_camera(scene)):
+    # A plan edit made its clip stale (spec #247 point 9): the scene is made again.
+    if stale.current_clip(scene) is not None and not (waits_to_be_said_to_camera(scene)):
         raise Refused(
             f"scene {scene.number} already has a clip, so it changes only through the shop "
             "owner's notes: the app shows them a plan and makes it once they say yes."
@@ -1994,6 +2193,10 @@ PRODUCER = Agent(
         CreatePerson,
         RunPlanningChecks,
         CreateMusic,
+        EditScene,
+        AddScene,
+        RemoveScene,
+        ReorderScenes,
         MakeStartingPicture,
         MakeLineAudio,
         TranscribeLineAudio,

@@ -352,7 +352,8 @@ class LibraryItem(models.Model):
 # part. Blank for a talking scene.
 BROLL_FIELDS = ["broll_kind", "person_shown", "usage", "result", "needs", "owner_part"]
 # What the planner named for a B-roll scene's action (#223): dropped with the action it was
-# for, whenever what the scene shows changes. Kept out of BROLL_FIELDS, which a step snapshots.
+# for, whenever what the scene shows changes. Kept out of BROLL_FIELDS: a step snapshots them
+# too, but only a clip is made for them (jobs.stale), never a starting picture.
 PLANNED_FOR_THE_ACTION = ["scene_pictures", "piece"]
 
 # Each B-roll field as a scene step keeps its copy: a step's own `result` is what the
@@ -365,6 +366,14 @@ STEP_BROLL_FIELDS = {
     "needs": "needs",
     "owner_part": "owner_part",
 }
+
+
+class InThePlan(models.Manager["Scene"]):
+    """The scenes the plan holds: a scene the producer removed (spec #247 point 5) is kept
+    with what was made and paid for it, out of every list of the ad's scenes."""
+
+    def get_queryset(self) -> models.QuerySet[Scene]:
+        return super().get_queryset().filter(removed_at__isnull=True)
 
 
 class Scene(models.Model):
@@ -507,11 +516,26 @@ class Scene(models.Model):
         "it. Emptied when the line changes any other way.",
     )
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PLANNED)
+    removed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the producer removed the scene from the plan. Blank while it is in "
+        "it. A removed scene keeps its steps and what they made, and its last number.",
+    )
+
+    # The first manager is the default, which `job.scenes` uses too: only the plan's scenes.
+    objects = InThePlan()
+    with_removed = models.Manager()  # noqa: DJ012 (a manager, read as a field)
 
     class Meta:
         ordering = ["job", "number"]
+        base_manager_name = "with_removed"
         constraints = [
-            models.UniqueConstraint(fields=["job", "number"], name="one_scene_per_number")
+            models.UniqueConstraint(
+                fields=["job", "number"],
+                condition=models.Q(removed_at__isnull=True),
+                name="one_scene_per_number",
+            )
         ]
 
     def __str__(self) -> str:
@@ -560,17 +584,15 @@ class Scene(models.Model):
 
     def current_picture(self) -> ProducedItem | None:
         """The starting picture the scene's clip is made from: the newest version made for what
-        the scene shows as it stands, or brought back (#143). A line shortened to fit its clip
-        still shows what its picture was made for."""
-        made_for = SceneStep.made_for(self, through="step__")
-        del made_for["step__line"]
+        the scene shows as it stands, or brought back (#143). A new line keeps its picture
+        (spec #247 point 9: a new line makes its audio, transcript and clip stale), and so does
+        a new reference list, which only a clip is sent."""
         return (
             self.produced.filter(
                 kind=ProducedItem.Kind.STARTING_PICTURE,
                 step__kind=SceneStep.Kind.STARTING_PICTURE,
                 step__status=SceneStep.Status.FINISHED,
-                step__line__in=[self.line, *self.shortened_from],
-                **made_for,
+                **SceneStep.picture_made_for(self, through="step__"),
             )
             .order_by("version")
             .last()
@@ -1027,6 +1049,17 @@ class SceneStep(models.Model):
         blank=True,
         help_text="The scene's owner part when the step started. Blank for none.",
     )
+    scene_pictures = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The scene's scene pictures when the step started, as the scene keeps them: "
+        "a clip is made for its reference list, so a new list makes it stale.",
+    )
+    piece = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="The scene's video piece when the step started. Null for none.",
+    )
     note = models.TextField(
         blank=True, help_text="What the producer asked for, beyond the line. Blank for nothing."
     )
@@ -1187,13 +1220,24 @@ class SceneStep(models.Model):
 
     @staticmethod
     def snapshot(scene: Scene) -> dict[str, Any]:
-        """What a step started for `scene` as it stands keeps of it: its line, what it shows
-        and its B-roll labels."""
+        """What a step started for `scene` as it stands keeps of it: its line, what it shows,
+        its B-roll labels and its reference list (its scene pictures and piece)."""
         return {
             "line": scene.line,
             "shows": scene.shows,
             **{STEP_BROLL_FIELDS[field]: getattr(scene, field) for field in BROLL_FIELDS},
+            **{field: getattr(scene, field) for field in PLANNED_FOR_THE_ACTION},
         }
+
+    @staticmethod
+    def picture_made_for(scene: Scene, through: str = "") -> dict[str, Any]:
+        """`made_for` for a starting picture: what the scene shows and its B-roll labels,
+        never its line or its reference list."""
+        made_for = SceneStep.made_for(scene, through)
+        for field in ["line", *PLANNED_FOR_THE_ACTION]:
+            made_for.pop(f"{through}{field}", None)
+            made_for.pop(f"{through}{field}__isnull", None)
+        return made_for
 
     @staticmethod
     def made_for(scene: Scene, through: str = "") -> dict[str, Any]:
@@ -1203,10 +1247,12 @@ class SceneStep(models.Model):
         made_for = {
             f"{through}{field}": value for field, value in SceneStep.snapshot(scene).items()
         }
-        if scene.owner_part is None:
-            # No owner part is SQL NULL, which an exact None doesn't match in a JSON field.
-            del made_for[f"{through}owner_part"]
-            made_for[f"{through}owner_part__isnull"] = True
+        # No owner part or piece is SQL NULL, which an exact None doesn't match in a JSON
+        # field.
+        for field in ("owner_part", "piece"):
+            if getattr(scene, field) is None:
+                del made_for[f"{through}{field}"]
+                made_for[f"{through}{field}__isnull"] = True
         return made_for
 
 

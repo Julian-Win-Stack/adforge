@@ -22,7 +22,7 @@ from django.db.models import Exists, OuterRef
 from django.utils import timezone
 
 from chat.models import Message, Session
-from jobs import reference_photos, work
+from jobs import plan_edits, reference_photos, work
 from jobs.checks import LONGEST_BROLL_LINE_SECONDS, LONGEST_LINE_SECONDS
 from jobs.fix_plans import PlanCant, propose
 from jobs.models import (
@@ -780,15 +780,8 @@ def _carry_on(row: FixPlanScene) -> None:
     if row.line and not row.steps.exists():
         if running:
             return
-        if scene.line != row.line:
-            # The shop owner read the line and said yes: they know their product, so it
-            # isn't fact checked (Julian, 2026-10-11 22:13, #138).
-            scene.change_line(row.line)
-            scene.save(update_fields=["line", "shortened_from", "status"])
         # Also when the line already says it: the overlay the plan showed is the one drawn.
-        if row.overlay and scene.overlay != row.overlay:
-            scene.overlay = row.overlay
-            scene.save(update_fields=["overlay"])
+        plan_edits.change_line(scene, row.line, row.overlay)
     if row.steps.filter(
         kind=SceneStep.Kind.CLIP,
         status=SceneStep.Status.FINISHED,
@@ -935,15 +928,12 @@ def _picture(row: FixPlanScene, scene: Scene, running: set[str]) -> ProducedItem
         if row.action == Action.NEW_CLIP:
             _failed(row, f"Scene {scene.number} has no starting picture to make its clip from.")
             return None
-    made_for = SceneStep.made_for(scene, through="step__")
-    del made_for["step__line"]
     picture = (
         scene.produced.filter(
             kind=ProducedItem.Kind.STARTING_PICTURE,
             step__plan_scene=row,
             step__status=SceneStep.Status.FINISHED,
-            step__line__in=[scene.line, *scene.shortened_from],
-            **made_for,
+            **SceneStep.picture_made_for(scene, through="step__"),
         )
         # Not one drawn again for its fix check: only the try after it can have a clip.
         .exclude(step__redraws__status__in=DRAWN_AGAIN)

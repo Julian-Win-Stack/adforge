@@ -433,9 +433,11 @@ def test_a_clip_already_being_made_isnt_started_again(
     assert SceneStep.objects.filter(kind="clip").count() == 1
 
 
-def test_a_changed_line_gets_no_clip_until_its_picture_and_audio_are_made_again(
+def test_a_changed_line_keeps_its_picture_and_gets_no_clip_until_its_audio_is_made_again(
     fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
+    # A new line makes its audio, transcript and clip stale, never its picture (spec #247
+    # point 9).
     Scene.objects.filter(number=1).update(line="Say hello to the Stoneware Mug.")
     calling(fake_model, "make_clip")
 
@@ -443,9 +445,8 @@ def test_a_changed_line_gets_no_clip_until_its_picture_and_audio_are_made_again(
 
     assert results_of("make_clip") == [
         refused(
-            "scene 1's starting picture was made for an earlier line, or for what the scene "
-            "showed before, and the scene has changed since. Make its starting picture again "
-            "first."
+            "scene 1's audio was made for an earlier line, and the line has changed since. "
+            "Make the line's audio again first."
         )
     ]
 

@@ -18,7 +18,7 @@ from chat.models import Attachment, Message, Session
 from gateway.gateway import charged_to
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, UnusableReply
-from jobs import owner_parts
+from jobs import owner_parts, stale
 from jobs.models import FixCheck, Job, ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
 from jobs.picture_check import PictureKeptFailing
@@ -332,9 +332,13 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
             "owner every try, so they can tap one to use it instead, for nothing. Tell the "
             "shop owner."
         )
+    # A clip made for the scene as it was before a plan edit is stale (spec #247 point 9):
+    # kept, with every version, but it doesn't finish the scene.
+    edited = stale.is_stale(step)
     # Finished here, in the transaction that finishes the step, never as its first clip is kept:
     # a step that stops before then leaves its scene unfinished, as a picture's does.
-    Scene.objects.filter(pk=step.scene_id).update(status=Scene.Status.FINISHED)
+    if not edited:
+        Scene.objects.filter(pk=step.scene_id).update(status=Scene.Status.FINISHED)
     # A B-roll clip made before every B-roll scene got a picture may have none.
     picture = f"starting picture version {clip.picture.version} and " if clip.picture else ""
     note = f', with its movement rewritten from the note "{step.note}"' if step.note else ""
@@ -353,8 +357,14 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
         f"Background step finished: scene {number}'s clip is ready (version {clip.version}, "
         f"{clip.seconds:g} seconds), made from {picture}audio version "
         f"{clip.made_from.version}{note}.{_cost(step)}{what_the_judge_did(step, clip)} "
-        f"Scene {number} is finished.{fixed}{waiting} "
-        "Tell the shop owner."
+        + (
+            f"It was made for scene {number} as it was before the plan changed, so it is stale "
+            f"and scene {number} isn't finished: make its stale steps again if the scene "
+            "needs them."
+            if edited
+            else f"Scene {number} is finished."
+        )
+        + f"{fixed}{waiting} Tell the shop owner."
     )
 
 
