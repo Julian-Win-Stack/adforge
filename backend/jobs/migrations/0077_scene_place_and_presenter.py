@@ -16,7 +16,7 @@ def as_things_stood(apps, schema_editor):
 
     def portrait_of(job_id):
         return (
-            ProducedItem.objects.filter(job_id=job_id, kind="portrait").order_by("version").first()
+            ProducedItem.objects.filter(job_id=job_id, kind="portrait").order_by("version").last()
         )
 
     for item in ProducedItem.objects.filter(kind__in=["person_in_room", "scene_person_in_room"]):
