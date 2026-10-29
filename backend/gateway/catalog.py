@@ -1,6 +1,9 @@
 """Which model does each job, and what each model costs. Change a model here, nowhere else."""
 
+from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
+
+from django.conf import settings
 
 MODEL_FOR_PURPOSE: dict[str, str] = {
     "produce": "gpt-5.6-sol",
@@ -131,6 +134,32 @@ SLOW_ANSWER_SECONDS: dict[str, float] = {
 THINKING_LEVEL_FOR_PURPOSE: dict[str, str] = {
     "probe_video": "MINIMAL",
 }
+
+
+@dataclass(frozen=True)
+class ContextWindow:
+    """How many tokens a model takes in one call: input and output together (`context`), and
+    of them at most `max_input` in."""
+
+    context: int
+    max_input: int
+
+
+# The context window of each model an agent takes turns on, beside its prices: from the
+# model's page (gpt-5.6-sol: developers.openai.com/api/docs/models/gpt-5.6-sol, 2026-10-29).
+# The producer's conversation folds past a share of it (settings.FOLD_PAST_SHARE_OF_WINDOW).
+CONTEXT_WINDOW: dict[str, ContextWindow] = {
+    "gpt-5.6-sol": ContextWindow(context=1_050_000, max_input=922_000),
+}
+
+
+def max_input_tokens(model: str) -> int:
+    """The most input tokens one call of `model` takes: its own window's, or our Azure
+    deployment's limit when that is set and lower (settings.AZURE_OPENAI_MAX_INPUT_TOKENS)."""
+    window = CONTEXT_WINDOW[model].max_input
+    azure: int = settings.AZURE_OPENAI_MAX_INPUT_TOKENS
+    return min(window, azure) if azure else window
+
 
 # US dollars per million tokens: (input, output). From OpenAI's pricing page, and Gemini's
 # from Google's (ai.google.dev/gemini-api/docs/pricing, 2026-10-29), whose output price

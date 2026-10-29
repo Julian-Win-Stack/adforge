@@ -8,7 +8,7 @@ replaced by one that runs the loop again and carries on where the checkpoints sa
 
 import inspect
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from functools import cache
@@ -53,6 +53,7 @@ from jobs.models import Job, SceneStep
 from jobs.notices import left_out_by_the_filter, post_notice
 from jobs.reference_photos import ReferencePhotoUnusable
 
+from . import fold
 from .models import RefusedPicture, SystemNote, ToolCall
 
 logger = logging.getLogger(__name__)
@@ -244,6 +245,12 @@ class Agent:
     # Whether each of its tools takes a required `why`, kept on the call's row (spec #247
     # point 7): the producer's do.
     asks_why: bool = False
+    # Whether its oldest tool calls fold to one line each once its last turn passes the fold
+    # point (spec #247 point 15, agents/fold.py): the producer's do.
+    folds: bool = False
+    # What it is given last on every turn, rebuilt from the database each time: the
+    # producer's is the ad as it stands (agents/snapshot.py). None for no snapshot.
+    snapshot: Callable[[Session], str] | None = None
 
     def tool_specs(self) -> list[ToolSpec]:
         return [tool.spec(asks_why=self.asks_why) for tool in self.tools]
@@ -313,6 +320,7 @@ def _work(agent: Agent, session: Session) -> int:
                 conversation=conversation,
                 tools=agent.tool_specs(),
                 done="the work on your ad carried on",
+                snapshot=agent.snapshot(session) if agent.snapshot else "",
             )
             # A tool past the limit is refused, and the agent gets one turn to tell the user.
             # Asking for another tool instead, it is stopped.
@@ -323,6 +331,10 @@ def _work(agent: Agent, session: Session) -> int:
                 # Only the steps and notes the turn was given: one that came while the model
                 # worked is given on the next turn.
                 _read(steps, notes)
+                # Decided from the turn just kept, and kept with it, so a restart rebuilds the
+                # same conversation: folded or not, never folded twice for one turn.
+                if agent.folds:
+                    fold.fold_if_past(session, agent.name, agent.purpose)
                 if turn.says:
                     messages.add(session, role=Message.Role.AGENT, text=turn.says)
                 if stopped:
@@ -374,6 +386,7 @@ def take_a_turn(
     tools: Sequence[ToolSpec],
     done: str,
     since: datetime | None = None,
+    snapshot: str = "",
 ) -> Turn:
     """An agent's turn (`take_turn`), past the safety filter (requirement 22). A model's
     filter refuses a whole turn over one picture in the conversation, so when it refuses, the
@@ -383,7 +396,7 @@ def take_a_turn(
     so in red, with a warning line: `done` says what went on without it, as "the work on
     your ad carried on". When that is refused too, or no picture is new, one more turn is
     taken without every picture. Raises the filter's BlockedBySafetyFilter when every try is
-    refused."""
+    refused. A `snapshot` is given after the conversation, as take_turn says."""
     conversation = without_refused_pictures(session, purpose, conversation)
     # A picture shown twice is one picture.
     shown = list(
@@ -416,6 +429,7 @@ def take_a_turn(
             ),
             tools=tools,
             since=since,
+            snapshot=snapshot,
         )
 
     try:
@@ -686,10 +700,19 @@ def _nothing_to_answer_since_its_last_turn(
         return False
     gained = conversation[len(given) :]
     return (
-        conversation[: len(given)] == given
+        len(conversation) >= len(given)
+        and all(_the_same(now, then) for now, then in zip(conversation, given, strict=False))
         and bool(gained)
         and all(isinstance(each, Said) and each.by == "agent" for each in gained)
     )
+
+
+def _the_same(now: Happened, then: Happened) -> bool:
+    """Whether `now` is what `then` was in an earlier turn's conversation. A tool call is the
+    same call, folded since or not: a fold changes how it is given, not what happened."""
+    if isinstance(now, ToolUse) and isinstance(then, ToolUse):
+        return (now.call_id, now.tool) == (then.call_id, then.tool)
+    return now == then
 
 
 def over_the_limit(session: Session) -> bool:
@@ -809,6 +832,14 @@ def _as_given(happened: Message | ToolCall | SceneStep | SystemNote) -> Happened
         return StepFinished(text=happened.result)
     if isinstance(happened, SystemNote):
         return StepFinished(text=f"{SYSTEM_NOTE} {happened.text}")
+    if isinstance(happened, ToolCall) and happened.fold_line:
+        # As one line: its tool, scene, outcome and cost, and the call's why, as it was made.
+        return ToolUse(
+            call_id=happened.call_id,
+            tool=happened.tool,
+            arguments={"why": happened.why} if happened.why else {},
+            result=fold.as_folded(happened),
+        )
     if isinstance(happened, ToolCall):
         return ToolUse(
             call_id=happened.call_id,

@@ -248,14 +248,18 @@ def take_turn(
     conversation: Sequence[Happened],
     tools: Sequence[ToolSpec],
     since: datetime | None = None,
+    snapshot: str = "",
 ) -> Turn:
     """Give an agent its conversation and the tools it may call, and have it take one turn:
     say something, ask for tools, or both. The pictures its tools handed back are read here
     from the file store and shown with their labels, as `call_model`'s images are. An agent
     whose conversations start afresh, as the decider's each round, passes when this one
     started (`since`): a turn taken in an earlier one, handed the same words, isn't this
-    one's to take again."""
-    handoff = TurnHandoff(conversation=list(conversation), tools=[tool.name for tool in tools])
+    one's to take again. A `snapshot` of what the agent works on is given after its
+    conversation."""
+    handoff = TurnHandoff(
+        conversation=list(conversation), tools=[tool.name for tool in tools], snapshot=snapshot
+    )
     # Validate again here rather than trusting the caller built the handoff properly.
     handoff = TurnHandoff.model_validate(handoff.model_dump())
     shown = [

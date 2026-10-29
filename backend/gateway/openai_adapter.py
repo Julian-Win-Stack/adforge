@@ -323,7 +323,7 @@ def _conversation(request: TurnRequest) -> ResponseInputParam:
     """The agent's conversation as OpenAI takes it: each tool it called is the call, then
     what the tool handed back, paired by the call's id: its words, then each picture after
     its label. What the system tells it, such as that background work finished, comes from
-    the developer, above the user."""
+    the developer, above the user, and so does the snapshot it is given last."""
     images = iter(request.images)
     items: ResponseInputParam = []
     for each in request.handoff.conversation:
@@ -351,6 +351,9 @@ def _conversation(request: TurnRequest) -> ResponseInputParam:
                 assert (image.label, image.key) == (picture.label, picture.key)
                 output += [{"type": "input_text", "text": image.label}, _output_image(image)]
         items.append({"type": "function_call_output", "call_id": each.call_id, "output": output})
+    # The snapshot of what the agent works on comes last, after everything that happened.
+    if request.handoff.snapshot:
+        items.append({"role": "developer", "content": request.handoff.snapshot})
     return items
 
 

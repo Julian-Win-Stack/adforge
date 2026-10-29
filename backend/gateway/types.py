@@ -201,11 +201,21 @@ type Happened = Said | ToolUse | StepFinished
 
 
 class TurnHandoff(Handoff):
-    """What an agent is given for one turn: its conversation so far, and the names of the
-    tools it may call."""
+    """What an agent is given for one turn: its conversation so far, the names of the tools
+    it may call, and, for an agent given one, the snapshot of the ad as it stands, given after
+    the conversation (spec #247 point 15)."""
 
     conversation: list[Happened]
     tools: list[str]
+    snapshot: str = ""
+
+    @model_serializer(mode="wrap")
+    def _no_snapshot_left_out(self, dump: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        # A turn with no snapshot is recorded exactly as before snapshots were given.
+        dumped: dict[str, Any] = dump(self)
+        if not self.snapshot:
+            dumped.pop("snapshot", None)
+        return dumped
 
 
 @dataclass(frozen=True)
