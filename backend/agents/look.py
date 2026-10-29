@@ -9,16 +9,20 @@ import io
 import math
 import re
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, ClassVar, Literal
 
 import PIL.Image
+from pydantic import BaseModel, Field
 
 from adforge import file_store
-from gateway.types import Image
-from jobs import clip_judge, library, owner_parts, work
-from jobs.models import ProducedItem, Scene
+from gateway.gateway import call_model
+from gateway.types import Handoff, Image
+from jobs import clip_judge, library, library_items, owner_parts, work
+from jobs.models import AgentFix, Job, ProducedItem, Scene
 
-from .loop import Refused
+from .fixing_agent import judge_words, try_shown
+from .loop import Refused, Tool
+from .models import ToolCall
 
 # ---------------------------------------------------------------- versions
 
@@ -190,3 +194,220 @@ def video_prompt(clip: ProducedItem) -> str:
     if sent is not None:
         return sent.prompt
     return clip.motion_prompt or (clip.step.motion_prompt if clip.step else "")
+
+
+# ---------------------------------------------------------------- the producer's look
+
+# Its own call purpose, on the producer's model (gateway/catalog.py), so a lookup of the
+# producer's last turn never finds a look (spec #247 point 15).
+PURPOSE = "look"
+# The most pictures one look is shown: what the model takes in one ask.
+MOST_PICTURES = clip_judge.MOST_PICTURES
+
+INSTRUCTIONS = """\
+You look, for the producer of a short video ad, at what it can't see itself: a scene's clip \
+as frames, each labelled with its time; what the clip's video model was sent (its pictures, \
+each with its label, frames of each video piece and the prompt); a picture in the ad's \
+library; or a try of a scene's fix. You are told the scene as planned, what you are shown, \
+and the producer's question.
+Answer the question only from what you are shown and told. You report: you never decide \
+what to do next and you never make a plan. The producer decides.
+Answer in four parts, each in plain words:
+- sees: what the pictures or frames show that bears on the question, with the second it \
+starts for a clip.
+- wrong: what is wrong and with which part, the second it starts, and what a real one would \
+do. "Nothing" when nothing the question is about is wrong.
+- root_cause: what caused it, said by where it comes from: a picture or a video piece the \
+video model was sent (by its number), words in the prompt, what the scene's plan asks, or \
+what the video model can't do. Blank when nothing is wrong.
+- direction: which way a fix should go, in one or two sentences, never a whole new prompt. \
+Blank when nothing is wrong.
+When what you are shown can't answer the question, say so in sees, and say what would."""
+
+
+class LookHandoff(Handoff):
+    """The scene as planned (blank for a library picture looked at alone), what the look is
+    shown in words, and the producer's question."""
+
+    scene: str
+    shown: str
+    question: str
+
+
+class LookAnswer(BaseModel):
+    """The look's words, in the judge's fault shape."""
+
+    sees: str = Field(description="What is shown that bears on the question.")
+    wrong: str = Field(
+        description="What is wrong and with which part, the second it starts, and what a real "
+        'one would do. "Nothing" when nothing is wrong.'
+    )
+    root_cause: str = Field(description="What caused it. Blank when nothing is wrong.")
+    direction: str = Field(description="Which way a fix should go. Blank when nothing is wrong.")
+
+
+class Look(Tool):
+    """Look at something you can't see yourself, and be told about it in words: what it
+    shows, what is wrong, its root cause and a direction for a fix. what: "clip" for a
+    scene's current version, what its clip was sent and its frames; "version" for an earlier
+    version of the scene by its number; "library_item" for a picture in the ad's library by
+    its number; "try" for a try of the scene's newest fix by its number (try 0 is the clip it
+    fixes). Ask one question, about what you need to know."""
+
+    name: ClassVar[str] = "look"
+
+    scene: int | None = Field(
+        description="The scene's number. Null only for a library item looked at alone."
+    )
+    what: Literal["clip", "version", "library_item", "try"]
+    number: int | None = Field(
+        description="The version's, library item's or try's number; null for the clip."
+    )
+    question: str = Field(description="What you need to know, in one or two sentences.")
+
+    def run(self, call: ToolCall) -> str:
+        job = call.session.jobs.first()
+        if job is None:
+            raise Refused("there is no ad yet, so nothing to look at.")
+        return look_at(job, self.scene, self.what, self.number, self.question)
+
+
+def look_at(job: Job, scene: int | None, what: str, number: int | None, question: str) -> str:
+    """The look's words on `what` of the scene numbered `scene` in `job` (spec #247 point
+    2): shown its pictures and frames, fitted into MOST_PICTURES, and told the scene, what it
+    is shown and `question`, on the producer's model. Raises Refused when there is nothing
+    such to look at."""
+    if not question.strip():
+        raise Refused("ask the look one question, about what you need to know.")
+    if (number is None) != (what == "clip"):
+        raise Refused(
+            "the clip takes no number; a version, a library item or a try takes its number."
+        )
+    found = _scene_of(job, scene, needed=what != "library_item")
+    title, shown, pictures = _what_is_shown(job, found, what, number)
+    fit = fitted({0: [{"label": each.label, "key": each.key} for each in pictures]}, MOST_PICTURES)
+    answer = call_model(
+        job=job,
+        purpose=PURPOSE,
+        instructions=INSTRUCTIONS,
+        handoff=LookHandoff(
+            scene=scene_facts(found) if found is not None else "",
+            shown=shown,
+            question=question.strip(),
+        ),
+        output=LookAnswer,
+        images=[Image(label=each["label"], key=each["key"]) for each in fit[0]],
+    )
+    return "\n".join(
+        [
+            f"The look at {title}, asked: {question.strip()}",
+            f"Sees: {answer.sees}",
+            f"What is wrong: {answer.wrong}",
+            f"Root cause: {answer.root_cause or '(none)'}",
+            f"Direction: {answer.direction or '(none)'}",
+        ]
+    )
+
+
+def _scene_of(job: Job, number: int | None, *, needed: bool) -> Scene | None:
+    if number is None:
+        if needed:
+            raise Refused("name the scene to look at.")
+        return None
+    scene = job.scenes.filter(number=number).first()
+    if scene is None:
+        raise Refused(f"the ad has no scene {number}.")
+    return scene
+
+
+def _what_is_shown(
+    job: Job, scene: Scene | None, what: str, number: int | None
+) -> tuple[str, str, list[Image]]:
+    """What the look is at, named; what it is shown, in words; and the pictures."""
+    if what in ("clip", "version"):
+        assert scene is not None
+        return _version_shown(scene, number)
+    assert number is not None, "look_at refuses a library item or a try with no number"
+    if what == "library_item":
+        return _library_item_shown(job, number)
+    assert scene is not None
+    return _try_of(scene, number)
+
+
+def _library_item_shown(job: Job, number: int) -> tuple[str, str, list[Image]]:
+    found = [each for each in library.library_of(job) if each.number == number]
+    if not found:
+        raise Refused(f"there is no library item {number}.")
+    [item] = found
+    return (
+        f"library item {number}",
+        f"Library item {library_items.library_line(item)}",
+        [Image(label=f"Library item {item.number}: {item.label}", key=item.file)],
+    )
+
+
+def _try_of(scene: Scene, number: int) -> tuple[str, str, list[Image]]:
+    """Try `number` of the scene's newest fix, as the fixing agent looks at it: what its
+    clip was sent and its frames, with the judge's words; try 0 is the clip it fixes."""
+    fixing = AgentFix.objects.filter(step__scene=scene).order_by("id").last()
+    if fixing is None:
+        raise Refused(f"scene {scene.number} has had no fix, so it has no tries.")
+    if number == 0:
+        picture, clip, ruling = (
+            fixing.first_clip.picture if fixing.first_clip else None,
+            fixing.first_clip,
+            fixing.ruling,
+        )
+    else:
+        row = fixing.tries.filter(number=number).first()
+        if row is None:
+            raise Refused(
+                f"scene {scene.number}'s newest fix has tries 0 to {fixing.tries.count()}."
+            )
+        picture, clip = row.picture, row.clip
+        ruling = clip.ruling if clip is not None else None
+    label = f"Scene {scene.number}, try {number}"
+    sent, shown = try_shown(label, picture, clip)
+    said = f"What its clip was sent, then the clip's frames. {sent}" if sent else ""
+    if not shown:
+        raise Refused(f"scene {scene.number}'s try {number} has nothing to look at.")
+    return (
+        f"scene {scene.number}, try {number} of its newest fix",
+        f"{said} {judge_words(ruling)}".strip(),
+        shown,
+    )
+
+
+def _version_shown(scene: Scene, number: int | None) -> tuple[str, str, list[Image]]:
+    """A version of the scene: what its clip was sent (or its starting picture, for a clip
+    made from one), then its clip's frames, with the judge's words on it."""
+    version = version_of(scene, number)
+    current = work.versions(scene)[-1].number
+    title = f"scene {scene.number}, {named(version, current)}"
+    label = f"Scene {scene.number}, {named(version, current)}"
+    clip = version.clip
+    sent = library.sent_list_of(clip) if clip is not None else None
+    said: list[str] = []
+    pictures: list[Image] = []
+    if sent is not None:
+        said += [
+            f"What its clip was sent, then the clip. {clip_judge.references_said(sent)}",
+            f"The prompt it was sent: {sent.prompt}",
+        ]
+        pictures += clip_judge.references_shown(sent, label)
+    elif version.picture is not None:
+        said.append("Its starting picture, then the clip it was made from.")
+        pictures.append(Image(label=f"{label}, starting picture", key=version.picture.file))
+        if clip is not None and (prompt := video_prompt(clip)):
+            said.append(f"The clip's video prompt: {prompt}")
+    if clip is None:
+        said.append("It has no clip yet.")
+    else:
+        said.append(
+            f"The clip's frames, {clip_judge.FRAMES_PER_SECOND} a second, each labelled with its "
+            f"time. {judge_words(clip.ruling)}"
+        )
+        pictures += clip_frames(clip, f"Scene {scene.number}, clip of {named(version, current)}")
+    if not pictures:
+        raise Refused(f"scene {scene.number}'s {version.label} has nothing to look at yet.")
+    return title, " ".join(said), pictures
