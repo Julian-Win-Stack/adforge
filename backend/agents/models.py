@@ -100,7 +100,8 @@ class SystemNote(models.Model):
     """What code tells the producer of a fix plan it runs (fix redesign, decision 20): the plan
     with its per-scene lines, the fixes started, a scene done and what it cost, a failed check
     and its two versions, an error, the new ad shown. And of the page the shop owner pasted in
-    the page panel, which code keeps as the page. Short and written by code; never a
+    the page panel, which code keeps as the page, and of the shop owner's pause: the steps it
+    cancelled and those it kept running (spec #247 point 14). Short and written by code; never a
     picture, frames, judge words, version lists or the decider's reasoning. The shop owner
     isn't shown them: the chat's own messages tell them."""
 
@@ -115,6 +116,7 @@ class SystemNote(models.Model):
         YES_TOO_LATE = "yes_too_late"
         CHECK_UNCHECKED = "check_unchecked"
         PAGE_PASTED = "page_pasted"
+        PAUSED = "paused"
 
     session = models.ForeignKey(
         "chat.Session", on_delete=models.CASCADE, related_name="system_notes"

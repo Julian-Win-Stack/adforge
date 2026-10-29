@@ -71,7 +71,7 @@ from jobs.work import (
     why_the_checks_passed,
 )
 
-from . import hard_list, step_signals
+from . import hard_list, loop, step_signals
 from .fixing_agent import AGENT as FIXING_AGENT
 from .fixing_agent import MOST_TRIES
 from .fixing_agent import PURPOSE as FIXING_AGENT_PURPOSE
@@ -115,6 +115,11 @@ made. Tell the shop owner the work has started, then carry on or reply: don't ca
 again to see whether it has finished. When a step finishes or fails, you are told in a \
 message from the system, not from the shop owner. Then tell the shop owner what was made, \
 or what went wrong.
+The shop owner can press pause. A message from the app then says which steps it cancelled \
+before they started, with what each was for, and which are still running and will finish. \
+Start nothing while paused: every scene tool answers paused. If the shop owner hasn't \
+written since, tell them in one line that you paused and what is still finishing, then \
+wait. Their next message ends the pause: act on it, and call again the tools still needed.
 Every fact about the product comes from its page or from the shop owner. You have no tool \
 that searches the web, so never look anything up, infer or guess. When something you need \
 is missing or unclear, ask one short, specific question. When you can't do something, say \
@@ -1730,7 +1735,8 @@ def _start_step(
 ) -> None:
     """Start a scene step in the background, from the scene's line, what it shows and its
     B-roll labels as they stand, unless one of its kind is already running for the scene:
-    then refuse, saying `busy`."""
+    then refuse, saying `busy`. Never while the shop owner's pause holds."""
+    loop.refuse_while_paused(call.session)
     if scene.steps.filter(kind=kind, status=SceneStep.Status.RUNNING).exists():
         raise Refused(busy)
     try:
@@ -1761,7 +1767,9 @@ def _start_step(
 
 def _a_checked_scene(call: ToolCall, number: int) -> Scene:
     """The scene a scene tool was asked to work on, once its line has passed the fact check.
-    Every scene tool starts here, so none makes anything for a line that hasn't."""
+    Every scene tool starts here, so none makes anything for a line that hasn't, nor
+    anything at all while the shop owner's pause holds (spec #247 point 14)."""
+    loop.refuse_while_paused(call.session)
     job = _the_job(call)
     if job is None or not job.scenes.exists():
         raise Refused("the ad hasn't been planned yet, and its scenes come from the plan.")
