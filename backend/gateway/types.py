@@ -121,6 +121,21 @@ class AnswerBrokeItsRules(UnusableReply):
     point 8, `gateway.asking_again`)."""
 
 
+def rules_broken(broke: AnswerBrokeItsRules) -> str:
+    """Each rule `broke`'s answer broke, as the model is told it: the field, if any, and the
+    rule in the output's own words, with nothing of the call's (no model, purpose or link)."""
+    cause = broke.__cause__
+    assert isinstance(cause, ValidationError), "raised from the answer's ValidationError"
+    rules = []
+    for error in cause.errors():
+        # A rule of the output's own says why in its own words, without "Value error, ".
+        why = str(error["ctx"]["error"]) if error["type"] == "value_error" else error["msg"]
+        field = ".".join(str(part) for part in error["loc"])
+        rules.append(f"{field}: {why}" if field else why)
+    # Joined into one sentence: a rule's own full stop would end it early.
+    return "; ".join(rule.rstrip(".") for rule in rules)
+
+
 def broke_its_rules(error: ValueError) -> bool:
     """Whether reading an answer failed on a rule of its output, the answer itself whole: not
     JSON cut off or unreadable."""

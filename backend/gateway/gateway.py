@@ -80,6 +80,7 @@ from .types import (
     VoiceDesignHandoff,
     VoiceProvider,
     Word,
+    rules_broken,
 )
 
 if TYPE_CHECKING:
@@ -439,7 +440,8 @@ def call_model[Out: BaseModel](
             raise
         return ask(
             dataclasses.replace(
-                request, instructions=f"{instructions}\n\n{ANSWER_AGAIN.format(error=broke)}"
+                request,
+                instructions=f"{instructions}\n\n{ANSWER_AGAIN.format(error=rules_broken(broke))}",
             )
         )
 

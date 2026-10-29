@@ -7,14 +7,14 @@ import time
 from collections.abc import Callable, Sequence
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import PIL.Image
 import pytest
 from django.conf import settings as django_settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, model_validator
 from pytest_django import Settings
 from pytest_httpserver import HTTPServer
 from werkzeug import Request, Response
@@ -35,7 +35,15 @@ from gateway.gateway import (
     watch_video,
 )
 from gateway.models import ModelCall
-from gateway.types import AnswerTookTooLong, Handoff, Image, ReferenceVideo, UnusableReply
+from gateway.types import (
+    AnswerBrokeItsRules,
+    AnswerTookTooLong,
+    Handoff,
+    Image,
+    ReferenceVideo,
+    UnusableReply,
+    rules_broken,
+)
 from jobs.product_videos import PieceWanted, cut_pieces
 from jobs.work import PageCheck, PageCheckHandoff
 
@@ -352,7 +360,9 @@ def test_a_whole_answer_that_breaks_a_rule_is_asked_again_once_told_why(
     assert checked.decision == "readable"
     first, again = _instructions_sent(httpserver)
     assert DECISION_RULE not in first
-    assert DECISION_RULE in again
+    # Told the field and the rule it broke, and nothing of ours: no model, no purpose, no link.
+    assert f"decision: {DECISION_RULE}" in again
+    assert "gpt-5-mini" not in again and "check_page" not in again and "http" not in again
     # Both answers were paid for, and both are on the record.
     assert list(ModelCall.objects.order_by("id").values_list("outcome", flat=True)) == [
         "failed",
@@ -1004,3 +1014,41 @@ def test_only_the_purposes_named_slow_get_their_own_time_to_answer(
     _check_page([])
 
     assert ModelCall.objects.get().outcome == "succeeded"
+
+
+class _Rules(BaseModel):
+    decision: Literal["readable", "unreadable"]
+    photos: list[int]
+
+    @model_validator(mode="after")
+    def _known_photos(self) -> _Rules:
+        if 9 in self.photos:
+            raise ValueError("There's no picture 9 in the library.")
+        return self
+
+
+@pytest.mark.parametrize(
+    ("answer", "told"),
+    [
+        pytest.param(
+            {"decision": "maybe", "photos": "all"},
+            "decision: Input should be 'readable' or 'unreadable'; "
+            "photos: Input should be a valid list",
+            id="fields",
+        ),
+        pytest.param(
+            {"decision": "readable", "photos": [9]},
+            "There's no picture 9 in the library",
+            id="the whole answer's rule",
+        ),
+    ],
+)
+def test_a_model_asked_again_is_told_each_rule_its_answer_broke_and_nothing_else(
+    answer: dict[str, Any], told: str
+) -> None:
+    try:
+        _Rules.model_validate(answer)
+    except ValidationError as error:
+        broke = AnswerBrokeItsRules("gpt-5-mini gave an answer", input_tokens=1, output_tokens=1)
+        broke.__cause__ = error
+    assert rules_broken(broke) == told

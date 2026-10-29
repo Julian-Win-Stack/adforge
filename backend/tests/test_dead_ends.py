@@ -696,6 +696,8 @@ def test_dead_end_a_paid_answer_the_validator_rejects_goes_back_to_its_model_onc
     first, again = asks
     assert NO_PICTURE_9 not in first.instructions
     assert NO_PICTURE_9 in again.instructions
+    # A rule of the whole plan is told as it is, not as pydantic's "Value error".
+    assert "Value error" not in again.instructions
     # The record keeps what each ask was told.
     told = [
         call.system_prompt.instructions
