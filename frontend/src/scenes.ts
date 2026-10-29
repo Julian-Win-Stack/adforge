@@ -100,6 +100,25 @@ export function sceneCards(messages: Message[]): SceneCard[] {
       }
     }
 
+    // A give-up's try kept in the ad is never posted as a file of its own: the notice of
+    // every try carries it, and what it was sent.
+    const kept = message.tries?.clips.find((one) => one.clip === message.tries?.in_ad);
+    if (message.tries && kept) {
+      const scene = card(message.tries.scene);
+      if (scene.clips.at(-1)?.file.url !== kept.url) {
+        const file: Attachment = {
+          position: 0,
+          kind: "video",
+          url: kept.url,
+          scene: message.tries.scene,
+          version: kept.version,
+          sent: kept.sent ?? null,
+        };
+        scene.clips.push({ file, picture: scene.picture, sent: clipSent(file) });
+        scene.clipOutOfDate = false;
+      }
+    }
+
     if (message.question) {
       card(message.question.scene).question = message.question.open ? message.question.text : null;
     }

@@ -1061,13 +1061,21 @@ def _scene_facts(scene: Scene) -> str:
             *([f"What it ends on: {scene.result}"] if scene.result else []),
             *(
                 [
-                    "What it needs: "
+                    "Its pictures: "
                     + "; ".join(
-                        f"{need['what']} (product photos {', '.join(map(str, need['photos']))})"
-                        for need in scene.needs
+                        f"library item {picture['number']} (for {picture['for']})"
+                        for picture in scene.scene_pictures
                     )
                 ]
-                if scene.needs
+                if scene.scene_pictures
+                else []
+            ),
+            *(
+                [
+                    f"Its video piece: video {scene.piece['video']}, moment "
+                    f"{scene.piece['moment']}"
+                ]
+                if scene.piece
                 else []
             ),
         ]

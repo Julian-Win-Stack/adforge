@@ -513,3 +513,20 @@ test("what was left out of a clip's pictures, and each recolour that fell back, 
     { label: "The garlic press, closed, seen from the back.", colour: "red" },
   ]);
 });
+
+test("after a give-up the scene's card shows the try kept in the ad and what it was sent", () => {
+  // The kept try is never posted as a file of its own: the notice of every try carries it.
+  const notice = triesNotice(13);
+  notice.tries!.clips[2].sent = sentListFixture();
+  const [card] = sceneCards([message([clip(2, "/t1.mp4")]), notice]);
+  expect(card.clips.map((one) => one.file.url)).toEqual(["/t1.mp4", "/t3.mp4"]);
+  expect(card.clips[1].sent?.pictures.map((one) => one.image)).toEqual(
+    sentListFixture().pictures.map((one) => one.image),
+  );
+});
+
+test("a tries notice whose try in the ad is already the scene's clip adds no clip", () => {
+  const notice = triesNotice(11);
+  const [card] = sceneCards([message([clip(2, "/t1.mp4")]), notice]);
+  expect(card.clips.map((one) => one.file.url)).toEqual(["/t1.mp4"]);
+});

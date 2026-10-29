@@ -1356,13 +1356,14 @@ def _ask_fact_check(
     record."""
     showing = [line.scene for line in lines if line.shows]
     # What a scene shows may be supported by how the product looks in its photos: those in
-    # the ad's colour, and those the scenes need. A script where the person talks
-    # throughout is checked on text alone.
+    # the ad's colour, and those the scenes picked from the library (spec #210 point 11). A
+    # script where the person talks throughout is checked on text alone.
+    positions = library_sheets.photo_positions(job) if showing else {}
     needed = {
-        number
+        positions[picture["number"]]
         for scene in job.scenes.filter(number__in=showing)
-        for need in scene.needs
-        for number in need["photos"]
+        for picture in scene.scene_pictures
+        if picture["number"] in positions
     }
     # A plan may mark no photo in the ad's colour: then every photo that fits is shown.
     marked = job.photos.filter(shows_product_colour=True).exists()

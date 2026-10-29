@@ -108,8 +108,8 @@ The usual order is: read the page, plan the ad, create the person, run the plann
 checks, create the music, then, for each scene, make its starting picture, when it has \
 one, and its line's audio, which can run at the same time, transcribe the audio once it's \
 ready, and once the picture is made and the audio heard, make the scene's clip, which \
-finishes the scene. A scene that shows the product has no starting picture, unless it shows \
-a part no photo shows: its clip is made once its audio is heard. \
+finishes the scene. A scene that shows the product has no starting picture: its clip is made \
+once its audio is heard. \
 Once every scene is finished, assemble the ad, which shows it to the shop owner. When a \
 tool hands back something to ask the shop owner, ask it in your reply and wait for their \
 answer before passing their choice to a tool.
@@ -747,8 +747,7 @@ class CreateMusic(Tool):
 
 
 # Why a scene that shows the product gets no starting picture: its clip is made from the
-# product's pictures and videos (spec #210 point 19), save one holding a part no photo shows,
-# whose picture waits for the shop owner's yes until #234.
+# product's pictures and videos (spec #210 point 19).
 NO_STARTING_PICTURE = (
     "scene {scene} shows the product, so it has no starting picture: its clip is made from "
     "the product's own pictures and videos. Make its clip once its audio is heard."
@@ -772,7 +771,7 @@ class MakeStartingPicture(Tool):
 
     def run(self, call: ToolCall) -> str:
         scene = _a_checked_scene(call, self.scene)
-        if scene.shows and owner_parts.owner_part(scene) is None:
+        if scene.shows:
             # Spec #210 point 19: a B-roll clip is made from its sent list.
             raise Refused(NO_STARTING_PICTURE.format(scene=scene.number))
         if latest(scene.job, ProducedItem.Kind.PORTRAIT) is None:
@@ -1026,7 +1025,7 @@ class MakeClip(Tool):
             _refuse_unless_movement_can_change(
                 scene,
                 talking="Its starting picture or its line can change instead.",
-                unlabelled="Make its starting picture again with the note instead.",
+                unlabelled="Its line can change instead.",
             )
         for kind in [
             SceneStep.Kind.STARTING_PICTURE,
@@ -1039,7 +1038,7 @@ class MakeClip(Tool):
                     "told when it's ready; make the clip then."
                 )
         part = owner_parts.owner_part(scene)
-        picture = None if scene.shows and part is None else self._starting_picture(scene)
+        picture = None if scene.shows else self._starting_picture(scene)
         if scene.shows and latest(scene.job, ProducedItem.Kind.PORTRAIT) is None:
             raise Refused(
                 "the person hasn't been made yet, and the clip is sent the presenter in the "
@@ -1154,9 +1153,8 @@ class MakeClip(Tool):
 
     @staticmethod
     def _starting_picture(scene: Scene) -> ProducedItem:
-        """The starting picture a talking scene's clip is made from, or a B-roll scene's
-        owner part waits for the shop owner's yes on (#234 moves that yes to the part's own
-        picture); refused when there is none for the scene as it stands."""
+        """The starting picture a talking scene's clip is made from; refused when there is
+        none for the scene as it stands."""
         # A picture step is finished with its picture made. One made before every B-roll
         # scene got a picture may have none: its scene's picture is made again.
         picture_steps = scene.steps.filter(
@@ -1265,7 +1263,7 @@ class CorrectOwnerPart(Tool):
         if part is None:
             raise Refused(
                 f"scene {scene.number} shows no part drawn without a photo, so there is nothing "
-                "of it to correct. Make its starting picture again with a note instead."
+                "of it to correct. Make its clip again with a note instead."
             )
         words = normalised_note(self.words)
         if not words and self.photo is None:
