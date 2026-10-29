@@ -24,6 +24,7 @@ from gateway.models import ModelCall
 from gateway.types import VideoRequest
 from jobs import product_videos
 from jobs.library import LookFrame, PagePhoto, library_of, watch_of
+from jobs.library_sheets import sheets_of
 from jobs.models import Job
 from jobs.work import plan_handoff
 
@@ -183,7 +184,7 @@ def test_two_videos_in_different_players_are_watched_at_once_into_moments_and_th
     assert product_videos.frames_of(demo, [0.5]) != product_videos.frames_of(demo, [0.0])
     # The planner still gets both through the old fields: the transcripts and the video
     # pictures, which are the look frames.
-    handoff = plan_handoff(job, "", job.photos.count())
+    handoff = plan_handoff(job, "", sheets_of(job))
     assert handoff.video_transcripts == ["Twist the lid off and pump once.", "music only"]
     pictures = job.photos.exclude(from_video=None).order_by("position")
     assert [(p.from_video_id, p.at_second, p.note) for p in pictures] == [
@@ -328,7 +329,7 @@ def test_a_video_that_doesnt_show_this_product_is_thrown_out_with_a_grey_notice(
     # No look frame entered the library.
     assert not [item for item in library_of(job) if isinstance(item.source, LookFrame)]
     assert not job.photos.exclude(from_video=None).exists()
-    assert plan_handoff(job, "", 1).video_transcripts == []
+    assert plan_handoff(job, "", sheets_of(job)).video_transcripts == []
     assert [notice for notice in notices(api, session_id) if "video" in notice[1]] == [
         ("info", "Your page's video 1 doesn't show this product, so it is left out of the ad.")
     ]

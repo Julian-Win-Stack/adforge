@@ -3,6 +3,7 @@ and the length fit when the user set a target length. What each model is handed,
 must hand back, and the rules it follows."""
 
 import math
+from collections.abc import Collection
 from typing import Literal, Self
 
 from pydantic import BaseModel, Field, StrictInt, field_validator, model_validator
@@ -14,7 +15,7 @@ from .planning import (
     BROLL_ONE_ACTION_INSTRUCTIONS,
     ChatMessage,
     ScriptScene,
-    photos_missing,
+    needs_missing,
 )
 
 # A script fits its target when it runs no more than this much over it. Shorter always fits.
@@ -79,13 +80,15 @@ per scene. Some scenes instead show something else while the person's voice says
 line, described in the scene's "shows"; for a scene where the person talks, "shows" is \
 null. The fact check failed one of your scenes. You get the page's text, the \
 conversation with the shop owner so far, labelled "user" for them and "producer" for \
-you, the colour the ad shows the product in, how many product photos there are and the \
+you, the colour the ad shows the product in, how many pictures the library holds (every \
+picture the app has of the product) and how many of them you aren't shown, the library \
 numbers of those showing the product in that colour, the whole script, the scene that \
 failed, and each reason it failed, oldest first, with whether its line, its "shows" or \
 both were wrong. A scene that shows something has its "usage", how the product is used \
 in it, and its "result", what you can see at its end; a wrong "usage" or "result" is a \
-wrong "shows". For such a scene, the product photos come after, each labelled with its \
-number: "Photo 1", "Photo 2".
+wrong "shows". For such a scene, the library's pictures come after, several to a sheet, \
+each with its library number and its label written under it: name a picture by its \
+library number.
 Rewrite that one scene whole so every claim in its line, and everything it shows, is \
 stated by the page or by the shop owner's own words, or for what the product looks like, \
 shown by the product photos. Your own messages only show what was asked: never take a \
@@ -272,7 +275,8 @@ class RewriteHandoff(Handoff):
     page_text: str
     conversation: list[ChatMessage]
     product_colour: str
-    photo_count: int
+    library_pictures: int
+    pictures_not_shown: int
     colour_photos: list[int]
     script: list[LineToCheck]
     scene: int
@@ -306,11 +310,12 @@ class RewrittenScene(ScriptScene):
 
 
 def rewritten_scene_for(
-    number: int, *, shows_something: bool, photo_count: int
+    number: int, *, shows_something: bool, library: Collection[int]
 ) -> type[RewrittenScene]:
     """A rewrite of scene `number`, which shows something or where the person talks, in a
-    job with `photo_count` photos: a rewrite never turns the person talking into a scene
-    that shows something else, and follows the planner's rules for a B-roll scene."""
+    job whose library holds the numbers in `library`: a rewrite never turns the person
+    talking into a scene that shows something else, and follows the planner's rules for a
+    B-roll scene."""
 
     class RewrittenSceneForItsKind(RewrittenScene):
         @model_validator(mode="after")
@@ -322,7 +327,7 @@ def rewritten_scene_for(
         @model_validator(mode="after")
         def _its_pictures_can_be_sent(self) -> Self:
             for problem in (
-                photos_missing(self, photo_count),
+                needs_missing(self, library),
                 self.too_many_pictures(number),
             ):
                 if problem is not None:

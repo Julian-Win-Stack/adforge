@@ -139,7 +139,7 @@ A video the shop placed with the product photos in the product's gallery, picked
 _Avoid_: Media, asset, clip (a clip is a made ad clip)
 
 **Video picture**:
-A product photo cut from a product video at one second: a look frame the watcher named, kept as a photo until the planner reads the library; it carries the look frame's label, and the planner is shown it as "from the product's video at N s". It counts as a product photo everywhere (looks only), after the page's photos and before the user's. A moment that copies a page photo is not kept. Never a reference photo, and never shown to the user.
+A product photo cut from a product video at one second: a look frame the watcher named, kept as a photo for the starting picture and the fact check; it carries the look frame's label. The planner sees the look frame itself on the library sheets, written under as "from the product's video N at S s". It counts as a product photo everywhere (looks only), after the page's photos and before the user's. A moment that copies a page photo is not kept. Never a reference photo, and never shown to the user.
 _Avoid_: Frame, still, keyframe, video frame
 
 **Page panel**:
@@ -156,7 +156,7 @@ _Avoid_: Override, manual input
 
 ### The library (spec #210)
 
-Shapes in `jobs/library.py` (#211). Built by `jobs/library_items.py` (#220): every kept product photo after the page read (and each one added later), and each owner photo once cleaned; nothing reads it yet but the round export (`library.txt`).
+Shapes in `jobs/library.py` (#211). Built by `jobs/library_items.py` (#220): every kept product photo after the page read (and each one added later), and each owner photo once cleaned. The planner and a scene's rewrite see it on **Library sheets** (`jobs/library_sheets.py`, #233); the round export writes it as `library.txt`.
 
 **Library**:
 Everything the app knows about one product's pictures and videos, built once per ad: every kept page photo, every owner photo cleaned, every page video watched (its moments, look frames and colour), the product-only version of each look photo that needs one, and recoloured versions of pictures. Each picture carries the picker's fixed fields (kind, side, alone, colour, target for a line-up) and one free label sentence code never parses.
@@ -167,8 +167,12 @@ The call that gives a photo the picker never saw (one the shop owner sent, or on
 _Avoid_: Tagger, classifier
 
 **Library number**:
-An item's number in the library, which never changes for the ad. Numbers run from 1 in the order items enter the library.
+An item's number in the library, which never changes for the ad. Numbers run from 1 in the order items enter the library. The planner names every picture by it (scene pictures, needs, colour photos); a need or colour photo is kept as the product photo that picture is.
 _Avoid_: Index, photo number (a product photo's position is another number)
+
+**Library sheet**:
+One picture the planner is shown with several library pictures on it (2 by 2, the grid one setting), each picture's number and label in a black bar under it, so its 50 pictures hold 200. The planner is handed the video moments first, as text, then the sheets. A library past 200 has its last pictures left off, and the chat is told how many in red.
+_Avoid_: Grid (the picker's), contact sheet
 
 **Look picture**:
 A picture whose job is to show the product's look (a side or a state).
@@ -192,7 +196,7 @@ _Avoid_: Video reader (the old one)
 
 **Look frame**:
 A frame of a page video the watcher named as the best view of one product state, pulled from the file at that second and kept in the library with the photo's fields, its video and its second.
-_Avoid_: Video picture (its stand-in for the planner until the planner reads the library)
+_Avoid_: Video picture (its product-photo copy)
 
 **Sent list**:
 The numbered pictures and pieces one clip was sent, with their labels, kept on the clip with every picture left out and its tier, every recolour and its outcome, and the prompt.

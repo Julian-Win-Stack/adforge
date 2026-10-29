@@ -89,7 +89,7 @@ def test_a_fact_check_that_doesnt_say_which_part_is_wrong_cant_be_read(
 
 
 def test_a_rewritten_scene_that_keeps_the_rules_is_read() -> None:
-    rewrite = rewritten_scene_for(2, shows_something=True, photo_count=2)
+    rewrite = rewritten_scene_for(2, shows_something=True, library=(1, 2))
     assert rewrite.model_validate(DOES_A_JOB).shows == POUR
 
 
@@ -116,4 +116,4 @@ def test_a_rewritten_scene_that_breaks_the_broll_rules_cant_be_read(
     rewrite: dict[str, Any], told: str
 ) -> None:
     with pytest.raises(pydantic.ValidationError, match=told):
-        rewritten_scene_for(2, shows_something=True, photo_count=2).model_validate(rewrite)
+        rewritten_scene_for(2, shows_something=True, library=(1, 2)).model_validate(rewrite)
