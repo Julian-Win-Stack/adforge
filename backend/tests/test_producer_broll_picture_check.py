@@ -72,12 +72,15 @@ def test_a_picture_that_passes_is_judged_beside_the_shop_photo_it_was_drawn_from
     step = picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE)
 
     picture = step.produced.get()
-    # Two passes settle it, so the third ask isn't made.
-    assert paid_for()[-4:] == [
+    # Two passes settle it, so the third ask isn't made; then the ad's room alone and the
+    # presenter standing in it are drawn.
+    assert paid_for()[-6:] == [
         "choose_broll_picture",
         "make_starting_picture",
         "check_starting_picture",
         "check_starting_picture",
+        "make_room_alone",
+        "make_person_in_room",
     ]
     # The picture first, then the one shop photo it was drawn from, for how the product is
     # built (Julian 23:05: the phone was caught 5 of 5 with it, 3 of 5 without). No prompt

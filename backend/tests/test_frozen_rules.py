@@ -38,6 +38,8 @@ from jobs.scenes import (
     BROLL_KIND_RULES,
     BROLL_SHARED_RULES,
     MAIN_PHOTO_JOB,
+    PERSON_IN_ROOM_PROMPT,
+    ROOM_ALONE_PROMPT,
     SAME_SIDE,
     broll_prompt_instructions,
     broll_video_prompt,
@@ -249,6 +251,24 @@ def test_every_scene_picture_is_sent_the_before_picture_for_the_place_only() -> 
     assert BEFORE_PICTURE_JOB == (
         "the place, its light and each thing in it, with every mark, exactly as they are"
     )
+
+
+def test_the_person_in_room_picture_is_ordered_to_show_the_presenter_standing_only() -> None:
+    # Not graded yet, frozen as Julian ordered it (Oct 28 17:37, "just standing straight in
+    # that room. that's it."; spec #210 point 12): an order, not a ban.
+    assert (
+        "The person stands straight and still in the room, facing the camera, hands at their "
+        "sides, and nothing else happens."
+    ) in PERSON_IN_ROOM_PROMPT
+
+
+def test_the_room_alone_is_ordered_to_hold_only_the_room() -> None:
+    # Not graded yet, frozen as Julian decided it (spec 2 item 53, Oct 28 22:32): "the
+    # room-alone picture holds only the room, nothing of the scene".
+    assert (
+        "Keep only the room itself, exactly as it is: take every other thing out of it, with "
+        "every mark, stain or mess on what stays, so nothing of any scene is left in it."
+    ) in ROOM_ALONE_PROMPT
 
 
 # A21: the start-picture judge, word for word as tested on 98 pictures Julian graded

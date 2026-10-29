@@ -45,6 +45,10 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # The ad's before-picture: planned from every B-roll scene, then drawn.
     "plan_before_picture": "gpt-5.6-sol",
     "make_before_picture": "gpt-image-2.5-sunburst",
+    # The before-picture's room alone, then the presenter standing in it: drawn once per ad
+    # from it and the portrait, as the before-picture is.
+    "make_room_alone": "gpt-image-2.5-sunburst",
+    "make_person_in_room": "gpt-image-2.5-sunburst",
     # Judges the starting picture beside its shop photo. With the photo, sol caught 7 of Julian's
     # 10 wrong pictures and failed none of 88 good ones; luna missed the bent neck, the bag clasp
     # and the logo (evals/picture-judge/wrong-pictures-and-photo-test.md; Julian 10 Oct 23:05).

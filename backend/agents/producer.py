@@ -1392,9 +1392,15 @@ def _refuse_unless_movement_can_change(scene: Scene, *, talking: str, unlabelled
 # on the round 3 test ads (project memory, "Costs").
 PICTURE_FALLBACK_USD = Decimal("0.10")
 
-# The ad's before-picture is drawn once, by the first B-roll starting picture, and later ones
-# reuse it, so a picture made again doesn't pay for it.
-_BEFORE_PICTURE_PURPOSES = ["plan_before_picture", "make_before_picture"]
+# The ad's before-picture, its room alone and its person-in-room picture are drawn once, by
+# the first B-roll starting picture, and later ones reuse them, so a picture made again
+# doesn't pay for them.
+_DRAWN_ONCE_PURPOSES = [
+    "plan_before_picture",
+    "make_before_picture",
+    "make_room_alone",
+    "make_person_in_room",
+]
 
 
 class Estimate(NamedTuple):
@@ -1470,7 +1476,7 @@ def _picture_only_estimate_usd(scene: Scene) -> Decimal:
     )
     paid: Decimal | None = None
     if last is not None:
-        paid = last.tool_call.model_calls.exclude(purpose__in=_BEFORE_PICTURE_PURPOSES).aggregate(
+        paid = last.tool_call.model_calls.exclude(purpose__in=_DRAWN_ONCE_PURPOSES).aggregate(
             cost=Sum("cost_usd")
         )["cost"]
     return paid or PICTURE_FALLBACK_USD

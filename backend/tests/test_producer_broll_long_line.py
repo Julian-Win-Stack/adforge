@@ -207,6 +207,9 @@ def test_no_clip_is_paid_for_until_the_audio_fits(
         "make_starting_picture",
         "check_starting_picture",
         "check_starting_picture",
+        # The ad's room alone and the presenter standing in it, once.
+        "make_room_alone",
+        "make_person_in_room",
         "speak_line",
         "shorten_line",
         "fact_check",
