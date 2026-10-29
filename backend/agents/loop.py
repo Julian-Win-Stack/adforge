@@ -355,8 +355,11 @@ def _work(agent: Agent, session: Session) -> int:
             if not calls:
                 return read_up_to
             for call in calls:
-                if _stopped_since_the_user_spoke(session):
-                    _refuse_as_stopped(call)
+                # Read before each call, so a pause pressed meanwhile reaches the agent
+                # between its calls rather than after the whole turn.
+                held = _held_since_the_user_spoke(session)
+                if held is not None:
+                    _refuse_unrun(call, held)
                 else:
                     settle(agent, call, new=True)
 
@@ -505,10 +508,10 @@ def not_shown(labels: Sequence[str]) -> str:
     )
 
 
-def _refuse_as_stopped(call: ToolCall) -> None:
-    """Keep a call the agent asked for before a scene step stopped the run as refused,
-    without running it, so nothing is paid for once the run has stopped."""
-    call.result = f"{REFUSED} a scene step stopped the run. Nothing was done."
+def _refuse_unrun(call: ToolCall, why: str) -> None:
+    """Keep a call the agent asked for before its run was held as refused for `why`, without
+    running it, so nothing is paid for once the run has stopped or the shop owner paused."""
+    call.result = f"{REFUSED} {why} Nothing was done."
     call.answer = "cant"
     call.finished_at = timezone.now()
     call.save(update_fields=["result", "answer", "finished_at"])
@@ -785,6 +788,45 @@ def _conversation(
     return conversation, max((message.seq for message in said), default=0), read + unread, notes
 
 
+# Why the calls left of a turn aren't run once a scene step stopped the run.
+STOPPED_THE_RUN = "a scene step stopped the run."
+
+# What a scene tool answers while the shop owner's pause holds (spec #247 point 14), and the
+# calls left of a turn asked for before the agent was told of the pause: "starts nothing"
+# is the tools' rule, not only the agent's instructions.
+PAUSED = (
+    "paused. The shop owner pressed pause, so no scene step is started until they write "
+    "again. Call it again after their message if it is still needed."
+)
+
+
+def paused(session: Session) -> bool:
+    """Whether the shop owner's pause holds in `session`, as the database has it now."""
+    return Session.objects.filter(pk=session.pk, paused_at__isnull=False).exists()
+
+
+def refuse_while_paused(session: Session) -> None:
+    """Refuse a scene tool's work while the shop owner's pause holds, saying so."""
+    if paused(session):
+        raise Refused(PAUSED)
+
+
+def _held_since_the_user_spoke(session: Session) -> str | None:
+    """Why the calls left of the agent's turn are refused unrun, or None to run them: a scene
+    step stopped the run since the user's last message, or the shop owner paused and the
+    agent hasn't been given the pause's note yet, so it reads it before anything more runs."""
+    if _stopped_since_the_user_spoke(session):
+        return STOPPED_THE_RUN
+    if paused(session) and unread_pause_notes(session).exists():
+        return PAUSED
+    return None
+
+
+def unread_pause_notes(session: Session) -> QuerySet[SystemNote]:
+    """The notes of the shop owner's pause the producer hasn't been given yet."""
+    return session.system_notes.filter(kind=SystemNote.Kind.PAUSED, read_at__isnull=True)
+
+
 def _stopped_since_the_user_spoke(session: Session) -> bool:
     """Whether a scene step stopped the run since the user's last message."""
     stopped = SceneStep.objects.filter(tool_call__session=session, status=SceneStep.Status.STOPPED)
@@ -801,9 +843,11 @@ def unread_steps(agent: Agent, session: Session) -> QuerySet[SceneStep]:
 
 
 def _finished_steps(agent: Agent, session: Session) -> QuerySet[SceneStep]:
+    """The scene steps `agent` started in the session that have ended, but those the shop
+    owner's pause cancelled: the pause's note tells it of them."""
     return SceneStep.objects.filter(
         tool_call__session=session, tool_call__agent=agent.name, finished_at__isnull=False
-    )
+    ).exclude(status=SceneStep.Status.CANCELLED)
 
 
 def _read(steps: list[SceneStep], notes: list[SystemNote]) -> None:
