@@ -7,7 +7,7 @@ from django.conf import settings
 
 # The producer's model: the producer's turns, and its look (spec #247 point 2, Julian 03:15:
 # the look is the producer's own model).
-PRODUCER_MODEL = "gpt-5.6-sol"
+PRODUCER_MODEL = "gpt-6.1-sol"
 
 MODEL_FOR_PURPOSE: dict[str, str] = {
     "produce": PRODUCER_MODEL,
@@ -21,14 +21,14 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "copy_page_text": "gpt-6-luna",
     # The picker reads a marked screenshot of the page: 92% of its photos were the right
     # product's (docs/scraping-test/ref-photo-test/results.md).
-    "pick_photos": "gpt-5.6-sol",
+    "pick_photos": "gpt-6.1-sol",
     # A photo the picker never saw gets its Face note from the same model, as the picker
     # gives it for the photos it picks.
-    "note_face": "gpt-5.6-sol",
+    "note_face": "gpt-6.1-sol",
     # A photo the picker never saw gets the picker's fixed fields from the same model, as the
     # picker gives them for the photos it picks (spec #210 point 1).
-    "label_photo": "gpt-5.6-sol",
-    "plan_ad": "gpt-5.6-sol",
+    "label_photo": "gpt-6.1-sol",
+    "plan_ad": "gpt-6.1-sol",
     # The watcher: watches a page video whole, sound and all (spec #210 point 3), as Gemini
     # Flash did in the watcher test (runs/watcher-test/results.md, Oct 27 2026).
     "watch_video": "gemini-3.8-flash",
@@ -36,18 +36,18 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # point 3): the watcher's own model, so its filter is the one probed.
     "probe_video": "gemini-3.8-flash",
     "fact_check": "gpt-5.6-terra",
-    "rewrite_line": "gpt-5.6-sol",
-    "shorten_script": "gpt-5.6-sol",
-    "shorten_line": "gpt-5.6-sol",
-    "lengthen_line": "gpt-5.6-sol",
+    "rewrite_line": "gpt-6.1-sol",
+    "shorten_script": "gpt-6.1-sol",
+    "shorten_line": "gpt-6.1-sol",
+    "lengthen_line": "gpt-6.1-sol",
     "draw_person": "gpt-image-2.5-sunburst",
-    "choose_starting_picture": "gpt-5.6-sol",
-    "choose_broll_picture": "gpt-5.6-sol",
+    "choose_starting_picture": "gpt-6.1-sol",
+    "choose_broll_picture": "gpt-6.1-sol",
     # A B-roll scene's video prompt written again from a note, by the same model that wrote it.
-    "rewrite_clip_prompt": "gpt-5.6-sol",
+    "rewrite_clip_prompt": "gpt-6.1-sol",
     # A B-roll clip's first-send prompt (#210 point 16): written by the model that writes
     # B-roll video prompts today.
-    "write_first_send_prompt": "gpt-5.6-sol",
+    "write_first_send_prompt": "gpt-6.1-sol",
     "make_starting_picture": "gpt-image-2.5-sunburst",
     # A clean picture of only the thing a shop owner's photo is taken for (Reference photo,
     # CONTEXT.md), drawn as starting pictures are.
@@ -68,7 +68,7 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "make_part_picture": "gpt-image-2.5-sunburst",
     "check_part_picture": "gpt-6.1-sol",
     # The ad's before-picture: planned from every B-roll scene, then drawn.
-    "plan_before_picture": "gpt-5.6-sol",
+    "plan_before_picture": "gpt-6.1-sol",
     "make_before_picture": "gpt-image-2.5-sunburst",
     # The before-picture's room alone, then the presenter standing in it: drawn once per ad
     # from it and the portrait, as the before-picture is.
@@ -150,10 +150,10 @@ class ContextWindow:
 
 
 # The context window of each model an agent takes turns on, beside its prices: from the
-# model's page (gpt-5.6-sol: developers.openai.com/api/docs/models/gpt-5.6-sol, 2026-10-29).
+# model's page (gpt-6.1-sol: developers.openai.com/api/docs/models/gpt-6.1-sol, 2026-10-29).
 # The producer's conversation folds past a share of it (settings.FOLD_PAST_SHARE_OF_WINDOW).
 CONTEXT_WINDOW: dict[str, ContextWindow] = {
-    "gpt-5.6-sol": ContextWindow(context=1_050_000, max_input=922_000),
+    "gpt-6.1-sol": ContextWindow(context=1_050_000, max_input=922_000),
 }
 
 
