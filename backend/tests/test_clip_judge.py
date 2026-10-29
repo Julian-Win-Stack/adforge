@@ -435,16 +435,38 @@ def test_the_sent_lists_pieces_share_at_most_ten_frames_shown(
     shown = clip_judge.sent_references(sent)
 
     assert [each["label"] for each in shown[:2]] == [
-        "Image 1: The garlic press, closed, seen from the front.",
-        "Image 2: A hand squeezing the press over a bowl.",
+        "Image 1. The prompt says: Image 1 is the garlic press, closed, seen from the front.",
+        "Image 2. The prompt says: Image 2 is a hand squeezing the press over a bowl: copy the "
+        "hand and how it holds the press.",
     ]
     videos = [each["label"] for each in shown[9:]]
     assert len(videos) == 10
-    assert videos[0] == "Video 1, Frame at 0 s" and videos[5] == "Video 2, Frame at 0 s"
-    assert clip_judge.sent_said(sent)[-2:] == [
-        "Video 1: only for the movement, not the look",
-        "Video 2: only for the movement, not the look",
-    ]
+    assert videos[0].endswith("\nVideo 1, Frame at 0 s")
+    assert videos[5].endswith("\nVideo 2, Frame at 0 s")
+
+
+def test_a_picture_or_piece_the_prompt_never_names_is_labelled_from_the_sent_list() -> None:
+    sent = SentList.model_validate(json.loads(FIXTURE.read_text()))
+    # A prompt with only its speed line and sentence, as a fixing agent's own prompt may be.
+    sent = sent.model_copy(update={"prompt": "Film this in real-time speed. She squeezes it."})
+
+    said = clip_judge.sent_said(sent)
+
+    assert said[0] == "Image 1: The garlic press, closed, seen from the front."
+    assert said[-1] == "Video 2: only for the movement, not the look"
+
+
+def test_the_prompt_names_each_picture_by_its_first_sentence_naming_it() -> None:
+    said = clip_judge.prompt_says(
+        "Film this.\nImage 1 is the jar, lid on. Image 2 is a hand on it.\nImage 1 opens. "
+        "Video 1 is only for the movement."
+    )
+
+    assert said == {
+        "Image 1": "Image 1 is the jar, lid on.",
+        "Image 2": "Image 2 is a hand on it.",
+        "Video 1": "Video 1 is only for the movement.",
+    }
 
 
 @pytest.mark.parametrize(
