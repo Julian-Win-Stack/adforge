@@ -1,8 +1,40 @@
 import type { Attachment, Message, PlanNotice, SceneStep } from "./api";
 
 /** One version of a scene's clip, with the starting picture it was made from (the scene's
- * latest picture when the clip landed), which is its first frame. */
-export type SceneClip = { file: Attachment; picture: Attachment | null };
+ * latest picture when the clip landed), which is its first frame, and what was sent to
+ * make it, when anything is known. */
+export type SceneClip = { file: Attachment; picture: Attachment | null; sent: ClipSent | null };
+
+/** What a scene card shows of what one clip was sent: the pictures in the order they went
+ * (Image 1 first), the video pieces with the seconds sent, the labels of the pictures left
+ * out, and each picture whose recolour fell back so it went in its own colour. */
+export type ClipSent = {
+  pictures: { image: number; label: string; url: string }[];
+  pieces: { number: number; url: string; start: number; end: number }[];
+  leftOut: string[];
+  notRecoloured: { label: string; colour: string }[];
+};
+
+/** What a clip's attachment says it was sent, or null when it says nothing: a clip made
+ * before anything was recorded carries the empty list. The one place the chat's sent list
+ * is read. */
+export function clipSent(clip: Attachment): ClipSent | null {
+  const sent = clip.sent;
+  if (!sent || (sent.pictures.length === 0 && sent.pieces.length === 0)) return null;
+  return {
+    pictures: sent.pictures.map(({ image, label, url }) => ({ image, label, url })),
+    pieces: sent.pieces.map(({ number, url, start, end }) => ({ number, url, start, end })),
+    leftOut: sent.left_out.map(({ label }) => label),
+    notRecoloured: sent.recolours
+      .filter(({ outcome }) => outcome === "fell_back")
+      .map(({ of, colour }) => ({
+        label:
+          [...sent.pictures, ...sent.left_out].find((one) => one.library_number === of)?.label ??
+          "",
+        colour,
+      })),
+  };
+}
 
 /** What the chat shows of one scene: every clip made for it, oldest first, its latest
  * starting picture, what is being made for it now, and what its last try failed to make. */
@@ -58,7 +90,7 @@ export function sceneCards(messages: Message[]): SceneCard[] {
         scene.picture = attachment;
         scene.clipOutOfDate = scene.clips.length > 0;
       } else {
-        scene.clips.push({ file: attachment, picture: scene.picture });
+        scene.clips.push({ file: attachment, picture: scene.picture, sent: clipSent(attachment) });
         scene.clipOutOfDate = false;
       }
     }
