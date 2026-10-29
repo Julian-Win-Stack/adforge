@@ -33,6 +33,7 @@ from jobs.work import NO_FIRECRAWL, keep_photo
 
 from .conftest import (
     COPIED,
+    LABELLED,
     MUG_FRONT,
     MUG_SIDE,
     NO_FACE,
@@ -46,6 +47,7 @@ from .conftest import (
     FakeDns,
     FakeFirecrawl,
     handoffs,
+    labelled_by_the_call,
     openai_answer,
     openai_reply,
     openai_turn,
@@ -630,7 +632,10 @@ def test_without_a_firecrawl_key_the_page_is_read_plainly_and_says_so(
     assert firecrawl.requests == []
     assert read_page_result().endswith("Kept 2 product photos.")
     assert f"{ON_THE_PAGE}\n" in Job.objects.get().page_text
-    assert notices(api, session_id) == [("problem", NO_FIRECRAWL)]
+    assert notices(api, session_id) == [
+        ("problem", NO_FIRECRAWL),
+        ("info", labelled_by_the_call(2)),
+    ]
 
 
 def test_a_page_the_shop_answers_firecrawl_404_for_cant_be_read_and_isnt_downloaded_plainly(
@@ -793,7 +798,9 @@ def test_a_failed_screenshot_falls_back_to_the_declared_photos(
             "Firecrawl couldn't take the page's marked screenshot (Firecrawl answered 400: "
             "Actions failed), so this product's photos couldn't be picked off it. "
             + DECLARED_INSTEAD,
-        )
+        ),
+        # The picker never saw the declared photos: a call of their own labels them.
+        ("info", labelled_by_the_call(2)),
     ]
 
 
@@ -911,7 +918,10 @@ def test_a_picker_that_fails_or_picks_nothing_falls_back_to_the_declared_photos(
         f"{shop}{SHAMPOO_PHOTO_PATH}?v=1783623478&width=1920",
         f"{shop}{SHAMPOO_PHOTO_PATH}?v=1783623478",
     ]
-    assert notices(api, session_id) == [("problem", why + DECLARED_INSTEAD)]
+    assert notices(api, session_id) == [
+        ("problem", why + DECLARED_INSTEAD),
+        ("info", labelled_by_the_call(2)),
+    ]
 
 
 @pytest.mark.parametrize(
@@ -970,7 +980,9 @@ def test_picked_photos_that_wont_download_are_named_and_the_rest_or_the_declared
             f"{notice}\n"
             f"- {splash}: {splash} answered 404 NOT FOUND, so trying again won't help.\n"
             f"- {lather}: It came back as text/html, not a PNG, JPEG, WebP or GIF image.",
-        )
+        ),
+        # The declared photos used instead are labelled by a call of their own.
+        *([("info", labelled_by_the_call(2))] if DECLARED_INSTEAD in notice else []),
     ]
 
 
@@ -1495,6 +1507,9 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
         openai_answer(COPIED),
         openai_answer(NO_FACE),
         openai_answer(NO_FACE),
+        # Each declared photo is labelled for the library.
+        openai_answer(LABELLED),
+        openai_answer(LABELLED),
         openai_turn("", ("call_2", "plan_ad", {})),
         openai_answer(PLAN),
         openai_turn("Here's the plan."),
@@ -1508,7 +1523,7 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
         "Hand-thrown, holds 350 ml, and dishwasher safe.",
         "Yours for $24.00.",
     ]
-    _, check, _, _, _, _, plan, _ = [
+    _, check, _, _, _, _, _, _, plan, _ = [
         request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
     ]
     assert check["model"] == "gpt-5-mini"

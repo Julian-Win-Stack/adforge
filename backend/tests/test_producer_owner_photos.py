@@ -1226,15 +1226,8 @@ def test_a_clean_picture_drawn_before_a_restart_is_used_not_drawn_again(mug_fixe
 # --- The job's library (spec #210 point 1) ----------------------------------------------------
 
 
-@pytest.fixture
-def unpicked_labelled(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The page's declared photos labelled into the library, as the picker never saw them, so
-    the library holds items before the shop owner's photo."""
-    monkeypatch.setattr("jobs.library_items.LABEL_UNPICKED_PAGE_PHOTOS", True)
-
-
 def test_the_shop_owners_photo_cleaned_after_the_plan_joins_the_library_at_the_next_number(
-    unpicked_labelled: None, mug_fixed: Fix
+    mug_fixed: Fix,
 ) -> None:
     from jobs.library import OwnerPhoto, PagePhoto, library_of
 
@@ -1257,7 +1250,7 @@ def test_the_shop_owners_photo_cleaned_after_the_plan_joins_the_library_at_the_n
 
 
 def test_a_clean_picture_drawn_again_after_a_restart_enters_the_library_once(
-    unpicked_labelled: None, mug_fixed: Fix
+    mug_fixed: Fix,
 ) -> None:
     from jobs.library import library_of
     from jobs.work import clean_picture

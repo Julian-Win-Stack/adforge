@@ -151,7 +151,14 @@ def test_a_tool_the_producer_makes_up_or_an_argument_it_adds_is_handed_back_and_
     # Its next turn was given the result, and it carried on to reply.
     assert given_to_the_producer(4)[-1]["result"] == told
     assert chat(api, session_id)[-1] == ("agent", "Let me do that properly.")
-    assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face"]
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "label_photo",
+        "label_photo",
+    ]
 
 
 # --- The producer itself can't carry on -----------------------------------------------------
@@ -332,7 +339,15 @@ def test_a_tool_call_past_the_limit_for_one_message_is_refused_and_the_count_res
         "carry on."
     )
     assert refused.finished
-    assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face", "plan_ad"]
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "label_photo",
+        "label_photo",
+        "plan_ad",
+    ]
     assert chat(api, session_id)[-1] == ("agent", told)
 
     # The user's next message starts the count again.
@@ -340,7 +355,7 @@ def test_a_tool_call_past_the_limit_for_one_message_is_refused_and_the_count_res
         "produce", turn(calls=[("create_person", {})]), turn(says="Meet your presenter!")
     )
     say("Go on")
-    assert paid_for()[5:] == ["draw_person", "design_voice", "measure_voice"]
+    assert paid_for()[7:] == ["draw_person", "design_voice", "measure_voice"]
 
 
 def test_a_producer_that_asks_for_another_tool_after_the_limit_is_stopped(
@@ -370,7 +385,15 @@ def test_a_producer_that_asks_for_another_tool_after_the_limit_is_stopped(
         ("agent", "I hit my limit of 2 steps for one message. Send a message and I'll carry on."),
     ]
     assert ToolCall.objects.filter(tool="create_person").count() == 1
-    assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face", "plan_ad"]
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "label_photo",
+        "label_photo",
+        "plan_ad",
+    ]
 
 
 def test_every_agents_tool_calls_count_towards_the_limit(
@@ -406,7 +429,14 @@ def test_every_agents_tool_calls_count_towards_the_limit(
 
     (refused,) = results_of("plan_ad")
     assert refused.startswith("Refused: this would be tool call 3 since the shop owner's")
-    assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face"]
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "label_photo",
+        "label_photo",
+    ]
 
 
 # --- What the producer is given each turn ---------------------------------------------------
@@ -550,6 +580,8 @@ def test_a_page_without_a_usable_photo_isnt_read_yet_so_a_new_link_is_read_for_t
         "copy_page_text",
         "note_face",
         "note_face",
+        "label_photo",
+        "label_photo",
     ]
 
 
@@ -723,7 +755,14 @@ def test_once_a_page_has_been_read_a_link_to_another_page_is_refused(
         "owner to start a new chat for this one for now. Nothing was done."
     )
     assert Job.objects.get().product_url == page_read
-    assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face"]
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "label_photo",
+        "label_photo",
+    ]
 
 
 def test_reading_the_same_page_again_hands_back_what_was_read_and_pays_nothing(
@@ -740,9 +779,16 @@ def test_reading_the_same_page_again_hands_back_what_was_read_and_pays_nothing(
     again = results_of("read_page")[1]
     assert again.startswith(
         f"{page_read} was already read for this ad, so nothing was read or paid for again. "
-        "Reading it cost $0.0126. The ad has 2 product photos."
+        "Reading it cost $0.0246. The ad has 2 product photos."
     )
-    assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face"]
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "label_photo",
+        "label_photo",
+    ]
     assert Job.objects.get().photos.count() == 2
     assert ToolCall.objects.filter(tool="read_page").last().cost_usd() == 0  # type: ignore[union-attr]
 
@@ -903,7 +949,15 @@ def test_planning_again_hands_back_the_plan_and_pays_nothing(
         "The ad was already planned, so nothing was planned or paid for again. Planning it "
         f"cost $0.006.\n{plan}",
     ]
-    assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face", "plan_ad"]
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "label_photo",
+        "label_photo",
+        "plan_ad",
+    ]
     assert Job.objects.get().scenes.count() == 3
 
 
@@ -934,6 +988,8 @@ def test_making_the_person_again_hands_back_the_person_and_pays_nothing(
         "copy_page_text",
         "note_face",
         "note_face",
+        "label_photo",
+        "label_photo",
         "plan_ad",
         "draw_person",
         "design_voice",
@@ -1296,7 +1352,15 @@ def test_planning_again_is_refused_until_the_user_has_answered_the_planners_ques
         "Ask them, and wait for their answer. Nothing was done."
     )
     # The refused call paid for no plan.
-    assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face", "plan_ad"]
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "label_photo",
+        "label_photo",
+        "plan_ad",
+    ]
 
     fake_model.respond(
         "produce", turn(calls=[("plan_ad", {})]), turn(says="Planned with the sale price.")

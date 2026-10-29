@@ -24,6 +24,7 @@ from jobs.work import NO_FIRECRAWL
 from .conftest import (
     COPIED,
     FACTS_OK,
+    LABELLED,
     MUG_FRONT,
     MUG_SIDE,
     NO_FACE,
@@ -31,6 +32,7 @@ from .conftest import (
     READABLE,
     chat,
     given_to_the_producer,
+    labelled_by_the_call,
     openai_answer,
     openai_turn,
     picture,
@@ -63,6 +65,7 @@ def test_the_producer_reads_the_page_its_given_and_tells_the_user_what_it_found(
         ("user", f"Make me a 15 second ad for {product_page_url}"),
         ("agent", "I'll read your product page first."),
         ("notice", NO_FIRECRAWL),
+        ("notice", labelled_by_the_call(2)),
         ("agent", "Your mug's page has what the ad needs, and two photos of it."),
     ]
     job = Job.objects.get(session_id=session_id)
@@ -78,9 +81,9 @@ def test_the_producer_reads_the_page_its_given_and_tells_the_user_what_it_found(
     assert checkpoint.finished
     assert "Kept 2 product photos" in checkpoint.result
     # Checking the page cost 1,000 tokens in and 100 out on gpt-5-mini, $0.00045, copying
-    # its text the same on gpt-6-luna, $0.00015, and noting each of its 2 photos' faces the
-    # same on gpt-5.6-sol, $0.006 each.
-    assert checkpoint.cost_usd() == Decimal("0.0126")
+    # its text the same on gpt-6-luna, $0.00015, and noting each of its 2 photos' faces and
+    # labelling each for the library the same on gpt-5.6-sol, $0.006 a call.
+    assert checkpoint.cost_usd() == Decimal("0.0246")
     # The producer's second turn was given what the tool produced.
     assert given_to_the_producer(2)[-1] == {
         "kind": "tool_use",
@@ -208,6 +211,9 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
         openai_answer(COPIED),
         openai_answer(NO_FACE),
         openai_answer(NO_FACE),
+        # Each declared photo is labelled for the library.
+        openai_answer(LABELLED),
+        openai_answer(LABELLED),
         openai_turn("Your mug's page has what the ad needs."),
     )
 
@@ -216,9 +222,10 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
     assert chat(api, session_id)[1:] == [
         ("agent", "I'll read your product page first."),
         ("notice", NO_FIRECRAWL),
+        ("notice", labelled_by_the_call(2)),
         ("agent", "Your mug's page has what the ad needs."),
     ]
-    first, _check, _copy, _front, _side, second = [
+    first, _check, _copy, _front, _side, _front_label, _side_label, second = [
         request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
     ]
     assert first["model"] == "gpt-5.6-sol"
@@ -350,12 +357,13 @@ def test_the_producer_takes_a_brief_to_a_checked_plan_that_is_ready_to_render(
         ("user", f"Make me a 15 second ad for {product_page_url}", []),
         ("agent", "I'll read your product page first.", []),
         ("notice", NO_FIRECRAWL, []),
+        ("notice", labelled_by_the_call(2), []),
         ("agent", "Now I'll plan the ad.", []),
         ("agent", "Next, the person who presents it.", []),
         ("agent", "", ["picture", "sound"]),
         ("agent", "Meet your presenter! The script is checked and ready to make.", []),
     ]
-    person = api.get(f"/api/sessions/{session_id}/messages/").json()[5]["attachments"]
+    person = api.get(f"/api/sessions/{session_id}/messages/").json()[6]["attachments"]
     portrait, voice = job.produced.get(kind="portrait"), job.produced.get(kind="voice")
     # Neither belongs to a scene.
     assert [(each["url"], each["scene"]) for each in person] == [
@@ -375,7 +383,18 @@ def test_the_producer_takes_a_brief_to_a_checked_plan_that_is_ready_to_render(
         (each.tool, each.job_id, list(each.model_calls.values_list("purpose", flat=True)))
         for each in checkpoints
     ] == [
-        ("read_page", job.pk, ["check_page", "copy_page_text", "note_face", "note_face"]),
+        (
+            "read_page",
+            job.pk,
+            [
+                "check_page",
+                "copy_page_text",
+                "note_face",
+                "note_face",
+                "label_photo",
+                "label_photo",
+            ],
+        ),
         ("plan_ad", job.pk, ["plan_ad"]),
         ("create_person", job.pk, ["draw_person", "design_voice", "measure_voice"]),
         ("run_planning_checks", job.pk, ["fact_check"]),

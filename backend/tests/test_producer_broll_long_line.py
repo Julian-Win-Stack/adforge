@@ -14,7 +14,15 @@ from agents import tasks
 from gateway.fake import FakeModel, turn
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 
-from .conftest import JUDGED_CLIP, HeldSteps, WorkerStopped, facts_ok, handoffs, paid_for
+from .conftest import (
+    JUDGED_CLIP,
+    HeldSteps,
+    WorkerStopped,
+    facts_ok,
+    handoffs,
+    labelled_by_the_call,
+    paid_for,
+)
 from .test_producer_broll import (
     BROLL_CHOICE,
     LINE_2,
@@ -72,7 +80,9 @@ def warnings() -> list[str]:
     return [
         warning["text"]
         for warning in Job.objects.get().warnings
+        # Said as the page was read: the plain download, and its photos labelled.
         if not warning["text"].startswith("Firecrawl")
+        and warning["text"] != labelled_by_the_call(2)
     ]
 
 

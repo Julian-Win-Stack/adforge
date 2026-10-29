@@ -21,6 +21,7 @@ from .conftest import (
     SHAMPOO_PHOTO_PATH,
     SHAMPOO_PICKED,
     FakeFirecrawl,
+    labelled_by_the_call,
     paid_for,
     photo,
     picture,
@@ -272,8 +273,8 @@ def test_a_picker_answer_with_a_value_outside_the_fixed_fields_is_refused(
 def unlabelled_notice(marks: str, many: bool) -> str:
     return (
         f"The photo picker kept {marks} off the page without usable fields saying what each "
-        f"shows (its kind, side, colour and label), so {'they are' if many else 'it is'} kept "
-        "unlabelled and may each be kept twice if the page has another copy."
+        f"shows (its kind, side, colour and label), so {'they' if many else 'it'} may each be "
+        "kept twice if the page has another copy."
     )
 
 
@@ -317,8 +318,12 @@ def test_a_picture_whose_fields_break_their_rules_is_kept_unlabelled_and_named_i
         "line-up",
     }
     text = unlabelled_notice("picture I102", many=False)
-    assert notices(api, session_id) == [("problem", text)]
-    assert [warning["text"] for warning in Job.objects.get().warnings] == [text]
+    # The labelling call labels it for the library instead, which is said too.
+    assert notices(api, session_id) == [("problem", text), ("info", labelled_by_the_call(1))]
+    assert [warning["text"] for warning in Job.objects.get().warnings] == [
+        text,
+        labelled_by_the_call(1),
+    ]
 
 
 def test_a_colour_of_several_words_is_kept_as_one_joined_by_hyphens(
@@ -379,8 +384,11 @@ def test_a_picked_picture_the_picker_gave_no_fields_is_kept_and_named_in_red(
     assert by_link["101.png"]["kind"] == "side"
     assert by_link[SHAMPOO_PHOTO_PATH.rsplit("/", 1)[-1]]["side"] == "front"
     text = unlabelled_notice("pictures I102 and I104", many=True)
-    assert notices(api, session_id) == [("problem", text)]
-    assert [warning["text"] for warning in Job.objects.get().warnings] == [text]
+    assert notices(api, session_id) == [("problem", text), ("info", labelled_by_the_call(2))]
+    assert [warning["text"] for warning in Job.objects.get().warnings] == [
+        text,
+        labelled_by_the_call(2),
+    ]
 
 
 def test_a_page_read_again_keeps_each_copy_group_once_without_comparing_the_photos(

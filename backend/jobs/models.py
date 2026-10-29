@@ -322,9 +322,12 @@ class LibraryItem(models.Model):
     alone = models.CharField(
         max_length=3, help_text="yes: the product alone on a plain background; else no."
     )
-    colour = models.CharField(max_length=40, help_text="The product's colour, one word.")
-    target = models.CharField(
-        max_length=200, blank=True, help_text="For a line-up, the product's position in it."
+    colour = models.TextField(
+        help_text="The product's colour, one word (two joined by a hyphen), as the picker's."
+    )
+    target = models.TextField(
+        blank=True,
+        help_text="For a line-up, the product's position in it, as long as the picker wrote it.",
     )
     label = models.TextField(
         help_text="One free sentence for prompts and the planner. Code never parses it."

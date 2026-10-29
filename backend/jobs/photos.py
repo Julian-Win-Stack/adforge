@@ -12,11 +12,11 @@ import io
 import re
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, Self
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from PIL import Image, ImageStat
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from gateway.types import Handoff
 
@@ -271,9 +271,8 @@ class LabelPhotoHandoff(Handoff):
 
 
 class PhotoLabel(BaseModel):
-    """The labelling call's answer: a photo's fixed fields, as the picker gives them. The
-    call's schema checks the fixed values; the label's own rules are the library's, checked
-    in `label_of`, as for the picker's pictures."""
+    """The labelling call's answer: a photo's fixed fields, as the picker gives them, held to
+    the library's label rules by the call itself, as one photo's answer is all there is."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -289,9 +288,24 @@ class PhotoLabel(BaseModel):
     )
     label: str = Field(description="One sentence saying what the picture shows.")
 
+    # The label's rules (jobs.library.PictureLabel) as validators, which OpenAI's strict
+    # schema leaves out: an answer that breaks one is a failed call, asked again, never kept.
+    @field_validator("colour", "label")
+    @classmethod
+    def _said(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("it is empty")
+        return value
+
+    @model_validator(mode="after")
+    def _a_target_for_a_line_up_only(self) -> Self:
+        if (self.kind == "line-up") != bool(self.target.strip()):
+            raise ValueError("a line-up names its target, and nothing else has one")
+        return self
+
     def label_of(self) -> PictureLabel:
         """The photo's label as the library keeps it, a colour of several words joined by
-        hyphens. Raises ValidationError when it breaks the library's rules."""
+        hyphens."""
         return PictureLabel(
             kind=self.kind,
             side=self.side,

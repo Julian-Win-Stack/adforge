@@ -292,7 +292,8 @@ def test_a_video_refused_everywhere_down_to_5_s_is_dropped_as_all_of_it(
         "The AI model's safety filter refused all of it: seconds 0-30 dropped, after 10 probes."
     )
     assert video.transcript == ""
-    assert job.library.count() == 0
+    # No look frame entered the library.
+    assert not [item for item in library_of(job) if isinstance(item.source, LookFrame)]
     told = (
         "The AI model's safety filter refused all of your page's video 1 (reason: all), so "
         "seconds 0-30 of it are dropped and the ad is planned without it."

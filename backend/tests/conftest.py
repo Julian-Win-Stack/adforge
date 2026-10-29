@@ -142,6 +142,23 @@ SHAMPOO_PICKED = shampoo_picked()
 # What the Face-note call answers for a photo with no stranger's face in it.
 NO_FACE: dict[str, Any] = {"has_face": False}
 
+
+def labelled_by_the_call(count: int) -> str:
+    """The notice saying the labelling call labelled `count` of the page's photos, which the
+    photo picker didn't, as the mug page's two declared photos are."""
+    if count == 1:
+        return (
+            "The photo picker didn't say what 1 of the page's photo shows, so a call of its "
+            "own looked at it and labelled it for the ad's picture library, as the picker "
+            "labels the photos it picks."
+        )
+    return (
+        f"The photo picker didn't say what {count} of the page's photos show, so a call of its "
+        "own looked at each and labelled them for the ad's picture library, as the picker "
+        "labels the photos it picks."
+    )
+
+
 # What the labelling call answers for a photo the picker never saw, when a test doesn't say:
 # the product from the front, alone.
 LABELLED: dict[str, Any] = {

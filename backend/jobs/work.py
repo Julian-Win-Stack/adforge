@@ -11,9 +11,8 @@ import mimetypes
 import re
 import tempfile
 import wave
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -21,7 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from django.conf import settings
-from django.db import connection, transaction
+from django.db import transaction
 from django.db.models import Max, Q, QuerySet
 from django.utils import timezone
 from pydantic import ValidationError
@@ -115,6 +114,7 @@ from .checks import (
     script_seconds,
     shortened_script_for,
 )
+from .job_locks import one_job_at_a_time as _one_job_at_a_time
 from .library import PictureLabel, watch_of
 from .models import (
     BROLL_FIELDS,
@@ -560,13 +560,14 @@ def _labels_and_copies(
 
 
 def _kept_unlabelled(marks: list[str]) -> str:
-    """The notice naming the picked pictures kept without the picker's fields."""
+    """The notice naming the picked pictures kept without the picker's fields (the labelling
+    call labels them for the library, which its own notice says)."""
     listed = f"{', '.join(marks[:-1])} and {marks[-1]}" if len(marks) > 1 else marks[0]
     return (
         f"The photo picker kept picture{'s' if len(marks) > 1 else ''} {listed} off the page "
         "without usable fields saying what each shows (its kind, side, colour and label), so "
-        f"{'they are' if len(marks) > 1 else 'it is'} kept unlabelled and may each be kept "
-        "twice if the page has another copy."
+        f"{'they' if len(marks) > 1 else 'it'} may each be kept twice if the page has another "
+        "copy."
     )
 
 
@@ -2196,9 +2197,12 @@ CLEAN_PICTURE_LOCK = 3
 def clean_picture(scene: Scene, row: ReferencePhoto) -> str:
     """The clean picture of only `row`'s thing, drawn from the shop owner's photo once per ad
     (see _clean_picture), which joins the job's library as that photo, labelled, the first
-    time it is drawn. Gives its key in the file store."""
+    time it is drawn: unless it is a photo of the scene's owner part, whose picture enters
+    the library as the part's (#234). Gives its key in the file store."""
     drawn = _clean_picture(scene, row)
-    library_items.add_owner_photo(scene.job, row.file, drawn, f"the shop owner's {row.thing}")
+    part = owner_parts.owner_part(scene)
+    if part is None or not reference_photos.same_thing(row.thing, part.what):
+        library_items.add_owner_photo(scene.job, row.file, drawn, f"the shop owner's {row.thing}")
     return drawn
 
 
@@ -2475,20 +2479,6 @@ def _show_once(job: Job, made: list[ProducedItem]) -> None:
             role=Message.Role.AGENT,
             carrying=[messages.AttachedFile(Attachment.Kind.PICTURE, item.file) for item in unseen],
         )
-
-
-@contextmanager
-def _one_job_at_a_time(lock: int, job: Job) -> Iterator[None]:
-    """Wait for, then hold while the block runs, the Postgres advisory lock `lock` for `job`,
-    so work done under it for the same job runs one at a time. It is held by the database
-    connection, not a transaction, so what is done under it is kept as it happens."""
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT pg_advisory_lock(%s, hashtext(%s))", [lock, str(job.pk)])
-    try:
-        yield
-    finally:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT pg_advisory_unlock(%s, hashtext(%s))", [lock, str(job.pk)])
 
 
 def _plan_broll_picture(

@@ -282,3 +282,24 @@ def test_a_scene_with_no_owner_part_cant_be_corrected() -> None:
         owner_parts.photo_correction(scene, owner_photo())
     assert not ReferencePhoto.objects.exists()
     assert Job.objects.get().scenes.get(number=2).owner_part is None
+
+
+def test_a_photo_of_the_part_cleaned_doesnt_enter_the_library_as_the_owners_photo(
+    fake_model: FakeModel,
+    instructed: dict[str, list[str]],  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from jobs.library import library_of
+
+    with_owner_part()
+    picture_of_scene_2(fake_model, steps, say)
+    scene = approved()
+    before = library_of(scene.job)
+    labelled = ModelCall.objects.filter(purpose="label_photo").count()
+
+    owner_parts.photo_correction(scene, owner_photo())
+
+    # The part's picture enters the library as the part's (#234), not as an owner photo.
+    assert library_of(scene.job) == before
+    assert ModelCall.objects.filter(purpose="label_photo").count() == labelled

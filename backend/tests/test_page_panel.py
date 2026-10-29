@@ -449,12 +449,14 @@ def test_a_pasted_page_whose_check_is_refused_is_answered_and_can_be_sent_again(
     assert not any(each["text"].startswith("I had to stop") for each in messages(api, session_id))
 
 
-def test_the_photos_of_a_pasted_page_join_the_library_as_the_shop_owners_labelled(
+def test_the_photos_of_a_pasted_page_join_the_library_as_the_pages_labelled(
+    api: APIClient,
     fake_model: FakeModel,
     unreadable: str,
+    session_id: str,
     paste: Callable[..., Any],
 ) -> None:
-    from jobs.library import OwnerPhoto, library_of
+    from jobs.library import PagePhoto, library_of
 
     fake_model.respond("check_page", READABLE)
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
@@ -463,9 +465,16 @@ def test_the_photos_of_a_pasted_page_join_the_library_as_the_shop_owners_labelle
     paste(PASTE, ("front.png", FRONT), ("side.png", SIDE))
 
     attached = list(Attachment.objects.order_by("position").values_list("file", flat=True))
+    # The page's photos, as the page at the shop's link would give them.
     assert [(item.number, item.source, item.file) for item in library_of(Job.objects.get())] == [
-        (number, OwnerPhoto(original=file), file) for number, file in enumerate(attached, 1)
+        (number, PagePhoto(photo=number), file) for number, file in enumerate(attached, 1)
     ]
     labelled = handoffs("label_photo")
     assert [each["photo"] for each in labelled] == attached
     assert {each["product_text"] for each in labelled} == {PASTE}
+    assert (
+        "info",
+        "The photo picker didn't say what 2 of the page's photos show, so a call of its own "
+        "looked at each and labelled them for the ad's picture library, as the picker labels "
+        "the photos it picks.",
+    ) in [(each["level"], each["text"]) for each in messages(api, session_id)]

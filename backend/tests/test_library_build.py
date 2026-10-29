@@ -4,21 +4,29 @@ by the labelling call. Driven through the chat: the owner's first message, the p
 labelling call faked at the gateway, the shop's page on the local web server through the
 stand-in Firecrawl."""
 
+import contextvars
 import re
+import threading
+import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pytest
 from rest_framework.test import APIClient
 
+from adforge import file_store
+from adforge.retry import OutsideServiceDown
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import ModelRequest
 from jobs.library import LibraryEntry, OwnerPhoto, PagePhoto, library_of
-from jobs.models import Job
+from jobs.library_items import MOST_PRODUCT_TEXT, add_kept_photos, add_owner_photo
+from jobs.models import Job, ProductPhoto
 from jobs.photos import PICK_INSTRUCTIONS
+from jobs.threads import closing_its_connection
 
-from .conftest import LABELLED, READABLE, SHAMPOO_PICKED, photo
+from .conftest import LABELLED, READABLE, SHAMPOO_PICKED, paid_for, photo
 from .test_picker_labels import LABELS, labelled_page, notices  # noqa: F401 (a fixture)
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -155,10 +163,44 @@ def test_a_labelling_answer_that_breaks_the_fields_rules_leaves_the_photo_out_in
 ) -> None:
     first_message(fake_model, say, labelled_page, {**OWNER_LABEL, **changed})
 
+    (labelling,) = ModelCall.objects.filter(purpose="label_photo")
+    assert labelling.outcome == ModelCall.Outcome.FAILED
     assert [item.source.came_from for item in library_of(Job.objects.get())] == ["page_photo"] * 5
     (problem,) = [text for level, text in notices(api, session_id) if level == "problem"]
-    assert problem.startswith("Saying what a photo the shop owner sent shows failed")
+    # Said in plain words, never as the answer's validation error.
+    assert problem == (
+        "Saying what a photo the shop owner sent shows failed (the AI model's answer couldn't "
+        "be used), so it isn't in the ad's picture library and can't be sent to the video "
+        "model. It is tried again when photos are next added."
+    )
     assert [warning["text"] for warning in Job.objects.get().warnings] == [problem]
+
+
+def test_a_photo_whose_labelling_answer_broke_the_rules_is_asked_again_when_photos_are_added(
+    fake_model: FakeModel,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    say: Say,
+) -> None:
+    first_message(fake_model, say, labelled_page, {**OWNER_LABEL, "label": " "})
+    fake_model.respond(
+        "produce",
+        turn(
+            calls=[
+                ("use_photos", {"photos": [{"photo": n, "shows": "the product"} for n in (1, 2)]})
+            ]
+        ),
+        turn(says="Added."),
+    )
+    fake_model.respond("label_photo", OWNER_LABEL)
+
+    say("Here's one more of mine.", ("my-other-bottle.png", photo(202)))
+
+    owners = [item for item in library_of(Job.objects.get()) if item.number > 5]
+    assert [(item.number, item.label) for item in owners] == [
+        (6, OWNER_LABEL["label"]),
+        (7, LABELLED["label"]),
+    ]
+    assert ModelCall.objects.filter(purpose="label_photo").count() == 3
 
 
 def test_a_colour_of_two_words_from_the_labelling_call_is_kept_joined_by_a_hyphen(
@@ -213,9 +255,11 @@ def test_an_owner_photo_added_later_joins_at_the_next_number_and_the_others_keep
     assert ModelCall.objects.filter(purpose="label_photo").count() == 2
 
 
-def test_a_page_photo_the_picker_gave_no_fields_stays_out_of_the_library(
+def test_a_page_photo_the_picker_gave_no_fields_is_labelled_by_the_call_and_said_so(
+    api: APIClient,
     fake_model: FakeModel,
     labelled_page: str,  # noqa: F811 (the fixture)
+    session_id: str,
     say: Say,
 ) -> None:
     without_the_side = [label for label in FIVE_PICKED["pictures"] if label["picture"] != "I102"]
@@ -231,6 +275,106 @@ def test_a_page_photo_the_picker_gave_no_fields_stays_out_of_the_library(
 
     job = Job.objects.get()
     side = job.photos.get(source_url__endswith="102.png")
-    assert [item.number for item in library_of(job)] == [1, 2, 3, 4]
-    assert PagePhoto(photo=side.position) not in [item.source for item in library_of(job)]
-    assert not ModelCall.objects.filter(purpose="label_photo").exists()
+    assert listed(job)[2] == (3, "page_photo", "side", LABELLED["label"])
+    assert library_of(job)[2].source == PagePhoto(photo=side.position)
+    (labelling,) = ModelCall.objects.filter(purpose="label_photo")
+    assert labelling.handoff["photo"] == side.source_url
+    # Labelled while the page is read, before its text is kept, it is still given that text.
+    assert job.page_text
+    assert labelling.handoff["product_text"] == job.page_text[:MOST_PRODUCT_TEXT]
+    told = (
+        "The photo picker didn't say what 1 of the page's photo shows, so a call of its own "
+        "looked at it and labelled it for the ad's picture library, as the picker labels the "
+        "photos it picks."
+    )
+    assert ("info", told) in notices(api, session_id)
+    assert told in [warning["text"] for warning in job.warnings]
+
+
+def test_a_page_read_again_puts_a_photo_its_labelling_left_out_into_the_library(
+    fake_model: FakeModel,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    say: Say,
+) -> None:
+    # The picker gives the side photo no fields, and its labelling call fails the first time.
+    without_the_side = [label for label in FIVE_PICKED["pictures"] if label["picture"] != "I102"]
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": labelled_page, "target_seconds": None})]),
+        turn(says="Done."),
+        turn(calls=[("read_page", {"link": labelled_page, "target_seconds": None})]),
+        turn(says="It was already read."),
+    )
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("pick_photos", {**FIVE_PICKED, "pictures": without_the_side})
+    fake_model.respond("label_photo", *[OutsideServiceDown("503 from the provider")] * 3)
+    say(f"Make an ad for {labelled_page}")
+    assert [item.number for item in library_of(Job.objects.get())] == [1, 2, 3, 4]
+
+    say("Read my page again")
+
+    job = Job.objects.get()
+    side = job.photos.get(source_url__endswith="102.png")
+    assert [item.number for item in library_of(job)] == [1, 2, 3, 4, 5]
+    assert library_of(job)[4].source == PagePhoto(photo=side.position)
+    assert paid_for().count("pick_photos") == 1
+
+
+def test_two_steps_adding_the_same_owner_photo_at_once_add_it_once(
+    fake_model: FakeModel,
+) -> None:
+    job = Job.objects.create(product_url="https://shop.example/p")
+    key = file_store.save(f"jobs/{job.pk}/owner.png", photo(203))
+    both_asking = threading.Barrier(2)
+
+    def slowly(_: Any) -> dict[str, Any]:
+        time.sleep(0.3)
+        return LABELLED
+
+    fake_model.answer_unscripted("label_photo", slowly)
+
+    def adding() -> None:
+        both_asking.wait()
+        closing_its_connection(add_owner_photo, job, key, key, "the product")
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        for done in [pool.submit(contextvars.copy_context().run, adding) for _ in range(2)]:
+            done.result()
+
+    assert [(item.number, item.file) for item in library_of(job)] == [(1, key)]
+
+
+def test_a_page_photo_whose_stored_fields_no_longer_fit_is_labelled_again(
+    fake_model: FakeModel,
+) -> None:
+    job = Job.objects.create(product_url="https://shop.example/p")
+    key = file_store.save(f"jobs/{job.pk}/photos/1.png", photo(204))
+    ProductPhoto.objects.create(
+        job=job,
+        position=1,
+        source_url="https://shop.example/1.png",
+        file=key,
+        kind="packshot",  # A kind the set no longer holds.
+        side="front",
+        alone="yes",
+        colour="amber",
+        label="The bottle.",
+    )
+
+    (item,) = add_kept_photos(job)
+
+    assert (item.kind, item.label) == ("side", LABELLED["label"])
+
+
+def test_a_photo_sent_as_is_enters_beside_a_clean_picture_drawn_from_it(
+    fake_model: FakeModel,
+) -> None:
+    job = Job.objects.create(product_url="https://shop.example/p")
+    sent = file_store.save(f"jobs/{job.pk}/sent.png", photo(205))
+    clean = file_store.save(f"jobs/{job.pk}/clean.png", photo(206))
+    add_owner_photo(job, sent, clean, "the shop owner's black mug")
+    ProductPhoto.objects.create(job=job, position=1, file=sent)
+
+    add_kept_photos(job)
+
+    assert [(item.number, item.file) for item in library_of(job)] == [(1, clean), (2, sent)]

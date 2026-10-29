@@ -199,6 +199,9 @@ class ReadPage(Tool):
                     f"read, and {self.link} is a different link. Ads for other products come "
                     "later: tell the shop owner to start a new chat for this one for now."
                 )
+            # A read that stopped once the page was kept may have left photos out of the
+            # job's library: they join it now.
+            add_kept_photos(job)
             return (
                 f"{self.link} was already read for this ad, so nothing was read or paid for "
                 f"again. Reading it cost {dollars(_spent(job, self.name))}. The ad has "
@@ -276,6 +279,9 @@ class ReadPage(Tool):
                 declared = True
             elif skipped:
                 post_notice(job, _not_downloaded(skipped), Message.Level.PROBLEM)
+        # The job's library starts from the page's photos, labelled, before the videos' look
+        # frames join it.
+        add_kept_photos(job, product_text=text)
         # The gallery videos the picker picked, each watched for its moments, look frames,
         # colour and words (jobs.watcher). One that can't be watched is told in red.
         save_videos(job, list(picked.videos))
@@ -283,8 +289,6 @@ class ReadPage(Tool):
         # Only once every photo is kept: a worker that stops part-way through them leaves the
         # page unread, so the read run again keeps them all rather than the few already kept.
         keep_page(job, download, product_page, text)
-        # Once the page's photos are kept and labelled: the job's library starts from them.
-        add_kept_photos(job)
         if messages.page_panel_wanted(call.session):
             post_notice(job, PANEL_NOT_NEEDED, Message.Level.INFO, wants_pasted_page=False)
         # The pictures cut from its videos are the planner's, not news to the owner.
