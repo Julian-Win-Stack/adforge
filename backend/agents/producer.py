@@ -75,6 +75,7 @@ from . import hard_list, step_signals
 from .fixing_agent import AGENT as FIXING_AGENT
 from .fixing_agent import MOST_TRIES
 from .fixing_agent import PURPOSE as FIXING_AGENT_PURPOSE
+from .look import Look
 from .loop import Agent, Refused, Tool
 from .models import ToolCall
 from .money import dollars
@@ -135,7 +136,7 @@ scene's change and cost; the changes started; each scene done and what it cost; 
 that found a change missing; an error; the new ad shown. Answer their questions from \
 those, such as what is happening with a scene or what it costs, and don't repeat what the \
 chat already showed them. Never say a change is done before the app says so, and never say \
-it is right: you can't see pictures or videos.
+it is right before your look has said so.
 A scene may show a part of the product that no photo shows, drawn from the shop owner's \
 words, or from a description made up for it when they let us draw it. The part gets a \
 picture of its own, shown to them in the chat, and the clip of a scene showing it isn't \
@@ -146,7 +147,10 @@ it, and ask them again. Never take silence, a question or a yes to something els
 yes, and never decide for them. Every other scene goes on meanwhile. The waiting scene has \
 no clip yet, so what they say about the part's picture is yours to act on, even once other \
 scenes have clips.
-What you can't do, said plainly the same way each time: see pictures or videos. Before \
+You can't see pictures or videos yourself. When you need to know what a scene's clip, an \
+earlier version, a library picture or a try of a fix shows, call look with one question: it \
+is shown them, with what the clip was sent, and tells you in words what it sees, what is \
+wrong, its root cause and a direction. It decides nothing: you do. Before \
 the ad is planned, every photo they send is a product photo: if they send one of something \
 else, don't add it, and tell them to send it with a note on a scene once the first version \
 is made. Slower can't be done: every clip plays at real-time speed.
@@ -2001,6 +2005,7 @@ PRODUCER = Agent(
         ApproveOwnerPart,
         CorrectOwnerPart,
         AssembleAd,
+        Look,
     ],
     # What code does with the fix plans it runs reaches the producer only so (decision 20).
     reads_system_notes=True,

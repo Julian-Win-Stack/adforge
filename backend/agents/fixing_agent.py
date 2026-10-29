@@ -709,7 +709,7 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
     words and tools in the order they happened."""
     first = fixing.first_clip
     assert first is not None, "the fixing started with try 0"
-    sent, shown = _try_shown("Try 0", first.picture, first)
+    sent, shown = try_shown("Try 0", first.picture, first)
     happened: list[Happened] = [
         Said(by="user", text=_intro(fixing)),
         ToolUse(
@@ -1072,7 +1072,7 @@ class LookAtTry(Tool):
             picture, clip = row.picture, row.clip
             ruling = clip.ruling if clip is not None else None
         label = f"Try {self.number}"
-        sent, shown = _try_shown(label, picture, clip)
+        sent, shown = try_shown(label, picture, clip)
         said = (
             f"{label}: what its clip was sent, then the clip's frames. {sent}"
             if sent
@@ -1081,7 +1081,7 @@ class LookAtTry(Tool):
         return ToolResult(f"{said} {judge_words(ruling)}", shown)
 
 
-def _try_shown(
+def try_shown(
     label: str, picture: ProducedItem | None, clip: ProducedItem | None
 ) -> tuple[str, list[Image]]:
     """What a look at a try shows, and what code says of what its clip was sent: when its
