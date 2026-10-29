@@ -38,6 +38,12 @@ class ModelCall(models.Model):
         blank=True,
         help_text="The pictures shown with the handoff: each one's label and file-store key.",
     )
+    video = models.CharField(
+        max_length=500,
+        blank=True,
+        help_text="The video shown with the handoff, by its file-store key, as it was sent: "
+        "blank for a call shown none.",
+    )
     output = models.JSONField(null=True, blank=True)
     outcome = models.CharField(max_length=10, choices=Outcome.choices)
     error = models.TextField(blank=True)

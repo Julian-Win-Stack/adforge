@@ -321,6 +321,11 @@ def _isolated_outside_world(settings: Settings, tmp_path: Path) -> None:
     # stand-in.
     settings.OPENAI_PICTURES_KEY = ""
     settings.OPENAI_PICTURES_BASE_URL = ""
+    # Videos are never watched by the real Gemini. A test that watches one points these at a
+    # stand-in.
+    settings.GEMINI_API_KEY = ""
+    settings.GEMINI_BASE_URL = "http://gemini.invalid"
+    settings.GEMINI_FILE_POLL_SECONDS = 0
 
 
 @pytest.fixture(autouse=True)
@@ -663,6 +668,34 @@ def video(data: bytes) -> tuple[int, int, float]:
     found = json.loads(probed.stdout)
     (picture,) = [stream for stream in found["streams"] if stream["codec_type"] == "video"]
     return picture["width"], picture["height"], float(found["format"]["duration"])
+
+
+def a_video(width: int, height: int, *, sound: bool, seconds: float = 1) -> bytes:
+    """A real video, `width` by `height` px, `seconds` long, with a tone for its sound or
+    none at all."""
+    with tempfile.TemporaryDirectory() as folder:
+        made = Path(folder) / "made.mp4"
+        tone = ["-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds}"] if sound else []
+        subprocess.run(
+            [settings.FFMPEG, "-loglevel", "error", "-f", "lavfi"]
+            + ["-i", f"testsrc=size={width}x{height}:rate=10:duration={seconds}", *tone]
+            + ["-pix_fmt", "yuv420p", str(made)],
+            check=True,
+        )
+        return made.read_bytes()
+
+
+def has_sound(data: bytes) -> bool:
+    """Whether a video has a sound track, as ffprobe reads it."""
+    with _written(data) as file:
+        probed = subprocess.run(
+            [settings.FFPROBE, "-v", "error", "-show_streams", "-of", "json", file],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=True,
+        )
+    return any(stream["codec_type"] == "audio" for stream in json.loads(probed.stdout)["streams"])
 
 
 def colour_at(data: bytes, seconds: float) -> str:
