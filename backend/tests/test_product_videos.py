@@ -5,6 +5,8 @@ Through the chat, with the picker's picked players set by the test."""
 import dataclasses
 import io
 import subprocess
+import threading
+import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -13,6 +15,7 @@ import PIL.Image
 import pytest
 from django.conf import settings
 from pytest_httpserver import HTTPServer
+from werkzeug import Request, Response
 
 from adforge import file_store
 from gateway.fake import FakeModel, turn
@@ -84,6 +87,11 @@ def read(fake_model: FakeModel, say: Callable[..., None], link: str, *, times: i
         )
         fake_model.respond("check_page", READABLE)
         say(f"Make an ad for {link}")
+
+
+def warnings() -> list[str]:
+    """What the job's notices said, oldest first."""
+    return [warning["text"] for warning in Job.objects.get().warnings]
 
 
 def is_jpeg_picture(key: str) -> bool:
@@ -176,6 +184,13 @@ def test_videos_with_no_file_to_keep_are_kept_as_links_with_a_first_frame_when_o
     assert [video.first_frame for video in videos[2:]] == ["", "", ""]
     # The photos were kept as ever.
     assert "Kept 1 product photo." in results_of("read_page")[0]
+    # The one left out for never ending is told; a dead link or a playlist isn't a video.
+    told = [text for text in warnings() if "video" in text]
+    assert told == [
+        f"Your page's video 2 ({shop}/cdn/videos/big.mp4) couldn't be fetched whole, so it is "
+        f"left out of the ad: {shop}/cdn/videos/big.mp4 is too big to be a product video, at "
+        f"over {len(tiny_mp4) - 1:,} bytes."
+    ]
 
 
 def test_a_page_read_again_keeps_its_videos_once(
@@ -264,3 +279,69 @@ def test_frames_never_reach_past_the_file(tmp_path: Path) -> None:
     assert product_videos.frame_times(2.0) == [0.25, 0.75, 1.25, 1.75]
     assert product_videos.first_frame_time(2.0) == 0.5
     assert product_videos.first_frame_time(0.4) == 0.2
+
+
+def test_a_video_that_takes_too_long_to_fetch_is_left_out_and_the_owner_is_told(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+    picks_videos: list[dict[str, Any]],
+    tiny_mp4: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(product_videos, "NEVER_ENDING_SECONDS", 0.5)
+
+    def trickle(_: Request) -> Response:
+        def chunks() -> Iterator[bytes]:
+            # About 3 s in all, well past the half second allowed.
+            for start in range(0, len(tiny_mp4), 200):
+                time.sleep(0.1)
+                yield tiny_mp4[start : start + 200]
+
+        return Response(chunks(), content_type="video/mp4")
+
+    httpserver.expect_request("/cdn/videos/live.mp4").respond_with_handler(trickle)
+    live = f"{firecrawl.shop}/cdn/videos/live.mp4"
+    picks_videos.append(player(1, live))
+
+    read(fake_model, say, shampoo_page_url)
+
+    (video,) = Job.objects.get().videos.all()
+    assert (video.source_url, video.file) == (live, "")
+    assert [text for text in warnings() if "video" in text] == [
+        f"Your page's video 1 ({live}) couldn't be fetched whole, so it is left out of the ad: "
+        f"{live} took over 0.5 s to fetch as a product video."
+    ]
+    assert "Kept 1 product photo." in results_of("read_page")[0]
+
+
+def test_a_pages_videos_are_fetched_at_the_same_time(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+    picks_videos: list[dict[str, Any]],
+    tiny_mp4: bytes,
+) -> None:
+    # Neither video is sent until both are asked for.
+    both_asked = threading.Barrier(2, timeout=10)
+
+    def video(_: Request) -> Response:
+        both_asked.wait()
+        return Response(tiny_mp4, content_type="video/mp4")
+
+    for name in ("one", "two"):
+        httpserver.expect_request(f"/cdn/videos/{name}.mp4").respond_with_handler(video)
+        picks_videos.append(
+            player(len(picks_videos) + 1, f"{firecrawl.shop}/cdn/videos/{name}.mp4")
+        )
+
+    read(fake_model, say, shampoo_page_url)
+
+    videos = Job.objects.get().videos.order_by("position")
+    # Fetched one after the other, neither would come and both would be kept as links.
+    assert [bool(video.file) for video in videos] == [True, True]
+    assert [file_store.read(video.file) for video in videos] == [tiny_mp4, tiny_mp4]

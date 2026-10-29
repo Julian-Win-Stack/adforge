@@ -175,7 +175,8 @@ def test_two_videos_in_different_players_are_watched_at_once_into_moments_and_th
     assert [picture_of(item.file).size for item in frames] == [(64, 96), (96, 64)]
     # The frame at the look frame's own second, not the video's opening.
     pulled = file_store.read(frames[0].file)
-    assert pulled == product_videos.frame_of(demo, 0.5) != product_videos.frame_of(demo, 0.0)
+    assert [pulled] == product_videos.frames_of(demo, [0.5])
+    assert product_videos.frames_of(demo, [0.5]) != product_videos.frames_of(demo, [0.0])
     # The planner still gets both through the old fields: the transcripts and the video
     # pictures, which are the look frames.
     handoff = plan_handoff(job, "", job.photos.count())
@@ -216,9 +217,15 @@ def test_the_watcher_is_handed_the_page_and_the_videos_length(
     [
         watched(moments=[moment(0.0, 20.0, "The whole routine, start to finish.")]),
         watched(moments=[moment(20.0, 30.0, "Past the end of the video.")]),
-        watched(look_frames=[look_frame(25.0, "Past the end of the video.")]),
+        watched(moments=[moment(24.0, 24.5, "Starts at the end of the video.")]),
+        watched(look_frames=[look_frame(25.5, "Past the end of the video.")]),
     ],
-    ids=["a 20 s moment", "a moment past the end", "a look frame past the end"],
+    ids=[
+        "a 20 s moment",
+        "a moment past the end",
+        "a moment starting at the end",
+        "a look frame past the end",
+    ],
 )
 def test_an_answer_the_schema_refuses_is_asked_again_once(
     fake_model: FakeModel,
@@ -278,7 +285,7 @@ def test_a_video_the_watcher_cant_answer_for_twice_is_told_in_red_and_the_page_i
     assert [notice for notice in notices(api, session_id) if "video" in notice[1]] == [
         (
             "problem",
-            "Your product's video 1 couldn't be watched, so the ad is planned without it.",
+            "Your page's video 1 couldn't be watched, so the ad is planned without it.",
         )
     ]
     assert any("video 1 couldn't be watched" in warning["text"] for warning in job.warnings)
@@ -351,6 +358,7 @@ def test_a_video_over_three_minutes_isnt_watched_and_the_owner_is_told_which(
     short, long = Job.objects.get().videos.order_by("position")
     assert watch_of(short) is not None
     assert long.watched is None
+    assert long.thrown_out
     told = [notice for notice in notices(api, session_id) if "video" in notice[1]]
     assert told == [
         (
@@ -396,3 +404,72 @@ def test_a_page_read_again_doesnt_watch_its_videos_again(
     job = Job.objects.get()
     assert job.library.count() == 1
     assert job.photos.exclude(from_video=None).count() == 1
+
+
+def test_a_look_frame_and_a_moment_at_the_videos_last_second_are_kept_at_its_end(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+    picks_videos: list[dict[str, Any]],  # noqa: F811
+    tiny_mp4: bytes,  # noqa: F811
+) -> None:
+    serve(httpserver, "/cdn/videos/demo.mp4", tiny_mp4, "video/mp4")
+    picks_videos.append(player(1, f"{firecrawl.shop}/cdn/videos/demo.mp4"))
+    # Watched a frame a second, the 2 s video's last moment and frame are given as second 3
+    # and second 2, where no frame is left to pull.
+    fake_model.respond(
+        "watch_video",
+        watched(
+            moments=[moment(1.0, 3.0, "The serum is smoothed in.")],
+            look_frames=[look_frame(2.0, "The result on the skin.", kind="result", side="none")],
+        ),
+    )
+
+    read(fake_model, say, shampoo_page_url)
+
+    assert "Kept 1 product photo." in results_of("read_page")[0]
+    job = Job.objects.get()
+    (video,) = job.videos.all()
+    watch = watch_of(video)
+    assert watch is not None
+    duration = video.duration or 0
+    assert [(m.start, m.end) for m in watch.moments] == [(1.0, duration)]
+    (item,) = library_of(job)
+    assert isinstance(item.source, LookFrame)
+    # Pulled half a second before the end, where the last frames are.
+    assert item.source.second == pytest.approx(duration - 0.5)
+    assert picture_of(item.file).size == (64, 96)
+
+
+def test_a_watched_video_whose_keeping_fails_keeps_nothing_and_is_told_in_red(
+    fake_model: FakeModel,
+    api: APIClient,
+    session_id: str,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+    picks_videos: list[dict[str, Any]],  # noqa: F811
+    tiny_mp4: bytes,  # noqa: F811
+) -> None:
+    serve(httpserver, "/cdn/videos/demo.mp4", tiny_mp4, "video/mp4")
+    picks_videos.append(player(1, f"{firecrawl.shop}/cdn/videos/demo.mp4"))
+    fake_model.respond("watch_video", DEMO)
+    # The video picture's own face note fails, after its look frame entered the library.
+    fake_model.respond("note_face", RuntimeError("the face note failed"))
+
+    read(fake_model, say, shampoo_page_url)
+
+    assert "Kept 1 product photo." in results_of("read_page")[0]
+    job = Job.objects.get()
+    (video,) = job.videos.all()
+    # Nothing kept, so the next read of the page watches it again.
+    assert video.watched is None and video.transcript == ""
+    assert job.library.count() == 0
+    assert not job.photos.exclude(from_video=None).exists()
+    assert (
+        "problem",
+        "Your page's video 1 couldn't be watched, so the ad is planned without it.",
+    ) in notices(api, session_id)

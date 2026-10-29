@@ -11,6 +11,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from functools import cache
 from typing import ClassVar
 
 from django.conf import settings
@@ -249,22 +250,30 @@ def take_a_turn(
     one at a time, newest first, then all together. The agent is told in its tool's result
     which picture is left out and why, every later turn leaves it out too, and the chat says
     so in red, with a warning line: `done` says what went on without it, as "the work on
-    your ad carried on". Raises the filter's BlockedBySafetyFilter when every try is
-    refused, or no picture is new."""
+    your ad carried on". When that is refused too, or no picture is new, one more turn is
+    taken without every picture. Raises the filter's BlockedBySafetyFilter when every try is
+    refused."""
     conversation = without_refused_pictures(session, purpose, conversation)
-    shown = [
-        Image(label=picture.label, key=picture.key)
-        for each in conversation
-        if isinstance(each, ToolUse)
-        for picture in each.pictures
-    ]
-    looked_at = {
-        picture["key"]
-        for images in ModelCall.objects.filter(
-            session=session, purpose=purpose, outcome=ModelCall.Outcome.SUCCEEDED
-        ).values_list("images", flat=True)
-        for picture in images
-    }
+    # A picture shown twice is one picture.
+    shown = list(
+        dict.fromkeys(
+            Image(label=picture.label, key=picture.key)
+            for each in conversation
+            if isinstance(each, ToolUse)
+            for picture in each.pictures
+        )
+    )
+
+    @cache
+    def looked_at() -> set[str]:
+        # Only needed once a turn is refused.
+        return {
+            picture["key"]
+            for images in ModelCall.objects.filter(
+                session=session, purpose=purpose, outcome=ModelCall.Outcome.SUCCEEDED
+            ).values_list("images", flat=True)
+            for picture in images
+        }
 
     def ask(kept: list[Image]) -> Turn:
         return take_turn(
@@ -278,9 +287,16 @@ def take_a_turn(
             since=since,
         )
 
-    turn, left_out = past_the_safety_filter(
-        ask, shown, may_leave_out=lambda image: image.key not in looked_at
-    )
+    try:
+        turn, left_out = past_the_safety_filter(
+            ask, shown, may_leave_out=lambda image: image.key not in looked_at()
+        )
+    except BlockedBySafetyFilter:
+        # A refusal shouldn't end the session over pictures the model looked at before
+        # either: one more turn, without every picture, unless that was already tried.
+        if not any(image.key in looked_at() for image in shown):
+            raise
+        turn, left_out = ask([]), shown
     if left_out:
         with transaction.atomic():
             RefusedPicture.objects.bulk_create(

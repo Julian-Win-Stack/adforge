@@ -118,7 +118,7 @@ def test_seconds_the_filter_refuses_are_dropped_and_the_rest_is_watched_in_its_o
     parts = {
         # The first part's last action runs on past its edge: it ends at the edge.
         (0.0, 10.0): watched(
-            moments=[moment(0.0, 4.0, "The cap comes off."), moment(4.0, 10.0, "It is poured.")],
+            moments=[moment(0.0, 4.0, "The cap comes off."), moment(4.0, 10.5, "It is poured.")],
             look_frames=[look_frame(2.0, "The bottle, cap off.")],
             colour="black",
             transcript="Twist it open.",
@@ -178,7 +178,7 @@ def test_seconds_the_filter_refuses_are_dropped_and_the_rest_is_watched_in_its_o
     assert [(span.start, span.end) for span in seen.refused.dropped] == [(10.0, 15.0)]
     assert ModelCall.objects.filter(purpose="probe_video").count() == 4
     told = (
-        "The AI model's safety filter refused some of your product's video 1's pictures "
+        "The AI model's safety filter refused some of your page's video 1's pictures "
         "(reason: pictures), so seconds 10-15 of it are dropped and the rest was watched."
     )
     assert video_notices(api, session_id) == [("problem", told)]
@@ -230,7 +230,7 @@ def test_a_video_refused_only_for_its_sound_is_kept_without_its_words(
     assert seen.refused is not None
     assert (seen.refused.reason, seen.refused.dropped, seen.refused.probes) == ("sound", [], 0)
     told = (
-        "The AI model's safety filter refused your product's video 1 for its sound (reason: "
+        "The AI model's safety filter refused your page's video 1 for its sound (reason: "
         "sound), so it was watched without it: its sound, seconds 0-30, is dropped and nothing "
         "said in it is kept."
     )
@@ -284,7 +284,7 @@ def test_a_video_refused_everywhere_down_to_5_s_is_dropped_as_all_of_it(
     assert video.transcript == ""
     assert job.library.count() == 0
     told = (
-        "The AI model's safety filter refused all of your product's video 1 (reason: all), so "
+        "The AI model's safety filter refused all of your page's video 1 (reason: all), so "
         "seconds 0-30 of it are dropped and the ad is planned without it."
     )
     assert video_notices(api, session_id) == [("problem", told)]
@@ -328,7 +328,7 @@ def test_the_search_stops_at_16_probes_and_drops_the_parts_not_probed(
     assert video_notices(api, session_id) == [
         (
             "problem",
-            "The AI model's safety filter refused some of your product's video 1's pictures "
+            "The AI model's safety filter refused some of your page's video 1's pictures "
             "(reason: pictures), so seconds 0-5 and 10-60 of it are dropped and the rest was "
             "watched.",
         )
@@ -375,7 +375,7 @@ def test_both_halves_passing_are_both_watched_and_nothing_is_dropped(
     assert video_notices(api, session_id) == [
         (
             "problem",
-            "The AI model's safety filter refused some of your product's video 1's pictures "
+            "The AI model's safety filter refused some of your page's video 1's pictures "
             "(reason: pictures), so nothing of it is dropped and the rest was watched.",
         )
     ]
@@ -411,7 +411,7 @@ def test_a_refusal_the_second_ask_gets_past_is_still_told_in_red(
     assert video_notices(api, session_id) == [
         (
             "problem",
-            "The AI model's safety filter refused your product's video 1 once, then let it "
+            "The AI model's safety filter refused your page's video 1 once, then let it "
             "through when it was asked again, so nothing of it is dropped.",
         )
     ]
@@ -457,7 +457,7 @@ def test_a_rate_limit_or_a_timeout_is_never_a_refusal(
         else [
             (
                 "problem",
-                "Your product's video 1 couldn't be watched, so the ad is planned without it.",
+                "Your page's video 1 couldn't be watched, so the ad is planned without it.",
             )
         ]
     )
@@ -498,7 +498,7 @@ def test_a_part_refused_when_watched_is_dropped_and_a_probe_answer_that_cant_be_
     assert (seen.refused.reason, seen.refused.probes) == ("pictures", 2)
     assert [(span.start, span.end) for span in seen.refused.dropped] == [(0.0, 15.0)]
     assert [text for _, text in video_notices(api, session_id)] == [
-        "The AI model's safety filter refused some of your product's video 1's pictures "
+        "The AI model's safety filter refused some of your page's video 1's pictures "
         "(reason: pictures), so seconds 0-15 of it are dropped and the rest was watched."
     ]
 
