@@ -335,6 +335,14 @@ def test_the_producers_window_is_its_models_unless_the_azure_deployments_is_lowe
     assert fold_point("produce") == window // 2
 
 
+def test_the_whole_window_is_the_input_the_models_page_gives(settings: Settings) -> None:
+    settings.AZURE_OPENAI_MAX_INPUT_TOKENS = 0
+    settings.FOLD_PAST_SHARE_OF_WINDOW = 1.0
+
+    # gpt-5.6-sol takes at most 922,000 tokens in (its model page, 2026-10-29).
+    assert fold_point("produce") == 922_000
+
+
 # --- The fold rule (unit, in support) ---------------------------------------------------------
 
 
