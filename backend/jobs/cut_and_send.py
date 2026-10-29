@@ -286,6 +286,19 @@ def clip_colour(pieces: Sequence[tuple[str, float]], ad: str) -> str:
     return next(colour for colour, _ in pieces if seconds[colour] == most)
 
 
+def front_of(originals: Sequence[LibraryEntry]) -> LibraryEntry | None:
+    """The tier 1 picture, Image 1 of every clip: the page's front look photo, else an
+    owner's front photo standing in; None when there is neither."""
+    return image_1(originals) or owner_front(originals)
+
+
+def original_of_number(job: Job, number: int) -> LibraryEntry:
+    """The library original item `number` of `job` is a version of, or the item itself: how
+    cut-and-send reads a pick."""
+    everything = {item.number: item for item in library_of(job)}
+    return _original_of(everything, everything[number])
+
+
 def image_1(originals: Sequence[LibraryEntry]) -> LibraryEntry | None:
     """Tier 1, Image 1: the product's front look photo, always a page photo; the first look
     photo in library order when the page has no front. Not approved yet (audit item 10):
@@ -412,7 +425,7 @@ def _in_tiers(
         item = library_items.to_send(job, original)
         taken.append(_Taken(tier, original, item, None, for_, item.label, item.file))
 
-    front = image_1(originals) or owner_front(originals)
+    front = front_of(originals)
     if front is None:
         _say_no_front(job, scene)
     else:
