@@ -222,6 +222,30 @@ class Attachment(models.Model):
         help_text="The clip this video shows, whose sent list the scene's card shows. Null "
         "for any other file, and for clips shown before the chat kept which one it was.",
     )
+    note_scene = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="For a photo the shop owner sent with a scene's note on the scene cards, the "
+        "number of that scene as it was then, as the note says it. Null for any other file, a "
+        "photo sent in the chat box included.",
+    )
+    note_for = models.ForeignKey(
+        "jobs.Scene",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The scene `note_scene` named when the photo was sent, followed through later "
+        "plan edits that move or remove it. Null for any other file.",
+    )
+    settled_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="For a photo sent with a scene's note, when code last needed nothing more of "
+        "the producer for it: the photo was in that scene's references, the producer asked the "
+        "shop owner about it, or the shop owner was told in red it wasn't used. Null until then "
+        "and for any other file.",
+    )
 
     class Meta:
         ordering = ["message", "position"]
