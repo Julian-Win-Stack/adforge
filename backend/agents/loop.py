@@ -215,6 +215,11 @@ class Tool(BaseModel):
     # shop owner a question does: the turn's other calls still run, and then the agent takes
     # no further turn until something new comes (spec #247 point 5).
     ends_the_turn: ClassVar[bool] = False
+    # Whether it may run while the shop owner's pause holds (spec #247 point 14): only a tool
+    # that spends nothing, such as one that reads what is there or asks the shop owner. Every
+    # other tool of an agent that can be paused answers paused, so a new tool spends nothing
+    # while paused unless it says it is free.
+    runs_while_paused: ClassVar[bool] = False
 
     def run(self, call: ToolCall) -> str | ToolResult:
         """Do the work and say what happened. What it says is the result the agent is given,
@@ -262,6 +267,9 @@ class Agent:
     # Whether each of its tools takes a required `why`, kept on the call's row (spec #247
     # point 7): the producer's do.
     asks_why: bool = False
+    # Whether the shop owner's pause holds it: its tools that aren't free answer paused while
+    # it does (`Tool.runs_while_paused`). The producer's are.
+    pausable: bool = False
     # Whether its oldest tool calls fold to one line each once its last turn passes the fold
     # point (spec #247 point 15, agents/fold.py): the producer's do.
     folds: bool = False
@@ -574,6 +582,8 @@ def settle(
             )
         elif new and agent.asks_why and not call.why and not _asked_why_before(agent, call):
             answer = ToolAnswer.cant(f"{NO_WHY} Nothing was done.")
+        elif _held_by_the_pause(agent, call):
+            answer = ToolAnswer.cant(f"{REFUSED} {PAUSED} Nothing was done.")
         else:
             answer = _run(agent, call)
             # Said once it ran, so a tool that starts the ad's job keeps the line with it.
@@ -836,12 +846,12 @@ def _conversation(
 # Why the calls left of a turn aren't run once a scene step stopped the run.
 STOPPED_THE_RUN = "a scene step stopped the run."
 
-# What a scene tool answers while the shop owner's pause holds (spec #247 point 14), and the
-# calls left of a turn asked for before the agent was told of the pause: "starts nothing"
-# is the tools' rule, not only the agent's instructions.
+# What a tool that spends answers while the shop owner's pause holds (spec #247 point 14),
+# and every call left of a turn asked for before the agent was told of the pause: "starts
+# nothing" is the tools' rule, not only the agent's instructions.
 PAUSED = (
-    "paused. The shop owner pressed pause, so no scene step is started until they write "
-    "again. Call it again after their message if it is still needed."
+    "paused. The shop owner pressed pause, so nothing that costs money is started until they "
+    "write again. Call it again after their message if it is still needed."
 )
 
 
@@ -850,10 +860,14 @@ def paused(session: Session) -> bool:
     return Session.objects.filter(pk=session.pk, paused_at__isnull=False).exists()
 
 
-def refuse_while_paused(session: Session) -> None:
-    """Refuse a scene tool's work while the shop owner's pause holds, saying so."""
-    if paused(session):
-        raise Refused(PAUSED)
+def _held_by_the_pause(agent: Agent, call: ToolCall) -> bool:
+    """Whether the shop owner's pause holds `call`: the agent can be paused, the tool isn't
+    one that runs while paused, and the session is paused."""
+    if not agent.pausable:
+        return False
+    tool = {tool.name: tool for tool in agent.tools}.get(call.tool)
+    # A tool it hasn't got is refused by the run, saying so.
+    return tool is not None and not tool.runs_while_paused and paused(call.session)
 
 
 def _held_since_the_user_spoke(session: Session) -> str | None:
