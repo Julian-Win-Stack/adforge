@@ -7,7 +7,9 @@ and holds against the fixing agent's film_again too (Julian, Q20). A version of 
 product-only or recoloured picture) is that item: excluding one excludes the other, and a
 pick of one is a pick of its original.
 
-`tier_2(scene)` is the one list both cut-and-send and the fixing agent read."""
+`excluded(scene)` is the one rule cut-and-send (in every tier) and the fixing agent's
+film_again (its refusal) both read; `tier_2(scene)` is the fixing agent's view of the scene's
+tier 2, exclusions applied."""
 
 from collections.abc import Iterable, Sequence
 

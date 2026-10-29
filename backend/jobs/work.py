@@ -965,7 +965,7 @@ def plan(job: Job) -> ProducerDecision:
     the conversation, and keep the plan. A decision to ask the user keeps nothing."""
     sheets = library_sheets.sheets_of(job)
     library_sheets.tell_not_shown(job, sheets)
-    library, moments = _library_numbers(job), _moments_by_video(job)
+    library, moments = _library_numbers(job), moments_by_video(job)
     decision, left_out = library_sheets.past_the_filter(
         job,
         sheets,
@@ -1042,7 +1042,7 @@ def _library_numbers(job: Job) -> set[int]:
     return set(job.library.values_list("number", flat=True))
 
 
-def _moments_by_video(job: Job) -> dict[int, int]:
+def moments_by_video(job: Job) -> dict[int, int]:
     """How many moments each of `job`'s watched page videos has, by the video's number."""
     return {
         video.position: len(watched.moments)
@@ -3403,16 +3403,39 @@ def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
         except Exception:
             # An agent that can't carry on doesn't fail the step: the first clip is kept.
             logger.exception("The fixing agent stopped at scene %s's clip", step.scene.number)
-            return _first_kept(step, first)
+            return _kept_when_stopped(step, first)
         if outcome.passed is None and outcome.gave_up is None:
             # It stopped before, as a step run again finds it.
-            return _first_kept(step, first)
+            return _kept_when_stopped(step, first)
     ended = _ended(step)
     if ended.passed is not None:
         return ended.passed
     newest = _newest_clip(step.scene)
     assert newest is not None, "the step made its clip"
     return newest
+
+
+# Why a fix resumed with the shop owner's answer ended, when an error stopped the agent.
+STOPPED_AFTER_THE_ANSWER = (
+    "The fixing agent stopped on an error after the shop owner's answer, so its last try stays."
+)
+
+
+def _kept_when_stopped(step: SceneStep, first: ProducedItem) -> ProducedItem:
+    """The clip a B-roll clip step keeps once an error stopped the fixing agent: its first
+    clip, unless the fix was resumed with the shop owner's answer. The scene had its last try
+    in the ad while the fix waited for the answer, so it keeps it, as a give-up does, and the
+    shop owner is shown every try."""
+    from jobs import owner_answers  # It imports the watcher, which imports this module.
+
+    if not owner_answers.answered(step):
+        return _first_kept(step, first)
+    AgentFix.objects.filter(
+        step=step, finished_at__isnull=False, passed__isnull=True, gave_up=""
+    ).update(gave_up=STOPPED_AFTER_THE_ANSWER)
+    kept = _ended(step).kept
+    assert kept is not None, "a give-up of a step of its own keeps its last try"
+    return kept
 
 
 def agent_fix(step: SceneStep) -> AgentFix | None:
@@ -3541,7 +3564,15 @@ def end_the_agents_fixing(step: SceneStep) -> None:
     # The step fails, so a clip of its own is no clip of the ad's: only a try, filmed in a step
     # of its own, is. With no try filmed, the scene waits for its clip to be made again, and a
     # question the fix was parked on is withdrawn: no answer can resume a fix whose step failed.
-    if ended.kept is not None and ended.kept.step_id == step.pk:
+    # A step run again with the shop owner's answer had its own clip in the ad already: it
+    # stays there.
+    from jobs import owner_answers  # It imports the watcher, which imports this module.
+
+    if (
+        ended.kept is not None
+        and ended.kept.step_id == step.pk
+        and not owner_answers.resuming(step)
+    ):
         Scene.objects.get(pk=step.scene_id).plan_again()
         OwnerQuestion.objects.filter(agent_fix=ended, answered_at__isnull=True).delete()
 

@@ -25,11 +25,13 @@ from jobs import (
     owner_parts,
     page,
     picture_check,
+    plan_edits,
     reference_photos,
     scene_references,
+    stale,
 )
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
-from jobs.library import library_of, watch_of
+from jobs.library import library_of
 from jobs.library_items import add_kept_photos, add_product_only_versions, library_line
 from jobs.made_pictures import PictureNotMade, make_picture
 from jobs.models import (
@@ -45,7 +47,15 @@ from jobs.models import (
     SceneStep,
 )
 from jobs.notices import post_notice
-from jobs.planning import ScenePicture, ScenePiece
+from jobs.planning import (
+    BrollKind,
+    Part,
+    PersonShown,
+    ScenePicture,
+    ScenePiece,
+    pictures_missing,
+    piece_missing,
+)
 from jobs.product_videos import save_videos
 from jobs.reference_photos import ReferencePhotoUnusable
 from jobs.watcher import watch_videos
@@ -63,6 +73,7 @@ from jobs.work import (
     fetch_page,
     keep_page,
     latest,
+    moments_by_video,
     music_mood,
     music_prompt,
     music_seconds,
@@ -121,6 +132,12 @@ once its audio is heard. \
 Once every scene is finished, assemble the ad, which shows it to the shop owner. When a \
 tool hands back something to ask the shop owner, ask it with ask_owner and wait for their \
 answer before passing their choice to a tool.
+The plan can change at any step: edit_scene changes any of a scene's fields, and \
+add_scene, remove_scene and reorder_scenes change which scenes play and in what order. \
+Each says which steps the change made stale; nothing is made again by itself. Run the \
+planning checks on what changed, make again only the stale steps the change needs with the \
+scene tools, then assemble the ad. Once it is shown, tell the shop owner in one line what \
+changed and what it cost.
 Scene tools start their work in the background and hand back at once, before anything is \
 made. Tell the shop owner the work has started, then carry on or reply: don't call the tool \
 again to see whether it has finished. When a step finishes or fails, you are told in a \
@@ -815,9 +832,7 @@ class MakeStartingPicture(Tool):
         made = _with_the_photos_in_use(
             scene,
             steps.filter(
-                status=SceneStep.Status.FINISHED,
-                note=note,
-                **SceneStep.made_for(scene, picture=True),
+                status=SceneStep.Status.FINISHED, note=note, **SceneStep.picture_made_for(scene)
             )
             .filter(produced__isnull=False)
             .distinct(),
@@ -892,6 +907,16 @@ class MakePicture(Tool):
             f"{library_line(made)} Look at it (look, library_item {made.number}) before a "
             "scene's references name it."
         )
+
+
+def _made_for_its_references(scene: Scene) -> dict[str, Any]:
+    """The filter for clips made through "step__" for the scene's references as they stand:
+    what only a clip is made from (CLIP_ONLY_INPUTS)."""
+    return {
+        key: value
+        for key, value in SceneStep.made_for(scene, through="step__").items()
+        if key.removeprefix("step__").removesuffix("__isnull") in CLIP_ONLY_INPUTS
+    }
 
 
 def _with_the_photos_in_use(scene: Scene, steps: QuerySet[SceneStep]) -> SceneStep | None:
@@ -977,13 +1002,15 @@ def _already_made_picture(call: ToolCall, scene: Scene, made: SceneStep) -> str:
     )
 
 
-def _no_clip_being_made(scene: Scene) -> None:
-    """Refuse a new starting picture while the scene's clip is being made: that clip, of the
-    picture before, would finish the scene once the new picture had un-finished it (#133)."""
+def _no_clip_being_made(scene: Scene, then: str = "make its starting picture again then") -> None:
+    """Refuse what changes a clip's inputs while the scene's clip is being made, such as a new
+    starting picture or new references: that clip, made from what came before, would finish
+    the scene once the change had un-finished it (#133). `then` says what to do once it's
+    ready."""
     if scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING).exists():
         raise Refused(
             f"scene {scene.number}'s clip is still being made. You'll be told when it's "
-            "ready; make its starting picture again then."
+            f"ready; {then}."
         )
 
 
@@ -1164,10 +1191,7 @@ class MakeClip(Tool):
                 # clip, made from its sent list, has no picture: any made for the scene's plan
                 # as it stands (its references with it) is the same clip.
                 **(
-                    {
-                        "picture__step": picture_step,
-                        **{f"step__{field}": getattr(scene, field) for field in CLIP_ONLY_INPUTS},
-                    }
+                    {"picture__step": picture_step, **_made_for_its_references(scene)}
                     if picture_step is not None
                     else _made_for_the_plan(scene)
                 ),
@@ -1281,15 +1305,179 @@ def _made_for_the_plan(scene: Scene) -> dict[str, Any]:
     return made_for
 
 
+class _SceneFields(Tool):
+    """What a plan edit can give a scene, each null to leave it as it is."""
+
+    line: str | None = Field(
+        default=None,
+        description="The scene's new line, exactly what the person says. Null keeps it.",
+    )
+    shows: str | None = Field(
+        default=None,
+        description="What the scene shows while the voice says the line, in plain words, for "
+        "a scene that shows the product rather than the person talking; an empty string has "
+        "the person say the line to camera. Null keeps it.",
+    )
+    broll_kind: BrollKind | None = Field(
+        default=None,
+        description='For a scene that shows the product: "does a job", "shows the problem" '
+        'or "showcase". Null keeps it.',
+    )
+    person_shown: PersonShown | None = Field(
+        default=None,
+        description='For a scene that shows the product: "has face" when the presenter\'s '
+        'face is in it, "no face" when it isn\'t. Null keeps it.',
+    )
+    usage: str | None = Field(
+        default=None,
+        description="For a scene that shows the product: how the product is used in it, from "
+        "the page; an empty string when it isn't used. Null keeps it.",
+    )
+    result: str | None = Field(
+        default=None,
+        description='For a "does a job" scene: the result you can see at its end; an empty '
+        "string for the other kinds. Null keeps it.",
+    )
+    part: Part | None = Field(
+        default=None, description="The part of the script the scene plays. Null keeps it."
+    )
+    overlay: str | None = Field(
+        default=None,
+        description="The few words drawn along the top while the scene plays; an empty string "
+        "for none. Null keeps it.",
+    )
+
+    def _fields(self) -> dict[str, Any]:
+        return {name: getattr(self, name) for name in plan_edits.EDITABLE}
+
+
+class EditScene(_SceneFields):
+    """Change any of a scene's fields in the plan: its line, whether it shows the product or
+    the person talking and what it shows, its labels, its part, its overlay. Hands back which
+    of the scene's steps the change made stale; nothing is made again until you call the
+    scene tools for it. A changed line, or a change to what the scene shows, is checked
+    against the page again: run the planning checks before making anything for it."""
+
+    name = "edit_scene"
+
+    scene: int = Field(description="The number of the scene.")
+
+    def run(self, call: ToolCall) -> str:
+        scene = _a_planned_scene(call, self.scene)
+        try:
+            edited = plan_edits.edit_scene(scene, self._fields())
+        except plan_edits.CantEdit as cant:
+            raise Refused(str(cant)) from None
+        if not edited.changed:
+            return f"Scene {scene.number} already is as asked, so nothing was changed."
+        return _plan_edited(scene.job, edited)
+
+
+class AddScene(_SceneFields):
+    """Add a scene to the plan at the number you give, the scenes from there on moved one
+    later. It has nothing made yet: run the planning checks on it, then make its steps."""
+
+    name = "add_scene"
+
+    at: int = Field(description="The new scene's number: 1 to one past the last scene.")
+
+    def run(self, call: ToolCall) -> str:
+        job = _a_planned_job(call)
+        if not self.line:
+            raise Refused("a new scene needs its line: what the person says in it.")
+        try:
+            edited = plan_edits.add_scene(job, self.at, self._fields())
+        except plan_edits.CantEdit as cant:
+            raise Refused(str(cant)) from None
+        return _plan_edited(job, edited)
+
+
+class RemoveScene(Tool):
+    """Take a scene out of the plan, the scenes after it moved one earlier. What was made and
+    paid for it is kept, out of the ad."""
+
+    name = "remove_scene"
+
+    scene: int = Field(description="The number of the scene.")
+
+    def run(self, call: ToolCall) -> str:
+        scene = _a_planned_scene(call, self.scene)
+        try:
+            edited = plan_edits.remove_scene(scene)
+        except plan_edits.CantEdit as cant:
+            raise Refused(str(cant)) from None
+        return _plan_edited(scene.job, edited)
+
+
+class ReorderScenes(Tool):
+    """Play the scenes in a new order. Nothing made for them goes stale."""
+
+    name = "reorder_scenes"
+
+    order: list[int] = Field(
+        description="Every scene's number as it is now, once each, in the order they are to "
+        "play, such as [2, 1, 3]."
+    )
+
+    def run(self, call: ToolCall) -> str:
+        job = _a_planned_job(call)
+        try:
+            edited = plan_edits.reorder(job, self.order)
+        except plan_edits.CantEdit as cant:
+            raise Refused(str(cant)) from None
+        return _plan_edited(job, edited)
+
+
+def _a_planned_job(call: ToolCall) -> Job:
+    job = _the_job(call)
+    if job is None or not job.scenes.exists():
+        raise Refused("the ad hasn't been planned yet, so there is no plan to change.")
+    return job
+
+
+def _a_planned_scene(call: ToolCall, number: int) -> Scene:
+    job = _a_planned_job(call)
+    scene = job.scenes.filter(number=number).first()
+    if scene is None:
+        raise Refused(f"the ad has no scene {number}: its scenes are 1 to {job.scenes.count()}.")
+    return scene
+
+
+def _plan_edited(job: Job, edited: plan_edits.Edited) -> str:
+    """What the producer is told of a plan edit: what changed, what it made stale, what is to
+    be checked, and the plan as it stands."""
+    said = [
+        "Changed the plan: "
+        + "; ".join(
+            f"scene {number} {_listed(fields)}"
+            if fields[0] in ("added", "removed", "moved")
+            else f"scene {number}'s {_listed(fields)}"
+            for number, fields in edited.changed.items()
+        )
+        + "."
+    ]
+    said += edited.also
+    said += edited.stale or ["Nothing made for the ad is stale."]
+    if edited.to_check:
+        said.append(
+            f"The planning checks haven't checked {_scenes(edited.to_check)} against the page: "
+            "run them before making anything for it."
+        )
+    said.append(
+        "Make again what you decide the change needs with the scene tools, then assemble the ad."
+    )
+    return "\n".join([" ".join(said), _script(job), _overlays(job)])
+
+
 class SetReferences(Tool):
     """Set what a scene that shows the product sends its next clip, from the ad's picture
     library: its scene pictures by library number, each with what it is for, in your order;
     its video piece by video and moment number; and the library items never sent for this
     scene, whichever tier would take them. Code still sends the product's front photo as
     Image 1, then your pictures, then the drawn picture of the place, then the product's
-    other sides, at most 9 pictures in all: the answer says what the next clip is sent and
-    what is left out. A new list makes the scene's clip out of date; nothing is remade until
-    you make its clip again. Null keeps what the scene has."""
+    other sides, as many pictures in all as the video model takes: the answer says what the
+    next clip is sent and what is left out. A new list makes the scene's clip out of date;
+    nothing is remade until you make its clip again. Null keeps what the scene has."""
 
     name = "set_references"
 
@@ -1318,7 +1506,7 @@ class SetReferences(Tool):
                 f"scene {scene.number} is said to camera: its clip is sent no pictures from "
                 "the library."
             )
-        job = scene.job
+        _no_clip_being_made(scene, then="set its references then")
         pictures = (
             [ScenePicture.model_validate(picture) for picture in scene.scene_pictures]
             if self.pictures is None
@@ -1334,12 +1522,13 @@ class SetReferences(Tool):
             else ScenePiece.model_validate(scene.piece)
         )
         exclude = list(scene.excluded) if self.exclude is None else self.exclude
-        _refuse_unknown_references(job, pictures, piece, exclude)
+        _refuse_unknown_references(scene, pictures, piece, exclude)
         hard_list.refuse_part_picture_elsewhere(scene, [picture.number for picture in pictures])
         wanted = {
             "scene_pictures": [picture.model_dump(by_alias=True) for picture in pictures],
             "piece": None if piece is None else piece.model_dump(),
-            "excluded": list(dict.fromkeys(exclude)),
+            # A set: the same items in another order are the same list.
+            "excluded": sorted(set(exclude)),
         }
         changed = [field for field, value in wanted.items() if getattr(scene, field) != value]
         if changed:
@@ -1347,34 +1536,27 @@ class SetReferences(Tool):
             for field, value in wanted.items():
                 setattr(scene, field, value)
         told = [_references_words(scene)]
-        if changed and _latest_clip(scene) is not None:
-            scene.plan_again()
-            told.append(
-                f"Scene {scene.number}'s clip was made from its earlier references, so it is "
-                "out of date: nothing is remade until you make its clip again."
-            )
-        elif not changed:
+        if changed:
+            # A clip made for the earlier references is stale now (spec #247 point 9).
+            told += filter(None, [stale.after_edit(scene)])
+        else:
             told.append("Nothing changed: the scene had these references already.")
         told.append(_next_send_words(scene))
         return " ".join(told)
 
 
 def _refuse_unknown_references(
-    job: Job, pictures: list[ScenePicture], piece: ScenePiece | None, exclude: list[int]
+    scene: Scene, pictures: list[ScenePicture], piece: ScenePiece | None, exclude: list[int]
 ) -> None:
     """Refuse references the ad doesn't have, or that contradict each other, before anything
-    is kept."""
+    is kept: the planner's own checks of a plan's pictures and moment."""
+    job = scene.job
     numbers = [item.number for item in library_of(job)]
-    unknown = [
-        number
-        for number in [*(picture.number for picture in pictures), *exclude]
-        if number not in numbers
-    ]
-    if unknown:
-        raise Refused(
-            f"the ad's picture library has no item {listed_numbers(sorted(set(unknown)))}: its "
-            + (f"items are 1 to {len(numbers)}." if numbers else "library is empty.")
-        )
+    missing = pictures_missing([*(picture.number for picture in pictures), *exclude], numbers) or (
+        piece_missing(scene.number, piece, moments_by_video(job))
+    )
+    if missing is not None:
+        raise Refused(missing)
     named = [picture.number for picture in pictures]
     twice = sorted({number for number in named if named.count(number) > 1})
     if twice:
@@ -1383,18 +1565,9 @@ def _refuse_unknown_references(
     both = [n for n in named if scene_references.original_number(job, n) in originals]
     if both:
         raise Refused(
-            f"library item {listed_numbers(both)} is both a scene picture and excluded: "
-            "a picture is sent or excluded, not both."
+            f"library item {listed_numbers(both)} is both a scene picture and excluded "
+            "(or a version of one that is): a picture is sent or excluded, not both."
         )
-    if piece is not None:
-        video = job.videos.filter(position=piece.video).first()
-        watch = None if video is None else watch_of(video)
-        if watch is None or not watch.moments:
-            raise Refused(f"the ad has no watched video {piece.video} with moments.")
-        if not 1 <= piece.moment <= len(watch.moments):
-            raise Refused(
-                f"video {piece.video} has moments 1 to {len(watch.moments)}, not {piece.moment}."
-            )
 
 
 def _references_words(scene: Scene) -> str:
@@ -1427,6 +1600,11 @@ def _next_send_words(scene: Scene) -> str:
         for image, picture in enumerate(going.pictures, start=1)
     )
     told = [f"Its next clip is sent: {images or 'no pictures'}."]
+    if not any(picture.tier == 1 for picture in going.pictures):
+        told.append(
+            "No photo of the product's front or look is left to send as Image 1, so the video "
+            "model sees the product only in the other pictures."
+        )
     drawn, place = scene_place(scene, scene.person_shown)
     if place is None:
         told.append(
@@ -1659,8 +1837,31 @@ class AssembleAd(Tool):
             f"Assembled the ad (version {ad.version}, {ad.seconds:g} seconds) from each scene's "
             "clip, cut to where its words are said, with captions of the words as spoken, the "
             "music under the voice and each scene's overlay, and showed it to the shop owner "
-            f"in the chat. {_listed(plays)}. Tell the shop owner."
+            f"in the chat. {_listed(plays)}.{_spent_since_the_ad_before(call.session, ad)} "
+            "Tell the shop owner."
         )
+
+
+def _spent_since_the_ad_before(session: Session, ad: ProducedItem) -> str:
+    """What every model call of the session cost since the ad before `ad` was assembled, the
+    producer's own turns too, as a sentence to follow another (spec #247 point 10: after a
+    change the shop owner is told in one line what it cost). Blank for the first ad."""
+    before = (
+        ProducedItem.objects.filter(
+            job=ad.job, kind=ProducedItem.Kind.FINISHED_AD, version__lt=ad.version
+        )
+        .order_by("version")
+        .last()
+    )
+    if before is None:
+        return ""
+    spent: Decimal | None = session.model_calls.filter(created_at__gt=before.created_at).aggregate(
+        cost=Sum("cost_usd")
+    )["cost"]
+    return (
+        f" The changes since ad version {before.version} cost {dollars(spent or Decimal(0))}:"
+        " tell the shop owner in one line what changed and what it cost."
+    )
 
 
 class ReadAd(Tool):
@@ -1994,7 +2195,8 @@ def _before_its_clip(scene: Scene) -> None:
     redesign, decisions 1 and 2). A scene the fixing agent gave up on, said to camera, is
     made again as a talking scene until it has its clip. Checked once nothing already made
     can be handed back, so what is free and changes nothing stays free."""
-    if _latest_clip(scene) is not None and not (waits_to_be_said_to_camera(scene)):
+    # A plan edit made its clip stale (spec #247 point 9): the scene is made again.
+    if stale.current_clip(scene) is not None and not (waits_to_be_said_to_camera(scene)):
         raise Refused(
             f"scene {scene.number} already has a clip, so it changes only through the shop "
             "owner's notes: the app shows them a plan and makes it once they say yes."
@@ -2406,6 +2608,10 @@ PRODUCER = Agent(
         CreatePerson,
         RunPlanningChecks,
         CreateMusic,
+        EditScene,
+        AddScene,
+        RemoveScene,
+        ReorderScenes,
         MakeStartingPicture,
         MakePicture,
         MakeLineAudio,

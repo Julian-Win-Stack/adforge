@@ -141,6 +141,26 @@ def remade_twice(
     return clip_of_scene_2(fake_model, steps, say)
 
 
+def test_a_try_that_changes_what_the_scene_shows_and_passes_finishes_the_scene(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The agent films its try of a scene it changed: that try is made for the scene as it
+    # stands, so it isn't stale (spec #247 point 9), whatever the step it fixes was made for.
+    fake_model.respond("check_clip_motion", failing(FLOATS))
+    agent_films(monkeypatch, REMADE, shows={1: "Tea pours from a teapot into the mug."})
+
+    step = clip_of_scene_2(fake_model, steps, say)
+
+    step.refresh_from_db()
+    assert "Scene 2 is finished." in step.result
+    assert "stale" not in step.result
+    assert Scene.objects.get(number=2).status == "finished"
+
+
 def test_a_failed_clip_is_handed_to_the_fixing_agent_at_once(
     fake_model: FakeModel,
     checked: None,  # noqa: F811

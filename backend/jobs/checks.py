@@ -146,7 +146,7 @@ person talking.
 Rewrite the script to fit: trim lines, or drop a scene. Stay within the most words. \
 Give each line with the number of the scene it comes from: a scene keeps what it shows, \
 so a shortened line must still match it. Keep lines you don't need to change exactly as \
-they are. The first line must be one the person says to camera. Keep the first scene, \
+they are. Keep the first scene, \
 the hook, and the last, the call to action: never drop either. One line must still say \
 the price. Every claim must be stated by the page or by the shop owner's own words: your own \
 messages only show what was asked. Never name the product's colour. Never infer or \
@@ -382,8 +382,8 @@ class ShortenedScript(BaseModel):
 
 def shortened_script_for(script: list[LineToCheck]) -> type[ShortenedScript]:
     """A shortening of `script`: each line from one of its scenes, in the order they play,
-    opening on one the person says to camera. Anything else fails while the answer is
-    read, like any other broken answer."""
+    opening on its first scene, the hook, whether that scene is said to camera or shows the
+    product. Anything else fails while the answer is read, like any other broken answer."""
     shows = {scene.scene: scene.shows for scene in script}
 
     class ShortenedScriptForJob(ShortenedScript):
@@ -395,8 +395,8 @@ def shortened_script_for(script: list[LineToCheck]) -> type[ShortenedScript]:
                     raise ValueError(f"There's no scene {scene}: the script has {len(shows)}.")
             if kept != sorted(set(kept)):
                 raise ValueError("Give the lines in the order they play, each scene once.")
-            if shows[kept[0]] is not None:
-                raise ValueError("The first scene is the person talking to camera.")
+            if kept[0] != script[0].scene:
+                raise ValueError("Keep the first scene, the hook: never drop it.")
             return self
 
     return ShortenedScriptForJob
