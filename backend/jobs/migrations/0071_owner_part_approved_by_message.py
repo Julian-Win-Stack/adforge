@@ -8,7 +8,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("chat", "0016_message_shows_owner_question"),
-        ("jobs", "0069_owner_part_picture_in_the_library"),
+        ("jobs", "0070_agentfixtry_sent"),
     ]
 
     operations = [
