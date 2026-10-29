@@ -71,14 +71,16 @@ def test_the_first_version_gets_round_4s_scenes_in_the_planners_plan(tmp_path: P
         model="planner",
         instructions="",
         handoff=PlanHandoff(
-            product_url=ad.url,
-            page_text="",
-            target_seconds=None,
-            photo_count=9,
-            conversation=[],
+            moments="",
+            library_pictures=9,
+            pictures_not_shown=0,
             video_transcripts=[],
+            page_text="",
+            product_url=ad.url,
+            target_seconds=None,
+            conversation=[],
         ),
-        output=producer_decision_for(9, library=(), moments={}),
+        output=producer_decision_for(library=range(1, 10), moments={}),
     )
 
     planned = provider.complete(request).output.model_dump()

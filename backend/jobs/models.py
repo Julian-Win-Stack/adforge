@@ -1619,3 +1619,41 @@ class AgentFixTry(models.Model):
 
     def __str__(self) -> str:
         return f"Try {self.number}"
+
+
+class OwnerQuestion(models.Model):
+    """A question the fixing agent asked the shop owner about a scene, its last resort when
+    the ad's library holds nothing for what the fix needs (spec #210 point 23; Julian's
+    design, 2026-10-29). Asking parks the fix: its ask_owner call stays the last tool call,
+    awaiting its result, the scene keeps its last try and the ad finishes. The question is
+    open until the owner answers it; with no answer nothing else happens."""
+
+    class Wants(models.TextChoices):
+        VIDEO = "video"
+        PHOTO = "photo"
+        WORDS = "words"
+
+    scene = models.ForeignKey(Scene, on_delete=models.CASCADE, related_name="owner_questions")
+    agent_fix = models.OneToOneField(
+        AgentFix,
+        on_delete=models.CASCADE,
+        related_name="owner_question",
+        help_text="The fix the question parked: one question per scene fix.",
+    )
+    tool_call = models.OneToOneField(
+        "agents.ToolCall",
+        on_delete=models.CASCADE,
+        related_name="+",
+        help_text="The agent's ask_owner call, whose result is the owner's answer once given.",
+    )
+    question = models.TextField(help_text="The agent's question, in its own words.")
+    wants = models.CharField(
+        max_length=10, choices=Wants.choices, help_text="What the agent asked for."
+    )
+    asked_at = models.DateTimeField(auto_now_add=True)
+    answered_at = models.DateTimeField(
+        null=True, blank=True, help_text="When the owner answered; blank while it is open."
+    )
+
+    def __str__(self) -> str:
+        return f"Scene {self.scene.number}'s question for the shop owner"

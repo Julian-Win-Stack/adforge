@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("jobs", "0066_agentfixtry_root_cause_and_move"),
+        ("jobs", "0067_owner_question"),
     ]
 
     operations = [

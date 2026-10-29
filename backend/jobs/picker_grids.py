@@ -265,12 +265,21 @@ def grids(
     ]
 
 
-def grid(tiles: list[tuple[str, bytes]], across: int, side: int) -> bytes:
+def grid(
+    tiles: list[tuple[str, bytes]], across: int, side: int, *, label_under: bool = False
+) -> bytes:
     """`tiles` in one JPEG, `across` to a row, each picture fitted on white in a square
-    `side` px a side under a black bar with its label."""
-    font_size = max(22, side // 14)
+    `side` px a side with its label on a black bar: above it, or with `label_under` under it,
+    the label wrapped onto as many lines as it takes, every bar in the grid as tall as the
+    tallest."""
+    font_size = max(22, side // 14) if not label_under else max(18, side // 22)
     font = PIL.ImageFont.load_default(size=font_size)
-    bar = font_size + 14
+    draw = PIL.ImageDraw.Draw(PIL.Image.new("RGB", (1, 1)))
+    texts = [
+        _wrapped(label, font, side - 16, draw) if label_under else [label] for label, _ in tiles
+    ]
+    line = font_size + 6
+    bar = max(len(lines) for lines in texts) * line + 8 if texts else 0
     rows = (len(tiles) + across - 1) // across
     gap = 8
     sheet = PIL.Image.new(
@@ -279,22 +288,42 @@ def grid(tiles: list[tuple[str, bytes]], across: int, side: int) -> bytes:
         "#888",
     )
     draw = PIL.ImageDraw.Draw(sheet)
-    for k, (label, content) in enumerate(tiles):
+    for k, ((_, content), lines) in enumerate(zip(tiles, texts, strict=True)):
         x, y = gap + (k % across) * (side + gap), gap + (k // across) * (side + bar + gap)
-        draw.rectangle((x, y, x + side - 1, y + bar - 1), fill="black")
-        draw.text((x + 8, y + 6), label, fill="white", font=font)
+        top = y + side if label_under else y
+        draw.rectangle((x, top, x + side - 1, top + bar - 1), fill="black")
+        for n, text in enumerate(lines):
+            draw.text((x + 8, top + 4 + n * line), text, fill="white", font=font)
         with PIL.Image.open(io.BytesIO(content)) as opened:
             # A see-through background counts as white.
             flat = PIL.Image.new("RGBA", opened.size, "white")
             flat.alpha_composite(opened.convert("RGBA"))
             picture = flat.convert("RGB")
         picture.thumbnail((side, side))
+        below = y if label_under else y + bar
         sheet.paste(
-            picture, (x + (side - picture.width) // 2, y + bar + (side - picture.height) // 2)
+            picture, (x + (side - picture.width) // 2, below + (side - picture.height) // 2)
         )
     saved = io.BytesIO()
     sheet.save(saved, "JPEG", quality=85)
     return saved.getvalue()
+
+
+def _wrapped(
+    text: str,
+    font: PIL.ImageFont.FreeTypeFont | PIL.ImageFont.ImageFont,
+    width: int,
+    draw: PIL.ImageDraw.ImageDraw,
+) -> list[str]:
+    """`text` broken between words into lines no wider than `width` px, a word wider than
+    that on a line of its own."""
+    lines: list[str] = []
+    for word in text.split():
+        if lines and draw.textlength(f"{lines[-1]} {word}", font=font) <= width:
+            lines[-1] += f" {word}"
+        else:
+            lines.append(word)
+    return lines or [""]
 
 
 def _number(player: dict[str, Any], key: str) -> int:

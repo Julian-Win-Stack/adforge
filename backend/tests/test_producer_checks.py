@@ -9,8 +9,8 @@ import pytest
 
 from gateway.fake import FakeModel, meanwhile, turn
 from gateway.models import ModelCall
+from jobs.library import PagePhoto, PictureLabel, add_to_library
 from jobs.models import Job, Scene
-from jobs.work import keep_photo
 
 from .conftest import (
     FACTS_OK,
@@ -25,7 +25,6 @@ from .conftest import (
     handoffs,
     lines,
     paid_for,
-    picture,
     plan_with,
     results_of,
 )
@@ -840,25 +839,31 @@ def test_a_broll_scenes_details_and_needed_photos_are_handed_to_the_fact_check_a
     # cream), and each B-roll scene's needed photos: scene 2 first needed photo 2, and its
     # rewrite needs none.
     assert images_shown("fact_check") == [["Photo 1", "Photo 2"], ["Photo 1"]]
-    # The rewrite is shown every photo, and told how many there are and which show the
-    # colour, so it can give back what its scene needs.
-    assert images_shown("rewrite_line") == [["Photo 1", "Photo 2"]]
+    # The rewrite is shown the library's sheets, as the planner is, and told how many
+    # pictures it holds and which show the colour, so it can give back what its scene needs.
+    assert images_shown("rewrite_line") == [
+        ["Library pictures 1 to 2 (each numbered and labelled under it)"]
+    ]
     (sent,) = handoffs("rewrite_line")
-    assert (sent["photo_count"], sent["colour_photos"]) == (2, [1])
+    assert (sent["library_pictures"], sent["pictures_not_shown"], sent["colour_photos"]) == (
+        2,
+        0,
+        [1],
+    )
 
 
-def test_a_rewrite_on_a_job_with_more_than_50_photos_is_shown_50_page_photos_first(
+def test_a_rewrite_on_a_library_bigger_than_the_sheets_hold_is_shown_the_same_200(
     fake_model: FakeModel, page_read: str, say: Callable[..., None]
 ) -> None:
-    # The page's 2 photos, 3 the shop owner attached, then 48 more of the page's: 53 in all.
+    # The page's 2 photos and 208 more pictures: 210 in the library.
     job = Job.objects.get()
-    for position in range(3, 54):
-        keep_photo(
+    front = job.photos.get(position=1).file
+    for _ in range(208):
+        add_to_library(
             job,
-            position,
-            picture(100 + position, 100, (143, 170, 140)),
-            "image/png",
-            source_url="" if position <= 5 else f"https://shop.example/{position}.png",
+            front,
+            PictureLabel(kind="side", side="front", alone="yes", colour="green", label="The mug."),
+            PagePhoto(photo=1),
         )
     fake_model.respond(
         "produce",
@@ -877,14 +882,18 @@ def test_a_rewrite_on_a_job_with_more_than_50_photos_is_shown_50_page_photos_fir
 
     say("Plan it and check it")
 
-    assert images_shown("rewrite_line") == [
-        [f"Photo {position}" for position in [1, 2, *range(6, 54)]]
-    ]
-    # The plan left the same photos out, and the chat was told once.
+    (shown,) = images_shown("rewrite_line")
+    assert (len(shown), shown[-1]) == (
+        50,
+        "Library pictures 197 to 200 (each numbered and labelled under it)",
+    )
+    assert handoffs("rewrite_line")[0]["pictures_not_shown"] == 10
+    # The plan left the same pictures out, and the chat was told once.
     job.refresh_from_db()
     assert [warning["text"] for warning in job.warnings].count(
-        "The ad has 53 product photos, more than the 50 a model can be shown at once, so "
-        "photos 3, 4 and 5 are left out when it's planned or a line is rewritten."
+        "The product's library has 210 pictures, more than the 200 the planner can be shown, "
+        "so 10 of them are not shown: pictures 201 to 210 are left out when the ad is planned "
+        "or a scene is rewritten."
     ) == 1
 
 
@@ -950,8 +959,8 @@ def test_a_rewrite_of_a_line_the_person_says_is_shown_no_photos(
     [
         pytest.param(
             {**DOES_A_JOB, "needs": [{"what": "the glaze up close", "photos": [3]}]},
-            "There's no photo 3: the job has 2.",
-            id="a photo the job doesn't have",
+            "There's no picture 3 in the library.",
+            id="a picture the library doesn't have",
         ),
     ],
 )

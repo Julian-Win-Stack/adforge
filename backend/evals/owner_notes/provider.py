@@ -146,7 +146,7 @@ class OwnerNotesProvider:
         reply = self.real.complete(request)
         if self.phase == "first" and request.purpose == "plan_ad":
             planned = self._round_4_plan(
-                reply.output.model_dump(), request.handoff.model_dump()["photo_count"]
+                reply.output.model_dump(), request.handoff.model_dump()["library_pictures"]
             )
             return _with(reply, request, planned)
         if self.phase == "first" and request.purpose == "choose_broll_picture":

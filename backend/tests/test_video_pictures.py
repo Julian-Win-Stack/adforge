@@ -16,12 +16,11 @@ from pytest_httpserver import HTTPServer
 from adforge import file_store
 from gateway.fake import FakeModel
 from jobs import work
-from jobs.models import Job, ProductPhoto, ProductVideo, ReferencePhoto
+from jobs.models import Job, ProductVideo, ReferencePhoto
 from jobs.product_videos import save_videos
 from jobs.work import save_video_pictures
 
-from .conftest import FakeFirecrawl, picture
-from .test_producer_checks import images_shown
+from .conftest import FakeFirecrawl
 from .test_product_videos import player, read, tiny_mp4  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -150,55 +149,6 @@ def test_a_video_picture_is_never_a_reference_photo(
     )
 
     assert not ReferencePhoto.objects.exists()
-
-
-def test_48_page_photos_and_5_video_pictures_show_the_planner_50_and_say_which_are_left_out(
-    gallery_video: ProductVideo, fake_model: FakeModel
-) -> None:
-    job = gallery_video.job
-    for position in range(2, 49):
-        work.keep_photo(
-            job,
-            position,
-            picture(100 + position, 100, (143, 170, 140)),
-            "image/png",
-            source_url=f"https://shop.example/{position}.png",
-        )
-    fake_model.respond("note_face", *[{"has_face": False}] * 5)
-    seconds = (0.2, 0.6, 1.0, 1.4, 1.8)
-    save_video_pictures(
-        job,
-        gallery_video,
-        [kept(second, f"Moment {second}.") for second in seconds],
-        frames(*((second, frame_picture(10 + n)) for n, second in enumerate(seconds))),
-    )
-    # A photo the shop owner attached comes after everything.
-    work.keep_photo(job, 54, picture(300, 300, (9, 9, 9)), "image/png")
-    assert ProductPhoto.objects.filter(from_video=gallery_video).count() == 5
-    fake_model.respond(
-        "plan_ad",
-        {
-            "decision": "ask",
-            "reason": "The size is unclear.",
-            "question": "Which size?",
-            "plan": None,
-        },
-    )
-
-    work.plan(job)
-
-    assert images_shown("plan_ad") == [
-        [f"Photo {position}" for position in range(1, 49)]
-        + [
-            "Photo 49 (from the product's video at 0.2 s: Moment 0.2.)",
-            "Photo 50 (from the product's video at 0.6 s: Moment 0.6.)",
-        ]
-    ]
-    job.refresh_from_db()
-    assert [warning["text"] for warning in job.warnings] == [
-        "The ad has 54 product photos, more than the 50 a model can be shown at once, so "
-        "photos 51, 52, 53 and 54 are left out when it's planned or a line is rewritten."
-    ]
 
 
 def test_a_page_read_again_keeps_its_video_and_its_video_pictures(
