@@ -252,3 +252,103 @@ def redraw_with_check(
     if len(refusals) >= MOST_REFUSALS:
         raise CutOutFailed(checked.problems, refused=refusals[-1])
     raise CutOutFailed(checked.problems)
+
+
+# A picture the producer makes (spec #247 point 5) is checked once the way a cut-out is: the
+# product in it must be the product in its references, unchanged. Its examples are made up,
+# never from a test product (CODING_STANDARDS.md).
+MADE_PICTURE_CHECK = """\
+You check a picture made for a video ad by a picture model. It was asked for in words, and \
+may have been given pictures of the product to make it from, called its references. You are \
+told what was asked and what the picture is meant to show, and shown the picture first and \
+its references, when it has any, after it, each with what it shows.
+
+Work in two steps.
+1. Look before you judge. Write what the references show of the product: its shape, its \
+colours, and any print, label or marks on it, from each side shown. Then write everything \
+the picture shows: the product as it is drawn, each time it is drawn, and anything else in \
+it.
+2. Then judge. Decide "pass" only when both are true: the picture shows what it is meant \
+to show; and the product in it is unchanged from its references: the same shape, the same \
+colours and the same print or label, on the side each reference shows. Decide "fail" for \
+anything else, such as a part of the product missing or added, a changed shape or colour, \
+print that is changed, missing, mirrored or made up, a side drawn that no reference shows, \
+or something asked for that isn't there. Small differences in light, sharpness or size are \
+not a fail.
+
+When no reference is shown, judge only whether the picture shows what it is meant to show, \
+and whether anything in it could not exist."""
+
+MADE_PICTURES_SHOWN = "The picture made is first; its references, when it has any, follow it."
+
+
+class MadePictureCheckHandoff(Handoff):
+    """What the picture was asked for in, what it is meant to show (the producer's label),
+    what each reference shows, in the order shown, and which picture is which."""
+
+    asked: str
+    label: str
+    references: list[str]
+    pictures: str = MADE_PICTURES_SHOWN
+
+
+# Filled in from the top, so the check looks at the pictures before it judges
+# (vision-judges.md, rule 1). A comment, not a docstring: a docstring would be sent to the
+# check in the answer's schema.
+class MadePictureVerdict(BaseModel):
+    references_show: str = Field(
+        description="The product as the references show it: shape, colours, print, sides. "
+        "Empty when no reference is shown."
+    )
+    picture_shows: str = Field(
+        description="Everything the picture shows: the product each time it is drawn, and "
+        "anything else."
+    )
+    verdict: Literal["pass", "fail"]
+    problem: str | None = Field(
+        description="When it fails: what is wrong, in one sentence. Null when it passes."
+    )
+
+    @model_validator(mode="after")
+    def _a_failure_says_why(self) -> Self:
+        if self.verdict == "fail" and not (self.problem or "").strip():
+            raise ValueError("A picture that fails must say what is wrong.")
+        return self
+
+
+def check_made_picture(
+    job: Job, picture: str, references: list[tuple[str, str]], *, asked: str, label: str
+) -> Said:
+    """What the made picture's check says of the picture at `picture`, asked for as `asked`
+    to show `label`, made from `references` (each its file and what it shows): asked once,
+    no vote, as the cut-out check is, and answered from its record when asked the same
+    again. A picture whose check gives no answer is Unchecked: nothing says it is right."""
+    images = [Image(label="The picture made:", key=picture)] + [
+        Image(label=f"Reference {number}: {shows}", key=file)
+        for number, (file, shows) in enumerate(references, start=1)
+    ]
+    try:
+        verdict = call_model(
+            job=job,
+            purpose="check_made_picture",
+            instructions=MADE_PICTURE_CHECK,
+            handoff=MadePictureCheckHandoff(
+                asked=asked, label=label, references=[shows for _, shows in references]
+            ),
+            output=MadePictureVerdict,
+            images=images,
+            pay_once=True,
+        )
+    except BlockedBySafetyFilter as error:
+        logger.warning("The check of a made picture was refused: %s", error)
+        return Unchecked("the AI model's safety filter refused to look at it", refused=True)
+    except (UnusableReply, AnswerTookTooLong, UnreadableImage) as error:
+        logger.warning("The check of a made picture gave no answer: %s", error)
+        return Unchecked("the AI model checking it gave no usable answer")
+    except OutsideServiceDown as error:
+        logger.warning("The check of a made picture gave no answer: %s", error)
+        return Unchecked("the AI service checking it didn't answer")
+    if verdict.verdict == "pass":
+        return None
+    assert verdict.problem is not None, "a failing answer says why"
+    return verdict.problem

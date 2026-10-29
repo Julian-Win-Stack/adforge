@@ -55,6 +55,10 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # The cut-out check (spec #210 point 6): the product-only version, or the clean picture of
     # a shop owner's thing, beside the photo it was cut from. The picture judges' model.
     "check_cut_out": "gpt-6.1-sol",
+    # A picture the producer makes from its own prompt and library items (spec #247 point 5),
+    # drawn as cut-outs are, and its check, asked once as the cut-out check is.
+    "make_picture": "gpt-image-2.5-sunburst",
+    "check_made_picture": "gpt-6.1-sol",
     # An owner part's own picture (spec #210 point 20): drawn from its sentence beside a
     # product photo, or changed from the shop owner's photo of it, as cut-outs are drawn; and
     # its check against the sentence, on the picture judges' model.

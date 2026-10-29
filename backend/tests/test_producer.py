@@ -244,6 +244,7 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
         "run_planning_checks",
         "create_music",
         "make_starting_picture",
+        "make_picture",
         "make_line_audio",
         "transcribe_line_audio",
         "make_clip",
