@@ -476,8 +476,10 @@ def test_the_cost_line_counts_from_the_ad_just_before_not_the_first(
     spent = ModelCall.objects.filter(
         created_at__gt=second.created_at, created_at__lt=third.created_at
     ).aggregate(cost=Sum("cost_usd"))["cost"]
-    answer = ToolCall.objects.filter(tool="assemble_ad").latest("id").result
-    assert f"The changes since ad version {second.version} cost {dollars(spent)}:" in answer
+    first, *_, last = ToolCall.objects.filter(tool="assemble_ad").order_by("id")
+    assert f"The changes since ad version {second.version} cost {dollars(spent)}:" in last.result
+    # The first ad has no ad before it to count from.
+    assert "The changes since" not in first.result
 
 
 @pytest.mark.parametrize("edited", [False, True], ids=["clip current", "clip stale"])
