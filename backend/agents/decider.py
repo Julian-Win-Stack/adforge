@@ -489,6 +489,7 @@ def _verdict(clip: ProducedItem) -> str:
         "pass": "The judge passed this clip.",
         "fail": "The judge failed this clip.",
         "not_checked": "The judge couldn't check this clip.",
+        "unsure": "The judge couldn't tell whether this clip is right: the shop owner decides.",
     }.get((clip.ruling or {}).get("verdict") or "", "The judge didn't judge this clip.")
 
 
