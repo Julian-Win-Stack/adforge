@@ -431,3 +431,28 @@ def test_an_edit_while_the_fixing_agent_films_the_scene_again_is_refused_and_cha
     answer = answer_of("edit_scene")
     assert answer.startswith("Refused: the fixing agent is filming scene 2 again")
     assert Scene.objects.get(number=2).line == line
+
+
+def test_new_music_once_the_ad_is_shown_is_put_in_when_the_ad_is_assembled_again(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+) -> None:
+    # Nothing locks once the ad has clips (spec #247 point 5; ticket #259): the music is made
+    # again at any step, and the producer assembles the ad with it.
+    job = shown.job
+    first = job.produced.filter(kind="music").latest("version")
+    owner_says(
+        fake_model,
+        say,
+        "Calmer music, please.",
+        ("create_music", {"mood": "calm piano"}),
+        ("assemble_ad", {}),
+    )
+
+    music = job.produced.filter(kind="music").latest("version")
+    assert (music.version, music.text.startswith("Calm piano.")) == (first.version + 1, True)
+    assert answer_of("create_music").startswith(f"Made the music (version {music.version}")
+    ad = job.produced.filter(kind="finished_ad").latest("version")
+    assert (ad.version, ad.made_from) == (shown.version + 1, music)
+    assert f"The changes since ad version {shown.version} cost $" in answer_of("assemble_ad")
