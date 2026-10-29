@@ -3157,10 +3157,11 @@ def say_the_agent_gave_up(step: SceneStep) -> None:
         meanwhile = f"so scene {number} keeps the clip it had before"
     else:
         meanwhile = "so the last try is in the ad"
+    capped = ", and the fixing agent filmed as many tries as it may" if ended.ended_by_cap else ""
     post_notice(
         step.scene.job,
         f"The clip judge found a problem in all {len(_clip_tries(step))} tries at scene "
-        f"{number}'s clip, {meanwhile}. Watch them, and tap one to use it instead.",
+        f"{number}'s clip{capped}, {meanwhile}. Watch them, and tap one to use it instead.",
         Message.Level.INFO,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
         tries_of=step.pk,
@@ -3251,7 +3252,12 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
     if ended.passed is not None:
         passed = ended.passed.remake
         return f"{failed}, so the fixing agent filmed it again, and the judge passed try {passed}."
-    gave_up = f"{failed}, and the fixing agent gave up after {len(_clip_tries(step)) - 1} tries"
+    filmed = len(_clip_tries(step)) - 1
+    gave_up = (
+        f"{failed}, and the fixing agent filmed as many tries as it may ({filmed}), none passing"
+        if ended.ended_by_cap
+        else f"{failed}, and the fixing agent gave up after {filmed} tries"
+    )
     if _kept_a_try(step, ended):
         return (
             f"{gave_up}, so {_what_is_kept(step)} is in the ad. The chat showed the shop owner "
