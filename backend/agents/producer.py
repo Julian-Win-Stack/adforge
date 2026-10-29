@@ -10,6 +10,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.db import IntegrityError, transaction
 from django.db.models import Avg, Max, QuerySet, Sum
+from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from adforge.retry import OutsideServiceDown
@@ -22,6 +23,7 @@ from jobs import (
     clip_judge,
     cut_and_send,
     fix_check,
+    owner_answers,
     owner_parts,
     page,
     picture_check,
@@ -38,8 +40,10 @@ from jobs.models import (
     BROLL_FIELDS,
     CLIP_ONLY_INPUTS,
     PLANNED_FOR_THE_ACTION,
+    AgentFix,
     Fix,
     Job,
+    OwnerQuestion,
     ProducedItem,
     ProductPhoto,
     ReferencePhoto,
@@ -84,6 +88,7 @@ from jobs.work import (
     music_seconds,
     new_scene_place,
     note_face,
+    open_question,
     plan,
     remake_person,
     run_checks,
@@ -92,6 +97,7 @@ from jobs.work import (
     show_once,
     use_music_again,
     version_label,
+    versions,
     waits_to_be_said_to_camera,
     why_the_checks_havent_passed,
     why_the_checks_passed,
@@ -99,7 +105,7 @@ from jobs.work import (
 
 from . import hard_list, loop, snapshot, step_signals
 from .fixing_agent import AGENT as FIXING_AGENT
-from .fixing_agent import MOST_TRIES, PLACE_NAMES
+from .fixing_agent import MOST_TRIES, PLACE_NAMES, carry_on_after_the_pause
 from .fixing_agent import PURPOSE as FIXING_AGENT_PURPOSE
 from .look import Look
 from .loop import Agent, Failed, Refused, Tool
@@ -204,6 +210,12 @@ wrong, its root cause and a direction. It decides nothing: you do. Before \
 the ad is planned, every photo they send is a product photo: if they send one of something \
 else, don't add it, and tell them to send it with a note on a scene once the first version \
 is made. Slower can't be done: every clip plays at real-time speed.
+When the shop owner's note is about what a scene's clip shows, look at that clip first, \
+then call fix_scene with your detailed instruction: the fixing agent films the scene again \
+until a try passes, and you are told how the fix ended. When it ends waiting on the fixing \
+agent's question, ask the shop owner that question with ask_owner; once they answer, call \
+fix_scene for that scene again, with what the fix should do with their answer. A fix the \
+pause stopped carries on when you call fix_scene for its scene again.
 To choose which library pictures and which video moment a scene that shows the product \
 sends its next clip, or to keep a library item out of that scene's clips, call \
 set_references: its answer says what the next clip is sent and what is left out.
@@ -1465,6 +1477,210 @@ class MakeClip(Tool):
         )
 
 
+class FixScene(Tool):
+    """Hand the shop owner's note about what a scene's clip shows to the fixing agent, which
+    films the scene again, try after try, until a try passes the clip judge with the change
+    made, or its tries run out, when the last try stays in the ad and the shop owner is shown
+    every try. Code hands it their note word for word, your instruction and what your last
+    look at the scene's clip found, so look first. Works in the background and hands back at
+    once; you are told how it ended. Only for a note about what a clip shows: everything else
+    you change with the other tools. When the fixing agent's question waits for the shop
+    owner, call it again for the scene once they answered, with your instruction: their
+    answer, word for word, and what they attached go to the fix, which carries on. Call it
+    again too to carry on a fix the shop owner's pause stopped."""
+
+    name = "fix_scene"
+
+    scene: int = Field(description="The number of the scene.")
+    instruction: str = Field(
+        min_length=1,
+        description="What the fixing agent must change, in detail, from the shop owner's note "
+        "and your look; or, when handing back their answer or carrying on a paused fix, what it "
+        "should do with it.",
+    )
+
+    def run(self, call: ToolCall) -> str:
+        scene = _a_checked_scene(call, self.scene)
+        instruction = self.instruction.strip()
+        if not instruction:
+            raise Refused("the instruction is blank: say what the fixing agent must change.")
+        if not scene.shows:
+            raise Refused(
+                f"scene {scene.number} is a talking scene, and the fixing agent only films "
+                "scenes that show the product: change it with the scene tools instead."
+            )
+        question = open_question(scene)
+        if question is not None:
+            return _hand_the_answer_back(call, scene, question, instruction)
+        paused = _paused_fix(scene)
+        if paused is not None:
+            return _carry_on_the_paused_fix(call, scene, paused, instruction)
+        noted = _latest_clip(scene)
+        if noted is None:
+            raise Refused(
+                f"scene {scene.number} has no clip yet, so there is nothing to fix: make its clip."
+            )
+        note = _owners_note(call, scene, noted)
+        if not note:
+            raise Refused(
+                f"the shop owner has written nothing since scene {scene.number}'s clip was "
+                "shown: fix_scene hands the fixing agent their note about what the clip shows."
+            )
+        busy = (
+            f"scene {scene.number}'s clip or its fix is already being made. You'll be told when "
+            "it ends."
+        )
+        _start_step(
+            call,
+            scene,
+            SceneStep.Kind.CLIP,
+            busy=busy,
+            made_from=noted.made_from,
+            picture=noted.picture,
+            picture_step=noted.picture.step if noted.picture is not None else None,
+            owner_note=note,
+            fix_goal=instruction,
+            look_words=_last_look(call, scene, noted),
+        )
+        return (
+            f"Started scene {scene.number}'s fix: the fixing agent films it again in the "
+            "background until a try passes or its tries run out. You'll be told how it ends."
+        )
+
+
+def _owners_note(call: ToolCall, scene: Scene, noted: ProducedItem) -> str:
+    """The shop owner's note on `scene`, word for word: every message they wrote since its
+    clip was shown, the ad was last assembled or the scene's last fix started, until `call`."""
+    since = [noted.created_at]
+    ad = latest(scene.job, ProducedItem.Kind.FINISHED_AD)
+    if ad is not None:
+        since.append(ad.created_at)
+    fixed = scene.steps.exclude(owner_note="").exclude(tool_call=call).order_by("started_at").last()
+    if fixed is not None:
+        since.append(fixed.started_at)
+    written = call.session.messages.filter(
+        role=Message.Role.USER, created_at__gt=max(since), created_at__lte=call.created_at
+    ).order_by("seq")
+    return "\n".join(each.text.strip() for each in written if each.text.strip())
+
+
+def _last_look(call: ToolCall, scene: Scene, noted: ProducedItem) -> str:
+    """What the producer's newest look at `scene` since its clip was made found, in words;
+    blank when it took none."""
+    looked = (
+        ToolCall.objects.filter(
+            session=call.session,
+            agent=call.agent,
+            tool=Look.name,
+            arguments__scene=scene.number,
+            answer="made",
+            created_at__gt=noted.created_at,
+            created_at__lt=call.created_at,
+        )
+        .order_by("created_at", "id")
+        .last()
+    )
+    return looked.result if looked is not None else ""
+
+
+def _hand_the_answer_back(
+    call: ToolCall, scene: Scene, question: OwnerQuestion, instruction: str
+) -> str:
+    """Hand the shop owner's answer to the fixing agent's question back to its parked fix
+    (spec #247 point 11): every message they wrote since it was asked, word for word, with
+    the photos and videos attached, and the producer's `instruction`. The fix carries on in
+    the background."""
+    written = list(
+        call.session.messages.filter(
+            role=Message.Role.USER,
+            created_at__gt=question.asked_at,
+            created_at__lte=call.created_at,
+        )
+        .prefetch_related("attachments")
+        .order_by("seq")
+    )
+    words = "\n".join(each.text.strip() for each in written if each.text.strip())
+    files = [attached for each in written for attached in each.attachments.all()]
+    try:
+        owner_answers.answer(
+            question,
+            words=words,
+            photos=[each.file for each in files if each.kind == Attachment.Kind.PICTURE],
+            videos=[each.file for each in files if each.kind == Attachment.Kind.VIDEO],
+            instruction=instruction,
+        )
+    except ValueError:
+        raise Refused(
+            f"the shop owner hasn't answered the fixing agent's question about scene "
+            f'{scene.number} yet: "{question.question}" Ask them with ask_owner, and call '
+            "fix_scene again once they answer."
+        ) from None
+    except owner_answers.NotWaiting as not_waiting:
+        raise Refused(f"the question takes no answer now: {not_waiting}") from None
+    return (
+        f"Handed the shop owner's answer to scene {scene.number}'s fix: what they attached "
+        "goes into the ad's library, and the fixing agent carries on in the background. "
+        "You'll be told how it ends."
+    )
+
+
+def _paused_fix(scene: Scene) -> AgentFix | None:
+    """The scene's fix the shop owner's pause parked between tries, still waiting, while the
+    clip it left in the ad is the scene's newest: a scene changed since moved past it."""
+    fixing = (
+        AgentFix.objects.filter(step__scene=scene, paused_at__isnull=False)
+        .select_related("step")
+        .order_by("id")
+        .last()
+    )
+    if fixing is None:
+        return None
+    made = versions(scene)
+    if not made or made[-1].clip is None or made[-1].clip.pk != fixing.kept_id:
+        AgentFix.objects.filter(pk=fixing.pk).update(paused_at=None)
+        return None
+    return fixing
+
+
+def _carry_on_the_paused_fix(
+    call: ToolCall, scene: Scene, fixing: AgentFix, instruction: str
+) -> str:
+    """Carry on a fix the shop owner's pause parked (spec #247 point 14a): opened again with
+    the producer's `instruction`, its step run again in the background, from its checkpoints."""
+    if scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING).exists():
+        raise Refused(f"scene {scene.number}'s clip is being made. You'll be told when it ends.")
+    with transaction.atomic():
+        if Session.objects.select_for_update().get(pk=call.session_id).paused_at:
+            raise Refused(loop.PAUSED)
+        step = SceneStep.objects.select_for_update().get(pk=fixing.step_id)
+        carry_on_after_the_pause(fixing, instruction)
+        SceneStep.objects.filter(pk=step.pk).update(
+            status=SceneStep.Status.RUNNING,
+            reason="",
+            result="",
+            finished_at=None,
+            producer_read_at=None,
+            taken_at=None,
+            seen_at=timezone.now(),
+        )
+        post_notice(
+            scene.job,
+            f"Scene {scene.number}'s fix carries on.",
+            Message.Level.INFO,
+            step=messages.StepSignal(
+                scene.number, Message.StepKind.CLIP, Message.StepState.STARTED
+            ),
+        )
+        from .tasks import run_scene_step
+
+        step_id = step.pk
+        transaction.on_commit(lambda: run_scene_step.delay(step_id))
+    return (
+        f"Scene {scene.number}'s fix carries on in the background from where the pause stopped "
+        "it. You'll be told how it ends."
+    )
+
+
 class _SceneFields(Tool):
     """What a plan edit can give a scene, each null to leave it as it is."""
 
@@ -2481,6 +2697,9 @@ def _start_step(
     made_from: ProducedItem | None = None,
     picture: ProducedItem | None = None,
     picture_step: SceneStep | None = None,
+    owner_note: str = "",
+    fix_goal: str = "",
+    look_words: str = "",
 ) -> None:
     """Start a scene step in the background, from the scene's line, what it shows and its
     B-roll labels as they stand, unless one of its kind is already running for the scene:
@@ -2503,6 +2722,9 @@ def _start_step(
                 made_from=made_from,
                 picture=picture,
                 picture_step=picture_step,
+                owner_note=owner_note,
+                fix_goal=fix_goal,
+                look_words=look_words,
             )
             # The shop owner's photos go with every later step of their scene (D1).
             if scene.shows:
@@ -2764,6 +2986,7 @@ PRODUCER = Agent(
         MakeLineAudio,
         TranscribeLineAudio,
         MakeClip,
+        FixScene,
         SetReferences,
         ApproveOwnerPart,
         CorrectOwnerPart,

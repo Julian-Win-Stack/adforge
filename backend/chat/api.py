@@ -24,6 +24,12 @@ from .models import Attachment, Message, Session
 
 # As much as one message may say. Long enough for a brief pasted in one go.
 MAX_TEXT_CHARACTERS = 10_000
+# The videos the shop owner may attach to one message, and how big each may be, as the video
+# formats the app reads (spec #247 point 5: the chat takes a video as it takes a photo). Not
+# approved yet: Claude's numbers.
+MAX_VIDEOS = 3
+MAX_VIDEO_BYTES = 100_000_000
+VIDEO_TYPES = {"video/mp4": ".mp4", "video/quicktime": ".mov", "video/webm": ".webm"}
 # As much as the page panel's message may say: a whole product page pasted in one go.
 MAX_PASTED_PAGE_CHARACTERS = 200_000
 
@@ -231,6 +237,9 @@ class SendSerializer(serializers.Serializer[None]):
     photos = serializers.ListField(
         child=serializers.FileField(), required=False, max_length=MAX_PHOTOS, default=list
     )
+    videos = serializers.ListField(
+        child=serializers.FileField(), required=False, max_length=MAX_VIDEOS, default=list
+    )
     plan = serializers.IntegerField(
         required=False,
         allow_null=True,
@@ -262,9 +271,21 @@ class SendSerializer(serializers.Serializer[None]):
                 )
         return photos
 
+    def validate_videos(self, videos: list[UploadedFile[bytes]]) -> list[UploadedFile[bytes]]:
+        for video in videos:
+            if video.content_type not in VIDEO_TYPES:
+                raise serializers.ValidationError(f"{video.name} isn't an MP4, MOV or WebM video.")
+            if (video.size or 0) > MAX_VIDEO_BYTES:
+                raise serializers.ValidationError(
+                    f"{video.name} is over {MAX_VIDEO_BYTES // 1_000_000} MB."
+                )
+        return videos
+
     def validate(self, data: dict[str, object]) -> dict[str, object]:
         text = str(data["text"])
         if data["pasted_page"]:
+            if data["videos"]:
+                raise serializers.ValidationError({"videos": "A pasted page takes photos only."})
             # A browser sends a text box's line ends as two characters each; the owner pasted
             # one, and the page keeps one.
             text = text.replace("\r\n", "\n")
@@ -277,7 +298,7 @@ class SendSerializer(serializers.Serializer[None]):
             raise serializers.ValidationError(
                 {"text": f"Ensure this field has no more than {MAX_TEXT_CHARACTERS} characters."}
             )
-        if not text and not data["photos"] and data["use_clip"] is None:
+        if not text and not data["photos"] and not data["videos"] and data["use_clip"] is None:
             raise serializers.ValidationError({"text": "Type something, or attach a photo."})
         return data
 
@@ -346,6 +367,13 @@ def _send(session: Session, request: Request) -> Response:
                 f"sessions/{session.pk}/photos/{uuid.uuid4()}{extension}", photo.read()
             )
             kept.append(messages.AttachedFile(Attachment.Kind.PICTURE, key))
+        for video in sending.validated_data["videos"]:
+            key = file_store.save(
+                f"sessions/{session.pk}/videos/{uuid.uuid4()}"
+                f"{VIDEO_TYPES[video.content_type or '']}",
+                video.read(),
+            )
+            kept.append(messages.AttachedFile(Attachment.Kind.VIDEO, key))
         text = sending.validated_data["text"]
         if tapped is not None:
             # A tap says yes and nothing else, whatever text came with it.

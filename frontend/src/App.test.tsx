@@ -13,7 +13,13 @@ type StoredSession = Session & { messages: Message[] };
 function fakeBackend() {
   const sessions: StoredSession[] = [];
   const requests: string[] = [];
-  const sent: { text: string; photos: string[]; plan?: number; use_clip?: number }[] = [];
+  const sent: {
+    text: string;
+    photos: string[];
+    plan?: number;
+    use_clip?: number;
+    videos?: string[];
+  }[] = [];
   let heldPolls: Promise<void> | null = null;
   let heldSends: Promise<void> | null = null;
   let pollsFail = false;
@@ -95,9 +101,11 @@ function fakeBackend() {
         let plan: number | undefined;
         let use_clip: number | undefined;
         const photos: string[] = [];
+        const videos: string[] = [];
         if (init?.body instanceof FormData) {
           text = String(init.body.get("text"));
           for (const photo of init.body.getAll("photos")) photos.push((photo as File).name);
+          for (const video of init.body.getAll("videos")) videos.push((video as File).name);
         } else {
           ({ text, plan, use_clip } = JSON.parse(String(init?.body)));
         }
@@ -108,7 +116,13 @@ function fakeBackend() {
           said.use_clip = use_clip;
           return Response.json({ session: summary(session), message: said }, { status: 201 });
         }
-        sent.push(plan === undefined ? { text, photos } : { text, photos, plan });
+        sent.push(
+          videos.length > 0
+            ? { text, photos, videos }
+            : plan === undefined
+              ? { text, photos }
+              : { text, photos, plan },
+        );
         const carried = photos.map((name, i) => ({
           position: i + 1,
           kind: "picture" as const,
@@ -429,6 +443,25 @@ test("attaches photos to a message", async () => {
   expect(backend.sent).toEqual([{ text: "This is my mug", photos: ["front.png", "side.png"] }]);
   expect(screen.getByAltText("Photo you attached (1)").getAttribute("src")).toBe(
     "/media/front.png",
+  );
+});
+
+test("sends an attached video as a video", async () => {
+  const backend = fakeBackend();
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+
+  await user.type(screen.getByLabelText("Message"), "Here is how the lid goes on");
+  await user.upload(screen.getByLabelText("Photos"), [
+    new File(["lid"], "lid.mp4", { type: "video/mp4" }),
+    new File(["front"], "front.png", { type: "image/png" }),
+  ]);
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await waitFor(() =>
+    expect(backend.sent).toEqual([
+      { text: "Here is how the lid goes on", photos: ["front.png"], videos: ["lid.mp4"] },
+    ]),
   );
 });
 
