@@ -25,7 +25,7 @@ from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import TurnReply, TurnRequest
 from jobs.library import keep_sent_list
-from jobs.models import Job, ProducedItem
+from jobs.models import Job, ProducedItem, Scene
 
 from .conftest import (
     PLAN,
@@ -177,6 +177,7 @@ def test_a_turn_paid_for_past_the_fold_point_before_the_worker_stopped_isnt_paid
     # The turn paid for before the worker stopped, and the one after it.
     assert producer_turns() == turns + 2
     assert chat(api, session_id)[-1] == ("agent", "Scene 2 is planned.")
+    assert len(results_of("read_ad")) == 1
     # Folded once, for the turn kept: the oldest half of the four calls it was given whole.
     assert list(
         ToolCall.objects.exclude(fold_line="").order_by("id").values_list("tool", flat=True)
@@ -184,6 +185,39 @@ def test_a_turn_paid_for_past_the_fold_point_before_the_worker_stopped_isnt_paid
     # Folded with the turn kept, so the turn after it was given them folded.
     (read,) = [each for each in given_to_the_producer(turns + 2) if each.get("tool") == "read_page"]
     assert read["result"].startswith(call("read_page").fold_line)
+
+
+def test_a_turn_paid_for_before_the_worker_stopped_isnt_paid_again_after_work_changed_the_ad(
+    api: APIClient,
+    fake_model: FakeModel,
+    session_id: str,
+    say: Callable[..., None],
+    past_the_fold_point: int,
+) -> None:
+    turns = producer_turns()
+    fake_model.respond("produce", turn(calls=[("read_ad", {"scene": 2})]))
+    turn_paid_for = the_worker_stops(
+        post_save, ModelCall, when=lambda paid: paid.purpose == "produce"
+    )
+    with turn_paid_for, pytest.raises(WorkerStopped):
+        say("What is scene 2?")
+    # Work running in the background changes the ad meanwhile, as a fix filming scene 2
+    # again with a new line does, so the ad as it stands is not what the paid turn was given.
+    given = snapshot_given(producer_turns())
+    Scene.objects.filter(number=2).update(line="A new line for scene two, filmed again.")
+    a_producer_last_beat(session_id, seconds_before_it_counts_as_dead=-1)
+    # Only the turn after it is scripted: paying for the stopped turn again would take this.
+    fake_model.respond("produce", turn(says="Scene 2 is being filmed again."))
+
+    restart_dead_producers()
+
+    assert producer_turns() == turns + 2
+    assert chat(api, session_id)[-1] == ("agent", "Scene 2 is being filmed again.")
+    # The paid turn was handed back, and the call it asked for ran.
+    assert len(results_of("read_ad")) == 1
+    # The turn after it is given the ad as it stands now.
+    assert snapshot_given(producer_turns()) != given
+    assert "A new line for scene two, filmed again." in snapshot_given(producer_turns())
 
 
 def snapshot_given(number: int) -> str:

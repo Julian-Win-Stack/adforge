@@ -17,6 +17,7 @@ from agents import fixing_agent, producer, tasks
 from agents.fixing_agent import Failure, Outcome, Try, fix_scene
 from agents.models import ToolCall
 from agents.money import dollars
+from agents.snapshot import ad_as_it_stands
 from chat.models import Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
@@ -1267,6 +1268,18 @@ def test_a_new_picture_from_a_photo_the_job_doesnt_have_is_refused(
         film_again(new_picture=True, photo=3, picture_prompt="The mug on the counter."),
     )
     assert answer.startswith("Refused: Image 1 must be one of the shop photos: [1, 2].")
+
+
+def test_the_ad_snapshot_counts_a_fixed_scenes_money_once(new_line_passes: Outcome) -> None:
+    session = Scene.objects.get(number=2).job.session
+    assert session is not None
+
+    snapshot = ad_as_it_stands(session)
+
+    # Every model call of the scene's work once: its steps', the fixing agent's turns and
+    # its try's steps, which share the try's tool call.
+    (scene_2,) = [line for line in snapshot.splitlines() if line.startswith("Scene 2:")]
+    assert scene_2.endswith("It cost $0.867575.")
 
 
 def test_a_move_the_safety_filter_blocks_is_answered_as_a_cant_and_the_fix_carries_on(

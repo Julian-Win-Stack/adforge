@@ -10,15 +10,17 @@ written with it, so every rebuild of the conversation comes out the same."""
 
 import logging
 import re
+from decimal import Decimal
 
 from django.conf import settings
+from django.db.models import Q
 
 from chat.models import Session
 from gateway import catalog
 from gateway.models import ModelCall
 
 from .models import ToolCall
-from .money import dollars
+from .money import cost_of, dollars
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +57,8 @@ def fold_if_past(session: Session, agent: str, purpose: str) -> list[ToolCall]:
         )
     )
     share: float = settings.FOLD_SHARE_OF_CALLS
-    folding = whole[: int(len(whole) * share)]
+    # At least one while any is whole, so the last whole call folds too.
+    folding = whole[: max(1, int(len(whole) * share))] if whole else []
     for each in folding:
         each.fold_line = fold_line(each)
         each.save(update_fields=["fold_line"])
@@ -93,7 +96,7 @@ def fold_line(call: ToolCall) -> str:
     said = re.split(r"(?<=[.!?])\s", " ".join(call.result.split()), maxsplit=1)[0]
     if len(said) > _OUTCOME_CHARACTERS:
         said = said[: _OUTCOME_CHARACTERS - 3].rstrip() + "..."
-    return f"{call.tool}{where}: {kind} ({said}); cost {dollars(call.cost_usd())}."
+    return f"{call.tool}{where}: {kind} ({said}); cost {dollars(_cost(call))}."
 
 
 def as_folded(call: ToolCall) -> str:
@@ -103,3 +106,9 @@ def as_folded(call: ToolCall) -> str:
         f"{call.fold_line} Folded to one line; read_earlier_call with call id {call.call_id} "
         "gives its whole answer."
     )
+
+
+def _cost(call: ToolCall) -> Decimal:
+    """What a call's work cost: its own model calls, and the fixing agent's on any step it
+    started, each once."""
+    return cost_of(Q(tool_call=call) | Q(tool_call__agent_fix__step__tool_call=call))
