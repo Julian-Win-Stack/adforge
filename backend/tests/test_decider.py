@@ -32,6 +32,8 @@ from jobs.models import (
     SceneStep,
 )
 
+from .sent_lists import holding_the_fixture
+
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
@@ -178,7 +180,7 @@ def test_a_picture_note_is_planned_after_the_decider_looks_at_the_scene(
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
         # It decides before looking: refused, and it looks, then decides again.
         turn(calls=[("decide", picture_note)]),
-        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("look_at_references", {"scene": 2})]),
         turn(calls=[("decide", picture_note)]),
     )
 
@@ -196,7 +198,7 @@ def test_a_picture_note_is_planned_after_the_decider_looks_at_the_scene(
     assert outcome.plan.state == FixPlan.State.PROPOSED
     assert outcome.plan.notes == [{"seq": note.seq, "text": note.text}]
     # The look showed the scene's current starting picture, labelled by code.
-    [look] = ToolCall.objects.filter(agent="decider", tool="look_at_picture")
+    [look] = ToolCall.objects.filter(agent="decider", tool="look_at_references")
     assert [picture["label"] for picture in look.pictures] == [
         "Scene 2, starting picture, v2 black toilet (the current version)"
     ]
@@ -208,6 +210,113 @@ def test_a_picture_note_is_planned_after_the_decider_looks_at_the_scene(
     )
     # The decider never speaks in the chat: the plan is shown by code.
     assert not _chat(ad).messages.filter(role=Message.Role.AGENT).exists()
+
+
+def _current_clip(job: Job, scene: int) -> ProducedItem:
+    return job.scenes.get(number=scene).produced.filter(kind=ProducedItem.Kind.CLIP).latest("id")
+
+
+def test_a_note_on_a_clip_with_a_sent_list_is_decided_after_looking_at_its_references(
+    fake_model: FakeModel, ad: Job
+) -> None:
+    sent = holding_the_fixture(_current_clip(ad, 2))
+    note = _owner_says(ad, "In scene 2 the press should be red.")
+    picture_note = _decided([_row(2, "fix", "The press is red.")])
+    fake_model.respond(
+        "decide_fixes",
+        turn(calls=[("sort_message", {"kind": "fix_note"})]),
+        # It decides before looking: refused, and it looks, then decides again.
+        turn(calls=[("decide", picture_note)]),
+        turn(calls=[("look_at_references", {"scene": 2})]),
+        turn(calls=[("decide", picture_note)]),
+    )
+
+    outcome = decider.read(ad, [note])
+
+    assert isinstance(outcome, decider.Planned)
+    assert _results("decide")[0].startswith("Refused: look at scene 2 first")
+    [look] = ToolCall.objects.filter(agent="decider", tool="look_at_references")
+    labels = [picture["label"] for picture in look.pictures]
+    named = "Scene 2, v2 black toilet (the current version)"
+    # The pictures sent, in their order, each with its label; then each piece's frames; then
+    # the clip's frames. No starting picture.
+    assert labels[:9] == [f"{named}, Image {each.image}: {each.label}" for each in sent.pictures]
+    assert [picture["key"] for picture in look.pictures[:9]] == [
+        each.file for each in sent.pictures
+    ]
+    pieces = labels[9:-2]
+    video_1 = [label for label in pieces if label.startswith(f"{named}, Video 1, Frame at ")]
+    video_2 = [label for label in pieces if label.startswith(f"{named}, Video 2, Frame at ")]
+    assert video_1 and video_2 and pieces == video_1 + video_2
+    assert labels[-2:] == [
+        "Scene 2, clip of v2 black toilet (the current version), Frame at 0 s",
+        "Scene 2, clip of v2 black toilet (the current version), Frame at 0.2 s",
+    ]
+    starting = ad.scenes.get(number=2).produced.get(
+        kind=ProducedItem.Kind.STARTING_PICTURE, version=2
+    )
+    assert starting.file not in [picture["key"] for picture in look.pictures]
+    # Its words say what was sent and left out, and how each piece was cut.
+    said = " ".join(look.result.split())
+    assert "Left out of the clip: The garlic press, closed, seen from the top." in said
+    assert "Video 1 is page video 1, moment 2, 6 s to 11 s." in said
+    assert "Video 2 is page video 2, moment 1, cut to 3 s to 13 s of its 3 s to 15 s" in said
+    assert "Library picture 2 couldn't be made red, so it went as it was." in said
+    # The decider is given the references first and the clip after, in one look.
+    looked = _uses(fake_model.turns_taken[3].handoff.conversation, "look_at_references")[0]
+    assert [picture.label for picture in looked.pictures] == labels
+    # The ad says the clip's prompt as it was sent.
+    the_ad = _given(fake_model, 0)[0]
+    assert f"The current clip's video prompt: {sent.prompt}" in the_ad.text
+
+
+def test_past_the_most_pictures_the_references_stay_whole_and_the_frames_are_joined(
+    fake_model: FakeModel, ad: Job, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(decider, "MOST_PICTURES", 12)
+    sent = holding_the_fixture(_current_clip(ad, 2))
+    note = _owner_says(ad, "In scene 2 the press should be red.")
+    fake_model.respond(
+        "decide_fixes",
+        turn(calls=[("sort_message", {"kind": "fix_note"})]),
+        turn(calls=[("look_at_references", {"scene": 2})]),
+        turn(calls=[("decide", _decided([_row(2, "fix", "The press is red.")]))]),
+    )
+
+    decider.read(ad, [note])
+
+    named = "Scene 2, v2 black toilet (the current version)"
+    labels = [image.label for image in fake_model.turns_taken[2].images]
+    assert labels[:9] == [f"{named}, Image {each.image}: {each.label}" for each in sent.pictures]
+    video_1, video_2, clip = labels[9:]
+    assert video_1.startswith(f"{named}, Video 1, Frames at 0 s, 0.2 s, ")
+    assert video_2.startswith(f"{named}, Video 2, Frames at 0 s, 0.2 s, ")
+    assert clip == (
+        "Scene 2, clip of v2 black toilet (the current version), "
+        "Frames at 0 s, 0.2 s, left to right"
+    )
+
+
+def test_a_note_on_a_clip_with_no_sent_list_shows_its_starting_picture(
+    fake_model: FakeModel, ad: Job
+) -> None:
+    note = _owner_says(ad, "In scene 2 the toilet should be white.")
+    fake_model.respond(
+        "decide_fixes",
+        turn(calls=[("sort_message", {"kind": "fix_note"})]),
+        turn(calls=[("look_at_references", {"scene": 2})]),
+        turn(calls=[("decide", _decided([_row(2, "fix", "The toilet is white.")]))]),
+    )
+
+    assert isinstance(decider.read(ad, [note]), decider.Planned)
+
+    [look] = ToolCall.objects.filter(agent="decider", tool="look_at_references")
+    assert look.result == "Scene 2, starting picture, v2 black toilet (the current version)."
+    assert [picture["key"] for picture in look.pictures] == [
+        ad.scenes.get(number=2)
+        .produced.get(kind=ProducedItem.Kind.STARTING_PICTURE, version=2)
+        .file
+    ]
 
 
 def _given(fake_model: FakeModel, turn_number: int) -> list[Any]:
@@ -226,7 +335,7 @@ def test_the_decider_is_told_the_ad_and_the_note_and_doesnt_look_at_the_judge_fo
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("look_at_references", {"scene": 2})]),
         turn(calls=[("decide", _decided([_row(2, "fix", "The toilet is white.")]))]),
     )
 
@@ -262,7 +371,7 @@ def test_an_approved_owner_part_is_told_as_settled(fake_model: FakeModel, ad: Jo
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("look_at_references", {"scene": 2})]),
         turn(calls=[("decide", _decided([_row(2, "new_picture", "The toilet is white.")]))]),
     )
 
@@ -281,7 +390,7 @@ def test_going_back_needs_a_look_at_that_version(fake_model: FakeModel, ad: Job)
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("look_at_references", {"scene": 2})]),
         turn(calls=[("decide", back)]),
         turn(calls=[("look_at_version", {"scene": 2, "version": 1})]),
         turn(calls=[("decide", back)]),
@@ -322,7 +431,7 @@ def test_a_photo_in_the_picture_needs_no_look_at_the_frames(fake_model: FakeMode
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("look_at_references", {"scene": 2})]),
         # The photo is used before it was looked at: refused.
         turn(calls=[("decide", decided)]),
         turn(calls=[("look_at_owner_photo", {"photo": 1})]),
@@ -362,7 +471,7 @@ def test_a_photos_thing_only_during_the_action_needs_a_look_at_the_clip(
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("look_at_owner_photo", {"photo": 1}), ("look_at_picture", {"scene": 2})]),
+        turn(calls=[("look_at_owner_photo", {"photo": 1}), ("look_at_references", {"scene": 2})]),
         turn(calls=[("decide", decided)]),
         turn(calls=[("look_at_clip", {"scene": 2, "version": None})]),
         turn(calls=[("decide", decided)]),
@@ -407,16 +516,16 @@ def test_a_look_before_the_message_is_sorted_is_refused(fake_model: FakeModel, a
     note = _owner_says(ad, "Scene 2 is too dark.")
     fake_model.respond(
         "decide_fixes",
-        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("look_at_references", {"scene": 2})]),
         turn(calls=[("sort_message", {"kind": "not_a_fix"})]),
     )
 
     decider.read(ad, [note])
 
-    assert _results("look_at_picture")[0].startswith(
+    assert _results("look_at_references")[0].startswith(
         "Refused: sort the shop owner's newest message with sort_message first."
     )
-    assert ToolCall.objects.get(tool="look_at_picture").pictures == []
+    assert ToolCall.objects.get(tool="look_at_references").pictures == []
 
 
 @pytest.fixture
@@ -426,7 +535,7 @@ def planned(fake_model: FakeModel, ad: Job) -> tuple[Message, decider.Planned]:
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("look_at_picture", {"scene": 2}), ("look_at_picture", {"scene": 1})]),
+        turn(calls=[("look_at_references", {"scene": 2}), ("look_at_references", {"scene": 1})]),
         turn(
             calls=[
                 (
@@ -503,8 +612,8 @@ def test_a_correction_plans_again_on_the_looks_already_made(
     assert kinds == [
         ("said", None),
         ("tool_use", "sort_message"),
-        ("tool_use", "look_at_picture"),
-        ("tool_use", "look_at_picture"),
+        ("tool_use", "look_at_references"),
+        ("tool_use", "look_at_references"),
         ("tool_use", "decide"),
         ("said", None),
     ]
@@ -589,7 +698,7 @@ def test_a_worker_that_stopped_carries_on_from_the_checkpoints(
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("look_at_references", {"scene": 2})]),
         RuntimeError("the worker stopped"),
     )
     with pytest.raises(RuntimeError):
@@ -605,7 +714,7 @@ def test_a_worker_that_stopped_carries_on_from_the_checkpoints(
     stopped, restarted = fake_model.turns_taken[2:]
     assert restarted.handoff == stopped.handoff
     assert [image.key for image in restarted.images] == [image.key for image in stopped.images]
-    assert ToolCall.objects.filter(agent="decider", tool="look_at_picture").count() == 1
+    assert ToolCall.objects.filter(agent="decider", tool="look_at_references").count() == 1
 
 
 def test_a_decider_that_answers_without_a_tool_is_reminded_then_stopped(
@@ -730,7 +839,7 @@ def test_an_action_while_talking_is_a_cant_and_what_they_hold_is_a_new_picture(
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("look_at_picture", {"scene": 1})]),
+        turn(calls=[("look_at_references", {"scene": 1})]),
         turn(
             calls=[
                 (
@@ -768,7 +877,7 @@ def test_a_new_line_keeps_the_picture_and_one_with_a_visual_change_is_a_new_pict
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("look_at_picture", {"scene": 1})]),
+        turn(calls=[("look_at_references", {"scene": 1})]),
         turn(
             calls=[
                 (
@@ -902,7 +1011,7 @@ def test_a_photo_in_the_picture_and_during_the_action_needs_no_look_at_the_frame
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("look_at_owner_photo", {"photo": 1}), ("look_at_picture", {"scene": 2})]),
+        turn(calls=[("look_at_owner_photo", {"photo": 1}), ("look_at_references", {"scene": 2})]),
         turn(
             calls=[
                 (
@@ -1001,7 +1110,7 @@ def test_a_decide_that_breaks_a_rule_is_refused_and_nothing_is_planned(
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("look_at_picture", {"scene": 1}), ("look_at_owner_photo", {"photo": 1})]),
+        turn(calls=[("look_at_references", {"scene": 1}), ("look_at_owner_photo", {"photo": 1})]),
         turn(calls=[("decide", decided)]),
         turn(calls=[("sort_message", {"kind": "not_a_fix"})]),
     )
@@ -1117,7 +1226,7 @@ def test_a_sort_kept_after_a_newer_message_came_in_doesnt_answer_the_newer_one(
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("look_at_references", {"scene": 2})]),
         turn(calls=[("decide", _decided([_row(2, "fix", "The toilet is white.")]))]),
     )
 
@@ -1181,7 +1290,7 @@ def test_a_message_is_sorted_without_the_pictures_already_looked_at(
 
     sorting = fake_model.turns_taken[-1]
     assert sorting.images == ()
-    looks = _uses(sorting.handoff.conversation, "look_at_picture")
+    looks = _uses(sorting.handoff.conversation, "look_at_references")
     assert [look.result for look in looks] == [
         "Scene 2, starting picture, v2 black toilet (the current version).",
         "Scene 1, starting picture, v1 first version (the current version).",
@@ -1196,8 +1305,8 @@ def test_each_look_is_shown_once_and_the_oldest_go_past_the_most_pictures(
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("look_at_picture", {"scene": 2})]),
-        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("look_at_references", {"scene": 2})]),
+        turn(calls=[("look_at_references", {"scene": 2})]),
         turn(calls=[("look_at_clip", {"scene": 2, "version": None})]),
         turn(calls=[("decide", _decided([_row(2, "fix", "The scene is brighter.")]))]),
     )
@@ -1210,7 +1319,7 @@ def test_each_look_is_shown_once_and_the_oldest_go_past_the_most_pictures(
     )
     # Looked at twice: shown once, with the later look.
     assert [image.key for image in again.images] == [picture.file]
-    first_look = _uses(again.handoff.conversation, "look_at_picture")[0]
+    first_look = _uses(again.handoff.conversation, "look_at_references")[0]
     assert first_look.result.endswith("(Its pictures are shown with the same look, later.)")
     # The clip's two frames, joined into one picture, fill the turn: with nothing left to
     # join, the picture is past the most and said so.
@@ -1218,7 +1327,7 @@ def test_each_look_is_shown_once_and_the_oldest_go_past_the_most_pictures(
         "Scene 2, clip of v2 black toilet (the current version), "
         "Frames at 0 s, 0.2 s, left to right"
     ]
-    looks = _uses(clip.handoff.conversation, "look_at_picture")
+    looks = _uses(clip.handoff.conversation, "look_at_references")
     assert looks[-1].result.endswith(
         "(Its pictures aren't shown any more: look again to see them.)"
     )
@@ -1236,7 +1345,7 @@ def test_two_clips_past_the_most_pictures_are_both_shown_with_their_frames_side_
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("look_at_references", {"scene": 2})]),
         turn(calls=[("look_at_clip", {"scene": 2, "version": 1})]),
         turn(calls=[("look_at_clip", {"scene": 2, "version": 2})]),
         turn(calls=[("decide", _decided([_row(2, "fix", "The gel foams up blue.")]))]),
@@ -1318,7 +1427,7 @@ def test_the_decider_stops_after_the_most_tools_for_one_message(
     fake_model.respond(
         "decide_fixes",
         turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("look_at_picture", {"scene": 2})]),
+        turn(calls=[("look_at_references", {"scene": 2})]),
         turn(calls=[("look_at_clip", {"scene": 2, "version": None})]),
     )
 
@@ -1383,11 +1492,11 @@ def test_a_version_the_scene_doesnt_have_is_refused(fake_model: FakeModel, ad: J
 WHAT_THE_AGENT_CAN_DO = (
     "- a fix, in a scene that shows the product rather than the person talking. A fixing agent "
     "then owns that scene until the change is made. It sees everything you can see, and it may "
-    "change what happens in the scene and how it ends, its starting picture, what is said in "
-    "it, its kind of B-roll, whether the person's face shows, and how close the camera is. It "
-    "films the scene again up to 6 times, each try checked for the shop owner's change, and "
-    "never asks the shop owner anything. When it can't film the change well, the scene stays "
-    "as it was and the shop owner is shown its tries. The fix's change is its goal: one "
+    "change what happens in the scene and how it ends, the pictures it is made from, what is "
+    "said in it, its kind of B-roll, whether the person's face shows, and how close the camera "
+    "is. It films the scene again up to 6 times, each try checked for the shop owner's change, "
+    "and never asks the shop owner anything. When it can't film the change well, the scene "
+    "stays as it was and the shop owner is shown its tries. The fix's change is its goal: one "
     "sentence in the shop owner's own words saying what must be different, with any words "
     "they give to say in it word for word."
 )

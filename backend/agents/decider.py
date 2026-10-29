@@ -31,7 +31,7 @@ from adforge import file_store, tracing
 from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.types import Happened, Image, Said, Shown, ToolUse
-from jobs import clip_judge, fix_plans, owner_parts, planning, work
+from jobs import clip_judge, fix_plans, library, owner_parts, planning, work
 from jobs.models import (
     FixCheck,
     FixPlan,
@@ -52,9 +52,12 @@ PURPOSE = "decide_fixes"
 INSTRUCTIONS = f"""\
 You decide how to fix a short video ad from its shop owner's notes. The ad is made of \
 scenes: in some a person speaks a line to camera, in others the product is shown while the \
-person's voice says the line over it. Each scene has a starting picture and a clip made \
-from it, and every time a scene was made again it got a new version, so it has a list of \
-versions: "v1 first version", then one for each change.
+person's voice says the line over it. A scene where the person talks has a starting \
+picture and a clip made from it. A scene that shows the product has a clip made from its \
+references: the pictures and video pieces the video model was sent for it, each with its \
+label (a clip made before references were sent has a starting picture instead). Every \
+time a scene was made again it got a new version, so it has a list of versions: "v1 first \
+version", then one for each change.
 You don't talk to the shop owner and you make nothing yourself. You read their messages, \
 look at what you need, and answer once, with decide. The app shows your plan to the shop \
 owner and does all of it once they say yes.
@@ -66,15 +69,18 @@ waits for their answer, and the message says to carry on with the new version as
 Anything else, such as a question about the cost, is not a fix. When it isn't a fix note, \
 you are done.
 For a fix note, look before you decide. You can't decide a scene you haven't looked at, or \
-go back to a version you haven't looked at. Look at a scene's starting picture for what \
-the picture shows, and at its clip's frames for what happens or how things move. The \
-judge's findings on a clip are for notes about how things move, a product that flips to \
-another side, or the action not happening; don't look at them for anything else. Look at \
-each of the shop owner's photos you use.
+go back to a version you haven't looked at. Look at a scene's references for what its \
+clip was made from and what it shows: you see what it was sent, then the clip's frames \
+(for a scene where the person talks, its starting picture). Look at a clip's frames \
+alone for what happens or how things move. The judge's findings on a clip are for notes \
+about how things move, a product that flips to another side, or the action not \
+happening; don't look at them for anything else. Look at each of the shop owner's photos \
+you use.
 Then decide, for each scene the notes are about, what changes in it:
 - a fix, in a scene that shows the product rather than the person talking. A fixing agent \
 then owns that scene until the change is made. It sees everything you can see, and it may \
-change what happens in the scene and how it ends, its starting picture, what is said in it, \
+change what happens in the scene and how it ends, the pictures it is made from, what is \
+said in it, \
 its kind of B-roll, whether the person's face shows, and how close the camera is. It films \
 the scene again up to {MOST_TRIES} times, each try checked for the shop owner's change, \
 and never asks the shop owner anything. When it can't film the change well, the scene \
@@ -112,17 +118,19 @@ example, or anything that isn't about the ad is a can't of the whole plan, in it
 with no scene and no look.
 The shop owner can send photos of their own things. For each photo you use, name the one \
 thing to take from it, in their words, such as "black toilet". For each scene that shows \
-that thing, answer two questions: is it in the starting picture now, and does more of it \
+that thing, answer two questions: is it in the scene's starting picture or references \
+now, and does more of it \
 show during the action? Both can be yes. When the thing is in the picture and the scene's \
 plan says whether it is used during the action ("scoops gel from the jar" is yes, "holds \
 the jar up" is no), you don't need the clip's frames. When it doesn't say, look at the \
-frames. When the thing is in no starting picture, read each scene's plan for where it \
+frames. When the thing is in no starting picture or references, read each scene's plan \
+for where it \
 shows, look at those scenes' frames to confirm, and add each scene where you see it, \
 saying why in its change. Found nowhere: ask the shop owner which scene. Scenes they name \
 win: "only scene 2" means only scene 2. When a photo doesn't show its thing clearly enough \
 to copy how it looks, say it isn't clear.
 A scene's owner part is a part of the product no photo showed, drawn from the shop owner's \
-words or made up, that they said yes to in its starting picture: it is settled. Every later \
+words or made up, that they said yes to in its picture: it is settled. Every later \
 picture of the scene keeps it, so never ask them for a photo of it or how it looks.
 When you can't tell what they want, ask one short question instead, in the question of \
 decide, in plain words."""
@@ -376,20 +384,24 @@ def _scenes(numbers: Sequence[int]) -> str:
     return f"scenes {', '.join(str(number) for number in numbers[:-1])} and {numbers[-1]}"
 
 
-class LookAtPicture(Tool):
-    """See a scene's current starting picture: what the scene shows now, before it moves."""
+class LookAtReferences(Tool):
+    """See what a scene's current clip was made from, then the clip: the pictures it was
+    sent, each with its label, the frames of each video piece sent with it, then the clip's
+    frames, 5 a second. A clip made before references were sent shows its starting picture
+    instead, as does a scene where the person talks to camera."""
 
-    name: ClassVar[str] = "look_at_picture"
+    name: ClassVar[str] = "look_at_references"
 
     scene: int
 
     def run(self, call: ToolCall) -> ToolResult:
         _sorted_first()
-        return _picture_of(_scene(self.scene), None)
+        return _references_of(_scene(self.scene), None)
 
 
 class LookAtVersion(Tool):
-    """See an earlier version's starting picture, by its number in the scene's version list."""
+    """See an earlier version as look_at_references shows the current one, by its number in
+    the scene's version list."""
 
     name: ClassVar[str] = "look_at_version"
 
@@ -398,16 +410,31 @@ class LookAtVersion(Tool):
 
     def run(self, call: ToolCall) -> ToolResult:
         _sorted_first()
-        return _picture_of(_scene(self.scene), self.version)
+        return _references_of(_scene(self.scene), self.version)
 
 
-def _picture_of(scene: Scene, number: int | None) -> ToolResult:
+def _references_of(scene: Scene, number: int | None) -> ToolResult:
+    """The version's references and its clip's frames, when its clip carries a sent list;
+    else its starting picture, as before references were sent."""
     version = _version_of(scene, number)
     current = work.versions(scene)[-1].number
-    if version.picture is None:
-        raise Refused(f"scene {scene.number}'s {version.label} has no starting picture.")
-    label = f"Scene {scene.number}, starting picture, {_named(version, current)}"
-    return ToolResult(text=f"{label}.", pictures=[Image(label=label, key=version.picture.file)])
+    clip = version.clip
+    sent = library.sent_list_of(clip) if clip is not None else None
+    if clip is None or sent is None:
+        if version.picture is None:
+            raise Refused(f"scene {scene.number}'s {version.label} has no starting picture.")
+        label = f"Scene {scene.number}, starting picture, {_named(version, current)}"
+        return ToolResult(text=f"{label}.", pictures=[Image(label=label, key=version.picture.file)])
+    named = f"Scene {scene.number}, {_named(version, current)}"
+    return ToolResult(
+        text=f"{named}: what its clip was sent, then the clip. "
+        f"{clip_judge.references_said(sent)} Then the clip's frames, "
+        f"{clip_judge.FRAMES_PER_SECOND} a second, each labelled with its time. {_judged(clip)}",
+        pictures=[
+            *clip_judge.references_shown(sent, named),
+            *_clip_frames(clip, f"Scene {scene.number}, clip of {_named(version, current)}"),
+        ],
+    )
 
 
 class LookAtClip(Tool):
@@ -427,15 +454,18 @@ class LookAtClip(Tool):
         if clip is None:
             raise Refused(f"scene {scene.number}'s {version.label} has no clip.")
         named = f"Scene {scene.number}, clip of {_named(version, work.versions(scene)[-1].number)}"
-        frames = _frames(clip)
         return ToolResult(
             text=f"{named}: {clip_judge.FRAMES_PER_SECOND} frames a second, each labelled with "
             f"its time. {_judged(clip)}",
-            pictures=[
-                Image(label=f"{named}, {clip_judge.frame_label(each['times'])}", key=each["key"])
-                for each in frames
-            ],
+            pictures=_clip_frames(clip, named),
         )
+
+
+def _clip_frames(clip: ProducedItem, named: str) -> list[Image]:
+    return [
+        Image(label=f"{named}, {clip_judge.frame_label(each['times'])}", key=each["key"])
+        for each in _frames(clip)
+    ]
 
 
 def _frames(clip: ProducedItem) -> list[dict[str, Any]]:
@@ -531,7 +561,7 @@ class PhotoUse(BaseModel):
 
     photo: int
     in_picture: bool = Field(
-        description="Whether the thing is in the scene's starting picture now."
+        description="Whether the thing is in the scene's starting picture or references now."
     )
     during_action: bool = Field(description="Whether more of it shows during the scene's action.")
 
@@ -683,7 +713,7 @@ class Decide(Tool):
         """Refuse a scene decided without a look at it, a go-back without a look at its
         version, and a photo's thing only during the action without a look at the clip."""
         # The judge's findings are its words, not a look: it can be wrong (decision 16).
-        looks = (LookAtPicture.name, LookAtVersion.name, LookAtClip.name)
+        looks = (LookAtReferences.name, LookAtVersion.name, LookAtClip.name)
         if not any(_looked_at(round, tool, scene=decided.scene) for tool in looks):
             raise Refused(f"look at scene {decided.scene} first.")
         if decided.go_back_to is not None and not any(
@@ -731,7 +761,7 @@ DECIDER = Agent(
     instructions=INSTRUCTIONS,
     tools=[
         SortMessage,
-        LookAtPicture,
+        LookAtReferences,
         LookAtVersion,
         LookAtClip,
         JudgeFindings,
@@ -899,26 +929,49 @@ def _shown(
 
 
 def _fitted(looks: list[ToolCall]) -> dict[int, list[dict[str, str]]]:
-    """Each look's pictures, with every clip's frames joined side by side, as few to a
-    picture as lets every look fit in MOST_PICTURES: the clip judge's way of fitting frames
-    (`clip_judge.cut_pictures`), so each frame is kept at FRAMES_PER_SECOND (decision 10) and
-    a note about two clips sees both at once."""
-    clips = [look for look in looks if look.tool == LookAtClip.name]
-    others = sum(len(look.pictures) for look in looks if look.tool != LookAtClip.name)
+    """Each look's pictures, with every run of one clip's frames (or one piece's) joined side
+    by side, as few to a picture as lets every look fit in MOST_PICTURES: the clip judge's
+    way of fitting frames (`clip_judge.cut_pictures`), so each frame is kept at
+    FRAMES_PER_SECOND (decision 10) and a note about two clips sees both at once. Any other
+    picture, such as a reference sent with a clip, stays one to a picture."""
+    parts = {look.pk: _runs(look.pictures) for look in looks}
+    runs = [part for each in parts.values() for frames, part in each if frames]
+    others = sum(len(part) for each in parts.values() for frames, part in each if not frames)
     together = 1
-    while together < max((len(clip.pictures) for clip in clips), default=1) and (
-        others + sum(math.ceil(len(clip.pictures) / together) for clip in clips) > MOST_PICTURES
+    while together < max((len(run) for run in runs), default=1) and (
+        others + sum(math.ceil(len(run) / together) for run in runs) > MOST_PICTURES
     ):
         together += 1
     return {
-        look.pk: [
-            _joined_frames(look.pictures[i : i + together])
-            for i in range(0, len(look.pictures), together)
+        pk: [
+            shown
+            for frames, part in each
+            for shown in (
+                [_joined_frames(part[i : i + together]) for i in range(0, len(part), together)]
+                if frames
+                else part
+            )
         ]
-        if look.tool == LookAtClip.name
-        else look.pictures
-        for look in looks
+        for pk, each in parts.items()
     }
+
+
+def _runs(pictures: list[dict[str, str]]) -> list[tuple[bool, list[dict[str, str]]]]:
+    """`pictures` cut into runs in order: each run of frames of one clip or piece, labelled
+    as `LookAtClip` labels them, as (True, frames); every other picture as (False, [it])."""
+    runs: list[tuple[bool, list[dict[str, str]]]] = []
+    of = None
+    for picture in pictures:
+        frame = _FRAME_LABEL.fullmatch(picture["label"])
+        if frame is None:
+            runs.append((False, [picture]))
+            of = None
+        elif of == frame["clip"]:
+            runs[-1][1].append(picture)
+        else:
+            runs.append((True, [picture]))
+            of = frame["clip"]
+    return runs
 
 
 def _opens(data: bytes) -> bool:
@@ -931,7 +984,10 @@ def _opens(data: bytes) -> bool:
 
 
 # A frame's label, as `LookAtClip` gives it: the clip, then the time of each frame in it.
-_FRAME_LABEL = re.compile(r"^(?P<clip>.*), Frames? at (?P<times>.+?)(?:, left to right)?$")
+_FRAME_LABEL = re.compile(
+    r"^(?P<clip>.*), Frames? at (?P<times>\d+(?:\.\d+)? s(?:, \d+(?:\.\d+)? s)*)"
+    r"(?:, left to right)?$"
+)
 
 
 def _joined_frames(frames: list[dict[str, str]]) -> dict[str, str]:
@@ -1040,6 +1096,9 @@ def _scene_facts(scene: Scene) -> str:
 
 
 def _video_prompt(clip: ProducedItem) -> str:
+    sent = library.sent_list_of(clip)
+    if sent is not None:
+        return sent.prompt
     return clip.motion_prompt or (clip.step.motion_prompt if clip.step else "")
 
 

@@ -39,7 +39,7 @@ from gateway.types import (
     ToolSpec,
     ToolUse,
 )
-from jobs import auto_fix, clip_judge, picture_check, reference_photos, scenes, work
+from jobs import auto_fix, clip_judge, library, picture_check, reference_photos, scenes, work
 from jobs.models import AgentFix, AgentFixTry, ProducedItem, ReferencePhoto, Scene, SceneStep
 
 from . import loop
@@ -495,16 +495,20 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
     words and tools in the order they happened."""
     first = fixing.first_clip
     assert first is not None, "the fixing started with try 0"
-    shown = [Shown(label="Try 0, start picture", key=first.picture.file)] if first.picture else []
+    sent, shown = _try_shown("Try 0", first.picture, first)
     happened: list[Happened] = [
         Said(by="user", text=_intro(fixing)),
         ToolUse(
             call_id="try-0",
             tool=LookAtTry.name,
             arguments={"number": 0},
-            result="Try 0: the scene as it failed in the ad. Its start picture, then its "
-            "clip's frames.",
-            pictures=[*shown, *_frames(first, "Try 0, clip")],
+            result="Try 0: the scene as it failed in the ad. "
+            + (
+                f"What its clip was sent, then the clip's frames. {sent}"
+                if sent
+                else "Its start picture, then its clip's frames."
+            ),
+            pictures=[Shown(label=each.label, key=each.key) for each in shown],
         ),
     ]
     said = list(fixing.said)
@@ -699,8 +703,9 @@ class LookAtPresenter(Tool):
 
 
 class LookAtTry(Tool):
-    """See a try again: its start picture, its clip's frames and the judge's words. Try 0 is
-    the scene as it failed in the ad."""
+    """See a try again: what its clip was sent (the pictures with their labels and the video
+    pieces' frames), or its start picture for a clip made from one, then its clip's frames
+    and the judge's words. Try 0 is the scene as it failed in the ad."""
 
     name: ClassVar[str] = "look_at_try"
     number: int
@@ -720,12 +725,32 @@ class LookAtTry(Tool):
             picture, clip = row.picture, row.clip
             ruling = clip.ruling if clip is not None else None
         label = f"Try {self.number}"
-        shown = [Image(label=f"{label}, start picture", key=picture.file)] if picture else []
-        if clip is not None:
-            shown += [
-                Image(label=each.label, key=each.key) for each in _frames(clip, f"{label}, clip")
-            ]
-        return ToolResult(f"{label}. {judge_words(ruling)}", shown)
+        sent, shown = _try_shown(label, picture, clip)
+        said = (
+            f"{label}: what its clip was sent, then the clip's frames. {sent}"
+            if sent
+            else f"{label}."
+        )
+        return ToolResult(f"{said} {judge_words(ruling)}", shown)
+
+
+def _try_shown(
+    label: str, picture: ProducedItem | None, clip: ProducedItem | None
+) -> tuple[str, list[Image]]:
+    """What a look at a try shows, and what code says of what its clip was sent: when its
+    clip carries a sent list (spec #210 point 21), the pictures it was sent with their labels
+    and each piece's frames, then the clip's frames; else its start picture, then the clip's
+    frames, with nothing said."""
+    sent = library.sent_list_of(clip) if clip is not None else None
+    frames = [] if clip is None else _frames(clip, f"{label}, clip")
+    clip_frames = [Image(label=each.label, key=each.key) for each in frames]
+    if sent is not None:
+        return clip_judge.references_said(sent), [
+            *clip_judge.references_shown(sent, label),
+            *clip_frames,
+        ]
+    shown = [Image(label=f"{label}, start picture", key=picture.file)] if picture else []
+    return "", [*shown, *clip_frames]
 
 
 class FilmAgain(Tool):

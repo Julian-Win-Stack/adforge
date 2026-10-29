@@ -11,9 +11,13 @@ from typing import Any
 import pytest
 from pydantic import create_model
 
+from adforge import file_store
 from gateway import catalog
 from jobs import clip_judge, fix_check
 from jobs.clip_judge import SIDES_CHECK, SidesVerdict, judged, still_failing, wording_version
+from jobs.library import SentList
+
+from .sent_lists import FIXTURE, piece
 
 PINNED = Path(__file__).parent / "fixtures"
 
@@ -345,3 +349,20 @@ def test_the_fix_check_settles_the_judges_answers_about_the_owners_change() -> N
     assert fix_check.settle_all([made, NOT_MADE, made]).verdict == "passed"
     assert fix_check.settle_all([None, made, None]).verdict == "unchecked"
     assert fix_check.settle_all([None, made, None]).answers == [made]
+
+
+def test_a_long_piece_is_shown_as_its_frames_thinned_evenly_to_the_most() -> None:
+    frames = clip_judge.piece_frames(file_store.save("piece.mp4", piece(4.0)), most=5)
+
+    # 20 frames at 5 a second (0 to 3.8 s), thinned to 5 spread from the first to the last:
+    # frames 0, 5, 10, 14 and 19.
+    assert [frame["times"] for frame in frames] == [[0.0], [1.0], [2.0], [2.8], [3.8]]
+
+
+def test_a_piece_cut_at_its_videos_end_is_said_so() -> None:
+    raw = json.loads(FIXTURE.read_text())
+    raw["pieces"][1]["trim"] = "video_ended"
+
+    said = clip_judge.references_said(SentList.model_validate(raw))
+
+    assert "of its 3 s to 15 s because the moment ran past its video's end." in said

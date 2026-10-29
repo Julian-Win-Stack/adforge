@@ -424,7 +424,7 @@ def test_a_note_per_photo_planned_together_takes_each_photo_by_its_number(
                 ("sort_message", {"kind": "fix_note"}),
                 ("look_at_owner_photo", {"photo": 1}),
                 ("look_at_owner_photo", {"photo": 2}),
-                ("look_at_picture", {"scene": 2}),
+                ("look_at_references", {"scene": 2}),
                 (
                     "decide",
                     {

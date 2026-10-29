@@ -60,7 +60,7 @@ def _a_fix_said_yes_to(
 ) -> FixPlanScene:
     fake_model.respond(
         "decide_fixes",
-        planning(("look_at_picture", {"scene": 2}), decided(row(2, "fix", GOAL))),
+        planning(("look_at_references", {"scene": 2}), decided(row(2, "fix", GOAL))),
     )
     say("In scene 2 she should lift the mug and put it down.")
     [plan] = plans()
@@ -85,7 +85,7 @@ def test_a_note_is_a_fix_whose_goal_the_agent_films_until_a_try_passes(
 
     fake_model.respond(
         "decide_fixes",
-        planning(("look_at_picture", {"scene": 2}), decided(row(2, "fix", GOAL))),
+        planning(("look_at_references", {"scene": 2}), decided(row(2, "fix", GOAL))),
     )
     say("In scene 2 she should lift the mug and put it down.")
 

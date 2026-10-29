@@ -215,21 +215,44 @@ def broll_prompt_instructions(broll_kind: str) -> str:
 # (route B step 1, #132). The proven rules above come with it, unchanged, but a note naming the
 # movement to film wins over the one-movement rule here only (Julian's grade of the real-clip
 # run, Oct 18: "show the gel going onto the brush first" was dropped).
-CLIP_FROM_NOTE_RULES = """\
+# What a note naming movements may change, said the same way whatever the clip is made from.
+_NOTE_NAMES_A_MOVEMENT = """\
+When the note names a movement to film, such as a step before the one "shows" names, like \
+putting the product on the tool used with it, film every movement the note names, in the \
+order it says: here the note wins over the rules above that say to film one movement only, \
+never to film or draw putting the product on, and to follow a note only for what "shows" \
+describes. Every other rule of this scene's kind still holds, such as nobody touching the \
+product in a scene that shows the problem."""
+
+CLIP_FROM_NOTE_RULES = f"""\
 The scene's starting picture is already made, and it stays as it is: you are shown it, and \
 "picture_prompt" is the prompt it was drawn from. Pick no photo and write no picture prompt. \
 Write only a new video prompt: "motion_prompt" is the one the scene's first clip from this \
 picture was made from, before any note, and "note" says what the shop owner wants changed \
 about how it moves. Change the movement as the note asks, starting from what the picture \
-shows, and keep what was right. When the note names a movement to film, such as a step before \
-the one "shows" names, like putting the product on the tool used with it, film every movement \
-the note names, in the order it says: here the note wins over the rules above that say to film \
-one movement only, never to film or draw putting the product on, and to follow a note only for \
-what "shows" describes. Every other rule of this scene's kind still holds, such as nobody \
-touching the product in a scene that shows the problem. Follow the note unless it asks for \
+shows, and keep what was right. {_NOTE_NAMES_A_MOVEMENT} Follow the note unless it asks for \
 something that can't start from this picture, or something else "shows" doesn't describe, and \
 then say so in the reason. Give a one-sentence reason for the video prompt, written for the \
 shop owner."""
+
+# The same, for a clip made from its references (spec #210 point 21): the pictures it was sent
+# stay, and the writer is shown them with their labels in place of a starting picture.
+CLIP_FROM_REFERENCES_RULES = f"""\
+The scene's clip is made from its references, the pictures the video model was sent for it, \
+and they stay as they are: you are shown them in their order, each with its label. Pick no \
+photo and write no picture prompt. Write only a new video prompt: "motion_prompt" is the \
+prompt the scene's last clip was sent, and "note" says what the shop owner wants changed \
+about how it moves. Change the movement as the note asks, with what the pictures show, and \
+keep what was right. {_NOTE_NAMES_A_MOVEMENT} Follow the note unless it asks for something \
+these pictures can't show, or something else "shows" doesn't describe, and then say so in the \
+reason. Give a one-sentence reason for the video prompt, written for the shop owner."""
+
+
+def clip_from_references_instructions(broll_kind: str) -> str:
+    """What the model writing a B-roll scene's video prompt again from a note is told when the
+    clip it improves on was made from references: the scene's rules, then that only the
+    movement changes."""
+    return f"{broll_prompt_instructions(broll_kind)}\n{CLIP_FROM_REFERENCES_RULES}"
 
 
 def clip_from_note_instructions(broll_kind: str) -> str:
@@ -400,6 +423,23 @@ class ClipFromNoteHandoff(Handoff):
     usage: str
     result: str
     picture_prompt: str
+    motion_prompt: str
+    note: str
+    conversation: list[ChatMessage]
+
+
+class ClipFromReferencesHandoff(Handoff):
+    """What the model writing a B-roll scene's video prompt again from a note is handed when
+    the clip it improves on was made from references: the scene, the prompt that clip was
+    sent, and the note. The pictures it was sent are shown beside it."""
+
+    scene: int
+    line: str
+    shows: str
+    broll_kind: str
+    person_shown: str
+    usage: str
+    result: str
     motion_prompt: str
     note: str
     conversation: list[ChatMessage]
