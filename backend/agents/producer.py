@@ -1520,16 +1520,18 @@ class FixScene(Tool):
             raise Refused(
                 f"scene {scene.number} has no clip yet, so there is nothing to fix: make its clip."
             )
-        note = _owners_note(call, scene, noted)
-        if not note:
-            raise Refused(
-                f"the shop owner has written nothing since scene {scene.number}'s clip was "
-                "shown: fix_scene hands the fixing agent their note about what the clip shows."
-            )
         busy = (
             f"scene {scene.number}'s clip or its fix is already being made. You'll be told when "
             "it ends."
         )
+        if scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING).exists():
+            raise Refused(busy)
+        note = _owners_note(call, scene)
+        if not note:
+            raise Refused(
+                "the shop owner hasn't written anything yet: fix_scene hands the fixing agent "
+                "their note about what the clip shows."
+            )
         _start_step(
             call,
             scene,
@@ -1548,18 +1550,24 @@ class FixScene(Tool):
         )
 
 
-def _owners_note(call: ToolCall, scene: Scene, noted: ProducedItem) -> str:
-    """The shop owner's note on `scene`, word for word: every message they wrote since its
-    clip was shown, the ad was last assembled or the scene's last fix started, until `call`."""
-    since = [noted.created_at]
-    ad = latest(scene.job, ProducedItem.Kind.FINISHED_AD)
-    if ad is not None:
-        since.append(ad.created_at)
-    fixed = scene.steps.exclude(owner_note="").exclude(tool_call=call).order_by("started_at").last()
-    if fixed is not None:
-        since.append(fixed.started_at)
-    written = call.session.messages.filter(
-        role=Message.Role.USER, created_at__gt=max(since), created_at__lte=call.created_at
+def _owners_note(call: ToolCall, scene: Scene) -> str:
+    """The shop owner's latest note, word for word, whatever its age: their newest messages
+    before `call`, every one since the producer last spoke to them before the newest, so an
+    ad assembled, a clip shown or a try swapped in since never loses it. Blank when they
+    wrote nothing."""
+    said = call.session.messages.filter(created_at__lte=call.created_at)
+    newest = said.filter(role=Message.Role.USER).exclude(text="").order_by("seq").last()
+    if newest is None:
+        return ""
+    # The producer's own words: code's messages carrying a clip or the ad have none.
+    answered = (
+        said.filter(role=Message.Role.AGENT, seq__lt=newest.seq)
+        .exclude(text="")
+        .order_by("seq")
+        .last()
+    )
+    written = said.filter(
+        role=Message.Role.USER, seq__gt=answered.seq if answered is not None else 0
     ).order_by("seq")
     return "\n".join(each.text.strip() for each in written if each.text.strip())
 

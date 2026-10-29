@@ -22,6 +22,12 @@ def save_file(name: str, path: Path) -> str:
         return default_storage.save(name, File(given))
 
 
+def save_upload(name: str, upload: File[bytes]) -> str:
+    """Store a file sent to the app, copied in chunks from where it was received (its
+    temporary file for a big one), never whole in memory; as `save`."""
+    return default_storage.save(name, upload)
+
+
 def save_once(name: str, make: Callable[[], bytes], *, whole: Callable[[bytes], bool]) -> str:
     """Store what `make` gives as `name`, unless something `whole` is already kept there: for a
     file whose name says what is in it, so asking for it again finds the one already made. A

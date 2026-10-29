@@ -14,6 +14,7 @@ from django.utils import timezone
 from chat import messages
 from chat.models import Message, Session
 from jobs.models import AgentFix, SceneStep
+from jobs.work import keeps_the_last_try_on_give_up
 
 from . import step_signals
 from .models import SystemNote
@@ -139,8 +140,12 @@ def _what_it_was_for(step: SceneStep) -> str:
     fixing = (
         ", whose fixing agent finishes the try it is filming, then waits for you to carry it "
         f"on with fix_scene for scene {step.scene.number}"
-        if step.fixes_a_note
-        or AgentFix.objects.filter(step=step, finished_at__isnull=True).exists()
+        # Only a fix that keeps its last try parks (an old fix plan's doesn't).
+        if keeps_the_last_try_on_give_up(step)
+        and (
+            step.fixes_a_note
+            or AgentFix.objects.filter(step=step, finished_at__isnull=True).exists()
+        )
         else ""
     )
     return f"{name}, from {called}{because}{fixing}"
