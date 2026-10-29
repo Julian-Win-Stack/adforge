@@ -115,8 +115,14 @@ def test_a_clip_step_that_stops_after_its_first_clip_leaves_its_scene_to_make_ag
         steps.run_next()
         monkeypatch.undo()
 
-    assert SceneStep.objects.filter(kind="clip", scene__number=2).latest("id").status == "failed"
+    failed = SceneStep.objects.filter(kind="clip", scene__number=2).latest("id")
+    assert failed.status == "failed"
     assert Scene.objects.get(number=2).status == Scene.Status.PLANNED
+    # The producer is told its ways on, as a tool's can't (spec #247 point 8).
+    assert (
+        "Its clip (version 1) was made before the step ended, but scene 2 isn't finished with "
+        "it: keep it with keep_try for scene 2, try 0, or make a new one with make_clip."
+    ) in failed.result
 
     # Assembly says plainly scene 2 isn't finished, and its clip can be made again.
     calling(fake_model, say, ("assemble_ad", {}))
@@ -127,6 +133,46 @@ def test_a_clip_step_that_stops_after_its_first_clip_leaves_its_scene_to_make_ag
     assert Scene.objects.get(number=2).status == Scene.Status.FINISHED
     calling(fake_model, say, ("assemble_ad", {}))
     assert ProducedItem.objects.filter(kind="finished_ad").exists(), last_result("assemble_ad")
+
+
+def test_a_clip_kept_before_its_step_ended_can_be_kept_for_nothing(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
+    made_ready(fake_model, steps, say, (1, 2, 3))
+    calling(fake_model, say, *[("make_clip", {"scene": scene}) for scene in (1, 3)])
+    run(fake_model, steps)
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+
+    def broken(*_: object, **__: object) -> None:
+        raise RuntimeError("the fix check broke after the clip was kept")
+
+    monkeypatch.setattr(tasks, "check_fix", broken)
+    fake_model.respond("produce", turn(says="The clip failed."))
+    steps.run_next()
+    monkeypatch.undo()
+    kept = ProducedItem.objects.get(kind="clip", scene__number=2)
+    paid = ModelCall.objects.count()
+
+    calling(fake_model, say, ("keep_try", {"scene": 2, "try_number": 0}))
+
+    assert last_result("keep_try") == (
+        f"Scene 2's clip (version {kept.version}), made before its step ended, is the scene's "
+        "clip now: nothing was made or paid for, and scene 2 is finished."
+    )
+    assert Scene.objects.get(number=2).status == Scene.Status.FINISHED
+    # Only the agents' own turns were paid.
+    assert set(ModelCall.objects.order_by("id")[paid:].values_list("purpose", flat=True)) <= {
+        "produce",
+        "decide_fixes",
+    }
+    calling(fake_model, say, ("assemble_ad", {}))
+    (ad,) = ProducedItem.objects.filter(kind="finished_ad")
+    assert [cut["clip"] for cut in ad.cuts if cut["scene"] == 2] == [kept.pk]
 
 
 # --- The worker-start cleanup survives a try killed mid-judge ------------------------------
@@ -248,6 +294,8 @@ def started_clip_of_scene_2(
 
 
 def test_a_step_whose_worker_was_killed_is_failed_and_its_scene_made_again(
+    api: APIClient,
+    session_id: str,
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
@@ -263,7 +311,18 @@ def test_a_step_whose_worker_was_killed_is_failed_and_its_scene_made_again(
 
     step.refresh_from_db()
     assert step.status == SceneStep.Status.FAILED
-    assert step.result.startswith("Background step failed: scene 2's clip couldn't be made")
+    assert step.result == (
+        "Background step failed: scene 2's clip couldn't be made: Its work stopped partway, and "
+        "it was never heard from again. Start it again with make_clip for scene 2, or skip it: "
+        "remove scene 2 with remove_scene, and the ad is made without it. Tell the shop owner "
+        "what went wrong."
+    )
+    # Said in red in the chat, and the run goes on: the producer took its turn on it.
+    assert any(
+        text == "Scene 2's clip couldn't be made: it was stopped partway." and level == "problem"
+        for _, level, text, _ in step_messages(api, session_id)
+    )
+    assert ToolCall.objects.filter(tool="make_clip").count() == 1
     # The producer was told, and the scene's clip can be made again.
     calling(fake_model, say, ("make_clip", {"scene": 2}))
     assert last_result("make_clip").startswith("Started scene 2's clip")
@@ -530,3 +589,57 @@ def test_a_starting_picture_is_made_with_no_photo_marked_in_the_ads_colour(
     assert asked.handoff["colour_photos"] == []
     assert asked.handoff["product_colour"] == PLAN["plan"]["product_colour"]
     assert [image["label"] for image in asked.images] == ["The portrait", "Photo 1", "Photo 2"]
+
+
+# --- A starting picture that kept failing its check is an answer, never a stop ---------------
+
+
+def test_a_picture_that_kept_failing_its_check_is_an_answer_and_the_run_goes_on(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failing_pictures = PictureKeptFailing(
+        1, [("pictures/1.png", ["The mug floats."]), ("pictures/2.png", ["Two handles."])]
+    )
+
+    def kept_failing(step: SceneStep) -> ProducedItem | None:
+        raise failing_pictures
+
+    monkeypatch.setitem(
+        tasks.STEP_WORK,
+        SceneStep.Kind.STARTING_PICTURE,
+        dataclasses.replace(tasks.STEP_WORK[SceneStep.Kind.STARTING_PICTURE], make=kept_failing),
+    )
+    calling(fake_model, say, ("make_starting_picture", {"scene": 1, "note": None}))
+    # The producer is woken with the answer, and acts on it: no stopped run.
+    fake_model.respond(
+        "produce",
+        turn(calls=[("make_line_audio", {"scene": 1})]),
+        turn(says="Scene 1's picture kept failing; what should change?"),
+    )
+    steps.run_next()
+
+    step = SceneStep.objects.get(kind="starting_picture", scene__number=1)
+    assert step.status == SceneStep.Status.FAILED
+    assert step.result == (
+        "Background step failed: scene 1's starting picture couldn't be made: scene 1's "
+        "starting picture failed its check all 2 times it was drawn. The chat showed the shop "
+        "owner every picture drawn and what the check found in each. Change the picture with "
+        "make_starting_picture and a note saying what to change, or make the scene show the "
+        "product instead with edit_scene. Tell the shop owner what went wrong."
+    )
+    assert last_result("make_line_audio").startswith("Started scene 1's audio")
+    # One red notice, with every picture and what was found in each.
+    red = [
+        message
+        for message in api.get(f"/api/sessions/{session_id}/messages/").json()
+        if message["level"] == "problem" and "starting picture" in message["text"]
+    ]
+    assert len(red) == 1
+    assert "Picture 1: The mug floats.\nPicture 2: Two handles." in red[0]["text"]
+    assert len(red[0]["attachments"]) == 2

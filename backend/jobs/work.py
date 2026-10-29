@@ -2154,7 +2154,7 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
     their face. It is checked before any clip is paid for; one that fails is drawn again from
     prompts written to fix what the check found, at most MOST_REDRAWS times. When the last
     one drawn fails too, the chat is shown each picture and why it failed, and
-    PictureKeptFailing is raised to stop the run. A fix's picture drawn again because the one
+    PictureKeptFailing is raised to fail its step. A fix's picture drawn again because the one
     before it failed its fix check is written as a redo of that one from the start, told
     what the fix check found, and every redo of it after is told that too.
 
@@ -2446,7 +2446,7 @@ def _during_the_clip(step: SceneStep) -> list[ReferencePhoto]:
 
 def say_the_pictures_kept_failing(job: Job, failing: PictureKeptFailing) -> None:
     """Show the chat each starting picture drawn for the scene, and what its check found in
-    it, as the run stops: so a judge too strict, or prompts it can't fix, are seen rather
+    it, as its step fails: so a judge too strict, or prompts it can't fix, are seen rather
     than kept quietly (Julian 2026-10-10 21:48)."""
     scene, failed = failing.scene, failing.failed
     found = "\n".join(
@@ -2456,7 +2456,7 @@ def say_the_pictures_kept_failing(job: Job, failing: PictureKeptFailing) -> None
     post_notice(
         job,
         f"Scene {scene}'s starting picture failed its check all {len(failed)} times it was "
-        "drawn, so I stopped. This is a problem in the app, not with your product. What the "
+        "drawn, so it wasn't made. This is a problem in the app, not with your product. What the "
         f"check found in each picture:\n{found}",
         Message.Level.PROBLEM,
         carrying=[messages.AttachedFile(Attachment.Kind.PICTURE, file) for file, _ in failed],
@@ -4142,6 +4142,67 @@ def use_try(clip: ProducedItem) -> GoneBack:
     what the try was made for again. The tap is their yes. Refuses as `check_try_to_use` does."""
     assert clip.scene is not None, "a try is a scene's clip"
     return go_back(clip.scene, _try_to_use(clip))
+
+
+def kept_before_it_failed(scene: Scene) -> ProducedItem | None:
+    """The clip the scene's newest clip step kept before it failed, as when the worker stopped
+    while the judge looked at it or an error came after (spec #247 point 8): the scene isn't
+    finished with it, but it can be kept rather than made again. None when that step didn't
+    fail, kept no clip, or the fixing agent took it (its tries are picked from instead)."""
+    step = scene.steps.filter(kind=SceneStep.Kind.CLIP).order_by("id").last()
+    if (
+        step is None
+        or step.status != SceneStep.Status.FAILED
+        or AgentFix.objects.filter(step=step).exists()
+    ):
+        return None
+    return step.produced.filter(kind=ProducedItem.Kind.CLIP).order_by("id").first()
+
+
+def keep_the_clip_before_it_failed(clip: ProducedItem) -> None:
+    """Keep the clip a failed clip step made (`kept_before_it_failed`) as the scene's clip: its
+    step counts as finished, so the clip is a version of the scene like any other, and the
+    scene is finished; the chat is shown it. Nothing is made, judged or paid for. Raises
+    SceneBusy while the scene's picture or clip is being made, and NoSuchVersion when the
+    scene changed since the clip was made for it."""
+    from . import stale  # It reads scenes as this module keeps them.
+
+    step = clip.step
+    scene = clip.scene
+    assert step is not None and scene is not None, "a kept clip is a scene step's"
+    with transaction.atomic():
+        Scene.objects.select_for_update().get(pk=scene.pk)
+        if scene.steps.filter(
+            kind__in=[SceneStep.Kind.STARTING_PICTURE, SceneStep.Kind.CLIP],
+            status=SceneStep.Status.RUNNING,
+        ).exists():
+            raise SceneBusy(f"scene {scene.number}'s picture or clip is being made")
+        picture = scene.current_picture()
+        if (
+            stale.is_stale(step)
+            or stale.current_audio(scene) != clip.made_from
+            or (picture is not None and (clip.picture is None or clip.picture.step != picture.step))
+        ):
+            raise NoSuchVersion(
+                f"scene {scene.number} has changed since that clip was made for it, so it no "
+                "longer fits the scene"
+            )
+        SceneStep.objects.filter(pk=step.pk).update(status=SceneStep.Status.FINISHED)
+        Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
+        if scene.job.session is not None:
+            messages.add(
+                scene.job.session,
+                role=Message.Role.AGENT,
+                carrying=[
+                    messages.AttachedFile(
+                        Attachment.Kind.VIDEO,
+                        clip.file,
+                        scene.number,
+                        version_label(clip),
+                        clip=clip,
+                    )
+                ],
+            )
 
 
 def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:

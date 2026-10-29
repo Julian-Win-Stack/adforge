@@ -1119,7 +1119,7 @@ def test_a_fixing_the_worker_stopped_in_is_given_up_and_the_scene_put_back(
     assert work._says_the_line_as_it_stands(Scene.objects.get(number=2), fixing.kept)
 
 
-def test_the_producer_never_takes_a_try_for_a_clip_already_made(
+def test_the_producer_is_handed_back_the_try_kept_for_a_clip_already_made(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
@@ -1138,11 +1138,14 @@ def test_the_producer_never_takes_a_try_for_a_clip_already_made(
 
     calling(fake_model, say, ("make_clip", {"scene": 2}))
 
-    # Try 1 is no clip of the scene's to hand back: the scene, with a clip, changes only
-    # through the shop owner's notes.
+    # Try 1 is the scene's clip, made for it as it stands: it is handed back, and nothing is
+    # filmed or paid for again (spec #247 point 9).
     made = ToolCall.objects.filter(tool="make_clip").latest("id")
-    assert "already made" not in made.result
-    assert made.result.startswith("Refused: scene 2 already has a clip")
+    kept = AgentFix.objects.get().kept
+    assert kept is not None
+    assert made.result.startswith(
+        f"Scene 2's clip (version {kept.version}) is already made for the scene as it stands"
+    )
     assert len(handoffs("make_broll_clip")) == asked
 
 

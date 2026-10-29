@@ -991,7 +991,7 @@ def test_making_the_person_again_hands_back_the_person_and_pays_nothing(
     assert again == (
         "The person was already made and shown to the shop owner, so nothing was made or "
         "paid for again. Making them cost $0.01155. The voice speaks 2.0 words a second, "
-        "measured on the script."
+        "measured on the script. To change them, call remake_person."
     )
     assert paid_for() == [
         "check_page",
