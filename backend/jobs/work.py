@@ -62,6 +62,7 @@ from gateway.types import (
     Image,
     Judgement,
     MusicHandoff,
+    ReferenceVideo,
     UnusableReply,
 )
 
@@ -117,7 +118,7 @@ from .checks import (
     shortened_script_for,
 )
 from .job_locks import one_job_at_a_time as _one_job_at_a_time
-from .library import Drawn, PictureLabel, watch_of
+from .library import Drawn, PictureLabel, SentList, watch_of
 from .models import (
     BROLL_FIELDS,
     PLANNED_FOR_THE_ACTION,
@@ -3944,18 +3945,27 @@ def _judge_clip(step: SceneStep, clip: ProducedItem) -> None:
     )
 
 
-def _make_clip(step: SceneStep, *, remake: int = 0, motion: str = "") -> ProducedItem:
+def _make_clip(
+    step: SceneStep, *, remake: int = 0, motion: str = "", sent: SentList | None = None
+) -> ProducedItem:
     """make_clip's clip, made and kept: its first, or its `remake`th remake, moving as `motion`
-    says."""
+    says; or, given the `sent` list cut-and-send or the fixing agent built, made from what it
+    lists, which the clip keeps."""
     scene = step.scene
     job = scene.job
     picture, audio = step.picture, step.made_from
     assert audio is not None, "a clip step starts with its audio"
-    assert picture is not None or step.picture_step is not None, "and its picture, or its plan"
+    assert picture is not None or step.picture_step is not None or sent is not None, (
+        "and its picture, or its plan, or its sent list"
+    )
     assert audio.seconds is not None, "a line's audio is measured when it's made"
-    if step.note and not step.motion_prompt and not remake:
+    if step.note and not step.motion_prompt and not remake and sent is None:
         _rewrite_motion_prompt(step)
-    handoff = _clip_handoff(step, picture, audio, motion=motion)
+    handoff = (
+        _clip_handoff(step, picture, audio, motion=motion)
+        if sent is None
+        else sent_handoff(step, audio, sent)
+    )
     making, collecting = _clip_purposes(step)
 
     def tell_its_slow() -> None:
@@ -3998,6 +4008,8 @@ def _make_clip(step: SceneStep, *, remake: int = 0, motion: str = "") -> Produce
             motion_prompt=motion,
             change=change_made_for(step),
         )
+        if sent is not None:
+            library.keep_sent_list(clip, sent)
     return clip
 
 
@@ -4532,6 +4544,35 @@ def _clip_handoff(
             ),
         )
     return BrollClipHandoff(starting_picture=picture.file, seconds=seconds, prompt=prompt)
+
+
+def sent_handoff(step: SceneStep, audio: ProducedItem, sent: SentList) -> BrollClipHandoff:
+    """What the video model is asked for when a B-roll clip is made from a sent list: its
+    pictures in order as example pictures, its pieces as reference videos, and its prompt,
+    in the fewest whole seconds that cover the audio. Raises ClipFailed, as _clip_handoff
+    does, for a line longer than the longest B-roll clip."""
+    assert audio.seconds is not None, "a line's audio is measured when it's made"
+    if audio.seconds > MOST_BROLL_SECONDS:
+        raise ClipFailed(
+            f"its line takes {round(audio.seconds, 1):g} seconds to say, and the B-roll video "
+            f"model makes clips of at most {MOST_BROLL_SECONDS} seconds"
+        )
+    videos = {video.position: video.file for video in step.scene.job.videos.all()}
+    return BrollClipHandoff(
+        example_pictures=[picture.file for picture in sent.pictures],
+        reference_videos=[
+            ReferenceVideo(
+                file=piece.file,
+                video=videos[piece.video],
+                start=piece.start,
+                end=piece.end,
+                trim=piece.trim,
+            )
+            for piece in sent.pieces
+        ],
+        seconds=_broll_clip_seconds(audio.seconds),
+        prompt=sent.prompt,
+    )
 
 
 def _broll_clip_seconds(audio_seconds: float) -> int:
