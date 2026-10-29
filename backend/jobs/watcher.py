@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated, Self
 
 from django.conf import settings
+from django.db import transaction
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from adforge import file_store
@@ -38,7 +39,7 @@ from jobs.library import (
 )
 from jobs.models import Job, ProductVideo
 from jobs.notices import post_notice
-from jobs.product_videos import frame_of
+from jobs.product_videos import frame_second, frames_of
 from jobs.threads import closing_its_connection
 from jobs.work import save_video_pictures
 
@@ -49,6 +50,9 @@ PURPOSE = "watch_video"
 MUSIC_ONLY = "music only"
 # An answer the schema refuses is asked for again this many times.
 ASKED_AGAIN = 1
+# The watcher looks at one frame a second and answers in whole seconds, so an end or a look
+# frame up to this far past the video's end is its last second, and is taken as the end.
+PAST_THE_END_SECONDS = 1.0
 
 LONGEST_MOMENT = (
     f"A moment lasts at most {VIDEO_API_MOST_PIECE_SECONDS} seconds, the longest piece of "
@@ -120,14 +124,16 @@ class WatcherAnswer(BaseModel):
 
 
 def _answer_for(seconds: float) -> type[WatcherAnswer]:
-    """The watcher's answer for a video `seconds` long: nothing in it past the video's end."""
+    """The watcher's answer for a video `seconds` long: no moment starting at or past its end,
+    and nothing more than PAST_THE_END_SECONDS past it."""
 
     class WatcherAnswerForThisVideo(WatcherAnswer):
         @model_validator(mode="after")
         def _inside_the_video(self) -> Self:
             ends = [moment.end for moment in self.moments]
             ends += [frame.second for frame in self.look_frames]
-            if any(end > seconds for end in ends):
+            starts_past = any(moment.start >= seconds for moment in self.moments)
+            if starts_past or any(end > seconds + PAST_THE_END_SECONDS for end in ends):
                 raise ValueError(f"the video is {seconds:g} s long; nothing is past its end")
             return self
 
@@ -167,7 +173,7 @@ def watch_videos(job: Job, page_text: str) -> list[str]:
         # however the answers came.
         for video, each in zip(to_watch, asked, strict=True):
             try:
-                answer = each.result()
+                told += _keep(job, video, each.result())
             except Exception as error:
                 # Whatever stops one video's watch, the page is read and the ad planned
                 # without it: never quietly.
@@ -182,8 +188,6 @@ def watch_videos(job: Job, page_text: str) -> list[str]:
                     f"The product's video {video.position} couldn't be watched ({error}), so "
                     "the ad is planned without it."
                 )
-                continue
-            told += _keep(job, video, answer)
     return told
 
 
@@ -224,35 +228,50 @@ def _keep(job: Job, video: ProductVideo, answer: WatcherAnswer) -> list[str]:
             Message.Level.INFO,
         )
         return [f"The product's video {video.position} doesn't show this product: left out."]
-    keep_watch(
-        video,
-        VideoWatch(
-            moments=number_moments(answer.moments),
-            look_frames=[frame.second for frame in answer.look_frames],
-            colour=answer.colour,
-            transcript=answer.transcript,
-        ),
-    )
-    video.transcript = answer.transcript.strip() or MUSIC_ONLY
-    video.save(update_fields=["transcript"])
-    pulled = []
-    for number, frame in enumerate(answer.look_frames, 1):
-        key = file_store.save(
-            f"jobs/{job.pk}/videos/{video.position}-look-{number}.jpg",
-            frame_of(video, frame.second),
+    seconds = float(video.duration or 0)
+    # Every frame is pulled before anything is kept, so a video whose frames can't be pulled
+    # keeps nothing, and is watched again on the next read of the page.
+    pulled_at = [frame_second(video, frame.second) for frame in answer.look_frames]
+    pictures = frames_of(video, pulled_at)
+    with transaction.atomic():
+        pulled = []
+        for number, (frame, second, picture) in enumerate(
+            zip(answer.look_frames, pulled_at, pictures, strict=True), 1
+        ):
+            key = file_store.save(
+                f"jobs/{job.pk}/videos/{video.position}-look-{number}.jpg", picture
+            )
+            label = PictureLabel.model_validate(frame.model_dump(exclude={"second"}))
+            add_to_library(job, key, label, LookFrame(video=video.position, second=second))
+            pulled.append({"key": key, "second": second, "shows": frame.label})
+        # The planner's video pictures, until it reads the library: the same look frames.
+        save_video_pictures(job, video, pulled, pulled)
+        video.transcript = answer.transcript.strip() or MUSIC_ONLY
+        video.save(update_fields=["transcript"])
+        # Last: a video is watched once all it gave is kept.
+        keep_watch(
+            video,
+            VideoWatch(
+                moments=number_moments(
+                    [
+                        moment.model_copy(update={"end": min(moment.end, seconds)})
+                        for moment in answer.moments
+                    ]
+                ),
+                look_frames=pulled_at,
+                colour=answer.colour,
+                transcript=answer.transcript,
+            ),
         )
-        label = PictureLabel.model_validate(frame.model_dump(exclude={"second"}))
-        add_to_library(job, key, label, LookFrame(video=video.position, second=frame.second))
-        pulled.append({"key": key, "second": frame.second, "shows": frame.label})
-    # The planner's video pictures, until it reads the library: the same look frames.
-    save_video_pictures(job, video, pulled, pulled)
     return []
 
 
 def _too_long(job: Job, video: ProductVideo) -> str:
-    """Tell the owner and the producer that `video` is too long to be watched."""
+    """Tell the owner and the producer, once, that `video` is too long to be watched."""
     most = settings.WATCH_VIDEO_MOST_SECONDS
     length = f"{_seconds(video.duration or 0)} long, over the {_seconds(most)}"
+    video.thrown_out = f"It is {length} the app watches."
+    video.save(update_fields=["thrown_out"])
     post_notice(
         job,
         f"Your page's video {video.position} ({video.source_url}) is {length} the app watches, "
