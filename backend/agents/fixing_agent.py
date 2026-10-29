@@ -1059,18 +1059,10 @@ class LookAtTry(Tool):
 
     def run(self, call: ToolCall) -> ToolResult:
         fixing = _fixing_of(call)
-        if self.number == 0:
-            picture, clip, ruling = (
-                fixing.first_clip.picture if fixing.first_clip else None,
-                fixing.first_clip,
-                fixing.ruling,
-            )
-        else:
-            row = fixing.tries.filter(number=self.number).first()
-            if row is None:
-                raise Refused(f"tries so far: 0 to {fixing.tries.count()}.")
-            picture, clip = row.picture, row.clip
-            ruling = clip.ruling if clip is not None else None
+        parts = try_parts(fixing, self.number)
+        if parts is None:
+            raise Refused(f"tries so far: 0 to {fixing.tries.count()}.")
+        picture, clip, ruling = parts
         label = f"Try {self.number}"
         sent, shown = try_shown(label, picture, clip)
         said = (
@@ -1079,6 +1071,20 @@ class LookAtTry(Tool):
             else f"{label}."
         )
         return ToolResult(f"{said} {judge_words(ruling)}", shown)
+
+
+def try_parts(
+    fixing: AgentFix, number: int
+) -> tuple[ProducedItem | None, ProducedItem | None, dict[str, Any] | None] | None:
+    """Try `number` of `fixing` as its start picture, its clip and the judge's ruling on it,
+    or None when it has no such try. Try 0 is the clip it fixes, with the ruling handed over."""
+    if number == 0:
+        first = fixing.first_clip
+        return (first.picture if first else None, first, fixing.ruling)
+    row = fixing.tries.filter(number=number).first()
+    if row is None:
+        return None
+    return row.picture, row.clip, row.clip.ruling if row.clip is not None else None
 
 
 def try_shown(

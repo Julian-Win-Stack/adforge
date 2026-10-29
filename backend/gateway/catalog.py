@@ -135,6 +135,8 @@ SLOW_ANSWER_SECONDS: dict[str, float] = {
     # A whole video, watched with thinking: the watcher test's calls took 31 to 55 s.
     "watch_video": 600,
     "probe_video": 600,
+    # The producer's look is shown as many pictures as the clip judge (agents/look.py).
+    "look": 600,
 }
 
 # How hard a Gemini model thinks before it answers, for a purpose that isn't to think as
