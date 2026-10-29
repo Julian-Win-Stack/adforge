@@ -26,6 +26,7 @@ from gateway.fake import FakeModel
 from gateway.gateway import (
     UnreadableImage,
     VideoNotWatchable,
+    asking_again_once,
     call_model,
     collect_clip,
     speak,
@@ -302,6 +303,101 @@ def test_a_reply_that_cant_be_used_still_records_what_it_cost(
     assert (call.input_tokens, call.output_tokens) == (1_200, 300)
     # gpt-5-mini: 1,200 x $0.25/M in + 300 x $2.00/M out = $0.0003 + $0.0006.
     assert call.cost_usd == Decimal("0.0009")
+
+
+def _checked_page() -> PageCheck:
+    return call_model(
+        job=None,
+        purpose="check_page",
+        instructions="Check the page.",
+        handoff=PageCheckHandoff(
+            product_url="https://shop.example/products/mug",
+            page_url="https://shop.example/products/mug",
+            page_text="Stoneware Mug",
+            photo_count=2,
+        ),
+        output=PageCheck,
+    )
+
+
+def _checked_or_unusable() -> PageCheck | UnusableReply:
+    """The page check, or the UnusableReply it raised."""
+    try:
+        return _checked_page()
+    except UnusableReply as unusable:
+        return unusable
+
+
+def _instructions_sent(httpserver: HTTPServer) -> list[str]:
+    return [
+        request.get_json()["instructions"]
+        for request, _ in httpserver.log
+        if request.path == "/v1/responses"
+    ]
+
+
+# The rule PageCheck's decision keeps, as pydantic says it is broken.
+DECISION_RULE = "Input should be 'readable' or 'unreadable'"
+
+
+def test_a_whole_answer_that_breaks_a_rule_is_asked_again_once_told_why(
+    httpserver: HTTPServer, openai_server: Callable[..., None]
+) -> None:
+    openai_server(openai_answer({**READABLE, "decision": "maybe"}), openai_answer(READABLE))
+
+    with asking_again_once():
+        checked = _checked_or_unusable()
+
+    assert isinstance(checked, PageCheck)
+    assert checked.decision == "readable"
+    first, again = _instructions_sent(httpserver)
+    assert DECISION_RULE not in first
+    assert DECISION_RULE in again
+    # Both answers were paid for, and both are on the record.
+    assert list(ModelCall.objects.order_by("id").values_list("outcome", flat=True)) == [
+        "failed",
+        "succeeded",
+    ]
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        pytest.param(
+            openai_reply({"type": "refusal", "refusal": "I can't help with that."}),
+            id="refused",
+        ),
+        pytest.param(
+            openai_reply(
+                {"type": "output_text", "text": '{"decision": "read', "annotations": []},
+                status="incomplete",
+            ),
+            id="cut off mid-answer",
+        ),
+    ],
+)
+def test_an_answer_that_breaks_no_rule_but_cant_be_used_is_not_asked_again(
+    httpserver: HTTPServer, openai_server: Callable[..., None], reply: dict[str, Any]
+) -> None:
+    # Asked again, the model would answer.
+    openai_server(reply, openai_answer(READABLE))
+
+    with asking_again_once():
+        checked = _checked_or_unusable()
+
+    assert isinstance(checked, UnusableReply)
+    assert len(_instructions_sent(httpserver)) == 1
+
+
+def test_a_whole_answer_that_breaks_a_rule_is_not_asked_again_outside_a_producers_tool_call(
+    httpserver: HTTPServer, openai_server: Callable[..., None]
+) -> None:
+    openai_server(openai_answer({**READABLE, "decision": "maybe"}), openai_answer(READABLE))
+
+    checked = _checked_or_unusable()
+
+    assert isinstance(checked, UnusableReply)
+    assert len(_instructions_sent(httpserver)) == 1
 
 
 def test_a_call_that_fails_still_records_which_photos_it_showed(
