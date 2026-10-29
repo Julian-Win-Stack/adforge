@@ -3411,16 +3411,39 @@ def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
         except Exception:
             # An agent that can't carry on doesn't fail the step: the first clip is kept.
             logger.exception("The fixing agent stopped at scene %s's clip", step.scene.number)
-            return _first_kept(step, first)
+            return _kept_when_stopped(step, first)
         if outcome.passed is None and outcome.gave_up is None:
             # It stopped before, as a step run again finds it.
-            return _first_kept(step, first)
+            return _kept_when_stopped(step, first)
     ended = _ended(step)
     if ended.passed is not None:
         return ended.passed
     newest = _newest_clip(step.scene)
     assert newest is not None, "the step made its clip"
     return newest
+
+
+# Why a fix resumed with the shop owner's answer ended, when an error stopped the agent.
+STOPPED_AFTER_THE_ANSWER = (
+    "The fixing agent stopped on an error after the shop owner's answer, so its last try stays."
+)
+
+
+def _kept_when_stopped(step: SceneStep, first: ProducedItem) -> ProducedItem:
+    """The clip a B-roll clip step keeps once an error stopped the fixing agent: its first
+    clip, unless the fix was resumed with the shop owner's answer. The scene had its last try
+    in the ad while the fix waited for the answer, so it keeps it, as a give-up does, and the
+    shop owner is shown every try."""
+    from jobs import owner_answers  # It imports the watcher, which imports this module.
+
+    if not owner_answers.answered(step):
+        return _first_kept(step, first)
+    AgentFix.objects.filter(
+        step=step, finished_at__isnull=False, passed__isnull=True, gave_up=""
+    ).update(gave_up=STOPPED_AFTER_THE_ANSWER)
+    kept = _ended(step).kept
+    assert kept is not None, "a give-up of a step of its own keeps its last try"
+    return kept
 
 
 def agent_fix(step: SceneStep) -> AgentFix | None:

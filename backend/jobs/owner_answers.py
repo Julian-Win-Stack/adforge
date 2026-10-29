@@ -23,9 +23,9 @@ from chat import messages
 from chat.models import Message
 from gateway.types import Image
 
-from . import library_items, product_videos, watcher
+from . import library_items, product_videos, watcher, work
 from .library import LibraryEntry, LookFrame, ProductOnly, library_of, watch_of
-from .models import Job, OwnerQuestion, ProductVideo, SceneStep
+from .models import Job, OwnerQuestion, ProductVideo, Scene, SceneStep
 from .notices import post_notice
 
 
@@ -45,8 +45,8 @@ def answer(
     step runs again in a worker, which puts the files in the library and resumes the fix with
     the answer; the chat says the scene's fix carries on, which clears the question from the
     scene's card. Gives the step. Raises NotWaiting when the question was answered already
-    or withdrawn, or its fix is carrying on with an answer now; ValueError for an answer with
-    nothing in it."""
+    or withdrawn, its fix is carrying on with an answer now, or the scene has a newer version
+    than the clip the fix left in the ad; ValueError for an answer with nothing in it."""
     words = words.strip()
     if not (words or photos or videos):
         raise ValueError("an answer has words, a photo or a video")
@@ -59,6 +59,11 @@ def answer(
         step = SceneStep.objects.select_for_update().get(agent_fix=found.agent_fix_id)
         if step.status == SceneStep.Status.RUNNING:
             raise NotWaiting("the scene's fix is carrying on with an answer already.")
+        # The fix carries on from the clip it left in the ad: a scene changed since, as by a
+        # plan or a swap, has moved past the question.
+        shown = work.versions(found.scene)
+        if not shown or shown[-1].clip is None or shown[-1].clip.pk != found.agent_fix.kept_id:
+            raise NotWaiting("the scene has a newer version since the question was asked.")
         found.answer = {"words": words, "photos": list(photos), "videos": list(videos)}
         found.save(update_fields=["answer"])
         # Its step runs again: the fix carries on in it, as in any step's work.
@@ -86,6 +91,38 @@ def answer(
         transaction.on_commit(lambda: tasks.run_scene_step.delay(step_id))
     step.refresh_from_db()
     return step
+
+
+def resuming(step: SceneStep) -> bool:
+    """Whether `step` is a clip step run again with the shop owner's answer to its fix's
+    question (`answer`): a worker that stops while it runs leaves it to be run again."""
+    return OwnerQuestion.objects.filter(agent_fix__step=step, answer__isnull=False).exists()
+
+
+def run_again(step: SceneStep) -> None:
+    """Queue `step`, run again with the shop owner's answer and stopped partway, as when the
+    worker restarted, to run again: the fix and the answer carry on from their checkpoints,
+    paying for nothing twice. Its clip from before the answer stays in the ad meanwhile."""
+    SceneStep.objects.filter(pk=step.pk).update(taken_at=None, seen_at=timezone.now())
+    from agents import tasks
+
+    step_id = step.pk
+    transaction.on_commit(lambda: tasks.run_scene_step.delay(step_id))
+
+
+def withdraw(scene: Scene) -> None:
+    """Withdraw the scene's open question, not answered yet, as a change to the scene starts:
+    a newer version moves past it. The chat says so, once."""
+    for question in OwnerQuestion.objects.filter(
+        scene=scene, answered_at__isnull=True, answer__isnull=True
+    ):
+        question.delete()
+        post_notice(
+            scene.job,
+            f"The fixing agent's question about scene {scene.number}'s clip is withdrawn: the "
+            "scene is being changed, so it no longer needs your answer.",
+            Message.Level.INFO,
+        )
 
 
 def answered(step: SceneStep) -> bool:
@@ -126,7 +163,8 @@ def take_the_answer(step: SceneStep) -> None:
                     f"Its product-only version is library item "
                     f"{library_items.library_line(version)}"
                 )
-    said += _videos(job, given["videos"], added)
+    unreadable, from_videos = _videos(job, given["videos"], added)
+    said += from_videos
     text = "\n".join(
         [
             f'The shop owner answered: "{given["words"]}"'
@@ -142,6 +180,13 @@ def take_the_answer(step: SceneStep) -> None:
     from agents.loop import ToolResult
 
     with transaction.atomic():
+        for _ in range(unreadable):
+            post_notice(
+                job,
+                "The video you sent couldn't be read as a video, so nothing from it is in the "
+                "ad's library.",
+                Message.Level.PROBLEM,
+            )
         if added:
             post_notice(
                 job,
@@ -152,26 +197,22 @@ def take_the_answer(step: SceneStep) -> None:
         fixing_agent.answer_question(question, ToolResult(text, pictures))
 
 
-def _videos(job: Job, keys: Sequence[str], added: list[LibraryEntry]) -> list[str]:
-    """Keep and watch the videos the shop owner sent, adding their look frames to `added`.
-    Gives what the agent is told of each."""
+def _videos(job: Job, keys: Sequence[str], added: list[LibraryEntry]) -> tuple[int, list[str]]:
+    """Keep and watch the videos the shop owner sent, and only those, adding their look
+    frames to `added`. Gives how many couldn't be read as videos, for the chat to be told
+    with the answer, and what the agent is told of each."""
     kept: list[ProductVideo] = []
     said: list[str] = []
+    unreadable = 0
     for key in keys:
         video = product_videos.keep_owner_video(job, key)
         if video is None:
-            post_notice(
-                job,
-                "The video you sent couldn't be read as a video, so nothing from it is in the "
-                "ad's library.",
-                Message.Level.PROBLEM,
-            )
+            unreadable += 1
             said.append("Their video couldn't be read, so nothing from it is in the library.")
         else:
             kept.append(video)
     if kept:
-        # Watches every video not watched yet: the owner's, and any page video a read missed.
-        watcher.watch_videos(job, job.page_text)
+        watcher.watch_videos(job, job.page_text, only=kept)
     for video in kept:
         video.refresh_from_db()
         watch = watch_of(video)
@@ -193,7 +234,7 @@ def _videos(job: Job, keys: Sequence[str], added: list[LibraryEntry]) -> list[st
             else ""
         )
         said.append(f"Their video is page video {video.position}, watched: {moments}.{looks}")
-    return said
+    return unreadable, said
 
 
 def _items(items: Sequence[LibraryEntry]) -> str:

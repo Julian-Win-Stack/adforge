@@ -187,10 +187,21 @@ def test_a_video_is_watched_and_its_moments_and_look_frames_reach_the_agent(
     number = len(library_of(job)) + 1
     fake_model.respond("fix_scene", turn(calls=[film_again()]))
 
+    # A page video whose watch failed on the page read isn't watched with the answer.
+    ProductVideo.objects.create(
+        job=job,
+        position=9,
+        kind=ProductVideo.Kind.VIDEO,
+        file=file_store.save("page_video_9.mp4", piece(2.0)),
+        duration=2.0,
+    )
+    watched_before = len(fake_model.videos_watched)
+
     owner_answers.answer(question, words="", videos=[video])
     run(fake_model, steps)
 
     [kept] = ProductVideo.objects.filter(file=video)
+    assert len(fake_model.videos_watched) == watched_before + 1
     [frame] = [each for each in library_of(job) if each.number == number]
     assert frame.source == LookFrame(video=kept.position, second=1.0)
     ask_read = resumed_turn(fake_model)
@@ -202,14 +213,17 @@ def test_a_video_is_watched_and_its_moments_and_look_frames_reach_the_agent(
     assert [picture.key for picture in ask_read.pictures] == [frame.file]
 
 
-def test_a_worker_stopped_while_taking_the_answer_adds_the_photo_once(
+def test_a_worker_restart_while_taking_the_answer_runs_the_step_again_adding_the_photo_once(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    parked(fake_model, steps, say)
+    # The agent asks before filming any try, so the scene's first clip is in the ad.
+    fake_model.respond("check_clip_motion", failing(FLOATS))
+    fake_model.respond("fix_scene", turn(calls=[ask()]))
+    assemble_through_the_chat(fake_model, steps, say)
     job = Job.objects.get()
     question = work.open_question(job.scenes.get(number=2))
     assert question is not None
@@ -226,14 +240,100 @@ def test_a_worker_stopped_while_taking_the_answer_adds_the_photo_once(
     step = owner_answers.answer(question, words=WORDS, photos=[photo])
     with pytest.raises(WorkerStopped):
         steps.run_held()
-    fake_model.respond("fix_scene", turn(calls=[film_again()]))
-    fake_model.respond("produce", turn(says="Done."))
-    tasks.run_scene_step(step.pk)
 
+    tasks.carry_on_after_the_worker_starts()
+
+    # The step is queued to run again, not failed: its scene stays finished, the answer kept.
+    step.refresh_from_db()
+    assert (step.status, steps.held) == ("running", [step.pk])
+    assert job.scenes.get(number=2).status == "finished"
+    question.refresh_from_db()
+    assert question.answer is not None
+    assert not Message.objects.filter(step_scene=2, step_state="not_made").exists()
+
+    fake_model.respond("fix_scene", turn(calls=[film_again()]))
+    run(fake_model, steps)
+
+    fixing = AgentFix.objects.get()
+    assert fixing.passed == fixing.tries.get(number=1).clip
     assert len(library_of(job)) == in_the_library + 1
     assert labelling_calls() == labelled_before + 1
     notices = Message.objects.filter(text__startswith="What you sent is in the ad's picture")
     assert notices.count() == 1
+
+
+def test_an_error_after_the_answer_keeps_the_last_try_in_the_ad(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    ad = parked(fake_model, steps, say)
+    job = Job.objects.get()
+    last_try = AgentFix.objects.get().tries.get(number=1).clip
+    assert last_try is not None
+    question = work.open_question(job.scenes.get(number=2))
+    assert question is not None
+    fake_model.respond("fix_scene", RuntimeError("The agent's model broke."))
+
+    owner_answers.answer(question, words="A quarter turn.")
+    run(fake_model, steps)
+
+    # The ad keeps the last try, never the first clip the judge failed.
+    ads = job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).order_by("version")
+    shown = ads.last()
+    assert shown is not None and shown.pk == ad.pk
+    newest = job.scenes.get(number=2).produced.filter(kind="clip").order_by("id").last()
+    assert newest is not None and newest.file == last_try.file
+    # The shop owner is shown every try, as for a give-up.
+    assert Message.objects.filter(tries_of=AgentFix.objects.get().step).exists()
+
+
+def test_a_change_to_the_scene_withdraws_the_question_and_an_answer_is_refused(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    parked(fake_model, steps, say)
+    job = Job.objects.get()
+    question = work.open_question(job.scenes.get(number=2))
+    assert question is not None
+
+    # The shop owner's note plans a new clip of scene 2, which the judge passes.
+    fixing.fixed(2, "new_clip", change=SLOWER, note=SLOWER)
+    fake_model.respond("rewrite_clip_prompt", rewrite(REMADE))
+    steps.run_held()
+
+    assert work.open_question(job.scenes.get(number=2)) is None
+    assert Message.objects.filter(
+        text__startswith="The fixing agent's question about scene 2's clip is withdrawn"
+    ).exists()
+    with pytest.raises(owner_answers.NotWaiting):
+        owner_answers.answer(question, words="A quarter turn.")
+
+
+def test_an_answer_to_a_question_the_scene_moved_past_is_refused(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parked(fake_model, steps, say)
+    job = Job.objects.get()
+    question = work.open_question(job.scenes.get(number=2))
+    assert question is not None
+    # A change that leaves the question open: the answer is still refused.
+    monkeypatch.setattr(owner_answers, "withdraw", lambda scene: None)
+    fixing.fixed(2, "new_clip", change=SLOWER, note=SLOWER)
+    fake_model.respond("rewrite_clip_prompt", rewrite(REMADE))
+    steps.run_held()
+    assert work.open_question(job.scenes.get(number=2)) is not None
+
+    with pytest.raises(owner_answers.NotWaiting, match="newer version"):
+        owner_answers.answer(question, words="A quarter turn.")
+    assert not steps.held
 
 
 def test_a_second_fix_on_the_scene_after_the_resumed_one_works_as_before(
