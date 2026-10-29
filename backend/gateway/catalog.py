@@ -31,6 +31,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "choose_broll_picture": "gpt-5.6-sol",
     # A B-roll scene's video prompt written again from a note, by the same model that wrote it.
     "rewrite_clip_prompt": "gpt-5.6-sol",
+    # A B-roll clip's first-send prompt (#210 point 16): written by the model that writes
+    # B-roll video prompts today.
+    "write_first_send_prompt": "gpt-5.6-sol",
     "make_starting_picture": "gpt-image-2.5-sunburst",
     # A clean picture of only the thing a shop owner's photo is taken for (Reference photo,
     # CONTEXT.md), drawn as starting pictures are.
