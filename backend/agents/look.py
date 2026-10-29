@@ -1,8 +1,8 @@
 """Looking at what the ad is made of: a scene's versions, its clip's frames and what its clip
 was sent, written and fitted for a model to be shown (fix redesign, decisions 10 and 17; spec
-#210 point 21). The decider's looks were built from these, and the producer's look is (spec
-#247 point 2): a sub-call on the producer's own model that is shown them with the producer's
-question and answers in words only."""
+#210 point 21). The producer's look is built from these (spec #247 point 2): a sub-call on
+the producer's own model that is shown them with the producer's question and answers in words
+only."""
 
 import hashlib
 import io
@@ -183,7 +183,7 @@ def scene_facts(scene: Scene) -> str:
     part = owner_parts.owner_part(scene)
     if part is not None and owner_parts.is_approved(scene):
         facts.append(f"Its owner part, which the shop owner said yes to: {part.what}. {part.looks}")
-    in_use = scene.reference_photos.filter(dropped_by__isnull=True).values_list("thing", flat=True)
+    in_use = scene.photos_in_use().values_list("thing", flat=True)
     if in_use:
         facts.append(f"The shop owner's photos it uses: {', '.join(in_use)}")
     if current is not None:

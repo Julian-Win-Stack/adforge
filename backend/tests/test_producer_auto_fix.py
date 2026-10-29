@@ -6,13 +6,12 @@ model and the judge are faked at the gateway, and the agent by tests/agent_tries
 "Fixing agent", Julian's yes 2026-10-19 16:49: "we will always start with the agent")."""
 
 from collections.abc import Callable
-from decimal import Decimal
 from typing import Any
 
 import pytest
 from django.test import override_settings
 
-from agents import fixing_agent, producer
+from agents import fixing_agent
 from chat.models import Attachment, Message
 from gateway.fake import FakeModel
 from jobs import work
@@ -309,21 +308,6 @@ def test_a_step_run_again_reads_back_how_the_agent_ended_and_never_hands_it_over
 
     assert again == AgentFix.objects.get().passed
     assert agent.handed == []
-
-
-def test_a_clip_is_estimated_up_to_every_try_the_agent_may_film(
-    remade_once: SceneStep,
-) -> None:
-    scene = Scene.objects.get(number=2)
-
-    estimate = producer._clip_estimate(scene, 5.0, from_note=False)
-
-    # A 5-second clip at Boreal's $0.0792 a second is $0.396, and the judge's 3 asks (its
-    # first question, then PRODUCT and MOTION) at the $0.003 recorded are $0.009. Each try:
-    # that clip and judge, no new picture (scene 2 shows the product, so its clips are made
-    # from its sent list, spec #210), and the agent's 3 turns at the $0.07 fallback (none of
-    # its turns is recorded: the agent is faked here).
-    assert estimate == (Decimal("0.405"), Decimal("0.405") + 6 * Decimal("0.615"))
 
 
 # --- Jobs made before the fixing agent: the old auto-fix's remakes -------------------------

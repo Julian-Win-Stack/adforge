@@ -745,8 +745,8 @@ def test_the_fixing_agent_is_told_the_apps_prompt_rules_unchanged() -> None:
     assert all(rules in told for rules in BROLL_KIND_RULES.values())
 
 
-def test_the_fixing_agent_runs_on_the_deciders_model() -> None:
-    assert MODEL_FOR_PURPOSE["fix_scene"] == MODEL_FOR_PURPOSE["decide_fixes"] == "gpt-6.1-sol"
+def test_the_fixing_agent_runs_on_the_picture_judges_model() -> None:
+    assert MODEL_FOR_PURPOSE["fix_scene"] == "gpt-6.1-sol"
 
 
 # The first-send prompt (#210 point 16, decided; Julian's words in the decision record). It

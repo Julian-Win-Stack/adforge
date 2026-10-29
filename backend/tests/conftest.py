@@ -27,15 +27,14 @@ from werkzeug import Request, Response
 from adforge import celery_app, file_store
 from agents import tasks
 from agents.models import ToolCall
-from chat.models import Message, Session
+from chat.models import Session
 from gateway.fake import FakeModel, turn
 from gateway.gateway import use_model
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
-from gateway.types import ModelReply, ModelRequest, Turn, TurnReply, TurnRequest
-from jobs import fix_check
+from gateway.types import ModelReply, ModelRequest, TurnReply, TurnRequest
 from jobs.library import SentList
-from jobs.models import Fix, Job, Scene
+from jobs.models import Job
 
 from . import ffmpeg_replay
 
@@ -78,11 +77,6 @@ PRODUCT_PAGE = """<!doctype html>
 </body>
 </html>
 """
-
-
-def not_a_fix() -> Turn:
-    """The decider's turn sorting the shop owner's newest message as not a fix note."""
-    return turn(calls=[("sort_message", {"kind": "not_a_fix"})])
 
 
 # What the page check answers for the mug's page.
@@ -484,7 +478,6 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("check_starting_picture", lambda _: PICTURE_OK)
     fake.answer_unscripted("check_cut_out", lambda _: CUT_OUT_OK)
     fake.answer_unscripted("check_part_picture", lambda _: PART_PICTURE_OK)
-    fake.answer_unscripted("check_fix", lambda request: with_owner_photo(FIX_MADE, request.output))
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
     # A product video's watcher sees the product and nothing else in it, unless a test says.
     fake.answer_unscripted("watch_video", lambda _: NOTHING_WATCHED)
@@ -494,9 +487,6 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("check_clip_product", lambda _: CLIP_PRODUCT_OK)
     # Each B-roll clip's first-send prompt (#224), when a test doesn't say.
     fake.answer_unscripted("write_first_send_prompt", first_send_written)
-    # Once the ad has a clip, every message goes to the decider first: unless a test scripts
-    # it, it passes each one on to the producer.
-    fake.answer_unscripted("decide_fixes", lambda _: not_a_fix())
     with use_model(fake):
         yield fake
 
@@ -755,10 +745,10 @@ _JUDGE_ORDER = ["check_clip_references", "check_clip_product", *JUDGED_CLIP]
 
 def paid_for() -> list[str]:
     """The purpose of every model call the tools made, oldest first: the agents' own turns,
-    the producer's and the decider's, aside. A clip judge's asks are made all at once, so the
+    the producer's, aside. A clip judge's asks are made all at once, so the
     ones made together are listed as JUDGED_CLIP lists them, whichever answered first."""
     paid = list(
-        ModelCall.objects.exclude(purpose__in=["produce", "decide_fixes"])
+        ModelCall.objects.exclude(purpose="produce")
         .order_by("created_at", "id")
         .values_list("purpose", flat=True)
     )
@@ -1159,14 +1149,6 @@ class WorkerStopped(BaseException):
 
 
 @pytest.fixture
-def no_fix_redraws(monkeypatch: pytest.MonkeyPatch) -> None:
-    """For tests of what happens once the shop owner is asked about a fix's starting picture
-    that failed its fix check: the first failed check asks them, with no redraw before it.
-    The redraws themselves are tested in test_fix_check_redraws.py."""
-    monkeypatch.setattr(fix_check, "MOST_REDRAWS", 0)
-
-
-@pytest.fixture
 def steps(monkeypatch: pytest.MonkeyPatch) -> Iterator[HeldSteps]:
     held = HeldSteps()
     monkeypatch.setattr(tasks.run_scene_step, "delay", held.held.append)
@@ -1194,26 +1176,3 @@ FINISHING_STEP = (
     "or putting it away, never gets a B-roll scene of its own: the voice says it over the main "
     "step's scene, or the person says it to camera."
 )
-
-
-def said_yes_to_a_fix(scene: int, fix: str, redo: Literal["clip", "picture", "line"]) -> Fix:
-    """The shop owner said yes, with their last message, to `fix` as scene `scene`'s fix,
-    recorded by a call no agent gives its model. For tests about a redo made from a Fix
-    rather than about the plan that would confirm it (tests/fixing.py)."""
-    asked = ToolCall.objects.create(
-        session=Session.objects.get(),
-        agent="test",
-        tool="restate_fix",
-        call_id=f"said_yes_{Fix.objects.count()}",
-        arguments={},
-        finished_at=timezone.now(),
-    )
-    return Fix.objects.create(
-        job=Job.objects.get(),
-        scene=Scene.objects.get(number=scene),
-        fix=" ".join(fix.split()),
-        redo=redo,
-        estimate_usd=0,
-        asked=asked,
-        confirmed_by=Message.objects.filter(role="user").last(),
-    )

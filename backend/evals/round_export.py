@@ -15,7 +15,7 @@ What it writes:
   (graded whole); ad-latest.mp4 too when owner notes made newer versions.
 - <ad folder>/ad.json: product link, app commit, when it started and was first finished
   (wall time), abandoned (no finished ad), model calls that failed (refusals, filters).
-- <ad folder>/notes.json: each owner note, its restatement, estimate, yes, and fix check.
+- <ad folder>/notes.json: each owner note handed to the fixing agent, the instruction, and its cost.
 - <ad folder>/tool_calls.json: what the agents did after the ad's first clip (spec #247 point
   17), in call order, in the shape of evals.tool_calls: each tool call of the session made
   after it (the rows agents' own turns are charged to left out) with the agent, tool, `why`,
@@ -115,9 +115,9 @@ def _first_clip_step(scene: Any) -> tuple[Any, list[Any]] | None:
     clips oldest first; a step that failed before making one (and was asked again) is passed."""
     from jobs.models import ProducedItem, SceneStep
 
-    steps = SceneStep.objects.filter(
-        scene=scene, kind=SceneStep.Kind.CLIP, fix__isnull=True
-    ).exclude(tool_call__agent="fixing_agent")
+    steps = SceneStep.objects.filter(scene=scene, kind=SceneStep.Kind.CLIP, owner_note="").exclude(
+        tool_call__agent="fixing_agent"
+    )
     for step in steps.order_by("id"):
         # The fixing agent films each try in a step of its own, charged to the agent's call.
         made = list(
@@ -162,26 +162,26 @@ def _inputs(scene: Any, step: Any) -> str:
 
 
 def _notes(job: Any) -> list[dict[str, Any]]:
-    """Each owner note on the ad: his words, the restatement, the redo and what it cost to
-    estimate, whether he said yes, and the fix check on what it made."""
-    notes = []
-    for fix in job.fixes.select_related("scene").order_by("id"):
-        checks = [
-            {"verdict": check.verdict, "reason": check.reason}
-            for check in fix.checks.order_by("id")
-        ]
-        notes.append(
-            {
-                "scene": fix.scene.number,
-                "notes": fix.notes,
-                "fix": fix.fix,
-                "redo": fix.redo,
-                "estimate_usd": float(fix.estimate_usd),
-                "yes": fix.confirmed_by_id is not None,
-                "fix_checks": checks,
-            }
-        )
-    return notes
+    """Each owner note the producer handed to the fixing agent (fix_scene): his words, the
+    producer's instruction, what its look found, and what the fix cost."""
+    from jobs.models import SceneStep
+
+    steps = (
+        SceneStep.objects.filter(scene__job=job, kind=SceneStep.Kind.CLIP)
+        .exclude(owner_note="")
+        .select_related("scene")
+        .order_by("id")
+    )
+    return [
+        {
+            "scene": step.scene.number,
+            "note": step.owner_note,
+            "fix": step.fix_goal,
+            "look": step.look_words,
+            "cost_usd": float(step.cost_usd()),
+        }
+        for step in steps
+    ]
 
 
 def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, dict[str, Any]]:

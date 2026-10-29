@@ -62,7 +62,7 @@ def say_waits_on_a_question(step: SceneStep) -> None:
 
 def say_not_made(step: SceneStep, why: str) -> None:
     """Tell the chat the step ended with nothing made, if it follows it, and `why` in plain
-    words: a fix plan's step tells the shop owner nothing else (case C12b)."""
+    words (case C12b)."""
     ended = signal(step, Message.StepState.NOT_MADE)
     if ended is None:
         return

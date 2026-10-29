@@ -21,10 +21,10 @@ from agents.snapshot import ad_as_it_stands
 from chat.models import Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from gateway.types import BlockedBySafetyFilter, Said, ToolUse
+from gateway.types import BlockedBySafetyFilter, ToolUse
 from jobs import work
 from jobs.clip_judge import ASKS
-from jobs.models import AgentFix, Fix, ProducedItem, Scene, SceneStep
+from jobs.models import AgentFix, ProducedItem, Scene, SceneStep
 
 from .conftest import (
     CLIP_MOTION_OK,
@@ -35,10 +35,9 @@ from .conftest import (
     motion_answer,
     paid_for,
 )
-from .fixing import fixed as fixed_by_a_plan
 from .sent_lists import holding_the_fixture
 from .test_pick_from_tries import made_ad  # noqa: F401 (a fixture)
-from .test_producer_auto_fix import FLOATS, REMADE, clip_of_scene_2, failing, rewrite
+from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing
 from .test_producer_broll import (
     LINE_2,
     SHOWS,
@@ -48,7 +47,6 @@ from .test_producer_broll import (
     made_ready,
     run,
 )
-from .test_producer_picture_then_clip import ads
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -671,69 +669,6 @@ GOAL = "She stirs the tea."
 STILL_HOVERS = "The hand still hovers beside the mug."
 
 
-def owners_fix(fake_model: FakeModel, step: SceneStep, *calls: Any) -> Outcome:
-    """The agent fixes scene 2 for the owner's note, filming `calls`, one a turn."""
-    first = step.produced.order_by("id").first()
-    step.fix = Fix.objects.create(
-        job=step.scene.job,
-        scene=step.scene,
-        fix=GOAL,
-        redo=Fix.Redo.CLIP,
-        estimate_usd=0,
-        asked=step.tool_call,
-    )
-    step.save(update_fields=["fix"])
-    fake_model.respond("fix_scene", *[turn(calls=[call]) for call in calls])
-    return fix_scene(step, door="owner", failure=Failure(note=NOTE, clip=first), goal=GOAL)
-
-
-def test_an_owners_note_is_given_to_the_agent_with_its_goal(
-    fake_model: FakeModel, failed_clip: SceneStep
-) -> None:
-    owners_fix(fake_model, failed_clip, film_again())
-    [first, *_] = [each for each in fake_model.turns_taken if each.purpose == "fix_scene"]
-    said = first.handoff.conversation[0]
-    assert isinstance(said, Said)
-    intro = said.text
-    assert f'sent this note about scene 2: "{NOTE}"' in intro
-    assert f"What must be different, in the owner's words: {GOAL}" in intro
-
-
-def test_a_try_for_an_owners_note_is_judged_beside_the_clip_they_noted(
-    fake_model: FakeModel, failed_clip: SceneStep
-) -> None:
-    noted = failed_clip.produced.order_by("id").first()
-    outcome = owners_fix(fake_model, failed_clip, film_again(), film_again())
-    assert outcome.tries[0].ruling["compared_with"] == noted.pk  # type: ignore[index, union-attr]
-    assert outcome.tries[0].fix_check == {"verdict": "passed", "reason": ""}
-    assert outcome.passed == outcome.tries[0].clip
-
-
-def test_a_try_whose_owners_change_isnt_made_fails_though_the_judge_passes_it(
-    fake_model: FakeModel, failed_clip: SceneStep
-) -> None:
-    not_made = {
-        "old_shows": "The hand hovers.",
-        "new_shows": "The hand hovers.",
-        "verdict": "not fixed",
-        "still_wrong": STILL_HOVERS,
-    }
-    fake_model.answer_unscripted(
-        "check_clip_motion", motion_answer(CLIP_MOTION_OK, owner_change=not_made)
-    )
-    outcome = owners_fix(
-        fake_model,
-        failed_clip,
-        film_again(),
-        ("give_up", {"reason": "The stir never shows."}),
-    )
-    [made] = outcome.tries
-    assert made.ruling["verdict"] == "pass"  # type: ignore[index]
-    assert made.fix_check is not None and made.fix_check["verdict"] == "failed"
-    assert outcome.passed is None and outcome.gave_up == "The stir never shows."
-    assert f"Whether the owner's change is made: no. {STILL_HOVERS}" in told()[0]
-
-
 # --- Door 1 through the chat, the real agent on scripted turns ------------------------------
 
 
@@ -792,85 +727,6 @@ def failing_first(clips: int) -> Callable[[Any], dict[str, Any]]:
         return motion_answer(next(failed, CLIP_MOTION_OK))(request)
 
     return answering
-
-
-def test_an_old_plans_new_clip_the_agent_fixes_with_a_new_line_lands(
-    made_ad: ProducedItem,  # noqa: F811
-    fake_model: FakeModel,
-    steps: HeldSteps,
-) -> None:
-    plan = fixed_by_a_plan(2, "new_clip", change=SLOWER, note=SLOWER)
-    fake_model.respond("rewrite_clip_prompt", rewrite(REMADE))
-    fake_model.answer_unscripted("check_clip_motion", failing_first(1))
-    fake_model.respond("fact_check", facts_ok(2))
-    fake_model.respond(
-        "fix_scene", turn(calls=[film_again(line=NEW_LINE, shows=STIRS, video_prompt=STIRS)])
-    )
-
-    steps.run_held()
-
-    fixing = AgentFix.objects.get()
-    passed = fixing.passed
-    assert passed is not None and scene_row()[0] == NEW_LINE
-    # The shop owner's note goes with it, and the judge compares the try with the clip they
-    # noted.
-    assert (SLOWER in fixing.note, fixing.goal) == (True, SLOWER)
-    noted = fixing.step.shown_before(ProducedItem.Kind.CLIP)
-    assert noted is not None and (passed.ruling or {}).get("compared_with") == noted.pk
-    row = plan.scenes.get()
-    assert (row.landed_at is not None, row.error) == (True, "")
-    assert [cut["clip"] for cut in ads()[-1].cuts if cut["scene"] == 2] == [passed.pk]
-
-
-def test_an_agent_fixing_an_old_plans_new_clip_is_told_giving_up_keeps_the_scenes_clip(
-    made_ad: ProducedItem,  # noqa: F811
-    fake_model: FakeModel,
-    steps: HeldSteps,
-) -> None:
-    fixed_by_a_plan(2, "new_clip", change=SLOWER, note=SLOWER)
-    fake_model.respond("rewrite_clip_prompt", rewrite(REMADE))
-    fake_model.answer_unscripted("check_clip_motion", failing_first(50))
-    fake_model.respond("fact_check", facts_ok(2))
-    fake_model.respond(
-        "fix_scene",
-        turn(calls=[film_again()]),
-        turn(calls=[("give_up", {"reason": "The pour never slows."})]),
-    )
-
-    steps.run_held()
-
-    # Door 1 took it, but a fix's scene keeps its clip from before, so that's what it's told.
-    fixing = AgentFix.objects.get()
-    assert (fixing.door, fixing.said_to_camera) == (AgentFix.Door.JUDGE, False)
-    [turn_1, *_] = [each for each in fake_model.turns_taken if each.purpose == "fix_scene"]
-    assert fixing_agent.GAVE_UP[AgentFix.Door.OWNER] in turn_1.instructions
-    assert told()[-1].startswith(fixing_agent.GIVEN_UP[AgentFix.Door.OWNER])
-
-
-def test_an_agent_fixing_an_owners_note_is_told_giving_up_keeps_the_scenes_clip(
-    fake_model: FakeModel, failed_clip: SceneStep
-) -> None:
-    not_made = {
-        "old_shows": "The hand hovers.",
-        "new_shows": "The hand hovers.",
-        "verdict": "not fixed",
-        "still_wrong": STILL_HOVERS,
-    }
-    fake_model.answer_unscripted(
-        "check_clip_motion", motion_answer(CLIP_MOTION_OK, owner_change=not_made)
-    )
-    owners_fix(
-        fake_model,
-        failed_clip,
-        film_again(),
-        ("give_up", {"reason": "The stir never shows."}),
-    )
-    [turn_1, *_] = [each for each in fake_model.turns_taken if each.purpose == "fix_scene"]
-    assert fixing_agent.GAVE_UP[AgentFix.Door.OWNER] in turn_1.instructions
-    assert "said to camera" not in turn_1.instructions.split("The app's own prompt rules")[0]
-    said = [tool.description for tool in turn_1.tools if tool.name == "give_up"]
-    assert said == [fixing_agent.GIVE_UP_FOR_A_NOTE]
-    assert told()[-1].startswith(fixing_agent.GIVEN_UP[AgentFix.Door.OWNER])
 
 
 # --- When the agent stops ------------------------------------------------------------------
@@ -1202,15 +1058,15 @@ def test_a_move_the_safety_filter_blocks_is_answered_as_a_cant_and_the_fix_carri
     fake_model: FakeModel, failed_clip: SceneStep, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The loop answers every agent's tool the same (spec #247 point 6): a move the safety
-    # filter blocks is a can't the agent reads, never the end of the fix. The decider's tools
-    # are settled by the same loop.
+    # filter blocks is a can't the agent reads, never the end of the fix.
     def blocked(*_: object) -> list[ProducedItem]:
         raise BlockedBySafetyFilter("Image processing blocked due to content policy")
 
     monkeypatch.setattr(work, "edit_scene_place", blocked)
     place = ("place_edit", {"picture": "room", "edit": "Clear the shelf.", "new_place": None})
 
-    outcome = owners_fix(fake_model, failed_clip, place, film_again())
+    fake_model.respond("fix_scene", turn(calls=[place]), turn(calls=[film_again()]))
+    outcome = fixed(failed_clip)
 
     assert told()[0].startswith("Failed: the AI service's safety filter refused what it was sent")
     assert [each.number for each in outcome.tries] == [1]
