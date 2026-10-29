@@ -31,7 +31,7 @@ from jobs.models import (
 )
 
 from .agent_tries import agent_films
-from .conftest import MUG_SIDE, HeldSteps, producer_turns
+from .conftest import CLIP_FIXED, MUG_SIDE, HeldSteps, handoffs, producer_turns
 from .fixing import fixed, owner_photo, plan_row, planned
 from .test_fix_check import HANDLE_HIDDEN, not_made
 from .test_fix_loop import TURN_REWRITE
@@ -662,27 +662,25 @@ def how_it_moves(clip: ProducedItem) -> str:
     return str(clip.sent["prompt"]).splitlines()[-1]
 
 
-def test_a_new_picture_keeps_the_movement_of_the_clip_it_replaces(
+def test_a_new_picture_of_a_broll_scene_is_its_clip_written_again_from_the_note(
     fake_model: FakeModel,
     held: HeldSteps,
     say: Callable[..., None],
     api: APIClient,
     session_id: str,
 ) -> None:
-    # The live ad's fix 1: a picture note gave the clip a newly chosen action the shop owner
-    # never asked for. Only a new clip chooses a new movement (design thread, 05:15 Oct 17).
-    # A plan stored before the fixing agent: a new picture of a B-roll scene.
-    moved = how_it_moves(clip(2))
+    # A B-roll scene has no starting picture (spec #210 point 19), so a new picture of it is
+    # its clip written again from the note, which keeps what was right (#242). A plan stored
+    # before the fixing agent: a new picture of a B-roll scene.
     table = plan_row(2, "new_picture", change="The mug is on a wooden table.")
     tap_yes(api, session_id, stored(table, note="In scene 2 put the mug on a wooden table."))
-    fake_model.respond("choose_broll_picture", {**BROLL_CHOICE, "motion_prompt": LIFT})
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
 
     held.run_held()
 
     assert status(2) == "finished"
-    asked = fake_model.broll_clips_asked[-1]["prompt"]
-    assert moved in asked
-    assert LIFT not in asked
+    assert fake_model.broll_clips_asked[-1]["prompt"].endswith(TURN_REWRITE["motion_prompt"])
+    assert handoffs("make_broll_clip")[-1]["starting_picture"] is None
 
 
 def test_a_movement_note_with_a_photo_of_a_thing_in_the_picture_moves_as_the_note_says(
@@ -794,34 +792,22 @@ def test_a_yes_that_fails_to_run_is_said_so_in_red_and_later_messages_route(
 def _a_picture_note_on_scene_2_said_yes_to(
     fake_model: FakeModel, say: Callable[..., None], api: APIClient, session_id: str
 ) -> None:
-    # A plan stored before the fixing agent: a new picture of a B-roll scene.
+    # A plan stored before the fixing agent: a new picture of a B-roll scene, which has no
+    # starting picture, so its clip is made again from the note (spec #210 point 19, #242).
     table = plan_row(2, "new_picture", change="The mug is on a wooden table.")
     tap_yes(api, session_id, stored(table, note="In scene 2 put the mug on a wooden table."))
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
 
 
-def test_a_new_picture_keeps_the_movement_of_the_agents_try_the_judge_passed(
-    fake_model: FakeModel,
-    held: HeldSteps,
-    say: Callable[..., None],
-    api: APIClient,
-    session_id: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # The first fix's clip fails, and the fixing agent's first try passes: the next new
-    # picture moves as that try does.
-    _a_picture_note_on_scene_2_said_yes_to(fake_model, say, api, session_id)
-    fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 3)
-    agent_films(monkeypatch, REMADE)
-    held.run_held()
-    counter = plan_row(2, "new_picture", change="The mug is on a marble counter.")
-    tap_yes(api, session_id, stored(counter, note="In scene 2 put the mug on a marble counter."))
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+def failing_the_change(problem: str) -> dict[str, Any]:
+    """MOTION's answer on a fix's clip when it sees `problem`: the clip is fix checked for the
+    owner's change too, as a B-roll new picture is a new clip (#242)."""
+    return {**failing(problem), "owner_change": CLIP_FIXED}
 
-    held.run_held()
 
-    assert status(2) == "finished"
-    assert REMADE in fake_model.broll_clips_asked[-1]["prompt"]
+# "A new picture keeps the movement of the agent's try the judge passed" is deleted: a B-roll
+# new picture is a new clip written again from its note (spec #210 point 19, #242), so which
+# clip's prompt that rewrite starts from is the note clip's (jobs.work._sent_to_improve).
 
 
 def test_a_fix_clip_the_judge_couldnt_check_is_kept_and_the_chat_says_so(
@@ -840,7 +826,10 @@ def test_a_fix_clip_the_judge_couldnt_check_is_kept_and_the_chat_says_so(
 
     assert status(2) == "finished"
     told = [each.text for each in Message.objects.filter(role="notice", level="info")]
-    assert "Scene 2's new clip couldn't be checked, so it is kept unchecked." in told
+    # A B-roll new picture is a new clip, fix checked for the change (#242).
+    assert "Scene 2's new clip couldn't be checked for your change, so it is kept unchecked." in (
+        told
+    )
 
 
 def test_a_fix_clip_the_agent_gave_up_on_shows_its_tries_not_the_producer(
@@ -852,7 +841,7 @@ def test_a_fix_clip_the_agent_gave_up_on_shows_its_tries_not_the_producer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _a_picture_note_on_scene_2_said_yes_to(fake_model, say, api, session_id)
-    fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 9)
+    fake_model.respond("check_clip_motion", *[failing_the_change(FLOATS)] * 9)
     agent_films(monkeypatch, REMADE, REMADE_AGAIN)
 
     held.run_held()

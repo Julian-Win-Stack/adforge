@@ -244,8 +244,9 @@ def problems() -> list[str]:
 
 
 def brighter(fake_model: FakeModel, steps: HeldSteps) -> None:
-    """A later fix of scene 2's starting picture, with no photo, said yes to and made."""
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    """A later new picture of scene 2, with no photo, said yes to and made: a new clip, as the
+    scene shows the product and has no starting picture (spec #210 point 19, #242)."""
+    fake_model.respond("rewrite_clip_prompt", REWRITE)
     fixing.fixed(2, "new_picture", note="Make it brighter.", change=BRIGHTER)
     steps.run_held()
 
@@ -352,27 +353,29 @@ def test_a_note_per_photo_planned_together_takes_each_photo_by_its_number(
     assert files == [owner_file(1), owner_file(2)]
 
 
-# --- A new starting picture with the photo -----------------------------------------------------
+# --- A new picture with the photo: a new clip sent it (spec #210 point 19, #242) ---------------
 
 
 @pytest.fixture
 def mug_fixed(fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say) -> Fix:
-    """Scene 2 drawn again with the shop owner's black mug, and its clip made from it by
-    code."""
+    """Scene 2's new picture with the shop owner's black mug: the scene shows the product, so
+    its clip is made again from the note, sent the clean picture of the mug."""
     photos_sent(fake_model, say, OWNER_MUG)
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    fake_model.respond("rewrite_clip_prompt", REWRITE)
     fixing.fixed(2, "new_picture", note=MUG_NOTE, change=MUG_FIX, photos=[photo(1, "black mug")])
     steps.run_held()
     return Fix.objects.get()
 
 
-def test_the_writer_of_the_prompts_is_told_the_shop_owners_pictures_win(
-    instructed: dict[str, list[str]],  # noqa: F811 (the fixture)
+def test_a_new_picture_with_the_shop_owners_photo_sends_its_clean_picture_with_the_clip(
     mug_fixed: Fix,
 ) -> None:
-    assert instructed["choose_broll_picture"][-1].endswith(
-        reference_photos.writer_rules(["black mug"], [], picks_photo=True)
-    )
+    (clean,) = clean_pictures()
+    sent = handoffs("make_broll_clip")[-1]
+    assert sent["starting_picture"] is None
+    assert clean in sent["example_pictures"] and owner_file(1) not in sent["example_pictures"]
+    assert not ProducedItem.objects.filter(kind="starting_picture", scene__number=2).exists()
+    assert mug_fixed.redo == "clip"
 
 
 def test_a_shop_owners_photo_the_clean_pictures_check_refuses_is_named_as_theirs(
@@ -388,11 +391,11 @@ def test_a_shop_owners_photo_the_clean_pictures_check_refuses_is_named_as_theirs
 
     fake_model.answer_unscripted("check_cut_out", refusing)
     photos_sent(fake_model, say, OWNER_MUG)
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    fake_model.respond("rewrite_clip_prompt", REWRITE)
     fixing.fixed(2, "new_picture", note=MUG_NOTE, change=MUG_FIX, photos=[photo(1, "black mug")])
     steps.run_held()
 
-    assert last_step("starting_picture").status == "finished"
+    assert last_step("clip").status == "finished"
     (said,) = [text for text in problems() if "safety filter" in text]
     assert said == (
         "The AI model's safety filter refused to look at the shop owner's photo of their "
@@ -409,7 +412,6 @@ def test_the_photo_is_kept_on_the_scene_once_the_shop_owner_says_yes(mug_fixed: 
         mug_fixed,
     )
     assert row.drawn == clean_pictures()[0]
-    assert list(last_step("starting_picture").reference_photos.all()) == [row]
     assert list(last_step("clip").reference_photos.all()) == [row]
 
 
@@ -584,10 +586,8 @@ def test_a_later_fix_on_the_scene_draws_it_with_the_photo_again_without_drawing_
     brighter(fake_model, steps)
 
     assert len(clean_pictures()) == 1
-    assert handoffs("make_starting_picture")[-1]["pictures"][0] == clean_pictures()[0]
+    assert clean_pictures()[0] in handoffs("make_broll_clip")[-1]["example_pictures"]
     assert in_use() == [("black mug", "picture")]
-    # The check of that fix has no photo of its own: it is asked as any.
-    assert "owner_photos" not in handoffs("check_fix")[-1]
 
 
 # --- Going back, a new photo of the same thing ---------------------------------------------------
@@ -613,7 +613,7 @@ def test_a_new_photo_of_the_same_thing_replaces_the_old_one(
 ) -> None:
     photos_sent(fake_model, say, ("other-mug.png", picture(60, 80, (5, 5, 40))))
     fix = "In scene 2, the mug looks like the shop owner's new photo of their black mug."
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    fake_model.respond("rewrite_clip_prompt", REWRITE)
 
     fixing.fixed(2, "new_picture", change=fix, photos=[photo(2, "the Black mug")])
     steps.run_held()
@@ -622,7 +622,8 @@ def test_a_new_photo_of_the_same_thing_replaces_the_old_one(
     old, new = rows
     assert old.dropped_by == new.added_by
     assert (new.file, new.dropped_by) == (owner_file(2), None)
-    assert handoffs("make_starting_picture")[-1]["pictures"][0] == clean_pictures()[-1]
+    sent = handoffs("make_broll_clip")[-1]["example_pictures"]
+    assert clean_pictures()[-1] in sent and clean_pictures()[0] not in sent
 
 
 def test_a_new_photo_of_a_thing_another_scene_uses_is_taken_only_by_the_scene_planned(
@@ -650,7 +651,7 @@ def test_a_new_photo_of_a_thing_another_scene_uses_is_taken_only_by_the_scene_pl
 def test_the_same_photo_named_in_other_capitals_is_already_in_use_and_makes_nothing(
     fake_model: FakeModel, mug_fixed: Fix, steps: HeldSteps
 ) -> None:
-    made = latest("starting_picture")
+    made = latest("clip")
     paid = paid_for()
 
     plan = fixing.fixed(
@@ -662,7 +663,7 @@ def test_the_same_photo_named_in_other_capitals_is_already_in_use_and_makes_noth
         "Scene 2 already uses owner photo 1 for the Black Mug, so nothing would change."
     )
     assert paid_for() == paid
-    assert latest("starting_picture") == made
+    assert latest("clip") == made
 
 
 # --- A photo that can't be drawn clean (D8) -----------------------------------------------------
@@ -679,15 +680,16 @@ def test_a_clean_picture_that_keeps_failing_its_check_asks_for_another_photo(
     fixing.fixed(2, "new_picture", change=MUG_FIX, photos=[photo(1, "black mug")])
     steps.run_held()
 
-    step = last_step("starting_picture")
+    step = last_step("clip")
     assert step.status == "failed"
     assert len(clean_pictures()) == 3
-    assert not handoffs("choose_broll_picture")[3:]
+    # Scenes 2 and 3's first clips only: none was asked for the fix.
+    assert len(handoffs("make_broll_clip")) == 2
     assert "Ask them for another photo of the black mug" in step.result
     assert any("Ask them for another photo of the black mug" in told for told in errors())
     assert latest("clip").file == old.file
     assert (
-        "Scene 2's starting picture couldn't be made: your black mug couldn't be drawn from "
+        "Scene 2's clip couldn't be made: your black mug couldn't be drawn from "
         "your photo. Please send another photo of it."
     ) in problems()
     assert Scene.objects.get(number=2).status == "finished"
@@ -709,13 +711,13 @@ def test_a_photo_the_picture_model_refuses_asks_for_another_photo(
     fixing.fixed(2, "new_picture", change=MUG_FIX, photos=[photo(1, "black mug")])
     steps.run_held()
 
-    step = last_step("starting_picture")
+    step = last_step("clip")
     assert step.status == "failed"
     assert "the picture model refused to draw the black mug" in step.result
     assert "Ask them for another photo of the black mug" in step.result
     assert any("the picture model refused to draw the black mug" in told for told in errors())
     assert (
-        "Scene 2's starting picture couldn't be made: your black mug couldn't be drawn from "
+        "Scene 2's clip couldn't be made: your black mug couldn't be drawn from "
         "your photo. Please send another photo of it."
     ) in problems()
 
