@@ -16,6 +16,7 @@ from rest_framework.test import APIClient
 
 from agents import fixing_agent, tasks
 from agents.models import ToolCall
+from chat.models import Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import UnusableReply
@@ -30,6 +31,7 @@ from jobs.models import (
     Scene,
     SceneStep,
 )
+from jobs.notices import post_notice
 from jobs.planning import producer_decision_for
 from jobs.product_videos import save_videos
 
@@ -789,3 +791,30 @@ def test_a_scene_step_a_producer_tool_runs_at_once_never_asks_its_models_again(
     assert len(judged) == 2
     first, again = judged
     assert again.instructions == first.instructions
+
+
+def test_a_paid_answer_rejected_twice_again_is_said_in_red_once_until_something_else_is(
+    api: APIClient,
+    session_id: str,
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    page_read: str,
+) -> None:
+    names_no_photo = {**PLAN, "plan": {**PLAN["plan"], "colour_photos": [9]}}
+    fake_model.respond("plan_ad", *[names_no_photo] * 4)
+    red_before = len(red_in_the_chat(api, session_id))
+
+    producer.told("Plan it", ("plan_ad", {}), ("plan_ad", {}), "The planner keeps failing.")
+
+    # The same line twice in a row is said once.
+    reds = red_in_the_chat(api, session_id)[red_before:]
+    assert len(reds) == 1
+    # Once something else was said in red, it is said again.
+    post_notice(Job.objects.get(), "Something else failed.", Message.Level.PROBLEM)
+    fake_model.respond("plan_ad", names_no_photo, names_no_photo)
+    producer.told("Try again", ("plan_ad", {}), "It failed again.")
+    assert red_in_the_chat(api, session_id)[red_before:] == [
+        reds[0],
+        "Something else failed.",
+        reds[0],
+    ]

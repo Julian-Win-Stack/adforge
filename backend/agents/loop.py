@@ -635,7 +635,8 @@ def _say_it_broke_a_rule_twice(call: ToolCall, broke: AnswerBrokeItsRules) -> No
     logger.warning("Session %s: %s (%s: %s)", call.session_id, BROKE_A_RULE_TWICE, call.tool, broke)
     # A model's answer is only had for an ad's work, so the session has its job.
     job = call.session.jobs.first()
-    if job is not None:
+    # Said once while nothing else has been said in red since: the agent may call again.
+    if job is not None and not (job.warnings and job.warnings[-1]["text"] == BROKE_A_RULE_TWICE):
         post_notice(job, BROKE_A_RULE_TWICE, Message.Level.PROBLEM)
 
 
