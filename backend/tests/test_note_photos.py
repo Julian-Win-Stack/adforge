@@ -13,7 +13,7 @@ from rest_framework.test import APIClient
 from agents.models import SystemNote
 from chat.models import Attachment
 from gateway.fake import FakeModel, meanwhile, turn
-from jobs.library import library_of
+from jobs.library import PictureLabel, Recoloured, add_to_library, library_of
 from jobs.models import Job
 
 from .conftest import (
@@ -139,7 +139,7 @@ def test_a_reply_leaving_the_photo_unused_is_held_until_it_is_in_the_scene(
     assert reminder == (
         "Owner photo 1, sent with the Scene 2 note, isn't in scene 2's references yet. Put it "
         "there (add_to_library, then set_references), or ask the shop owner about it with "
-        "ask_owner. Your turn can't end before."
+        "ask_owner, naming it in the question's photos. Your turn can't end before."
     )
     assert f"From the app, not the shop owner: {reminder}" in str(
         given_to_the_producer(producer_turns() - 2)
@@ -150,9 +150,7 @@ def test_a_reply_leaving_the_photo_unused_is_held_until_it_is_in_the_scene(
         ("agent", "Scene 2 uses your photo now."),
     ]
     # No red notice: it was used.
-    assert [said for said in watched.owner_saw() if said[0] == "notice"][-1:] != [
-        ("notice", UNUSED)
-    ]
+    assert ("notice", UNUSED) not in watched.owner_saw()
 
 
 def test_a_photo_put_in_another_scene_is_held_and_asking_the_owner_ends_the_turn(
@@ -167,7 +165,14 @@ def test_a_photo_put_in_another_scene_is_held_and_asking_the_owner_ends_the_turn
     fake_model.respond(
         "produce",
         *scripted_turns(*filed(1, scene=2), reply="Done."),
-        turn(calls=[("ask_owner", {"question": "Scene 1 is you talking: where should it go?"})]),
+        turn(
+            calls=[
+                (
+                    "ask_owner",
+                    {"question": "Scene 1 is you talking: where should it go?", "photos": [1]},
+                )
+            ]
+        ),
     )
 
     sending_notes(api, session_id, "Scene 1: hold the mug like this", [1])
@@ -194,7 +199,14 @@ def test_two_photos_each_with_its_own_scene_are_held_until_both_are_used(
     fake_model.respond(
         "produce",
         *scripted_turns(*filed(2, scene=2), reply="Scene 2 uses your photo."),
-        turn(calls=[("ask_owner", {"question": "What should scene 1 take from your photo?"})]),
+        turn(
+            calls=[
+                (
+                    "ask_owner",
+                    {"question": "What should scene 1 take from your photo?", "photos": [1]},
+                )
+            ]
+        ),
     )
     first = producer_turns() + 1
 
@@ -236,6 +248,78 @@ def test_another_photo_in_the_scene_doesnt_count_for_one_left_out(
         "Owner photo 2, sent with the Scene 2 note, isn't in scene 2's references yet."
     )
     assert "Owner photo 1" not in reminder
+
+
+def test_a_question_about_something_else_doesnt_let_the_photo_go(
+    fake_model: FakeModel,
+    producer: ScriptedProducer,
+    watched: Watched,  # noqa: F811
+    labelled: None,
+    api: APIClient,
+    session_id: str,
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("ask_owner", {"question": "Should the voice be faster too?"})]),
+    )
+    sending_notes(api, session_id, NOTES, [2])
+    assert reminders() == []
+
+    producer.told(
+        "Yes, faster.",
+        "OK, I'll make the voice faster.",
+        *filed(1),
+    )
+
+    (reminder,) = reminders()
+    assert reminder.startswith("Owner photo 1, sent with the Scene 2 note, isn't in scene 2's")
+    assert answer_of("set_references").startswith("Scene 2's references: pictures ")
+
+
+def test_a_version_of_the_photo_in_the_scene_counts_as_the_photo(
+    fake_model: FakeModel,
+    producer: ScriptedProducer,
+    watched: Watched,  # noqa: F811
+    labelled: None,
+    api: APIClient,
+    session_id: str,
+) -> None:
+    job = Job.objects.get()
+    photo_item = len(library_of(job)) + 1
+
+    def recoloured() -> None:
+        # The clean picture of the photo, recoloured, as the recolour step keeps one.
+        clean = library_of(job)[photo_item - 1]
+        label = PictureLabel.model_validate({**LABELLED, "colour": "red"})
+        add_to_library(job, clean.file, label, Recoloured(of=photo_item, colour="red"))
+
+    fake_model.respond(
+        "produce",
+        turn(calls=[("add_to_library", {"photos": [{"photo": 1, "shows": LID_ON}], "videos": []})]),
+        meanwhile(
+            recoloured,
+            turn(
+                calls=[
+                    (
+                        "set_references",
+                        {
+                            "scene": 2,
+                            "pictures": [{"number": photo_item + 1, "for": "state"}],
+                            "exclude": None,
+                        },
+                    )
+                ]
+            ),
+        ),
+        turn(says="Scene 2 uses your mug in red."),
+    )
+
+    sending_notes(api, session_id, NOTES, [2])
+
+    assert answer_of("set_references").startswith(
+        f"Scene 2's references: pictures {photo_item + 1}"
+    )
+    assert reminders() == []
 
 
 UNUSED = (
@@ -333,6 +417,40 @@ def test_while_paused_a_photo_holds_nothing(
     assert [said for said in watched.owner_saw() if said[0] == "agent"][-1] == ("agent", "Paused.")
 
 
+def test_a_newer_photo_gets_every_reminder_of_its_own(
+    fake_model: FakeModel,
+    producer: ScriptedProducer,
+    watched: Watched,  # noqa: F811
+    api: APIClient,
+    session_id: str,
+) -> None:
+    # The first photo got one reminder, then the turn ended on a question about another thing.
+    fake_model.respond(
+        "produce",
+        turn(says="Noted."),
+        turn(calls=[("ask_owner", {"question": "Should the voice be faster too?"})]),
+    )
+    sending_notes(api, session_id, NOTES, [2])
+    assert len(reminders()) == 1
+
+    fake_model.respond(
+        "produce",
+        turn(says="Noted."),
+        turn(says="Noted, really."),
+        turn(says="Noted, I promise."),
+    )
+    sending_notes(api, session_id, "Scene 2: and this one too", [2])
+
+    assert len(reminders()) == 3
+    assert ("notice", UNUSED_TWO) in watched.owner_saw()
+
+
+UNUSED_TWO = (
+    "The 2 photos you sent with your Scene 2 note weren't used: the producer didn't put them "
+    "in scene 2. Send them again with your note, or tell the producer what to do with them."
+)
+
+
 def test_a_photo_sent_in_the_chat_box_with_no_scene_holds_nothing(
     fake_model: FakeModel,
     producer: ScriptedProducer,
@@ -349,21 +467,22 @@ def test_a_photo_sent_in_the_chat_box_with_no_scene_holds_nothing(
 
 
 @pytest.mark.parametrize(
-    ("scenes", "photos", "refused"),
+    ("scenes", "photos", "text", "refused"),
     [
-        ([2, 2, 2, 2], 4, "Up to 3 photos can go with one scene's note: scene 2 has 4."),
-        ([2], 2, "Say which scene's note each photo goes with."),
-        ([0], 1, "Ensure this value is greater than or equal to 1."),
-        ([5], 1, "The ad has no scene 5: send the note again."),
+        ([2, 2, 2, 2], 4, NOTES, "Up to 3 photos can go with one scene's note: scene 2 has 4."),
+        ([2], 2, NOTES, "Say which scene's note each photo goes with."),
+        ([0], 1, NOTES, "Ensure this value is greater than or equal to 1."),
+        ([5], 1, NOTES, "The ad has no scene 5: send the note again."),
+        ([2], 1, " ", "Say in the note what to take from its photo."),
     ],
 )
 def test_photos_sent_with_notes_wrongly_are_refused(
-    api: APIClient, session_id: str, scenes: list[int], photos: int, refused: str
+    api: APIClient, session_id: str, scenes: list[int], photos: int, text: str, refused: str
 ) -> None:
     sent = api.post(
         f"/api/sessions/{session_id}/messages/",
         {
-            "text": NOTES,
+            "text": text,
             "photos": [
                 SimpleUploadedFile(f"p{n}.png", photo(n), content_type="image/png")
                 for n in range(photos)

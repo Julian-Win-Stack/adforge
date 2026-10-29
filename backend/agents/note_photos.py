@@ -36,7 +36,8 @@ def hold_the_turn(session: Session) -> bool:
     reminded = SystemNote.objects.filter(
         session=session,
         kind=SystemNote.Kind.NOTE_PHOTO,
-        created_at__gte=waiting[0].message.created_at,
+        # Counted since the newest photo came, so each photo gets every reminder.
+        created_at__gte=waiting[-1].message.created_at,
     ).count()
     if reminded >= MOST_REMINDERS:
         _say_unused(session, waiting)
@@ -74,14 +75,17 @@ def _waiting(session: Session) -> list[Attachment]:
 
 def _settled(job: Job, photo: Attachment) -> bool:
     """Whether the producer owes nothing for `photo`: it asked the shop owner a question
-    since the photo was sent, the photo's scene is gone from the plan, or the photo is in its
-    scene's references, as the clean picture drawn from it or a version of that."""
+    naming it in the question's photos since it was sent, the photo's scene is gone from
+    the plan, or the photo is in its scene's references, as the clean picture drawn from it
+    or a version of that."""
+    photo_number = messages.owner_photo_number(photo)
     asked = ToolCall.objects.filter(
         session=job.session,
         agent="producer",
         tool="ask_owner",
         answer="made",
         created_at__gt=photo.message.created_at,
+        arguments__photos__contains=[photo_number],
     ).exists()
     if asked:
         return True
@@ -110,7 +114,8 @@ def _reminder(waiting: list[Attachment]) -> str:
     about = "it" if len(waiting) == 1 else "them"
     return (
         f"{unused} {put} (add_to_library, then set_references), or ask the shop owner about "
-        f"{about} with ask_owner. Your turn can't end before."
+        f"{about} with ask_owner, naming {about} in the question's photos. Your turn can't end "
+        "before."
     )
 
 

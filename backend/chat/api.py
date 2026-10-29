@@ -286,6 +286,10 @@ class SendSerializer(serializers.Serializer[None]):
             )
         scenes: list[int] = data["photo_scenes"]  # type: ignore[assignment]
         if scenes:
+            if not text.strip():
+                raise serializers.ValidationError(
+                    {"text": "Say in the note what to take from its photo."}
+                )
             if len(scenes) != len(data["photos"]):  # type: ignore[arg-type]
                 raise serializers.ValidationError(
                     {"photo_scenes": "Say which scene's note each photo goes with."}

@@ -206,8 +206,8 @@ else, don't add it, and tell them to send it with a note on a scene once the fir
 is made. Once the ad is planned, put a photo or a video they send into the library with \
 add_to_library, so a scene's references can name it. A photo sent with a scene's note, as \
 "owner photo 4, sent with the Scene 2 note", is for that scene: put it in that scene's \
-references with set_references, or ask the shop owner about it with ask_owner; your turn \
-can't end before. Slower can't be done: every clip \
+references with set_references, or ask the shop owner about it with ask_owner, naming it \
+in the question's photos; your turn can't end before. Slower can't be done: every clip \
 plays at real-time speed.
 When the shop owner's note is about what a scene's clip shows, look at that clip first, \
 then call fix_scene with your detailed instruction: the fixing agent films the scene again \
@@ -2286,6 +2286,11 @@ class AskOwner(Tool):
         min_length=1,
         description="The one question, as the shop owner reads it in the chat: plain words, "
         "for someone who isn't technical.",
+    )
+    photos: list[int] = Field(
+        default=[],
+        description="The shop owner's photos the question is about, by their number as the "
+        'chat gives it: "owner photo 3" is 3. Empty for none.',
     )
 
     def run(self, call: ToolCall) -> str:
