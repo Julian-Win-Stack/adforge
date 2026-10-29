@@ -42,7 +42,6 @@ from .conftest import (
     READABLE,
     SHAMPOO_PHOTO,
     SHAMPOO_PHOTO_PATH,
-    SHAMPOO_PICKED,
     SHAMPOO_RECORD_PHOTO_PATH,
     FakeDns,
     FakeFirecrawl,
@@ -54,6 +53,7 @@ from .conftest import (
     photo,
     picture,
     results_of,
+    shampoo_picked,
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
@@ -482,7 +482,7 @@ def test_a_page_selling_two_products_keeps_only_this_ones_text_and_photos(
     fake_model.respond("copy_page_text", SHAMPOO_COPIED)
     # I16 is a thumbnail of I8's photo.
     fake_model.respond(
-        "pick_photos", {**SHAMPOO_PICKED, "gallery_images": [8, 10, 16], "more_images": [15]}
+        "pick_photos", shampoo_picked({"gallery_images": [8, 10, 16], "more_images": [15]})
     )
 
     say(f"Make an ad for {shampoo_page_url}")
@@ -877,13 +877,13 @@ def test_a_page_with_no_product_record_is_picked_without_one(
             id="the model's safety filter blocks even the screenshot",
         ),
         pytest.param(
-            [{**SHAMPOO_PICKED, "gallery_images": [], "more_images": []}],
+            [shampoo_picked({"gallery_images": [], "more_images": []})],
             "The photo picker found no photo of this product on the page. ",
             id="it picks nothing",
         ),
         pytest.param(
             # The logo isn't numbered, and there is no I99 on the page.
-            [{**SHAMPOO_PICKED, "gallery_images": [99], "more_images": []}],
+            [shampoo_picked({"gallery_images": [99], "more_images": []})],
             "The photo picker found no photo of this product on the page. ",
             id="it picks only numbers that aren't on the page",
         ),
@@ -954,7 +954,7 @@ def test_picked_photos_that_wont_download_are_named_and_the_rest_or_the_declared
     )
     reading(fake_model, shampoo_page_url)
     fake_model.respond("check_page", READABLE)
-    fake_model.respond("pick_photos", {**SHAMPOO_PICKED, **picked})
+    fake_model.respond("pick_photos", shampoo_picked({**picked}))
 
     say(f"Make an ad for {shampoo_page_url}")
 
@@ -1023,7 +1023,7 @@ def test_more_than_50_picked_photos_keeps_the_first_50(
     # The gallery is numbered after the rest of the page here: it still comes first.
     gallery, more = list(range(130, 155)), list(range(100, 130))
     fake_model.respond(
-        "pick_photos", {**SHAMPOO_PICKED, "gallery_images": gallery, "more_images": more}
+        "pick_photos", shampoo_picked({"gallery_images": gallery, "more_images": more})
     )
 
     say(f"Make an ad for {shampoo_page_url}")
@@ -1065,7 +1065,7 @@ def test_a_picture_under_100_px_on_a_side_is_never_offered_to_the_picker(
     fake_model.respond("check_page", READABLE)
     # A picker that names the small picture anyway, off the screenshot.
     fake_model.respond(
-        "pick_photos", {**SHAMPOO_PICKED, "gallery_images": [200, 201], "more_images": []}
+        "pick_photos", shampoo_picked({"gallery_images": [200, 201], "more_images": []})
     )
 
     say(f"Make an ad for {shampoo_page_url}")

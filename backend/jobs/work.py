@@ -386,6 +386,11 @@ class Picked:
     # Each picked link that was sized up, with the link as the page gave it: fetched instead
     # when the biggest size can't be, as when a size-like word was the shop's own name.
     as_given: dict[str, str] = field(default_factory=dict)
+    # The picker's fixed fields for each picked link it labelled.
+    labels: dict[str, photos.PickedPicture] = field(default_factory=dict)
+    # Each picked link's copy group: every picked link the picker gave the same copy group,
+    # in pick order. A link it gave no label is a group of its own.
+    copies: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 DECLARED_INSTEAD = (
@@ -499,6 +504,9 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
             )
         )
         return Picked(None, notices, videos=videos)
+    labels, copies, unlabelled = _labels_and_copies(picked, links)
+    if unlabelled:
+        notices.append((_kept_unlabelled(unlabelled), Message.Level.PROBLEM))
     return Picked(
         [link.url for link in links],
         notices,
@@ -506,6 +514,45 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
         unnoted=frozenset(link.url for link in links if link.has_face is None),
         videos=videos,
         as_given={link.url: link.as_given for link in links if link.as_given != link.url},
+        labels=labels,
+        copies=copies,
+    )
+
+
+def _labels_and_copies(
+    picked: photos.PickedPhotos, links: list[photos.PickedLink]
+) -> tuple[dict[str, photos.PickedPicture], dict[str, tuple[str, ...]], list[str]]:
+    """Each picked link's fields from the picker, by the picture's mark (the first mark's for
+    a link picked twice), each link's copy group, and the marks of the pictures it picked
+    but gave no fields."""
+    by_mark = {picture.picture: picture for picture in picked.pictures}
+    labels: dict[str, photos.PickedPicture] = {}
+    groups: dict[int, list[str]] = {}
+    unlabelled: list[str] = []
+    for link in links:
+        found = by_mark.get(link.mark)
+        if found is None:
+            unlabelled.append(link.mark)
+            continue
+        labels.setdefault(link.url, found)
+        group = groups.setdefault(found.copy_group, [])
+        if link.url not in group:
+            group.append(link.url)
+    copies = {
+        link.url: tuple(groups[labels[link.url].copy_group]) if link.url in labels else (link.url,)
+        for link in links
+    }
+    return labels, copies, unlabelled
+
+
+def _kept_unlabelled(marks: list[str]) -> str:
+    """The notice naming the picked pictures the picker said nothing about."""
+    listed = f"{', '.join(marks[:-1])} and {marks[-1]}" if len(marks) > 1 else marks[0]
+    return (
+        f"The photo picker kept picture{'s' if len(marks) > 1 else ''} {listed} off the page "
+        "without saying what each shows (its kind, side, colour and label), so "
+        f"{'they are' if len(marks) > 1 else 'it is'} kept unlabelled and may each be kept "
+        "twice if the page has another copy."
     )
 
 
@@ -635,33 +682,34 @@ def save_photos(
     job: Job,
     urls: list[str],
     *,
-    merge_copies: bool = False,
+    copies: Mapping[str, Sequence[str]] | None = None,
+    labels: Mapping[str, photos.PickedPicture] | None = None,
     faces: frozenset[str] | None = None,
     unnoted: frozenset[str] = frozenset(),
     as_given: dict[str, str] | None = None,
 ) -> list[SkippedPhoto]:
-    """Download and keep each photo, after any the job already has, up to MAX_PHOTOS. With
-    `merge_copies`, a photo that is a copy of one already kept, at another size or under
-    another name, is left out, and the one kept has a face if either does. `faces` are the
+    """Download and keep each photo, after any the job already has, up to MAX_PHOTOS, with
+    the picker's fields for it in `labels`. With the picker's `copies`, each link's copy
+    group, one photo of each group is kept, the first that can be, and the one kept has a
+    face if any copy does; a link of a group is also the same photo at any other size.
+    Without them, as for the page's declared photos, every link is kept. `faces` are the
     links the picker marked with a face; without them, or for the `unnoted` links it didn't
     note, each photo kept is given its Face note by a call of its own. A link that can't be
     fetched is fetched `as_given` instead, when that names another link for it. Gives back
     each one that was skipped, with why.
 
     A page read again, as after a crash or by a second read of the same page, only adds the
-    photos the job doesn't have yet: one at a link already kept, or with `merge_copies` a
-    copy of one already kept, is left out. Photos already kept are never deleted or changed,
-    so their numbers and what the plan marked on them stay."""
+    photos the job doesn't have yet: one at a link already kept, or with `copies` one in a
+    copy group a kept photo was kept for, is left out. Photos already kept are never deleted
+    or changed, so their numbers and what the plan marked on them stay."""
     page_photos = job.photos.exclude(source_url="").filter(from_video=None).order_by("position")
     saved = job.photos.aggregate(last=Max("position"))["last"] or 0
     links = set(page_photos.values_list("source_url", flat=True))
-    copies = photos.Copies()
-    kept: list[ProductPhoto] = []
-    if merge_copies:
-        for had in page_photos:
-            if copies.copy_of(had.source_url, file_store.read(had.file)) is None:
-                kept.append(had)
-    already = len(kept)
+    # The photo kept for each link of its copy group, by what its links share at every size.
+    kept_for: dict[str, ProductPhoto] = {}
+    for had in page_photos:
+        _keep_for_its_copies(kept_for, had, [had.source_url, *had.copy_links])
+    this_read: list[ProductPhoto] = []
     count = page_photos.count()
     skipped = []
     for url in urls:
@@ -669,9 +717,10 @@ def save_photos(
             break
         if url in links:
             continue
-        if merge_copies and (copy := copies.kept_at_link(url)) is not None:
-            if copy >= already:
-                _merge_face(kept[copy], url, faces)
+        group = list(copies.get(url, (url,))) if copies is not None else []
+        if copies is not None and (copy := _kept_copy(kept_for, [url, *group])) is not None:
+            if copy in this_read:
+                _merge_face(copy, url, faces)
             continue
         try:
             photo = _photo_at(url, (as_given or {}).get(url))
@@ -696,20 +745,36 @@ def save_photos(
                 )
             )
             continue
-        if merge_copies and (copy := copies.copy_of(url, photo.content)) is not None:
-            if copy >= already:
-                _merge_face(kept[copy], url, faces)
-            continue
         saved += 1
         count += 1
         links.add(url)
         has_face = url in faces if faces is not None and url not in unnoted else None
-        kept.append(
-            keep_photo(
-                job, saved, photo.content, photo.content_type, source_url=url, has_face=has_face
-            )
+        kept = keep_photo(
+            job,
+            saved,
+            photo.content,
+            photo.content_type,
+            source_url=url,
+            has_face=has_face,
+            picked_as=(labels or {}).get(url),
+            copy_links=group,
         )
+        this_read.append(kept)
+        _keep_for_its_copies(kept_for, kept, [url, *group])
     return skipped
+
+
+def _keep_for_its_copies(
+    kept_for: dict[str, ProductPhoto], kept: ProductPhoto, group: Sequence[str]
+) -> None:
+    """Note `kept` as the photo kept for every link of its copy `group`."""
+    for link in group:
+        kept_for.setdefault(photos.same_key(link), kept)
+
+
+def _kept_copy(kept_for: Mapping[str, ProductPhoto], group: Sequence[str]) -> ProductPhoto | None:
+    """The photo already kept for any link of a copy `group`, if one is."""
+    return next((kept_for[key] for key in map(photos.same_key, group) if key in kept_for), None)
 
 
 # How far, in seconds, the reader's second may be from the picked frame it names: the
@@ -796,10 +861,13 @@ def keep_photo(
     from_video: ProductVideo | None = None,
     at_second: float | None = None,
     note: str = "",
+    picked_as: photos.PickedPicture | None = None,
+    copy_links: Sequence[str] = (),
 ) -> ProductPhoto:
     """Store a product photo with the job, with its Face note, or with None, noted by a call
     of its own. An uploaded photo has no source link. A video picture is kept with the video
-    it was cut `from_video`, its second there and its one-line `note`."""
+    it was cut `from_video`, its second there and its one-line `note`. A page photo the
+    picker kept has the fields it was `picked_as` and the links of its copy group."""
     extension = mimetypes.guess_extension(content_type) or ""
     key = file_store.save(f"jobs/{job.pk}/photos/{position}{extension}", content)
     if has_face is None:
@@ -815,6 +883,13 @@ def keep_photo(
         from_video=from_video,
         at_second=at_second,
         note=note,
+        kind=picked_as.kind if picked_as else "",
+        side=picked_as.side if picked_as else "",
+        alone=picked_as.alone if picked_as else "",
+        colour=picked_as.colour if picked_as else "",
+        target=picked_as.target if picked_as else "",
+        label=picked_as.label if picked_as else "",
+        copy_links=list(copy_links),
     )
 
 

@@ -90,17 +90,53 @@ COPIED = {
     "passages": ["Stoneware Mug", "Hand-thrown, holds 350 ml, dishwasher safe."],
 }
 
+
 # What the photo picker answers when a test doesn't say: on the shampoo's marked
 # screenshot, its big gallery photo (I8) and the same photo's thumbnail (I16).
-SHAMPOO_PICKED = {
-    "product": "Detox Clarifying Hair Shampoo",
-    "gallery_images": [8, 16],
-    "more_images": [],
-    "product_sections": [15, 30],
-    "notes": "",
-    "face_images": [],
-    "page_blocked": False,
-}
+def picker_fields(marks: list[str], copies: list[list[str]]) -> list[dict[str, Any]]:
+    """The picker's fields for each picture in `marks`: every one a front photo of the
+    product alone, each its own copy group but for those listed together in `copies`."""
+    groups = {mark: number for number, group in enumerate(copies, 1) for mark in group}
+    return [
+        {
+            "picture": mark,
+            "copy_group": groups.get(mark, len(copies) + number),
+            "kind": "side",
+            "side": "front",
+            "alone": "yes",
+            "colour": "amber",
+            "target": "",
+            "label": f"The product, in picture {mark}.",
+        }
+        for number, mark in enumerate(marks, 1)
+    ]
+
+
+def shampoo_picked(
+    changes: dict[str, Any] | None = None, *, copies: list[list[str]] | None = None
+) -> dict[str, Any]:
+    """The picker's answer on the shampoo's page, with `changes`, and its fields for every
+    picture it picked. I16 is a thumbnail of I8's photo: the two are one copy group."""
+    answer = {
+        "product": "Detox Clarifying Hair Shampoo",
+        "gallery_images": [8, 16],
+        "more_images": [],
+        "product_sections": [15, 30],
+        "notes": "",
+        "face_images": [],
+        "page_blocked": False,
+        **(changes or {}),
+    }
+    marks = [f"I{n}" for n in [*answer["gallery_images"], *answer["more_images"]]] + [
+        f"R{n}" for n in answer.get("record_images", []) if n > 0
+    ]
+    return {
+        **answer,
+        "pictures": picker_fields(marks, [["I8", "I16"]] if copies is None else copies),
+    }
+
+
+SHAMPOO_PICKED = shampoo_picked()
 
 # What the Face-note call answers for a photo with no stranger's face in it.
 NO_FACE: dict[str, Any] = {"has_face": False}
