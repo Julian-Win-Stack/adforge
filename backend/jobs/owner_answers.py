@@ -13,6 +13,7 @@ on from its checkpoints (`fixing_agent.answer_question`). Whatever came is the a
 when it isn't what was asked for. Once the step finishes, its clip replaces the scene's and
 the ad is assembled again, as a swapped-in try's is (agents.tasks)."""
 
+import logging
 from collections.abc import Sequence
 from typing import Any
 
@@ -27,6 +28,8 @@ from . import library_items, product_videos, watcher, work
 from .library import LibraryEntry, LookFrame, ProductOnly, library_of, watch_of
 from .models import Job, OwnerQuestion, ProductVideo, Scene, SceneStep
 from .notices import post_notice
+
+logger = logging.getLogger(__name__)
 
 
 class NotWaiting(Exception):
@@ -106,15 +109,47 @@ def resuming(step: SceneStep) -> bool:
     return OwnerQuestion.objects.filter(agent_fix__step=step, answer__isnull=False).exists()
 
 
-def run_again(step: SceneStep) -> None:
-    """Queue `step`, run again with the shop owner's answer and stopped partway, as when the
-    worker restarted, to run again: the fix and the answer carry on from their checkpoints,
-    paying for nothing twice. Its clip from before the answer stays in the ad meanwhile."""
+# How many times a step run again with the shop owner's answer is queued again after the
+# worker stopped partway through it; past that it fails, so a resume that stops the worker
+# every time doesn't run forever.
+MOST_RUNS_AGAIN = 1
+
+
+def run_again(step: SceneStep) -> bool:
+    """For `step`, run again with the shop owner's answer and stopped partway, as when the
+    worker restarted: queue it to run again, at most MOST_RUNS_AGAIN times, the fix and the
+    answer carrying on from their checkpoints, paying for nothing twice, its clip from before
+    the answer staying in the ad meanwhile. Past that, nothing is queued: the chat is told the
+    fix couldn't carry on, and False is given, for the step to fail as any stopped step does.
+    Gives whether it was queued."""
+    question = (
+        OwnerQuestion.objects.select_for_update()
+        .filter(agent_fix__step=step, answer__isnull=False)
+        .select_related("scene__job")
+        .get()
+    )
+    given: dict[str, Any] = question.answer or {}
+    runs = int(given.get("runs_again", 0))
+    if runs >= MOST_RUNS_AGAIN:
+        logger.warning(
+            "Scene step %s, resumed with the shop owner's answer, stopped again: failed", step.pk
+        )
+        post_notice(
+            question.scene.job,
+            f"Scene {question.scene.number}'s fix couldn't carry on with your answer: its work "
+            "stopped partway again after it was started again, so the clip that was in the ad "
+            "stays there.",
+            Message.Level.PROBLEM,
+        )
+        return False
+    question.answer = {**given, "runs_again": runs + 1}
+    question.save(update_fields=["answer"])
     SceneStep.objects.filter(pk=step.pk).update(taken_at=None, seen_at=timezone.now())
     from agents import tasks
 
     step_id = step.pk
     transaction.on_commit(lambda: tasks.run_scene_step.delay(step_id))
+    return True
 
 
 def withdraw(scene: Scene) -> None:

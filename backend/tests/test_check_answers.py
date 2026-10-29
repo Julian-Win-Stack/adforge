@@ -28,13 +28,21 @@ def test_a_shortened_script_that_keeps_the_rules_is_read() -> None:
     assert shortened_script_for(SCRIPT).model_validate(shortened(1, 3)).lines
 
 
+def test_a_script_of_scenes_that_all_show_the_product_can_be_shortened() -> None:
+    # After the producer made every scene B-roll (spec #247 point 5), no line is said to
+    # camera: the shortened script opens on the first scene all the same.
+    all_broll = [LineToCheck(scene=scene.scene, line=scene.line, shows=POUR) for scene in SCRIPT]
+
+    assert shortened_script_for(all_broll).model_validate(shortened(1, 3)).lines
+
+
 @pytest.mark.parametrize(
     ("kept", "broken_rule"),
     [
         pytest.param(
             [2, 3],
-            "The first scene is the person talking to camera",
-            id="opening on a scene that shows the product",
+            "Keep the first scene, the hook: never drop it.",
+            id="the first scene dropped",
         ),
         pytest.param([1, 3, 2], "Give the lines in the order they play", id="out of order"),
         pytest.param([1, 1], "Give the lines in the order they play", id="a scene twice"),

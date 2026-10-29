@@ -370,3 +370,51 @@ def test_a_second_fix_on_the_scene_after_the_resumed_one_works_as_before(
         "look_at_try"
     ]
     assert work.open_question(job.scenes.get(number=2)) is None
+
+
+def test_a_resumed_step_the_worker_stops_in_twice_fails_and_keeps_its_clip_in_the_ad(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The agent asks before filming any try, so the scene's first clip is in the ad.
+    fake_model.respond("check_clip_motion", failing(FLOATS))
+    fake_model.respond("fix_scene", turn(calls=[ask()]))
+    ad = assemble_through_the_chat(fake_model, steps, say)
+    job = Job.objects.get()
+    in_the_ad = {cut["scene"]: cut["clip"] for cut in ad.cuts}[2]
+    question = work.open_question(job.scenes.get(number=2))
+    assert question is not None
+
+    def stops(*args: Any) -> Any:
+        raise WorkerStopped()
+
+    # The resume stops the worker every time.
+    monkeypatch.setattr(fixing_agent, "answer_question", stops)
+    step = owner_answers.answer(question, words=WORDS)
+    with pytest.raises(WorkerStopped):
+        steps.run_held()
+    tasks.carry_on_after_the_worker_starts()
+    with pytest.raises(WorkerStopped):
+        steps.run_held()
+    fake_model.respond("produce", turn(says="Done."))
+
+    tasks.carry_on_after_the_worker_starts()
+
+    # Queued again once only: the second time it fails, said in red and kept in the warnings.
+    step.refresh_from_db()
+    assert (step.status, steps.held) == ("failed", [])
+    said = (
+        "Scene 2's fix couldn't carry on with your answer: its work stopped partway again "
+        "after it was started again, so the clip that was in the ad stays there."
+    )
+    assert Message.objects.filter(text=said, level="problem").count() == 1
+    assert said in [each["text"] for each in Job.objects.get().warnings]
+    # The scene keeps its clip in the ad, and isn't planned again.
+    scene = job.scenes.get(number=2)
+    assert scene.status == "finished"
+    newest = scene.produced.filter(kind="clip").order_by("id").last()
+    first = ProducedItem.objects.get(pk=in_the_ad)
+    assert newest is not None and newest.file == first.file
