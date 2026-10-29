@@ -380,11 +380,10 @@ def test_a_new_person_is_drawn_again_in_each_place_never_the_ads_newest(
     owner_says(fake_model, say, "Make her younger.", ("remake_person", {"remake": "look"}))
     new = job.produced.filter(kind="portrait").order_by("version").last()
     assert new is not None and new.version == 2
-    # The has-face scenes' pictures and clips show her as she was.
-    assert stale_by_scene() == [
-        ["starting_picture", "clip"],
-        *[["starting_picture", "clip"]] * 5,
-    ]
+    # The has-face scenes show her as she was: the talking scene's picture and clip, and the
+    # clips of the scenes showing the product, which have no starting picture (spec #210
+    # point 19).
+    assert stale_by_scene() == [["starting_picture", "clip"], *[["clip"]] * 5]
     assert "drawn again for the new person" in answer_of("remake_person")
     # Until drawn again, no picture of her in a place is sent: not the old person's.
     for number in (2, 3):
@@ -392,14 +391,7 @@ def test_a_new_person_is_drawn_again_in_each_place_never_the_ads_newest(
         assert scene_place(scene, scene.person_shown)[1] is None
 
     paid_before = len(paid_for())
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE, BROLL_CHOICE)
-    owner_says(
-        fake_model,
-        say,
-        "Go on",
-        ("make_starting_picture", {"scene": 2, "note": None}),
-        ("make_starting_picture", {"scene": 3, "note": None}),
-    )
+    owner_says(fake_model, say, "Go on", ("make_clip", {"scene": 2}), ("make_clip", {"scene": 3}))
     run(fake_model, steps)
 
     # Drawn again once for the ad's place and once in scene 2's own room, from the new
