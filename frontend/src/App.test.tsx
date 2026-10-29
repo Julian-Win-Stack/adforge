@@ -89,6 +89,8 @@ function fakeBackend() {
           refusal = null;
           return Response.json(body, { status });
         }
+        // The owner's message ends the pause, as chat/api.py does.
+        session.paused = false;
         let text: string;
         let plan: number | undefined;
         let use_clip: number | undefined;
@@ -128,7 +130,20 @@ function fakeBackend() {
       if (heldPolls) await heldPolls;
       if (pollsFail) throw new TypeError("Failed to fetch");
       const after = Number(messages[2] ?? 0);
-      return Response.json(session.messages.filter((message) => message.seq > after));
+      return Response.json(
+        session.messages.filter((message) => message.seq > after),
+        // As chat/api.py says whether the pause holds, with every poll.
+        { headers: { "X-Session-Paused": session.paused ? "true" : "false" } },
+      );
+    }
+
+    const paused = url.match(/^\/api\/sessions\/([\w-]+)\/pause\/$/);
+    if (paused && method === "POST") {
+      // As agents/pause.py does: a notice the chat shows until the owner writes again.
+      const session = find(paused[1]);
+      session.paused = true;
+      add(session, "notice", "Paused. Nothing new is started until you write.", [], "info");
+      return Response.json({ paused: true });
     }
 
     const renamed = url.match(/^\/api\/sessions\/([\w-]+)\/$/);
@@ -2207,4 +2222,31 @@ test("the tries are off while a tap is on its way, so a second tap sends nothing
 
   release();
   await waitFor(() => expect(aTry("Try 1").textContent).toContain("Swapping in…"));
+});
+
+test("the pause button stops the producer until the owner writes, and is offered again then", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: "Mug ad" }));
+  await findSaid("Make me an ad for my mug");
+
+  await user.click(await screen.findByRole("button", { name: "Pause" }));
+
+  expect(backend.requests).toContain("POST /api/sessions/session-1/pause/");
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await findSaid("Paused. Nothing new is started until you write.");
+  // Paused: nothing to press again, and the producer only says its one line.
+  expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
+  backend.agentSays("Paused. Scene 1's picture is finishing. What should change?");
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await findSaid("Paused. Scene 1's picture is finishing. What should change?");
+  expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
+
+  // The owner's message ends the pause: the producer works again, and can be paused again.
+  await user.type(screen.getByLabelText("Message"), "Only make scene 2");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  await findSaid("Only make scene 2");
+  expect(await screen.findByRole("button", { name: "Pause" })).toBeDefined();
 });

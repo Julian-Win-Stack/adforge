@@ -17,10 +17,11 @@ from agents import fixing_agent, producer, tasks
 from agents.fixing_agent import Failure, Outcome, Try, fix_scene
 from agents.models import ToolCall
 from agents.money import dollars
+from agents.snapshot import ad_as_it_stands
 from chat.models import Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from gateway.types import Said, ToolUse
+from gateway.types import BlockedBySafetyFilter, Said, ToolUse
 from jobs import work
 from jobs.clip_judge import ASKS
 from jobs.models import AgentFix, Fix, ProducedItem, Scene, SceneStep
@@ -1253,3 +1254,56 @@ def test_a_new_picture_from_a_photo_the_job_doesnt_have_is_refused(
         film_again(new_picture=True, photo=3, picture_prompt="The mug on the counter."),
     )
     assert answer.startswith("Refused: Image 1 must be one of the shop photos: [1, 2].")
+
+
+def test_the_ad_snapshot_counts_a_fixed_scenes_money_once(new_line_passes: Outcome) -> None:
+    session = Scene.objects.get(number=2).job.session
+    assert session is not None
+
+    snapshot = ad_as_it_stands(session)
+
+    # Every model call of the scene's work once: its steps', the fixing agent's turns and
+    # its try's steps, which share the try's tool call.
+    (scene_2,) = [line for line in snapshot.splitlines() if line.startswith("Scene 2:")]
+    assert scene_2.endswith("It cost $0.867575.")
+
+
+def test_a_picture_the_scene_excludes_is_refused_and_no_try_is_spent(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    # The producer's set_references excluded library item 2, the page's photo 2 (Q20).
+    Scene.objects.filter(number=2).update(excluded=[2])
+    edits = fake_model.edits
+
+    [answer] = refused_then_given_up(
+        fake_model,
+        failed_clip,
+        film_again(new_picture=True, photo=2, picture_prompt="The mug on the counter."),
+    )
+
+    assert answer.startswith(
+        "Refused: library item 2 is excluded for this scene: it is never sent for it."
+    )
+    assert fake_model.edits == edits
+    assert [each.number for each in AgentFix.objects.get().tries.all()] == [1]
+    # The agent was told so from the start.
+    first = ModelCall.objects.filter(purpose="fix_scene").order_by("created_at", "id")[0]
+    assert "never sent for it (excluded): library item 2" in json.dumps(first.handoff)
+
+
+def test_a_move_the_safety_filter_blocks_is_answered_as_a_cant_and_the_fix_carries_on(
+    fake_model: FakeModel, failed_clip: SceneStep, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The loop answers every agent's tool the same (spec #247 point 6): a move the safety
+    # filter blocks is a can't the agent reads, never the end of the fix. The decider's tools
+    # are settled by the same loop.
+    def blocked(*_: object) -> list[ProducedItem]:
+        raise BlockedBySafetyFilter("Image processing blocked due to content policy")
+
+    monkeypatch.setattr(work, "edit_scene_place", blocked)
+    place = ("place_edit", {"picture": "room", "edit": "Clear the shelf.", "new_place": None})
+
+    outcome = owners_fix(fake_model, failed_clip, place, film_again())
+
+    assert told()[0].startswith("Failed: the AI service's safety filter refused what it was sent")
+    assert [each.number for each in outcome.tries] == [1]

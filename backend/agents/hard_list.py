@@ -9,21 +9,25 @@ wish that live in code. Each is a tool answer, a can't with the reason, never a 
 Nothing else is a code refusal of a wish. A new guard is added only after a graded failure,
 as a tool answer with a reason, and lives here only if it refuses a wish."""
 
+from collections.abc import Sequence
 from typing import NoReturn
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from django.conf import settings
 
+from adforge.retry import OutsideServiceDown
 from gateway.types import MOST_PIECE_SECONDS
-from jobs import owner_parts
-from jobs.cut_and_send import DRAWN_NAMES, TIER_NAMES, Sending
+from jobs import owner_parts, page, work
+from jobs.cut_and_send import DRAWN_NAMES, TIER_NAMES, Excluded, Sending
 from jobs.library import VIDEO_API_MOST_PICTURES, LeftOut, library_of
 from jobs.models import Job, Scene
 
 from .loop import Refused
 
-# What the producer is told to tell the shop owner of another product's page.
+# What the producer is told to tell the shop owner of another product's page, and the
+# chat's button that starts a new ad (frontend App, "New session").
 ANOTHER_PRODUCT = "start a new ad for that"
+NEW_AD_BUTTON = "New session"
 
 # Query parameters that say where a visitor came from, not which product a page is for.
 _TRACKING_PREFIXES = ("utm_",)
@@ -49,14 +53,32 @@ def refuse_part_picture_elsewhere(scene: Scene, numbers: list[int]) -> None:
 def refuse_another_product(job: Job, link: str) -> None:
     """Refuse `link` when the job has a product page already and `link` is another
     product's: one ad never mixes two products. Asked before anything is read, so the job's
-    page is never replaced by another product's."""
-    if same_product(link, job.product_url):
+    page is never replaced by another product's. A link is this ad's product when it is,
+    or its page says it is (where it answers from, or the address it names as its own), the
+    link first given, where that page answered from, or the address it named as its own."""
+    known = [job.product_url, job.page_final_url, job.page_canonical_url]
+    if _among(link, known):
+        return
+    try:
+        theirs = work.page_addresses(link)
+    except (page.PageUnreadable, OutsideServiceDown) as error:
+        raise Refused(
+            f"this ad's page, {job.product_url}, has already been read, and {link} couldn't be "
+            f"opened to tell whether it is the same product ({error}). Ask the shop owner "
+            "whether it is: an ad is for one product."
+        ) from error
+    if any(_among(address, known) for address in theirs):
         return
     raise Refused(
         f"this ad is for the product at {job.product_url}, whose page has already been read, "
         f"and {link} is another product's page. One ad is for one product: tell the shop "
-        f'owner "{ANOTHER_PRODUCT}" in plain words, and go on with this ad.'
+        f'owner "{ANOTHER_PRODUCT}" in plain words, with the chat\'s "{NEW_AD_BUTTON}" '
+        "button, and go on with this ad."
     )
+
+
+def _among(link: str, known: list[str]) -> bool:
+    return any(same_product(link, each) for each in known if each)
 
 
 def same_product(link: str, other: str) -> bool:
@@ -103,19 +125,16 @@ def refuse_clip_before_the_owners_yes(
 
 def cut_answer(scene: int, sending: Sending) -> str:
     """What the producer is told of the cut of scene `scene`'s clip to the video API's
-    limits: each picture and piece of video left out, and why, and each piece cut short.
+    limits: each picture and piece of video left out, and why, each piece cut short, and
+    each item the scene's exclude list kept out.
     Blank when nothing was cut. Made part of the clip's answer, so the producer can choose
     which pictures matter for the scene, exclude ones that don't, or make one combined
     picture."""
     told = []
     if sending.left_out:
-        many = len(sending.left_out) != 1
-        told.append(
-            f"The video model takes at most {VIDEO_API_MOST_PICTURES} pictures, and the "
-            f"{VIDEO_API_MOST_PICTURES} that come first in the send order filled it, so "
-            f"{len(sending.left_out)} picture{'s were' if many else ' was'} left out of scene "
-            f"{scene}'s clip: {'; '.join(_named(picture) for picture in sending.left_out)}."
-        )
+        told.append(left_out_answer(scene, sending.left_out))
+    if sending.excluded:
+        told.append(excluded_answer(scene, sending.excluded))
     for left in sending.pieces_left_out:
         told.append(
             f"The piece of video {left.video}, moment {left.moment} ({left.start:g} to "
@@ -130,6 +149,26 @@ def cut_answer(scene: int, sending: Sending) -> str:
                 f"most {MOST_PIECE_SECONDS:g} s of video over up to {_pieces()}."
             )
     return " ".join(told)
+
+
+def excluded_answer(scene: int, excluded: Sequence[Excluded]) -> str:
+    """The items scene `scene`'s exclude list kept out of its clip, each by its label,
+    number and the tier that would have taken it."""
+    named = "; ".join(
+        f'"{item.label}" (library item {item.number}, {TIER_NAMES[item.tier]})' for item in excluded
+    )
+    return f"Not sent, as excluded for scene {scene}: {named}."
+
+
+def left_out_answer(scene: int, left_out: Sequence[LeftOut]) -> str:
+    """The pictures the video API's cap leaves out of scene `scene`'s clip, and why."""
+    many = len(left_out) != 1
+    return (
+        f"The video model takes at most {VIDEO_API_MOST_PICTURES} pictures, and the "
+        f"{VIDEO_API_MOST_PICTURES} that come first in the send order filled it, so "
+        f"{len(left_out)} picture{'s were' if many else ' was'} left out of scene "
+        f"{scene}'s clip: {'; '.join(_named(picture) for picture in left_out)}."
+    )
 
 
 def _pieces() -> str:

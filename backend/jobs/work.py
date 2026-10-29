@@ -284,6 +284,16 @@ def _failed(error: Exception) -> firecrawl.FirecrawlFailed:
     )
 
 
+def page_addresses(link: str) -> list[str]:
+    """Where the page at `link` is: the address it answers from, after any redirects, and
+    the one it names as its own, if any. Read with a plain download, the page read's own,
+    which nothing is paid for and nothing is kept from. Raises PageUnreadable for a page that
+    won't open, and OutsideServiceDown if the shop stays down."""
+    with_retries(lambda: page.check_where_it_points(link))
+    download = _plain_download(link)
+    return [address for address in (download.final_url, page.parse(download).canonical) if address]
+
+
 def _plain_download(link: str) -> page.Download:
     return page.download(link, max_bytes=page.MAX_PAGE_BYTES, what="product page")
 
@@ -672,8 +682,20 @@ def keep_page(job: Job, download: page.Download, product_page: page.ProductPage,
     job.page_text = text
     job.page_text_full = product_page.text
     job.page_html_key = file_store.save(f"jobs/{job.pk}/page.html", download.content)
+    # Where the page is, so another link to the same product is known as this ad's.
+    job.page_final_url = download.final_url[:2000]
+    job.page_canonical_url = product_page.canonical[:2000]
     job.status = Job.Status.PAGE_READ
-    job.save(update_fields=["page_text", "page_text_full", "page_html_key", "status"])
+    job.save(
+        update_fields=[
+            "page_text",
+            "page_text_full",
+            "page_html_key",
+            "page_final_url",
+            "page_canonical_url",
+            "status",
+        ]
+    )
 
 
 def check_page(job: Job, download: page.Download, product_page: page.ProductPage) -> PageCheck:
@@ -3354,6 +3376,12 @@ def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
         _judge_clip(step, first)
     if _ruling(first)["verdict"] != "fail":
         return first
+    # A fix parked on a question the shop owner answered is opened again with the answer, so
+    # the agent carries on below. It watches videos, and the watcher saves video pictures
+    # here, so it is imported where it is used.
+    from jobs import owner_answers
+
+    owner_answers.take_the_answer(step)
     if agent_fix(step) is None:
         # The agent's module runs the scene's work, so it is imported where it is used.
         from agents import fixing_agent
@@ -3889,7 +3917,15 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
         return f"{failed}, and it couldn't be made again, so it is kept as it is."
     if ended.passed is not None:
         passed = ended.passed.remake
-        return f"{failed}, so the fixing agent filmed it again, and the judge passed try {passed}."
+        from jobs import owner_answers  # It imports the watcher, which imports this module.
+
+        answered = (
+            " once the shop owner answered its question," if owner_answers.answered(step) else ""
+        )
+        return (
+            f"{failed}, so the fixing agent filmed it again, and{answered} the judge passed try "
+            f"{passed}."
+        )
     filmed = len(_clip_tries(step)) - 1
     if is_parked(ended):
         tried = {0: "before filming a try", 1: "after 1 try"}.get(filmed, f"after {filmed} tries")

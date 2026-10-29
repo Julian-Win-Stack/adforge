@@ -10,7 +10,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from adforge import file_store
-from agents import page_panel
+from agents import page_panel, pause
 from agents.tasks import another_session_is_busy, hold_one_at_a_time_lock, wake_producer
 from gateway.gateway import IMAGE_TYPE_NAMES, IMAGE_TYPES
 from jobs import work
@@ -26,6 +26,9 @@ from .models import Attachment, Message, Session
 MAX_TEXT_CHARACTERS = 10_000
 # As much as the page panel's message may say: a whole product page pasted in one go.
 MAX_PASTED_PAGE_CHARACTERS = 200_000
+
+# The poll's header saying whether the shop owner's pause holds: "true" or "false".
+PAUSED_HEADER = "X-Session-Paused"
 
 # What the user is told when another session is working: only one works at a time.
 ANOTHER_SESSION_IS_BUSY = "Another ad is being made right now. Please try again once it's finished."
@@ -174,10 +177,16 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
 
 
 class SessionSerializer(serializers.ModelSerializer[Session]):
+    # Whether the shop owner's pause holds: until their next message (spec #247 point 14).
+    paused = serializers.SerializerMethodField()
+
     class Meta:
         model = Session
-        fields = ["id", "name", "created_at"]
+        fields = ["id", "name", "created_at", "paused"]
         read_only_fields = ["id", "created_at"]
+
+    def get_paused(self, session: Session) -> bool:
+        return session.paused_at is not None
 
 
 @api_view(["GET", "POST"])
@@ -294,7 +303,12 @@ def session_messages(request: Request, session_id: str) -> Response:
         .select_related("fix_plan", "owner_question__scene")
         .prefetch_related("attachments__clip")
     )
-    return Response(MessageSerializer(newer, many=True).data)
+    # Whether the shop owner's pause holds, with every poll, so the chat shows it as it stands
+    # (a header, so the poll's list stays as it is).
+    return Response(
+        MessageSerializer(newer, many=True).data,
+        headers={PAUSED_HEADER: "true" if found.paused_at is not None else "false"},
+    )
 
 
 def _send(session: Session, request: Request) -> Response:
@@ -351,11 +365,13 @@ def _send(session: Session, request: Request) -> Response:
             chosen_clip=chosen.pk if chosen is not None else None,
             pasted_page=pasted,
         )
+        # Whatever they sent, their message ends the pause: the producer reads it first.
+        pause.clear(session)
         # Only once the message is saved: a producer about to stop either finds it, or has
         # already stopped, and one is started here.
         wake_producer(str(session.pk))
     # The first message may just have named the session.
-    session.refresh_from_db(fields=["name"])
+    session.refresh_from_db(fields=["name", "paused_at"])
     return Response(
         {
             "session": SessionSerializer(session).data,
@@ -363,6 +379,22 @@ def _send(session: Session, request: Request) -> Response:
         },
         status=status.HTTP_201_CREATED,
     )
+
+
+@api_view(["POST"])
+def pause_session(request: Request, session_id: str) -> Response:
+    """The pause button: stop the session's producer from starting anything new until the
+    shop owner writes. Steps waiting for the worker are cancelled, steps it took finish and
+    are kept, and the producer is told which (agents/pause.py). Pressing it again while paused
+    does nothing more."""
+    found = get_object_or_404(Session, pk=session_id)
+    # Under the lock every message sent takes before it looks for another busy session: the
+    # pause still holds and cancels, but the producer only reads it once no other session
+    # works, so pausing never starts a second one.
+    with transaction.atomic():
+        hold_one_at_a_time_lock()
+        pause.pause(found, wake=not another_session_is_busy(found))
+    return Response({"paused": True})
 
 
 def _chosen_try(session: Session, clip: int) -> ProducedItem:

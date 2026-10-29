@@ -10,6 +10,7 @@ import {
   ApiError,
   getMessagesSince,
   sendMessage,
+  pauseSession,
   startSession,
   type Attachment,
   type Message,
@@ -61,6 +62,9 @@ export function Chat({
   const [messages, setMessages] = useState<Message[]>([]);
   const [pollError, setPollError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  // Whether the owner's pause holds, as the server last said: each poll, the pause button's
+  // answer and each message sent say it.
+  const [paused, setPaused] = useState(false);
   const lastSeq = useRef(0);
   const thread = useRef<HTMLDivElement>(null);
   // A new session is made once, so a refused first message doesn't leave another empty
@@ -84,9 +88,10 @@ export function Chat({
 
     async function ask() {
       try {
-        const newer = await getMessagesSince(sessionId as string, lastSeq.current);
+        const polled = await getMessagesSince(sessionId as string, lastSeq.current);
         if (stopped) return;
-        show(newer);
+        show(polled.messages);
+        setPaused(polled.paused);
         setPollError(null);
       } catch {
         if (stopped) return;
@@ -151,6 +156,7 @@ export function Chat({
   async function send(text: string, photos: File[], as: SendAs = {}) {
     const id = sessionId ?? (started.current ??= (await startSession()).id);
     const sent = await sendMessage(id, text, photos, as);
+    setPaused(sent.session.paused ?? false);
     if (sessionId !== null) show([sent.message]);
     // A brand new session has no polling yet: opening it loads what was just said.
     onSent(sent);
@@ -178,6 +184,11 @@ export function Chat({
   const waitingOnOwner =
     (planWaits || suggestedNotes(messages).size > 0) && !cards.some((card) => card.making !== null);
   const pageAsk = pagePanel(messages);
+  // Something to pause: the producer working, or a scene's picture or clip being made.
+  const pausable =
+    sessionId !== null &&
+    !paused &&
+    ((producerHasTheFloor && !waitingOnOwner) || cards.some((card) => card.making !== null));
   const pasted = lastPastedPage(messages);
   const unacceptedPaste = pasted && !acceptedPastes(messages).has(pasted.seq) ? pasted : null;
   const covers = new Map(
@@ -353,6 +364,14 @@ export function Chat({
               text={draft}
               onChange={setDraft}
               onSend={send}
+              onPause={
+                pausable
+                  ? async () => {
+                      await pauseSession(sessionId as string);
+                      setPaused(true);
+                    }
+                  : undefined
+              }
               placeholder={
                 sessionId === null
                   ? "Paste a product link and describe the ad you want..."
@@ -809,15 +828,19 @@ function Composer({
   text,
   onChange,
   onSend,
+  onPause,
   placeholder,
 }: {
   text: string;
   onChange: (text: string) => void;
   onSend: (text: string, photos: File[]) => Promise<void>;
+  /** Offered while there is work to pause; the button stays until the pause notice lands. */
+  onPause?: () => Promise<void>;
   placeholder: string;
 }) {
   const [photos, setPhotos] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
+  const [pausing, setPausing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const photoInput = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -846,6 +869,19 @@ function Composer({
       setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
     } finally {
       setSending(false);
+    }
+  }
+
+  async function pause() {
+    if (!onPause || pausing) return;
+    setPausing(true);
+    setError(null);
+    try {
+      await onPause();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
+    } finally {
+      setPausing(false);
     }
   }
 
@@ -919,6 +955,17 @@ function Composer({
           ))}
         </div>
         <span className="composer-hint">Enter to send</span>
+        {onPause && (
+          <button
+            type="button"
+            className="pause"
+            title="Stop starting new work until you write"
+            onClick={pause}
+            disabled={pausing}
+          >
+            Pause
+          </button>
+        )}
         <button type="submit" className="send" aria-label="Send" disabled={!canSend}>
           {sending ? <span className="spinner" /> : <ArrowUpIcon />}
         </button>

@@ -191,6 +191,9 @@ export type Session = {
   id: string;
   name: string;
   created_at: string;
+  /** Whether the owner's pause holds: until their next message. The session itself and
+   * a message sent say it; the list leaves it out. */
+  paused?: boolean;
 };
 
 /** What the server answers when a message is sent: the message, and the session it landed
@@ -244,9 +247,15 @@ export async function renameSession(sessionId: string, name: string): Promise<Se
   );
 }
 
-/** Only the messages numbered above `after`, so a poll never repeats or skips one. */
-export async function getMessagesSince(sessionId: string, after: number): Promise<Message[]> {
-  return readJson<Message[]>(await fetch(`/api/sessions/${sessionId}/messages/?after=${after}`));
+/** What a poll brings: the messages numbered above `after`, so a poll never repeats or
+ * skips one, and whether the owner's pause holds now. */
+export type Polled = { messages: Message[]; paused: boolean };
+
+export async function getMessagesSince(sessionId: string, after: number): Promise<Polled> {
+  const response = await fetch(`/api/sessions/${sessionId}/messages/?after=${after}`);
+  const messages = await readJson<Message[]>(response);
+  // As chat/api.py's PAUSED_HEADER says it.
+  return { messages, paused: response.headers.get("X-Session-Paused") === "true" };
 }
 
 /** What a message is besides its words: a tap of a plan's yes button names the `plan`, and
@@ -280,4 +289,13 @@ export async function sendMessage(
     );
   }
   return readJson<Sent>(await fetch(`/api/sessions/${sessionId}/messages/`, request));
+}
+
+/** The pause button: the producer starts nothing new until the owner writes. Steps waiting
+ * to start are cancelled and the running ones finish; the chat is told by a notice, and each
+ * poll says the pause holds until the owner's next message. */
+export async function pauseSession(sessionId: string): Promise<void> {
+  await readJson<{ paused: boolean }>(
+    await fetch(`/api/sessions/${sessionId}/pause/`, jsonRequest("POST", {})),
+  );
 }

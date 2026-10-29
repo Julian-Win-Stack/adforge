@@ -440,3 +440,23 @@ def test_references_with_a_face_after_a_room_only_place_edit_are_refused(
     # No clip and no try for the refused call: the one try is the next call's, in its own room.
     assert [row.tool_call_id for row in AgentFixTry.objects.all()] == [filmed.pk]
     assert len(fake_model.broll_clips_asked) == asked_before + 1
+
+
+def test_a_reference_the_scene_excludes_is_refused_with_no_clip_or_try(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    # The producer's set_references excluded library item 7 for scene 2 (Julian Q20).
+    failed_clip.scene.excluded = [7]
+    failed_clip.scene.save(update_fields=["excluded"])
+    fake_model.respond("fix_scene", turn(calls=[with_references()]), turn(calls=[film_again()]))
+    asked_before = len(fake_model.broll_clips_asked)
+
+    fixed(failed_clip)
+
+    refused_call, filmed = ToolCall.objects.filter(tool="film_again").order_by("id")
+    assert refused_call.result.startswith(
+        "Refused: library item 7 is excluded for this scene: it is never sent for it."
+    )
+    assert refused_call.answer == "cant"
+    assert [(row.number, row.tool_call_id) for row in AgentFixTry.objects.all()] == [(1, filmed.pk)]
+    assert len(fake_model.broll_clips_asked) == asked_before + 1
