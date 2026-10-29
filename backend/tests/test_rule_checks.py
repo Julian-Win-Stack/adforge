@@ -20,11 +20,15 @@ GOOD: dict[str, object] = {
     "on a rust ring.",
     "MOTION PROMPT": "The hand makes one firm scrubbing pass along the rust ring; the stain "
     "lifts only under the bristles.",
-    "VIDEO PROMPT SENT": "A 5-second video at real-time speed. The camera stays still. The hand "
-    "makes one firm scrubbing pass along the rust ring; the stain lifts only under the "
-    "bristles.",
-    "SETTINGS": "model=creatify/boreal-h3 seconds=5 starting_picture=make_starting_picture_Ab1.png "
-    "example_pictures=[]",
+    # The first-send shape (#210 point 16): the speed line, a label line per picture and piece
+    # sent, in order, and one sentence.
+    "VIDEO PROMPT SENT": "Film this in real-time speed.\n"
+    "Image 1 is the cleaner bottle, seen from the front.\n"
+    "Image 2 is a toilet brush scrubbing a bowl: copy the hand and how it holds the brush.\n"
+    "Video 1 is only for the movement, not the look.\n"
+    "The hand scrubs the rust ring with one firm pass and the stain lifts where the bristles go.",
+    "SETTINGS": "model=creatify/boreal-h3 seconds=5 starting_picture= "
+    "example_pictures=[jobs/8/library/1.jpg, jobs/8/library/4.jpg]",
 }
 
 
@@ -101,11 +105,19 @@ def test_a_scene_that_keeps_every_rule_passes_every_check(tmp_path: Path) -> Non
     ("change", "check"),
     [
         pytest.param(
+            {"VIDEO PROMPT SENT": str(GOOD["VIDEO PROMPT SENT"]).split("\n", 1)[1]},
+            "A1 real-time speed",
+            id="no speed line",
+        ),
+        pytest.param(
             {
-                "VIDEO PROMPT SENT": "A 5-second handheld phone video, casual. A hand scrubs.",
+                "VIDEO PROMPT SENT": "Image 1 is the cleaner bottle, seen from the front.\n"
+                "Image 2 is a toilet brush scrubbing a bowl.\n"
+                "Video 1 is only for the movement, not the look.\n"
+                "At real-time speed, the hand scrubs the rust ring."
             },
             "A1 real-time speed",
-            id="no real-time speed",
+            id="real-time speed said, but not the speed line first",
         ),
         pytest.param(
             {"MOTION PROMPT": "The hand slowly scrubs the ring for 3 seconds."},
@@ -124,52 +136,91 @@ def test_a_scene_that_keeps_every_rule_passes_every_check(tmp_path: Path) -> Non
             id="a photo sent for an action",
         ),
         pytest.param(
-            {"SETTINGS": "model=creatify/boreal-h3 starting_picture= example_pictures=[a.png]"},
-            "A7 drawn start picture, no shop photos",
-            id="shop photos sent to the video model",
-        ),
-        pytest.param(
-            # Reference mode (Julian 2026-10-16): a raw photo after the drawn Image 1.
+            # Reference mode's old line about Image 1.
             {
-                "SETTINGS": "model=creatify/boreal-h3 seconds=5 starting_picture= "
-                "example_pictures=[make_starting_picture_N21pGSn.png, "
-                "sessions/4/photos/3f2a.jpg]"
+                "VIDEO PROMPT SENT": "Film this in real-time speed.\n"
+                "Image 1 is how the clip starts: the clip starts exactly like Image 1.\n"
+                "Image 2 is a toilet brush scrubbing a bowl.\n"
+                "The hand scrubs the rust ring."
             },
-            "A7 drawn start picture, no shop photos",
-            id="a raw photo after the drawn starting picture",
+            "C5 a label per picture and piece sent, then one sentence",
+            id="image 1 is how the clip starts",
         ),
         pytest.param(
-            # Image 1 must be the drawn starting picture: the clip starts like it.
+            {"SETTINGS": "model=creatify/boreal-h3 example_pictures=[jobs/8/library/1.jpg]"},
+            "C5 a label per picture and piece sent, then one sentence",
+            id="a label for a picture not sent",
+        ),
+        pytest.param(
             {
-                "SETTINGS": "model=creatify/boreal-h3 seconds=5 starting_picture= "
-                "example_pictures=[make_reference_photo_picture_x1.png, "
-                "make_starting_picture_N21pGSn.png]"
+                "SETTINGS": "model=creatify/boreal-h3 example_pictures=[jobs/8/library/1.jpg, "
+                "jobs/8/library/4.jpg, jobs/8/library/2.jpg]"
             },
-            "A7 drawn start picture, no shop photos",
-            id="image 1 not the drawn starting picture",
+            "C5 a label per picture and piece sent, then one sentence",
+            id="a picture sent with no label",
         ),
         pytest.param(
-            {"SETTINGS": "model=creatify/boreal-h3 starting_picture= example_pictures=[]"},
-            "A7 drawn start picture, no shop photos",
-            id="no picture at all",
-        ),
-        pytest.param(
-            # Both ways at once, as the video model refuses: a shop photo with the start one.
             {
-                "SETTINGS": "model=creatify/boreal-h3 starting_picture=make_starting_picture_1.png "
-                "example_pictures=[sessions/4/photos/3f2a.jpg]"
+                "VIDEO PROMPT SENT": "Film this in real-time speed.\n"
+                "Image 2 is a toilet brush scrubbing a bowl.\n"
+                "Image 1 is the cleaner bottle, seen from the front.\n"
+                "The hand scrubs the rust ring."
             },
-            "A7 drawn start picture, no shop photos",
-            id="a shop photo beside a starting picture",
+            "C5 a label per picture and piece sent, then one sentence",
+            id="labels out of order",
         ),
         pytest.param(
-            # Starting-picture mode with a raw photo as the first frame.
             {
-                "SETTINGS": "model=creatify/boreal-h3 starting_picture=sessions/4/photos/3f2a.jpg "
-                "example_pictures=[]"
+                "VIDEO PROMPT SENT": "Film this in real-time speed.\n"
+                "Image 1 is the cleaner bottle, seen from the front.\n"
+                "Image 2 is a toilet brush scrubbing a bowl.\n"
+                "Video 1 is a hand scrubbing.\n"
+                "The hand scrubs the rust ring."
             },
-            "A7 drawn start picture, no shop photos",
-            id="a raw photo as the starting picture",
+            "C5 a label per picture and piece sent, then one sentence",
+            id="a piece sent for its look",
+        ),
+        pytest.param(
+            {
+                "VIDEO PROMPT SENT": "Film this in real-time speed.\n"
+                "Image 1 is the cleaner bottle, seen from the front.\n"
+                "Image 2 is a toilet brush scrubbing a bowl.\n"
+                "Video 2 is only for the movement, not the look.\n"
+                "Video 1 is only for the movement, not the look.\n"
+                "The hand scrubs the rust ring."
+            },
+            "C5 a label per picture and piece sent, then one sentence",
+            id="pieces out of order",
+        ),
+        pytest.param(
+            {
+                "VIDEO PROMPT SENT": "Film this in real-time speed.\n"
+                "Image 1 is the cleaner bottle, seen from the front.\n"
+                "Image 2 is a toilet brush scrubbing a bowl.\n"
+                "The hand scrubs the rust ring. The stain lifts."
+            },
+            "C5 a label per picture and piece sent, then one sentence",
+            id="two sentences",
+        ),
+        pytest.param(
+            {
+                "VIDEO PROMPT SENT": "Film this in real-time speed.\n"
+                "Image 1 is the cleaner bottle, seen from the front.\n"
+                "Image 2 is a toilet brush scrubbing a bowl.\n"
+                "The camera stays still.\n"
+                "The hand scrubs the rust ring."
+            },
+            "C5 a label per picture and piece sent, then one sentence",
+            id="a line besides the labels and the sentence",
+        ),
+        pytest.param(
+            {
+                "VIDEO PROMPT SENT": "Film this in real-time speed.\n"
+                "Image 1 is the cleaner bottle, seen from the front.\n"
+                "Image 2 is a toilet brush scrubbing a bowl."
+            },
+            "C5 a label per picture and piece sent, then one sentence",
+            id="no sentence",
         ),
         pytest.param(
             # Round 1 #8 s2: the camera pushed toward the ring.
@@ -179,6 +230,17 @@ def test_a_scene_that_keeps_every_rule_passes_every_check(tmp_path: Path) -> Non
             },
             "A14 the camera never moves",
             id="camera moves",
+        ),
+        pytest.param(
+            {
+                "VIDEO PROMPT SENT": "Film this in real-time speed.\n"
+                "Image 1 is the cleaner bottle, seen from the front.\n"
+                "Image 2 is a toilet brush scrubbing a bowl.\n"
+                "Video 1 is only for the movement, not the look.\n"
+                "For 3 seconds the hand scrubs the rust ring."
+            },
+            "A4 no timings",
+            id="a timing in the prompt sent",
         ),
         pytest.param(
             {"MOTION PROMPT": "After two seconds the hand scrubs the ring."},
@@ -225,37 +287,6 @@ def test_a_scene_that_breaks_a_rule_fails_that_check(
     run = saved_run(tmp_path, [{**GOOD, **change}])
 
     assert failed(run) == {("8-toilet-cleaner", 2, check)}
-
-
-@pytest.mark.parametrize(
-    "sent_with",
-    [
-        pytest.param(
-            "model=creatify/boreal-h3 seconds=5 starting_picture= "
-            "example_pictures=[make_starting_picture_N21pGSn.png]",
-            id="reference mode, the drawn starting picture as image 1",
-        ),
-        pytest.param(
-            "model=creatify/boreal-h3 seconds=5 starting_picture= "
-            "example_pictures=[make_starting_picture_N21pGSn.png, "
-            "make_reference_photo_picture_x1.png]",
-            id="reference mode, then a clean picture of the shop owner's thing",
-        ),
-        pytest.param(
-            # As round 2 saved it, in starting-picture mode.
-            "model=creatify/boreal-h3 (Boreal-H3) seconds=7 resolution=768p "
-            "prompt_enhancement=auto starting_picture=make_starting_picture_3p9bZly.png "
-            "example_pictures=[]",
-            id="an old saved run in starting-picture mode",
-        ),
-    ],
-)
-def test_the_drawn_starting_picture_sent_first_either_way_passes(
-    tmp_path: Path, sent_with: str
-) -> None:
-    run = saved_run(tmp_path, [{**GOOD, "SETTINGS": sent_with}])
-
-    assert failed(run) == set()
 
 
 @pytest.mark.parametrize(
@@ -342,12 +373,3 @@ def test_an_ad_folder_with_scene_files_but_no_scene_folders_is_skipped(tmp_path:
     (loose / "scene-2-plan.txt").write_text("a plan")
 
     assert {result.ad for result in check_run(run)} == {"8-toilet-cleaner"}
-
-
-def test_a7_names_the_purposes_the_app_saves_drawn_pictures_under() -> None:
-    # A7 tells drawn pictures from photos by the purpose each is saved under: renaming one
-    # would fail every good reference-mode scene.
-    from evals.rule_checks import _DRAWN_PICTURES
-    from gateway.catalog import MODEL_FOR_PURPOSE
-
-    assert all(purpose in MODEL_FOR_PURPOSE for purpose in _DRAWN_PICTURES)
