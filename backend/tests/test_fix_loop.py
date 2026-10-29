@@ -211,42 +211,32 @@ def test_a_clip_note_makes_only_that_scenes_clip_again_and_a_new_ad(
     ]
 
 
-# --- 2. A picture note: a new picture un-finishes the scene, then its clip, then the ad ------
+# --- 2. A picture note on a scene that shows the product: a new clip, then the ad ----------
 
 
-def test_a_picture_note_makes_the_picture_then_the_clip_then_the_ad(
+def test_a_picture_note_on_a_broll_scene_makes_a_new_clip_from_the_note_then_the_ad(
     fake_model: FakeModel, say: Say, steps: HeldSteps, shown: list[str]
 ) -> None:
+    # Scene 2 shows the product, so it has no starting picture (spec #210 point 19): a new
+    # picture for it is its clip made again from the owner's note, fix checked as a clip.
     untouched = made_for(1, 3)
     fixed(2, "new_picture", change=HANDLE_FIX, note=WRONG_SIDE)
-    assert Fix.objects.get().redo == "picture"
-    assert held_kinds(steps) == [(2, "starting_picture")]
-    fake_model.respond("choose_broll_picture", HANDLE_SHOWING)
-    steps.run_next()
-
-    # The new picture plans the scene again, and passed its checks, so code makes its clip,
-    # with no note: the ad can't be assembled from the old clip meanwhile. It is the scene's
-    # first: a scene showing the product had none (spec #210 point 19; what a picture note on
-    # such a scene does is #242's).
-    assert latest("starting_picture", 2).version == 1
-    assert Scene.objects.get(number=2).status == "planned"
+    assert Fix.objects.get().redo == "clip"
     assert held_kinds(steps) == [(2, "clip")]
-    owner_says(fake_model, say, "Is it ready?", ("assemble_ad", {}))
-    assert results_of("assemble_ad")[-1].startswith("Refused: scene 2's clip is still being made.")
-    assert [ad.version for ad in ads()] == [1]
-    assert SceneStep.objects.get(pk=steps.held[0]).note == ""
+    assert SceneStep.objects.get(pk=steps.held[0]).note == HANDLE_FIX
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
     steps.run_next()
 
     new_clip_2 = latest("clip", 2)
-    assert new_clip_2.picture == latest("starting_picture", 2)
+    assert new_clip_2.picture is None and new_clip_2.sent is not None
     assert new_clip_2.step.fix == Fix.objects.get()  # type: ignore[union-attr]
     assert Scene.objects.get(number=2).status == "finished"
     assert made_for(1, 3) == untouched
     assert [ad.version for ad in ads()] == [1, 2]
     assert [cut["clip"] for cut in ads()[1].cuts][1] == new_clip_2.pk
-    # No rewrite: the clip moves as the new picture was planned to.
-    assert "rewrite_clip_prompt" not in paid_for()[len(shown) :]
-    assert paid_for()[len(shown) :].count("make_broll_clip") == 1
+    paid = paid_for()[len(shown) :]
+    assert "make_starting_picture" not in paid and "choose_broll_picture" not in paid
+    assert paid.count("make_broll_clip") == 1
 
 
 # --- 3. Nothing is made again before the shop owner's yes --------------------------------------

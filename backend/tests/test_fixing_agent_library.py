@@ -32,9 +32,10 @@ from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, ProductVideo, 
 
 from .conftest import HeldSteps, WorkerStopped, picture
 from .sent_lists import holding_the_fixture, piece
-from .test_fixing_agent import COUNTED, everything_the_agent_read, film_again
+from .test_fixing_agent import COUNTED, ONE_PICK, everything_the_agent_read, film_again
 from .test_producer_auto_fix import clip_of_scene_2, failing
 from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
+from .test_recolour import RECOLOUR_OK
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -148,7 +149,12 @@ def test_after_a_judge_fail_the_first_message_holds_fault_sent_list_library_and_
     fake_model: FakeModel, failed_clip: SceneStep
 ) -> None:
     sent = holding_the_fixture(first_clip(failed_clip))
-    fake_model.respond("fix_scene", turn(calls=[film_again()]))
+    # Its pick may be recoloured to the clip's colour.
+    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
+    fake_model.respond("fix_scene", turn(calls=[film_again(references=ONE_PICK)]))
+    # The library as it stood when the fix started: the try's recolour adds to it after.
+    job = failed_clip.scene.job
+    library, items = library_text(job), [str(item.number) for item in library_of(job)]
 
     fixed(failed_clip)
 
@@ -177,13 +183,10 @@ def test_after_a_judge_fail_the_first_message_holds_fault_sent_list_library_and_
     assert "Library item 2 couldn't be made red, so it went as it was." in said.splitlines()
     assert sent.prompt in said
     # The library as a text list, numbered as the job's library is, with no pictures.
-    job = failed_clip.scene.job
     listed = said.split("The ad's picture library")[1]
-    assert library_text(job) in listed
-    numbers = [line.split(".")[0] for line in library_text(job).splitlines()]
-    assert (
-        numbers == [str(item.number) for item in library_of(job)] == [str(n) for n in range(1, 8)]
-    )
+    assert library in listed
+    numbers = [line.split(".")[0] for line in library.splitlines()]
+    assert numbers == items == [str(n) for n in range(1, 8)]
     # The page video's moments, which look_at_library opens by number.
     assert "Page video 1, moment 2, 1.5 s to 3.5 s: Tea is poured into the mug." in said
     # The planner's note on how the product behaves.

@@ -146,7 +146,30 @@ def test_an_ad_is_fixed_by_a_clip_note_then_gone_back_then_given_a_new_line(
 
 
 # Spec #210 point 19: the test of a new line and a new picture on one B-roll scene was
-# deleted: the scene has no starting picture, and a B-roll new_picture is #242's.
+# deleted: the scene has no starting picture. A B-roll new picture is a new clip (#242).
+
+
+def test_a_new_picture_of_a_broll_scene_is_a_new_clip_from_its_sent_list_fix_checked(
+    made_ad: ProducedItem,  # noqa: F811
+    fake_model: FakeModel,
+    steps: HeldSteps,
+) -> None:
+    before = clip(2)
+    paid_before = len(paid_for())
+    fixed(2, "new_picture", change=TABLE, note=TABLE)
+    fake_model.respond("rewrite_clip_prompt", rewrite(REMADE))
+
+    steps.run_held()
+
+    made = clip(2)
+    assert made != before and made.picture is None and made.sent is not None
+    paid = paid_for()[paid_before:]
+    assert "make_starting_picture" not in paid and "check_starting_picture" not in paid
+    assert "make_broll_clip" in paid
+    # It is fixed as a clip: made from the owner's note, and its fix check is the clip's.
+    assert made.step is not None and made.step.note == TABLE
+    assert made.step.fix is not None and made.step.fix.redo == "clip"
+    assert FixCheck.objects.filter(step=made.step).exists()
 
 
 def test_a_question_mid_fix_is_the_producers_with_the_notes_and_the_fix_carries_on(
@@ -156,17 +179,16 @@ def test_a_question_mid_fix_is_the_producers_with_the_notes_and_the_fix_carries_
     api: APIClient,
     session_id: str,
 ) -> None:
-    # A plan stored before the fixing agent: a new picture of B-roll scene 2.
+    # A plan stored before the fixing agent: a new picture of B-roll scene 2, which has no
+    # starting picture, so it is a new clip (spec #210 point 19).
     stored(
         plan_row(2, "new_picture", change=TABLE), note="In scene 2 put the mug on a wooden table."
     )
     [plan] = plans()
     tap_yes(api, session_id, plan)
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
-    # The new picture is made and checked; its clip is still to be made.
-    held.run_next()
+    fake_model.respond("rewrite_clip_prompt", rewrite(REMADE))
     fake_model.respond("decide_fixes", turn(calls=[("sort_message", {"kind": "not_a_fix"})]))
-    fake_model.respond("produce", turn(says="Scene 2's new picture is done; its clip is next."))
+    fake_model.respond("produce", turn(says="Scene 2's new clip is being made."))
 
     say("How is scene 2 coming along?")
 
@@ -178,7 +200,7 @@ def test_a_question_mid_fix_is_the_producers_with_the_notes_and_the_fix_carries_
     ]
     assert told[:2] == [
         "A fix plan is shown to the shop owner, waiting for their yes",
-        "The shop owner said yes to the plan: scene 2's new starting picture is being made",
+        "The shop owner said yes to the plan: scene 2's new clip is being made",
     ]
     # Not a note: no new plan is shown, and the plan said yes to stays confirmed.
     assert plans() == [plan]

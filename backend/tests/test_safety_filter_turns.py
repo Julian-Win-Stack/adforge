@@ -16,6 +16,7 @@ from agents.models import ToolCall
 from chat.models import Message, Session
 from gateway.fake import FakeModel, turn
 from gateway.types import BlockedBySafetyFilter, ToolUse, Turn, TurnRequest
+from jobs.library import library_of
 from jobs.models import AgentFix, Job, ProducedItem, SceneStep
 
 from .conftest import HeldSteps
@@ -293,27 +294,26 @@ def failed_clip(
     return clip_of_scene_2(fake_model, steps, say)
 
 
-def a_photo_not_sent_with_the_clip() -> int:
-    """A shop photo the agent sees first by looking at it: one its clip wasn't sent, as the
-    agent is shown its clip's sent pictures from the start (spec #210 point 19)."""
+def an_item_not_sent_with_the_clip() -> tuple[int, str]:
+    """A library item the agent sees first by looking at it, by number and the label it is
+    shown under: one its clip wasn't sent, as the agent is shown its clip's sent pictures from
+    the start (spec #210 point 19)."""
     clip = ProducedItem.objects.filter(kind="clip", scene__number=2).latest("id")
     assert clip.sent is not None
     sent = {picture["file"] for picture in clip.sent["pictures"]}
-    return next(
-        photo.position for photo in clip.job.photos.order_by("position") if photo.file not in sent
-    )
+    item = next(each for each in library_of(clip.job) if each.file not in sent)
+    return item.number, f"Library item {item.number}: {item.label}"
 
 
 def test_a_fixing_agent_turn_refused_over_a_look_is_taken_again_and_costs_no_try(
     fake_model: FakeModel, failed_clip: SceneStep
 ) -> None:
-    photo = a_photo_not_sent_with_the_clip()
-    shop_photo = f"Shop photo {photo}"
+    number, shop_photo = an_item_not_sent_with_the_clip()
     fake_model.answer_unscripted(
         "fix_scene",
         refused_over(
             shop_photo,
-            turn(calls=[("look_at_shop_photo", {"photo": photo})]),
+            turn(calls=[("look_at_library", {"item": number, "video": None, "moment": None})]),
             turn(calls=[film_again()]),
             turn(calls=[("give_up", {"reason": "It can't be filmed."})]),
         ),
@@ -325,7 +325,7 @@ def test_a_fixing_agent_turn_refused_over_a_look_is_taken_again_and_costs_no_try
     _, refused, again, _ = turns_for(fake_model, "fix_scene")
     assert shop_photo in labels(refused)
     assert shop_photo not in labels(again)
-    assert result_of(again, "look_at_shop_photo").splitlines()[-1] == (
+    assert result_of(again, "look_at_library").splitlines()[-1] == (
         f"{shop_photo} isn't shown: the AI model's safety filter refused to look at it. "
         "Carry on without it."
     )

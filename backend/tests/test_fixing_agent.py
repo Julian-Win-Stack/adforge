@@ -24,11 +24,11 @@ from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, Said, ToolUse
 from jobs import work
 from jobs.clip_judge import ASKS
+from jobs.library import sent_list_of
 from jobs.models import AgentFix, Fix, ProducedItem, Scene, SceneStep
 
 from .conftest import (
     CLIP_MOTION_OK,
-    PICTURE_OK,
     HeldSteps,
     WorkerStopped,
     facts_ok,
@@ -50,6 +50,7 @@ from .test_producer_broll import (
     run,
 )
 from .test_producer_picture_then_clip import ads
+from .test_recolour import RECOLOUR_OK
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -74,8 +75,8 @@ def colour_photo() -> int:
 
 
 def film_again(**changes: Any) -> tuple[str, dict[str, Any]]:
-    """The agent's film_again call: scene 2 as planned, filmed again with the same picture,
-    with `changes`."""
+    """The agent's film_again call: scene 2 as planned, filmed again sent what the newest clip
+    was sent, with `changes`."""
     return (
         "film_again",
         {
@@ -86,14 +87,16 @@ def film_again(**changes: Any) -> tuple[str, dict[str, Any]]:
             "result": "",
             "broll_kind": "showcase",
             "person_shown": "no face",
-            "new_picture": False,
-            "photo": None,
-            "picture_prompt": None,
             "video_prompt": STIRS,
             "would_ask_owner": None,
             **changes,
         },
     )
+
+
+# References naming one library item and no piece: a try of a clip holding the fixture sent
+# list, whose pieces are of videos the test ad doesn't have, names its own.
+ONE_PICK = {"pictures": [{"number": 2, "used_for": "state"}], "piece": None}
 
 
 def fixed(step: SceneStep, **kwargs: Any) -> Outcome:
@@ -107,8 +110,12 @@ def fixed(step: SceneStep, **kwargs: Any) -> Outcome:
 
 def looks_at_try_0(fake_model: FakeModel, step: SceneStep) -> tuple[ToolUse, ToolCall]:
     """The agent looks at try 0 and films once: the try 0 it was given first, and its look."""
+    # Its pick may be recoloured to the clip's colour.
+    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
     fake_model.respond(
-        "fix_scene", turn(calls=[("look_at_try", {"number": 0})]), turn(calls=[film_again()])
+        "fix_scene",
+        turn(calls=[("look_at_try", {"number": 0})]),
+        turn(calls=[film_again(references=ONE_PICK)]),
     )
     fixed(step)
     [first, *_] = [each for each in fake_model.turns_taken if each.purpose == "fix_scene"]
@@ -380,11 +387,8 @@ def test_a_line_the_fact_check_fails_is_refused_with_its_reason(
     assert scene_row()[0] == LINE_2
 
 
-def test_showing_the_face_without_a_new_picture_is_refused(
-    fake_model: FakeModel, failed_clip: SceneStep
-) -> None:
-    [answer] = refused_then_given_up(fake_model, failed_clip, film_again(person_shown="has face"))
-    assert answer.startswith("Refused: showing or hiding the face changes the picture")
+# "Showing or hiding the face without a new picture is refused" is deleted: a try has no
+# start picture (spec #210 point 19), so a face is the drawn picture cut-and-send sends.
 
 
 def test_a_result_on_a_scene_that_doesnt_do_a_job_is_refused(
@@ -411,19 +415,20 @@ def test_a_line_that_cant_be_voiced_is_refused_and_the_old_line_kept(
     assert scene_row()[0] == LINE_2
 
 
-def test_a_new_line_that_cant_be_heard_back_is_refused_before_any_picture_is_drawn(
+def test_a_new_line_that_cant_be_heard_back_is_refused_before_any_clip_is_made(
     fake_model: FakeModel, failed_clip: SceneStep
 ) -> None:
     fake_model.respond("fact_check", facts_ok(2))
     fake_model.respond("transcribe_line", *[OutsideServiceDown("401 Unauthorized")] * 3)
-    edits = fake_model.edits
+    clips_made = paid_for().count("make_broll_clip")
     [answer] = refused_then_given_up(
-        fake_model, failed_clip, a_new_picture(line=NEW_LINE, shows=STIRS)
+        fake_model, failed_clip, film_again(line=NEW_LINE, shows=STIRS)
     )
     assert answer.startswith(
         "Refused: the new line can't be voiced right now, so keep the scene's line as it is."
     )
-    assert fake_model.edits == edits
+    # Only the given-up-on try after it was filmed.
+    assert paid_for().count("make_broll_clip") == clips_made + 1
     assert scene_row()[:2] == (LINE_2, SHOWS)
 
 
@@ -639,76 +644,55 @@ def test_a_scene_the_cap_ended_keeps_its_last_try_and_the_chat_says_the_cap_ende
     ) in step.result
 
 
-# --- A new start picture -----------------------------------------------------------------------
-
-PICTURE_PROMPT = "Image 1's mug on the bench of Image 2, a hand holding a spoon above it."
-CROOKED = "The handle is on the wrong side."
-
-
-def a_new_picture(**changes: Any) -> tuple[str, dict[str, Any]]:
-    return film_again(
-        new_picture=True, photo=colour_photo(), picture_prompt=PICTURE_PROMPT, **changes
-    )
+# --- What a try is sent ----------------------------------------------------------------------
+# A new start picture and its check and redraws are deleted, naming spec #210 point 19: a try
+# is sent what the newest clip was sent, or the references the agent names.
 
 
-def picture_fails() -> dict[str, Any]:
-    return {**PICTURE_OK, "verdict": "fail", "problem": CROOKED}
-
-
-def test_a_new_start_picture_is_drawn_checked_and_filmed(
+def test_a_try_is_sent_the_newest_clips_picks_and_piece_and_no_start_picture(
     fake_model: FakeModel, failed_clip: SceneStep
 ) -> None:
-    fake_model.respond("fix_scene", turn(calls=[a_new_picture()]))
-    outcome = fixed(failed_clip)
-    [made] = outcome.tries
-    assert made.picture is not None and made.picture.change == "try 1"
-    assert made.clip is not None and made.clip.picture == made.picture
-    assert made.picture.step is not None and made.picture.step.prompt == PICTURE_PROMPT
-    assert [version.label for version in work.versions(Scene.objects.get(number=2))] == [
-        "v1 first version (first clip)",
-        "v2 try 1",
-    ]
-
-
-def test_a_tries_picture_is_never_priced_as_a_picture_with_its_clip_and_judge(
-    fake_model: FakeModel, failed_clip: SceneStep
-) -> None:
-    scene = Scene.objects.get(number=2)
-    before = producer._picture_only_estimate_usd(scene)
-    fake_model.respond("fix_scene", turn(calls=[a_new_picture()]))
-    fixed(failed_clip)
-    assert producer._picture_only_estimate_usd(scene) == before
-
-
-def test_a_picture_that_fails_its_check_is_drawn_again_without_counting_as_a_try(
-    fake_model: FakeModel, failed_clip: SceneStep
-) -> None:
-    fake_model.respond("check_starting_picture", picture_fails(), picture_fails())
-    fake_model.respond("fix_scene", turn(calls=[a_new_picture()]), turn(calls=[a_new_picture()]))
-    outcome = fixed(failed_clip)
-    assert told()[0].startswith(
-        f"Refused: the picture check failed the new start picture: {CROOKED} {CROOKED} Draw it "
-        "again (redraw 1 of 2"
-    )
-    assert [each.number for each in outcome.tries] == [1]
-    assert outcome.passed is not None
-
-
-def test_a_picture_that_keeps_failing_ends_its_try_with_no_clip(
-    fake_model: FakeModel, failed_clip: SceneStep
-) -> None:
-    fake_model.respond("check_starting_picture", *[picture_fails()] * 6)
+    clip = failed_clip.produced.order_by("id").first()
+    assert clip is not None
+    before = sent_list_of(clip)
+    assert before is not None
+    drawn = len(handoffs("make_starting_picture"))
     fake_model.respond(
         "fix_scene",
-        *[turn(calls=[a_new_picture()]) for _ in range(3)],
         turn(calls=[film_again()]),
+        turn(calls=[film_again(video_prompt=POURS)]),
+        turn(calls=[("give_up", {"reason": "It keeps floating."})]),
     )
+    fake_model.respond("check_clip_motion", failing(FLOATS), failing(FLOATS))
+
     outcome = fixed(failed_clip)
-    assert told()[2].startswith(
-        f"The picture check failed the new start picture: {CROOKED} {CROOKED} That was the last "
-        "redraw: try 1 ends with no clip."
-    )
-    assert [(each.number, each.clip is None) for each in outcome.tries] == [(1, True), (2, False)]
+
+    picks = [(p.library_number, p.for_) for p in before.pictures if p.tier == 2]
+    pieces = [(p.video, p.moment) for p in before.pieces]
+    for made in outcome.tries:
+        assert made.clip is not None and made.clip.picture is None
+        sent = sent_list_of(made.clip)
+        assert sent is not None
+        assert [(p.library_number, p.for_) for p in sent.pictures if p.tier == 2] == picks
+        assert [(p.video, p.moment) for p in sent.pieces] == pieces
+        assert made.video_prompt == sent.prompt and sent.prompt.endswith(
+            STIRS if made.number == 1 else POURS
+        )
+    # Nothing is drawn or checked as a start picture.
+    assert len(handoffs("make_starting_picture")) == drawn
+    assert "check_starting_picture" not in paid_for()
+
+
+def test_the_agent_is_never_told_of_a_start_picture(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    fake_model.respond("fix_scene", turn(calls=[film_again()]))
+    fixed(failed_clip)
+    first = ModelCall.objects.filter(purpose="fix_scene").order_by("created_at", "id")[0]
+    told_it = json.dumps(first.handoff)
+    assert "start picture" not in told_it and "starting picture" not in told_it
+    # Nor of shop photos by their positions: the agent names pictures by library number.
+    assert "Shop photos" not in told_it and "look_at_shop_photo" not in told_it
 
 
 # --- Door 2: the shop owner's note -------------------------------------------------------------
@@ -1187,23 +1171,6 @@ def test_a_try_the_worker_stopped_in_is_carried_on_from_its_checkpoint(
     assert outcome.passed == outcome.tries[0].clip
 
 
-def test_a_new_picture_drawn_before_the_worker_stopped_isnt_drawn_again(
-    fake_model: FakeModel, failed_clip: SceneStep
-) -> None:
-    fake_model.respond("fix_scene", turn(calls=[a_new_picture()]))
-    fake_model.respond("check_starting_picture", WorkerStopped())
-    with pytest.raises(WorkerStopped):
-        fixed(failed_clip)
-    edits = fake_model.edits
-
-    outcome = fixed(failed_clip)
-
-    assert fake_model.edits == edits
-    [made] = outcome.tries
-    assert made.picture is not None and made.picture.step is not None
-    assert made.picture.step.prompt == PICTURE_PROMPT
-
-
 def test_no_number_of_turns_stops_the_agent(fake_model: FakeModel, failed_clip: SceneStep) -> None:
     fake_model.respond(
         "fix_scene",
@@ -1245,17 +1212,6 @@ def test_a_give_up_kept_already_is_left_as_it_is_when_the_worker_restarts(
     assert scene_clip() == kept.kept
 
 
-def test_a_new_picture_from_a_photo_the_job_doesnt_have_is_refused(
-    fake_model: FakeModel, failed_clip: SceneStep
-) -> None:
-    [answer] = refused_then_given_up(
-        fake_model,
-        failed_clip,
-        film_again(new_picture=True, photo=3, picture_prompt="The mug on the counter."),
-    )
-    assert answer.startswith("Refused: Image 1 must be one of the shop photos: [1, 2].")
-
-
 def test_the_ad_snapshot_counts_a_fixed_scenes_money_once(new_line_passes: Outcome) -> None:
     session = Scene.objects.get(number=2).job.session
     assert session is not None
@@ -1280,7 +1236,7 @@ def test_a_picture_the_scene_excludes_is_refused_and_no_try_is_spent(
     [answer] = refused_then_given_up(
         fake_model,
         failed_clip,
-        film_again(new_picture=True, photo=2, picture_prompt="The mug on the counter."),
+        film_again(references={"pictures": [{"number": 2, "used_for": "state"}], "piece": None}),
     )
 
     assert answer.startswith(

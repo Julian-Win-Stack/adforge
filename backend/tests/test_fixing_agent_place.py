@@ -17,6 +17,7 @@ from gateway.fake import FakeModel, turn
 from gateway.gateway import edit_picture
 from gateway.types import ToolUse
 from jobs import work
+from jobs.library import sent_list_of
 from jobs.models import AgentFixTry, ProducedItem, Scene, SceneStep
 
 from .conftest import HeldSteps, WorkerStopped, handoffs
@@ -104,12 +105,17 @@ def test_a_new_place_is_drawn_for_the_scene_only_and_shown_before_anything_films
         assert work.scene_place(other, "no face") == ("room", ads_room)
 
 
-A_FACE = film_again(
-    person_shown="has face",
-    new_picture=True,
-    photo=1,
-    picture_prompt="The presenter holds the mug from Image 1 in the room from the last image.",
-)
+A_FACE = film_again(person_shown="has face")
+
+
+def sent_place() -> str:
+    """The file of the place the newest try's clip was sent: its drawn picture."""
+    row = AgentFixTry.objects.exclude(clip=None).order_by("-number").first()
+    assert row is not None and row.clip is not None
+    sent = sent_list_of(row.clip)
+    assert sent is not None
+    [place] = [picture for picture in sent.pictures if picture.drawn is not None]
+    return place.file
 
 
 def test_after_a_restart_the_next_try_is_drawn_in_the_scenes_own_place(
@@ -132,9 +138,8 @@ def test_after_a_restart_the_next_try_is_drawn_in_the_scenes_own_place(
     # The restart drew nothing again.
     assert len(handoffs("draw_scene_room")) == len(handoffs("make_scene_person_in_room")) == 1
     assert ToolCall.objects.filter(tool="place_edit").count() == 1
-    # The try's start picture is drawn in the scene's own place, not the ad's.
-    tried = handoffs("make_starting_picture")[-1]["pictures"]
-    assert tried[-1] == own.file and before_picture.file not in tried
+    # The try is sent the scene's own place, not the ad's.
+    assert sent_place() == own.file != before_picture.file
 
 
 MOVE_THE_LAMP = "Move the lamp to the left end of the shelf."
@@ -210,11 +215,7 @@ def tries() -> int:
     return AgentFixTry.objects.count()
 
 
-NO_FACE_NEW_PICTURE = film_again(
-    new_picture=True,
-    photo=1,
-    picture_prompt="A hand holds the mug from Image 1 in the room from the last image.",
-)
+NO_FACE_NEW_PICTURE = film_again()
 
 
 def test_a_try_needing_the_picture_the_new_place_lacks_is_refused_and_names_it(
@@ -240,7 +241,7 @@ def test_a_try_needing_the_picture_the_new_place_lacks_is_refused_and_names_it(
     assert handoffs("make_scene_person_in_room") == []
     [room] = Scene.objects.get(number=2).produced.filter(kind=ProducedItem.Kind.SCENE_ROOM)
     assert not no_face.result.startswith("Refused")
-    assert handoffs("make_starting_picture")[-1]["pictures"][-1] == room.file
+    assert sent_place() == room.file
     # The place the agent looks at is the scene's own.
     looked = ToolCall.objects.get(tool="look_at_place")
     assert [picture["key"] for picture in looked.pictures] == [room.file]
@@ -272,4 +273,4 @@ def test_a_worker_stopped_mid_place_edit_pays_for_nothing_again(
     assert scene.produced.filter(kind=ProducedItem.Kind.SCENE_ROOM).count() == 1
     [own] = scene.produced.filter(kind=ProducedItem.Kind.SCENE_PERSON_IN_ROOM)
     assert own.file == stopped[0]
-    assert handoffs("make_starting_picture")[-1]["pictures"][-1] == own.file
+    assert sent_place() == own.file

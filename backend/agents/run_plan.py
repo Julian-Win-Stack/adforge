@@ -278,6 +278,15 @@ def _photo_cant(row: FixPlanScene) -> str:
     return ""
 
 
+def _redo(row: FixPlanScene) -> Fix.Redo:
+    """What the row makes again: a new picture for a scene that shows the product is its clip
+    made again from its sent list, as it has no starting picture (spec #210 point 19), so it
+    is fix checked as a clip."""
+    if row.action == Action.NEW_PICTURE and row.scene.shows:
+        return Fix.Redo.CLIP
+    return _REDO[Action(row.action)]
+
+
 def _row_estimate(row: FixPlanScene, counted: set[tuple[str, str]]) -> Estimate:
     """What the row is estimated to cost, as today's fix of the same redo: with, for the first
     row of the plan taking each thing from a photo, its clean picture, unless one was already
@@ -293,12 +302,12 @@ def _row_estimate(row: FixPlanScene, counted: set[tuple[str, str]]) -> Estimate:
         # A new picture asked for with a new line: both, then the clip. A new line keeps the
         # picture, or draws one for a talking scene that has none; a scene that shows the
         # product never has one (spec #210 point 19).
-        new_picture = row.action == Action.NEW_PICTURE or (
-            not scene.shows and _shown_picture(scene) is None
+        new_picture = not scene.shows and (
+            row.action == Action.NEW_PICTURE or _shown_picture(scene) is None
         )
         estimate = _quantized(_line_estimate(scene, f'"{row.line}"', new_picture=new_picture))
     else:
-        estimate = _estimate(scene, _REDO[Action(row.action)], row.change)
+        estimate = _estimate(scene, _redo(row), row.change)
     clean = Decimal(0)
     for photo in row.photos:
         key = (str(photo["file"]), str(photo["thing"]).casefold())
@@ -364,6 +373,9 @@ def _line_of(row: FixPlanScene) -> str:
 def _what(row: FixPlanScene) -> str:
     if row.action == Action.FIX:
         return "fixed by the fixing agent, to this goal"
+    if row.action == Action.NEW_PICTURE and row.scene.shows:
+        # It has no starting picture: its clip is made again (`_redo`).
+        return f'new line, "{row.line}", then its clip' if row.line else "new clip"
     if row.action == Action.NEW_PICTURE and row.line:
         return f'new starting picture and new line, "{row.line}", then its clip'
     if row.action == Action.NEW_PICTURE:
@@ -465,7 +477,7 @@ def _confirmed_fix(plan: FixPlan, row: FixPlanScene) -> Fix:
         job=plan.job,
         scene=row.scene,
         fix=row.change,
-        redo=_REDO[Action(row.action)],
+        redo=_redo(row),
         notes=plan.notes,
         estimate_usd=row.estimate_usd,
         asked=_code_call(row, "run_fix_plan"),
@@ -520,6 +532,8 @@ def _made(row: FixPlanScene) -> str:
         return f"go back to version {row.go_back_to}"
     if row.action == Action.FIX:
         return "fix"
+    if row.action == Action.NEW_PICTURE and row.scene.shows:
+        return "new line" if row.line else "new clip"
     if row.action == Action.NEW_PICTURE and row.line:
         return "new starting picture and new line"
     return {
@@ -810,6 +824,10 @@ def _carry_on(row: FixPlanScene) -> None:
     )
     if picture is not None and row.action == Action.NEW_PICTURE:
         clips = clips.filter(picture_step=picture.step)
+    # A new picture of a scene that shows the product is a new clip of it, made from the note.
+    as_new_clip = row.action == Action.NEW_CLIP or (
+        from_sent_list and row.action == Action.NEW_PICTURE
+    )
     if clips.exists():
         _landed(row)
         return
@@ -823,19 +841,24 @@ def _carry_on(row: FixPlanScene) -> None:
         row,
         scene,
         SceneStep.Kind.CLIP,
-        note=row.change if row.action == Action.NEW_CLIP else "",
+        note=row.change if as_new_clip else "",
         made_from=audio,
         picture=picture,
         picture_step=picture.step if picture is not None else None,
-        motion_prompt=_kept_motion(row, scene, picture),
+        motion_prompt="" if as_new_clip else _kept_motion(row, scene, picture),
     )
 
 
 def _from_its_sent_list(row: FixPlanScene, scene: Scene) -> bool:
     """Whether the row's clip is made from the scene's sent list, with no starting picture:
-    a new clip, a new line's clip or a go back's in a scene that shows the product (spec #210
-    point 19). A new picture for such a scene still draws one (#242)."""
-    return bool(scene.shows) and row.action in (Action.NEW_CLIP, Action.NEW_LINE, Action.GO_BACK)
+    any row's clip in a scene that shows the product (spec #210 point 19), a new picture's
+    being a new clip made from its note."""
+    return bool(scene.shows) and row.action in (
+        Action.NEW_CLIP,
+        Action.NEW_LINE,
+        Action.GO_BACK,
+        Action.NEW_PICTURE,
+    )
 
 
 def _carry_on_fix(row: FixPlanScene, scene: Scene, running: set[str]) -> None:

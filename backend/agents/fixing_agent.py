@@ -1,14 +1,14 @@
 """The fixing agent: one agent owns a failed B-roll scene until it is fixed or honestly given
 up (handoffs/fixing-agent/spec.md). Bad means the clip judge failed the scene's clip (door 1)
-or the shop owner sent a note about it (door 2). The agent sees the plan, the page, the shop
-photos, the place, the failed clip's frames and what the judge or the owner said; it decides
-what to change (the action, the result, the kind, the face, the framing, the start picture,
-both prompts, the line), films again with the app's own steps, and reads the judge's answer.
-It repeats until a try passes, or it calls give_up, or it has filmed the tries cap, when
-code ends it; it is never told the cap. As its last resort at door 1 it may ask the shop
-owner once (ask_owner): the fix is then parked on that question, ending as a give-up does
-until `answer_question` gives the answer and opens it again. Every try is a version the shop
-owner can see and pick.
+or the shop owner sent a note about it (door 2). The agent sees the plan, the page, what the
+failed clip was sent, its frames, the library and what the judge or the owner said; it
+decides what to change (the action, the result, the kind, the face, the framing, the
+pictures and the piece the clip is sent, the video prompt, the line), films again with the
+app's own steps, and reads the judge's answer. It repeats until a try passes, or it calls
+give_up, or it has filmed the tries cap, when code ends it; it is never told the cap. As its
+last resort at door 1 it may ask the shop owner once (ask_owner): the fix is then parked on
+that question, ending as a give-up does until `answer_question` gives the answer and opens
+it again. Every try is a version the shop owner can see and pick.
 
 Nothing is kept in memory between turns: each turn is rebuilt from the AgentFix row and the
 checkpoint of every tool the agent called, so a worker that stops halfway is replaced by one
@@ -30,7 +30,7 @@ from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, Field
 
 from adforge import file_store, tracing
-from gateway.gateway import charged_to, edit_picture
+from gateway.gateway import charged_to
 from gateway.types import (
     MOST_BROLL_SECONDS,
     Happened,
@@ -44,13 +44,9 @@ from jobs import (
     auto_fix,
     clip_judge,
     cut_and_send,
-    first_send,
     library,
     library_items,
-    library_sheets,
-    picture_check,
     product_videos,
-    reference_photos,
     scene_references,
     scenes,
     work,
@@ -64,7 +60,6 @@ from jobs.models import (
     OwnerQuestion,
     ProducedItem,
     ProductVideo,
-    ReferencePhoto,
     Scene,
     SceneStep,
 )
@@ -81,9 +76,6 @@ PURPOSE = "fix_scene"
 # decision about the scene (Julian 2026-10-19 16:45, "We cannot make that decision with the
 # code"). The agent decides when to give up.
 MOST_TRIES = 6
-# A start picture that fails its check is drawn again, as the app does, at most this often
-# before the try ends with no clip.
-MOST_REDRAWS = picture_check.MOST_REDRAWS
 # The newest pictures the agent is shown on a turn; older ones are dropped with a note.
 MOST_PICTURES = 50
 
@@ -104,8 +96,8 @@ You fix one B-roll scene of a short vertical video ad. In a B-roll scene the pre
 voice says the scene's line while the clip shows the product. The scene's clip failed: a \
 judge watched it and found faults, or the shop owner failed it. You own this scene. You may \
 change, for this scene only: what it shows (the action), what it ends on (the result), its \
-B-roll kind, whether the presenter's face is in it, the camera framing, the start picture \
-(you write its prompt from scratch), the video prompt (from scratch), and the line. You may \
+B-roll kind, whether the presenter's face is in it, the camera framing, the pictures and the \
+video piece the clip is sent, the video prompt (from scratch), and the line. You may \
 film a different step of what the line says, when that step films better. The clip lasts the \
 line's audio in whole seconds, at least 5 and at most 15, so a shorter or longer line changes \
 the clip's length. You never change another scene. Every B-roll scene happens in the ad's \
@@ -122,17 +114,17 @@ model fills the spare seconds with things that never happen in life. Every clip 
 had an action that keeps going by its own course for the whole clip. So pick an action that \
 fills the clip, or write the clip second by second so each second has its real part: the \
 reach, the action, and what it naturally causes as it settles, ending on the result.
-- The clip is made from your start picture as a looks guide: its first frame is a redraw of \
-it. So the start picture must show the moment just before the action, with everything the \
-action needs already in place and held the way a real person holds it, and nothing in it \
+- The clip is made from the pictures and the video piece it is sent, as guides to how things \
+look and move. Its first frame must show the moment just before the action, with everything \
+the action needs already in place and held the way a real person holds it, and nothing in it \
 that the action contradicts.
 
 Rules you keep, always:
 - Positive orders only, in the video prompt: no "not", "no", "never", "without", "nothing", \
 "nobody", "none", "neither", "nor", "avoid", or any word ending in "n't". Code refuses a \
 video prompt with them.
-- ONE action per clip. The camera never moves. Only "real-time speed": never slower. The \
-start picture is an order. Never turn the product to a side the photos don't show. The \
+- ONE action per clip. The camera never moves. Only "real-time speed": never slower. Never \
+turn the product to a side the photos don't show. The \
 result shows only where the product touches. In a scene that shows the problem, nobody \
 touches the product.
 - The line stays a true claim from the page; a new line, or a new action, is fact checked \
@@ -143,20 +135,20 @@ a product is really used.
 film every one in its order (only there may a clip have more than one action).
 {{asking}}
 
-How you work: you are shown the scene, the plan, the page, what the failed clip was sent \
-(or its start picture), the failed clip's frames (5 a second), what the judge found, the \
+How you work: you are shown the scene, the plan, the page, what the failed clip was sent, \
+the failed clip's frames (5 a second), what the judge found, the \
 ad's picture library as a list and how the product behaves. Look at anything else you need: \
 look_at_library opens one library item, or one moment of a page video, by its number. Then \
 make a move, whichever fixes the cause, in no set order: film_again films the whole scene as \
-you write it, and its references send library items by number, in your order, and a page \
-video's moment as the piece, in place of the start picture (code sends them after the \
-front photo and before the scene's place and the other sides, makes them the clip's \
-colour, labels each one and puts the speed line before your prompt); change_action \
+you write it, sent what the newest clip was sent unless you name references: library items \
+by number, in your order, and a page video's moment as the piece, in place of the newest \
+clip's picks and piece (code sends them after the front photo and before the scene's place \
+and the other sides, makes them the clip's colour, labels each one and puts the speed line \
+before your prompt); change_action \
 films another selling action, with its line, that you write; \
 end_result_only films only the end state the action leads to; place_edit shows you the \
 scene's new place before anything is filmed; give_up ends the fix. After each filmed move \
-you are told what was sent, shown the new start picture when you drew one and the new \
-clip's frames, and given the judge's verdict. When code \
+you are told what was sent, shown the new clip's frames, and given the judge's verdict. When code \
 refuses a move, its answer says why: that costs no try, so change what it names and call \
 again. On a fail, find what caused it (the plan, the pictures, or what the video model can't \
 do) and change that cause, not only the words. {WORDS_THEN_REFERENCES} On every try, write \
@@ -165,9 +157,9 @@ one new clip was made. When, after trying, you judge the scene can't be filmed w
 give_up with your reason: {{gave_up}} The judge can be wrong, but only a clip the judge \
 passes passes.
 
-The app's own prompt rules follow, for writing the two prompts. They hold for you too, with \
-two exceptions: you may write the video prompt second by second, with timings, when that \
-helps; and a rule about following a producer's note does not apply.
+The app's own video prompt rules follow. They hold for you too, with two exceptions: you \
+may write the video prompt second by second, with timings, when that helps; and a rule \
+about following a producer's note does not apply.
 """
 
 
@@ -222,7 +214,8 @@ def _gives_up_as(fixing: AgentFix) -> AgentFix.Door:
 
 def instructions(door: str = AgentFix.Door.JUDGE) -> str:
     """Everything the agent is told for `door`: its own instructions, saying what giving up
-    does there, then the app's B-roll prompt rules, unchanged."""
+    does there, then the app's B-roll video prompt rules and each kind's rules, read for a
+    clip made from what it is sent (`for_a_sent_clip`)."""
     kinds = "\n\n".join(
         f'When the B-roll kind is "{kind}":\n{rules}'
         for kind, rules in scenes.BROLL_KIND_RULES.items()
@@ -230,7 +223,19 @@ def instructions(door: str = AgentFix.Door.JUDGE) -> str:
     told = INSTRUCTIONS.replace("{gave_up}", GAVE_UP[AgentFix.Door(door)]).replace(
         "{asking}", ASKING[AgentFix.Door(door)]
     )
-    return f"{told}\n{scenes.BROLL_SHARED_RULES}\n\n{kinds}"
+    return for_a_sent_clip(f"{told}\n{scenes.BROLL_VIDEO_PROMPT_RULES}\n{kinds}")
+
+
+# The app's B-roll rules were written for a clip animated from a drawn starting picture; a
+# clip made from what it is sent has none (spec #210 point 19), so the agent reads each of
+# those rules as said of the clip's first frame. Claude's wording, not approved yet: one place.
+STARTING_PICTURE_READS_AS = ("the starting picture", "the clip's first frame")
+
+
+def for_a_sent_clip(rules: str) -> str:
+    """`rules` as they hold for a clip made from what it is sent, with no starting picture."""
+    old, new = STARTING_PICTURE_READS_AS
+    return rules.replace(old, new).replace(old.capitalize(), new.capitalize())
 
 
 def _tools(door: str) -> list[ToolSpec]:
@@ -319,9 +324,7 @@ class Try:
 
     number: int
     clip: ProducedItem | None
-    picture: ProducedItem | None
     scene_row: dict[str, Any]
-    picture_prompt: str
     video_prompt: str
     ruling: dict[str, Any] | None
     fix_check: dict[str, Any] | None
@@ -375,7 +378,7 @@ def fix_scene(
 
 def outcome(fixing: AgentFix) -> Outcome:
     """How `fixing` ended, or stands."""
-    tries = [_as_try(each, fixing) for each in fixing.tries.select_related("clip", "picture")]
+    tries = [_as_try(each, fixing) for each in fixing.tries.select_related("clip")]
     return Outcome(
         passed=fixing.passed,
         tries=tries,
@@ -390,9 +393,7 @@ def _as_try(row: AgentFixTry, fixing: AgentFix) -> Try:
     return Try(
         number=row.number,
         clip=row.clip,
-        picture=row.picture,
         scene_row=row.scene_row,
-        picture_prompt=row.picture_prompt,
         video_prompt=row.video_prompt,
         ruling=row.clip.ruling if row.clip is not None else None,
         fix_check=row.fix_check,
@@ -775,10 +776,10 @@ LIBRARY_FULL = (
 
 REMINDER = "Answer with a tool call: a look, a move or give_up."
 
-# What the first message says of a failed clip made before clips were sent references.
+# What the first message says of a failed clip made before the app kept what clips were sent.
 NO_SENT_LIST = (
-    "The failed clip was made from a start picture, before the app sent clips references, so "
-    "it has no sent list: what it was sent is its start picture, shown with it as try 0."
+    "The failed clip was made before the app kept what clips were sent, so there is no list of "
+    "what it was sent: its frames are shown as try 0."
 )
 # The drawn picture of a sent list, by what it shows (jobs.library.Drawn).
 DRAWN = {
@@ -792,7 +793,7 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
     words and tools in the order they happened."""
     first = fixing.first_clip
     assert first is not None, "the fixing started with try 0"
-    sent, shown = try_shown("Try 0", first.picture, first)
+    sent, shown = try_shown("Try 0", first)
     happened: list[Happened] = [
         Said(by="user", text=_intro(fixing)),
         ToolUse(
@@ -803,7 +804,7 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
             + (
                 f"What its clip was sent, then the clip's frames. {sent}"
                 if sent
-                else "Its start picture, then its clip's frames."
+                else "Its clip's frames."
             ),
             pictures=[Shown(label=each.label, key=each.key) for each in shown],
         ),
@@ -849,8 +850,6 @@ def _intro(fixing: AgentFix) -> str:
     first = fixing.first_clip
     assert first is not None and first.made_from is not None
     plan = "\n".join(_scene_facts(each) for each in job.scenes.order_by("number"))
-    colour = [p.position for p in job.photos.filter(shows_product_colour=True)]
-    every = [p.position for p in job.photos.all()]
     seconds = first.made_from.seconds or 0
     clip_seconds = work._broll_clip_seconds(seconds)
     sent = library.sent_list_of(first)
@@ -894,13 +893,6 @@ def _intro(fixing: AgentFix) -> str:
             ),
             f"Scene {scene.number}'s line takes {seconds:.2f} s to say, so its clip is "
             f"{clip_seconds} s.",
-            f"Shop photos, any of which may be Image 1: {every}; those showing the product in "
-            f"the ad's colour, {job.product_colour}: {colour}. For a new start picture, pick "
-            "Image 1 from those in the ad's colour; only when none suits, or there are none, "
-            "take another where the product is clearly seen. The product's look and colour come "
-            f"only from that photo: never change them or make one up. {scenes.SEVERAL_ITEMS}",
-            f'Code starts the video prompt with "{first_send.SPEED_LINE}", then a line for '
-            "each picture and video the clip is sent, saying what it is, then your words.",
             f"The page's words:\n{job.page_text}",
         ]
     )
@@ -1102,21 +1094,6 @@ def _fixing_of(call: ToolCall) -> AgentFix:
     return call.agent_fix
 
 
-class LookAtShopPhoto(Tool):
-    """See one of the shop's product photos, by its number."""
-
-    name: ClassVar[str] = "look_at_shop_photo"
-    photo: int
-
-    def run(self, call: ToolCall) -> ToolResult:
-        photo = _fixing_of(call).step.scene.job.photos.filter(position=self.photo).first()
-        if photo is None:
-            raise Refused(f"there is no photo {self.photo}.")
-        return ToolResult(
-            f"Shop photo {self.photo}.", [Image(label=f"Shop photo {self.photo}", key=photo.file)]
-        )
-
-
 class LookAtPlace(Tool):
     """See the place this scene happens in: its own newest one, when place_edit made it one,
     else the ad's place picture, the place every B-roll scene happens in."""
@@ -1156,8 +1133,8 @@ class LookAtPresenter(Tool):
 
 class LookAtTry(Tool):
     """See a try again: what its clip was sent (the pictures with their labels and the video
-    pieces' frames), or its start picture for a clip made from one, then its clip's frames
-    and the judge's words. Try 0 is the scene as it failed in the ad."""
+    pieces' frames), then its clip's frames and the judge's words. Try 0 is the scene as it
+    failed in the ad."""
 
     name: ClassVar[str] = "look_at_try"
     number: int
@@ -1167,9 +1144,9 @@ class LookAtTry(Tool):
         parts = try_parts(fixing, self.number)
         if parts is None:
             raise Refused(f"tries so far: 0 to {fixing.tries.count()}.")
-        picture, clip, ruling = parts
+        clip, ruling = parts
         label = f"Try {self.number}"
-        sent, shown = try_shown(label, picture, clip)
+        sent, shown = try_shown(label, clip)
         said = (
             f"{label}: what its clip was sent, then the clip's frames. {sent}"
             if sent
@@ -1180,25 +1157,22 @@ class LookAtTry(Tool):
 
 def try_parts(
     fixing: AgentFix, number: int
-) -> tuple[ProducedItem | None, ProducedItem | None, dict[str, Any] | None] | None:
-    """Try `number` of `fixing` as its start picture, its clip and the judge's ruling on it,
-    or None when it has no such try. Try 0 is the clip it fixes, with the ruling handed over."""
+) -> tuple[ProducedItem | None, dict[str, Any] | None] | None:
+    """Try `number` of `fixing` as its clip and the judge's ruling on it, or None when it has
+    no such try. Try 0 is the clip it fixes, with the ruling handed over."""
     if number == 0:
-        first = fixing.first_clip
-        return (first.picture if first else None, first, fixing.ruling)
+        return fixing.first_clip, fixing.ruling
     row = fixing.tries.filter(number=number).first()
     if row is None:
         return None
-    return row.picture, row.clip, row.clip.ruling if row.clip is not None else None
+    return row.clip, row.clip.ruling if row.clip is not None else None
 
 
-def try_shown(
-    label: str, picture: ProducedItem | None, clip: ProducedItem | None
-) -> tuple[str, list[Image]]:
+def try_shown(label: str, clip: ProducedItem | None) -> tuple[str, list[Image]]:
     """What a look at a try shows, and what code says of what its clip was sent: when its
     clip carries a sent list (spec #210 point 21), the pictures it was sent with their labels
-    and each piece's frames, then the clip's frames; else its start picture, then the clip's
-    frames, with nothing said."""
+    and each piece's frames, then the clip's frames; else the clip's frames, with nothing
+    said."""
     sent = library.sent_list_of(clip) if clip is not None else None
     frames = [] if clip is None else _frames(clip, f"{label}, clip")
     clip_frames = [Image(label=each.label, key=each.key) for each in frames]
@@ -1217,8 +1191,7 @@ def try_shown(
             *pieces,
             *clip_frames,
         ]
-    shown = [Image(label=f"{label}, start picture", key=picture.file)] if picture else []
-    return "", [*shown, *clip_frames]
+    return "", clip_frames
 
 
 class LookAtLibrary(Tool):
@@ -1324,7 +1297,7 @@ class NamedPiece(BaseModel):
 
 
 class References(BaseModel):
-    """What a try is sent in place of a start picture."""
+    """What a try is sent in place of the newest clip's picks and piece."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -1403,10 +1376,10 @@ def place_edit(fixing: AgentFix, asked: PlaceEdit) -> ToolResult:
 
 
 class FilmAgain(Tool):
-    """Film this scene again as you write it here: code saves your scene row, draws a new
-    start picture when you ask for one and checks it, or sends the references you name in its
-    place, makes the clip and has the judge watch it. Write the whole scene as it should be,
-    every field."""
+    """Film this scene again as you write it here: code saves your scene row, sends the clip
+    what the newest clip was sent, or the references you name in place of its picks and piece,
+    makes the clip and has the judge watch it. Write the whole scene as it should be, every
+    field."""
 
     name: ClassVar[str] = "film_again"
     root_cause: str = Field(
@@ -1421,31 +1394,18 @@ class FilmAgain(Tool):
     result: str = Field(description='What it ends on, for "does a job"; empty otherwise.')
     broll_kind: Literal["does a job", "showcase", "shows the problem"]
     person_shown: Literal["no face", "has face"]
-    new_picture: bool = Field(
-        description="True to draw a new start picture from picture_prompt; false keeps the "
-        "current one."
-    )
-    photo: int | None = Field(
-        description="With a new picture: the shop photo that is Image 1, one in the ad's colour "
-        "when one suits."
-    )
-    picture_prompt: str | None = Field(
-        description="With a new picture: the picture model's prompt, written from scratch, "
-        "naming each image by its number and job."
-    )
     video_prompt: str = Field(
         description="The video model's prompt, from scratch, positive orders only. Code adds "
-        "the clip's length and the still camera before it; with references, the speed line "
-        "and a label for each picture and the piece instead."
+        "the speed line and a label for each picture and piece sent before it."
     )
     would_ask_owner: str | None = Field(
         description="What you would ask the shop owner, if anything. Nobody is asked."
     )
     references: References | None = Field(
         default=None,
-        description="The library pictures and the moment to send in place of the start "
-        "picture, with new_picture false. Code recolours them to the clip's colour and labels "
-        "them. Null films from the start picture.",
+        description="The library pictures and the moment to send in place of the newest "
+        "clip's picks and piece. Code recolours them to the clip's colour and labels them. "
+        "Null sends what the newest clip was sent.",
     )
 
     def run(self, call: ToolCall) -> ToolResult:
@@ -1499,27 +1459,14 @@ END_RESULT_ONLY = (
 
 class EndResultOnly(FilmAgain):
     """Film only the end state the action leads to, with the action already done: you write
-    the scene yourself, every field, with what it shows as that end state. Its start picture
-    shows that end state too, so draw a new one unless the current one already shows it. Code
-    adds a fixed line saying so before your video prompt, then films it as film_again does and
-    has the judge watch it."""
+    the scene yourself, every field, with what it shows as that end state; name references
+    that show it when the newest clip's don't. Code adds a fixed line saying so before your
+    video prompt, then films it as film_again does and has the judge watch it."""
 
-    # The clip's first frame is a redraw of its start picture, until the start picture is
-    # retired (spec #210 point 19): so here the picture shows the end state, not the moment
-    # before the action.
     name: ClassVar[str] = "end_result_only"
     shows: str = Field(
         description="The end state the clip holds on, in one sentence: the product and what "
         "the action left."
-    )
-    new_picture: bool = Field(
-        description="True to draw a new start picture of the end state from picture_prompt; "
-        "false only when the current one already shows that end state."
-    )
-    picture_prompt: str | None = Field(
-        description="With a new picture: the picture model's prompt, written from scratch, "
-        "showing the end state with the action already done, naming each image by its number "
-        "and job."
     )
 
     def run(self, call: ToolCall) -> ToolResult:
@@ -1568,7 +1515,6 @@ class AskOwner(Tool):
 
 
 TOOLS: list[type[Tool]] = [
-    LookAtShopPhoto,
     LookAtPlace,
     LookAtPresenter,
     LookAtTry,
@@ -1591,58 +1537,12 @@ def _row(scene: Scene) -> dict[str, Any]:
     return {field: getattr(scene, field) for field in ROW}
 
 
-def _owner_photos(step: SceneStep, use: str) -> list[ReferencePhoto]:
-    return [row for row in step.reference_photos.all() if row.use == use]
-
-
-def _pictures_sent(
-    fixing: AgentFix, person_shown: str, photo: int
-) -> tuple[list[str], list[dict[str, Any]]]:
-    """The pictures the picture model gets, as the app sends them: the shop owner's things
-    first, then the main photo, the scene's needs photos, the portrait for a face, the place
-    last: the scene's own, when place_edit made it one, else the ad's before-picture.
-    Gives the files and the pictures_sent rows."""
-    step = fixing.step
-    job = step.scene.job
-    owners = _owner_photos(step, ReferencePhoto.Use.PICTURE)
-    files = [work.clean_picture(step.scene, row) for row in owners]
-    rows: list[dict[str, Any]] = [
-        {"image": number, "job": reference_photos.picture_job(row.thing), "reference_photo": row.pk}
-        for number, row in enumerate(owners, 1)
-    ]
-    rows.append({"image": len(rows) + 1, "job": scenes.MAIN_PHOTO_JOB, "photo": photo})
-    files.append(job.photos.get(position=photo).file)
-    faces = {p.position: p.has_face for p in job.photos.all()}
-    for need in scenes.photos_for_needs(step.scene.needs, faces, scenes.MOST_NEEDS_PHOTOS):
-        files.append(job.photos.get(position=need.photo).file)
-        rows.append({"image": len(rows) + 1, "job": scenes.need_job(need), "photo": need.photo})
-    if person_shown == Scene.PersonShown.HAS_FACE:
-        portrait = work.latest(job, ProducedItem.Kind.PORTRAIT)
-        assert portrait is not None, "a scene with a face has its presenter"
-        files.append(portrait.file)
-        rows.append({"image": len(rows) + 1, "job": scenes.PORTRAIT_JOB, "portrait": True})
-    # The scene's own place, when place_edit made it one (#237), else the ad's.
-    own = work.own_place(step.scene, work.drawn_for(person_shown))
-    if own is not None:
-        files.append(own.file)
-        rows.append(
-            {"image": len(rows) + 1, "job": scenes.BEFORE_PICTURE_JOB, "scene_place": own.pk}
-        )
-        return files, rows
-    place = work.latest(job, ProducedItem.Kind.BEFORE_PICTURE)
-    assert place is not None, "every B-roll picture is drawn in the ad's place"
-    files.append(place.file)
-    rows.append({"image": len(rows) + 1, "job": scenes.BEFORE_PICTURE_JOB, "before_picture": True})
-    return files, rows
-
-
-def _current(fixing: AgentFix) -> tuple[ProducedItem | None, ProducedItem]:
-    """The start picture, if any, and the line's audio the scene's newest try was filmed from:
-    a B-roll clip made from its sent list has no start picture."""
+def _newest_clip(fixing: AgentFix) -> ProducedItem:
+    """The scene's newest clip in this fix: its newest try's, or the clip it fixes."""
     last = fixing.tries.filter(clip__isnull=False).order_by("-number").first()
     clip = last.clip if last is not None else fixing.first_clip
     assert clip is not None and clip.made_from is not None
-    return clip.picture, clip.made_from
+    return clip
 
 
 def _try_step(fixing: AgentFix, call: ToolCall, kind: str, **made: Any) -> SceneStep:
@@ -1677,22 +1577,16 @@ def film_again(fixing: AgentFix, asked: FilmAgain, call: ToolCall) -> ToolResult
     """One try at the scene. A refusal, or work that fails, puts the scene row back as it
     was before the try. Run again after a worker stopped, it pays for nothing twice."""
     row = fixing.tries.filter(tool_call=call).first()
-    if row is not None and row.step is None:
-        return ToolResult(f"Try {row.number} ended with no clip: its picture kept failing.", [])
     if row is not None and row.clip is not None and "verdict" in (row.clip.ruling or {}):
         return _told(fixing, row)
     scene = fixing.step.scene
     scene.refresh_from_db()
     before = {field: getattr(scene, field) for field in KEPT}
     try:
-        told = _film_again(fixing, asked, call, scene, row)
+        return _film_again(fixing, asked, call, scene, row)
     except BaseException:
         _put_back(scene, before)
         raise
-    if fixing.tries.filter(tool_call=call, step__isnull=True).exists():
-        # Its picture kept failing: nothing was filmed, so the scene is as it was.
-        _put_back(scene, before)
-    return told
 
 
 def _refuse_what_breaks_the_rules(fixing: AgentFix, asked: FilmAgain, scene: Scene) -> None:
@@ -1708,21 +1602,9 @@ def _refuse_what_breaks_the_rules(fixing: AgentFix, asked: FilmAgain, scene: Sce
     if asked.references is not None:
         _refuse_bad_references(scene.job, asked)
         _refuse_excluded(asked, scene)
-        if asked.broll_kind != "does a job" and asked.result.strip():
-            raise Refused('only a "does a job" scene has a result.')
-        _refuse_a_missing_own_place(scene, asked.person_shown)
-        return
-    if asked.new_picture and not (asked.photo and asked.picture_prompt):
-        raise Refused("a new picture needs photo and picture_prompt.")
-    every = list(scene.job.photos.values_list("position", flat=True))
-    if asked.new_picture and asked.photo not in every:
-        raise Refused(f"Image 1 must be one of the shop photos: {every}.")
-    _refuse_excluded(asked, scene)
-    if not asked.new_picture and asked.person_shown != scene.person_shown:
-        raise Refused("showing or hiding the face changes the picture: draw a new one.")
     if asked.broll_kind != "does a job" and asked.result.strip():
         raise Refused('only a "does a job" scene has a result.')
-    _refuse_what_misses_the_place(fixing, asked, scene)
+    _refuse_a_missing_own_place(scene, asked.person_shown)
 
 
 def _refuse_excluded(asked: FilmAgain, scene: Scene) -> None:
@@ -1739,44 +1621,24 @@ def _refuse_excluded(asked: FilmAgain, scene: Scene) -> None:
 
 
 def _items_named(asked: FilmAgain, scene: Scene) -> list[int]:
-    """The library items the try names: its references' pictures, or the library items of
-    its new start picture's Image 1 photo."""
-    if asked.references is not None:
-        return [picture.number for picture in asked.references.pictures]
-    if not asked.new_picture or asked.photo is None:
+    """The library items the try names: its references' pictures."""
+    if asked.references is None:
         return []
-    positions = library_sheets.photo_positions(scene.job)
-    return [number for number, position in positions.items() if position == asked.photo]
+    return [picture.number for picture in asked.references.pictures]
 
 
-def _refuse_what_misses_the_place(fixing: AgentFix, asked: FilmAgain, scene: Scene) -> None:
-    """Refuse a try that wouldn't be filmed in the scene's own newest place (#237): one whose
-    face needs the other picture of it, or one keeping a start picture drawn before it."""
-    newest = _refuse_a_missing_own_place(scene, asked.person_shown)
-    if newest is None:
-        return
-    current = _current(fixing)[0]
-    if not asked.new_picture and current is not None and newest.pk > current.pk:
-        raise Refused(
-            "the scene's place changed after its start picture was drawn: draw a new start "
-            "picture, so the try is filmed in its new place."
-        )
-
-
-def _refuse_a_missing_own_place(scene: Scene, person_shown: str) -> ProducedItem | None:
-    """Refuse a try, with a start picture or references, whose face needs the picture of the
-    scene's own place that place_edit hasn't made, so it would go in the ad's old place
-    (#237). Gives the scene's newest own place picture, if any."""
+def _refuse_a_missing_own_place(scene: Scene, person_shown: str) -> None:
+    """Refuse a try whose face needs the picture of the scene's own place that place_edit
+    hasn't made, so it would go in the ad's old place (#237)."""
     newest = work.newest_own_place(scene)
     if newest is None:
-        return None
+        return
     drawn = work.drawn_for(person_shown)
     if work.own_place(scene, drawn) is None:
         raise Refused(
             f"the scene's newest place is its own {PLACE_NAMES[_drawn_as(newest)]}, and this "
             f"try needs its {PLACE_NAMES[drawn]}: call place_edit with picture {drawn} first."
         )
-    return newest
 
 
 # A move code refuses (references the library doesn't hold, a rule broken) comes back as the
@@ -1786,11 +1648,6 @@ def _refuse_bad_references(job: Job, asked: FilmAgain) -> None:
     """Refuse references that name what the library doesn't hold, before anything is made."""
     references = asked.references
     assert references is not None
-    if asked.new_picture:
-        raise Refused(
-            "a try sent references is filmed from them, not from a start picture: set "
-            "new_picture to false."
-        )
     if not references.pictures:
         raise Refused("name at least one picture: a video piece goes beside pictures.")
     held = {each.number for each in library.library_of(job)}
@@ -1844,49 +1701,34 @@ def _film_again(
             _fact_checked(scene)
         scene.save()
 
-    # The new line is voiced first, so a line refused costs no picture.
-    picture, audio = _current(fixing)
+    # The new line is voiced first, so a line refused costs no clip.
+    newest = _newest_clip(fixing)
+    audio = newest.made_from
+    assert audio is not None
     if row is not None and row.step is not None and row.step.made_from is not None:
         audio = row.step.made_from
     elif "line" in changed:
         audio = _voiced(fixing, call)
-    shown: list[Image] = []
-    if row is not None and row.picture is not None:
-        picture = row.picture
-    elif asked.new_picture:
-        drawn = _drawn(fixing, asked, call, number, shown)
-        if isinstance(drawn, str):
-            return ToolResult(drawn, shown)
-        picture = drawn
 
-    # What a try with references is sent: built once, before its try is, and kept on it.
+    # What the try is sent: built once, before its try is, and kept on it.
     sent = (
         library.SentList.model_validate(row.sent)
         if row is not None and row.sent is not None
-        else _references_sent(fixing, asked.references, asked.video_prompt, asked.person_shown)
-        if row is None and asked.references is not None
+        else _try_sent(fixing, asked, newest)
+        if row is None
         else None
     )
 
     if row is None:
         step = _try_step(
-            fixing,
-            call,
-            SceneStep.Kind.CLIP,
-            made_from=audio,
-            picture=picture,
-            picture_step=picture.step if picture is not None else None,
-            motion_prompt=asked.video_prompt,
+            fixing, call, SceneStep.Kind.CLIP, made_from=audio, motion_prompt=asked.video_prompt
         )
         row = AgentFixTry.objects.create(
             agent_fix=fixing,
             number=number,
             tool_call=call,
             step=step,
-            picture=picture,
             scene_row=_row(scene),
-            new_picture=asked.new_picture,
-            picture_prompt=asked.picture_prompt or "",
             video_prompt=sent.prompt if sent is not None else _as_sent(step, asked.video_prompt),
             sent=sent.model_dump(mode="json") if sent is not None else None,
             root_cause=asked.root_cause,
@@ -1917,11 +1759,10 @@ def _film_again(
         row.fix_check = {"verdict": settled.verdict, "reason": settled.reason}
     row.passed = _passes(row, clip)
     row.save(update_fields=["clip", "fix_check", "passed"])
-    fixing.redraws = 0
     if row.passed:
         fixing.passed = clip
-    fixing.save(update_fields=["redraws", "passed"])
-    return _told(fixing, row, changed=changed, shown=shown)
+        fixing.save(update_fields=["passed"])
+    return _told(fixing, row, changed=changed)
 
 
 # What the clip takes from a picture a try sends, by its `for` (jobs.library.For), as code's
@@ -1929,28 +1770,54 @@ def _film_again(
 USED_FOR = cut_and_send.FOR_WORDS
 
 
+def _try_sent(fixing: AgentFix, asked: FilmAgain, newest: ProducedItem) -> library.SentList | None:
+    """What a try is sent (spec #210 point 23): the references it names; else the picks and
+    piece the newest clip was sent, so a try starts from the newest clip's sent list. None
+    for a newest clip made before the app kept what clips were sent: its try is cut from the
+    scene's plan, as a first clip is (`work.broll_sent_list`)."""
+    if asked.references is not None:
+        picks = [
+            ScenePicture(number=picture.number, for_=picture.used_for)
+            for picture in asked.references.pictures
+        ]
+        pieces = (
+            []
+            if asked.references.piece is None
+            else [
+                ScenePiece(video=asked.references.piece.video, moment=asked.references.piece.moment)
+            ]
+        )
+        return _references_sent(fixing, picks, pieces, asked.video_prompt, asked.person_shown)
+    before = library.sent_list_of(newest)
+    if before is None:
+        return None
+    picks = [
+        ScenePicture(number=picture.library_number, for_=picture.for_)
+        for picture in before.pictures
+        if picture.tier == 2 and picture.library_number is not None and picture.for_ is not None
+    ]
+    pieces = [ScenePiece(video=piece.video, moment=piece.moment) for piece in before.pieces]
+    return _references_sent(fixing, picks, pieces, asked.video_prompt, asked.person_shown)
+
+
 def _references_sent(
-    fixing: AgentFix, references: References, prompt: str, person_shown: str
+    fixing: AgentFix,
+    picks: list[ScenePicture],
+    pieces: list[ScenePiece],
+    prompt: str,
+    person_shown: str,
 ) -> library.SentList:
-    """The sent list of a try with references (spec #210 point 23): cut-and-send's, the
-    agent's picks as its tier 2 and the moment named as its piece, so code orders, recolours,
-    caps and says in red what was left out as for every clip; then the prompt: the speed
-    line, a label line per picture and piece, and the agent's own words."""
+    """The sent list of a try: cut-and-send's, `picks` as its tier 2 and `pieces` as its
+    pieces, so code orders, recolours, caps and says in red what was left out as for every
+    clip; then the prompt: the speed line, a label line per picture and piece, and the
+    agent's own words."""
     scene = fixing.step.scene
     sending = cut_and_send.cut_and_send(
         scene,
         person_shown=person_shown,
         # That try's tier 2, the scene's exclusions applied (refused before, kept out here).
-        picks=scene_references.tier_2(
-            scene,
-            [
-                ScenePicture(number=picture.number, for_=picture.used_for)
-                for picture in references.pictures
-            ],
-        ),
-        pieces=[]
-        if references.piece is None
-        else [ScenePiece(video=references.piece.video, moment=references.piece.moment)],
+        picks=scene_references.tier_2(scene, picks),
+        pieces=pieces,
     )
     job = scene.job
     made_now = {each.made for each in sending.recolours if each.made is not None}
@@ -2009,16 +1876,12 @@ def _told(
     row: AgentFixTry,
     *,
     changed: list[str] | None = None,
-    shown: list[Image] | None = None,
 ) -> ToolResult:
-    """What the agent is told of a filmed try: what changed, its picture and frames, the
-    judge's words and, for door 2, whether the owner's change is made."""
+    """What the agent is told of a filmed try: what changed, what it was sent, its frames,
+    the judge's words and, for door 2, whether the owner's change is made."""
     assert row.clip is not None
     label = f"Try {row.number}"
-    pictures = list(shown or [])
-    if row.picture is not None and row.new_picture and not pictures:
-        pictures.append(Image(label=f"{label}, new start picture", key=row.picture.file))
-    pictures += [
+    pictures = [
         Image(label=each.label, key=each.key) for each in _frames(row.clip, f"{label}, new clip")
     ]
     words = [
@@ -2088,75 +1951,3 @@ def _voiced(fixing: AgentFix, call: ToolCall) -> ProducedItem:
         raise Refused(CANT_BE_VOICED) from error
     _done(heard)
     return audio
-
-
-def _drawn(
-    fixing: AgentFix, asked: FilmAgain, call: ToolCall, number: int, shown: list[Image]
-) -> ProducedItem | str:
-    """The try's new start picture, checked; or, when the check fails it, what the agent is
-    told: draw it again, or, after the last redraw, that the try ends with no clip."""
-    assert asked.photo is not None and asked.picture_prompt is not None
-    files, rows = _pictures_sent(fixing, asked.person_shown, asked.photo)
-    owners = _owner_photos(fixing.step, ReferencePhoto.Use.PICTURE)
-    step = _try_step(
-        fixing,
-        call,
-        SceneStep.Kind.STARTING_PICTURE,
-        photo=fixing.step.scene.job.photos.get(position=asked.photo),
-        prompt=asked.picture_prompt,
-        motion_prompt=asked.video_prompt,
-        way=SceneStep.Way.FROM_PICTURE,
-        pictures_sent=rows,
-    )
-    prompt = (
-        f"{reference_photos.picture_label([row.thing for row in owners])} {asked.picture_prompt}"
-        if owners
-        else asked.picture_prompt
-    )
-    # A picture drawn for this try before the worker stopped isn't paid for again.
-    drawn = work._pictures_drawn(step)
-    file = (
-        drawn[0]
-        if drawn
-        else edit_picture(
-            job=fixing.step.scene.job,
-            purpose="make_starting_picture",
-            prompt=prompt,
-            pictures=files,
-        )
-    )
-    problems = work._check_broll_picture(step, file)
-    shown.append(Image(label=f"Try {number}, new start picture", key=file))
-    if not problems:
-        picture = work._keep_picture(step, file)
-        ProducedItem.objects.filter(pk=picture.pk).update(change=f"try {number}")
-        _done(step)
-        picture.refresh_from_db()
-        return picture
-    _failed(step, "; ".join(problems))
-    fixing.redraws += 1
-    fixing.save(update_fields=["redraws"])
-    if fixing.redraws <= MOST_REDRAWS:
-        raise Refused(
-            f"the picture check failed the new start picture: {' '.join(problems)} Draw it "
-            f"again (redraw {fixing.redraws} of {MOST_REDRAWS}; it doesn't count as a try)."
-        )
-    # The last redraw failed too: the try ends with nothing filmed, and the scene as it was.
-    AgentFixTry.objects.create(
-        agent_fix=fixing,
-        number=number,
-        tool_call=call,
-        scene_row=_row(fixing.step.scene),
-        new_picture=True,
-        picture_prompt=asked.picture_prompt,
-        root_cause=asked.root_cause,
-        move=asked.move,
-        would_ask_owner=asked.would_ask_owner or "",
-        picture_problems=[problems],
-    )
-    fixing.redraws = 0
-    fixing.save(update_fields=["redraws"])
-    return (
-        f"The picture check failed the new start picture: {' '.join(problems)} That was the "
-        f"last redraw: try {number} ends with no clip."
-    )
