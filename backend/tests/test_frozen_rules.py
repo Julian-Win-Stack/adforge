@@ -22,6 +22,7 @@ from jobs.clip_judge import (
     Check,
     SidesVerdict,
 )
+from jobs.first_send import FIRST_SEND_INSTRUCTIONS, PIECE_LABEL, SPEED_LINE
 from jobs.photos import PICK_INSTRUCTIONS
 from jobs.picture_check import (
     ASKS,
@@ -37,6 +38,7 @@ from jobs.scenes import (
     BROLL_KIND_RULES,
     BROLL_SHARED_RULES,
     MAIN_PHOTO_JOB,
+    SAME_SIDE,
     broll_prompt_instructions,
     broll_video_prompt,
 )
@@ -633,3 +635,42 @@ def test_the_fixing_agent_is_told_the_apps_prompt_rules_unchanged() -> None:
 
 def test_the_fixing_agent_runs_on_the_deciders_model() -> None:
     assert MODEL_FOR_PURPOSE["fix_scene"] == MODEL_FOR_PURPOSE["decide_fixes"] == "gpt-6.1-sol"
+
+
+# The first-send prompt (#210 point 16, decided; Julian's words in the decision record). It
+# retires, for the first send, the frozen opener's "The camera stays still.", SAME_SIDE (A18)
+# and reference mode's "Image 1 is how the clip starts": the tests above pin them while the old
+# writer is still the one the clip step calls.
+FIRST_SEND_FROZEN = [
+    pytest.param(SPEED_LINE, "Film this in real-time speed.", id="A1 the speed line, first"),
+    pytest.param(
+        PIECE_LABEL, "only for the movement, not the look", id="a piece is for its movement"
+    ),
+    pytest.param(
+        FIRST_SEND_INSTRUCTIONS,
+        '- "sentence": ONE sentence for the whole clip, built from the scene and the pictures: '
+        "the action, the thing it is done to or with, the place, and how it ends, said the way "
+        "a person would say it. Give no timings.",
+        id="one sentence: action, thing, place, end state",
+    ),
+]
+
+
+@pytest.mark.parametrize(("text", "sentence"), FIRST_SEND_FROZEN)
+def test_the_first_send_prompts_rules_are_as_decided_word_for_word(
+    text: str, sentence: str
+) -> None:
+    assert sentence in text
+
+
+def test_the_first_send_writer_is_told_nothing_of_the_retired_opener() -> None:
+    # #210 point 16: gone from the first send are the camera opener, the side sentence, "Image
+    # 1 is how the clip starts", the picture prompt and timings.
+    for retired in ("The camera stays still", SAME_SIDE, "how the clip starts", "-second video"):
+        assert retired not in FIRST_SEND_INSTRUCTIONS
+
+
+@pytest.mark.parametrize("name", ["garlic", "press", "toilet", "phone case", "bag"])
+def test_the_first_send_writers_rules_name_no_tested_product(name: str) -> None:
+    # CODING_STANDARDS.md: the contract fixture's product and the graded rounds' products.
+    assert not re.search(rf"\b{name}\b", FIRST_SEND_INSTRUCTIONS, re.IGNORECASE)

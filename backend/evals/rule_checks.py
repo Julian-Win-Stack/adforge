@@ -70,9 +70,15 @@ def _found(pattern: str, text: str) -> str | None:
     return found.group(0) if found else None
 
 
-# A1: "real-time speed" was in the opener that passed #12 and #8 and is in today's.
+# A1: "real-time speed" was in the opener that passed #12 and #8. Since #210 point 16 the
+# prompt sent opens on the speed line, which code puts first (jobs.first_send.SPEED_LINE).
+SPEED_LINE = "Film this in real-time speed."
+
+
 def _real_time_speed(scene: SavedScene) -> str | None:
-    return None if "real-time speed" in scene.video_prompt else 'no "real-time speed"'
+    if scene.video_prompt.split("\n")[0] == SPEED_LINE:
+        return None
+    return f"the prompt sent doesn't open on {SPEED_LINE!r}"
 
 
 # Numbers as the app writes them, in digits or in words.
@@ -84,12 +90,13 @@ _NUMBER_WORDS = {
 } | {"twenty": "20", "thirty": "30", "fifty": "50", "hundred": "100"}
 _COUNT = rf"(\d+(\.\d+)?|{'|'.join(_NUMBER_WORDS)})"
 
-# A4: no seconds or timings, nothing that slows it down. The opener's clip length is code's.
+# A4: no seconds or timings, nothing that slows it down, in the planned prompt or in the prompt
+# sent: since #210 point 16 the prompt sent has no clip length either.
 _TIMING = rf"\b{_COUNT}\s*-?\s*(s|secs?|seconds?)\b|\bslow(ly|-motion| motion)\b|\bgently\b"
 
 
 def _no_timings(scene: SavedScene) -> str | None:
-    return _found(_TIMING, scene.motion_prompt)
+    return _found(_TIMING, scene.motion_prompt) or _found(_TIMING, scene.video_prompt)
 
 
 # A6: a photo the picture model is sent shows only how something looks, never an action or a
@@ -108,32 +115,42 @@ def _photo_jobs_looks_only(scene: SavedScene) -> str | None:
     return None
 
 
-# A7: the video model gets the drawn start picture, never shop photos (#12 V1 FAIL, V2 GOOD).
-# Locked rule 1 as changed (Julian 2026-10-15 19:38): the drawn starting picture is what it
-# gets first, as its starting picture or, in reference mode, as Image 1, and every picture
-# after it is drawn too: a clean picture of a shop owner's thing. Pictures are told apart by
-# the name the app saves each under: what made it.
-_DRAWN_STARTING_PICTURE = "make_starting_picture"
-_DRAWN_PICTURES = (_DRAWN_STARTING_PICTURE, "make_reference_photo_picture")
+# C5: the first send's prompt (#210 point 16): after the speed line, one label line per picture
+# sent, Image 1, 2, 3... in the order sent, then one per piece, Video 1, 2, 3..., each only for
+# its movement, then one sentence, and nothing else. It retires the old A7 (the video model got
+# only the drawn starting picture as Image 1, "how the clip starts"): since #210 point 13
+# Image 1 is the product's front look photo and the pictures sent are the clip's sent list.
+_RETIRED_IMAGE_1 = "Image 1 is how the clip starts"
+_PIECE_LINE = re.compile(r"Video (\d+) is only for the movement, not the look\.")
 
 
-def _drawn_start_picture(scene: SavedScene) -> str | None:
-    if started := re.search(r"starting_picture=(\S+)", scene.settings):
-        if not Path(started.group(1)).name.startswith(_DRAWN_STARTING_PICTURE):
-            return f"the starting picture is {started.group(1)}, not the drawn one"
-        if "example_pictures=[]" not in scene.settings:
-            return "shop photos sent to the video model"
-        return None
+def _pictures_sent(scene: SavedScene) -> list[str]:
     listed = re.search(r"example_pictures=\[([^\]]*)\]", scene.settings)
-    pictures = [name.strip() for name in listed.group(1).split(",")] if listed else []
-    pictures = [name for name in pictures if name]
-    if not pictures:
-        return "no starting picture"
-    if not Path(pictures[0]).name.startswith(_DRAWN_STARTING_PICTURE):
-        return f"Image 1 is {pictures[0]}, not the drawn starting picture"
-    for name in pictures[1:]:
-        if not Path(name).name.startswith(_DRAWN_PICTURES):
-            return f"shop photo {name} sent to the video model"
+    names = [name.strip() for name in listed.group(1).split(",")] if listed else []
+    return [name for name in names if name]
+
+
+def _first_send_shape(scene: SavedScene) -> str | None:
+    if _RETIRED_IMAGE_1 in scene.video_prompt:
+        return f"the retired {_RETIRED_IMAGE_1!r}"
+    lines = scene.video_prompt.split("\n")
+    if lines[0] == SPEED_LINE:
+        lines = lines[1:]
+    for number in range(1, len(_pictures_sent(scene)) + 1):
+        if not lines or not lines[0].startswith(f"Image {number} is "):
+            return f"no label line for Image {number}, in order"
+        lines = lines[1:]
+    pieces = 0
+    while lines and (piece := _PIECE_LINE.fullmatch(lines[0])):
+        pieces += 1
+        if int(piece.group(1)) != pieces:
+            return f"Video {piece.group(1)} out of order"
+        lines = lines[1:]
+    if len(lines) != 1:
+        return f"{len(lines)} lines after the labels, not one sentence"
+    (sentence,) = lines
+    if re.search(r"[.!?]\s", sentence) or not sentence.endswith((".", "!", "?")):
+        return f"not one sentence: {sentence!r}"
     return None
 
 
@@ -210,10 +227,10 @@ SCENE_CHECKS = {
     "A1 real-time speed": _real_time_speed,
     "A4 no timings": _no_timings,
     "A6 photo jobs are looks only": _photo_jobs_looks_only,
-    "A7 drawn start picture, no shop photos": _drawn_start_picture,
     "A14 the camera never moves": _camera_still,
     "C1 the B-roll does more than handle the product": _more_than_handling,
     "C3 a number in the scene is in its prompts": _numbers_carried,
+    "C5 a label per picture and piece sent, then one sentence": _first_send_shape,
 }
 
 FIRST_TALKING = "A16 the first scene is talking"
