@@ -18,7 +18,8 @@ from agents.producer import Estimate, _clip_estimate, _estimate, _line_estimate
 from chat import messages
 from chat.models import Message, Session
 from gateway.fake import FakeModel
-from jobs import work
+from jobs import cut_and_send, library, work
+from jobs.first_send import SPEED_LINE
 from jobs.models import (
     Fix,
     FixCheck,
@@ -417,7 +418,8 @@ def test_a_new_line_in_a_broll_scene_keeps_how_its_clip_moves(
     say_yes(propose(row(2, "new_clip", change=TURN)))
     fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
     held.run_held()
-    moved = work.motion_of(clip(2))
+    noted = clip(2)
+    moved = work.motion_of(noted)
     assert moved == TURN_REWRITE["motion_prompt"]
 
     say_yes(propose(row(2, "new_line", change="Say it warmer.", line="A warm mug for cold days.")))
@@ -426,11 +428,61 @@ def test_a_new_line_in_a_broll_scene_keeps_how_its_clip_moves(
     made = clip(2)
     assert made.step is not None and made.step.line == "A warm mug for cold days."
     assert work.motion_of(made) == moved
-    # Spec #210 point 19: made from its sent list, with no starting picture.
+    # Spec #210 point 19: made from its sent list, with no starting picture; spec #247 point
+    # 9: the new line keeps the pictures, and the clip is sent what the note's clip was.
     assert made.picture is None and made.sent is not None
+    assert made.sent == noted.sent and made.sent["prompt"].endswith(moved)
     assert not SceneStep.objects.filter(
         scene__number=2, kind="starting_picture", plan_scene__isnull=False
     ).exists()
+    assert status(2) == "finished"
+
+
+def test_a_note_clip_is_sent_codes_speed_line_and_labels_and_never_an_item_since_excluded(
+    fake_model: FakeModel, held: HeldSteps
+) -> None:
+    first = library.sent_list_of(clip(2))
+    assert first is not None and len(first.pictures) > 1
+    dropped = first.pictures[-1].library_number
+    assert dropped is not None
+    two = scene(2)
+    two.excluded = [dropped]
+    two.save(update_fields=["excluded"])
+
+    say_yes(propose(row(2, "new_clip", change=TURN)))
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
+    held.run_held()
+
+    sent = library.sent_list_of(clip(2))
+    assert sent is not None
+    assert dropped not in [picture.library_number for picture in sent.pictures]
+    lines = sent.prompt.splitlines()
+    assert lines[0] == SPEED_LINE
+    assert lines[1 : 1 + len(sent.pictures)] == [
+        cut_and_send.image_line(two.job, picture, None) for picture in sent.pictures
+    ]
+    assert lines[-1] == TURN_REWRITE["motion_prompt"]
+
+
+def test_going_back_after_a_line_change_sends_what_the_version_was_sent_and_says_so(
+    fake_model: FakeModel, held: HeldSteps
+) -> None:
+    first = clip(2)
+    say_yes(propose(row(2, "new_clip", change=TURN)))
+    fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
+    held.run_held()
+    say_yes(propose(row(2, "new_line", change="Say it warmer.", line="A warm mug for cold days.")))
+    held.run_held()
+    assert clip(2).sent != first.sent
+
+    say_yes(propose(row(2, "go_back", change="The first one.", go_back_to=1)))
+    held.run_held()
+
+    made = clip(2)
+    assert made.step is not None and made.step.line == "A warm mug for cold days."
+    assert made.sent == first.sent
+    top = work.versions(scene(2))[-1]
+    assert top.clip == made and top.label == "v4 back to v1"
     assert status(2) == "finished"
 
 

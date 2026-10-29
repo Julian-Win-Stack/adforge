@@ -240,12 +240,14 @@ shop owner."""
 CLIP_FROM_REFERENCES_RULES = f"""\
 The scene's clip is made from its references, the pictures the video model was sent for it, \
 and they stay as they are: you are shown them in their order, each with its label. Pick no \
-photo and write no picture prompt. Write only a new video prompt: "motion_prompt" is the \
-prompt the scene's last clip was sent, and "note" says what the shop owner wants changed \
-about how it moves. Change the movement as the note asks, with what the pictures show, and \
-keep what was right. {_NOTE_NAMES_A_MOVEMENT} Follow the note unless it asks for something \
-these pictures can't show, or something else "shows" doesn't describe, and then say so in the \
-reason. Give a one-sentence reason for the video prompt, written for the shop owner."""
+photo and write no picture prompt. Write only a new video prompt: "motion_prompt" is the words \
+of the prompt the scene's last clip was sent, and "note" says what the shop owner wants \
+changed about how it moves. Code puts the speed line and each picture's and video's line \
+before your words, as it did before those, so write only the words. Change the movement as the \
+note asks, with what the pictures show, and keep what was right. {_NOTE_NAMES_A_MOVEMENT} \
+Follow the note unless it asks for something these pictures can't show, or something else \
+"shows" doesn't describe, and then say so in the reason. Give a one-sentence reason for the \
+video prompt, written for the shop owner."""
 
 
 def clip_from_references_instructions(broll_kind: str) -> str:

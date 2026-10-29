@@ -64,7 +64,9 @@ def stale_steps(scene: Scene) -> list[SceneStep.Kind]:
     made."""
     audio = current_audio(scene)
     current = {
-        SceneStep.Kind.STARTING_PICTURE: scene.current_picture() is not None,
+        # A scene showing the product has no starting picture (spec #210 point 19): one made
+        # while it was said to camera is never made again.
+        SceneStep.Kind.STARTING_PICTURE: bool(scene.shows) or scene.current_picture() is not None,
         SceneStep.Kind.LINE_AUDIO: audio is not None,
         SceneStep.Kind.TRANSCRIPT: audio is not None
         and scene.produced.filter(
