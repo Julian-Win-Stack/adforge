@@ -28,7 +28,14 @@ class SystemPrompt(models.Model):
 
     class Meta:
         ordering = ["created_at", "id"]
-        indexes = [models.Index(fields=["session", "purpose", "digest"])]
+        # One per session, purpose and text, even for judge asks sent at once from threads.
+        constraints = [
+            models.UniqueConstraint(
+                fields=["session", "purpose", "digest"],
+                nulls_distinct=False,
+                name="one_system_prompt_per_session_purpose_and_text",
+            )
+        ]
 
     def __str__(self) -> str:
         return f"{self.purpose}'s system prompt ({self.digest[:8]})"

@@ -39,6 +39,9 @@ from jobs.models import Fix, Job, Scene
 
 from . import ffmpeg_replay
 
+# What is sent to Langfuse, kept in memory, for every test that reads its traces.
+from .traced import _langfuse, traces  # noqa: F401 (fixtures)
+
 celery_app.conf.update(task_always_eager=True, task_eager_propagates=True)
 
 
