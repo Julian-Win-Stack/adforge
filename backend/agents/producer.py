@@ -3105,5 +3105,6 @@ PRODUCER = Agent(
     asks_why=True,
     pausable=True,
     folds=True,
+    asks_again_once=True,
     snapshot=snapshot.ad_as_it_stands,
 )

@@ -56,9 +56,10 @@ def planning(
 
 
 def planning_through_openai(
-    openai_server: Callable[..., None], link: str, reply: dict[str, Any]
+    openai_server: Callable[..., None], link: str, *replies: dict[str, Any]
 ) -> None:
-    """The same, through the real OpenAI code talking to a stand-in OpenAI server."""
+    """The same, through the real OpenAI code talking to a stand-in OpenAI server: the
+    planner answers `replies`, one per ask."""
     openai_server(
         openai_turn(
             "", ("call_1", "read_page", {"link": link, "target_seconds": None, "why": DEFAULT_WHY})
@@ -71,7 +72,7 @@ def planning_through_openai(
         openai_answer(LABELLED),
         openai_answer(LABELLED),
         openai_turn("", ("call_2", "plan_ad", {"why": DEFAULT_WHY})),
-        openai_answer(reply),
+        *(openai_answer(reply) for reply in replies),
         openai_turn("Here's the plan."),
     )
 
@@ -468,7 +469,8 @@ def test_a_plan_that_breaks_the_rules_is_handed_back_keeps_nothing_and_is_still_
     reply: dict[str, Any],
     broken_rule: str,
 ) -> None:
-    planning_through_openai(openai_server, product_page_url, reply)
+    # Told why and asked again, the planner breaks the same rule again.
+    planning_through_openai(openai_server, product_page_url, reply, reply)
 
     say(f"Make an ad for {product_page_url}")
 
@@ -488,9 +490,12 @@ def test_a_plan_that_breaks_the_rules_is_handed_back_keeps_nothing_and_is_still_
     )
     assert job.person_gender == ""
     assert not job.photos.filter(shows_product_colour=True).exists()
-    # The bad plan is still paid for: 1,200 x $4.00/M in + 300 x $20.00/M out.
-    plan_call = ModelCall.objects.get(purpose="plan_ad")
-    assert (plan_call.outcome, plan_call.cost_usd) == ("failed", Decimal("0.0108"))
+    # Both bad plans are still paid for: 1,200 x $4.00/M in + 300 x $20.00/M out each.
+    plan_calls = ModelCall.objects.filter(purpose="plan_ad").order_by("id")
+    assert [(call.outcome, call.cost_usd) for call in plan_calls] == [
+        ("failed", Decimal("0.0108")),
+        ("failed", Decimal("0.0108")),
+    ]
     # Nothing is made from a plan that broke the rules.
     assert paid_for() == [
         "check_page",
@@ -499,6 +504,7 @@ def test_a_plan_that_breaks_the_rules_is_handed_back_keeps_nothing_and_is_still_
         "note_face",
         "label_photo",
         "label_photo",
+        "plan_ad",
         "plan_ad",
     ]
 
@@ -644,18 +650,19 @@ def test_a_plan_naming_a_picture_or_a_moment_the_job_doesnt_have_is_refused(
     beyond = {**TEA_POURED_FROM_THE_VIDEO, "scene_pictures": [{"number": 13, "for": "result"}]}
     no_such_moment = {**TEA_POURED_FROM_THE_VIDEO, "piece": {"video": 1, "moment": 3}}
     planning_from_the_library(
-        fake_model,
-        product_page_url,
-        a_library_plan(beyond),
-        a_library_plan(no_such_moment),
-        plans=2,
+        fake_model, product_page_url, a_library_plan(beyond), a_library_plan(no_such_moment)
     )
 
     say(f"Make an ad for {product_page_url}")
 
-    first, second = results_of("plan_ad")
-    assert "Scene 2 names picture 13: the library has no such picture." in first
-    assert "Scene 2 names moment 3 of video 1: that video has moments 1 to 2." in second
+    # The planner was told the picture it named isn't there and asked again; its second plan
+    # named a moment that isn't there, and the producer was handed that.
+    no_picture = "Scene 2 names picture 13: the library has no such picture."
+    first, again = (asked.instructions for asked in fake_model.asked if asked.purpose == "plan_ad")
+    assert no_picture not in first
+    assert no_picture in again
+    (failed,) = results_of("plan_ad")
+    assert "Scene 2 names moment 3 of video 1: that video has moments 1 to 2." in failed
     assert not Job.objects.get().scenes.exists()
 
 
@@ -672,13 +679,16 @@ def test_a_plan_filming_the_same_action_in_two_scenes_is_refused_and_planned_aga
         product_page_url,
         a_library_plan(TEA_POURED_FROM_THE_VIDEO, poured_again),
         a_library_plan(TEA_POURED_FROM_THE_VIDEO, LIFTED_FULL),
-        plans=2,
     )
 
     say(f"Make an ad for {product_page_url}")
 
-    refused, planned = results_of("plan_ad")
-    assert "Scenes 2 and 3 film the same action: give each B-roll scene a different one." in refused
+    # Refused, the plan went back to the planner with why, and its next plan stands.
+    same_action = "Scenes 2 and 3 film the same action: give each B-roll scene a different one."
+    first, again = (asked.instructions for asked in fake_model.asked if asked.purpose == "plan_ad")
+    assert same_action not in first
+    assert same_action in again
+    (planned,) = results_of("plan_ad")
     assert planned.startswith("Planned 4 scenes.")
     assert list(Job.objects.get().scenes.values_list("shows", flat=True)) == [
         "",
