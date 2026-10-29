@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from adforge import file_store
+from agents import look
 from agents.loop import FAILED, REFUSED, ToolAnswer
 from agents.models import ToolCall
 from chat.models import Session
@@ -25,7 +26,7 @@ from gateway.models import ModelCall
 # agent called, so no tool call of the record.
 TURNS = "take_turn"
 # The gateway purpose of the producer's look (spec #247 point 2): its answer is words.
-LOOK = "look"
+LOOK = look.PURPOSE
 
 
 class Pictures:

@@ -323,3 +323,64 @@ def test_past_the_most_pictures_the_references_stay_whole_and_the_frames_are_joi
     assert frames == (
         "Scene 2, clip of v2 red press (the current version), Frames at 0 s, 0.2 s, left to right"
     )
+
+
+@pytest.mark.parametrize(
+    ("asked", "refused"),
+    [
+        ({**_asks("clip", None), "question": " "}, "Refused: ask the look one question"),
+        (_asks("clip", 1), "Refused: the clip takes no number"),
+        (_asks("version", None), "Refused: the clip takes no number"),
+        (_asks("clip", None, scene=None), "Refused: name the scene to look at."),
+        (_asks("clip", None, scene=9), "Refused: the ad has no scene 9."),
+    ],
+)
+def test_a_look_asked_wrongly_is_a_cant_saying_why_and_nothing_is_paid(
+    fake_model: FakeModel,
+    ad: Job,
+    owner_asks: Callable[..., None],
+    asked: dict[str, Any],
+    refused: str,
+) -> None:
+    owner_asks("Look at scene 2.", turn(calls=[("look", asked)]), turn(says="Sorry."))
+
+    [row] = ToolCall.objects.filter(tool="look")
+    assert row.answer == "cant" and row.result.startswith(refused)
+    assert not ModelCall.objects.filter(purpose=look.PURPOSE).exists()
+
+
+def test_a_try_made_from_a_start_picture_is_told_its_video_prompt(
+    fake_model: FakeModel, ad: Job, owner_asks: Callable[..., None]
+) -> None:
+    failed = ad.scenes.get(number=2).produced.filter(kind=ProducedItem.Kind.CLIP).latest("id")
+    assert failed.step is not None
+    AgentFix.objects.create(
+        step=failed.step, door=AgentFix.Door.JUDGE, first_clip=failed, ruling={"verdict": "fail"}
+    )
+    fake_model.respond(look.PURPOSE, WORDS)
+
+    owner_asks(
+        "What failed?", turn(calls=[("look", _asks("try", 0))]), turn(says="It stayed shut.")
+    )
+
+    looked = _look_call()
+    assert _labels(looked)[0] == "Scene 2, try 0, start picture"
+    assert "The clip's video prompt: A hand squeezes the press, take 2." in looked.handoff["shown"]
+    assert "The judge's verdict: fail." in looked.handoff["shown"]
+
+
+def test_the_same_look_asked_again_is_answered_once_and_paid_once(
+    fake_model: FakeModel, ad: Job, owner_asks: Callable[..., None]
+) -> None:
+    fake_model.respond(look.PURPOSE, WORDS)
+
+    owner_asks(
+        "Look twice.",
+        turn(calls=[("look", _asks("version", 1))]),
+        turn(calls=[("look", _asks("version", 1))]),
+        turn(says="Same answer."),
+    )
+
+    first, again = ToolCall.objects.filter(tool="look").order_by("id")
+    assert first.result == again.result and WORDS["root_cause"] in again.result
+    assert ModelCall.objects.filter(purpose=look.PURPOSE).count() == 1

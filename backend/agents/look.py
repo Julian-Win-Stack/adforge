@@ -9,7 +9,7 @@ import io
 import math
 import re
 from collections.abc import Mapping, Sequence
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, assert_never
 
 import PIL.Image
 from pydantic import BaseModel, Field
@@ -20,7 +20,7 @@ from gateway.types import Handoff, Image
 from jobs import clip_judge, library, library_items, owner_parts, work
 from jobs.models import AgentFix, Job, ProducedItem, Scene
 
-from .fixing_agent import judge_words, try_shown
+from .fixing_agent import judge_words, try_parts, try_shown
 from .loop import Refused, Tool
 from .models import ToolCall
 
@@ -225,6 +225,10 @@ Blank when nothing is wrong.
 When what you are shown can't answer the question, say so in sees, and say what would."""
 
 
+# What the look can be asked to look at.
+type What = Literal["clip", "version", "library_item", "try"]
+
+
 class LookHandoff(Handoff):
     """The scene as planned (blank for a library picture looked at alone), what the look is
     shown in words, and the producer's question."""
@@ -259,7 +263,7 @@ class Look(Tool):
     scene: int | None = Field(
         description="The scene's number. Null only for a library item looked at alone."
     )
-    what: Literal["clip", "version", "library_item", "try"]
+    what: What
     number: int | None = Field(
         description="The version's, library item's or try's number; null for the clip."
     )
@@ -272,7 +276,7 @@ class Look(Tool):
         return look_at(job, self.scene, self.what, self.number, self.question)
 
 
-def look_at(job: Job, scene: int | None, what: str, number: int | None, question: str) -> str:
+def look_at(job: Job, scene: int | None, what: What, number: int | None, question: str) -> str:
     """The look's words on `what` of the scene numbered `scene` in `job` (spec #247 point
     2): shown its pictures and frames, fitted into MOST_PICTURES, and told the scene, what it
     is shown and `question`, on the producer's model. Raises Refused when there is nothing
@@ -296,6 +300,8 @@ def look_at(job: Job, scene: int | None, what: str, number: int | None, question
             question=question.strip(),
         ),
         output=LookAnswer,
+        # A worker that stopped after the look answered is handed the same answer, unpaid.
+        pay_once=True,
         images=[Image(label=each["label"], key=each["key"]) for each in fit[0]],
     )
     return "\n".join(
@@ -321,17 +327,19 @@ def _scene_of(job: Job, number: int | None, *, needed: bool) -> Scene | None:
 
 
 def _what_is_shown(
-    job: Job, scene: Scene | None, what: str, number: int | None
+    job: Job, scene: Scene | None, what: What, number: int | None
 ) -> tuple[str, str, list[Image]]:
     """What the look is at, named; what it is shown, in words; and the pictures."""
-    if what in ("clip", "version"):
+    if what == "clip" or what == "version":
         assert scene is not None
         return _version_shown(scene, number)
     assert number is not None, "look_at refuses a library item or a try with no number"
     if what == "library_item":
         return _library_item_shown(job, number)
-    assert scene is not None
-    return _try_of(scene, number)
+    if what == "try":
+        assert scene is not None
+        return _try_of(scene, number)
+    assert_never(what)
 
 
 def _library_item_shown(job: Job, number: int) -> tuple[str, str, list[Image]]:
@@ -352,23 +360,18 @@ def _try_of(scene: Scene, number: int) -> tuple[str, str, list[Image]]:
     fixing = AgentFix.objects.filter(step__scene=scene).order_by("id").last()
     if fixing is None:
         raise Refused(f"scene {scene.number} has had no fix, so it has no tries.")
-    if number == 0:
-        picture, clip, ruling = (
-            fixing.first_clip.picture if fixing.first_clip else None,
-            fixing.first_clip,
-            fixing.ruling,
-        )
-    else:
-        row = fixing.tries.filter(number=number).first()
-        if row is None:
-            raise Refused(
-                f"scene {scene.number}'s newest fix has tries 0 to {fixing.tries.count()}."
-            )
-        picture, clip = row.picture, row.clip
-        ruling = clip.ruling if clip is not None else None
+    parts = try_parts(fixing, number)
+    if parts is None:
+        raise Refused(f"scene {scene.number}'s newest fix has tries 0 to {fixing.tries.count()}.")
+    picture, clip, ruling = parts
     label = f"Scene {scene.number}, try {number}"
     sent, shown = try_shown(label, picture, clip)
-    said = f"What its clip was sent, then the clip's frames. {sent}" if sent else ""
+    if sent:
+        said = f"What its clip was sent, then the clip's frames. {sent}"
+    else:
+        said = "Its start picture, then the frames of the clip made from it." if picture else ""
+        if clip is not None and (prompt := video_prompt(clip)):
+            said += f" The clip's video prompt: {prompt}"
     if not shown:
         raise Refused(f"scene {scene.number}'s try {number} has nothing to look at.")
     return (
@@ -395,9 +398,10 @@ def _version_shown(scene: Scene, number: int | None) -> tuple[str, str, list[Ima
             f"The prompt it was sent: {sent.prompt}",
         ]
         pictures += clip_judge.references_shown(sent, label)
-    elif version.picture is not None:
-        said.append("Its starting picture, then the clip it was made from.")
-        pictures.append(Image(label=f"{label}, starting picture", key=version.picture.file))
+    else:
+        if version.picture is not None:
+            said.append("Its starting picture, then the clip made from it.")
+            pictures.append(Image(label=f"{label}, starting picture", key=version.picture.file))
         if clip is not None and (prompt := video_prompt(clip)):
             said.append(f"The clip's video prompt: {prompt}")
     if clip is None:
