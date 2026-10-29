@@ -33,7 +33,6 @@ from adforge import file_store, tracing
 from gateway.gateway import charged_to, edit_picture
 from gateway.types import (
     MOST_BROLL_SECONDS,
-    BrollClipHandoff,
     Happened,
     Image,
     Said,
@@ -44,6 +43,7 @@ from gateway.types import (
 from jobs import (
     auto_fix,
     clip_judge,
+    first_send,
     library,
     library_items,
     picture_check,
@@ -759,11 +759,6 @@ def _intro(fixing: AgentFix) -> str:
     every = [p.position for p in job.photos.all()]
     seconds = first.made_from.seconds or 0
     clip_seconds = work._broll_clip_seconds(seconds)
-    during = [row.thing for row in _owner_photos(step, ReferencePhoto.Use.CLIP)]
-    opener = (
-        f"{reference_photos.reference_mode_label(during)} "
-        f"{scenes.broll_video_prompt('', clip_seconds).rstrip()}"
-    )
     sent = library.sent_list_of(first)
     if fixing.door == AgentFix.Door.OWNER:
         failed = (
@@ -797,7 +792,8 @@ def _intro(fixing: AgentFix) -> str:
             "Image 1 from those in the ad's colour; only when none suits, or there are none, "
             "take another where the product is clearly seen. The product's look and colour come "
             f"only from that photo: never change them or make one up. {scenes.SEVERAL_ITEMS}",
-            f'Code starts the video prompt with: "{opener}" then your words.',
+            f'Code starts the video prompt with "{first_send.SPEED_LINE}", then a line for '
+            "each picture and video the clip is sent, saying what it is, then your words.",
             f"The page's words:\n{job.page_text}",
         ]
     )
@@ -1465,11 +1461,12 @@ def _pictures_sent(
     return files, rows
 
 
-def _current(fixing: AgentFix) -> tuple[ProducedItem, ProducedItem]:
-    """The start picture and the line's audio the scene's newest try was filmed from."""
+def _current(fixing: AgentFix) -> tuple[ProducedItem | None, ProducedItem]:
+    """The start picture, if any, and the line's audio the scene's newest try was filmed from:
+    a B-roll clip made from its sent list has no start picture."""
     last = fixing.tries.filter(clip__isnull=False).order_by("-number").first()
     clip = last.clip if last is not None else fixing.first_clip
-    assert clip is not None and clip.picture is not None and clip.made_from is not None
+    assert clip is not None and clip.made_from is not None
     return clip.picture, clip.made_from
 
 
@@ -1557,7 +1554,8 @@ def _refuse_what_misses_the_place(fixing: AgentFix, asked: FilmAgain, scene: Sce
             f"the scene's newest place is its own {PLACE_NAMES[_drawn_as(newest)]}, and this "
             f"try needs its {PLACE_NAMES[drawn]}: call place_edit with picture {drawn} first."
         )
-    if not asked.new_picture and newest.pk > _current(fixing)[0].pk:
+    current = _current(fixing)[0]
+    if not asked.new_picture and current is not None and newest.pk > current.pk:
         raise Refused(
             "the scene's place changed after its start picture was drawn: draw a new start "
             "picture, so the try is filmed in its new place."
@@ -1612,7 +1610,7 @@ def _film_again(
             SceneStep.Kind.CLIP,
             made_from=audio,
             picture=picture,
-            picture_step=picture.step,
+            picture_step=picture.step if picture is not None else None,
             motion_prompt=asked.video_prompt,
         )
         row = AgentFixTry.objects.create(
@@ -1624,7 +1622,7 @@ def _film_again(
             scene_row=_row(scene),
             new_picture=asked.new_picture,
             picture_prompt=asked.picture_prompt or "",
-            video_prompt=_as_sent(step, picture, audio, asked.video_prompt),
+            video_prompt=_as_sent(step, asked.video_prompt),
             root_cause=asked.root_cause,
             move=asked.move,
             would_ask_owner=asked.would_ask_owner or "",
@@ -1657,11 +1655,10 @@ def _film_again(
     return _told(fixing, row, changed=changed, shown=shown)
 
 
-def _as_sent(step: SceneStep, picture: ProducedItem, audio: ProducedItem, motion: str) -> str:
-    """The video prompt as it is sent: code's opener, then the agent's words."""
-    handoff = work._clip_handoff(step, picture, audio, motion=motion)
-    assert isinstance(handoff, BrollClipHandoff), "a B-roll scene's clip"
-    return handoff.prompt
+def _as_sent(step: SceneStep, motion: str) -> str:
+    """The video prompt as it is sent: the speed line and code's label for each picture and
+    piece sent, then the agent's words."""
+    return work.broll_sent_list(step, motion=motion).prompt
 
 
 def _passes(row: AgentFixTry, clip: ProducedItem) -> bool:

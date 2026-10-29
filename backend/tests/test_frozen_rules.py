@@ -40,9 +40,7 @@ from jobs.scenes import (
     MAIN_PHOTO_JOB,
     PERSON_IN_ROOM_PROMPT,
     ROOM_ALONE_PROMPT,
-    SAME_SIDE,
     broll_prompt_instructions,
-    broll_video_prompt,
 )
 
 PLANNER = PLAN_INSTRUCTIONS
@@ -250,25 +248,10 @@ def test_every_kind_of_b_roll_prompt_gets_the_frozen_shared_rules() -> None:
     assert all(shared in broll_prompt_instructions(kind) for kind in BROLL_KIND_RULES)
 
 
-def test_the_video_prompt_asks_for_real_time_speed() -> None:
-    # A1: in the old opener that passed #12 and #8 and in today's. Only "real-time speed" is
-    # frozen: the camera style that follows is open until a test compares.
-    assert "at real-time speed." in broll_video_prompt("A hand pours the sauce.", 5)
-
-
 def test_the_main_photo_is_sent_for_its_looks_only() -> None:
     # A6: Oct 7 #12 drop leak: a photo's pose is copied whatever its job says, so the main
     # photo's job is only how the product looks.
     assert MAIN_PHOTO_JOB == "the product, only how it looks"
-
-
-def test_the_video_prompt_keeps_the_side_facing_the_camera() -> None:
-    # A18: round 3 #12 s2 and s3 FAIL, the phone flipped mid-clip; with this sentence in
-    # every video prompt, 9 clips Julian saw were all fine (decisions/built-phone-flip-fix.md).
-    assert (
-        "The camera stays still. Whatever side faces the camera at the start stays toward the "
-        "camera the whole time. A hand pours the sauce."
-    ) in broll_video_prompt("A hand pours the sauce.", 5)
 
 
 def test_every_scene_picture_is_sent_the_before_picture_for_the_place_only() -> None:
@@ -767,9 +750,10 @@ def test_the_fixing_agent_runs_on_the_deciders_model() -> None:
 
 
 # The first-send prompt (#210 point 16, decided; Julian's words in the decision record). It
-# retires, for the first send, the frozen opener's "The camera stays still.", SAME_SIDE (A18)
-# and reference mode's "Image 1 is how the clip starts": the tests above pin them while the old
-# writer is still the one the clip step calls.
+# retires the frozen opener's "The camera stays still." and "A n-second video at real-time
+# speed." (A1, now the speed line), the same-side sentence (A18) and reference mode's "Image 1
+# is how the clip starts": their tests went with the old writer when the clip step switched to
+# cut-and-send (#240).
 FIRST_SEND_FROZEN = [
     pytest.param(SPEED_LINE, "Film this in real-time speed.", id="A1 the speed line, first"),
     pytest.param(
@@ -785,6 +769,10 @@ FIRST_SEND_FROZEN = [
 ]
 
 
+# The old opener's side sentence (A18), retired by #210 point 16.
+SAME_SIDE_RETIRED = "Whatever side faces the camera at the start stays toward the camera"
+
+
 @pytest.mark.parametrize(("text", "sentence"), FIRST_SEND_FROZEN)
 def test_the_first_send_prompts_rules_are_as_decided_word_for_word(
     text: str, sentence: str
@@ -795,7 +783,7 @@ def test_the_first_send_prompts_rules_are_as_decided_word_for_word(
 def test_the_first_send_writer_is_told_nothing_of_the_retired_opener() -> None:
     # #210 point 16: gone from the first send are the camera opener, the side sentence, "Image
     # 1 is how the clip starts", the picture prompt and timings.
-    for retired in ("The camera stays still", SAME_SIDE, "how the clip starts", "-second video"):
+    for retired in ("The camera stays still", SAME_SIDE_RETIRED, "how the clip starts", "-second"):
         assert retired not in FIRST_SEND_INSTRUCTIONS
 
 

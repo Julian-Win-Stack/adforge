@@ -32,7 +32,7 @@ from pydantic import (
     model_validator,
 )
 
-from gateway.types import MOST_PIECE_SECONDS, PieceTrim
+from gateway.types import MOST_EXAMPLE_PICTURES, MOST_PIECE_SECONDS, PieceTrim
 from jobs import cards
 from jobs.models import Job, LibraryItem, ProducedItem, ProductVideo
 
@@ -67,7 +67,7 @@ KINDS, SIDES, ALONE = (get_args(get_args(fixed)[0]) for fixed in (Kind, Side, Al
 
 # The video API's limits on one clip's call (#210 point 13). Its limit on pieces is the
 # gateway's, where the call is checked.
-VIDEO_API_MOST_PICTURES = 9
+VIDEO_API_MOST_PICTURES = MOST_EXAMPLE_PICTURES
 VIDEO_API_MOST_PIECE_SECONDS = MOST_PIECE_SECONDS
 
 # The sent list's fixed values (#210 points 11, 13, 14, 8). Not approved yet: the planner's

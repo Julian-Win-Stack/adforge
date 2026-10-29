@@ -225,22 +225,6 @@ def during_clip_rules(things: list[str]) -> str:
     )
 
 
-def reference_mode_label(things: list[str]) -> str:
-    """Put by code before a clip's video prompt in reference mode: the starting picture is
-    Image 1 and the clip starts like it (Julian 05:12, "this is how the thing should start"),
-    then a sentence for each clean picture of the shop owner's things, in order."""
-    return " ".join(
-        [
-            "Image 1 is how the clip starts: the clip starts exactly like Image 1.",
-            *(
-                f"Image {number} is the shop owner's own {thing}: wherever it disagrees with "
-                f"another picture, follow Image {number}."
-                for number, thing in enumerate(things, 2)
-            ),
-        ]
-    )
-
-
 def _listed(items: list[str]) -> str:
     """ "a", "a and b", or "a, b and c"."""
     return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
