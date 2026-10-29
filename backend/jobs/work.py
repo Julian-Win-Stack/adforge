@@ -964,7 +964,7 @@ def plan(job: Job) -> ProducerDecision:
     the conversation, and keep the plan. A decision to ask the user keeps nothing."""
     sheets = library_sheets.sheets_of(job)
     library_sheets.tell_not_shown(job, sheets)
-    library, moments = _library_numbers(job), _moments_by_video(job)
+    library, moments = _library_numbers(job), moments_by_video(job)
     decision, left_out = library_sheets.past_the_filter(
         job,
         sheets,
@@ -1041,7 +1041,7 @@ def _library_numbers(job: Job) -> set[int]:
     return set(job.library.values_list("number", flat=True))
 
 
-def _moments_by_video(job: Job) -> dict[int, int]:
+def moments_by_video(job: Job) -> dict[int, int]:
     """How many moments each of `job`'s watched page videos has, by the video's number."""
     return {
         video.position: len(watched.moments)
