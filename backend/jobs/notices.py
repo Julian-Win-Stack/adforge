@@ -34,9 +34,9 @@ def post_notice(
     later. No model is ever given a notice: the producer learns of the failure from the
     tool's result. A notice about a scene's starting picture or clip carries its `step`, and one
     may suggest a note on a scene; one about a fix plan carries its `plan`; one showing every
-    try of a clip the judge failed names its clip step, `tries_of`; one saying the fixing agent asked the shop owner a
-    question names it, `owner_question`; one about the product page
-    says whether it wants the page panel, `wants_pasted_page`; one answering the page panel's
+    try of a clip the judge failed names its clip step, `tries_of`; one saying the fixing
+    agent asked the shop owner a question names it, `owner_question`; one about the product
+    page says whether it wants the page panel, `wants_pasted_page`; one answering the page panel's
     message carries its `pasted_page_result`, and one keeping a pasted page with too few
     photos `wants_more_photos`. Gives the message
     posted, or None for a job with no chat."""
