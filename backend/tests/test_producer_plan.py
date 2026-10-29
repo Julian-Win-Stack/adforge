@@ -19,7 +19,6 @@ from gateway.models import ModelCall
 from jobs.library import PagePhoto, PictureLabel, VideoWatch, add_to_library, keep_watch
 from jobs.models import Job, ProductVideo
 from jobs.planning import PLAN_INSTRUCTIONS, producer_decision_for
-from jobs.work import keep_photo
 
 from .conftest import (
     COPIED,
@@ -35,7 +34,6 @@ from .conftest import (
     openai_answer,
     openai_turn,
     paid_for,
-    picture,
     results_of,
 )
 
@@ -321,7 +319,7 @@ def shown(image: dict[str, Any]) -> tuple[str, PIL.Image.Image]:
     )
 
 
-def test_the_planner_is_handed_the_page_text_the_target_the_photo_count_and_the_conversation(
+def test_the_planner_is_handed_the_page_text_the_target_the_library_count_and_the_conversation(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
     planning(fake_model, product_page_url, PLAN, target_seconds=12)
@@ -337,9 +335,12 @@ def test_the_planner_is_handed_the_page_text_the_target_the_photo_count_and_the_
     assert "InStock" in handoff["page_text"]
     del handoff["page_text"]
     assert handoff == {
+        # The mug's page has no videos, so no moments.
+        "moments": "",
+        "library_pictures": 2,
+        "pictures_not_shown": 0,
         "product_url": product_page_url,
         "target_seconds": 12,
-        "photo_count": 2,
         # The conversation so far, the producer's own words too, so an answer is read next to its
         # question.
         "conversation": [
@@ -366,7 +367,7 @@ def test_the_planner_is_given_the_plan_instructions_and_the_decisions_schema(
     request = the_plan_request(httpserver)
     assert request["instructions"] == PLAN_INSTRUCTIONS
     sent = request["text"]["format"]["schema"]["$defs"]
-    defined = producer_decision_for(2, library=(), moments={}).model_json_schema()["$defs"]
+    defined = producer_decision_for(library=(1, 2), moments={}).model_json_schema()["$defs"]
     assert (
         set(sent)
         == set(defined)
@@ -387,7 +388,7 @@ def test_the_planner_is_given_the_plan_instructions_and_the_decisions_schema(
         }
 
 
-def test_the_planner_is_shown_every_product_photo_by_its_number(
+def test_the_planner_is_shown_the_library_on_a_sheet_and_the_kept_photos_are_unchanged(
     httpserver: HTTPServer,
     openai_server: Callable[..., None],
     product_page_url: str,
@@ -399,77 +400,31 @@ def test_the_planner_is_shown_every_product_photo_by_its_number(
 
     message = the_plan_message(httpserver)
     assert message["role"] == "user"
-    handoff, *photos = message["content"]
-    labels, images = photos[0::2], photos[1::2]
-    assert labels == [
-        {"type": "input_text", "text": "Photo 1"},
-        {"type": "input_text", "text": "Photo 2"},
-    ]
-    assert [(image["type"], image["detail"]) for image in images] == [("input_image", "high")] * 2
-    # The front photo is sage green and the side one cream, so each label is on its own photo.
-    assert [
-        (media_type, image_shown.getpixel((0, 0))) for media_type, image_shown in map(shown, images)
-    ] == [
-        ("image/png", (143, 170, 140)),
-        ("image/png", (236, 229, 206)),
-    ]
-    # The record says which photos were shown by their keys in the file store, not their bytes.
+    handoff, label, image = message["content"]
+    assert label == {
+        "type": "input_text",
+        "text": "Library pictures 1 to 2 (each numbered and labelled under it)",
+    }
+    assert (image["type"], image["detail"]) == ("input_image", "high")
+    # One sheet, two across: the sage green front photo on the left, the cream side photo on
+    # the right, each fitted in its square, its label under it.
+    media_type, sheet = shown(image)
+    assert media_type == "image/jpeg"
+    assert sheet.width == 2 * 600 + 3 * 8
+    for x, colour in ((8 + 300, (143, 170, 140)), (16 + 900, (236, 229, 206))):
+        pixel = sheet.getpixel((x, 8 + 300))
+        assert isinstance(pixel, tuple)
+        assert all(abs(a - b) <= 6 for a, b in zip(pixel, colour, strict=True))
+    # The record says which sheet was shown by its key in the file store, not its bytes.
     call = ModelCall.objects.get(purpose="plan_ad")
-    job_id = Job.objects.get().pk
-    assert call.images == [
-        {"label": "Photo 1", "key": f"jobs/{job_id}/photos/1.png"},
-        {"label": "Photo 2", "key": f"jobs/{job_id}/photos/2.png"},
-    ]
+    job = Job.objects.get()
+    ((shown_label, key),) = [(image["label"], image["key"]) for image in call.images]
+    assert shown_label == label["text"]
+    assert key.startswith(f"jobs/{job.pk}/sheets/")
     assert handoff["type"] == "input_text"
     assert json.loads(handoff["text"]) == call.handoff
-
-
-def test_a_job_with_more_than_50_photos_is_planned_from_50_page_photos_first_saying_so(
-    fake_model: FakeModel, page_read: str, say: Callable[..., None]
-) -> None:
-    # The page's 2 photos, 5 the shop owner attached, then 46 more of the page's: 53 in all.
-    job = Job.objects.get()
-    for position in range(3, 54):
-        owners = position <= 7
-        keep_photo(
-            job,
-            position,
-            picture(100 + position, 100, (143, 170, 140)),
-            "image/png",
-            source_url="" if owners else f"https://shop.example/{position}.png",
-        )
-    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
-    fake_model.respond("plan_ad", PLAN)
-
-    say("Plan it")
-
-    (call,) = ModelCall.objects.filter(purpose="plan_ad")
-    assert [image["label"] for image in call.images] == [
-        f"Photo {position}" for position in [1, 2, *range(8, 54), 3, 4]
-    ]
-    job.refresh_from_db()
-    assert job.warnings[-1]["text"] == (
-        "The ad has 53 product photos, more than the 50 a model can be shown at once, so "
-        "photos 5, 6 and 7 are left out when it's planned or a line is rewritten."
-    )
-
-
-def test_the_planner_is_shown_each_photo_shrunk_to_fit_2048_pixels_and_the_kept_ones_are_unchanged(
-    httpserver: HTTPServer,
-    openai_server: Callable[..., None],
-    product_page_url: str,
-    say: Callable[..., None],
-) -> None:
-    planning_through_openai(openai_server, product_page_url, PLAN)
-
-    say(f"Make an ad for {product_page_url}")
-
-    _, *photos = the_plan_message(httpserver)["content"]
-    # The front photo, 400 x 300, already fits. The side one, 1600 x 1200, is sent as it is:
-    # 2,048 px is the most a model looks at, so nothing under it is shrunk.
-    assert [shown(image)[1].size for image in photos[1::2]] == [(400, 300), (1600, 1200)]
-    kept = Job.objects.get().photos.all()
-    assert [file_store.read(photo.file) for photo in kept] == [MUG_FRONT, MUG_SIDE]
+    # The photos themselves are kept as they came.
+    assert [file_store.read(photo.file) for photo in job.photos.all()] == [MUG_FRONT, MUG_SIDE]
 
 
 # --- A plan that can't be used ----------------------------------------------------------------
@@ -477,8 +432,8 @@ def test_the_planner_is_shown_each_photo_shrunk_to_fit_2048_pixels_and_the_kept_
 
 # Every rule a plan can break is tried in test_planning.py. One of pydantic's own and one of
 # ours prove the chat hands a broken plan back the same way, whichever check refused it. The
-# photo count is the one rule test_planning.py can't pin: it hard-codes the mug's 2 photos,
-# so the chat proves the planner's decision is asked for with the job's own count.
+# library's numbers are the one rule test_planning.py can't pin: it hard-codes a library, so
+# the chat proves the planner's decision is asked for with the job's own library.
 @pytest.mark.parametrize(
     ("reply", "broken_rule"),
     [
@@ -495,8 +450,8 @@ def test_the_planner_is_shown_each_photo_shrunk_to_fit_2048_pixels_and_the_kept_
         ),
         pytest.param(
             a_plan_with(colour_photos=[1, 3]),
-            "There's no photo 3: the job has 2.",
-            id="a photo after the last one",
+            "There's no picture 3 in the library.",
+            id="a picture after the last one",
         ),
     ],
 )
@@ -542,33 +497,6 @@ def test_a_plan_that_breaks_the_rules_is_handed_back_keeps_nothing_and_is_still_
     ]
 
 
-def test_a_photo_models_cant_read_is_handed_back_saying_why_and_the_planner_isnt_paid(
-    fake_model: FakeModel, page_read: str, say: Callable[..., None]
-) -> None:
-    # A job whose photos were kept before they had to be PNG, JPEG, WebP or GIF has a BMP.
-    # The chat no longer keeps one, so it is added by hand.
-    job = Job.objects.get()
-    bmp = picture(40, 30, (143, 170, 140), "BMP")
-    keep_photo(job, 3, bmp, "image/bmp", source_url="https://shop.example/mug.bmp")
-    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="I couldn't plan it."))
-
-    say("Plan it")
-
-    assert plan_ad_result() == (
-        f"Failed: Photo 3 (jobs/{job.pk}/photos/3.bmp) is image/bmp, which models can't read. "
-        "Only PNG, JPEG, WebP or GIF pictures can be shown to a model."
-    )
-    assert paid_for() == [
-        "check_page",
-        "copy_page_text",
-        "note_face",
-        "note_face",
-        "label_photo",
-        "label_photo",
-    ]
-    assert not job.scenes.exists()
-
-
 # --- Scene pictures by library number and the piece by moment number (#223) -----------------
 
 # Stands in for the library build and the watcher (#220, #221): the job's library holds 12
@@ -607,10 +535,11 @@ def the_library_and_its_video_are_ready() -> None:
     """The job's library, filled up to LIBRARY_SIZE after the page's photos, and its watched
     page video, made while the producer works."""
     job = Job.objects.get()
-    for number in range(job.library.count() + 1, LIBRARY_SIZE + 1):
+    front = job.photos.get(position=1).file
+    for _ in range(job.library.count() + 1, LIBRARY_SIZE + 1):
         add_to_library(
             job,
-            f"jobs/{job.pk}/library/{number}.png",
+            front,
             PictureLabel(kind="side", side="front", alone="yes", colour="green", label="The mug."),
             PagePhoto(photo=1),
         )
