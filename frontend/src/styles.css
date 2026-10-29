@@ -1777,7 +1777,6 @@ button:disabled {
   border-color: var(--border-strong);
 }
 
-/* The owner's note on a scene. Every note is sent together from the bar under the cards. */
 /* What the clip on show was sent: a small picture per image with its label, in the order
    they went, the video pieces, and in red what didn't go as planned. */
 .scene-sent {
@@ -1846,6 +1845,25 @@ button:disabled {
   background: var(--surface);
 }
 
+.scene-sent-picture {
+  display: block;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+/* The label of the picture tapped, for narrow cards that don't show labels. */
+.scene-sent-chosen {
+  display: none;
+  margin: 0;
+  font-size: 10px;
+  line-height: 13px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
 .scene-sent-problem {
   margin: 0;
   font-size: 11px;
@@ -1854,6 +1872,7 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+/* The owner's note on a scene. Every note is sent together from the bar under the cards. */
 .scene-form {
   flex: 1;
   min-height: 0;
@@ -1997,11 +2016,11 @@ button:disabled {
 
   /* The cards are too narrow to write in, so the one being written on opens wider, its
      note beside the clip, so the strip doesn't grow taller. */
-  .scene-cards > li:focus-within {
+  .scene-cards > li:has(.scene-note:focus) {
     flex-basis: 300px;
   }
 
-  .scene-cards > li:focus-within .scene-card {
+  .scene-cards > li:has(.scene-note:focus) .scene-card {
     display: grid;
     grid-template-columns: 104px minmax(0, 1fr);
     /* The third row holds the room the note took under the clip, so the card keeps its
@@ -2010,12 +2029,12 @@ button:disabled {
     gap: 6px 10px;
   }
 
-  .scene-cards > li:focus-within .scene-media,
-  .scene-cards > li:focus-within .scene-foot {
+  .scene-cards > li:has(.scene-note:focus) .scene-media,
+  .scene-cards > li:has(.scene-note:focus) .scene-foot {
     grid-column: 1;
   }
 
-  .scene-cards > li:focus-within .scene-note {
+  .scene-cards > li:has(.scene-note:focus) .scene-note {
     grid-column: 2;
     grid-row: 1 / span 3;
     height: 100%;
@@ -2039,7 +2058,7 @@ button:disabled {
     background: var(--bg-sidebar);
   }
 
-  .scene-cards > li:focus-within .scene-note-suggested {
+  .scene-cards > li:has(.scene-note:focus) .scene-note-suggested {
     display: none;
   }
 
@@ -2058,9 +2077,9 @@ button:disabled {
     min-height: 40px;
   }
 
-  /* The strip's cards are narrow: the sent pictures wrap as small squares, their labels a
-     hover or long-press away, and the red line is cut to three lines, whole on hover. While
-     a card is being written on, they step aside so the strip keeps its height. */
+  /* The strip's cards are narrow: the sent pictures wrap as small squares, and the label of
+     the one tapped shows under them; the red line is always whole. While a card's note is
+     being written, they step aside so the strip keeps its height. */
   .scene-sent-pictures {
     flex-direction: row;
     flex-wrap: wrap;
@@ -2076,6 +2095,10 @@ button:disabled {
     display: none;
   }
 
+  .scene-sent-chosen {
+    display: block;
+  }
+
   .scene-sent-pieces video {
     width: 32px;
   }
@@ -2083,13 +2106,9 @@ button:disabled {
   .scene-sent-problem {
     font-size: 10px;
     line-height: 13px;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
   }
 
-  .scene-cards > li:focus-within .scene-sent {
+  .scene-cards > li:has(.scene-note:focus) .scene-sent {
     display: none;
   }
 
@@ -2276,11 +2295,11 @@ button:disabled {
     flex-basis: 88px;
   }
 
-  .scene-cards > li:focus-within {
+  .scene-cards > li:has(.scene-note:focus) {
     flex-basis: 270px;
   }
 
-  .scene-cards > li:focus-within .scene-card {
+  .scene-cards > li:has(.scene-note:focus) .scene-card {
     grid-template-columns: 88px minmax(0, 1fr);
   }
 

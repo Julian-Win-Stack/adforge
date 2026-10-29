@@ -303,8 +303,8 @@ class ProductVideo(models.Model):
 class LibraryItem(models.Model):
     """One picture or look frame the app knows about for a job (jobs.library.LibraryEntry),
     with its library number, which never changes for the job. Its fixed fields are plain
-    text here: jobs.library's schema checks them on the way in and out, so a value set can
-    change there without a migration."""
+    text here: jobs.library's schema checks them strictly on the way in and leniently on
+    the way out, so a value set can change there without a migration."""
 
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="library")
     number = models.PositiveIntegerField(
