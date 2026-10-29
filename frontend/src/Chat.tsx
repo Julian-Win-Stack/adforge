@@ -23,7 +23,15 @@ import { acceptedPastes, lastPastedPage, morePhotosWanted, pagePanel } from "./p
 import { ScenePanel } from "./ScenePanel";
 import { nextFollowing } from "./follow";
 import { sceneCards, suggestedNotes, tryInAd } from "./scenes";
-import { ArrowUpIcon, CloseIcon, ImageIcon, SidebarIcon, SoundIcon, SparkIcon } from "./icons";
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  CloseIcon,
+  ImageIcon,
+  SidebarIcon,
+  SoundIcon,
+  SparkIcon,
+} from "./icons";
 
 const POLL_EVERY_MS = 2000;
 
@@ -102,6 +110,8 @@ export function Chat({
   // something; then it stays put until they come back down. Pictures and videos that
   // finish loading make the thread taller, so growth is watched, not just new messages.
   const following = useRef(true);
+  // The same, as state, for the down arrow that shows while the reader is scrolled up.
+  const [scrolledUp, setScrolledUp] = useState(false);
   // Where the thread was at the last scroll event, or where the code last put it. Its own
   // scrolling is told apart from the reader's by this: a scroll event can land after more
   // has loaded below, which isn't the reader leaving the bottom; only scrolling up is.
@@ -121,6 +131,7 @@ export function Chat({
         nearBottom: nearBottom(),
         following: following.current,
       });
+      setScrolledUp(!following.current);
       placedAt.current = el.scrollTop;
     };
     el.addEventListener("scroll", onScroll);
@@ -141,6 +152,15 @@ export function Chat({
     const el = thread.current;
     if (el && following.current) toBottom(el);
   }, [messages.length]);
+  /** The down arrow: glides to the newest message and follows it again. The glide's own
+   * scroll events only move down, so they don't stop the following. */
+  const backToBottom = () => {
+    const el = thread.current;
+    if (!el) return;
+    following.current = true;
+    setScrolledUp(false);
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  };
 
   /** Says something. The first message of a new session is what creates the session. A
    * button's message says what it is (`as`). */
@@ -320,6 +340,17 @@ export function Chat({
           </div>
 
           <div className="composer-wrap">
+            {scrolledUp && (
+              <button
+                type="button"
+                className="to-bottom"
+                aria-label="Scroll to the newest message"
+                title="Scroll to the newest message"
+                onClick={backToBottom}
+              >
+                <ArrowDownIcon size={20} />
+              </button>
+            )}
             {pageAsk && (
               <PagePanel
                 sessionId={sessionId as string}
