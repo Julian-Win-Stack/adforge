@@ -12,13 +12,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from functools import cache
-from typing import ClassVar
+from typing import Any, ClassVar, Literal
 
 from django.conf import settings
 from django.db import transaction
 from django.db.models import QuerySet
 from django.utils import timezone
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
 from adforge import tracing
 from adforge.retry import OutsideServiceDown
@@ -97,6 +97,92 @@ class Refused(Exception):
     rules, or what it works on doesn't exist yet. Says why, for the agent."""
 
 
+class Asks(Exception):
+    """A tool can't go on without one answer, and has done nothing: says the ONE clarifying
+    question, for the agent to answer from what it knows and call the tool again (spec #247
+    point 6)."""
+
+
+# How a tool's result begins when it couldn't do what it was asked: refused, having done
+# nothing, or failed. Code and tests read them, so they stay.
+REFUSED = "Refused:"
+FAILED = "Failed:"
+# How a tool's result begins when it asks the agent one question back.
+QUESTION = "Question:"
+
+type AnswerKind = Literal["made", "cant", "question"]
+
+
+@dataclass(frozen=True)
+class ToolAnswer:
+    """What a tool hands back to the agent (spec #247 point 6): the thing it made ("made"),
+    "can't, because ..." with the reason ("cant"), or one clarifying question ("question").
+    `text` is what the agent reads, as the tool call's row keeps it in its result, and the
+    row's `answer` keeps the kind. Every tool's return, refusal and error is made one of
+    these by the loop, so nothing a tool does stops the run or is skipped unsaid."""
+
+    kind: AnswerKind
+    text: str
+    pictures: Sequence[Image] = ()
+
+    @classmethod
+    def handed_back(cls, result: str | ToolResult) -> ToolAnswer:
+        """What a tool's run handed back: a result that says it failed or refused is a
+        can't, anything else the thing it made."""
+        text, pictures = (
+            (result.text, result.pictures) if isinstance(result, ToolResult) else (result, ())
+        )
+        return cls(cls.kind_of(text), text, pictures)
+
+    @classmethod
+    def cant(cls, text: str) -> ToolAnswer:
+        """A can't, `text` beginning REFUSED or FAILED and saying why."""
+        return cls("cant", text)
+
+    @classmethod
+    def question(cls, question: str) -> ToolAnswer:
+        return cls(
+            "question",
+            f"{QUESTION} {question} Nothing was done. Answer it from what you already know and "
+            "call the tool again with the answer; ask the shop owner only when nothing you "
+            "know answers it.",
+        )
+
+    @classmethod
+    def of(cls, call: ToolCall) -> ToolAnswer:
+        """The answer a finished call handed back, from its row."""
+        kind: AnswerKind = call.answer or cls.kind_of(call.result)  # type: ignore[assignment]
+        return cls(
+            kind,
+            call.result,
+            [Image(label=each["label"], key=each["key"]) for each in call.pictures],
+        )
+
+    @staticmethod
+    def kind_of(text: str) -> AnswerKind:
+        """The kind of answer a result's words give, by how they begin."""
+        if text.startswith((REFUSED, FAILED)):
+            return "cant"
+        if text.startswith(QUESTION):
+            return "question"
+        return "made"
+
+    def as_json(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "text": self.text,
+            "pictures": [{"label": each.label, "key": each.key} for each in self.pictures],
+        }
+
+    @classmethod
+    def from_json(cls, data: dict[str, Any]) -> ToolAnswer:
+        return cls(
+            data["kind"],
+            data["text"],
+            [Image(label=each["label"], key=each["key"]) for each in data.get("pictures", [])],
+        )
+
+
 @dataclass(frozen=True)
 class ToolResult:
     """What a tool hands back when it has pictures to show: its words, and the pictures,
@@ -121,10 +207,27 @@ class Tool(BaseModel):
         raise NotImplementedError
 
     @classmethod
-    def spec(cls) -> ToolSpec:
+    def spec(cls, *, asks_why: bool = False) -> ToolSpec:
+        """The tool as the agent's model is offered it: with a required `why` among its
+        arguments when `asks_why`."""
         return ToolSpec(
-            name=cls.name, description=inspect.cleandoc(cls.__doc__ or ""), arguments=cls
+            name=cls.name,
+            description=inspect.cleandoc(cls.__doc__ or ""),
+            arguments=_with_why(cls) if asks_why else cls,
         )
+
+
+# What the agent is asked to write in a call's `why` (spec #247 point 7).
+WHY = (
+    "One sentence: why you are making this call now, from what you know so far. It is kept "
+    "with the call for the people who review your work; the tool doesn't read it."
+)
+
+
+@cache
+def _with_why(tool: type[Tool]) -> type[BaseModel]:
+    """`tool`'s arguments with a required `why`, the shape its model fills in."""
+    return create_model(tool.__name__, __base__=tool, why=(str, Field(description=WHY)))
 
 
 @dataclass(frozen=True)
@@ -138,6 +241,12 @@ class Agent:
     instructions: str
     tools: Sequence[type[Tool]]
     reads_system_notes: bool = False
+    # Whether each of its tools takes a required `why`, kept on the call's row (spec #247
+    # point 7): the producer's do.
+    asks_why: bool = False
+
+    def tool_specs(self) -> list[ToolSpec]:
+        return [tool.spec(asks_why=self.asks_why) for tool in self.tools]
 
 
 # What a trace shows for the page panel's message, rather than the whole page pasted.
@@ -202,7 +311,7 @@ def _work(agent: Agent, session: Session) -> int:
                 purpose=agent.purpose,
                 instructions=agent.instructions,
                 conversation=conversation,
-                tools=[tool.spec() for tool in agent.tools],
+                tools=agent.tool_specs(),
                 done="the work on your ad carried on",
             )
             # A tool past the limit is refused, and the agent gets one turn to tell the user.
@@ -230,7 +339,7 @@ def _work(agent: Agent, session: Session) -> int:
                         agent=agent.name,
                         tool=asked.tool,
                         call_id=asked.call_id,
-                        arguments=asked.arguments,
+                        **_why_apart(agent, asked.arguments),
                     )
                     for asked in turn.calls
                 ]
@@ -240,7 +349,19 @@ def _work(agent: Agent, session: Session) -> int:
                 if _stopped_since_the_user_spoke(session):
                     _refuse_as_stopped(call)
                 else:
-                    settle(agent, call)
+                    settle(agent, call, new=True)
+
+
+def _why_apart(agent: Agent, arguments: dict[str, Any]) -> dict[str, Any]:
+    """A call's row fields from the arguments it was asked with: for an agent that asks why,
+    the `why` apart from the tool's own arguments. A `why` that isn't words is none."""
+    if not agent.asks_why:
+        return {"arguments": arguments}
+    why = arguments.get("why")
+    return {
+        "arguments": {key: value for key, value in arguments.items() if key != "why"},
+        "why": why.strip() if isinstance(why, str) else "",
+    }
 
 
 def take_a_turn(
@@ -378,63 +499,97 @@ def not_shown(labels: Sequence[str]) -> str:
 def _refuse_as_stopped(call: ToolCall) -> None:
     """Keep a call the agent asked for before a scene step stopped the run as refused,
     without running it, so nothing is paid for once the run has stopped."""
-    call.result = "Refused: a scene step stopped the run. Nothing was done."
+    call.result = f"{REFUSED} a scene step stopped the run. Nothing was done."
+    call.answer = "cant"
     call.finished_at = timezone.now()
-    call.save(update_fields=["result", "finished_at"])
+    call.save(update_fields=["result", "answer", "finished_at"])
 
 
-def settle(agent: Agent, call: ToolCall, *, counted: bool = True) -> None:
+def settle(agent: Agent, call: ToolCall, *, counted: bool = True, new: bool = False) -> None:
     """Run the tool a checkpoint asked for, unless it is past the limit, and keep what it
-    handed back. A call the safety filter blocked is kept as failed, then stops the run. A
-    call not `counted` against the limit is code's work, as the fixing agent's is, not an
-    answer to the shop owner's message."""
-    blocked: BlockedBySafetyFilter | None = None
-    with tracing.tool(call.tool, call.arguments) as traced:
+    handed back, as a ToolAnswer: whatever the tool does, refuses or raises, the agent is
+    answered and the run goes on. A call not `counted` against the limit is code's work, as
+    the fixing agent's is, not an answer to the shop owner's message. A `new` call, just
+    asked for, of an agent that asks why is refused once when it has no `why`; one left
+    unfinished by a worker that stopped is run as it was asked."""
+    with tracing.tool(call.tool, call.arguments, why=call.why) as traced:
         # Kept before the tool runs, for the scene steps it starts to find. A tool run again
         # after a restart is traced again, and the steps it starts then go inside that run.
         call.trace_id, call.observation_id = traced.ids()
         call.save(update_fields=["trace_id", "observation_id"])
         number = _calls_since_the_user_spoke(call.session, up_to=call)
         if counted and number > _limit():
-            call.result = (
-                f"Refused: this would be tool call {number} since the shop owner's last "
+            answer = ToolAnswer.cant(
+                f"{REFUSED} this would be tool call {number} since the shop owner's last "
                 f"message, and the limit is {_limit()}. Nothing was done. Tell the shop owner "
                 "plainly that you hit the limit of work for one message, what is done so far, "
                 "and that sending a message lets you carry on."
             )
+        elif new and agent.asks_why and not call.why and not _asked_why_before(agent, call):
+            answer = ToolAnswer.cant(f"{NO_WHY} Nothing was done.")
         else:
-            try:
-                result = _run(agent, call)
-                if isinstance(result, ToolResult):
-                    call.result = result.text
-                    call.pictures = [
-                        {"label": picture.label, "key": picture.key} for picture in result.pictures
-                    ]
-                else:
-                    call.result = result
-            except BlockedBySafetyFilter as error:
-                blocked = error
-                call.result = f"Failed: {why_it_failed(error, 'the tool')}"
+            answer = _run(agent, call)
+            # Said once it ran, so a tool that starts the ad's job keeps the line with it.
+            if new and agent.asks_why and not call.why:
+                _say_it_ran_without_a_why(call)
+        call.result = answer.text
+        call.answer = answer.kind
+        call.pictures = [
+            {"label": picture.label, "key": picture.key} for picture in answer.pictures
+        ]
         tracing.handed_back(traced, call.result, **_level(call.result))
     call.finished_at = timezone.now()
-    call.save(update_fields=["result", "pictures", "asked_about", "finished_at"])
-    if blocked is not None:
-        raise blocked
+    call.save(update_fields=["result", "answer", "pictures", "asked_about", "finished_at"])
+
+
+# What an agent that asks why is told of a call made without one. Said once per tool: the
+# same call made again without one runs, so a missing reason never stops the work.
+NO_WHY = (
+    f"{REFUSED} the call has no `why`. Every call takes one sentence saying why you are "
+    "making it now: call the tool again with it."
+)
+
+
+def _asked_why_before(agent: Agent, call: ToolCall) -> bool:
+    """Whether the agent's last call of the same tool before `call` was refused for having
+    no `why`: it was told once."""
+    before = (
+        call.session.tool_calls.filter(agent=agent.name, tool=call.tool, id__lt=call.pk)
+        .order_by("id")
+        .last()
+    )
+    return before is not None and before.result.startswith(NO_WHY)
+
+
+def _say_it_ran_without_a_why(call: ToolCall) -> None:
+    """Tell the chat in red, with a warning line, that a call ran with no reason kept for it,
+    after the agent was told once."""
+    text = (
+        f"The {call.agent} made its {call.tool} call again without saying why, so it ran with "
+        "no reason kept for it."
+    )
+    logger.warning("Session %s: %s", call.session_id, text)
+    job = call.session.jobs.first()
+    if job is not None:
+        post_notice(job, text, Message.Level.PROBLEM)
+    else:
+        messages.add(call.session, role=Message.Role.NOTICE, text=text, level=Message.Level.PROBLEM)
 
 
 def _level(result: str) -> dict[str, str]:
     """How a tool's result is marked in its trace, so a refusal or failure stands out."""
-    if result.startswith("Failed:"):
+    if result.startswith(FAILED):
         return {"level": "ERROR"}
-    if result.startswith("Refused:"):
+    if result.startswith(REFUSED):
         return {"level": "WARNING"}
     return {}
 
 
-def _run(agent: Agent, call: ToolCall) -> str | ToolResult:
-    """What the tool hands back: what it did, or why it refused or failed. A tool that fails
-    hands the reason back, so the agent can tell the user, or try something else. A picture
-    no model can read fails the tool here, rather than the agent's next turn."""
+def _run(agent: Agent, call: ToolCall) -> ToolAnswer:
+    """What the tool answers: what it made, why it refused or failed, or its one question.
+    A tool that fails hands the reason back, so the agent can tell the user, or try something
+    else: nothing it raises stops the run. A picture no model can read fails the tool here,
+    rather than the agent's next turn."""
     try:
         tool = {tool.name: tool for tool in agent.tools}[call.tool]
         try:
@@ -450,15 +605,15 @@ def _run(agent: Agent, call: ToolCall) -> str | ToolResult:
                 if not (picture.label and picture.key):
                     raise ValueError(f"the {call.tool} tool gave a picture with no label or key")
                 check_readable(picture)
-        return result
+        return ToolAnswer.handed_back(result)
     except Refused as refused:
-        return f"Refused: {refused} Nothing was done."
-    except BlockedBySafetyFilter:
-        raise  # It stops the whole run, once the call is kept as failed.
+        return ToolAnswer.cant(f"{REFUSED} {refused} Nothing was done.")
+    except Asks as asks:
+        return ToolAnswer.question(str(asks))
     except Exception as error:
         if not isinstance(error, EXPECTED_FAILURES):
             logger.exception("The %s tool failed for checkpoint %s", call.tool, call.pk)
-        return f"Failed: {why_it_failed(error, 'the tool')}"
+        return ToolAnswer.cant(f"{FAILED} {why_it_failed(error, 'the tool')}")
 
 
 def why_it_failed(error: Exception, stopped: str) -> str:
@@ -471,7 +626,10 @@ def why_it_failed(error: Exception, stopped: str) -> str:
     if isinstance(error, UnreadableImage):
         return f"{error}. Only {IMAGE_TYPE_NAMES} pictures can be shown to a model."
     if isinstance(error, BlockedBySafetyFilter):
-        return f"{BLOCKED}."
+        return (
+            f"the AI service's safety filter refused what it was sent ({error}). The same "
+            "request is refused again, so change what is asked, or go on without it."
+        )
     if isinstance(error, ClipFailed):
         return f"the video model couldn't make the clip ({error})."
     if isinstance(error, ReferencePhotoUnusable):
@@ -655,7 +813,10 @@ def _as_given(happened: Message | ToolCall | SceneStep | SystemNote) -> Happened
         return ToolUse(
             call_id=happened.call_id,
             tool=happened.tool,
-            arguments=happened.arguments,
+            # As the agent made the call: its why, kept apart on the row, too.
+            arguments={**happened.arguments, "why": happened.why}
+            if happened.why
+            else happened.arguments,
             result=happened.result,
             pictures=[Shown(**picture) for picture in happened.pictures],
         )

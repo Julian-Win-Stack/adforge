@@ -349,10 +349,12 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
         "them again."
         for scene, part in say_what_waits_on_the_shop_owner(step.scene.job, step)
     )
+    # What was cut to the video API's limits, kept on the step as its clip was sent.
+    cut = f" {step.result}" if step.result else ""
     return (
         f"Background step finished: scene {number}'s clip is ready (version {clip.version}, "
         f"{clip.seconds:g} seconds), made from {picture}audio version "
-        f"{clip.made_from.version}{note}.{_cost(step)}{what_the_judge_did(step, clip)} "
+        f"{clip.made_from.version}{note}.{cut}{_cost(step)}{what_the_judge_did(step, clip)} "
         f"Scene {number} is finished.{fixed}{waiting} "
         "Tell the shop owner."
     )

@@ -181,17 +181,19 @@ def test_each_b_roll_clip_is_sent_its_own_drawn_place(pictures_made: None) -> No
     # picture (point 19).
     job = Job.objects.get()
     person, room = (job.produced.get(kind=kind) for kind in ("person_in_room", "room_alone"))
+    clips = list(job.produced.filter(kind="clip", scene__number__in=[2, 3]))
     sent = {
         clip.scene.number: [picture["drawn"] for picture in clip.sent["pictures"]]
-        for clip in job.produced.filter(kind="clip", scene__number__in=[2, 3])
+        for clip in clips
+        if clip.scene is not None and clip.sent is not None
     }
     assert "person_in_room" in sent[2] and "room" not in sent[2]
     assert "room" in sent[3] and "person_in_room" not in sent[3]
     assert not job.produced.filter(kind="starting_picture", scene__number__in=[2, 3]).exists()
     drawn_sent = {
         picture["file"]
-        for clip in job.produced.filter(kind="clip", scene__number__in=[2, 3])
-        for picture in clip.sent["pictures"]
+        for clip in clips
+        for picture in (clip.sent or {})["pictures"]
         if picture["drawn"]
     }
     assert drawn_sent == {person.file, room.file}

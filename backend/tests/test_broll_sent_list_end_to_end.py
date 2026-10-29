@@ -292,6 +292,7 @@ def test_the_judge_is_shown_the_same_list_and_the_scene_card_shows_it(
             *(f"Image {n}" for n in range(1, 6)),
             "Video 1",
         ]
+    assert clip.ruling is not None
     assert [item["key"] for item in clip.ruling["pictures"]["references"]][:5] == [
         p.file for p in sent.pictures
     ]

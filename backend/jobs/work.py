@@ -119,7 +119,7 @@ from .checks import (
     shortened_script_for,
 )
 from .job_locks import one_job_at_a_time as _one_job_at_a_time
-from .library import Drawn, PictureLabel, watch_of
+from .library import Drawn, PictureLabel, SentList, watch_of
 from .models import (
     BROLL_FIELDS,
     PLANNED_FOR_THE_ACTION,
@@ -3937,23 +3937,27 @@ def _judge_clip(step: SceneStep, clip: ProducedItem) -> None:
     )
 
 
-def _make_clip(step: SceneStep, *, remake: int = 0, motion: str = "") -> ProducedItem:
+def _make_clip(
+    step: SceneStep, *, remake: int = 0, motion: str = "", sent: SentList | None = None
+) -> ProducedItem:
     """make_clip's clip, made and kept: its first, or its `remake`th remake, moving as `motion`
-    says. A B-roll clip is sent what cut-and-send builds for it (`broll_sent_list`), never a
-    starting picture, and keeps that sent list before it is shown anywhere."""
+    says; or, given the `sent` list cut-and-send or the fixing agent built, made from what it
+    lists. A B-roll clip is sent what cut-and-send builds for it (`broll_sent_list`) unless
+    given one, never a starting picture, and keeps that sent list before it is shown
+    anywhere."""
     scene = step.scene
     job = scene.job
     picture, audio = step.picture, step.made_from
     assert audio is not None, "a clip step starts with its audio"
     assert picture is not None or step.shows, "a talking clip is made from its picture"
     assert audio.seconds is not None, "a line's audio is measured when it's made"
-    if step.note and not step.motion_prompt and not remake:
+    if step.note and not step.motion_prompt and not remake and sent is None:
         _rewrite_motion_prompt(step)
-    sent: library.SentList | None = None
     handoff: ClipHandoff | BrollClipHandoff
     if step.shows:
         _too_long_for_a_broll_clip(audio.seconds)
-        sent = broll_sent_list(step, motion=motion)
+        if sent is None:
+            sent = broll_sent_list(step, motion=motion)
         handoff = sent_handoff(step, audio, sent)
     else:
         handoff = _clip_handoff(step, picture, audio)
@@ -3999,9 +4003,10 @@ def _make_clip(step: SceneStep, *, remake: int = 0, motion: str = "") -> Produce
             motion_prompt=motion,
             change=change_made_for(step),
         )
-    if sent is not None:
-        # Kept before the clip is shown anywhere, so its card shows what it was sent.
-        library.keep_sent_list(clip, sent)
+        if sent is not None:
+            # Kept with the clip, before it is shown anywhere, so its card shows what it was
+            # sent.
+            library.keep_sent_list(clip, sent)
     return clip
 
 
@@ -4020,12 +4025,24 @@ def broll_sent_list(step: SceneStep, *, motion: str = "") -> library.SentList:
     except PlaceNotDrawn as not_drawn:
         # Sent no picture of its place, as cut-and-send says for the scene.
         say_the_place_wasnt_drawn(job, not_drawn)
-    if motion:
-        return cut_and_send.labelled_sent_list(job, _planned_sending(step), motion)
     if step.note:
         improved = _sent_to_improve(step)
         return improved.model_copy(update={"prompt": step.motion_prompt or improved.prompt})
-    return cut_and_send.first_sent_list(step, _planned_sending(step))
+    sending = _planned_sending(step)
+    _keep_the_cut(step, sending)
+    if motion:
+        return cut_and_send.labelled_sent_list(job, sending, motion)
+    return cut_and_send.first_sent_list(step, sending)
+
+
+def _keep_the_cut(step: SceneStep, sending: cut_and_send.Sending) -> None:
+    """Keep on the clip step, until it finishes, what the producer is told of the cut of its
+    clip to the video API's limits (agents.hard_list.cut_answer): its finished answer says it.
+    Blank when nothing was cut."""
+    from agents import hard_list
+
+    step.result = hard_list.cut_answer(step.scene.number, sending)
+    step.save(update_fields=["result"])
 
 
 def _planned_sending(step: SceneStep) -> cut_and_send.Sending:

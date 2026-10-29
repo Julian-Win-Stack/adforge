@@ -1071,10 +1071,7 @@ def _scene_facts(scene: Scene) -> str:
                 else []
             ),
             *(
-                [
-                    f"Its video piece: video {scene.piece['video']}, moment "
-                    f"{scene.piece['moment']}"
-                ]
+                [f"Its video piece: video {scene.piece['video']}, moment {scene.piece['moment']}"]
                 if scene.piece
                 else []
             ),

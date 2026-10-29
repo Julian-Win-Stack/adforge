@@ -488,6 +488,7 @@ def test_each_clip_in_the_chat_carries_what_it_was_sent(
     # The talking clips were sent no list; the B-roll clip shows the one it was sent.
     assert shown[1] == shown[3] == NOTHING_SENT
     clip = Job.objects.get().produced.get(kind="clip", scene__number=2)
+    assert clip.sent is not None
     assert (
         [each["label"] for each in shown[2]["pictures"]]
         == [picture["label"] for picture in clip.sent["pictures"]]

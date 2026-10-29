@@ -466,9 +466,10 @@ FIRST_SEND_SENTENCE = "A hand uses the product in the room until the job is done
 def first_send_written(request: ModelRequest[Any]) -> dict[str, Any]:
     """What the first-send writer answers when a test doesn't say: each picture's label as its
     line's words, and FIRST_SEND_SENTENCE."""
+    handoff: Any = request.handoff
     labels = [
         f"{label[:1].lower()}{label[1:]}".rstrip(". ")
-        for label in (picture.label for picture in request.handoff.pictures)
+        for label in (picture.label for picture in handoff.pictures)
     ]
     return {"labels": labels, "sentence": FIRST_SEND_SENTENCE}
 

@@ -182,6 +182,7 @@ def test_the_chat_shows_every_try_with_the_judges_problem_and_the_agents_pick_an
         ],
     }
     # Each try carries what it was sent, so the scene's card shows the one kept in the ad.
+    assert try_2.sent is not None
     assert notice["tries"]["clips"][2]["sent"]["prompt"] == try_2.sent["prompt"]
     # No B-roll clip of scene 2 is shown in the chat but in the notice.
     tried = {clip.file for clip in tries()}
