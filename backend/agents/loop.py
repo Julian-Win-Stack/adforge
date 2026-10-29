@@ -251,8 +251,8 @@ def _with_why(tool: type[Tool]) -> type[BaseModel]:
 @dataclass(frozen=True)
 class Agent:
     """What runs on the loop: the agent's name, the purpose that picks its model, what it is
-    told to do, the tools it may call, and whether it is given code's system notes on the
-    fix plans it runs (the producer is: fix redesign, decision 20)."""
+    told to do, the tools it may call, and whether it is given code's system notes (the
+    producer is: a pasted page, the shop owner's pause)."""
 
     name: str
     purpose: str
@@ -799,8 +799,7 @@ def _conversation(
     words it would read as something it said. So is the page panel's message: code keeps
     its pasted page as the page, and a system note tells the agent so.
 
-    A system note comes where the agent was first given it, as a step does. The fix plan
-    steps code runs are never the agent's, so it is told of them only by these notes."""
+    A system note comes where the agent was first given it, as a step does."""
     said = list(session.messages.prefetch_related("attachments"))
     finished = _finished_steps(agent, session).order_by("finished_at", "id")
     read = list(finished.filter(producer_read_at__isnull=False))

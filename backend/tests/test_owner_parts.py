@@ -234,14 +234,13 @@ def test_a_picture_drawn_after_the_yes_with_a_new_photo_of_the_part_needs_a_new_
     assert not owner_parts.is_approved(scene)
 
 
-def test_a_reference_photo_from_the_owner_parts_answer_has_no_fix(call: ToolCall) -> None:
+def test_a_reference_photo_from_the_owner_parts_answer_is_in_use(call: ToolCall) -> None:
     scene = a_broll_scene(call, owner_part=APPLICATOR)
 
     photo = ReferencePhoto.objects.create(
         scene=scene, file="owner/1.jpg", thing="the applicator", use=ReferencePhoto.Use.PICTURE
     )
 
-    assert photo.added_by is None
     assert list(scene.photos_in_use()) == [photo]
 
 
@@ -291,7 +290,6 @@ def test_the_yes_keeps_the_part_and_its_photos_for_every_scene_that_shows_it(
     assert sorted(copied.values_list("scene__number", "file", "thing", "use", "drawn")) == [
         (number, "owner/1.jpg", "applicator", "picture", "clean/owner/1.jpg") for number in (3, 4)
     ]
-    assert not copied.filter(added_by__isnull=False).exists()
     # Every scene showing it is approved, its own picture still to be drawn with the part.
     for number in (2, 3, 4):
         assert owner_parts.is_approved(Scene.objects.get(number=number))

@@ -1,34 +1,27 @@
 """The producer: the agent the user talks to. What it is told to do, and its tools."""
 
-import re
 from datetime import datetime
-from decimal import ROUND_HALF_UP, Decimal
-from typing import Any, Literal, NamedTuple
+from decimal import Decimal
+from typing import Any, Literal
 
-from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.db import IntegrityError, transaction
-from django.db.models import Avg, Max, Q, QuerySet, Sum
+from django.db.models import Max, Q, QuerySet, Sum
 from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Attachment, Message, Session
-from gateway import catalog
 from gateway.models import ModelCall
 from gateway.types import MusicHandoff, UnusableReply
 from jobs import (
-    clip_judge,
     cut_and_send,
-    fix_check,
     owner_answers,
     owner_parts,
     page,
-    picture_check,
     plan_edits,
-    reference_photos,
     scene_references,
     stale,
 )
@@ -41,7 +34,6 @@ from jobs.models import (
     CLIP_ONLY_INPUTS,
     PLANNED_FOR_THE_ACTION,
     AgentFix,
-    Fix,
     Job,
     OwnerQuestion,
     ProducedItem,
@@ -76,7 +68,6 @@ from jobs.work import (
     bring_back_clip,
     bring_back_picture,
     check_page,
-    clip_estimate_usd,
     copy_and_pick,
     create_music,
     create_person,
@@ -114,8 +105,7 @@ from jobs.work import (
 
 from . import hard_list, loop, snapshot, step_signals
 from .fixing_agent import AGENT as FIXING_AGENT
-from .fixing_agent import MOST_TRIES, PLACE_NAMES, carry_on_after_the_pause
-from .fixing_agent import PURPOSE as FIXING_AGENT_PURPOSE
+from .fixing_agent import PLACE_NAMES, carry_on_after_the_pause
 from .look import Look
 from .loop import Agent, Failed, Refused, Tool
 from .models import ToolCall
@@ -162,7 +152,8 @@ planning checks on what changed, make again only the stale steps the change need
 scene tools, then assemble the ad. Once it is shown, tell the shop owner in one line what \
 changed and what it cost.
 Every version of a scene is kept. use_version puts an earlier version back in the ad for \
-nothing, and keep_try puts in one of the tries the fixing agent filmed of a clip; once an ad \
+nothing, and keep_try puts in one of the tries the fixing agent filmed of a clip, as when \
+the shop owner taps one in the chat (their message names the try and the scene); once an ad \
 has been shown, each assembles it again. create_music again in another mood makes new \
 music for the ad; assemble the ad again to put it in. cost_so_far says what the ad has \
 cost so far, by part.
@@ -197,18 +188,6 @@ the page's text and attach its photos. If they paste a page's text into the chat
 don't take facts from it: point them to the panel, which keeps it as the page.
 When a tool skips a product photo, tell the shop owner which photo and why. When a tool \
 fails or refuses, tell the shop owner honestly what happened.
-Once a scene has a clip, the app takes the shop owner's notes on the ad: another AI \
-reads each one and looks at the pictures and clips, then the app shows them a plan in the \
-chat with a yes button, and once they say yes it makes every change and shows the new ad. \
-You don't decide what changes or make it, and you have no tool for it: never restate a \
-note, ask them to confirm it or say yes, or say you'll change something. What reaches you \
-from them then is what isn't a note, such as a question: answer it. You are told what the \
-app does in messages from the app, not from the shop owner: the plan shown, with each \
-scene's change and cost; the changes started; each scene done and what it cost; a check \
-that found a change missing; an error; the new ad shown. Answer their questions from \
-those, such as what is happening with a scene or what it costs, and don't repeat what the \
-chat already showed them. Never say a change is done before the app says so, and never say \
-it is right before your look has said so.
 A scene may show a part of the product that no photo shows, drawn from the shop owner's \
 words, or from a description made up for it when they let us draw it. The part gets a \
 picture of its own, shown to them in the chat, and the clip of a scene showing it isn't \
@@ -217,8 +196,7 @@ they say yes to that picture in their own words, call approve_owner_part. When t
 what to change or send a photo of the part, call correct_owner_part, which draws the \
 part's picture again and shows it, and ask them again. Never take silence, a question or \
 a yes to something else as their yes, and never decide for them. Every other scene goes \
-on meanwhile. The waiting scene has no clip yet, so what they say about the part's picture \
-is yours to act on, even once other scenes have clips.
+on meanwhile.
 You can't see pictures or videos yourself. When you need to know what a scene's clip, an \
 earlier version, a library picture or a try of a fix shows, call look with one question: it \
 is shown them, with what the clip was sent, and tells you in words what it sees, what is \
@@ -2259,15 +2237,6 @@ class AssembleAd(Tool):
         job = _the_job(call)
         if job is None or not job.scenes.exists():
             raise Refused("the ad hasn't been planned yet, and it is assembled from its scenes.")
-        from .run_plan import held_on_a_check  # It runs fixes with this module's tools.
-
-        held = sorted({row.scene.number for row in held_on_a_check(call.session)})
-        if held:
-            # Code assembles the new ad once the shop owner answers (flow step 9).
-            raise Refused(
-                f"the shop owner hasn't answered the fix check on {_scenes(held)} yet. The app "
-                "assembles the new ad once they answer."
-            )
         ad, again = assemble_the_ad(call.session, job)
         if again:
             return (
@@ -2586,11 +2555,6 @@ def _photos_of(step: SceneStep) -> set[tuple[str, str]]:
     return {(row.file, row.thing.casefold()) for row in step.reference_photos.all()}
 
 
-# What a clean picture of a shop owner's thing is estimated to cost: a picture and its
-# check's looks, as a starting picture with none recorded (PICTURE_FALLBACK_USD).
-CLEAN_PICTURE_USD = Decimal("0.10")
-
-
 # What the producer calls each kind of step, in what it is told.
 STEP_NAMES = {
     SceneStep.Kind.STARTING_PICTURE: "starting picture",
@@ -2598,22 +2562,6 @@ STEP_NAMES = {
     SceneStep.Kind.TRANSCRIPT: "transcript",
     SceneStep.Kind.CLIP: "clip",
 }
-
-
-def quoted_line(fix: str) -> str | None:
-    """The new line a fix for a new line holds: the one span of it in straight or curly
-    quotes, its spacing tidied. None when it holds no such span, or more than one."""
-    spans = re.findall(r'["\u201c]([^"\u201c\u201d]*)["\u201d]', fix)
-    return normalised_note(spans[0]) or None if len(spans) == 1 else None
-
-
-def _seconds_to_say(scene: Scene, line: str) -> float:
-    """How long the person's voice takes to say `line`, at its measured speed."""
-    voice = _measured_voice(scene.job)
-    assert voice is not None and voice.words_per_second is not None, (
-        "a scene with a clip was made in a measured voice"
-    )
-    return line_seconds(line, voice.words_per_second)
 
 
 def _refuse_unless_movement_can_change(scene: Scene, *, talking: str, unlabelled: str) -> None:
@@ -2632,207 +2580,6 @@ def _refuse_unless_movement_can_change(scene: Scene, *, talking: str, unlabelled
         raise Refused(
             f"scene {scene.number} was planned before scenes had their B-roll labels, so its "
             f"movement can't be rewritten from a note. {unlabelled}"
-        )
-
-
-# What a starting picture is estimated to cost when the scene's last one has no cost
-# recorded: a picture (about $0.05) and its judge's looks (about $0.04 each), the costs seen
-# on the round 3 test ads (project memory, "Costs").
-PICTURE_FALLBACK_USD = Decimal("0.10")
-
-# The ad's before-picture, its room alone and its person-in-room picture are drawn once, by
-# the first B-roll starting picture, and later ones reuse them, so a picture made again
-# doesn't pay for them.
-_DRAWN_ONCE_PURPOSES = [
-    "plan_before_picture",
-    "make_before_picture",
-    "make_room_alone",
-    "make_person_in_room",
-]
-
-
-class Estimate(NamedTuple):
-    """What a fix is estimated to cost, and the most it can cost: the same, unless the clip
-    judge can have its clip made again."""
-
-    about: Decimal
-    up_to: Decimal
-
-
-# What one call to the clip judge, the fix check or the writer of a clip's video prompt is
-# estimated to cost when the ad has none recorded: about $0.07, the proof's average for an
-# ask of the clip judge on gpt-6.1-sol (decider call 13, 2026-10-13).
-CALL_FALLBACK_USD = Decimal("0.07")
-MILLIONTH = Decimal("0.000001")
-# The clip judge's asks about a B-roll clip, made from its sent list (spec #210 point 19):
-# its first question once, then PRODUCT and MOTION each ASKS times.
-_JUDGE_PURPOSES = ["check_clip_references", "check_clip_product", "check_clip_motion"]
-_JUDGE_ASKS = 1 + 2 * clip_judge.ASKS
-_WRITER_PURPOSES = ["rewrite_clip_prompt"]
-# The fixing agent's turns for one try: a look or two, then film_again. A GUESS, until real
-# runs of the agent in the app are recorded (fixing agent build, T3).
-AGENT_TURNS_PER_TRY = 3
-
-
-def _estimate(scene: Scene, redo: Fix.Redo, fix: str) -> Estimate:
-    """What making `redo` again for the scene, for `fix`, is estimated to cost, to the
-    millionth of a dollar a bill is recorded to: a price times the seconds a voice was
-    measured to take never ends."""
-    if redo == Fix.Redo.PICTURE:
-        estimate = picture_estimate(scene)
-    elif redo == Fix.Redo.LINE:
-        estimate = _line_estimate(scene, fix)
-    else:
-        estimate = _clip_estimate(scene, _clip_seconds(scene), from_note=True)
-    return Estimate(*(amount.quantize(MILLIONTH, rounding=ROUND_HALF_UP) for amount in estimate))
-
-
-def _line_estimate(scene: Scene, fix: str, *, new_picture: bool = False) -> Estimate:
-    """What a new line for the scene, then its audio, transcript and clip, is estimated to
-    cost, sized from the new line in `fix`, as long as the voice takes to say it. A new line
-    keeps the scene's starting picture (Julian, 2026-10-17): with `new_picture`, the shop
-    owner also asked for a new one, estimated as for a picture fix."""
-    line = quoted_line(fix)
-    assert line is not None, "a fix for a new line holds it in quotes"
-    seconds = _seconds_to_say(scene, line)
-    rest = (
-        (_picture_only_estimate_usd(scene) if new_picture else Decimal(0))
-        + catalog.speech_cost_usd(catalog.MODEL_FOR_PURPOSE["speak_line"], len(line))
-        + catalog.transcription_cost_usd(catalog.MODEL_FOR_PURPOSE["transcribe_line"], seconds)
-    )
-    clip = _clip_estimate(scene, seconds, from_note=False)
-    return Estimate(rest + clip.about, rest + clip.up_to)
-
-
-def picture_estimate(scene: Scene) -> Estimate:
-    """What a new starting picture for the scene, then its clip, is estimated to cost: up to
-    the picture drawn again, and checked again, each time its fix check can fail it, when
-    checks are on."""
-    picture = _picture_only_estimate_usd(scene)
-    clip = _clip_estimate(scene, _clip_seconds(scene), from_note=False)
-    redraws = fix_check.MOST_REDRAWS if settings.QUALITY_CHECKS else 0
-    # The fix check asks as often as the picture check does.
-    check = picture_check.ASKS * _each_call_usd(scene, ["check_fix"])
-    return Estimate(picture + clip.about, picture + redraws * (picture + check) + clip.up_to)
-
-
-def _picture_only_estimate_usd(scene: Scene) -> Decimal:
-    """What a new starting picture for the scene is estimated to cost: what its last one cost,
-    its judge's looks included, or the fallback when that isn't recorded."""
-    last = (
-        scene.steps.filter(kind=SceneStep.Kind.STARTING_PICTURE, status=SceneStep.Status.FINISHED)
-        # A try's picture step is charged its whole try: its clip and judge too.
-        .exclude(tool_call__agent=FIXING_AGENT)
-        .last()
-    )
-    paid: Decimal | None = None
-    if last is not None:
-        paid = last.tool_call.model_calls.exclude(purpose__in=_DRAWN_ONCE_PURPOSES).aggregate(
-            cost=Sum("cost_usd")
-        )["cost"]
-    return paid or PICTURE_FALLBACK_USD
-
-
-def _clip_seconds(scene: Scene) -> float:
-    """How long the audio the scene's clip speaks lasts."""
-    clip = _latest_clip(scene)
-    assert clip is not None and clip.made_from is not None, "a fix is for a scene with a clip"
-    seconds = clip.made_from.seconds
-    assert seconds is not None, "a line's audio is measured when it's made"
-    return seconds
-
-
-def _clip_estimate(scene: Scene, audio_seconds: float, *, from_note: bool) -> Estimate:
-    """What a new clip of the scene covering `audio_seconds` of its line is estimated to
-    cost: its video and, for a B-roll clip with quality checks on, the clip judge's asks; for
-    a clip made from the shop owner's note, also the call writing its video prompt; its fix
-    is checked by the clip judge's own asks (Julian 2026-10-14). It can cost up to that
-    plus every try the fixing agent can film once the judge fails it (door 1)."""
-    video = _clip_video_usd(scene, audio_seconds)
-    judged = bool(scene.shows) and settings.QUALITY_CHECKS
-    about = video + _judge_usd(scene)
-    if from_note:
-        about += _each_call_usd(scene, _WRITER_PURPOSES)
-    tries = MOST_TRIES * agent_try_usd(scene, audio_seconds) if judged else Decimal(0)
-    return Estimate(about, about + tries)
-
-
-def _clip_video_usd(scene: Scene, audio_seconds: float) -> Decimal:
-    """What the video of a clip of the scene covering `audio_seconds` is billed: a B-roll
-    clip's with the seconds of its planned piece sent beside it."""
-    broll = bool(scene.shows)
-    return clip_estimate_usd(
-        audio_seconds,
-        broll=broll,
-        piece_seconds=cut_and_send.planned_piece_seconds(scene) if broll else 0.0,
-    )
-
-
-def agent_try_usd(scene: Scene, audio_seconds: float) -> Decimal:
-    """What one try of the fixing agent at the scene is estimated to cost, for either door: a
-    new starting picture (none for a scene showing the product: its clip is made from the
-    product's own pictures, spec #210), its video covering `audio_seconds`, the clip judge's
-    asks (which check the shop owner's change too, for a fix) and the agent's turns."""
-    return (
-        (Decimal(0) if scene.shows else _picture_only_estimate_usd(scene))
-        + _clip_video_usd(scene, audio_seconds)
-        + _judge_usd(scene)
-        + AGENT_TURNS_PER_TRY * _each_call_usd(scene, [FIXING_AGENT_PURPOSE])
-    )
-
-
-def _judge_usd(scene: Scene) -> Decimal:
-    """What the clip judge's asks about one of the scene's clips are estimated to cost: none
-    for a talking scene, or with quality checks off."""
-    if not (scene.shows and settings.QUALITY_CHECKS):
-        return Decimal(0)
-    return _JUDGE_ASKS * _each_call_usd(scene, _JUDGE_PURPOSES)
-
-
-def _each_call_usd(scene: Scene, purposes: list[str]) -> Decimal:
-    """What one call for one of `purposes` is estimated to cost: the average of those made
-    for the scene's last clip, or else of those made for the ad, or the fallback when none
-    is recorded."""
-    paid = ModelCall.objects.filter(job=scene.job, purpose__in=purposes, cost_usd__gt=0)
-    last = (
-        scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.FINISHED)
-        .exclude(tool_call__agent=FIXING_AGENT)
-        .last()
-    )
-    for calls in (paid.filter(tool_call=last.tool_call) if last else paid.none(), paid):
-        average: Decimal | None = calls.aggregate(cost=Avg("cost_usd"))["cost"]
-        if average:
-            return average
-    return CALL_FALLBACK_USD
-
-
-def _use_the_photos(fix: Fix) -> None:
-    """Once the shop owner has said yes to the fix, its scene uses its photos from now on
-    (D1), each in place of any it used of the same thing (D3), and stops using those it
-    drops. A clean picture already drawn of the same thing from the same photo is kept."""
-    using = list(_photos_in_use(fix.scene))
-    for row in using:
-        if any(reference_photos.same_thing(row.thing, thing) for thing in fix.drops) or any(
-            reference_photos.same_thing(row.thing, str(photo["thing"])) for photo in fix.photos
-        ):
-            row.dropped_by = fix
-            row.save(update_fields=["dropped_by"])
-    for photo in fix.photos:
-        drawn = (
-            ReferencePhoto.objects.filter(
-                scene__job=fix.job, file=photo["file"], thing__iexact=photo["thing"]
-            )
-            .exclude(drawn="")
-            .values_list("drawn", flat=True)
-            .first()
-        )
-        ReferencePhoto.objects.create(
-            scene=fix.scene,
-            file=photo["file"],
-            thing=photo["thing"],
-            use=photo["use"],
-            drawn=drawn or "",
-            added_by=fix,
         )
 
 
@@ -2869,7 +2616,7 @@ def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem]:
 
 def _show(session: Session, ad: ProducedItem, made_for: str = "") -> None:
     """Show the finished ad in the chat, unless it already is, as after a restart: with
-    what it was made for, if a fix plan made it, so two of them can be told apart."""
+    what it was made for, if given, so two of them can be told apart."""
     if not Attachment.objects.filter(message__session=session, file=ad.file).exists():
         messages.add(
             session,
@@ -3255,7 +3002,7 @@ PRODUCER = Agent(
         ReadAd,
         ReadEarlierCall,
     ],
-    # What code does with the fix plans it runs reaches the producer only so (decision 20).
+    # What code tells it of a pasted page and of the shop owner's pause.
     reads_system_notes=True,
     asks_why=True,
     pausable=True,

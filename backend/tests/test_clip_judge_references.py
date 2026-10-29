@@ -34,9 +34,7 @@ from .conftest import (
 )
 from .fake_fixing_agent import FakeAgent, ScriptedTry, install
 from .sent_lists import holding_the_fixture
-from .test_fix_wiring import decided, planning, plans, row, tap_yes
 from .test_producer_broll import (
-    assemble_through_the_chat,
     checked,  # noqa: F401 (a fixture)
 )
 from .test_producer_clip_judge import clip_of, ruling
@@ -187,37 +185,6 @@ def test_when_the_references_cant_show_enough_the_clip_is_kept_and_the_owner_tol
     )
     assert [text for _, text in notices(api, session_id)].count(line) == 1
     assert "couldn't tell whether this clip is right" in step.result
-
-
-def test_an_owners_no_on_a_clip_the_judge_couldnt_tell_about_goes_to_the_owner_note_door(
-    api: APIClient,
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    sent_on_every_clip: None,
-    steps: HeldSteps,
-    session_id: str,
-    say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake_model.answer_unscripted("check_clip_references", lambda _: CANNOT_TELL)
-    assemble_through_the_chat(fake_model, steps, say)
-    assert ruling(ProducedItem.objects.get(kind="clip", scene__number=2))["verdict"] == "unsure"
-    assert not AgentFix.objects.exists()
-    agent = install(monkeypatch, FakeAgent(tries=[ScriptedTry()]))
-
-    goal = "The press is squeezed shut over the bowl and garlic comes out."
-    fake_model.respond(
-        "decide_fixes",
-        planning(("look_at_references", {"scene": 2}), decided(row(2, "fix", goal))),
-    )
-    say("No, that's not how the press works in scene 2.")
-    [plan] = plans()
-    tap_yes(api, session_id, plan)
-    steps.run_held()
-
-    [handed] = agent.handed
-    assert (handed["door"], handed["goal"]) == ("owner", goal)
-    assert "not how the press works" in handed["failure"].note
 
 
 def test_a_product_check_unsure_keeps_the_clip_for_the_owner_and_a_fail_goes_to_the_fixer(

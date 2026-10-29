@@ -2,114 +2,19 @@
 spec handoffs/owner-photos-build-spec.md). A fix names one thing to take from each photo, and
 the owner confirms it. Code draws a clean picture of only that thing from the photo, and
 sends it first, labelled to win wherever it disagrees with another picture (option C, 16:01).
-Where the thing is in the scene's starting picture, or belongs in it from the start, the
-starting picture is drawn again with it; where it only shows during the clip, the clip is made
-in reference mode: its starting picture first, told the clip starts like it, then the clean
-pictures. A model looks at each scene's starting picture to say which (the route call, 20:00),
-and the shop owner isn't told. Raw photos never go to the video model (locked rule 1, 19:38).
+Raw photos never go to the video model (locked rule 1, 19:38).
 
-Here: the route call, how a thing is named, and the words code adds to the prompts. The
-pictures are drawn in jobs.work."""
+Here: how a thing is named, and the words code adds to the prompts. The pictures are drawn in
+jobs.work."""
 
 import logging
 import re
-from typing import Literal
-
-from pydantic import BaseModel, Field, ValidationError
-
-from adforge.retry import OutsideServiceDown
-from gateway.gateway import call_model
-from gateway.types import BlockedBySafetyFilter, Handoff, Image, UnusableReply
-
-from .models import Job
 
 logger = logging.getLogger(__name__)
 
 # The most photos one note's fix, or one scene, takes things from (Julian 17:43 "up to 3";
 # D4: a fourth on a scene makes the producer ask which to drop).
 MOST_PHOTOS = 3
-
-ROUTE_INSTRUCTIONS = """\
-You help make a short video ad for a shop. Each scene of the ad is a short video clip that \
-starts from a still starting picture. The shop owner sent a photo of one of their own things, \
-named for you, to change how it looks in the ad. You are shown the scene's starting picture \
-first and the shop owner's photo second, and told what the scene shows and, if the shop \
-owner asked for a change to this scene, the change.
-
-Work in three steps.
-1. Look at the shop owner's photo. Write what it shows of the named thing. Then say whether \
-the thing is clear enough in it to copy its colour, shape and details. An ordinary phone \
-photo is clear enough, even a bit soft, dark or taken from an angle; answer no only when you \
-can't really see the thing: too blurry, too dark, too small or mostly hidden. When it isn't, \
-say why in a few words.
-2. Look before you decide. Write what the starting picture shows of that thing, or of \
-anything that could be it in a different look: where it is and how it looks, or that \
-nothing like it is there.
-3. Then decide where the named thing goes in this scene:
-- "in_the_picture": the starting picture shows that thing, or something in its place that \
-could be it, even if it looks different from the photo.
-- "belongs_from_the_start": the starting picture doesn't show it, but the change asks for it \
-to be in the scene from the first moment, such as an object added to the place.
-- "appears_during_the_clip": it only shows once the action starts, such as a gel squeezed out \
-of a tube, foam, or something a hand brings in.
-Say in one sentence why."""
-
-Where = Literal["in_the_picture", "belongs_from_the_start", "appears_during_the_clip"]
-
-
-class RouteHandoff(Handoff):
-    """The thing the shop owner's photo is taken for, what the scene shows, and the change
-    they asked for this scene: null when they didn't name it."""
-
-    thing: str
-    scene_shows: str
-    change: str | None
-    pictures: str = "The starting picture is first; the shop owner's photo is second."
-
-
-# Filled in from the top, so it looks at both pictures before it decides (vision-judges.md,
-# rule 1). A comment, not a docstring: a docstring would be sent in the answer's schema.
-class RouteAnswer(BaseModel):
-    photo_shows: str = Field(description="What the shop owner's photo shows of the thing.")
-    clear_enough: bool = Field(
-        description="Whether the thing is clear enough in the photo to copy its look."
-    )
-    unclear_why: str | None = Field(
-        description="When it isn't clear enough: why, in a few words. Null when it is."
-    )
-    picture_shows: str = Field(
-        description="What the starting picture shows of the thing, or that it isn't there."
-    )
-    where: Where
-    why: str = Field(description="One sentence saying why.")
-
-
-def where_it_goes(
-    job: Job, *, picture: str, photo: str, thing: str, shows: str, change: str | None
-) -> RouteAnswer | None:
-    """Where `thing`, taken from the shop owner's photo at `photo`, goes in the scene whose
-    starting picture is at `picture` and which shows `shows`: asked once of a model shown both,
-    and answered from its record when asked the same again. `change` is the fix the shop owner
-    asked for the scene, or None for a scene they didn't name. None when no answer could be
-    had."""
-    try:
-        return call_model(
-            job=job,
-            purpose="route_reference_photo",
-            instructions=ROUTE_INSTRUCTIONS,
-            handoff=RouteHandoff(thing=thing, scene_shows=shows, change=change),
-            output=RouteAnswer,
-            images=[
-                Image(label="The starting picture:", key=picture),
-                Image(label="The shop owner's photo:", key=photo),
-            ],
-            pay_once=True,
-        )
-    # ValidationError: an answer kept from before the answer's form changed can't be read.
-    except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter, ValidationError) as error:
-        logger.warning("Where the %s goes couldn't be had: %s", thing, error)
-        return None
-
 
 _ARTICLE = re.compile(r"^(the|a|an)(\s+|$)", re.IGNORECASE)
 

@@ -10,7 +10,7 @@ from collections.abc import Callable
 
 import pytest
 
-from agents import decider, producer
+from agents import producer
 from gateway.fake import FakeModel
 from jobs import owner_parts
 from jobs.models import ReferencePhoto, Scene
@@ -88,6 +88,7 @@ def test_a_scene_planned_with_the_approved_part_sends_its_clip_the_parts_picture
     assert owner_parts.is_approved(scene(3))
 
 
-def test_the_producer_and_the_decider_never_ask_again_about_an_approved_part() -> None:
-    for instructions in (producer.INSTRUCTIONS, decider.INSTRUCTIONS):
-        assert "never ask them for a photo of it or how it looks" in " ".join(instructions.split())
+def test_the_producer_never_asks_again_about_an_approved_part() -> None:
+    assert "never ask them for a photo of it or how it looks" in " ".join(
+        producer.INSTRUCTIONS.split()
+    )

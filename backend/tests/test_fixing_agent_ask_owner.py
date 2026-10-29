@@ -236,20 +236,6 @@ def test_an_agent_fixing_an_owners_note_has_no_ask_and_is_told_never_to_ask() ->
     assert "call ask_owner" not in told_at["owner"]
 
 
-def test_an_agent_fixing_an_owners_note_that_asks_anyway_is_refused_and_parks_nothing(
-    fake_model: FakeModel,
-    failed_clip: SceneStep,  # noqa: F811
-) -> None:
-    from .test_fixing_agent import owners_fix
-
-    outcome = owners_fix(fake_model, failed_clip, ask(), film_again())
-
-    assert told()[0] == "Refused: the shop owner can't be asked in this fix. Nothing was done."
-    assert not outcome.parked
-    assert work.open_question(failed_clip.scene) is None
-    assert [each.number for each in outcome.tries] == [1]
-
-
 def test_the_producer_is_told_plainly_of_an_ask_before_any_try(
     fake_model: FakeModel,
     checked: None,  # noqa: F811

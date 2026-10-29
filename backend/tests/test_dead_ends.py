@@ -14,7 +14,7 @@ from django.utils import timezone
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
-from agents import fixing_agent, run_plan, tasks
+from agents import fixing_agent, tasks
 from agents.models import ToolCall
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
@@ -108,9 +108,9 @@ def test_a_clip_step_that_stops_after_its_first_clip_leaves_its_scene_to_make_ag
     else:
 
         def broken(*_: object, **__: object) -> None:
-            raise RuntimeError("the fix check broke after the clip was kept")
+            raise RuntimeError("the step broke after the clip was kept")
 
-        monkeypatch.setattr(tasks, "check_fix", broken)
+        monkeypatch.setattr(tasks, "_prompt_given", broken)
         fake_model.respond("produce", turn(says="The clip failed."))
         steps.run_next()
         monkeypatch.undo()
@@ -149,9 +149,9 @@ def test_a_clip_kept_before_its_step_ended_can_be_kept_for_nothing(
     calling(fake_model, say, ("make_clip", {"scene": 2}))
 
     def broken(*_: object, **__: object) -> None:
-        raise RuntimeError("the fix check broke after the clip was kept")
+        raise RuntimeError("the step broke after the clip was kept")
 
-    monkeypatch.setattr(tasks, "check_fix", broken)
+    monkeypatch.setattr(tasks, "_prompt_given", broken)
     fake_model.respond("produce", turn(says="The clip failed."))
     steps.run_next()
     monkeypatch.undo()
@@ -168,7 +168,6 @@ def test_a_clip_kept_before_its_step_ended_can_be_kept_for_nothing(
     # Only the agents' own turns were paid.
     assert set(ModelCall.objects.order_by("id")[paid:].values_list("purpose", flat=True)) <= {
         "produce",
-        "decide_fixes",
     }
     calling(fake_model, say, ("assemble_ad", {}))
     (ad,) = ProducedItem.objects.filter(kind="finished_ad")
@@ -251,32 +250,6 @@ def test_a_step_whose_fixing_cant_be_ended_is_still_failed_with_a_red_notice(
         and warning["text"].startswith("Scene 1's clip stopped partway, and the fixing agent")
         for warning in Job.objects.get().warnings
     )
-
-
-def test_one_step_whose_end_cant_carry_on_leaves_the_others_ended(
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    made_ready(fake_model, steps, say, (1, 3))
-    calling(fake_model, say, ("make_clip", {"scene": 1}), ("make_clip", {"scene": 3}))
-    steps.held.clear()
-    first, second = SceneStep.objects.filter(kind="clip", status="running").order_by("id")
-    carrying_on = run_plan.carry_on_scene
-
-    def broken_for_the_first(scene: Scene) -> None:
-        if scene.pk == first.scene_id:
-            raise KeyError("something unforeseen")
-        carrying_on(scene)
-
-    monkeypatch.setattr(run_plan, "carry_on_scene", broken_for_the_first)
-    fake_model.respond("produce", turn(says="Both stopped."))
-    tasks.carry_on_after_the_worker_starts()
-
-    assert SceneStep.objects.get(pk=first.pk).status == SceneStep.Status.FAILED
-    assert SceneStep.objects.get(pk=second.pk).status == SceneStep.Status.FAILED
 
 
 # --- A step whose worker was killed is failed once its heartbeat stops ---------------------
@@ -418,8 +391,8 @@ def test_a_step_failed_as_dead_whose_work_then_fails_says_so_once(
 
 @pytest.mark.parametrize(
     "stopped",
-    [PictureKeptFailing(1, [("picture.png", ["wrong"])]), work.AgentGaveUp("No try worked.")],
-    ids=["pictures kept failing", "fixing agent gave up"],
+    [PictureKeptFailing(1, [("picture.png", ["wrong"])])],
+    ids=["pictures kept failing"],
 )
 def test_a_step_failed_as_dead_that_stops_the_run_or_gives_up_stays_failed(
     fake_model: FakeModel,

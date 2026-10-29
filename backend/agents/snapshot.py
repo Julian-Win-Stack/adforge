@@ -126,7 +126,7 @@ def _sent_in_full(sent: SentList) -> list[str]:
 
 def _cost(scene: Scene) -> Decimal:
     """What the scene's finished steps cost, the fixing agent's work on them included: each
-    model call once, as a fix plan's scene counts it."""
+    model call once."""
     return cost_of(
         Q(tool_call__scene_steps__scene=scene, tool_call__scene_steps__finished_at__isnull=False)
         | Q(

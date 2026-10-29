@@ -52,7 +52,7 @@ from gateway.types import (
 from . import assembly
 from .first_send import PIECE_LABEL
 from .library import VIDEO_API_MOST_PIECE_SECONDS, SentList, sent_list_of
-from .models import AgentFix, AgentFixTry, Fix, ProducedItem, SceneStep
+from .models import AgentFix, AgentFixTry, ProducedItem, SceneStep
 from .notices import post_left_out_by_the_filter, post_notice, post_refused_by_the_filter
 from .planning import ChatMessage
 from .scenes import photos_for_needs
@@ -744,37 +744,21 @@ def complained_about(step: SceneStep) -> ProducedItem | None:
     agent_try = AgentFixTry.objects.filter(step=step).select_related("agent_fix__step").first()
     if agent_try is not None:
         # A try the fixing agent films for the shop owner's note is judged beside the clip
-        # they noted, try 0, whichever try it is; a try at a fix's clip the judge failed
-        # (an old plan's new clip), as that fix's clips are.
+        # they noted, try 0, whichever try it is.
         fixing = agent_try.agent_fix
         if fixing.door == AgentFix.Door.OWNER:
             return fixing.first_clip
-        step = fixing.step
-    fix = step.fix
-    if fix is None:
-        return None
-    # A fix plan's fix row, filmed again by the fixing agent, is judged for the change too.
-    if fix.redo not in (Fix.Redo.CLIP, Fix.Redo.SCENE) and not during_the_clip(fix):
-        return None
-    return step.shown_before(ProducedItem.Kind.CLIP)
+    return None
 
 
 def owner_change_of(step: SceneStep) -> str:
     """The shop owner's change a fix's clip is judged for, in one line: for a try the fixing
-    agent films for their note (door 2), the goal it was handed (the producer's instruction,
-    or an old fix plan's goal); else the step's Fix's change."""
+    agent films for their note (door 2), the goal it was handed (the producer's instruction);
+    else the step's own goal."""
     agent_try = AgentFixTry.objects.filter(step=step).select_related("agent_fix").first()
     if agent_try is not None and agent_try.agent_fix.door == AgentFix.Door.OWNER:
         return agent_try.agent_fix.goal
-    assert step.fix is not None, "a clip judged for a change is a fix's"
-    return step.fix.fix
-
-
-def during_the_clip(fix: Fix) -> list[dict[str, Any]]:
-    """The shop owner's photos `fix` takes things from that only show during the clip: the
-    clip judge asks about them, even for a picture fix, whose picture check can't see them
-    (Julian 20:25, "we always check whether the owner's words are applied right")."""
-    return [photo for photo in fix.photos if photo["use"] == "clip"]
+    return step.fix_goal
 
 
 def judge_clip(
@@ -808,9 +792,7 @@ def judge_clip(
                 [each.answer for each in motion],
                 clip,
                 compared_with=old,
-                # Judged in the photo form only while a shop owner's photo was still shown.
-                photos=bool(old and step.fix and during_the_clip(step.fix))
-                and not all(each.without_owner_photos for each in motion),
+                photos=False,
             ),
             **_past_the_filter(sides, motion),
         }
@@ -861,7 +843,7 @@ def _asked_against_sent(
     pictures: dict[str, Any] | None = (clip.ruling or {}).get("pictures")
     fresh = not pictures or "references" not in pictures
     old = complained_about(step)
-    photos = during_the_clip(step.fix) if old is not None and step.fix is not None else []
+    photos: list[dict[str, Any]] = []
     owners = [
         Image(label=OWNER_PHOTO_LABEL.format(each["thing"]), key=str(each["file"]))
         for each in photos
@@ -1025,7 +1007,7 @@ def _sent_ruling_facts(
         "wording": wording_version(
             sent=True,
             fix=compared_with is not None,
-            photos=bool(compared_with and step.fix and during_the_clip(step.fix)),
+            photos=False,
         ),
         "models": {
             purpose.removeprefix("check_clip_"): catalog.MODEL_FOR_PURPOSE[purpose]
@@ -1161,7 +1143,7 @@ def _asked(
     pictures = (clip.ruling or {}).get("pictures")
     old = complained_about(step)
     # A clip fix with the shop owner's photos has MOTION shown them too.
-    photos = during_the_clip(step.fix) if old is not None and step.fix is not None else []
+    photos: list[dict[str, Any]] = []
     owners = [
         Image(label=OWNER_PHOTO_LABEL.format(each["thing"]), key=str(each["file"]))
         for each in photos
@@ -1190,7 +1172,7 @@ def _asked(
     owner: dict[str, Any] = {
         "conversation": conversation,
         "what_the_agent_understood_from_the_owner": (
-            owner_change_of(step) if old is not None or step.fix is not None else None
+            owner_change_of(step) if old is not None else None
         ),
     }
     fixing = old_frames is not None

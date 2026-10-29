@@ -14,8 +14,7 @@ from agents import page_panel, pause
 from agents.tasks import another_session_is_busy, hold_one_at_a_time_lock, wake_producer
 from gateway.gateway import IMAGE_TYPE_NAMES, IMAGE_TYPES
 from jobs import work
-from jobs.fix_plans import notice
-from jobs.models import FixPlan, ProducedItem
+from jobs.models import ProducedItem
 from jobs.page import MAX_PHOTO_BYTES, MAX_PHOTOS
 
 from . import messages
@@ -38,13 +37,6 @@ PAUSED_HEADER = "X-Session-Paused"
 
 # What the user is told when another session is working: only one works at a time.
 ANOTHER_SESSION_IS_BUSY = "Another ad is being made right now. Please try again once it's finished."
-
-# What the yes button is told when the plan it was tapped on no longer waits for an answer.
-PLAN_NO_LONGER_WAITS = "That plan isn't waiting for an answer any more. Look at the newer plan."
-# What it is told when the plan already has a yes from it, as after a reply that was lost.
-PLAN_ALREADY_SAID_YES = "You've already said yes to that plan."
-# What a tap of the yes button says, as the chat and the producer read it.
-TAPPED_YES = "Yes"
 
 # What the page panel is told when its message can't be taken.
 PASTE_THE_PAGE = "Paste the text of the product's page."
@@ -82,7 +74,6 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
     attachments = AttachmentSerializer(many=True, read_only=True)
     step = serializers.SerializerMethodField()
     suggested_note = serializers.SerializerMethodField()
-    plan = serializers.SerializerMethodField()
     tries = serializers.SerializerMethodField()
     question = serializers.SerializerMethodField()
     # The try a tap of "Use this one" chose (#180); null for any other message.
@@ -101,7 +92,6 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
             "attachments",
             "step",
             "suggested_note",
-            "plan",
             "tries",
             "question",
             "use_clip",
@@ -126,19 +116,6 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
         if message.suggested_note_scene is None:
             return None
         return {"scene": message.suggested_note_scene, "text": message.suggested_note}
-
-    def get_plan(self, message: Message) -> dict[str, object] | None:
-        """The fix plan the message is about and what it says of it, or null. A notice
-        showing a plan carries the plan as it stands now; the others name it."""
-        plan = message.fix_plan
-        if plan is None or not message.plan_event:
-            return None
-        shown = message.plan_event == Message.PlanEvent.SHOWN
-        return {
-            "id": plan.pk,
-            "event": message.plan_event,
-            "notice": notice(plan) if shown else None,
-        }
 
     def get_tries(self, message: Message) -> dict[str, object] | None:
         """Every try of a clip the judge failed every try of, as it stands now, each with what
@@ -219,7 +196,7 @@ def session(request: Request, session_id: str) -> Response:
         found.name = rename.validated_data["name"]
         found.save(update_fields=["name"])
         return Response(SessionSerializer(found).data)
-    history = found.messages.select_related("fix_plan", "owner_question__scene").prefetch_related(
+    history = found.messages.select_related("owner_question__scene").prefetch_related(
         "attachments__clip"
     )
     return Response(
@@ -242,12 +219,6 @@ class SendSerializer(serializers.Serializer[None]):
     )
     videos = serializers.ListField(
         child=serializers.FileField(), required=False, max_length=MAX_VIDEOS, default=list
-    )
-    plan = serializers.IntegerField(
-        required=False,
-        allow_null=True,
-        default=None,
-        help_text="The fix plan whose yes button sent this. Never set by typing.",
     )
     use_clip = serializers.IntegerField(
         required=False,
@@ -321,7 +292,7 @@ def session_messages(request: Request, session_id: str) -> Response:
     poll.is_valid(raise_exception=True)
     newer = (
         found.messages.filter(seq__gt=poll.validated_data["after"])
-        .select_related("fix_plan", "owner_question__scene")
+        .select_related("owner_question__scene")
         .prefetch_related("attachments__clip")
     )
     # Whether the shop owner's pause holds, with every poll, so the chat shows it as it stands
@@ -334,14 +305,11 @@ def session_messages(request: Request, session_id: str) -> Response:
 
 def _send(session: Session, request: Request) -> Response:
     """Take the user's message, and start the producer's worker on it unless it is already
-    working. Once the ad has a clip, the worker routes it by code first (agents/routing.py):
-    to the decider, which may pass it on to the producer, or, for a tap, to the plan it says
-    yes to.
+    working. Every message is the producer's: a tap of "Use this one" under a try arrives as
+    a message naming the try, which the producer acts on.
     An interrupt is stored and acknowledged straight away rather than refused, and the
     working producer reads it next. Only one session works at a time, so a message to a
-    session while another is busy is refused, and not kept. A tap of a plan's yes button
-    names the plan, and is refused unless that plan is still waiting in this session and has
-    no yes from it yet."""
+    session while another is busy is refused, and not kept."""
     sending = SendSerializer(data=request.data)
     sending.is_valid(raise_exception=True)
     photos: list[UploadedFile[bytes]] = sending.validated_data["photos"]
@@ -354,9 +322,6 @@ def _send(session: Session, request: Request) -> Response:
         pasted = sending.validated_data["pasted_page"]
         if pasted and (refused_paste := _refuse_paste(session, photos)) is not None:
             return Response({"detail": refused_paste}, status=status.HTTP_400_BAD_REQUEST)
-        tapped = sending.validated_data["plan"]
-        if tapped is not None and (refused := _refuse_tap(session, tapped)) is not None:
-            return Response({"plan": refused}, status=status.HTTP_400_BAD_REQUEST)
         chosen = None
         if sending.validated_data["use_clip"] is not None:
             try:
@@ -379,10 +344,7 @@ def _send(session: Session, request: Request) -> Response:
             )
             kept.append(messages.AttachedFile(Attachment.Kind.VIDEO, key))
         text = sending.validated_data["text"]
-        if tapped is not None:
-            # A tap says yes and nothing else, whatever text came with it.
-            text = TAPPED_YES
-        elif chosen is not None:
+        if chosen is not None:
             assert chosen.scene is not None
             text = f"Use {work.try_name(chosen)} for scene {chosen.scene.number}."
         message = messages.add(
@@ -390,7 +352,6 @@ def _send(session: Session, request: Request) -> Response:
             role=Message.Role.USER,
             text=text,
             carrying=kept,
-            plan=None if tapped is None else messages.PlanSignal(tapped, Message.PlanEvent.YES),
             chosen_clip=chosen.pk if chosen is not None else None,
             pasted_page=pasted,
         )
@@ -430,8 +391,7 @@ def _chosen_try(session: Session, clip: int) -> ProducedItem:
     """The try of a clip the judge failed every try of that a tap of its "Use this one"
     button in `session` chose (#180), refused, saying why, unless it can be swapped in: it
     must be a clip of this chat's ad, one of the tries the chat showed, and not the one in
-    the ad already, or by then: a tap sent before it, not yet acted on, as while the producer
-    is busy, swaps its try in first."""
+    the ad already. The tap arrives as a message naming the try: the producer swaps it in."""
     chosen = (
         ProducedItem.objects.filter(pk=clip, job__session=session, kind=ProducedItem.Kind.CLIP)
         .select_related("step", "scene")
@@ -439,15 +399,7 @@ def _chosen_try(session: Session, clip: int) -> ProducedItem:
     )
     if chosen is None:
         raise work.TryNotOnOffer(work.TRIES_NOT_ON_OFFER)
-    waiting = (
-        session.messages.filter(
-            role=Message.Role.USER, routed_at__isnull=True, chosen_clip__step=chosen.step_id
-        )
-        .select_related("chosen_clip")
-        .order_by("seq")
-        .last()
-    )
-    work.check_try_to_use(chosen, waiting=waiting.chosen_clip if waiting is not None else None)
+    work.check_try_to_use(chosen)
     return chosen
 
 
@@ -462,23 +414,4 @@ def _refuse_paste(session: Session, photos: list[UploadedFile[bytes]]) -> str | 
         return PASTE_BEING_CHECKED
     if not photos:
         return ATTACH_A_PHOTO
-    return None
-
-
-def _refuse_tap(session: Session, plan: int) -> str | None:
-    """Why a tap of plan `plan`'s yes button in `session` is refused, or None to keep it:
-    the plan must be this chat's, still waiting, and not yet said yes to. The chat's row,
-    then the plan's, stay locked until the yes is kept, so a plan replaced or settled
-    meanwhile can't be said yes to. Every writer of a plan locks them in that order (the job
-    first when it locks it), so two of them never wait on each other."""
-    Session.objects.select_for_update().get(pk=session.pk)
-    waiting = (
-        FixPlan.objects.select_for_update()
-        .filter(pk=plan, session=session, state=FixPlan.State.PROPOSED)
-        .first()
-    )
-    if waiting is None:
-        return PLAN_NO_LONGER_WAITS
-    if waiting.messages.filter(plan_event=Message.PlanEvent.YES).exists():
-        return PLAN_ALREADY_SAID_YES
     return None
