@@ -379,7 +379,7 @@ def test_a_pause_lets_the_try_finish_parks_the_fix_and_the_producer_carries_it_o
         for number, each in enumerate(conversation)
         if isinstance(each, Said) and each.text.startswith(fixing_agent.CARRIED_ON)
     ]
-    assert conversation[at].by == "user"  # type: ignore[union-attr]
+    assert conversation[at].by == "user"
     assert any(isinstance(each, ToolUse) for each in conversation[:at])
     assert not [
         each
