@@ -273,7 +273,8 @@ class SentPiece(_Shape):
     trim: Trim | None = Field(
         description="moment_over_limit: the moment ran past the video API's limit and was cut "
         "to its first seconds; pieces_over_limit: the pieces ran past it together and the last "
-        "was cut to fit. None for the moment's own seconds."
+        "was cut to fit; video_ended: the moment ran past its video's end and was cut there. "
+        "None for the moment's own seconds."
     )
     file: Sentence = Field(description="Key of the cut piece in the file store.")
 
