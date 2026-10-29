@@ -17,7 +17,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import PIL.Image
 import PIL.ImageDraw
@@ -332,11 +332,23 @@ def _corner(k: int, across: int, side: int, bar: int) -> tuple[int, int]:
     return _GAP + (k % across) * (side + _GAP), _GAP + (k // across) * (side + bar + _GAP)
 
 
-def tiles_cut_from(label: str, content: bytes) -> list[tuple[str, str, bytes]]:
-    """The tiles of the picker's grid labelled `label`, as `grids` drew it: each one's grid
-    kind, its label and its picture cut back out of `content`, without its bar, for a grid
-    drawn again with fewer of them."""
-    kind = label.partition(": ")[0]
+class CutTile(NamedTuple):
+    """A tile cut back out of the picker's grid: the grid's kind, its label and its picture."""
+
+    kind: str
+    label: str
+    picture: bytes
+
+
+def kind_of(label: str) -> str:
+    """The kind of the picker's grid labelled `label`, as `grids` labels it."""
+    return label.partition(": ")[0]
+
+
+def tiles_cut_from(label: str, content: bytes) -> list[CutTile]:
+    """The tiles of the picker's grid labelled `label`, as `grids` drew it, each picture cut
+    back out of `content` without its bar, for a grid drawn again with fewer of them."""
+    kind = kind_of(label)
     across, side = GRID_SHAPES[kind]
     # A label over a picture is one line on its bar, as `grid` draws it.
     bar = _bar(1, _font_size(side, label_under=False))
@@ -346,7 +358,7 @@ def tiles_cut_from(label: str, content: bytes) -> list[tuple[str, str, bytes]]:
             x, y = _corner(k, across, side, bar)
             saved = io.BytesIO()
             sheet.crop((x, y + bar, x + side, y + bar + side)).save(saved, "JPEG", quality=95)
-            cut.append((kind, tile, saved.getvalue()))
+            cut.append(CutTile(kind, tile, saved.getvalue()))
     return cut
 
 

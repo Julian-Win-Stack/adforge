@@ -439,8 +439,8 @@ def past_the_safety_filter[Answer](
 
 # The most probes made to find which of a call's pictures the safety filter refuses, besides
 # the one call on what is left (#228 review S2): halving finds one refused picture of 25-50 in
-# about 5, two in about 14; the cap is the watcher's for a refused video (#210 point 3, 16
-# probes). Pictures still unsorted when it is reached count as refused.
+# about 5, two in about 14; the watcher's search of a refused video has the same cap (#210
+# point 3). Pictures still unsorted when it is reached count as refused.
 MOST_REFUSED_PROBES = 16
 
 
@@ -487,7 +487,9 @@ def refused_by_halving[Picture](
     return [picture for picture in pictures if picture in refused]
 
 
-def refuses[Picture](ask: Callable[[list[Picture]], object], shown: list[Picture]) -> bool:
+def refused_by_filter[Picture](
+    ask: Callable[[list[Picture]], object], shown: list[Picture]
+) -> bool:
     """Whether the safety filter refuses `ask` showing `shown`."""
     try:
         ask(shown)

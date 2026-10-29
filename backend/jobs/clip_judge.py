@@ -40,7 +40,12 @@ from adforge import file_store
 from adforge.retry import OutsideServiceDown
 from chat.models import Message
 from gateway import catalog
-from gateway.gateway import call_model, past_the_safety_filter, refused_by_halving, refuses
+from gateway.gateway import (
+    call_model,
+    past_the_safety_filter,
+    refused_by_filter,
+    refused_by_halving,
+)
 from gateway.types import (
     AnswerTookTooLong,
     BlockedBySafetyFilter,
@@ -1345,7 +1350,7 @@ def _past_refused_frames(
     rest = ask.images[: len(ask.images) - len(ask.frames)]
     clip = ask.images[len(rest) :]
     times = dict(zip((image.key for image in clip), ask.frames, strict=True))
-    refused = refused_by_halving(lambda group: refuses(asking, [*rest, *group]), clip)
+    refused = refused_by_halving(lambda group: refused_by_filter(asking, [*rest, *group]), clip)
     # Every half passing alone, though all of them together were refused: none can be named.
     blind = refused or clip
     shown = [image for image in clip if image not in blind]

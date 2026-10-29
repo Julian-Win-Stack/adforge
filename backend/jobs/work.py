@@ -43,8 +43,8 @@ from gateway.gateway import (
     edit_picture,
     make_music,
     past_the_safety_filter,
+    refused_by_filter,
     refused_by_halving,
-    refuses,
     speak,
     submit_broll_clip,
     submit_clip,
@@ -601,8 +601,9 @@ def _picked_past_the_safety_filter(
     the screenshot may be left out past the safety filter, never the screenshot itself, and
     the picker isn't told of a grid's pictures it isn't shown. The tiles of the grids left out
     are then halved to find the ones the filter refuses (requirement 22), and the picker asked
-    once more, shown the rest of them drawn again in grids. Raises BlockedBySafetyFilter when
-    it refuses even the screenshot."""
+    once more, shown the rest of them drawn again in grids; when that can't be had, the
+    answer without the grids stands. Raises BlockedBySafetyFilter when it refuses even the
+    screenshot."""
 
     def tiles(grids: list[Image]) -> list[str]:
         return [tile for grid in grids for tile in picker_grids.tiles_of(grid.label)]
@@ -618,6 +619,32 @@ def _picked_past_the_safety_filter(
     )
     if not left:
         return picked, []
+    try:
+        return _past_refused_tiles(job, asked, images, left)
+    except (BlockedBySafetyFilter, UnusableReply, OutsideServiceDown, OSError) as error:
+        # The tiles refused alone, refused only together or not found: the pick made without
+        # the grids stands.
+        logger.warning(
+            "The picker's refused pictures weren't found, so their grids are out: %s", error
+        )
+        return picked, tiles(left)
+
+
+def _past_refused_tiles(
+    job: Job,
+    asked: Callable[[list[Image]], photos.PickedPhotos],
+    images: list[Image],
+    left: list[Image],
+) -> tuple[photos.PickedPhotos, list[str]]:
+    """The picker's answer shown `images` but the tiles of the grids `left` the safety filter
+    refuses, and those tiles, for a picker refused when shown `images`: asked once more as
+    it was, as the filter may refuse a call once and pass it the next time; then the tiles
+    are found by halving (requirement 22) and the picker asked once on the rest, drawn again
+    in grids. Raises when that answer can't be had."""
+    try:
+        return asked(images), []
+    except BlockedBySafetyFilter:
+        pass
     kept = [image for image in images if image not in left]
     cut = [
         tile
@@ -625,38 +652,36 @@ def _picked_past_the_safety_filter(
         for tile in picker_grids.tiles_cut_from(grid.label, file_store.read(grid.key))
     ]
 
-    def asked_with(some: list[tuple[str, str, bytes]]) -> photos.PickedPhotos:
+    def asked_with(some: list[picker_grids.CutTile]) -> photos.PickedPhotos:
         return asked(_with_grids_drawn_again(job, kept, some))
 
-    refused = refused_by_halving(lambda some: refuses(asked_with, some), cut)
-    try:
-        return asked_with([tile for tile in cut if tile not in refused]), [
-            label for _, label, _ in refused
-        ]
-    except BlockedBySafetyFilter:
-        # Refused only together, the pictures halving names may not be the ones refused.
-        return picked, tiles(left)
+    refused = refused_by_halving(lambda some: refused_by_filter(asked_with, some), cut)
+    return asked_with([tile for tile in cut if tile not in refused]), [
+        tile.label for tile in refused
+    ]
 
 
 def _with_grids_drawn_again(
-    job: Job, kept: list[Image], tiles: list[tuple[str, str, bytes]]
+    job: Job, kept: list[Image], tiles: list[picker_grids.CutTile]
 ) -> list[Image]:
     """`kept` and `tiles` of the grids left out drawn again into grids of their kinds, each
     kind's grids in the place the picker is shown that kind. Each grid is kept in the file
     store under a name made from its picture, so the same grid drawn again is kept once."""
     drawn: list[Image] = []
     for kind, (across, side) in picker_grids.GRID_SHAPES.items():
-        of_kind = [(label, content) for tile_kind, label, content in tiles if tile_kind == kind]
+        of_kind = [(tile.label, tile.picture) for tile in tiles if tile.kind == kind]
         for label, content in picker_grids.grids(kind, of_kind, across, side):
             named = hashlib.sha256(content).hexdigest()[:24]
             key = file_store.save_once(
-                f"jobs/{job.pk}/firecrawl/grid-{named}.jpg", partial(bytes, content), whole=bool
+                f"jobs/{job.pk}/firecrawl/grid-{named}.jpg",
+                partial(bytes, content),
+                whole=file_store.whole_picture,
             )
             drawn.append(Image(label, key))
     order = [*picker_grids.GRID_SHAPES]
 
     def place(image: Image) -> int:
-        kind = image.label.partition(": ")[0]
+        kind = picker_grids.kind_of(image.label)
         return order.index(kind) + 1 if kind in order else 0
 
     return sorted([*kept, *drawn], key=place)
