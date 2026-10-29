@@ -2,9 +2,14 @@
 money (#247 point 19a), driven through the chat: the producer's model is faked at the
 gateway to make scene 1's starting picture, and the fake picture model refuses as told."""
 
+import threading
+import time
 from collections.abc import Callable
+from itertools import pairwise
+from typing import Any
 
 import pytest
+from django.db import connection
 from pytest_django import Settings
 from rest_framework.test import APIClient
 
@@ -12,7 +17,7 @@ from chat.models import Session
 from gateway import gateway
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from gateway.types import BlockedBySafetyFilter, RefusedForMoney
+from gateway.types import BlockedBySafetyFilter, Picture, RefusedForMoney
 from jobs.models import Job, SceneStep
 
 from .conftest import HeldSteps, chat
@@ -167,3 +172,80 @@ def test_without_azure_set_up_a_picture_refused_for_money_fails_saying_so(
     assert "out of money" in step.reason
     assert fake_model.pictures_drawn_on[drawn_before:] == ["openai"]
     assert any("out of money" in text for text in red_lines(api, session_id))
+
+
+def test_when_azure_refuses_for_money_too_the_step_fails_saying_so(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    fake_model.respond("make_starting_picture", OUT_OF_MONEY, OUT_OF_MONEY)
+
+    make_scene_1(fake_model, steps, say)
+
+    step = SceneStep.objects.get()
+    assert step.status == "failed"
+    assert "out of money" in step.reason
+    # Azure is set up: the reason doesn't say it isn't.
+    assert "set up" not in step.reason
+
+
+def switched_to_azure(fake_model: FakeModel) -> Job:
+    """A job whose session's pictures are drawn on Azure: OpenAI refused one for money."""
+    job = Job.objects.create(
+        session=Session.objects.create(), product_url="https://shop.example/products/mug"
+    )
+    fake_model.respond("draw_person", OUT_OF_MONEY)
+    with gateway.use_model(fake_model):
+        gateway.draw_picture(job=job, purpose="draw_person", prompt="A potter.")
+    return job
+
+
+def test_azures_wait_isnt_counted_in_how_long_its_call_took(
+    fake_model: FakeModel, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings.AZURE_PICTURES_PER_MINUTE = 120
+    monkeypatch.setattr(gateway, "_wait", time.sleep)
+    job = switched_to_azure(fake_model)
+
+    with gateway.use_model(fake_model):
+        gateway.draw_picture(job=job, purpose="draw_person", prompt="A potter.")
+
+    # It waited half a second for Azure's pace, but the call itself was quick.
+    paced = ModelCall.objects.filter(provider="azure").order_by("id").last()
+    assert paced is not None and paced.duration_ms is not None
+    assert paced.duration_ms < 300
+
+
+def test_pictures_made_at_once_are_drawn_on_azure_one_at_a_time_at_its_pace(
+    fake_model: FakeModel, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Many workers make pictures at the same time; Azure's limit holds for them all.
+    settings.AZURE_PICTURES_PER_MINUTE = 120
+    monkeypatch.setattr(gateway, "_wait", time.sleep)
+    job = switched_to_azure(fake_model)
+    started: list[float] = []
+    drawing = fake_model.draw
+
+    def slow_draw(**asked: Any) -> Picture:
+        started.append(time.monotonic())
+        time.sleep(0.2)
+        return drawing(**asked)
+
+    monkeypatch.setattr(fake_model, "draw", slow_draw)
+
+    def draw() -> None:
+        try:
+            with gateway.use_model(fake_model):
+                gateway.draw_picture(job=job, purpose="draw_person", prompt="A potter.")
+        finally:
+            connection.close()
+
+    threads = [threading.Thread(target=draw) for _ in range(3)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(started) == 3
+    # Each starts once the one before has ended and half a second more has passed.
+    starts = sorted(started)
+    assert all(later - earlier >= 0.65 for earlier, later in pairwise(starts))

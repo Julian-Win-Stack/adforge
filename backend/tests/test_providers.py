@@ -20,7 +20,7 @@ from pytest_django import Settings
 from pytest_httpserver import HTTPServer
 from werkzeug import Request, Response
 
-from adforge import file_store
+from adforge import file_store, retry
 from adforge.retry import OutsideServiceDown
 from adforge.settings import azure_pictures_account, openai_account, openai_pictures_account
 from gateway import gateway
@@ -1793,3 +1793,73 @@ def test_a_picture_made_from_others_on_azure_is_asked_of_azures_deployment(
     assert drawn.data == made
     (request,) = sent
     assert request.form["model"] == "our-picture-deployment"
+
+
+def test_a_picture_refused_at_the_accounts_hard_spend_limit_is_said_so_and_not_asked_again(
+    httpserver: HTTPServer, settings: Settings
+) -> None:
+    # OpenAI says the hard spend limit is reached as a bad request, not a rate limit.
+    settings.OPENAI_PICTURES_KEY = "sk-test"
+    settings.OPENAI_PICTURES_BASE_URL = httpserver.url_for("/v1")
+    settings.AZURE_PICTURES_KEY = ""
+    httpserver.expect_request("/v1/images/generations", method="POST").respond_with_json(
+        {
+            "error": {
+                "message": "Billing hard limit has been reached",
+                "type": "invalid_request_error",
+                "param": None,
+                "code": "billing_hard_limit_reached",
+            }
+        },
+        status=400,
+    )
+
+    with use_model(OpenAIProvider()), pytest.raises(RefusedForMoney, match="hard limit"):
+        draw_picture(job=None, purpose="draw_person", prompt="A potter.")
+
+    assert len(httpserver.log) == 1
+
+
+def test_a_picture_azure_is_too_busy_for_is_asked_again_when_azure_says(
+    httpserver: HTTPServer, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings.OPENAI_PICTURES_KEY = "sk-openai"
+    settings.AZURE_PICTURES_KEY = "azure-key"
+    settings.AZURE_PICTURES_BASE_URL = httpserver.url_for("/openai/v1/")
+    settings.RETRY_DELAYS_SECONDS = [2, 8]
+    slept: list[float] = []
+    monkeypatch.setattr(retry, "_sleep", slept.append)
+    portrait = picture(720, 1280, (180, 150, 120))
+    httpserver.expect_ordered_request("/openai/v1/images/generations").respond_with_json(
+        {"error": {"message": "Rate limit reached.", "code": "429"}},
+        status=429,
+        headers={"Retry-After": "31"},
+    )
+    httpserver.expect_ordered_request("/openai/v1/images/generations").respond_with_json(
+        {"created": 1, "data": [{"b64_json": base64.b64encode(portrait).decode()}]}
+    )
+
+    drawn = retry.with_retries(
+        lambda: OpenAIProvider().draw(model="gpt-image-2.5-sunburst", prompt="A.", on_azure=True)
+    )
+
+    assert drawn.data == portrait
+    # Azure's own word on when to ask again, not the usual 2 seconds.
+    assert slept == [31.0]
+
+
+def test_with_no_deployment_named_azure_is_asked_for_the_catalogs_model(
+    httpserver: HTTPServer, settings: Settings
+) -> None:
+    settings.AZURE_PICTURES_KEY = "azure-key"
+    settings.AZURE_PICTURES_BASE_URL = httpserver.url_for("/openai/v1/")
+    settings.AZURE_PICTURES_DEPLOYMENT = ""
+    portrait = picture(720, 1280, (180, 150, 120))
+    httpserver.expect_oneshot_request(
+        "/openai/v1/images/generations",
+        json={"model": "some-picture-model", "prompt": "A.", "size": "720x1280", "quality": "high"},
+    ).respond_with_json({"created": 1, "data": [{"b64_json": base64.b64encode(portrait).decode()}]})
+
+    drawn = OpenAIProvider().draw(model="some-picture-model", prompt="A.", on_azure=True)
+
+    assert drawn.data == portrait

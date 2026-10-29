@@ -148,10 +148,9 @@ def azure_pictures_account(environ: Mapping[str, str]) -> tuple[str, str]:
 OPENAI_API_KEY, OPENAI_BASE_URL = openai_account(os.environ)
 OPENAI_PICTURES_KEY, OPENAI_PICTURES_BASE_URL = openai_pictures_account(os.environ)
 AZURE_PICTURES_KEY, AZURE_PICTURES_BASE_URL = azure_pictures_account(os.environ)
-# The name of the picture model's deployment on Azure: the same model OpenAI draws with.
-AZURE_PICTURES_DEPLOYMENT = (
-    os.environ.get("AZURE_OPENAI_PICTURES_DEPLOYMENT") or "gpt-image-2.5-sunburst"
-)
+# The name of the picture model's deployment on Azure. Empty means the deployment has the
+# model's own name, as Azure's copies of the other models do.
+AZURE_PICTURES_DEPLOYMENT = os.environ.get("AZURE_OPENAI_PICTURES_DEPLOYMENT", "")
 # How many pictures Azure's deployment draws a minute; pictures drawn there are paced to it.
 AZURE_PICTURES_PER_MINUTE = 2
 

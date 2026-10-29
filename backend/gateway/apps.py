@@ -24,7 +24,7 @@ class GatewayConfig(AppConfig):
                     "Once OpenAI refuses a picture for money, that session's pictures are "
                     "drawn on %s (deployment %s), at most %s a minute",
                     _host(settings.AZURE_PICTURES_BASE_URL),
-                    settings.AZURE_PICTURES_DEPLOYMENT,
+                    settings.AZURE_PICTURES_DEPLOYMENT or "named as the model",
                     settings.AZURE_PICTURES_PER_MINUTE,
                 )
             else:
