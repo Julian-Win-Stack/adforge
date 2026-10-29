@@ -743,7 +743,8 @@ REMINDER = "Answer with a tool call: a look, a move or give_up."
 # What the first message says of a failed clip made before the app kept what clips were sent.
 NO_SENT_LIST = (
     "The failed clip was made before the app kept what clips were sent, so there is no list of "
-    "what it was sent: its frames are shown as try 0."
+    "what it was sent: its frames are shown as try 0. Until a try names references, a try is "
+    "sent the scene's planned pictures and piece."
 )
 # The drawn picture of a sent list, by what it shows (jobs.library.Drawn).
 DRAWN = {
