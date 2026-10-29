@@ -12,11 +12,11 @@ import io
 import re
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any, NamedTuple
+from typing import Any, Literal, NamedTuple, Self
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from PIL import Image, ImageStat
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from gateway.types import Handoff
 
@@ -38,11 +38,11 @@ button at the top. If the page lets the shopper choose a colour, flavour, shade 
 choice is part of the same product.
 
 Then answer:
-- gallery_images: the pictures in that product's own photo gallery (the big photo next to the \
-title and buy button, its thumbnails, and the rest of that gallery) that show the product \
-itself: any angle, close-up, packaging, the product in use or worn by a model. Leave out \
-gallery pictures in which the product can't be seen (text cards, charts, skin before/after, \
-ingredients, badges).
+- gallery_images: every picture in that product's own photo gallery (the big photo next to \
+the title and buy button, its thumbnails, and the rest of that gallery), whatever it shows: \
+any angle, close-up, packaging, the product open or in another state, in use or worn by a \
+model, what is inside it, the result of using it, a before/after, a chart, the product next \
+to other things. Leave out only cards made of words alone.
 - more_images: other pictures anywhere else on the page that clearly show this same product.
 - product_sections: the T numbers of pieces whose text describes this product: what it is, \
 materials or ingredients, sizes, fit, dimensions, how to use, benefits, specs, what's in the \
@@ -55,10 +55,11 @@ pieces about other products: "you may also like", "shop the look", "pairs well w
 or versions sold on their own pages, accessories sold separately, even from the same brand \
 and even if they look alike. A picture that links to another product's page is another \
 product. A picture that shows this product next to other products, such as a line-up, a set, \
-a routine or a comparison of versions, is another product's picture too, even though this \
-product is in it: leave it out. Also leave out reviews, Q&A, navigation, cart, promotions and \
-footer text. When unsure whether a picture shows exactly this product, leave it out: a \
-missing photo costs little, a wrong one puts another product in the advert.
+a routine or a comparison of versions, is kept as a line-up when this exact product is in it, \
+with where it stands among them (see target below). Also leave out reviews, Q&A, navigation, \
+cart, promotions and footer text. When unsure whether a product in a picture is exactly this \
+product, leave it out: a missing photo costs little, a wrong one puts another product in the \
+advert.
 
 You also get the shop's official record of the product sold on this page (title, brand, \
 description, the names of its colours, shades or sizes) and its official photos, one per \
@@ -72,8 +73,29 @@ Then note faces: face_images are the I numbers, among the ones you picked, of pi
 show a person's face you could recognise. A body, a hand, an arm, lips or a face turned away, \
 cut off or too small to recognise doesn't count.
 
-Last, page_blocked: true when the screenshots show a block, error, login or "verify you're \
+Then page_blocked: true when the screenshots show a block, error, login or "verify you're \
 human" page instead of the shop's product page.
+
+Last, pictures: one entry for every picture you picked, in gallery_images, more_images or \
+record_images, each with these fields:
+- picture: its mark, "I<n>", or "R<n>" for an official photo.
+- copy_group: a number shared by every copy of one photo: the same shot at another size, crop \
+or file, on the page or among the official photos. Every other photo gets a number of its own. \
+Pick every copy as usual; the group says they are one photo, and one copy is kept.
+- kind: side (how the product looks from one side), state (the product in another state of \
+its own, such as open, unfolded or another pack size), content (what the product holds, out of \
+it), in-use (the product being used or worn), result (what using it leaves, the end state, a \
+before/after), line-up (this product among other products), chart (a chart, table or diagram).
+- side: the side of the product facing the camera: front, back, side or top; none when no one \
+side of it shows.
+- alone: yes when the product is alone on a plain background, no when anything else is in the \
+picture.
+- colour: the product's colour in the picture, one word.
+- target: for a line-up, where this product stands among the others, so it can be told apart \
+from them; empty for every other kind.
+- label: one sentence saying what the picture shows, as you would tell someone who can't see \
+it: the product, its state, what else is in it. For a before/after, say which part is before \
+and which is after.
 
 Three more kinds of picture come with the screenshots:
 
@@ -150,6 +172,68 @@ class PickHandoff(Handoff):
     video_players: str
 
 
+# The picker's fixed values for a picture it keeps (spec #210 point 2). Open to change: the
+# shared library contract owns them once it lands.
+Kind = Literal["side", "state", "content", "in-use", "result", "line-up", "chart"]
+Side = Literal["front", "back", "side", "top", "none"]
+Alone = Literal["yes", "no"]
+# How a kept picture is named in the picker's answer: by its mark on the page or the record.
+PICTURE_MARK = re.compile(r"[IR][1-9]\d*")
+
+
+class PickedPicture(BaseModel):
+    """The picker's fixed fields for one picture it kept."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    picture: str = Field(
+        description='The picture\'s mark: "I<n>", or "R<n>" for an official photo.'
+    )
+    copy_group: int = Field(
+        description="The same number for every copy of one photo (another size, crop or file "
+        "of the same shot); a different number for every other photo."
+    )
+    kind: Kind
+    side: Side
+    alone: Alone
+    colour: str = Field(description="The product's colour in the picture, one word.")
+    target: str = Field(
+        description='For a line-up, where this product stands among the others; "" for any '
+        "other kind."
+    )
+    label: str = Field(description="One sentence saying what the picture shows.")
+
+    # Validators rather than a pattern or ge, which OpenAI's strict schema doesn't accept.
+    @field_validator("picture")
+    @classmethod
+    def _a_mark(cls, picture: str) -> str:
+        if not PICTURE_MARK.fullmatch(picture):
+            raise ValueError(f"\"{picture}\" isn't a picture's mark, such as I8 or R1")
+        return picture
+
+    @field_validator("colour")
+    @classmethod
+    def _one_word(cls, colour: str) -> str:
+        if not colour.strip() or len(colour.split()) > 1:
+            raise ValueError(f'the colour "{colour}" isn\'t one word')
+        return colour.strip().casefold()
+
+    @field_validator("label")
+    @classmethod
+    def _a_sentence(cls, label: str) -> str:
+        if not label.strip():
+            raise ValueError("the label is empty")
+        return label.strip()
+
+    @model_validator(mode="after")
+    def _a_target_for_a_line_up_only(self) -> Self:
+        if self.kind == "line-up" and not self.target.strip():
+            raise ValueError(f"{self.picture} is a line-up with no target")
+        if self.kind != "line-up" and self.target.strip():
+            raise ValueError(f"{self.picture} isn't a line-up, so it has no target")
+        return self
+
+
 class PickedPhotos(BaseModel):
     product: str
     gallery_images: list[int]
@@ -166,6 +250,8 @@ class PickedPhotos(BaseModel):
     record_images: list[int] = []
     gallery_videos: list[int] = []
     video_notes: str = ""
+    # Last, after every answer the picker was tested with: one entry per picture kept.
+    pictures: list[PickedPicture] = []
 
 
 class FaceNoteHandoff(Handoff):
@@ -241,12 +327,13 @@ def too_small(picture: dict[str, Any]) -> bool:
 
 class PickedLink(NamedTuple):
     """A picked photo's link at its biggest size, the link as the page or record gave it,
-    and whether the picker marked it with a face: None for an official photo, which it
-    doesn't note."""
+    whether the picker marked it with a face: None for an official photo, which it doesn't
+    note; and its mark, I<n> or R<n>."""
 
     url: str
     as_given: str
     has_face: bool | None
+    mark: str
 
 
 def picked_links(
@@ -261,11 +348,12 @@ def picked_links(
             best_url(by_number[number]),
             widest_url(by_number[number]),
             number in picked.face_images,
+            f"I{number}",
         )
         for number in [*picked.gallery_images, *picked.more_images]
         if number in by_number
     ] + [
-        PickedLink(full_size(record_urls[number - 1]), record_urls[number - 1], None)
+        PickedLink(full_size(record_urls[number - 1]), record_urls[number - 1], None, f"R{number}")
         for number in picked.record_images
         if 1 <= number <= len(record_urls)
     ]

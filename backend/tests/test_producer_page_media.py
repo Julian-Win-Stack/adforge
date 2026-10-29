@@ -19,10 +19,10 @@ from jobs.models import Job
 from .conftest import (
     READABLE,
     SHAMPOO_PHOTO_PATH,
-    SHAMPOO_PICKED,
     FakeFirecrawl,
     paid_for,
     photo,
+    shampoo_picked,
 )
 from .test_producer_page import notices, read_page_result, reading
 
@@ -128,7 +128,7 @@ def test_hidden_gallery_pictures_reach_the_picker_in_a_grid_and_a_picked_one_is_
     serve_hidden(httpserver, 42, 43, 44, 46)
     reading(fake_model, shampoo_page_url)
     fake_model.respond("check_page", READABLE)
-    fake_model.respond("pick_photos", {**SHAMPOO_PICKED, "gallery_images": [8, 40]})
+    fake_model.respond("pick_photos", shampoo_picked({"gallery_images": [8, 40]}))
 
     say(f"Make an ad for {shampoo_page_url}")
 
@@ -188,11 +188,13 @@ def test_every_record_photo_is_offered_and_a_picked_one_is_kept_once(
     record_with_photos(firecrawl, httpserver, 9)
     reading(fake_model, shampoo_page_url)
     fake_model.respond("check_page", READABLE)
-    # R1 is the same photo as I8, so only R7 is kept from the record.
+    # R1 is the same photo as I8, in its copy group, so only R7 is kept from the record.
     fake_model.respond(
         "pick_photos",
         # R0 and R10 aren't in the record.
-        {**SHAMPOO_PICKED, "gallery_images": [8], "record_images": [0, 1, 7, 10]},
+        shampoo_picked(
+            {"gallery_images": [8], "record_images": [0, 1, 7, 10]}, copies=[["I8", "R1"]]
+        ),
     )
 
     say(f"Make an ad for {shampoo_page_url}")
@@ -300,7 +302,7 @@ def test_video_players_reach_the_picker_by_their_first_frames_and_picked_ones_ar
     fake_model.respond("check_page", READABLE)
     fake_model.respond(
         "pick_photos",
-        {**SHAMPOO_PICKED, "gallery_videos": [1, 5, 3, 9], "video_notes": "V2 is a review."},
+        shampoo_picked({"gallery_videos": [1, 5, 3, 9], "video_notes": "V2 is a review."}),
     )
 
     say(f"Make an ad for {shampoo_page_url}")
@@ -359,7 +361,7 @@ def test_a_page_with_many_hidden_pictures_record_photos_and_videos_stays_under_5
         )
     reading(fake_model, shampoo_page_url)
     fake_model.respond("check_page", READABLE)
-    fake_model.respond("pick_photos", {**SHAMPOO_PICKED, "gallery_images": [8, 159]})
+    fake_model.respond("pick_photos", shampoo_picked({"gallery_images": [8, 159]}))
 
     say(f"Make an ad for {shampoo_page_url}")
 
@@ -395,7 +397,7 @@ def test_a_page_read_again_shows_the_picker_the_same_grids_and_pays_once(
     fake_model.respond("check_page", READABLE)
     # The first read stops when the copy call fails, after the picker has answered.
     fake_model.respond("copy_page_text", *[OutsideServiceDown("503 from the provider")] * 3)
-    fake_model.respond("pick_photos", {**SHAMPOO_PICKED, "gallery_images": [8, 40]})
+    fake_model.respond("pick_photos", shampoo_picked({"gallery_images": [8, 40]}))
     say(f"Make an ad for {shampoo_page_url}")
     asked = len(httpserver.log)
 
@@ -422,14 +424,14 @@ def test_a_page_read_before_the_grids_had_lines_is_shown_the_grids_afresh(
     reading(fake_model, shampoo_page_url)
     fake_model.respond("check_page", READABLE)
     fake_model.respond("copy_page_text", *[OutsideServiceDown("503 from the provider")] * 3)
-    fake_model.respond("pick_photos", {**SHAMPOO_PICKED, "gallery_images": [8, 40]})
+    fake_model.respond("pick_photos", shampoo_picked({"gallery_images": [8, 40]}))
     say(f"Make an ad for {shampoo_page_url}")
     # As a job read before the picker's lines were kept with its pictures.
     job = Job.objects.get()
     del job.firecrawl["picker_lines"]
     job.save(update_fields=["firecrawl"])
     # The grids are drawn and stored again, so the picker is asked again.
-    fake_model.respond("pick_photos", {**SHAMPOO_PICKED, "gallery_images": [8, 40]})
+    fake_model.respond("pick_photos", shampoo_picked({"gallery_images": [8, 40]}))
 
     reading(fake_model, shampoo_page_url)
     say("Try again")
@@ -491,7 +493,7 @@ def test_a_grid_the_models_safety_filter_blocks_is_left_out_and_the_rest_are_pic
     def blocked_by_the_hidden_grid(request: ModelRequest[Any]) -> dict[str, Any]:
         if hidden_grid in [image.label for image in request.images]:
             raise BlockedBySafetyFilter("content_policy_violation")
-        return {**SHAMPOO_PICKED, "gallery_images": [8], "record_images": [1]}
+        return shampoo_picked({"gallery_images": [8], "record_images": [1]}, copies=[["I8", "R1"]])
 
     fake_model.answer_unscripted("pick_photos", blocked_by_the_hidden_grid)
 
@@ -532,7 +534,7 @@ def test_when_every_grid_alone_is_blocked_the_photos_are_picked_off_the_screensh
     def blocked_by_any_grid(request: ModelRequest[Any]) -> dict[str, Any]:
         if len(request.images) > len(SCREENSHOT_PARTS):
             raise BlockedBySafetyFilter("content_policy_violation")
-        return {**SHAMPOO_PICKED, "gallery_images": [8]}
+        return shampoo_picked({"gallery_images": [8]})
 
     fake_model.answer_unscripted("pick_photos", blocked_by_any_grid)
 
@@ -566,7 +568,7 @@ def test_a_picked_picture_whose_biggest_size_cant_be_had_is_kept_at_its_link_as_
     httpserver.expect_request("/cdn/shop/files/candle.png").respond_with_data("", status=404)
     reading(fake_model, shampoo_page_url)
     fake_model.respond("check_page", READABLE)
-    fake_model.respond("pick_photos", {**SHAMPOO_PICKED, "gallery_images": [8, 42]})
+    fake_model.respond("pick_photos", shampoo_picked({"gallery_images": [8, 42]}))
 
     say(f"Make an ad for {shampoo_page_url}")
 
