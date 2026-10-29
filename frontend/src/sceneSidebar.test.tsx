@@ -284,3 +284,55 @@ test("the sidebar lists sessions named after a link by their product", () => {
   );
   expect(screen.getByRole("button", { name: "Mens Tree Runners · allbirds.com" })).toBeTruthy();
 });
+
+const QUESTION = "Could you send a short video of the lid being screwed onto the mug?";
+
+/** Code's red line that the fixing agent asked the shop owner a question about scene 2. */
+function asked(open = true): Message {
+  return {
+    ...said([]),
+    role: "notice",
+    level: "problem",
+    text: "The fixing agent has a question for you about scene 2's clip. The question is on scene 2's card.",
+    step: { scene: 2, kind: "clip", state: "made" },
+    question: { scene: 2, text: QUESTION, open },
+  };
+}
+
+function started(scene: number): Message {
+  return { ...said([]), role: "notice", step: { scene, kind: "clip", state: "started" } };
+}
+
+test("a scene with an open question shows it on its card, in the agent's words, under the clip, with nothing to answer in", () => {
+  showPanel([...SCENES, asked()]);
+  const card = screen.getByRole("article", { name: "Scene 2" });
+  const question = within(card).getByRole("note", { name: "Question for you" });
+  expect(question.textContent).toContain(QUESTION);
+  // Under the clip, before the note box.
+  const clip = within(card).getByLabelText("Scene 2's clip");
+  expect(clip.compareDocumentPosition(question) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  // The answer comes through the producer: no box, no attach, no button on the question.
+  expect(within(question).queryByRole("textbox")).toBeNull();
+  expect(within(question).queryByRole("button")).toBeNull();
+  expect(question.querySelector("input")).toBeNull();
+  // The other scene shows none.
+  const other = screen.getByRole("article", { name: "Scene 1" });
+  expect(within(other).queryByRole("note", { name: "Question for you" })).toBeNull();
+});
+
+test("an answered question isn't on the card", () => {
+  showPanel([...SCENES, asked(false)]);
+  const card = screen.getByRole("article", { name: "Scene 2" });
+  expect(within(card).queryByRole("note", { name: "Question for you" })).toBeNull();
+});
+
+test("the question leaves the card once its scene is being made again", () => {
+  showPanel([...SCENES, asked(), started(1)]);
+  const card = screen.getByRole("article", { name: "Scene 2" });
+  expect(within(card).getByRole("note", { name: "Question for you" })).toBeTruthy();
+  cleanup();
+
+  showPanel([...SCENES, asked(), started(2)]);
+  const redone = screen.getByRole("article", { name: "Scene 2" });
+  expect(within(redone).queryByRole("note", { name: "Question for you" })).toBeNull();
+});

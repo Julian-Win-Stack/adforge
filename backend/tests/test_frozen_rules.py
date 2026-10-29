@@ -725,20 +725,39 @@ def test_the_fixing_agent_is_told_photos_for_looks_and_video_for_movement_word_f
     assert [word for word in TESTED_PRODUCT_WORDS if word in words] == []
 
 
+# Whether the agent may ask the shop owner, as it is told at each door (spec #210 point 23;
+# Julian's ask_owner design, 2026-10-29; the wording is Claude's): door 1 may ask as its last
+# resort, door 2 keeps the old rule, never to ask.
+ASKING_AT_EACH_DOOR = {
+    "judge": "- Ask the shop owner only as your last resort, when the ad's library holds nothing "
+    "for what the fix needs: call ask_owner with your own question, for a video, a photo or "
+    "words. You may ask once in this scene's fix. The fix then waits for the answer, the last "
+    "try staying in the ad; the answer comes back as ask_owner's answer, with the new library "
+    "item it made. Anything else you would ask them, write in would_ask_owner and carry on as "
+    "best you can.",
+    "owner": "- Never ask the shop owner anything. If you would need them (for example to know "
+    "how the product is really used), write it in would_ask_owner and carry on as best you can.",
+}
+
+
+def as_approved(door: str) -> str:
+    return FIXING_AGENT_AS_APPROVED.replace("{gave_up}", GAVE_UP_AT_EACH_DOOR[door]).replace(
+        "{asking}", ASKING_AT_EACH_DOOR[door]
+    )
+
+
 def test_the_fixing_agent_is_told_what_giving_up_does_at_each_door_word_for_word() -> None:
     assert fixing_agent.GAVE_UP == GAVE_UP_AT_EACH_DOOR
+    assert fixing_agent.ASKING == ASKING_AT_EACH_DOOR
     assert fixing_agent.GIVE_UP_FOR_A_NOTE == GIVE_UP_FOR_A_NOTE
     assert fixing_agent.GIVEN_UP == GIVEN_UP_AT_EACH_DOOR
-    for door, gave_up in GAVE_UP_AT_EACH_DOOR.items():
-        told = fixing_agent.instructions(door)
-        assert told.startswith(FIXING_AGENT_AS_APPROVED.replace("{gave_up}", gave_up))
+    for door in GAVE_UP_AT_EACH_DOOR:
+        assert fixing_agent.instructions(door).startswith(as_approved(door))
 
 
 def test_the_fixing_agent_is_told_the_apps_prompt_rules_unchanged() -> None:
     told = fixing_agent.instructions()
-    assert told.startswith(
-        FIXING_AGENT_AS_APPROVED.replace("{gave_up}", GAVE_UP_AT_EACH_DOOR["judge"])
-    )
+    assert told.startswith(as_approved("judge"))
     assert BROLL_SHARED_RULES in told
     assert all(rules in told for rules in BROLL_KIND_RULES.values())
 
