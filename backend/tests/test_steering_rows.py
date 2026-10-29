@@ -5,6 +5,8 @@ tools were told and answered, what the shop owner saw in the chat, what the fake
 was sent, and the cost line. Every model is faked at the gateway; the clips are real tiny
 videos."""
 
+import re
+from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
 
@@ -18,8 +20,9 @@ from adforge import file_store
 from agents.models import ToolCall
 from agents.money import dollars
 from chat.models import Attachment
-from gateway.fake import FakeModel
+from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
+from gateway.types import Turn
 from jobs import stale
 from jobs.library import LookFrame, OwnerPhoto, library_of
 from jobs.models import Job, ProducedItem, Scene
@@ -82,6 +85,18 @@ def spent_since(ad: ProducedItem, until: ProducedItem) -> Decimal:
     return spent
 
 
+def with_its_cost(what: str) -> Callable[[], Turn]:
+    """The producer's one line to the shop owner after a change: `what` changed, and what it
+    cost, as assemble_ad's answer told it."""
+
+    def said() -> Turn:
+        cost = re.search(r"cost (\$[0-9.]+):", answer_of("assemble_ad"))
+        assert cost is not None, answer_of("assemble_ad")
+        return turn(says=f"{what} It cost {cost.group(1)}.")
+
+    return said
+
+
 class Watched:
     """What a row is checked against: the chat, the fake video API and the money, as they
     stood when the shop owner started steering."""
@@ -119,6 +134,11 @@ class Watched:
         assert ad.version == self.ad.version + 1
         assert Attachment.objects.filter(file=ad.file).exists()
         return ad
+
+    def told_its_cost(self, what: str, ad: ProducedItem) -> None:
+        """The shop owner saw the producer's one line on the change, with what it cost."""
+        spent = dollars(spent_since(self.ad, ad))
+        assert ("agent", f"{what} It cost {spent}.") in self.owner_saw()
 
     def cost_line(self, ad: ProducedItem) -> str:
         """The line assemble_ad hands the producer for the shop owner: what the changes since
@@ -187,7 +207,9 @@ def test_make_every_scene_broll(
     producer.woken(("make_clip", {"scene": 1}))
     producer.woken(("make_clip", {"scene": 3}))
     producer.woken()
-    producer.woken(("assemble_ad", {}), "Every scene is B-roll now; here's the new ad.")
+    producer.woken(
+        ("assemble_ad", {}), with_its_cost("Every scene is B-roll now; here's the new ad.")
+    )
 
     # The video API was sent two B-roll clips, each from its sent list and no starting
     # picture, and no talking clip.
@@ -209,7 +231,7 @@ def test_make_every_scene_broll(
     ad = watched.new_ad()
     assert ad.cuts[1]["clip"] == watched.ad.cuts[1]["clip"]
     assert watched.cost_line(ad) in answer_of("assemble_ad")
-    assert ("agent", "Every scene is B-roll now; here's the new ad.") in watched.owner_saw()
+    watched.told_its_cost("Every scene is B-roll now; here's the new ad.", ad)
 
 
 # --- "Scene 2 is boring" -----------------------------------------------------------------------
@@ -229,7 +251,7 @@ def test_a_boring_scene_gets_a_new_action_and_one_new_clip(
     )
     assert told("edit_scene") == [{"scene": 2, "shows": LIVELIER}]
     assert "Scene 2's clip is stale" in answer_of("edit_scene")
-    producer.woken(("assemble_ad", {}), "Scene 2 has a livelier action now.")
+    producer.woken(("assemble_ad", {}), with_its_cost("Scene 2 has a livelier action now."))
 
     # One new clip, the scene's alone, sent its new action through the first-send writer.
     (asked,) = watched.broll_sent()
@@ -246,7 +268,7 @@ def test_a_boring_scene_gets_a_new_action_and_one_new_clip(
         watched.ad.cuts[2]["clip"],
     ]
     assert watched.cost_line(ad) in answer_of("assemble_ad")
-    assert ("agent", "Scene 2 has a livelier action now.") in watched.owner_saw()
+    watched.told_its_cost("Scene 2 has a livelier action now.", ad)
 
 
 # --- "Make it shorter" -------------------------------------------------------------------------
@@ -266,7 +288,7 @@ def test_make_it_shorter_makes_audio_and_a_clip_only_where_the_line_changed(
     assert "Scene 3's audio, transcript and clip are stale" in answer_of("edit_scene")
     producer.woken(("transcribe_line_audio", {"scene": 3}))
     producer.woken(("make_clip", {"scene": 3}))
-    producer.woken(("assemble_ad", {}), "The last line is shorter now.")
+    producer.woken(("assemble_ad", {}), with_its_cost("The last line is shorter now."))
 
     # Only scene 3's voice and clip were made again: one talking clip, from its new audio.
     assert watched.paid_for() == [
@@ -285,7 +307,7 @@ def test_make_it_shorter_makes_audio_and_a_clip_only_where_the_line_changed(
     assert ad.seconds is not None and watched.ad.seconds is not None
     assert ad.seconds < watched.ad.seconds
     assert watched.cost_line(ad) in answer_of("assemble_ad")
-    assert ("agent", "The last line is shorter now.") in watched.owner_saw()
+    watched.told_its_cost("The last line is shorter now.", ad)
 
 
 # --- "Slower" ----------------------------------------------------------------------------------
@@ -378,7 +400,9 @@ def test_the_photo_with_the_lid_off_is_sent_for_scene_2_and_an_excluded_side_nev
     answer = answer_of("set_references")
     assert answer.startswith(f"Scene 2's references: pictures {lid_off} (state), ")
     assert f'Not sent, as excluded for scene 2: "{BACK.label}" (library item {back}' in answer
-    producer.woken(("assemble_ad", {}), "Scene 2 shows the mug with its lid off now.")
+    producer.woken(
+        ("assemble_ad", {}), with_its_cost("Scene 2 shows the mug with its lid off now.")
+    )
 
     # Sent Image 1, the lid off in tier 2 first, its room and as many as the cap takes; the
     # back never, and the cut named in the clip's answer to the producer.
@@ -403,11 +427,11 @@ def test_the_photo_with_the_lid_off_is_sent_for_scene_2_and_an_excluded_side_nev
     )
     # The shop owner saw the clip, the cut in red, the producer's line and the new ad.
     saw = watched.owner_saw()
-    assert ("agent", "Scene 2 shows the mug with its lid off now.") in saw
     assert any(role == "notice" and "left out" in text for role, text in saw), saw
     ad = watched.new_ad()
     assert ad.cuts[1]["clip"] == clip.pk
     assert watched.cost_line(ad) in answer_of("assemble_ad")
+    watched.told_its_cost("Scene 2 shows the mug with its lid off now.", ad)
 
 
 # --- make_picture, then set_references ---------------------------------------------------------
@@ -443,7 +467,7 @@ def test_a_made_picture_is_stored_named_by_set_references_and_sent(
     assert made.label == MADE_LABEL
     assert handoffs("make_picture")[-1]["prompt"] == MADE_PROMPT
     assert answer_of("set_references").startswith("Scene 2's references: pictures 3 (result)")
-    producer.woken(("assemble_ad", {}), "Scene 2 ends on the mug full of tea now.")
+    producer.woken(("assemble_ad", {}), with_its_cost("Scene 2 ends on the mug full of tea now."))
 
     # The new clip was sent it in tier 2, after Image 1.
     clip = newest_clip(2)
@@ -459,7 +483,7 @@ def test_a_made_picture_is_stored_named_by_set_references_and_sent(
     ad = watched.new_ad()
     assert ad.cuts[1]["clip"] == clip.pk
     assert watched.cost_line(ad) in answer_of("assemble_ad")
-    assert ("agent", "Scene 2 ends on the mug full of tea now.") in watched.owner_saw()
+    watched.told_its_cost("Scene 2 ends on the mug full of tea now.", ad)
 
 
 # --- "Go back to the first version of scene 2" -------------------------------------------------
@@ -533,7 +557,7 @@ def test_five_different_rooms(
         assert "clip is stale now" in call.result
     for _ in ROOMS[:-1]:
         producer.woken()
-    producer.woken(("assemble_ad", {}), "She's in five different rooms now.")
+    producer.woken(("assemble_ad", {}), with_its_cost("She's in five different rooms now."))
 
     # Five rooms and five pictures of her in them, each shown; five B-roll clips, each
     # sent the presenter in its own scene's room.
@@ -551,7 +575,7 @@ def test_five_different_rooms(
     ad = watching.new_ad()
     assert ad.cuts[0] == five_shown.cuts[0]
     assert watching.cost_line(ad) in answer_of("assemble_ad")
-    assert ("agent", "She's in five different rooms now.") in watching.owner_saw()
+    watching.told_its_cost("She's in five different rooms now.", ad)
 
 
 # --- An owner attachment: a photo and a small video ---------------------------------------------
@@ -624,7 +648,7 @@ def test_an_owner_photo_and_video_enter_the_library_and_are_sent_for_scene_2(
     assert answer_of("set_references").startswith(
         f"Scene 2's references: pictures {photo_number} (state); video piece video 1, moment 1"
     )
-    producer.woken(("assemble_ad", {}), "Scene 2 uses your photo and video now.")
+    producer.woken(("assemble_ad", {}), with_its_cost("Scene 2 uses your photo and video now."))
 
     # The clip was sent the photo in tier 2 and the piece from the video's moment.
     clip = newest_clip(2)
@@ -639,10 +663,10 @@ def test_an_owner_photo_and_video_enter_the_library_and_are_sent_for_scene_2(
         "notice",
         f"What you sent is in the ad's picture library as items {photo_number} and {frame_number}.",
     ) in saw
-    assert ("agent", "Scene 2 uses your photo and video now.") in saw
     ad = watched.new_ad()
     assert ad.cuts[1]["clip"] == clip.pk
     assert watched.cost_line(ad) in answer_of("assemble_ad")
+    watched.told_its_cost("Scene 2 uses your photo and video now.", ad)
 
 
 def test_an_attachment_named_wrongly_is_refused_and_nothing_is_added(
