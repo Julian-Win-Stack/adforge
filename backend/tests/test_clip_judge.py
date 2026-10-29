@@ -14,6 +14,7 @@ from pydantic import create_model
 from adforge import file_store
 from gateway import catalog
 from jobs import clip_judge, fix_check
+from jobs.auto_fix import judge_saw
 from jobs.clip_judge import SIDES_CHECK, SidesVerdict, judged, still_failing, wording_version
 from jobs.library import SentList
 
@@ -372,3 +373,89 @@ def test_a_piece_asked_for_again_gives_the_same_frames() -> None:
     kept = file_store.save("piece.mp4", piece(1.0))
 
     assert clip_judge.piece_frames(kept) == clip_judge.piece_frames(kept)
+
+
+# ---------------------------------------------------------------- a clip with its sent list (#228)
+
+
+def product(verdict: str = "pass", fault: str | None = None) -> dict[str, Any]:
+    """A PRODUCT answer."""
+    return {
+        "product_from_references": "A garlic press with two handles.",
+        "frames": [],
+        "verdict": verdict,
+        "compared_against": "Image 1" if fault else None,
+        "clip_shows": None,
+        "real_product_shows": None,
+        "fault_frame_times": [],
+        "fault": fault,
+        "references_never_show": "its open chamber" if verdict == "unsure" else None,
+    }
+
+
+def test_a_product_check_unsure_with_nothing_failing_makes_the_clip_unsure() -> None:
+    ruling = judged([product("unsure")], [motion()], first_check="product")
+
+    assert ruling["verdict"] == "unsure"
+    assert ruling["checks"]["product"] == "unsure"
+    assert ruling["answers"]["product"] == [product("unsure")]
+
+
+def test_a_fail_beats_an_unsure_and_its_fault_is_the_problem() -> None:
+    wrong = "A second handle on the back at 2.1 s."
+    ruling = judged([product("fail", wrong)], [motion()], first_check="product")
+
+    assert ruling["verdict"] == "fail"
+    assert ruling["failures"][0]["check"] == "product"
+    assert still_failing(ruling) == [wrong]
+    assert judge_saw(ruling) == [product("fail", wrong)]
+
+
+def test_an_ask_answered_without_refused_frames_is_unsure_unless_it_fails() -> None:
+    blind = [("motion", 1)]
+    ruling = judged([product()], [motion()], first_check="product", blind=blind)
+
+    assert ruling["verdict"] == "unsure"
+    assert ruling["checks"]["real_motion"] == "unsure"
+    assert ruling["checks"]["product"] == "pass"
+    failed = judged([product()], [motion(real_motion=FLOATS)], first_check="product", blind=blind)
+    assert failed["checks"]["real_motion"] == "fail"
+    assert failed["checks"]["sudden_change"] == "unsure"
+
+
+def test_the_sent_lists_pieces_share_at_most_ten_frames_shown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent = SentList.model_validate(json.loads(FIXTURE.read_text()))
+    key = file_store.save("piece.mp4", piece(4.0))
+    sent = sent.model_copy(
+        update={"pieces": [each.model_copy(update={"file": key}) for each in sent.pieces]}
+    )
+
+    shown = clip_judge.sent_references(sent)
+
+    assert [each["label"] for each in shown[:2]] == [
+        "Image 1: The garlic press, closed, seen from the front.",
+        "Image 2: A hand squeezing the press over a bowl.",
+    ]
+    videos = [each["label"] for each in shown[9:]]
+    assert len(videos) == 10
+    assert videos[0] == "Video 1, Frame at 0 s" and videos[5] == "Video 2, Frame at 0 s"
+    assert clip_judge.sent_said(sent)[-2:] == [
+        "Video 1: only for the movement, not the look",
+        "Video 2: only for the movement, not the look",
+    ]
+
+
+@pytest.mark.parametrize(
+    "told",
+    ["REFERENCES_QUESTION", "PRODUCT_CHECK", "MOTION_FROM_REFERENCES", "BEHAVIOUR_FRAME"],
+)
+def test_the_sent_wording_version_changes_whenever_what_the_judge_is_told_does(
+    told: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before = wording_version(sent=True)
+    monkeypatch.setattr(clip_judge, told, getattr(clip_judge, told) + " Changed.")
+
+    assert wording_version(sent=True) != before
+    assert wording_version(sent=True) != wording_version()

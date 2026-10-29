@@ -25,7 +25,7 @@ import logging
 import math
 import subprocess
 import tempfile
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,6 +37,7 @@ from pydantic import BaseModel, Field
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
+from chat.models import Message
 from gateway import catalog
 from gateway.gateway import call_model, past_the_safety_filter
 from gateway.types import (
@@ -48,9 +49,10 @@ from gateway.types import (
 )
 
 from . import assembly
-from .library import VIDEO_API_MOST_PIECE_SECONDS, SentList
+from .first_send import PIECE_LABEL
+from .library import VIDEO_API_MOST_PIECE_SECONDS, SentList, sent_list_of
 from .models import AgentFix, AgentFixTry, Fix, ProducedItem, SceneStep
-from .notices import post_left_out_by_the_filter, post_refused_by_the_filter
+from .notices import post_left_out_by_the_filter, post_notice, post_refused_by_the_filter
 from .planning import ChatMessage
 from .scenes import photos_for_needs
 from .threads import closing_its_connection
@@ -343,29 +345,224 @@ class MotionPhotoFixVerdict(MotionVerdict):
     owner_change: PhotoFixAnswer
 
 
+# ---------------------------------------------------------------- a clip with its sent list
+
+# A clip that carries the sent list its video API got (#210 point 18, #228) is judged against
+# exactly that: the sent pictures, each piece's frames and the prompt, then the clip. Its words
+# are the judge build brief's (handoffs/judge-build/brief.md, section 3), word for word from the
+# hand test's harness (runs/hand-rounds/judge-test/run.py): PRODUCT replaces SIDES, and MOTION
+# keeps today's words but for its last paragraph. A clip with no sent list is judged as above.
+
+PRODUCT_CHECK = """\
+You check an AI-made video clip before it is used in a product ad. The video API that made the \
+clip was given reference pictures of the product, sometimes a reference video of the real \
+product in use, and a prompt. You are given exactly the same, and then the clip as frames in \
+order, each labelled with its time in seconds. Your one question: is the product in the clip \
+the real product, and does it behave the way the real product behaves?
+
+Work in three steps.
+1. Learn the product from the references. From the pictures and the video frames write down: \
+its parts and where each sits; each side you can see and what is on that side; how many of it \
+the scene has; how it is held; and, from the video frames, what moves when it is used and what \
+comes out or changes, in what shape and amount. Write only what the references show. Also \
+write what the references never show (a side, a state, an action), because you cannot know \
+what a real one looks like there.
+2. Look at the clip, frame by frame. For each frame write what the product shows and what it \
+is doing, and whether anything in it differs from the references: a part a real one does not \
+have, a part on a side where the real one has none, a side that is not the reference's side, a \
+second copy of the product where the scene has one, a part that appears or vanishes between \
+frames, the product changing shape, state or hands between frames, or an action or output \
+unlike the real one's.
+3. Decide.
+- "fail" when you are sure, from the references, that the product on screen is not the real \
+product or does not behave like it. Name the fault in product terms, with the reference you \
+compared against and the frame times, so that someone who has not watched the clip can fix it.
+- "unsure" when the clip shows a side, a state or an action that the references never show, so \
+you cannot know what a real one looks like there. Say what the references never show. Unsure \
+is not a fail: the shop owner decides.
+- "pass" when every part of the product you can see matches the references and it behaves like \
+the real one.
+Differences in colour, size, angle, distance, lighting, background, or small print on a label \
+are not a fault by themselves. The person, the place and the camera are not your question."""
+
+
+# A comment, not a docstring, for the same reason as SidesVerdict's.
+class ClipFrame(BaseModel):
+    time: float = Field(description="The frame's time in seconds, as labelled.")
+    product_shows: str = Field(
+        description="What of the product shows and what it is doing, in a few words."
+    )
+    differs: str = Field(description="What differs from the references in this frame, or empty.")
+
+
+class ProductVerdict(BaseModel):
+    product_from_references: str = Field(
+        description="The real product as the references show it: parts, sides, count, how it "
+        "is held, how it works, what comes out or changes. Then what the references never show."
+    )
+    frames: list[ClipFrame]
+    verdict: Literal["pass", "fail", "unsure"]
+    compared_against: str | None = Field(
+        description="On a fail: the reference you compared against, e.g. 'Image 2' or 'Video 1 "
+        "at 5 s'. Null otherwise."
+    )
+    clip_shows: str | None = Field(
+        description="On a fail: what the clip shows and at which second, e.g. 'bristles on the "
+        "back of the head at 2.3 s'. Null otherwise."
+    )
+    real_product_shows: str | None = Field(
+        description="On a fail: what the real product shows there, from the reference. Null "
+        "otherwise."
+    )
+    fault_frame_times: list[float] = Field(
+        description="On a fail: the frame times where the fault shows. Empty otherwise."
+    )
+    fault: str | None = Field(
+        description="On a fail: the fault in product terms, one or two sentences, for the "
+        "person who fixes it. Null otherwise."
+    )
+    references_never_show: str | None = Field(
+        description="On unsure: the side, state or action the clip shows that the references "
+        "never show. Null otherwise."
+    )
+
+
+# MOTION for a clip with its sent list: today's words, the paragraph on the shop photo
+# replaced (requirement 14; the brief's MOTION_NEW).
+MOTION_SHOP_PHOTO_PARAGRAPH = (
+    "You may also be shown one shop photo of the product, and facts about it from the shop. They "
+    "tell you what the product is, what it is made of, what is inside and how it is built. Use "
+    "them only for that. Never compare the frames with the photo: differences in size, angle, "
+    "colour, label or print are not a fail."
+)
+assert MOTION_CHECK.count(MOTION_SHOP_PHOTO_PARAGRAPH) == 1
+MOTION_FROM_REFERENCES = MOTION_CHECK.replace(
+    MOTION_SHOP_PHOTO_PARAGRAPH,
+    "Before the clip you are shown what the video API that made the clip was given: the "
+    "reference pictures, each labelled as in the prompt, frames from the reference video when "
+    "there was one, and the prompt itself. They tell you what the product is, what it is made "
+    "of, how it is built and how a real one moves and behaves. Use them to know how a real one "
+    "moves.",
+)
+
+# Said beside the planner's note on how this product behaves (#210 point 18, spec 2 item 28,
+# Julian Oct 28 22:38). NOT IN THE BRIEF YET: the brief was to carry this line before the judge
+# was built and doesn't (checked Oct 29); Claude's wording, for Julian's yes.
+BEHAVIOUR_FRAME = (
+    "This is a note on how this product behaves, written from the shop's own page and what its "
+    "videos show. Use it, with the references, to know how a real one looks, moves and behaves."
+)
+
+# The judge's first question (#210 point 18, spec 2 item 27, Julian Oct 28 23:16): do the
+# references and the behaviour note show enough to judge this clip's action? Claude's wording
+# (the brief has none for it), for Julian's yes; the logic is his.
+REFERENCES_QUESTION = """\
+You look at an AI-made video clip before it is judged for a product ad. The video API that \
+made the clip was given reference pictures of the product, sometimes a reference video of the \
+real product in use, and a prompt. You are given exactly the same, a note on how this product \
+behaves, the scene's order, and then the clip as frames in order, each labelled with its time \
+in seconds. Your one question: do the references and the note show enough of the real product \
+to judge what the clip does with it?
+
+Work in two steps.
+1. Write what the references and the note show of the real product: its sides, its states, and \
+how it moves and what it does when it is used. Then write what the clip shows the product doing, \
+and each side and state of the product it shows, with the frame times.
+2. Decide.
+- "enough" when the references or the note show each side and state of the product the clip \
+shows, and show or say how the product behaves in the clip's action, so that someone could tell \
+from them whether the clip is right.
+- "cannot tell" when the clip shows a side, a state or an action of the product that neither the \
+references nor the note show, so nobody could know from them what a real one looks like or does \
+there. Say what they never show, in a few words that finish the sentence "the references never \
+show ...".
+You do not judge whether the clip is right. The person, the place and the camera are not your \
+question."""
+
+
+class ReferencesVerdict(BaseModel):
+    references_show: str = Field(
+        description="What the references and the note show of the real product: its sides, its "
+        "states, how it moves and what it does."
+    )
+    clip_shows: str = Field(
+        description="What the clip shows the product doing, and each side and state of it, "
+        "with the frame times."
+    )
+    verdict: Literal["enough", "cannot tell"]
+    references_never_show: str | None = Field(
+        description="On cannot tell: what the references and the note never show, in a few "
+        'words that finish "the references never show ...". Null otherwise.'
+    )
+
+
+class SentClipCheckHandoff(Handoff):
+    """Which of a check's asks about one clip this is, from 1; the product; what the clip's
+    video API was sent: its prompt word for word and a line for each picture and video, in the
+    order shown; how long the clip is; and the planner's note on how this product behaves
+    (#210 point 18). The judge build brief's handoff, with the note."""
+
+    ask: int
+    product: str
+    prompt_sent_to_the_video_api: str
+    references: list[str]
+    clip_seconds: float | None
+    about_how_it_behaves: str = BEHAVIOUR_FRAME
+    how_this_product_behaves: str
+
+
+class SentMotionCheckHandoff(SentClipCheckHandoff):
+    """And the scene's order: what the clip should show."""
+
+    order: str
+
+
+class SentMotionFixCheckHandoff(SentMotionCheckHandoff):
+    """And, for a clip made again for the shop owner's clip fix, their change word for word."""
+
+    owner_change: str
+
+
+class SentMotionPhotoFixCheckHandoff(SentMotionFixCheckHandoff):
+    """And the things the shop owner's photos for the fix are taken for, in the order shown."""
+
+    owner_photos: list[str]
+
+
 # ---------------------------------------------------------------- the ruling
 
-Verdict = Literal["pass", "fail", "not_checked"]
+Verdict = Literal["pass", "fail", "unsure", "not_checked"]
+
+# The first check of a ruling: SIDES for a clip judged with no sent list, PRODUCT for one
+# judged against its sent list (#228). A ruling's answers keep each under its own name.
+FIRST_CHECKS = ("sides", "product")
 
 
 def judged(
-    sides: Sequence[dict[str, Any] | None],
+    first: Sequence[dict[str, Any] | None],
     motion: Sequence[dict[str, Any] | None],
+    *,
+    first_check: Literal["sides", "product"] = "sides",
+    blind: Iterable[tuple[str, int]] = (),
 ) -> dict[str, Any]:
     """The judge's ruling on a clip from its answers, in the order asked: each a SidesVerdict
-    or MotionVerdict as a dict, or None for an ask that went unchecked. Each check (SIDES, and
-    each MOTION question) is settled by itself: it fails when an answer fails it, and is not
-    checked when it has no usable answer. The clip fails when any check fails. Every failing
-    answer counts, however soon its thing is back to normal: the half-second forgive rule is
-    gone (Julian 2026-10-19 03:37).
+    (or, with `first_check` "product", a ProductVerdict) or MotionVerdict as a dict, or None
+    for an ask that went unchecked. Each check (SIDES or PRODUCT, and each MOTION question) is
+    settled by itself: it fails when an answer fails it; it is unsure when an answer says
+    unsure, or when an ask in `blind` (its check and ask) answered without some of the clip's
+    frames, which the safety filter refused, and nothing fails it (Julian, Oct 29 00:10); and
+    it is not checked when it has no usable answer. The clip fails when any check fails, and
+    is unsure when none fails and any is unsure. Every failing answer counts, however soon its
+    thing is back to normal: the half-second forgive rule is gone (Julian 2026-10-19 03:37).
 
-    Gives "verdict" (pass, fail or not_checked), "checks" (each check's verdict),
+    Gives "verdict" (pass, fail, unsure or not_checked), "checks" (each check's verdict),
     "failed_answers" (how many answers failed on anything, of all asked), "failures" (each
     failed answer's check, ask, problems and whole answer) and "answers" (every answer, as
     given)."""
+    blinded = set(blind)
     # Each check's name and, by ask, the part of each answer that holds its verdict.
     asked: list[tuple[str, list[tuple[int, dict[str, Any]]]]] = [
-        ("sides", [(ask, answer) for ask, answer in enumerate(sides, 1) if answer])
+        (first_check, [(ask, answer) for ask, answer in enumerate(first, 1) if answer])
     ] + [
         (question, [(ask, answer[question]) for ask, answer in enumerate(motion, 1) if answer])
         for question in MOTION_QUESTIONS
@@ -373,35 +570,42 @@ def judged(
     checks: dict[str, Verdict] = {}
     problems: dict[tuple[str, int], list[str]] = {}
     for name, usable in asked:
+        which = first_check if name == first_check else "motion"
         failing = [(ask, said) for ask, said in usable if said["verdict"] == "fail"]
         for ask, said in failing:
-            which = "sides" if name == "sides" else "motion"
-            problems.setdefault((which, ask), []).append(said["problem"])
-        checks[name] = "fail" if failing else "pass" if usable else "not_checked"
+            problems.setdefault((which, ask), []).append(_problem(said))
+        unsure = any(said["verdict"] == "unsure" or (which, ask) in blinded for ask, said in usable)
+        checks[name] = (
+            "fail" if failing else "unsure" if unsure else "pass" if usable else "not_checked"
+        )
     failures = [
         {
             "check": which,
             "ask": ask,
             "problems": said,
             # Never the answer to a fix's question: it is no fault of the clip (spec, part 2).
-            "answer": _without_owner_change((sides if which == "sides" else motion)[ask - 1]),
+            "answer": _without_owner_change((first if which == first_check else motion)[ask - 1]),
         }
         for (which, ask), said in sorted(
-            problems.items(), key=lambda item: (item[0][0] != "sides", item[0][1])
+            problems.items(), key=lambda item: (item[0][0] != first_check, item[0][1])
         )
     ]
     verdicts = set(checks.values())
     return {
-        "verdict": "fail"
-        if "fail" in verdicts
-        else "not_checked"
-        if "not_checked" in verdicts
-        else "pass",
+        "verdict": next(
+            (verdict for verdict in ("fail", "unsure", "not_checked") if verdict in verdicts),
+            "pass",
+        ),
         "checks": checks,
         "failed_answers": len(failures),
         "failures": failures,
-        "answers": {"sides": sides, "motion": motion},
+        "answers": {first_check: first, "motion": motion},
     }
+
+
+def _problem(said: dict[str, Any]) -> str:
+    """A failing answer's problem: a PRODUCT answer names it its fault."""
+    return str(said["fault"] if "fault" in said else said["problem"])
 
 
 def owner_change_answers(ruling: dict[str, Any]) -> list[dict[str, Any] | None]:
@@ -423,18 +627,19 @@ def _without_owner_change(answer: dict[str, Any] | None) -> dict[str, Any] | Non
 
 
 def still_failing(ruling: dict[str, Any]) -> list[str]:
-    """The problems behind a ruling's failed checks, SIDES first, each check's in the order
-    asked: never one a ruling made before left out (left_out)."""
+    """The problems behind a ruling's failed checks , SIDES (or PRODUCT) first, each check's in
+    the order asked: never one a ruling made before left out (left_out)."""
     left = left_out(ruling)
     answers = ruling.get("answers", {})
     problems = []
-    for name in ["sides", *MOTION_QUESTIONS]:
+    for name in [*FIRST_CHECKS, *MOTION_QUESTIONS]:
         if ruling.get("checks", {}).get(name) != "fail":
             continue
-        for ask, answer in enumerate(answers.get("sides" if name == "sides" else "motion", []), 1):
-            said = answer and (answer if name == "sides" else answer[name])
+        first = name in FIRST_CHECKS
+        for ask, answer in enumerate(answers.get(name if first else "motion", []), 1):
+            said = answer and (answer if first else answer[name])
             if said and said["verdict"] == "fail" and (name, ask) not in left:
-                problems.append(said["problem"])
+                problems.append(_problem(said))
     return problems
 
 
@@ -554,7 +759,12 @@ def judge_clip(
     also shown the clip they complained about (complained_about) and asked whether their
     change is made: each answer's "owner_change", which never counts in the verdict. Its
     ruling's "compared_with" is that clip's id. When that clip's frames can't be cut, the
-    clip is judged as any other, and the fix is left unchecked."""
+    clip is judged as any other, and the fix is left unchecked.
+
+    A clip that carries its sent list is judged against it instead (_judge_against_sent)."""
+    sent = sent_list_of(clip)
+    if sent is not None:
+        return _judge_against_sent(step, clip, sent)
     answered: list[_Answered] = []
     try:
         sides, motion, old = _asked(step, clip, conversation)
@@ -583,11 +793,254 @@ def judge_clip(
     return ruling
 
 
-def _past_the_filter(sides: list[_Answered], motion: list[_Answered]) -> dict[str, Any]:
+def _judge_against_sent(step: SceneStep, clip: ProducedItem, sent: SentList) -> dict[str, Any]:
+    """Judge a B-roll clip that carries `sent`, the sent list its video API got (#210 point
+    18), keeping the ruling on the clip and giving it. Every ask is shown the sent pictures in
+    their order and each piece's frames (sent_references), then the clip's frames, and told the
+    prompt and the planner's note on how this product behaves. The first question
+    (REFERENCES_QUESTION) asks whether those show enough to judge the clip's action: when they
+    don't, the ruling is "unsure" with "cannot_tell" saying what the references never show,
+    neither check is asked, the clip is kept and the shop owner is told to check it themselves.
+    Else PRODUCT and MOTION are asked, as judge_clip asks SIDES and MOTION, and an unsure check
+    keeps the clip for the shop owner to decide. The ruling also gives "behaviour" (the note it
+    was told) and, in "pictures", "references" (what it was shown of the sent list)."""
+    answered: list[_Answered] = []
+    try:
+        ruling, answered = _asked_against_sent(step, clip, sent)
+    except Exception as error:
+        logger.exception("Scene %s's clip couldn't be judged", step.scene.number)
+        ruling = {
+            **judged([None] * ASKS, [None] * ASKS, first_check="product"),
+            **_sent_ruling_facts(step, clip, None),
+            "error": str(error),
+        }
+    clip.ruling = ruling
+    clip.save(update_fields=["ruling"])
+    _say_what_the_filter_refused(step, answered, ruling["verdict"])
+    _say_the_judge_is_unsure(step, ruling)
+    return ruling
+
+
+def _asked_against_sent(
+    step: SceneStep, clip: ProducedItem, sent: SentList
+) -> tuple[dict[str, Any], list[_Answered]]:
+    """_judge_against_sent's ruling and every answer it was given."""
+    pictures: dict[str, Any] | None = (clip.ruling or {}).get("pictures")
+    fresh = not pictures or "references" not in pictures
+    old = complained_about(step)
+    photos = during_the_clip(step.fix) if old is not None and step.fix is not None else []
+    owners = [
+        Image(label=OWNER_PHOTO_LABEL.format(each["thing"]), key=str(each["file"]))
+        for each in photos
+    ]
+    if fresh:
+        references = sent_references(sent)
+        beside = len(references)
+        beside_each_clip = MOST_PICTURES - (MOST_PICTURES - beside - len(owners)) // 2
+        old_frames = _frames_beside(old, beside=beside_each_clip, cut=True) if old else None
+        pictures = {
+            **cut_pictures(clip.file, beside=beside, sets=("sides",)),
+            **cut_pictures(
+                clip.file, beside=beside_each_clip if old_frames else beside, sets=("frames",)
+            ),
+            "references": references,
+        }
+    else:
+        assert pictures is not None
+        beside_each_clip = (
+            MOST_PICTURES - (MOST_PICTURES - len(pictures["references"]) - len(owners)) // 2
+        )
+        old_frames = _frames_beside(old, beside=beside_each_clip, cut=False) if old else None
+    assert pictures is not None
+    if old is not None and old_frames is None:
+        logger.warning("Scene %s's fix is judged without the old clip", step.scene.number)
+    clip.ruling = {"pictures": pictures}
+    clip.save(update_fields=["ruling"])
+    shown = [Image(label=each["label"], key=each["key"]) for each in pictures["references"]]
+    job = step.scene.job
+    told: dict[str, Any] = {
+        "product": job.product_name,
+        "prompt_sent_to_the_video_api": sent.prompt,
+        "references": sent_said(sent),
+        "clip_seconds": clip.seconds,
+        "how_this_product_behaves": job.product_behaviour,
+        "order": step.shows,
+    }
+    fixing = old_frames is not None
+    facts = _sent_ruling_facts(step, clip, old if fixing else None)
+
+    first = _answer(
+        step,
+        _Ask(
+            "check_clip_references",
+            REFERENCES_QUESTION,
+            SentMotionCheckHandoff(ask=1, **told),
+            ReferencesVerdict,
+            [*shown, *_frames_shown(pictures["frames"])],
+            references=0,
+        ),
+    )
+    if first.answer is None:
+        post_notice(
+            job,
+            f"The clip judge couldn't ask whether scene {step.scene.number}'s references show "
+            "enough to judge its clip, so it judged the clip on its two checks alone.",
+            Message.Level.PROBLEM,
+        )
+    elif first.answer["verdict"] == "cannot tell":
+        return {
+            "verdict": "unsure",
+            "checks": {},
+            "failed_answers": 0,
+            "failures": [],
+            "answers": {"references": first.answer, "product": [], "motion": []},
+            "cannot_tell": first.answer["references_never_show"] or "",
+            **facts,
+        }, [first]
+
+    with_photos = fixing and bool(owners)
+    motion_shown = (
+        [*shown, *owners, *_frames_shown(pictures["frames"], old=old_frames)]
+        if with_photos
+        else [*shown, *_frames_shown(pictures["frames"], old=old_frames)]
+    )
+    asks = [
+        _Ask(
+            "check_clip_product",
+            PRODUCT_CHECK,
+            SentClipCheckHandoff(ask=ask, **{k: v for k, v in told.items() if k != "order"}),
+            ProductVerdict,
+            [*shown, *_frames_shown(pictures["sides"])],
+            references=len(shown),
+            frames=_times(pictures["sides"]),
+        )
+        for ask in range(1, ASKS + 1)
+    ] + [
+        _Ask(
+            "check_clip_motion",
+            f"{MOTION_FROM_REFERENCES}\n\n{MOTION_FIX_QUESTION}\n\n{MOTION_PHOTO_FIX_QUESTION}"
+            if with_photos
+            else f"{MOTION_FROM_REFERENCES}\n\n{MOTION_FIX_QUESTION}"
+            if fixing
+            else MOTION_FROM_REFERENCES,
+            SentMotionPhotoFixCheckHandoff(
+                ask=ask,
+                **told,
+                owner_change=step.fix.fix,  # type: ignore[union-attr]
+                owner_photos=[str(each["thing"]) for each in photos],
+            )
+            if with_photos
+            else SentMotionFixCheckHandoff(ask=ask, **told, owner_change=step.fix.fix)  # type: ignore[union-attr]
+            if fixing
+            else SentMotionCheckHandoff(ask=ask, **told),
+            MotionPhotoFixVerdict if with_photos else MotionFixVerdict if fixing else MotionVerdict,
+            motion_shown,
+            references=len(shown) + (len(owners) if with_photos else 0),
+            frames=_times(pictures["frames"]),
+        )
+        for ask in range(1, ASKS + 1)
+    ]
+    with ThreadPoolExecutor(max_workers=len(asks)) as pool:
+        asked = [
+            pool.submit(contextvars.copy_context().run, closing_its_connection, _answer, step, each)
+            for each in asks
+        ]
+        answers = [each.result() for each in asked]
+    product, motion = answers[:ASKS], answers[ASKS:]
+    blinded = [
+        (check, ask, each.blind)
+        for check, said in (("product", product), ("motion", motion))
+        for ask, each in enumerate(said, 1)
+        if each.blind
+    ]
+    blind = [
+        {"check": check, "ask": ask, "seconds": list(seconds)} for check, ask, seconds in blinded
+    ]
+    ruling = {
+        **judged(
+            [each.answer for each in product],
+            [each.answer for each in motion],
+            first_check="product",
+            blind=[(check, ask) for check, ask, _ in blinded],
+        ),
+        **facts,
+        **_past_the_filter(product, motion, first_check="product"),
+        **({"refused_frames": blind} if blind else {}),
+    }
+    ruling["answers"]["references"] = first.answer
+    # Judged in the photo form only while a shop owner's photo was still shown.
+    ruling["wording"] = wording_version(
+        sent=True,
+        fix=fixing,
+        photos=with_photos and not all(each.without_owner_photos for each in motion),
+    )
+    return ruling, [first, *answers]
+
+
+def _sent_ruling_facts(
+    step: SceneStep, clip: ProducedItem, compared_with: ProducedItem | None
+) -> dict[str, Any]:
+    """What a ruling against a sent list says beside its verdict: its words and models, the
+    pictures it was shown, the behaviour note it was told and, for a fix's clip, the clip it
+    was compared with."""
+    return {
+        "wording": wording_version(
+            sent=True,
+            fix=compared_with is not None,
+            photos=bool(compared_with and step.fix and during_the_clip(step.fix)),
+        ),
+        "models": {
+            purpose.removeprefix("check_clip_"): catalog.MODEL_FOR_PURPOSE[purpose]
+            for purpose in ("check_clip_references", "check_clip_product", "check_clip_motion")
+        },
+        "pictures": (clip.ruling or {}).get("pictures"),
+        "behaviour": step.scene.job.product_behaviour,
+        **({"compared_with": compared_with.pk} if compared_with is not None else {}),
+    }
+
+
+def _say_the_judge_is_unsure(step: SceneStep, ruling: dict[str, Any]) -> None:
+    """Tell the chat, once, when the judge couldn't tell whether a clip is right because the
+    references never show what it shows: the clip is kept, and the shop owner decides
+    (#210 point 18). Seconds of the clip the safety filter refused are told in red, as every
+    refusal is."""
+    number = step.scene.number
+    job = step.scene.job
+    never = [ruling["cannot_tell"]] if "cannot_tell" in ruling else []
+    if ruling.get("checks", {}).get("product") == "unsure":
+        never += [
+            answer["references_never_show"]
+            for answer in ruling["answers"]["product"]
+            if answer and answer["verdict"] == "unsure" and answer["references_never_show"]
+        ]
+    for what in dict.fromkeys(never):
+        text = (
+            f"The clip judge can't tell whether scene {number}'s clip is right: the references "
+            f"never show {what.rstrip('.')}, check this one yourself."
+        )
+        if all(warning["text"] != text for warning in job.warnings):
+            post_notice(job, text, Message.Level.INFO)
+    seconds = sorted({t for each in ruling.get("refused_frames", []) for t in each["seconds"]})
+    if seconds:
+        post_refused_by_the_filter(
+            job,
+            f"scene {number}'s clip at {', '.join(f'{t:g} s' for t in seconds)}",
+            "the clip judge couldn't check those seconds and the clip is kept for you to "
+            "decide: check this one yourself",
+        )
+
+
+def _times(pictures: list[dict[str, Any]]) -> tuple[tuple[float, ...], ...]:
+    return tuple(tuple(picture["times"]) for picture in pictures)
+
+
+def _past_the_filter(
+    sides: list[_Answered], motion: list[_Answered], *, first_check: str = "sides"
+) -> dict[str, Any]:
     """What a ruling says of the safety filter (requirement 22), when it refused anything:
     "not_shown", each ask answered without reference pictures it refused, and which;
     "refused_by_the_filter", each ask it refused over the clip itself, unchecked."""
-    asked = [("sides", ask, each) for ask, each in enumerate(sides, 1)] + [
+    asked = [(first_check, ask, each) for ask, each in enumerate(sides, 1)] + [
         ("motion", ask, each) for ask, each in enumerate(motion, 1)
     ]
     not_shown = [
@@ -770,10 +1223,14 @@ class _Ask:
 
     purpose: str
     instructions: str
-    handoff: ClipCheckHandoff
-    output: type[SidesVerdict] | type[MotionVerdict]
+    handoff: Handoff
+    output: type[BaseModel]
     images: list[Image]
     references: int
+    # For a clip judged against its sent list (#228), the time of each frame in each of the
+    # last pictures shown, the clip's own: a picture of them the safety filter refuses is
+    # left out, and the check is unsure for those seconds (Julian, Oct 29 00:10).
+    frames: tuple[tuple[float, ...], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -787,6 +1244,8 @@ class _Answered:
     refused: bool = False
     # Asked as a fix with no shop owner's photo, as the filter refused every one of them.
     without_owner_photos: bool = False
+    # The seconds of the clip it was answered without, the filter refusing them.
+    blind: tuple[float, ...] = ()
 
 
 def _answer(step: SceneStep, ask: _Ask) -> _Answered:
@@ -810,15 +1269,20 @@ def _answer(step: SceneStep, ask: _Ask) -> _Answered:
         return answer.model_dump(mode="json"), output is not ask.output
 
     try:
-        (answer, without), left_out = past_the_safety_filter(
-            asking, ask.images, may_leave_out=lambda image: image in references
-        )
+        try:
+            (answer, without), left_out = past_the_safety_filter(
+                asking, ask.images, may_leave_out=lambda image: image in references
+            )
+        except BlockedBySafetyFilter:
+            if not ask.frames:
+                raise
+            return _past_refused_frames(asking, ask)
         return _Answered(answer, [named(image) for image in left_out], without_owner_photos=without)
     except Exception as error:
         logger.warning(
             "%s ask %s about scene %s's clip went unchecked: %s",
             ask.purpose,
-            ask.handoff.ask,
+            getattr(ask.handoff, "ask", None),
             step.scene.number,
             error,
             # Expected when a model or the service misbehaves; anything else is a bug to see.
@@ -829,22 +1293,45 @@ def _answer(step: SceneStep, ask: _Ask) -> _Answered:
         return _Answered(None, [], refused=isinstance(error, BlockedBySafetyFilter))
 
 
-def _as_shown(
-    ask: _Ask, shown: list[Image]
-) -> tuple[str, ClipCheckHandoff, type[SidesVerdict] | type[MotionVerdict]]:
+def _past_refused_frames(
+    asking: Callable[[list[Image]], tuple[dict[str, Any], bool]], ask: _Ask
+) -> _Answered:
+    """`ask` answered without the pictures of the clip's frames the safety filter refuses,
+    each left out alone, last first, never all of them; with the seconds it didn't see."""
+    clip = ask.images[len(ask.images) - len(ask.frames) :]
+    (answer, without), left = past_the_safety_filter(
+        asking, ask.images, may_leave_out=lambda image: image in clip, fewest_kept=1
+    )
+    times = dict(zip((image.key for image in clip), ask.frames, strict=True))
+    return _Answered(
+        answer,
+        [],
+        without_owner_photos=without,
+        blind=tuple(t for image in left for t in times[image.key]),
+    )
+
+
+def _as_shown(ask: _Ask, shown: list[Image]) -> tuple[str, Handoff, type[BaseModel]]:
     """What `ask` is told, handed and answers as when it is shown `shown`: a fix's ask with
     the shop owner's photos names only those still shown, and with none of them left, is
     asked as a fix without photos is."""
     handoff = ask.handoff
-    if not isinstance(handoff, MotionPhotoFixCheckHandoff):
+    if not isinstance(handoff, (MotionPhotoFixCheckHandoff, SentMotionPhotoFixCheckHandoff)):
         return ask.instructions, handoff, ask.output
     labels = {image.label for image in shown}
     kept = [thing for thing in handoff.owner_photos if OWNER_PHOTO_LABEL.format(thing) in labels]
     if kept:
         return ask.instructions, handoff.model_copy(update={"owner_photos": kept}), ask.output
+    unphotographed = handoff.model_dump(exclude={"owner_photos"})
+    if isinstance(handoff, SentMotionPhotoFixCheckHandoff):
+        return (
+            f"{MOTION_FROM_REFERENCES}\n\n{MOTION_FIX_QUESTION}",
+            SentMotionFixCheckHandoff(**unphotographed),
+            MotionFixVerdict,
+        )
     return (
         f"{MOTION_CHECK}\n\n{MOTION_FIX_QUESTION}",
-        MotionFixCheckHandoff(**handoff.model_dump(exclude={"owner_photos"})),
+        MotionFixCheckHandoff(**unphotographed),
         MotionFixVerdict,
     )
 
@@ -899,7 +1386,15 @@ def _shown(
     """The shop photo, the photos of what the scene needs, then the pictures of the clip in
     order, each labelled with the time of each frame in it; with `old`, the pictures of the
     clip a fix was made for come before them."""
-    shown = [Image(label=SHOP_PHOTO_LABEL, key=photo), *needs]
+    return [Image(label=SHOP_PHOTO_LABEL, key=photo), *needs, *_frames_shown(pictures, old=old)]
+
+
+def _frames_shown(
+    pictures: list[dict[str, Any]], *, old: list[dict[str, Any]] | None = None
+) -> list[Image]:
+    """The pictures of the clip in order, each labelled with the time of each frame in it;
+    with `old`, the pictures of the clip a fix was made for come before them."""
+    shown: list[Image] = []
     clips = (
         [(FRAMES_LABEL, pictures)]
         if old is None
@@ -964,6 +1459,44 @@ def sent_pictures(sent: SentList, label: str) -> list[Image]:
     return [
         Image(label=f"{label}, Image {picture.image}: {picture.label}", key=picture.file)
         for picture in sent.pictures
+    ]
+
+
+# How the judge is shown and told a clip's sent list (#228): each picture by its number in the
+# prompt, with its label; each piece's frames by its number and the frame's time in it.
+SENT_PICTURE_LABEL = "Image {}: {}"
+SENT_PIECE_FRAME_LABEL = "Video {}, {}"
+
+
+def sent_references(sent: SentList) -> list[dict[str, Any]]:
+    """What the judge is shown of the clip's sent list, kept in the file store: each picture
+    in its order, then each piece's frames, PIECE_FRAMES_SHOWN of them in all, shared evenly
+    by the pieces and thinned evenly in each (the judge build brief: "the piece at most 10
+    frames"). Each has its "label" and "key"."""
+    most = max(1, PIECE_FRAMES_SHOWN // len(sent.pieces)) if sent.pieces else 0
+    return [
+        *(
+            {"label": SENT_PICTURE_LABEL.format(picture.image, picture.label), "key": picture.file}
+            for picture in sent.pictures
+        ),
+        *(
+            {
+                "label": SENT_PIECE_FRAME_LABEL.format(piece.number, frame_label(frame["times"])),
+                "key": frame["key"],
+            }
+            for piece in sent.pieces
+            for frame in piece_frames(piece.file, most)
+        ),
+    ]
+
+
+def sent_said(sent: SentList) -> list[str]:
+    """A line for each picture and piece of the clip's sent list, in its order, as the judge
+    is handed them beside what it is shown: a picture's label, and a piece's line in the
+    prompt."""
+    return [
+        *(SENT_PICTURE_LABEL.format(picture.image, picture.label) for picture in sent.pictures),
+        *(f"Video {piece.number}: {PIECE_LABEL}" for piece in sent.pieces),
     ]
 
 
@@ -1107,13 +1640,17 @@ def _every_frame(video: Path, folder: Path, per_second: int) -> list[tuple[Path,
     return [(file, round(i / per_second, 2)) for i, file in enumerate(files)]
 
 
-def wording_version(*, fix: bool = False, photos: bool = False) -> str:
+def wording_version(*, fix: bool = False, photos: bool = False, sent: bool = False) -> str:
     """A version of everything the judge is told, kept with each ruling: its instructions,
     the frames around the shop's text and the conversation, what it is handed, how many
     frames a second each check is shown and how they are labelled, and its answer forms. It
     changes whenever any of them does. For a fix's clip (`fix`), also the question about the
     owner's change, the labels of the two clips, its handoff and its answer form; a clip
-    judged without them keeps the version it had before they were written."""
+    judged without them keeps the version it had before they were written. For a clip judged
+    against its sent list (`sent`), the first question, PRODUCT and MOTION's words for it, the
+    behaviour note's frame, the sent list's labels and its handoffs and answer forms."""
+    if sent:
+        return _sent_wording_version(fix=fix, photos=photos)
     told = [
         f"sides {SIDES_FRAMES_PER_SECOND} frames a second, motion {FRAMES_PER_SECOND}",
         SIDES_CHECK,
@@ -1146,6 +1683,51 @@ def wording_version(*, fix: bool = False, photos: bool = False) -> str:
             *(
                 json.dumps(form.model_json_schema(), sort_keys=True)
                 for form in (MotionPhotoFixCheckHandoff, MotionPhotoFixVerdict)
+            ),
+        ]
+    return hashlib.sha256("\n".join(told).encode()).hexdigest()[:10]
+
+
+def _sent_wording_version(*, fix: bool, photos: bool) -> str:
+    told = [
+        f"product {SIDES_FRAMES_PER_SECOND} frames a second, motion and the first question "
+        f"{FRAMES_PER_SECOND}, at most {PIECE_FRAMES_SHOWN} of the pieces' frames",
+        REFERENCES_QUESTION,
+        PRODUCT_CHECK,
+        MOTION_FROM_REFERENCES,
+        BEHAVIOUR_FRAME,
+        SENT_PICTURE_LABEL,
+        SENT_PIECE_FRAME_LABEL,
+        PIECE_LABEL,
+        FRAMES_LABEL,
+        *(
+            json.dumps(form.model_json_schema(), sort_keys=True)
+            for form in (
+                SentClipCheckHandoff,
+                SentMotionCheckHandoff,
+                ReferencesVerdict,
+                ProductVerdict,
+                MotionVerdict,
+            )
+        ),
+    ]
+    if fix:
+        told += [
+            MOTION_FIX_QUESTION,
+            OLD_FRAMES_LABEL,
+            NEW_FRAMES_LABEL,
+            *(
+                json.dumps(form.model_json_schema(), sort_keys=True)
+                for form in (SentMotionFixCheckHandoff, MotionFixVerdict)
+            ),
+        ]
+    if fix and photos:
+        told += [
+            MOTION_PHOTO_FIX_QUESTION,
+            OWNER_PHOTO_LABEL,
+            *(
+                json.dumps(form.model_json_schema(), sort_keys=True)
+                for form in (SentMotionPhotoFixCheckHandoff, MotionPhotoFixVerdict)
             ),
         ]
     return hashlib.sha256("\n".join(told).encode()).hexdigest()[:10]

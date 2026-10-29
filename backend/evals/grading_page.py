@@ -35,6 +35,7 @@ CAUSE_LABELS = {
 }
 CHECK_WORDS = {
     "sides": "impossible sides or parts",
+    "product": "not the real product",
     "real_motion": "unreal motion",
     "sudden_change": "change where nothing touched",
     "does_what_was_ordered": "not the ordered action",

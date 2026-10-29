@@ -401,6 +401,47 @@ def test_the_clip_judge_is_unchanged_from_the_one_proved() -> None:
     assert MOTION_CHECK == CLIP_MOTION_AS_PROVED
 
 
+# Changed on purpose for #210 point 18 (spec 2 items 27 and 28; ticket #228): a clip that
+# carries its sent list is judged with the judge build brief's words (handoffs/judge-build/
+# brief.md, section 3): PRODUCT word for word from the hand test's harness (run.py
+# PRODUCT_CHECK, pinned in tests/fixtures/clip_judge_product_check.txt), MOTION as proved with
+# only its shop-photo paragraph replaced (the brief's MOTION_NEW); and it is first asked
+# whether the references and the behaviour note show enough to judge the clip. The proved
+# SIDES and MOTION above stay for a clip with no sent list.
+CLIP_MOTION_NEW_PARAGRAPH = (
+    "Before the clip you are shown what the video API that made the clip was given: the "
+    "reference pictures, each labelled as in the prompt, frames from the reference video when "
+    "there was one, and the prompt itself. They tell you what the product is, what it is made "
+    "of, how it is built and how a real one moves and behaves. Use them to know how a real one "
+    "moves."
+)
+
+
+def test_a_clip_with_its_sent_list_is_judged_with_the_judge_briefs_words() -> None:
+    pinned = Path(__file__).parent / "fixtures" / "clip_judge_product_check.txt"
+    assert clip_judge.PRODUCT_CHECK == pinned.read_text()
+    proved_head = CLIP_MOTION_AS_PROVED[: CLIP_MOTION_AS_PROVED.index("You may also be shown")]
+    assert clip_judge.MOTION_FROM_REFERENCES == proved_head + CLIP_MOTION_NEW_PARAGRAPH
+    assert MODEL_FOR_PURPOSE["check_clip_product"] == "gpt-6.1-sol"
+
+
+def test_the_judge_first_asks_whether_the_references_show_enough() -> None:
+    # Spec 2 item 27 (Julian Oct 28 23:16): Claude's wording, the logic his.
+    question = " ".join(clip_judge.REFERENCES_QUESTION.split())
+    assert (
+        "Your one question: do the references and the note show enough of the real product to "
+        "judge what the clip does with it?"
+    ) in question
+    assert '"cannot tell" when the clip shows a side, a state or an action of the product' in (
+        question
+    )
+    assert "You do not judge whether the clip is right." in question
+    # Spec 2 item 28 (Julian Oct 28 22:38): every ask is told how this product behaves.
+    assert clip_judge.SentClipCheckHandoff.model_fields["about_how_it_behaves"].default == (
+        clip_judge.BEHAVIOUR_FRAME
+    )
+
+
 def test_the_clip_judge_asks_for_each_problem_in_up_to_3_sentences() -> None:
     # Decider call 2 (2026-10-13 05:33): the auto-redo's prompt writer needs what went wrong,
     # when, and what a real one would do; the proof ran with these words.

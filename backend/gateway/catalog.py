@@ -68,6 +68,10 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # (Claude Doc "Clip judge discussion", Results).
     "check_clip_sides": "gpt-6.1-sol",
     "check_clip_motion": "gpt-6.1-sol",
+    # A clip with its sent list (#228): PRODUCT replaces SIDES, on the model the judge build
+    # brief tested it on, and the first question asks whether the references show enough.
+    "check_clip_product": "gpt-6.1-sol",
+    "check_clip_references": "gpt-6.1-sol",
     "design_voice": "inworld-tts-2",
     "measure_voice": "inworld-tts-2",
     "speak_line": "inworld-tts-2",
@@ -90,6 +94,8 @@ ANSWER_SECONDS = 120
 SLOW_ANSWER_SECONDS: dict[str, float] = {
     "check_clip_sides": 600,
     "check_clip_motion": 600,
+    "check_clip_product": 600,
+    "check_clip_references": 600,
     # A whole video, watched with thinking: the watcher test's calls took 31 to 55 s.
     "watch_video": 600,
     "probe_video": 600,
