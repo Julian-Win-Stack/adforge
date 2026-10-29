@@ -333,16 +333,6 @@ def to_send(job: Job, item: LibraryEntry) -> LibraryEntry:
     return item if version is None else version
 
 
-def product_only_cut_out(job: Job, original: str) -> str | None:
-    """The product-only version of the shop owner's photo `original`, as they sent it, when
-    it has one: the product cut out of it already. None when it has none."""
-    item = _in_the_library(job, OwnerPhoto(original=original), original)
-    if item is None:
-        return None
-    version = to_send(job, item)
-    return None if version is item else version.file
-
-
 def library_text(job: Job) -> str:
     """`job`'s library as a text list, one line per item: its number, what it shows, its
     colour and where it came from."""

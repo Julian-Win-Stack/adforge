@@ -549,7 +549,7 @@ def test_an_owner_parts_picture_goes_only_to_the_scene_holding_the_part_after_it
     holding = a_scene(job, 2)
     holding.owner_part = {"what": "the brush's back", "source": "invented", "looks": "Flat."}
     holding.owner_part_picture = job.library.get(number=part.number)
-    holding.owner_part_drawn = {"part": holding.owner_part, "photos": []}
+    holding.owner_part_drawn = {"part": holding.owner_part, "photos": [], "file": file}
     holding.save()
     other = a_scene(job, 3)
 

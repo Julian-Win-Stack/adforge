@@ -373,7 +373,12 @@ def test_an_approved_owner_part_is_told_as_settled(fake_model: FakeModel, ad: Jo
         OwnerPart(part="nozzle"),
     )
     scene.owner_part_picture = ad.library.get(number=item.number)
-    scene.owner_part_drawn = {"part": part, "photos": [], "shown_at": timezone.now().isoformat()}
+    scene.owner_part_drawn = {
+        "part": part,
+        "photos": [],
+        "file": "nozzle.png",
+        "shown_at": timezone.now().isoformat(),
+    }
     scene.owner_part_approved_at = timezone.now()
     scene.save()
     assert owner_parts.is_approved(scene)
