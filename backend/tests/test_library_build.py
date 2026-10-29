@@ -228,10 +228,13 @@ def test_a_labelling_answer_that_breaks_the_fields_rules_leaves_the_photo_out_in
     say: Say,
     changed: dict[str, str],
 ) -> None:
-    first_message(fake_model, say, labelled_page, {**OWNER_LABEL, **changed})
+    broken = {**OWNER_LABEL, **changed}
+    # Told why and asked again, the labelling breaks the same rule again.
+    fake_model.respond("label_photo", broken)
+    first_message(fake_model, say, labelled_page, broken)
 
-    (labelling,) = ModelCall.objects.filter(purpose="label_photo")
-    assert labelling.outcome == ModelCall.Outcome.FAILED
+    labelling = ModelCall.objects.filter(purpose="label_photo")
+    assert [call.outcome for call in labelling] == [ModelCall.Outcome.FAILED] * 2
     assert [item.source.came_from for item in library_of(Job.objects.get())] == ["page_photo"] * 5
     (problem,) = [text for level, text in notices(api, session_id) if level == "problem"]
     # Said in plain words, never as the answer's validation error.
@@ -248,7 +251,10 @@ def test_a_photo_whose_labelling_answer_broke_the_rules_is_asked_again_when_phot
     labelled_page: str,  # noqa: F811 (the fixture)
     say: Say,
 ) -> None:
-    first_message(fake_model, say, labelled_page, {**OWNER_LABEL, "label": " "})
+    no_label = {**OWNER_LABEL, "label": " "}
+    # Told why and asked again, the labelling breaks the same rule again.
+    fake_model.respond("label_photo", no_label)
+    first_message(fake_model, say, labelled_page, no_label)
     fake_model.respond(
         "produce",
         turn(
@@ -267,7 +273,7 @@ def test_a_photo_whose_labelling_answer_broke_the_rules_is_asked_again_when_phot
         (6, OWNER_ALONE["label"]),
         (7, LABELLED["label"]),
     ]
-    assert ModelCall.objects.filter(purpose="label_photo").count() == 3
+    assert ModelCall.objects.filter(purpose="label_photo").count() == 4
 
 
 def test_a_colour_of_two_words_from_the_labelling_call_is_kept_joined_by_a_hyphen(

@@ -8,6 +8,7 @@ from pydantic import (
     ConfigDict,
     Field,
     SerializerFunctionWrapHandler,
+    ValidationError,
     model_serializer,
     model_validator,
 )
@@ -112,6 +113,20 @@ class UnusableReply(Exception):
         super().__init__(message)
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
+
+
+class AnswerBrokeItsRules(UnusableReply):
+    """An answer, billed and whole, that broke a rule of its output's shape, such as a field's
+    check: inside a producer's tool call the model is told why and asked once more (spec #247
+    point 8, `gateway.asking_again_once`)."""
+
+
+def broke_its_rules(error: ValueError) -> bool:
+    """Whether reading an answer failed on a rule of its output, the answer itself whole: not
+    JSON cut off or unreadable."""
+    return isinstance(error, ValidationError) and all(
+        each["type"] != "json_invalid" for each in error.errors()
+    )
 
 
 class AnswerTookTooLong(Exception):

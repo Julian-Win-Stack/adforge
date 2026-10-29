@@ -18,6 +18,7 @@ from agents import fixing_agent, tasks
 from agents.models import ToolCall
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
+from gateway.types import UnusableReply
 from jobs import work
 from jobs.models import (
     AgentFix,
@@ -674,7 +675,10 @@ def test_dead_end_a_note_with_one_impossible_part_has_the_rest_done_and_that_par
     assert ModelCall.objects.filter(purpose="fact_check").count() == checked_before
 
 
-def test_dead_end_a_paid_answer_the_validator_rejects_is_a_tool_answer_and_the_run_goes_on(
+NO_PICTURE_9 = "There's no picture 9 in the library."
+
+
+def test_dead_end_a_paid_answer_the_validator_rejects_goes_back_to_its_model_once_with_why(
     producer: ScriptedProducer,
     fake_model: FakeModel,
     page_read: str,
@@ -682,13 +686,79 @@ def test_dead_end_a_paid_answer_the_validator_rejects_is_a_tool_answer_and_the_r
     names_no_photo = {**PLAN, "plan": {**PLAN["plan"], "colour_photos": [9]}}
     fake_model.respond("plan_ad", names_no_photo, PLAN)
 
+    producer.told("Plan it", ("plan_ad", {}), "Here's the plan.")
+
+    # The planner was asked again, told the rule its paid answer broke; its second answer is
+    # the plan, and the producer's one call made it.
+    asks = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"]
+    assert len(asks) == 2
+    first, again = asks
+    assert NO_PICTURE_9 not in first.instructions
+    assert NO_PICTURE_9 in again.instructions
+    # The record keeps what each ask was told.
+    told = [
+        call.system_prompt.instructions
+        for call in ModelCall.objects.filter(purpose="plan_ad").order_by("id")
+        if call.system_prompt is not None
+    ]
+    assert [NO_PICTURE_9 in instructions for instructions in told] == [False, True]
+    planned = ToolCall.objects.get(tool="plan_ad")
+    assert planned.answer == "made", planned.result
+    assert Job.objects.get().scenes.count() == 3
+
+
+def test_dead_end_a_paid_answer_the_validator_rejects_twice_is_a_failed_answer_said_in_red(
+    api: APIClient,
+    session_id: str,
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    page_read: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    names_no_photo = {**PLAN, "plan": {**PLAN["plan"], "colour_photos": [9]}}
+    fake_model.respond("plan_ad", names_no_photo, names_no_photo, PLAN)
+    red_before = len(red_in_the_chat(api, session_id))
+
     producer.told("Plan it", ("plan_ad", {}), ("plan_ad", {}), "Here's the plan.")
 
-    first, second = ToolCall.objects.filter(tool="plan_ad").order_by("id")
-    # The paid answer the validator rejected reached the producer as the tool's can't, with
-    # the rule it broke; the producer planned again, and the plan stands.
-    assert first.answer == "cant"
-    assert first.result.startswith("Failed: a model's answer couldn't be used")
-    assert "There's no picture 9 in the library." in first.result
-    assert second.answer == "made"
+    # Asked again with why, the planner broke the rule again: the tool answers the can't with
+    # the rule, the shop owner is told in red, and the producer's next call runs.
+    failed, planned = ToolCall.objects.filter(tool="plan_ad").order_by("id")
+    assert failed.answer == "cant"
+    assert failed.result.startswith("Failed: a model's answer couldn't be used")
+    assert NO_PICTURE_9 in failed.result
+    # Said in plain words, never as the answer's validation error, with its warning line.
+    reds = red_in_the_chat(api, session_id)[red_before:]
+    assert reds == [
+        "An AI model's answer couldn't be used, even after it was told why and asked again, "
+        "so part of making your ad didn't work this time. The producer was told and carries on."
+    ]
+    assert reds[0] in [warning["text"] for warning in Job.objects.get().warnings]
+    # The server log has the rule it broke.
+    assert any(
+        reds[0] in record.message and NO_PICTURE_9 in record.message
+        for record in caplog.records
+        if record.levelname == "WARNING"
+    )
+    assert planned.answer == "made", planned.result
     assert Job.objects.get().scenes.count() == 3
+
+
+def test_a_paid_answer_the_model_refused_is_not_asked_again_nor_said_in_red(
+    api: APIClient,
+    session_id: str,
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    page_read: str,
+) -> None:
+    # A refusal broke no rule of the answer: telling the model a rule wouldn't help.
+    refused = UnusableReply("the model refused", input_tokens=1_000, output_tokens=100)
+    fake_model.respond("plan_ad", refused, PLAN)
+    red_before = len(red_in_the_chat(api, session_id))
+
+    producer.told("Plan it", ("plan_ad", {}), ("plan_ad", {}), "Here's the plan.")
+
+    failed, planned = ToolCall.objects.filter(tool="plan_ad").order_by("id")
+    assert failed.result == "Failed: a model's answer couldn't be used (the model refused)."
+    assert red_in_the_chat(api, session_id)[red_before:] == []
+    assert planned.answer == "made", planned.result
