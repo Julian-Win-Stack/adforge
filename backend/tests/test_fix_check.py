@@ -319,7 +319,8 @@ def test_a_picture_the_fix_checks_filter_refuses_to_look_at_carries_on_and_says_
     (said,) = Message.objects.filter(
         role="notice", level="problem", text__contains="safety filter"
     ).values_list("text", flat=True)
-    assert "scene 2's new starting picture" in said
+    assert "scene 2's old or new starting picture" in said
+    assert "your change couldn't be checked" in said
 
 
 def test_a_not_fixed_answer_with_no_reason_is_no_answer_but_is_still_paid_for(

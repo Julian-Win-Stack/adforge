@@ -15,8 +15,11 @@ from jobs.planning import PLAN_INSTRUCTIONS, producer_decision_for
 from .conftest import FINISHING_STEP, PLAN, SHOWCASE, a_plan_with, broll
 
 # The decision for a job with the mug's 2 photos, as the planner is asked for it.
+# Its library holds 12 pictures, and its one page video was watched into 2 moments.
 PHOTO_COUNT = 2
-DECISION = producer_decision_for(PHOTO_COUNT)
+LIBRARY = range(1, 13)
+MOMENTS = {1: 2}
+DECISION = producer_decision_for(PHOTO_COUNT, library=LIBRARY, moments=MOMENTS)
 # What the planner is told of each field, as its schema is given to the model.
 SCHEMA = DECISION.model_json_schema()["$defs"]
 
@@ -45,19 +48,36 @@ def a_plan_with_ways(*kinds: str) -> dict[str, Any]:
     "broll" showing the mug, "second state" showing the second of two end states, or
     "talking second state", said to camera yet given as a second state."""
     scenes: list[dict[str, Any]] = [{"line": "Meet the Stoneware Mug."}]
-    for kind in kinds:
+    for number, kind in enumerate(kinds, start=2):
         line = {"line": "Holds 350 ml of hot tea or cold brew."}
         if kind == "talking":
             scenes.append(line)
         elif kind == "talking second state":
             scenes.append({**line, "second_state": True})
         else:
-            scenes.append(broll({**line, "shows": "the mug in a hand"}))
+            # Each B-roll scene films an action of its own.
+            scenes.append(broll({**line, "shows": f"the mug in a hand, seen in scene {number}"}))
             scenes[-1]["second_state"] = kind == "second state"
     return a_plan_with(scenes=scenes)
 
 
 # --- What the planner is told ----------------------------------------------------------------
+
+
+def test_the_planner_is_told_what_each_broll_scene_is_sent_and_how_the_product_behaves() -> None:
+    instructions = PLAN_INSTRUCTIONS
+    # Spec #210 point 11: the planner names scene pictures by library number, each with one
+    # of the `for` values, and a piece by moment number; it never names sides nor counts.
+    for value in ("content", "result", "in-use", "place", "person", "state"):
+        assert f'"{value}" for ' in instructions
+    assert "Name as many as the scene needs." in instructions
+    assert "Never name a picture only for a side of the product" in instructions
+    assert "name a picture of that end state, a page photo or a frame from a video" in instructions
+    assert "named the first time you plan the scene. Never give seconds." in instructions
+    # Point 19 (Julian Oct 28 17:36): the planner's 5-picture cap goes.
+    assert "at most 5 pictures" not in instructions
+    # Point 11, spec 2 item 28: the note the clip judge and the fixing agent read.
+    assert "write how the product behaves: one short paragraph" in instructions
 
 
 def test_the_planner_is_told_how_to_plan_each_broll_scene() -> None:
@@ -642,14 +662,52 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
         ),
         pytest.param(
             broll_scene(
-                person_shown="has face",
-                needs=[{"what": f"part {n}", "photos": [1]} for n in range(1, 5)],
+                scene_pictures=[{"number": 4, "for": "in-use"}, {"number": 13, "for": "result"}]
             ),
-            "Scene 2 would send 6 pictures (the main photo, one for each of its 4 needs and "
-            "the presenter's portrait): 5 at most.",
-            id="a scene sending six pictures",
+            "Scene 2 names picture 13: the library holds pictures 1 to 12.",
+            id="a scene picture after the library's last",
+        ),
+        pytest.param(
+            broll_scene(piece={"video": 1, "moment": 3}),
+            "Scene 2 names moment 3 of video 1: that video has moments 1 to 2.",
+            id="a moment after the video's last",
+        ),
+        pytest.param(
+            broll_scene(piece={"video": 2, "moment": 1}),
+            "Scene 2 names a moment of video 2: that video has no moments.",
+            id="a moment of a video with none",
+        ),
+        pytest.param(
+            talking_scene(scene_pictures=[{"number": 4, "for": "person"}]),
+            "A scene where the person talks to camera has no scene pictures or video piece.",
+            id="a talking scene with scene pictures",
+        ),
+        pytest.param(
+            talking_scene(piece={"video": 1, "moment": 1}),
+            "A scene where the person talks to camera has no scene pictures or video piece.",
+            id="a talking scene with a piece",
+        ),
+        pytest.param(
+            a_plan_with(
+                scenes=[
+                    {"line": "Meet the Stoneware Mug."},
+                    broll({"line": "Holds 350 ml.", "shows": "Tea poured into the mug"}),
+                    broll({"line": "Keeps it warm.", "shows": "  tea POURED into a mug. "}),
+                ]
+            ),
+            "Scenes 2 and 3 film the same action: give each B-roll scene a different one.",
+            id="two broll scenes filming the same action",
         ),
         pytest.param(a_plan_with(product_name=" "), "This can't be empty.", id="no name"),
+        pytest.param(a_plan_without("product_behaviour"), "Field required", id="no behaviour note"),
+        pytest.param(
+            a_plan_with(product_behaviour=" "), "This can't be empty.", id="an empty behaviour note"
+        ),
+        pytest.param(
+            a_plan_with(product_behaviour="It holds a hot drink.\n\nIt is lifted by its handle."),
+            "How the product behaves is one short paragraph.",
+            id="a behaviour note of two paragraphs",
+        ),
         pytest.param(a_plan_with(product_colour=" "), "This can't be empty.", id="no colour"),
         pytest.param(
             a_plan_with(person_looks=" "), "This can't be empty.", id="no look for the person"

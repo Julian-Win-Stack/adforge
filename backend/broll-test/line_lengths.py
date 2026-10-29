@@ -80,7 +80,7 @@ def plan_once(product: str, run: int) -> dict[str, Any]:
                 conversation=_conversation(job),
                 video_transcripts=[],
             ),
-            output=producer_decision_for(len(photos)),
+            output=producer_decision_for(len(photos), library=(), moments={}),
             images=[Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos],
         )
         if decision.plan is None:

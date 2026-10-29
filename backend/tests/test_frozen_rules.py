@@ -38,6 +38,8 @@ from jobs.scenes import (
     BROLL_KIND_RULES,
     BROLL_SHARED_RULES,
     MAIN_PHOTO_JOB,
+    PERSON_IN_ROOM_PROMPT,
+    ROOM_ALONE_PROMPT,
     SAME_SIDE,
     broll_prompt_instructions,
     broll_video_prompt,
@@ -181,6 +183,32 @@ FROZEN = [
         'When "shows" names a person or a hand, they are in the clip, doing what it says.',
         id="A17 a person named in shows is in the clip (#5 s3 FAIL)",
     ),
+    # Spec #210 point 10 (Julian, Oct 27-28): the planner's rules for what its scenes film and
+    # how its picks are sent. Not proven by grades yet, pinned so they change only when he says.
+    pytest.param(
+        PLANNER,
+        "Give each B-roll scene a different action: never film the same action in two scenes.",
+        id="#210-10 a different action per B-roll scene",
+    ),
+    pytest.param(
+        PLANNER,
+        "The video moments show how the product is really used: plan from them.",
+        id="#210-10 plan from the moments",
+    ),
+    pytest.param(
+        PLANNER,
+        "Plan only actions the product really does: ones the page, the shop owner's words or a "
+        "video moment shows it doing.",
+        id="#210-10 only actions the product really does (requirement 9)",
+    ),
+    pytest.param(
+        PLANNER,
+        "Each B-roll clip is sent its pictures in this order: the product's front photo, then "
+        "the scene pictures you name, in your order, then the picture of the person in the "
+        "place, then the product's other sides. So the scene pictures you name always come "
+        "right after the front photo, before anything else the clip is sent.",
+        id="#210-10 the planner is told the send order (audit item 13)",
+    ),
 ]
 
 
@@ -249,6 +277,25 @@ def test_every_scene_picture_is_sent_the_before_picture_for_the_place_only() -> 
     assert BEFORE_PICTURE_JOB == (
         "the place, its light and each thing in it, with every mark, exactly as they are"
     )
+
+
+def test_the_person_in_room_picture_is_ordered_to_show_the_presenter_standing_only() -> None:
+    # Not graded yet, frozen as Julian ordered it (Oct 28 17:37, "just standing straight in
+    # that room. that's it."; spec #210 point 12): an order, not a ban.
+    assert (
+        "The person stands straight and still in the room, hands at their sides, and nothing "
+        "else happens."
+    ) in PERSON_IN_ROOM_PROMPT
+
+
+def test_the_room_alone_is_ordered_to_hold_only_the_room() -> None:
+    # Not graded yet, frozen as Julian decided it (spec 2 item 53, Oct 28 22:32): "the
+    # room-alone picture holds only the room, nothing of the scene".
+    assert (
+        "Keep the room itself as it is: its walls, floor, surfaces and fittings. Take out every "
+        "other thing, and every mark, stain or mess on what stays, so nothing of any scene is "
+        "left."
+    ) in ROOM_ALONE_PROMPT
 
 
 # A21: the start-picture judge, word for word as tested on 98 pictures Julian graded

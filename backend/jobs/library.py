@@ -33,6 +33,7 @@ from pydantic import (
 )
 
 from gateway.types import MOST_PIECE_SECONDS, PieceTrim
+from jobs import cards
 from jobs.models import Job, LibraryItem, ProducedItem, ProductVideo
 
 logger = logging.getLogger(__name__)
@@ -398,9 +399,16 @@ class SentList(_Shape):
 
 
 def keep_sent_list(item: ProducedItem, sent: SentList) -> None:
-    """Keep `sent` on the clip `item`: every clip and every try carries its own."""
+    """Keep `sent` on the clip `item`: every clip and every try carries its own. Each of its
+    pictures gets a card-size copy, for the scene's card in the chat."""
     item.sent = sent.model_dump(mode="json")
     item.save(update_fields=["sent"])
+    named: dict[str, list[str]] = {}
+    for picture in sent.pictures:
+        named.setdefault(picture.file, []).append(f"Image {picture.image}")
+    for left in sent.left_out:
+        named.setdefault(left.file, []).append(f'the picture left out, "{left.label}"')
+    cards.make_cards(item, named)
 
 
 def sent_list_of(item: ProducedItem) -> SentList | None:

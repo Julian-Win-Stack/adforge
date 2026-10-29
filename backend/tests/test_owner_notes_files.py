@@ -78,7 +78,7 @@ def test_the_first_version_gets_round_4s_scenes_in_the_planners_plan(tmp_path: P
             conversation=[],
             video_transcripts=[],
         ),
-        output=producer_decision_for(9),
+        output=producer_decision_for(9, library=(), moments={}),
     )
 
     planned = provider.complete(request).output.model_dump()

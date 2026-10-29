@@ -133,11 +133,20 @@ def test_a_try_whose_clip_has_a_sent_list_is_shown_by_its_references_then_its_fr
         pieces = [label for label in rest if label.startswith("Try 0, Video ")]
         frames = [label for label in rest if label.startswith("Try 0, clip, ")]
         assert pieces and frames and rest == pieces + frames
+        # Each piece's frames are joined 4 to a picture, as the clip's are.
+        for video in (1, 2):
+            assert f"Try 0, Video {video}, Frames at 0 s, 0.2 s, 0.4 s, 0.6 s, left to right" in (
+                pieces
+            )
         assert not any("start picture" in label for label in labels)
-    said = " ".join(look.result.split())
-    assert said.startswith("Try 0: what its clip was sent, then the clip's frames.")
-    assert "Left out of the clip: The garlic press, closed, seen from the top." in said
-    assert "What its clip was sent" in given.result
+    # Try 0 is the same pictures on every turn, so a paid turn is replayed and a refused
+    # picture known again.
+    [first, second, *_] = [each for each in fake_model.turns_taken if each.purpose == "fix_scene"]
+    try_0 = [each.handoff.conversation[1] for each in (first, second)]
+    assert all(isinstance(each, ToolUse) for each in try_0)
+    assert [
+        [shown.key for shown in each.pictures] for each in try_0 if isinstance(each, ToolUse)
+    ] == [[shown.key for shown in given.pictures]] * 2
 
 
 def test_a_try_whose_clip_has_no_sent_list_is_shown_by_its_start_picture(

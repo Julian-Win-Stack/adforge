@@ -194,12 +194,21 @@ def test_a_picture_fix_is_estimated_at_the_last_pictures_cost_and_a_clip(
     assert picture_estimate(scene) == (paid + 4 * HEYGEN, paid + redraws + 4 * HEYGEN)
 
 
-def test_a_broll_picture_fix_leaves_out_the_shared_before_picture(shown: ProducedItem) -> None:
+def test_a_broll_picture_fix_leaves_out_the_ads_shared_pictures_of_its_place(
+    shown: ProducedItem,
+) -> None:
     picture = last_step("starting_picture", 2)
-    drew_it = picture.tool_call.model_calls.filter(purpose="make_before_picture")
-    assert drew_it.exists(), "scene 2's picture drew the ad's before-picture"
+    drew_them = picture.tool_call.model_calls.filter(
+        purpose__in=["make_before_picture", "make_room_alone", "make_person_in_room"]
+    )
+    assert drew_them.count() == 3, "scene 2's picture drew the ad's pictures of its place"
     kept = picture.tool_call.model_calls.exclude(
-        purpose__in=["plan_before_picture", "make_before_picture"]
+        purpose__in=[
+            "plan_before_picture",
+            "make_before_picture",
+            "make_room_alone",
+            "make_person_in_room",
+        ]
     )
 
     cost = sum((call.cost_usd or Decimal(0) for call in kept), Decimal(0))

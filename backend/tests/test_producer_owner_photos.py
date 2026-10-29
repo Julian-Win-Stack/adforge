@@ -22,7 +22,14 @@ from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, ModelRequest, UnusableReply
 from jobs import fix_check, reference_photos, work
-from jobs.clip_judge import ASKS, MOTION_PHOTO_FIX_QUESTION, OWNER_PHOTO_LABEL
+from jobs.clip_judge import (
+    ASKS,
+    MOTION_CHECK,
+    MOTION_FIX_QUESTION,
+    MOTION_PHOTO_FIX_QUESTION,
+    OWNER_PHOTO_LABEL,
+    wording_version,
+)
 from jobs.fix_check import PhotoFixVerdict
 from jobs.models import (
     Fix,
@@ -46,6 +53,7 @@ from .conftest import (
     LABELLED,
     NO_CHOICES,
     OWNER_PHOTO_SHOWS,
+    PICTURE_OK,
     PLAN,
     HeldSteps,
     broll,
@@ -628,6 +636,31 @@ def test_a_shop_owners_photo_the_fix_checks_filter_refuses_is_left_out_and_the_f
     assert said in [warning["text"] for warning in Job.objects.get().warnings]
 
 
+def test_a_shop_owners_photo_the_clean_pictures_check_refuses_is_named_as_theirs(
+    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
+) -> None:
+    """Requirement 22: the clean picture is checked without the shop owner's photo it was
+    drawn from, and the red notice names that photo as theirs, not a shop photo."""
+
+    def refusing(request: ModelRequest[Any]) -> dict[str, Any]:
+        if owner_file(1) in [image.key for image in request.images]:
+            raise BlockedBySafetyFilter("content_policy_violation")
+        return PICTURE_OK
+
+    fake_model.answer_unscripted("check_starting_picture", refusing)
+    photos_sent(fake_model, say, OWNER_MUG)
+    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    fixing.fixed(2, "new_picture", note=MUG_NOTE, change=MUG_FIX, photos=[photo(1, "black mug")])
+    steps.run_held()
+
+    assert last_step("starting_picture").status == "finished"
+    (said,) = [text for text in problems() if "safety filter" in text]
+    assert said == (
+        "The AI model's safety filter refused to look at the shop owner's photo of their "
+        "black mug, so the clean picture of the shop owner's black mug was checked without it."
+    )
+
+
 def test_the_photo_is_kept_on_the_scene_once_the_shop_owner_says_yes(mug_fixed: Fix) -> None:
     row = ReferencePhoto.objects.get()
     assert (row.scene.number, row.thing, row.use, row.added_by) == (
@@ -743,10 +776,14 @@ def test_the_clip_judge_is_shown_the_shop_owners_photo_for_the_change(
 
 
 def test_a_shop_owners_photo_the_clip_judges_filter_refuses_is_left_out_of_the_clip_fix_check(
-    fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
+    fake_model: FakeModel,
+    shown: ProducedItem,
+    steps: HeldSteps,
+    say: Say,
+    instructed: dict[str, list[str]],  # noqa: F811 (the fixture)
 ) -> None:
-    """Requirement 22: MOTION is asked again without the photo, no longer told of it, and its
-    answer about the change still settles the fix; the chat is told in red."""
+    """Requirement 22: MOTION is asked again without the photo, as a fix without photos is,
+    and its answer about the change still settles the fix; the chat is told in red."""
     label = OWNER_PHOTO_LABEL.format("tea")
     answering = motion_answer(CLIP_MOTION_OK)
 
@@ -765,7 +802,13 @@ def test_a_shop_owners_photo_the_clip_judges_filter_refuses_is_left_out_of_the_c
     assert label in [image["label"] for image in first.images]
     assert [image for image in then.images if image["label"] != label] == then.images
     assert len(then.images) == len(first.images) - 1
-    assert then.handoff["owner_photos"] == []
+    assert "owner_photos" not in then.handoff
+    assert instructed["check_clip_motion"][-2].endswith(MOTION_PHOTO_FIX_QUESTION)
+    assert instructed["check_clip_motion"][-1] == f"{MOTION_CHECK}\n\n{MOTION_FIX_QUESTION}"
+    new = latest("clip")
+    assert new.ruling is not None
+    assert new.ruling["wording"] == wording_version(fix=True)
+    assert "owner_photo_shows" not in new.ruling["answers"]["motion"][0]["owner_change"]
     fix = Fix.objects.get()
     assert fix.checks.get().verdict == "passed"
     (said,) = [text for text in problems() if "safety filter" in text]

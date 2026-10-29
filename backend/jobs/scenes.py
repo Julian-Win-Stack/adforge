@@ -298,6 +298,29 @@ ad looks.
 Give a one-sentence reason for the prompt, written for the shop owner."""
 
 
+# What the picture model is ordered to draw for the ad's room alone, from the before-picture:
+# the room with nothing of any scene in it (spec #210 point 12; spec 2 item 53, Julian Oct 28
+# 22:32), so a clip sent it as its background takes no scene's things or problems from it.
+ROOM_ALONE_PROMPT = (
+    "Draw the place in this picture again as an upright 9:16 photo, from the same camera and "
+    "in the same light. Keep the room itself as it is: its walls, floor, surfaces and "
+    "fittings. Take out every other thing, and every mark, stain or mess on what stays, so "
+    "nothing of any scene is left. No person, no hand, and no added text, captions or logos."
+)
+
+# What the picture model is ordered to draw for the ad's person-in-room picture, from the
+# portrait first, then the room alone: the presenter standing in the room and nothing else,
+# as an order, not a ban (Julian Oct 28 17:37: "just standing straight in that room. that's
+# it."). Untested: the risk that a video model copies the pose is read from the grades.
+PERSON_IN_ROOM_PROMPT = (
+    "An upright 9:16 photo of the person from the first picture, with the same face, hair "
+    "and clothes, in the room from the second picture, from the same camera and in the same "
+    "light. The person stands straight and still in the room, hands at their sides, and "
+    "nothing else happens. Keep the room exactly as it is, and add no text, captions or "
+    "logos."
+)
+
+
 # Added by code to every labelled B-roll scene's video prompt: the video model sees only the
 # starting picture, so a side it can't see is made up (round 3, 10 Oct: the #12 phone case
 # flipped mid-clip; docs/broll-picture-logic.md, "Prompt rules").

@@ -116,6 +116,12 @@ class Job(models.Model):
     person_voice = models.TextField(
         blank=True, help_text="The producer's description of the person's voice."
     )
+    product_behaviour = models.TextField(
+        blank=True,
+        help_text="How the product behaves, one short paragraph the planner writes from the "
+        "page text and the video moments, for the clip judge and the fixing agent. Blank "
+        "before the plan, and for an ad planned before it was asked for.",
+    )
     script_format = models.CharField(
         max_length=30,
         blank=True,
@@ -428,6 +434,20 @@ class Scene(models.Model):
         help_text="What a B-roll scene needs that the main photo can't show, each with the "
         'numbers of the photos that show it, such as [{"what": "the gel", "photos": [3, 5]}]. '
         "Empty when the main photo is enough.",
+    )
+    scene_pictures = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The B-roll scene's scene pictures the planner named, in its order, each by "
+        'library number with what it is for (jobs.library.For), such as [{"number": 4, '
+        '"for": "in-use"}]. Empty for a talking scene and for one planned before them.',
+    )
+    piece = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="The video piece the planner named for the B-roll scene: the page video's "
+        'position and the moment\'s number in it, such as {"video": 1, "moment": 2}. Null '
+        "when none.",
     )
     owner_part = models.JSONField(
         null=True,
@@ -1189,6 +1209,12 @@ class ProducedItem(models.Model):
         # The place the ad's B-roll scenes happen in, before any starts: every B-roll
         # starting picture is drawn from it.
         BEFORE_PICTURE = "before_picture"
+        # The before-picture's room alone, with nothing of any scene in it: for the
+        # scenes nobody is seen in (spec #210 point 12; spec 2 item 53).
+        ROOM_ALONE = "room_alone"
+        # The presenter standing straight and still in the room alone, nothing else
+        # happening: for the scenes the presenter is seen in (spec #210 point 12).
+        PERSON_IN_ROOM = "person_in_room"
 
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="produced")
     scene = models.ForeignKey(
@@ -1228,7 +1254,8 @@ class ProducedItem(models.Model):
         related_name="+",
         help_text="What it was made from: for a line's audio, the voice that spoke it; for a "
         "transcript, the audio it was heard in; for a clip, the audio it speaks; for a "
-        "finished ad, the music under its voice.",
+        "finished ad, the music under its voice; for the room alone, the before-picture; for "
+        "the person-in-room picture, the room alone.",
     )
     picture = models.ForeignKey(
         "self",

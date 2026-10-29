@@ -260,6 +260,9 @@ def test_nothing_in_the_whole_flow_is_paid_for_twice(ad_made_through_the_chat: N
         # Two passes from the judge settle it (Julian, 10 Oct 21:55).
         "check_starting_picture",
         "check_starting_picture",
+        # Then the ad's room alone and the presenter standing in it, once.
+        "make_room_alone",
+        "make_person_in_room",
         "choose_starting_picture",
         "make_starting_picture",
         "speak_line",
@@ -454,6 +457,9 @@ def test_the_ad_with_a_scene_needing_a_photo_pays_for_each_thing_once(
         # Two passes from the judge settle each (Julian, 10 Oct 21:55).
         "check_starting_picture",
         "check_starting_picture",
+        # Then the ad's room alone and the presenter standing in it, once for both scenes.
+        "make_room_alone",
+        "make_person_in_room",
         "choose_broll_picture",
         "make_starting_picture",
         "check_starting_picture",
