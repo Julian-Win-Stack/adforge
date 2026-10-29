@@ -4053,13 +4053,14 @@ OWNER_THINGS_FOR: library.For = "content"
 
 
 def _sent_to_improve(step: SceneStep) -> library.SentList:
-    """What the clip a note's B-roll clip improves on was sent: its own sent list, or, for one
-    made before clips kept theirs, the scene's planned references labelled by code with how
-    that clip moved."""
+    """What a note's B-roll clip starts from: the sent list of the clip it improves on, as it
+    was; or, when the shop owner's things show during the clip, or for a clip made before
+    clips kept their sent lists, the scene's planned references (the things among them)
+    labelled by code with how that clip moved."""
     made = versions(step.scene)
     improves = made[-1].clip if made else None
     sent = library.sent_list_of(improves) if improves is not None else None
-    if sent is not None:
+    if sent is not None and not _during_the_clip(step):
         return sent
     return cut_and_send.labelled_sent_list(
         step.scene.job,
@@ -4475,6 +4476,11 @@ def _rewrite_motion_prompt(step: SceneStep) -> None:
     made = versions(step.scene)
     improves = made[-1].clip if made else None
     sent = library.sent_list_of(improves) if improves is not None else None
+    # A B-roll clip has no starting picture (spec #210 point 19): its references are rebuilt
+    # with the shop owner's things among them, which it is then shown as its own pictures.
+    rebuilt = step.picture is None and (sent is None or bool(during))
+    if rebuilt:
+        sent = _sent_to_improve(step)
     handoff: ClipFromNoteHandoff | ClipFromReferencesHandoff
     if sent is not None:
         instructions = clip_from_references_instructions(step.broll_kind)
@@ -4509,7 +4515,7 @@ def _rewrite_motion_prompt(step: SceneStep) -> None:
         instructions=instructions,
         handoff=handoff,
         output=ClipFromNoteChoice,
-        images=[*shown, *_the_owners_things(step, during)],
+        images=[*shown, *([] if rebuilt else _the_owners_things(step, during))],
         pay_once=True,
     )
     step.motion_prompt = rewrite.motion_prompt

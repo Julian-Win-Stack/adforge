@@ -21,7 +21,7 @@ from chat.models import Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, ModelRequest, UnusableReply
-from jobs import fix_check, reference_photos, work
+from jobs import fix_check, reference_photos
 from jobs.clip_judge import (
     ASKS,
     MOTION_CHECK,
@@ -41,7 +41,6 @@ from jobs.models import (
     Scene,
     SceneStep,
 )
-from jobs.scenes import SAME_SIDE
 
 from . import fixing
 from .agent_tries import agent_films
@@ -707,50 +706,19 @@ def tea_fixed(fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say:
     return Fix.objects.get()
 
 
-def test_a_thing_during_the_clip_makes_it_in_reference_mode_from_the_starting_picture(
+def test_a_thing_during_the_clip_is_sent_with_the_clips_pictures_as_its_clean_picture(
     tea_fixed: Fix,
 ) -> None:
     (clean,) = clean_pictures()
     sent = handoffs("make_broll_clip")[-1]
-    # Locked rule 1 as changed (Julian 19:38): the drawn starting picture goes first, then the
-    # clean picture; never a raw photo, and never both ways at once.
+    # No starting picture (spec #210 point 19): the clip's sent list, the clean picture of the
+    # tea among its pictures, never the raw photo; the prompt the rewrite wrote from the note.
     assert sent["starting_picture"] is None
-    assert sent["example_pictures"] == [latest("starting_picture").file, clean]
+    assert clean in sent["example_pictures"]
     assert owner_file(1) not in sent["example_pictures"]
-    assert sent["prompt"].startswith(
-        "Image 1 is how the clip starts: the clip starts exactly like Image 1. Image 2 is the "
-        "shop owner's own tea: wherever it disagrees with another picture, follow Image 2. A "
-    )
-    assert f"The camera stays still. {SAME_SIDE} {REWRITE['motion_prompt']}" in sent["prompt"]
-    # The starting picture isn't drawn again.
-    assert latest("starting_picture").version == 1
+    assert sent["prompt"] == REWRITE["motion_prompt"]
+    assert not ProducedItem.objects.filter(kind="starting_picture", scene__number=2).exists()
     assert in_use() == [("tea", "clip")]
-
-
-@pytest.fixture
-def reference_mode_off(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The one-line switch back to before (Julian 2026-10-16 19:08)."""
-    monkeypatch.setattr(work, "EVERY_BROLL_CLIP_IN_REFERENCE_MODE", False)
-
-
-def test_with_reference_mode_switched_off_only_a_thing_during_the_clip_makes_it_so(
-    reference_mode_off: None, tea_fixed: Fix
-) -> None:
-    (clean,) = clean_pictures()
-    first, remade = handoffs("make_broll_clip")[0], handoffs("make_broll_clip")[-1]
-    # Before the tea, the clip was made from its starting picture as its first frame.
-    assert (first["starting_picture"], first["example_pictures"]) == (
-        latest("starting_picture").file,
-        [],
-    )
-    assert not first["prompt"].startswith("Image 1")
-    # With the tea, in reference mode as the owner-photos build made it.
-    assert remade["starting_picture"] is None
-    assert remade["example_pictures"] == [latest("starting_picture").file, clean]
-    assert remade["prompt"].startswith(
-        "Image 1 is how the clip starts: the clip starts exactly like Image 1. Image 2 is the "
-        "shop owner's own tea"
-    )
 
 
 def test_the_clip_prompt_writer_is_told_of_the_shop_owners_thing_and_shown_it(

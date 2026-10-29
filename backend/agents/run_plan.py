@@ -798,10 +798,11 @@ def _carry_on(row: FixPlanScene) -> None:
         # the scene's clip, made for the scene as the agent left it.
         _landed(row)
         return
-    picture = _picture(row, scene, running)
+    from_sent_list = _from_its_sent_list(row, scene)
+    picture = None if from_sent_list else _picture(row, scene, running)
     if row.line and not _line_heard(row, scene, running):
         return
-    if picture is None:
+    if picture is None and not from_sent_list:
         return
     clips = row.steps.filter(
         kind=SceneStep.Kind.CLIP,
@@ -809,7 +810,7 @@ def _carry_on(row: FixPlanScene) -> None:
         produced__isnull=False,
         **SceneStep.made_for(scene),
     )
-    if row.action == Action.NEW_PICTURE:
+    if picture is not None and row.action == Action.NEW_PICTURE:
         clips = clips.filter(picture_step=picture.step)
     if clips.exists():
         _landed(row)
@@ -827,9 +828,16 @@ def _carry_on(row: FixPlanScene) -> None:
         note=row.change if row.action == Action.NEW_CLIP else "",
         made_from=audio,
         picture=picture,
-        picture_step=picture.step,
+        picture_step=picture.step if picture is not None else None,
         motion_prompt=_kept_motion(row, scene, picture),
     )
+
+
+def _from_its_sent_list(row: FixPlanScene, scene: Scene) -> bool:
+    """Whether the row's clip is made from the scene's sent list, with no starting picture:
+    a new clip, a new line's clip or a go back's in a scene that shows the product (spec #210
+    point 19). A new picture for such a scene still draws one (#242)."""
+    return bool(scene.shows) and row.action in (Action.NEW_CLIP, Action.NEW_LINE, Action.GO_BACK)
 
 
 def _carry_on_fix(row: FixPlanScene, scene: Scene, running: set[str]) -> None:
@@ -899,7 +907,7 @@ def agent_gave_up(step: SceneStep, reason: str) -> None:
     carry_on_scene(scene, but=row)
 
 
-def _kept_motion(row: FixPlanScene, scene: Scene, picture: ProducedItem) -> str:
+def _kept_motion(row: FixPlanScene, scene: Scene, picture: ProducedItem | None) -> str:
     """For a new picture's or a new line's clip in a scene that shows the product, how the
     clip it replaces moved: only a new clip chooses a new movement (live ad fix 1; design
     thread, 05:15 Oct 17), a new clip made a new picture for its photo too. Blank otherwise,

@@ -1,8 +1,9 @@
 """Requirement 22 for the judges, driven through the chat: when the safety filter refuses the
-clip judge, the fix check or the picture check over one of the reference pictures it is shown
-beside what it judges, the check is asked again without it and answers on the rest. What it
+clip judge or the fix check over one of the reference pictures it is shown beside what it
+judges, the check is asked again without it and answers on the rest. What it
 judges itself (the clip's frames, the new picture) is never left out: a check refused over it
-is not checked, as before. Every refusal shows in the chat as a red notice, kept as a warning."""
+is not checked, as before. Every refusal shows in the chat as a red notice, kept as a warning.
+(A B-roll scene's starting picture and its check are gone, spec #210 point 19.)"""
 
 from collections.abc import Callable
 from typing import Any
@@ -15,13 +16,11 @@ from gateway.types import BlockedBySafetyFilter, ModelRequest
 from jobs.models import Job, ProducedItem, SceneStep
 
 from .agent_tries import agent_films
-from .conftest import CLIP_MOTION_OK, CLIP_SIDES_OK, PICTURE_OK, HeldSteps, motion_answer
+from .conftest import CLIP_MOTION_OK, CLIP_SIDES_OK, HeldSteps, motion_answer
 from .test_producer_broll import (
-    BROLL_CHOICE,
     calling,
     checked,  # noqa: F401 (a fixture)
     made_ready,
-    picture_of_scene_2,
     run,
 )
 from .test_producer_clip_judge import clip_of, ruling
@@ -111,54 +110,6 @@ def test_a_clip_the_judges_filter_refuses_to_look_at_is_kept_unchecked_and_the_c
     step = SceneStep.objects.get(kind="clip", scene__number=2)
     assert step.status == "finished"
     assert "couldn't check this clip, so it is kept unchecked" in step.result
-
-
-def test_a_shop_photo_the_picture_checks_filter_refuses_is_left_out_and_the_picture_checked(
-    api: APIClient,
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    steps: HeldSteps,
-    session_id: str,
-    say: Callable[..., None],
-) -> None:
-    fake_model.answer_unscripted(
-        "check_starting_picture",
-        refusing(lambda label: label == "The shop photo:", lambda _: PICTURE_OK),
-    )
-
-    step = picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE)
-
-    # Each ask is made again without the shop photo, and two passes settle it.
-    with_it = ["The picture to judge:", "The shop photo:"]
-    assert labels_shown("check_starting_picture") == [with_it, with_it[:1]] * 2
-    assert step.status == "finished"
-    ((level, said),) = refusals(api, session_id)
-    assert level == "problem"
-    assert "the shop photo" in said and "scene 2's starting picture was checked" in said
-    assert said in [warning["text"] for warning in Job.objects.get().warnings]
-
-
-def test_a_picture_the_checks_filter_refuses_to_look_at_is_kept_unchecked_and_the_chat_told(
-    api: APIClient,
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    steps: HeldSteps,
-    session_id: str,
-    say: Callable[..., None],
-) -> None:
-    fake_model.answer_unscripted(
-        "check_starting_picture",
-        refusing(lambda label: label == "The picture to judge:", lambda _: PICTURE_OK),
-    )
-
-    step = picture_of_scene_2(fake_model, steps, say, BROLL_CHOICE)
-
-    # Never asked without the picture it judges: every ask goes unchecked, which is no fail.
-    with_it = ["The picture to judge:", "The shop photo:"]
-    assert labels_shown("check_starting_picture") == [with_it, with_it[:1]] * 3
-    assert step.status == "finished"
-    ((level, said),) = refusals(api, session_id)
-    assert level == "problem" and "scene 2's starting picture" in said and "unchecked" in said
 
 
 def test_a_clip_the_filter_refuses_to_look_at_but_the_other_check_fails_isnt_said_to_be_kept(

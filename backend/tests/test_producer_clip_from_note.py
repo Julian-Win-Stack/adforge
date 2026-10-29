@@ -1,10 +1,10 @@
 """A B-roll scene's clip made again from a note (route B step 1, #132): when a clip's movement
-is wrong, only the clip is made again, from the same starting picture and the same audio,
-with its video prompt rewritten by a backend model from the note. Nothing else is made or
-paid for. Once the scene has a clip, the new clip is a fix plan's, said yes to and run by
-code, with the plan's change as the clip's note (fix redesign, decision 7). The scene's first
-clip is made through the chat; the producer's model and the scene models are faked at the
-gateway."""
+is wrong, only the clip is made again, from the same sent list and the same audio (a B-roll
+scene has no starting picture, spec #210 point 19), with its video prompt rewritten by a
+backend model from the note. Nothing else is made or paid for. Once the scene has a clip, the
+new clip is a fix plan's, said yes to and run by code, with the plan's change as the clip's
+note (fix redesign, decision 7). The scene's first clip is made through the chat; the
+producer's model and the scene models are faked at the gateway."""
 
 from collections.abc import Callable
 from typing import Any
@@ -23,13 +23,11 @@ from jobs.models import FixPlanScene, ProducedItem, Scene, SceneStep
 from jobs.scenes import (
     BROLL_KIND_RULES,
     BROLL_SHARED_RULES,
-    CLIP_FROM_NOTE_RULES,
     CLIP_FROM_REFERENCES_RULES,
-    SAME_SIDE,
 )
 
 from .conftest import (
-    JUDGED_CLIP,
+    SENT_LIST_JUDGED,
     HeldSteps,
     WorkerStopped,
     handoffs,
@@ -39,10 +37,7 @@ from .conftest import (
 from .fixing import fixed
 from .sent_lists import holding_the_fixture
 from .test_producer_broll import (
-    BROLL_CHOICE,
-    IMAGE_1,
     LINE_2,
-    MOTION,
     SHOWS,
     calling,
     checked,  # noqa: F401 (a fixture)
@@ -50,6 +45,7 @@ from .test_producer_broll import (
     clips_asked,
     instructed,  # noqa: F401 (a fixture)
     made_ready,
+    sent_prompt,
     unlabelled,  # noqa: F401 (a fixture)
 )
 
@@ -122,8 +118,7 @@ def test_the_rewrite_is_handed_the_old_prompts_the_scene_the_note_and_the_conver
         "person_shown": "no face",
         "usage": "",
         "result": "",
-        "picture_prompt": BROLL_CHOICE["prompt"],
-        "motion_prompt": MOTION,
+        "motion_prompt": sent_prompt(),
         "note": HOVERS,
     }
     said = [message["text"] for message in handoff["conversation"]]
@@ -158,41 +153,20 @@ def test_a_rewrite_of_a_clip_made_from_references_is_shown_the_pictures_it_was_s
     ]
 
 
-def test_the_rewrite_is_told_the_broll_rules_and_that_only_the_movement_changes(
-    fake_model: FakeModel,
-    clipped: None,
-    steps: HeldSteps,
-    instructed: dict[str, list[str]],  # noqa: F811
-) -> None:
-    clip_with_note(fake_model, steps, HOVERS, REWRITE)
-
-    assert instructed["rewrite_clip_prompt"] == [
-        f"{BROLL_SHARED_RULES}\n{BROLL_KIND_RULES['showcase']}\n{CLIP_FROM_NOTE_RULES}"
-    ]
-
-
 def test_the_new_prompt_is_sent_to_the_video_model_with_the_rules_code_adds(
     fake_model: FakeModel, clipped: None, steps: HeldSteps
 ) -> None:
     clip_with_note(fake_model, steps, HOVERS, REWRITE)
 
-    # Wrapped by code exactly as the first clip's prompt was: its length, the still camera and
-    # SAME_SIDE first, so the rewrite can't drop them.
-    assert clips_asked("prompt") == [
-        f"{IMAGE_1}A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} "
-        f"{MOTION}",
-        f"{IMAGE_1}A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} "
-        f"{NEW_MOTION}",
-    ]
-    # In reference mode, its starting picture as Image 1, as every B-roll clip.
-    picture = ProducedItem.objects.get(kind="starting_picture").file
-    assert clips_asked("example_pictures")[-1] == [picture]
+    # The rewrite is the whole prompt, sent with the first clip's pictures as they were.
+    assert clips_asked("prompt") == [sent_prompt(), NEW_MOTION]
+    first, again = clips_asked("example_pictures")
+    assert again == first
 
 
 def test_only_the_clip_is_made_again_and_paid_for(
     fake_model: FakeModel, clipped: None, steps: HeldSteps
 ) -> None:
-    picture_step = SceneStep.objects.get(kind="starting_picture", scene__number=2)
     first = ProducedItem.objects.get(kind="clip")
     paid = len(paid_for())
 
@@ -202,19 +176,17 @@ def test_only_the_clip_is_made_again_and_paid_for(
         "rewrite_clip_prompt",
         "make_broll_clip",
         "collect_broll_clip",
-        *JUDGED_CLIP,
+        *SENT_LIST_JUDGED,
     ]
     assert clips() == [(2, 1), (2, 2)]
     second = ProducedItem.objects.get(kind="clip", version=2)
-    assert (second.picture, second.made_from) == (first.picture, first.made_from)
+    assert (second.picture, second.made_from) == (None, first.made_from)
     step = second.step
     assert step is not None
-    assert (step.note, step.motion_prompt, step.picture_step) == (HOVERS, NEW_MOTION, picture_step)
-    # The first clip and the picture step are as they were.
+    assert (step.note, step.motion_prompt) == (HOVERS, NEW_MOTION)
+    # The first clip is as it was, and no picture was drawn.
     assert ProducedItem.objects.get(pk=first.pk).file == first.file
-    picture_step.refresh_from_db()
-    assert picture_step.motion_prompt == MOTION
-    assert ProducedItem.objects.filter(kind="starting_picture").count() == 1
+    assert not ProducedItem.objects.filter(kind="starting_picture").exists()
     assert ProducedItem.objects.filter(kind="line_audio").count() == 1
     assert Scene.objects.get(number=2).status == "finished"
 
@@ -265,9 +237,9 @@ def test_a_different_note_makes_a_new_clip(
         "The tea should pour from the left.",
     ]
     # Each rewrite improves the clip in the ad: the second starts from the first note's
-    # movement, not the picture's own prompt (#180).
+    # movement, not the first clip's (#180).
     assert [handoff["motion_prompt"] for handoff in handoffs("rewrite_clip_prompt")] == [
-        MOTION,
+        sent_prompt(),
         REWRITE["motion_prompt"],
     ]
 
@@ -297,9 +269,8 @@ def test_going_back_to_an_earlier_note_brings_its_clip_back_without_paying_again
         second.made_from,
         second.ruling,
     )
-    # Its picture is brought back with it, as the version's newest picture.
-    assert back.picture is not None and second.picture is not None
-    assert back.picture.file == second.picture.file
+    # It has no picture to bring back: a B-roll clip has none (spec #210 point 19).
+    assert back.picture is None
     assert work.versions(Scene.objects.get(number=2))[-1].label == "v4 back to v2"
     # The ad is assembled from the note's clip, not the last one made.
     assert _clip_and_transcript(Scene.objects.get(number=2))[0] == back
@@ -332,7 +303,7 @@ def test_no_note_after_a_clip_was_made_is_already_made_as_before(
 
     assert paid_for() == paid
     assert results_of("make_clip")[-1].startswith(
-        "Scene 2's clip was already made from this starting picture and audio (version 1), "
+        "Scene 2's clip was already made from this plan and audio (version 1), "
         "so nothing was made or paid for again."
     )
 
@@ -389,8 +360,7 @@ def test_a_scene_planned_before_its_broll_labels_with_a_note_is_refused(
     assert not SceneStep.objects.filter(kind="clip").exists()
     assert results_of("make_clip")[-1] == (
         "Refused: scene 2 was planned before scenes had their B-roll labels, so its movement "
-        "can't be rewritten from a note. Make its starting picture again with the note "
-        "instead. Nothing was done."
+        "can't be rewritten from a note. Its line can change instead. Nothing was done."
     )
 
 
@@ -436,7 +406,7 @@ def test_a_rewrite_answered_before_the_worker_stopped_isnt_paid_for_again(
     assert ModelCall.objects.filter(purpose="rewrite_clip_prompt").count() == 1
     assert paid_for().count("make_broll_clip") == 2
     assert SceneStep.objects.get(pk=step_id).status == "finished"
-    assert clips_asked("prompt")[-1].endswith(f"{SAME_SIDE} {NEW_MOTION}")
+    assert clips_asked("prompt")[-1] == NEW_MOTION
 
 
 # --- Pure logic -------------------------------------------------------------------------------

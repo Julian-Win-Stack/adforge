@@ -7,6 +7,7 @@ gateway, but the clips are real tiny videos and ffmpeg runs for real."""
 
 from collections.abc import Callable
 from decimal import Decimal
+from typing import Any
 
 import pytest
 from django.db.models.signals import post_save
@@ -27,10 +28,38 @@ from .test_producer_broll import (
     checked,  # noqa: F401 (a fixture)
     picture_of,
 )
-from .test_producer_broll_picture_check import FIXED_CHOICE, FUSED_HANDLE, impossible
 from .test_producer_restarts import WorkerStopped, the_worker_stops
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("checked")]
+
+
+# A judge's answer and fix, as the B-roll picture check gave them (its tests are gone: a
+# B-roll scene has no starting picture, spec #210 point 19).
+def impossible(problem: str) -> dict[str, Any]:
+    """The judge's answer for a picture with an object that can't exist."""
+    return {
+        "objects": [
+            {
+                "name": "mug",
+                "side_facing_camera": "the front",
+                "parts_seen": "a handle on each side, one fused into the rim",
+                "a_real_one_could_look_like_this": False,
+                "why": "A handle can't grow out of the rim.",
+            }
+        ],
+        "verdict": "fail",
+        "problem": problem,
+    }
+
+
+FUSED_HANDLE = "The mug's handle is fused into its rim; a real handle joins the side."
+
+# The prompts written again to fix it.
+FIXED_CHOICE: dict[str, Any] = {
+    **BROLL_CHOICE,
+    "prompt": "The mug upright on a workbench, its handle rising straight from its side.",
+}
+
 
 HIGHER = "Hold it higher."
 

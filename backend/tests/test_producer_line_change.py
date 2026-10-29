@@ -15,11 +15,10 @@ from gateway.catalog import MODEL_FOR_PURPOSE, transcription_cost_usd
 from gateway.fake import FakeModel
 from jobs.models import Fix, FixPlan, ProducedItem, Scene, SceneStep
 
-from .conftest import JUDGED_CLIP, HeldSteps, facts_ok, paid_for, producer_turns
+from .conftest import SENT_LIST_JUDGED, HeldSteps, facts_ok, paid_for, producer_turns
 from .fixing import fixed, plan_row, planned
 from .test_fix_loop import TURN_REWRITE, latest
 from .test_producer_broll import (
-    IMAGE_1,
     SHOWS,
     TALKING_CHOICE,
     checked,  # noqa: F401 (a fixture)
@@ -160,20 +159,19 @@ def test_a_broll_scenes_new_line_pays_for_its_steps_the_judge_and_no_before_pict
     new_line(2, LINE_2_NEW, NOTE_2)
     made_again(steps)
 
-    # The picture is kept; the new clip is judged as any B-roll clip is, and a new line isn't
-    # checked against the fix (#131).
+    # No picture is drawn; the new clip is made from the scene's sent list and judged as any
+    # B-roll clip is, and a new line isn't checked against the fix (#131, spec #210 point 19).
     assert paid_for()[paid:] == [
         "speak_line",
         "transcribe_line",
+        "write_first_send_prompt",
         "make_broll_clip",
         "collect_broll_clip",
-        *JUDGED_CLIP,
+        *SENT_LIST_JUDGED,
     ]
-    # The new clip is in reference mode, the starting picture it kept as Image 1.
     assert clips_asked("starting_picture")[-1] is None
-    assert clips_asked("example_pictures")[-1] == [latest("starting_picture", 2).file]
-    assert latest("starting_picture", 2).version == 1
-    assert clips_asked("prompt")[-1].startswith(IMAGE_1)
+    assert clips_asked("example_pictures")[-1] == clips_asked("example_pictures")[0]
+    assert not ProducedItem.objects.filter(kind="starting_picture", scene__number=2).exists()
 
 
 def test_a_new_broll_line_too_long_to_say_cant_be_made(
