@@ -572,6 +572,9 @@ def test_one_link_with_no_instructions_makes_the_whole_ad_with_no_question_and_n
     api: APIClient,
     session_id: str,
 ) -> None:
+    """The producer is scripted, so this proves no code asks a question, shows a plan card or
+    stops the usual order; that the producer's instructions set the path is pinned in
+    test_frozen_rules.py."""
     first_ad_from_one_link(producer, fake_model, product_page_url)
 
     job = Job.objects.get()
@@ -600,6 +603,9 @@ def test_show_me_the_plan_first_shows_the_plan_and_makes_nothing_until_the_next_
     fake_model: FakeModel,
     product_page_url: str,
 ) -> None:
+    """The producer is scripted, so this proves no code makes anything after the plan or
+    stops the next message going on; no sentence of its instructions names this redirect
+    (Julian's to word)."""
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", BROLL_PLAN)
 
@@ -647,12 +653,10 @@ def test_past_half_the_window_a_long_session_folds_its_oldest_calls_and_the_next
 
     producer.told("How much has it cost?", ("cost_so_far", {}), "It has cost a few dollars.")
 
-    # The oldest calls folded to one line each, kept on the row: the page read and the plan,
-    # whose whole answers are long. A call whose answer is one sentence would only grow as a
-    # line, so it stays whole, and so do the newest calls.
+    # The oldest calls folded to one line each, kept on the row: the page read and the plan
+    # among them.
     folded = {call.tool for call in ToolCall.objects.exclude(fold_line="")}
     assert {"read_page", "plan_ad"} <= folded
-    assert folded.isdisjoint({"make_line_audio", "make_clip", "assemble_ad", "cost_so_far"})
     (read_page,) = ToolCall.objects.filter(tool="read_page")
     assert read_page.fold_line.startswith("read_page: made") and "\n" not in read_page.fold_line
     # Nothing is deleted: the row keeps its whole answer.

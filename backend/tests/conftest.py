@@ -1175,9 +1175,15 @@ def checked(fake_model: FakeModel, planned: None, say: Callable[..., None]) -> N
 # call; a list of them is one turn making them all; a string is what it says to the shop
 # owner, a turn that calls nothing and so ends its work; a Turn, or a callable making one when
 # the turn is taken (to read what an earlier call handed back), is taken as it is, and may end
-# the script.
+# the script; so is an error the producer's model raises instead of taking the turn, as a test
+# of a stop on purpose (with expect_stop) ends a script.
 type ScriptStep = (
-    str | tuple[str, dict[str, Any]] | list[tuple[str, dict[str, Any]]] | Turn | Callable[[], Turn]
+    str
+    | tuple[str, dict[str, Any]]
+    | list[tuple[str, dict[str, Any]]]
+    | Turn
+    | Callable[[], Turn]
+    | BaseException
 )
 
 # What the scripted producer says when its script doesn't end with words of its own.
@@ -1186,10 +1192,10 @@ SCRIPTED_REPLY = "On it."
 
 def scripted_turns(
     *script: ScriptStep, reply: str = SCRIPTED_REPLY
-) -> list[Turn | Callable[[], Turn]]:
+) -> list[Turn | Callable[[], Turn] | BaseException]:
     """The producer's turns for `script`, ending with `reply` when the script ends on a tool
     call or a list of them."""
-    turns: list[Turn | Callable[[], Turn]] = []
+    turns: list[Turn | Callable[[], Turn] | BaseException] = []
     for step in script:
         if isinstance(step, str):
             turns.append(turn(says=step))
@@ -1207,8 +1213,10 @@ def scripted_turns(
 class ScriptedProducer:
     """The producer, faked and scripted per test: it makes exactly the tool calls a test
     gives it, so the test proves the tools, the notes and what the shop owner sees, not the
-    agent's judgment. Each script must be used up, and the producer must never have had to
-    stop, or the test fails there."""
+    agent's judgment. The producer's turns scripted for a message or a wake must all be taken
+    by it, and it must not have had to stop, unless the test said it expects that
+    (expect_stop), or the test fails there; every other model's script must be used up by the
+    test's end."""
 
     def __init__(
         self,
@@ -1223,23 +1231,26 @@ class ScriptedProducer:
         self.steps = steps
         self._api = api
         self.session_id = session_id
+        self._stop_expected = False
 
     def told(
         self, message: str, *script: ScriptStep, photos: Sequence[tuple[str, bytes]] = ()
     ) -> None:
         """The shop owner sends `message` (with `photos`, each (name, content)), and the
         producer takes `script` before it stops, its scene steps held for the worker."""
+        stops = self._stops()
         self.fake_model.respond("produce", *scripted_turns(*script))
         self._say(message, *photos)
-        self._all_used()
+        self._all_used(stops)
 
     def woken(self, *script: ScriptStep) -> None:
         """The worker runs the oldest step held, and the producer, woken by it finishing,
         takes `script`."""
         assert self.steps.held, "No scene step is waiting for the worker"
+        stops = self._stops()
         self.fake_model.respond("produce", *scripted_turns(*script))
         self.steps.run_next()
-        self._all_used()
+        self._all_used(stops)
 
     def steps_run(self, reply: str = "Done.") -> None:
         """The worker runs every step held, and every one they start, oldest first; each
@@ -1251,11 +1262,27 @@ class ScriptedProducer:
         """What the producer said in the chat, oldest first."""
         return [text for role, text in chat(self._api, self.session_id) if role == "agent"]
 
-    def _all_used(self) -> None:
+    def expect_stop(self) -> None:
+        """The next told or woken is to end with the producer having had to stop, as a test of
+        a stop on purpose wants: it fails if the producer didn't stop."""
+        self._stop_expected = True
+
+    def scripts_left(self) -> dict[str, int]:
+        """Every purpose with scripted outcomes left unused, and how many."""
+        return self.fake_model.scripts_left()
+
+    def _stops(self) -> list[str]:
+        return [text for text in self.said() if text.startswith("I had to stop")]
+
+    def _all_used(self, stops_before: list[str]) -> None:
         left = self.fake_model.left("produce")
         assert left == 0, f"{left} of the producer's scripted turns were never taken"
-        stopped = [text for text in self.said() if text.startswith("I had to stop")]
-        assert stopped == [], stopped
+        stopped = self._stops()[len(stops_before) :]
+        if self._stop_expected:
+            self._stop_expected = False
+            assert stopped, "The producer was expected to stop, and didn't"
+        else:
+            assert stopped == [], stopped
 
 
 @pytest.fixture
@@ -1265,10 +1292,13 @@ def producer(
     steps: HeldSteps,
     api: APIClient,
     session_id: str,
-) -> ScriptedProducer:
+) -> Iterator[ScriptedProducer]:
     """The producer, scripted by the test (see ScriptedProducer). Its scene steps are held
-    until the test runs them."""
-    return ScriptedProducer(fake_model, say, steps, api, session_id)
+    until the test runs them. At the test's end, every model's script must be used up: a
+    script left over claims a path that never ran."""
+    scripted = ScriptedProducer(fake_model, say, steps, api, session_id)
+    yield scripted
+    assert scripted.scripts_left() == {}, "Scripted but never used"
 
 
 # The finishing-step rule (Julian 10 Oct 02:59), pinned word for word for the planner and

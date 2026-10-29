@@ -186,6 +186,10 @@ class FakeModel:
         """How many scripted outcomes for `purpose` haven't been used yet."""
         return len(self._scripts[purpose])
 
+    def scripts_left(self) -> dict[str, int]:
+        """Every purpose with scripted outcomes not used yet, and how many."""
+        return {purpose: len(left) for purpose, left in self._scripts.items() if left}
+
     def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]:
         return self._output(request)
 
