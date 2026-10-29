@@ -1129,16 +1129,18 @@ class OwnerPhotoShows(BaseModel):
         description='The photo\'s number, as the chat gives it: "owner photo 3" is 3.'
     )
     shows: str = Field(
-        description="What it shows, from what the shop owner said of it, in a few words."
+        description="The one thing in it to keep, in a few words, from what the shop owner "
+        "said of it: the photo goes in as a clean picture of only that thing, drawn from it."
     )
 
 
 class AddToLibrary(Tool):
     """Add photos and videos the shop owner attached in the chat, once the ad is planned, to
     the ad's library, so a scene's references can name them like any other item: each photo
-    labelled, with its product-only version when it needs one; each video watched into
-    moments, its look frames added. Hands back each new item's number and label, and each
-    video's moments. Before the plan, their product photos go in with use_photos."""
+    as a clean picture of only the thing its `shows` names, drawn from it (never the photo as
+    sent), and labelled; each video watched into moments, its look frames added. Hands back
+    each new item's number and label, and each video's moments. Before the plan, their
+    product photos go in with use_photos."""
 
     name = "add_to_library"
 
@@ -1180,6 +1182,7 @@ class AddToLibrary(Tool):
                     videos=[],
                     shows=each.shows.strip(),
                     cleaned_of=each.shows.strip(),
+                    without_it="send a clearer photo of it",
                 ),
             )
             for each in self.photos
@@ -1189,7 +1192,12 @@ class AddToLibrary(Tool):
                 (
                     f"Owner video {number}: ",
                     owner_answers.into_the_library(
-                        job, photos=[], videos=[videos[number - 1].file], shows="", cleaned_of=""
+                        job,
+                        photos=[],
+                        videos=[videos[number - 1].file],
+                        shows="",
+                        cleaned_of="",
+                        without_it="",
                     ),
                 )
             )
