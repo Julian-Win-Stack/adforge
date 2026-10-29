@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from jobs.library import (
     LookFrame,
+    Made,
     OwnerPart,
     OwnerPhoto,
     PagePhoto,
@@ -125,6 +126,8 @@ def test_every_source_comes_back_as_it_went_in() -> None:
         (FRONT, OwnerPart(part="the handle's underside")),
         (FRONT, ProductOnly(of=2)),
         (black, Recoloured(of=1, colour="black")),
+        (FRONT, Made(references=[1, 3])),
+        (FRONT, Made(references=[])),
     ]
     for number, (label, source) in enumerate(sources, start=1):
         add_to_library(job, f"jobs/x/item-{number}.jpg", label, source)
@@ -139,11 +142,20 @@ def test_every_source_comes_back_as_it_went_in() -> None:
         ProductOnly(of=3),
         ProductOnly.model_construct(of=0),
         Recoloured(of=1, colour="black"),
+        Made(references=[1, 2]),
+        Made.model_construct(references=[0]),
     ],
-    ids=["of itself", "of a later item", "of no item", "recoloured to another colour"],
+    ids=[
+        "of itself",
+        "of a later item",
+        "of no item",
+        "recoloured to another colour",
+        "made from itself",
+        "made from no item",
+    ],
 )
 def test_a_version_of_another_item_must_name_an_earlier_item_and_its_own_colour(
-    source: ProductOnly | Recoloured,
+    source: ProductOnly | Recoloured | Made,
 ) -> None:
     job = a_job()
     add_to_library(job, "jobs/x/item-1.jpg", FRONT, PagePhoto(photo=1))

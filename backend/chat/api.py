@@ -10,7 +10,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from adforge import file_store
-from agents import page_panel
+from agents import page_panel, pause
 from agents.tasks import another_session_is_busy, hold_one_at_a_time_lock, wake_producer
 from gateway.gateway import IMAGE_TYPE_NAMES, IMAGE_TYPES
 from jobs import work
@@ -171,10 +171,16 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
 
 
 class SessionSerializer(serializers.ModelSerializer[Session]):
+    # Whether the shop owner's pause holds: until their next message (spec #247 point 14).
+    paused = serializers.SerializerMethodField()
+
     class Meta:
         model = Session
-        fields = ["id", "name", "created_at"]
+        fields = ["id", "name", "created_at", "paused"]
         read_only_fields = ["id", "created_at"]
+
+    def get_paused(self, session: Session) -> bool:
+        return session.paused_at is not None
 
 
 @api_view(["GET", "POST"])
@@ -348,6 +354,8 @@ def _send(session: Session, request: Request) -> Response:
             chosen_clip=chosen.pk if chosen is not None else None,
             pasted_page=pasted,
         )
+        # Whatever they sent, their message ends the pause: the producer reads it first.
+        pause.clear(session)
         # Only once the message is saved: a producer about to stop either finds it, or has
         # already stopped, and one is started here.
         wake_producer(str(session.pk))
@@ -360,6 +368,17 @@ def _send(session: Session, request: Request) -> Response:
         },
         status=status.HTTP_201_CREATED,
     )
+
+
+@api_view(["POST"])
+def pause_session(request: Request, session_id: str) -> Response:
+    """The pause button: stop the session's producer from starting anything new until the
+    shop owner writes. Steps waiting for the worker are cancelled, steps it took finish and
+    are kept, and the producer is told which (agents/pause.py). Pressing it again while paused
+    does nothing more."""
+    found = get_object_or_404(Session, pk=session_id)
+    pause.pause(found)
+    return Response({"paused": True})
 
 
 def _chosen_try(session: Session, clip: int) -> ProducedItem:
