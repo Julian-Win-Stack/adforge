@@ -974,15 +974,6 @@ def _runs(pictures: list[dict[str, str]]) -> list[tuple[bool, list[dict[str, str
     return runs
 
 
-def _opens(data: bytes) -> bool:
-    """Whether `data` is a whole picture, not one a stopped worker left half-saved."""
-    try:
-        PIL.Image.open(io.BytesIO(data)).load()
-    except OSError, PIL.Image.DecompressionBombError:
-        return False
-    return True
-
-
 # A frame's label, as `LookAtClip` gives it: the clip, then the time of each frame in it.
 _FRAME_LABEL = re.compile(
     r"^(?P<clip>.*), Frames? at (?P<times>\d+(?:\.\d+)? s(?:, \d+(?:\.\d+)? s)*)"
@@ -1007,7 +998,7 @@ def _joined_frames(frames: list[dict[str, str]]) -> dict[str, str]:
     key = file_store.save_once(
         f"decider_frames_{hashlib.sha256(chr(10).join(keys).encode()).hexdigest()[:32]}.jpg",
         lambda: clip_judge.joined([PIL.Image.open(io.BytesIO(file_store.read(k))) for k in keys]),
-        whole=_opens,
+        whole=file_store.whole_picture,
     )
     return {"label": f"{labels[0]['clip']}, {clip_judge.frame_label(times)}", "key": key}  # type: ignore[index]
 

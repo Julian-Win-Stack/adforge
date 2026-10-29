@@ -5,6 +5,7 @@ import io
 import json
 from collections.abc import Callable
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 import PIL.Image
@@ -20,9 +21,10 @@ from agents.models import ToolCall
 from chat import messages
 from chat.api import MAX_TEXT_CHARACTERS
 from chat.models import Attachment, Message, Session
-from chat.sent import CARD_PICTURE_SIDE, NOTHING_SENT
+from chat.sent import NOTHING_SENT
 from gateway.fake import FakeModel, turn
 from jobs import library
+from jobs.cards import CARD_PICTURE_SIDE, card_key
 from jobs.library import SentList
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 
@@ -612,3 +614,67 @@ def test_a_clip_made_before_its_sent_list_was_kept_carries_an_empty_one(
         "recolours": [],
         "prompt": "",
     }
+
+
+def test_a_half_saved_card_picture_is_made_again(
+    api: APIClient, start_session: Callable[..., str], send: Callable[..., Any], settings: Settings
+) -> None:
+    session_id = start_session()
+    send(session_id, "Make me an ad for my mug")
+    session = Session.objects.get(pk=session_id)
+    sent = sent_list_in_the_store()
+    # A worker stopped while saving the first picture's card left half of it.
+    whole = picture(400, 300, (143, 170, 140), "JPEG")
+    file_store.save(card_key(sent.pictures[0].file), whole[: len(whole) // 2])
+
+    clip = _a_clip(session, sent=sent)
+    messages.add(
+        session,
+        role=Message.Role.AGENT,
+        carrying=[messages.AttachedFile(Attachment.Kind.VIDEO, clip.file, 2, "v1", clip=clip)],
+    )
+
+    polled = api.get(f"/api/sessions/{session_id}/messages/?after=1").json()
+    shown = PIL.Image.open(
+        io.BytesIO(served(polled[0]["attachments"][0]["sent"]["pictures"][0]["url"], settings))
+    )
+    shown.load()
+    assert max(shown.size) <= CARD_PICTURE_SIDE
+
+
+def test_a_picture_that_cant_be_made_card_size_is_shown_whole_and_said_in_red(
+    api: APIClient, start_session: Callable[..., str], send: Callable[..., Any], settings: Settings
+) -> None:
+    session_id = start_session()
+    send(session_id, "Make me an ad for my mug")
+    session = Session.objects.get(pk=session_id)
+    sent = sent_list_in_the_store()
+    broken = sent.pictures[2].file
+    with (Path(settings.MEDIA_ROOT) / broken).open("wb") as kept:
+        kept.write(b"not a picture")
+
+    # Keeping the sent list doesn't fail the clip.
+    clip = _a_clip(session, sent=sent)
+    messages.add(
+        session,
+        role=Message.Role.AGENT,
+        carrying=[messages.AttachedFile(Attachment.Kind.VIDEO, clip.file, 2, "v1", clip=clip)],
+    )
+
+    polled = api.get(f"/api/sessions/{session_id}/messages/?after=1").json()
+    notice, shown_clip = polled
+    assert (notice["role"], notice["level"]) == ("notice", "problem")
+    assert notice["text"] == (
+        "Scene 2's clip was sent Image 3, but it couldn't be made small for the scene's card, "
+        "so the card shows it full size. The clip itself is not affected."
+    )
+    assert [warning["text"] for warning in Job.objects.get(pk=clip.job_id).warnings] == [
+        notice["text"]
+    ]
+    pictures = shown_clip["attachments"][0]["sent"]["pictures"]
+    # That picture links to itself; the others to their card-size copies.
+    assert served(pictures[2]["url"], settings) == b"not a picture"
+    assert (
+        max(PIL.Image.open(io.BytesIO(served(pictures[0]["url"], settings))).size)
+        <= CARD_PICTURE_SIDE
+    )
