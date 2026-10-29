@@ -185,6 +185,23 @@ test("a clip's card shows the pictures it was sent, small with their labels in s
   expect(problem.textContent).toContain("red");
 });
 
+test("a sent picture tapped shows its label under the pictures, for cards too narrow for labels", async () => {
+  showPanel([said([sentClip(1, sentListFixture())])]);
+  const card = screen.getByRole("article", { name: "Scene 1" });
+  const second = within(card).getByRole("button", {
+    name: "Image 2: A hand squeezing the press over a bowl.",
+  });
+
+  await userEvent.click(second);
+  expect(second.getAttribute("aria-pressed")).toBe("true");
+  expect(card.querySelector(".scene-sent-chosen")?.textContent).toBe(
+    "Image 2: A hand squeezing the press over a bowl.",
+  );
+
+  await userEvent.click(second);
+  expect(card.querySelector(".scene-sent-chosen")).toBeNull();
+});
+
 test("a clip sent everything as planned, with no video piece, has no red line and no pieces", () => {
   const fixture = sentListFixture();
   const plain = { ...fixture, pieces: [], left_out: [], recolours: [fixture.recolours[0]] };

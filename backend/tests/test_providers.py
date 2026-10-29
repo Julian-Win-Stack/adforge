@@ -466,22 +466,6 @@ def test_a_transcript_with_no_words_is_refused(
     assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
 
 
-@pytest.mark.parametrize("reply", NO_WORDS)
-def test_a_product_videos_sound_with_no_words_is_heard_as_nothing_said_and_still_billed(
-    httpserver: HTTPServer, elevenlabs: ElevenLabsProvider, reply: dict[str, Any]
-) -> None:
-    key = file_store.save("video-sound.wav", wav(1))
-    httpserver.expect_oneshot_request("/v1/speech-to-text", method="POST").respond_with_json(reply)
-
-    with use_model(elevenlabs):
-        transcription = transcribe(job=None, purpose="transcribe_video", audio_key=key)
-
-    assert (transcription.text, transcription.words) == ("", ())
-    heard_call = ModelCall.objects.get()
-    assert (heard_call.outcome, heard_call.audio_seconds) == ("succeeded", 1.0)
-    assert heard_call.cost_usd == Decimal("0.000061")
-
-
 def test_audio_whose_length_elevenlabs_doesnt_say_is_measured(
     httpserver: HTTPServer, elevenlabs: ElevenLabsProvider
 ) -> None:

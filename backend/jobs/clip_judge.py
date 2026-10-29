@@ -37,7 +37,6 @@ from pydantic import BaseModel, Field
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
-from chat.models import Message
 from gateway import catalog
 from gateway.gateway import call_model, past_the_safety_filter
 from gateway.types import (
@@ -50,7 +49,7 @@ from gateway.types import (
 
 from . import assembly
 from .models import AgentFix, AgentFixTry, Fix, ProducedItem, SceneStep
-from .notices import left_out_by_the_filter, post_notice, refused_by_the_filter
+from .notices import post_left_out_by_the_filter, post_refused_by_the_filter
 from .planning import ChatMessage
 from .scenes import photos_for_needs
 from .threads import closing_its_connection
@@ -607,20 +606,12 @@ def _say_what_the_filter_refused(step: SceneStep, answered: list[_Answered]) -> 
     job, number = step.scene.job, step.scene.number
     left = list(dict.fromkeys(name for each in answered for name in each.not_shown))
     if left:
-        post_notice(
-            job,
-            left_out_by_the_filter(left, f"scene {number}'s clip was judged"),
-            Message.Level.PROBLEM,
-        )
+        post_left_out_by_the_filter(job, left, f"scene {number}'s clip was judged")
     if any(each.refused for each in answered):
-        post_notice(
+        post_refused_by_the_filter(
             job,
-            refused_by_the_filter(
-                f"scene {number}'s clip",
-                "the clip judge couldn't check all of it and it is kept as it is: check it "
-                "yourself",
-            ),
-            Message.Level.PROBLEM,
+            f"scene {number}'s clip",
+            "the clip judge couldn't check all of it and it is kept as it is: check it yourself",
         )
 
 

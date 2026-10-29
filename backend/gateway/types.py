@@ -367,8 +367,9 @@ MOST_EXAMPLE_PICTURES = 5
 LEAST_PIECE_SECONDS = 2
 MOST_PIECE_SECONDS = 15
 # Why a piece holds fewer seconds than its moment: the moment ran past MOST_PIECE_SECONDS and
-# was cut to its first seconds, or the pieces ran past it together and the last was cut to fit.
-PieceTrim = Literal["moment_over_limit", "pieces_over_limit"]
+# was cut to its first seconds, the pieces ran past it together and the last was cut to fit,
+# or the moment ran past its video's end and was cut there.
+PieceTrim = Literal["moment_over_limit", "pieces_over_limit", "video_ended"]
 
 
 class ReferenceVideo(Handoff):

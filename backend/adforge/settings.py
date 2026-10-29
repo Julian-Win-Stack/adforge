@@ -199,6 +199,9 @@ GEMINI_THINKING_LEVEL = "HIGH"
 # sound, looked at this many frames a second (spec #210 point 3, as in the watcher test).
 WATCH_VIDEO_SHORT_SIDE = 480
 WATCH_VIDEO_FRAMES_PER_SECOND = 1.0
+# A page video longer than this many seconds is not watched, and the owner is told which
+# (requirement 23, Julian Oct 27 2026 04:28: "ok. 3 min"). Length is the only cut: no byte cap.
+WATCH_VIDEO_MOST_SECONDS = 180
 
 # Langfuse, where every agent turn, tool call and model call is sent to be looked at as a
 # tree. Tracing is off unless both keys are set.
