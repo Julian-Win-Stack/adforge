@@ -140,8 +140,14 @@ def clean_picture_prompt(thing: str) -> str:
     photo. It always says never to copy a face, whoever is in the photo (Julian 17:45-17:46;
     a hand may stay where it holds the thing), and never to draw a side the photo doesn't
     show (locked rule 3; design thread 22:27)."""
+    return clean_photo_of(f"the {thing}")
+
+
+def clean_photo_of(what: str) -> str:
+    """The picture model's prompt for a cut-out of only `what` ("the black mug") from the
+    photo it is given, as the clean picture of an owner's thing is drawn."""
     return (
-        f"A clean photo of only the {thing} in this photo, exactly as it looks: the same "
+        f"A clean photo of only {what} in this photo, exactly as it looks: the same "
         "shape, colours, materials, print and every part. Nothing else from the photo: no "
         "other object and no background. Never copy any person's face. Seen from the side "
         "the photo shows it from, never from a side the photo doesn't show, on a plain light "

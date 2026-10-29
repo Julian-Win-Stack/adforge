@@ -1125,6 +1125,7 @@ def _told_in_trace(system_prompt: SystemPrompt | None) -> dict[str, Any]:
 # answer. A verdict an answer doesn't hold, as a fix's question on any other clip, is no score.
 VERDICT_SCORES: dict[str, dict[str, tuple[str, ...]]] = {
     "check_starting_picture": {"starting_picture_real": ()},
+    "check_cut_out": {"cut_out_alone_and_unchanged": ()},
     "check_fix": {"fix_made": ()},
     "check_clip_sides": {"clip_sides_real": ()},
     "check_clip_product": {"clip_matches_product": ()},

@@ -69,6 +69,7 @@ from . import (
     assembly,
     auto_fix,
     clip_judge,
+    cut_out,
     firecrawl,
     fix_check,
     library,
@@ -2212,11 +2213,11 @@ def clean_picture(scene: Scene, row: ReferencePhoto) -> str:
 def _clean_picture(scene: Scene, row: ReferencePhoto) -> str:
     """The clean picture of only `row`'s thing, drawn from the shop owner's photo (Julian
     2026-10-15 17:43) once per ad, by whichever step needs it first, and kept on every scene's
-    row of the same photo and thing. It is checked as a starting picture is, beside the photo,
-    and drawn again when the check fails, at most MOST_REDRAWS times (D8). Gives its key in the
-    file store. Raises ReferencePhotoUnusable when it still fails, or the picture model
-    refuses the photo: nothing more is made for the scene, and the shop owner is asked for
-    another photo.
+    row of the same photo and thing. It is a cut-out (jobs.cut_out), checked beside the photo
+    by `_owner_photo_check`, and drawn again when the check fails, at most MOST_REDRAWS times
+    (D8). Gives its key in the file store. Raises ReferencePhotoUnusable when it still fails,
+    or the picture model refuses the photo past its retry: nothing more is made for the
+    scene, and the shop owner is asked for another photo.
 
     Run again, as after a worker stopped, it pays for nothing already paid for: each picture
     drawn is reused in turn, and each check answered from its record."""
@@ -2229,59 +2230,60 @@ def _clean_picture(scene: Scene, row: ReferencePhoto) -> str:
         if drawn:
             row.drawn = drawn
             return drawn
-        prompt = reference_photos.clean_picture_prompt(row.thing)
-        paid = [
-            str(call.output["file"])
-            for call in _paid_calls(job, "make_reference_photo_picture").filter(
-                handoff={"prompt": prompt, "pictures": [row.file]}
+        try:
+            file = cut_out.redraw_with_check(
+                job,
+                purpose="make_reference_photo_picture",
+                prompt=reference_photos.clean_picture_prompt(row.thing),
+                photo=row.file,
+                check=_owner_photo_check(job, row),
+                unchecked_passes=True,
             )
-            if call.output is not None
-        ]
-        failed: list[list[str]] = []
-        for tries in range(MOST_REDRAWS + 1):
-            try:
-                file = (
-                    paid[tries]
-                    if tries < len(paid)
-                    else edit_picture(
-                        job=job,
-                        purpose="make_reference_photo_picture",
-                        prompt=prompt,
-                        pictures=[row.file],
-                    )
-                )
-            except BlockedBySafetyFilter as error:
+        except cut_out.CutOutFailed as failed:
+            if failed.refused is not None:
                 raise ReferencePhotoUnusable(
                     f"the picture model refused to draw the {row.thing} from the shop owner's "
-                    f"photo ({error}), so nothing more was made for scene {scene.number}. "
-                    f"Ask them for another photo of the {row.thing}.",
+                    f"photo ({failed.refused}), so nothing more was made for scene "
+                    f"{scene.number}. Ask them for another photo of the {row.thing}.",
                     thing=row.thing,
-                ) from error
-            problems = (
-                judge_starting_picture(
-                    job,
-                    file,
-                    row.file,
-                    about=f"the shop owner's {row.thing}",
-                    named=f"the clean picture of the shop owner's {row.thing}",
-                    photo_named=f"the shop owner's photo of their {row.thing}",
-                )
-                if settings.QUALITY_CHECKS
-                else []
-            )
-            if not problems:
-                same.update(drawn=file)
-                row.drawn = file
-                return file
-            failed.append(problems)
-        found = " ".join(problems[0] for problems in failed)
-        raise ReferencePhotoUnusable(
-            f"the clean copy of the {row.thing} drawn from the shop owner's photo failed its "
-            f"check all {len(failed)} times it was drawn ({found}), so nothing more was made "
-            f"for scene {scene.number}. Ask them for another photo of the {row.thing}, "
-            "showing it clearly.",
-            thing=row.thing,
+                ) from failed
+            raise ReferencePhotoUnusable(
+                f"the clean copy of the {row.thing} drawn from the shop owner's photo failed "
+                f"its check all {len(failed.problems)} times it was drawn "
+                f"({' '.join(failed.problems)}), so nothing more was made for scene "
+                f"{scene.number}. Ask them for another photo of the {row.thing}, showing it "
+                "clearly.",
+                thing=row.thing,
+            ) from failed
+        same.update(drawn=file)
+        row.drawn = file
+        return file
+
+
+def _owner_photo_check(job: Job, row: ReferencePhoto) -> cut_out.Check:
+    """How the clean picture of `row`'s thing is checked: by the cut-out check, asked once,
+    as the product-only versions of library photos are (spec #210 point 6). NOT APPROVED YET
+    (audit item 24: never asked; before, it was the starting picture's 3-ask vote, which
+    `judge_starting_picture` still holds). Unchecked when QUALITY_CHECKS is off. A cut-out the
+    check's filter refuses to look at is kept unchecked, said in red."""
+    named = f"the clean picture of the shop owner's {row.thing}"
+
+    def check(file: str) -> cut_out.Said:
+        if not settings.QUALITY_CHECKS:
+            return None
+        said = cut_out.check_cut_out(
+            job,
+            file,
+            row.file,
+            keep=f"the shop owner's {row.thing}",
+            photo_named=f"the shop owner's photo of their {row.thing}",
+            needs_photo=False,
         )
+        if isinstance(said, cut_out.Unchecked) and said.refused:
+            post_refused_by_the_filter(job, named, "it is kept unchecked: check it yourself")
+        return said
+
+    return check
 
 
 def _during_the_clip(step: SceneStep) -> list[ReferencePhoto]:
