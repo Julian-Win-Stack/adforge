@@ -1,4 +1,4 @@
-"""A new starting picture for a finished scene un-finishes it: the ad can't be assembled
+"""A new starting picture for a finished talking scene un-finishes it: the ad can't be assembled
 again until the scene's clip is made from the new picture, so an ad never quietly reuses a
 clip of the old one (#133). The new picture is the producer's, made with a note, then its
 clip. The ad is first made through the chat; the producer's model and the scene models are
@@ -6,7 +6,6 @@ faked at the gateway, but the clips are real tiny videos and ffmpeg runs for rea
 
 from collections.abc import Callable
 from decimal import Decimal
-from typing import Any
 
 import pytest
 
@@ -15,7 +14,6 @@ from jobs.models import Job, ProducedItem, Scene, SceneStep
 
 from .conftest import HeldSteps, results_of
 from .test_producer_broll import (
-    BROLL_CHOICE,
     TALKING_CHOICE,
     assemble_through_the_chat,
     calling,
@@ -25,34 +23,6 @@ from .test_producer_broll import (
 )
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("checked")]
-
-
-# A judge's answer and fix, as the B-roll picture check gave them (its tests are gone: a
-# B-roll scene has no starting picture, spec #210 point 19).
-def impossible(problem: str) -> dict[str, Any]:
-    """The judge's answer for a picture with an object that can't exist."""
-    return {
-        "objects": [
-            {
-                "name": "mug",
-                "side_facing_camera": "the front",
-                "parts_seen": "a handle on each side, one fused into the rim",
-                "a_real_one_could_look_like_this": False,
-                "why": "A handle can't grow out of the rim.",
-            }
-        ],
-        "verdict": "fail",
-        "problem": problem,
-    }
-
-
-FUSED_HANDLE = "The mug's handle is fused into its rim; a real handle joins the side."
-
-# The prompts written again to fix it.
-FIXED_CHOICE: dict[str, Any] = {
-    **BROLL_CHOICE,
-    "prompt": "The mug upright on a workbench, its handle rising straight from its side.",
-}
 
 
 HIGHER = "Hold it higher."

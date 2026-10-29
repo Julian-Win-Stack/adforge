@@ -5,7 +5,6 @@ acts on: pass or fail, how many of its answers failed, and each failed answer's 
 everything it saw."""
 
 import json
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -15,18 +14,31 @@ from adforge import file_store
 from gateway import catalog
 from jobs import clip_judge, fix_check
 from jobs.auto_fix import judge_saw
-from jobs.clip_judge import SIDES_CHECK, SidesVerdict, judged, still_failing, wording_version
+from jobs.clip_judge import judged, still_failing, wording_version
 from jobs.library import SentList
 
 from .sent_lists import FIXTURE, piece
 
-PINNED = Path(__file__).parent / "fixtures"
-
 SEEN = [{"time": 0.0, "seen": "broad_face", "face": "front", "parts": "", "thin_edge_side": "none"}]
 
 
+def product(verdict: str = "pass", fault: str | None = None) -> dict[str, Any]:
+    """A PRODUCT answer."""
+    return {
+        "product_from_references": "A garlic press with two handles.",
+        "frames": [],
+        "verdict": verdict,
+        "compared_against": "Image 1" if fault else None,
+        "clip_shows": None,
+        "real_product_shows": None,
+        "fault_frame_times": [],
+        "fault": fault,
+        "references_never_show": "its open chamber" if verdict == "unsure" else None,
+    }
+
+
 def sides(problem: str | None = None, back: str | None = None) -> dict[str, Any]:
-    """A SIDES answer: failing with `problem` when one is given."""
+    """A SIDES answer, as a ruling made before the SIDES check went (#241) holds it."""
     return {
         "frames": SEEN,
         "turns": [],
@@ -60,12 +72,12 @@ FLOATS = "The teapot rises at 1.2 s with no hand on it; a real one stays put."
 FILLS = "The mug fills at 0.8 s before the pour reaches it; a real one fills as tea lands."
 
 
-def test_a_failing_sides_answer_fails_the_clip() -> None:
-    ruling = judged([sides(HANDLE)], [motion()])
+def test_a_failing_product_answer_fails_the_clip() -> None:
+    ruling = judged([product("fail", HANDLE)], [motion()])
 
     assert ruling["verdict"] == "fail"
     assert ruling["checks"] == {
-        "sides": "fail",
+        "product": "fail",
         "real_motion": "pass",
         "sudden_change": "pass",
         "does_what_was_ordered": "pass",
@@ -75,11 +87,11 @@ def test_a_failing_sides_answer_fails_the_clip() -> None:
 
 
 def test_each_motion_question_is_settled_by_itself() -> None:
-    ruling = judged([sides()], [motion(sudden_change=FILLS)])
+    ruling = judged([product()], [motion(sudden_change=FILLS)])
 
     assert ruling["verdict"] == "fail"
     assert ruling["checks"] == {
-        "sides": "pass",
+        "product": "pass",
         "real_motion": "pass",
         "sudden_change": "fail",
         "does_what_was_ordered": "pass",
@@ -88,7 +100,7 @@ def test_each_motion_question_is_settled_by_itself() -> None:
 
 
 def test_passing_answers_pass_the_clip() -> None:
-    ruling = judged([sides()], [motion()])
+    ruling = judged([product()], [motion()])
 
     assert ruling["verdict"] == "pass"
     assert (ruling["failed_answers"], ruling["failures"]) == (0, [])
@@ -96,45 +108,38 @@ def test_passing_answers_pass_the_clip() -> None:
 
 def test_each_failed_answer_gives_its_problems_and_everything_it_saw() -> None:
     both = motion(real_motion=FLOATS, sudden_change=FILLS)
-    ruling = judged([sides(HANDLE)], [both])
+    ruling = judged([product("fail", HANDLE)], [both])
 
     assert ruling["verdict"] == "fail"
     assert ruling["failed_answers"] == 2
     assert ruling["failures"] == [
-        {"check": "sides", "ask": 1, "problems": [HANDLE], "answer": sides(HANDLE)},
+        {"check": "product", "ask": 1, "problems": [HANDLE], "answer": product("fail", HANDLE)},
         {"check": "motion", "ask": 1, "problems": [FLOATS, FILLS], "answer": both},
     ]
     assert still_failing(ruling) == [HANDLE, FLOATS, FILLS]
 
 
 def test_every_answer_is_kept() -> None:
-    answers = ([sides(HANDLE)], [None])
+    answers = ([product("fail", HANDLE)], [None])
 
-    assert judged(*answers)["answers"] == {"sides": answers[0], "motion": answers[1]}
+    assert judged(*answers)["answers"] == {"product": answers[0], "motion": answers[1]}
 
 
 def test_a_thing_back_to_normal_soon_still_fails_the_check() -> None:
     # The half-second forgive rule is gone (Julian 2026-10-19 03:37): every failing answer
     # counts, however soon its thing is back to normal.
     blink = "The ring at the rim vanishes at 8.0 s; a real one stays."
-    ruling = judged([sides()], [motion(sudden_change=(blink, "8.1"))])
+    ruling = judged([product()], [motion(sudden_change=(blink, "8.1"))])
 
     assert ruling["verdict"] == "fail"
     assert still_failing(ruling) == [blink]
-
-
-def test_a_sides_problem_back_to_normal_soon_still_fails_the_check() -> None:
-    blink = "A logo appears on the case's back at 3 s and is gone by the next frame."
-    ruling = judged([sides(blink, "3.1 s")], [motion()])
-
-    assert ruling["checks"]["sides"] == "fail"
 
 
 def test_a_check_with_no_usable_answer_is_not_checked() -> None:
     ruling = judged([None], [motion()])
 
     assert ruling["verdict"] == "not_checked"
-    assert ruling["checks"]["sides"] == "not_checked"
+    assert ruling["checks"]["product"] == "not_checked"
     assert ruling["checks"]["real_motion"] == "pass"
 
 
@@ -142,7 +147,7 @@ def test_a_failed_check_fails_the_clip_even_when_another_went_unchecked() -> Non
     ruling = judged([None], [motion(real_motion=FLOATS)])
 
     assert ruling["verdict"] == "fail"
-    assert ruling["checks"]["sides"] == "not_checked"
+    assert ruling["checks"]["product"] == "not_checked"
 
 
 def test_the_judge_asks_each_check_once_with_no_vote_call() -> None:
@@ -153,15 +158,17 @@ def test_the_judge_asks_each_check_once_with_no_vote_call() -> None:
 @pytest.mark.parametrize(
     "told",
     [
-        "MOTION_CHECK",
-        "SIDES_CHECK",
-        "PAGE_FRAME",
-        "CONVERSATION_FRAME",
+        "REFERENCES_QUESTION",
+        "PRODUCT_CHECK",
+        "MOTION_FROM_REFERENCES",
+        "BEHAVIOUR_FRAME",
+        "SENT_PICTURE_LABEL",
+        "SENT_PIECE_LABEL",
+        "SENT_PIECE_FRAME_LABEL",
         "FRAMES_LABEL",
-        "SHOP_PHOTO_LABEL",
-        "NEEDS_PHOTO_LABEL",
-        "SIDES_FRAMES_PER_SECOND",
+        "PRODUCT_FRAMES_PER_SECOND",
         "FRAMES_PER_SECOND",
+        "PIECE_FRAMES_SHOWN",
     ],
 )
 def test_the_wording_version_changes_whenever_what_the_judge_is_told_does(
@@ -177,10 +184,11 @@ def test_the_wording_version_changes_whenever_what_the_judge_is_told_does(
 @pytest.mark.parametrize(
     "form",
     [
-        "SidesVerdict",
+        "ProductVerdict",
         "MotionVerdict",
-        "ClipCheckHandoff",
-        "MotionCheckHandoff",
+        "ReferencesVerdict",
+        "SentClipCheckHandoff",
+        "SentMotionCheckHandoff",
     ],
 )
 def test_the_wording_version_changes_whenever_an_answer_form_or_handoff_does(
@@ -226,26 +234,6 @@ def test_still_failing_leaves_out_what_a_ruling_from_the_vote_outvoted() -> None
     assert still_failing(ruling) == [FLOATS]
 
 
-# ---------------------------------------------------------------- the SIDES check as tested
-
-
-# The phone-flip SIDES check (harness arm F1, evals/clip-judge-v2 prompts.py SIDES_FLIP, tested
-# on all 110 graded clips 2026-10-13: 3 of 3 flips caught, 0 wrong fails; Julian's yes to ship
-# 2026-10-14 18:30). The judge's words and its answer form are Julian's: both are pinned whole,
-# so any change to either fails here until he says so and the pinned copy changes with it.
-def test_the_sides_check_is_the_phone_flip_wording_as_tested_word_for_word() -> None:
-    assert SIDES_CHECK == (PINNED / "clip_judge_sides_check.txt").read_text()
-
-
-def test_the_sides_answer_form_is_the_one_tested_field_for_field() -> None:
-    # The per-frame and turn fields stay: filling them is what makes the judge decide the
-    # direction before it looks at the face that comes back. No code reads them (Julian,
-    # 2026-10-14). The schema is what the model is handed, descriptions and choices included.
-    pinned = json.loads((PINNED / "clip_judge_sides_verdict_schema.json").read_text())
-
-    assert SidesVerdict.model_json_schema() == pinned
-
-
 # --- A fix's clip: the question about the owner's change (Julian 2026-10-14) -----------------
 
 NOT_MADE = {
@@ -259,11 +247,11 @@ NOT_MADE = {
 def test_the_answer_about_the_owners_change_never_counts_in_the_ruling() -> None:
     asked = [{**motion(real_motion=FLOATS), "owner_change": NOT_MADE}]
 
-    ruling = judged([sides()], asked)
+    ruling = judged([product()], asked)
 
     # Only the clip's own faults: the change not made is no fault of the clip.
     assert ruling["checks"] == {
-        "sides": "pass",
+        "product": "pass",
         "real_motion": "fail",
         "sudden_change": "pass",
         "does_what_was_ordered": "pass",
@@ -276,7 +264,7 @@ def test_the_answer_about_the_owners_change_never_counts_in_the_ruling() -> None
 
 
 def test_a_change_not_made_alone_passes_the_clip() -> None:
-    ruling = judged([sides()], [{**motion(), "owner_change": NOT_MADE}])
+    ruling = judged([product()], [{**motion(), "owner_change": NOT_MADE}])
 
     assert (ruling["verdict"], ruling["failures"]) == ("pass", [])
 
@@ -309,7 +297,7 @@ def test_a_change_not_made_that_doesnt_say_why_goes_unchecked_and_the_clips_chec
     blank = {**NOT_MADE, "still_wrong": " "}
     # The form takes it, so the clip's own MOTION answers aren't lost with it (review F1).
     clip_judge.MotionFixVerdict.model_validate({**motion(), "owner_change": blank})
-    ruling = judged([sides()], [{**motion(real_motion=FLOATS), "owner_change": blank}])
+    ruling = judged([product()], [{**motion(real_motion=FLOATS), "owner_change": blank}])
 
     assert ruling["checks"]["real_motion"] == "fail"
     assert clip_judge.owner_change_answers(ruling) == [None]
@@ -378,23 +366,8 @@ def test_a_piece_asked_for_again_gives_the_same_frames() -> None:
 # ---------------------------------------------------------------- a clip with its sent list (#228)
 
 
-def product(verdict: str = "pass", fault: str | None = None) -> dict[str, Any]:
-    """A PRODUCT answer."""
-    return {
-        "product_from_references": "A garlic press with two handles.",
-        "frames": [],
-        "verdict": verdict,
-        "compared_against": "Image 1" if fault else None,
-        "clip_shows": None,
-        "real_product_shows": None,
-        "fault_frame_times": [],
-        "fault": fault,
-        "references_never_show": "its open chamber" if verdict == "unsure" else None,
-    }
-
-
 def test_a_product_check_unsure_with_nothing_failing_makes_the_clip_unsure() -> None:
-    ruling = judged([product("unsure")], [motion()], first_check="product")
+    ruling = judged([product("unsure")], [motion()])
 
     assert ruling["verdict"] == "unsure"
     assert ruling["checks"]["product"] == "unsure"
@@ -403,7 +376,7 @@ def test_a_product_check_unsure_with_nothing_failing_makes_the_clip_unsure() -> 
 
 def test_a_fail_beats_an_unsure_and_its_fault_is_the_problem() -> None:
     wrong = "A second handle on the back at 2.1 s."
-    ruling = judged([product("fail", wrong)], [motion()], first_check="product")
+    ruling = judged([product("fail", wrong)], [motion()])
 
     assert ruling["verdict"] == "fail"
     assert ruling["failures"][0]["check"] == "product"
@@ -413,12 +386,12 @@ def test_a_fail_beats_an_unsure_and_its_fault_is_the_problem() -> None:
 
 def test_an_ask_answered_without_refused_frames_is_unsure_unless_it_fails() -> None:
     blind = [("motion", 1)]
-    ruling = judged([product()], [motion()], first_check="product", blind=blind)
+    ruling = judged([product()], [motion()], blind=blind)
 
     assert ruling["verdict"] == "unsure"
     assert ruling["checks"]["real_motion"] == "unsure"
     assert ruling["checks"]["product"] == "pass"
-    failed = judged([product()], [motion(real_motion=FLOATS)], first_check="product", blind=blind)
+    failed = judged([product()], [motion(real_motion=FLOATS)], blind=blind)
     assert failed["checks"]["real_motion"] == "fail"
     assert failed["checks"]["sudden_change"] == "unsure"
 
@@ -467,17 +440,3 @@ def test_the_prompt_names_each_picture_by_its_first_sentence_naming_it() -> None
         "Image 2": "Image 2 is a hand on it.",
         "Video 1": "Video 1 is only for the movement.",
     }
-
-
-@pytest.mark.parametrize(
-    "told",
-    ["REFERENCES_QUESTION", "PRODUCT_CHECK", "MOTION_FROM_REFERENCES", "BEHAVIOUR_FRAME"],
-)
-def test_the_sent_wording_version_changes_whenever_what_the_judge_is_told_does(
-    told: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    before = wording_version(sent=True)
-    monkeypatch.setattr(clip_judge, told, getattr(clip_judge, told) + " Changed.")
-
-    assert wording_version(sent=True) != before
-    assert wording_version(sent=True) != wording_version()

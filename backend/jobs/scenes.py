@@ -52,36 +52,6 @@ Use the conversation with the shop owner for their wishes about how the ad looks
 about the product come only from what you are shown.
 Give a one-sentence reason for the photo and one for the prompt, written for the shop owner."""
 
-BROLL_PICTURE_INSTRUCTIONS = f"""\
-You plan the starting picture for one scene of a short vertical video ad. The scene doesn't \
-show the person talking to camera: it shows what the scene's "shows" describes, while the \
-person's voice says the scene's line over it. The picture is made by a picture model from \
-two pictures: the portrait first, then one product photo. A video model then animates it, \
-with no sound, so it is the scene's first frame.
-You are shown the portrait and the product photos you may pick from, each labelled with \
-its number. {COLOUR_PICK}
-Pick the photo whose view of the product suits what the scene shows best. {SEVERAL_ITEMS}
-Then write the \
-picture model's prompt: the product from the second picture, exactly as it looks, with any \
-label or print unchanged; the scene as "shows" describes it and nothing more; the setting \
-and light of the portrait's; the person from the first picture only if "shows" needs them, \
-and then the same person, with the same face, hair and clothes; upright 9:16, with the \
-product in the middle so the top and bottom of the frame stay clear: text is drawn there \
-in the finished ad. Ask for no added text, captions or logos.
-Then write the video model's motion prompt: what moves in the scene, and how, in one or two \
-short sentences.
-Make nothing up, in either prompt. Show only what "shows" describes: no result, use, \
-feature, texture, colour or amount it doesn't state, nothing that makes the product look \
-bigger, better or more effective than described, and no part of the product the photos \
-don't show.
-The producer may add a note, such as what the shop owner asked for this scene. Follow it \
-unless it asks for something you can't do with these pictures, or something "shows" \
-doesn't describe, and then say so in a reason.
-Use the conversation with the shop owner for their wishes about how the ad looks. Facts \
-about the product come only from what you are shown.
-Give a one-sentence reason for the photo, one for the prompt and one for the motion prompt, \
-written for the shop owner."""
-
 # What the model writing a B-roll scene's prompts is told: the shared rules, then only the
 # rules of the scene's kind, so a rule for one kind can't be used on another
 # (docs/broll-picture-logic.md, "Two kinds of scene" and "Prompt rules").
@@ -213,12 +183,10 @@ def broll_prompt_instructions(broll_kind: str) -> str:
     return f"{BROLL_SHARED_RULES}\n{BROLL_KIND_RULES[broll_kind]}"
 
 
-# Added to what the model writing a B-roll scene's prompts is told when only its clip is made
-# again, from a note: the starting picture stays, so only the video prompt is written again
-# (route B step 1, #132). The proven rules above come with it, unchanged, but a note naming the
-# movement to film wins over the one-movement rule here only (Julian's grade of the real-clip
-# run, Oct 18: "show the gel going onto the brush first" was dropped).
-# What a note naming movements may change, said the same way whatever the clip is made from.
+# What a note naming movements may change, when only a B-roll clip is made again from a note:
+# the proven rules above come with it, unchanged, but a note naming the movement to film wins
+# over the one-movement rule here only (Julian's grade of the real-clip run, Oct 18: "show the
+# gel going onto the brush first" was dropped).
 _NOTE_NAMES_A_MOVEMENT = """\
 When the note names a movement to film, such as a step before the one "shows" names, like \
 putting the product on the tool used with it, film every movement the note names, in the \
@@ -227,19 +195,9 @@ never to film or draw putting the product on, and to follow a note only for what
 describes. Every other rule of this scene's kind still holds, such as nobody touching the \
 product in a scene that shows the problem."""
 
-CLIP_FROM_NOTE_RULES = f"""\
-The scene's starting picture is already made, and it stays as it is: you are shown it, and \
-"picture_prompt" is the prompt it was drawn from. Pick no photo and write no picture prompt. \
-Write only a new video prompt: "motion_prompt" is the one the scene's first clip from this \
-picture was made from, before any note, and "note" says what the shop owner wants changed \
-about how it moves. Change the movement as the note asks, starting from what the picture \
-shows, and keep what was right. {_NOTE_NAMES_A_MOVEMENT} Follow the note unless it asks for \
-something that can't start from this picture, or something else "shows" doesn't describe, and \
-then say so in the reason. Give a one-sentence reason for the video prompt, written for the \
-shop owner."""
-
-# The same, for a clip made from its references (spec #210 point 21): the pictures it was sent
-# stay, and the writer is shown them with their labels in place of a starting picture.
+# Added to what the model writing a B-roll scene's prompts is told when only its clip is made
+# again, from a note (spec #210 point 21): the pictures its last clip was sent stay, and the
+# writer is shown them with their labels.
 CLIP_FROM_REFERENCES_RULES = f"""\
 The scene's clip is made from its references, the pictures the video model was sent for it, \
 and they stay as they are: you are shown them in their order, each with its label. Pick no \
@@ -258,13 +216,6 @@ def clip_from_references_instructions(broll_kind: str) -> str:
     clip it improves on was made from references: the scene's rules, then that only the
     movement changes."""
     return f"{broll_prompt_instructions(broll_kind)}\n{CLIP_FROM_REFERENCES_RULES}"
-
-
-def clip_from_note_instructions(broll_kind: str) -> str:
-    """What the model writing a B-roll scene's video prompt again from a note is told: the
-    same rules as when the scene's prompts were first written, then that only the movement
-    changes."""
-    return f"{broll_prompt_instructions(broll_kind)}\n{CLIP_FROM_NOTE_RULES}"
 
 
 # The job of each picture the picture model gets for a B-roll scene's starting picture.
@@ -340,16 +291,6 @@ SCENE_NEW_PLACE_PROMPT = (
 )
 
 
-# Added by code to every prompt for a scene that shows the product, after what the model
-# wrote, so the rule is in every prompt sent whatever the model leaves out.
-NOTHING_MADE_UP = "Show only what is described; add or change nothing about the product."
-
-
-def with_nothing_made_up(prompt: str) -> str:
-    """A prompt for a scene that shows the product, as it is sent: NOTHING_MADE_UP added."""
-    return f"{prompt} {NOTHING_MADE_UP}"
-
-
 # How the person is posed with the product in a talking scene, one sentence per size the
 # plan can give. Code owns these, not the planner, so the rule holds in every job: the
 # same sentence is handed to the model that plans the starting picture and put into the
@@ -405,50 +346,6 @@ class StartingPictureHandoff(Handoff):
     person_looks: str
     pose: str
     note: str | None
-    conversation: list[ChatMessage]
-
-
-class BrollPictureHandoff(StartingPictureHandoff):
-    shows: str
-
-
-class PictureJob(Handoff):
-    image: int
-    job: str
-
-
-class BrollPromptHandoff(Handoff):
-    scene: int
-    line: str
-    script: list[str]
-    shows: str
-    broll_kind: str
-    person_shown: str
-    usage: str
-    result: str
-    pictures: list[PictureJob]
-    before_picture: str
-    product_colour: str
-    colour_photos: list[int]
-    person_looks: str
-    note: str | None
-    conversation: list[ChatMessage]
-
-
-class ClipFromNoteHandoff(Handoff):
-    """What the model writing a B-roll scene's video prompt again from a note is handed: the
-    scene, the prompts its starting picture and last clip were made from, and the note."""
-
-    scene: int
-    line: str
-    shows: str
-    broll_kind: str
-    person_shown: str
-    usage: str
-    result: str
-    picture_prompt: str
-    motion_prompt: str
-    note: str
     conversation: list[ChatMessage]
 
 
@@ -560,20 +457,6 @@ class StartingPictureChoice(BaseModel):
     @field_validator("photo_reason", "prompt", "prompt_reason")
     @classmethod
     def _not_empty(cls, text: str) -> str:
-        if not text.strip():
-            raise ValueError("This can't be empty.")
-        return text
-
-
-class BrollPictureChoice(StartingPictureChoice):
-    motion_prompt: str = Field(description="The prompt for the video model: what moves, and how.")
-    motion_prompt_reason: str = Field(
-        description="One sentence saying why the motion prompt asks for that."
-    )
-
-    @field_validator("motion_prompt", "motion_prompt_reason")
-    @classmethod
-    def _motion_not_empty(cls, text: str) -> str:
         if not text.strip():
             raise ValueError("This can't be empty.")
         return text

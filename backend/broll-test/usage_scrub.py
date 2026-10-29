@@ -48,7 +48,7 @@ CHECK = (
 def ask(picture: str, questions: list[str], usage: str) -> bool:
     check = call_model(
         job=None,
-        purpose="choose_broll_picture",
+        purpose="check_starting_picture",
         instructions=CHECK,
         handoff=CheckHandoff(how_the_product_is_used=usage, questions=questions),
         output=Check,

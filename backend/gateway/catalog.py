@@ -42,7 +42,6 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "lengthen_line": "gpt-6.1-sol",
     "draw_person": "gpt-image-2.5-sunburst",
     "choose_starting_picture": "gpt-6.1-sol",
-    "choose_broll_picture": "gpt-6.1-sol",
     # A B-roll scene's video prompt written again from a note, by the same model that wrote it.
     "rewrite_clip_prompt": "gpt-6.1-sol",
     # A B-roll clip's first-send prompt (#210 point 16): written by the model that writes
@@ -95,9 +94,8 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # The B-roll clip judge's two checks (jobs/clip_judge.py). Tested on sol; the model check
     # of 2026-10-13 found luna matches it, at the edge, so stage 4 may move both to luna
     # (Claude Doc "Clip judge discussion", Results).
-    "check_clip_sides": "gpt-6.1-sol",
     "check_clip_motion": "gpt-6.1-sol",
-    # A clip with its sent list (#228): PRODUCT replaces SIDES, on the model the judge build
+    # Judged against its sent list (#228): PRODUCT replaced SIDES, on the model the judge build
     # brief tested it on, and the first question asks whether the references show enough.
     "check_clip_product": "gpt-6.1-sol",
     "check_clip_references": "gpt-6.1-sol",
@@ -121,7 +119,6 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
 # clip step waits on it.
 ANSWER_SECONDS = 120
 SLOW_ANSWER_SECONDS: dict[str, float] = {
-    "check_clip_sides": 600,
     "check_clip_motion": 600,
     "check_clip_product": 600,
     "check_clip_references": 600,

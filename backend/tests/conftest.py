@@ -282,23 +282,6 @@ FIX_MADE: dict[str, Any] = {
 }
 
 
-# The B-roll clip judge's answers, when SIDES and MOTION find nothing wrong.
-CLIP_SIDES_OK: dict[str, Any] = {
-    "frames": [
-        {
-            "time": 0.0,
-            "seen": "broad_face",
-            "face": "front",
-            "parts": "handle on the right, rim at the top",
-            "thin_edge_side": "none",
-        }
-    ],
-    "turns": [],
-    "across_frames": "The mug keeps its front to the camera.",
-    "verdict": "pass",
-    "problem": None,
-    "back_to_normal_at": None,
-}
 # The judge of a clip with a sent list (#228): its first question, when the references and
 # the behaviour note show enough to judge the clip, and the PRODUCT check finding nothing wrong.
 REFERENCES_ENOUGH: dict[str, Any] = {
@@ -373,7 +356,6 @@ def asked_with(fake_model: FakeModel, *purposes: str) -> list[ModelRequest[Any]]
     """Every request the clip judge is sent for `purposes`, in the order sent, each answered
     as by default."""
     defaults: dict[str, Callable[[ModelRequest[Any]], dict[str, Any]]] = {
-        "check_clip_sides": lambda _: CLIP_SIDES_OK,
         "check_clip_motion": motion_answer(CLIP_MOTION_OK),
         "check_clip_references": lambda _: REFERENCES_ENOUGH,
         "check_clip_product": lambda _: CLIP_PRODUCT_OK,
@@ -481,7 +463,6 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
     # A product video's watcher sees the product and nothing else in it, unless a test says.
     fake.answer_unscripted("watch_video", lambda _: NOTHING_WATCHED)
-    fake.answer_unscripted("check_clip_sides", lambda _: CLIP_SIDES_OK)
     fake.answer_unscripted("check_clip_motion", motion_answer(CLIP_MOTION_OK))
     fake.answer_unscripted("check_clip_references", lambda _: REFERENCES_ENOUGH)
     fake.answer_unscripted("check_clip_product", lambda _: CLIP_PRODUCT_OK)
@@ -734,19 +715,16 @@ def results_of(tool: str) -> list[str]:
     return list(ToolCall.objects.filter(tool=tool).values_list("result", flat=True))
 
 
-# What judging one B-roll clip pays for (jobs/clip_judge.py), as paid_for lists it.
-JUDGED_CLIP = ["check_clip_sides", "check_clip_motion"]
-# The clip judge's asks of a clip with a sent list, as paid_for lists them (#228).
+# The clip judge's asks of a B-roll clip, judged against its sent list, as paid_for lists them
+# (#228): its first question before its checks.
 SENT_LIST_JUDGED = ["check_clip_references", "check_clip_product", "check_clip_motion"]
-# The order paid_for lists a clip judge's asks in: a clip with a sent list asks its first
-# question before its checks (#228).
-_JUDGE_ORDER = ["check_clip_references", "check_clip_product", *JUDGED_CLIP]
+_JUDGE_ORDER = SENT_LIST_JUDGED
 
 
 def paid_for() -> list[str]:
     """The purpose of every model call the tools made, oldest first: the agents' own turns,
     the producer's, aside. A clip judge's asks are made all at once, so the
-    ones made together are listed as JUDGED_CLIP lists them, whichever answered first."""
+    ones made together are listed as SENT_LIST_JUDGED lists them, whichever answered first."""
     paid = list(
         ModelCall.objects.exclude(purpose="produce")
         .order_by("created_at", "id")

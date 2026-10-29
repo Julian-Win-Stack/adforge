@@ -16,7 +16,7 @@ from jobs import owner_parts
 from jobs.models import ReferencePhoto, Scene
 
 from .conftest import HeldSteps, handoffs
-from .test_producer_broll import BROLL_CHOICE, calling, instructed, run  # noqa: F401
+from .test_producer_broll import calling, instructed, run  # noqa: F401
 from .test_producer_owner_photos import (  # noqa: F401 (fixtures)
     OWNER_MUG,
     checked,

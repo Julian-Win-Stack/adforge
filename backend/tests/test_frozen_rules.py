@@ -18,10 +18,8 @@ from jobs.checks import FACT_CHECK_INSTRUCTIONS
 from jobs.clip_judge import (
     FRAMES_PER_SECOND,
     MOTION_CHECK,
-    SIDES_CHECK,
-    SIDES_FRAMES_PER_SECOND,
+    PRODUCT_FRAMES_PER_SECOND,
     Check,
-    SidesVerdict,
 )
 from jobs.first_send import FIRST_SEND_INSTRUCTIONS, PIECE_LABEL, SPEED_LINE
 from jobs.photos import PICK_INSTRUCTIONS
@@ -333,11 +331,8 @@ def test_the_start_picture_judge_runs_as_tested() -> None:
 # on gpt-6.1-sol, 3 asks failing on 2, it wrongly failed 2 of 29 good clips and caught 6 of 12
 # faults, the bar met (decisions/julian-away-judgment-calls.md calls 10 and 12;
 # decisions/built-clip-judge-in-app.md). The wording is Julian's to change.
-# The phone-flip SIDES check (harness arm F1, Julian's yes to ship 2026-10-14 18:30), pinned
-# word for word beside its answer form in the clip judge's own tests.
-CLIP_SIDES_AS_PROVED = (
-    Path(__file__).parent / "fixtures" / "clip_judge_sides_check.txt"
-).read_text()
+# The phone-flip SIDES check went with the B-roll starting picture it judged a clip beside
+# (spec #210 point 19, #241); MOTION's proved words stay the base of MOTION_FROM_REFERENCES.
 
 CLIP_MOTION_AS_PROVED = """\
 You check a short video clip for a product ad before it is shown to the shop owner. You decide \
@@ -381,7 +376,6 @@ print are not a fail."""
 
 
 def test_the_clip_judge_is_unchanged_from_the_one_proved() -> None:
-    assert SIDES_CHECK == CLIP_SIDES_AS_PROVED
     assert MOTION_CHECK == CLIP_MOTION_AS_PROVED
 
 
@@ -390,8 +384,7 @@ def test_the_clip_judge_is_unchanged_from_the_one_proved() -> None:
 # brief.md, section 3): PRODUCT word for word from the hand test's harness (run.py
 # PRODUCT_CHECK, pinned in tests/fixtures/clip_judge_product_check.txt), MOTION as proved with
 # only its shop-photo paragraph replaced (the brief's MOTION_NEW); and it is first asked
-# whether the references and the behaviour note show enough to judge the clip. The proved
-# SIDES and MOTION above stay for a clip with no sent list.
+# whether the references and the behaviour note show enough to judge the clip.
 CLIP_MOTION_NEW_PARAGRAPH = (
     "Before the clip you are shown what the video API that made the clip was given: the "
     "reference pictures, each labelled as in the prompt, frames from the reference video when "
@@ -429,10 +422,6 @@ def test_the_judge_first_asks_whether_the_references_show_enough() -> None:
 def test_the_clip_judge_asks_for_each_problem_in_up_to_3_sentences() -> None:
     # Decider call 2 (2026-10-13 05:33): the auto-redo's prompt writer needs what went wrong,
     # when, and what a real one would do; the proof ran with these words.
-    assert SidesVerdict.model_fields["problem"].description == (
-        "When it fails: up to 3 sentences: the object and what is impossible about it, the "
-        "frame time, and what a real one would look like. Null when it passes."
-    )
     assert Check.model_fields["problem"].description == (
         "When it fails: up to 3 sentences: what went wrong and with which part, the second it "
         "starts, and what a real one would do. Null when it passes."
@@ -440,16 +429,15 @@ def test_the_clip_judge_asks_for_each_problem_in_up_to_3_sentences() -> None:
 
 
 def test_the_clip_judge_runs_as_proved() -> None:
-    # Decider call 10: the proof's wrong fails pick the model, sol for both checks.
-    assert MODEL_FOR_PURPOSE["check_clip_sides"] == "gpt-6.1-sol"
-    assert MODEL_FOR_PURPOSE["check_clip_motion"] == "gpt-6.1-sol"
-    # Each ask may take as long as the harness waited.
-    assert SLOW_ANSWER_SECONDS["check_clip_sides"] == 600
-    assert SLOW_ANSWER_SECONDS["check_clip_motion"] == 600
-    # SIDES at 10 frames a second (the phone-flip check, Julian's yes 2026-10-14 18:30; it was
-    # 5 stills, call 9), MOTION at 5 frames a second, each asked once: the vote is gone
+    # Decider call 10: the proof's wrong fails pick the model, sol for every check.
+    for check in ("references", "product", "motion"):
+        assert MODEL_FOR_PURPOSE[f"check_clip_{check}"] == "gpt-6.1-sol"
+        # Each ask may take as long as the harness waited.
+        assert SLOW_ANSWER_SECONDS[f"check_clip_{check}"] == 600
+    # PRODUCT at 10 frames a second (SIDES' phone-flip rate, Julian's yes 2026-10-14 18:30; it
+    # was 5 stills, call 9), MOTION at 5 frames a second, each asked once: the vote is gone
     # (Julian 2026-10-22 21:09, "drop the vote").
-    assert (SIDES_FRAMES_PER_SECOND, FRAMES_PER_SECOND, clip_judge.ASKS) == (10, 5, 1)
+    assert (PRODUCT_FRAMES_PER_SECOND, FRAMES_PER_SECOND, clip_judge.ASKS) == (10, 5, 1)
 
 
 # The photo picker's lines for hidden pictures, every record photo and video players, as the
@@ -570,13 +558,7 @@ def test_the_product_videos_lines_name_no_shop_or_product(name: str) -> None:
 # The owner part (owner-part approval spec, Julian's design 2026-10-19): drawn from the shop
 # owner's one sentence, or the planner's, exactly as it says. Pinned so a change is seen; not
 # yet proved by a grade (the real picture test, T5, comes first).
-OWNER_PART = owner_parts.OwnerPart(what="PART", source="owner's words", looks="LOOKS")
-OWNER_PART_RULES = [
-    owner_parts.writer_rule(OWNER_PART),
-    owner_parts.writer_rule(OWNER_PART.model_copy(update={"source": "invented"})),
-    owner_parts.picture_label(OWNER_PART),
-    owner_parts.CHECK_RULE,
-]
+OWNER_PART_RULES = [owner_parts.CHECK_RULE]
 # Products and parts of the test ads, and the parts the rules were designed around: none may
 # be named in a rule every product gets (CODING_STANDARDS.md, no hardcoding).
 TESTED_PRODUCT_WORDS = [
@@ -620,23 +602,9 @@ TESTED_PRODUCT_WORDS = [
 
 
 def test_the_owner_part_rules_are_unchanged() -> None:
-    writer, invented, label, check = OWNER_PART_RULES
-    assert writer == (
-        'One part of the product this scene shows, "PART", is in none of the pictures sent: '
-        "no photo shows it. How it looks comes only from the shop owner's own words: "
-        '"LOOKS" Draw it exactly as that sentence says, nothing more: write every look the '
-        "sentence gives it into the picture prompt, and never give it a colour, shape, size, "
-        "material, mark or detail the sentence doesn't, or take its look from another part "
-        "of the product. Code puts the sentence before your picture prompt too."
-    )
-    assert (
-        "comes only from a sentence written for the shop owner, who sees the picture and "
-        'approves it: "LOOKS"'
-    ) in invented
-    assert label == (
-        "The PART is in none of the pictures: draw it exactly as this says, and add nothing "
-        'to it: "LOOKS"'
-    )
+    # The B-roll picture writer's rule and label for the part went with the B-roll starting
+    # picture (spec #210 point 19, #241); the check's rule stays for the pictures still checked.
+    (check,) = OWNER_PART_RULES
     assert check == (
         'One part of the product, named in "owner_part", is in no shop photo: it was drawn '
         "from the one sentence given there, which says how it looks. Use that sentence as you "

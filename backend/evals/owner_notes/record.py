@@ -93,7 +93,6 @@ WATCHED = (
     "check_cut_out",
     "make_broll_clip",
     "check_clip_motion",
-    "check_clip_sides",
 )
 
 

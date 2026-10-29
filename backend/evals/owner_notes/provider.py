@@ -46,22 +46,6 @@ PICTURE_GAP_SECONDS = 3.1
 PICTURE_LOCK = Path(os.environ.get("OWNER_NOTES_PICTURE_LOCK", "/tmp/owner-notes-pictures.lock"))
 
 # What the clip judge answers: nothing wrong, and, asked about a fix's clip, the change made.
-CLIP_SIDES_OK: dict[str, Any] = {
-    "frames": [
-        {
-            "time": 0.0,
-            "seen": "broad_face",
-            "face": "front",
-            "parts": "(video faked: not judged)",
-            "thin_edge_side": "none",
-        }
-    ],
-    "turns": [],
-    "across_frames": "(video faked: not judged)",
-    "verdict": "pass",
-    "problem": None,
-    "back_to_normal_at": None,
-}
 CLIP_MOTION_OK: dict[str, Any] = {
     "look": {
         "in_the_clip": "(video faked: not judged)",
@@ -156,15 +140,11 @@ class OwnerNotesProvider:
                 reply.output.model_dump(), request.handoff.model_dump()["library_pictures"]
             )
             return _with(reply, request, planned)
-        if self.phase == "first" and request.purpose == "choose_broll_picture":
-            return _with(reply, request, self._round_4_prompts(request, reply.output.model_dump()))
         return reply
 
     def _faked(self, request: ModelRequest[Any]) -> dict[str, Any] | None:
         if self.real_clip and self._real_videos and request.purpose.startswith("check_clip"):
             return None
-        if request.purpose == "check_clip_sides":
-            return CLIP_SIDES_OK
         if request.purpose == "check_clip_motion":
             if "owner_change" in request.output.model_fields:
                 return {**CLIP_MOTION_OK, "owner_change": CLIP_FIXED}
@@ -214,18 +194,6 @@ class OwnerNotesProvider:
                 }
             )
         return {**decision, "plan": {**plan, "scenes": scenes}}
-
-    def _round_4_prompts(
-        self, request: ModelRequest[Any], choice: dict[str, Any]
-    ) -> dict[str, Any]:
-        """The prompt writer's choice, with round 4's prompts for the scene."""
-        saved = self.ad.scene(request.handoff.model_dump()["scene"])
-        return {
-            **choice,
-            "prompt": saved.picture_prompt or choice["prompt"],
-            "prompt_reason": saved.prompt_reason or choice["prompt_reason"],
-            "motion_prompt": saved.motion_prompt or choice["motion_prompt"],
-        }
 
     def take_turn(self, request: TurnRequest) -> TurnReply:
         reply: TurnReply = self.real.take_turn(request)
