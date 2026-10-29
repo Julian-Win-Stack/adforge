@@ -272,3 +272,59 @@ def test_a_picture_chooser_refused_over_every_photo_is_never_asked_with_none(
             "blocked it.",
         )
     ]
+
+
+def test_a_plan_made_again_past_the_same_refusal_tells_the_chat_once(
+    api: APIClient,
+    fake_model: FakeModel,
+    five_photos_page: str,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    question = {
+        "decision": "ask",
+        "reason": "The page sells two sizes.",
+        "question": "Which size should the ad sell?",
+        "plan": None,
+    }
+    answers = [question, PLAN]
+    fake_model.answer_unscripted(
+        "plan_ad", lambda request: refused_over("Photo 1", answers[0])(request)
+    )
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": five_photos_page, "target_seconds": None})]),
+        turn(calls=[("plan_ad", {})]),
+        turn(says="Which size?"),
+    )
+    fake_model.respond("check_page", READABLE)
+    say(f"Make an ad for {five_photos_page}")
+    answers.pop(0)
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
+
+    say("The big one.")
+
+    assert Job.objects.get().status == Job.Status.PLANNED
+    assert len(refusals(api, session_id)) == 1
+
+
+def test_a_photo_the_planner_wasnt_shown_is_never_marked_in_the_ads_colour(
+    fake_model: FakeModel,
+    five_photos_page: str,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": five_photos_page, "target_seconds": None})]),
+        turn(calls=[("plan_ad", {})]),
+        turn(says="Here's the plan."),
+    )
+    fake_model.respond("check_page", READABLE)
+    # The plan names photos 1 and 2 as in the ad's colour, though it never saw photo 2.
+    colours = {**PLAN, "plan": {**PLAN["plan"], "colour_photos": [1, 2]}}
+    fake_model.answer_unscripted("plan_ad", refused_over("Photo 2", colours))
+
+    say(f"Make an ad for {five_photos_page}")
+
+    marked = Job.objects.get().photos.filter(shows_product_colour=True)
+    assert list(marked.values_list("position", flat=True)) == [1]

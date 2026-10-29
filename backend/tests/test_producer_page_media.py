@@ -512,8 +512,9 @@ def test_a_grid_the_models_safety_filter_blocks_is_left_out_and_the_rest_are_pic
     assert second.handoff["official_photos"] == first.handoff["official_photos"]
     assert (first.outcome, second.outcome) == ("failed", "succeeded")
     assert "Kept 1 product photo." in read_page_result()
+    # Red, as every refusal is, though the photos were picked.
     assert (
-        "info",
+        "problem",
         "The AI model's safety filter refused to look at some of the pictures beside the "
         "page's screenshot (hidden pictures I40 and I41), so this product's photos were "
         "picked without them.",

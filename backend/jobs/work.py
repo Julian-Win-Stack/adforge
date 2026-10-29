@@ -126,7 +126,7 @@ from .models import (
     Scene,
     SceneStep,
 )
-from .notices import left_out_by_the_filter, post_notice
+from .notices import post_left_out_by_the_filter, post_notice
 from .picture_check import (
     ASKS,
     FAILS_TO_FAIL,
@@ -488,7 +488,7 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
         )
         return Picked(None, notices)
     if left_out:
-        notices.append((_left_out_by_the_filter(left_out), Message.Level.INFO))
+        notices.append((_left_out_by_the_filter(left_out), Message.Level.PROBLEM))
     if picked.page_blocked:
         notices.append((PAGE_BLOCKED, Message.Level.PROBLEM))
         return Picked(None, notices, blocked=True)
@@ -933,7 +933,7 @@ def plan(job: Job) -> ProducerDecision:
     )
     if left_out:
         named = [f"photo {shown[image].position}" for image in left_out]
-        post_notice(job, left_out_by_the_filter(named, "the ad was planned"), Message.Level.PROBLEM)
+        post_left_out_by_the_filter(job, named, "the ad was planned")
     planned = decision.plan
     if planned is None:
         return decision
@@ -972,7 +972,10 @@ def plan(job: Job) -> ProducerDecision:
                 "status",
             ]
         )
-        job.photos.filter(position__in=planned.colour_photos).update(shows_product_colour=True)
+        # A photo left out past the safety filter was never seen, so never marked.
+        job.photos.filter(position__in=planned.colour_photos).exclude(
+            position__in=[shown[image].position for image in left_out]
+        ).update(shows_product_colour=True)
     return decision
 
 
@@ -1930,13 +1933,10 @@ def _chosen_past_the_safety_filter[Choice](
         fewest_kept=1,
     )
     if left_out:
-        post_notice(
+        post_left_out_by_the_filter(
             scene.job,
-            left_out_by_the_filter(
-                [f"photo {photo(image)}" for image in left_out],
-                f"scene {scene.number}'s starting picture was planned",
-            ),
-            Message.Level.PROBLEM,
+            [f"photo {photo(image)}" for image in left_out],
+            f"scene {scene.number}'s starting picture was planned",
         )
     return choice
 

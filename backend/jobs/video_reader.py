@@ -20,7 +20,7 @@ from gateway.types import (
 )
 from jobs import picker_grids
 from jobs.models import Job, ProductVideo
-from jobs.notices import left_out_by_the_filter, post_notice
+from jobs.notices import post_left_out_by_the_filter, post_notice
 from jobs.planning import PLAN_INSTRUCTIONS, PlanHandoff
 from jobs.work import plan_handoff
 
@@ -159,13 +159,10 @@ def _read(job: Job, video: ProductVideo, page_text: str) -> dict[str, Any]:
         list(named),
     )
     if left_out:
-        post_notice(
+        post_left_out_by_the_filter(
             job,
-            left_out_by_the_filter(
-                [named[image] for image in left_out],
-                f"your product's video {video.position} was read",
-            ),
-            Message.Level.PROBLEM,
+            [named[image] for image in left_out],
+            f"your product's video {video.position} was read",
         )
     shown_seconds = {
         second for grid, seconds in grids if grid not in left_out for second in seconds
