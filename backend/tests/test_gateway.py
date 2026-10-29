@@ -8,6 +8,7 @@ from typing import Any
 
 import PIL.Image
 import pytest
+from django.core.files.storage import default_storage
 from pydantic import BaseModel, ValidationError
 from pytest_django import Settings
 from pytest_httpserver import HTTPServer
@@ -19,6 +20,7 @@ from gateway import catalog
 from gateway.fake import FakeModel
 from gateway.gateway import (
     UnreadableImage,
+    VideoNotWatchable,
     call_model,
     collect_clip,
     speak,
@@ -144,6 +146,29 @@ def test_a_video_watched_again_is_sent_as_cut_the_first_time(fake_model: FakeMod
 
     first, second = ModelCall.objects.all()
     assert first.video == second.video
+
+
+def test_a_cut_left_half_saved_is_cut_again_before_it_is_sent(fake_model: FakeModel) -> None:
+    key = file_store.save("videos/page-video.mp4", a_video(540, 960, sound=True))
+    fake_model.respond("watch_video", {"moments": []}, {"moments": []})
+    _watch(key)
+    cut = ModelCall.objects.get().video
+    whole = file_store.read(cut)
+    # A worker stopped while saving the cut.
+    default_storage.delete(cut)
+    assert file_store.save(cut, whole[: len(whole) // 2]) == cut
+
+    _watch(key)
+
+    _, again = fake_model.videos_watched
+    assert again.video.data == whole
+
+
+def test_a_video_ffmpeg_cant_cut_fails_saying_what_ffmpeg_said(fake_model: FakeModel) -> None:
+    key = file_store.save("videos/page-video.mp4", b"not a video at all")
+
+    with pytest.raises(VideoNotWatchable, match="couldn't cut the video .*Invalid data"):
+        _watch(key)
 
 
 def _check_page(images: list[Image]) -> None:

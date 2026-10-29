@@ -244,6 +244,63 @@ def test_a_video_gemini_fails_to_make_ready_fails_the_call_without_watching_it(
     assert not [request for request, _ in httpserver.log if request.path == GENERATE]
 
 
+def _stored_by_gemini(httpserver: HTTPServer, state: str) -> None:
+    """Gemini's file store taking the upload, the file made in `state`."""
+    upload_url = httpserver.url_for("/upload/v1beta/files/session-1")
+    made = {"name": "files/abc-123", "uri": httpserver.url_for("/v1beta/files/abc-123")}
+    httpserver.expect_request("/upload/v1beta/files", method="POST").respond_with_data(
+        "{}", headers={"X-Goog-Upload-URL": upload_url}
+    )
+    httpserver.expect_request("/upload/v1beta/files/session-1", method="POST").respond_with_json(
+        {"file": {**made, "state": state}}
+    )
+    httpserver.expect_request("/v1beta/files/abc-123", method="GET").respond_with_json(
+        {**made, "state": state}
+    )
+
+
+def test_a_video_gemini_is_still_making_ready_after_the_wait_is_given_up_on_as_gemini_down(
+    httpserver: HTTPServer, gemini: GeminiProvider, video_key: str, settings: Settings
+) -> None:
+    settings.GEMINI_INLINE_REQUEST_BYTES = 1_000
+    settings.GEMINI_FILE_WAIT_SECONDS = 0.05
+    settings.GEMINI_FILE_POLL_SECONDS = 0.01
+    _stored_by_gemini(httpserver, "PROCESSING")
+
+    with pytest.raises(OutsideServiceDown, match="still making the video files/abc-123 ready"):
+        _watch(gemini, video_key)
+
+    assert {call.outcome for call in ModelCall.objects.all()} == {"failed"}
+    assert not [request for request, _ in httpserver.log if request.path == GENERATE]
+
+
+def test_a_file_store_that_gives_no_upload_link_fails_the_call_and_isnt_asked_again(
+    httpserver: HTTPServer, gemini: GeminiProvider, video_key: str, settings: Settings
+) -> None:
+    settings.GEMINI_INLINE_REQUEST_BYTES = 1_000
+    httpserver.expect_request("/upload/v1beta/files", method="POST").respond_with_json({})
+
+    with pytest.raises(GeminiFailed, match="gave no link to upload the video to"):
+        _watch(gemini, video_key)
+
+    assert ModelCall.objects.get().outcome == "failed"
+
+
+def test_a_video_in_geminis_file_store_is_not_uploaded_again_when_the_watch_is_asked_again(
+    httpserver: HTTPServer, gemini: GeminiProvider, video_key: str, settings: Settings
+) -> None:
+    settings.GEMINI_INLINE_REQUEST_BYTES = 1_000
+    _stored_by_gemini(httpserver, "ACTIVE")
+    down = {"error": {"code": 503, "message": "Try again later.", "status": "UNAVAILABLE"}}
+    httpserver.expect_oneshot_request(GENERATE, method="POST").respond_with_json(down, status=503)
+    httpserver.expect_request(GENERATE, method="POST").respond_with_json(TWISTED_OFF)
+
+    assert _watch(gemini, video_key) == Moments(moments=["The lid is twisted off."])
+    paths = [request.path for request, _ in httpserver.log]
+    assert paths.count("/upload/v1beta/files") == 1
+    assert paths.count(GENERATE) == 2
+
+
 SAFETY_BLOCKS = [
     pytest.param(
         {"promptFeedback": {"blockReason": "SAFETY"}, "usageMetadata": {"promptTokenCount": 9}},
@@ -323,6 +380,11 @@ def test_a_watch_that_takes_too_long_is_given_up_on_and_never_counts_as_blocked(
         _watch(gemini, video_key)
 
     assert ModelCall.objects.get().outcome == "failed"
+    # The stand-in server is shared: let the slow reply finish, so it isn't logged in the
+    # next test's turn.
+    deadline = time.monotonic() + 5
+    while not httpserver.log and time.monotonic() < deadline:
+        time.sleep(0.05)
 
 
 def test_an_error_gemini_gives_for_another_reason_is_shown_as_its_own_and_not_asked_again(
