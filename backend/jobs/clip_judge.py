@@ -914,24 +914,47 @@ PIECE_FRAMES_SHOWN = 10
 
 def piece_frames(piece: str, most: int = PIECE_FRAMES_SHOWN) -> list[dict[str, Any]]:
     """The frames of the video piece at `piece`, FRAMES_PER_SECOND a second thinned evenly to
-    at most `most`, kept in the file store, each with its time in the piece."""
+    at most `most`, kept in the file store, each with its time in the piece. Cut once: the
+    same piece gives the same frames under the same keys every time it is asked for, so a
+    turn showing them again is the same turn (a paid answer replayed, a refused frame known)."""
+    name = f"piece_frames_{hashlib.sha256(f'{piece}|{most}'.encode()).hexdigest()[:32]}.json"
+    kept = file_store.save_once(name, lambda: _cut_piece(piece, most), whole=_a_frame_list)
+    frames: list[dict[str, Any]] = json.loads(file_store.read(kept))
+    return frames
+
+
+def _cut_piece(piece: str, most: int) -> bytes:
     with tempfile.TemporaryDirectory() as folder:
         video = Path(folder) / "piece.mp4"
         video.write_bytes(file_store.read(piece))
         frames = _every_frame(video, Path(folder) / "frames", FRAMES_PER_SECOND)
         if len(frames) > most:
             frames = [frames[round(i * (len(frames) - 1) / max(most - 1, 1))] for i in range(most)]
-        return [{"times": [t], "key": _side_by_side([path])} for path, t in frames]
+        cut = [{"times": [t], "key": _side_by_side([path])} for path, t in frames]
+    return json.dumps(cut).encode()
+
+
+def _a_frame_list(data: bytes) -> bool:
+    """Whether `data` is a whole list of frames, not one a stopped worker left half-saved."""
+    try:
+        return isinstance(json.loads(data), list)
+    except ValueError:
+        return False
+
+
+def sent_pictures(sent: SentList, label: str) -> list[Image]:
+    """The pictures a clip was sent, in their order, each labelled `label` and its label."""
+    return [
+        Image(label=f"{label}, Image {picture.image}: {picture.label}", key=picture.file)
+        for picture in sent.pictures
+    ]
 
 
 def references_shown(sent: SentList, label: str) -> list[Image]:
     """What a clip was sent, as pictures: each picture in its order with its label, then the
     frames of each piece, every one labelled starting with `label`."""
     return [
-        *(
-            Image(label=f"{label}, Image {picture.image}: {picture.label}", key=picture.file)
-            for picture in sent.pictures
-        ),
+        *sent_pictures(sent, label),
         *(
             Image(
                 label=f"{label}, Video {piece.number}, {frame_label(frame['times'])}",
