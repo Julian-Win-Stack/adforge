@@ -1883,6 +1883,18 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.scene-question-text {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: default;
+}
+
 .scene-question-title {
   font-weight: 600;
   color: var(--danger);
@@ -2128,15 +2140,22 @@ button:disabled {
     display: none;
   }
 
-  /* In the strip the question is clamped; its whole text is in its title. */
   .scene-question {
+    padding: 2px 4px;
+    font-size: 10px;
+    line-height: 13px;
+  }
+
+  /* In the strip the question is cut short until tapped; tapped again, it is short again. */
+  .scene-question-text {
+    cursor: pointer;
+  }
+
+  .scene-question-text[aria-expanded="false"] {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 4;
     overflow: hidden;
-    padding: 2px 4px;
-    font-size: 10px;
-    line-height: 13px;
   }
 
   .scene-cards > li:has(.scene-note:focus) .scene-question {

@@ -3737,14 +3737,13 @@ def _say_the_agent_asked(step: SceneStep, ended: AgentFix) -> None:
         meanwhile = f"scene {number} keeps the clip it had before"
     else:
         meanwhile = "the last try is in the ad"
-    asked = open_question(step.scene)
     post_notice(
         step.scene.job,
         f"The fixing agent has a question for you about scene {number}'s clip, so {meanwhile} "
         f"until you answer it. The question is on scene {number}'s card.",
         Message.Level.PROBLEM,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
-        owner_question=asked.pk if asked is not None else None,
+        owner_question=ended.owner_question.pk,
     )
 
 
