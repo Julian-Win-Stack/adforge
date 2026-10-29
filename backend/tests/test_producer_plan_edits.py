@@ -6,11 +6,14 @@ Driven through the chat from an ad already shown; the producer is scripted and e
 faked at the gateway; the clips are real tiny videos."""
 
 from collections.abc import Callable
+from datetime import timedelta
 from typing import Any
 
 import pytest
 from django.db.models import Sum
+from django.utils import timezone
 
+from agents import tasks
 from agents.models import ToolCall
 from agents.money import dollars
 from chat.models import Attachment
@@ -456,3 +459,35 @@ def test_new_music_once_the_ad_is_shown_is_put_in_when_the_ad_is_assembled_again
     ad = job.produced.filter(kind="finished_ad").latest("version")
     assert (ad.version, ad.made_from) == (shown.version + 1, music)
     assert f"The changes since ad version {shown.version} cost $" in answer_of("assemble_ad")
+
+
+@pytest.mark.parametrize("edited", [False, True], ids=["clip current", "clip stale"])
+def test_a_dead_step_offers_to_keep_the_scenes_clip_only_while_it_is_current(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    steps: HeldSteps,
+    say: Say,
+    edited: bool,
+) -> None:
+    if edited:
+        owner_says(fake_model, say, "Shorter.", ("edit_scene", {"scene": 3, "line": SHORT_3}))
+        fake_model.respond("fact_check", facts_ok(3))
+        owner_says(fake_model, say, "Go on", ("run_planning_checks", NO_CHOICES))
+    owner_says(
+        fake_model,
+        say,
+        "Make it brighter.",
+        ("make_starting_picture", {"scene": 3, "note": "A brighter workshop."}),
+    )
+    (step_id,) = steps.held
+    steps.held.clear()
+    long_ago = timezone.now() - timedelta(minutes=6)
+    SceneStep.objects.filter(pk=step_id).update(taken_at=long_ago, seen_at=long_ago)
+
+    fake_model.respond("produce", turn(says="Scene 3's picture stopped."))
+    tasks.fail_dead_steps()
+
+    result = SceneStep.objects.get(pk=step_id).result
+    keeps = "or skip it: scene 3 keeps the clip it has."
+    removes = "or skip it: remove scene 3 with remove_scene, and the ad is made without it."
+    assert (keeps in result, removes in result) == (not edited, edited)
