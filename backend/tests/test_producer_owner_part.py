@@ -22,6 +22,7 @@ from jobs.reference_photos import ReferencePhotoUnusable
 
 from .conftest import (
     HeldSteps,
+    chat,
     given_to_the_producer,
     handoffs,
     photo,
@@ -172,6 +173,35 @@ def test_the_shop_owners_yes_lets_the_clip_be_made(
     assert not approved.startswith("Refused")
     assert owner_parts.is_approved(scene_2())
     assert clips_of(2) == 1
+
+
+@pytest.mark.usefixtures("pictured")
+def test_asked_in_the_chat_the_shop_owners_yes_in_words_is_kept_against_their_message(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], api: Any, session_id: str
+) -> None:
+    question = "Does the lid in this picture look right?"
+    # Asking ends the producer's turn: it takes no other.
+    fake_model.respond("produce", turn(calls=[("ask_owner", {"question": question})]))
+    say("Go on")
+    assert chat(api, session_id)[-1] == ("agent", question)
+
+    yes(fake_model, steps, say)
+
+    approving = Message.objects.get(role=Message.Role.USER, text="Yes, that lid looks right.")
+    assert scene_2().owner_part_approved_by == approving
+    assert clips_of(2) == 1
+
+
+@pytest.mark.usefixtures("pictured")
+def test_a_correction_after_a_yes_drops_the_message_the_yes_was_kept_against(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    owner_says(fake_model, say, "Yes, that lid looks right.", ("approve_owner_part", {"scene": 2}))
+
+    corrected(fake_model, steps, say, "A round pink lid with a small knob on top.")
+
+    assert scene_2().owner_part_approved_by is None
+    assert not owner_parts.is_approved(scene_2())
 
 
 @pytest.mark.usefixtures("pictured")

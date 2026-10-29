@@ -12,8 +12,12 @@ grades.json. From backend/:
 
     uv run python -m evals.grading_page <run folder>   # writes <run folder>/grading.html
 
+It also writes each ad's "what the agent did" page (evals.agent_page) as <ad>/agent.html, which
+the ad links to when its export has a tool_calls.json.
+
 Publish grading.html as an artifact with the db capability and the clips as its files, at
-the paths the page names (<ad>/ad.mp4, <ad>/scene-N/first.mp4, remake-K.mp4).
+the paths the page names (<ad>/ad.mp4, <ad>/scene-N/first.mp4, remake-K.mp4, <ad>/agent.html
+and its <ad>/tool-call-pictures/).
 """
 
 import html
@@ -22,6 +26,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from evals import agent_page
 from evals.results import CAUSES, grade_key
 from evals.round_export import check_folder, clip_name
 from jobs.library import VIDEO_API_MOST_PICTURES
@@ -216,6 +221,21 @@ def _scene_card(ad: str, result: dict[str, Any]) -> str:
   </section>"""
 
 
+def _agent_link(run: Path, ad: str) -> str:
+    """The link to the ad's "what the agent did" page; nothing for a run exported before it."""
+    if not (run / ad / "tool_calls.json").exists():
+        return ""
+    return (
+        f'\n    <p><a href="{_esc(ad)}/{agent_page.FILE}">What the agent did</a>: every tool '
+        "call after the first clip, with its why, answer and cost.</p>"
+    )
+
+
+def ads_of(run: Path) -> list[str]:
+    """The run's ad folders that have a tool-call record, an ad with no clip graded too."""
+    return sorted(each.parent.name for each in run.glob("*/tool_calls.json"))
+
+
 def page(run: Path) -> str:
     """The page for the run folder `run`."""
     results: dict[str, dict[str, Any]] = json.loads((run / "results.json").read_text())
@@ -228,12 +248,21 @@ def page(run: Path) -> str:
         cards = "".join(_scene_card(ad, r) for r in sorted(scenes, key=lambda r: r["scene"]))
         sections.append(f"""
   <section class="ad" id="{_esc(ad)}">
-    <h2>{_esc(ad)}</h2>
+    <h2>{_esc(ad)}</h2>{_agent_link(run, ad)}
     <div class="card">
       <video class="whole" controls preload="metadata" playsinline src="{_esc(ad)}/ad.mp4"></video>
       <div class="questions">{_taps(grade_key(ad), "Whole ad: good?", causes=False)}
       </div>
     </div>{cards}
+  </section>""")
+    # An ad with no clip to grade (abandoned before its first clip, or said to camera only)
+    # still has what its agents did.
+    for ad in ads_of(run):
+        if ad not in ads:
+            sections.append(f"""
+  <section class="ad" id="{_esc(ad)}">
+    <h2>{_esc(ad)}</h2>{_agent_link(run, ad)}
+    <p class="muted">No B-roll clip to grade.</p>
   </section>""")
     return (
         TEMPLATE.replace("{{SECTIONS}}", "".join(sections))
@@ -251,6 +280,8 @@ def main(args: list[str]) -> None:
     run = Path(args[0])
     (run / "grading.html").write_text(page(run))
     print(f"wrote {run / 'grading.html'}")
+    for ad in ads_of(run):
+        print(f"wrote {agent_page.write(run, ad)}")
 
 
 if __name__ == "__main__":
