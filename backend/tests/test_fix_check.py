@@ -24,6 +24,7 @@ from chat.models import Message
 from chat.sent import NOTHING_SENT
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
+from gateway.types import BlockedBySafetyFilter
 from jobs import clip_judge, library, work
 from jobs.clip_judge import ASKS
 from jobs.models import Fix, FixCheck, FixPlan, ProducedItem, Scene, SceneStep
@@ -299,6 +300,26 @@ def test_a_picture_check_whose_asks_fail_unexpectedly_carries_on_and_says_so(
         "Scene 2's fix couldn't be checked in its new picture, so it carries on unchecked. "
         "The chat told the shop owner it wasn't checked."
     ]
+
+
+def test_a_picture_the_fix_checks_filter_refuses_to_look_at_carries_on_and_says_so_in_red(
+    fake_model: FakeModel,
+    steps: HeldSteps,
+    shown: list[str],  # noqa: F811
+) -> None:
+    """Requirement 22: the old and new pictures are what it checks, never left out, so a
+    refusal over them leaves the fix unchecked, and the chat is told in red why."""
+    refused = BlockedBySafetyFilter("content_policy_violation")
+    fake_model.respond("check_fix", refused, refused, refused)
+
+    picture_redone(fake_model, steps)
+
+    assert FixCheck.objects.get().verdict == "unchecked"
+    assert held_kinds(steps) == [(2, "clip")]
+    (said,) = Message.objects.filter(
+        role="notice", level="problem", text__contains="safety filter"
+    ).values_list("text", flat=True)
+    assert "scene 2's new starting picture" in said
 
 
 def test_a_not_fixed_answer_with_no_reason_is_no_answer_but_is_still_paid_for(

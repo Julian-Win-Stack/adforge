@@ -129,7 +129,7 @@ from .models import (
     Scene,
     SceneStep,
 )
-from .notices import post_left_out_by_the_filter, post_notice
+from .notices import post_left_out_by_the_filter, post_notice, post_refused_by_the_filter
 from .picture_check import (
     ASKS,
     FAILS_TO_FAIL,
@@ -2208,7 +2208,13 @@ def clean_picture(scene: Scene, row: ReferencePhoto) -> str:
                     thing=row.thing,
                 ) from error
             problems = (
-                judge_starting_picture(job, file, row.file, about=f"the shop owner's {row.thing}")
+                judge_starting_picture(
+                    job,
+                    file,
+                    row.file,
+                    about=f"the shop owner's {row.thing}",
+                    named=f"the clean picture of the shop owner's {row.thing}",
+                )
                 if settings.QUALITY_CHECKS
                 else []
             )
@@ -2392,6 +2398,7 @@ def judge_starting_picture(
     photo: str,
     *,
     about: str,
+    named: str = "",
     owner_part: owner_parts.OwnerPart | None = None,
 ) -> list[str]:
     """What is wrong with the starting picture at `picture`, from a judge shown the picture,
@@ -2400,40 +2407,64 @@ def judge_starting_picture(
     fail it; nothing when it passes. An ask the safety filter blocks, or whose answer can't
     be had, counts as not checked: the picture is paid for, and failing it would pay for it
     again. `about` names the picture in the log. A picture that draws `owner_part` from its
-    sentence is checked with the sentence for that part, as no photo shows it."""
+    sentence is checked with the sentence for that part, as no photo shows it.
+
+    A shop photo the safety filter refuses is left out, and the picture judged without it;
+    the chat is told in red, naming the picture as `named` does (its starting picture, by
+    `about`, unless told). A job of None, as in an eval, has no chat."""
+    named = named or f"{about}'s starting picture"
+    shop_photo = Image(label="The shop photo:", key=photo)
     passes = 0
     problems: list[str] = []
+    left_out: list[Image] = []
+    refused = False
     # Asked until the answers settle it, so a picture two answers pass isn't asked a third.
     for ask in range(1, ASKS + 1):
         if passes > ASKS - FAILS_TO_FAIL or len(problems) >= FAILS_TO_FAIL:
             break
         try:
-            verdict = call_model(
-                job=job,
-                purpose="check_starting_picture",
-                instructions=(
-                    STARTING_PICTURE_CHECK
-                    if owner_part is None
-                    else f"{STARTING_PICTURE_CHECK}\n\n{owner_parts.CHECK_RULE}"
+            # The shop photo the safety filter refuses is left out, and the picture judged
+            # without it (requirement 22); the picture judged never is.
+            handoff = owner_parts.check_handoff(ask, owner_part)
+            verdict, left = past_the_safety_filter(
+                lambda shown: call_model(
+                    job=job,
+                    purpose="check_starting_picture",
+                    instructions=(
+                        STARTING_PICTURE_CHECK
+                        if owner_part is None
+                        else f"{STARTING_PICTURE_CHECK}\n\n{owner_parts.CHECK_RULE}"
+                    ),
+                    handoff=handoff,  # noqa: B023 (asked before the next loop)
+                    output=StartingPictureVerdict,
+                    images=shown,
+                    pay_once=True,
                 ),
-                handoff=owner_parts.check_handoff(ask, owner_part),
-                output=StartingPictureVerdict,
-                images=[
-                    Image(label="The picture to judge:", key=picture),
-                    Image(label="The shop photo:", key=photo),
-                ],
-                pay_once=True,
+                [Image(label="The picture to judge:", key=picture), shop_photo],
+                may_leave_out=lambda image: image == shop_photo,
             )
+            left_out += left
         except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
             logger.warning(
                 "Ask %s about %s's starting picture went unchecked: %s", ask, about, error
             )
+            refused = refused or isinstance(error, BlockedBySafetyFilter)
             continue
         if verdict.verdict == "pass":
             passes += 1
         else:
             assert verdict.problem is not None, "a failing answer says why"
             problems.append(verdict.problem)
+    if job is not None and left_out:
+        post_left_out_by_the_filter(job, ["the shop photo"], f"{named} was checked")
+    if job is not None and refused:
+        post_refused_by_the_filter(
+            job,
+            named,
+            "it is kept unchecked: check it yourself"
+            if passes + len(problems) == 0
+            else "some of its checks couldn't be made",
+        )
     return problems if len(problems) >= FAILS_TO_FAIL else []
 
 
@@ -2476,9 +2507,11 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
         return None
     if picture:
         job = fix.job
+        refused = _FilterRefused()
         settled = fix_check.settle(
-            lambda ask: _ask_about_the_fix(job, fix, ask, old.file, made.file)
+            lambda ask: _ask_about_the_fix(job, fix, ask, old.file, made.file, refused)
         )
+        _say_what_the_filter_refused(fix, refused)
     else:
         settled = _the_clip_judges_answer(made)
     return FixCheck.objects.create(
@@ -2527,12 +2560,26 @@ def _the_clip_judges_answer(new: ProducedItem) -> fix_check.Settled:
     return fix_check.settle_all(clip_judge.owner_change_answers(ruling))
 
 
-def _ask_about_the_fix(job: Job, fix: Fix, ask: int, old: str, new: str) -> dict[str, Any] | None:
+@dataclass
+class _FilterRefused:
+    """What the safety filter refused while a fix was checked (requirement 22): the shop
+    owner's photos left out of an ask, by name, and whether it refused an ask even without
+    them, over the pictures checked."""
+
+    left_out: list[str] = field(default_factory=list)
+    refused: bool = False
+
+
+def _ask_about_the_fix(
+    job: Job, fix: Fix, ask: int, old: str, new: str, refused: _FilterRefused
+) -> dict[str, Any] | None:
     """Ask the judge once whether the new picture at `new` has the change `fix` asks for,
     shown the old picture at `old` first and, for a fix that takes things from the shop
     owner's photos, each photo after the new picture, named (Julian 2026-10-15 19:34). Gives
     its answer, or None when none could be had: the picture is paid for, and failing it on no
-    answer would hold up its clip."""
+    answer would hold up its clip. A shop owner's photo the safety filter refuses is left out
+    and the judge asked again without it, as a fix without that photo is: the answer's
+    "not_shown" names each, and `refused` gathers what the filter refused."""
     images = [
         Image(label="The old picture:", key=old),
         Image(label="The new picture:", key=new),
@@ -2540,10 +2587,52 @@ def _ask_about_the_fix(job: Job, fix: Fix, ask: int, old: str, new: str) -> dict
     # Only things drawn into the picture: one that shows during the clip is never in a still,
     # and its clip's judge looks for it.
     photos = [photo for photo in fix.photos if photo["use"] == ReferencePhoto.Use.PICTURE]
+    owners = [
+        Image(label=f"The shop owner's photo of their {photo['thing']}:", key=str(photo["file"]))
+        for photo in photos
+    ]
     during = [str(photo["thing"]) for photo in clip_judge.during_the_clip(fix)]
-    if not photos and during:
-        return _fix_answer(
-            job,
+
+    def asking(shown: list[Image]) -> dict[str, Any]:
+        things = [
+            str(photo["thing"])
+            for photo, image in zip(photos, owners, strict=True)
+            if image in shown
+        ]
+        return _fix_question(job, fix, ask, shown, things, during).model_dump()
+
+    try:
+        answer, left = past_the_safety_filter(
+            asking, [*images, *owners], may_leave_out=lambda image: image in owners
+        )
+    except Exception as error:
+        logger.warning(
+            "Ask %s about the fix %r went unchecked: %s",
+            ask,
+            fix.fix,
+            error,
+            # Expected when a model or the service misbehaves; anything else is a bug to see.
+            exc_info=not isinstance(
+                error, (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter, AnswerTookTooLong)
+            ),
+        )
+        refused.refused = refused.refused or isinstance(error, BlockedBySafetyFilter)
+        return None
+    if not left:
+        return answer
+    not_shown = [clip_judge.named(image) for image in left]
+    refused.left_out += not_shown
+    return {**answer, "not_shown": not_shown}
+
+
+def _fix_question(
+    job: Job, fix: Fix, ask: int, images: list[Image], things: list[str], during: list[str]
+) -> fix_check.FixVerdict | fix_check.PhotoFixVerdict:
+    """The judge's answer about the fix, shown `images`: the old and new pictures, then the
+    shop owner's photos of `things`, in order; told of the things `during` the clip."""
+    if not things and during:
+        return call_model(
+            job=job,
             purpose="check_fix",
             instructions=f"{fix_check.FIX_CHECK}\n\n{fix_check.DURING_THE_ACTION}",
             handoff=fix_check.DuringTheActionHandoff(
@@ -2551,19 +2640,20 @@ def _ask_about_the_fix(job: Job, fix: Fix, ask: int, old: str, new: str) -> dict
             ),
             output=fix_check.FixVerdict,
             images=images,
+            pay_once=True,
         )
-    if not photos:
-        return _fix_answer(
-            job,
+    if not things:
+        return call_model(
+            job=job,
             purpose="check_fix",
             instructions=fix_check.FIX_CHECK,
             handoff=fix_check.FixCheckHandoff(fix=fix.fix, ask=ask),
             output=fix_check.FixVerdict,
             images=images,
+            pay_once=True,
         )
-    things = [str(photo["thing"]) for photo in photos]
-    return _fix_answer(
-        job,
+    return call_model(
+        job=job,
         purpose="check_fix",
         instructions="\n\n".join(
             [
@@ -2576,54 +2666,25 @@ def _ask_about_the_fix(job: Job, fix: Fix, ask: int, old: str, new: str) -> dict
             fix=fix.fix, ask=ask, owner_photos=things, during_the_action=during
         ),
         output=fix_check.PhotoFixVerdict,
-        images=[
-            *images,
-            *(
-                Image(
-                    label=f"The shop owner's photo of their {photo['thing']}:",
-                    key=str(photo["file"]),
-                )
-                for photo in photos
-            ),
-        ],
+        images=images,
+        pay_once=True,
     )
 
 
-def _fix_answer(
-    job: Job,
-    *,
-    purpose: str,
-    instructions: str,
-    handoff: fix_check.FixCheckHandoff,
-    output: type[fix_check.FixVerdict] | type[fix_check.PhotoFixVerdict],
-    images: list[Image],
-) -> dict[str, Any] | None:
-    """One answer of the judge checking a fix, or None when none could be had, whatever went
-    wrong, as the clip judge's asks: what it checks is already paid for, and failing it on
-    no answer would fail that too."""
-    try:
-        verdict = call_model(
-            job=job,
-            purpose=purpose,
-            instructions=instructions,
-            handoff=handoff,
-            output=output,
-            images=images,
-            pay_once=True,
+def _say_what_the_filter_refused(fix: Fix, refused: _FilterRefused) -> None:
+    """Tell the chat in red of every picture the safety filter refused while `fix` was
+    checked."""
+    number = fix.scene.number
+    if refused.left_out:
+        post_left_out_by_the_filter(
+            fix.job, list(dict.fromkeys(refused.left_out)), f"scene {number}'s fix was checked"
         )
-    except Exception as error:
-        logger.warning(
-            "Ask %s about the fix %r went unchecked: %s",
-            handoff.ask,
-            handoff.fix,
-            error,
-            # Expected when a model or the service misbehaves; anything else is a bug to see.
-            exc_info=not isinstance(
-                error, (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter, AnswerTookTooLong)
-            ),
+    if refused.refused:
+        post_refused_by_the_filter(
+            fix.job,
+            f"scene {number}'s new starting picture",
+            "some of the checks of your change couldn't be made",
         )
-        return None
-    return verdict.model_dump()
 
 
 def say_the_fix_check_failed(check: FixCheck) -> None:
