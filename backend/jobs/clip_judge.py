@@ -565,7 +565,9 @@ def judge_clip(
                 [each.answer for each in motion],
                 clip,
                 compared_with=old,
-                photos=bool(old and step.fix and during_the_clip(step.fix)),
+                # Judged in the photo form only while a shop owner's photo was still shown.
+                photos=bool(old and step.fix and during_the_clip(step.fix))
+                and not all(each.without_owner_photos for each in motion),
             ),
             **_past_the_filter(sides, motion),
         }
@@ -577,7 +579,7 @@ def judge_clip(
         }
     clip.ruling = ruling
     clip.save(update_fields=["ruling"])
-    _say_what_the_filter_refused(step, answered)
+    _say_what_the_filter_refused(step, answered, ruling["verdict"])
     return ruling
 
 
@@ -600,10 +602,13 @@ def _past_the_filter(sides: list[_Answered], motion: list[_Answered]) -> dict[st
     }
 
 
-def _say_what_the_filter_refused(step: SceneStep, answered: list[_Answered]) -> None:
+def _say_what_the_filter_refused(
+    step: SceneStep, answered: list[_Answered], verdict: Verdict
+) -> None:
     """Tell the chat in red of every picture the safety filter refused when the clip was
     judged: the reference pictures it was judged without, and the clip itself, when the
-    filter refused to judge it at all."""
+    filter refused to judge it at all; kept as it is only when the ruling, `verdict`, didn't
+    fail it on the checks that were made."""
     job, number = step.scene.job, step.scene.number
     left = list(dict.fromkeys(name for each in answered for name in each.not_shown))
     if left:
@@ -612,7 +617,10 @@ def _say_what_the_filter_refused(step: SceneStep, answered: list[_Answered]) -> 
         post_refused_by_the_filter(
             job,
             f"scene {number}'s clip",
-            "the clip judge couldn't check all of it and it is kept as it is: check it yourself",
+            "the clip judge couldn't check all of it"
+            if verdict == "fail"
+            else "the clip judge couldn't check all of it and it is kept as it is: check it "
+            "yourself",
         )
 
 
@@ -777,6 +785,8 @@ class _Answered:
     answer: dict[str, Any] | None
     not_shown: list[str]
     refused: bool = False
+    # Asked as a fix with no shop owner's photo, as the filter refused every one of them.
+    without_owner_photos: bool = False
 
 
 def _answer(step: SceneStep, ask: _Ask) -> _Answered:
@@ -786,23 +796,24 @@ def _answer(step: SceneStep, ask: _Ask) -> _Answered:
     never are, as a check that didn't see part of the clip can't pass it."""
     references = ask.images[: ask.references]
 
-    def asking(shown: list[Image]) -> dict[str, Any]:
+    def asking(shown: list[Image]) -> tuple[dict[str, Any], bool]:
+        instructions, handoff, output = _as_shown(ask, shown)
         answer: BaseModel = call_model(
             job=step.scene.job,
             purpose=ask.purpose,
-            instructions=ask.instructions,
-            handoff=_handed(ask.handoff, shown),
-            output=ask.output,
+            instructions=instructions,
+            handoff=handoff,
+            output=output,
             images=shown,
             pay_once=True,
         )
-        return answer.model_dump(mode="json")
+        return answer.model_dump(mode="json"), output is not ask.output
 
     try:
-        answer, left_out = past_the_safety_filter(
+        (answer, without), left_out = past_the_safety_filter(
             asking, ask.images, may_leave_out=lambda image: image in references
         )
-        return _Answered(answer, [named(image) for image in left_out])
+        return _Answered(answer, [named(image) for image in left_out], without_owner_photos=without)
     except Exception as error:
         logger.warning(
             "%s ask %s about scene %s's clip went unchecked: %s",
@@ -818,17 +829,23 @@ def _answer(step: SceneStep, ask: _Ask) -> _Answered:
         return _Answered(None, [], refused=isinstance(error, BlockedBySafetyFilter))
 
 
-def _handed(handoff: ClipCheckHandoff, shown: list[Image]) -> ClipCheckHandoff:
-    """`handoff`, naming only the shop owner's photos among the pictures `shown`."""
+def _as_shown(
+    ask: _Ask, shown: list[Image]
+) -> tuple[str, ClipCheckHandoff, type[SidesVerdict] | type[MotionVerdict]]:
+    """What `ask` is told, handed and answers as when it is shown `shown`: a fix's ask with
+    the shop owner's photos names only those still shown, and with none of them left, is
+    asked as a fix without photos is."""
+    handoff = ask.handoff
     if not isinstance(handoff, MotionPhotoFixCheckHandoff):
-        return handoff
+        return ask.instructions, handoff, ask.output
     labels = {image.label for image in shown}
-    return handoff.model_copy(
-        update={
-            "owner_photos": [
-                thing for thing in handoff.owner_photos if OWNER_PHOTO_LABEL.format(thing) in labels
-            ]
-        }
+    kept = [thing for thing in handoff.owner_photos if OWNER_PHOTO_LABEL.format(thing) in labels]
+    if kept:
+        return ask.instructions, handoff.model_copy(update={"owner_photos": kept}), ask.output
+    return (
+        f"{MOTION_CHECK}\n\n{MOTION_FIX_QUESTION}",
+        MotionFixCheckHandoff(**handoff.model_dump(exclude={"owner_photos"})),
+        MotionFixVerdict,
     )
 
 
