@@ -449,6 +449,8 @@ def test_a_reference_the_scene_excludes_is_refused_with_no_clip_or_try(
     failed_clip.scene.excluded = [7]
     failed_clip.scene.save(update_fields=["excluded"])
     fake_model.respond("fix_scene", turn(calls=[with_references()]), turn(calls=[film_again()]))
+    # The plain try re-cuts the sent list: a picture recoloured to the clip's colour passes.
+    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
     asked_before = len(fake_model.broll_clips_asked)
 
     fixed(failed_clip)

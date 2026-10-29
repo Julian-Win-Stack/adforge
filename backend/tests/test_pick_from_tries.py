@@ -300,11 +300,11 @@ def test_a_tap_while_the_scene_is_being_made_is_refused_until_its_ready(
     failed_ad: ProducedItem, api: APIClient, session_id: str
 ) -> None:
     _, try_1, _ = tries()
-    # Its picture is being drawn again.
-    drawn = SceneStep.objects.filter(kind="starting_picture", scene__number=2).last()
-    assert drawn is not None
+    # Its clip is being made again (it has no starting picture: spec #210 point 19).
+    making = SceneStep.objects.filter(kind="clip", scene__number=2).last()
+    assert making is not None
     SceneStep.objects.create(
-        scene=drawn.scene, kind=drawn.kind, tool_call=drawn.tool_call, line=drawn.line
+        scene=making.scene, kind=making.kind, tool_call=making.tool_call, line=making.line
     )
 
     sent = tap_use(api, session_id, try_1)
@@ -416,12 +416,13 @@ def test_going_back_to_a_try_after_the_line_changed_keeps_the_newer_line(
 
     tap_yes(api, session_id, plans()[-1])
 
-    # The try's picture is brought back, the product shown again, with the newer line.
+    # The try's sent list is brought back, the product shown again, with the newer line:
+    # its clip is made again (it has no starting picture: spec #210 point 19).
     scene.refresh_from_db()
     assert (scene.line, scene.shows) == (newer, SHOWS)
     top = work.versions(scene)[-1]
-    assert top.picture is not None and top.picture.file == try_1.picture.file  # type: ignore[union-attr]
-    assert top.clip is None
+    assert top.label == "v4 back to v2"
+    assert top.picture is None and top.clip is None
 
 
 SLOWER = "Pour the tea slower."
@@ -441,7 +442,8 @@ def test_a_note_after_a_tap_has_the_rewrite_start_from_the_swapped_in_clips_move
     fake_model.respond("rewrite_clip_prompt", rewrite(REMADE_AGAIN))
     steps.run_next()
 
-    assert handoffs("rewrite_clip_prompt")[-1]["motion_prompt"] == REMADE
+    # The swapped-in try's prompt, as it was sent with its pictures.
+    assert handoffs("rewrite_clip_prompt")[-1]["motion_prompt"].endswith(REMADE)
 
 
 # --- A fix's clip the agent gave up on keeps the clip from before -----------------------------

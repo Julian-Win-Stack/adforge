@@ -18,8 +18,8 @@ from agents.models import SystemNote, ToolCall
 from chat import messages
 from chat.models import Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
-from gateway.types import StepFinished, Turn, UnusableReply
-from jobs import fix_check
+from gateway.types import StepFinished, Turn
+from jobs import fix_check, work
 from jobs.models import (
     FixCheck,
     FixPlan,
@@ -31,7 +31,7 @@ from jobs.models import (
 )
 
 from .agent_tries import agent_films
-from .conftest import CLIP_SIDES_OK, MUG_SIDE, HeldSteps, producer_turns
+from .conftest import MUG_SIDE, HeldSteps, producer_turns
 from .fixing import fixed, owner_photo, plan_row, planned
 from .test_fix_check import HANDLE_HIDDEN, not_made
 from .test_fix_loop import TURN_REWRITE
@@ -590,12 +590,12 @@ def test_go_ahead_carries_on_only_the_scenes_it_names_when_two_checks_wait(
     api: APIClient,
     session_id: str,
 ) -> None:
-    # A plan stored before the fixing agent: a new picture of B-roll scene 2 beside scene 1's.
-    note = "Make the workshop brighter in scenes 1 and 2."
-    both = [plan_row(number, "new_picture", change=BRIGHTER) for number in (1, 2)]
+    # A plan stored before the fixing agent: new pictures of talking scenes 1 and 3 (a scene
+    # that shows the product has none to check: spec #210 point 19).
+    note = "Make the workshop brighter in scenes 1 and 3."
+    both = [plan_row(number, "new_picture", change=BRIGHTER) for number in (1, 3)]
     tap_yes(api, session_id, stored(*both, note=note))
-    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
+    fake_model.respond("choose_starting_picture", TALKING_CHOICE, TALKING_CHOICE)
     fake_model.respond("check_fix", *[not_made(HANDLE_HIDDEN)] * 4)
     held.run_held()
     assert list(FixCheck.objects.values_list("verdict", flat=True)) == ["failed", "failed"]
@@ -611,10 +611,10 @@ def test_go_ahead_carries_on_only_the_scenes_it_names_when_two_checks_wait(
     assert (
         ToolCall.objects.filter(agent="decider", tool="sort_message", result__startswith="Refused:")
         .get()
-        .result.startswith("Refused: fix checks wait on scenes 1 and 2: name the scenes")
+        .result.startswith("Refused: fix checks wait on scenes 1 and 3: name the scenes")
     )
     gone = dict(FixCheck.objects.values_list("step__scene__number", "gone_ahead_at"))
-    assert gone[1] is not None and gone[2] is None
+    assert gone[1] is not None and gone[3] is None
     [step] = SceneStep.objects.filter(pk__in=held.held)
     assert (step.kind, step.scene.number) == ("clip", 1)
 
@@ -664,6 +664,7 @@ def test_a_new_picture_keeps_the_movement_of_the_clip_it_replaces(
     # The live ad's fix 1: a picture note gave the clip a newly chosen action the shop owner
     # never asked for. Only a new clip chooses a new movement (design thread, 05:15 Oct 17).
     # A plan stored before the fixing agent: a new picture of a B-roll scene.
+    moved = work.motion_of(clip(2))
     table = plan_row(2, "new_picture", change="The mug is on a wooden table.")
     tap_yes(api, session_id, stored(table, note="In scene 2 put the mug on a wooden table."))
     fake_model.respond("choose_broll_picture", {**BROLL_CHOICE, "motion_prompt": LIFT})
@@ -672,7 +673,7 @@ def test_a_new_picture_keeps_the_movement_of_the_clip_it_replaces(
 
     assert status(2) == "finished"
     asked = fake_model.broll_clips_asked[-1]["prompt"]
-    assert MOTION in asked
+    assert moved in asked
     assert LIFT not in asked
 
 
@@ -683,20 +684,23 @@ def test_a_movement_note_with_a_photo_of_a_thing_in_the_picture_moves_as_the_not
     api: APIClient,
     session_id: str,
 ) -> None:
-    # A new clip whose photo's thing is in the picture is made a new picture, as the route
-    # says; its clip still chooses its movement from the note (design thread, 05:15 Oct 17).
-    # A plan stored before the fixing agent: a new clip of a B-roll scene, with the photo.
+    # A new clip whose photo's thing is in the picture: the photo is sent with the clip (spec
+    # #210 point 19) and the clip chooses its movement from the note (design thread, 05:15
+    # Oct 17). A plan stored before the fixing agent: a new clip of a B-roll scene.
+    moved = work.motion_of(clip(2))
     note = "In scene 2 the hand should lift my black mug to the camera."
     mug = {**mug_photo_sent(fake_model, say, note), "in_picture": True}
     tap_yes(api, session_id, stored(plan_row(2, "new_clip", change=LIFT, photos=[mug]), note=note))
-    fake_model.respond("choose_broll_picture", {**BROLL_CHOICE, "motion_prompt": LIFT})
+    fake_model.respond(
+        "rewrite_clip_prompt", {"motion_prompt": LIFT, "motion_prompt_reason": "The note."}
+    )
 
     held.run_held()
 
     assert status(2) == "finished"
     asked = fake_model.broll_clips_asked[-1]["prompt"]
     assert LIFT in asked
-    assert MOTION not in asked
+    assert moved not in asked
 
 
 def test_a_photos_thing_too_long_to_keep_is_refused_to_the_decider_which_names_it_again(
@@ -818,8 +822,9 @@ def test_a_fix_clip_the_judge_couldnt_check_is_kept_and_the_chat_says_so(
     session_id: str,
 ) -> None:
     _a_picture_note_on_scene_2_said_yes_to(fake_model, say, api, session_id)
-    unusable = UnusableReply("no answer", input_tokens=1, output_tokens=1)
-    fake_model.respond("check_clip_sides", *[unusable] * 6, CLIP_SIDES_OK)
+    # PRODUCT and MOTION never give an answer that can be read.
+    for purpose in ("check_clip_product", "check_clip_motion"):
+        fake_model.answer_unscripted(purpose, lambda _: {})
 
     held.run_held()
 

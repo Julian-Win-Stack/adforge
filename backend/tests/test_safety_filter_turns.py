@@ -28,13 +28,20 @@ from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def refused_over(label: str, *turns: Turn) -> Callable[[TurnRequest], Turn]:
+def refused_over(
+    label: str, *turns: Turn, times: int | None = None
+) -> Callable[[TurnRequest], Turn]:
     """An agent model whose safety filter refuses any turn showing the picture labelled
-    `label`, and otherwise takes `turns` in order."""
+    `label` (only its first `times` such turns, when given), and otherwise takes `turns` in
+    order."""
     left = deque(turns)
+    refused = [0]
 
     def taking(request: TurnRequest) -> Turn:
-        if label in [image.label for image in request.images]:
+        if label in [image.label for image in request.images] and (
+            times is None or refused[0] < times
+        ):
+            refused[0] += 1
             raise BlockedBySafetyFilter("content_policy_violation")
         return left.popleft()
 
@@ -305,6 +312,9 @@ def test_a_fixing_agent_turn_refused_over_a_look_is_taken_again_and_costs_no_try
             turn(calls=[("look_at_shop_photo", {"photo": photo})]),
             turn(calls=[film_again()]),
             turn(calls=[("give_up", {"reason": "It can't be filmed."})]),
+            # The try is shown with its sent list, the shop photo in it (spec #210 point 19):
+            # only the look is refused here.
+            times=1,
         ),
     )
     fake_model.respond("check_clip_motion", failing(FLOATS))

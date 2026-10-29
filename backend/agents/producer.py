@@ -1846,7 +1846,10 @@ class Estimate(NamedTuple):
 # ask of the clip judge on gpt-6.1-sol (decider call 13, 2026-10-13).
 CALL_FALLBACK_USD = Decimal("0.07")
 MILLIONTH = Decimal("0.000001")
-_JUDGE_PURPOSES = ["check_clip_sides", "check_clip_motion"]
+# The clip judge's asks about a B-roll clip, made from its sent list (spec #210 point 19):
+# its first question once, then PRODUCT and MOTION each ASKS times.
+_JUDGE_PURPOSES = ["check_clip_references", "check_clip_product", "check_clip_motion"]
+_JUDGE_ASKS = 1 + 2 * clip_judge.ASKS
 _WRITER_PURPOSES = ["rewrite_clip_prompt"]
 # The fixing agent's turns for one try: a look or two, then film_again. A GUESS, until real
 # runs of the agent in the app are recorded (fixing agent build, T3).
@@ -1965,7 +1968,7 @@ def _judge_usd(scene: Scene) -> Decimal:
     for a talking scene, or with quality checks off."""
     if not (scene.shows and settings.QUALITY_CHECKS):
         return Decimal(0)
-    return 2 * clip_judge.ASKS * _each_call_usd(scene, _JUDGE_PURPOSES)
+    return _JUDGE_ASKS * _each_call_usd(scene, _JUDGE_PURPOSES)
 
 
 def _each_call_usd(scene: Scene, purposes: list[str]) -> Decimal:

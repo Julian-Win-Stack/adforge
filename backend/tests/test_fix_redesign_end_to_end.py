@@ -1,7 +1,7 @@
 """The fix redesign end to end, through the chat, with every model faked (ticket 09; test
 layers 2 and 3 of decisions/fix-redesign.md section 7). One shop owner's ad, first made,
-then fixed three ways in a row: a picture note planned by the decider, run by code after the
-yes through the picture check, the fix check and the clip judge, and shown; then going back
+then fixed three ways in a row: a clip note planned by the decider, run by code after the
+yes through the clip judge, and shown; then going back
 to the first version; then a new line. And the producer's lane: a question asked mid-fix is
 the producer's, given with the notes code wrote, and the fix carries on by code (decision
 20). What the producer says from them is its model's, scripted here."""
@@ -16,9 +16,9 @@ from chat.models import Message
 from gateway.fake import FakeModel, turn
 from gateway.types import Said
 from jobs import work
-from jobs.models import AgentFix, FixCheck, ProducedItem, Scene, SceneStep
+from jobs.models import AgentFix, FixCheck, ProducedItem, Scene
 
-from .conftest import JUDGED_CLIP, HeldSteps, facts_ok, paid_for, producer_turns
+from .conftest import SENT_LIST_JUDGED, HeldSteps, facts_ok, paid_for, producer_turns
 from .fixing import fixed, plan_row
 from .test_fix_wiring import (
     decided,
@@ -57,7 +57,7 @@ def held(steps: HeldSteps, fake_model: FakeModel) -> HeldSteps:
     return steps
 
 
-def test_an_ad_is_fixed_by_a_picture_note_then_gone_back_then_given_a_new_line(
+def test_an_ad_is_fixed_by_a_clip_note_then_gone_back_then_given_a_new_line(
     fake_model: FakeModel,
     held: HeldSteps,
     say: Callable[..., None],
@@ -68,31 +68,28 @@ def test_an_ad_is_fixed_by_a_picture_note_then_gone_back_then_given_a_new_line(
     first = work.versions(Scene.objects.get(number=2))[0]
     ads_before = len(ads())
 
-    # A picture note: a plan stored before the fixing agent, of a new picture of B-roll
-    # scene 2; code shows the plan, nothing is made yet.
-    stored(
-        plan_row(2, "new_picture", change=TABLE), note="In scene 2 put the mug on a wooden table."
-    )
+    # A clip note: a plan stored before the fixing agent, of a new clip of B-roll scene 2
+    # (spec #210 point 19: it has no starting picture to draw again); code shows the plan,
+    # nothing is made yet.
+    stored(plan_row(2, "new_clip", change=TABLE), note="In scene 2 put the mug on a wooden table.")
     [plan] = plans()
     assert Message.objects.filter(plan_event="shown", fix_plan=plan).exists()
     assert held.held == []
 
-    # The yes: code makes the picture, checks it twice, then makes its clip and judges it.
+    # The yes: code makes the clip from its sent list and judges it, the change with it.
     tap_yes(api, session_id, plan)
     paid_before = len(paid_for())
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
-    held.run_next()
-    [clip_step] = SceneStep.objects.filter(pk__in=held.held)
-    assert (clip_step.kind, clip_step.picture) == ("clip", picture(2))
+    fake_model.respond("rewrite_clip_prompt", rewrite(REMADE))
     held.run_held()
 
     checks = paid_for()[paid_before:]
-    assert "check_starting_picture" in checks
-    assert "check_fix" in checks
+    assert "check_starting_picture" not in checks
+    assert "make_starting_picture" not in checks
     judged = [purpose for purpose in checks if purpose.startswith("check_clip_")]
-    assert sorted(judged) == sorted(JUDGED_CLIP)
+    assert sorted(set(judged)) == sorted(set(SENT_LIST_JUDGED))
     assert FixCheck.objects.get().verdict == "passed"
     assert status(2) == "finished"
+    assert clip(2).picture is None
     assert len(ads()) == ads_before + 1
     assert clip(2).pk in [cut["clip"] for cut in ads()[-1].cuts]
     assert work.versions(Scene.objects.get(number=2))[-1].label == f"v2 {TABLE}"
@@ -148,36 +145,8 @@ def test_an_ad_is_fixed_by_a_picture_note_then_gone_back_then_given_a_new_line(
     assert producer_turns() == turns
 
 
-def test_a_note_asking_for_a_new_line_and_a_new_picture_on_one_scene_gets_both(
-    fake_model: FakeModel,
-    held: HeldSteps,
-    say: Callable[..., None],
-    api: APIClient,
-    session_id: str,
-) -> None:
-    turns, ads_before, old = producer_turns(), len(ads()), picture(2)
-    # A plan stored before the fixing agent: a new picture of B-roll scene 2, with its line.
-    note = f'Scene 2 should say "{NEW_LINE}", with the mug on a wooden table.'
-    stored(plan_row(2, "new_picture", change=TABLE, line=NEW_LINE), note=note)
-    [plan] = plans()
-    shown = Message.objects.get(plan_event="shown", fix_plan=plan)
-    assert f'New line: "{NEW_LINE}"' in shown.text
-
-    tap_yes(api, session_id, plan)
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
-    held.run_held()
-
-    scene = Scene.objects.get(number=2)
-    assert (scene.line, scene.status) == (NEW_LINE, "finished")
-    drawn = picture(2)
-    assert drawn != old and drawn.step is not None
-    assert (drawn.step.line, drawn.step.note) == (NEW_LINE, TABLE)
-    made = clip(2)
-    assert made.picture == drawn and made.step is not None and made.step.line == NEW_LINE
-    assert FixCheck.objects.get().verdict == "passed"
-    assert len(ads()) == ads_before + 1
-    assert made.pk in [cut["clip"] for cut in ads()[-1].cuts]
-    assert producer_turns() == turns
+# Spec #210 point 19: the test of a new line and a new picture on one B-roll scene was
+# deleted: the scene has no starting picture, and a B-roll new_picture is #242's.
 
 
 def test_a_question_mid_fix_is_the_producers_with_the_notes_and_the_fix_carries_on(

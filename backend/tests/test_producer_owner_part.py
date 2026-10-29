@@ -17,7 +17,7 @@ from agents.producer import INSTRUCTIONS
 from agents.tasks import restart_dead_producers
 from chat.models import Message
 from gateway.fake import FakeModel, turn
-from jobs import owner_parts, reference_photos
+from jobs import owner_parts, reference_photos, scene_references
 from jobs.library import OwnerPart, library_of
 from jobs.models import Job, ReferencePhoto, Scene, SceneStep
 from jobs.reference_photos import ReferencePhotoUnusable
@@ -362,7 +362,11 @@ def test_three_rounds_of_corrections_then_a_yes_make_the_clip(
     clip = Job.objects.get().produced.get(kind="clip", scene__number=2)
     assert clip.picture is None
     assert clip.sent is not None
-    assert part_item().number in [picture["library_number"] for picture in clip.sent["pictures"]]
+    sent = [picture["library_number"] for picture in clip.sent["pictures"]]
+    # Sent as it is or recoloured to the clip's colour: a version of the part's item.
+    job = Job.objects.get()
+    originals = [scene_references.original_number(job, n) for n in sent if n is not None]
+    assert part_item().number in originals
 
 
 # --- The rest of the ad --------------------------------------------------------------------------

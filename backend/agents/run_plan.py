@@ -215,11 +215,14 @@ def _rule_cant(row: FixPlanScene) -> str:
         if row.go_back_to is None or not 1 <= row.go_back_to <= count:
             has = "only version 1" if count == 1 else f"versions 1 to {count}"
             return f"Scene {number} has {has}, so there is no version {row.go_back_to}."
-        if work.versions(scene)[row.go_back_to - 1].picture is None and not (
-            work.go_back_is_free(scene, row.go_back_to)
+        if (
+            work.versions(scene)[row.go_back_to - 1].picture is None
+            and not scene.shows
+            and not work.go_back_is_free(scene, row.go_back_to)
         ):
-            # A B-roll scene made from example pictures: its clip no longer says the line,
-            # and there is no picture to make a new one from (work.NothingToBringBack).
+            # A talking version with no picture: its clip no longer says the line, and there
+            # is no picture to make a new one from (work.NothingToBringBack). A scene that
+            # shows the product makes its new clip from the version's sent list.
             return (
                 f"Scene {number}'s version {row.go_back_to} can't be brought back: its clip no "
                 "longer says the scene's line, and it has no starting picture to make a new "
@@ -293,8 +296,11 @@ def _row_estimate(row: FixPlanScene, counted: set[tuple[str, str]]) -> Estimate:
         return _quantized(_clip_estimate(scene, _audio_seconds(scene), from_note=False))
     elif row.line:
         # A new picture asked for with a new line: both, then the clip. A new line keeps the
-        # picture, or draws one for a scene that has none.
-        new_picture = row.action == Action.NEW_PICTURE or _shown_picture(scene) is None
+        # picture, or draws one for a talking scene that has none; a scene that shows the
+        # product never has one (spec #210 point 19).
+        new_picture = row.action == Action.NEW_PICTURE or (
+            not scene.shows and _shown_picture(scene) is None
+        )
         estimate = _quantized(_line_estimate(scene, f'"{row.line}"', new_picture=new_picture))
     else:
         estimate = _estimate(scene, _REDO[Action(row.action)], row.change)
