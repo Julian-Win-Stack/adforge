@@ -372,10 +372,15 @@ def cut_pieces(wanted: Sequence[PieceWanted]) -> PiecesCut:
             )
             continue
         start, end = piece.start, piece.end
-        if end - start < LEAST_PIECE_SECONDS:
-            left_out.append(LeftOutPiece(piece, _too_short(piece)))
-            continue
         trim: PieceTrim | None = None
+        # A moment can run past its video's end, as seconds counted to the second can: the
+        # piece holds, and says, only the seconds there are.
+        length = _length_of(piece.video)
+        if end > length:
+            trim, end = "video_ended", length
+        if end - start < LEAST_PIECE_SECONDS:
+            left_out.append(LeftOutPiece(piece, _too_short(start, end)))
+            continue
         # The backstop: a moment longer than the video model takes is cut to its first
         # seconds, and pieces longer than it takes in all have the last cut to fit; either
         # way the piece says so.
@@ -392,13 +397,26 @@ def cut_pieces(wanted: Sequence[PieceWanted]) -> PiecesCut:
     return PiecesCut(sent=sent, left_out=left_out)
 
 
-def _too_short(piece: PieceWanted) -> str:
-    """Why a moment shorter than the video model takes isn't sent. Not approved yet: it is
-    left out rather than widened past its own seconds, which the sent list never holds."""
+def _too_short(start: float, end: float) -> str:
+    """Why a moment holding fewer seconds of video than the video model takes isn't sent.
+    Not approved yet: it is left out rather than widened past its own seconds, which the
+    sent list never holds."""
     return (
-        f"its moment is {piece.end - piece.start:g} s long, and the video model takes pieces of "
+        f"it holds {max(0.0, end - start):g} s of video, and the video model takes pieces of "
         f"at least {LEAST_PIECE_SECONDS} s"
     )
+
+
+def _length_of(video: str) -> float:
+    """How many seconds long the video kept as `video` is. Raises RuntimeError for one
+    ffprobe can't read."""
+    with tempfile.TemporaryDirectory() as folder:
+        file = Path(folder) / "video"
+        file.write_bytes(file_store.read(video))
+        length = _duration(file)
+    if length is None:
+        raise RuntimeError(f"ffprobe couldn't read the length of the page video {video}")
+    return length
 
 
 def _piece_name(video: str, start: float, end: float) -> str:
@@ -427,6 +445,9 @@ def _cut(video: str, start: float, end: float) -> bytes:
         )
         if ran.returncode != 0 or not piece.is_file():
             raise RuntimeError(f"ffmpeg failed: {ran.stderr.decode(errors='replace')[-2000:]}")
+        # Never a file that holds no video, sent and paid for as if it did.
+        if _duration(piece) is None:
+            raise RuntimeError(f"ffmpeg cut {start:g}-{end:g} s of {video} into no video")
         return piece.read_bytes()
 
 

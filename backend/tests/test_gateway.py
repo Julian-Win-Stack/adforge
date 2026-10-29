@@ -635,8 +635,47 @@ def test_a_moment_under_2_seconds_is_left_out_saying_why(page_video: str) -> Non
 
     assert cut.sent == []
     assert [(left.wanted, left.reason) for left in cut.left_out] == [
-        (wanted, "its moment is 1 s long, and the video model takes pieces of at least 2 s")
+        (wanted, "it holds 1 s of video, and the video model takes pieces of at least 2 s")
     ]
+
+
+def test_a_moment_past_the_videos_end_is_cut_at_the_end_and_says_so(page_video: str) -> None:
+    (piece,) = cut_pieces([PieceWanted(video=page_video, start=20, end=26)]).sent
+
+    # The page video is 24 seconds long: the piece holds, and says, only the seconds it has.
+    assert (piece.start, piece.trim) == (20, "video_ended")
+    assert piece.end == pytest.approx(24, abs=0.1)
+    assert video(file_store.read(piece.file))[2] == pytest.approx(4, abs=0.25)
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "holds"),
+    [
+        pytest.param(23, 28, "1", id="1 second left in the video"),
+        pytest.param(25, 29, "0", id="starting past the end"),
+    ],
+)
+def test_a_moment_with_under_2_seconds_left_in_its_video_is_left_out_saying_why(
+    page_video: str, start: float, end: float, holds: str
+) -> None:
+    wanted = PieceWanted(video=page_video, start=start, end=end)
+
+    cut = cut_pieces([wanted])
+
+    assert cut.sent == []
+    assert [(left.wanted, left.reason) for left in cut.left_out] == [
+        (
+            wanted,
+            f"it holds {holds} s of video, and the video model takes pieces of at least 2 s",
+        )
+    ]
+
+
+def test_a_page_video_ffmpeg_cant_read_is_never_sent_as_a_piece() -> None:
+    unreadable = file_store.save("jobs/1/videos/2.mp4", b"\0\0\0\x18ftypisom not a video")
+
+    with pytest.raises(RuntimeError, match="couldn't read the length"):
+        cut_pieces([PieceWanted(video=unreadable, start=0, end=4)])
 
 
 def test_a_clip_sent_a_piece_is_billed_for_the_pieces_seconds_too(
