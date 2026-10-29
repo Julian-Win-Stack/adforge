@@ -329,8 +329,8 @@ def test_past_the_most_pictures_the_references_stay_whole_and_the_frames_are_joi
     ("asked", "refused"),
     [
         ({**_asks("clip", None), "question": " "}, "Refused: ask the look one question"),
-        (_asks("clip", 1), "Refused: the clip takes no number"),
-        (_asks("version", None), "Refused: the clip takes no number"),
+        (_asks("clip", 1), "Refused: the clip, the person and the place take no number"),
+        (_asks("version", None), "Refused: the clip, the person and the place take no number"),
         (_asks("clip", None, scene=None), "Refused: name the scene to look at."),
         (_asks("clip", None, scene=9), "Refused: the ad has no scene 9."),
     ],

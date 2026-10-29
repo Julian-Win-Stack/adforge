@@ -125,7 +125,13 @@ def a_scene(job: Job, number: int = 2) -> Scene:
 
 def the_place(job: Job, kind: ProducedItem.Kind = ProducedItem.Kind.PERSON_IN_ROOM) -> str:
     file = file_store.save(f"jobs/{job.pk}/{kind}.png", photo(500))
-    ProducedItem.objects.create(job=job, kind=kind, version=1, file=file)
+    # The presenter in the room is drawn from the portrait as it stands (ticket #256).
+    person = (
+        ProducedItem.objects.create(job=job, kind=ProducedItem.Kind.PORTRAIT, file=file)
+        if kind == ProducedItem.Kind.PERSON_IN_ROOM
+        else None
+    )
+    ProducedItem.objects.create(job=job, kind=kind, version=1, file=file, person=person)
     return file
 
 
