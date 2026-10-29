@@ -61,6 +61,8 @@ class ProductPage:
     photo_urls: list[str]
     name: str  # The declared product's name, else the page's title, else "".
     description: str  # The declared product's description, else og:description, else "".
+    # The address the page names as its own (rel=canonical, else og:url), made whole, or "".
+    canonical: str = ""
 
 
 def download(url: str, *, max_bytes: int, what: str) -> Download:
@@ -197,6 +199,7 @@ def parse(page: Download) -> ProductPage:
     soup = BeautifulSoup(page.content, "html.parser", from_encoding=page.charset)
     products = _declared_products(soup)
     photo_urls = _photo_urls(soup, products, page.final_url)
+    canonical = _canonical(soup, page.final_url)
     name = _first_text(product.get("name") for product in products) or _title(soup)
     description = _first_text(product.get("description") for product in products) or (
         _first_text(
@@ -217,7 +220,17 @@ def parse(page: Download) -> ProductPage:
         photo_urls=photo_urls,
         name=name,
         description=description,
+        canonical=canonical,
     )
+
+
+def _canonical(soup: BeautifulSoup, final_url: str) -> str:
+    """The address the page says is its own: its canonical link, else its og:url."""
+    declared = [link.get("href") for link in soup.find_all("link", rel="canonical")] + [
+        meta.get("content") for meta in soup.find_all("meta", property="og:url")
+    ]
+    address = _first_text(declared)
+    return urljoin(final_url, address) if address else ""
 
 
 def _first_text(values: Iterable[Any]) -> str:

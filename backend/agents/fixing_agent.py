@@ -494,8 +494,9 @@ def _settle_unless_ended(fixing: AgentFix, call: ToolCall) -> None:
     done."""
     if _ended(fixing):
         call.result = f"Refused: {WAITS if work.is_parked(fixing) else ENDED} Nothing was done."
+        call.answer = "cant"
         call.finished_at = timezone.now()
-        call.save(update_fields=["result", "finished_at"])
+        call.save(update_fields=["result", "answer", "finished_at"])
     else:
         _settle(fixing, call)
 
@@ -614,8 +615,10 @@ def answer_question(question: OwnerQuestion, answer: ToolResult) -> AgentFix:
         assert call.finished_at is None, "a question is answered once"
         call.result = answer.text
         call.pictures = [{"label": each.label, "key": each.key} for each in answer.pictures]
+        # The owner's answer is what the agent's ask made.
+        call.answer = "made"
         call.finished_at = timezone.now()
-        call.save(update_fields=["result", "pictures", "finished_at"])
+        call.save(update_fields=["result", "pictures", "answer", "finished_at"])
         question.answered_at = call.finished_at
         question.save(update_fields=["answered_at"])
         fixing = AgentFix.objects.select_for_update().get(pk=question.agent_fix_id)

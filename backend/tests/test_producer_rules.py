@@ -744,9 +744,12 @@ def test_a_link_or_length_that_cant_be_used_is_refused(
 
 
 def test_once_a_page_has_been_read_a_link_to_another_page_is_refused(
-    fake_model: FakeModel, page_read: str, say: Callable[..., None]
+    fake_model: FakeModel, page_read: str, httpserver: HTTPServer, say: Callable[..., None]
 ) -> None:
     other = page_read.replace("/products/mug", "/products/teapot")
+    httpserver.expect_request("/products/teapot").respond_with_data(
+        "<html><body><h1>Glass Teapot</h1></body></html>", content_type="text/html"
+    )
     fake_model.respond(
         "produce",
         turn(calls=[("read_page", {"link": other, "target_seconds": None})]),
@@ -758,8 +761,8 @@ def test_once_a_page_has_been_read_a_link_to_another_page_is_refused(
     assert results_of("read_page")[1] == (
         f"Refused: this ad is for the product at {page_read}, whose page has already been "
         f"read, and {other} is another product's page. One ad is for one product: tell the "
-        'shop owner "start a new ad for that" in plain words, and go on with this ad. Nothing '
-        "was done."
+        'shop owner "start a new ad for that" in plain words, with the chat\'s "New session" '
+        "button, and go on with this ad. Nothing was done."
     )
     assert Job.objects.get().product_url == page_read
     assert paid_for() == [
