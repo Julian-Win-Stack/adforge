@@ -2644,8 +2644,8 @@ def say_the_fix_check_failed(check: FixCheck) -> None:
         Message.Level.PROBLEM,
         # Without their scene's number, so the scene's card keeps showing its newest.
         carrying=[
-            messages.AttachedFile(kind, check.old.file),
-            messages.AttachedFile(kind, check.new.file),
+            messages.AttachedFile(kind, check.old.file, clip=None if picture else check.old),
+            messages.AttachedFile(kind, check.new.file, clip=None if picture else check.new),
         ],
         suggested=messages.SuggestedNote(number, check.reason),
     )
@@ -3519,6 +3519,8 @@ def bring_back_clip(
             motion_prompt=clip.motion_prompt,
             change=_gone_back(back_to) or clip.change,
             back_to=back_to,
+            # The same file, so what it was sent.
+            sent=clip.sent,
         )
         Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
     return again
@@ -3797,10 +3799,12 @@ def _bring_back(scene: Scene, number: int) -> GoneBack:
                 scene.job.session,
                 role=Message.Role.AGENT,
                 carrying=[
-                    messages.AttachedFile(kind, made.file, scene.number, top.label)
-                    for kind, made in (
-                        (Attachment.Kind.PICTURE, picture),
-                        (Attachment.Kind.VIDEO, clip),
+                    messages.AttachedFile(
+                        kind, made.file, scene.number, top.label, clip=made if is_clip else None
+                    )
+                    for kind, made, is_clip in (
+                        (Attachment.Kind.PICTURE, picture, False),
+                        (Attachment.Kind.VIDEO, clip, True),
                     )
                     if made is not None
                 ],

@@ -1088,6 +1088,7 @@ class MakeClip(Tool):
                                 again.file,
                                 scene.number,
                                 version_label(again),
+                                clip=again,
                             )
                         ],
                     )
