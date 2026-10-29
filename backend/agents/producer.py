@@ -37,9 +37,9 @@ from jobs.models import (
     SceneStep,
 )
 from jobs.notices import post_notice
-from jobs.product_videos import save_videos, transcribe_videos
+from jobs.product_videos import save_videos
 from jobs.reference_photos import ReferencePhotoUnusable
-from jobs.video_reader import read_videos
+from jobs.watcher import watch_videos
 from jobs.work import (
     DECLARED_INSTEAD,
     SkippedPhoto,
@@ -61,7 +61,6 @@ from jobs.work import (
     plan,
     run_checks,
     save_photos,
-    save_video_pictures,
     use_music_again,
     version_label,
     waits_to_be_said_to_camera,
@@ -275,15 +274,10 @@ class ReadPage(Tool):
                 declared = True
             elif skipped:
                 post_notice(job, _not_downloaded(skipped), Message.Level.PROBLEM)
-        # The gallery videos the picker picked, what each says, and each read for the moments
-        # the plan would need as pictures. One that can't be read is left out: the owner isn't
-        # told.
+        # The gallery videos the picker picked, each watched for its moments, look frames,
+        # colour and words (jobs.watcher). One that can't be watched is told in red.
         save_videos(job, list(picked.videos))
-        unread_videos = transcribe_videos(job) + read_videos(job, text)
-        # Once each: a video whose pictures an earlier read of the page kept keeps them.
-        for video in job.videos.order_by("position"):
-            if (moments := (video.read or {}).get("kept")) and not video.pictures.exists():
-                save_video_pictures(job, video, moments, video.frames_picked)
+        unread_videos = watch_videos(job, text)
         # Only once every photo is kept: a worker that stops part-way through them leaves the
         # page unread, so the read run again keeps them all rather than the few already kept.
         keep_page(job, download, product_page, text)

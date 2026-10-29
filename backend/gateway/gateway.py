@@ -524,7 +524,7 @@ def transcribe(*, job: Job | None, purpose: str, audio_key: str) -> Transcriptio
 
     def hear() -> _Made[Transcription]:
         heard = provider.transcribe(model=model, audio=file_store.read(handoff.audio))
-        if not heard.words and purpose not in catalog.NOTHING_SAID_IS_FINE:
+        if not heard.words:
             raise ValueError(f"{provider.name} heard no words in the audio")
         return _Made(
             result=heard,
