@@ -8,6 +8,8 @@ from collections import deque
 from collections.abc import Callable
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from agents import decider, loop
 from agents.models import ToolCall
@@ -54,6 +56,14 @@ def result_of(request: TurnRequest, tool: str) -> str:
         if isinstance(each, ToolUse) and each.tool == tool
     ]
     return used.result
+
+
+def results_of(request: TurnRequest, tool: str) -> list[str]:
+    return [
+        each.result
+        for each in request.handoff.conversation
+        if isinstance(each, ToolUse) and each.tool == tool
+    ]
 
 
 def red_notices(chat: Session | None) -> list[str]:
@@ -141,7 +151,39 @@ def test_a_producer_turn_refused_with_no_new_picture_still_stops(
     assert len(turns_for(fake_model, "produce")) == 1
 
 
-def test_a_turn_refused_once_every_picture_was_looked_at_before_still_stops(
+BOTH = [STARTING, "Scene 2, starting picture, v1 first version"]
+
+
+def test_a_turn_refused_over_pictures_looked_at_before_is_taken_once_more_without_them(
+    fake_model: FakeModel,
+    session: Session,  # noqa: F811
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("look_at_scene", {"scene": 2}), ("look_at_scene", {"scene": 2})]),
+        turn(calls=[("jot_down", {"text": "seen"})]),
+        BlockedBySafetyFilter("content_policy_violation"),
+        turn("Done."),
+    )
+
+    loop.run(LOOKER, session)
+
+    # The model looked at both pictures on the turn before: one more turn, without both,
+    # each named once though it was shown twice.
+    *_, refused, again = turns_for(fake_model, "produce")
+    assert labels(refused) == BOTH * 2
+    assert labels(again) == []
+    assert [each.splitlines()[-1] for each in results_of(again, "look_at_scene")] == 2 * [
+        f"{BOTH[0]} and {BOTH[1]} aren't shown: the AI model's safety filter refused to look "
+        "at them. Carry on without them."
+    ]
+    assert red_notices(session) == [
+        f"The AI model's safety filter refused to look at {BOTH[0]} and {BOTH[1]}, so the "
+        "work on your ad carried on without them."
+    ]
+
+
+def test_a_turn_refused_without_the_pictures_looked_at_before_too_stops(
     fake_model: FakeModel,
     session: Session,  # noqa: F811
 ) -> None:
@@ -150,14 +192,54 @@ def test_a_turn_refused_once_every_picture_was_looked_at_before_still_stops(
         turn(calls=[("look_at_scene", {"scene": 2})]),
         turn(calls=[("jot_down", {"text": "seen"})]),
         BlockedBySafetyFilter("content_policy_violation"),
+        BlockedBySafetyFilter("content_policy_violation"),
     )
 
-    # The model looked at both pictures on the turn before, so neither is what it refuses.
     with pytest.raises(BlockedBySafetyFilter):
         loop.run(LOOKER, session)
 
-    assert len(turns_for(fake_model, "produce")) == 3
+    assert [labels(each) for each in turns_for(fake_model, "produce")[2:]] == [BOTH, []]
     assert red_notices(session) == []
+
+
+def test_a_picture_shown_twice_is_left_out_once(
+    fake_model: FakeModel,
+    session: Session,  # noqa: F811
+) -> None:
+    def refusing_either(request: TurnRequest) -> Turn:
+        if set(BOTH) & set(labels(request)):
+            raise BlockedBySafetyFilter("content_policy_violation")
+        return turn("Done.")
+
+    fake_model.respond(
+        "produce",
+        turn(calls=[("look_at_scene", {"scene": 2}), ("look_at_scene", {"scene": 2})]),
+    )
+    fake_model.answer_unscripted("produce", refusing_either)
+
+    loop.run(LOOKER, session)
+
+    # Without each picture, then without both: each try leaves out every showing of it.
+    _, *refused, again = turns_for(fake_model, "produce")
+    assert [labels(each) for each in refused] == [BOTH * 2, [STARTING] * 2, [BOTH[1]] * 2]
+    assert labels(again) == []
+    assert red_notices(session) == [
+        f"The AI model's safety filter refused to look at {BOTH[0]} and {BOTH[1]}, so the "
+        "work on your ad carried on without them."
+    ]
+
+
+def test_a_turn_the_filter_lets_through_never_looks_up_which_pictures_it_saw(
+    fake_model: FakeModel,
+    session: Session,  # noqa: F811
+) -> None:
+    fake_model.respond("produce", turn(calls=[("look_at_scene", {"scene": 2})]), turn("Done."))
+
+    with CaptureQueriesContext(connection) as queries:
+        loop.run(LOOKER, session)
+
+    looked_up = 'SELECT "gateway_modelcall"."images" AS "images" FROM'
+    assert not [each for each in queries.captured_queries if each["sql"].startswith(looked_up)]
 
 
 # --- The decider ----------------------------------------------------------------------------
