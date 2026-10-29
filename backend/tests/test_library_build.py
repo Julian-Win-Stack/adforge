@@ -19,7 +19,7 @@ from adforge import file_store
 from adforge.retry import OutsideServiceDown
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from gateway.types import ModelRequest
+from gateway.types import BlockedBySafetyFilter, ModelRequest
 from jobs import work
 from jobs.library import LibraryEntry, OwnerPhoto, PagePhoto, library_of
 from jobs.library_items import MOST_PRODUCT_TEXT, add_kept_photos, add_owner_photo
@@ -27,7 +27,7 @@ from jobs.models import Job, ProductPhoto, ReferencePhoto, Scene
 from jobs.photos import PICK_INSTRUCTIONS
 from jobs.threads import closing_its_connection
 
-from .conftest import LABELLED, READABLE, SHAMPOO_PICKED, paid_for, photo
+from .conftest import CUT_OUT_OK, LABELLED, READABLE, SHAMPOO_PICKED, paid_for, photo
 from .test_picker_labels import LABELS, labelled_page, notices  # noqa: F401 (a fixture)
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -146,6 +146,37 @@ def test_a_thing_from_the_owners_photo_cut_out_already_is_cut_out_on_its_own_for
 
     assert ModelCall.objects.filter(purpose="make_reference_photo_picture").count() == 1
     assert drawn != product_only.file
+
+
+def test_the_clean_picture_of_an_owners_thing_is_checked_as_that_thing_beside_their_photo(
+    fake_model: FakeModel,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    say: Say,
+) -> None:
+    first_message(fake_model, say, labelled_page)
+    job = Job.objects.get()
+    scene = Scene.objects.create(job=job, number=1, line="It dries fast.", shows="It dries.")
+    row = ReferencePhoto.objects.create(
+        scene=scene,
+        file=job.photos.get(position=6).file,
+        thing="towel",
+        use=ReferencePhoto.Use.PICTURE,
+    )
+    checks = len(ModelCall.objects.filter(purpose="check_cut_out"))
+    # The check's filter refuses the photo beside it once: it is checked without it.
+    fake_model.respond(
+        "check_cut_out", BlockedBySafetyFilter("content_policy_violation"), CUT_OUT_OK
+    )
+
+    work.clean_picture(scene, row)
+
+    asked = ModelCall.objects.filter(purpose="check_cut_out").order_by("id")[checks:]
+    assert [call.handoff["keep"] for call in asked] == ["the shop owner's towel"] * 2
+    assert {
+        "level": "problem",
+        "text": "The AI model's safety filter refused to look at the shop owner's photo of "
+        "their towel, so the clean picture of the shop owner's towel was checked without it.",
+    }.items() <= {**job.warnings[-1]}.items()
 
 
 def test_the_labelling_call_is_given_the_pickers_label_rules_and_the_photo(

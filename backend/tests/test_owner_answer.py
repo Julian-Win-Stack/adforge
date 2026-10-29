@@ -23,6 +23,7 @@ from gateway.types import StepFinished, ToolUse
 from jobs import owner_answers, work
 from jobs.library import LookFrame, OwnerPhoto, library_of, sent_list_of
 from jobs.models import AgentFix, Job, ProducedItem, ProductVideo
+from jobs.reference_photos import clean_photo_of
 
 from .conftest import LABELLED, NOTHING_WATCHED, HeldSteps, WorkerStopped, picture
 from .sent_lists import piece
@@ -103,8 +104,10 @@ def test_a_photo_and_words_enter_the_library_and_the_fix_films_with_them_into_th
     assert item.source == OwnerPhoto(original=photo)
     [drawn] = ModelCall.objects.filter(purpose="make_reference_photo_picture")
     assert drawn.handoff["pictures"] == [photo]
-    # Of only the thing that answers the question asked.
-    assert QUESTION in drawn.handoff["prompt"]
+    # Of only the thing that answers the question asked, not of everything the photo shows.
+    assert drawn.handoff["prompt"] == clean_photo_of(
+        f"the thing the photo shows that answers this question: {QUESTION}"
+    )
     assert drawn.output == {"file": item.file}
     assert item.file != photo
     # The agent read the words and the new item as its ask's result, with the item's picture.

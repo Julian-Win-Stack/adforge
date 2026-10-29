@@ -76,6 +76,11 @@ def told(tool: str) -> list[dict[str, Any]]:
     return [call.arguments for call in calls_of(tool)]
 
 
+def level_of(said: str) -> list[str]:
+    """How each notice saying `said` was shown: "problem" (red) or "info" (grey)."""
+    return [each["level"] for each in Job.objects.get().warnings if each["text"] == said]
+
+
 def ads() -> list[ProducedItem]:
     return list(ProducedItem.objects.filter(kind="finished_ad").order_by("version"))
 
@@ -764,7 +769,9 @@ def test_a_video_watched_with_no_look_frame_is_added_for_its_moments(
         in (call.result)
     )
     assert len(library_of(Job.objects.get())) == before
-    assert ("notice", f"Your video is kept as page video {video.position}.") in watched.owner_saw()
+    kept = f"Your video is kept as page video {video.position}."
+    assert ("notice", kept) in watched.owner_saw()
+    assert level_of(kept) == ["info"]
 
 
 def test_a_video_that_cant_be_read_is_said_in_red_and_nothing_is_added(
@@ -829,26 +836,45 @@ def test_a_photo_whose_clean_picture_keeps_failing_is_said_in_red_and_nothing_is
         "Owner photo 1: their photo isn't in the library: all 3 tries failed (A hand is still "
         "in it. The lid is changed. The handle is missing.)."
     ) in call.result
-    assert (
-        "notice",
+    red = (
         "A clean picture couldn't be drawn from the photo you sent: all 3 tries failed (A hand "
         "is still in it. The lid is changed. The handle is missing.). It isn't in the ad's "
-        "library, so it won't be sent for any scene: send a clearer photo of it.",
-    ) in watched.owner_saw()
+        "library, so it won't be sent for any scene: send a clearer photo of it."
+    )
+    assert ("notice", red) in watched.owner_saw()
+    assert level_of(red) == ["problem"]
     assert len(library_of(Job.objects.get())) == before
     assert LID_ON not in [each.get("shows") for each in handoffs("label_photo")]
 
 
-def test_a_clean_picture_checked_without_the_photo_is_said_in_red_naming_both(
+BLOCKED = BlockedBySafetyFilter("content_policy_violation")
+
+
+@pytest.mark.parametrize(
+    ("answers", "red"),
+    [
+        (
+            [BLOCKED, CUT_OUT_OK],
+            "The AI model's safety filter refused to look at the shop owner's photo, so the "
+            f"clean picture of {LID_ON} was checked without it.",
+        ),
+        (
+            [BLOCKED, BLOCKED],
+            "The AI model's safety filter refused to look at the clean picture of "
+            f"{LID_ON}, so it is kept unchecked: check it yourself.",
+        ),
+    ],
+)
+def test_a_clean_picture_the_checks_filter_refuses_is_kept_and_said_in_red(
     fake_model: FakeModel,
     producer: ScriptedProducer,
     watched: Watched,
     api: APIClient,
     session_id: str,
+    answers: list[Any],
+    red: str,
 ) -> None:
-    fake_model.respond(
-        "check_cut_out", BlockedBySafetyFilter("content_policy_violation"), CUT_OUT_OK
-    )
+    fake_model.respond("check_cut_out", *answers)
     fake_model.respond(
         "produce",
         *scripted_turns(
@@ -860,11 +886,8 @@ def test_a_clean_picture_checked_without_the_photo_is_said_in_red_naming_both(
     sending(api, session_id, "The lid on.", photos=[photo(7)])
 
     assert calls_of("add_to_library")[-1].answer == "made"
-    assert (
-        "notice",
-        "The AI model's safety filter refused to look at the shop owner's photo, so the clean "
-        f"picture of {LID_ON} was checked without it.",
-    ) in watched.owner_saw()
+    assert ("notice", red) in watched.owner_saw()
+    assert level_of(red) == ["problem"]
 
 
 @pytest.mark.parametrize(
