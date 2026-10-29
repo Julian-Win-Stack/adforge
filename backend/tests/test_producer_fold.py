@@ -263,7 +263,7 @@ def test_the_ad_as_it_stands_is_given_last_and_any_part_is_read_again_in_full(
     # And all the chat has spent before that turn: every model call, its own turns too.
     given_with = ModelCall.objects.filter(purpose="produce").order_by("created_at", "id")
     before = ModelCall.objects.filter(created_at__lt=list(given_with)[-1].created_at)
-    spent = sum((each.cost_usd for each in before), Decimal(0))
+    spent = sum((each.cost_usd or Decimal(0) for each in before), Decimal(0))
     assert f"Spent in this chat so far, your own turns included: {dollars(spent)}." in snapshot
     # Not in the conversation itself, which stays as it happened.
     assert snapshot.splitlines()[0] not in json.dumps(given_to_the_producer(producer_turns()))
