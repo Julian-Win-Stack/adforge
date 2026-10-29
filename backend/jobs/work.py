@@ -3574,13 +3574,14 @@ def check_try_to_use(clip: ProducedItem) -> None:
     _try_to_use(clip)
 
 
-def use_try(clip: ProducedItem) -> GoneBack:
+def use_try(clip: ProducedItem, *, show: bool = True) -> GoneBack:
     """Swap a try of a clip the judge failed every try of into the ad, as the shop owner
     tapped: its version is gone back to, for nothing, with nothing made, judged or paid for,
     and the chat is shown it, a scene said to camera when the fixing agent gave up showing
-    what the try was made for again. The tap is their yes. Refuses as `check_try_to_use` does."""
+    what the try was made for again. The tap is their yes. Refuses as `check_try_to_use` does.
+    Not to `show` it leaves the chat as it was, as go_back."""
     assert clip.scene is not None, "a try is a scene's clip"
-    return go_back(clip.scene, _try_to_use(clip))
+    return go_back(clip.scene, _try_to_use(clip), show=show)
 
 
 def kept_before_it_failed(scene: Scene) -> ProducedItem | None:
@@ -4320,7 +4321,7 @@ class GoneBack:
     clip_to_make: bool
 
 
-def go_back(scene: Scene, number: int) -> GoneBack:
+def go_back(scene: Scene, number: int, *, show: bool = True) -> GoneBack:
     """Make the scene's version `number` its newest again, as a new top version, the
     original too (decision 8, Julian 2026-10-16 22:40): its starting picture brought back,
     free, and its clip too when it still says the scene's line as it stands, so nothing is
@@ -4331,7 +4332,8 @@ def go_back(scene: Scene, number: int) -> GoneBack:
     what was brought back. A try of a scene the fixing agent gave up on, said to camera since,
     has the scene show what the try was made for again. Refuses a version the scene doesn't
     have, a talking one with no picture whose clip no longer says the line, and while the scene's
-    picture or clip is being made."""
+    picture or clip is being made. Not to `show` it skips the chat's message, as for a swap
+    on the scene's card, which shows it there itself."""
     with transaction.atomic():
         Scene.objects.select_for_update().get(pk=scene.pk)
         # Whether the clip still says the line is read from the scene as it now stands.
@@ -4341,10 +4343,10 @@ def go_back(scene: Scene, number: int) -> GoneBack:
             status=SceneStep.Status.RUNNING,
         ).exists():
             raise SceneBusy(f"scene {scene.number}'s picture or clip is still being made")
-        return _bring_back(scene, number)
+        return _bring_back(scene, number, show=show)
 
 
-def _bring_back(scene: Scene, number: int) -> GoneBack:
+def _bring_back(scene: Scene, number: int, *, show: bool) -> GoneBack:
     """go_back's work, the scene locked and read as it stands, in its transaction."""
     with transaction.atomic():
         shown = versions(scene)
@@ -4377,7 +4379,7 @@ def _bring_back(scene: Scene, number: int) -> GoneBack:
         # The bring-backs set the status through their own copy of the scene.
         scene.refresh_from_db(fields=["status"])
         top = versions(scene)[-1]
-        if scene.job.session is not None:
+        if show and scene.job.session is not None:
             messages.add(
                 scene.job.session,
                 role=Message.Role.AGENT,

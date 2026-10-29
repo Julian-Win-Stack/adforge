@@ -839,7 +839,9 @@ function sceneCardsShown() {
     .queryAllByRole("article")
     .map((card) => {
       const media = card.querySelector("video, img");
-      return [card.getAttribute("aria-label"), media?.getAttribute("src") ?? "nothing"];
+      // The clip itself, without the moment a clip with no first frame is shown from.
+      const src = media?.getAttribute("src")?.replace(/#t=[\d.]+$/, "");
+      return [card.getAttribute("aria-label"), src ?? "nothing"];
     });
 }
 

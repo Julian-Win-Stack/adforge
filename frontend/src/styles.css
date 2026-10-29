@@ -1773,9 +1773,12 @@ button:disabled {
   background: linear-gradient(transparent, rgba(10, 10, 14, 0.85));
 }
 
-.scene-thumb.old .scene-thumb-number {
-  font-size: 7.5px;
-  letter-spacing: -0.01em;
+.scene-thumb-number small {
+  display: block;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-2);
 }
 
 /* A clip being previewed: the player is outlined so it doesn't read as the one in the ad. */
@@ -1803,6 +1806,7 @@ button:disabled {
 .scene-preview-old {
   flex-basis: 100%;
   margin: 0;
+  text-align: left;
   font-size: 11.5px;
   line-height: 1.35;
   color: var(--text-2);
@@ -1810,6 +1814,10 @@ button:disabled {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.scene-preview-check.whole {
+  -webkit-line-clamp: unset;
 }
 
 .scene-preview-check.pass {
@@ -1858,10 +1866,12 @@ button:disabled {
 
 .scene-swapped {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  column-gap: 8px;
+  row-gap: 2px;
   margin: 0;
-  padding: 6px 6px 6px 10px;
+  padding: 6px 10px;
   border-radius: var(--radius-s);
   background: var(--accent-soft);
   color: var(--accent-2);
@@ -1871,14 +1881,19 @@ button:disabled {
 }
 
 .scene-swapped span {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
-.scene-undo {
-  padding: 3px 10px;
-  color: var(--accent-2);
-  border-color: rgba(200, 240, 74, 0.35);
+/* A quiet text button: the swap already happened, Undo is only the way back. */
+.scene-swapped .scene-undo {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 /* A choice for the owner, not an error: amber, never red. */
@@ -2155,6 +2170,50 @@ button:disabled {
      never makes the strip taller. */
   .scene-cards .scene-media {
     width: 104px;
+  }
+
+  /* Three clips fit across a narrow card before its strip scrolls. */
+  .scene-cards .scene-thumb {
+    width: 28px;
+  }
+
+  .scene-cards .scene-strip {
+    gap: 4px;
+  }
+
+  .scene-cards .scene-thumb-badge {
+    top: 1.5px;
+    right: 1.5px;
+    width: 11px;
+    height: 11px;
+  }
+
+  .scene-cards .scene-thumb-badge svg {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scene-cards .scene-status.previewing {
+    padding: 3px 7px;
+    font-size: 10.5px;
+    white-space: nowrap;
+  }
+
+  .scene-cards .scene-none-passed {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+
+  .scene-cards .scene-preview {
+    padding: 6px;
+  }
+
+  .scene-cards .scene-use,
+  .scene-cards .scene-back {
+    flex-basis: 100%;
+    padding: 5px 8px;
+    white-space: normal;
+    line-height: 1.25;
   }
 
   /* The cards are too narrow to write in, so the one being written on opens wider, its

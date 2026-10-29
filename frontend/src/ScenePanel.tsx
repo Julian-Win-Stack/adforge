@@ -250,7 +250,8 @@ function SceneCardView({
         {clip ? (
           <video
             key={clip.url}
-            src={clip.url}
+            // With no first frame to show, the browser shows the clip's own, a moment in.
+            src={clip.poster ? clip.url : `${clip.url}#t=0.1`}
             poster={clip.poster ?? undefined}
             controls
             playsInline
@@ -303,9 +304,7 @@ function SceneCardView({
       </div>
       {preview ? (
         <div className="scene-preview" role="group" aria-label={`Previewing v${preview.number}`}>
-          <p className={`scene-preview-check ${preview.verdict}`} title={checkSaid(preview)}>
-            {checkSaid(preview)}
-          </p>
+          <CheckLine key={preview.number} version={preview} />
           {preview.free ? (
             <button
               type="button"
@@ -372,6 +371,24 @@ const CHECK_WORDS = {
   not_checked: "not checked",
 } as const;
 
+/** What the check said of a previewed clip, cut short where the card is narrow: a tap shows
+ * it whole. */
+function CheckLine({ version }: { version: CardVersion }) {
+  const [whole, setWhole] = useState(false);
+  const said = checkSaid(version);
+  return (
+    <button
+      type="button"
+      className={`scene-preview-check ${version.verdict}${whole ? " whole" : ""}`}
+      aria-expanded={version.problem ? whole : undefined}
+      title={said}
+      onClick={() => setWhole(!whole)}
+    >
+      {said}
+    </button>
+  );
+}
+
 /** What the clip judge said of a clip, in a line: "Failed the check: the mug floats". */
 function checkSaid(version: CardVersion) {
   const said = CHECK_WORDS[version.verdict];
@@ -420,7 +437,10 @@ function VersionThumb({
           <DashIcon />
         )}
       </span>
-      <span className="scene-thumb-number">{old ? "Old line" : `v${version.number}`}</span>
+      <span className="scene-thumb-number">
+        v{version.number}
+        {old && <small>Old line</small>}
+      </span>
     </button>
   );
 }

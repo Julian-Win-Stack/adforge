@@ -74,8 +74,9 @@ def shown(scene: Scene) -> list[CardVersion]:
 
 def use(scene: Scene, number: int) -> work.GoneBack:
     """Put the scene's version `number` in the ad from its card, for nothing, as the shop owner
-    tapped: its clip is brought back as the scene's newest version, a question the fixing agent
-    asked about the scene is withdrawn, and the chat is shown the clip. Refuses, saying why, a
+    tapped: its clip is brought back as the scene's newest version and a question the fixing
+    agent asked about the scene is withdrawn. The card shows it: the chat isn't shown the
+    clip again under another version's number. Refuses, saying why, a
     version the card doesn't show, the one in the ad, one that no longer fits the scene, and
     while the scene's picture or clip is being made."""
     picked = next((each for each in shown(scene) if each.number == number), None)
@@ -89,10 +90,11 @@ def use(scene: Scene, number: int) -> work.GoneBack:
             "the ad for free."
         )
     try:
-        if work.is_a_try_on_offer(picked.clip):
-            gone = work.use_try(picked.clip)
+        if work.says_the_line_as_it_stands(scene, picked.clip):
+            gone = work.go_back(scene, number, show=False)
         else:
-            gone = work.go_back(scene, number)
+            # A try of a scene said to camera since: swapping it in shows the product again.
+            gone = work.use_try(picked.clip, show=False)
     except work.SceneBusy as busy:
         raise CantUse(
             f"Scene {scene.number}'s picture or clip is being made right now. Try again once "
@@ -120,7 +122,11 @@ def _in_the_ad(scene: Scene, made: list[work.Version], shown_as: dict[int, int])
 def _free(scene: Scene, version: work.Version) -> bool:
     """Whether `version`, not the one in the ad, can go in the ad for nothing."""
     assert version.clip is not None, "the card shows clips"
-    return work.is_a_try_on_offer(version.clip) or work.go_back_is_free(scene, version.number)
+    # As go_back_is_free, from the versions already read; a try is asked about only when its
+    # clip doesn't say the line, as a scene said to camera before 2026-10-23.
+    return work.says_the_line_as_it_stands(scene, version.clip) or work.is_a_try_on_offer(
+        version.clip
+    )
 
 
 def _judged(clip: ProducedItem) -> tuple[Verdict, str]:

@@ -15,7 +15,7 @@ from rest_framework.test import APIClient
 from adforge import file_store
 from agents.models import SystemNote, ToolCall
 from chat import sent as sent_lists
-from chat.models import Message, Session
+from chat.models import Attachment, Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
 from jobs.models import AgentFix, OwnerQuestion, ProducedItem, Scene
 
@@ -88,10 +88,16 @@ def test_a_version_swapped_in_from_the_card_is_in_the_ad_for_nothing_and_the_ad_
     _, try_1, _ = tries()
     paid = paid_for()
 
+    shown_before = Attachment.objects.count()
+
     sent = use_on_card(api, session_id, fake_model, 2)
 
     assert sent.status_code == 200, sent.json()
     assert current_clip(2).file == try_1.file
+    # The card shows it: the chat isn't shown the clip again under another number, only the ad.
+    assert [
+        (each.kind, each.scene) for each in Attachment.objects.order_by("id")[shown_before:]
+    ] == [("video", None)]
     # The card keeps its numbering: the clip brought back is v2, not a v4 of its own.
     assert labels(2)[-1] == "v4 back to v2"
     assert shown(api, session_id) == [
