@@ -40,7 +40,6 @@ from .conftest import (
     ScriptedProducer,
     WorkerStopped,
     a_plan_with,
-    facts_ok,
     scripted_turns,
 )
 from .test_fixing_agent import film_again
@@ -791,7 +790,7 @@ def test_dead_end_a_note_with_one_impossible_part_has_the_rest_done_and_that_par
         "<body><h1>Glass Teapot</h1></body></html>",
         content_type="text/html",
     )
-    fake_model.respond("fact_check", facts_ok(3))
+    checked_before = ModelCall.objects.filter(purpose="fact_check").count()
     producer.told(
         f"Add my teapot too ({other_product}), and have scene 3 say it's on sale for $19.",
         [
@@ -806,7 +805,13 @@ def test_dead_end_a_note_with_one_impossible_part_has_the_rest_done_and_that_par
     assert refused.startswith("Refused:") and "start a new ad for that" in refused
     assert ToolCall.objects.filter(tool="read_page").latest("id").answer == "cant"
     assert Scene.objects.get(number=3).line == ON_SALE
-    assert ToolCall.objects.get(tool="edit_scene").answer == "made"
+    edited = ToolCall.objects.get(tool="edit_scene")
+    assert edited.answer == "made"
+    # The new line isn't checked by the edit: it waits for the producer's planning checks
+    # (#254: the checks run again on changed lines; code never reruns on its own).
+    assert "The planning checks haven't checked scene 3 against the page" in edited.result
+    assert not Scene.objects.get(number=3).fact_checked
+    assert ModelCall.objects.filter(purpose="fact_check").count() == checked_before
 
 
 def test_dead_end_a_paid_answer_the_validator_rejects_is_a_tool_answer_and_the_run_goes_on(
