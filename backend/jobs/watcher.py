@@ -539,7 +539,8 @@ def _keep(
             label = PictureLabel.model_validate(frame.model_dump(exclude={"second"}))
             add_to_library(job, key, label, LookFrame(video=video.position, second=second))
             pulled.append({"key": key, "second": second, "shows": frame.label})
-        # The planner's video pictures, until it reads the library: the same look frames.
+        # The same look frames as video pictures, the product photos the starting picture and
+        # the fact check are shown.
         save_video_pictures(job, video, pulled, pulled)
         # Unheard is not nothing said: a video watched without its sound has no transcript.
         unheard = refused is not None and refused.reason == "sound"

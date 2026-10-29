@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal, Protocol, Self
+from typing import Annotated, Any, ClassVar, Literal, Protocol, Self
 
 from pydantic import (
     BaseModel,
@@ -17,6 +17,22 @@ class Handoff(BaseModel):
     number belongs, or a missing field, fails before any money is spent."""
 
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+
+    # The fields a model reads after the pictures it is shown rather than before them, such
+    # as the planner's page text after the library's sheets. A call with no pictures is handed
+    # every field at once.
+    AFTER_IMAGES: ClassVar[frozenset[str]] = frozenset()
+
+    def around_images(self) -> tuple[str, str | None]:
+        """The handoff as JSON in two parts: the fields that go before the pictures, and
+        those in AFTER_IMAGES that go after them (None when there are none), each in the
+        handoff's own field order."""
+        if not self.AFTER_IMAGES:
+            return self.model_dump_json(), None
+        return (
+            self.model_dump_json(exclude=set(self.AFTER_IMAGES)),
+            self.model_dump_json(include=set(self.AFTER_IMAGES)),
+        )
 
 
 class Judgement(BaseModel):

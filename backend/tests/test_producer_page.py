@@ -1531,9 +1531,10 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
     assert "Stoneware Mug" in json.loads(check["input"])["page_text"]
     assert check["text"]["format"]["type"] == "json_schema"
     assert plan["model"] == "gpt-5.6-sol"
-    # The plan's handoff comes first in its message, ahead of the product photos.
+    # The plan's moments come first in its message, the page's text after the library's sheet.
     [message] = plan["input"]
-    assert "Stoneware Mug" in json.loads(message["content"][0]["text"])["page_text"]
+    assert list(json.loads(message["content"][0]["text"]))[0] == "moments"
+    assert "Stoneware Mug" in json.loads(message["content"][-1]["text"])["page_text"]
     assert plan["text"]["format"]["type"] == "json_schema"
     call = ModelCall.objects.get(purpose="check_page")
     assert (call.provider, call.outcome, call.input_tokens, call.output_tokens) == (

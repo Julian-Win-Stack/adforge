@@ -21,6 +21,7 @@ from jobs.library import (
     OwnerPhoto,
     PagePhoto,
     PictureLabel,
+    Recoloured,
     add_to_library,
     library_of,
 )
@@ -258,6 +259,31 @@ def test_needs_and_colour_photos_named_by_library_number_are_kept_as_the_photos_
     ) == [3]
     assert (
         "problem",
-        "Library picture 3 has no product photo a starting picture can be made from, so the "
-        "scenes that need it are made without it.",
+        "Library picture 3 has no product photo a starting picture can be made from, so it is "
+        "left out of the photos the scenes need.",
     ) in notices(api, session_id)
+
+
+def test_a_recoloured_picture_named_in_the_ads_colour_never_marks_the_photo_it_was_made_from(
+    api: APIClient,
+    fake_model: FakeModel,
+    page_read: str,
+    session_id: str,
+    say: Say,
+) -> None:
+    # Picture 3 is photo 1 recoloured red: photo 1 itself isn't in that colour.
+    job = Job.objects.get()
+    red = PictureLabel(kind="side", side="front", alone="yes", colour="red", label="The mug.")
+    add_to_library(job, job.photos.get(position=1).file, red, Recoloured(of=1, colour="red"))
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
+    fake_model.respond("plan_ad", a_plan_with(colour_photos=[3, 2]))
+
+    say("Plan it")
+
+    marked = Job.objects.get().photos.filter(shows_product_colour=True)
+    assert list(marked.values_list("position", flat=True)) == [2]
+    told = (
+        "Library picture 3 has no product photo of its own, so it isn't marked as showing the "
+        "ad's colour."
+    )
+    assert ("problem", told) in notices(api, session_id)
