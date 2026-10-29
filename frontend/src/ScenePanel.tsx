@@ -227,6 +227,16 @@ function SceneCardView({
         )}
       </div>
       {clip?.sent && <SentView sent={clip.sent} />}
+      {card.question && (
+        <p
+          className="scene-question"
+          role="note"
+          aria-label="Question for you"
+          title={card.question}
+        >
+          <span className="scene-question-title">Question for you</span> {card.question}
+        </p>
+      )}
       {suggested && (
         <span
           className="scene-note-suggested"
@@ -290,11 +300,7 @@ function SentView({ sent }: { sent: ClipSent }) {
           ))}
         </ul>
       )}
-      {problems.length > 0 && (
-        <p className="scene-sent-problem">
-          {problems.join(" ")}
-        </p>
-      )}
+      {problems.length > 0 && <p className="scene-sent-problem">{problems.join(" ")}</p>}
     </div>
   );
 }

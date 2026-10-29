@@ -6,6 +6,7 @@ line. The agent, the judge, the pictures and the clips are faked at the gateway.
 from collections.abc import Callable
 
 import pytest
+from rest_framework.test import APIClient
 
 from agents import fixing_agent
 from agents.loop import ToolResult
@@ -187,3 +188,34 @@ def test_an_agent_fixing_an_owners_note_has_no_ask_and_is_told_never_to_ask() ->
     assert "call ask_owner" in told_at["judge"]
     assert "Never ask the shop owner anything." in told_at["owner"]
     assert "call ask_owner" not in told_at["owner"]
+
+
+def test_the_chat_carries_the_open_question_for_its_scenes_card(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 2)
+    fake_model.respond(
+        "fix_scene", turn(calls=[film_again(video_prompt=POURS)]), turn(calls=[ask()])
+    )
+    assemble_through_the_chat(fake_model, steps, say)
+
+    def carried() -> list[tuple[str, dict[str, object]]]:
+        shown = api.get(f"/api/sessions/{session_id}/messages/").json()
+        return [(each["text"], each["question"]) for each in shown if each["question"] is not None]
+
+    # Only the red line about the question carries it, open, in the agent's words.
+    [(text, shown)] = carried()
+    assert "The question is on scene 2's card." in text
+    assert shown == {"scene": 2, "text": QUESTION, "open": True}
+
+    question = work.open_question(AgentFix.objects.get().step.scene)
+    assert question is not None
+    fixing_agent.answer_question(question, ToolResult("A quarter turn clockwise.", []))
+
+    # Once answered, the card no longer shows it as waiting.
+    assert carried()[0][1]["open"] is False

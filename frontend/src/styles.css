@@ -1872,6 +1872,22 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+/* The fixing agent's question for the owner, under the clip: text only, answered in the chat. */
+.scene-question {
+  margin: 0;
+  padding: 4px 6px;
+  border-left: 2px solid var(--danger);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.scene-question-title {
+  font-weight: 600;
+  color: var(--danger);
+}
+
 /* The owner's note on a scene. Every note is sent together from the bar under the cards. */
 .scene-form {
   flex: 1;
@@ -2109,6 +2125,21 @@ button:disabled {
   }
 
   .scene-cards > li:has(.scene-note:focus) .scene-sent {
+    display: none;
+  }
+
+  /* In the strip the question is clamped; its whole text is in its title. */
+  .scene-question {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    overflow: hidden;
+    padding: 2px 4px;
+    font-size: 10px;
+    line-height: 13px;
+  }
+
+  .scene-cards > li:has(.scene-note:focus) .scene-question {
     display: none;
   }
 
