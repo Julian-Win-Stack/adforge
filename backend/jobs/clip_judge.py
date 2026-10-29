@@ -48,6 +48,7 @@ from gateway.types import (
 )
 
 from . import assembly
+from .library import VIDEO_API_MOST_PIECE_SECONDS, SentList
 from .models import AgentFix, AgentFixTry, Fix, ProducedItem, SceneStep
 from .planning import ChatMessage
 from .scenes import photos_for_needs
@@ -816,6 +817,80 @@ def frame_label(times: list[float]) -> str:
     if len(times) == 1:
         return f"Frame at {times[0]:g} s"
     return f"Frames at {', '.join(f'{t:g} s' for t in times)}, left to right"
+
+
+# The most frames of a sent piece shown beside the references, thinned evenly (the judge
+# build brief: "the piece at most 10 frames").
+PIECE_FRAMES_SHOWN = 10
+
+
+def piece_frames(piece: str, most: int = PIECE_FRAMES_SHOWN) -> list[dict[str, Any]]:
+    """The frames of the video piece at `piece`, FRAMES_PER_SECOND a second thinned evenly to
+    at most `most`, kept in the file store, each with its time in the piece."""
+    with tempfile.TemporaryDirectory() as folder:
+        video = Path(folder) / "piece.mp4"
+        video.write_bytes(file_store.read(piece))
+        frames = _every_frame(video, Path(folder) / "frames", FRAMES_PER_SECOND)
+        if len(frames) > most:
+            frames = [frames[round(i * (len(frames) - 1) / max(most - 1, 1))] for i in range(most)]
+        return [{"times": [t], "key": _side_by_side([path])} for path, t in frames]
+
+
+def references_shown(sent: SentList, label: str) -> list[Image]:
+    """What a clip was sent, as pictures: each picture in its order with its label, then the
+    frames of each piece, every one labelled starting with `label`."""
+    return [
+        *(
+            Image(label=f"{label}, Image {picture.image}: {picture.label}", key=picture.file)
+            for picture in sent.pictures
+        ),
+        *(
+            Image(
+                label=f"{label}, Video {piece.number}, {frame_label(frame['times'])}",
+                key=frame["key"],
+            )
+            for piece in sent.pieces
+            for frame in piece_frames(piece.file)
+        ),
+    ]
+
+
+TRIMMED = {
+    "moment_over_limit": f"the moment ran past the video model's {VIDEO_API_MOST_PIECE_SECONDS} s",
+    "pieces_over_limit": f"the pieces ran past the video model's {VIDEO_API_MOST_PIECE_SECONDS} s "
+    "together",
+    "video_ended": "the moment ran past its video's end",
+}
+
+
+def references_said(sent: SentList) -> str:
+    """What a clip was sent, in words, for whoever is shown `references_shown`: how many
+    pictures, where each piece was cut from, what was left out and which recolour fell back."""
+    said = [
+        f"It was sent {len(sent.pictures)} pictures, each shown with its label, all in "
+        f"{sent.colour}."
+    ]
+    for piece in sent.pieces:
+        cut = f"page video {piece.video}, moment {piece.moment}"
+        if piece.trim is None:
+            said.append(f"Video {piece.number} is {cut}, {piece.start:g} s to {piece.end:g} s.")
+        else:
+            said.append(
+                f"Video {piece.number} is {cut}, cut to {piece.start:g} s to {piece.end:g} s "
+                f"of its {piece.moment_start:g} s to {piece.moment_end:g} s because "
+                # A stored trim the set no longer holds is said as it was kept.
+                f"{TRIMMED.get(piece.trim, piece.trim)}."
+            )
+    if sent.pieces:
+        said.append("Each video is shown as its frames, only for the movement, not the look.")
+    if sent.left_out:
+        said.append("Left out of the clip: " + " ".join(picture.label for picture in sent.left_out))
+    said += [
+        f"Library picture {each.of} couldn't be made {each.colour}, so it went as it was."
+        for each in sent.recolours
+        if each.outcome == "fell_back"
+    ]
+    return " ".join(said)
 
 
 PICTURE_SETS = {"sides": SIDES_FRAMES_PER_SECOND, "frames": FRAMES_PER_SECOND}

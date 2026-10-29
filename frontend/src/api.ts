@@ -10,6 +10,60 @@ export type Attachment = {
   /** For a scene's starting picture or clip, the label of the scene version it is shown as,
    * such as "v2 black toilet"; blank otherwise. */
   version?: string;
+  /** For a scene's clip, what was sent to the video API to make it; the empty list for a
+   * clip made before anything was recorded. Null (or absent) on any other file. */
+  sent?: SentList | null;
+};
+
+/** A picture sent with a clip or left out of it (backend jobs/library.py `PictureRef`): a
+ * library item, or one drawn for the clip (tier 3). `url` is a card-size copy of `file`. */
+export type PictureRef = {
+  tier: 1 | 2 | 3 | 4;
+  library_number: number | null;
+  drawn: string | null;
+  for: string | null;
+  label: string;
+  file: string;
+  url: string;
+};
+
+/** A picture sent with a clip, as Image N. */
+export type SentPicture = PictureRef & { image: number };
+
+/** A piece of one of the product's videos sent with a clip, as Video N: its moment's
+ * seconds, and the seconds sent, inside them when it was trimmed to fit. */
+export type SentPiece = {
+  number: number;
+  video: number;
+  moment: number;
+  moment_start: number;
+  moment_end: number;
+  start: number;
+  end: number;
+  trim: string | null;
+  file: string;
+  url: string;
+};
+
+/** A library item the clip's colour was put on, and whether that worked or the item went
+ * in its own colour. */
+export type SentRecolour = {
+  of: number;
+  colour: string;
+  outcome: "done" | "fell_back";
+  made: number | null;
+};
+
+/** What one clip was made from (backend jobs/library.py `SentList`): the pictures in the
+ * order sent (Image 1, Image 2, ...), the pieces, the pictures that didn't fit, the
+ * recolours, and the words sent with them. */
+export type SentList = {
+  colour: string;
+  pictures: SentPicture[];
+  pieces: SentPiece[];
+  left_out: PictureRef[];
+  recolours: SentRecolour[];
+  prompt: string;
 };
 
 /** What a message says of a scene's starting picture or clip: a notice that it started, the

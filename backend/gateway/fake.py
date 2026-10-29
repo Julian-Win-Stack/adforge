@@ -1,14 +1,14 @@
 """A scripted stand-in for a model provider, for tests. Each call pops the next scripted
 outcome for its purpose: output data to return, a turn an agent takes, an error to raise,
-or a turn during which something else happens (see `meanwhile`).
+or a turn during which something else happens (see `meanwhile`). A video to watch is
+scripted as any other call, by its purpose, and what each was sent is kept in
+`videos_watched`.
 
 Pictures, voices and transcripts need no script: the fake draws a plain portrait, makes a
 plain picture of its own from other pictures, designs a numbered voice, speaks at
 `words_per_second` with `pause_seconds` of silence before and after, and hears exactly the
 words it spoke. Script an error for their purpose
 to make one fail, or script a transcript for "transcribe_line" to have something else heard.
-A product video's sound, which the fake didn't speak, has nothing said in it unless a
-transcript is scripted for "transcribe_video".
 
 Music needs no script either: each piece asked for is a low hum as long as was asked, with
 its number written into it so each is its own. Script an error for "make_music" to make one
@@ -17,11 +17,12 @@ fail.
 Clips need no script either: each one asked for is made at once, a real tiny clip that
 speaks the audio a talking clip was asked for, or, for a B-roll clip, is silent for exactly
 the seconds asked for, so ffmpeg can cut and join it: set `clips_short_by` to make B-roll
-ones shorter. What each B-roll clip was sent is kept in `broll_clips_asked`. The fake makes
-talking clips and B-roll ones alike, and its clip scripts are keyed "make_clip" and
-"collect_clip" whichever purpose asked: {"state": "working"} for
-"collect_clip" to have a clip still being made when asked, {"state": "failed", "error": ...}
-to have it fail, or an error for "make_clip" or "collect_clip"."""
+ones shorter. What each B-roll clip was sent, pieces of video and all, is kept in
+`broll_clips_asked`. The fake makes talking clips and B-roll ones alike, and its clip
+scripts are keyed "make_clip" and "collect_clip" whichever purpose asked:
+{"state": "working"} for "collect_clip" to have a clip still being made when asked,
+{"state": "failed", "error": ...} to have it fail, or an error for "make_clip" or
+"collect_clip"."""
 
 import functools
 import io
@@ -40,6 +41,7 @@ from pydantic import BaseModel, ValidationError
 
 from .types import (
     ClipStatus,
+    LoadedPiece,
     ModelReply,
     ModelRequest,
     Picture,
@@ -49,6 +51,7 @@ from .types import (
     TurnReply,
     TurnRequest,
     UnusableReply,
+    VideoRequest,
     Word,
 )
 
@@ -114,7 +117,8 @@ class FakeModel:
         # and its motion prompt.
         self.clips_asked: list[tuple[float, bool, str]] = []
         # What each B-roll clip was sent, in turn: its starting picture or example pictures,
-        # its seconds and its prompt.
+        # its reference videos (each piece's file, the seconds of its page video it holds and
+        # any trim), its seconds and its prompt.
         self.broll_clips_asked: list[dict[str, Any]] = []
         # How much shorter than asked each silent clip is made, as a real model's may be.
         self.clips_short_by = 0.0
@@ -125,6 +129,8 @@ class FakeModel:
         self.music: list[bytes] = []
         # Every turn an agent was asked to take, as it was sent, pictures and all.
         self.turns_taken: list[TurnRequest] = []
+        # Every video the fake was asked to watch, as it was sent, video and all.
+        self.videos_watched: list[VideoRequest[Any]] = []
 
     def respond(self, purpose: str, *outcomes: Outcome) -> None:
         self._scripts[purpose].extend(outcomes)
@@ -138,6 +144,15 @@ class FakeModel:
         self._unscripted[purpose] = answer
 
     def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]:
+        return self._output(request)
+
+    def watch[Out: BaseModel](self, request: VideoRequest[Out]) -> ModelReply[Out]:
+        self.videos_watched.append(request)
+        return self._output(request)
+
+    def _output[Out: BaseModel](
+        self, request: ModelRequest[Out] | VideoRequest[Out]
+    ) -> ModelReply[Out]:
         unscripted = self._unscripted.get(request.purpose)
         if unscripted is not None and not self._scripts[request.purpose]:
             outcome: dict[str, Any] | Turn = unscripted(request)
@@ -234,13 +249,12 @@ class FakeModel:
         return audio.getvalue()
 
     def transcribe(self, *, model: str, audio: bytes) -> Transcription:
-        # Audio the fake didn't speak is a product video's sound.
-        purpose = "transcribe_line" if audio in self.heard else "transcribe_video"
+        purpose = "transcribe_line"
         script = self._scripts[purpose]
         scripted = self._next(purpose) if script else None
         assert not isinstance(scripted, Turn), f"{purpose!r} was scripted a turn"
         self.transcribed.append(audio)
-        # Unscripted, a product video's sound has nothing said in it.
+        # Unscripted, audio the fake didn't speak has nothing said in it.
         text = scripted["text"] if scripted else self.heard.get(audio, "")
         # Heard evenly spaced, at the pace the fake speaks.
         pace = 1 / self.words_per_second
@@ -275,6 +289,7 @@ class FakeModel:
         example_pictures: Sequence[bytes],
         seconds: int,
         prompt: str,
+        reference_videos: Sequence[LoadedPiece] = (),
     ) -> str:
         self._fail_if_scripted("make_clip")
         self.clips_submitted.append(f"video-{len(self.clips_submitted) + 1}")
@@ -282,6 +297,16 @@ class FakeModel:
             {
                 "starting_picture": starting_picture,
                 "example_pictures": list(example_pictures),
+                "reference_videos": [
+                    {
+                        "file": sent.data,
+                        "start": sent.piece.start,
+                        "end": sent.piece.end,
+                        "seconds": sent.piece.seconds,
+                        "trim": sent.piece.trim,
+                    }
+                    for sent in reference_videos
+                ],
                 "seconds": seconds,
                 "prompt": prompt,
             }

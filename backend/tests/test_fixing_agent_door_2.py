@@ -11,7 +11,7 @@ from django.db.models import Sum
 from rest_framework.test import APIClient
 
 from adforge.retry import OutsideServiceDown
-from agents import tasks
+from agents import fixing_agent, tasks
 from agents.models import SystemNote
 from agents.money import dollars
 from agents.producer import _latest_clip
@@ -60,7 +60,7 @@ def _a_fix_said_yes_to(
 ) -> FixPlanScene:
     fake_model.respond(
         "decide_fixes",
-        planning(("look_at_picture", {"scene": 2}), decided(row(2, "fix", GOAL))),
+        planning(("look_at_references", {"scene": 2}), decided(row(2, "fix", GOAL))),
     )
     say("In scene 2 she should lift the mug and put it down.")
     [plan] = plans()
@@ -85,7 +85,7 @@ def test_a_note_is_a_fix_whose_goal_the_agent_films_until_a_try_passes(
 
     fake_model.respond(
         "decide_fixes",
-        planning(("look_at_picture", {"scene": 2}), decided(row(2, "fix", GOAL))),
+        planning(("look_at_references", {"scene": 2}), decided(row(2, "fix", GOAL))),
     )
     say("In scene 2 she should lift the mug and put it down.")
 
@@ -252,6 +252,49 @@ def test_through_the_chat_the_agent_films_the_owners_change_until_a_try_passes(
     agent = ModelCall.objects.filter(tool_call__agent_fix=fixing).aggregate(cost=Sum("cost_usd"))
     assert planned.cost_usd() >= agent["cost"] > 0
     assert SystemNote.objects.filter(text__contains=f"It cost {dollars(planned.cost_usd())}.")
+
+
+def test_a_fix_the_cap_ended_keeps_the_scene_as_it_was_and_says_the_cap_ended_it(
+    fake_model: FakeModel,
+    held: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Door 2 keeps the clip the scene had before the fix, as before the cap went silent
+    # (#217: not settled for door 2, kept as it was).
+    monkeypatch.setattr(fixing_agent, "MOST_TRIES", 2)
+    # Every try: the judge finds the owner's change not made.
+    fake_model.answer_unscripted(
+        "check_clip_motion",
+        motion_answer(
+            CLIP_MOTION_OK,
+            {
+                "old_shows": "The mug stays on the table.",
+                "new_shows": "The mug stays on the table.",
+                "verdict": "not fixed",
+                "still_wrong": "The mug never leaves the table.",
+            },
+        ),
+    )
+    fake_model.respond(
+        "fix_scene", turn(calls=[film_again(video_prompt=STIRS)]), turn(calls=[film_again()])
+    )
+    before = clip(2)
+
+    _a_fix_said_yes_to(fake_model, held, say, api, session_id)
+    [step] = SceneStep.objects.filter(pk__in=held.held)
+    held.run_held()
+
+    fixing = AgentFix.objects.get()
+    assert (fixing.ended_by_cap, fixing.tries.count()) == (True, 2)
+    assert clip(2).file == before.file
+    told = Message.objects.filter(tries_of=step).get()
+    assert told.text == (
+        "Scene 2 stays as it was: The fixing agent filmed as many tries as it may at this "
+        "scene, and none of them passed. Watch the tries, and tap one to use it instead."
+    )
 
 
 def test_an_agent_that_stops_after_a_try_leaves_the_scene_as_it_was(

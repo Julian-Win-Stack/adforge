@@ -67,7 +67,7 @@ SCENE_PICTURE_FOR: dict[For, str] = {
     "person": "how the person, or their hand, is with the product",
     "state": "the product in a state the scene's action changes it to or shows",
 }
-assert tuple(SCENE_PICTURE_FOR) == get_args(For), "every For value is told, in its order"
+assert tuple(SCENE_PICTURE_FOR) == get_args(get_args(For)[0]), "every For value is told, in order"
 
 # What a B-roll scene is sent, named by the planner, and the rules for what it films (#210
 # points 10 and 11; Julian Oct 27-28). Not approved yet: "named on the first try" (audit

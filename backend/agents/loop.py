@@ -11,6 +11,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from functools import cache
 from typing import ClassVar
 
 from django.conf import settings
@@ -29,8 +30,10 @@ from gateway.gateway import (
     charged_to,
     check_readable,
     last_turn_given,
+    past_the_safety_filter,
     take_turn,
 )
+from gateway.models import ModelCall
 from gateway.types import (
     BlockedBySafetyFilter,
     ClipFailed,
@@ -42,12 +45,14 @@ from gateway.types import (
     StepFinished,
     ToolSpec,
     ToolUse,
+    Turn,
     UnusableReply,
 )
-from jobs.models import SceneStep
+from jobs.models import Job, SceneStep
+from jobs.notices import left_out_by_the_filter, post_notice
 from jobs.reference_photos import ReferencePhotoUnusable
 
-from .models import SystemNote, ToolCall
+from .models import RefusedPicture, SystemNote, ToolCall
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +166,7 @@ def _work(agent: Agent, session: Session) -> int:
         settle(agent, call)
     while True:
         conversation, read_up_to, steps, notes = _conversation(agent, session)
+        conversation = without_refused_pictures(session, agent.purpose, conversation)
         if _stopped_since_the_user_spoke(session):
             stopping = [
                 step
@@ -180,12 +186,14 @@ def _work(agent: Agent, session: Session) -> int:
             return read_up_to
         # The turn is traced with the tools it asked for inside it.
         with tracing.agent_turn(agent.name):
-            turn = take_turn(
+            turn = take_a_turn(
                 session=session,
+                job=session.jobs.first(),
                 purpose=agent.purpose,
                 instructions=agent.instructions,
                 conversation=conversation,
                 tools=[tool.spec() for tool in agent.tools],
+                done="the work on your ad carried on",
             )
             # A tool past the limit is refused, and the agent gets one turn to tell the user.
             # Asking for another tool instead, it is stopped.
@@ -223,6 +231,138 @@ def _work(agent: Agent, session: Session) -> int:
                     _refuse_as_stopped(call)
                 else:
                     settle(agent, call)
+
+
+def take_a_turn(
+    *,
+    session: Session,
+    job: Job | None,
+    purpose: str,
+    instructions: str,
+    conversation: Sequence[Happened],
+    tools: Sequence[ToolSpec],
+    done: str,
+    since: datetime | None = None,
+) -> Turn:
+    """An agent's turn (`take_turn`), past the safety filter (requirement 22). A model's
+    filter refuses a whole turn over one picture in the conversation, so when it refuses, the
+    turn is taken again without the pictures it hadn't already looked at in an earlier turn,
+    one at a time, newest first, then all together. The agent is told in its tool's result
+    which picture is left out and why, every later turn leaves it out too, and the chat says
+    so in red, with a warning line: `done` says what went on without it, as "the work on
+    your ad carried on". When that is refused too, or no picture is new, one more turn is
+    taken without every picture. Raises the filter's BlockedBySafetyFilter when every try is
+    refused."""
+    conversation = without_refused_pictures(session, purpose, conversation)
+    # A picture shown twice is one picture.
+    shown = list(
+        dict.fromkeys(
+            Image(label=picture.label, key=picture.key)
+            for each in conversation
+            if isinstance(each, ToolUse)
+            for picture in each.pictures
+        )
+    )
+
+    @cache
+    def looked_at() -> set[str]:
+        # Only needed once a turn is refused.
+        return {
+            picture["key"]
+            for images in ModelCall.objects.filter(
+                session=session, purpose=purpose, outcome=ModelCall.Outcome.SUCCEEDED
+            ).values_list("images", flat=True)
+            for picture in images
+        }
+
+    def ask(kept: list[Image]) -> Turn:
+        return take_turn(
+            session=session,
+            purpose=purpose,
+            instructions=instructions,
+            conversation=_leaving_out(
+                conversation, [image for image in shown if image not in kept]
+            ),
+            tools=tools,
+            since=since,
+        )
+
+    try:
+        turn, left_out = past_the_safety_filter(
+            ask, shown, may_leave_out=lambda image: image.key not in looked_at()
+        )
+    except BlockedBySafetyFilter:
+        # A refusal shouldn't end the session over pictures the model looked at before
+        # either: one more turn, without every picture, unless that was already tried.
+        if not any(image.key in looked_at() for image in shown):
+            raise
+        turn, left_out = ask([]), shown
+    if left_out:
+        with transaction.atomic():
+            RefusedPicture.objects.bulk_create(
+                RefusedPicture(session=session, purpose=purpose, label=image.label, key=image.key)
+                for image in left_out
+            )
+            notice = left_out_by_the_filter([image.label for image in left_out], done)
+            if job is not None:
+                post_notice(job, notice, Message.Level.PROBLEM)
+            else:
+                messages.add(
+                    session, role=Message.Role.NOTICE, text=notice, level=Message.Level.PROBLEM
+                )
+    return turn
+
+
+def without_refused_pictures(
+    session: Session, purpose: str, conversation: Sequence[Happened]
+) -> list[Happened]:
+    """The conversation without the pictures the agent's model refused to look at in an
+    earlier turn, each tool's result saying which of its pictures is left out."""
+    refused = [
+        Image(label=label, key=key)
+        for label, key in RefusedPicture.objects.filter(
+            session=session, purpose=purpose
+        ).values_list("label", "key")
+    ]
+    return _leaving_out(conversation, refused)
+
+
+def _leaving_out(conversation: Sequence[Happened], left_out: Sequence[Image]) -> list[Happened]:
+    """The conversation with the pictures `left_out` taken out of each tool's result, which
+    says so in one line. A result with none of them is left as it is."""
+    gone = {(image.label, image.key) for image in left_out}
+    kept: list[Happened] = []
+    for each in conversation:
+        if isinstance(each, ToolUse) and any(
+            (picture.label, picture.key) in gone for picture in each.pictures
+        ):
+            dropped = [
+                picture.label for picture in each.pictures if (picture.label, picture.key) in gone
+            ]
+            each = each.model_copy(
+                update={
+                    "pictures": [
+                        picture
+                        for picture in each.pictures
+                        if (picture.label, picture.key) not in gone
+                    ],
+                    "result": f"{each.result}\n{not_shown(dropped)}",
+                }
+            )
+        kept.append(each)
+    return kept
+
+
+def not_shown(labels: Sequence[str]) -> str:
+    """What an agent is told of the pictures a tool gave that its model's safety filter
+    refused to look at, in one line."""
+    one = len(labels) == 1
+    named = labels[0] if one else f"{', '.join(labels[:-1])} and {labels[-1]}"
+    it, isnt = ("it", "isn't") if one else ("them", "aren't")
+    return (
+        f"{named} {isnt} shown: the AI model's safety filter refused to look at {it}. Carry "
+        f"on without {it}."
+    )
 
 
 def _refuse_as_stopped(call: ToolCall) -> None:

@@ -431,7 +431,13 @@ def test_a_page_read_again_adds_only_the_photos_the_job_doesnt_have(
         httpserver.url_for("/cdn/mug-back.png"),
     )
 
-    work.save_photos(job, [new, *kept, copy], merge_copies=True, faces=frozenset())
+    # The picker put the copy in the front photo's copy group.
+    work.save_photos(
+        job,
+        [new, *kept, copy],
+        copies={new: (new,), **{url: (url,) for url in kept}, copy: (kept[0], copy)},
+        faces=frozenset(),
+    )
 
     assert list(job.photos.order_by("position").values_list("source_url", flat=True)) == [
         *kept,

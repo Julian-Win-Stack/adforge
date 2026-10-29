@@ -12,7 +12,7 @@ import pytest
 
 from agents import fixing_agent
 from gateway.catalog import MODEL_FOR_PURPOSE, SLOW_ANSWER_SECONDS
-from jobs import clip_judge, owner_parts, video_reader
+from jobs import clip_judge, owner_parts, watcher
 from jobs.checks import FACT_CHECK_INSTRUCTIONS
 from jobs.clip_judge import (
     FRAMES_PER_SECOND,
@@ -22,6 +22,7 @@ from jobs.clip_judge import (
     Check,
     SidesVerdict,
 )
+from jobs.first_send import FIRST_SEND_INSTRUCTIONS, PIECE_LABEL, SPEED_LINE
 from jobs.photos import PICK_INSTRUCTIONS
 from jobs.picture_check import (
     ASKS,
@@ -37,6 +38,7 @@ from jobs.scenes import (
     BROLL_KIND_RULES,
     BROLL_SHARED_RULES,
     MAIN_PHOTO_JOB,
+    SAME_SIDE,
     broll_prompt_instructions,
     broll_video_prompt,
 )
@@ -408,6 +410,9 @@ def test_the_clip_judge_runs_as_proved() -> None:
 # 126-page test proved them (runs/photo-video-pick-test/run.py, Julian's yes 2026-10-19 20:53).
 # Gallery videos: every one in the gallery, picked by where it sits, not by its frame (Julian
 # 2026-10-22 03:01, "it's just a prompt change").
+# Official-photo line-ups: kept with the product named, not left out (requirement 25, Julian
+# 2026-10-26 20:47, "we shouldn't drop this, instead tell which one is the product"; ruled for
+# #212 on 2026-10-29).
 PICKER_SHOWN_BESIDE_AS_TESTED = """\
 Three more kinds of picture come with the screenshots:
 
@@ -420,7 +425,8 @@ by the same rules and answer with their I numbers in gallery_images or more_imag
 
 - The official photos R1, R2, ... are no longer a guide only: when an official photo shows \
 this product and no picked I picture is the same photo, put its R number in record_images. \
-Leave out official photos of other products, bundles or line-ups by the same rules.
+Leave out official photos of other products or bundles by the same rules; keep a line-up with \
+this product in it as above.
 
 - Video players V1, V2, ... are the page's videos, each shown as its poster or first frame, \
 with where it sits (box, position, and which pictures share its box). Answer gallery_videos \
@@ -447,17 +453,17 @@ def test_the_photo_pickers_rules_name_no_shop(name: str) -> None:
     assert name.casefold() not in PICK_INSTRUCTIONS.casefold()
 
 
-# The video reader's job, added after the planner's own instructions (Julian 2026-10-20 02:23,
-# "Do these things").
-READER_ADDED_JOB = (
-    "You ask the shop owner nothing. Before you plan, name the video moments you would need "
-    "as pictures, and why."
+# The watcher writes each moment as one action within the video API's longest piece (spec
+# #210 point 4, user story 30: "As the watcher, I want to know the API's 15 s limit").
+WATCHER_LONGEST_MOMENT = (
+    "A moment lasts at most 15 seconds, the longest piece of video the video model takes: "
+    "split a longer action at a natural point, such as where one step ends and the next begins."
 )
 
 
-def test_the_video_reader_is_the_planners_instructions_and_its_one_added_job() -> None:
-    assert video_reader.INSTRUCTIONS == f"{PLAN_INSTRUCTIONS}\n\n{READER_ADDED_JOB}"
-    assert MODEL_FOR_PURPOSE["read_video"] == MODEL_FOR_PURPOSE["plan_ad"]
+def test_the_watcher_is_told_the_video_apis_15_second_limit() -> None:
+    assert WATCHER_LONGEST_MOMENT in watcher.INSTRUCTIONS
+    assert MODEL_FOR_PURPOSE["watch_video"] == "gemini-3.8-flash"
 
 
 # What the planner and the fact check are told of the product's videos, each line Julian's
@@ -506,7 +512,7 @@ def test_the_product_videos_lines_are_as_approved(prompt: str, line: str) -> Non
 )
 def test_the_product_videos_lines_name_no_shop_or_product(name: str) -> None:
     for line in (
-        video_reader.ADDED_JOB,
+        watcher.INSTRUCTIONS,
         PLANNER_VIDEO_PICTURE,
         PLANNER_VIDEO_WORDS,
         FACT_CHECK_VIDEO_WORDS,
@@ -659,3 +665,42 @@ def test_the_fixing_agent_is_told_the_apps_prompt_rules_unchanged() -> None:
 
 def test_the_fixing_agent_runs_on_the_deciders_model() -> None:
     assert MODEL_FOR_PURPOSE["fix_scene"] == MODEL_FOR_PURPOSE["decide_fixes"] == "gpt-6.1-sol"
+
+
+# The first-send prompt (#210 point 16, decided; Julian's words in the decision record). It
+# retires, for the first send, the frozen opener's "The camera stays still.", SAME_SIDE (A18)
+# and reference mode's "Image 1 is how the clip starts": the tests above pin them while the old
+# writer is still the one the clip step calls.
+FIRST_SEND_FROZEN = [
+    pytest.param(SPEED_LINE, "Film this in real-time speed.", id="A1 the speed line, first"),
+    pytest.param(
+        PIECE_LABEL, "only for the movement, not the look", id="a piece is for its movement"
+    ),
+    pytest.param(
+        FIRST_SEND_INSTRUCTIONS,
+        '- "sentence": ONE sentence for the whole clip, built from the scene and the pictures: '
+        "the action, the thing it is done to or with, the place, and how it ends, said the way "
+        "a person would say it. Give no timings.",
+        id="one sentence: action, thing, place, end state",
+    ),
+]
+
+
+@pytest.mark.parametrize(("text", "sentence"), FIRST_SEND_FROZEN)
+def test_the_first_send_prompts_rules_are_as_decided_word_for_word(
+    text: str, sentence: str
+) -> None:
+    assert sentence in text
+
+
+def test_the_first_send_writer_is_told_nothing_of_the_retired_opener() -> None:
+    # #210 point 16: gone from the first send are the camera opener, the side sentence, "Image
+    # 1 is how the clip starts", the picture prompt and timings.
+    for retired in ("The camera stays still", SAME_SIDE, "how the clip starts", "-second video"):
+        assert retired not in FIRST_SEND_INSTRUCTIONS
+
+
+@pytest.mark.parametrize("name", ["garlic", "press", "toilet", "phone case", "bag"])
+def test_the_first_send_writers_rules_name_no_tested_product(name: str) -> None:
+    # CODING_STANDARDS.md: the contract fixture's product and the graded rounds' products.
+    assert not re.search(rf"\b{name}\b", FIRST_SEND_INSTRUCTIONS, re.IGNORECASE)

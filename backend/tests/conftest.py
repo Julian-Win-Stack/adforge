@@ -24,7 +24,7 @@ from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 from werkzeug import Request, Response
 
-from adforge import celery_app
+from adforge import celery_app, file_store
 from agents import tasks
 from agents.models import ToolCall
 from chat.models import Message, Session
@@ -34,6 +34,7 @@ from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import ModelReply, ModelRequest, Turn, TurnReply, TurnRequest
 from jobs import fix_check
+from jobs.library import SentList
 from jobs.models import Fix, Job, Scene
 
 from . import ffmpeg_replay
@@ -90,17 +91,53 @@ COPIED = {
     "passages": ["Stoneware Mug", "Hand-thrown, holds 350 ml, dishwasher safe."],
 }
 
+
 # What the photo picker answers when a test doesn't say: on the shampoo's marked
 # screenshot, its big gallery photo (I8) and the same photo's thumbnail (I16).
-SHAMPOO_PICKED = {
-    "product": "Detox Clarifying Hair Shampoo",
-    "gallery_images": [8, 16],
-    "more_images": [],
-    "product_sections": [15, 30],
-    "notes": "",
-    "face_images": [],
-    "page_blocked": False,
-}
+def picker_fields(marks: list[str], copies: list[list[str]]) -> list[dict[str, Any]]:
+    """The picker's fields for each picture in `marks`: every one a front photo of the
+    product alone, each its own copy group but for those listed together in `copies`."""
+    groups = {mark: number for number, group in enumerate(copies, 1) for mark in group}
+    return [
+        {
+            "picture": mark,
+            "copy_group": groups.get(mark, len(copies) + number),
+            "kind": "side",
+            "side": "front",
+            "alone": "yes",
+            "colour": "amber",
+            "target": "",
+            "label": f"The product, in picture {mark}.",
+        }
+        for number, mark in enumerate(marks, 1)
+    ]
+
+
+def shampoo_picked(
+    changes: dict[str, Any] | None = None, *, copies: list[list[str]] | None = None
+) -> dict[str, Any]:
+    """The picker's answer on the shampoo's page, with `changes`, and its fields for every
+    picture it picked. I16 is a thumbnail of I8's photo: the two are one copy group."""
+    answer = {
+        "product": "Detox Clarifying Hair Shampoo",
+        "gallery_images": [8, 16],
+        "more_images": [],
+        "product_sections": [15, 30],
+        "notes": "",
+        "face_images": [],
+        "page_blocked": False,
+        **(changes or {}),
+    }
+    marks = [f"I{n}" for n in [*answer["gallery_images"], *answer["more_images"]]] + [
+        f"R{n}" for n in answer.get("record_images", []) if n > 0
+    ]
+    return {
+        **answer,
+        "pictures": picker_fields(marks, [["I8", "I16"]] if copies is None else copies),
+    }
+
+
+SHAMPOO_PICKED = shampoo_picked()
 
 # What the Face-note call answers for a photo with no stranger's face in it.
 NO_FACE: dict[str, Any] = {"has_face": False}
@@ -323,6 +360,11 @@ def _isolated_outside_world(settings: Settings, tmp_path: Path) -> None:
     # stand-in.
     settings.OPENAI_PICTURES_KEY = ""
     settings.OPENAI_PICTURES_BASE_URL = ""
+    # Videos are never watched by the real Gemini. A test that watches one points these at a
+    # stand-in.
+    settings.GEMINI_API_KEY = ""
+    settings.GEMINI_BASE_URL = "http://gemini.invalid"
+    settings.GEMINI_FILE_POLL_SECONDS = 0
 
 
 @pytest.fixture(autouse=True)
@@ -338,6 +380,17 @@ def api() -> APIClient:
     return APIClient()
 
 
+# What the watcher writes for a video, unless a test says: it shows the product, and no
+# moment, look frame or word.
+NOTHING_WATCHED: dict[str, Any] = {
+    "shows_this_product": True,
+    "moments": [],
+    "look_frames": [],
+    "colour": "black",
+    "transcript": "",
+}
+
+
 @pytest.fixture
 def fake_model() -> Iterator[FakeModel]:
     fake = FakeModel()
@@ -347,8 +400,8 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("check_starting_picture", lambda _: PICTURE_OK)
     fake.answer_unscripted("check_fix", lambda request: with_owner_photo(FIX_MADE, request.output))
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
-    # A product video's reader needs none of its moments as pictures, unless a test says.
-    fake.answer_unscripted("read_video", lambda _: {"kept": [], "rejected": []})
+    # A product video's watcher sees the product and nothing else in it, unless a test says.
+    fake.answer_unscripted("watch_video", lambda _: NOTHING_WATCHED)
     fake.answer_unscripted("check_clip_sides", lambda _: CLIP_SIDES_OK)
     fake.answer_unscripted("check_clip_motion", motion_answer(CLIP_MOTION_OK))
     # Once the ad has a clip, every message goes to the decider first: unless a test scripts
@@ -635,6 +688,20 @@ def handoffs(purpose: str) -> list[dict[str, Any]]:
     )
 
 
+SENT_LIST_FIXTURE = Path(__file__).parent / "fixtures" / "sent_list.json"
+
+
+def sent_list_in_the_store() -> SentList:
+    """The sent-list fixture, with each of its pictures in the file store as big as a phone
+    takes them and each piece as a file of its own."""
+    sent = SentList.model_validate(json.loads(SENT_LIST_FIXTURE.read_text()))
+    for each in [*sent.pictures, *sent.left_out]:
+        file_store.save(each.file, picture(1600, 1200, (236, 229, 206), "JPEG"))
+    for piece in sent.pieces:
+        file_store.save(piece.file, b"a piece of a product video")
+    return sent
+
+
 def served(link: str, settings: Settings) -> bytes:
     """What the browser gets from a link: the web server hands out MEDIA_ROOT at /media/."""
     assert link.startswith("/media/"), f"{link} isn't a link the web server hands out"
@@ -665,6 +732,34 @@ def video(data: bytes) -> tuple[int, int, float]:
     found = json.loads(probed.stdout)
     (picture,) = [stream for stream in found["streams"] if stream["codec_type"] == "video"]
     return picture["width"], picture["height"], float(found["format"]["duration"])
+
+
+def a_video(width: int, height: int, *, sound: bool, seconds: float = 1) -> bytes:
+    """A real video, `width` by `height` px, `seconds` long, with a tone for its sound or
+    none at all."""
+    with tempfile.TemporaryDirectory() as folder:
+        made = Path(folder) / "made.mp4"
+        tone = ["-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds}"] if sound else []
+        subprocess.run(
+            [settings.FFMPEG, "-loglevel", "error", "-f", "lavfi"]
+            + ["-i", f"testsrc=size={width}x{height}:rate=10:duration={seconds}", *tone]
+            + ["-pix_fmt", "yuv420p", str(made)],
+            check=True,
+        )
+        return made.read_bytes()
+
+
+def has_sound(data: bytes) -> bool:
+    """Whether a video has a sound track, as ffprobe reads it."""
+    with _written(data) as file:
+        probed = subprocess.run(
+            [settings.FFPROBE, "-v", "error", "-show_streams", "-of", "json", file],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=True,
+        )
+    return any(stream["codec_type"] == "audio" for stream in json.loads(probed.stdout)["streams"])
 
 
 def colour_at(data: bytes, seconds: float) -> str:

@@ -40,7 +40,7 @@ from jobs.models import Job
 from .play import Played
 from .score import score
 
-SCENE_LOOKS = ("look_at_picture", "look_at_version", "look_at_clip")
+SCENE_LOOKS = ("look_at_references", "look_at_version", "look_at_clip")
 LOOKS = (*SCENE_LOOKS, "look_at_owner_photo")
 
 

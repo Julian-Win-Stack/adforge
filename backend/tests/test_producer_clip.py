@@ -17,6 +17,7 @@ from agents.models import SystemNote
 from agents.money import dollars
 from agents.producer import PRODUCER
 from chat.models import Message, Session
+from chat.sent import NOTHING_SENT
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import work
@@ -234,6 +235,8 @@ def test_the_clip_is_made_in_the_background_from_the_picture_and_the_audio_heard
             "url": f"/media/{clip.file}",
             "scene": 1,
             "version": "v1 first version",
+            # Made before cut-and-send keeps a sent list, so nothing it was sent is shown.
+            "sent": NOTHING_SENT,
         }
     ]
     # The clip's own message says the step that started has ended with it.

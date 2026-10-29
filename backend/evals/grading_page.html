@@ -48,12 +48,20 @@ video.whole { max-width: 320px; }
 .note { display: grid; gap: 6px; }
 textarea { font: inherit; width: 100%; max-width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); resize: vertical; }
 .note .save { justify-self: start; }
+.count { margin: 8px 0 0; font-weight: 600; }
+.count.capped { color: var(--fail); }
+.sent { font-size: 0.85rem; border-top: 1px solid var(--line); padding-top: 6px; min-width: 0; overflow-wrap: anywhere; }
+.sent summary { cursor: pointer; color: var(--muted); }
+.sent-list, .left-out { margin: 4px 0; padding-left: 18px; }
+.sent-head, .left-out-head { margin: 6px 0 0; color: var(--muted); }
+.left-out-head, .left-out { color: var(--fail); }
 .saved { font-size: 0.85rem; color: var(--pass); }
 </style>
 <div class="wrap">
   <header>
     <h1>Round Grading</h1>
     <p class="lead">Grade each ad, each scene's first clip and, where the app kept a remake, the kept clip. On a failed clip, tap the first step that broke. The judge's verdict is shown for every clip.</p>
+    {{COUNT}}
     <p class="status" id="status">Connecting to the tap store…</p>
   </header>
 {{SECTIONS}}
