@@ -366,3 +366,9 @@ def test_a_piece_cut_at_its_videos_end_is_said_so() -> None:
     said = clip_judge.references_said(SentList.model_validate(raw))
 
     assert "of its 3 s to 15 s because the moment ran past its video's end." in said
+
+
+def test_a_piece_asked_for_again_gives_the_same_frames() -> None:
+    kept = file_store.save("piece.mp4", piece(1.0))
+
+    assert clip_judge.piece_frames(kept) == clip_judge.piece_frames(kept)

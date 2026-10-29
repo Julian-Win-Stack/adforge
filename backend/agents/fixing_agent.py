@@ -639,6 +639,12 @@ def _frames(clip: ProducedItem, label: str) -> list[Shown]:
     kept = ((clip.ruling or {}).get("pictures") or {}).get("frames")
     if not kept:
         kept = clip_judge.cut_pictures(clip.file, beside=0, sets=("frames",))["frames"]
+    return _four_to_a_picture(kept, label)
+
+
+def _four_to_a_picture(kept: list[dict[str, Any]], label: str) -> list[Shown]:
+    """Frames, each with its times, joined 4 to a picture under a name made from them, so the
+    same frames are the same picture on every turn."""
     shown = []
     for i in range(0, len(kept), 4):
         group = kept[i : i + 4]
@@ -745,8 +751,18 @@ def _try_shown(
     frames = [] if clip is None else _frames(clip, f"{label}, clip")
     clip_frames = [Image(label=each.label, key=each.key) for each in frames]
     if sent is not None:
+        # Each piece's frames are joined as the clip's are, so a try's pictures leave room
+        # for another's in MOST_PICTURES.
+        pieces = [
+            Image(label=each.label, key=each.key)
+            for piece in sent.pieces
+            for each in _four_to_a_picture(
+                clip_judge.piece_frames(piece.file), f"{label}, Video {piece.number}"
+            )
+        ]
         return clip_judge.references_said(sent), [
-            *clip_judge.references_shown(sent, label),
+            *clip_judge.sent_pictures(sent, label),
+            *pieces,
             *clip_frames,
         ]
     shown = [Image(label=f"{label}, start picture", key=picture.file)] if picture else []
