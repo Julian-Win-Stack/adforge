@@ -74,3 +74,10 @@ def left_out_by_the_filter(pictures: Sequence[str], done: str) -> str:
         f"The AI model's safety filter refused to look at {named}, so {done} without "
         f"{'it' if len(pictures) == 1 else 'them'}."
     )
+
+
+def refused_by_the_filter(what: str, then: str) -> str:
+    """The notice for work a model's safety filter refused over `what` itself, which can't be
+    left out of it (requirement 22): `then` says what happened instead, such as "it is kept
+    unchecked"."""
+    return f"The AI model's safety filter refused to look at {what}, so {then}."

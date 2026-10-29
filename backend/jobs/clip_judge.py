@@ -37,8 +37,9 @@ from pydantic import BaseModel, Field
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
+from chat.models import Message
 from gateway import catalog
-from gateway.gateway import call_model
+from gateway.gateway import call_model, past_the_safety_filter
 from gateway.types import (
     AnswerTookTooLong,
     BlockedBySafetyFilter,
@@ -49,6 +50,7 @@ from gateway.types import (
 
 from . import assembly
 from .models import AgentFix, AgentFixTry, Fix, ProducedItem, SceneStep
+from .notices import left_out_by_the_filter, post_notice, refused_by_the_filter
 from .planning import ChatMessage
 from .scenes import photos_for_needs
 from .threads import closing_its_connection
@@ -553,15 +555,20 @@ def judge_clip(
     change is made: each answer's "owner_change", which never counts in the verdict. Its
     ruling's "compared_with" is that clip's id. When that clip's frames can't be cut, the
     clip is judged as any other, and the fix is left unchecked."""
+    answered: list[_Answered] = []
     try:
         sides, motion, old = _asked(step, clip, conversation)
-        ruling = _ruling(
-            sides,
-            motion,
-            clip,
-            compared_with=old,
-            photos=bool(old and step.fix and during_the_clip(step.fix)),
-        )
+        answered = [*sides, *motion]
+        ruling = {
+            **_ruling(
+                [each.answer for each in sides],
+                [each.answer for each in motion],
+                clip,
+                compared_with=old,
+                photos=bool(old and step.fix and during_the_clip(step.fix)),
+            ),
+            **_past_the_filter(sides, motion),
+        }
     except Exception as error:
         logger.exception("Scene %s's clip couldn't be judged", step.scene.number)
         ruling = {
@@ -570,7 +577,51 @@ def judge_clip(
         }
     clip.ruling = ruling
     clip.save(update_fields=["ruling"])
+    _say_what_the_filter_refused(step, answered)
     return ruling
+
+
+def _past_the_filter(sides: list[_Answered], motion: list[_Answered]) -> dict[str, Any]:
+    """What a ruling says of the safety filter (requirement 22), when it refused anything:
+    "not_shown", each ask answered without reference pictures it refused, and which;
+    "refused_by_the_filter", each ask it refused over the clip itself, unchecked."""
+    asked = [("sides", ask, each) for ask, each in enumerate(sides, 1)] + [
+        ("motion", ask, each) for ask, each in enumerate(motion, 1)
+    ]
+    not_shown = [
+        {"check": check, "ask": ask, "pictures": each.not_shown}
+        for check, ask, each in asked
+        if each.not_shown
+    ]
+    refused = [{"check": check, "ask": ask} for check, ask, each in asked if each.refused]
+    return {
+        **({"not_shown": not_shown} if not_shown else {}),
+        **({"refused_by_the_filter": refused} if refused else {}),
+    }
+
+
+def _say_what_the_filter_refused(step: SceneStep, answered: list[_Answered]) -> None:
+    """Tell the chat in red of every picture the safety filter refused when the clip was
+    judged: the reference pictures it was judged without, and the clip itself, when the
+    filter refused to judge it at all."""
+    job, number = step.scene.job, step.scene.number
+    left = list(dict.fromkeys(name for each in answered for name in each.not_shown))
+    if left:
+        post_notice(
+            job,
+            left_out_by_the_filter(left, f"scene {number}'s clip was judged"),
+            Message.Level.PROBLEM,
+        )
+    if any(each.refused for each in answered):
+        post_notice(
+            job,
+            refused_by_the_filter(
+                f"scene {number}'s clip",
+                "the clip judge couldn't check all of it and it is kept as it is: check it "
+                "yourself",
+            ),
+            Message.Level.PROBLEM,
+        )
 
 
 def _ruling(
@@ -595,7 +646,7 @@ def _ruling(
 
 def _asked(
     step: SceneStep, clip: ProducedItem, conversation: list[ChatMessage]
-) -> tuple[list[dict[str, Any] | None], list[dict[str, Any] | None], ProducedItem | None]:
+) -> tuple[list[_Answered], list[_Answered], ProducedItem | None]:
     """Each check's answers about `clip`, in the order asked, all asked at once, and, for a
     fix's clip, the clip MOTION was shown beside it, if any."""
     planned = step.picture_step
@@ -664,6 +715,7 @@ def _asked(
                 pictures["frames"],
                 old=old_frames,
             ),
+            references=beside + len(owners) if with_photos else beside,
         )
         for told in (
             {"ask": ask, "facts": _facts(step, with_use=True), "order": step.shows, **owner}
@@ -677,6 +729,7 @@ def _asked(
             ClipCheckHandoff(ask=ask, facts=_facts(step, with_use=False), **owner),
             SidesVerdict,
             _shown(photo, needs, pictures["sides"]),
+            references=beside,
         )
         for ask in range(1, ASKS + 1)
     ] + motion
@@ -711,29 +764,53 @@ def _frames_beside(old: ProducedItem, *, beside: int, cut: bool) -> list[dict[st
 
 @dataclass(frozen=True)
 class _Ask:
-    """One ask of one check: what it is asked for, told, handed and shown, and answers as."""
+    """One ask of one check: what it is asked for, told, handed and shown, and answers as.
+    The first `references` pictures shown are the reference pictures beside the clip: the
+    shop photo, the photos of what the scene needs and the shop owner's photos."""
 
     purpose: str
     instructions: str
     handoff: ClipCheckHandoff
     output: type[SidesVerdict] | type[MotionVerdict]
     images: list[Image]
+    references: int
 
 
-def _answer(step: SceneStep, ask: _Ask) -> dict[str, Any] | None:
+@dataclass(frozen=True)
+class _Answered:
+    """One ask's answer, or None when none could be had; the reference pictures the safety
+    filter refused, which it was answered without, by name; and whether the filter refused
+    it even without them, over the clip itself."""
+
+    answer: dict[str, Any] | None
+    not_shown: list[str]
+    refused: bool = False
+
+
+def _answer(step: SceneStep, ask: _Ask) -> _Answered:
     """One ask's answer, or None when it can't be had, for any reason: the clip is paid for,
-    and the other asks' answers still count."""
-    try:
+    and the other asks' answers still count. A reference picture the safety filter refuses
+    is left out and the ask made again without it (requirement 22); the clip's own frames
+    never are, as a check that didn't see part of the clip can't pass it."""
+    references = ask.images[: ask.references]
+
+    def asking(shown: list[Image]) -> dict[str, Any]:
         answer: BaseModel = call_model(
             job=step.scene.job,
             purpose=ask.purpose,
             instructions=ask.instructions,
-            handoff=ask.handoff,
+            handoff=_handed(ask.handoff, shown),
             output=ask.output,
-            images=ask.images,
+            images=shown,
             pay_once=True,
         )
         return answer.model_dump(mode="json")
+
+    try:
+        answer, left_out = past_the_safety_filter(
+            asking, ask.images, may_leave_out=lambda image: image in references
+        )
+        return _Answered(answer, [named(image) for image in left_out])
     except Exception as error:
         logger.warning(
             "%s ask %s about scene %s's clip went unchecked: %s",
@@ -746,7 +823,27 @@ def _answer(step: SceneStep, ask: _Ask) -> dict[str, Any] | None:
                 error, (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter, AnswerTookTooLong)
             ),
         )
-        return None
+        return _Answered(None, [], refused=isinstance(error, BlockedBySafetyFilter))
+
+
+def _handed(handoff: ClipCheckHandoff, shown: list[Image]) -> ClipCheckHandoff:
+    """`handoff`, naming only the shop owner's photos among the pictures `shown`."""
+    if not isinstance(handoff, MotionPhotoFixCheckHandoff):
+        return handoff
+    labels = {image.label for image in shown}
+    return handoff.model_copy(
+        update={
+            "owner_photos": [
+                thing for thing in handoff.owner_photos if OWNER_PHOTO_LABEL.format(thing) in labels
+            ]
+        }
+    )
+
+
+def named(image: Image) -> str:
+    """A reference picture as a notice names it: its label, as words in a sentence."""
+    label = image.label.rstrip(":")
+    return label[:1].lower() + label[1:]
 
 
 def _facts(step: SceneStep, *, with_use: bool) -> str:
