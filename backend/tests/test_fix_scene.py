@@ -277,7 +277,9 @@ def test_the_fixing_agents_question_is_asked_by_the_producer_and_the_answer_resu
 
     # The photo is in the library, as the shop owner's photo, and the agent read the answer.
     job = Job.objects.get()
-    assert [each for each in library_of(job) if each.source == OwnerPhoto(original=photo.file)]
+    [item] = [each for each in library_of(job) if each.source == OwnerPhoto(original=photo.file)]
+    # As the clean picture drawn from it, never the photo as sent.
+    assert item.file != photo.file
     turns = [each for each in fake_model.turns_taken if each.purpose == "fix_scene"]
     [ask_read] = [
         each
@@ -285,7 +287,7 @@ def test_the_fixing_agents_question_is_asked_by_the_producer_and_the_answer_resu
         if isinstance(each, ToolUse) and each.tool == "ask_owner"
     ]
     assert ANSWER in ask_read.result and WITH_IT in ask_read.result
-    assert photo.file in [each.key for each in ask_read.pictures]
+    assert item.file in [each.key for each in ask_read.pictures]
     # The fix carried on and passed; the question is answered.
     fixing = AgentFix.objects.get(step=step)
     assert fixing.passed is not None and fixing.passed == fixing.tries.get(number=2).clip

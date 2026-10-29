@@ -26,7 +26,7 @@ from jobs import (
     stale,
 )
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
-from jobs.library import library_of
+from jobs.library import LibraryEntry, library_of
 from jobs.library_items import add_kept_photos, add_product_only_versions, library_line
 from jobs.made_pictures import PictureNotMade, make_picture
 from jobs.models import (
@@ -37,6 +37,7 @@ from jobs.models import (
     OwnerQuestion,
     ProducedItem,
     ProductPhoto,
+    ProductVideo,
     ReferencePhoto,
     Scene,
     SceneStep,
@@ -1170,38 +1171,60 @@ class AddToLibrary(Tool):
             )
         if any(not each.shows.strip() for each in self.photos):
             raise Refused("say what each photo shows.")
-        taken = [
-            owner_answers.into_the_library(
-                job, photos=[photos[each.photo - 1].file], videos=[], shows=each.shows.strip()
+        taken: list[tuple[str, owner_answers.Taken]] = [
+            (
+                f"Owner photo {each.photo}: ",
+                owner_answers.into_the_library(
+                    job,
+                    photos=[photos[each.photo - 1].file],
+                    videos=[],
+                    shows=each.shows.strip(),
+                    cleaned_of=each.shows.strip(),
+                ),
             )
             for each in self.photos
         ]
-        if self.videos:
+        for number in self.videos:
             taken.append(
-                owner_answers.into_the_library(
-                    job,
-                    photos=[],
-                    videos=[videos[number - 1].file for number in self.videos],
-                    shows="",
+                (
+                    f"Owner video {number}: ",
+                    owner_answers.into_the_library(
+                        job, photos=[], videos=[videos[number - 1].file], shows="", cleaned_of=""
+                    ),
                 )
             )
-        added = [item for each in taken for item in each.added]
+        added = [item for _, each in taken for item in each.added]
+        watched = [video for _, each in taken for video in each.watched]
         with transaction.atomic():
-            owner_answers.say_unreadable(job, sum(each.unreadable for each in taken))
-            if added:
-                post_notice(
-                    job,
-                    "What you sent is in the ad's picture library as "
-                    f"{owner_answers.items_said(added)}.",
-                    Message.Level.INFO,
-                )
-        said = "\n".join(line for each in taken for line in each.said)
-        if not added:
+            owner_answers.say_unreadable(job, sum(each.unreadable for _, each in taken))
+            if added or watched:
+                post_notice(job, _what_went_in(added, watched), Message.Level.INFO)
+        said = "\n".join(
+            named + line[:1].lower() + line[1:] for named, each in taken for line in each.said
+        )
+        if not added and not watched:
             raise Failed(f"nothing was added to the library.\n{said}")
         return (
             f"{said}\nName them in a scene's references with set_references; look at one "
             "first (look, library_item N) when you need to know what it shows."
         )
+
+
+def _what_went_in(added: list[LibraryEntry], watched: list[ProductVideo]) -> str:
+    """The shop owner's line on where what they sent went: library items and page videos."""
+    said = (
+        [f"What you sent is in the ad's picture library as {owner_answers.items_said(added)}."]
+        if added
+        else []
+    )
+    if watched:
+        many = len(watched) > 1
+        numbers = listed_numbers([video.position for video in watched])
+        said.append(
+            f"Your video{'s are' if many else ' is'} kept as page video{'s' if many else ''} "
+            f"{numbers}."
+        )
+    return " ".join(said)
 
 
 def _owner_videos(count: int) -> str:

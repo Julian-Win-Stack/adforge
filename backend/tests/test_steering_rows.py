@@ -22,12 +22,14 @@ from agents.money import dollars
 from chat.models import Attachment
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from gateway.types import Turn
+from gateway.types import BlockedBySafetyFilter, Turn
 from jobs import stale
 from jobs.library import LookFrame, OwnerPhoto, library_of
 from jobs.models import Job, ProducedItem, Scene
+from jobs.reference_photos import clean_photo_of
 
 from .conftest import (
+    CUT_OUT_OK,
     LABELLED,
     NO_CHOICES,
     NOTHING_WATCHED,
@@ -49,6 +51,7 @@ from .test_producer_broll import checked  # noqa: F401 (a fixture)
 from .test_producer_fixes import shown  # noqa: F401 (a fixture)
 from .test_producer_person_and_room import PLACES, ROOMS, five_shown  # noqa: F401
 from .test_producer_plan_edits import AS_BROLL, LINE_1, LINE_3, SHORT_3, SHOWS_1, SHOWS_3
+from .test_product_only import failing
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -71,6 +74,11 @@ def answer_of(tool: str) -> str:
 def told(tool: str) -> list[dict[str, Any]]:
     """What each call of `tool` was told, oldest first, without its `why`."""
     return [call.arguments for call in calls_of(tool)]
+
+
+def level_of(said: str) -> list[str]:
+    """How each notice saying `said` was shown: "problem" (red) or "info" (grey)."""
+    return [each["level"] for each in Job.objects.get().warnings if each["text"] == said]
 
 
 def ads() -> list[ProducedItem]:
@@ -465,7 +473,8 @@ def test_a_made_picture_is_stored_named_by_set_references_and_sent(
     made = Job.objects.get().library.get(number=3)
     assert answer_of("make_picture").startswith("Made library item 3")
     assert made.label == MADE_LABEL
-    assert handoffs("make_picture")[-1]["prompt"] == MADE_PROMPT
+    front, other = (Job.objects.get().library.get(number=n).file for n in (1, 2))
+    assert handoffs("make_picture")[-1] == {"prompt": MADE_PROMPT, "pictures": [front, other]}
     assert answer_of("set_references").startswith("Scene 2's references: pictures 3 (result)")
     producer.woken(("assemble_ad", {}), with_its_cost("Scene 2 ends on the mug full of tea now."))
 
@@ -580,6 +589,44 @@ def test_five_different_rooms(
 
 # --- An owner attachment: a photo and a small video ---------------------------------------------
 
+
+def sending(
+    api: APIClient,
+    session_id: str,
+    text: str,
+    *,
+    photos: list[bytes] = [],  # noqa: B006 (never changed)
+    videos: list[bytes] = [],  # noqa: B006 (never changed)
+) -> None:
+    """The shop owner sends `text` with these photos and videos attached, through the chat;
+    the producer's turns are scripted first."""
+    sent = api.post(
+        f"/api/sessions/{session_id}/messages/",
+        {
+            "text": text,
+            "photos": [
+                SimpleUploadedFile(f"photo{n}.png", data, content_type="image/png")
+                for n, data in enumerate(photos, 1)
+            ],
+            "videos": [
+                SimpleUploadedFile(f"video{n}.mp4", data, content_type="video/mp4")
+                for n, data in enumerate(videos, 1)
+            ],
+        },
+        format="multipart",
+    )
+    assert sent.status_code == 201, sent.json()
+
+
+def owner_photo(number: int) -> str:
+    """The shop owner's photo `number` as they sent it, in the file store."""
+    return (
+        Attachment.objects.filter(message__role="user", kind="picture")
+        .order_by("message__seq", "position")[number - 1]
+        .file
+    )
+
+
 LID_ON = "the mug with its lid on"
 LID_MOMENT = {"start": 0.0, "end": 2.5, "happens": "The lid is pressed on.", "on_screen": "A mug."}
 
@@ -619,32 +666,39 @@ def test_an_owner_photo_and_video_enter_the_library_and_are_sent_for_scene_2(
             ("make_clip", {"scene": 2}),
         ),
     )
-    sent = api.post(
-        f"/api/sessions/{session_id}/messages/",
-        {
-            "text": "Here's the mug with its lid on, and how the lid goes on. Use them in scene 2.",
-            "photos": [SimpleUploadedFile("lid.png", photo(7), content_type="image/png")],
-            "videos": [SimpleUploadedFile("lid.mp4", piece(3.0), content_type="video/mp4")],
-        },
-        format="multipart",
+    sending(
+        api,
+        session_id,
+        "Here's the mug with its lid on, and how the lid goes on. Use them in scene 2.",
+        photos=[photo(7)],
+        videos=[piece(3.0)],
     )
-    assert sent.status_code == 201, sent.json()
     assert fake_model.left("produce") == 0
     # The producer read them numbered, as the tool takes them.
     assert "[Attached 1 picture and 1 video: owner photo 1 and owner video 1]" in str(
         given_to_the_producer(producer_turns() - 3)
     )
 
-    # The photo is in the library labelled, the video kept, watched and its look frame added.
+    # The photo is in the library as the clean picture of what it shows, drawn from it once
+    # and labelled, never as sent; the video kept, watched and its look frame added.
     assert told("add_to_library") == [{"photos": [{"photo": 1, "shows": LID_ON}], "videos": [1]}]
     entries = {item.number: item for item in library_of(job)}
-    assert entries[photo_number].source == OwnerPhoto(original=entries[photo_number].file)
+    raw = owner_photo(1)
+    assert entries[photo_number].source == OwnerPhoto(original=raw)
+    (drawn,) = handoffs("make_reference_photo_picture")
+    assert drawn == {"prompt": clean_photo_of(LID_ON), "pictures": [raw]}
+    assert entries[photo_number].file != raw
     assert handoffs("label_photo")[-1]["shows"] == LID_ON
+    # Its clean picture was checked as keeping only what it shows.
+    assert LID_ON in [each["keep"] for each in handoffs("check_cut_out")]
     (video,) = job.videos.all()
     assert entries[frame_number].source == LookFrame(video=video.position, second=1.0)
     answer = answer_of("add_to_library")
-    assert f"Their photo is library item {photo_number}" in answer
-    assert f"Their video is page video {video.position}, watched: moments 1 to 1" in answer
+    assert f"Owner photo 1: their photo is library item {photo_number}" in answer
+    assert (
+        f"Owner video 1: their video is page video {video.position}, watched: moments 1 to 1"
+        in answer
+    )
     assert answer_of("set_references").startswith(
         f"Scene 2's references: pictures {photo_number} (state); video piece video 1, moment 1"
     )
@@ -655,13 +709,15 @@ def test_an_owner_photo_and_video_enter_the_library_and_are_sent_for_scene_2(
     (asked,) = watched.broll_sent()
     assert asked["example_pictures"] == sent_pictures(clip)
     assert file_store.read(entries[photo_number].file) in asked["example_pictures"]
+    assert file_store.read(raw) not in asked["example_pictures"]
     ((piece_sent),) = asked["reference_videos"]
     assert (piece_sent["start"], piece_sent["end"]) == (0.0, 2.5)
     # The shop owner saw where their files went, the producer's line and the new ad.
     saw = watched.owner_saw()
     assert (
         "notice",
-        f"What you sent is in the ad's picture library as items {photo_number} and {frame_number}.",
+        f"What you sent is in the ad's picture library as items {photo_number} and "
+        f"{frame_number}. Your video is kept as page video {video.position}.",
     ) in saw
     ad = watched.new_ad()
     assert ad.cuts[1]["clip"] == clip.pk
@@ -685,3 +741,200 @@ def test_an_attachment_named_wrongly_is_refused_and_nothing_is_added(
     )
     assert len(library_of(Job.objects.get())) == before
     assert watched.paid_for() == []
+
+
+def test_a_video_watched_with_no_look_frame_is_added_for_its_moments(
+    fake_model: FakeModel,
+    producer: ScriptedProducer,
+    watched: Watched,
+    api: APIClient,
+    session_id: str,
+) -> None:
+    before = len(library_of(Job.objects.get()))
+    fake_model.respond("watch_video", {**NOTHING_WATCHED, "colour": GREEN, "moments": [LID_MOMENT]})
+    fake_model.respond(
+        "produce",
+        *scripted_turns(("add_to_library", {"photos": [], "videos": [2]}), "It's in."),
+    )
+
+    sending(api, session_id, "How the lid goes on.", videos=[piece(2.0), piece(3.0)])
+
+    # Only the video named was kept: the second one sent.
+    (video,) = Job.objects.get().videos.all()
+    assert file_store.read(video.file) == piece(3.0)
+    call = calls_of("add_to_library")[-1]
+    assert call.answer == "made"
+    assert (
+        f"Owner video 2: their video is page video {video.position}, watched: moments 1 to 1"
+        in (call.result)
+    )
+    assert len(library_of(Job.objects.get())) == before
+    kept = f"Your video is kept as page video {video.position}."
+    assert ("notice", kept) in watched.owner_saw()
+    assert level_of(kept) == ["info"]
+
+
+def test_a_video_that_cant_be_read_is_said_in_red_and_nothing_is_added(
+    fake_model: FakeModel,
+    producer: ScriptedProducer,
+    watched: Watched,
+    api: APIClient,
+    session_id: str,
+) -> None:
+    before = len(library_of(Job.objects.get()))
+    fake_model.respond(
+        "produce",
+        *scripted_turns(("add_to_library", {"photos": [], "videos": [1]}), "It didn't play."),
+    )
+
+    sending(api, session_id, "How the lid goes on.", videos=[b"not a video"])
+
+    call = calls_of("add_to_library")[-1]
+    assert call.answer == "cant"
+    assert call.result.startswith("Failed: nothing was added to the library.")
+    assert "Owner video 1: their video couldn't be read" in call.result
+    assert (
+        "notice",
+        "The video you sent couldn't be read as a video, so nothing from it is in the ad's "
+        "library.",
+    ) in watched.owner_saw()
+    assert len(library_of(Job.objects.get())) == before
+    assert not Job.objects.get().videos.exists()
+    assert watched.paid_for() == []
+
+
+def test_a_photo_whose_clean_picture_keeps_failing_is_said_in_red_and_nothing_is_added(
+    fake_model: FakeModel,
+    producer: ScriptedProducer,
+    watched: Watched,
+    api: APIClient,
+    session_id: str,
+) -> None:
+    before = len(library_of(Job.objects.get()))
+    fake_model.respond(
+        "check_cut_out",
+        failing("A hand is still in it."),
+        failing("The lid is changed."),
+        failing("The handle is missing."),
+    )
+    fake_model.respond(
+        "produce",
+        *scripted_turns(
+            ("add_to_library", {"photos": [{"photo": 1, "shows": LID_ON}], "videos": []}),
+            "It didn't come out.",
+        ),
+    )
+
+    sending(api, session_id, "The lid on.", photos=[photo(7)])
+
+    # Drawn once and redrawn twice, each try checked; none kept, the raw photo neither.
+    assert len(handoffs("make_reference_photo_picture")) == 3
+    call = calls_of("add_to_library")[-1]
+    assert call.answer == "cant"
+    assert call.result.startswith("Failed: nothing was added to the library.")
+    assert (
+        "Owner photo 1: their photo isn't in the library: all 3 tries failed (A hand is still "
+        "in it. The lid is changed. The handle is missing.)."
+    ) in call.result
+    red = (
+        "A clean picture couldn't be drawn from the photo you sent: all 3 tries failed (A hand "
+        "is still in it. The lid is changed. The handle is missing.). It isn't in the ad's "
+        "library, so it won't be sent for any scene: send a clearer photo of it."
+    )
+    assert ("notice", red) in watched.owner_saw()
+    assert level_of(red) == ["problem"]
+    assert len(library_of(Job.objects.get())) == before
+    assert LID_ON not in [each.get("shows") for each in handoffs("label_photo")]
+
+
+BLOCKED = BlockedBySafetyFilter("content_policy_violation")
+
+
+@pytest.mark.parametrize(
+    ("answers", "red"),
+    [
+        (
+            [BLOCKED, CUT_OUT_OK],
+            "The AI model's safety filter refused to look at the shop owner's photo, so the "
+            f"clean picture of {LID_ON} was checked without it.",
+        ),
+        (
+            [BLOCKED, BLOCKED],
+            "The AI model's safety filter refused to look at the clean picture of "
+            f"{LID_ON}, so it is kept unchecked: check it yourself.",
+        ),
+    ],
+)
+def test_a_clean_picture_the_checks_filter_refuses_is_kept_and_said_in_red(
+    fake_model: FakeModel,
+    producer: ScriptedProducer,
+    watched: Watched,
+    api: APIClient,
+    session_id: str,
+    answers: list[Any],
+    red: str,
+) -> None:
+    fake_model.respond("check_cut_out", *answers)
+    fake_model.respond(
+        "produce",
+        *scripted_turns(
+            ("add_to_library", {"photos": [{"photo": 1, "shows": LID_ON}], "videos": []}),
+            "It's in.",
+        ),
+    )
+
+    sending(api, session_id, "The lid on.", photos=[photo(7)])
+
+    assert calls_of("add_to_library")[-1].answer == "made"
+    assert ("notice", red) in watched.owner_saw()
+    assert level_of(red) == ["problem"]
+
+
+@pytest.mark.parametrize(
+    ("asked", "refused"),
+    [
+        ({"photos": [], "videos": []}, "name at least one of the shop owner's photos or videos."),
+        (
+            {
+                "photos": [{"photo": 1, "shows": LID_ON}, {"photo": 1, "shows": LID_ON}],
+                "videos": [],
+            },
+            "name each photo and video once.",
+        ),
+        ({"photos": [{"photo": 1, "shows": " "}], "videos": []}, "say what each photo shows."),
+    ],
+)
+def test_an_attachment_asked_for_wrongly_is_refused_and_nothing_is_added(
+    fake_model: FakeModel,
+    producer: ScriptedProducer,
+    watched: Watched,
+    api: APIClient,
+    session_id: str,
+    asked: dict[str, Any],
+    refused: str,
+) -> None:
+    before = len(library_of(Job.objects.get()))
+    fake_model.respond("produce", *scripted_turns(("add_to_library", asked), "Sorry."))
+
+    sending(api, session_id, "The lid on.", photos=[photo(7)])
+
+    assert answer_of("add_to_library") == f"Refused: {refused} Nothing was done."
+    assert len(library_of(Job.objects.get())) == before
+    assert watched.paid_for() == []
+
+
+def test_an_attachment_before_the_plan_is_refused_pointing_to_use_photos(
+    producer: ScriptedProducer, page_read: str
+) -> None:
+    producer.told(
+        "Use this one too.",
+        ("add_to_library", {"photos": [{"photo": 1, "shows": LID_ON}], "videos": []}),
+        "I'll use it as a product photo.",
+        photos=[("lid.png", photo(7))],
+    )
+
+    assert answer_of("add_to_library") == (
+        "Refused: the ad isn't planned yet: before the plan, the shop owner's product photos go "
+        "in with use_photos. Nothing was done."
+    )
+    assert not Job.objects.get().library.filter(source__came_from="owner_photo").exists()
