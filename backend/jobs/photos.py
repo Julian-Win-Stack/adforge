@@ -12,15 +12,15 @@ import io
 import re
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any, NamedTuple, Self
+from typing import Any, NamedTuple
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from PIL import Image, ImageStat
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from gateway.types import Handoff
 
-from .library import Alone, Kind, Side
+from .library import Alone, Kind, PictureLabel, Side
 
 PICK_INSTRUCTIONS = """\
 You look at one shop's product page the way a shopper would, to pick out the product's own \
@@ -92,7 +92,7 @@ before/after), line-up (this product among other products), chart (a chart, tabl
 side of it shows.
 - alone: yes when the product is alone on a plain background, no when anything else is in the \
 picture.
-- colour: the product's colour in the picture, one word.
+- colour: the product's colour in the picture, one word; join two with a hyphen.
 - target: for a line-up, where this product stands among the others, so it can be told apart \
 from them; empty for every other kind.
 - label: one sentence saying what the picture shows, as you would tell someone who can't see \
@@ -110,7 +110,8 @@ by the same rules and answer with their I numbers in gallery_images or more_imag
 
 - The official photos R1, R2, ... are no longer a guide only: when an official photo shows \
 this product and no picked I picture is the same photo, put its R number in record_images. \
-Leave out official photos of other products, bundles or line-ups by the same rules.
+Leave out official photos of other products or bundles by the same rules; keep a line-up with \
+this product in it as above.
 
 - Video players V1, V2, ... are the page's videos, each shown as its poster or first frame, \
 with where it sits (box, position, and which pictures share its box). Answer gallery_videos \
@@ -174,15 +175,12 @@ class PickHandoff(Handoff):
     video_players: str
 
 
-# How a kept picture is named in the picker's answer: by its mark on the page or the record.
-PICTURE_MARK = re.compile(r"[IR][1-9]\d*")
-
-
 class PickedPicture(BaseModel):
-    """The picker's fixed fields for one picture it kept: the library's picture label
-    (jobs.library.PictureLabel, whose value sets these are), with the picture's mark and
-    copy group. Checked by validators of its own, as OpenAI's strict schema takes no length
-    limit or default."""
+    """The picker's fields for one picture it kept: its mark, its copy group and the
+    library's picture label. The call's schema checks the fixed values; the label's own rules
+    (one colour word, a target for a line-up only, a sentence) are the library's, checked
+    picture by picture in `label_of`, so one picture that breaks them loses only its own
+    fields, never the whole pick."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -196,42 +194,26 @@ class PickedPicture(BaseModel):
     kind: Kind
     side: Side
     alone: Alone
-    colour: str = Field(description="The product's colour in the picture, one word.")
+    colour: str = Field(
+        description="The product's colour in the picture, one word; two joined by a hyphen."
+    )
     target: str = Field(
         description='For a line-up, where this product stands among the others; "" for any '
         "other kind."
     )
     label: str = Field(description="One sentence saying what the picture shows.")
 
-    # Validators rather than a pattern or ge, which OpenAI's strict schema doesn't accept.
-    @field_validator("picture")
-    @classmethod
-    def _a_mark(cls, picture: str) -> str:
-        if not PICTURE_MARK.fullmatch(picture):
-            raise ValueError(f"\"{picture}\" isn't a picture's mark, such as I8 or R1")
-        return picture
-
-    @field_validator("colour")
-    @classmethod
-    def _one_word(cls, colour: str) -> str:
-        if not colour.strip() or len(colour.split()) > 1:
-            raise ValueError(f'the colour "{colour}" isn\'t one word')
-        return colour.strip().casefold()
-
-    @field_validator("label")
-    @classmethod
-    def _a_sentence(cls, label: str) -> str:
-        if not label.strip():
-            raise ValueError("the label is empty")
-        return label.strip()
-
-    @model_validator(mode="after")
-    def _a_target_for_a_line_up_only(self) -> Self:
-        if self.kind == "line-up" and not self.target.strip():
-            raise ValueError(f"{self.picture} is a line-up with no target")
-        if self.kind != "line-up" and self.target.strip():
-            raise ValueError(f"{self.picture} isn't a line-up, so it has no target")
-        return self
+    def label_of(self) -> PictureLabel:
+        """The picture's label as the library keeps it, a colour of several words joined
+        by hyphens. Raises ValidationError when it breaks the library's rules."""
+        return PictureLabel(
+            kind=self.kind,
+            side=self.side,
+            alone=self.alone,
+            colour="-".join(self.colour.split()),
+            target=self.target,
+            label=self.label,
+        )
 
 
 class PickedPhotos(BaseModel):

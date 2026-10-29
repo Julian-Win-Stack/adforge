@@ -269,32 +269,86 @@ def test_a_picker_answer_with_a_value_outside_the_fixed_fields_is_refused(
     assert problem.startswith("Picking this product's photos off the page failed")
 
 
+def unlabelled_notice(marks: str, many: bool) -> str:
+    return (
+        f"The photo picker kept {marks} off the page without usable fields saying what each "
+        f"shows (its kind, side, colour and label), so {'they are' if many else 'it is'} kept "
+        "unlabelled and may each be kept twice if the page has another copy."
+    )
+
+
+def side_photo(changed: dict[str, str]) -> list[dict[str, Any]]:
+    """LABELS with the side photo's (I102's) entry changed."""
+    return [{**entry, **changed} if entry["picture"] == "I102" else entry for entry in LABELS]
+
+
 @pytest.mark.parametrize(
     "changed",
     [
-        pytest.param({"kind": "side", "target": "the bottle on the left"}, id="target, no line-up"),
+        pytest.param({"kind": "side", "target": "none"}, id="target, no line-up"),
         pytest.param({"kind": "line-up", "target": ""}, id="line-up, no target"),
-        pytest.param({"colour": "light amber"}, id="colour of two words"),
+        pytest.param({"colour": " "}, id="no colour"),
         pytest.param({"label": " "}, id="no label"),
-        pytest.param({"picture": "8"}, id="not a mark"),
+        pytest.param({"picture": "102"}, id="not a mark"),
     ],
 )
-def test_a_picture_whose_fields_break_their_rules_is_refused(
+def test_a_picture_whose_fields_break_their_rules_is_kept_unlabelled_and_named_in_red(
+    api: APIClient,
     fake_model: FakeModel,
     labelled_page: str,
+    session_id: str,
     say: Callable[..., None],
     changed: dict[str, str],
 ) -> None:
     reading(fake_model, labelled_page)
     fake_model.respond("check_page", READABLE)
-    fake_model.respond(
-        "pick_photos", {**PICKED, "pictures": [{**LABELS[0], **changed}, *LABELS[1:]]}
-    )
+    fake_model.respond("pick_photos", {**PICKED, "pictures": side_photo(changed)})
 
     say(f"Make an ad for {labelled_page}")
 
-    (picking,) = ModelCall.objects.filter(purpose="pick_photos")
-    assert picking.outcome == ModelCall.Outcome.FAILED
+    # Only that picture loses its fields: the pick and every other picture's stand.
+    by_link = {photo["from"]: photo for photo in kept(Job.objects.get())}
+    assert len(by_link) == 7
+    assert by_link["102.png"]["kind"] == ""
+    assert {photo["kind"] for name, photo in by_link.items() if name != "102.png"} == {
+        "side",
+        "state",
+        "in-use",
+        "line-up",
+    }
+    text = unlabelled_notice("picture I102", many=False)
+    assert notices(api, session_id) == [("problem", text)]
+    assert [warning["text"] for warning in Job.objects.get().warnings] == [text]
+
+
+def test_a_colour_of_several_words_is_kept_as_one_joined_by_hyphens(
+    fake_model: FakeModel, labelled_page: str, say: Callable[..., None]
+) -> None:
+    reading(fake_model, labelled_page)
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("pick_photos", {**PICKED, "pictures": side_photo({"colour": "Rose  gold"})})
+
+    say(f"Make an ad for {labelled_page}")
+
+    assert Job.objects.get().photos.get(source_url__endswith="102.png").colour == "rose-gold"
+
+
+def test_a_line_ups_long_target_is_kept_whole(
+    fake_model: FakeModel, labelled_page: str, say: Callable[..., None]
+) -> None:
+    target = "the bottle " + "just behind the tall jar " * 12 + "on the left"
+    line_up = [
+        {**entry, "target": target} if entry["picture"] == "I105" else entry for entry in LABELS
+    ]
+    reading(fake_model, labelled_page)
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("pick_photos", {**PICKED, "pictures": line_up})
+
+    say(f"Make an ad for {labelled_page}")
+
+    job = Job.objects.get()
+    assert job.status == Job.Status.PAGE_READ
+    assert job.photos.get(source_url__endswith="105.png").target == target
 
 
 def test_a_picked_picture_the_picker_gave_no_fields_is_kept_and_named_in_red(
@@ -306,10 +360,16 @@ def test_a_picked_picture_the_picker_gave_no_fields_is_kept_and_named_in_red(
 ) -> None:
     reading(fake_model, labelled_page)
     fake_model.respond("check_page", READABLE)
-    without = {"I102", "I104"}
+    # No fields for I8, whose link I16 shares and has them; none for I102 and I104, and I104
+    # is picked twice.
+    without = {"I8", "I102", "I104"}
     fake_model.respond(
         "pick_photos",
-        {**PICKED, "pictures": [entry for entry in LABELS if entry["picture"] not in without]},
+        {
+            **PICKED,
+            "more_images": [104],
+            "pictures": [entry for entry in LABELS if entry["picture"] not in without],
+        },
     )
 
     say(f"Make an ad for {labelled_page}")
@@ -317,11 +377,8 @@ def test_a_picked_picture_the_picker_gave_no_fields_is_kept_and_named_in_red(
     by_link = {photo["from"]: photo for photo in kept(Job.objects.get())}
     assert by_link["102.png"]["kind"] == by_link["104.png"]["kind"] == ""
     assert by_link["101.png"]["kind"] == "side"
-    text = (
-        "The photo picker kept pictures I102 and I104 off the page without saying what each "
-        "shows (its kind, side, colour and label), so they are kept unlabelled and may each be "
-        "kept twice if the page has another copy."
-    )
+    assert by_link[SHAMPOO_PHOTO_PATH.rsplit("/", 1)[-1]]["side"] == "front"
+    text = unlabelled_notice("pictures I102 and I104", many=True)
     assert notices(api, session_id) == [("problem", text)]
     assert [warning["text"] for warning in Job.objects.get().warnings] == [text]
 

@@ -24,6 +24,7 @@ from django.conf import settings
 from django.db import connection, transaction
 from django.db.models import Max, Q, QuerySet
 from django.utils import timezone
+from pydantic import ValidationError
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown, with_retries
@@ -112,6 +113,7 @@ from .checks import (
     script_seconds,
     shortened_script_for,
 )
+from .library import PictureLabel
 from .models import (
     BROLL_FIELDS,
     AgentFix,
@@ -387,7 +389,7 @@ class Picked:
     # when the biggest size can't be, as when a size-like word was the shop's own name.
     as_given: dict[str, str] = field(default_factory=dict)
     # The picker's fixed fields for each picked link it labelled.
-    labels: dict[str, photos.PickedPicture] = field(default_factory=dict)
+    labels: dict[str, PictureLabel] = field(default_factory=dict)
     # Each picked link's copy group: every picked link the picker gave the same copy group,
     # in pick order. A link it gave no label is a group of its own.
     copies: dict[str, tuple[str, ...]] = field(default_factory=dict)
@@ -521,36 +523,42 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
 
 def _labels_and_copies(
     picked: photos.PickedPhotos, links: list[photos.PickedLink]
-) -> tuple[dict[str, photos.PickedPicture], dict[str, tuple[str, ...]], list[str]]:
-    """Each picked link's fields from the picker, by the picture's mark (the first mark's for
-    a link picked twice), each link's copy group, and the marks of the pictures it picked
-    but gave no fields."""
+) -> tuple[dict[str, PictureLabel], dict[str, tuple[str, ...]], list[str]]:
+    """Each picked link's label from the picker, from the last of its marks with fields
+    that keep the library's rules; each link's copy group, by that mark's; and the first
+    mark of each link left with no such fields."""
     by_mark = {picture.picture: picture for picture in picked.pictures}
-    labels: dict[str, photos.PickedPicture] = {}
-    groups: dict[int, list[str]] = {}
-    unlabelled: list[str] = []
+    labels: dict[str, PictureLabel] = {}
+    group_of: dict[str, int] = {}
     for link in links:
         found = by_mark.get(link.mark)
         if found is None:
-            unlabelled.append(link.mark)
             continue
-        labels.setdefault(link.url, found)
-        group = groups.setdefault(found.copy_group, [])
-        if link.url not in group:
-            group.append(link.url)
+        try:
+            labels[link.url] = found.label_of()
+        except ValidationError:
+            continue
+        group_of[link.url] = found.copy_group
+    groups: dict[int, list[str]] = {}
+    for url, group in group_of.items():
+        groups.setdefault(group, []).append(url)
     copies = {
-        link.url: tuple(groups[labels[link.url].copy_group]) if link.url in labels else (link.url,)
+        link.url: tuple(groups[group_of[link.url]]) if link.url in group_of else (link.url,)
         for link in links
     }
-    return labels, copies, unlabelled
+    unlabelled: dict[str, str] = {}
+    for link in links:
+        if link.url not in labels:
+            unlabelled.setdefault(link.url, link.mark)
+    return labels, copies, list(unlabelled.values())
 
 
 def _kept_unlabelled(marks: list[str]) -> str:
-    """The notice naming the picked pictures the picker said nothing about."""
+    """The notice naming the picked pictures kept without the picker's fields."""
     listed = f"{', '.join(marks[:-1])} and {marks[-1]}" if len(marks) > 1 else marks[0]
     return (
         f"The photo picker kept picture{'s' if len(marks) > 1 else ''} {listed} off the page "
-        "without saying what each shows (its kind, side, colour and label), so "
+        "without usable fields saying what each shows (its kind, side, colour and label), so "
         f"{'they are' if len(marks) > 1 else 'it is'} kept unlabelled and may each be kept "
         "twice if the page has another copy."
     )
@@ -683,7 +691,7 @@ def save_photos(
     urls: list[str],
     *,
     copies: Mapping[str, Sequence[str]] | None = None,
-    labels: Mapping[str, photos.PickedPicture] | None = None,
+    labels: Mapping[str, PictureLabel] | None = None,
     faces: frozenset[str] | None = None,
     unnoted: frozenset[str] = frozenset(),
     as_given: dict[str, str] | None = None,
@@ -860,7 +868,7 @@ def keep_photo(
     from_video: ProductVideo | None = None,
     at_second: float | None = None,
     note: str = "",
-    picked_as: photos.PickedPicture | None = None,
+    picked_as: PictureLabel | None = None,
     copy_links: Sequence[str] = (),
 ) -> ProductPhoto:
     """Store a product photo with the job, with its Face note, or with None, noted by a call
