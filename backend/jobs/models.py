@@ -1430,7 +1430,16 @@ class AgentFix(models.Model):
         related_name="+",
         help_text="The passing try's clip, the scene's clip now. Blank until one passes.",
     )
-    gave_up = models.TextField(blank=True, help_text="The agent's reason, when it gave up.")
+    gave_up = models.TextField(
+        blank=True,
+        help_text="The agent's reason, when it gave up; or, when the tries cap ended it, code's "
+        "words saying so.",
+    )
+    ended_by_cap = models.BooleanField(
+        default=False,
+        help_text="Whether code ended it at the tries cap, with no try passed, rather than the "
+        "agent giving up.",
+    )
     picked = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
