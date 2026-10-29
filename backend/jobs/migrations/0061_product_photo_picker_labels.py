@@ -22,10 +22,9 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="productphoto",
             name="colour",
-            field=models.CharField(
+            field=models.TextField(
                 blank=True,
-                help_text="The product's colour in it, one short word.",
-                max_length=40,
+                help_text="The product's colour in it, one word (two joined by a hyphen).",
             ),
         ),
         migrations.AddField(
@@ -66,10 +65,9 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="productphoto",
             name="target",
-            field=models.CharField(
+            field=models.TextField(
                 blank=True,
                 help_text="In a line-up, where this product stands among the others; else blank.",
-                max_length=200,
             ),
         ),
     ]
