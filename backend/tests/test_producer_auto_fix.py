@@ -298,11 +298,12 @@ def test_a_clip_is_estimated_up_to_every_try_the_agent_may_film(
 
     estimate = producer._clip_estimate(scene, 5.0, from_note=False)
 
-    # A 5-second clip at Boreal's $0.0792 a second is $0.396, and the judge's 2 asks at the
-    # $0.003 recorded are $0.006. Each try: that clip and judge, no new picture (scene 2 shows
-    # the product, so its clips are made from its sent list, spec #210), and the agent's 3
-    # turns at the $0.07 fallback (none of its turns is recorded: the agent is faked here).
-    assert estimate == (Decimal("0.402"), Decimal("0.402") + 6 * Decimal("0.612"))
+    # A 5-second clip at Boreal's $0.0792 a second is $0.396, and the judge's 3 asks (its
+    # first question, then PRODUCT and MOTION) at the $0.003 recorded are $0.009. Each try:
+    # that clip and judge, no new picture (scene 2 shows the product, so its clips are made
+    # from its sent list, spec #210), and the agent's 3 turns at the $0.07 fallback (none of
+    # its turns is recorded: the agent is faked here).
+    assert estimate == (Decimal("0.405"), Decimal("0.405") + 6 * Decimal("0.615"))
 
 
 # --- Jobs made before the fixing agent: the old auto-fix's remakes -------------------------

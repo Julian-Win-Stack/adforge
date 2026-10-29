@@ -416,13 +416,12 @@ def test_going_back_to_a_try_after_the_line_changed_keeps_the_newer_line(
 
     tap_yes(api, session_id, plans()[-1])
 
-    # The try's sent list is brought back, the product shown again, with the newer line:
-    # its clip is made again (it has no starting picture: spec #210 point 19).
+    # The try's sent list is planned to be sent again, the product shown again, with the
+    # newer line: its clip is made again (it has no starting picture: spec #210 point 19).
     scene.refresh_from_db()
     assert (scene.line, scene.shows) == (newer, SHOWS)
-    top = work.versions(scene)[-1]
-    assert top.label == "v4 back to v2"
-    assert top.picture is None and top.clip is None
+    (back,) = plans()[-1].scenes.all()
+    assert (back.cant, back.remakes_clip) == ("", True)
 
 
 SLOWER = "Pour the tea slower."

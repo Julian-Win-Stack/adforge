@@ -19,7 +19,7 @@ from chat import messages
 from chat.models import Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
 from gateway.types import StepFinished, Turn
-from jobs import fix_check, work
+from jobs import fix_check
 from jobs.models import (
     FixCheck,
     FixPlan,
@@ -49,6 +49,7 @@ from .test_producer_picture_then_clip import (
     picture,
     status,
 )
+from .test_recolour import RECOLOUR_OK
 
 pytestmark = [
     pytest.mark.django_db(transaction=True),
@@ -654,6 +655,13 @@ def test_a_typed_yes_sent_before_the_plan_was_shown_runs_nothing(
     )
 
 
+def how_it_moves(clip: ProducedItem) -> str:
+    """The words a clip made from its sent list was told how to move: its prompt's last line,
+    after code's speed line and labels."""
+    assert clip.sent is not None
+    return str(clip.sent["prompt"]).splitlines()[-1]
+
+
 def test_a_new_picture_keeps_the_movement_of_the_clip_it_replaces(
     fake_model: FakeModel,
     held: HeldSteps,
@@ -664,7 +672,7 @@ def test_a_new_picture_keeps_the_movement_of_the_clip_it_replaces(
     # The live ad's fix 1: a picture note gave the clip a newly chosen action the shop owner
     # never asked for. Only a new clip chooses a new movement (design thread, 05:15 Oct 17).
     # A plan stored before the fixing agent: a new picture of a B-roll scene.
-    moved = work.motion_of(clip(2))
+    moved = how_it_moves(clip(2))
     table = plan_row(2, "new_picture", change="The mug is on a wooden table.")
     tap_yes(api, session_id, stored(table, note="In scene 2 put the mug on a wooden table."))
     fake_model.respond("choose_broll_picture", {**BROLL_CHOICE, "motion_prompt": LIFT})
@@ -687,13 +695,15 @@ def test_a_movement_note_with_a_photo_of_a_thing_in_the_picture_moves_as_the_not
     # A new clip whose photo's thing is in the picture: the photo is sent with the clip (spec
     # #210 point 19) and the clip chooses its movement from the note (design thread, 05:15
     # Oct 17). A plan stored before the fixing agent: a new clip of a B-roll scene.
-    moved = work.motion_of(clip(2))
+    moved = how_it_moves(clip(2))
     note = "In scene 2 the hand should lift my black mug to the camera."
     mug = {**mug_photo_sent(fake_model, say, note), "in_picture": True}
     tap_yes(api, session_id, stored(plan_row(2, "new_clip", change=LIFT, photos=[mug]), note=note))
     fake_model.respond(
         "rewrite_clip_prompt", {"motion_prompt": LIFT, "motion_prompt_reason": "The note."}
     )
+    # The mug's photo is sent recoloured to the clip's colour, and passes its check.
+    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
 
     held.run_held()
 

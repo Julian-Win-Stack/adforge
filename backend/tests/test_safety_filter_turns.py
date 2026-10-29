@@ -16,32 +16,25 @@ from agents.models import ToolCall
 from chat.models import Message, Session
 from gateway.fake import FakeModel, turn
 from gateway.types import BlockedBySafetyFilter, ToolUse, Turn, TurnRequest
-from jobs.models import AgentFix, Job, SceneStep
+from jobs.models import AgentFix, Job, ProducedItem, SceneStep
 
 from .conftest import HeldSteps
 from .test_agent_pictures import LOOKER, session  # noqa: F401 (a fixture)
 from .test_decider import _decided, _owner_says, _row, ad  # noqa: F401 (a fixture)
-from .test_fixing_agent import colour_photo, film_again, fixed
+from .test_fixing_agent import film_again, fixed
 from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing
 from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def refused_over(
-    label: str, *turns: Turn, times: int | None = None
-) -> Callable[[TurnRequest], Turn]:
+def refused_over(label: str, *turns: Turn) -> Callable[[TurnRequest], Turn]:
     """An agent model whose safety filter refuses any turn showing the picture labelled
-    `label` (only its first `times` such turns, when given), and otherwise takes `turns` in
-    order."""
+    `label`, and otherwise takes `turns` in order."""
     left = deque(turns)
-    refused = [0]
 
     def taking(request: TurnRequest) -> Turn:
-        if label in [image.label for image in request.images] and (
-            times is None or refused[0] < times
-        ):
-            refused[0] += 1
+        if label in [image.label for image in request.images]:
             raise BlockedBySafetyFilter("content_policy_violation")
         return left.popleft()
 
@@ -300,10 +293,21 @@ def failed_clip(
     return clip_of_scene_2(fake_model, steps, say)
 
 
+def a_photo_not_sent_with_the_clip() -> int:
+    """A shop photo the agent sees first by looking at it: one its clip wasn't sent, as the
+    agent is shown its clip's sent pictures from the start (spec #210 point 19)."""
+    clip = ProducedItem.objects.filter(kind="clip", scene__number=2).latest("id")
+    assert clip.sent is not None
+    sent = {picture["file"] for picture in clip.sent["pictures"]}
+    return next(
+        photo.position for photo in clip.job.photos.order_by("position") if photo.file not in sent
+    )
+
+
 def test_a_fixing_agent_turn_refused_over_a_look_is_taken_again_and_costs_no_try(
     fake_model: FakeModel, failed_clip: SceneStep
 ) -> None:
-    photo = colour_photo()
+    photo = a_photo_not_sent_with_the_clip()
     shop_photo = f"Shop photo {photo}"
     fake_model.answer_unscripted(
         "fix_scene",
@@ -312,9 +316,6 @@ def test_a_fixing_agent_turn_refused_over_a_look_is_taken_again_and_costs_no_try
             turn(calls=[("look_at_shop_photo", {"photo": photo})]),
             turn(calls=[film_again()]),
             turn(calls=[("give_up", {"reason": "It can't be filmed."})]),
-            # The try is shown with its sent list, the shop photo in it (spec #210 point 19):
-            # only the look is refused here.
-            times=1,
         ),
     )
     fake_model.respond("check_clip_motion", failing(FLOATS))

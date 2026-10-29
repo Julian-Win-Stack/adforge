@@ -123,13 +123,9 @@ def check_and_propose(
         if row.cant or row.action == Action.NO_CHANGE:
             row.estimate_usd = row.estimate_up_to_usd = Decimal(0)
             continue
-        if row.action == Action.NEW_CLIP and any(photo["in_picture"] for photo in row.photos):
-            row.action = Action.NEW_PICTURE
-            row.new_movement = True
-        if row.action == Action.NEW_LINE and any(photo["in_picture"] for photo in row.photos):
-            # A new line keeps its starting picture, but a photo of a thing in it changes how
-            # it looks: a new picture, with the new line.
-            row.action = Action.NEW_PICTURE
+        # A photo of the shop owner's is used only in a scene that shows the product, which has
+        # no starting picture: every photo is sent with its clip (spec #210 point 19), so the
+        # row's clip or line stays as asked.
         if row.action == Action.GO_BACK:
             assert row.go_back_to is not None, "a go back names its version"
             row.remakes_clip = not work.go_back_is_free(row.scene, row.go_back_to)
@@ -245,8 +241,7 @@ def _photo_cant(row: FixPlanScene) -> str:
             f"Scene {number} was planned before scenes had their B-roll labels, so your photos "
             "can't be used in it."
         )
-    # A new line's clip takes a photo of a thing only during it; with one of a thing in its
-    # picture, the row is made a new picture after this.
+    # A new line's or a new clip's clip is sent the photo, whatever it shows.
     if row.action == Action.GO_BACK:
         return (
             f"Scene {number}'s change is going back to a version, and a photo changes how "
