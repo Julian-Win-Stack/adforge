@@ -253,6 +253,8 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
         "ask_owner",
         "assemble_ad",
         "look",
+        "read_ad",
+        "read_earlier_call",
     ]
     assert {(tool["type"], tool["strict"]) for tool in tools.values()} == {("function", True)}
     read_page = tools["read_page"]
