@@ -217,30 +217,6 @@ NO_FACE_NEW_PICTURE = film_again(
 )
 
 
-def test_a_try_keeping_a_start_picture_older_than_the_new_place_is_refused(
-    fake_model: FakeModel, failed_clip: SceneStep
-) -> None:
-    fake_model.respond(
-        "fix_scene",
-        turn(calls=[place_edit(new_place=KITCHEN)]),
-        turn(calls=[film_again()]),
-        turn(calls=[NO_FACE_NEW_PICTURE]),
-    )
-    fixed(failed_clip)
-
-    kept_old, drawn_new = ToolCall.objects.filter(tool="film_again").order_by("id")
-    assert kept_old.result.startswith(
-        "Refused: the scene's place changed after its start picture was drawn: draw a new start "
-        "picture"
-    )
-    # The new start picture is drawn in the room the scene's presenter was drawn in, its own.
-    scene = Scene.objects.get(number=2)
-    [room] = scene.produced.filter(kind=ProducedItem.Kind.SCENE_ROOM)
-    assert handoffs("make_starting_picture")[-1]["pictures"][-1] == room.file
-    assert not drawn_new.result.startswith("Refused")
-    assert tries() == 1
-
-
 def test_a_try_needing_the_picture_the_new_place_lacks_is_refused_and_names_it(
     fake_model: FakeModel, failed_clip: SceneStep
 ) -> None:

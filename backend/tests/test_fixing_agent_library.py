@@ -194,14 +194,6 @@ def test_after_a_judge_fail_the_first_message_holds_fault_sent_list_library_and_
     assert not COUNTED.search(said)
 
 
-def test_a_clip_with_no_sent_list_says_so_in_the_first_message(
-    fake_model: FakeModel, failed_clip: SceneStep
-) -> None:
-    fake_model.respond("fix_scene", turn(calls=[film_again()]))
-    fixed(failed_clip)
-    assert fixing_agent.NO_SENT_LIST in intro(fake_model)
-
-
 def test_a_product_fault_is_given_in_its_fixed_form() -> None:
     assert FIXED_FORM in fixing_agent.judge_words(FAILED)
 

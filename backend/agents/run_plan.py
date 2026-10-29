@@ -857,10 +857,9 @@ def _carry_on_fix(row: FixPlanScene, scene: Scene, running: set[str]) -> None:
         return
     if steps.exists() or running:
         return
+    # A clip made from its sent list has no starting picture (spec #210 point 19); one made
+    # before has the one the shop owner sees.
     picture = _shown_picture(scene)
-    if picture is None:
-        _failed(row, f"Scene {scene.number} has no starting picture for the fixing agent.")
-        return
     audio = _audio(scene)
     if audio is None or not _heard(audio):
         _failed(row, f"Scene {scene.number}'s clip couldn't be made: its line has no audio.")
@@ -872,7 +871,7 @@ def _carry_on_fix(row: FixPlanScene, scene: Scene, running: set[str]) -> None:
         note=row.change,
         made_from=audio,
         picture=picture,
-        picture_step=picture.step,
+        picture_step=picture.step if picture is not None else None,
     )
 
 
