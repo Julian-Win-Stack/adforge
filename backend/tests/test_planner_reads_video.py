@@ -1,6 +1,7 @@
 """The planner and the fact check read the product's videos: what each video says, and the
-pictures cut from them. Through the chat, with each video's transcript and its video pictures
-set on the job by the test where the page read would keep them."""
+pictures cut from them, which the planner sees in the library as look frames. Through the
+chat, with each video's transcript, its video pictures and their look frames set on the job by
+the test where the page read would keep them."""
 
 from collections.abc import Callable
 from typing import Any
@@ -10,6 +11,8 @@ from pytest_httpserver import HTTPServer
 
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
+from jobs.library import LookFrame, PictureLabel, add_to_library, library_of
+from jobs.library_sheets import tile_text
 from jobs.models import Job, ProductPhoto, ProductVideo
 from jobs.work import keep_photo
 
@@ -46,10 +49,23 @@ def video(job: Job, position: int, *, transcript: str, file: str = "") -> Produc
     )
 
 
+def look_frame(job: Job, photo: ProductPhoto) -> int:
+    """The video picture `photo` entered in the library as a look frame, as the watcher keeps
+    it. Gives its library number."""
+    assert photo.from_video is not None and photo.at_second is not None
+    return add_to_library(
+        job,
+        photo.file,
+        PictureLabel(kind="state", side="none", alone="yes", colour="green", label=photo.note),
+        LookFrame(video=photo.from_video.position, second=photo.at_second),
+    ).number
+
+
 def video_picture(
     job: Job, position: int, from_video: ProductVideo, at_second: float, note: str
 ) -> ProductPhoto:
-    """A picture cut from `from_video`, kept as a product photo with the reader's note."""
+    """A picture cut from `from_video`, kept as a product photo with the reader's note and
+    entered in the library as a look frame."""
     photo = keep_photo(
         job,
         position,
@@ -61,6 +77,7 @@ def video_picture(
     photo.at_second = at_second
     photo.note = note
     photo.save(update_fields=["from_video", "at_second", "note"])
+    look_frame(job, photo)
     return photo
 
 
@@ -82,7 +99,7 @@ def plan_it(fake_model: FakeModel, say: Callable[..., None], plan: dict[str, Any
     say("Plan it")
 
 
-def test_the_planner_is_told_what_each_video_says_and_shown_its_pictures_with_their_notes(
+def test_the_planner_is_told_what_each_video_says_and_shown_its_pictures_marked_on_the_sheet(
     fake_model: FakeModel, mug_with_videos: Job, say: Callable[..., None]
 ) -> None:
     plan_it(fake_model, say, PLAN)
@@ -90,8 +107,13 @@ def test_the_planner_is_told_what_each_video_says_and_shown_its_pictures_with_th
     (call,) = ModelCall.objects.filter(purpose="plan_ad")
     # One per video with a file, in the videos' order; a video with no file says nothing.
     assert call.handoff["video_transcripts"] == [SAYS, "music only"]
-    assert call.handoff["photo_count"] == 3
-    assert [image["label"] for image in call.images] == ["Photo 1", "Photo 2", PICTURE_LABEL]
+    assert call.handoff["library_pictures"] == 3
+    assert [image["label"] for image in call.images] == [
+        "Library pictures 1 to 3 (each numbered and labelled under it)"
+    ]
+    # The picture cut from the video is written under on the sheet as from the video.
+    *_, frame = library_of(mug_with_videos)
+    assert tile_text(frame) == f"3. {PICTURE_NOTE} (from the product's video 1 at 1.8 s)"
 
 
 def test_a_job_without_videos_tells_the_planner_its_videos_say_nothing(
@@ -173,6 +195,7 @@ def test_a_moment_only_the_gallery_video_shows_is_planned_as_a_scene_and_passes_
         at_second=0.6,
         note="the pump pressed and the lather in a palm",
     )
+    frame = look_frame(job, kept)
 
     plan_it(
         fake_model,
@@ -184,7 +207,7 @@ def test_a_moment_only_the_gallery_video_shows_is_planned_as_a_scene_and_passes_
                     {
                         "line": "Two pumps lather through even the thickest hair.",
                         "shows": "Two pumps of the shampoo lathered in a palm.",
-                        "needs": [{"what": "the lather", "photos": [kept.position]}],
+                        "needs": [{"what": "the lather", "photos": [frame]}],
                     }
                 ),
                 {"line": "Get yours today.", "overlay": None},
@@ -207,8 +230,9 @@ def test_a_moment_only_the_gallery_video_shows_is_planned_as_a_scene_and_passes_
         "lather in a palm)"
     )
     (planning,) = ModelCall.objects.filter(purpose="plan_ad")
-    assert picture_label in [image["label"] for image in planning.images]
+    assert planning.handoff["library_pictures"] == frame
     assert planning.handoff["video_transcripts"] == [gallery.transcript]
+    # The plan names the look frame by its library number; its need is kept as the photo.
     scene = job.scenes.get(number=2)
     assert scene.needs == [{"what": "the lather", "photos": [kept.position]}]
     (checking,) = ModelCall.objects.filter(purpose="fact_check")

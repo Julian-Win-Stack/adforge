@@ -144,7 +144,8 @@ def test_a_photo_attached_as_the_answer_is_added_and_can_be_a_needed_photo(
     say("Here's one", ("filled.png", filled))
 
     *_, planning = handoffs("plan_ad")
-    assert planning["photo_count"] == 3
+    # The attached photo is the library's third picture, and is the job's photo 3.
+    assert planning["library_pictures"] == 3
     assert planning["conversation"][-1] == {
         "by": "user",
         # Only the producer is told the photo's number: what the jobs read is as it was.

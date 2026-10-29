@@ -63,6 +63,11 @@ def five_photos_page(httpserver: HTTPServer) -> str:
     return httpserver.url_for("/products/mug")
 
 
+# The five photos' library on the planner's sheets: four on the first, one on the second.
+FIRST_SHEET = "Library pictures 1 to 4 (each numbered and labelled under it)"
+SECOND_SHEET = "Library picture 5 (numbered and labelled under it)"
+
+
 def refused_over(label: str, answer: dict[str, Any]) -> Callable[[ModelRequest[Any]], Any]:
     """A model whose safety filter refuses any call showing the picture labelled `label`."""
 
@@ -85,7 +90,7 @@ def refusals(api: APIClient, session_id: str) -> list[tuple[str, str]]:
     return [(level, text) for level, text in notices(api, session_id) if "safety filter" in text]
 
 
-def test_a_photo_the_planners_safety_filter_refuses_is_left_out_and_the_ad_is_planned(
+def test_a_sheet_the_planners_safety_filter_refuses_is_left_out_and_the_ad_is_planned(
     api: APIClient,
     fake_model: FakeModel,
     five_photos_page: str,
@@ -99,22 +104,20 @@ def test_a_photo_the_planners_safety_filter_refuses_is_left_out_and_the_ad_is_pl
         turn(says="Here's the plan."),
     )
     fake_model.respond("check_page", READABLE)
-    fake_model.answer_unscripted("plan_ad", refused_over("Photo 3", PLAN))
+    fake_model.answer_unscripted("plan_ad", refused_over(FIRST_SHEET, PLAN))
 
     say(f"Make an ad for {five_photos_page}")
 
-    # Shown every photo, then without each in turn, last first, until one is let through.
-    every = [f"Photo {number}" for number in range(1, 6)]
+    # Shown every sheet, then without each in turn, last first, until one is let through.
     assert labels_shown("plan_ad") == [
-        every,
-        [label for label in every if label != "Photo 5"],
-        [label for label in every if label != "Photo 4"],
-        [label for label in every if label != "Photo 3"],
+        [FIRST_SHEET, SECOND_SHEET],
+        [FIRST_SHEET],
+        [SECOND_SHEET],
     ]
     job = Job.objects.get()
     assert job.status == Job.Status.PLANNED and job.scenes.count() == 3
     ((level, said),) = refusals(api, session_id)
-    assert level == "problem" and "photo 3" in said
+    assert level == "problem" and "library pictures 1 to 4" in said
     assert said in [warning["text"] for warning in job.warnings]
     # The run carried on past the plan: the producer read its result and replied.
     assert results_of("plan_ad")[0].startswith("Planned")
@@ -152,7 +155,7 @@ def test_a_photo_the_picture_choosers_safety_filter_refuses_is_left_out_and_the_
     assert said in [warning["text"] for warning in job.warnings]
 
 
-def test_when_the_planners_filter_refuses_two_photos_the_ad_is_planned_without_any(
+def test_when_the_planners_filter_refuses_both_sheets_the_ad_is_planned_without_any(
     api: APIClient,
     fake_model: FakeModel,
     five_photos_page: str,
@@ -166,21 +169,21 @@ def test_when_the_planners_filter_refuses_two_photos_the_ad_is_planned_without_a
         turn(says="Here's the plan."),
     )
     fake_model.respond("check_page", READABLE)
-    refusing_4 = refused_over("Photo 4", PLAN)
+    refusing_second = refused_over(SECOND_SHEET, PLAN)
     fake_model.answer_unscripted(
-        "plan_ad", lambda request: refused_over("Photo 2", refusing_4(request))(request)
+        "plan_ad", lambda request: refused_over(FIRST_SHEET, refusing_second(request))(request)
     )
 
     say(f"Make an ad for {five_photos_page}")
 
-    # Each photo left out alone is refused, so all are left out together.
-    assert [len(labels) for labels in labels_shown("plan_ad")] == [5, 4, 4, 4, 4, 4, 0]
+    # Each sheet left out alone is refused, so both are left out together.
+    assert [len(labels) for labels in labels_shown("plan_ad")] == [2, 1, 1, 0]
     assert Job.objects.get().status == Job.Status.PLANNED
     assert refusals(api, session_id) == [
         (
             "problem",
-            "The AI model's safety filter refused to look at photo 1, photo 2, photo 3, "
-            "photo 4 and photo 5, so the ad was planned without them.",
+            "The AI model's safety filter refused to look at library pictures 1 to 4 and "
+            "library picture 5, so the ad was planned without them.",
         )
     ]
 
@@ -237,7 +240,7 @@ def test_a_plan_made_again_past_the_same_refusal_tells_the_chat_once(
     }
     answers = [question, PLAN]
     fake_model.answer_unscripted(
-        "plan_ad", lambda request: refused_over("Photo 1", answers[0])(request)
+        "plan_ad", lambda request: refused_over(FIRST_SHEET, answers[0])(request)
     )
     fake_model.respond(
         "produce",
@@ -256,7 +259,7 @@ def test_a_plan_made_again_past_the_same_refusal_tells_the_chat_once(
     assert len(refusals(api, session_id)) == 1
 
 
-def test_a_photo_the_planner_wasnt_shown_is_never_marked_in_the_ads_colour(
+def test_a_picture_the_planner_wasnt_shown_is_never_marked_in_the_ads_colour(
     fake_model: FakeModel,
     five_photos_page: str,
     say: Callable[..., None],
@@ -268,9 +271,9 @@ def test_a_photo_the_planner_wasnt_shown_is_never_marked_in_the_ads_colour(
         turn(says="Here's the plan."),
     )
     fake_model.respond("check_page", READABLE)
-    # The plan names photos 1 and 2 as in the ad's colour, though it never saw photo 2.
-    colours = {**PLAN, "plan": {**PLAN["plan"], "colour_photos": [1, 2]}}
-    fake_model.answer_unscripted("plan_ad", refused_over("Photo 2", colours))
+    # The plan names pictures 1 and 5 as in the ad's colour, though it never saw picture 5.
+    colours = {**PLAN, "plan": {**PLAN["plan"], "colour_photos": [1, 5]}}
+    fake_model.answer_unscripted("plan_ad", refused_over(SECOND_SHEET, colours))
 
     say(f"Make an ad for {five_photos_page}")
 

@@ -292,10 +292,11 @@ def test_a_plan_the_safety_filter_blocks_even_without_photos_stops_the_run_and_a
 
     say("Plan it")
 
-    # Asked with both photos, without each, then without both: the page's words are refused.
+    # Asked with the library's one sheet (both photos), then without it: the page's words are
+    # refused.
     assert [
         len(call.images) for call in ModelCall.objects.filter(purpose="plan_ad").order_by("id")
-    ] == [2, 1, 1, 0]
+    ] == [1, 0]
 
     assert chat(api, session_id)[-1] == (
         "agent",
