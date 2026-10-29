@@ -414,8 +414,8 @@ def test_once_only_the_scene_waits_the_shop_owner_is_told_once(
 def test_the_shop_owners_yes_after_another_scenes_clip_still_reaches_the_producer(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    # After the ad's first clip, the shop owner's messages are sorted first: a yes to the
-    # part is no note on a clip, so it is the producer's to answer.
+    # After the ad's first clip, every message of the shop owner's is still the producer's
+    # (spec #247; ticket #262 deleted the routing): the yes in words opens the gate.
     other_scenes_clipped(fake_model, steps, say)
     # Every other scene is made while the scene waits.
     assert (clips_of(1), clips_of(2), clips_of(3)) == (1, 0, 1)
@@ -509,3 +509,35 @@ def test_a_correction_once_the_clip_is_made_draws_the_part_again_and_waits_for_a
     calling(fake_model, say, ("make_clip", {"scene": 2}))
     assert results_of("make_clip")[-1].startswith("Refused:")
     assert clips_of(2) == 1
+
+
+@pytest.mark.usefixtures("pictured")
+def test_a_yes_in_words_after_the_scenes_own_clip_opens_the_gate_again(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    # Spec #247, ticket #262: once the ad has clips, the shop owner's yes in words still
+    # reaches the producer, with no other model sorting it, and its approve_owner_part opens
+    # the gate for the corrected part's clip.
+    yes(fake_model, steps, say)
+    owner_says(
+        fake_model,
+        say,
+        "Make it pink.",
+        ("correct_owner_part", {"scene": 2, "words": "A round pink lid.", "photo": None}),
+    )
+    run(fake_model, steps)
+    assert not owner_parts.is_approved(scene_2())
+
+    owner_says(
+        fake_model,
+        say,
+        "Yes, the pink one.",
+        ("approve_owner_part", {"scene": 2}),
+        ("make_clip", {"scene": 2}),
+    )
+    run(fake_model, steps)
+
+    assert not results_of("approve_owner_part")[-1].startswith("Refused")
+    approving = Message.objects.get(role=Message.Role.USER, text="Yes, the pink one.")
+    assert scene_2().owner_part_approved_by == approving
+    assert clips_of(2) == 2

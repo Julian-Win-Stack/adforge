@@ -1,12 +1,7 @@
-"""The shop owner's photos on notes (Reference photo, CONTEXT.md): a fix plan names one thing
-to take from each photo and, per scene, whether it is in the starting picture now and whether
-more of it shows during the action (fix redesign, decisions 5, 14 and 21). After the yes, code
-draws a clean picture of only that thing from the photo, and either draws the scene's starting
-picture again with it, sent first and labelled to win, or makes its clip in reference mode, the
-starting picture first and the clean picture after (Julian 2026-10-15,
-handoffs/owner-photos-build-spec.md). The first ad is made through the chat; the fixes are
-plans driven by tests/fixing.py, or through the chat with a scripted decider. The models are
-faked at the gateway; the clips are real tiny videos and ffmpeg runs for real."""
+"""The shop owner's photos sent through the chat (Reference photo, CONTEXT.md): their
+numbers in the chat, and the helpers tests/test_owner_part_kept.py builds on. Their fix plans
+went with ticket #262; the producer's fix_scene path gives the fixing agent the photos. The
+models are faked at the gateway; the clips are real tiny videos and ffmpeg runs for real."""
 
 from collections.abc import Callable
 from typing import Any
@@ -162,7 +157,7 @@ def shown(fake_model: FakeModel, checked: None, steps: HeldSteps, say: Say) -> P
 
 def photos_sent(fake_model: FakeModel, say: Say, *photos: tuple[str, bytes]) -> None:
     """The shop owner sends `photos` through the chat, numbered by it from the photos before;
-    the decider sorts the message as no fix note (unscripted), so the producer answers it."""
+    the producer answers the message."""
     fake_model.respond("produce", turn(says="Thanks, I have your photos."))
     say("Here are our photos.", *photos)
 
@@ -201,9 +196,6 @@ def in_use(scene: int = 2) -> list[tuple[str, str]]:
 def problems() -> list[str]:
     """What the chat told the shop owner went wrong."""
     return list(Message.objects.filter(level="problem").values_list("text", flat=True))
-
-
-# --- Decision 5's fallback: the route call in place of the decider's answers -------------------
 
 
 # --- The photo numbers of the chat ------------------------------------------------------------
