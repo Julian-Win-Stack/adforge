@@ -255,6 +255,15 @@ def page(run: Path) -> str:
       </div>
     </div>{cards}
   </section>""")
+    # An ad with no clip to grade (abandoned before its first clip, or said to camera only)
+    # still has what its agents did.
+    for ad in ads_of(run):
+        if ad not in ads:
+            sections.append(f"""
+  <section class="ad" id="{_esc(ad)}">
+    <h2>{_esc(ad)}</h2>{_agent_link(run, ad)}
+    <p class="muted">No B-roll clip to grade.</p>
+  </section>""")
     return (
         TEMPLATE.replace("{{SECTIONS}}", "".join(sections))
         .replace("{{COUNT}}", _left_out_count(results))

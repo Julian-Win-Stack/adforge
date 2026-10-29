@@ -11,27 +11,22 @@ kept by code, from those checkpoints (decision 3): no scene is decided before it
 at, and no scene goes back to a version before that version was looked at."""
 
 import contextvars
-import hashlib
-import io
 import json
-import math
-import re
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, ClassVar, Literal
+from typing import ClassVar, Literal
 
-import PIL.Image
 from django.db import transaction
 from django.db.models import QuerySet
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from adforge import file_store, tracing
+from adforge import tracing
 from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.types import Happened, Image, Said, Shown, ToolUse
-from jobs import clip_judge, fix_plans, library, owner_parts, planning, work
+from jobs import clip_judge, fix_plans, library, planning, work
 from jobs.models import (
     FixCheck,
     FixPlan,
@@ -42,7 +37,7 @@ from jobs.models import (
     Scene,
 )
 
-from . import loop, run_plan
+from . import look, loop, run_plan
 from .fixing_agent import MOST_TRIES
 from .loop import Agent, Refused, Tool, ToolResult
 from .models import ToolCall
@@ -272,22 +267,6 @@ def this_round(job: Job) -> list[Message]:
 # ---------------------------------------------------------------- versions
 
 
-def _version_of(scene: Scene, number: int | None) -> work.Version:
-    """Version `number` of the scene, or its current one."""
-    versions = work.versions(scene)
-    if not versions:
-        raise Refused(f"scene {scene.number} has nothing made yet.")
-    if number is None:
-        return versions[-1]
-    if not 1 <= number <= len(versions):
-        raise Refused(f"scene {scene.number} has versions 1 to {len(versions)}, not {number}.")
-    return versions[number - 1]
-
-
-def _named(version: work.Version, current: int) -> str:
-    return f"{version.label}{' (the current version)' if version.number == current else ''}"
-
-
 # ---------------------------------------------------------------- the tools
 
 
@@ -416,23 +395,25 @@ class LookAtVersion(Tool):
 def _references_of(scene: Scene, number: int | None) -> ToolResult:
     """The version's references and its clip's frames, when its clip carries a sent list;
     else its starting picture, as before references were sent."""
-    version = _version_of(scene, number)
+    version = look.version_of(scene, number)
     current = work.versions(scene)[-1].number
     clip = version.clip
     sent = library.sent_list_of(clip) if clip is not None else None
     if clip is None or sent is None:
         if version.picture is None:
             raise Refused(f"scene {scene.number}'s {version.label} has no starting picture.")
-        label = f"Scene {scene.number}, starting picture, {_named(version, current)}"
+        label = f"Scene {scene.number}, starting picture, {look.named(version, current)}"
         return ToolResult(text=f"{label}.", pictures=[Image(label=label, key=version.picture.file)])
-    named = f"Scene {scene.number}, {_named(version, current)}"
+    named = f"Scene {scene.number}, {look.named(version, current)}"
     return ToolResult(
         text=f"{named}: what its clip was sent, then the clip. "
         f"{clip_judge.references_said(sent)} Then the clip's frames, "
         f"{clip_judge.FRAMES_PER_SECOND} a second, each labelled with its time. {_judged(clip)}",
         pictures=[
             *clip_judge.references_shown(sent, named),
-            *_clip_frames(clip, f"Scene {scene.number}, clip of {_named(version, current)}"),
+            *look.clip_frames(
+                clip, f"Scene {scene.number}, clip of {look.named(version, current)}"
+            ),
         ],
     )
 
@@ -449,32 +430,18 @@ class LookAtClip(Tool):
     def run(self, call: ToolCall) -> ToolResult:
         _sorted_first()
         scene = _scene(self.scene)
-        version = _version_of(scene, self.version)
+        version = look.version_of(scene, self.version)
         clip = version.clip
         if clip is None:
             raise Refused(f"scene {scene.number}'s {version.label} has no clip.")
-        named = f"Scene {scene.number}, clip of {_named(version, work.versions(scene)[-1].number)}"
+        named = (
+            f"Scene {scene.number}, clip of {look.named(version, work.versions(scene)[-1].number)}"
+        )
         return ToolResult(
             text=f"{named}: {clip_judge.FRAMES_PER_SECOND} frames a second, each labelled with "
             f"its time. {_judged(clip)}",
-            pictures=_clip_frames(clip, named),
+            pictures=look.clip_frames(clip, named),
         )
-
-
-def _clip_frames(clip: ProducedItem, named: str) -> list[Image]:
-    return [
-        Image(label=f"{named}, {clip_judge.frame_label(each['times'])}", key=each["key"])
-        for each in _frames(clip)
-    ]
-
-
-def _frames(clip: ProducedItem) -> list[dict[str, Any]]:
-    """The clip's frames as the judge was shown them for movement, kept on its ruling, or
-    cut now for a clip it never judged."""
-    kept = ((clip.ruling or {}).get("pictures") or {}).get("frames")
-    if kept:
-        return kept  # type: ignore[no-any-return]
-    return clip_judge.cut_pictures(clip.file, beside=0, sets=("frames",))["frames"]
 
 
 def _judged(clip: ProducedItem) -> str:
@@ -506,7 +473,7 @@ class JudgeFindings(Tool):
     def run(self, call: ToolCall) -> str:
         _sorted_first()
         scene = _scene(self.scene)
-        version = _version_of(scene, self.version)
+        version = look.version_of(scene, self.version)
         if version.clip is None:
             raise Refused(f"scene {scene.number}'s {version.label} has no clip.")
         ruling = version.clip.ruling or {}
@@ -902,7 +869,7 @@ def _shown(
 ) -> dict[int, tuple[list[dict[str, str]], str]]:
     """Per call, the pictures this turn shows of it and what its result says of those it
     doesn't. None before the newest message is sorted: sorting needs only the words. Then each
-    look's pictures once, with its newest call, fitted together into MOST_PICTURES (`_fitted`);
+    look's pictures once, with its newest call, fitted together into MOST_PICTURES (`look.fitted`);
     past it even so, the newest looks first."""
     shown: dict[int, tuple[list[dict[str, str]], str]] = {call.pk: ([], "") for call in calls}
     if not sorted_yet:
@@ -912,13 +879,13 @@ def _shown(
     for call in reversed(calls):
         if not call.pictures:
             continue
-        look = f"{call.tool} {json.dumps(call.arguments, sort_keys=True)}"
-        if look in seen:
+        asked = f"{call.tool} {json.dumps(call.arguments, sort_keys=True)}"
+        if asked in seen:
             shown[call.pk] = ([], " (Its pictures are shown with the same look, later.)")
         else:
             looks.append(call)
-        seen.add(look)
-    fitted = _fitted(looks)
+        seen.add(asked)
+    fitted = look.fitted({call.pk: call.pictures for call in looks}, MOST_PICTURES)
     room = MOST_PICTURES
     for call in looks:
         if len(fitted[call.pk]) > room:
@@ -929,85 +896,10 @@ def _shown(
     return shown
 
 
-def _fitted(looks: list[ToolCall]) -> dict[int, list[dict[str, str]]]:
-    """Each look's pictures, with every run of one clip's frames (or one piece's) joined side
-    by side, as few to a picture as lets every look fit in MOST_PICTURES: the clip judge's
-    way of fitting frames (`clip_judge.cut_pictures`), so each frame is kept at
-    FRAMES_PER_SECOND (decision 10) and a note about two clips sees both at once. Any other
-    picture, such as a reference sent with a clip, stays one to a picture."""
-    parts = {look.pk: _runs(look.pictures) for look in looks}
-    runs = [part for each in parts.values() for frames, part in each if frames]
-    others = sum(len(part) for each in parts.values() for frames, part in each if not frames)
-    together = 1
-    while together < max((len(run) for run in runs), default=1) and (
-        others + sum(math.ceil(len(run) / together) for run in runs) > MOST_PICTURES
-    ):
-        together += 1
-    return {
-        pk: [
-            shown
-            for frames, part in each
-            for shown in (
-                [_joined_frames(part[i : i + together]) for i in range(0, len(part), together)]
-                if frames
-                else part
-            )
-        ]
-        for pk, each in parts.items()
-    }
-
-
-def _runs(pictures: list[dict[str, str]]) -> list[tuple[bool, list[dict[str, str]]]]:
-    """`pictures` cut into runs in order: each run of frames of one clip or piece, labelled
-    as `LookAtClip` labels them, as (True, frames); every other picture as (False, [it])."""
-    runs: list[tuple[bool, list[dict[str, str]]]] = []
-    of = None
-    for picture in pictures:
-        frame = _FRAME_LABEL.fullmatch(picture["label"])
-        if frame is None:
-            runs.append((False, [picture]))
-            of = None
-        elif of == frame["clip"]:
-            runs[-1][1].append(picture)
-        else:
-            runs.append((True, [picture]))
-            of = frame["clip"]
-    return runs
-
-
-# A frame's label, as `LookAtClip` gives it: the clip, then the time of each frame in it.
-_FRAME_LABEL = re.compile(
-    r"^(?P<clip>.*), Frames? at (?P<times>\d+(?:\.\d+)? s(?:, \d+(?:\.\d+)? s)*)"
-    r"(?:, left to right)?$"
-)
-
-
-def _joined_frames(frames: list[dict[str, str]]) -> dict[str, str]:
-    """`frames` of one clip as one picture, joined left to right, labelled with the time of
-    each. Kept under a name made from the frames, so a later turn, or a restart, shows the
-    same picture and a paid turn is replayed for free."""
-    if len(frames) == 1:
-        return frames[0]
-    labels = [_FRAME_LABEL.fullmatch(frame["label"]) for frame in frames]
-    assert all(labels), "a look at a clip labels each frame with its times"
-    times = [
-        float(time.removesuffix(" s"))
-        for label in labels
-        for time in label["times"].split(", ")  # type: ignore[index]
-    ]
-    keys = [frame["key"] for frame in frames]
-    key = file_store.save_once(
-        f"decider_frames_{hashlib.sha256(chr(10).join(keys).encode()).hexdigest()[:32]}.jpg",
-        lambda: clip_judge.joined([PIL.Image.open(io.BytesIO(file_store.read(k))) for k in keys]),
-        whole=file_store.whole_picture,
-    )
-    return {"label": f"{labels[0]['clip']}, {clip_judge.frame_label(times)}", "key": key}  # type: ignore[index]
-
-
 def _the_ad(round: _Round) -> str:
     """The ad as it stands, scene by scene, written by code for the decider."""
     job = round.job
-    scenes = "\n\n".join(_scene_facts(scene) for scene in job.scenes.order_by("number"))
+    scenes = "\n\n".join(look.scene_facts(scene) for scene in job.scenes.order_by("number"))
     sent = _photos_sent(round)
     plan = fix_plans.open_plan(round.session)
     return "\n\n".join(
@@ -1042,61 +934,6 @@ def _held(round: _Round) -> list[str]:
             "asked to say go ahead with the new one or what to change."
         )
     return told
-
-
-def _scene_facts(scene: Scene) -> str:
-    versions = work.versions(scene)
-    current = versions[-1] if versions else None
-    # The overlay is read with the line it goes with.
-    said = [f'Line: "{scene.line}"', *([f'Overlay: "{scene.overlay}"'] if scene.overlay else [])]
-    if not scene.shows:
-        facts = [f"Scene {scene.number}: the person talks to camera.", *said]
-    else:
-        kind = ", ".join(each for each in [scene.broll_kind, scene.person_shown] if each)
-        facts = [
-            f"Scene {scene.number}: shows the product{f' ({kind})' if kind else ''}.",
-            *said,
-            f"Shows: {scene.shows}",
-            *([f"How the product is used: {scene.usage}"] if scene.usage else []),
-            *([f"What it ends on: {scene.result}"] if scene.result else []),
-            *(
-                [
-                    "Its pictures: "
-                    + "; ".join(
-                        f"library item {picture['number']} (for {picture['for']})"
-                        for picture in scene.scene_pictures
-                    )
-                ]
-                if scene.scene_pictures
-                else []
-            ),
-            *(
-                [f"Its video piece: video {scene.piece['video']}, moment {scene.piece['moment']}"]
-                if scene.piece
-                else []
-            ),
-        ]
-        prompt = _video_prompt(current.clip) if current and current.clip else ""
-        if prompt:
-            facts.append(f"The current clip's video prompt: {prompt}")
-    part = owner_parts.owner_part(scene)
-    if part is not None and owner_parts.is_approved(scene):
-        facts.append(f"Its owner part, which the shop owner said yes to: {part.what}. {part.looks}")
-    in_use = scene.reference_photos.filter(dropped_by__isnull=True).values_list("thing", flat=True)
-    if in_use:
-        facts.append(f"The shop owner's photos it uses: {', '.join(in_use)}")
-    if current is not None:
-        facts.append(
-            "Versions: " + "; ".join(_named(version, current.number) for version in versions)
-        )
-    return "\n".join(facts)
-
-
-def _video_prompt(clip: ProducedItem) -> str:
-    sent = library.sent_list_of(clip)
-    if sent is not None:
-        return sent.prompt
-    return clip.motion_prompt or (clip.step.motion_prompt if clip.step else "")
 
 
 def _photos_sent(round: _Round) -> str:

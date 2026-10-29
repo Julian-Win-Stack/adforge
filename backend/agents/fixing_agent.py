@@ -709,7 +709,7 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
     words and tools in the order they happened."""
     first = fixing.first_clip
     assert first is not None, "the fixing started with try 0"
-    sent, shown = _try_shown("Try 0", first.picture, first)
+    sent, shown = try_shown("Try 0", first.picture, first)
     happened: list[Happened] = [
         Said(by="user", text=_intro(fixing)),
         ToolUse(
@@ -1055,20 +1055,12 @@ class LookAtTry(Tool):
 
     def run(self, call: ToolCall) -> ToolResult:
         fixing = _fixing_of(call)
-        if self.number == 0:
-            picture, clip, ruling = (
-                fixing.first_clip.picture if fixing.first_clip else None,
-                fixing.first_clip,
-                fixing.ruling,
-            )
-        else:
-            row = fixing.tries.filter(number=self.number).first()
-            if row is None:
-                raise Refused(f"tries so far: 0 to {fixing.tries.count()}.")
-            picture, clip = row.picture, row.clip
-            ruling = clip.ruling if clip is not None else None
+        parts = try_parts(fixing, self.number)
+        if parts is None:
+            raise Refused(f"tries so far: 0 to {fixing.tries.count()}.")
+        picture, clip, ruling = parts
         label = f"Try {self.number}"
-        sent, shown = _try_shown(label, picture, clip)
+        sent, shown = try_shown(label, picture, clip)
         said = (
             f"{label}: what its clip was sent, then the clip's frames. {sent}"
             if sent
@@ -1077,7 +1069,21 @@ class LookAtTry(Tool):
         return ToolResult(f"{said} {judge_words(ruling)}", shown)
 
 
-def _try_shown(
+def try_parts(
+    fixing: AgentFix, number: int
+) -> tuple[ProducedItem | None, ProducedItem | None, dict[str, Any] | None] | None:
+    """Try `number` of `fixing` as its start picture, its clip and the judge's ruling on it,
+    or None when it has no such try. Try 0 is the clip it fixes, with the ruling handed over."""
+    if number == 0:
+        first = fixing.first_clip
+        return (first.picture if first else None, first, fixing.ruling)
+    row = fixing.tries.filter(number=number).first()
+    if row is None:
+        return None
+    return row.picture, row.clip, row.clip.ruling if row.clip is not None else None
+
+
+def try_shown(
     label: str, picture: ProducedItem | None, clip: ProducedItem | None
 ) -> tuple[str, list[Image]]:
     """What a look at a try shows, and what code says of what its clip was sent: when its
@@ -1591,6 +1597,7 @@ def _refuse_what_breaks_the_rules(fixing: AgentFix, asked: FilmAgain, scene: Sce
         _refuse_bad_references(scene.job, asked)
         if asked.broll_kind != "does a job" and asked.result.strip():
             raise Refused('only a "does a job" scene has a result.')
+        _refuse_a_missing_own_place(scene, asked.person_shown)
         return
     if asked.new_picture and not (asked.photo and asked.picture_prompt):
         raise Refused("a new picture needs photo and picture_prompt.")
@@ -1607,21 +1614,31 @@ def _refuse_what_breaks_the_rules(fixing: AgentFix, asked: FilmAgain, scene: Sce
 def _refuse_what_misses_the_place(fixing: AgentFix, asked: FilmAgain, scene: Scene) -> None:
     """Refuse a try that wouldn't be filmed in the scene's own newest place (#237): one whose
     face needs the other picture of it, or one keeping a start picture drawn before it."""
-    newest = work.newest_own_place(scene)
+    newest = _refuse_a_missing_own_place(scene, asked.person_shown)
     if newest is None:
         return
-    drawn = work.drawn_for(asked.person_shown)
-    if work.own_place(scene, drawn) is None:
-        raise Refused(
-            f"the scene's newest place is its own {PLACE_NAMES[_drawn_as(newest)]}, and this "
-            f"try needs its {PLACE_NAMES[drawn]}: call place_edit with picture {drawn} first."
-        )
     current = _current(fixing)[0]
     if not asked.new_picture and current is not None and newest.pk > current.pk:
         raise Refused(
             "the scene's place changed after its start picture was drawn: draw a new start "
             "picture, so the try is filmed in its new place."
         )
+
+
+def _refuse_a_missing_own_place(scene: Scene, person_shown: str) -> ProducedItem | None:
+    """Refuse a try, with a start picture or references, whose face needs the picture of the
+    scene's own place that place_edit hasn't made, so it would go in the ad's old place
+    (#237). Gives the scene's newest own place picture, if any."""
+    newest = work.newest_own_place(scene)
+    if newest is None:
+        return None
+    drawn = work.drawn_for(person_shown)
+    if work.own_place(scene, drawn) is None:
+        raise Refused(
+            f"the scene's newest place is its own {PLACE_NAMES[_drawn_as(newest)]}, and this "
+            f"try needs its {PLACE_NAMES[drawn]}: call place_edit with picture {drawn} first."
+        )
+    return newest
 
 
 # A move code refuses (references the library doesn't hold, a rule broken) comes back as the
@@ -1639,13 +1656,26 @@ def _refuse_bad_references(job: Job, asked: FilmAgain) -> None:
     if not references.pictures:
         raise Refused("name at least one picture: a video piece goes beside pictures.")
     held = {each.number for each in library.library_of(job)}
-    named: set[int] = set()
+    front = cut_and_send.front_of(library_items.originals(job))
+    named: dict[int, int] = {}
     for picture in references.pictures:
         if picture.number not in held:
             raise Refused(f"there is no library item {picture.number}.")
-        if picture.number in named:
-            raise Refused(f"library item {picture.number} is named twice.")
-        named.add(picture.number)
+        original = cut_and_send.original_of_number(job, picture.number).number
+        if original in named:
+            first = named[original]
+            raise Refused(
+                f"library item {picture.number} is named twice."
+                if first == picture.number
+                else f"library items {first} and {picture.number} are the same picture (one is "
+                "a version of the other): name it once."
+            )
+        if front is not None and original == front.number:
+            raise Refused(
+                f"library item {picture.number} is the front photo, which every clip is sent "
+                "as Image 1: leave it out of references."
+            )
+        named[original] = picture.number
     if references.piece is not None:
         _moment(job, references.piece.video, references.piece.moment)
 
@@ -1780,18 +1810,42 @@ def _references_sent(
         if references.piece is None
         else [ScenePiece(video=references.piece.video, moment=references.piece.moment)],
     )
+    job = scene.job
     made_now = {each.made for each in sending.recolours if each.made is not None}
+    colours = dict(job.library.filter(number__in=made_now).values_list("number", "colour"))
     lines = [
-        f"Image {picture.image} is {drawn_label(scene.job, picture.drawn)}."
-        if picture.drawn is not None
-        else f"Image {picture.image}"
-        + (f", made {sending.colour}" if picture.library_number in made_now else "")
-        + f": {picture.label}"
-        + (f" Used for {USED_FOR[picture.for_]}." if picture.for_ else "")
+        _image_line(job, picture, colours.get(picture.library_number or 0))
         for picture in sending.pictures
     ]
     lines += [f"Video {piece.number} is {PIECE_LABEL}." for piece in sending.pieces]
-    return sending.sent_list("\n".join([SPEED_LINE, *lines, prompt.strip()]))
+    said = [RECOLOURED_LINE] if made_now else []
+    return sending.sent_list("\n".join([SPEED_LINE, *lines, *said, prompt.strip()]))
+
+
+# Said once in a try's prompt when a picture was recoloured (Julian, tickets thread, Oct 29,
+# ruling a): a recoloured item keeps its label, so its line names the item's own colour.
+RECOLOURED_LINE = (
+    "A picture may have been recoloured after its words were written: when its line ends "
+    '"in" a colour, the product is that colour in it, never another colour word on the line.'
+)
+
+
+def _image_line(job: Job, picture: library.SentPicture, recoloured: str | None) -> str:
+    """One picture's line in a try's prompt, "Image N is ...": the drawn picture's fixed
+    words; else its library label, then what the clip takes from it, then, when it was
+    recoloured, the item's own colour."""
+    if picture.drawn is not None:
+        return f"Image {picture.image} is {drawn_label(job, picture.drawn)}."
+    words = picture.label.strip().rstrip(".")
+    first = words.split(" ", 1)[0]
+    if first[1:].islower() or len(first) == 1:
+        words = words[:1].lower() + words[1:]
+    parts = [words]
+    if picture.for_ is not None:
+        parts.append(f"used for {USED_FOR[picture.for_]}")
+    if recoloured is not None:
+        parts.append(f"in {recoloured}")
+    return f"Image {picture.image} is {', '.join(parts)}."
 
 
 def _as_sent(step: SceneStep, motion: str) -> str:

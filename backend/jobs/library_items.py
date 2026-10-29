@@ -50,6 +50,7 @@ from .job_locks import LIBRARY_LOCK, PRODUCT_ONLY_LOCK, one_job_at_a_time
 from .library import (
     LibraryEntry,
     LookFrame,
+    Made,
     OwnerPart,
     OwnerPhoto,
     PagePhoto,
@@ -363,6 +364,10 @@ def came_from(source: Source) -> str:
             return f"item {of}, the product alone"
         case Recoloured(of=of, colour=colour):
             return f"item {of}, recoloured {colour}"
+        case Made(references=[]):
+            return "made by the producer from its own words"
+        case Made(references=references):
+            return f"made by the producer from items {', '.join(map(str, references))}"
         case _:
             assert_never(source)
 

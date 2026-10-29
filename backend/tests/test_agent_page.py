@@ -19,7 +19,7 @@ from agents.models import ToolCall
 from evals import agent_page, grading_page
 from evals.tool_calls import LOOK, TURNS
 from gateway.models import ModelCall
-from jobs.models import Job, ProducedItem, SceneStep
+from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 
 from .test_producer_auto_fix import remade_once  # noqa: F401
 from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
@@ -172,7 +172,7 @@ def test_the_ads_page_lists_calls_in_order_with_cost_time_look_and_fold_linked_f
     look_card = page.split('id="call-2"')[1].split('id="call-3"')[0]
     assert look.why in look_card
     assert "$0.030000" in look_card
-    assert f"started {look.created_at.isoformat().replace('T', ' ')[:19]}" in look_card
+    assert f"started {look.created_at.isoformat().replace('T', ' ')[:19]} UTC" in look_card
     assert "The look (gpt-5.6-sol)" in look_card
     assert "Send the red brush photo as Image 1 and name its colour." in look_card
     assert "What is wrong with the brush?" in look_card
@@ -197,6 +197,34 @@ def test_an_ad_that_made_no_clip_keeps_every_call_and_says_so(
     assert len(calls) == ToolCall.objects.exclude(tool=TURNS).count()
     page = agent_page.page(run, AD)
     assert "no clip was made, so every call is listed" in page
+    _linked_both_ways(run)
+
+
+def test_a_talking_only_ad_has_its_page_linked_from_the_round(
+    remade_once: SceneStep,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    # Every scene said to camera: no B-roll scene and no B-roll clip.
+    AgentFix.objects.all().delete()
+    Scene.objects.update(shows="")
+    ProducedItem.objects.filter(kind="clip").delete()
+
+    run = exported(tmp_path)
+
+    assert json.loads((run / "results.json").read_text()) == {}
+    assert json.loads((run / AD / "ad.json").read_text())["first_clip_at"] is None
+    assert json.loads((run / AD / "tool_calls.json").read_text())[0]["tool"] == "read_page"
+    _linked_both_ways(run)
+
+
+def _linked_both_ways(run: Path) -> None:
+    """The round's page links the ad's page, and the ad's back link lands on its section."""
+    grading_page.main([str(run)])
+    grading = (run / "grading.html").read_text()
+    section = grading.split(f'<section class="ad" id="{AD}">')[1].split("</section>")[0]
+    assert f'href="{AD}/{agent_page.FILE}"' in section
+    assert "No B-roll clip to grade." in section
+    assert f'href="../grading.html#{AD}"' in (run / AD / agent_page.FILE).read_text()
 
 
 def test_a_run_exported_before_the_record_has_no_link_to_a_page(

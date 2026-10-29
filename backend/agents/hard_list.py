@@ -17,7 +17,7 @@ from django.conf import settings
 from gateway.types import MOST_PIECE_SECONDS
 from jobs import owner_parts
 from jobs.cut_and_send import DRAWN_NAMES, TIER_NAMES, Sending
-from jobs.library import VIDEO_API_MOST_PICTURES, LeftOut
+from jobs.library import VIDEO_API_MOST_PICTURES, LeftOut, library_of
 from jobs.models import Job, Scene
 
 from .loop import Refused
@@ -28,6 +28,22 @@ ANOTHER_PRODUCT = "start a new ad for that"
 # Query parameters that say where a visitor came from, not which product a page is for.
 _TRACKING_PREFIXES = ("utm_",)
 _TRACKING = frozenset({"fbclid", "gclid", "msclkid", "srsltid", "ref", "_pos", "_sid", "_ss"})
+
+
+def refuse_part_picture_elsewhere(scene: Scene, numbers: list[int]) -> None:
+    """Refuse naming any of the library items `numbers` for `scene` when it is an owner part's
+    picture, or a picture made from one, and `scene` doesn't hold that part: such a picture
+    goes only to the scenes holding the part, whose clip waits for the shop owner's yes."""
+    library = {item.number: item for item in library_of(scene.job)}
+    for number in numbers:
+        part = owner_parts.part_not_held(scene, library[number], library)
+        if part is not None:
+            raise Refused(
+                f"library item {number} shows an owner part (pictured in library item "
+                f"{part.number}: {part.label}), and scene {scene.number} doesn't hold it. A "
+                "part's picture, or one made from it, goes only to the scenes holding the "
+                "part, after the shop owner's yes: name it there."
+            )
 
 
 def refuse_another_product(job: Job, link: str) -> None:

@@ -64,6 +64,7 @@ def made_before_sent_lists(monkeypatch: pytest.MonkeyPatch) -> None:
     A clip with its sent list is judged as tests/test_clip_judge_references.py says."""
     monkeypatch.setattr("jobs.library.keep_sent_list", lambda *_: None)
 
+
 FLOATS = "The teapot rises at 1.2 s with no hand on it; a real one stays put."
 # A clip fix, as the plan the shop owner said yes to words it.
 POURS = "The tea pours into the mug, not beside it."
