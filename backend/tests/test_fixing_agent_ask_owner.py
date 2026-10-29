@@ -6,6 +6,7 @@ line. The agent, the judge, the pictures and the clips are faked at the gateway.
 from collections.abc import Callable
 
 import pytest
+from rest_framework.test import APIClient
 
 from agents import fixing_agent
 from agents.loop import ToolResult
@@ -134,10 +135,22 @@ def test_a_step_a_restart_failed_after_an_ask_with_a_try_keeps_the_question_open
 def test_a_step_a_restart_failed_after_an_ask_with_no_try_withdraws_the_question(
     fake_model: FakeModel,
     failed_clip: SceneStep,  # noqa: F811
+    api: APIClient,
+    session_id: str,
 ) -> None:
     asked_on_the_first_turn(fake_model, failed_clip)
+    work.say_the_agent_gave_up(failed_clip)
+
+    def questions_shown() -> list[object]:
+        shown = api.get(f"/api/sessions/{session_id}/messages/").json()
+        return [each["question"] for each in shown if each["question"] is not None]
+
+    assert len(questions_shown()) == 1
 
     work.end_the_agents_fixing(failed_clip)
+
+    # No card shows the withdrawn question.
+    assert questions_shown() == []
 
     # The scene's clip is made again, so no card shows a question for the fix that failed.
     failed_clip.scene.refresh_from_db()
@@ -250,3 +263,34 @@ def test_the_producer_is_told_plainly_of_an_ask_before_any_try(
         "and before filming a try the fixing agent asked the shop owner a question about it, "
         "shown on the scene's card, so the first clip is in the ad until they answer it."
     ) in step.result
+
+
+def test_the_chat_carries_the_open_question_for_its_scenes_card(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 2)
+    fake_model.respond(
+        "fix_scene", turn(calls=[film_again(video_prompt=POURS)]), turn(calls=[ask()])
+    )
+    assemble_through_the_chat(fake_model, steps, say)
+
+    def carried() -> list[tuple[str, dict[str, object]]]:
+        shown = api.get(f"/api/sessions/{session_id}/messages/").json()
+        return [(each["text"], each["question"]) for each in shown if each["question"] is not None]
+
+    # Only the red line about the question carries it, open, in the agent's words.
+    [(text, shown)] = carried()
+    assert "The question is on scene 2's card." in text
+    assert shown == {"scene": 2, "text": QUESTION, "open": True}
+
+    question = work.open_question(AgentFix.objects.get().step.scene)
+    assert question is not None
+    fixing_agent.answer_question(question, ToolResult("A quarter turn clockwise.", []))
+
+    # Once answered, the card no longer shows it as waiting.
+    assert carried()[0][1]["open"] is False
