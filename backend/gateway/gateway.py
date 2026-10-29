@@ -5,6 +5,8 @@ records every attempt: what was called, what it cost, how long it took, whether 
 and the one-sentence judgement."""
 
 import io
+import subprocess
+import tempfile
 import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -13,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from functools import cache
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, cast
 
 import PIL.Image
@@ -60,6 +63,8 @@ from .types import (
     TurnHandoff,
     TurnRequest,
     UnusableReply,
+    VideoProvider,
+    VideoRequest,
     VoiceDesignHandoff,
     VoiceProvider,
     Word,
@@ -73,6 +78,7 @@ if TYPE_CHECKING:
     from .creatify_adapter import CreatifyProvider
     from .elevenlabs_adapter import ElevenLabsProvider
     from .fal_adapter import FalProvider
+    from .gemini_adapter import GeminiProvider
     from .heygen_adapter import HeyGenProvider
     from .inworld_adapter import InworldProvider
     from .openai_adapter import OpenAIProvider
@@ -146,6 +152,13 @@ def _fal() -> FalProvider:
     return FalProvider()
 
 
+@cache
+def _gemini() -> GeminiProvider:
+    from .gemini_adapter import GeminiProvider
+
+    return GeminiProvider()
+
+
 def _provider() -> ModelProvider:
     return cast(ModelProvider, _override) if _override is not None else _openai()
 
@@ -180,6 +193,10 @@ _CLIP_SERVICES: dict[str, Callable[[], ClipCollector]] = {
 
 def _music() -> MusicProvider:
     return cast(MusicProvider, _override) if _override is not None else _fal()
+
+
+def _watchers() -> VideoProvider:
+    return cast(VideoProvider, _override) if _override is not None else _gemini()
 
 
 def _agents() -> AgentProvider:
@@ -348,6 +365,80 @@ def call_model[Out: BaseModel](
     return _recorded(
         job, purpose, request.model, provider.name, handoff, complete, _shown(request.images)
     )
+
+
+def watch_video[Out: BaseModel](
+    *,
+    job: Job | None,
+    purpose: str,
+    instructions: str,
+    handoff: Handoff,
+    video_key: str,
+    output: type[Out],
+) -> Out:
+    """Ask a model for `output` from the handoff and from what it sees and hears in the video
+    given by its key in the file store. The video is sent cut to WATCH_VIDEO_SHORT_SIDE px on
+    its short side, with its sound, looked at WATCH_VIDEO_FRAMES_PER_SECOND frames a second;
+    the cut is kept in the file store, and the call's record names it, so the record of what
+    was watched can't disagree with what was sent."""
+    # Validate again here rather than trusting the caller built the handoff properly.
+    handoff = type(handoff).model_validate(handoff.model_dump())
+    sent = _watchable(video_key)
+    request = VideoRequest(
+        purpose=purpose,
+        model=catalog.MODEL_FOR_PURPOSE[purpose],
+        instructions=instructions,
+        handoff=handoff,
+        output=output,
+        video=LoadedVideo(key=sent, media_type="video/mp4", data=file_store.read(sent)),
+        frames_per_second=settings.WATCH_VIDEO_FRAMES_PER_SECOND,
+    )
+    provider = _watchers()
+
+    def watch() -> _Made[Out]:
+        reply = provider.watch(request)
+        return _Made(
+            result=reply.output,
+            output=reply.output.model_dump(mode="json"),
+            bill=_Bill(
+                cost_usd=catalog.cost_usd(request.model, reply.input_tokens, reply.output_tokens),
+                input_tokens=reply.input_tokens,
+                output_tokens=reply.output_tokens,
+            ),
+        )
+
+    return _recorded(job, purpose, request.model, provider.name, handoff, watch, video=sent)
+
+
+def _watchable(video_key: str) -> str:
+    """The video, given by its key in the file store, as it is sent to be watched: an MP4
+    cut to WATCH_VIDEO_SHORT_SIDE px on its short side, or as it is when smaller, with its
+    sound. Made once and kept beside it; returns its key."""
+    side = settings.WATCH_VIDEO_SHORT_SIDE
+    original = PurePosixPath(video_key)
+    name = str(original.with_name(f"{original.stem}.watched-{side}px.mp4"))
+    # The short side at most `side`, and even, as H.264 needs; the long one in proportion.
+    width = f"trunc(min({side},iw)/2)*2"
+    height = f"trunc(min({side},ih)/2)*2"
+    scale = f"scale='if(lt(iw,ih),{width},-2)':'if(lt(iw,ih),-2,{height})'"
+
+    def cut() -> bytes:
+        with tempfile.TemporaryDirectory() as folder:
+            given = Path(folder) / "given"
+            made = Path(folder) / "watched.mp4"
+            given.write_bytes(file_store.read(video_key))
+            subprocess.run(
+                [settings.FFMPEG, "-nostdin", "-hide_banner", "-loglevel", "error"]
+                + ["-i", str(given), "-map", "0:v:0", "-map", "0:a:0?", "-vf", scale]
+                + ["-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-pix_fmt", "yuv420p"]
+                + ["-c:a", "aac", "-b:a", "64k", "-movflags", "+faststart", str(made)],
+                check=True,
+                capture_output=True,
+                timeout=600,
+            )
+            return made.read_bytes()
+
+    return file_store.save_once(name, cut, whole=bool)
 
 
 def draw_picture(*, job: Job | None, purpose: str, prompt: str) -> str:
@@ -654,6 +745,7 @@ def _recorded[Result](
     make: Callable[[], _Made[Result]],
     images: list[dict[str, str]] | None = None,
     session: Session | None = None,
+    video: str = "",
 ) -> Result:
     """Run `make` with retries, recording every attempt: what was called, what it cost, how
     long it took, whether it worked, and any judgement. Each is recorded against the session
@@ -670,10 +762,11 @@ def _recorded[Result](
         "model": model,
         "handoff": handoff.model_dump(mode="json"),
         "images": images or [],
+        "video": video,
     }
     attempts = 0
 
-    shown = _files_given(handoff, images)
+    shown = _files_given(handoff, images) + ([video] if video else [])
 
     def attempt() -> Result:
         nonlocal attempts

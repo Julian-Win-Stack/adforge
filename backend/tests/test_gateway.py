@@ -14,7 +14,7 @@ import pytest
 from django.conf import settings as django_settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from pytest_django import Settings
 from pytest_httpserver import HTTPServer
 from werkzeug import Request, Response
@@ -30,13 +30,14 @@ from gateway.gateway import (
     speak,
     submit_broll_clip,
     submit_clip,
+    watch_video,
 )
 from gateway.models import ModelCall
-from gateway.types import AnswerTookTooLong, Image, ReferenceVideo, UnusableReply
+from gateway.types import AnswerTookTooLong, Handoff, Image, ReferenceVideo, UnusableReply
 from jobs.product_videos import PieceWanted, cut_pieces
 from jobs.work import PageCheck, PageCheckHandoff
 
-from .conftest import READABLE, openai_answer, openai_reply, picture, video
+from .conftest import READABLE, a_video, has_sound, openai_answer, openai_reply, picture, video
 
 pytestmark = pytest.mark.django_db
 
@@ -69,6 +70,87 @@ def test_a_voice_line_with_no_voice_is_refused_before_the_voice_service_is_calle
     with pytest.raises(ValidationError, match="voice_id"):
         speak(job=None, purpose="measure_voice", voice_id="", text="Yours for $24.00.")
     assert not ModelCall.objects.exists()
+
+
+class Moments(BaseModel):
+    moments: list[str]
+
+
+class Told(Handoff):
+    product_name: str
+
+
+def _watch(video_key: str) -> Moments:
+    return watch_video(
+        job=None,
+        purpose="watch_video",
+        instructions="Watch the product's video.",
+        handoff=Told(product_name="Stoneware Mug"),
+        video_key=video_key,
+        output=Moments,
+    )
+
+
+def test_a_video_is_watched_at_480_px_with_its_sound_and_the_call_records_it(
+    fake_model: FakeModel,
+) -> None:
+    key = file_store.save("videos/page-video.mp4", a_video(540, 960, sound=True))
+    fake_model.respond("watch_video", {"moments": ["The lid is twisted off."]})
+
+    watched = _watch(key)
+
+    assert watched == Moments(moments=["The lid is twisted off."])
+    (asked,) = fake_model.videos_watched
+    # The short side cut to 480 px, the long side as it was in proportion, the sound kept.
+    width, height, _ = video(asked.video.data)
+    assert (width, height) == (480, 854)
+    assert has_sound(asked.video.data)
+    assert asked.frames_per_second == 1
+    assert asked.instructions == "Watch the product's video."
+    call = ModelCall.objects.get()
+    assert (call.purpose, call.model, call.outcome) == (
+        "watch_video",
+        "gemini-3.8-flash",
+        "succeeded",
+    )
+    assert call.handoff == {"product_name": "Stoneware Mug"}
+    assert call.video == asked.video.key
+    assert file_store.read(call.video) == asked.video.data
+    assert call.output == {"moments": ["The lid is twisted off."]}
+    # The fake's 1,000 tokens in and 100 out, at Gemini Flash's $0.75 and $3.75 a million.
+    assert call.cost_usd == Decimal("0.001125")
+
+
+@pytest.mark.parametrize(
+    ("given", "sent"),
+    [
+        pytest.param((960, 540), (854, 480), id="on its side: its height is cut to 480"),
+        pytest.param((64, 96), (64, 96), id="already smaller upright: never made bigger"),
+        pytest.param((96, 64), (96, 64), id="already smaller on its side: never made bigger"),
+    ],
+)
+def test_a_video_is_watched_with_its_short_side_at_most_480_px_and_no_sound_if_it_has_none(
+    fake_model: FakeModel, given: tuple[int, int], sent: tuple[int, int]
+) -> None:
+    key = file_store.save("videos/page-video.mp4", a_video(*given, sound=False))
+    fake_model.respond("watch_video", {"moments": []})
+
+    _watch(key)
+
+    (asked,) = fake_model.videos_watched
+    assert video(asked.video.data)[:2] == sent
+    assert not has_sound(asked.video.data)
+
+
+def test_a_video_watched_again_is_sent_as_cut_the_first_time(fake_model: FakeModel) -> None:
+    key = file_store.save("videos/page-video.mp4", a_video(540, 960, sound=True))
+    fake_model.respond("watch_video", {"moments": []}, {"moments": []})
+
+    _watch(key)
+    _watch(key)
+
+    first, second = ModelCall.objects.all()
+    assert first.video == second.video
 
 
 def _check_page(images: list[Image]) -> None:

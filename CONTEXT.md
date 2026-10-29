@@ -154,6 +154,38 @@ _Avoid_: Override, manual input, pasted facts
 Something the user states that the page does not, such as a promo code or a replacement line. Used as written and not fact checked, because the user is the source.
 _Avoid_: Override, manual input
 
+### The library (spec #210)
+
+Shapes only so far (`jobs/library.py`, #211): nothing builds or reads them yet.
+
+**Library**:
+Everything the app knows about one product's pictures and videos, built once per ad: every kept page photo, every owner photo cleaned, every page video watched (its moments, look frames and colour), the product-only version of each look photo that needs one, and recoloured versions of pictures. Each picture carries the picker's fixed fields (kind, side, alone, colour, target for a line-up) and one free label sentence code never parses.
+_Avoid_: Asset pool, gallery, media
+
+**Library number**:
+An item's number in the library, which never changes for the ad. Numbers run from 1 in the order items enter the library.
+_Avoid_: Index, photo number (a product photo's position is another number)
+
+**Look picture**:
+A picture whose job is to show the product's look (a side or a state).
+_Avoid_: Side picture (not yet built, another idea), reference picture
+
+**Scene picture**:
+A picture one scene needs (content, result, in use).
+_Avoid_: Reference photo (the owner's photo on a note)
+
+**Piece**:
+A 2-15 s cut of a page video sent as a reference video.
+_Avoid_: Clip (a clip is a made ad clip), segment
+
+**Moment**:
+One action in a page video, with its start and end seconds. Numbered per video from 1 in time order; a piece is named by its moment's number, never by seconds.
+_Avoid_: Scene, shot, video picture
+
+**Sent list**:
+The numbered pictures and pieces one clip was sent, with their labels, kept on the clip with every picture left out and its tier, every recolour and its outcome, and the prompt.
+_Avoid_: References, inputs, pictures sent (the starting picture's old record)
+
 ### Fixing a scene
 
 **Note**:

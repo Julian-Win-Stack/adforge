@@ -19,6 +19,7 @@ from django.db.models.signals import post_save, pre_save
 from langfuse import Langfuse
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from pydantic import BaseModel
 from pytest_django import Settings
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
@@ -27,12 +28,13 @@ from adforge import file_store, tracing
 from agents.models import ToolCall
 from agents.tasks import restart_dead_producers
 from gateway.fake import FakeModel, turn
-from gateway.gateway import submit_broll_clip
+from gateway.gateway import submit_broll_clip, watch_video
 from gateway.models import ModelCall
+from gateway.types import Handoff
 from jobs.models import SceneStep
 from jobs.product_videos import PieceWanted, cut_pieces
 
-from .conftest import READABLE, HeldSteps, chat, picture, results_of
+from .conftest import READABLE, HeldSteps, a_video, chat, picture, results_of
 
 # The fixture for a chat with a clip made, and those it is built on, for pytest to find.
 from .test_producer_clip import clipped, pictured, ready, spoken  # noqa: F401
@@ -507,3 +509,33 @@ def test_a_piece_of_video_a_b_roll_clip_is_sent_is_shown_in_the_trace(
         "image/png",
         "video/mp4",
     ]
+
+
+class Moments(BaseModel):
+    moments: list[str]
+
+
+class Told(Handoff):
+    product_name: str
+
+
+def test_a_video_watched_is_shown_in_the_trace_as_it_was_sent(
+    traces: Traces, fake_model: FakeModel
+) -> None:
+    key = file_store.save("videos/page-video.mp4", a_video(540, 960, sound=True))
+    fake_model.respond("watch_video", {"moments": ["The lid is twisted off."]})
+
+    watch_video(
+        job=None,
+        purpose="watch_video",
+        instructions="Watch the product's video.",
+        handoff=Told(product_name="Stoneware Mug"),
+        video_key=key,
+        output=Moments,
+    )
+
+    (call,) = [found for trace in traces.all() for found in trace.find(name="watch_video")]
+    assert call.kind == "generation"
+    assert call.value("input")["handoff"] == {"product_name": "Stoneware Mug"}
+    assert kinds_of_file(call.value("input")["shown"]) == ["video/mp4"]
+    assert call.value("output")["output"] == {"moments": ["The lid is twisted off."]}
