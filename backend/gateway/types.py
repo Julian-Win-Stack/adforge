@@ -366,20 +366,22 @@ MOST_EXAMPLE_PICTURES = 5
 # in all (spec #210, point 14).
 LEAST_PIECE_SECONDS = 2
 MOST_PIECE_SECONDS = 15
+# Why a piece holds fewer seconds than its moment: the moment ran past MOST_PIECE_SECONDS and
+# was cut to its first seconds, or the pieces ran past it together and the last was cut to fit.
+PieceTrim = Literal["moment_over_limit", "pieces_over_limit"]
 
 
 class ReferenceVideo(Handoff):
     """A piece of a page video, sent beside the example pictures to show how the product
     moves: the cut piece by its key in the file store, the page video it was cut from, also
-    by its key, and the seconds of that video it holds. `trimmed_from` is the end second the
-    piece was asked to reach when it was cut shorter to fit the video model's limit, so the
-    record can say so; None when it holds every second asked for."""
+    by its key, and the seconds of that video it holds. `trim` says why it was cut shorter
+    than the seconds asked for, so the record can say so; None when it holds all of them."""
 
     file: str = Field(min_length=1)
     video: str = Field(min_length=1)
     start: float = Field(ge=0)
     end: float
-    trimmed_from: float | None = None
+    trim: PieceTrim | None = None
 
     @property
     def seconds(self) -> float:
@@ -486,7 +488,7 @@ class ClipProvider(ClipCollector, Protocol):
 
 
 @dataclass(frozen=True)
-class LoadedVideo:
+class LoadedPiece:
     """A ReferenceVideo read from the file store, ready to send: the piece's file, what kind
     of file it is, and the piece as it was handed over."""
 
@@ -505,7 +507,7 @@ class BrollClipProvider(ClipCollector, Protocol):
         example_pictures: Sequence[bytes],
         seconds: int,
         prompt: str,
-        reference_videos: Sequence[LoadedVideo] = (),
+        reference_videos: Sequence[LoadedPiece] = (),
     ) -> str:
         """Ask for a `seconds`-long clip as `prompt` says, starting on `starting_picture`, or
         with things looking as in `example_pictures` and moving as in `reference_videos`.

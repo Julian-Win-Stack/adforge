@@ -23,6 +23,7 @@ from pydantic import (
     model_validator,
 )
 
+from gateway.types import MOST_PIECE_SECONDS, PieceTrim
 from jobs.models import Job, LibraryItem, ProducedItem, ProductVideo
 
 # The picker's fixed fields (#210 point 2). Not approved yet: the look-frame rule (audit
@@ -32,16 +33,18 @@ Side = Literal["front", "back", "side", "top", "none"]
 Alone = Literal["yes", "no"]
 KINDS, SIDES, ALONE = get_args(Kind), get_args(Side), get_args(Alone)
 
-# The video API's limits on one clip's call (#210 point 13).
+# The video API's limits on one clip's call (#210 point 13). Its limit on pieces is the
+# gateway's, where the call is checked.
 VIDEO_API_MOST_PICTURES = 9
-VIDEO_API_MOST_PIECE_SECONDS = 15
+VIDEO_API_MOST_PIECE_SECONDS = MOST_PIECE_SECONDS
 
 # The sent list's fixed values (#210 points 11, 13, 14, 8). Not approved yet: the planner's
 # `for` values (audit item 11).
 For = Literal["content", "result", "in-use", "place", "person", "state"]
 Tier = Literal[1, 2, 3, 4]
 Drawn = Literal["person_in_room", "room"]
-Trim = Literal["moment_over_limit", "pieces_over_limit"]
+# Owned by the gateway, where a piece is handed to the video API with its trim.
+Trim = PieceTrim
 RecolourOutcome = Literal["done", "fell_back"]
 
 

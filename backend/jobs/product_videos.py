@@ -22,7 +22,7 @@ from adforge import file_store
 from adforge.retry import OutsideServiceDown
 from chat.models import Message
 from gateway.gateway import IMAGE_TYPES, transcribe
-from gateway.types import LEAST_PIECE_SECONDS, MOST_PIECE_SECONDS, ReferenceVideo
+from gateway.types import LEAST_PIECE_SECONDS, MOST_PIECE_SECONDS, PieceTrim, ReferenceVideo
 from jobs import page, video_frames
 from jobs.models import Job, ProductVideo
 from jobs.notices import post_notice
@@ -373,47 +373,32 @@ def cut_pieces(wanted: Sequence[PieceWanted]) -> PiecesCut:
             continue
         start, end = piece.start, piece.end
         if end - start < LEAST_PIECE_SECONDS:
-            widened = _widened(piece)
-            if widened is None:
-                left_out.append(
-                    LeftOutPiece(piece, f"its video is shorter than {LEAST_PIECE_SECONDS} seconds")
-                )
-                continue
-            start, end = widened
-        trimmed_from = None
+            left_out.append(LeftOutPiece(piece, _too_short(piece)))
+            continue
+        trim: PieceTrim | None = None
         # The backstop: a moment longer than the video model takes is cut to its first
         # seconds, and pieces longer than it takes in all have the last cut to fit; either
         # way the piece says so.
         if end - start > room:
-            trimmed_from, end = end, start + room
+            trim = "moment_over_limit" if room == MOST_PIECE_SECONDS else "pieces_over_limit"
+            end = start + room
         room -= end - start
         file = file_store.save_once(
             _piece_name(piece.video, start, end),
             functools.partial(_cut, piece.video, start, end),
             whole=_is_video,
         )
-        sent.append(
-            ReferenceVideo(
-                file=file, video=piece.video, start=start, end=end, trimmed_from=trimmed_from
-            )
-        )
+        sent.append(ReferenceVideo(file=file, video=piece.video, start=start, end=end, trim=trim))
     return PiecesCut(sent=sent, left_out=left_out)
 
 
-def _widened(piece: PieceWanted) -> tuple[float, float] | None:
-    """The shortest piece the video model takes holding a moment shorter than that: from the
-    moment's start, or, too near the video's end for that, its last seconds. None when the
-    whole video is shorter. Raises RuntimeError for a video ffprobe can't read."""
-    with tempfile.TemporaryDirectory() as folder:
-        file = Path(folder) / "video"
-        file.write_bytes(file_store.read(piece.video))
-        duration = _duration(file)
-    if duration is None:
-        raise RuntimeError(f"ffprobe couldn't read the length of the page video {piece.video}")
-    if duration < LEAST_PIECE_SECONDS:
-        return None
-    start = min(piece.start, duration - LEAST_PIECE_SECONDS)
-    return start, start + LEAST_PIECE_SECONDS
+def _too_short(piece: PieceWanted) -> str:
+    """Why a moment shorter than the video model takes isn't sent. Not approved yet: it is
+    left out rather than widened past its own seconds, which the sent list never holds."""
+    return (
+        f"its moment is {piece.end - piece.start:g} s long, and the video model takes pieces of "
+        f"at least {LEAST_PIECE_SECONDS} s"
+    )
 
 
 def _piece_name(video: str, start: float, end: float) -> str:

@@ -506,7 +506,7 @@ def test_a_piece_cut_from_a_page_video_is_sent_with_the_seconds_it_was_cut_at(
 
     (asked,) = fake_model.broll_clips_asked
     (piece,) = asked["reference_videos"]
-    assert (piece["start"], piece["end"], piece["seconds"], piece["trimmed_from"]) == (
+    assert (piece["start"], piece["end"], piece["seconds"], piece["trim"]) == (
         2,
         5,
         3,
@@ -560,11 +560,11 @@ def test_a_moment_over_15_seconds_is_cut_to_its_first_15_and_says_it_was_trimmed
     )
 
     (piece,) = fake_model.broll_clips_asked[-1]["reference_videos"]
-    assert (piece["start"], piece["end"], piece["seconds"], piece["trimmed_from"]) == (
+    assert (piece["start"], piece["end"], piece["seconds"], piece["trim"]) == (
         3,
         18,
         15,
-        23,
+        "moment_over_limit",
     )
     # Cut, never sped up: fifteen seconds of the page video play in fifteen.
     assert video(piece["file"])[2] == pytest.approx(15, abs=0.25)
@@ -591,9 +591,9 @@ def test_pieces_over_15_seconds_in_all_have_the_last_trimmed_to_fit(
     )
 
     sent = fake_model.broll_clips_asked[-1]["reference_videos"]
-    assert [(piece["start"], piece["end"], piece["trimmed_from"]) for piece in sent] == [
+    assert [(piece["start"], piece["end"], piece["trim"]) for piece in sent] == [
         (0, 10, None),
-        (12, 17, 22),
+        (12, 17, "pieces_over_limit"),
     ]
     assert [video(piece["file"])[2] for piece in sent] == [
         pytest.approx(10, abs=0.25),
@@ -628,38 +628,14 @@ def test_a_piece_with_under_2_seconds_of_room_left_is_left_out_saying_why(
     ]
 
 
-def test_a_moment_under_2_seconds_is_sent_as_the_2_seconds_from_its_start(
-    page_video: str,
-) -> None:
-    (piece,) = cut_pieces([PieceWanted(video=page_video, start=7, end=8)]).sent
-
-    assert (piece.start, piece.end, piece.trimmed_from) == (7, 9, None)
-    assert video(file_store.read(piece.file))[2] == pytest.approx(2, abs=0.25)
-
-
-def test_a_moment_under_2_seconds_at_the_videos_end_is_sent_as_its_last_2_seconds(
-    page_video: str,
-) -> None:
-    (piece,) = cut_pieces([PieceWanted(video=page_video, start=23.5, end=24)]).sent
-
-    assert (piece.start, piece.end) == (22, 24)
-
-
-def test_a_video_under_2_seconds_is_left_out_saying_why(tmp_path: Path) -> None:
-    made = tmp_path / "short.mp4"
-    subprocess.run(
-        [django_settings.FFMPEG, "-loglevel", "error", "-f", "lavfi"]
-        + ["-i", "testsrc=size=32x48:rate=5"]
-        + ["-t", "1", "-pix_fmt", "yuv420p", str(made)],
-        check=True,
-    )
-    wanted = PieceWanted(video=file_store.save("short.mp4", made.read_bytes()), start=0, end=1)
+def test_a_moment_under_2_seconds_is_left_out_saying_why(page_video: str) -> None:
+    wanted = PieceWanted(video=page_video, start=7, end=8)
 
     cut = cut_pieces([wanted])
 
     assert cut.sent == []
     assert [(left.wanted, left.reason) for left in cut.left_out] == [
-        (wanted, "its video is shorter than 2 seconds")
+        (wanted, "its moment is 1 s long, and the video model takes pieces of at least 2 s")
     ]
 
 
@@ -681,7 +657,7 @@ def test_a_clip_sent_a_piece_is_billed_for_the_pieces_seconds_too(
     assert (submitted.video_seconds, submitted.cost_usd) == (7, 10 * Decimal("0.0792"))
     # The record says which piece was sent, and from which seconds of which video.
     (piece,) = submitted.handoff["reference_videos"]
-    assert (piece["video"], piece["start"], piece["end"], piece["trimmed_from"]) == (
+    assert (piece["video"], piece["start"], piece["end"], piece["trim"]) == (
         page_video,
         2,
         5,
@@ -691,7 +667,7 @@ def test_a_clip_sent_a_piece_is_billed_for_the_pieces_seconds_too(
 
 def _piece(start: float, end: float) -> ReferenceVideo:
     return ReferenceVideo.model_construct(
-        file="piece.mp4", video="page.mp4", start=start, end=end, trimmed_from=None
+        file="piece.mp4", video="page.mp4", start=start, end=end, trim=None
     )
 
 

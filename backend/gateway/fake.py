@@ -43,7 +43,7 @@ from pydantic import BaseModel, ValidationError
 
 from .types import (
     ClipStatus,
-    LoadedVideo,
+    LoadedPiece,
     ModelReply,
     ModelRequest,
     Picture,
@@ -292,7 +292,7 @@ class FakeModel:
         example_pictures: Sequence[bytes],
         seconds: int,
         prompt: str,
-        reference_videos: Sequence[LoadedVideo] = (),
+        reference_videos: Sequence[LoadedPiece] = (),
     ) -> str:
         self._fail_if_scripted("make_clip")
         self.clips_submitted.append(f"video-{len(self.clips_submitted) + 1}")
@@ -306,7 +306,7 @@ class FakeModel:
                         "start": sent.piece.start,
                         "end": sent.piece.end,
                         "seconds": sent.piece.seconds,
-                        "trimmed_from": sent.piece.trimmed_from,
+                        "trim": sent.piece.trim,
                     }
                     for sent in reference_videos
                 ],

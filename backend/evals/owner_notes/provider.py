@@ -27,7 +27,7 @@ from gateway.fake import FakeModel
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import (
     ClipStatus,
-    LoadedVideo,
+    LoadedPiece,
     ModelReply,
     ModelRequest,
     Picture,
@@ -275,7 +275,7 @@ class OwnerNotesProvider:
         example_pictures: Sequence[bytes],
         seconds: int,
         prompt: str,
-        reference_videos: Sequence[LoadedVideo] = (),
+        reference_videos: Sequence[LoadedPiece] = (),
     ) -> str:
         if self.phase == "first":
             video_id = f"round4-{_running_scene()}"

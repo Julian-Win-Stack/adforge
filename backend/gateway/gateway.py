@@ -42,6 +42,7 @@ from .types import (
     Image,
     Judgement,
     LoadedImage,
+    LoadedPiece,
     LoadedVideo,
     ModelProvider,
     ModelRequest,
@@ -628,7 +629,7 @@ def submit_broll_clip(
             seconds=handoff.seconds,
             prompt=handoff.prompt,
             reference_videos=[
-                LoadedVideo(data=file_store.read(piece.file), media_type="video/mp4", piece=piece)
+                LoadedPiece(data=file_store.read(piece.file), media_type="video/mp4", piece=piece)
                 for piece in handoff.reference_videos
             ],
         )

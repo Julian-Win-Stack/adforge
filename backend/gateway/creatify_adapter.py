@@ -29,7 +29,7 @@ from django.conf import settings
 
 from adforge.retry import OutsideServiceDown
 
-from .types import ClipFailed, ClipStatus, LoadedVideo
+from .types import ClipFailed, ClipStatus, LoadedPiece
 
 MODEL = "boreal-h3"
 # Creatify's statuses for a task it has finished with.
@@ -61,7 +61,7 @@ class CreatifyProvider:
         example_pictures: Sequence[bytes],
         seconds: int,
         prompt: str,
-        reference_videos: Sequence[LoadedVideo] = (),
+        reference_videos: Sequence[LoadedPiece] = (),
     ) -> str:
         body: dict[str, Any] = {
             "model": MODEL,
