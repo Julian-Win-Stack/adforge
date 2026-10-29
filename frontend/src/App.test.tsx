@@ -1266,12 +1266,16 @@ test("a scene's note takes up to 3 photos: then its photo button is off and more
 
 test("two pasted screenshots with the same name are two photos", async () => {
   await openFinishedAd();
+  const errors = vi.spyOn(console, "error");
 
   const image = (content: string) => new File([content], "image.png", { type: "image/png" });
   pastePhotos(noteBox(2), image("aaaa"));
   pastePhotos(noteBox(2), image("bbbb"));
 
   expect(notePhotos(2)).toEqual(["Photo for scene 2: image.png", "Photo for scene 2: image.png"]);
+  // React tells two of the same key apart only by complaining.
+  expect(errors).not.toHaveBeenCalled();
+  errors.mockRestore();
 });
 
 test("a photo with no words in its note can't be sent, and the form says what to write", async () => {

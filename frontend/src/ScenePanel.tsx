@@ -450,7 +450,9 @@ function NoteBox({
         <div className="scene-note-photos">
           {photos.map((file, index) => (
             <Thumb
-              key={`${file.name}-${file.size}`}
+              // Pasted screenshots share a name, so a photo is its place; each thumbnail's
+              // picture follows its file, wherever it moves.
+              key={index}
               photo={{ name: file.name, file }}
               label={`Photo for ${scene}: ${file.name}`}
               onRemove={() => onRemovePhoto(index)}
