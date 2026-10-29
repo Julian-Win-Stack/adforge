@@ -144,10 +144,6 @@ CANTS: dict[str, str] = {
 
 # Turns the decider may end with no tool, each answered with a reminder, before it stops.
 MOST_REMINDERS = 2
-# The most tools the decider may call for one message (design thread, 05b: a GUESS), far
-# under the limit for every agent together, so a decider going round in circles stops cheap.
-# Counted before each turn, so the turn that reaches it may run a few calls past it.
-MOST_TOOL_CALLS = 30
 REMINDER = "Answer with a tool call: sort_message, a look, or decide. Nothing you write is shown."
 
 
@@ -764,10 +760,6 @@ def read(job: Job, said: Sequence[Message]) -> Outcome:
                 return outcome
             if loop.over_the_limit(session):
                 raise NoDecision("it hit the limit of tools for one message")
-            if round.calls().filter(created_at__gt=round.said[-1].created_at).count() >= (
-                MOST_TOOL_CALLS
-            ):
-                raise NoDecision("it hit the decider's limit of tools for one message")
             with tracing.agent_turn(DECIDER_NAME):
                 turn = take_turn(
                     session=session,

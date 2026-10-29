@@ -1310,44 +1310,6 @@ def test_a_long_clips_frames_already_in_pairs_are_joined_with_every_time(
     ]
 
 
-def test_the_decider_stops_after_the_most_tools_for_one_message(
-    fake_model: FakeModel, ad: Job, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(decider, "MOST_TOOL_CALLS", 3)
-    note = _owner_says(ad, "Scene 2 should be brighter.")
-    fake_model.respond(
-        "decide_fixes",
-        turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("look_at_picture", {"scene": 2})]),
-        turn(calls=[("look_at_clip", {"scene": 2, "version": None})]),
-    )
-
-    with pytest.raises(decider.NoDecision, match="the decider's limit of tools"):
-        decider.read(ad, [note])
-
-    assert len(fake_model.turns_taken) == 3
-
-
-def test_a_correction_gets_its_own_tools_after_a_long_first_plan(
-    fake_model: FakeModel,
-    ad: Job,
-    planned: tuple[Message, decider.Planned],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The decider's limit counts the tools for the message being answered (design thread,
-    02:14 Oct 17), so the calls the first note's plan took leave a correction all of them."""
-    note, _ = planned
-    monkeypatch.setattr(decider, "MOST_TOOL_CALLS", 4)
-    correction = _owner_says(ad, "no, only scene 2")
-    fake_model.respond(
-        "decide_fixes",
-        turn(calls=[("sort_message", {"kind": "fix_note"})]),
-        turn(calls=[("decide", _decided([_row(2, "fix", "The toilet is white.")]))]),
-    )
-
-    assert isinstance(decider.read(ad, [note, correction]), decider.Planned)
-
-
 def test_the_decider_stops_at_the_limit_of_tools_for_one_message(
     fake_model: FakeModel, ad: Job, settings: Any
 ) -> None:
