@@ -3373,7 +3373,7 @@ def tries_shown(step: SceneStep) -> TriesShown:
     current = made[-1].clip if made else None
     # A clip that no longer says the scene's line, changed since, isn't the ad's any more.
     scene = Scene.objects.get(pk=step.scene_id)
-    if current is not None and not _says_the_line_as_it_stands(scene, current):
+    if current is not None and not says_the_line_as_it_stands(scene, current):
         current = None
     in_ad = next(
         (clip for clip in tries if current is not None and current.file == clip.file),
@@ -3414,7 +3414,7 @@ def _as_the_give_up_left_it(step: SceneStep) -> bool:
         ended.kept is not None
         and bool(made)
         and made[-1].clip == ended.kept
-        and _says_the_line_as_it_stands(scene, ended.kept)
+        and says_the_line_as_it_stands(scene, ended.kept)
     )
 
 
@@ -3462,8 +3462,8 @@ def say_the_agent_gave_up(step: SceneStep) -> None:
     )
     post_notice(
         step.scene.job,
-        f"{found}{capped}, so {_in_the_ad_meanwhile(step, ended)}. Watch them, and tap "
-        "one to use it instead.",
+        f"{found}{capped}, so {_in_the_ad_meanwhile(step, ended)}. Watch them, and pick "
+        f"one on scene {number}'s card to use it instead.",
         Message.Level.INFO,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
         tries_of=step.pk,
@@ -3557,6 +3557,16 @@ def _try_to_use(clip: ProducedItem) -> int:
     if not said_to_camera and not go_back_is_free(scene, number):
         raise TryNotOnOffer(TRIES_NOT_ON_OFFER)
     return number
+
+
+def is_a_try_on_offer(clip: ProducedItem) -> bool:
+    """Whether `clip` is a try of a clip the judge failed every try of that can be swapped in
+    now, as `check_try_to_use` allows."""
+    try:
+        _try_to_use(clip)
+    except TryNotOnOffer:
+        return False
+    return True
 
 
 def check_try_to_use(clip: ProducedItem) -> None:
@@ -3692,8 +3702,9 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
     )
     if _kept_a_try(step, ended):
         return (
-            f"{gave_up}, so {_what_is_kept(step)} is in the ad. The chat showed the shop owner "
-            f"every try, so they can tap one to use it instead, for nothing.{_assemble_again(step)}"
+            f"{gave_up}, so {_what_is_kept(step)} is in the ad. Scene {step.scene.number}'s card "
+            "shows the shop owner every try, so they can put one in the ad from it, for "
+            f"nothing.{_assemble_again(step)}"
         )
     return f"{gave_up}.{_assemble_again(step)}"
 
@@ -4344,7 +4355,7 @@ def _bring_back(scene: Scene, number: int) -> GoneBack:
         earlier = shown[number - 1]
         if earlier.clip is not None:
             _shown_again_for(scene, earlier.clip)
-        free = earlier.clip is not None and _says_the_line_as_it_stands(scene, earlier.clip)
+        free = earlier.clip is not None and says_the_line_as_it_stands(scene, earlier.clip)
         # A scene showing the product has no starting picture: its clip is made again from
         # its sent list (spec #210 point 19).
         if earlier.picture is None and not free and not scene.shows:
@@ -4395,10 +4406,10 @@ def go_back_is_free(scene: Scene, number: int) -> bool:
     if not 1 <= number <= len(made):
         raise NoSuchVersion(f"scene {scene.number} has versions 1 to {len(made)}, not {number}")
     clip = made[number - 1].clip
-    return clip is not None and _says_the_line_as_it_stands(scene, clip)
+    return clip is not None and says_the_line_as_it_stands(scene, clip)
 
 
-def _says_the_line_as_it_stands(scene: Scene, clip: ProducedItem) -> bool:
+def says_the_line_as_it_stands(scene: Scene, clip: ProducedItem) -> bool:
     """Whether `clip` still says the scene's line, in the person's voice, and was made for
     what the scene shows: the clip the ad is assembled from, if it were the newest."""
     audio = clip.made_from

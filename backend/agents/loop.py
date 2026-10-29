@@ -864,6 +864,12 @@ def unread_pause_notes(session: Session) -> QuerySet[SystemNote]:
     return session.system_notes.filter(kind=SystemNote.Kind.PAUSED, read_at__isnull=True)
 
 
+def unread_swap_notes(session: Session) -> QuerySet[SystemNote]:
+    """The notes of versions the shop owner swapped in from scenes' cards that the producer
+    hasn't been given yet."""
+    return session.system_notes.filter(kind=SystemNote.Kind.VERSION_USED, read_at__isnull=True)
+
+
 def unread_steps(agent: Agent, session: Session) -> QuerySet[SceneStep]:
     """The scene steps `agent` started in the session that have finished, and that it
     hasn't been given yet."""

@@ -1,9 +1,9 @@
 """The shop owner picks from every try when the fixing agent gives up on a B-roll clip the
 clip judge failed (door 1; #180 generalised to any number of tries): the last try stays in
 the ad (Julian, 2026-10-23), and the chat shows the first clip and every try, each with the
-judge's problem, the agent's pick marked and why it gave up. The ad doesn't wait. A tap reaches
-the producer as the shop owner's message naming the try, and keep_try swaps it in, for
-nothing. The producer's model, the scene models, the video model and
+judge's problem, the agent's pick marked and why it gave up. The ad doesn't wait. The shop
+owner swaps a try in from the scene's card (tests/test_card_versions.py), for nothing, and the
+producer can with keep_try. The producer's model, the scene models, the video model and
 the judge are faked at the gateway, and the agent by tests/agent_tries.py."""
 
 from collections.abc import Callable
@@ -117,8 +117,8 @@ def test_the_producer_is_told_the_agent_gave_up_and_the_last_try_is_in_the_ad(
     step = SceneStep.objects.filter(kind="clip", scene__number=2).order_by("id").first()
     assert step is not None
     assert (
-        "and the fixing agent gave up after 2 tries, so the last try is in the ad. The chat "
-        "showed the shop owner every try, so they can tap one to use it instead, for nothing. "
+        "and the fixing agent gave up after 2 tries, so the last try is in the ad. Scene 2's card "
+        "shows the shop owner every try, so they can put one in the ad from it, for nothing. "
         "Scene 2 is finished."
     ) in step.result
     assert "talking scene" not in step.result
@@ -143,7 +143,7 @@ def test_the_chat_shows_every_try_with_the_judges_problem_and_the_agents_pick_an
     assert (notice["role"], notice["level"]) == ("notice", "info")
     assert notice["text"] == (
         "The clip judge found a problem in all 3 tries at scene 2's clip, so the last try is in "
-        "the ad. Watch them, and tap one to use it instead."
+        "the ad. Watch them, and pick one on scene 2's card to use it instead."
     )
     assert notice["attachments"] == []
     # The notice ends the clip's step in the chat.
@@ -180,82 +180,45 @@ def test_the_chat_shows_every_try_with_the_judges_problem_and_the_agents_pick_an
     assert not Attachment.objects.filter(kind="video", scene=2, file__in=tried).exists()
 
 
-# --- One tap swaps a try in ------------------------------------------------------------------
+# --- A try swapped in from the scene's card ---------------------------------------------------
 
 
-def tap_use(api: APIClient, session_id: str, clip: ProducedItem) -> Any:
-    """The shop owner taps "Use this one" under `clip`."""
-    return api.post(
-        f"/api/sessions/{session_id}/messages/", {"text": "", "use_clip": clip.pk}, format="json"
-    )
-
-
-def tap_kept(
-    api: APIClient, session_id: str, fake_model: FakeModel, clip: ProducedItem, try_number: int
+def use_on_card(
+    api: APIClient, session_id: str, fake_model: FakeModel, version: int, scene: int = 2
 ) -> Any:
-    """The shop owner taps "Use this one" under `clip`: the tap reaches the producer as their
-    message, and the producer keeps that try."""
-    fake_model.respond(
-        "produce",
-        turn(calls=[("keep_try", {"scene": 2, "try_number": try_number})]),
-        turn(says="It's in the ad."),
+    """The shop owner taps "Use this in the ad" on scene `scene`'s v`version`: code swaps it
+    in and wakes the producer, which tells them."""
+    fake_model.respond("produce", turn(says="It's in the ad."))
+    return api.post(
+        f"/api/sessions/{session_id}/scenes/{scene}/use/", {"version": version}, format="json"
     )
-    return tap_use(api, session_id, clip)
 
 
-def test_a_tap_reaches_the_producer_which_swaps_the_try_in_for_nothing_and_assembles_the_ad(
+def test_a_try_swapped_in_from_the_card_is_in_the_ad_for_nothing_and_the_notice_says_so(
     failed_ad: ProducedItem, api: APIClient, session_id: str, fake_model: FakeModel
 ) -> None:
     _, try_1, _ = tries()
     paid = paid_for()
 
-    sent = tap_kept(api, session_id, fake_model, try_1, 1)
+    sent = use_on_card(api, session_id, fake_model, 2)
 
-    assert sent.status_code == 201, sent.json()
-    tap = sent.json()["message"]
-    assert (tap["role"], tap["text"], tap["use_clip"]) == (
-        "user",
-        "Use try 1 for scene 2.",
-        try_1.pk,
-    )
+    assert sent.status_code == 200, sent.json()
     scene = Scene.objects.get(number=2)
     assert (scene.shows, scene.broll_kind) == (SHOWS, "showcase")
-    # The producer was given the tap as the shop owner's message, and kept the try.
-    produced = [each for each in fake_model.turns_taken if each.purpose == "produce"]
-    said = [getattr(each, "text", "") for each in produced[-2].handoff.conversation]
-    assert "Use try 1 for scene 2." in said
-    assert results_of("keep_try")[-1].startswith("Scene 2's try 1 is in the ad now")
     assert labels(2)[-1] == "v4 back to v2"
     assert current_clip(2).file == try_1.file
     assert paid_for() == paid
+    # No producer step: it calls no tool for the swap.
+    assert results_of("keep_try") == []
     notice = the_tries_notice(api, session_id)["tries"]
     assert (notice["in_ad"], notice["on_offer"]) == (try_1.pk, True)
     (ad,) = [made for made in ads() if made != failed_ad]
     assert [cut["clip"] for cut in ad.cuts if cut["scene"] == 2] == [current_clip(2).pk]
 
 
-def test_after_a_tap_another_try_can_be_swapped_in_and_the_one_in_the_ad_cant(
+def test_a_card_swap_while_the_scene_is_being_made_is_refused_until_its_ready(
     failed_ad: ProducedItem, api: APIClient, session_id: str, fake_model: FakeModel
 ) -> None:
-    first, try_1, _ = tries()
-    tap_kept(api, session_id, fake_model, try_1, 1)
-
-    again = tap_use(api, session_id, try_1)
-    back = tap_kept(api, session_id, fake_model, first, 0)
-
-    assert (again.status_code, again.json()) == (
-        400,
-        {"use_clip": "That try is already in the ad."},
-    )
-    assert back.status_code == 201, back.json()
-    assert current_clip(2).file == first.file
-    assert labels(2)[-1] == "v5 back to v1"
-
-
-def test_a_tap_while_the_scene_is_being_made_is_refused_until_its_ready(
-    failed_ad: ProducedItem, api: APIClient, session_id: str
-) -> None:
-    _, try_1, _ = tries()
     # Its clip is being made again (it has no starting picture: spec #210 point 19).
     making = SceneStep.objects.filter(kind="clip", scene__number=2).last()
     assert making is not None
@@ -263,41 +226,30 @@ def test_a_tap_while_the_scene_is_being_made_is_refused_until_its_ready(
         scene=making.scene, kind=making.kind, tool_call=making.tool_call, line=making.line
     )
 
-    sent = tap_use(api, session_id, try_1)
+    sent = use_on_card(api, session_id, fake_model, 2)
 
     assert (sent.status_code, sent.json()) == (
-        400,
-        {
-            "use_clip": "Scene 2's picture or clip is being made right now. Tap again once "
-            "it's ready."
-        },
+        409,
+        {"detail": "Scene 2's picture or clip is being made right now. Try again once it's ready."},
     )
+    assert labels(2)[-1] == "v3 try 2"
 
 
-def test_a_tap_on_a_clip_that_isnt_a_try_shown_is_refused(
-    failed_ad: ProducedItem, api: APIClient, session_id: str
+def test_after_the_scenes_line_changed_its_tries_cant_be_swapped_in(
+    failed_ad: ProducedItem, api: APIClient, session_id: str, fake_model: FakeModel
 ) -> None:
-    talking = ProducedItem.objects.filter(kind="clip", scene__number=1).get()
-
-    sent = tap_use(api, session_id, talking)
-
-    assert sent.status_code == 400
-    assert sent.json() == {"use_clip": "Those tries aren't on offer any more."}
-
-
-def test_a_tap_after_the_scenes_line_changed_is_refused_as_its_tries_no_longer_say_it(
-    failed_ad: ProducedItem, api: APIClient, session_id: str
-) -> None:
-    _, try_1, _ = tries()
     scene = Scene.objects.get(number=2)
     scene.change_line("Stoneware that keeps your tea hot.")
     scene.save(update_fields=["line", "shortened_from", "status"])
 
-    sent = tap_use(api, session_id, try_1)
+    sent = use_on_card(api, session_id, fake_model, 2)
 
     assert (sent.status_code, sent.json()) == (
-        400,
-        {"use_clip": "Those tries aren't on offer any more."},
+        409,
+        {
+            "detail": "v2 was made for an older line of scene 2, so it can't go in the ad for "
+            "free."
+        },
     )
     notice = the_tries_notice(api, session_id)["tries"]
     assert (notice["in_ad"], notice["on_offer"]) == (None, False)
@@ -322,7 +274,7 @@ def made_ad(
     return assemble_through_the_chat(fake_model, steps, say)
 
 
-def test_a_tap_on_an_old_jobs_remake_shown_before_the_fixing_agent_swaps_it_in(
+def test_an_old_jobs_remake_shown_before_the_fixing_agent_swaps_in_from_the_card(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
@@ -335,9 +287,14 @@ def test_a_tap_on_an_old_jobs_remake_shown_before_the_fixing_agent_swaps_it_in(
     post_notice(step.scene.job, "Watch them.", Message.Level.INFO, tries_of=step.pk)
 
     assert [shown.clip for shown in work.tries_shown(step).tries] == made
-    sent = tap_kept(api, session_id, fake_model, made[1], made[1].remake or 0)
+    number = next(
+        version.number
+        for version in work.versions(Scene.objects.get(number=2))
+        if version.clip == made[1]
+    )
+    sent = use_on_card(api, session_id, fake_model, number)
 
-    assert sent.status_code == 201, sent.json()
+    assert sent.status_code == 200, sent.json()
     assert current_clip(2).file == made[1].file
 
 
@@ -361,7 +318,7 @@ def said_to_camera_as_before() -> None:
     AgentFix.objects.update(said_to_camera=True, kept=None, camera_before=camera_before)
 
 
-def test_a_tap_on_a_give_up_said_to_camera_before_shows_the_product_again(
+def test_a_card_swap_on_a_give_up_said_to_camera_before_shows_the_product_again(
     failed_ad: ProducedItem, api: APIClient, session_id: str, fake_model: FakeModel
 ) -> None:
     _, try_1, _ = tries()
@@ -369,9 +326,9 @@ def test_a_tap_on_a_give_up_said_to_camera_before_shows_the_product_again(
     notice = the_tries_notice(api, session_id)["tries"]
     assert (notice["in_ad"], notice["on_offer"]) == (None, True)
 
-    sent = tap_kept(api, session_id, fake_model, try_1, 1)
+    sent = use_on_card(api, session_id, fake_model, 2)
 
-    assert sent.status_code == 201, sent.json()
+    assert sent.status_code == 200, sent.json()
     scene = Scene.objects.get(number=2)
     assert (scene.shows, scene.broll_kind) == (SHOWS, "showcase")
     assert current_clip(2).file == try_1.file

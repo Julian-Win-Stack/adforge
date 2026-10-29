@@ -184,7 +184,7 @@ def test_a_fix_whose_tries_run_out_keeps_its_last_try_and_shows_every_try_to_swa
     assert shown.text == (
         "None of the 2 tries at scene 2's clip both passed the clip judge and made your "
         "change, and the fixing agent filmed as many tries as it may, so the last try is in "
-        "the ad. Watch them, and tap one to use it instead."
+        "the ad. Watch them, and pick one on scene 2's card to use it instead."
     )
     told = told_of_the_step(fake_model)
     assert "Scene 2's fix ended with no try passing (2 tries)" in told
