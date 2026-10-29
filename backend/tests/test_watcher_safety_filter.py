@@ -119,7 +119,10 @@ def test_seconds_the_filter_refuses_are_dropped_and_the_rest_is_watched_in_its_o
         # The first part's last action runs on past its edge: it ends at the edge.
         (0.0, 10.0): watched(
             moments=[moment(0.0, 4.0, "The cap comes off."), moment(4.0, 10.5, "It is poured.")],
-            look_frames=[look_frame(2.0, "The bottle, cap off.")],
+            look_frames=[
+                look_frame(2.0, "The bottle, cap off."),
+                look_frame(10.4, "The bottle, poured."),
+            ],
             colour="black",
             transcript="Twist it open.",
         ),
@@ -165,13 +168,13 @@ def test_seconds_the_filter_refuses_are_dropped_and_the_rest_is_watched_in_its_o
         (3, 15.0, 21.0, "It is rubbed in."),
         (4, 21.0, 30.0, "It is rinsed off."),
     ]
-    assert seen.look_frames == [2.0, 18.0]
+    assert seen.look_frames == [2.0, 10.0, 18.0]
     # The colour of the most seconds; what is said, joined in time order.
     assert seen.colour == "green"
     assert seen.transcript == "Twist it open. Rinse well."
     assert video.transcript == "Twist it open. Rinse well."
     frames = [item.source for item in library_of(job) if isinstance(item.source, LookFrame)]
-    assert [(frame.video, frame.second) for frame in frames] == [(1, 2.0), (1, 18.0)]
+    assert [(frame.video, frame.second) for frame in frames] == [(1, 2.0), (1, 10.0), (1, 18.0)]
     # The refusal is kept with the watch: why, what was dropped and how many probes it took.
     assert seen.refused is not None
     assert (seen.refused.reason, seen.refused.probes) == ("pictures", 4)
