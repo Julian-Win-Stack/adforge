@@ -1013,15 +1013,26 @@ class LookAtShopPhoto(Tool):
 
 
 class LookAtPlace(Tool):
-    """See the ad's place picture: the place every B-roll scene happens in."""
+    """See the place this scene happens in: its own newest one, when place_edit made it one,
+    else the ad's place picture, the place every B-roll scene happens in."""
 
     name: ClassVar[str] = "look_at_place"
 
     def run(self, call: ToolCall) -> ToolResult:
-        place = work.latest(_fixing_of(call).step.scene.job, ProducedItem.Kind.BEFORE_PICTURE)
+        scene = _fixing_of(call).step.scene
+        own = work.newest_own_place(scene)
+        if own is not None:
+            named = f"Scene {scene.number}'s own {PLACE_NAMES[_drawn_as(own)]}"
+            return ToolResult(f"{named}.", [Image(label=named, key=own.file)])
+        place = work.latest(scene.job, ProducedItem.Kind.BEFORE_PICTURE)
         if place is None:
             raise Refused("the ad has no place picture.")
         return ToolResult("The place picture.", [Image(label="The place picture", key=place.file)])
+
+
+def _drawn_as(own: ProducedItem) -> Literal["person_in_room", "room"]:
+    """Which picture of a scene's place `own` is."""
+    return "person_in_room" if own.kind == ProducedItem.Kind.SCENE_PERSON_IN_ROOM else "room"
 
 
 class LookAtPresenter(Tool):
@@ -1222,7 +1233,8 @@ class PlaceEdit(Tool):
     place drawn fresh (new_place). The small edit is cheaper and keeps the look already
     approved. A scene showing the presenter's face is sent the presenter in the room; one
     showing nobody, the room alone. You are shown the new picture and nothing is filmed:
-    look at it, change it again, or call film_again, which sends it."""
+    look at it, change it again, or make a filmed move (film_again, change_action or
+    end_result_only), which sends it."""
 
     name: ClassVar[str] = "place_edit"
     picture: Literal["person_in_room", "room"] = Field(
@@ -1251,8 +1263,12 @@ def place_edit(fixing: AgentFix, asked: PlaceEdit) -> ToolResult:
     """The scene's own picture of its place, made as the agent wrote it: an edit of the one it
     has now, or a new place drawn fresh (#237). Shown to the agent; nothing films."""
     words = [each for each in (asked.edit, asked.new_place) if each is not None]
-    if len(words) != 1 or not words[0].strip():
-        raise Refused("write either an edit or a new place, not both.")
+    if len(words) > 1:
+        raise Refused("write an edit or a new place, not both.")
+    if not words:
+        raise Refused("write an edit or a new place.")
+    if not words[0].strip():
+        raise Refused("the words are blank: write the edit or the new place.")
     scene = fixing.step.scene
     try:
         made = (
@@ -1262,10 +1278,13 @@ def place_edit(fixing: AgentFix, asked: PlaceEdit) -> ToolResult:
         )
     except work.NoPlaceYet as missing:
         raise Refused(f"the ad has no {PLACE_NAMES[asked.picture]} yet.") from missing
+    except work.NoPresenterYet as missing:
+        raise Refused("the ad has no presenter yet, so nobody can be drawn in it.") from missing
     named = f"Scene {scene.number}'s own {PLACE_NAMES[asked.picture]}"
     return ToolResult(
         f"{named}, for this scene only: the other scenes keep the ad's. Nothing was filmed: "
-        "look at it, change it again, or call film_again, which sends it.",
+        "look at it, change it again, or make a filmed move (film_again, change_action or "
+        "end_result_only), which sends it.",
         [Image(label=named, key=made[-1].file)],
     )
 
@@ -1367,14 +1386,27 @@ END_RESULT_ONLY = (
 
 class EndResultOnly(FilmAgain):
     """Film only the end state the action leads to, with the action already done: you write
-    the scene yourself, every field, with what it shows as that end state. Code adds a fixed
-    line saying so before your video prompt, then films it as film_again does and has the
-    judge watch it."""
+    the scene yourself, every field, with what it shows as that end state. Its start picture
+    shows that end state too, so draw a new one unless the current one already shows it. Code
+    adds a fixed line saying so before your video prompt, then films it as film_again does and
+    has the judge watch it."""
 
+    # The clip's first frame is a redraw of its start picture, until the start picture is
+    # retired (spec #210 point 19): so here the picture shows the end state, not the moment
+    # before the action.
     name: ClassVar[str] = "end_result_only"
     shows: str = Field(
         description="The end state the clip holds on, in one sentence: the product and what "
         "the action left."
+    )
+    new_picture: bool = Field(
+        description="True to draw a new start picture of the end state from picture_prompt; "
+        "false only when the current one already shows that end state."
+    )
+    picture_prompt: str | None = Field(
+        description="With a new picture: the picture model's prompt, written from scratch, "
+        "showing the end state with the action already done, naming each image by its number "
+        "and job."
     )
 
     def run(self, call: ToolCall) -> ToolResult:
@@ -1477,8 +1509,8 @@ def _pictures_sent(
         files.append(portrait.file)
         rows.append({"image": len(rows) + 1, "job": scenes.PORTRAIT_JOB, "portrait": True})
     # The scene's own place, when place_edit made it one (#237), else the ad's.
-    _, own = work.scene_place(step.scene, person_shown)
-    if own is not None and own.scene_id == step.scene_id:
+    own = work.own_place(step.scene, work.drawn_for(person_shown))
+    if own is not None:
         files.append(own.file)
         rows.append(
             {"image": len(rows) + 1, "job": scenes.BEFORE_PICTURE_JOB, "scene_place": own.pk}
@@ -1573,6 +1605,26 @@ def _refuse_what_breaks_the_rules(fixing: AgentFix, asked: FilmAgain, scene: Sce
         raise Refused("showing or hiding the face changes the picture: draw a new one.")
     if asked.broll_kind != "does a job" and asked.result.strip():
         raise Refused('only a "does a job" scene has a result.')
+    _refuse_what_misses_the_place(fixing, asked, scene)
+
+
+def _refuse_what_misses_the_place(fixing: AgentFix, asked: FilmAgain, scene: Scene) -> None:
+    """Refuse a try that wouldn't be filmed in the scene's own newest place (#237): one whose
+    face needs the other picture of it, or one keeping a start picture drawn before it."""
+    newest = work.newest_own_place(scene)
+    if newest is None:
+        return
+    drawn = work.drawn_for(asked.person_shown)
+    if work.own_place(scene, drawn) is None:
+        raise Refused(
+            f"the scene's newest place is its own {PLACE_NAMES[_drawn_as(newest)]}, and this "
+            f"try needs its {PLACE_NAMES[drawn]}: call place_edit with picture {drawn} first."
+        )
+    if not asked.new_picture and newest.pk > _current(fixing)[0].pk:
+        raise Refused(
+            "the scene's place changed after its start picture was drawn: draw a new start "
+            "picture, so the try is filmed in its new place."
+        )
 
 
 # A move code refuses (references the library doesn't hold, a rule broken) comes back as the

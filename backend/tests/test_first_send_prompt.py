@@ -50,7 +50,7 @@ def write(job: Job) -> str:
 
 def a_job(colours: dict[int, str] | None = None) -> Job:
     """A job whose library holds the fixture's 14 items, each red unless `colours` says."""
-    job = Job.objects.create(product_url="https://shop.example/press")
+    job = Job.objects.create(product_url="https://shop.example/press", person_gender="woman")
     for number in range(1, 15):
         colour = (colours or {}).get(number, "red")
         label = PictureLabel(

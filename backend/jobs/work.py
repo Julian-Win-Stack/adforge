@@ -2499,10 +2499,31 @@ def drawn_for(person_shown: str) -> Drawn:
 
 def scene_place(scene: Scene, person_shown: str) -> tuple[Drawn, ProducedItem | None]:
     """The drawn picture (tier 3) a clip of `scene` showing `person_shown` is sent: the
-    scene's own, when the fixing agent's place_edit made one for it (#237), else the ad's;
-    None when the ad has none yet."""
+    scene's own, when the fixing agent's place_edit made one for it (#237) and it is of the
+    scene's newest place, else the ad's; None when the ad has none yet. The fixing agent's
+    try whose scene's newest place has no such picture is refused before anything is sent."""
     drawn = drawn_for(person_shown)
-    return drawn, _place_of(scene, drawn)
+    return drawn, own_place(scene, drawn) or latest(scene.job, _AD_PLACE[drawn])
+
+
+def newest_own_place(scene: Scene) -> ProducedItem | None:
+    """The newest picture place_edit made for `scene`, of either kind."""
+    return scene.produced.filter(kind__in=_SCENE_PLACE.values()).order_by("id").last()
+
+
+def own_place(scene: Scene, drawn: Drawn) -> ProducedItem | None:
+    """The scene's own `drawn` picture of its newest place: the newest place_edit made, or,
+    for the room, the room the newest presenter picture was drawn in. None when the scene
+    has no place of its own, or its newest place has no `drawn` picture."""
+    newest = newest_own_place(scene)
+    if newest is None:
+        return None
+    if newest.kind == _SCENE_PLACE[drawn]:
+        return newest
+    made_from = newest.made_from
+    if drawn == "room" and made_from is not None and made_from.kind == _SCENE_PLACE["room"]:
+        return made_from
+    return None
 
 
 def _place_of(scene: Scene, drawn: Drawn) -> ProducedItem | None:
@@ -2512,6 +2533,10 @@ def _place_of(scene: Scene, drawn: Drawn) -> ProducedItem | None:
 
 class NoPlaceYet(Exception):
     """A scene's place can't be edited: the ad has no such picture yet."""
+
+
+class NoPresenterYet(Exception):
+    """The presenter can't be drawn in a scene's new place: the ad has no portrait yet."""
 
 
 def edit_scene_place(scene: Scene, drawn: Drawn, edit: str) -> ProducedItem:
@@ -2533,6 +2558,9 @@ def new_scene_place(scene: Scene, drawn: Drawn, place: str) -> list[ProducedItem
     drawn (PERSON_IN_ROOM_PROMPT): for that scene only. Gives back what was made, the
     picture asked for last. Run again, it pays for nothing already paid for."""
     job = scene.job
+    portrait = latest(job, ProducedItem.Kind.PORTRAIT)
+    if drawn == "person_in_room" and portrait is None:
+        raise NoPresenterYet()
     prompt = SCENE_NEW_PLACE_PROMPT.format(place=place.strip())
     paid_for = _paid_calls(job, "draw_scene_room").filter(handoff={"prompt": prompt}).last()
     file = (
@@ -2543,9 +2571,7 @@ def new_scene_place(scene: Scene, drawn: Drawn, place: str) -> list[ProducedItem
     room = _kept_place(scene, ProducedItem.Kind.SCENE_ROOM, file, made_from=None, prompt=prompt)
     if drawn == "room":
         return [room]
-    portrait = latest(job, ProducedItem.Kind.PORTRAIT)
-    if portrait is None:
-        raise NoPlaceYet(drawn)
+    assert portrait is not None
     pictures = [portrait.file, room.file]
     person = _edited_once(job, "make_scene_person_in_room", PERSON_IN_ROOM_PROMPT, pictures)
     return [
