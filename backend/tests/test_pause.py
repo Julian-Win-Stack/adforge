@@ -105,6 +105,12 @@ def test_pause_cancels_the_queued_steps_keeps_the_running_one_and_starts_nothing
     assert "Scene 3 closes on the price." in cancelled
     assert "scene 1's starting picture" not in cancelled
     assert "scene 1's starting picture" in running
+    # The note is all it is told of them: no cancelled step comes as a step result of its own.
+    assert [
+        each["text"]
+        for each in given_to_the_producer(producer_turns() - 1)
+        if each["kind"] == "step_finished" and not each["text"].startswith(SYSTEM_NOTE)
+    ] == []
     # Every scene tool answers paused, and starts nothing.
     assert (
         ToolCall.objects.filter(tool="make_starting_picture")
