@@ -19,11 +19,12 @@ fail.
 Clips need no script either: each one asked for is made at once, a real tiny clip that
 speaks the audio a talking clip was asked for, or, for a B-roll clip, is silent for exactly
 the seconds asked for, so ffmpeg can cut and join it: set `clips_short_by` to make B-roll
-ones shorter. What each B-roll clip was sent is kept in `broll_clips_asked`. The fake makes
-talking clips and B-roll ones alike, and its clip scripts are keyed "make_clip" and
-"collect_clip" whichever purpose asked: {"state": "working"} for
-"collect_clip" to have a clip still being made when asked, {"state": "failed", "error": ...}
-to have it fail, or an error for "make_clip" or "collect_clip"."""
+ones shorter. What each B-roll clip was sent, pieces of video and all, is kept in
+`broll_clips_asked`. The fake makes talking clips and B-roll ones alike, and its clip
+scripts are keyed "make_clip" and "collect_clip" whichever purpose asked:
+{"state": "working"} for "collect_clip" to have a clip still being made when asked,
+{"state": "failed", "error": ...} to have it fail, or an error for "make_clip" or
+"collect_clip"."""
 
 import functools
 import io
@@ -42,6 +43,7 @@ from pydantic import BaseModel, ValidationError
 
 from .types import (
     ClipStatus,
+    LoadedPiece,
     ModelReply,
     ModelRequest,
     Picture,
@@ -117,7 +119,8 @@ class FakeModel:
         # and its motion prompt.
         self.clips_asked: list[tuple[float, bool, str]] = []
         # What each B-roll clip was sent, in turn: its starting picture or example pictures,
-        # its seconds and its prompt.
+        # its reference videos (each piece's file, the seconds of its page video it holds and
+        # any trim), its seconds and its prompt.
         self.broll_clips_asked: list[dict[str, Any]] = []
         # How much shorter than asked each silent clip is made, as a real model's may be.
         self.clips_short_by = 0.0
@@ -289,6 +292,7 @@ class FakeModel:
         example_pictures: Sequence[bytes],
         seconds: int,
         prompt: str,
+        reference_videos: Sequence[LoadedPiece] = (),
     ) -> str:
         self._fail_if_scripted("make_clip")
         self.clips_submitted.append(f"video-{len(self.clips_submitted) + 1}")
@@ -296,6 +300,16 @@ class FakeModel:
             {
                 "starting_picture": starting_picture,
                 "example_pictures": list(example_pictures),
+                "reference_videos": [
+                    {
+                        "file": sent.data,
+                        "start": sent.piece.start,
+                        "end": sent.piece.end,
+                        "seconds": sent.piece.seconds,
+                        "trim": sent.piece.trim,
+                    }
+                    for sent in reference_videos
+                ],
                 "seconds": seconds,
                 "prompt": prompt,
             }

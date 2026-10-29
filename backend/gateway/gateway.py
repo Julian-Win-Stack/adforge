@@ -42,6 +42,7 @@ from .types import (
     Image,
     Judgement,
     LoadedImage,
+    LoadedPiece,
     LoadedVideo,
     ModelProvider,
     ModelRequest,
@@ -51,6 +52,7 @@ from .types import (
     PictureEditHandoff,
     PictureProvider,
     PortraitHandoff,
+    ReferenceVideo,
     SpeechHandoff,
     ToolRequest,
     ToolSpec,
@@ -602,6 +604,7 @@ def submit_broll_clip(
     example_picture_keys: Sequence[str],
     seconds: int,
     prompt: str,
+    reference_videos: Sequence[ReferenceVideo] = (),
 ) -> str:
     """Ask for a B-roll clip, with no sound, of `seconds` whole seconds as `prompt` says:
     from a starting picture, its first frame, or from example pictures, never both, each given
@@ -610,6 +613,7 @@ def submit_broll_clip(
     handoff = BrollClipHandoff(
         starting_picture=starting_picture_key,
         example_pictures=list(example_picture_keys),
+        reference_videos=list(reference_videos),
         seconds=seconds,
         prompt=prompt,
     )
@@ -624,13 +628,20 @@ def submit_broll_clip(
             example_pictures=[file_store.read(key) for key in handoff.example_pictures],
             seconds=handoff.seconds,
             prompt=handoff.prompt,
+            reference_videos=[
+                LoadedPiece(data=file_store.read(piece.file), media_type="video/mp4", piece=piece)
+                for piece in handoff.reference_videos
+            ],
         )
+        # Each second of reference video sent costs what a second made does (spec #210,
+        # Further Notes: 0.4 credits a second).
+        sent = sum(piece.seconds for piece in handoff.reference_videos)
         return _Made(
             result=video_id,
             output={"video_id": video_id},
             bill=_Bill(
                 video_seconds=handoff.seconds,
-                cost_usd=catalog.video_cost_usd(model, handoff.seconds),
+                cost_usd=catalog.video_cost_usd(model, handoff.seconds + sent),
             ),
         )
 
@@ -830,6 +841,7 @@ def _files_given(handoff: Handoff, images: list[dict[str, str]] | None) -> list[
         given += (
             [handoff.starting_picture] if handoff.starting_picture else handoff.example_pictures
         )
+        given += [piece.file for piece in handoff.reference_videos]
     return given
 
 
