@@ -19,7 +19,7 @@ from gateway.gateway import charged_to
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, UnusableReply
 from jobs import owner_answers, owner_parts, stale
-from jobs.models import FixCheck, Job, ProducedItem, Scene, SceneStep
+from jobs.models import AgentFix, FixCheck, Job, ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
 from jobs.picture_check import PictureKeptFailing
 from jobs.work import (
@@ -49,7 +49,6 @@ from .loop import (
     BLOCKED,
     EXPECTED_FAILURES,
     Asks,
-    RunStopped,
     ToolAnswer,
     why_it_failed,
     why_it_failed_plainly,
@@ -85,8 +84,6 @@ def run_producer(session_id: str) -> None:
     except BlockedBySafetyFilter:
         why = BLOCKED
         try_again = ""
-    except RunStopped as error:
-        why = str(error)
     except UnusableReply as error:
         why = f"my AI model's answer couldn't be used ({error})"
     except OutsideServiceDown as error:
@@ -563,14 +560,15 @@ def run_scene_step(step_id: int) -> None:
             step.save(update_fields=["status", "reason", "finished_at"])
             run_plan.agent_gave_up(step, gave_up.reason)
     except PictureKeptFailing as error:
-        # It stops the whole run. The chat is shown why in the same transaction, so a step
-        # run again after a crash never shows it twice.
+        # An answer, never a stop (spec #247 point 8): the chat is shown every picture and why
+        # each failed, in the same transaction, so a step run again after a crash never shows
+        # it twice, and the producer is told its ways on.
         tracing.flush()
         with transaction.atomic():
             if not _still_running(step):
                 return
             say_the_pictures_kept_failing(step.scene.job, error)
-            _stop(step, str(error))
+            _fail(step, f"{error}.", None, _pictures_ways_on(step))
             _told_it_ended(step)
     except Asks as asks:
         # The step's work needs one answer before it can make anything: its question goes
@@ -700,18 +698,75 @@ def _told_it_ended(step: SceneStep) -> None:
         run_plan.carry_on_scene(step.scene)
 
 
-def _fail(step: SceneStep, reason: str, plainly: str) -> None:
-    """Mark the step failed for `reason`, word what the producer is told, and tell the chat
-    nothing was made and why, `plainly`."""
+# The producer's tool that makes each kind of scene step.
+STEP_TOOLS = {
+    SceneStep.Kind.STARTING_PICTURE: "make_starting_picture",
+    SceneStep.Kind.LINE_AUDIO: "make_line_audio",
+    SceneStep.Kind.TRANSCRIPT: "transcribe_line_audio",
+    SceneStep.Kind.CLIP: "make_clip",
+}
+
+
+def _fail(step: SceneStep, reason: str, plainly: str | None, ways_on: str = "") -> None:
+    """End the step failed for `reason` with what the producer is told as a tool's can't is
+    (spec #247 point 8): why, then its ways on from here, `ways_on`, and those of a clip the
+    step kept before it ended; and tell the chat in red nothing was made and why, `plainly`,
+    unless the chat was already told (None). The run never stops on it."""
     step.status = SceneStep.Status.FAILED
     step.reason = reason
     step.result = (
         f"Background step failed: {_step_name(step)} couldn't be made: {reason} "
-        "Tell the shop owner what went wrong."
+        f"{ways_on}{_kept_clips_ways_on(step)}Tell the shop owner what went wrong."
     )
     step.finished_at = timezone.now()
     step.save(update_fields=["status", "reason", "result", "finished_at"])
-    step_signals.say_not_made(step, plainly)
+    if plainly is not None:
+        step_signals.say_not_made(step, plainly)
+
+
+def _kept_clips_ways_on(step: SceneStep) -> str:
+    """For a clip step that kept its clip before it ended, with no fixing agent on it (as when
+    the worker stopped while the judge looked at it): that it can be kept or made again, as a
+    sentence to follow another. Blank otherwise."""
+    if step.kind != SceneStep.Kind.CLIP or AgentFix.objects.filter(step=step).exists():
+        return ""
+    clip = step.produced.filter(kind=ProducedItem.Kind.CLIP).order_by("id").first()
+    if clip is None:
+        return ""
+    number = step.scene.number
+    return (
+        f"Its clip (version {clip.version}) was made before the step ended, but scene {number} "
+        f"isn't finished with it: keep it with keep_try for scene {number}, try 0, or make a "
+        "new one with make_clip. "
+    )
+
+
+def _ended_partway_ways_on(step: SceneStep) -> str:
+    """The ways on from a step whose work stopped partway and can't be carried on, as a dead
+    worker's (spec #247 point 8): start it again, or skip it, as a sentence to follow another."""
+    number = step.scene.number
+    # Only a clip made for the scene as it stands can be kept: a stale one can't be assembled.
+    current = stale.current_clip(Scene.objects.get(pk=step.scene_id))
+    skip = (
+        f"scene {number} keeps the clip it has"
+        if current is not None
+        else f"remove scene {number} with remove_scene, and the ad is made without it"
+    )
+    return (
+        f"Start it again with {STEP_TOOLS[SceneStep.Kind(step.kind)]} for scene {number}, or "
+        f"skip it: {skip}. "
+    )
+
+
+def _pictures_ways_on(step: SceneStep) -> str:
+    """The ways on from a starting picture that failed its check every time it was drawn (spec
+    #247 point 8), as a sentence to follow another: the chat showed each picture."""
+    other = "the person talking" if step.scene.shows else "show the product instead"
+    return (
+        "The chat showed the shop owner every picture drawn and what the check found in each. "
+        "Change the picture with make_starting_picture and a note saying what to change, or "
+        f"make the scene {other} with edit_scene. "
+    )
 
 
 def _ask_back(step: SceneStep, question: str) -> None:
@@ -726,19 +781,6 @@ def _ask_back(step: SceneStep, question: str) -> None:
     step.finished_at = timezone.now()
     step.save(update_fields=["status", "reason", "result", "finished_at"])
     step_signals.say_waits_on_a_question(step)
-
-
-def _stop(step: SceneStep, reason: str) -> None:
-    """Mark the step stopped for `reason`, stopping the run with it: the producer takes no
-    turn until the user speaks again (see loop.RunStopped)."""
-    step.status = SceneStep.Status.STOPPED
-    step.reason = reason
-    step.result = (
-        f"Background step stopped the run: {_step_name(step)} couldn't be made: {reason}. "
-        "The chat showed the shop owner why."
-    )
-    step.finished_at = timezone.now()
-    step.save(update_fields=["status", "reason", "result", "finished_at"])
 
 
 @shared_task
@@ -769,7 +811,7 @@ def _end_stopped(
                 # Before the step fails, so its scene is as the fixing agent's give-up
                 # leaves it.
                 end_the_agents_fixing(step)
-                _fail(step, reason, "it was stopped partway.")
+                _fail(step, reason, "it was stopped partway.", _ended_partway_ways_on(step))
                 if tell is not None:
                     tell(step)
         except Exception:
@@ -778,7 +820,7 @@ def _end_stopped(
                 with transaction.atomic():
                     if not _still_running(step):
                         continue
-                    _fail(step, reason, "it was stopped partway.")
+                    _fail(step, reason, "it was stopped partway.", _ended_partway_ways_on(step))
                     post_notice(
                         step.scene.job,
                         f"{_step_name(step).capitalize()} stopped partway, and the fixing "

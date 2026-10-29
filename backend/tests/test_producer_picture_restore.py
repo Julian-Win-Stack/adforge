@@ -184,10 +184,11 @@ def test_bringing_back_an_earlier_picture_still_needs_the_shop_owners_yes(
     assert status(SCENE) == "finished"
 
 
-def test_the_producer_cant_go_back_to_a_picture_on_a_scene_with_a_clip(
+def test_the_producer_brings_back_a_picture_on_a_scene_with_a_clip_for_nothing(
     fake_model: FakeModel, say: Callable[..., None], higher_then_slower: None
 ) -> None:
-    # Bringing a picture back changes the ad, so it is the shop owner's note's, planned.
+    # Nothing locks once a scene has a clip (spec #247 point 5): the picture already made for
+    # the line with no note is handed back, free, and the scene waits for a clip made from it.
     fake_model.respond(
         "produce",
         turn(calls=[("make_starting_picture", {"scene": SCENE, "note": None})]),
@@ -195,12 +196,13 @@ def test_the_producer_cant_go_back_to_a_picture_on_a_scene_with_a_clip(
     )
     say("Make scene 3's picture again")
 
-    assert results_of("make_starting_picture")[-1] == (
-        "Refused: scene 3 already has a clip, so it changes only through the shop owner's "
-        "notes: the app shows them a plan and makes it once they say yes. Nothing was done."
+    assert results_of("make_starting_picture")[-1].startswith(
+        "Scene 3's starting picture was already made for this line with no note (version 1), "
+        "so it is the scene's starting picture again, as version 4, and nothing was made or "
+        "paid for again."
     )
-    assert versions("starting_picture") == [1, 2, 3]
-    assert status(SCENE) == "finished"
+    assert versions("starting_picture") == [1, 2, 3, 4]
+    assert status(SCENE) == "planned"
 
 
 def test_no_picture_is_brought_back_while_the_scenes_clip_is_being_made(

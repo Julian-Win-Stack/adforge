@@ -31,6 +31,7 @@ from .conftest import (
     not_a_fix,
     paid_for,
     producer_turns,
+    results_of,
 )
 from .fixing import fixed
 from .test_fix_wiring import decided, planning, plans, row, tap_yes
@@ -582,3 +583,38 @@ def test_a_tap_on_a_give_up_said_to_camera_before_shows_the_product_again(
     scene = Scene.objects.get(number=2)
     assert (scene.shows, scene.broll_kind) == (SHOWS, "showcase")
     assert current_clip(2).file == try_1.file
+
+
+# --- The producer keeps a try: keep_try (spec #247 point 5, ticket #259) -------------------------
+
+
+def test_the_producer_keeps_a_try_for_nothing_and_assembles_the_ad(
+    failed_ad: ProducedItem, fake_model: FakeModel, say: Callable[..., None]
+) -> None:
+    _, try_1, _ = tries()
+    paid = paid_for()
+
+    calling(fake_model, say, ("keep_try", {"scene": 2, "try_number": 1}))
+
+    (answer,) = results_of("keep_try")
+    assert answer.startswith(
+        "Scene 2's try 1 is in the ad now, as v4 back to v2: nothing was made or paid for. The "
+        "ad was assembled again with it"
+    )
+    assert current_clip(2).file == try_1.file
+    assert paid_for() == paid
+    (ad,) = [made for made in ads() if made != failed_ad]
+    assert [cut["clip"] for cut in ad.cuts if cut["scene"] == 2] == [current_clip(2).pk]
+
+    # The one in the ad, a try that isn't there and a scene with no tries are refused.
+    calling(fake_model, say, ("keep_try", {"scene": 2, "try_number": 1}))
+    calling(fake_model, say, ("keep_try", {"scene": 2, "try_number": 5}))
+    calling(fake_model, say, ("keep_try", {"scene": 1, "try_number": 1}))
+    assert results_of("keep_try")[1:] == [
+        f"Refused: {work.TRY_IN_THE_AD} Nothing was done.",
+        "Refused: scene 2's tries are its first clip, try 1 and try 2, not 5. Nothing was done.",
+        "Refused: scene 1 has no tries to pick from: there are tries only of a clip the clip "
+        "judge failed and the fixing agent filmed again. Use use_version for its versions. "
+        "Nothing was done.",
+    ]
+    assert len(ads()) == 2

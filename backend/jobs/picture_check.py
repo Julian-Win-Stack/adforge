@@ -95,8 +95,9 @@ class StartingPictureCheckHandoff(Handoff):
 
 
 class PictureKeptFailing(Exception):
-    """A B-roll scene's starting picture failed its check every time it was drawn, so the run
-    stops. Holds each picture drawn, oldest first, with what the judge found in it."""
+    """A B-roll scene's starting picture failed its check every time it was drawn, so its step
+    fails, answering the producer with its ways on. Holds each picture drawn, oldest first,
+    with what the judge found in it."""
 
     def __init__(self, scene: int, failed: list[tuple[str, list[str]]]) -> None:
         self.scene = scene
