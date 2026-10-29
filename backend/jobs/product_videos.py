@@ -5,6 +5,7 @@ with its first frame, frames spread over it, its length and the frames it is thi
 player's thumbnail as its first frame. What a file says is written down as its transcript.
 The video reader (video_reader) reads them for the planner."""
 
+import functools
 import logging
 import mimetypes
 import re
@@ -21,6 +22,7 @@ from adforge import file_store
 from adforge.retry import OutsideServiceDown
 from chat.models import Message
 from gateway.gateway import IMAGE_TYPES, transcribe
+from gateway.types import LEAST_PIECE_SECONDS, MOST_PIECE_SECONDS, PieceTrim, ReferenceVideo
 from jobs import page, video_frames
 from jobs.models import Job, ProductVideo
 from jobs.notices import post_notice
@@ -317,3 +319,141 @@ def _sound(file: Path, wav: Path) -> None:
     )
     if ran.returncode != 0:
         raise RuntimeError(f"ffmpeg failed: {ran.stderr.decode(errors='replace')[-2000:]}")
+
+
+@dataclass(frozen=True)
+class PieceWanted:
+    """A piece of a page video to send as a reference video: the video by its key in the
+    file store, and the seconds of it wanted, as the watcher gave a moment's."""
+
+    video: str
+    start: float
+    end: float
+
+
+@dataclass(frozen=True)
+class LeftOutPiece:
+    """A piece wanted that isn't sent, and why."""
+
+    wanted: PieceWanted
+    reason: str
+
+
+@dataclass(frozen=True)
+class PiecesCut:
+    """The pieces cut, in the order wanted, ready to send; and those left out."""
+
+    sent: list[ReferenceVideo]
+    left_out: list[LeftOutPiece]
+
+
+def cut_pieces(wanted: Sequence[PieceWanted]) -> PiecesCut:
+    """Cut each piece wanted from its page video with ffmpeg, as its own file kept beside
+    the video, ready to send to the B-roll video model as a reference video. Never sped up.
+    A piece cut once is found again rather than cut twice, so a clip asked for again is
+    sent the very same file."""
+    sent: list[ReferenceVideo] = []
+    left_out = []
+    room = float(MOST_PIECE_SECONDS)
+    for piece in wanted:
+        if len(sent) == settings.BROLL_MOST_PIECES:
+            most = settings.BROLL_MOST_PIECES
+            left_out.append(
+                LeftOutPiece(piece, f"a clip is sent at most {most} of the pieces wanted")
+            )
+            continue
+        if room < LEAST_PIECE_SECONDS:
+            left_out.append(
+                LeftOutPiece(
+                    piece,
+                    f"the pieces before it fill the {MOST_PIECE_SECONDS} seconds of video a "
+                    "clip is sent",
+                )
+            )
+            continue
+        start, end = piece.start, piece.end
+        trim: PieceTrim | None = None
+        # A moment can run past its video's end, as seconds counted to the second can: the
+        # piece holds, and says, only the seconds there are.
+        length = _length_of(piece.video)
+        if end > length:
+            trim, end = "video_ended", length
+        if end - start < LEAST_PIECE_SECONDS:
+            left_out.append(LeftOutPiece(piece, _too_short(start, end)))
+            continue
+        # The backstop: a moment longer than the video model takes is cut to its first
+        # seconds, and pieces longer than it takes in all have the last cut to fit; either
+        # way the piece says so.
+        if end - start > room:
+            trim = "moment_over_limit" if room == MOST_PIECE_SECONDS else "pieces_over_limit"
+            end = start + room
+        room -= end - start
+        file = file_store.save_once(
+            _piece_name(piece.video, start, end),
+            functools.partial(_cut, piece.video, start, end),
+            whole=_is_video,
+        )
+        sent.append(ReferenceVideo(file=file, video=piece.video, start=start, end=end, trim=trim))
+    return PiecesCut(sent=sent, left_out=left_out)
+
+
+def _too_short(start: float, end: float) -> str:
+    """Why a moment holding fewer seconds of video than the video model takes isn't sent.
+    Not approved yet: it is left out rather than widened past its own seconds, which the
+    sent list never holds."""
+    return (
+        f"it holds {max(0.0, end - start):g} s of video, and the video model takes pieces of "
+        f"at least {LEAST_PIECE_SECONDS} s"
+    )
+
+
+def _length_of(video: str) -> float:
+    """How many seconds long the video kept as `video` is. Raises RuntimeError for one
+    ffprobe can't read."""
+    with tempfile.TemporaryDirectory() as folder:
+        file = Path(folder) / "video"
+        file.write_bytes(file_store.read(video))
+        length = _duration(file)
+    if length is None:
+        raise RuntimeError(f"ffprobe couldn't read the length of the page video {video}")
+    return length
+
+
+def _piece_name(video: str, start: float, end: float) -> str:
+    """Where the piece of `video` from `start` to `end` is kept: beside the video, named by
+    its seconds."""
+    return f"{Path(video).with_suffix('')}-piece-{start:g}-{end:g}.mp4"
+
+
+def _cut(video: str, start: float, end: float) -> bytes:
+    """The seconds from `start` to `end` of the video kept as `video`, as an MP4 of the
+    picture only: a piece shows how the product moves, and the clip made from it has no
+    sound of its own."""
+    with tempfile.TemporaryDirectory() as folder:
+        file = Path(folder) / "video"
+        file.write_bytes(file_store.read(video))
+        piece = Path(folder) / "piece.mp4"
+        ran = subprocess.run(
+            [settings.FFMPEG, "-nostdin", "-hide_banner", "-loglevel", "error"]
+            + ["-ss", f"{start:g}", *_READ_ONLY_THE_FILE, "-i", str(file)]
+            + ["-t", f"{end - start:g}"]
+            + ["-an", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p"]
+            + ["-movflags", "+faststart", str(piece)],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            timeout=_TIMEOUT_SECONDS,
+        )
+        if ran.returncode != 0 or not piece.is_file():
+            raise RuntimeError(f"ffmpeg failed: {ran.stderr.decode(errors='replace')[-2000:]}")
+        # Never a file that holds no video, sent and paid for as if it did.
+        if _duration(piece) is None:
+            raise RuntimeError(f"ffmpeg cut {start:g}-{end:g} s of {video} into no video")
+        return piece.read_bytes()
+
+
+def _is_video(content: bytes) -> bool:
+    """Whether `content` is a whole video ffprobe can read the length of."""
+    with tempfile.TemporaryDirectory() as folder:
+        file = Path(folder) / "video.mp4"
+        file.write_bytes(content)
+        return _duration(file) is not None

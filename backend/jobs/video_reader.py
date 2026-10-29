@@ -14,13 +14,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from adforge import file_store
 from chat.models import Message
-from gateway.gateway import call_model
+from gateway.gateway import call_model, past_the_safety_filter
 from gateway.types import (
     Image,
 )
 from jobs import picker_grids
 from jobs.models import Job, ProductVideo
-from jobs.notices import post_notice
+from jobs.notices import left_out_by_the_filter, post_notice
 from jobs.planning import PLAN_INSTRUCTIONS, PlanHandoff
 from jobs.work import plan_handoff
 
@@ -137,42 +137,67 @@ def _read(job: Job, video: ProductVideo, page_text: str) -> dict[str, Any]:
     shown = photos[:MOST_PHOTOS]
     frames = video.frames_picked[:MOST_FRAMES]
     grids = _grids(job, video, frames)
-    images = [Image(label=f"Photo {photo.position}", key=photo.file) for photo in shown] + grids
-    if len(images) > MOST_PICTURES:
-        raise ValueError(f"the video reader would be shown {len(images)} pictures")
+    # What each picture is named by in the chat, and the seconds of the frames each grid shows.
+    named = {
+        Image(label=f"Photo {photo.position}", key=photo.file): f"photo {photo.position}"
+        for photo in shown
+    }
+    named.update((grid, f"its frames at {', '.join(seconds)}") for grid, seconds in grids)
+    if len(named) > MOST_PICTURES:
+        raise ValueError(f"the video reader would be shown {len(named)} pictures")
     handoff = plan_handoff(job, page_text, len(photos))
-    answer = call_model(
-        job=job,
-        purpose="read_video",
-        instructions=INSTRUCTIONS,
-        handoff=VideoReadHandoff(**dict(handoff), transcript=video.transcript),
-        output=VideoRead,
-        images=images,
-        pay_once=True,
+    answer, left_out = past_the_safety_filter(
+        lambda images: call_model(
+            job=job,
+            purpose="read_video",
+            instructions=INSTRUCTIONS,
+            handoff=VideoReadHandoff(**dict(handoff), transcript=video.transcript),
+            output=VideoRead,
+            images=images,
+            pay_once=True,
+        ),
+        list(named),
     )
-    return on_shown_frames(answer, {second_label(frame["second"]) for frame in frames})
+    if left_out:
+        post_notice(
+            job,
+            left_out_by_the_filter(
+                [named[image] for image in left_out],
+                f"your product's video {video.position} was read",
+            ),
+            Message.Level.PROBLEM,
+        )
+    shown_seconds = {
+        second for grid, seconds in grids if grid not in left_out for second in seconds
+    }
+    return on_shown_frames(answer, shown_seconds)
 
 
-def _grids(job: Job, video: ProductVideo, frames: list[dict[str, Any]]) -> list[Image]:
+def _grids(
+    job: Job, video: ProductVideo, frames: list[dict[str, Any]]
+) -> list[tuple[Image, list[str]]]:
     """The video's picked frames in grids, each frame labelled with its second, each grid
     kept under a name its content gives: the same frames give the same grid, so a call
-    asked again matches the one paid for."""
+    asked again matches the one paid for. Each grid comes with its frames' seconds."""
     per_grid = GRID_ACROSS * GRID_ACROSS
     tiles = [(second_label(frame["second"]), file_store.read(frame["key"])) for frame in frames]
     count = (len(tiles) + per_grid - 1) // per_grid
-    grids: list[Image] = []
+    grids: list[tuple[Image, list[str]]] = []
     for number, start in enumerate(range(0, len(tiles), per_grid), 1):
         part = tiles[start : start + per_grid]
         content = picker_grids.grid(part, GRID_ACROSS, TILE_SIDE)
         named_by = hashlib.sha256(content).hexdigest()[:16]
         name = f"jobs/{job.pk}/videos/{video.position}-grid-{named_by}.jpg"
         key = file_store.save_once(name, functools.partial(bytes, content), whole=content.__eq__)
-        labels = ", ".join(label for label, _ in part)
+        seconds = [label for label, _ in part]
         grids.append(
-            Image(
-                label=f"{GRID_KIND}, grid {number} of {count}: {labels} "
-                "(each labelled in its black bar)",
-                key=key,
+            (
+                Image(
+                    label=f"{GRID_KIND}, grid {number} of {count}: {', '.join(seconds)} "
+                    "(each labelled in its black bar)",
+                    key=key,
+                ),
+                seconds,
             )
         )
     return grids

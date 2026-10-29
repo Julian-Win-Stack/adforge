@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from rest_framework.test import APIClient
 
 from adforge.file_store import read
 from agents import tasks
@@ -39,6 +40,7 @@ from .conftest import (
     silences,
     video,
 )
+from .test_safety_filter_split import refusals, refused_over
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -359,6 +361,36 @@ def test_a_scene_with_no_face_sends_the_image_maker_the_main_photo_alone(ready: 
         Job.objects.get().photos.get(position=1).file,
         before_picture_file(),
     ]
+
+
+def test_a_photo_the_safety_filter_refuses_is_left_out_of_the_pictures_planning(
+    api: APIClient,
+    session_id: str,
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    job = Job.objects.get()
+    calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": None}))
+    # Shown one photo, it isn't asked which: it answers no photo.
+    choice = {key: value for key, value in BROLL_CHOICE.items() if key != "photo"}
+    fake_model.answer_unscripted("choose_broll_picture", refused_over("Photo 1", choice))
+    run(fake_model, steps)
+
+    # Asked again without the last photo, then without photo 1, never without the
+    # before-picture; nor is it told photo 1 shows the ad's colour once it can't see it.
+    planned = ModelCall.objects.filter(purpose="choose_broll_picture").order_by("created_at")
+    assert [[image["label"] for image in call.images] for call in planned] == [
+        ["Photo 1", "Photo 2", "The before-picture"],
+        ["Photo 1", "The before-picture"],
+        ["Photo 2", "The before-picture"],
+    ]
+    assert planned.last().handoff["colour_photos"] == []  # type: ignore[union-attr]
+    (asked,) = handoffs("make_starting_picture")
+    assert asked["pictures"] == [job.photos.get(position=2).file, before_picture_file()]
+    ((level, said),) = refusals(api, session_id)
+    assert level == "problem" and "photo 1" in said and "scene 2" in said
 
 
 @pytest.fixture

@@ -32,6 +32,7 @@ from pydantic import (
     model_validator,
 )
 
+from gateway.types import MOST_PIECE_SECONDS, PieceTrim
 from jobs.models import Job, LibraryItem, ProducedItem, ProductVideo
 
 logger = logging.getLogger(__name__)
@@ -63,16 +64,18 @@ Side = Annotated[Literal["front", "back", "side", "top", "none"], Fixed]
 Alone = Annotated[Literal["yes", "no"], Fixed]
 KINDS, SIDES, ALONE = (get_args(get_args(fixed)[0]) for fixed in (Kind, Side, Alone))
 
-# The video API's limits on one clip's call (#210 point 13).
+# The video API's limits on one clip's call (#210 point 13). Its limit on pieces is the
+# gateway's, where the call is checked.
 VIDEO_API_MOST_PICTURES = 9
-VIDEO_API_MOST_PIECE_SECONDS = 15
+VIDEO_API_MOST_PIECE_SECONDS = MOST_PIECE_SECONDS
 
 # The sent list's fixed values (#210 points 11, 13, 14, 8). Not approved yet: the planner's
 # `for` values (audit item 11).
 For = Annotated[Literal["content", "result", "in-use", "place", "person", "state"], Fixed]
 Tier = Annotated[Literal[1, 2, 3, 4], Fixed]
 Drawn = Annotated[Literal["person_in_room", "room"], Fixed]
-Trim = Annotated[Literal["moment_over_limit", "pieces_over_limit"], Fixed]
+# Owned by the gateway, where a piece is handed to the video API with its trim.
+Trim = Annotated[PieceTrim, Fixed]
 RecolourOutcome = Annotated[Literal["done", "fell_back"], Fixed]
 
 
@@ -305,7 +308,8 @@ class SentPiece(_Shape):
     trim: Trim | None = Field(
         description="moment_over_limit: the moment ran past the video API's limit and was cut "
         "to its first seconds; pieces_over_limit: the pieces ran past it together and the last "
-        "was cut to fit. None for the moment's own seconds."
+        "was cut to fit; video_ended: the moment ran past its video's end and was cut there. "
+        "None for the moment's own seconds."
     )
     file: Key = Field(description="Key of the cut piece in the file store.")
 

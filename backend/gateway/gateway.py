@@ -30,6 +30,7 @@ from . import catalog
 from .models import ModelCall
 from .types import (
     AgentProvider,
+    BlockedBySafetyFilter,
     BrollClipHandoff,
     BrollClipProvider,
     ClipCollectHandoff,
@@ -42,6 +43,7 @@ from .types import (
     Image,
     Judgement,
     LoadedImage,
+    LoadedPiece,
     LoadedVideo,
     ModelProvider,
     ModelRequest,
@@ -51,6 +53,7 @@ from .types import (
     PictureEditHandoff,
     PictureProvider,
     PortraitHandoff,
+    ReferenceVideo,
     SpeechHandoff,
     ToolRequest,
     ToolSpec,
@@ -366,6 +369,39 @@ def call_model[Out: BaseModel](
     )
 
 
+def past_the_safety_filter[Answer](
+    ask: Callable[[list[Image]], Answer],
+    images: Sequence[Image],
+    *,
+    may_leave_out: Callable[[Image], bool] = lambda _: True,
+    fewest_kept: int = 0,
+) -> tuple[Answer, list[Image]]:
+    """`ask`'s answer shown `images`, and the pictures left out to get it (requirement 22). A
+    model's safety filter refuses a whole call over one picture it objects to, often wrongly,
+    so when it refuses, the pictures `may_leave_out` allows are left out one at a time, last
+    first, then all together, and the first answer had is given back. A try that would keep
+    fewer than `fewest_kept` of those pictures isn't made. `ask` is handed the pictures to
+    show, in their order, and builds the rest of the call from them. Raises the filter's
+    BlockedBySafetyFilter when every try is refused."""
+    images = list(images)
+    try:
+        return ask(images), []
+    except BlockedBySafetyFilter as error:
+        refused = error
+    droppable = [image for image in images if may_leave_out(image)]
+    tries = [[image] for image in reversed(droppable)]
+    if len(droppable) > 1:
+        tries.append(droppable)
+    for left in tries:
+        if len(droppable) - len(left) < fewest_kept:
+            continue
+        try:
+            return ask([image for image in images if image not in left]), left
+        except BlockedBySafetyFilter as error:
+            refused = error
+    raise refused
+
+
 def watch_video[Out: BaseModel](
     *,
     job: Job | None,
@@ -638,6 +674,7 @@ def submit_broll_clip(
     example_picture_keys: Sequence[str],
     seconds: int,
     prompt: str,
+    reference_videos: Sequence[ReferenceVideo] = (),
 ) -> str:
     """Ask for a B-roll clip, with no sound, of `seconds` whole seconds as `prompt` says:
     from a starting picture, its first frame, or from example pictures, never both, each given
@@ -646,6 +683,7 @@ def submit_broll_clip(
     handoff = BrollClipHandoff(
         starting_picture=starting_picture_key,
         example_pictures=list(example_picture_keys),
+        reference_videos=list(reference_videos),
         seconds=seconds,
         prompt=prompt,
     )
@@ -660,13 +698,20 @@ def submit_broll_clip(
             example_pictures=[file_store.read(key) for key in handoff.example_pictures],
             seconds=handoff.seconds,
             prompt=handoff.prompt,
+            reference_videos=[
+                LoadedPiece(data=file_store.read(piece.file), media_type="video/mp4", piece=piece)
+                for piece in handoff.reference_videos
+            ],
         )
+        # Each second of reference video sent costs what a second made does (spec #210,
+        # Further Notes: 0.4 credits a second).
+        sent = sum(piece.seconds for piece in handoff.reference_videos)
         return _Made(
             result=video_id,
             output={"video_id": video_id},
             bill=_Bill(
                 video_seconds=handoff.seconds,
-                cost_usd=catalog.video_cost_usd(model, handoff.seconds),
+                cost_usd=catalog.video_cost_usd(model, handoff.seconds + sent),
             ),
         )
 
@@ -866,6 +911,7 @@ def _files_given(handoff: Handoff, images: list[dict[str, str]] | None) -> list[
         given += (
             [handoff.starting_picture] if handoff.starting_picture else handoff.example_pictures
         )
+        given += [piece.file for piece in handoff.reference_videos]
     return given
 
 
