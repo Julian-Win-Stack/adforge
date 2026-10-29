@@ -12,13 +12,17 @@ from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel
 from gateway.types import BlockedBySafetyFilter, ModelRequest
-from jobs.models import Job, SceneStep
+from jobs.models import Job, ProducedItem, SceneStep
 
+from .agent_tries import agent_films
 from .conftest import CLIP_MOTION_OK, CLIP_SIDES_OK, PICTURE_OK, HeldSteps, motion_answer
 from .test_producer_broll import (
     BROLL_CHOICE,
+    calling,
     checked,  # noqa: F401 (a fixture)
+    made_ready,
     picture_of_scene_2,
+    run,
 )
 from .test_producer_clip_judge import clip_of, ruling
 from .test_safety_filter_split import labels_shown, refusals
@@ -155,3 +159,35 @@ def test_a_picture_the_checks_filter_refuses_to_look_at_is_kept_unchecked_and_th
     assert step.status == "finished"
     ((level, said),) = refusals(api, session_id)
     assert level == "problem" and "scene 2's starting picture" in said and "unchecked" in said
+
+
+def test_a_clip_the_filter_refuses_to_look_at_but_the_other_check_fails_isnt_said_to_be_kept(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def a_frame(label: str) -> bool:
+        return label.startswith("Frames from the clip")
+
+    fake_model.answer_unscripted("check_clip_sides", refusing(a_frame, lambda _: CLIP_SIDES_OK))
+    fails = {"verdict": "fail", "problem": "The mug floats.", "back_to_normal_at": "never"}
+    fake_model.respond("check_clip_motion", {**CLIP_MOTION_OK, "real_motion": fails})
+    agent = agent_films(monkeypatch, "The mug stays on the table.")
+
+    made_ready(fake_model, steps, say, (2,))
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    run(fake_model, steps)
+    clip = ProducedItem.objects.get(kind="clip", scene__number=2, version=1)
+
+    # MOTION failed it, so the fixing agent films it again: the chat isn't told it stays.
+    # (The try, refused the same way and passed by MOTION, is said to be kept.)
+    assert ruling(clip)["verdict"] == "fail"
+    assert [door for _, door, _, _ in agent.handed] == ["judge"]
+    (level, said), (_, about_the_try) = refusals(api, session_id)
+    assert "check it yourself" in about_the_try
+    assert level == "problem" and "scene 2's clip" in said
+    assert "kept" not in said and "check it yourself" not in said

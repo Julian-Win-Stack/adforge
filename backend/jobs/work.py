@@ -2247,6 +2247,7 @@ def clean_picture(scene: Scene, row: ReferencePhoto) -> str:
                     row.file,
                     about=f"the shop owner's {row.thing}",
                     named=f"the clean picture of the shop owner's {row.thing}",
+                    photo_named=f"the shop owner's photo of their {row.thing}",
                 )
                 if settings.QUALITY_CHECKS
                 else []
@@ -2547,6 +2548,7 @@ def judge_starting_picture(
     *,
     about: str,
     named: str = "",
+    photo_named: str = "the shop photo",
     owner_part: owner_parts.OwnerPart | None = None,
 ) -> list[str]:
     """What is wrong with the starting picture at `picture`, from a judge shown the picture,
@@ -2559,7 +2561,8 @@ def judge_starting_picture(
 
     A shop photo the safety filter refuses is left out, and the picture judged without it;
     the chat is told in red, naming the picture as `named` does (its starting picture, by
-    `about`, unless told). A job of None, as in an eval, has no chat."""
+    `about`, unless told) and the photo as `photo_named` does. A job of None, as in an eval,
+    has no chat."""
     named = named or f"{about}'s starting picture"
     shop_photo = Image(label="The shop photo:", key=photo)
     passes = 0
@@ -2604,7 +2607,7 @@ def judge_starting_picture(
             assert verdict.problem is not None, "a failing answer says why"
             problems.append(verdict.problem)
     if job is not None and left_out:
-        post_left_out_by_the_filter(job, ["the shop photo"], f"{named} was checked")
+        post_left_out_by_the_filter(job, [photo_named], f"{named} was checked")
     if job is not None and refused:
         post_refused_by_the_filter(
             job,
@@ -2659,7 +2662,7 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
         settled = fix_check.settle(
             lambda ask: _ask_about_the_fix(job, fix, ask, old.file, made.file, refused)
         )
-        _say_what_the_filter_refused(fix, refused)
+        _say_what_the_filter_refused(fix, refused, settled.verdict)
     else:
         settled = _the_clip_judges_answer(made)
     return FixCheck.objects.create(
@@ -2819,9 +2822,12 @@ def _fix_question(
     )
 
 
-def _say_what_the_filter_refused(fix: Fix, refused: _FilterRefused) -> None:
+def _say_what_the_filter_refused(
+    fix: Fix, refused: _FilterRefused, verdict: fix_check.Verdict
+) -> None:
     """Tell the chat in red of every picture the safety filter refused while `fix` was
-    checked."""
+    checked, and, when it refused the pictures checked, whether that left the fix
+    unchecked, its `verdict`."""
     number = fix.scene.number
     if refused.left_out:
         post_left_out_by_the_filter(
@@ -2830,8 +2836,10 @@ def _say_what_the_filter_refused(fix: Fix, refused: _FilterRefused) -> None:
     if refused.refused:
         post_refused_by_the_filter(
             fix.job,
-            f"scene {number}'s new starting picture",
-            "some of the checks of your change couldn't be made",
+            f"scene {number}'s old or new starting picture",
+            "your change couldn't be checked in it"
+            if verdict == "unchecked"
+            else "some of the checks of your change couldn't be made",
         )
 
 
