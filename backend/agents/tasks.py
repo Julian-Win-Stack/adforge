@@ -42,7 +42,15 @@ from jobs.work import (
 )
 
 from . import loop, page_panel, routing, run_plan, step_signals
-from .loop import BLOCKED, EXPECTED_FAILURES, RunStopped, why_it_failed, why_it_failed_plainly
+from .loop import (
+    BLOCKED,
+    EXPECTED_FAILURES,
+    Asks,
+    RunStopped,
+    ToolAnswer,
+    why_it_failed,
+    why_it_failed_plainly,
+)
 from .money import dollars
 from .producer import PRODUCER, STEP_NAMES
 
@@ -542,6 +550,15 @@ def run_scene_step(step_id: int) -> None:
             say_the_pictures_kept_failing(step.scene.job, error)
             _stop(step, str(error))
             _told_it_ended(step)
+    except Asks as asks:
+        # The step's work needs one answer before it can make anything: its question goes
+        # back to whoever started it as the step's answer, not as a failure (spec #247 point 6).
+        tracing.flush()
+        with transaction.atomic():
+            if not _still_running(step):
+                return
+            _ask_back(step, str(asks))
+            _told_it_ended(step)
     # Whatever stops the step, it isn't left running: the producer is told why.
     except Exception as error:
         if not isinstance(error, EXPECTED_FAILURES):
@@ -674,6 +691,20 @@ def _fail(step: SceneStep, reason: str, plainly: str) -> None:
     step.finished_at = timezone.now()
     step.save(update_fields=["status", "reason", "result", "finished_at"])
     step_signals.say_not_made(step, plainly)
+
+
+def _ask_back(step: SceneStep, question: str) -> None:
+    """End the step with nothing made, its work having asked `question`: the producer is
+    given the question as the step's answer, and the chat shows the step waits on it."""
+    step.status = SceneStep.Status.FAILED
+    step.reason = f"it asked: {question}"
+    step.result = (
+        f"Background step asked before making anything: {_step_name(step)} wasn't made. "
+        f"{ToolAnswer.question(question).text}"
+    )
+    step.finished_at = timezone.now()
+    step.save(update_fields=["status", "reason", "result", "finished_at"])
+    step_signals.say_waits_on_a_question(step)
 
 
 def _stop(step: SceneStep, reason: str) -> None:

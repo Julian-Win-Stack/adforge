@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("jobs", "0071_owner_part_approved_by_message"),
+        ("jobs", "0072_scene_step_cancelled"),
     ]
 
     operations = [

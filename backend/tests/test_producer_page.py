@@ -270,7 +270,7 @@ def test_a_link_that_cant_be_read_says_why_and_pays_for_nothing(
     say(f"Make an ad for {link}")
 
     assert read_page_result() == (
-        f"The page couldn't be read: {why.format(url=link)} {PASTE_IN_THE_PANEL}"
+        f"Failed: the page couldn't be read: {why.format(url=link)} {PASTE_IN_THE_PANEL}"
     )
     assert len(httpserver.log) == requests_made
     assert paid_for() == []
@@ -291,7 +291,8 @@ def test_a_link_to_a_website_that_doesnt_exist_is_looked_up_once_and_not_read(
     say(f"Make an ad for {link}")
 
     assert read_page_result() == (
-        "The page couldn't be read: shopp.example doesn't exist, so the link can't be opened. "
+        "Failed: the page couldn't be read: shopp.example doesn't exist, so the link can't be "
+        "opened. "
         f"Check it for typos. {PASTE_IN_THE_PANEL}"
     )
     assert dns.lookups == ["shopp.example"]
@@ -317,7 +318,8 @@ def test_a_link_that_redirects_to_a_private_network_address_is_not_followed(
     say(f"Make an ad for {link}")
 
     assert read_page_result() == (
-        f"The page couldn't be read: {admin_url} leads to a private network address, which is "
+        f"Failed: the page couldn't be read: {admin_url} leads to a private network address, "
+        "which is "
         f"never fetched. {PASTE_IN_THE_PANEL}"
     )
     assert [request.path for request, _ in httpserver.log] == ["/old-mug"]
@@ -654,7 +656,7 @@ def test_a_page_the_shop_answers_firecrawl_404_for_cant_be_read_and_isnt_downloa
     say(f"Make an ad for {shampoo_page_url}")
 
     assert read_page_result() == (
-        f"The page couldn't be read: {shampoo_page_url} answered 404 Not Found, so trying "
+        f"Failed: the page couldn't be read: {shampoo_page_url} answered 404 Not Found, so trying "
         f"again won't help. {PASTE_IN_THE_PANEL}"
     )
     assert "/products/detox-shampoo" not in [request.path for request, _ in httpserver.log]
@@ -719,7 +721,8 @@ def test_a_private_address_is_refused_before_firecrawl_is_asked(
     say(f"Make an ad for {shampoo_page_url}")
 
     assert read_page_result() == (
-        f"The page couldn't be read: {shampoo_page_url} leads to a private network address, "
+        f"Failed: the page couldn't be read: {shampoo_page_url} leads to a private network "
+        "address, "
         f"which is never fetched. {PASTE_IN_THE_PANEL}"
     )
     assert firecrawl.requests == []
