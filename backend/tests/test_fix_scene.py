@@ -26,7 +26,7 @@ from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 
 from .conftest import CLIP_FIXED, HeldSteps, picture
 from .test_fixing_agent import POURS, STIRS, film_again
-from .test_pick_from_tries import tap_use
+from .test_pick_from_tries import use_on_card
 from .test_producer_auto_fix import FLOATS, failing
 from .test_producer_broll import (  # noqa: F401 (fixtures)
     assemble_through_the_chat,
@@ -190,14 +190,14 @@ def test_a_fix_whose_tries_run_out_keeps_its_last_try_and_shows_every_try_to_swa
     assert "Scene 2's fix ended with no try passing (2 tries)" in told
     assert "the last try is in the ad" in told
 
-    # The tap reaches the producer as the shop owner's message: it keeps that try.
-    fake_model.respond(
-        "produce",
-        turn(calls=[("keep_try", {"scene": 2, "try_number": 1})]),
-        turn(says="Swapped."),
+    # The shop owner swaps the first try in from the scene's card, for nothing.
+    number = next(
+        version.number
+        for version in work.versions(Scene.objects.get(number=2))
+        if version.clip == first
     )
-    tapped = tap_use(api, session_id, first)
-    assert tapped.status_code == 201, tapped.json()
+    tapped = use_on_card(api, session_id, fake_model, number)
+    assert tapped.status_code == 200, tapped.json()
     assert work.versions(Scene.objects.get(number=2))[-1].clip.file == first.file  # type: ignore[union-attr]
 
 

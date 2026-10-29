@@ -253,7 +253,7 @@ def test_a_swap_withdraws_the_fixing_agents_open_question_about_the_scene(
     OwnerQuestion.objects.create(
         scene=Scene.objects.get(number=2),
         agent_fix=AgentFix.objects.get(),
-        tool_call=ToolCall.objects.order_by("id").first(),
+        tool_call=ToolCall.objects.order_by("id")[0],
         question="Have you a video of the mug standing still?",
         wants=OwnerQuestion.Wants.VIDEO,
     )
