@@ -31,7 +31,7 @@ from jobs import (
     stale,
 )
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
-from jobs.library import library_of, watch_of
+from jobs.library import library_of
 from jobs.library_items import add_kept_photos, add_product_only_versions, library_line
 from jobs.made_pictures import PictureNotMade, make_picture
 from jobs.models import (
@@ -47,7 +47,15 @@ from jobs.models import (
     SceneStep,
 )
 from jobs.notices import post_notice
-from jobs.planning import BrollKind, Part, PersonShown, ScenePicture, ScenePiece
+from jobs.planning import (
+    BrollKind,
+    Part,
+    PersonShown,
+    ScenePicture,
+    ScenePiece,
+    pictures_missing,
+    piece_missing,
+)
 from jobs.product_videos import save_videos
 from jobs.reference_photos import ReferencePhotoUnusable
 from jobs.watcher import watch_videos
@@ -65,6 +73,7 @@ from jobs.work import (
     fetch_page,
     keep_page,
     latest,
+    moments_by_video,
     music_mood,
     music_prompt,
     music_seconds,
@@ -980,13 +989,15 @@ def _already_made_picture(call: ToolCall, scene: Scene, made: SceneStep) -> str:
     )
 
 
-def _no_clip_being_made(scene: Scene) -> None:
-    """Refuse a new starting picture while the scene's clip is being made: that clip, of the
-    picture before, would finish the scene once the new picture had un-finished it (#133)."""
+def _no_clip_being_made(scene: Scene, then: str = "make its starting picture again then") -> None:
+    """Refuse what changes a clip's inputs while the scene's clip is being made, such as a new
+    starting picture or new references: that clip, made from what came before, would finish
+    the scene once the change had un-finished it (#133). `then` says what to do once it's
+    ready."""
     if scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING).exists():
         raise Refused(
             f"scene {scene.number}'s clip is still being made. You'll be told when it's "
-            "ready; make its starting picture again then."
+            f"ready; {then}."
         )
 
 
@@ -1426,9 +1437,9 @@ class SetReferences(Tool):
     its video piece by video and moment number; and the library items never sent for this
     scene, whichever tier would take them. Code still sends the product's front photo as
     Image 1, then your pictures, then the drawn picture of the place, then the product's
-    other sides, at most 9 pictures in all: the answer says what the next clip is sent and
-    what is left out. A new list makes the scene's clip out of date; nothing is remade until
-    you make its clip again. Null keeps what the scene has."""
+    other sides, as many pictures in all as the video model takes: the answer says what the
+    next clip is sent and what is left out. A new list makes the scene's clip out of date;
+    nothing is remade until you make its clip again. Null keeps what the scene has."""
 
     name = "set_references"
 
@@ -1457,7 +1468,7 @@ class SetReferences(Tool):
                 f"scene {scene.number} is said to camera: its clip is sent no pictures from "
                 "the library."
             )
-        job = scene.job
+        _no_clip_being_made(scene, then="set its references then")
         pictures = (
             [ScenePicture.model_validate(picture) for picture in scene.scene_pictures]
             if self.pictures is None
@@ -1473,12 +1484,13 @@ class SetReferences(Tool):
             else ScenePiece.model_validate(scene.piece)
         )
         exclude = list(scene.excluded) if self.exclude is None else self.exclude
-        _refuse_unknown_references(job, pictures, piece, exclude)
+        _refuse_unknown_references(scene, pictures, piece, exclude)
         hard_list.refuse_part_picture_elsewhere(scene, [picture.number for picture in pictures])
         wanted = {
             "scene_pictures": [picture.model_dump(by_alias=True) for picture in pictures],
             "piece": None if piece is None else piece.model_dump(),
-            "excluded": list(dict.fromkeys(exclude)),
+            # A set: the same items in another order are the same list.
+            "excluded": sorted(set(exclude)),
         }
         changed = [field for field, value in wanted.items() if getattr(scene, field) != value]
         if changed:
@@ -1496,21 +1508,17 @@ class SetReferences(Tool):
 
 
 def _refuse_unknown_references(
-    job: Job, pictures: list[ScenePicture], piece: ScenePiece | None, exclude: list[int]
+    scene: Scene, pictures: list[ScenePicture], piece: ScenePiece | None, exclude: list[int]
 ) -> None:
     """Refuse references the ad doesn't have, or that contradict each other, before anything
-    is kept."""
+    is kept: the planner's own checks of a plan's pictures and moment."""
+    job = scene.job
     numbers = [item.number for item in library_of(job)]
-    unknown = [
-        number
-        for number in [*(picture.number for picture in pictures), *exclude]
-        if number not in numbers
-    ]
-    if unknown:
-        raise Refused(
-            f"the ad's picture library has no item {listed_numbers(sorted(set(unknown)))}: its "
-            + (f"items are 1 to {len(numbers)}." if numbers else "library is empty.")
-        )
+    missing = pictures_missing([*(picture.number for picture in pictures), *exclude], numbers) or (
+        piece_missing(scene.number, piece, moments_by_video(job))
+    )
+    if missing is not None:
+        raise Refused(missing)
     named = [picture.number for picture in pictures]
     twice = sorted({number for number in named if named.count(number) > 1})
     if twice:
@@ -1519,18 +1527,9 @@ def _refuse_unknown_references(
     both = [n for n in named if scene_references.original_number(job, n) in originals]
     if both:
         raise Refused(
-            f"library item {listed_numbers(both)} is both a scene picture and excluded: "
-            "a picture is sent or excluded, not both."
+            f"library item {listed_numbers(both)} is both a scene picture and excluded "
+            "(or a version of one that is): a picture is sent or excluded, not both."
         )
-    if piece is not None:
-        video = job.videos.filter(position=piece.video).first()
-        watch = None if video is None else watch_of(video)
-        if watch is None or not watch.moments:
-            raise Refused(f"the ad has no watched video {piece.video} with moments.")
-        if not 1 <= piece.moment <= len(watch.moments):
-            raise Refused(
-                f"video {piece.video} has moments 1 to {len(watch.moments)}, not {piece.moment}."
-            )
 
 
 def _references_words(scene: Scene) -> str:
@@ -1563,6 +1562,11 @@ def _next_send_words(scene: Scene) -> str:
         for image, picture in enumerate(going.pictures, start=1)
     )
     told = [f"Its next clip is sent: {images or 'no pictures'}."]
+    if not any(picture.tier == 1 for picture in going.pictures):
+        told.append(
+            "No photo of the product's front or look is left to send as Image 1, so the video "
+            "model sees the product only in the other pictures."
+        )
     drawn, place = scene_place(scene, scene.person_shown)
     if place is None:
         told.append(

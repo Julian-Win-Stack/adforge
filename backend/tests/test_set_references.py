@@ -16,6 +16,7 @@ from agents.models import ToolCall
 from gateway.fake import FakeModel
 from jobs import cut_and_send, stale
 from jobs.cut_and_send import Excluded
+from jobs.library import PictureLabel, ProductOnly, add_to_library, library_of
 from jobs.models import Job, Scene, SceneStep
 
 from .conftest import HeldSteps, results_of
@@ -90,6 +91,8 @@ def problems() -> list[str]:
 def test_a_picture_set_for_the_scene_goes_in_tier_2_and_an_excluded_side_is_never_sent(
     fake_model: FakeModel, say: Callable[..., None], library: dict[str, int]
 ) -> None:
+    before = problems()
+
     answer = set_references(
         fake_model,
         say,
@@ -97,6 +100,8 @@ def test_a_picture_set_for_the_scene_goes_in_tier_2_and_an_excluded_side_is_neve
         exclude=[library["back"]],
     )
 
+    # Setting references sends nothing, so nothing missing is said to the shop owner yet.
+    assert problems() == before
     scene = scene_2()
     assert scene.scene_pictures == [{"number": library["lid off"], "for": "state"}]
     assert scene.excluded == [library["back"]]
@@ -118,7 +123,9 @@ def test_a_picture_set_for_the_scene_goes_in_tier_2_and_an_excluded_side_is_neve
         (2, library["lid off"]),
         (4, library["side"]),
     ]
-    assert [tier for tier, _, drawn in sent(sending) if drawn is not None] in ([], [3])
+    # The ad's room isn't drawn yet: no tier 3, said in red at the send.
+    assert [drawn for _, _, drawn in sent(sending) if drawn is not None] == []
+    assert any("no picture of the ad's room alone" in text for text in problems())
     assert sending.excluded == [Excluded(library["back"], BACK.label, 4)]
     assert "Not sent, as excluded for scene 2" in cut_answer(2, sending)
 
@@ -167,6 +174,87 @@ def test_excluding_the_front_sends_the_next_front_as_image_1(
     assert [(item.number, item.tier) for item in sending.excluded] == [(1, 1)]
 
 
+def test_excluding_every_front_is_said_in_the_answer(
+    fake_model: FakeModel, say: Callable[..., None], library: dict[str, int]
+) -> None:
+    before = problems()
+
+    # Every look photo: the two fronts, the back, the side and the lid off.
+    answer = set_references(fake_model, say, exclude=[1, 2, *library.values()])
+
+    assert "No photo of the product's front or look is left to send as Image 1" in answer
+    assert problems() == before
+
+
+def a_version_of(original: int, picture: PictureLabel) -> int:
+    """A product-only version of library item `original`, labelled `picture`: gives its
+    number."""
+    job = Job.objects.get()
+    item = next(each for each in library_of(job) if each.number == original)
+    return add_to_library(job, item.file, picture, ProductOnly(of=original)).number
+
+
+def test_excluding_a_version_excludes_its_original(
+    fake_model: FakeModel, say: Callable[..., None], library: dict[str, int]
+) -> None:
+    version = a_version_of(library["side"], green(SIDE))
+
+    set_references(fake_model, say, exclude=[version])
+
+    sending = planned_send()
+    sent_numbers = [number for _, number, _ in sent(sending)]
+    assert library["side"] not in sent_numbers and version not in sent_numbers
+    assert [(item.number, item.tier) for item in sending.excluded] == [(library["side"], 4)]
+
+
+def test_picking_a_version_of_an_excluded_item_is_refused(
+    fake_model: FakeModel, say: Callable[..., None], library: dict[str, int]
+) -> None:
+    version = a_version_of(library["lid off"], LID_OFF)
+
+    answer = set_references(
+        fake_model,
+        say,
+        pictures=[{"number": version, "for": "state"}],
+        exclude=[library["lid off"]],
+    )
+
+    assert answer.startswith(f"Refused: library item {version} is both a scene picture and")
+    assert scene_2().excluded == []
+
+
+def test_references_are_refused_while_the_scenes_clip_is_being_made(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], library: dict[str, int]
+) -> None:
+    made_ready(fake_model, steps, say, (2,))
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+
+    answer = set_references(fake_model, say, exclude=[library["side"]])
+
+    assert answer.startswith(
+        "Refused: scene 2's clip is still being made. You'll be told when it's ready; set its "
+        "references then."
+    )
+    assert scene_2().excluded == []
+    # The clip finishes the scene, which assembles from it as it stands.
+    run(fake_model, steps)
+    assert scene_2().status == Scene.Status.FINISHED
+    assert SceneStep.objects.filter(
+        kind="clip", status="finished", **SceneStep.made_for(scene_2())
+    ).exists()
+
+
+def test_the_exclude_list_is_a_set(
+    fake_model: FakeModel, say: Callable[..., None], library: dict[str, int]
+) -> None:
+    set_references(fake_model, say, exclude=[library["side"], library["back"]])
+
+    answer = set_references(fake_model, say, exclude=[library["back"], library["side"]])
+
+    assert "Nothing changed" in answer
+    assert scene_2().excluded == sorted([library["side"], library["back"]])
+
+
 def test_null_keeps_what_the_scene_has(
     fake_model: FakeModel, say: Callable[..., None], library: dict[str, int]
 ) -> None:
@@ -183,12 +271,12 @@ def test_null_keeps_what_the_scene_has(
     [
         pytest.param(
             {"pictures": [{"number": 40, "for": "state"}]},
-            "Refused: the ad's picture library has no item 40: its items are 1 to 5.",
+            "Refused: There's no picture 40 in the library.",
             id="unknown picture",
         ),
         pytest.param(
             {"exclude": [41]},
-            "Refused: the ad's picture library has no item 41: its items are 1 to 5.",
+            "Refused: There's no picture 41 in the library.",
             id="unknown exclusion",
         ),
         pytest.param(
@@ -203,7 +291,7 @@ def test_null_keeps_what_the_scene_has(
         ),
         pytest.param(
             {"piece": {"video": 1, "moment": 1}},
-            "Refused: the ad has no watched video 1 with moments.",
+            "Refused: Scene 2 names a moment of video 1: that video has no moments.",
             id="no such moment",
         ),
     ],
