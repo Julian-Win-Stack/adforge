@@ -14,7 +14,7 @@ from rest_framework.test import APIClient
 from adforge import file_store
 from agents.models import ToolCall
 from agents.producer import PASTE_IN_THE_PANEL
-from gateway.fake import FakeModel, turn
+from gateway.fake import DEFAULT_WHY, FakeModel, turn
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import Said, StepFinished, TurnHandoff, TurnRequest
@@ -89,7 +89,8 @@ def test_the_producer_reads_the_page_its_given_and_tells_the_user_what_it_found(
         "kind": "tool_use",
         "call_id": checkpoint.call_id,
         "tool": "read_page",
-        "arguments": {"link": product_page_url, "target_seconds": 15},
+        # As the producer made the call, its why too.
+        "arguments": {"link": product_page_url, "target_seconds": 15, "why": DEFAULT_WHY},
         "result": checkpoint.result,
     }
 
@@ -205,8 +206,10 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
     say: Callable[..., None],
 ) -> None:
     arguments = {"link": product_page_url, "target_seconds": 15}
+    # The model writes its why with every call (spec #247 point 7).
+    sent = {**arguments, "why": "Every fact in the ad comes from the shop owner's page."}
     openai_server(
-        openai_turn("I'll read your product page first.", ("call_a1", "read_page", arguments)),
+        openai_turn("I'll read your product page first.", ("call_a1", "read_page", sent)),
         openai_answer(READABLE),
         openai_answer(COPIED),
         openai_answer(NO_FACE),
@@ -251,10 +254,10 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
     assert {(tool["type"], tool["strict"]) for tool in tools.values()} == {("function", True)}
     read_page = tools["read_page"]
     assert read_page["description"].startswith("Start a job for an ad")
-    assert read_page["parameters"]["required"] == ["link", "target_seconds"]
+    assert read_page["parameters"]["required"] == ["link", "target_seconds", "why"]
     # A strict tool's arguments, nested ones too, list every field and allow no others.
     checks = tools["run_planning_checks"]["parameters"]
-    assert checks["required"] == ["line_choices", "length_choice"]
+    assert checks["required"] == ["line_choices", "length_choice", "why"]
     line_choice = checks["$defs"]["LineChoice"]
     assert (line_choice["required"], line_choice["additionalProperties"]) == (
         ["scene", "choice", "own_line"],
@@ -269,7 +272,7 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
             "type": "function_call",
             "call_id": "call_a1",
             "name": "read_page",
-            "arguments": json.dumps(arguments),
+            "arguments": json.dumps(sent),
         },
         {"type": "function_call_output", "call_id": "call_a1", "output": checkpoint.result},
     ]

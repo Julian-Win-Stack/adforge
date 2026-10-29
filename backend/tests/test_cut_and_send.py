@@ -535,18 +535,47 @@ def test_a_page_with_no_look_photo_sends_the_owners_front_or_says_there_is_no_im
     assert len(problems(job)) == 1
 
 
-def test_any_picture_of_another_side_is_tier_4_an_owner_parts_too(fake_model: FakeModel) -> None:
+def test_an_owner_parts_picture_goes_only_to_the_scene_holding_the_part_after_its_picks(
+    fake_model: FakeModel,
+) -> None:
     job = a_job()
     page_photo(job, FRONT)
-    part = file_store.save(f"jobs/{job.pk}/part.png", photo(62))
-    add_to_library(job, part, BACK, OwnerPart(part="the brush's back"))
+    in_use = page_photo(job, IN_USE)
+    file = file_store.save(f"jobs/{job.pk}/part.png", photo(62))
+    part = add_to_library(job, file, BACK, OwnerPart(part="the brush's back"))
+    owner_side = file_store.save(f"jobs/{job.pk}/owner.png", photo(63))
+    add_to_library(job, owner_side, SIDE, OwnerPhoto(original=owner_side))
     the_place(job)
+    holding = a_scene(job, 2)
+    holding.owner_part = {"what": "the brush's back", "source": "invented", "looks": "Flat."}
+    holding.owner_part_picture = job.library.get(number=part.number)
+    holding.owner_part_drawn = {"part": holding.owner_part, "photos": [], "file": file}
+    holding.save()
+    other = a_scene(job, 3)
 
-    sending = cut_and_send.cut_and_send(
-        a_scene(job), person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[]
-    )
+    sent = {
+        scene.number: cut_and_send.cut_and_send(
+            scene,
+            person_shown=Scene.PersonShown.HAS_FACE,
+            picks=[ScenePicture(number=in_use, for_="in-use")],
+            pieces=[],
+        )
+        for scene in (holding, other)
+    }
 
-    assert [(p.tier, p.library_number) for p in sending.pictures] == [(1, 1), (3, None), (4, 2)]
+    assert [(p.tier, p.library_number) for p in sent[2].pictures] == [
+        (1, 1),
+        (2, in_use),
+        (2, part.number),
+        (3, None),
+        (4, 4),
+    ]
+    assert [(p.tier, p.library_number) for p in sent[3].pictures] == [
+        (1, 1),
+        (2, in_use),
+        (3, None),
+        (4, 4),
+    ]
 
 
 @pytest.mark.parametrize(

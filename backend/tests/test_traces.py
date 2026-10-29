@@ -25,7 +25,7 @@ from adforge import file_store, tracing
 from agents.models import ToolCall
 from agents.producer import PRODUCER
 from agents.tasks import restart_dead_producers
-from gateway.fake import FakeModel, turn
+from gateway.fake import DEFAULT_WHY, FakeModel, turn
 from gateway.gateway import VERDICT_SCORES, call_model, submit_broll_clip, watch_video
 from gateway.models import ModelCall, SystemPrompt
 from gateway.types import Handoff, Judgement
@@ -40,6 +40,7 @@ from jobs.clip_judge import (
 from jobs.cut_out import CutOutVerdict
 from jobs.fix_check import FixVerdict, PhotoFixVerdict
 from jobs.models import SceneStep
+from jobs.owner_parts import PartPictureVerdict
 from jobs.picture_check import StartingPictureVerdict
 from jobs.product_videos import PieceWanted, cut_pieces
 
@@ -95,7 +96,10 @@ def test_a_messages_work_is_one_trace_of_turns_the_tools_they_asked_for_and_mode
     assert trace.value("output") == {"said": ["I read your mug's page."]}
     (read_page,) = trace.find(name="read_page")
     # Each side is named, so Langfuse doesn't show them as a chat's "User" and "Assistant".
-    assert read_page.value("input") == {"arguments": {"link": page_read, "target_seconds": None}}
+    assert read_page.value("input") == {
+        "arguments": {"link": page_read, "target_seconds": None},
+        "why": DEFAULT_WHY,
+    }
     assert read_page.value("output") == {"result": results_of("read_page")[0]}
     (check_page,) = trace.find(name="check_page")
     recorded = ModelCall.objects.get(purpose="check_page")
@@ -130,7 +134,7 @@ def test_an_agents_turn_is_shown_with_its_system_prompt_and_the_tools_it_was_off
     assert list(offered) == [tool.name for tool in PRODUCER.tools]
     read_page = offered["read_page"]
     assert read_page["description"].startswith("Start a job for an ad")
-    assert set(read_page["parameters"]["properties"]) == {"link", "target_seconds"}
+    assert set(read_page["parameters"]["properties"]) == {"link", "target_seconds", "why"}
     assert given["handoff"]["conversation"] == [
         {"kind": "said", "by": "user", "text": f"Make an ad for {page_read}"}
     ]
@@ -736,6 +740,7 @@ def test_a_judges_verdict_is_a_score_on_its_call_named_after_what_it_measures(
 JUDGES_ANSWERS: dict[str, list[type[BaseModel]]] = {
     "check_starting_picture": [StartingPictureVerdict],
     "check_cut_out": [CutOutVerdict],
+    "check_part_picture": [PartPictureVerdict],
     "check_fix": [FixVerdict, PhotoFixVerdict],
     "check_clip_sides": [SidesVerdict],
     "check_clip_product": [ProductVerdict],

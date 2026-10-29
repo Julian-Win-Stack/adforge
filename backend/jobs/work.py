@@ -2273,7 +2273,8 @@ def clean_picture(scene: Scene, row: ReferencePhoto) -> str:
     """The clean picture of only `row`'s thing, drawn from the shop owner's photo once per ad
     (see _clean_picture), which joins the job's library as that photo, labelled, the first
     time it is drawn: unless it is a photo of the scene's owner part, whose picture enters
-    the library as the part's (#234). Gives its key in the file store."""
+    the library as the part's own (jobs.owner_parts.draw_part_picture). Gives its key in the
+    file store."""
     drawn = _clean_picture(scene, row)
     part = owner_parts.owner_part(scene)
     if part is None or not reference_photos.same_thing(row.thing, part.what):

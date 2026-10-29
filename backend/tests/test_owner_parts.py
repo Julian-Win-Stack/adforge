@@ -1,18 +1,25 @@
 """The owner part on the scene record (owner-part approval, T0): a part of the product no
 photo shows, drawn from the shop owner's words or invented by the planner, which the shop
-owner approves in the starting picture before the scene's clip is made. The scene keeps it
-and when it was approved; each step snapshots it, as it does the scene's needs. Run on the
-real database: no model is called."""
+owner approves in the part's own picture in the library (spec #210 point 20) before the
+clip of a scene holding it is made. The scene keeps it and when it was approved; each step
+snapshots it, as it does the scene's needs. Run on the real database, the picture model and
+its checks faked at the gateway."""
 
 import pytest
 from django.utils import timezone
 
+from adforge import file_store
 from agents.models import ToolCall
 from chat.models import Session
+from gateway.fake import FakeModel
+from gateway.models import ModelCall
 from jobs import owner_parts
+from jobs.library import PagePhoto, PictureLabel, Recoloured, add_to_library, library_of
 from jobs.models import Job, ProducedItem, ReferencePhoto, Scene, SceneStep
 
-pytestmark = pytest.mark.django_db
+from .conftest import photo
+
+pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("fake_model")]
 
 APPLICATOR = {
     "what": "the applicator",
@@ -33,6 +40,28 @@ def call() -> ToolCall:
         call_id="c0",
         arguments={},
     )
+
+
+@pytest.fixture(autouse=True)
+def with_a_product_photo(call: ToolCall, fake_model: FakeModel) -> None:
+    """The job's library holds the product's photo, which a part's picture is drawn beside."""
+    assert call.job is not None
+    add_to_library(
+        call.job,
+        file_store.save("tint.png", photo(1)),
+        PictureLabel(kind="side", side="front", alone="yes", colour="red", label="The tint."),
+        PagePhoto(photo=1),
+    )
+
+
+def a_part_picture(scene: Scene) -> None:
+    """The scene's owner part's own picture, drawn into the library and shown."""
+    owner_parts.draw_part_picture(scene)
+    scene.refresh_from_db()
+
+
+def drawings() -> int:
+    return ModelCall.objects.filter(purpose="make_part_picture").count()
 
 
 def a_broll_scene(call: ToolCall, number: int = 2, **fields: object) -> Scene:
@@ -136,7 +165,7 @@ def test_a_scene_that_stops_showing_anything_drops_its_owner_part(call: ToolCall
 
 def test_the_owner_part_is_not_approved_until_the_shop_owner_says_yes(call: ToolCall) -> None:
     scene = a_broll_scene(call, owner_part=APPLICATOR)
-    a_picture(scene, call)
+    a_part_picture(scene)
 
     assert not owner_parts.is_approved(scene)
 
@@ -145,48 +174,62 @@ def test_the_owner_part_is_approved_once_the_shop_owner_says_yes_to_the_picture(
     call: ToolCall,
 ) -> None:
     scene = a_broll_scene(call, owner_part=APPLICATOR)
-    a_picture(scene, call)
+    a_part_picture(scene)
 
     owner_parts.approve(scene)
 
     assert owner_parts.is_approved(scene)
 
 
-def test_a_picture_drawn_again_for_the_part_as_approved_keeps_the_yes(call: ToolCall) -> None:
-    # The yes is for the part as the shop owner saw it: a later picture of it, such as a
-    # fix's, isn't asked about again (T4).
+def test_the_yes_needs_the_parts_picture(call: ToolCall) -> None:
     scene = a_broll_scene(call, owner_part=APPLICATOR)
-    a_picture(scene, call, version=1)
+    a_picture(scene, call)
+
+    with pytest.raises(ValueError, match="no picture of its part"):
+        owner_parts.approve(scene)
+    assert not owner_parts.is_approved(scene)
+
+
+def test_the_parts_picture_asked_for_again_as_approved_keeps_the_yes(call: ToolCall) -> None:
+    # The yes is for the part as the shop owner saw it: a later picture of the scene, such as
+    # a fix's, isn't asked about again (T4), and the part isn't drawn again.
+    scene = a_broll_scene(call, owner_part=APPLICATOR)
+    a_part_picture(scene)
     owner_parts.approve(scene)
 
     a_picture(scene, call, version=2)
+    a_part_picture(scene)
 
     assert owner_parts.is_approved(scene)
+    assert drawings() == 1
 
 
 def test_a_picture_drawn_after_the_yes_for_a_changed_part_needs_a_new_yes(
     call: ToolCall,
 ) -> None:
     scene = a_broll_scene(call, owner_part=APPLICATOR)
-    a_picture(scene, call, version=1)
+    a_part_picture(scene)
     owner_parts.approve(scene)
 
     scene.owner_part = {**APPLICATOR, "looks": "A pink foam tip on a short gold stem."}
     scene.save()
-    a_picture(scene, call, version=2)
+    assert not owner_parts.is_approved(scene)
+    a_part_picture(scene)
 
     assert not owner_parts.is_approved(scene)
+    assert drawings() == 2
 
 
 def test_a_picture_drawn_after_the_yes_with_a_new_photo_of_the_part_needs_a_new_yes(
     call: ToolCall,
 ) -> None:
     scene = a_broll_scene(call, owner_part=APPLICATOR)
-    a_picture(scene, call, version=1)
+    a_part_picture(scene)
     owner_parts.approve(scene)
 
     a_photo_of_the_part(scene)
-    a_picture(scene, call, version=2)
+    assert not owner_parts.is_approved(scene)
+    a_part_picture(scene)
 
     assert not owner_parts.is_approved(scene)
 
@@ -203,6 +246,9 @@ def test_a_reference_photo_from_the_owner_parts_answer_has_no_fix(call: ToolCall
 
 
 def a_photo_of_the_part(scene: Scene, file: str = "owner/1.jpg") -> ReferencePhoto:
+    """A photo of the part the shop owner sent, its clean picture drawn and in the store."""
+    if not file_store.exists(f"clean/{file}"):
+        assert file_store.save(f"clean/{file}", photo(len(file))) == f"clean/{file}"
     return ReferencePhoto.objects.create(
         scene=scene,
         file=file,
@@ -234,7 +280,7 @@ def test_the_yes_keeps_the_part_and_its_photos_for_every_scene_that_shows_it(
     a_broll_scene(call, 5, owner_part=lid, usage="Lift the inner lid and dab.")
     a_broll_scene(call, 6, shows="The tint's box on a shelf.", usage="")
     photo = a_photo_of_the_part(approved)
-    a_picture(approved, call)
+    a_part_picture(approved)
 
     owner_parts.approve(approved)
 
@@ -259,7 +305,7 @@ def test_a_photo_already_kept_isnt_copied_again_and_an_older_one_is_set_aside(
     a_photo_of_the_part(approved, "owner/2.jpg")
     kept = a_photo_of_the_part(other, "owner/2.jpg")
     older = a_photo_of_the_part(other, "owner/1.jpg")
-    a_picture(approved, call)
+    a_part_picture(approved)
 
     owner_parts.approve(approved)
 
@@ -277,7 +323,7 @@ def test_a_scene_whose_photo_shows_the_part_isnt_given_it(call: ToolCall) -> Non
         usage="Sweep the applicator along the cheekbone.",
         needs=[{"what": "the applicator", "photos": [2]}],
     )
-    a_picture(approved, call)
+    a_part_picture(approved)
 
     owner_parts.approve(approved)
 
@@ -288,7 +334,7 @@ def test_a_word_that_only_contains_the_parts_name_isnt_it(call: ToolCall) -> Non
     tip = {"what": "the tip", "source": "invented", "looks": "A rounded white tip."}
     approved = a_broll_scene(call, 2, owner_part=tip)
     a_broll_scene(call, 3, usage="Multiple layers build the colour.")
-    a_picture(approved, call)
+    a_part_picture(approved)
 
     owner_parts.approve(approved)
 
@@ -317,15 +363,15 @@ def test_a_correction_on_one_scene_changes_the_part_on_every_scene_showing_it(
 ) -> None:
     two = a_broll_scene(call, 2, owner_part=APPLICATOR)
     three = a_broll_scene(call, 3, owner_part=APPLICATOR)
-    a_picture(two, call)
-    a_picture(three, call)
+    a_part_picture(two)
+    a_part_picture(three)
 
     owner_parts.words_correction(three, PINK)
 
     two.refresh_from_db()
     assert two.owner_part is not None and two.owner_part["looks"] == PINK
     # Scene 2's picture shows the look corrected away: a yes to it can't be kept.
-    with pytest.raises(ValueError, match="no starting picture"):
+    with pytest.raises(ValueError, match="no picture of its part"):
         owner_parts.approve(two)
 
 
@@ -334,7 +380,7 @@ def test_a_correction_after_the_yes_needs_a_new_yes_on_every_scene_showing_the_p
 ) -> None:
     two = a_broll_scene(call, 2, owner_part=APPLICATOR)
     a_broll_scene(call, 3, owner_part=APPLICATOR)
-    a_picture(two, call)
+    a_part_picture(two)
     owner_parts.approve(two)
 
     owner_parts.words_correction(two, PINK)
@@ -353,7 +399,7 @@ def test_the_shop_owners_change_to_their_photo_goes_into_every_later_picture(
     a_photo_of_the_part(two)
     owner_parts.words_correction(two, PINK)
     two.refresh_from_db()
-    a_picture(two, call, version=2)
+    a_part_picture(two)
     owner_parts.approve(two)
 
     three = Scene.objects.get(number=3)
@@ -372,7 +418,7 @@ def test_a_yes_leaves_a_scene_whose_clip_is_made_as_it_is(call: ToolCall) -> Non
     ProducedItem.objects.create(
         job=four.job, scene=four, kind=ProducedItem.Kind.CLIP, version=1, file="s4.mp4"
     )
-    a_picture(two, call)
+    a_part_picture(two)
 
     owner_parts.approve(two)
 
@@ -384,9 +430,9 @@ def test_going_back_to_a_picture_the_shop_owner_corrected_needs_a_new_yes(
     call: ToolCall,
 ) -> None:
     two = a_broll_scene(call, 2, owner_part=APPLICATOR)
-    a_picture(two, call, version=1)
+    a_part_picture(two)
     row = a_photo_of_the_part(two)
-    a_picture(two, call, version=2)
+    a_part_picture(two)
     owner_parts.approve(two)
     assert owner_parts.is_approved(two)
 
@@ -395,3 +441,62 @@ def test_going_back_to_a_picture_the_shop_owner_corrected_needs_a_new_yes(
     row.save()
 
     assert not owner_parts.is_approved(two)
+
+
+def test_a_correction_drops_the_recolours_of_the_old_drawing(call: ToolCall) -> None:
+    two = a_broll_scene(call, 2, owner_part=APPLICATOR)
+    a_part_picture(two)
+    item = owner_parts.part_picture(two)
+    assert item is not None
+    add_to_library(
+        two.job,
+        "recoloured.png",
+        PictureLabel(kind="side", side="side", alone="yes", colour="blue", label="It, blue."),
+        Recoloured(of=item.number, colour="blue"),
+    )
+
+    owner_parts.words_correction(two, PINK)
+    a_part_picture(two)
+
+    assert not [each for each in library_of(two.job) if isinstance(each.source, Recoloured)]
+
+
+def test_a_scene_with_its_clip_made_is_no_longer_approved_once_the_part_is_drawn_again(
+    call: ToolCall,
+) -> None:
+    # Its clip keeps the part as it was; the library no longer holds the picture said yes to.
+    two = a_broll_scene(call, 2, owner_part=APPLICATOR)
+    three = a_broll_scene(call, 3, owner_part=APPLICATOR)
+    a_part_picture(two)
+    owner_parts.approve(two)
+    ProducedItem.objects.create(
+        job=three.job, scene=three, kind=ProducedItem.Kind.CLIP, version=1, file="s3.mp4"
+    )
+
+    owner_parts.words_correction(two, PINK)
+    a_part_picture(Scene.objects.get(number=2))
+
+    three.refresh_from_db()
+    assert three.owner_part == APPLICATOR
+    assert not owner_parts.is_approved(three)
+    assert owner_parts.part_picture(three) is None
+
+
+def test_the_parts_picture_is_kept_as_a_look_picture(call: ToolCall, fake_model: FakeModel) -> None:
+    fake_model.respond(
+        "label_photo",
+        {
+            "kind": "in-use",
+            "side": "none",
+            "alone": "yes",
+            "colour": "white",
+            "target": "",
+            "label": "A soft white tip on a thin clear stem.",
+        },
+    )
+    scene = a_broll_scene(call, owner_part=APPLICATOR)
+
+    a_part_picture(scene)
+
+    item = owner_parts.part_picture(scene)
+    assert item is not None and item.kind == "side"

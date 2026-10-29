@@ -276,14 +276,17 @@ def test_when_the_producers_own_model_fails_the_chat_is_told_why(
     assert chat(api, session_id)[-1] == ("agent", "Sure. What's the link to your product's page?")
 
 
-def test_a_plan_the_safety_filter_blocks_even_without_photos_stops_the_run_and_asks_for_another(
+def test_a_plan_the_safety_filter_blocks_even_without_photos_is_answered_as_a_cant(
     api: APIClient,
     fake_model: FakeModel,
     page_read: str,
     session_id: str,
     say: Callable[..., None],
 ) -> None:
-    fake_model.respond("produce", turn(calls=[("plan_ad", {})]))
+    # A tool the safety filter blocks answers the producer with why, and the run goes on: the
+    # producer takes its next turn and tells the shop owner (spec #247 point 6).
+    told = "The AI service refused to plan from your page. Could you send another link?"
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says=told))
 
     def blocked(_: object) -> dict[str, object]:
         raise BlockedBySafetyFilter("Image processing blocked due to content policy")
@@ -298,13 +301,15 @@ def test_a_plan_the_safety_filter_blocks_even_without_photos_stops_the_run_and_a
         len(call.images) for call in ModelCall.objects.filter(purpose="plan_ad").order_by("id")
     ] == [1, 0]
 
-    assert chat(api, session_id)[-1] == (
-        "agent",
-        "I had to stop: the AI service's safety filter blocked something on this product's "
-        "page, and this version of the app can't handle that yet. Please create a new "
-        "session with a different product.",
+    call = ToolCall.objects.get(tool="plan_ad")
+    assert call.answer == "cant"
+    assert call.result == (
+        "Failed: the AI service's safety filter refused what it was sent (Image processing "
+        "blocked due to content policy). The same request is refused again, so change what is "
+        "asked, or go on without it."
     )
-    assert ToolCall.objects.get(tool="plan_ad").finished
+    assert given_to_the_producer(4)[-1]["result"] == call.result
+    assert chat(api, session_id)[-1] == ("agent", told)
 
 
 # --- The limit on tool calls for each message -----------------------------------------------
@@ -741,19 +746,20 @@ def test_a_link_or_length_that_cant_be_used_is_refused(
 def test_once_a_page_has_been_read_a_link_to_another_page_is_refused(
     fake_model: FakeModel, page_read: str, say: Callable[..., None]
 ) -> None:
-    tracked = f"{page_read}?utm_source=ig"
+    other = page_read.replace("/products/mug", "/products/teapot")
     fake_model.respond(
         "produce",
-        turn(calls=[("read_page", {"link": tracked, "target_seconds": None})]),
-        turn(says="This chat is for your mug. Start a new chat for another ad."),
+        turn(calls=[("read_page", {"link": other, "target_seconds": None})]),
+        turn(says="This ad is for your mug. Start a new ad for that."),
     )
 
-    say(f"Now make one for {tracked}")
+    say(f"Now make one for {other}")
 
     assert results_of("read_page")[1] == (
-        f"Refused: this chat's ad is for {page_read}, whose page has already been read, and "
-        f"{tracked} is a different link. Ads for other products come later: tell the shop "
-        "owner to start a new chat for this one for now. Nothing was done."
+        f"Refused: this ad is for the product at {page_read}, whose page has already been "
+        f"read, and {other} is another product's page. One ad is for one product: tell the "
+        'shop owner "start a new ad for that" in plain words, and go on with this ad. Nothing '
+        "was done."
     )
     assert Job.objects.get().product_url == page_read
     assert paid_for() == [

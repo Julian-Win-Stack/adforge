@@ -20,9 +20,10 @@ from adforge.retry import OutsideServiceDown
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import ModelRequest
+from jobs import work
 from jobs.library import LibraryEntry, OwnerPhoto, PagePhoto, library_of
 from jobs.library_items import MOST_PRODUCT_TEXT, add_kept_photos, add_owner_photo
-from jobs.models import Job, ProductPhoto
+from jobs.models import Job, ProductPhoto, ReferencePhoto, Scene
 from jobs.photos import PICK_INSTRUCTIONS
 from jobs.threads import closing_its_connection
 
@@ -120,6 +121,31 @@ def test_the_first_message_builds_a_library_of_every_page_photo_and_the_owners_p
         target="",
         label="The amber bottle on a bathroom shelf, cap off.",
     )
+
+
+def test_a_thing_from_the_owners_photo_cut_out_already_is_cut_out_on_its_own_for_a_note(
+    fake_model: FakeModel,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    say: Say,
+) -> None:
+    # The photo's product-only version keeps only the product: a thing the product's name
+    # holds, as a rack's towel, is another thing, cut out of the photo on its own.
+    first_message(fake_model, say, labelled_page)
+    Job.objects.update(product_name="Bamboo Towel Rack")
+    job = Job.objects.get()
+    (product_only,) = [item for item in library_of(job) if item.source.came_from == "product_only"]
+    scene = Scene.objects.create(job=job, number=1, line="It dries fast.", shows="It dries.")
+    row = ReferencePhoto.objects.create(
+        scene=scene,
+        file=job.photos.get(position=6).file,
+        thing="the towel",
+        use=ReferencePhoto.Use.PICTURE,
+    )
+
+    drawn = work.clean_picture(scene, row)
+
+    assert ModelCall.objects.filter(purpose="make_reference_photo_picture").count() == 1
+    assert drawn != product_only.file
 
 
 def test_the_labelling_call_is_given_the_pickers_label_rules_and_the_photo(

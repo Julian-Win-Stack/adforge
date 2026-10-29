@@ -13,6 +13,8 @@ LIBRARY_LOCK = 5
 PRODUCT_ONLY_LOCK = 6
 # One library picture recoloured one colour (jobs.recolour): made, checked and added once.
 RECOLOUR_LOCK = 7
+# An owner part's picture (jobs.owner_parts): drawn, labelled and kept once per job at a time.
+PART_PICTURE_LOCK = 8
 
 
 @contextmanager

@@ -6,8 +6,9 @@ clip is sent, the same way every time, before every send. No AI prunes or combin
   a page photo (`image_1`). Tier 2: the picks, the planner's scene pictures in its order or
   the fixing agent's named references, no cap. Tier 3: the drawn picture of the place, the
   presenter in the room or the room alone, the scene's own when it has one
-  (work.scene_place). Tier 4: the other side pictures (back, side, top) in library order,
-  whatever they came from (an owner part's picture too).
+  (work.scene_place). The scene's owner part picture, when it holds one, goes last in tier 2
+  (owner_parts.part_picture), and no other scene is sent it. Tier 4: the other side
+  pictures (back, side, top) in library order, but owner parts'.
   States and pack sizes are in no tier: they go only when picked. The first
   VIDEO_API_MOST_PICTURES are sent; the rest are left out, their tier the reason, so a tier-4
   photo never pushes out a pick. A sender chooses among the library's originals only, and
@@ -32,13 +33,13 @@ recolours made once per picture and colour."""
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from chat.models import Message
 from gateway.types import ReferenceVideo
 
-from . import library_items, library_sheets, work
+from . import library_items, library_sheets, owner_parts, work
 from .first_send import FirstSendScene, drawn_label, write_first_send_prompt
 from .library import (
     VIDEO_API_MOST_PICTURES,
@@ -86,6 +87,18 @@ DRAWN_NAMES: dict[Drawn, str] = {
 
 
 @dataclass(frozen=True)
+class PieceLeftOut:
+    """A moment of a page video wanted for a clip and not sent: its video and moment, the
+    moment's seconds, and why (product_videos.cut_pieces)."""
+
+    video: int
+    moment: int
+    start: float
+    end: float
+    reason: str
+
+
+@dataclass(frozen=True)
 class Sending:
     """What one clip is sent, built by cut-and-send: everything of its SentList but the
     prompt, and the pieces as the video API's handoff takes them."""
@@ -96,6 +109,8 @@ class Sending:
     left_out: list[LeftOut]
     recolours: list[Recolour]
     reference_videos: list[ReferenceVideo]
+    # The pieces wanted and left out, for the clip's answer (agents.hard_list.cut_answer).
+    pieces_left_out: list[PieceLeftOut] = field(default_factory=list)
 
     @property
     def example_pictures(self) -> list[str]:
@@ -168,7 +183,7 @@ def cut_and_send(
     and the moments `pieces` as its pieces: see the module doc."""
     job = scene.job
     originals = library_items.originals(job)
-    sent_pieces, reference_videos, colours = _pieces(scene, pieces)
+    sent_pieces, reference_videos, colours, pieces_left_out = _pieces(scene, pieces)
     ad = ad_colour(job)
     colour = clip_colour(colours, ad)
     taken = _in_tiers(scene, person_shown, originals, picks)
@@ -239,6 +254,7 @@ def cut_and_send(
         left_out=left_out,
         recolours=recolours,
         reference_videos=reference_videos,
+        pieces_left_out=pieces_left_out,
     )
 
 
@@ -328,9 +344,10 @@ def _colour_photos(job: Job, originals: Sequence[LibraryEntry]) -> list[LibraryE
 
 def _pieces(
     scene: Scene, pieces: Sequence[ScenePiece]
-) -> tuple[list[SentPiece], list[ReferenceVideo], list[tuple[str, float]]]:
+) -> tuple[list[SentPiece], list[ReferenceVideo], list[tuple[str, float]], list[PieceLeftOut]]:
     """Each moment of `pieces` cut from its video: the pieces sent, as the record and as the
-    handoff keeps them, and each one's video's colour and seconds. A piece left out is said."""
+    handoff keeps them, each one's video's colour and seconds, and the pieces left out. A
+    piece left out is said."""
     job = scene.job
     named = []
     for piece in pieces:
@@ -349,9 +366,13 @@ def _pieces(
     cuts = iter(cut.sent)
     sent: list[SentPiece] = []
     colours: list[tuple[str, float]] = []
+    left_out: list[PieceLeftOut] = []
     for piece, moment, colour, wanted in named:
         if id(wanted) in left:
             _say_piece_left_out(job, scene, piece, moment.start, moment.end, left[id(wanted)])
+            left_out.append(
+                PieceLeftOut(piece.video, piece.moment, moment.start, moment.end, left[id(wanted)])
+            )
             continue
         made = next(cuts)
         sent.append(
@@ -368,7 +389,7 @@ def _pieces(
             )
         )
         colours.append((colour, made.seconds))
-    return sent, list(cut.sent), colours
+    return sent, list(cut.sent), colours, left_out
 
 
 def _in_tiers(
@@ -400,12 +421,18 @@ def _in_tiers(
         if pick.number not in everything:
             raise ValueError(f"library item {pick.number} isn't in the ad's library")
         take(2, _original_of(everything, everything[pick.number]), pick.for_)
+    # The scene's owner part, as it stands: a picture the scene holds, so a scene picture.
+    if (part := owner_parts.part_picture(scene)) is not None:
+        take(2, _original_of(everything, part))
     drawn, place = work.scene_place(scene, person_shown)
     if place is None:
         _say_no_place(job, scene, drawn)
     else:
         taken.append(_Taken(3, None, None, drawn, None, _drawn_label(job, drawn), place.file))
     for item in originals:
+        # An owner part's picture goes only to the scenes holding the part, as tier 2.
+        if item.source.came_from == "owner_part":
+            continue
         if item.kind == "side" and item.side in OTHER_SIDES:
             take(4, item)
     return taken
