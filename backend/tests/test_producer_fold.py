@@ -181,6 +181,9 @@ def test_a_turn_paid_for_past_the_fold_point_before_the_worker_stopped_isnt_paid
     assert list(
         ToolCall.objects.exclude(fold_line="").order_by("id").values_list("tool", flat=True)
     ) == ["read_page", "plan_ad"]
+    # Folded with the turn kept, so the turn after it was given them folded.
+    (read,) = [each for each in given_to_the_producer(turns + 2) if each.get("tool") == "read_page"]
+    assert read["result"].startswith(call("read_page").fold_line)
 
 
 def snapshot_given(number: int) -> str:
@@ -270,7 +273,7 @@ def test_the_snapshot_reaches_the_model_last_after_the_conversation(
     ]
     # Planned only by the second turn: the last one, after the plan, is given the ad.
     *_, given = turns[-1]["input"]
-    assert given["role"] == "developer"
+    assert given.get("role") == "developer"
     assert given["content"].startswith("From the app, not the shop owner: the ad as it stands")
     assert "Meet the Stoneware Mug from Kiln & Co." in given["content"]
     assert all("ad as it stands" not in json.dumps(each) for each in turns[0]["input"])
