@@ -22,7 +22,7 @@ from django.db.models import Exists, OuterRef
 from django.utils import timezone
 
 from chat.models import Message, Session
-from jobs import reference_photos, work
+from jobs import owner_answers, reference_photos, work
 from jobs.checks import LONGEST_BROLL_LINE_SECONDS, LONGEST_LINE_SECONDS
 from jobs.fix_plans import PlanCant, propose
 from jobs.models import (
@@ -406,6 +406,8 @@ def run_after_yes(plan: FixPlan) -> None:
                 row.fix = _confirmed_fix(plan, row)
             row.save(update_fields=["started_at", "fix"])
             _no_longer_held(row)
+            # The fixing agent's question about the scene is moved past by the change.
+            owner_answers.withdraw(row.scene)
         for row in rows:
             _carry_on(row)
         rows = [FixPlanScene.objects.select_related("scene").get(pk=row.pk) for row in rows]
@@ -546,6 +548,8 @@ def swapped_in(step: SceneStep) -> None:
     held on that step's failed fix check goes ahead with it, as their go ahead; else the ad,
     once there is one and no plan is still landing, is assembled again from it, for
     nothing."""
+    # A try swapped in moves the scene past any question its fixing agent asked about it.
+    owner_answers.withdraw(step.scene)
     row = step.plan_scene
     if row is not None and row in held_on_a_check(Session.objects.get(pk=row.plan.session_id)):
         go_ahead(row)

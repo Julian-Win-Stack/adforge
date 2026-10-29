@@ -196,14 +196,17 @@ def _answer_for(seconds: float) -> type[WatcherAnswer]:
     return WatcherAnswerForThisVideo
 
 
-def watch_videos(job: Job, page_text: str) -> list[str]:
+def watch_videos(
+    job: Job, page_text: str, *, only: Sequence[ProductVideo] | None = None
+) -> list[str]:
     """Watch each of the job's videos with a file that wasn't watched yet, all at once, and
-    keep what was seen. Gives back a line for the producer for each video not watched or
-    that couldn't be."""
+    keep what was seen; `only` these of them, when given. Gives back a line for the producer
+    for each video not watched or that couldn't be."""
+    chosen = None if only is None else {video.pk for video in only}
     waiting = [
         video
         for video in job.videos.exclude(file="").order_by("position")
-        if video.watched is None and not video.thrown_out
+        if video.watched is None and not video.thrown_out and (chosen is None or video.pk in chosen)
     ]
     told: list[str] = []
     to_watch: list[ProductVideo] = []

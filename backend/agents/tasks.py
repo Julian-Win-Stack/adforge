@@ -741,6 +741,11 @@ def _end_stopped(
             with transaction.atomic():
                 if not _still_running(step):
                     continue
+                # A step run again with the shop owner's answer had finished, its clip in
+                # the ad: it runs again from its checkpoints, never failed.
+                if owner_answers.resuming(step):
+                    owner_answers.run_again(step)
+                    continue
                 # Before the step fails, so its scene is as the fixing agent's give-up
                 # leaves it.
                 end_the_agents_fixing(step)
