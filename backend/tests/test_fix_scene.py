@@ -603,6 +603,30 @@ def test_a_fix_carried_on_and_paused_again_before_the_worker_takes_it_is_cancell
     assert fix_step().status == "cancelled"
 
 
+def test_cost_so_far_counts_the_fixing_agents_work_in_its_scene(
+    fake_model: FakeModel,
+    ad: ProducedItem,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    looks_then_fixes(fake_model, say)
+    fake_model.respond("check_clip_motion", fails_the_judge(FLOATS))
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[film_again(video_prompt=STIRS)]),
+        turn(calls=[("give_up", {"reason": "The brush never reads green."})]),
+    )
+    run(fake_model, steps)
+
+    owner_says(
+        fake_model, say, "What has it cost?", turn(calls=[("cost_so_far", {})]), turn(says="$1.")
+    )
+
+    answer = ToolCall.objects.get(tool="cost_so_far").result
+    # The agent's own turns are scene 2's, not left over as the rest.
+    assert "the rest" not in answer, answer
+
+
 def the_pause_note() -> str:
     [note] = SystemNote.objects.filter(kind=SystemNote.Kind.PAUSED)
     return note.text
