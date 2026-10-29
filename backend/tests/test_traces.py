@@ -823,9 +823,12 @@ def test_a_whole_ad_keeps_every_calls_why_lists_them_after_the_first_clip_and_tr
         "Scene 2 shows the mug as planned.",
     )
 
-    # Every tool call keeps its why.
+    # Every tool call the producer's turns made keeps its row and its why.
     calls = ToolCall.objects.filter(agent="producer")
-    assert calls.count() == 18
+    taken = ModelCall.objects.filter(purpose="produce")
+    made = [len((each.output or {})["calls"]) for each in taken]
+    assert calls.count() == sum(made)
+    assert calls.count() > 0
     assert set(calls.exclude(tool="look").values_list("why", flat=True)) == {DEFAULT_WHY}
     assert calls.get(tool="look").why == LOOK_WHY
 

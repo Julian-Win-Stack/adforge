@@ -10,6 +10,7 @@ written with it, so every rebuild of the conversation comes out the same."""
 
 import json
 import logging
+import math
 import re
 from decimal import Decimal
 
@@ -58,12 +59,12 @@ def fold_if_past(session: Session, agent: str, purpose: str) -> list[ToolCall]:
         )
     )
     share: float = settings.FOLD_SHARE_OF_CALLS
-    # The oldest share of the calls still whole fold, but for those whose line is no shorter
-    # than the call given in full, as a call with a one-sentence answer would only grow: they
-    # stay whole. At least one call is looked at while any is whole.
-    oldest = whole[: max(1, int(len(whole) * share))] if whole else []
-    lines = {each.pk: fold_line(each) for each in oldest}
-    folding = [each for each in oldest if _folding_shrinks(each, lines[each.pk])]
+    # The oldest share of the calls that are shorter folded: a call with a one-sentence answer
+    # given as its line would only grow, so it stays whole, and it never holds back a longer
+    # call behind it.
+    lines = {each.pk: fold_line(each) for each in whole}
+    shrinking = [each for each in whole if _folding_shrinks(each, lines[each.pk])]
+    folding = shrinking[: math.ceil(len(shrinking) * share)]
     for each in folding:
         each.fold_line = lines[each.pk]
         each.save(update_fields=["fold_line"])
