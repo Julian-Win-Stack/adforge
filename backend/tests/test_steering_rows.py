@@ -821,6 +821,8 @@ def test_a_photo_whose_clean_picture_keeps_failing_is_said_in_red_and_nothing_is
         "produce",
         *scripted_turns(
             ("add_to_library", {"photos": [{"photo": 1, "shows": LID_ON}], "videos": []}),
+            # Asked again the same: the tries are replayed from their records.
+            ("add_to_library", {"photos": [{"photo": 1, "shows": LID_ON}], "videos": []}),
             "It didn't come out.",
         ),
     )
@@ -829,8 +831,8 @@ def test_a_photo_whose_clean_picture_keeps_failing_is_said_in_red_and_nothing_is
 
     # Drawn once and redrawn twice, each try checked; none kept, the raw photo neither.
     assert len(handoffs("make_reference_photo_picture")) == 3
+    assert [call.answer for call in calls_of("add_to_library")] == ["cant", "cant"]
     call = calls_of("add_to_library")[-1]
-    assert call.answer == "cant"
     assert call.result.startswith("Failed: nothing was added to the library.")
     assert (
         "Owner photo 1: their photo isn't in the library: all 3 tries failed (A hand is still "
@@ -841,7 +843,8 @@ def test_a_photo_whose_clean_picture_keeps_failing_is_said_in_red_and_nothing_is
         "is still in it. The lid is changed. The handle is missing.). It isn't in the ad's "
         "library, so it won't be sent for any scene: send a clearer photo of it."
     )
-    assert ("notice", red) in watched.owner_saw()
+    # Said once, in red, though asked twice.
+    assert watched.owner_saw().count(("notice", red)) == 1
     assert level_of(red) == ["problem"]
     assert len(library_of(Job.objects.get())) == before
     assert LID_ON not in [each.get("shows") for each in handoffs("label_photo")]
