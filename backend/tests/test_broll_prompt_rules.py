@@ -3,6 +3,7 @@ prompt text, kept apart from tests/test_producer_broll.py so they run without a 
 
 import pytest
 
+from jobs.first_send import SPEED_LINE
 from jobs.scenes import (
     BROLL_KIND_RULES,
     BROLL_SHARED_RULES,
@@ -67,8 +68,10 @@ def test_the_model_planning_the_picture_is_given_the_shared_prompt_rules(rule: s
         'A part that "shows" or "usage" says happens while the movement is done, such as '
         "pressing down while turning a cap, is part of that one movement: film it during the "
         "movement, never before it or in the starting picture.",
-        # Code writes the clip's look and length first (broll_video_prompt).
-        "Code starts the video prompt with the clip's length",
+        # Code puts only the speed line first, the same one every clip is sent (spec #210
+        # point 16; #242 review S1: Claude's wording, not approved yet).
+        'Code starts the video prompt with the speed line, "Film this in real-time speed.", so '
+        "never write the speed, and never move the camera or say where or how close it ends.",
     ],
 )
 def test_the_model_writing_the_prompts_is_told_the_proven_rules(rule: str) -> None:
@@ -207,3 +210,10 @@ def test_a_showcase_scene_ends_on_what_it_shows() -> None:
     # The forced ending made pointless zooms (#15, #4): "a lot better" without it.
     assert "at its best" not in showcase
     assert "camera move" not in showcase
+
+
+def test_the_speed_line_the_writer_is_told_of_is_the_one_code_sends() -> None:
+    # A clip made from what it is sent starts with the speed line only (spec #210 point 16):
+    # no length, no still-camera line (#242 review S1).
+    assert f'"{SPEED_LINE}"' in BROLL_SHARED_RULES
+    assert "clip's length" not in BROLL_SHARED_RULES

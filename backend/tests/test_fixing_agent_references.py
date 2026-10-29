@@ -34,12 +34,20 @@ from jobs.library import (
     number_moments,
     sent_list_of,
 )
-from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, ProductVideo, SceneStep
+from jobs.models import (
+    AgentFix,
+    AgentFixTry,
+    Job,
+    ProducedItem,
+    ProductVideo,
+    ReferencePhoto,
+    SceneStep,
+)
 
-from .conftest import HeldSteps, WorkerStopped, picture
+from .conftest import CUT_OUT_OK, LABELLED, HeldSteps, WorkerStopped, picture
 from .sent_lists import piece
 from .test_fixing_agent import film_again
-from .test_producer_auto_fix import clip_of_scene_2
+from .test_producer_auto_fix import clip_of_scene_2, failing
 from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
 from .test_recolour import RECOLOUR_OK
 
@@ -457,3 +465,91 @@ def test_a_reference_the_scene_excludes_is_refused_with_no_clip_or_try(
     assert refused_call.answer == "cant"
     assert [(row.number, row.tool_call_id) for row in AgentFixTry.objects.all()] == [(1, filmed.pk)]
     assert len(fake_model.broll_clips_asked) == asked_before + 1
+
+
+# --- A try starts from the newest clip's sent list (#242, N3) --------------------------------
+
+
+def picks_and_pieces(clip: ProducedItem | None) -> tuple[list[Any], list[Any]]:
+    """The tier 2 picks (original library numbers) and the pieces a clip was sent."""
+    assert clip is not None
+    sent = sent_list_of(clip)
+    assert sent is not None
+    originals = {each.number: each for each in library_of(clip.job)}
+
+    def original(number: int) -> int:
+        source = originals[number].source
+        return int(source.of) if isinstance(source, Recoloured) else number
+
+    picks = [
+        (original(p.library_number), p.for_)
+        for p in sent.pictures
+        if p.tier == 2 and p.library_number is not None
+    ]
+    return picks, [(p.video, p.moment) for p in sent.pieces]
+
+
+def test_a_try_naming_no_references_is_sent_the_newest_tries_not_the_first_clips(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    # Try 1 names references, try 2 names none, try 3 names others: try 2 is sent try 1's
+    # picks and piece, which aren't the failed clip's, and try 3 its own.
+    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[with_references()]),
+        turn(calls=[film_again(video_prompt="A hand pours tea into the mug on the table.")]),
+        turn(calls=[with_references(WHITE_ONLY)]),
+        turn(calls=[("give_up", {"reason": "It keeps floating."})]),
+    )
+    fake_model.respond("check_clip_motion", *[failing("It floats.")] * 3)
+
+    fixed(failed_clip)
+
+    first = failed_clip.produced.filter(kind=ProducedItem.Kind.CLIP).order_by("id").first()
+    one, two, three = [row.clip for row in AgentFixTry.objects.order_by("number")]
+    assert picks_and_pieces(one) == ([(2, "state"), (7, "in-use")], [(1, 1)])
+    assert picks_and_pieces(two) == picks_and_pieces(one) != picks_and_pieces(first)
+    assert picks_and_pieces(three) == ([(3, "state")], [])
+    assert two is not None and str(sent_list_of(two).prompt).endswith(  # type: ignore[union-attr]
+        "A hand pours tea into the mug on the table."
+    )
+
+
+# --- The shop owner's thing goes with every try (#240, #242 review S2) ------------------------
+
+
+def test_the_shop_owners_thing_is_sent_with_a_try_with_references_and_one_without(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
+    fake_model.answer_unscripted("check_cut_out", lambda _: CUT_OUT_OK)
+    fake_model.answer_unscripted("label_photo", lambda _: {**LABELLED, "colour": "white"})
+    job = failed_clip.scene.job
+    mug = ReferencePhoto.objects.create(
+        scene=failed_clip.scene,
+        file=file_store.save("owner-mug.png", picture(60, 80, (20, 20, 20))),
+        thing="black mug",
+        use=ReferencePhoto.Use.CLIP,
+    )
+    failed_clip.reference_photos.add(mug)
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[with_references(WHITE_ONLY)]),
+        turn(calls=[film_again(video_prompt="A hand pours tea into the mug on the table.")]),
+        turn(calls=[("give_up", {"reason": "It keeps floating."})]),
+    )
+    fake_model.respond("check_clip_motion", *[failing("It floats.")] * 2)
+    before = len(fake_model.broll_clips_asked)
+
+    fixed(failed_clip)
+
+    mug.refresh_from_db()
+    assert mug.drawn and mug.drawn != mug.file
+    one, two = fake_model.broll_clips_asked[before:]
+    for asked in (one, two):
+        assert file_store.read(mug.drawn) in asked["example_pictures"]
+        assert file_store.read(mug.file) not in asked["example_pictures"]
+    # Drawn clean once, for both tries.
+    assert ModelCall.objects.filter(purpose="make_reference_photo_picture").count() == 1
+    assert job.library.filter(number__gt=7).exists()

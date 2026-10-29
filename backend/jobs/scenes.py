@@ -125,8 +125,8 @@ take.
 - Never ask for two things that can't both be true at once, of the product or the scene, \
 such as "upright" and "nozzle pointing down", or "squeeze" and "no gel". Check every order \
 against the product photos and against your other orders.
-- Code starts the video prompt with the clip's length and says the camera stays still, so \
-write neither, and never move the camera or say where or how close it ends.
+- Code starts the video prompt with the speed line, "Film this in real-time speed.", so never \
+write the speed, and never move the camera or say where or how close it ends.
 The producer may add a note, such as what the shop owner asked for this scene. Follow it \
 unless it asks for something you can't do with these pictures, or something "shows" doesn't \
 describe, and then say so in a reason.

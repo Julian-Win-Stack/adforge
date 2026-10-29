@@ -650,7 +650,7 @@ def test_a_scene_the_cap_ended_keeps_its_last_try_and_the_chat_says_the_cap_ende
 # is sent what the newest clip was sent, or the references the agent names.
 
 
-def test_a_try_is_sent_the_newest_clips_picks_and_piece_and_no_start_picture(
+def test_tries_naming_no_references_keep_the_clips_picks_and_piece_and_no_start_picture(
     fake_model: FakeModel, failed_clip: SceneStep
 ) -> None:
     clip = failed_clip.produced.order_by("id").first()
