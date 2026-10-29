@@ -11,7 +11,7 @@ import pytest
 from gateway.fake import FakeModel
 from gateway.types import UnusableReply
 from jobs.first_send import FirstSendScene, write_first_send_prompt
-from jobs.library import SentList
+from jobs.library import PagePhoto, PictureLabel, SentList, add_to_library
 from jobs.models import Job
 
 pytestmark = pytest.mark.django_db
@@ -48,8 +48,16 @@ def write(job: Job) -> str:
     return write_first_send_prompt(job, SENT.pictures, SENT.pieces, SCENE)
 
 
-def a_job() -> Job:
-    return Job.objects.create(product_url="https://shop.example/press")
+def a_job(colours: dict[int, str] | None = None) -> Job:
+    """A job whose library holds the fixture's 14 items, each red unless `colours` says."""
+    job = Job.objects.create(product_url="https://shop.example/press")
+    for number in range(1, 15):
+        colour = (colours or {}).get(number, "red")
+        label = PictureLabel(
+            kind="side", side="front", alone="yes", colour=colour, label=f"Item {number}."
+        )
+        add_to_library(job, f"jobs/x/item-{number}.png", label, PagePhoto(photo=number))
+    return job
 
 
 def test_the_prompt_is_the_speed_line_a_label_per_picture_and_piece_in_order_and_one_sentence(
@@ -97,9 +105,24 @@ def test_the_writer_is_told_the_scene_and_each_picture_by_its_label_and_what_it_
     assert told["scene"]["result"] == "fresh mince in the bowl"
     assert told["videos"] == 2
     assert told["pictures"][:3] == [
-        {"image": 1, "label": "The garlic press, closed, seen from the front.", "used_for": None},
-        {"image": 2, "label": "A hand squeezing the press over a bowl.", "used_for": "in-use"},
-        {"image": 3, "label": "Fresh mince in a small white bowl.", "used_for": "result"},
+        {
+            "image": 1,
+            "label": "The garlic press, closed, seen from the front.",
+            "colour": "red",
+            "used_for": None,
+        },
+        {
+            "image": 2,
+            "label": "A hand squeezing the press over a bowl.",
+            "colour": "red",
+            "used_for": "in-use",
+        },
+        {
+            "image": 3,
+            "label": "Fresh mince in a small white bowl.",
+            "colour": "red",
+            "used_for": "result",
+        },
     ]
     assert [picture["image"] for picture in told["pictures"]] == [1, 2, 3, 4, 5, 6, 8, 9]
     assert told["drawn"] == (
@@ -160,3 +183,30 @@ def test_a_label_the_writer_ends_with_a_full_stop_gets_only_one(fake_model: Fake
     prompt = write(a_job())
 
     assert prompt.split("\n")[1] == "Image 1 is the garlic press, closed, seen from the front."
+
+
+def test_a_picture_whose_label_names_another_colour_is_written_in_its_items_colour(
+    fake_model: FakeModel,
+) -> None:
+    # Item 14 is item 1 recoloured: its label still says the colour it was in before.
+    job = a_job({14: "green"})
+    black = SENT.pictures[0].model_copy(
+        update={"label": "The black garlic press, closed, seen from the front."}
+    )
+    told: list[Any] = []
+
+    def a_writer_that_follows_its_rules(request: Any) -> dict[str, Any]:
+        # As a writer told the rule does: the picture's colour, not the label's colour word.
+        (picture,) = request.handoff.pictures
+        told.append(request.instructions)
+        line = picture.label.lower().rstrip(".").replace("black", picture.colour)
+        return {"labels": [line], "sentence": SENTENCE}
+
+    fake_model.answer_unscripted("write_first_send_prompt", a_writer_that_follows_its_rules)
+
+    prompt = write_first_send_prompt(job, [black], [], SCENE)
+
+    assert (
+        prompt.split("\n")[1] == "Image 1 is the green garlic press, closed, seen from the front."
+    )
+    assert "never a colour word from its label" in told[0]
