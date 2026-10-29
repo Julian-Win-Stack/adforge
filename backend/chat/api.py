@@ -19,6 +19,7 @@ from jobs.models import FixPlan, ProducedItem
 from jobs.page import MAX_PHOTO_BYTES, MAX_PHOTOS
 
 from . import messages
+from . import sent as sent_lists
 from .models import Attachment, Message, Session
 
 # As much as one message may say. Long enough for a brief pasted in one go.
@@ -49,13 +50,23 @@ ATTACH_A_PHOTO = "Attach at least one photo of the product with the page's text.
 
 class AttachmentSerializer(serializers.ModelSerializer[Attachment]):
     url = serializers.SerializerMethodField()
+    sent = serializers.SerializerMethodField()
 
     class Meta:
         model = Attachment
-        fields = ["position", "kind", "url", "scene", "version"]
+        fields = ["position", "kind", "url", "scene", "version", "sent"]
 
     def get_url(self, attachment: Attachment) -> str:
         return file_store.url(attachment.file)
+
+    def get_sent(self, attachment: Attachment) -> dict[str, object] | None:
+        """What the clip a video shows was sent, for the scene's card; null for any other
+        file. A scene's clip shown before the chat kept which clip it was carries the empty
+        sent list, as one made before its sent list was kept does."""
+        is_a_clip = attachment.clip_id is not None or (
+            attachment.kind == Attachment.Kind.VIDEO and attachment.scene is not None
+        )
+        return sent_lists.shown(attachment.clip) if is_a_clip else None
 
 
 class MessageSerializer(serializers.ModelSerializer[Message]):
@@ -175,7 +186,7 @@ def session(request: Request, session_id: str) -> Response:
         found.name = rename.validated_data["name"]
         found.save(update_fields=["name"])
         return Response(SessionSerializer(found).data)
-    history = found.messages.select_related("fix_plan").prefetch_related("attachments")
+    history = found.messages.select_related("fix_plan").prefetch_related("attachments__clip")
     return Response(
         {**SessionSerializer(found).data, "messages": MessageSerializer(history, many=True).data}
     )
@@ -261,7 +272,7 @@ def session_messages(request: Request, session_id: str) -> Response:
     newer = (
         found.messages.filter(seq__gt=poll.validated_data["after"])
         .select_related("fix_plan")
-        .prefetch_related("attachments")
+        .prefetch_related("attachments__clip")
     )
     return Response(MessageSerializer(newer, many=True).data)
 

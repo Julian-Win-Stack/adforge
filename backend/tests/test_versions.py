@@ -10,16 +10,17 @@ tiny videos and ffmpeg runs for real."""
 from collections.abc import Callable
 
 import pytest
+from rest_framework.test import APIClient
 
 from agents import tasks
 from agents.models import ToolCall
 from chat.models import Attachment, Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from jobs import work
+from jobs import library, work
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 
-from .conftest import JUDGED_CLIP, HeldSteps, paid_for
+from .conftest import JUDGED_CLIP, HeldSteps, paid_for, sent_list_in_the_store
 from .fixing import fixed
 from .test_producer_broll import BROLL_CHOICE, checked  # noqa: F401 (a fixture)
 from .test_producer_picture_restore import SLOWER, higher_then_slower  # noqa: F401 (a fixture)
@@ -108,6 +109,27 @@ def test_going_back_with_the_line_unchanged_is_a_new_top_version_for_nothing(
     assert assemble(fake_model, say).startswith("Assembled")
     scene_cut = next(cut for cut in ads()[-1].cuts if cut["scene"] == 2)
     assert scene_cut["clip"] == top.clip.pk
+
+
+def test_a_clip_gone_back_to_carries_what_it_was_sent(api: APIClient) -> None:
+    sent = sent_list_in_the_store()
+    library.keep_sent_list(item("clip", 2), sent)
+
+    work.go_back(scene_2(), 2)
+
+    session = scene_2().job.session
+    assert session is not None
+    conversation = api.get(f"/api/sessions/{session.pk}/").json()["messages"]
+    clip = [
+        attached
+        for message in conversation
+        for attached in message["attachments"]
+        if attached["kind"] == "video" and attached["scene"] == 2
+    ][-1]
+    assert clip["version"] == "v4 back to v2"
+    assert [each["label"] for each in clip["sent"]["pictures"]] == [
+        each.label for each in sent.pictures
+    ]
 
 
 def test_a_newer_change_after_going_back_is_the_next_version(

@@ -234,6 +234,15 @@ class Attachment(models.Model):
         help_text="For a scene's starting picture or clip, the label of the scene version it "
         'is shown as, such as "v2 black toilet". Blank otherwise.',
     )
+    clip = models.ForeignKey(
+        "jobs.ProducedItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The clip this video shows, whose sent list the scene's card shows. Null "
+        "for any other file, and for clips shown before the chat kept which one it was.",
+    )
 
     class Meta:
         ordering = ["message", "position"]

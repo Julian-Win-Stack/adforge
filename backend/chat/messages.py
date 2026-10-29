@@ -8,6 +8,9 @@ from django.db import transaction
 from django.db.models import Max
 from django.utils.text import Truncator
 
+from jobs.models import ProducedItem
+
+from . import sent
 from .models import Attachment, Message, Session
 
 # How long a session's name may be, once it is taken from the first message.
@@ -20,12 +23,14 @@ PASTE_ACCEPTED = "accepted"
 class AttachedFile(NamedTuple):
     """A file for a message to carry. It is already in the file store. `scene` is the
     number of the scene it is the starting picture or clip of, if any, and `version` the
-    label of the scene version it is shown as."""
+    label of the scene version it is shown as, and `clip` the clip a video shows, so the
+    chat can show what that clip was sent."""
 
     kind: Attachment.Kind
     file: str
     scene: int | None = None
     version: str = ""
+    clip: ProducedItem | None = None
 
 
 class StepSignal(NamedTuple):
@@ -85,6 +90,10 @@ def add(
     For the same reason a message and its files are saved together: a poll that saw the
     message first would move past it and never show the picture.
     """
+    # Before the message is seen, so its clips' card pictures are there when it is.
+    for attached in carrying:
+        if attached.clip is not None:
+            sent.make_cards(attached.clip)
     with transaction.atomic():
         locked = Session.objects.select_for_update().get(pk=session.pk)
         last = locked.messages.aggregate(last=Max("seq"))["last"] or 0
@@ -116,6 +125,7 @@ def add(
                 file=attached.file,
                 scene=attached.scene,
                 version=attached.version,
+                clip=attached.clip,
             )
             for position, attached in enumerate(carrying, start=1)
         )

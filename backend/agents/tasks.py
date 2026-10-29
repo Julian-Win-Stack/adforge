@@ -452,7 +452,11 @@ STEP_WORK = {
         shown=lambda step, clip: (
             [
                 messages.AttachedFile(
-                    Attachment.Kind.VIDEO, clip.file, step.scene.number, version_label(clip)
+                    Attachment.Kind.VIDEO,
+                    clip.file,
+                    step.scene.number,
+                    version_label(clip),
+                    clip=clip,
                 )
             ]
             if clip and not agent_gave_up(step)
