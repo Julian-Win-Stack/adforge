@@ -17,7 +17,7 @@ from agents.models import SystemNote, ToolCall
 from chat.models import Attachment, Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from gateway.types import Said
+from gateway.types import Said, ToolUse
 from jobs import work
 from jobs.library import OwnerPhoto, library_of, sent_list_of
 from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
@@ -280,6 +280,16 @@ def test_the_fixing_agents_question_is_asked_in_the_chat_and_a_photo_answer_resu
     [photo] = Attachment.objects.filter(message__text=GREEN_PHOTO)
     library = library_of(Job.objects.get())
     assert [each for each in library if each.source == OwnerPhoto(original=photo.file)]
+    # The fixing agent read the answer: the owner's words, the producer's instruction and the
+    # photo, in its ask_owner call's result.
+    turns = [each for each in fake_model.turns_taken if each.purpose == "fix_scene"]
+    [ask_read] = [
+        each
+        for each in turns[-1].handoff.conversation
+        if isinstance(each, ToolUse) and each.tool == "ask_owner"
+    ]
+    assert GREEN_PHOTO in ask_read.result and WITH_IT in ask_read.result
+    assert photo.file in [each.key for each in ask_read.pictures]
 
     fixing.refresh_from_db()
     assert fixing.passed is not None and fixing.passed == fixing.tries.get(number=2).clip

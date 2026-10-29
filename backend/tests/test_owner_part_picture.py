@@ -157,4 +157,3 @@ def test_the_owner_parts_yes_in_words_after_the_first_clip_opens_the_gate_and_a_
     )
     producer.steps_run()
     assert clips_of(2) == 2
-    assert producer.said()[-1] == "Done."

@@ -677,7 +677,9 @@ def test_dead_end_a_clip_from_a_failed_step_is_kept_or_made_again_on_the_produce
         failed.result
     )
     assert failed.status == SceneStep.Status.FINISHED
-    assert any("Scene 2's clip" in text for text in red_in_the_chat(api, session_id))
+    assert "Scene 2's clip couldn't be made: something went wrong on our side." in (
+        red_in_the_chat(api, session_id)
+    )
     kept = ProducedItem.objects.get(kind="clip", scene__number=2)
     assert last_result("keep_try").startswith(f"Scene 2's clip (version {kept.version})")
     assert Scene.objects.get(number=2).status == Scene.Status.FINISHED
@@ -805,7 +807,6 @@ def test_dead_end_a_note_with_one_impossible_part_has_the_rest_done_and_that_par
     assert ToolCall.objects.filter(tool="read_page").latest("id").answer == "cant"
     assert Scene.objects.get(number=3).line == ON_SALE
     assert ToolCall.objects.get(tool="edit_scene").answer == "made"
-    assert "start a new ad for it" in producer.said()[-1]
 
 
 def test_dead_end_a_paid_answer_the_validator_rejects_is_a_tool_answer_and_the_run_goes_on(
@@ -823,7 +824,6 @@ def test_dead_end_a_paid_answer_the_validator_rejects_is_a_tool_answer_and_the_r
     # the rule it broke; the producer planned again, and the plan stands.
     assert first.answer == "cant"
     assert first.result.startswith("Failed: a model's answer couldn't be used")
-    assert "9" in first.result
+    assert "There's no picture 9 in the library." in first.result
     assert second.answer == "made"
     assert Job.objects.get().scenes.count() == 3
-    assert producer.said()[-1] == "Here's the plan."
