@@ -858,10 +858,10 @@ class MakePicture(Tool):
                 paid_under=call.pk,
             )
         except PictureNotMade as not_made:
-            return (
-                f"Failed: the picture wasn't stored, as {not_made}. Change the prompt or the "
+            raise Failed(
+                f"the picture wasn't stored, as {not_made}. Change the prompt or the "
                 "references and make it again, or go on without it."
-            )
+            ) from not_made
         return (
             f"Made library item {made.number}, checked once and passed: "
             f"{library_line(made)} Look at it (look, library_item {made.number}) before a "

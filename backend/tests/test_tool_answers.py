@@ -300,13 +300,14 @@ def test_the_fixtures_tool_call_why_cant_and_fold_line_are_the_codes_shapes(
 ) -> None:
     fixture = json.loads(TOOL_ANSWERS.read_text())
     row = {key: value for key, value in fixture["tool_call"].items() if key != "given"}
-    call = ToolCall.objects.create(
-        session_id=session_id, **row, fold_line=fixture["fold_line"], finished_at=timezone.now()
-    )
+    call = ToolCall.objects.create(session_id=session_id, **row, finished_at=timezone.now())
 
     # The row's why goes back to the agent with its call, as the fixture's given form says.
     given = ToolUse.model_validate(fixture["tool_call"]["given"])
     assert loop._as_given(call) == given
+    # Folded, it keeps its line on the row.
+    call.fold_line = fixture["fold_line"]
+    call.save(update_fields=["fold_line"])
     assert loop.ToolAnswer.of(call).kind == "made"
     cant = loop.ToolAnswer.from_json(fixture["cant"])
     assert (cant.kind, cant.as_json()) == ("cant", fixture["cant"])
