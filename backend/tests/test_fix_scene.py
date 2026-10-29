@@ -17,7 +17,9 @@ from rest_framework.test import APIClient
 
 from adforge import file_store
 from agents import fixing_agent, pause, producer
+from agents.fold import fold_line
 from agents.models import SystemNote, ToolCall
+from agents.money import dollars
 from chat.models import Attachment, Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
 from gateway.types import Said, StepFinished, ToolUse
@@ -235,6 +237,14 @@ def test_a_fix_the_fixing_agent_gives_up_keeps_its_last_try_as_the_agent_is_told
     answered = ToolCall.objects.filter(agent="fixing_agent", tool="give_up").get().result
     assert answered == fixing_agent.GIVEN_UP
     assert "the last try is in the ad" in told_of_the_step(fake_model)
+    # What the fix cost, the agent's turns and tries included, in its result and in its
+    # call's folded line.
+    step = fix_step()
+    assert f"It cost {dollars(step.cost_usd())}." in told_of_the_step(fake_model)
+    assert fold_line(ToolCall.objects.get(tool="fix_scene")).endswith(
+        f"; cost {dollars(step.cost_usd())}."
+    )
+    assert step.cost_usd() > 0
 
 
 def test_the_fixing_agents_question_is_asked_by_the_producer_and_the_answer_resumes_the_fix(

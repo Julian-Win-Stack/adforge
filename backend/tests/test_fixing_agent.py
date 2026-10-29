@@ -1175,3 +1175,30 @@ def test_a_try_the_worker_stopped_in_finishes_on_its_restart_while_the_pause_hol
     [stopped] = ToolCall.objects.filter(tool="film_again")
     assert not stopped.result.startswith("Refused")
     assert [each.number for each in outcome.tries] == [1]
+
+
+def test_the_ad_snapshot_leaves_out_a_scenes_running_step_and_its_fix_until_they_end(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    # Door 1: the clip step runs while the agent fixes it.
+    SceneStep.objects.filter(pk=failed_clip.pk).update(
+        status=SceneStep.Status.RUNNING, finished_at=None
+    )
+    session = failed_clip.tool_call.session
+    assert session is not None
+    seen: list[str] = []
+
+    def judged_mid_fix() -> dict[str, Any]:
+        seen.extend(
+            line for line in ad_as_it_stands(session).splitlines() if line.startswith("Scene 2:")
+        )
+        return CLIP_MOTION_OK
+
+    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
+    fake_model.respond("check_clip_motion", judged_mid_fix)
+    fake_model.respond("fix_scene", turn(calls=[film_again(references=ONE_PICK)]))
+    fixed(failed_clip)
+
+    # Only scene 2's finished steps: its picture, audio and transcript, not its clip step or
+    # the agent's turns and try, still running.
+    assert seen[0].endswith("It cost $0.001519.")

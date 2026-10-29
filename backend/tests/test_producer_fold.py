@@ -9,6 +9,7 @@ given, as a model does."""
 import dataclasses
 import json
 from collections.abc import Callable, Iterator
+from decimal import Decimal
 
 import pytest
 from django.db.models.signals import post_save
@@ -19,6 +20,7 @@ from rest_framework.test import APIClient
 
 from agents.fold import fold_if_past, fold_point
 from agents.models import ToolCall
+from agents.money import dollars
 from agents.tasks import restart_dead_producers
 from chat.models import Session
 from gateway import catalog
@@ -101,6 +103,8 @@ def test_past_the_fold_point_the_oldest_calls_fold_to_a_line_and_the_next_turn_f
     folded = call("read_page")
     assert folded.fold_line.startswith("read_page: made")
     assert "$" in folded.fold_line and "\n" not in folded.fold_line
+    # What its own work cost: reading and checking the page.
+    assert folded.fold_line.endswith("; cost $0.0246.")
     assert call("plan_ad").fold_line.startswith("plan_ad: made")
     # Nothing is deleted: the row keeps its whole answer.
     assert "Kept 2 product photos" in folded.result
@@ -256,6 +260,11 @@ def test_the_ad_as_it_stands_is_given_last_and_any_part_is_read_again_in_full(
     assert "left out: library item 5" in snapshot
     assert "It cost $0.216694." in snapshot
     assert "Scene 2: no version yet. It cost $0.00." in snapshot
+    # And all the chat has spent before that turn: every model call, its own turns too.
+    given_with = ModelCall.objects.filter(purpose="produce").order_by("created_at", "id")
+    before = ModelCall.objects.filter(created_at__lt=list(given_with)[-1].created_at)
+    spent = sum((each.cost_usd for each in before), Decimal(0))
+    assert f"Spent in this chat so far, your own turns included: {dollars(spent)}." in snapshot
     # Not in the conversation itself, which stays as it happened.
     assert snapshot.splitlines()[0] not in json.dumps(given_to_the_producer(producer_turns()))
     # A scene read in full: its sent list's labels, tiers and pieces, and its prompt.
