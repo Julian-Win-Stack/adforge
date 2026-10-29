@@ -78,7 +78,8 @@ def film_again(**changes: Any) -> tuple[str, dict[str, Any]]:
     return (
         "film_again",
         {
-            "why": "The action stops too soon, so the model fills the clip.",
+            "root_cause": "The action stops too soon, so the model fills the clip.",
+            "move": "Pick an action that keeps going for the whole clip.",
             "line": LINE_2,
             "shows": SHOWS,
             "result": "",

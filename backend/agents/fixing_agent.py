@@ -39,8 +39,19 @@ from gateway.types import (
     ToolSpec,
     ToolUse,
 )
-from jobs import auto_fix, clip_judge, library, picture_check, reference_photos, scenes, work
-from jobs.models import AgentFix, AgentFixTry, ProducedItem, ReferencePhoto, Scene, SceneStep
+from jobs import (
+    auto_fix,
+    clip_judge,
+    library,
+    library_items,
+    picture_check,
+    product_videos,
+    reference_photos,
+    scenes,
+    work,
+)
+from jobs.first_send import PIECE_LABEL
+from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, ReferencePhoto, Scene, SceneStep
 
 from . import loop
 from .loop import Refused, Tool, ToolResult
@@ -64,7 +75,14 @@ ROW = ("line", "shows", "result", "broll_kind", "person_shown")
 # What is put back on a give-up: the row and what follows from it.
 KEPT = (*ROW, "status", "fact_checked", "fact_problems", "shortened_from")
 
-INSTRUCTIONS = """\
+# Julian's one rule from the dropped API-limits list (spec #210 point 22; Oct 28 23:31, audit
+# thread): when words don't fix a clip, a reference does.
+WORDS_THEN_REFERENCES = (
+    "If fixing it with words doesn't fix it, use the reference video or photos: photos for how "
+    "it looks, the video for the movement."
+)
+
+INSTRUCTIONS = f"""\
 You fix one B-roll scene of a short vertical video ad. In a B-roll scene the presenter's \
 voice says the scene's line while the clip shows the product. The scene's clip failed: a \
 judge watched it and found faults, or the shop owner failed it. You own this scene. You may \
@@ -108,14 +126,17 @@ film every one in its order (only there may a clip have more than one action).
 - Never ask the shop owner anything. If you would need them (for example to know how the \
 product is really used), write it in would_ask_owner and carry on as best you can.
 
-How you work: you are shown the scene, the plan, the page, the start picture, the failed \
-clip's frames (5 a second) and what the judge found. Look at anything else you need. Then \
+How you work: you are shown the scene, the plan, the page, what the failed clip was sent \
+(or its start picture), the failed clip's frames (5 a second), what the judge found, the \
+ad's picture library as a list and how the product behaves. Look at anything else you need: \
+look_at_library opens one library item, or one moment of a page video, by its number. Then \
 call film_again with the whole scene as it should be, or give_up. After each \
 film_again you see the new start picture, the new clip's frames and the judge's verdict. On \
-a fail, find what caused it (the plan, the picture, or what the video model can't do) and \
-change that cause, not only the words. Try to film it first: code refuses give_up until at \
+a fail, find what caused it (the plan, the pictures, or what the video model can't do) and \
+change that cause, not only the words. {WORDS_THEN_REFERENCES} On every try, write the \
+cause you found and your move. Try to film it first: code refuses give_up until at \
 least one new clip was made. When, after trying, you judge the scene can't be filmed well, \
-call give_up with your reason: {gave_up} The judge can be wrong, but only a clip the judge \
+call give_up with your reason: {{gave_up}} The judge can be wrong, but only a clip the judge \
 passes passes.
 
 The app's own prompt rules follow, for writing the two prompts. They hold for you too, with \
@@ -468,11 +489,17 @@ def _put_back(scene: Scene, row: dict[str, Any]) -> None:
 
 
 def _fit(conversation: list[Happened]) -> list[Happened]:
-    """Keep the newest pictures under MOST_PICTURES; older ones are dropped with a note."""
-    room = MOST_PICTURES
+    """Keep the newest pictures under MOST_PICTURES; older ones are dropped with a note. What
+    the agent opened in the library stays for the whole fix (spec #210 point 22): it takes
+    its room first, and is never dropped."""
+    room = MOST_PICTURES - sum(
+        len(each.pictures)
+        for each in conversation
+        if isinstance(each, ToolUse) and each.tool == LookAtLibrary.name
+    )
     kept: list[Happened] = []
     for each in reversed(conversation):
-        if isinstance(each, ToolUse) and each.pictures:
+        if isinstance(each, ToolUse) and each.pictures and each.tool != LookAtLibrary.name:
             if len(each.pictures) <= room:
                 room -= len(each.pictures)
             else:
@@ -488,6 +515,17 @@ def _fit(conversation: list[Happened]) -> list[Happened]:
 
 
 REMINDER = "Answer with a tool call: a look, film_again or give_up."
+
+# What the first message says of a failed clip made before clips were sent references.
+NO_SENT_LIST = (
+    "The failed clip was made from a start picture, before the app sent clips references, so "
+    "it has no sent list: what it was sent is its start picture, shown with it as try 0."
+)
+# The drawn picture of a sent list, by what it shows (jobs.library.Drawn).
+DRAWN = {
+    "person_in_room": "the drawn picture of the presenter in the ad's room",
+    "room": "the drawn picture of the ad's room",
+}
 
 
 def _conversation(fixing: AgentFix) -> list[Happened]:
@@ -540,6 +578,10 @@ def _said(said: list[dict[str, Any]], at: int | None) -> list[Happened]:
 
 
 def _intro(fixing: AgentFix) -> str:
+    """The first message: the failure (the judge's fixed-form fault, or the owner's note),
+    what the failed clip was sent, the library as a text list with the page videos' moments,
+    and the planner's note on how the product behaves (spec #210 point 22); then the scene,
+    the plan and the page. It never names a count of tries."""
     step = fixing.step
     scene = step.scene
     job = scene.job
@@ -548,7 +590,6 @@ def _intro(fixing: AgentFix) -> str:
     plan = "\n".join(_scene_facts(each) for each in job.scenes.order_by("number"))
     colour = [p.position for p in job.photos.filter(shows_product_colour=True)]
     every = [p.position for p in job.photos.all()]
-    planned = first.step.picture_step if first.step is not None else None
     seconds = first.made_from.seconds or 0
     clip_seconds = work._broll_clip_seconds(seconds)
     during = [row.thing for row in _owner_photos(step, ReferencePhoto.Use.CLIP)]
@@ -556,10 +597,7 @@ def _intro(fixing: AgentFix) -> str:
         f"{reference_photos.reference_mode_label(during)} "
         f"{scenes.broll_video_prompt('', clip_seconds).rstrip()}"
     )
-    numbering = "; ".join(
-        f"Image {row['image']} = {row['job']}"
-        for row in _pictures_sent(fixing, scene.person_shown, (colour or every)[0])[1]
-    )
+    sent = library.sent_list_of(first)
     if fixing.door == AgentFix.Door.OWNER:
         failed = (
             f"The shop owner watched this clip in their ad and sent this note about scene "
@@ -572,24 +610,106 @@ def _intro(fixing: AgentFix) -> str:
     return "\n\n".join(
         [
             f"The ad is for this product page: {job.product_url}",
+            f"You fix scene {scene.number}.",
+            failed,
+            sent_list_words(sent) if sent is not None else NO_SENT_LIST,
+            _library_words(job),
+            "How this product behaves, as the planner wrote it from the page: "
+            + (job.product_behaviour or "the planner wrote no note for this ad."),
             f"The whole plan, scene by scene:\n{plan}",
-            f"You fix scene {scene.number}. Its start picture's prompt was:\n"
-            f"{planned.prompt if planned else ''}",
-            f"Its video prompt was:\n{work.motion_of(first)}",
-            f"Its line takes {seconds:.2f} s to say, so its clip is {clip_seconds} s.",
+            # A sent list holds its prompt.
+            *(
+                []
+                if sent is not None
+                else [f"Scene {scene.number}'s video prompt was:\n{work.motion_of(first)}"]
+            ),
+            f"Scene {scene.number}'s line takes {seconds:.2f} s to say, so its clip is "
+            f"{clip_seconds} s.",
             f"Shop photos, any of which may be Image 1: {every}; those showing the product in "
             f"the ad's colour, {job.product_colour}: {colour}. For a new start picture, pick "
             "Image 1 from those in the ad's colour; only when none suits, or there are none, "
             "take another where the product is clearly seen. The product's look and colour come "
             f"only from that photo: never change them or make one up. {scenes.SEVERAL_ITEMS}",
-            "A new start picture is drawn from these pictures, in this order: "
-            f'{numbering}. That order is for the face setting the scene has now: a "has face" '
-            'scene sends the presenter\'s portrait just before the place, a "no face" scene '
-            "leaves it out.",
             f'Code starts the video prompt with: "{opener}" then your words.',
-            failed,
             f"The page's words:\n{job.page_text}",
         ]
+    )
+
+
+def sent_list_words(sent: library.SentList) -> str:
+    """What a clip was sent, as a list in words: each picture with its library number and
+    label, each piece with its video and moment, what was left out and why, and the prompt."""
+    lines = [f"What the failed clip was sent, every picture in {sent.colour}:"]
+    for picture in sent.pictures:
+        named = (
+            f"library item {picture.library_number}"
+            if picture.library_number is not None
+            else DRAWN[picture.drawn or "room"]
+        )
+        lines.append(
+            f"Image {picture.image}: {named}. {picture.label}"
+            + (f" (for {picture.for_})" if picture.for_ else "")
+        )
+    for piece in sent.pieces:
+        cut = (
+            ""
+            if piece.trim is None
+            else f", cut from its {piece.moment_start:g} s to {piece.moment_end:g} s because "
+            f"{clip_judge.TRIMMED.get(piece.trim, piece.trim)}"
+        )
+        lines.append(
+            f"Video {piece.number}: page video {piece.video}, moment {piece.moment}, "
+            f"{piece.start:g} s to {piece.end:g} s{cut}. {PIECE_LABEL}"
+        )
+    for left in sent.left_out:
+        named = (
+            f"library item {left.library_number}"
+            if left.library_number is not None
+            else DRAWN[left.drawn or "room"]
+        )
+        lines.append(f"Left out: {named}. {left.label} ({LEFT_OUT_FOR[left.tier]})")
+    lines += [
+        f"Library item {each.of} couldn't be made {each.colour}, so it went as it was."
+        for each in sent.recolours
+        if each.outcome == "fell_back"
+    ]
+    lines.append(f"The prompt it was sent: {sent.prompt}")
+    return "\n".join(lines)
+
+
+# Why a picture was left out of a clip, by its tier (spec #210 point 13): every tier past the
+# video API's cap of pictures.
+LEFT_OUT_FOR = {
+    tier: f"past the video model's {library.VIDEO_API_MOST_PICTURES} pictures, {what}"
+    for tier, what in {
+        1: "though it was the front look photo",
+        2: "though it was a pick for the scene",
+        3: "though it was the drawn picture",
+        4: "another side photo",
+    }.items()
+}
+
+
+def _library_words(job: Job) -> str:
+    """The ad's library as a text list, one line per item and no pictures, then each page
+    video's moments: what look_at_library opens by number."""
+    listed = library_items.library_text(job) or "(no items)"
+    moments = [
+        f"Page video {video.position}, moment {moment.number}, {moment.start:g} s to "
+        f"{moment.end:g} s: {moment.happens} On screen: {moment.on_screen}"
+        for video in job.videos.order_by("position")
+        if (watch := library.watch_of(video)) is not None
+        for moment in watch.moments
+    ]
+    return (
+        "The ad's picture library, one line per item, which look_at_library opens by its "
+        f"number:\n{listed}"
+        + (
+            "\n\nThe page videos' moments, which look_at_library opens by video and moment:\n"
+            + "\n".join(moments)
+            if moments
+            else ""
+        )
     )
 
 
@@ -614,7 +734,10 @@ def judge_words(ruling: dict[str, Any] | None) -> str:
     verdict = ruling.get("verdict", "not judged")
     lines = [f"The judge's verdict: {verdict}. Checks: {json.dumps(ruling.get('checks', {}))}."]
     if verdict == "fail":
-        lines += [f"- It found: {fault}" for fault in dict.fromkeys(auto_fix.faults(ruling))]
+        fixed_form = _product_faults(ruling)
+        lines += fixed_form or [
+            f"- It found: {fault}" for fault in dict.fromkeys(auto_fix.faults(ruling))
+        ]
     motion = (ruling.get("answers") or {}).get("motion") or []
     if motion and isinstance(motion[0], dict):
         first = motion[0]
@@ -627,6 +750,31 @@ def judge_words(ruling: dict[str, Any] | None) -> str:
                 + " ".join(f"{m['time']:g}s {m['what_happens']}" for m in moments)
             )
     return "\n".join(lines)
+
+
+def _product_faults(ruling: dict[str, Any]) -> list[str]:
+    """Each fault the judge's PRODUCT check failed the clip for, in its fixed form (#228's
+    ProductVerdict): the reference it compared against, what the clip shows, what the real
+    product shows, at which seconds, and the fault in product terms. None for a ruling with
+    no PRODUCT fail, whose faults are said as found."""
+    if (ruling.get("checks") or {}).get("product") != "fail":
+        return []
+    lines = []
+    for answer in (ruling.get("answers") or {}).get("product") or []:
+        if not answer or answer.get("verdict") != "fail":
+            continue
+        times = ", ".join(f"{t:g} s" for t in answer.get("fault_frame_times") or [])
+        line = (
+            f"- Compared against {answer.get('compared_against') or 'the references'}: the clip "
+            f"shows {answer.get('clip_shows') or 'a fault'}; the real product shows "
+            f"{answer.get('real_product_shows') or 'something else'}"
+            + (f" (at {times})." if times else ".")
+        )
+        if answer.get("fault"):
+            line += f" The fault: {answer['fault']}"
+        if line not in lines:
+            lines.append(line)
+    return lines
 
 
 def _joined(keys: list[str]) -> Callable[[], bytes]:
@@ -769,15 +917,66 @@ def _try_shown(
     return "", [*shown, *clip_frames]
 
 
+class LookAtLibrary(Tool):
+    """Open one item of the ad's picture library by its number, to see the picture; or one
+    moment of a page video, by the video's number and the moment's, to see its frames. What
+    you open stays in front of you for the rest of this scene's fix."""
+
+    name: ClassVar[str] = "look_at_library"
+    item: int | None = Field(description="The library item's number; null for a moment.")
+    video: int | None = Field(description="For a moment: the page video's number; else null.")
+    moment: int | None = Field(description="For a moment: its number in that video; else null.")
+
+    def run(self, call: ToolCall) -> ToolResult:
+        job = _fixing_of(call).step.scene.job
+        an_item = self.item is not None and self.video is None and self.moment is None
+        a_moment = self.item is None and self.video is not None and self.moment is not None
+        if not (an_item or a_moment):
+            raise Refused("name a library item, or a video and its moment, not both.")
+        if self.item is not None:
+            found = [each for each in library.library_of(job) if each.number == self.item]
+            if not found:
+                raise Refused(f"there is no library item {self.item}.")
+            [item] = found
+            return ToolResult(
+                f"Library item {library_items.library_line(item)}",
+                [Image(label=f"Library item {item.number}: {item.label}", key=item.file)],
+            )
+        assert self.video is not None and self.moment is not None
+        video = job.videos.filter(position=self.video).first()
+        watch = library.watch_of(video) if video is not None and video.file else None
+        if video is None or watch is None:
+            raise Refused(f"there is no watched page video {self.video}.")
+        moments = [each for each in watch.moments if each.number == self.moment]
+        if not moments:
+            raise Refused(f"page video {self.video} has no moment {self.moment}.")
+        [moment] = moments
+        named = f"Page video {self.video}, moment {self.moment}"
+        part = product_videos.cut_part(video.file, moment.start, moment.end, sound=False)
+        # Each frame at its second in the video, so it reads as the moment's seconds do.
+        frames = [
+            {**frame, "times": [round(moment.start + t, 3) for t in frame["times"]]}
+            for frame in clip_judge.piece_frames(part)
+        ]
+        return ToolResult(
+            f"{named}, {moment.start:g} s to {moment.end:g} s: {moment.happens} On screen: "
+            f"{moment.on_screen} Its frames, each at its second in the video, "
+            f"{PIECE_LABEL}.",
+            [Image(label=each.label, key=each.key) for each in _four_to_a_picture(frames, named)],
+        )
+
+
 class FilmAgain(Tool):
     """Film this scene again as you write it here: code saves your scene row, draws a new
     start picture when you ask for one and checks it, makes the clip and has the judge watch
     it. Write the whole scene as it should be, every field."""
 
     name: ClassVar[str] = "film_again"
-    why: str = Field(
-        description="In plain words: what went wrong and what you change, and why that fixes it."
+    root_cause: str = Field(
+        description="In plain words: what caused the last fail (the plan, the pictures, the "
+        "prompt, or what the video model can't do)."
     )
+    move: str = Field(description="In plain words: what you change to fix that cause, and why.")
     line: str = Field(
         description="The scene's line, word for word: the same one, or a new true one."
     )
@@ -838,6 +1037,7 @@ TOOLS: list[type[Tool]] = [
     LookAtPlace,
     LookAtPresenter,
     LookAtTry,
+    LookAtLibrary,
     FilmAgain,
     GiveUp,
 ]
@@ -1026,7 +1226,8 @@ def _film_again(
             new_picture=asked.new_picture,
             picture_prompt=asked.picture_prompt or "",
             video_prompt=_as_sent(step, picture, audio, asked.video_prompt),
-            why=asked.why,
+            root_cause=asked.root_cause,
+            move=asked.move,
             would_ask_owner=asked.would_ask_owner or "",
         )
     assert row.step is not None
@@ -1212,7 +1413,8 @@ def _drawn(
         scene_row=_row(fixing.step.scene),
         new_picture=True,
         picture_prompt=asked.picture_prompt,
-        why=asked.why,
+        root_cause=asked.root_cause,
+        move=asked.move,
         would_ask_owner=asked.would_ask_owner or "",
         picture_problems=[problems],
     )
