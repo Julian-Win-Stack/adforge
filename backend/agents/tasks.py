@@ -234,16 +234,16 @@ def _told_it_waits(step: SceneStep) -> str:
     for their yes, as when this picture was the last thing being made."""
     return "".join(
         f"The chat told the shop owner that scene {scene.number} waits for their yes on "
-        f"{part.what} in its starting picture, so the ad can't be assembled yet: don't tell "
-        "them again. "
+        f"the picture of {part.what}, so the ad can't be assembled yet: don't tell them "
+        "again. "
         for scene, part in say_what_waits_on_the_shop_owner(step.scene.job, step)
     )
 
 
 def _needs_a_yes(step: SceneStep) -> str:
-    """What the producer is told about a picture of an owner part, which the shop owner must
-    say yes to before its scene's clip is made, or blank for a picture of none. A part they
-    already said yes to, as drawn here, is settled: they aren't asked about it again."""
+    """What the producer is told about a starting picture of an owner part, or blank for a
+    picture of none: the shop owner's yes is on the part's own picture, never on this one. A
+    part they already said yes to is settled: they aren't asked about it again."""
     if step.owner_part is None:
         return ""
     part = owner_parts.OwnerPart.model_validate(step.owner_part)
@@ -252,19 +252,10 @@ def _needs_a_yes(step: SceneStep) -> str:
             f"The picture shows {part.what}, which the shop owner already said yes to: don't "
             "ask them about it again. "
         )
-    if owner_parts.drawn_from_words(step) is None:
-        drawn_from = "the shop owner's photo of it."
-    elif part.source == "owner's words":
-        drawn_from = f'the shop owner\'s words: "{part.looks}"'
-    else:
-        drawn_from = (
-            f'a description made up for it, as the shop owner let us draw it: "{part.looks}"'
-        )
     return (
-        f"The picture shows {part.what}, which no product photo shows, drawn from "
-        f"{drawn_from} Its clip isn't made until the shop owner says yes to this picture. "
-        f"Ask them, in plain words, to look at {part.what} in it and say yes if it looks "
-        "right, or say what to change, or send a photo of it, and wait for their answer. "
+        f"The picture shows {part.what}, which no product photo shows. The clip waits for the "
+        f"shop owner's yes on the picture of {part.what} itself, shown to them in the chat, "
+        "not on this one: don't ask them about this picture. "
     )
 
 
@@ -384,7 +375,7 @@ def say_what_waits_on_the_shop_owner(
         if scene.status != Scene.Status.FINISHED
         and (part := owner_parts.owner_part(scene)) is not None
         and not owner_parts.is_approved(scene)
-        and scene.current_picture() is not None
+        and owner_parts.picture_is_current(scene)
         and not running.filter(scene=scene).exists()
     ]
     if len(waiting) + sum(scene.status == Scene.Status.FINISHED for scene in scenes) != len(scenes):
@@ -401,8 +392,8 @@ def _waits(scene: Scene, part: owner_parts.OwnerPart) -> str:
     """What the shop owner is told when the rest of the ad is made and `scene` waits."""
     drawn = "from your words" if part.source == "owner's words" else "by us, as you asked"
     return (
-        f"Scene {scene.number} waits for your yes on {part.what} in its starting picture: no "
-        f"photo showed it, so it was drawn {drawn}. Say yes if it looks right, or tell us what "
+        f"Scene {scene.number} waits for your yes on the picture of {part.what}: no photo "
+        f"showed it, so it was drawn {drawn}. Say yes if it looks right, or tell us what "
         "to change, or send a photo of it. Every scene that isn't waiting on you is made, and "
         "the ad is put together once this scene's clip is made."
     )
