@@ -135,13 +135,14 @@ def as_read(message: Message, *, numbered: bool = False) -> str:
     if not counts:
         return message.text
     carried = [f"{count} {kind}{'s' if count != 1 else ''}" for kind, count in counts.items()]
-    pictures = counts.get(Attachment.Kind.PICTURE, 0)
     numbers_said = ""
-    if numbered and message.role == Message.Role.USER and pictures:
-        first = _owner_photos_before(message) + 1
-        numbers = [str(number) for number in range(first, first + pictures)]
-        listed = numbers[0] if pictures == 1 else f"{', '.join(numbers[:-1])} and {numbers[-1]}"
-        numbers_said = f": owner photo{'s' if pictures != 1 else ''} {listed}"
+    if numbered and message.role == Message.Role.USER:
+        named = [
+            _numbered(name, _owner_files_before(message, kind) + 1, counts[kind])
+            for kind, name in ((Attachment.Kind.PICTURE, "photo"), (Attachment.Kind.VIDEO, "video"))
+            if counts.get(kind)
+        ]
+        numbers_said = f": {' and '.join(named)}" if named else ""
     note = f"[Attached {' and '.join(carried)}{numbers_said}]"
     return f"{message.text}\n\n{note}" if message.text else note
 
@@ -154,6 +155,18 @@ def owner_photos(session: Session) -> list[Attachment]:
             message__session=session,
             message__role=Message.Role.USER,
             kind=Attachment.Kind.PICTURE,
+        ).order_by("message__seq", "position")
+    )
+
+
+def owner_videos(session: Session) -> list[Attachment]:
+    """Every video the shop owner attached in the chat, in the order sent: owner video 1
+    first."""
+    return list(
+        Attachment.objects.filter(
+            message__session=session,
+            message__role=Message.Role.USER,
+            kind=Attachment.Kind.VIDEO,
         ).order_by("message__seq", "position")
     )
 
@@ -175,14 +188,21 @@ def page_panel_wanted(session: Session) -> bool:
     ).exists()
 
 
-def _owner_photos_before(message: Message) -> int:
-    """How many photos the shop owner attached in the chat before `message`."""
+def _owner_files_before(message: Message, kind: str) -> int:
+    """How many files of `kind` the shop owner attached in the chat before `message`."""
     return Attachment.objects.filter(
         message__session_id=message.session_id,
         message__role=Message.Role.USER,
         message__seq__lt=message.seq,
-        kind=Attachment.Kind.PICTURE,
+        kind=kind,
     ).count()
+
+
+def _numbered(name: str, first: int, count: int) -> str:
+    """Such as "owner photo 3", or "owner videos 1 and 2"."""
+    numbers = [str(number) for number in range(first, first + count)]
+    listed = numbers[0] if count == 1 else f"{', '.join(numbers[:-1])} and {numbers[-1]}"
+    return f"owner {name}{'s' if count != 1 else ''} {listed}"
 
 
 def name_from(text: str) -> str:

@@ -15,6 +15,7 @@ the ad is assembled again, as a swapped-in try's is (agents.tasks)."""
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from django.db import transaction
@@ -184,29 +185,13 @@ def take_the_answer(step: SceneStep) -> None:
         return
     job = step.scene.job
     given: dict[str, Any] = question.answer or {}
-    shows = f"what the shop owner sent in answer to this question: {question.question}"
-    said: list[str] = []
-    added: list[LibraryEntry] = []
-    for key in given["photos"]:
-        item = library_items.add_owner_photo(job, key, key, shows)
-        if item is None:
-            # The labelling call's red notice told the shop owner.
-            said.append("Their photo couldn't be labelled, so it isn't in the library.")
-            continue
-        added.append(item)
-        said.append(f"Their photo is library item {library_items.library_line(item)}")
-    if added:
-        library_items.add_product_only_versions(job)
-        numbers = {item.number for item in added}
-        for version in library_of(job):
-            if isinstance(version.source, ProductOnly) and version.source.of in numbers:
-                added.append(version)
-                said.append(
-                    f"Its product-only version is library item "
-                    f"{library_items.library_line(version)}"
-                )
-    unreadable, from_videos = _videos(job, given["videos"], added)
-    said += from_videos
+    taken = into_the_library(
+        job,
+        photos=given["photos"],
+        videos=given["videos"],
+        shows=f"what the shop owner sent in answer to this question: {question.question}",
+    )
+    added, said = taken.added, taken.said
     text = "\n".join(
         [
             f'The shop owner answered: "{given["words"]}"'
@@ -227,21 +212,67 @@ def take_the_answer(step: SceneStep) -> None:
     from agents.loop import ToolResult
 
     with transaction.atomic():
-        for _ in range(unreadable):
-            post_notice(
-                job,
-                "The video you sent couldn't be read as a video, so nothing from it is in the "
-                "ad's library.",
-                Message.Level.PROBLEM,
-            )
+        say_unreadable(job, taken.unreadable)
         if added:
             post_notice(
                 job,
-                f"What you sent is in the ad's picture library as {_items(added)}, and the "
+                f"What you sent is in the ad's picture library as {items_said(added)}, and the "
                 f"fixing agent carries on with scene {step.scene.number}'s clip.",
                 Message.Level.INFO,
             )
         fixing_agent.answer_question(question, ToolResult(text, pictures))
+
+
+@dataclass(frozen=True)
+class Taken:
+    """What the shop owner's files added to the library: the items, a line for the agent on
+    each file, and how many videos couldn't be read as videos."""
+
+    added: list[LibraryEntry]
+    said: list[str]
+    unreadable: int
+
+
+def into_the_library(
+    job: Job, *, photos: Sequence[str], videos: Sequence[str], shows: str
+) -> Taken:
+    """Put the photos and videos the shop owner sent in the chat (file-store keys) into
+    `job`'s library: each photo as their photo, labelled as kept to show `shows`, with its
+    product-only version when it needs one; each video kept and watched, its look frames
+    added. Run again, it adds nothing twice and pays for nothing twice."""
+    said: list[str] = []
+    added: list[LibraryEntry] = []
+    for key in photos:
+        item = library_items.add_owner_photo(job, key, key, shows)
+        if item is None:
+            # The labelling call's red notice told the shop owner.
+            said.append("Their photo couldn't be labelled, so it isn't in the library.")
+            continue
+        added.append(item)
+        said.append(f"Their photo is library item {library_items.library_line(item)}")
+    if added:
+        library_items.add_product_only_versions(job)
+        numbers = {item.number for item in added}
+        for version in library_of(job):
+            if isinstance(version.source, ProductOnly) and version.source.of in numbers:
+                added.append(version)
+                said.append(
+                    f"Its product-only version is library item "
+                    f"{library_items.library_line(version)}"
+                )
+    unreadable, from_videos = _videos(job, videos, added)
+    return Taken(added, said + from_videos, unreadable)
+
+
+def say_unreadable(job: Job, unreadable: int) -> None:
+    """Tell the shop owner in red of each video they sent that couldn't be read."""
+    for _ in range(unreadable):
+        post_notice(
+            job,
+            "The video you sent couldn't be read as a video, so nothing from it is in the "
+            "ad's library.",
+            Message.Level.PROBLEM,
+        )
 
 
 def _videos(job: Job, keys: Sequence[str], added: list[LibraryEntry]) -> tuple[int, list[str]]:
@@ -284,7 +315,7 @@ def _videos(job: Job, keys: Sequence[str], added: list[LibraryEntry]) -> tuple[i
     return unreadable, said
 
 
-def _items(items: Sequence[LibraryEntry]) -> str:
+def items_said(items: Sequence[LibraryEntry]) -> str:
     """Such as "item 9", or "items 9 and 10"."""
     numbers = [str(item.number) for item in items]
     if len(numbers) == 1:

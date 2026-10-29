@@ -239,6 +239,7 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
     assert list(tools) == [
         "read_page",
         "use_photos",
+        "add_to_library",
         "plan_ad",
         "create_person",
         "remake_person",
