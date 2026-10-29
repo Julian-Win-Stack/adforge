@@ -38,6 +38,7 @@ Run again, as after a worker stopped, it pays for nothing twice: pieces are cut 
 recolours made once per picture and colour."""
 
 import logging
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Literal
@@ -73,7 +74,7 @@ from .library import (
     watch_of,
 )
 from .library_items import LOOK_KINDS
-from .models import Job, Scene, SceneStep
+from .models import Job, ReferencePhoto, Scene, SceneStep
 from .notices import post_notice
 from .planning import ScenePicture, ScenePiece
 from .product_videos import PieceWanted, cut_pieces
@@ -212,29 +213,85 @@ FOR_WORDS: dict[str, str] = {
 
 def labelled_sent_list(job: Job, sending: Sending, words: str) -> SentList:
     """The SentList of a clip sent `sending` with `words` written by another than the
-    first-send writer: SPEED_LINE, then code's label for each picture (its label, and what
-    the scene takes from it) and each piece, then `words` (spec #210 points 16, 23)."""
-    words = words.strip()
-    if words.startswith(SPEED_LINE):
-        words = words.removeprefix(SPEED_LINE).strip()
-    lines = [SPEED_LINE]
-    for picture in sending.pictures:
-        said = (
-            drawn_label(job, picture.drawn)
-            if picture.drawn is not None
-            else _as_a_label(picture.label)
-        )
-        if picture.for_ is not None:
-            said = f"{said}, for {FOR_WORDS[picture.for_]}"
-        lines.append(f"Image {picture.image} is {said}.")
-    lines += [f"Video {piece.number} is {PIECE_LABEL}." for piece in sending.pieces]
-    return sending.sent_list("\n".join([*lines, *([words] if words else [])]))
+    first-send writer (a fixing agent's try, a clip made from the shop owner's note), labelled
+    by code (`labelled_prompt`)."""
+    return sending.sent_list(
+        labelled_prompt(job, sending.pictures, sending.pieces, sending.recolours, words)
+    )
 
 
-def _as_a_label(label: str) -> str:
-    """A library label as the words after "Image N is": lower case first, no full stop."""
-    said = label.strip().rstrip(". ")
-    return f"{said[:1].lower()}{said[1:]}"
+def relabelled(job: Job, sent: SentList, words: str) -> SentList:
+    """`sent` sent again with `words` in place of its prompt's, labelled by code
+    (`labelled_prompt`): the same pictures, pieces and recolours."""
+    return sent.model_copy(
+        update={"prompt": labelled_prompt(job, sent.pictures, sent.pieces, sent.recolours, words)}
+    )
+
+
+def labelled_prompt(
+    job: Job,
+    pictures: Sequence[SentPicture],
+    pieces: Sequence[SentPiece],
+    recolours: Sequence[Recolour],
+    words: str,
+) -> str:
+    """A prompt code labels around `words` (spec #210 points 16, 23): SPEED_LINE, then code's
+    line for each picture (`image_line`) and each piece, then RECOLOURED_LINE when a picture
+    was recoloured, then the words, with any line of code's they carried left out
+    (`words_of`)."""
+    words = words_of(words)
+    made_now = {each.made for each in recolours if each.made is not None}
+    colours = dict(job.library.filter(number__in=made_now).values_list("number", "colour"))
+    lines = [
+        SPEED_LINE,
+        *(
+            image_line(job, picture, colours.get(picture.library_number or 0))
+            for picture in pictures
+        ),
+        *(f"Video {piece.number} is {PIECE_LABEL}." for piece in pieces),
+        *([RECOLOURED_LINE] if made_now else []),
+        *([words] if words else []),
+    ]
+    return "\n".join(lines)
+
+
+_CODES_LINE = re.compile(r"(Image|Video) \d+ is ")
+
+
+def words_of(prompt: str) -> str:
+    """The words of a clip's prompt, without the lines code writes around them: the speed
+    line, each picture's and piece's line and the recoloured line."""
+    return "\n".join(
+        line
+        for line in prompt.strip().splitlines()
+        if line.strip() not in (SPEED_LINE, RECOLOURED_LINE) and not _CODES_LINE.match(line)
+    ).strip()
+
+
+# Said once in a labelled prompt when a picture was recoloured (Julian, tickets thread, Oct 29,
+# ruling a): a recoloured item keeps its label, so its line names the item's own colour.
+RECOLOURED_LINE = (
+    "A picture may have been recoloured after its words were written: when its line ends "
+    '"in" a colour, the product is that colour in it, never another colour word on the line.'
+)
+
+
+def image_line(job: Job, picture: SentPicture, recoloured: str | None) -> str:
+    """One picture's line in a prompt code labels, "Image N is ...": the drawn picture's fixed
+    words; else its library label, then what the clip takes from it (FOR_WORDS), then, when
+    it was recoloured, the item's own colour."""
+    if picture.drawn is not None:
+        return f"Image {picture.image} is {drawn_label(job, picture.drawn)}."
+    words = picture.label.strip().rstrip(".")
+    first = words.split(" ", 1)[0]
+    if first[1:].islower() or len(first) == 1:
+        words = words[:1].lower() + words[1:]
+    parts = [words]
+    if picture.for_ is not None:
+        parts.append(f"used for {FOR_WORDS[picture.for_]}")
+    if recoloured is not None:
+        parts.append(f"in {recoloured}")
+    return f"Image {picture.image} is {', '.join(parts)}."
 
 
 def planned_piece_seconds(scene: Scene) -> float:
@@ -279,6 +336,7 @@ def cut_and_send(
     in_ad_colour = (
         {item.number for item in _colour_photos(job, originals)} if colour == ad else set()
     )
+    own_colour = in_their_own_colour(job, originals)
     pictures: list[SentPicture] = []
     recolours: list[Recolour] = []
     fell_back: list[LibraryEntry] = []
@@ -289,6 +347,7 @@ def cut_and_send(
             and picture.original is not None
             and colour_word(item.colour) != colour
             and picture.original.number not in in_ad_colour
+            and picture.original.number not in own_colour
             and item.number != reference
         ):
             # A recolour that falls back is said by the recolour step, once per picture and
@@ -336,6 +395,21 @@ def cut_and_send(
         pieces_left_out=pieces_left_out,
         excluded=excluded,
     )
+
+
+def in_their_own_colour(job: Job, originals: Sequence[LibraryEntry]) -> set[int]:
+    """The library items among `originals` sent in their own colour, never recoloured to the
+    clip's: the clean pictures of the shop owner's things (drawn from their photos, the
+    scenes' ReferencePhoto rows), which aren't the product. The owner's part is part of the
+    product (its source is OwnerPart), so it is recoloured like the product's photos.
+
+    Not approved yet (#240 review, S5): this one rule says which items keep their colour."""
+    photos = set(ReferencePhoto.objects.filter(scene__job=job).values_list("file", flat=True))
+    return {
+        item.number
+        for item in originals
+        if isinstance(item.source, OwnerPhoto) and item.source.original in photos
+    }
 
 
 @dataclass(frozen=True)

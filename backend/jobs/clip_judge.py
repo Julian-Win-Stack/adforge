@@ -286,7 +286,7 @@ MOTION_QUESTIONS = ("real_motion", "sudden_change", "does_what_was_ordered")
 # decisions/spec-fix-check-shares-judge.md): a clip made again for the shop owner's clip fix
 # is judged as any clip, and each MOTION ask is also shown the clip they complained about,
 # told their change and asked this question. Its answer never fails the clip: it is the fix
-# check's verdict alone (jobs.work.check_fix). Wording: Julian's yes, 2026-10-14 21:44.
+# check's verdict alone. Wording: Julian's yes, 2026-10-14 21:44.
 MOTION_FIX_QUESTION = """\
 This clip was made again because the shop owner asked for a change, given to you word for \
 word as the owner's change. Before the new clip's frames you are shown frames of the old \

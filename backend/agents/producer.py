@@ -31,7 +31,6 @@ from jobs.library_items import add_kept_photos, add_product_only_versions, libra
 from jobs.made_pictures import PictureNotMade, make_picture
 from jobs.models import (
     BROLL_FIELDS,
-    CLIP_ONLY_INPUTS,
     PLANNED_FOR_THE_ACTION,
     AgentFix,
     Job,
@@ -1118,16 +1117,6 @@ class MakePicture(Tool):
         )
 
 
-def _made_for_its_references(scene: Scene) -> dict[str, Any]:
-    """The filter for clips made through "step__" for the scene's references as they stand:
-    what only a clip is made from (CLIP_ONLY_INPUTS)."""
-    return {
-        key: value
-        for key, value in SceneStep.made_for(scene, through="step__").items()
-        if key.removeprefix("step__").removesuffix("__isnull") in CLIP_ONLY_INPUTS
-    }
-
-
 def _with_the_photos_in_use(scene: Scene, steps: QuerySet[SceneStep]) -> SceneStep | None:
     """The newest of `steps` made with the shop owner's photos the scene uses now, if any."""
     using = {(row.file, row.thing.casefold()) for row in _photos_in_use(scene)}
@@ -1397,7 +1386,10 @@ class MakeClip(Tool):
                 # clip, made from its sent list, has no picture: any made for the scene's plan
                 # as it stands (its references with it) is the same clip.
                 **(
-                    {"picture__step": picture_step, **_made_for_its_references(scene)}
+                    {
+                        "picture__step": picture_step,
+                        **SceneStep.references_made_for(scene, "step__"),
+                    }
                     if picture_step is not None
                     else _made_for_the_plan(scene)
                 ),
@@ -2323,6 +2315,8 @@ class UseVersion(Tool):
             raise Refused(
                 f"{busy}. You'll be told when it's ready; use the version then."
             ) from busy
+        # Refused above unless the version is free, so its clip came back with it.
+        assert not gone.clip_to_make, "a free version brings its clip back"
         return (
             f"Scene {number} uses {chosen.label} again, as {gone.version.label}: its clip was "
             f"brought back, and nothing was made or paid for.{_assembled_again(call)}"
@@ -2399,7 +2393,7 @@ def _assembled_again(call: ToolCall) -> str:
         return ""
     try:
         ad, _ = assemble_the_ad(call.session, job)
-    except Refused as held:
+    except (Refused, Failed) as held:
         return f" The ad wasn't assembled again yet: {held} Assemble it once it can be."
     return (
         f" The ad was assembled again with it (version {ad.version}, {ad.seconds:g} seconds) "
@@ -2436,10 +2430,16 @@ class CostSoFar(Tool):
             .annotate(cost=Sum("cost_usd"))
             .order_by("tool_call__tool")
         )
+        turns = _summed(paid.filter(purpose=PRODUCER.purpose))
+        counted = sum(by_scene.values(), Decimal(0)) + turns
+        counted += sum((cost or Decimal(0) for _, cost in rest), Decimal(0))
         parts = [
             *(f"scene {number} {dollars(cost)}" for number, cost in by_scene.items()),
             *(f"{tool} {dollars(cost or Decimal(0))}" for tool, cost in rest),
-            f"your own turns {dollars(_summed(paid.filter(purpose=PRODUCER.purpose)))}",
+            f"your own turns {dollars(turns)}",
+            # Anything charged to none of those, as the app's own model calls on messages, so
+            # the parts add up to the total.
+            *([f"the rest {dollars(total - counted)}"] if total != counted else []),
         ]
         return f"The ad has cost {dollars(total)} so far: {_listed(parts)}."
 

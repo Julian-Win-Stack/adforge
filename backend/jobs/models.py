@@ -973,6 +973,17 @@ class SceneStep(models.Model):
         return made_for
 
     @staticmethod
+    def references_made_for(scene: Scene, through: str = "") -> dict[str, Any]:
+        """`made_for` of only what a clip alone is made from (CLIP_ONLY_INPUTS): the filter
+        for clips made through `through`, such as "step__", for the scene's references as
+        they stand."""
+        return {
+            key: value
+            for key, value in SceneStep.made_for(scene, through).items()
+            if key.removeprefix(through).removesuffix("__isnull") in CLIP_ONLY_INPUTS
+        }
+
+    @staticmethod
     def made_for(scene: Scene, through: str = "", *, picture: bool = False) -> dict[str, Any]:
         """The filter for steps made for `scene` as it stands, or for what steps made
         `through` a relation to them, such as "step__": those whose snapshot is still up to

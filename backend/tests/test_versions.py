@@ -7,7 +7,9 @@ is made through the chat and its scenes changed by the producer from notes, up t
 go-back, which code calls; the models are faked at the gateway, but the clips are real
 tiny videos and ffmpeg runs for real."""
 
+import re
 from collections.abc import Callable
+from decimal import Decimal
 
 import pytest
 from django.db.models import Sum
@@ -270,3 +272,6 @@ def test_cost_so_far_adds_up_every_model_call_by_part(
     assert "plan_ad $" in answer and "create_person $" in answer
     # Its own turn's cost too, the one that asked included.
     assert "your own turns $" in answer
+    # The parts add up to the total.
+    parts = re.findall(r"(?:, | and |: )[^$,]+ \$([0-9]+(?:\.[0-9]+)?)", answer)
+    assert sum(Decimal(part) for part in parts) == total
