@@ -143,6 +143,16 @@ class Message(models.Model):
         help_text="The B-roll clip step whose every try the clip judge failed, for code's "
         "notice showing them to pick from (#180). Null for any other message.",
     )
+    owner_question = models.ForeignKey(
+        "jobs.OwnerQuestion",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="shown_by",
+        help_text="For code's notice that the fixing agent asked the shop owner a question "
+        "(spec #210 point 23), the question, shown on its scene's card. Null for any other "
+        "message.",
+    )
     chosen_clip = models.ForeignKey(
         "jobs.ProducedItem",
         on_delete=models.SET_NULL,
