@@ -50,6 +50,7 @@ from jobs.notices import post_notice
 from jobs.planning import (
     BrollKind,
     Part,
+    PersonGender,
     PersonShown,
     ScenePicture,
     ScenePiece,
@@ -61,6 +62,8 @@ from jobs.reference_photos import ReferencePhotoUnusable
 from jobs.watcher import watch_videos
 from jobs.work import (
     DECLARED_INSTEAD,
+    NoPlaceYet,
+    NoPresenterYet,
     SkippedPhoto,
     assemble_ad,
     bring_back_clip,
@@ -70,6 +73,8 @@ from jobs.work import (
     copy_and_pick,
     create_music,
     create_person,
+    drawn_for,
+    edit_scene_place,
     fetch_page,
     keep_page,
     latest,
@@ -77,11 +82,14 @@ from jobs.work import (
     music_mood,
     music_prompt,
     music_seconds,
+    new_scene_place,
     note_face,
     plan,
+    remake_person,
     run_checks,
     save_photos,
     scene_place,
+    show_once,
     use_music_again,
     version_label,
     waits_to_be_said_to_camera,
@@ -91,7 +99,7 @@ from jobs.work import (
 
 from . import hard_list, loop, snapshot, step_signals
 from .fixing_agent import AGENT as FIXING_AGENT
-from .fixing_agent import MOST_TRIES
+from .fixing_agent import MOST_TRIES, PLACE_NAMES
 from .fixing_agent import PURPOSE as FIXING_AGENT_PURPOSE
 from .look import Look
 from .loop import Agent, Failed, Refused, Tool
@@ -136,6 +144,11 @@ Each says which steps the change made stale; nothing is made again by itself. Ru
 planning checks on what changed, make again only the stale steps the change needs with the \
 scene tools, then assemble the ad. Once it is shown, tell the shop owner in one line what \
 changed and what it cost.
+The person and the place can change at any step too: remake_person makes the presenter \
+again, their look, their voice or both, with your instruction on top of the standard \
+prompt; set_place gives a scene that shows the product a place of its own, drawn new or a \
+small edit of the one it has. Each says which steps the change made stale. Look at a new \
+portrait or place with look before making anything from it.
 Scene tools start their work in the background and hand back at once, before anything is \
 made. Tell the shop owner the work has started, then carry on or reply: don't call the tool \
 again to see whether it has finished. When a step finishes or fails, you are told in a \
@@ -569,7 +582,7 @@ class CreatePerson(Tool):
             return (
                 "The person was already made and shown to the shop owner, so nothing was made "
                 f"or paid for again. Making them cost {dollars(_spent(job, self.name))}. "
-                f"{_speed(voice)}"
+                f"{_speed(voice)} To change them, call remake_person."
             )
         portrait, voice = create_person(job)
         # A run again after a restart doesn't show the person twice.
@@ -587,6 +600,191 @@ class CreatePerson(Tool):
         return (
             "Made the person, and showed the shop owner their portrait and their voice "
             f"reading the script in the chat. {_speed(voice)}"
+        )
+
+
+class RemakePerson(Tool):
+    """Make the person who presents the ad again: their look (a new portrait), their voice (a
+    new voice, its speed measured on the script), or both. What you give replaces the plan's
+    description of them, which every later picture is made from; your instruction goes to
+    the picture model or the voice designer on top of the standard prompt. The new portrait
+    and voice are shown to the shop owner in the chat. Hands back what was made, and which of
+    the scenes' steps the change made stale: nothing is made again until you call the scene
+    tools for it. Look at the new portrait (look, what "person") before you make anything
+    from it."""
+
+    name = "remake_person"
+
+    remake: Literal["look", "voice", "both"] = Field(
+        description='What to make again: "look" for a new portrait, "voice" for a new voice, '
+        '"both" for both.'
+    )
+    gender: PersonGender | None = Field(
+        default=None,
+        description="What the person presents as, when it changes; it goes into both the "
+        "portrait and the voice, so remake both. Null keeps it.",
+    )
+    looks: str | None = Field(
+        default=None,
+        description="How the person looks, in full, replacing the plan's description, when the "
+        "look is made again. Null keeps it.",
+    )
+    voice: str | None = Field(
+        default=None,
+        description="How the person's voice sounds, in full, replacing the plan's description, "
+        "when the voice is made again. Null keeps it.",
+    )
+    instruction: str | None = Field(
+        default=None,
+        description="Your detailed instruction to the picture model or the voice designer, "
+        "on top of the standard prompt, such as what the shop owner asked for. Null for none.",
+    )
+
+    def run(self, call: ToolCall) -> str:
+        job = _the_job(call)
+        if job is None or latest(job, ProducedItem.Kind.PORTRAIT) is None:
+            raise Refused("the person hasn't been made yet: create the person first.")
+        look = self.remake in ("look", "both")
+        voice = self.remake in ("voice", "both")
+        if self.looks is not None and not look:
+            raise Refused('new looks are drawn in a new portrait: remake "look" or "both".')
+        if self.voice is not None and not voice:
+            raise Refused('a new voice description needs a new voice: remake "voice" or "both".')
+        changed = {
+            field: value.strip() if isinstance(value, str) else value
+            for field, value in (
+                ("person_gender", self.gender),
+                ("person_looks", self.looks),
+                ("person_voice", self.voice),
+            )
+            if value is not None
+        }
+        if changed:
+            Job.objects.filter(pk=job.pk).update(**changed)
+            job.refresh_from_db()
+        portrait, made_voice = remake_person(
+            job, look=look, voice=voice, instruction=self.instruction or "", call=call
+        )
+        shown = [
+            messages.AttachedFile(kind, item.file)
+            for kind, item in (
+                (Attachment.Kind.PICTURE, portrait),
+                (Attachment.Kind.SOUND, made_voice),
+            )
+            if item is not None and not _shown_before(call.session, item.file)
+        ]
+        if shown:
+            messages.add(call.session, role=Message.Role.AGENT, carrying=shown)
+        said = []
+        if portrait is not None:
+            said.append(
+                f"Made the person's look again (portrait version {portrait.version}) and showed "
+                'the shop owner in the chat. Look at it (look, what "person") before you make '
+                "anything from it."
+            )
+        if made_voice is not None:
+            said.append(
+                f"Made the person's voice again (version {made_voice.version}) and had the shop "
+                f"owner hear it reading the script in the chat. {_speed(made_voice)}"
+            )
+        said.append(f"It cost {dollars(call.cost_usd())}.")
+        return " ".join(said + _person_stale(job, portrait is not None))
+
+
+def _shown_before(session: Session, file: str) -> bool:
+    """Whether the chat already shows `file`, as after a restart."""
+    return Attachment.objects.filter(message__session=session, file=file).exists()
+
+
+def _person_stale(job: Job, new_look: bool) -> list[str]:
+    """What a new person made stale, scene by scene, for remake_person's answer: each scene's
+    stale steps, and the scenes whose picture of the presenter in their place shows the
+    person as they were."""
+    said = [line for scene in job.scenes.order_by("number") if (line := stale.after_edit(scene))]
+    faces = [
+        scene.number
+        for scene in job.scenes.order_by("number")
+        if scene.shows and scene.person_shown == Scene.PersonShown.HAS_FACE
+    ]
+    if new_look and faces:
+        said.append(
+            f"The picture of the presenter in the place of {_scenes(faces)} shows the person "
+            "as they were: it is drawn again for the new person when the scene's clip is next "
+            "made."
+        )
+    said.append(
+        "Make again what you decide the change needs with the scene tools, then assemble the ad."
+        if len(said) > 0
+        else "Nothing made for the ad is stale."
+    )
+    return said
+
+
+class SetPlace(Tool):
+    """Give a scene that shows the product a place of its own, for that scene only: a new
+    place drawn fresh from your words (new_place), or a small edit of the picture of the place
+    it has now (edit), which is cheaper and keeps the look already seen. A scene showing the
+    presenter's face is drawn with the presenter standing in it; one showing nobody, the room
+    alone. That picture is what its clips are sent of where it happens. Hands back the
+    picture made and which steps it made stale: nothing is filmed until you make the scene's
+    clip again. Look at it (look, what "place") before you do."""
+
+    name = "set_place"
+
+    scene: int = Field(description="The number of the scene.")
+    new_place: str | None = Field(
+        default=None,
+        description="The new place, described in full, to be drawn fresh. Null for an edit.",
+    )
+    edit: str | None = Field(
+        default=None,
+        description="A small change to the picture of the scene's place as it is now, such as "
+        "the light or what to clear away. Null for a new place.",
+    )
+
+    def run(self, call: ToolCall) -> str:
+        scene = _a_planned_scene(call, self.scene)
+        words = [each for each in (self.new_place, self.edit) if each is not None]
+        if len(words) != 1:
+            raise Refused("give a new place or an edit, one of the two.")
+        if not words[0].strip():
+            raise Refused("the words are blank: write the new place or the edit.")
+        if not scene.shows:
+            raise Refused(
+                f"scene {scene.number} has the person talking to camera, and its starting "
+                "picture is drawn from the portrait and a product photo, with no picture of a "
+                "place. Make its starting picture again with a note saying where they are, or "
+                "make it a scene that shows the product with edit_scene first."
+            )
+        drawn = drawn_for(scene.person_shown)
+        try:
+            made = (
+                new_scene_place(scene, drawn, words[0])
+                if self.new_place is not None
+                else [edit_scene_place(scene, drawn, words[0])]
+            )
+        except NoPlaceYet as missing:
+            raise Refused(
+                f"the ad has no {PLACE_NAMES[drawn]} yet to edit: it is drawn with the first "
+                "scene that shows the product. Give a new place instead."
+            ) from missing
+        except NoPresenterYet as missing:
+            raise Refused(
+                "the person hasn't been made yet, and the scene shows them: create the person "
+                "first."
+            ) from missing
+        picture = made[-1]
+        show_once(scene.job, made)
+        stale_line = stale.after_edit(scene)
+        return " ".join(
+            [
+                f"Made scene {scene.number}'s own {PLACE_NAMES[drawn]} (version "
+                f"{picture.version}), for this scene only: the other scenes keep theirs, and "
+                "it was shown to the shop owner in the chat. Its next clip is sent it. It cost "
+                f"{dollars(call.cost_usd())}. Look at it (look, scene {scene.number}, what "
+                '"place") before its clip is made.',
+                stale_line or "Nothing made for the scene is stale.",
+            ]
         )
 
 
@@ -2553,12 +2751,14 @@ PRODUCER = Agent(
         UsePhotos,
         PlanAd,
         CreatePerson,
+        RemakePerson,
         RunPlanningChecks,
         CreateMusic,
         EditScene,
         AddScene,
         RemoveScene,
         ReorderScenes,
+        SetPlace,
         MakeStartingPicture,
         MakePicture,
         MakeLineAudio,
