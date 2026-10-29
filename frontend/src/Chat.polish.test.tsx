@@ -2,7 +2,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import { Chat } from "./Chat";
-import type { Attachment, Message, PlanNotice, SceneStep } from "./api";
+import type { Attachment, Message, SceneStep } from "./api";
 
 const NOW = "2026-10-18T10:00:00Z";
 
@@ -25,7 +25,6 @@ function said(
     attachments: [],
     step: null,
     suggested_note: null,
-    plan: null,
     ...more,
   };
 }
@@ -67,29 +66,6 @@ async function session(messages: Omit<Message, "seq">[]) {
   await screen.findByText(numbered[0].text);
 }
 
-const PLAN: PlanNotice = {
-  plan: 1,
-  state: "proposed",
-  question: "",
-  estimate_usd: "0.40",
-  estimate_up_to_usd: "0.80",
-  cants: [],
-  scenes: [
-    {
-      scene: 2,
-      action: "new_clip",
-      change: "He scrubs harder",
-      line: "",
-      overlay: "",
-      go_back_to: null,
-      cant: "",
-      estimate_usd: "0.40",
-      estimate_up_to_usd: "0.80",
-      photos: [],
-    },
-  ],
-};
-
 test("a long problem notice shows its first line, and the rest only on asking", async () => {
   const listed = Array.from({ length: 59 }, (_, i) => `- https://shop.example/p${i}.jpg: gone.`);
   await session([
@@ -115,15 +91,17 @@ test("a one-line notice has nothing to show or hide", async () => {
   expect(screen.queryByRole("button", { name: "Show details" })).toBeNull();
 });
 
-test("while a plan waits for the owner's yes, the producer isn't said to be working", async () => {
+test("the producer's answer to the owner's notes brings no plan card and no yes button", async () => {
   await session([
     said("user", "Scene 2: he should scrub harder"),
-    said("notice", "", { plan: { id: 1, event: "shown", notice: PLAN } }),
+    said("agent", "He'll scrub harder in scene 2. About $0.40. Shall I?"),
   ]);
-  await screen.findByRole("button", { name: "Yes, go ahead" });
+  await screen.findByText("He'll scrub harder in scene 2. About $0.40. Shall I?");
 
-  expect(screen.queryByText("The producer is working")).toBeNull();
-  expect(screen.getByText("Waiting for your answer")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /^Yes/ })).toBeNull();
+  expect(screen.queryByRole("group", { name: "Plan for your notes" })).toBeNull();
+  expect(screen.queryByRole("group", { name: "Confirm the fix" })).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Message" })).toBeTruthy();
 });
 
 test("while a suggested note waits for the owner, the producer isn't said to be working", async () => {
@@ -237,18 +215,6 @@ test("a clip made again from the same picture keeps that picture as its cover", 
     .getAllByLabelText("Video the agent made")
     .map((clip) => clip.getAttribute("poster"));
   expect(posters).toEqual(["/media/s3-v1.png", "/media/s3-v1.png"]);
-});
-
-test("after the owner types an answer under a plan, the producer is said to be working", async () => {
-  await session([
-    said("user", "Scene 2: he should scrub harder"),
-    said("notice", "", { plan: { id: 1, event: "shown", notice: PLAN } }),
-    said("user", "How much will that cost?"),
-  ]);
-  await screen.findByRole("button", { name: "Yes, go ahead" });
-
-  expect(screen.getByText("The producer is working")).toBeTruthy();
-  expect(screen.queryByText("Waiting for your answer")).toBeNull();
 });
 
 test("a suggested note while another scene is still being made keeps the producer working", async () => {

@@ -75,51 +75,6 @@ export type SceneStep = {
   state: "started" | "made" | "not_made";
 };
 
-/** An owner photo a plan's scene uses: the one thing taken from it, whether that thing is in
- * the scene's starting picture now, and whether more of it shows during the action. */
-export type PlanPhoto = {
-  photo: number;
-  thing: string;
-  in_picture: boolean;
-  during_action: boolean;
-};
-
-/** What a fix plan changes in one scene, or why it can't. Amounts are dollars as strings. */
-export type PlanScene = {
-  scene: number;
-  action: "fix" | "new_picture" | "new_clip" | "new_line" | "go_back" | "no_change";
-  change: string;
-  line: string;
-  /** The scene's new overlay, for a new line that changes what it shows. Blank keeps it. */
-  overlay: string;
-  go_back_to: number | null;
-  cant: string;
-  estimate_usd: string;
-  estimate_up_to_usd: string;
-  photos: PlanPhoto[];
-};
-
-/** A fix plan as code posts it for the owner's yes (backend jobs/fix_plans.py `notice`),
- * read as it stands when the message was fetched. */
-export type PlanNotice = {
-  plan: number;
-  state: "proposed" | "confirmed" | "declined" | "replaced";
-  question: string;
-  estimate_usd: string;
-  estimate_up_to_usd: string;
-  /** What the owner asked that can't be done and isn't about one scene (music, voice...). */
-  cants: { kind: string; text: string }[];
-  scenes: PlanScene[];
-};
-
-/** What a message says of a fix plan: code's notice showing it (with the plan), the owner's
- * tap of its yes button, or code's notice that it is going ahead or was dropped. */
-export type MessagePlan = {
-  id: number;
-  event: "shown" | "yes" | "confirmed" | "declined";
-  notice: PlanNotice | null;
-};
-
 /** One try of a clip the clip judge failed every try of: its "Try 1" name, its scene
  * version label, and what the judge still sees wrong in it. */
 export type TryClip = {
@@ -159,8 +114,6 @@ export type Message = {
   /** A note the message suggests for a scene's card, as when the check of a fix found the
    * change missing; null for none. */
   suggested_note: { scene: number; text: string } | null;
-  /** The fix plan the message is about; null for none. */
-  plan: MessagePlan | null;
   /** Code's notice showing every try of a clip the judge failed every try of; null for any
    * other message. */
   tries?: MessageTries | null;
@@ -258,10 +211,10 @@ export async function getMessagesSince(sessionId: string, after: number): Promis
   return { messages, paused: response.headers.get("X-Session-Paused") === "true" };
 }
 
-/** What a message is besides its words: a tap of a plan's yes button names the `plan`, and
- * a tap of "Use this one" under a try names the try, `useClip`; the page panel's Done sends
- * the page text and photos as a `pastedPage`. Each marks the message as never typed. */
-export type SendAs = { plan?: number; useClip?: number; pastedPage?: boolean };
+/** What a message is besides its words: a tap of "Use this one" under a try names the try,
+ * `useClip`; the page panel's Done sends the page text and photos as a `pastedPage`. Each
+ * marks the message as never typed. */
+export type SendAs = { useClip?: number; pastedPage?: boolean };
 
 /** Say something in a session, with photos or videos when there are any. The server takes it
  * straight away, even while the agent is working. */
@@ -269,7 +222,7 @@ export async function sendMessage(
   sessionId: string,
   text: string,
   photos: File[],
-  { plan, useClip, pastedPage }: SendAs = {},
+  { useClip, pastedPage }: SendAs = {},
 ): Promise<Sent> {
   let request: RequestInit;
   if (photos.length > 0 || pastedPage) {
@@ -281,14 +234,7 @@ export async function sendMessage(
     if (pastedPage) form.append("pasted_page", "true");
     request = { method: "POST", body: form };
   } else {
-    request = jsonRequest(
-      "POST",
-      useClip !== undefined
-        ? { text, use_clip: useClip }
-        : plan === undefined
-          ? { text }
-          : { text, plan },
-    );
+    request = jsonRequest("POST", useClip !== undefined ? { text, use_clip: useClip } : { text });
   }
   return readJson<Sent>(await fetch(`/api/sessions/${sessionId}/messages/`, request));
 }

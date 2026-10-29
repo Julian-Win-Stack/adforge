@@ -28,7 +28,6 @@ function said(
     attachments,
     step: null,
     suggested_note,
-    plan: null,
   };
 }
 
