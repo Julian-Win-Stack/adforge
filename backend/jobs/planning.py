@@ -892,9 +892,14 @@ def picture_missing(number: int, scene: PlannedScene, library: Collection[int]) 
 def moment_missing(number: int, scene: PlannedScene, moments: Mapping[int, int]) -> str | None:
     """Why scene `number` names a moment no watched video has, or None. `moments` holds how
     many moments each watched video has, by the video's number."""
-    if scene.piece is None:
+    return piece_missing(number, scene.piece, moments)
+
+
+def piece_missing(number: int, piece: ScenePiece | None, moments: Mapping[int, int]) -> str | None:
+    """Why scene `number`'s `piece` names a moment no watched video has, or None."""
+    if piece is None:
         return None
-    video, moment = scene.piece.video, scene.piece.moment
+    video, moment = piece.video, piece.moment
     if not moments.get(video):
         return f"Scene {number} names a moment of video {video}: that video has no moments."
     if not 1 <= moment <= moments[video]:
