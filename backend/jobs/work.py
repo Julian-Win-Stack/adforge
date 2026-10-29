@@ -1854,7 +1854,8 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
     line best and writes the prompt, then the picture is made from the portrait and that
     photo. For a scene that shows the product rather than the person talking, the picture
     shows what the scene shows, and the model also writes the clip's motion prompt. Gives
-    back the picture, kept as the scene's next version.
+    back the picture, kept as the scene's next version. A B-roll step also makes sure the ad
+    has its room alone and its person-in-room picture (`person_and_room`).
 
     Run again, as after a worker stopped, it pays for nothing already paid for: the choice
     is made from the conversation as it was when the step started, so it is answered from
@@ -1863,8 +1864,12 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
     if step.broll_kind:
         made = made or _make_broll_picture(step)
         # Drawn by the first B-roll starting picture made, as the before-picture is; never
-        # sent to a starting picture.
-        person_and_room(step)
+        # sent to a starting picture, so one that can't be drawn leaves the scene's picture
+        # made, and is said in the chat.
+        try:
+            person_and_room(step)
+        except PlaceNotDrawn as not_drawn:
+            say_the_place_wasnt_drawn(step.scene.job, not_drawn)
         return made
     if made is not None:
         return made
@@ -2358,7 +2363,7 @@ def person_and_room(step: SceneStep) -> tuple[ProducedItem, ProducedItem]:
     standing straight and still in that room, nothing else happening, for the scenes they are
     seen in. Each is drawn once per ad, after the plan, with the picture model ordered as
     ROOM_ALONE_PROMPT and PERSON_IN_ROOM_PROMPT say, and shown in the chat once. Gives back
-    the person-in-room picture, then the room alone.
+    the person-in-room picture, then the room alone; PlaceNotDrawn when one can't be drawn.
 
     Run again, as after a worker stopped, it pays for nothing already paid for."""
     job = step.scene.job
@@ -2383,6 +2388,35 @@ def person_and_room(step: SceneStep) -> tuple[ProducedItem, ProducedItem]:
     return person, room
 
 
+# What the shop owner is told each of the ad's pictures of its place is, when it can't be drawn.
+PLACE_PICTURE_NAMES = {
+    ProducedItem.Kind.ROOM_ALONE: "picture of the ad's place on its own",
+    ProducedItem.Kind.PERSON_IN_ROOM: "picture of the presenter in the ad's place",
+}
+
+
+class PlaceNotDrawn(Exception):
+    """The picture model couldn't draw the ad's room alone or its person-in-room picture."""
+
+    def __init__(self, kind: ProducedItem.Kind) -> None:
+        super().__init__(f"the {PLACE_PICTURE_NAMES[kind]} couldn't be drawn")
+        self.kind = kind
+
+
+def say_the_place_wasnt_drawn(job: Job, failed: PlaceNotDrawn) -> None:
+    """Tell the chat, in red, that one of the ad's pictures of its place couldn't be drawn:
+    nothing sends it yet, so the scenes are made as usual, and the next B-roll starting
+    picture draws it again."""
+    logger.error("Job %s: %s", job.pk, failed, exc_info=failed.__cause__)
+    post_notice(
+        job,
+        f"The {PLACE_PICTURE_NAMES[failed.kind]} couldn't be drawn, so the ad doesn't have it "
+        "yet. Nothing in the ad uses it yet, so every scene is made as usual. It is drawn "
+        "again when the next scene showing the product gets its picture.",
+        Message.Level.PROBLEM,
+    )
+
+
 def _draw_once(
     job: Job,
     kind: ProducedItem.Kind,
@@ -2400,9 +2434,19 @@ def _draw_once(
     file = (
         drawn.output["file"]
         if drawn is not None and drawn.output is not None
-        else edit_picture(job=job, purpose=purpose, prompt=prompt, pictures=pictures)
+        else _drawn(kind, purpose, prompt, pictures, job)
     )
     return ProducedItem.objects.create(job=job, kind=kind, file=file, made_from=room)
+
+
+def _drawn(
+    kind: ProducedItem.Kind, purpose: str, prompt: str, pictures: list[str], job: Job
+) -> str:
+    """Have the picture model draw `kind`: PlaceNotDrawn, from what went wrong, if it can't."""
+    try:
+        return edit_picture(job=job, purpose=purpose, prompt=prompt, pictures=pictures)
+    except Exception as error:
+        raise PlaceNotDrawn(kind) from error
 
 
 def _show_once(job: Job, made: list[ProducedItem]) -> None:

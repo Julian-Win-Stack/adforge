@@ -283,8 +283,8 @@ def test_the_person_in_room_picture_is_ordered_to_show_the_presenter_standing_on
     # Not graded yet, frozen as Julian ordered it (Oct 28 17:37, "just standing straight in
     # that room. that's it."; spec #210 point 12): an order, not a ban.
     assert (
-        "The person stands straight and still in the room, facing the camera, hands at their "
-        "sides, and nothing else happens."
+        "The person stands straight and still in the room, hands at their sides, and nothing "
+        "else happens."
     ) in PERSON_IN_ROOM_PROMPT
 
 
@@ -292,8 +292,9 @@ def test_the_room_alone_is_ordered_to_hold_only_the_room() -> None:
     # Not graded yet, frozen as Julian decided it (spec 2 item 53, Oct 28 22:32): "the
     # room-alone picture holds only the room, nothing of the scene".
     assert (
-        "Keep only the room itself, exactly as it is: take every other thing out of it, with "
-        "every mark, stain or mess on what stays, so nothing of any scene is left in it."
+        "Keep the room itself as it is: its walls, floor, surfaces and fittings. Take out every "
+        "other thing, and every mark, stain or mess on what stays, so nothing of any scene is "
+        "left."
     ) in ROOM_ALONE_PROMPT
 
 
