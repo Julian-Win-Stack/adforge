@@ -3,6 +3,8 @@ as it writes it, and reads the judge's answer, until a try passes or it gives up
 is a version the shop owner can see and pick. The agent's turns, the judge, the pictures and
 the clips are faked at the gateway (spec: handoffs/fixing-agent/spec.md)."""
 
+import json
+import re
 from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
@@ -15,9 +17,10 @@ from agents import fixing_agent, producer, tasks
 from agents.fixing_agent import Failure, Outcome, Try, fix_scene
 from agents.models import ToolCall
 from agents.money import dollars
+from chat.models import Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from gateway.types import Said
+from gateway.types import Said, ToolUse
 from jobs import work
 from jobs.clip_judge import ASKS
 from jobs.models import AgentFix, Fix, ProducedItem, Scene, SceneStep
@@ -178,11 +181,11 @@ def test_every_model_call_of_the_fixing_is_charged_to_one_of_its_tool_calls(
     assert set(calls.values_list("tool_call__agent", flat=True)) == {"fixing_agent"}
 
 
-def test_the_agent_is_told_the_judges_words_and_the_tries_left(passed_on_try_2: Outcome) -> None:
+def test_the_agent_is_told_the_judges_words(passed_on_try_2: Outcome) -> None:
     first, second = told()
+    assert first.startswith("Try 1.") and second.startswith("Try 2.")
     assert "The judge's verdict: fail." in first and FLOATS in first
-    assert first.endswith("Tries left: 5 of 6.")
-    assert "It passes." in second and second.endswith("Tries left: 4 of 6.")
+    assert first.endswith("It fails.") and second.endswith("It passes.")
 
 
 def test_a_fixed_scene_is_never_looked_at_again(
@@ -377,25 +380,154 @@ def test_a_refused_try_is_no_try(fake_model: FakeModel, failed_clip: SceneStep) 
     assert [each.number for each in AgentFix.objects.get().tries.all()] == [1]
 
 
-# --- The cap ---------------------------------------------------------------------------------
+# --- The cap: silent, and code ends the fix ------------------------------------------------
+
+# A count of tries or turns, as the agent might be told one: "5 tries", "tries left",
+# "try 2 of 6", "at most 6 tries", "after 40 turns".
+COUNTED = re.compile(
+    r"\b\d+\s+(?:tries|turns)\b|\b(?:tries|turns)\s+left\b|\b(?:try|turn)\s+\d+\s+of\s+\d+",
+    re.IGNORECASE,
+)
 
 
-def test_the_seventh_try_is_refused_and_the_agent_told_to_give_up(
-    fake_model: FakeModel, failed_clip: SceneStep
-) -> None:
+def everything_the_agent_read(fake_model: FakeModel) -> list[str]:
+    """Every text the agent was handed on every turn: its instructions, its tools'
+    descriptions and argument schemas, and each line of its conversation."""
+    read: list[str] = []
+    for each in fake_model.turns_taken:
+        if each.purpose != "fix_scene":
+            continue
+        read.append(each.instructions)
+        for tool in each.tools:
+            read += [tool.description, json.dumps(tool.arguments.model_json_schema())]
+        for happened in each.handoff.conversation:
+            read.append(happened.result if isinstance(happened, ToolUse) else happened.text)
+    return read
+
+
+@pytest.fixture
+def ended_by_the_cap(fake_model: FakeModel, failed_clip: SceneStep) -> Outcome:
+    """A whole fix with a cap of 2: a look, a refused try, a failing try, a turn with no tool,
+    then a second failing try, which code ends the fix on."""
     fake_model.respond(
         "fix_scene",
-        *[turn(calls=[film_again()]) for _ in range(7)],
-        turn(calls=[("give_up", {"reason": "Six tries failed."})]),
+        turn(calls=[("look_at_place", {})]),
+        turn(calls=[film_again(video_prompt="Never spill.")]),
+        turn(calls=[film_again(video_prompt=POURS)]),
+        turn("Let me think about the pour."),
+        turn(calls=[film_again()]),
+        # Never taken: code ends the fix once the cap is reached.
+        turn(calls=[("give_up", {"reason": "Two tries failed."})]),
     )
-    fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 18)
-    outcome = fixed(failed_clip)
-    assert len(outcome.tries) == 6
-    assert told()[6].startswith(
-        "Refused: you have filmed all 6 tries. Call give_up with your reason"
+    fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 6)
+    return fixed(failed_clip, cap=2)
+
+
+def test_the_agent_is_never_told_a_count_of_tries_or_turns(
+    fake_model: FakeModel, ended_by_the_cap: Outcome
+) -> None:
+    read = everything_the_agent_read(fake_model)
+    assert [COUNTED.findall(text) for text in read if COUNTED.search(text)] == []
+    assert [COUNTED.findall(text) for text in told() if COUNTED.search(text)] == []
+
+
+def test_code_ends_the_fix_once_the_cap_is_reached_and_the_record_says_so(
+    fake_model: FakeModel, ended_by_the_cap: Outcome
+) -> None:
+    # No turn after the second try: the agent never gets to give up or film a third.
+    assert len([each for each in fake_model.turns_taken if each.purpose == "fix_scene"]) == 5
+    assert [(each.number, verdict(each)) for each in ended_by_the_cap.tries] == [
+        (1, "fail"),
+        (2, "fail"),
+    ]
+    assert (ended_by_the_cap.passed, ended_by_the_cap.ended_by_cap) == (None, True)
+    fixing = AgentFix.objects.get()
+    assert fixing.ended_by_cap and fixing.finished_at is not None
+    assert fixing.gave_up == fixing_agent.ENDED_BY_CAP
+    assert fixing.picked is None
+
+
+def test_a_try_at_the_cap_that_passes_is_the_scenes_clip(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    fake_model.respond("fix_scene", turn(calls=[film_again()]))
+
+    outcome = fixed(failed_clip, cap=1)
+
+    assert (outcome.passed, outcome.gave_up, outcome.ended_by_cap) == (
+        outcome.tries[0].clip,
+        None,
+        False,
     )
-    assert told()[6].endswith("Tries left: 0 of 6.")
-    assert outcome.gave_up == "Six tries failed."
+
+
+def test_a_second_try_in_the_turn_that_reached_the_cap_is_refused(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    fake_model.respond("fix_scene", turn(calls=[film_again(video_prompt=POURS), film_again()]))
+    fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 6)
+
+    outcome = fixed(failed_clip, cap=1)
+
+    assert [each.number for each in outcome.tries] == [1]
+    assert outcome.ended_by_cap
+    assert told()[1] == "Refused: the scene's fixing has ended. Nothing was done."
+
+
+def test_a_worker_that_stopped_as_the_cap_ended_the_fix_ends_it_on_its_restart(
+    fake_model: FakeModel, failed_clip: SceneStep, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_model.respond("fix_scene", turn(calls=[film_again(video_prompt=POURS)]))
+    fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 3)
+    give_up = fixing_agent.give_up
+
+    def stops_once(*args: Any) -> None:
+        monkeypatch.setattr(fixing_agent, "give_up", give_up)
+        raise WorkerStopped()
+
+    monkeypatch.setattr(fixing_agent, "give_up", stops_once)
+    with pytest.raises(WorkerStopped):
+        fixed(failed_clip, cap=1)
+    turns = len(fake_model.turns_taken)
+
+    outcome = fixed(failed_clip, cap=1)
+
+    assert len(fake_model.turns_taken) == turns
+    assert ([each.number for each in outcome.tries], outcome.ended_by_cap) == ([1], True)
+
+
+def test_a_scene_the_cap_ended_keeps_its_last_try_and_the_chat_says_the_cap_ended_it(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(fixing_agent, "MOST_TRIES", 2)
+    fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 3)
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[film_again(video_prompt=POURS)]),
+        turn(calls=[film_again()]),
+    )
+
+    step = clip_of_scene_2(fake_model, steps, say)
+
+    fixing = AgentFix.objects.get()
+    second = fixing.tries.get(number=2).clip
+    assert (fixing.ended_by_cap, fixing.kept, scene_clip()) == (True, second, second)
+    assert work.agent_gave_up(step)
+    (said,) = Message.objects.filter(role=Message.Role.NOTICE, tries_of=step)
+    assert said.text == (
+        "The clip judge found a problem in all 3 tries at scene 2's clip, and the fixing agent "
+        "filmed as many tries as it may, so the last try is in the ad. Watch them, and tap one "
+        "to use it instead."
+    )
+    step.refresh_from_db()
+    assert (
+        "and the fixing agent filmed as many tries as it may (2), none passing, so the last try "
+        "is in the ad."
+    ) in step.result
 
 
 # --- A new start picture -----------------------------------------------------------------------
@@ -963,17 +1095,17 @@ def test_a_new_picture_drawn_before_the_worker_stopped_isnt_drawn_again(
     assert made.picture.step.prompt == PICTURE_PROMPT
 
 
-def test_the_agent_is_given_up_on_after_its_most_turns(
-    fake_model: FakeModel, failed_clip: SceneStep, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(fixing_agent, "MOST_TURNS", 3)
-    fake_model.respond("fix_scene", *[turn(calls=[("look_at_place", {})]) for _ in range(4)])
+def test_no_number_of_turns_stops_the_agent(fake_model: FakeModel, failed_clip: SceneStep) -> None:
+    fake_model.respond(
+        "fix_scene",
+        *[turn(calls=[("look_at_place", {})]) for _ in range(45)],
+        turn(calls=[film_again()]),
+    )
 
     outcome = fixed(failed_clip)
 
-    assert outcome.gave_up == "The fixing agent stopped after 3 turns."
-    assert len([each for each in fake_model.turns_taken if each.purpose == "fix_scene"]) == 3
-    assert scene_row() == (LINE_2, SHOWS, "", "showcase", "no face")
+    assert len([each for each in fake_model.turns_taken if each.purpose == "fix_scene"]) == 46
+    assert outcome.gave_up is None and outcome.passed == outcome.tries[-1].clip
 
 
 def test_a_give_up_kept_already_is_left_as_it_is_when_the_worker_restarts(

@@ -263,7 +263,8 @@ class ReadPage(Tool):
             skipped = save_photos(
                 job,
                 picked.urls,
-                merge_copies=True,
+                copies=picked.copies,
+                labels=picked.labels,
                 faces=picked.faces,
                 unnoted=picked.unnoted,
                 as_given=picked.as_given,

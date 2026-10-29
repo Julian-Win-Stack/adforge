@@ -14,8 +14,10 @@ import pytest
 
 from evals import grading_page, results, round_export
 from gateway.models import ModelCall
+from jobs.library import SentList, keep_sent_list
 from jobs.models import AgentFix, Job, ProducedItem, SceneStep
 
+from .test_library_contracts import SENT_LIST_FIXTURE
 from .test_producer_auto_fix import FLOATS, SPINS, remade_once, remade_twice  # noqa: F401
 from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
 
@@ -217,6 +219,82 @@ def test_exporting_again_keeps_the_run_file_written_by_hand(
     exported(tmp_path)
 
     assert json.loads((run / "run.json").read_text())["name"] == "edited"
+
+
+def _sent(clip: ProducedItem, **change: Any) -> SentList:
+    """The contract's fixture sent list, kept on `clip` (with `change` made to it)."""
+    raw = json.loads(SENT_LIST_FIXTURE.read_text())
+    sent = SentList.model_validate({**raw, **change})
+    keep_sent_list(clip, sent)
+    return sent
+
+
+def test_every_clip_record_lists_what_it_was_sent_and_what_was_left_out(
+    remade_once: SceneStep,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    first, remake = ProducedItem.objects.filter(kind="clip").order_by("id")
+    _sent(first)
+    _sent(remake, left_out=[], prompt="Film this in real-time speed.")
+
+    scene = json.loads((exported(tmp_path) / "results.json").read_text())[f"{AD}:2"]
+
+    sent = scene["tries"][0]["sent"]
+    assert [(p["image"], p["library_number"], p["label"]) for p in sent["pictures"]][:2] == [
+        (1, 14, "The garlic press, closed, seen from the front."),
+        (2, 4, "A hand squeezing the press over a bowl."),
+    ]
+    assert sent["pictures"][6]["drawn"] == "person_in_room"
+    assert sent["pictures"][1]["for"] == "in-use"
+    assert [(o["tier"], o["library_number"], o["label"]) for o in sent["left_out"]] == [
+        (4, 5, "The garlic press, closed, seen from the top.")
+    ]
+    assert [(p["video"], p["moment"], p["start"], p["end"], p["trim"]) for p in sent["pieces"]] == [
+        (1, 2, 6.0, 11.0, None),
+        (2, 1, 3.0, 13.0, "pieces_over_limit"),
+    ]
+    assert [(r["of"], r["outcome"], r["made"]) for r in sent["recolours"]] == [
+        (1, "done", 14),
+        (2, "fell_back", None),
+    ]
+    assert sent["prompt"].startswith("Film this in real-time speed.\nImage 1 is")
+    # Each try carries its own.
+    assert scene["tries"][1]["sent"]["left_out"] == []
+    assert scene["kept"]["sent"]["prompt"] == "Film this in real-time speed."
+
+
+def test_the_page_shows_each_clips_sent_and_left_out_pictures_and_counts_the_capped_clips(
+    remade_once: SceneStep,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    first, remake = ProducedItem.objects.filter(kind="clip").order_by("id")
+    _sent(first)
+    _sent(remake, left_out=[])
+
+    page = grading_page.page(exported(tmp_path))
+
+    top = page.split('class="ad"')[0]
+    assert "Clips with pictures left out: 1 of 2" in top
+    clips = page.split('<figure class="clip">')[1:]
+    assert "Image 1: #14 The garlic press, closed, seen from the front." in clips[0]
+    assert "Image 7: drawn person in room" in clips[0]
+    assert "#5 The garlic press, closed, seen from the top." in clips[0]
+    assert "another side photo" in clips[0].split('class="left-out"')[1]
+    assert "pieces over limit" in clips[0] and "fell back" in clips[0]
+    assert 'class="left-out"' not in clips[1]
+    assert "Image 1: #14" in clips[1]
+
+
+def test_a_clip_made_before_cut_and_send_exports_with_no_sent_list(
+    remade_once: SceneStep,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    run = exported(tmp_path)
+
+    scene = json.loads((run / "results.json").read_text())[f"{AD}:2"]
+    assert [t["sent"] for t in scene["tries"]] == [None, None]
+    page = grading_page.page(run)
+    assert "left out" not in page.lower() and "Sent to the video model" not in page
 
 
 def _bytes(clip: ProducedItem | None) -> bytes:

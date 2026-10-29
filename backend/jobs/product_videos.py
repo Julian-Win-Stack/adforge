@@ -5,6 +5,7 @@ its link with the page's poster or the player's thumbnail as its first frame. A 
 are fetched all at once. The watcher (jobs.watcher) watches each file."""
 
 import contextvars
+import functools
 import logging
 import mimetypes
 import re
@@ -21,6 +22,7 @@ from django.conf import settings
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
 from gateway.gateway import IMAGE_TYPES
+from gateway.types import LEAST_PIECE_SECONDS, MOST_PIECE_SECONDS, PieceTrim, ReferenceVideo
 from jobs import page
 from jobs.models import Job, ProductVideo
 from jobs.threads import closing_its_connection
@@ -222,3 +224,120 @@ def _still(src: str, poster: str, folder: str) -> str:
             extension = mimetypes.guess_extension(still.content_type) or ""
             return file_store.save(f"{folder}-first{extension}", still.content)
     return ""
+
+
+@dataclass(frozen=True)
+class PieceWanted:
+    """A piece of a page video to send as a reference video: the video by its key in the
+    file store, and the seconds of it wanted, as the watcher gave a moment's."""
+
+    video: str
+    start: float
+    end: float
+
+
+@dataclass(frozen=True)
+class LeftOutPiece:
+    """A piece wanted that isn't sent, and why."""
+
+    wanted: PieceWanted
+    reason: str
+
+
+@dataclass(frozen=True)
+class PiecesCut:
+    """The pieces cut, in the order wanted, ready to send; and those left out."""
+
+    sent: list[ReferenceVideo]
+    left_out: list[LeftOutPiece]
+
+
+def cut_pieces(wanted: Sequence[PieceWanted]) -> PiecesCut:
+    """Cut each piece wanted from its page video with ffmpeg, as its own file kept beside
+    the video, ready to send to the B-roll video model as a reference video. Never sped up.
+    A piece cut once is found again rather than cut twice, so a clip asked for again is
+    sent the very same file."""
+    sent: list[ReferenceVideo] = []
+    left_out = []
+    room = float(MOST_PIECE_SECONDS)
+    for piece in wanted:
+        if len(sent) == settings.BROLL_MOST_PIECES:
+            most = settings.BROLL_MOST_PIECES
+            left_out.append(
+                LeftOutPiece(piece, f"a clip is sent at most {most} of the pieces wanted")
+            )
+            continue
+        if room < LEAST_PIECE_SECONDS:
+            left_out.append(
+                LeftOutPiece(
+                    piece,
+                    f"the pieces before it fill the {MOST_PIECE_SECONDS} seconds of video a "
+                    "clip is sent",
+                )
+            )
+            continue
+        start, end = piece.start, piece.end
+        if end - start < LEAST_PIECE_SECONDS:
+            left_out.append(LeftOutPiece(piece, _too_short(piece)))
+            continue
+        trim: PieceTrim | None = None
+        # The backstop: a moment longer than the video model takes is cut to its first
+        # seconds, and pieces longer than it takes in all have the last cut to fit; either
+        # way the piece says so.
+        if end - start > room:
+            trim = "moment_over_limit" if room == MOST_PIECE_SECONDS else "pieces_over_limit"
+            end = start + room
+        room -= end - start
+        file = file_store.save_once(
+            _piece_name(piece.video, start, end),
+            functools.partial(_cut, piece.video, start, end),
+            whole=_is_video,
+        )
+        sent.append(ReferenceVideo(file=file, video=piece.video, start=start, end=end, trim=trim))
+    return PiecesCut(sent=sent, left_out=left_out)
+
+
+def _too_short(piece: PieceWanted) -> str:
+    """Why a moment shorter than the video model takes isn't sent. Not approved yet: it is
+    left out rather than widened past its own seconds, which the sent list never holds."""
+    return (
+        f"its moment is {piece.end - piece.start:g} s long, and the video model takes pieces of "
+        f"at least {LEAST_PIECE_SECONDS} s"
+    )
+
+
+def _piece_name(video: str, start: float, end: float) -> str:
+    """Where the piece of `video` from `start` to `end` is kept: beside the video, named by
+    its seconds."""
+    return f"{Path(video).with_suffix('')}-piece-{start:g}-{end:g}.mp4"
+
+
+def _cut(video: str, start: float, end: float) -> bytes:
+    """The seconds from `start` to `end` of the video kept as `video`, as an MP4 of the
+    picture only: a piece shows how the product moves, and the clip made from it has no
+    sound of its own."""
+    with tempfile.TemporaryDirectory() as folder:
+        file = Path(folder) / "video"
+        file.write_bytes(file_store.read(video))
+        piece = Path(folder) / "piece.mp4"
+        ran = subprocess.run(
+            [settings.FFMPEG, "-nostdin", "-hide_banner", "-loglevel", "error"]
+            + ["-ss", f"{start:g}", *_READ_ONLY_THE_FILE, "-i", str(file)]
+            + ["-t", f"{end - start:g}"]
+            + ["-an", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p"]
+            + ["-movflags", "+faststart", str(piece)],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            timeout=_TIMEOUT_SECONDS,
+        )
+        if ran.returncode != 0 or not piece.is_file():
+            raise RuntimeError(f"ffmpeg failed: {ran.stderr.decode(errors='replace')[-2000:]}")
+        return piece.read_bytes()
+
+
+def _is_video(content: bytes) -> bool:
+    """Whether `content` is a whole video ffprobe can read the length of."""
+    with tempfile.TemporaryDirectory() as folder:
+        file = Path(folder) / "video.mp4"
+        file.write_bytes(content)
+        return _duration(file) is not None

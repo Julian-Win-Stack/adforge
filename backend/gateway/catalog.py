@@ -28,6 +28,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "choose_broll_picture": "gpt-5.6-sol",
     # A B-roll scene's video prompt written again from a note, by the same model that wrote it.
     "rewrite_clip_prompt": "gpt-5.6-sol",
+    # A B-roll clip's first-send prompt (#210 point 16): written by the model that writes
+    # B-roll video prompts today.
+    "write_first_send_prompt": "gpt-5.6-sol",
     "make_starting_picture": "gpt-image-2.5-sunburst",
     # A clean picture of only the thing a shop owner's photo is taken for (Reference photo,
     # CONTEXT.md), drawn as starting pictures are.
@@ -117,9 +120,10 @@ PRICE_PER_HOUR_OF_AUDIO: dict[str, Decimal] = {
 
 # US dollars per second of video made. Boreal-H3's from Creatify on 2026-10-03: 0.4 credits a
 # second at the 768p the adapter asks for, at $99 for 500 credits (API Starter); up to 5
-# example pictures are free, so nothing else is billed. HeyGen's from its own pricing page on
-# 2026-09-29: a photo avatar is 0.1 credits a second at $0.50 a credit, the same at 720p and
-# 1080p.
+# example pictures are free; each second of reference video sent costs 0.4 credits too
+# (spec #210, Further Notes), so it is billed at the same rate. HeyGen's from its own
+# pricing page on 2026-09-29: a photo avatar is 0.1 credits a second at $0.50 a credit, the
+# same at 720p and 1080p.
 PRICE_PER_SECOND_OF_VIDEO: dict[str, Decimal] = {
     "creatify/boreal-h3": Decimal("0.0792"),
     "heygen/avatar-iv": Decimal("0.05"),

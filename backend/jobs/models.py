@@ -184,6 +184,41 @@ class ProductPhoto(models.Model):
         blank=True,
         help_text="A video picture's one line: what it shows that no other photo shows.",
     )
+    # The photo picker's fixed fields for a page photo it kept (jobs.photos.PickedPicture),
+    # blank for a photo it never labelled: the shop owner's, a video picture, a declared one.
+    kind = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="What the picture is: side, state, content, in-use, result, line-up, chart.",
+    )
+    side = models.CharField(
+        max_length=10, blank=True, help_text="Which side of the product it shows, or none."
+    )
+    alone = models.CharField(
+        max_length=3,
+        blank=True,
+        help_text="yes when it shows the product alone on a plain background, else no.",
+    )
+    colour = models.CharField(
+        max_length=40, blank=True, help_text="The product's colour in it, one short word."
+    )
+    target = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="In a line-up, where this product stands among the others; else blank.",
+    )
+    label = models.TextField(
+        blank=True,
+        help_text="One sentence saying what it shows, for prompts and the planner to read.",
+    )
+    copy_links = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "Every link the picker put in this photo's copy group, in pick order: the other "
+            "copies are never kept, on this read or a later one."
+        ),
+    )
 
     class Meta:
         ordering = ["job", "position"]
@@ -1421,7 +1456,16 @@ class AgentFix(models.Model):
         related_name="+",
         help_text="The passing try's clip, the scene's clip now. Blank until one passes.",
     )
-    gave_up = models.TextField(blank=True, help_text="The agent's reason, when it gave up.")
+    gave_up = models.TextField(
+        blank=True,
+        help_text="The agent's reason, when it gave up; or, when the tries cap ended it, code's "
+        "words saying so.",
+    )
+    ended_by_cap = models.BooleanField(
+        default=False,
+        help_text="Whether code ended it at the tries cap, with no try passed, rather than the "
+        "agent giving up.",
+    )
     picked = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
