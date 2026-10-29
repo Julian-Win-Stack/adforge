@@ -21,6 +21,7 @@ import {
 import { MorePhotosPanel, PagePanel, wordCount } from "./PagePanel";
 import { acceptedPastes, lastPastedPage, morePhotosWanted, pagePanel } from "./pagePanelState";
 import { ScenePanel } from "./ScenePanel";
+import { pastedPhotos } from "./photos";
 import { nextFollowing } from "./follow";
 import { sceneCards, suggestedNotes, tryInAd } from "./scenes";
 import {
@@ -388,7 +389,16 @@ export function Chat({
             </p>
           </div>
         </div>
-        <ScenePanel messages={messages} onSend={(text) => send(text, [])} />
+        <ScenePanel
+          messages={messages}
+          onSend={(text, photos) =>
+            send(
+              text,
+              photos.map(({ file }) => file),
+              { photoScenes: photos.map(({ scene }) => scene) },
+            )
+          }
+        />
       </div>
     </section>
   );
@@ -516,6 +526,7 @@ function TriesView({
  * check's notice carries them with no scene, so the scene's card keeps its newest: the scene is
  * the suggested note's, and the old one comes first. Null for any other file. */
 function attachmentLabel(message: Message, attachment: Attachment, index: number) {
+  if (attachment.note_scene) return `Scene ${attachment.note_scene}`;
   if (attachment.scene !== null) {
     return `Scene ${attachment.scene}${attachment.version ? ` · ${attachment.version}` : ""}`;
   }
@@ -749,7 +760,7 @@ function Composer({
     }
   }
 
-  function addPhotos(picked: FileList | null) {
+  function addPhotos(picked: Iterable<File> | null) {
     const files = Array.from(picked ?? []);
     if (files.length === 0) return;
     setPhotos((have) => [...have, ...files]);
@@ -769,6 +780,7 @@ function Composer({
         value={text}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={onKeyDown}
+        onPaste={(event) => addPhotos(pastedPhotos(event))}
         rows={1}
       />
       {error && (

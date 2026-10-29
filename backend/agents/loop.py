@@ -277,6 +277,10 @@ class Agent:
     # What it is given last on every turn, rebuilt from the database each time: the
     # producer's is the ad as it stands (agents/snapshot.py). None for no snapshot.
     snapshot: Callable[[Session], str] | None = None
+    # Whether code holds its turn open as it goes to end it, having left it a system note
+    # saying why: the producer's holds it while a photo sent with a scene's note is unused
+    # (agents/note_photos.py). None never holds it.
+    holds_the_turn: Callable[[Session], bool] | None = None
 
     @property
     def turn_enders(self) -> set[str]:
@@ -376,6 +380,8 @@ def _work(agent: Agent, session: Session) -> int:
                     for asked in turn.calls
                 ]
             if not calls:
+                if agent.holds_the_turn is not None and agent.holds_the_turn(session):
+                    continue
                 return read_up_to
             for call in calls:
                 # Read before each call, so a pause pressed meanwhile reaches the agent

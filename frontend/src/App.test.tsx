@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App";
@@ -18,6 +18,7 @@ function fakeBackend() {
     photos: string[];
     use_clip?: number;
     videos?: string[];
+    photo_scenes?: number[];
   }[] = [];
   let heldPolls: Promise<void> | null = null;
   let heldSends: Promise<void> | null = null;
@@ -98,10 +99,12 @@ function fakeBackend() {
         let use_clip: number | undefined;
         const photos: string[] = [];
         const videos: string[] = [];
+        const photoScenes: number[] = [];
         if (init?.body instanceof FormData) {
           text = String(init.body.get("text"));
           for (const photo of init.body.getAll("photos")) photos.push((photo as File).name);
           for (const video of init.body.getAll("videos")) videos.push((video as File).name);
+          for (const scene of init.body.getAll("photo_scenes")) photoScenes.push(Number(scene));
         } else {
           ({ text, use_clip } = JSON.parse(String(init?.body)));
         }
@@ -112,12 +115,19 @@ function fakeBackend() {
           said.use_clip = use_clip;
           return Response.json({ session: summary(session), message: said }, { status: 201 });
         }
-        sent.push(videos.length > 0 ? { text, photos, videos } : { text, photos });
+        sent.push({
+          text,
+          photos,
+          ...(videos.length > 0 && { videos }),
+          ...(photoScenes.length > 0 && { photo_scenes: photoScenes }),
+        });
+        // As chat/api.py keeps each photo sent with a scene's note with that scene.
         const carried = photos.map((name, i) => ({
           position: i + 1,
           kind: "picture" as const,
           url: `/media/${name}`,
           scene: null,
+          note_scene: photoScenes[i] ?? null,
         }));
         const message = add(session, "user", text, carried);
         return Response.json({ session: summary(session), message }, { status: 201 });
@@ -1186,6 +1196,143 @@ test("notes on two scenes go as one message, one line per scene in scene order",
   ]);
   expect((noteBox(2) as HTMLTextAreaElement).value).toBe("");
   expect((noteBox(4) as HTMLTextAreaElement).value).toBe("");
+});
+
+function photoFile(name: string) {
+  return new File([name], name, { type: "image/png" });
+}
+
+/** Pastes `files` into `box`, as a photo copied from elsewhere is pasted. */
+function pastePhotos(box: HTMLElement, ...files: File[]) {
+  fireEvent.paste(box, { clipboardData: { files, getData: () => "" } });
+}
+
+function notePhotos(n: number) {
+  return within(sceneCard(n))
+    .queryAllByRole("img", { name: /^Photo for scene/ })
+    .map((photo) => photo.getAttribute("alt"));
+}
+
+test("a photo added to a scene's note goes with that scene, and the chat labels it with the scene", async () => {
+  const { backend, user } = await openFinishedAd();
+
+  await user.upload(within(sceneCard(2)).getByLabelText("Photos for scene 2"), [
+    photoFile("lid.png"),
+  ]);
+  expect(notePhotos(2)).toEqual(["Photo for scene 2: lid.png"]);
+  await user.type(noteBox(2), "Lid on, like this");
+  await user.type(noteBox(4), "Show the handle");
+  pastePhotos(noteBox(4), photoFile("handle.png"), photoFile("grip.png"));
+  expect(notePhotos(4)).toEqual(["Photo for scene 4: handle.png", "Photo for scene 4: grip.png"]);
+  await user.click(sendNotesButton());
+
+  await findSaid("Scene 2: Lid on, like this Scene 4: Show the handle");
+  expect(backend.sent).toEqual([
+    {
+      text: "Scene 2: Lid on, like this\nScene 4: Show the handle",
+      photos: ["lid.png", "handle.png", "grip.png"],
+      photo_scenes: [2, 4, 4],
+    },
+  ]);
+  const thread = screen.getByRole("list", { name: "Conversation" });
+  expect(
+    within(thread)
+      .getAllByAltText(/^Photo you attached/)
+      .map((photo) => photo.closest("figure")?.querySelector("figcaption")?.textContent),
+  ).toEqual(["Scene 2", "Scene 4", "Scene 4"]);
+  // The cards are empty again, photos included.
+  expect(notePhotos(2)).toEqual([]);
+  expect(notePhotos(4)).toEqual([]);
+});
+
+test("a scene's note takes up to 3 photos: then its photo button is off and more aren't added", async () => {
+  const { user } = await openFinishedAd();
+
+  await user.upload(within(sceneCard(1)).getByLabelText("Photos for scene 1"), [
+    photoFile("a.png"),
+    photoFile("b.png"),
+  ]);
+  pastePhotos(noteBox(1), photoFile("c.png"), photoFile("d.png"));
+
+  expect(notePhotos(1)).toEqual([
+    "Photo for scene 1: a.png",
+    "Photo for scene 1: b.png",
+    "Photo for scene 1: c.png",
+  ]);
+  const button = within(sceneCard(1)).getByRole("button", { name: "Add a photo to scene 1" });
+  expect(button.hasAttribute("disabled")).toBe(true);
+  expect(button.getAttribute("title")).toBe("Up to 3 photos per scene");
+});
+
+test("two pasted screenshots with the same name are two photos", async () => {
+  await openFinishedAd();
+  const errors = vi.spyOn(console, "error");
+
+  const image = (content: string) => new File([content], "image.png", { type: "image/png" });
+  pastePhotos(noteBox(2), image("aaaa"));
+  pastePhotos(noteBox(2), image("bbbb"));
+
+  expect(notePhotos(2)).toEqual(["Photo for scene 2: image.png", "Photo for scene 2: image.png"]);
+  // React tells two of the same key apart only by complaining.
+  expect(errors).not.toHaveBeenCalled();
+  errors.mockRestore();
+});
+
+test("a photo with no words in its note can't be sent, and the form says what to write", async () => {
+  const { backend, user } = await openFinishedAd();
+
+  await user.type(noteBox(1), "Slower");
+  pastePhotos(noteBox(3), photoFile("tile.png"));
+  expect(sendNotesButton().hasAttribute("disabled")).toBe(true);
+  expect(
+    within(screen.getByRole("region", { name: "Scenes" })).getByText(
+      "Say in scene 3's note what to take from its photo.",
+    ),
+  ).toBeDefined();
+  await user.click(sendNotesButton());
+  expect(backend.sent).toEqual([]);
+
+  await user.type(noteBox(3), "This tile, not the white one");
+  expect(sendNotesButton().hasAttribute("disabled")).toBe(false);
+  expect(sendNotesButton().textContent).toBe("Send 2 notes");
+});
+
+test("a photo taken off a scene's note isn't sent", async () => {
+  const { backend, user } = await openFinishedAd();
+
+  pastePhotos(noteBox(2), photoFile("old.png"), photoFile("new.png"));
+  await user.click(within(sceneCard(2)).getByRole("button", { name: "Remove old.png" }));
+  await user.type(noteBox(2), "Use this one");
+  await user.click(sendNotesButton());
+
+  await findSaid("Scene 2: Use this one");
+  expect(backend.sent).toEqual([
+    { text: "Scene 2: Use this one", photos: ["new.png"], photo_scenes: [2] },
+  ]);
+});
+
+test("pasting text into a note box pastes the text, not a photo", async () => {
+  const { user } = await openFinishedAd();
+
+  await user.click(noteBox(2));
+  await user.paste("Brighter please");
+
+  expect((noteBox(2) as HTMLTextAreaElement).value).toBe("Brighter please");
+  expect(notePhotos(2)).toEqual([]);
+});
+
+test("a photo pasted into the chat box is attached like one picked with the paperclip", async () => {
+  const backend = fakeBackend();
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+
+  await user.type(screen.getByLabelText("Message"), "This is my mug");
+  pastePhotos(screen.getByLabelText("Message"), photoFile("front.png"));
+  expect(screen.getByRole("button", { name: "Remove front.png" })).toBeDefined();
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await screen.findByAltText("Photo you attached (1)");
+  expect(backend.sent).toEqual([{ text: "This is my mug", photos: ["front.png"] }]);
 });
 
 test("with no note anywhere, nothing can be sent and the form says what to do", async () => {

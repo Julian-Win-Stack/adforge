@@ -368,6 +368,7 @@ def test_an_agent_message_can_carry_a_picture_a_sound_and_a_video(
             "scene": None,
             "version": "",
             "sent": None,
+            "note_scene": None,
         },
         {
             "position": 2,
@@ -376,6 +377,7 @@ def test_an_agent_message_can_carry_a_picture_a_sound_and_a_video(
             "scene": None,
             "version": "",
             "sent": None,
+            "note_scene": None,
         },
         # The finished ad is no scene's clip, so nothing it was sent is shown.
         {
@@ -385,6 +387,7 @@ def test_an_agent_message_can_carry_a_picture_a_sound_and_a_video(
             "scene": None,
             "version": "",
             "sent": None,
+            "note_scene": None,
         },
     ]
 
@@ -426,6 +429,7 @@ def test_a_reopened_session_says_which_scene_each_file_and_step_message_is_about
                     "scene": 2,
                     "version": "",
                     "sent": NOTHING_SENT,
+                    "note_scene": None,
                 }
             ],
         ),

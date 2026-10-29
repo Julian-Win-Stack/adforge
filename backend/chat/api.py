@@ -14,7 +14,7 @@ from agents import page_panel, pause
 from agents.tasks import another_session_is_busy, hold_one_at_a_time_lock, wake_producer
 from gateway.gateway import IMAGE_TYPE_NAMES, IMAGE_TYPES
 from jobs import work
-from jobs.models import ProducedItem
+from jobs.models import ProducedItem, Scene
 from jobs.page import MAX_PHOTO_BYTES, MAX_PHOTOS
 
 from . import messages
@@ -29,6 +29,8 @@ MAX_TEXT_CHARACTERS = 10_000
 MAX_VIDEOS = 3
 MAX_VIDEO_BYTES = 100_000_000
 VIDEO_TYPES = {"video/mp4": ".mp4", "video/quicktime": ".mov", "video/webm": ".webm"}
+# The photos the shop owner may send with one scene's note (Julian, Oct 15).
+MAX_PHOTOS_PER_NOTE = 3
 # As much as the page panel's message may say: a whole product page pasted in one go.
 MAX_PASTED_PAGE_CHARACTERS = 200_000
 
@@ -55,7 +57,7 @@ class AttachmentSerializer(serializers.ModelSerializer[Attachment]):
 
     class Meta:
         model = Attachment
-        fields = ["position", "kind", "url", "scene", "version", "sent"]
+        fields = ["position", "kind", "url", "scene", "version", "sent", "note_scene"]
 
     def get_url(self, attachment: Attachment) -> str:
         return file_store.url(attachment.file)
@@ -220,6 +222,13 @@ class SendSerializer(serializers.Serializer[None]):
     videos = serializers.ListField(
         child=serializers.FileField(), required=False, max_length=MAX_VIDEOS, default=list
     )
+    photo_scenes = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        required=False,
+        default=list,
+        help_text="Sent by the scene cards: for each photo in order, the number of the scene "
+        "whose note it goes with. Empty for photos sent in the chat box.",
+    )
     use_clip = serializers.IntegerField(
         required=False,
         allow_null=True,
@@ -268,13 +277,34 @@ class SendSerializer(serializers.Serializer[None]):
             if len(text) > MAX_PASTED_PAGE_CHARACTERS:
                 raise serializers.ValidationError({"text": PASTE_TOO_LONG})
             return {**data, "text": text}
+        # A form's line ends come as two characters each, as the scene cards' notes with
+        # photos do; the owner typed one.
+        text = text.replace("\r\n", "\n")
         if len(text) > MAX_TEXT_CHARACTERS:
             raise serializers.ValidationError(
                 {"text": f"Ensure this field has no more than {MAX_TEXT_CHARACTERS} characters."}
             )
+        scenes: list[int] = data["photo_scenes"]  # type: ignore[assignment]
+        if scenes:
+            if not text.strip():
+                raise serializers.ValidationError(
+                    {"text": "Say in the note what to take from its photo."}
+                )
+            if len(scenes) != len(data["photos"]):  # type: ignore[arg-type]
+                raise serializers.ValidationError(
+                    {"photo_scenes": "Say which scene's note each photo goes with."}
+                )
+            for scene in sorted(set(scenes)):
+                if scenes.count(scene) > MAX_PHOTOS_PER_NOTE:
+                    raise serializers.ValidationError(
+                        {
+                            "photo_scenes": f"Up to {MAX_PHOTOS_PER_NOTE} photos can go with "
+                            f"one scene's note: scene {scene} has {scenes.count(scene)}."
+                        }
+                    )
         if not text and not data["photos"] and not data["videos"] and data["use_clip"] is None:
             raise serializers.ValidationError({"text": "Type something, or attach a photo."})
-        return data
+        return {**data, "text": text}
 
 
 class PollSerializer(serializers.Serializer[None]):
@@ -329,12 +359,16 @@ def _send(session: Session, request: Request) -> Response:
             except work.TryNotOnOffer as refused_try:
                 return Response({"use_clip": str(refused_try)}, status=status.HTTP_400_BAD_REQUEST)
         kept = []
-        for photo in photos:
+        try:
+            scenes = _scenes_noted(session, sending.validated_data["photo_scenes"], len(photos))
+        except serializers.ValidationError as refused:
+            return Response(refused.detail, status=status.HTTP_400_BAD_REQUEST)
+        for photo, scene in zip(photos, scenes, strict=True):
             extension = mimetypes.guess_extension(photo.content_type or "") or ""
             key = file_store.save(
                 f"sessions/{session.pk}/photos/{uuid.uuid4()}{extension}", photo.read()
             )
-            kept.append(messages.AttachedFile(Attachment.Kind.PICTURE, key))
+            kept.append(messages.AttachedFile(Attachment.Kind.PICTURE, key, note_for=scene))
         for video in sending.validated_data["videos"]:
             # Copied in chunks: a video may be MAX_VIDEO_BYTES.
             key = file_store.save_upload(
@@ -369,6 +403,22 @@ def _send(session: Session, request: Request) -> Response:
         },
         status=status.HTTP_201_CREATED,
     )
+
+
+def _scenes_noted(session: Session, numbers: list[int], photos: int) -> list[Scene | None]:
+    """The scene of the note each photo was sent with, from the scene numbers the scene cards
+    sent: none for each photo sent in the chat box. Raises ValidationError for a scene the
+    plan doesn't have."""
+    if not numbers:
+        return [None] * photos
+    job = session.jobs.first()
+    planned = {scene.number: scene for scene in job.scenes.all()} if job is not None else {}
+    missing = sorted(set(numbers) - set(planned))
+    if missing:
+        raise serializers.ValidationError(
+            {"photo_scenes": f"The ad has no scene {missing[0]}: send the note again."}
+        )
+    return [planned[number] for number in numbers]
 
 
 @api_view(["POST"])

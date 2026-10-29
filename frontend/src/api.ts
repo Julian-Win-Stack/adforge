@@ -7,6 +7,9 @@ export type Attachment = {
   kind: "picture" | "sound" | "video";
   url: string;
   scene: number | null;
+  /** For a photo the owner sent with a scene's note, the number of that scene as the note
+   * named it; null (or absent) for any other file. */
+  note_scene?: number | null;
   /** For a scene's starting picture or clip, the label of the scene version it is shown as,
    * such as "v2 black toilet"; blank otherwise. */
   version?: string;
@@ -213,8 +216,9 @@ export async function getMessagesSince(sessionId: string, after: number): Promis
 
 /** What a message is besides its words: a tap of "Use this one" under a try names the try,
  * `useClip`; the page panel's Done sends the page text and photos as a `pastedPage`. Each
- * marks the message as never typed. */
-export type SendAs = { useClip?: number; pastedPage?: boolean };
+ * marks the message as never typed. The scene cards' notes name the scene of each photo's
+ * note, in the photos' order, `photoScenes`. */
+export type SendAs = { useClip?: number; pastedPage?: boolean; photoScenes?: number[] };
 
 /** Say something in a session, with photos or videos when there are any. The server takes it
  * straight away, even while the agent is working. */
@@ -222,7 +226,7 @@ export async function sendMessage(
   sessionId: string,
   text: string,
   photos: File[],
-  { useClip, pastedPage }: SendAs = {},
+  { useClip, pastedPage, photoScenes }: SendAs = {},
 ): Promise<Sent> {
   let request: RequestInit;
   if (photos.length > 0 || pastedPage) {
@@ -231,6 +235,7 @@ export async function sendMessage(
     // A video goes as a video, so the fixing agent's question can be answered with one.
     for (const photo of photos)
       form.append(photo.type.startsWith("video/") ? "videos" : "photos", photo);
+    for (const scene of photoScenes ?? []) form.append("photo_scenes", String(scene));
     if (pastedPage) form.append("pasted_page", "true");
     request = { method: "POST", body: form };
   } else {
