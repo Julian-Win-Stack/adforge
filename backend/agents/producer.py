@@ -27,7 +27,9 @@ from jobs import (
     reference_photos,
 )
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
-from jobs.library_items import add_kept_photos, add_product_only_versions
+from jobs.library import library_of
+from jobs.library_items import add_kept_photos, add_product_only_versions, library_line
+from jobs.made_pictures import PictureNotMade, make_picture
 from jobs.models import (
     BROLL_FIELDS,
     PLANNED_FOR_THE_ACTION,
@@ -152,6 +154,10 @@ else, don't add it, and tell them to send it with a note on a scene once the fir
 is made. Slower can't be done: every clip plays at real-time speed.
 A part of the product drawn from the shop owner's words or made up is settled once they \
 say yes to its picture: never ask them for a photo of it or how it looks again.
+make_picture makes a new picture for the ad's library from your prompt and library items. \
+Send single pictures first. Make a combined picture, such as several sides of the product \
+in one, only when a scene's references left out a picture the scene needs. Look at what \
+you made before you send it.
 Keep your messages short and friendly, written for someone who isn't technical."""
 
 
@@ -787,6 +793,59 @@ class MakeStartingPicture(Tool):
         return (
             f"Started scene {scene.number}'s starting picture. It isn't made yet: you'll be "
             "told when it's ready."
+        )
+
+
+class MakePicture(Tool):
+    """Make a picture with the picture model, from your own prompt and pictures from the
+    ad's library as references, and store it in the library as a new item with your label,
+    to send like any other. Combining several sides of the product into one picture is one
+    use of it. The picture is checked once: the product must be unchanged from its
+    references and the picture show what your label says. Hands back the new item's number,
+    or why it couldn't be made."""
+
+    name = "make_picture"
+
+    prompt: str = Field(
+        description="What to draw, in full: the picture model reads only this and the "
+        "references, as pictures 1, 2, 3... in the order given."
+    )
+    references: list[int] = Field(
+        description="The library numbers of the pictures to make it from, in order. Empty "
+        "to draw from the prompt alone."
+    )
+    label: str = Field(
+        description="One sentence saying what the picture shows, as the library's labels "
+        "do. It becomes the new item's label."
+    )
+
+    def run(self, call: ToolCall) -> str:
+        job = _with_its_page(call, "a picture is made from its library")
+        if not self.prompt.strip() or not self.label.strip():
+            raise Refused("a picture needs a prompt and a label.")
+        library = {item.number: item for item in library_of(job)}
+        missing = [number for number in self.references if number not in library]
+        if missing:
+            held = (
+                f"Its items are {listed_numbers(sorted(library))}." if library else "It is empty."
+            )
+            raise Refused(f"the ad's library has no item {listed_numbers(missing)}. {held}")
+        try:
+            made = make_picture(
+                job,
+                prompt=self.prompt,
+                references=[library[number] for number in self.references],
+                label=self.label.strip(),
+                paid_under=call.pk,
+            )
+        except PictureNotMade as not_made:
+            return (
+                f"Failed: the picture wasn't stored, as {not_made}. Change the prompt or the "
+                "references and make it again, or go on without it."
+            )
+        return (
+            f"Made library item {made.number}, checked once and passed: "
+            f"{library_line(made)} Look at it before a scene's references name it."
         )
 
 
@@ -1995,6 +2054,7 @@ PRODUCER = Agent(
         RunPlanningChecks,
         CreateMusic,
         MakeStartingPicture,
+        MakePicture,
         MakeLineAudio,
         TranscribeLineAudio,
         MakeClip,

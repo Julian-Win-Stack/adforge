@@ -167,8 +167,17 @@ class Recoloured(_Shape):
     colour: Colour
 
 
+class Made(_Shape):
+    """A picture the producer made with the picture model (spec #247 point 5): from its own
+    prompt, with these library items, by number, as references (none when drawn from the
+    prompt alone)."""
+
+    came_from: Literal["made"] = "made"
+    references: list[Annotated[int, Field(ge=1)]]
+
+
 Source = Annotated[
-    PagePhoto | OwnerPhoto | LookFrame | OwnerPart | ProductOnly | Recoloured,
+    PagePhoto | OwnerPhoto | LookFrame | OwnerPart | ProductOnly | Recoloured | Made,
     Field(discriminator="came_from"),
 ]
 
@@ -184,6 +193,10 @@ class LibraryEntry(PictureLabel):
     def _a_version_of_an_earlier_item(self) -> Self:
         if isinstance(self.source, ProductOnly | Recoloured) and self.source.of >= self.number:
             raise ValueError("an item is a version of an earlier item")
+        if isinstance(self.source, Made) and any(
+            reference >= self.number for reference in self.source.references
+        ):
+            raise ValueError("a made picture's references are earlier items")
         if isinstance(self.source, Recoloured) and self.source.colour != self.colour:
             raise ValueError("a recoloured item is in the colour it was recoloured to")
         return self
