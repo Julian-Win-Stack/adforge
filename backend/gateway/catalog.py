@@ -101,6 +101,13 @@ SLOW_ANSWER_SECONDS: dict[str, float] = {
     "probe_video": 600,
 }
 
+# How hard a Gemini model thinks before it answers, for a purpose that isn't to think as
+# settings.GEMINI_THINKING_LEVEL says: the watcher's probe asks only whether the safety filter
+# lets a part of a video through, in one word, and thinking is billed as output.
+THINKING_LEVEL_FOR_PURPOSE: dict[str, str] = {
+    "probe_video": "MINIMAL",
+}
+
 # US dollars per million tokens: (input, output). From OpenAI's pricing page, and Gemini's
 # from Google's (ai.google.dev/gemini-api/docs/pricing, 2026-10-29), whose output price
 # includes thinking. Gemini 3.8 Flash's standard paid price holds through December 31, 2026,

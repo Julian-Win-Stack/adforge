@@ -117,6 +117,7 @@ from .checks import (
 from .library import PictureLabel, watch_of
 from .models import (
     BROLL_FIELDS,
+    PLANNED_FOR_THE_ACTION,
     AgentFix,
     AgentFixTry,
     Fix,
@@ -1386,6 +1387,7 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
                 "shortened_from",
                 "shows",
                 *BROLL_FIELDS,
+                *PLANNED_FOR_THE_ACTION,
                 "status",
                 "fact_problems",
                 "second_state",
@@ -1712,6 +1714,7 @@ def _shorten(job: Job, words_per_second: float) -> None:
                         "part",
                         "second_state",
                         *BROLL_FIELDS,
+                        *PLANNED_FOR_THE_ACTION,
                         "status",
                         "fact_checked",
                         "fact_problems",
@@ -1854,7 +1857,8 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
     line best and writes the prompt, then the picture is made from the portrait and that
     photo. For a scene that shows the product rather than the person talking, the picture
     shows what the scene shows, and the model also writes the clip's motion prompt. Gives
-    back the picture, kept as the scene's next version.
+    back the picture, kept as the scene's next version. A B-roll step also makes sure the ad
+    has its room alone and its person-in-room picture (`person_and_room`).
 
     Run again, as after a worker stopped, it pays for nothing already paid for: the choice
     is made from the conversation as it was when the step started, so it is answered from
@@ -1863,8 +1867,12 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
     if step.broll_kind:
         made = made or _make_broll_picture(step)
         # Drawn by the first B-roll starting picture made, as the before-picture is; never
-        # sent to a starting picture.
-        person_and_room(step)
+        # sent to a starting picture, so one that can't be drawn leaves the scene's picture
+        # made, and is said in the chat.
+        try:
+            person_and_room(step)
+        except PlaceNotDrawn as not_drawn:
+            say_the_place_wasnt_drawn(step.scene.job, not_drawn)
         return made
     if made is not None:
         return made
@@ -2242,6 +2250,7 @@ def clean_picture(scene: Scene, row: ReferencePhoto) -> str:
                     row.file,
                     about=f"the shop owner's {row.thing}",
                     named=f"the clean picture of the shop owner's {row.thing}",
+                    photo_named=f"the shop owner's photo of their {row.thing}",
                 )
                 if settings.QUALITY_CHECKS
                 else []
@@ -2358,7 +2367,7 @@ def person_and_room(step: SceneStep) -> tuple[ProducedItem, ProducedItem]:
     standing straight and still in that room, nothing else happening, for the scenes they are
     seen in. Each is drawn once per ad, after the plan, with the picture model ordered as
     ROOM_ALONE_PROMPT and PERSON_IN_ROOM_PROMPT say, and shown in the chat once. Gives back
-    the person-in-room picture, then the room alone.
+    the person-in-room picture, then the room alone; PlaceNotDrawn when one can't be drawn.
 
     Run again, as after a worker stopped, it pays for nothing already paid for."""
     job = step.scene.job
@@ -2383,6 +2392,35 @@ def person_and_room(step: SceneStep) -> tuple[ProducedItem, ProducedItem]:
     return person, room
 
 
+# What the shop owner is told each of the ad's pictures of its place is, when it can't be drawn.
+PLACE_PICTURE_NAMES = {
+    ProducedItem.Kind.ROOM_ALONE: "picture of the ad's place on its own",
+    ProducedItem.Kind.PERSON_IN_ROOM: "picture of the presenter in the ad's place",
+}
+
+
+class PlaceNotDrawn(Exception):
+    """The picture model couldn't draw the ad's room alone or its person-in-room picture."""
+
+    def __init__(self, kind: ProducedItem.Kind) -> None:
+        super().__init__(f"the {PLACE_PICTURE_NAMES[kind]} couldn't be drawn")
+        self.kind = kind
+
+
+def say_the_place_wasnt_drawn(job: Job, failed: PlaceNotDrawn) -> None:
+    """Tell the chat, in red, that one of the ad's pictures of its place couldn't be drawn:
+    nothing sends it yet, so the scenes are made as usual, and the next B-roll starting
+    picture draws it again."""
+    logger.error("Job %s: %s", job.pk, failed, exc_info=failed.__cause__)
+    post_notice(
+        job,
+        f"The {PLACE_PICTURE_NAMES[failed.kind]} couldn't be drawn, so the ad doesn't have it "
+        "yet. Nothing in the ad uses it yet, so every scene is made as usual. It is drawn "
+        "again when the next scene showing the product gets its picture.",
+        Message.Level.PROBLEM,
+    )
+
+
 def _draw_once(
     job: Job,
     kind: ProducedItem.Kind,
@@ -2400,9 +2438,19 @@ def _draw_once(
     file = (
         drawn.output["file"]
         if drawn is not None and drawn.output is not None
-        else edit_picture(job=job, purpose=purpose, prompt=prompt, pictures=pictures)
+        else _drawn(kind, purpose, prompt, pictures, job)
     )
     return ProducedItem.objects.create(job=job, kind=kind, file=file, made_from=room)
+
+
+def _drawn(
+    kind: ProducedItem.Kind, purpose: str, prompt: str, pictures: list[str], job: Job
+) -> str:
+    """Have the picture model draw `kind`: PlaceNotDrawn, from what went wrong, if it can't."""
+    try:
+        return edit_picture(job=job, purpose=purpose, prompt=prompt, pictures=pictures)
+    except Exception as error:
+        raise PlaceNotDrawn(kind) from error
 
 
 def _show_once(job: Job, made: list[ProducedItem]) -> None:
@@ -2503,6 +2551,7 @@ def judge_starting_picture(
     *,
     about: str,
     named: str = "",
+    photo_named: str = "the shop photo",
     owner_part: owner_parts.OwnerPart | None = None,
 ) -> list[str]:
     """What is wrong with the starting picture at `picture`, from a judge shown the picture,
@@ -2515,7 +2564,8 @@ def judge_starting_picture(
 
     A shop photo the safety filter refuses is left out, and the picture judged without it;
     the chat is told in red, naming the picture as `named` does (its starting picture, by
-    `about`, unless told). A job of None, as in an eval, has no chat."""
+    `about`, unless told) and the photo as `photo_named` does. A job of None, as in an eval,
+    has no chat."""
     named = named or f"{about}'s starting picture"
     shop_photo = Image(label="The shop photo:", key=photo)
     passes = 0
@@ -2560,7 +2610,7 @@ def judge_starting_picture(
             assert verdict.problem is not None, "a failing answer says why"
             problems.append(verdict.problem)
     if job is not None and left_out:
-        post_left_out_by_the_filter(job, ["the shop photo"], f"{named} was checked")
+        post_left_out_by_the_filter(job, [photo_named], f"{named} was checked")
     if job is not None and refused:
         post_refused_by_the_filter(
             job,
@@ -2615,7 +2665,7 @@ def check_fix(step: SceneStep, made: ProducedItem | None) -> FixCheck | None:
         settled = fix_check.settle(
             lambda ask: _ask_about_the_fix(job, fix, ask, old.file, made.file, refused)
         )
-        _say_what_the_filter_refused(fix, refused)
+        _say_what_the_filter_refused(fix, refused, settled.verdict)
     else:
         settled = _the_clip_judges_answer(made)
     return FixCheck.objects.create(
@@ -2775,9 +2825,12 @@ def _fix_question(
     )
 
 
-def _say_what_the_filter_refused(fix: Fix, refused: _FilterRefused) -> None:
+def _say_what_the_filter_refused(
+    fix: Fix, refused: _FilterRefused, verdict: fix_check.Verdict
+) -> None:
     """Tell the chat in red of every picture the safety filter refused while `fix` was
-    checked."""
+    checked, and, when it refused the pictures checked, whether that left the fix
+    unchecked, its `verdict`."""
     number = fix.scene.number
     if refused.left_out:
         post_left_out_by_the_filter(
@@ -2786,8 +2839,10 @@ def _say_what_the_filter_refused(fix: Fix, refused: _FilterRefused) -> None:
     if refused.refused:
         post_refused_by_the_filter(
             fix.job,
-            f"scene {number}'s new starting picture",
-            "some of the checks of your change couldn't be made",
+            f"scene {number}'s old or new starting picture",
+            "your change couldn't be checked in it"
+            if verdict == "unchecked"
+            else "some of the checks of your change couldn't be made",
         )
 
 
@@ -2941,7 +2996,14 @@ def _say_it_to_camera(scene: Scene) -> None:
         scene.shortened_from = []
         scene.second_state = False
         scene.save(
-            update_fields=["shows", *BROLL_FIELDS, "shortened_from", "second_state", "status"]
+            update_fields=[
+                "shows",
+                *BROLL_FIELDS,
+                *PLANNED_FOR_THE_ACTION,
+                "shortened_from",
+                "second_state",
+                "status",
+            ]
         )
         scene.job.scenes.filter(number=scene.number + 1).update(second_state=False)
         post_notice(
@@ -3971,11 +4033,15 @@ def _bring_back(scene: Scene, number: int) -> GoneBack:
                 role=Message.Role.AGENT,
                 carrying=[
                     messages.AttachedFile(
-                        kind, made.file, scene.number, top.label, clip=made if is_clip else None
+                        kind,
+                        made.file,
+                        scene.number,
+                        top.label,
+                        clip=made if kind == Attachment.Kind.VIDEO else None,
                     )
-                    for kind, made, is_clip in (
-                        (Attachment.Kind.PICTURE, picture, False),
-                        (Attachment.Kind.VIDEO, clip, True),
+                    for kind, made in (
+                        (Attachment.Kind.PICTURE, picture),
+                        (Attachment.Kind.VIDEO, clip),
                     )
                     if made is not None
                 ],

@@ -74,23 +74,22 @@ assert tuple(SCENE_PICTURE_FOR) == get_args(get_args(For)[0]), "every For value 
 # item 12) and the send order told to the planner (audit item 13).
 PLAN_SCENE_PICTURES_INSTRUCTIONS = (
     """\
-The library is every picture the app has of the product, each by its library number, and \
-every video moment, each by its video and its moment number. The video moments show how \
-the product is really used: plan from them. Plan only actions the product really does: \
-ones the page, the shop owner's words or a video moment shows it doing. Give each B-roll \
-scene a different action: never film the same action in two scenes.
-For each B-roll scene, also give:
-- Its scene pictures: the library pictures the scene needs, in the order they matter, \
-each by its library number with what it is for: """
+- Its scene pictures: the pictures the scene needs from the library, which holds every \
+picture the app has of the product, each by its library number. Give them in the order \
+they matter, each by its library number with what it is for: """
     + "; ".join(f'"{value}" for {meaning}' for value, meaning in SCENE_PICTURE_FOR.items())
     + """. Name as many as the scene needs. Never name a picture only for a side of the \
-product: every photo of its sides is sent with every clip. When the scene's end state \
-depends on the product, such as what it makes, leaves behind or changes, name a picture \
-of that end state, a page photo or a frame from a video, for "result". Empty for a scene \
-where the person talks to camera.
+product: the app adds the photos of its sides. When the scene's end state depends on the \
+product, such as what it makes, leaves behind or changes, name a picture of that end \
+state, a page photo or a frame from a video, for "result". Empty for a scene where the \
+person talks to camera.
 - Its video piece: when a video moment shows the scene's action, that moment by its video \
 and moment number, named the first time you plan the scene. Never give seconds. Null when \
 no moment shows it.
+The video moments show how the product is really used: plan from them. Plan only actions \
+the product really does: ones the page, the shop owner's words or a video moment shows it \
+doing. Give each B-roll scene a different action: never film the same action in two \
+scenes.
 Each B-roll clip is sent its pictures in this order: the product's front photo, then the \
 scene pictures you name, in your order, then the picture of the person in the place, then \
 the product's other sides. So the scene pictures you name always come right after the \
@@ -613,6 +612,12 @@ class OwnerPart(BaseModel):
         return text
 
 
+def _quoted(values: tuple[str, ...]) -> str:
+    """`values` quoted and listed: "a", "b" or "c"."""
+    quoted = [f'"{value}"' for value in values]
+    return f"{', '.join(quoted[:-1])} or {quoted[-1]}"
+
+
 class ScenePicture(BaseModel):
     """A picture a B-roll scene needs, by its library number, with what it is for."""
 
@@ -621,7 +626,7 @@ class ScenePicture(BaseModel):
     number: StrictInt = Field(description="The picture's library number.")
     for_: For = Field(
         alias="for",
-        description='What it is for: "content", "result", "in-use", "place", "person" or "state".',
+        description=f"What it is for: {_quoted(get_args(get_args(For)[0]))}.",
     )
 
 
@@ -872,8 +877,9 @@ def picture_missing(number: int, scene: PlannedScene, library: Collection[int]) 
     """Why scene `number` names a scene picture the library doesn't hold, or None."""
     for picture in scene.scene_pictures:
         if picture.number not in library:
-            held = f"pictures 1 to {max(library)}" if library else "no pictures yet"
-            return f"Scene {number} names picture {picture.number}: the library holds {held}."
+            return (
+                f"Scene {number} names picture {picture.number}: the library has no such picture."
+            )
     return None
 
 

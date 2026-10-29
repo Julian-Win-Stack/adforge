@@ -28,6 +28,7 @@ from jobs import (
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
 from jobs.models import (
     BROLL_FIELDS,
+    PLANNED_FOR_THE_ACTION,
     Fix,
     Job,
     ProducedItem,
@@ -623,6 +624,7 @@ class RunPlanningChecks(Tool):
                     "shortened_from",
                     "shows",
                     *BROLL_FIELDS,
+                    *PLANNED_FOR_THE_ACTION,
                     "status",
                     "fact_checked",
                 ]

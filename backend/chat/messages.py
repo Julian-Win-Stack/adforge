@@ -10,7 +10,6 @@ from django.utils.text import Truncator
 
 from jobs.models import ProducedItem
 
-from . import sent
 from .models import Attachment, Message, Session
 
 # How long a session's name may be, once it is taken from the first message.
@@ -90,10 +89,6 @@ def add(
     For the same reason a message and its files are saved together: a poll that saw the
     message first would move past it and never show the picture.
     """
-    # Before the message is seen, so its clips' card pictures are there when it is.
-    for attached in carrying:
-        if attached.clip is not None:
-            sent.make_cards(attached.clip)
     with transaction.atomic():
         locked = Session.objects.select_for_update().get(pk=session.pk)
         last = locked.messages.aggregate(last=Max("seq"))["last"] or 0

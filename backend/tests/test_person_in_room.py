@@ -10,9 +10,11 @@ from typing import Any
 
 import pytest
 
-from chat.models import Attachment
+from chat.models import Attachment, Message
 from gateway.fake import FakeModel, turn
+from gateway.gateway import edit_picture
 from gateway.models import ModelCall
+from gateway.types import BlockedBySafetyFilter
 from jobs.models import Job, SceneStep
 from jobs.work import person_and_room
 
@@ -58,6 +60,18 @@ def paid_file(purpose: str) -> str:
     assert output is not None
     file: str = output["file"]
     return file
+
+
+@pytest.fixture
+def room_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The picture model's safety filter refuses to draw the room alone."""
+
+    def editing(*, purpose: str, **asked: Any) -> str:
+        if purpose == "make_room_alone":
+            raise BlockedBySafetyFilter("refused")
+        return edit_picture(purpose=purpose, **asked)
+
+    monkeypatch.setattr("jobs.work.edit_picture", editing)
 
 
 @pytest.fixture
@@ -111,8 +125,9 @@ def test_the_room_alone_is_drawn_from_the_drawn_room_with_only_the_room_in_it(
     (asked,) = handoffs("make_room_alone")
     assert asked["pictures"] == [job.produced.get(kind="before_picture").file]
     assert (
-        "Keep only the room itself, exactly as it is: take every other thing out of it, with "
-        "every mark, stain or mess on what stays, so nothing of any scene is left in it."
+        "Keep the room itself as it is: its walls, floor, surfaces and fittings. Take out every "
+        "other thing, and every mark, stain or mess on what stays, so nothing of any scene is "
+        "left."
     ) in asked["prompt"]
     room = job.produced.get(kind="room_alone")
     assert room.file == paid_file("make_room_alone")
@@ -129,8 +144,8 @@ def test_the_person_in_room_is_drawn_from_the_portrait_and_the_room_standing_sti
         job.produced.get(kind="room_alone").file,
     ]
     assert (
-        "The person stands straight and still in the room, facing the camera, hands at their "
-        "sides, and nothing else happens."
+        "The person stands straight and still in the room, hands at their sides, and nothing "
+        "else happens."
     ) in asked["prompt"]
     person = job.produced.get(kind="person_in_room")
     assert person.file == paid_file("make_person_in_room")
@@ -180,3 +195,24 @@ def test_each_picture_is_kept_with_what_it_was_drawn_from(pictures_made: None) -
     room = job.produced.get(kind="room_alone")
     assert room.made_from == job.produced.get(kind="before_picture")
     assert job.produced.get(kind="person_in_room").made_from == room
+
+
+def test_a_room_alone_that_cant_be_drawn_leaves_every_starting_picture_made_and_says_so(
+    room_refused: None, pictures_made: None
+) -> None:
+    # The fixture checked that every scene's step finished, its picture kept and shown.
+    job = Job.objects.get()
+    assert job.produced.filter(kind="starting_picture").count() == 4
+    assert not job.produced.filter(kind__in=["room_alone", "person_in_room"]).exists()
+    # Said in red, and kept with the job's warnings, each time it was tried: once per B-roll
+    # scene's picture.
+    said = "The picture of the ad's place on its own couldn't be drawn"
+    told = [
+        text
+        for text in Message.objects.filter(role="notice", level="problem").values_list(
+            "text", flat=True
+        )
+        if said in text
+    ]
+    assert len(told) == 2
+    assert [w["text"] for w in job.warnings if said in w["text"]] == told

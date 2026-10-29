@@ -163,6 +163,28 @@ def test_a_video_is_sent_inline_at_one_frame_a_second_before_its_handoff_with_th
     assert call.cost_usd == Decimal("0.031823")
 
 
+def test_the_watchers_one_word_probe_thinks_as_little_as_gemini_can(
+    httpserver: HTTPServer, gemini: GeminiProvider, video_key: str
+) -> None:
+    sent: list[Request] = []
+    httpserver.expect_oneshot_request(GENERATE, method="POST").respond_with_handler(
+        _kept(sent, TWISTED_OFF)
+    )
+
+    with use_model(gemini):
+        watch_video(
+            job=None,
+            purpose="probe_video",
+            instructions="Say in one word what is on screen.",
+            handoff=Told(product_name="Stoneware Mug"),
+            video_key=video_key,
+            output=Moments,
+        )
+
+    (request,) = sent
+    assert request.json["generationConfig"]["thinkingConfig"] == {"thinkingLevel": "MINIMAL"}
+
+
 def test_a_video_too_big_to_send_inline_is_put_in_geminis_file_store_and_watched_from_there(
     httpserver: HTTPServer, gemini: GeminiProvider, video_key: str, settings: Settings
 ) -> None:
