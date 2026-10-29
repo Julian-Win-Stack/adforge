@@ -49,6 +49,7 @@ from .types import (
     ModelRequest,
     Picture,
     ToolRequest,
+    ToolSpec,
     Transcription,
     Turn,
     TurnReply,
@@ -61,15 +62,45 @@ from .types import (
 # Numbers the scripted tool calls, so each has its own id as a real model's would.
 _call_ids = itertools.count(1)
 
+# The `why` a scripted call is given when its script names none, for a tool that asks for one
+# (the producer's, spec #247 point 7).
+DEFAULT_WHY = "It is the next step the work needs."
+
 
 def turn(says: str = "", *, calls: Sequence[tuple[str, dict[str, Any]]] = ()) -> Turn:
     """A turn for a fake agent to take: what it says, and each tool it calls with its
-    arguments. A turn that calls no tool is the agent's reply."""
+    arguments. A turn that calls no tool is the agent's reply. A call whose arguments name
+    no `why` is given DEFAULT_WHY, which a tool that asks for none never sees. A test that
+    wants a call with no `why` at all builds its Turn itself."""
     return Turn(
         says=says,
         calls=tuple(
-            ToolRequest(call_id=f"call_{next(_call_ids)}", tool=tool, arguments=arguments)
+            ToolRequest(
+                call_id=f"call_{next(_call_ids)}",
+                tool=tool,
+                arguments={**arguments, "why": arguments.get("why", DEFAULT_WHY)},
+            )
             for tool, arguments in calls
+        ),
+    )
+
+
+def _as_the_tools_take(outcome: Turn, tools: Sequence[ToolSpec]) -> Turn:
+    """`outcome` without the `why` of each call to a tool offered that asks for none, as a
+    real model given those tools' shapes would send it. A call to a tool not offered is
+    left as it is."""
+    asks_none = {spec.name for spec in tools if "why" not in spec.arguments.model_fields}
+    return Turn(
+        says=outcome.says,
+        calls=tuple(
+            call
+            if call.tool not in asks_none
+            else ToolRequest(
+                call_id=call.call_id,
+                tool=call.tool,
+                arguments={key: value for key, value in call.arguments.items() if key != "why"},
+            )
+            for call in outcome.calls
         ),
     )
 
@@ -188,7 +219,9 @@ class FakeModel:
             outcome = self._next(request.purpose)
         assert isinstance(outcome, Turn), f"{request.purpose!r} was scripted output, not a turn"
         return TurnReply(
-            turn=outcome, input_tokens=self.INPUT_TOKENS, output_tokens=self.OUTPUT_TOKENS
+            turn=_as_the_tools_take(outcome, request.tools),
+            input_tokens=self.INPUT_TOKENS,
+            output_tokens=self.OUTPUT_TOKENS,
         )
 
     def _next(self, purpose: str) -> dict[str, Any] | Turn:

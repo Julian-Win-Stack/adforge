@@ -32,7 +32,7 @@ recolours made once per picture and colour."""
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from chat.models import Message
@@ -86,6 +86,18 @@ DRAWN_NAMES: dict[Drawn, str] = {
 
 
 @dataclass(frozen=True)
+class PieceLeftOut:
+    """A moment of a page video wanted for a clip and not sent: its video and moment, the
+    moment's seconds, and why (product_videos.cut_pieces)."""
+
+    video: int
+    moment: int
+    start: float
+    end: float
+    reason: str
+
+
+@dataclass(frozen=True)
 class Sending:
     """What one clip is sent, built by cut-and-send: everything of its SentList but the
     prompt, and the pieces as the video API's handoff takes them."""
@@ -96,6 +108,8 @@ class Sending:
     left_out: list[LeftOut]
     recolours: list[Recolour]
     reference_videos: list[ReferenceVideo]
+    # The pieces wanted and left out, for the clip's answer (agents.hard_list.cut_answer).
+    pieces_left_out: list[PieceLeftOut] = field(default_factory=list)
 
     @property
     def example_pictures(self) -> list[str]:
@@ -168,7 +182,7 @@ def cut_and_send(
     and the moments `pieces` as its pieces: see the module doc."""
     job = scene.job
     originals = library_items.originals(job)
-    sent_pieces, reference_videos, colours = _pieces(scene, pieces)
+    sent_pieces, reference_videos, colours, pieces_left_out = _pieces(scene, pieces)
     ad = ad_colour(job)
     colour = clip_colour(colours, ad)
     taken = _in_tiers(scene, person_shown, originals, picks)
@@ -239,6 +253,7 @@ def cut_and_send(
         left_out=left_out,
         recolours=recolours,
         reference_videos=reference_videos,
+        pieces_left_out=pieces_left_out,
     )
 
 
@@ -328,9 +343,10 @@ def _colour_photos(job: Job, originals: Sequence[LibraryEntry]) -> list[LibraryE
 
 def _pieces(
     scene: Scene, pieces: Sequence[ScenePiece]
-) -> tuple[list[SentPiece], list[ReferenceVideo], list[tuple[str, float]]]:
+) -> tuple[list[SentPiece], list[ReferenceVideo], list[tuple[str, float]], list[PieceLeftOut]]:
     """Each moment of `pieces` cut from its video: the pieces sent, as the record and as the
-    handoff keeps them, and each one's video's colour and seconds. A piece left out is said."""
+    handoff keeps them, each one's video's colour and seconds, and the pieces left out. A
+    piece left out is said."""
     job = scene.job
     named = []
     for piece in pieces:
@@ -349,9 +365,13 @@ def _pieces(
     cuts = iter(cut.sent)
     sent: list[SentPiece] = []
     colours: list[tuple[str, float]] = []
+    left_out: list[PieceLeftOut] = []
     for piece, moment, colour, wanted in named:
         if id(wanted) in left:
             _say_piece_left_out(job, scene, piece, moment.start, moment.end, left[id(wanted)])
+            left_out.append(
+                PieceLeftOut(piece.video, piece.moment, moment.start, moment.end, left[id(wanted)])
+            )
             continue
         made = next(cuts)
         sent.append(
@@ -368,7 +388,7 @@ def _pieces(
             )
         )
         colours.append((colour, made.seconds))
-    return sent, list(cut.sent), colours
+    return sent, list(cut.sent), colours, left_out
 
 
 def _in_tiers(

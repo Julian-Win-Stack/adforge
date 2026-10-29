@@ -31,9 +31,27 @@ class ToolCall(models.Model):
     call_id = models.CharField(
         max_length=200, help_text="The model's id for the call, which pairs it with its result."
     )
-    arguments = models.JSONField()
+    arguments = models.JSONField(help_text="The tool's own arguments, without its `why`.")
+    why = models.TextField(
+        blank=True,
+        help_text="The one sentence the agent wrote with the call saying why it made it (spec "
+        "#247 point 7). Blank for an agent whose tools ask for none.",
+    )
     result = models.TextField(
         blank=True, help_text="What the tool handed back to the agent. Blank until it finishes."
+    )
+    answer = models.CharField(
+        max_length=10,
+        blank=True,
+        choices=[("made", "made"), ("cant", "can't"), ("question", "question")],
+        help_text="Which of the three ways its result answers the agent (loop.ToolAnswer): the "
+        "thing it made, can't with the reason, or one question. Blank until it finishes.",
+    )
+    fold_line = models.TextField(
+        blank=True,
+        help_text="The one line the call stands as in the agent's conversation once it is "
+        "folded (spec #247 point 15): tool, scene, outcome, cost. Blank while it is given in "
+        "full.",
     )
     pictures = models.JSONField(
         default=list,
