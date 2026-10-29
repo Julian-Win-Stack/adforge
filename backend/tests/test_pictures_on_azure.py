@@ -20,7 +20,7 @@ from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, Picture, RefusedForMoney
 from jobs.models import Job, SceneStep
 
-from .conftest import HeldSteps, chat
+from .conftest import HeldSteps, ScriptedProducer, chat
 from .test_producer_scenes import CHOICE, making
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
@@ -249,3 +249,59 @@ def test_pictures_made_at_once_are_drawn_on_azure_one_at_a_time_at_its_pace(
     # Each starts once the one before has ended and half a second more has passed.
     starts = sorted(started)
     assert all(later - earlier >= 0.65 for earlier, later in pairwise(starts))
+
+
+# --- Whole-build check C (spec #247 Testing Decisions, ticket #266) --------------------------
+
+
+def picture_of_scene_1(note: str | None = None) -> tuple[str, dict[str, Any]]:
+    return ("make_starting_picture", {"scene": 1, "note": note})
+
+
+def test_the_scripted_producers_pictures_move_to_azure_once_openai_refuses_for_money(
+    api: APIClient,
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    checked: None,
+    session_id: str,
+) -> None:
+    drawn_before = len(fake_model.pictures_drawn_on)
+    red_before = len(red_lines(api, session_id))
+    fake_model.respond("make_starting_picture", OUT_OF_MONEY)
+    fake_model.respond("choose_starting_picture", CHOICE, CHOICE)
+
+    producer.told("Make scene 1's starting picture", picture_of_scene_1(), "On it.")
+    producer.woken(picture_of_scene_1("Smiling more."), "Scene 1's picture is made.")
+    producer.steps_run()
+
+    # The refused picture was drawn on Azure at once, and the next one went straight there.
+    assert fake_model.pictures_drawn_on[drawn_before:] == ["openai", "azure", "azure"]
+    assert [step.status for step in SceneStep.objects.order_by("id")] == ["finished"] * 2
+    # The shop owner was told once, in red, and the ad's warnings keep the same line.
+    (told,) = red_lines(api, session_id)[red_before:]
+    assert "out of money" in told and "Azure" in told
+    assert told in [warning["text"] for warning in Job.objects.get().warnings]
+
+
+def test_the_scripted_producers_picture_refused_for_safety_stays_on_openai_as_an_answer(
+    api: APIClient,
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    checked: None,
+    session_id: str,
+) -> None:
+    drawn_before = len(fake_model.pictures_drawn_on)
+    fake_model.respond("make_starting_picture", BlockedBySafetyFilter("content_filter"))
+    fake_model.respond("choose_starting_picture", CHOICE, CHOICE)
+
+    producer.told("Make scene 1's starting picture", picture_of_scene_1(), "On it.")
+    # The refusal reaches the producer as the step's answer, and it goes on with a new note.
+    producer.woken(picture_of_scene_1("Her hands in her lap."), "Trying another picture.")
+    producer.steps_run()
+
+    refused, made = SceneStep.objects.order_by("id")
+    assert refused.status == "failed" and "safety filter" in refused.result
+    assert made.status == "finished"
+    # Neither went to Azure, and nothing said so.
+    assert fake_model.pictures_drawn_on[drawn_before:] == ["openai", "openai"]
+    assert not any("Azure" in text for _, text in chat(api, session_id))

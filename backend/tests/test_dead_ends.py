@@ -33,7 +33,16 @@ from jobs.picture_check import PictureKeptFailing
 from jobs.planning import producer_decision_for
 from jobs.product_videos import save_videos
 
-from .conftest import MUG_FRONT, PLAN, HeldSteps, WorkerStopped, a_plan_with
+from .conftest import (
+    MUG_FRONT,
+    PLAN,
+    HeldSteps,
+    ScriptedProducer,
+    WorkerStopped,
+    a_plan_with,
+    facts_ok,
+    scripted_turns,
+)
 from .test_fixing_agent import film_again
 from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing
 from .test_producer_broll import (
@@ -616,3 +625,205 @@ def test_a_picture_that_kept_failing_its_check_is_an_answer_and_the_run_goes_on(
     assert len(red) == 1
     assert "Picture 1: The mug floats.\nPicture 2: Two handles." in red[0]["text"]
     assert len(red[0]["attachments"]) == 2
+
+
+# --- Whole-build check C (spec #247 Testing Decisions, ticket #266): each dead end of the Oct
+# 21 audit, driven by the scripted producer, is a tool answer with the reason, never a stop. --
+
+
+def red_in_the_chat(api: APIClient, session_id: str) -> list[str]:
+    return [
+        message["text"]
+        for message in api.get(f"/api/sessions/{session_id}/messages/").json()
+        if message["level"] == "problem"
+    ]
+
+
+@pytest.fixture
+def clipped_but_2(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    """Every scene ready, its music made, and scenes 1 and 3 clipped; scene 2, which shows
+    the mug, has no clip yet."""
+    calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
+    made_ready(fake_model, steps, say, (1, 2, 3))
+    calling(fake_model, say, ("make_clip", {"scene": 1}), ("make_clip", {"scene": 3}))
+    run(fake_model, steps)
+
+
+def test_dead_end_a_clip_from_a_failed_step_is_kept_or_made_again_on_the_producers_say(
+    api: APIClient,
+    producer: ScriptedProducer,
+    clipped_but_2: None,
+    session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    producer.told("Make scene 2", ("make_clip", {"scene": 2}), "Making scene 2.")
+
+    def broken(*_: object, **__: object) -> None:
+        raise RuntimeError("the step broke after the clip was kept")
+
+    # The step fails after its clip is kept; the producer, woken with the ways on, keeps it.
+    monkeypatch.setattr(tasks, "_prompt_given", broken)
+    producer.woken(("keep_try", {"scene": 2, "try_number": 0}), "Scene 2 keeps its clip.")
+
+    # The step failed, its answer giving the ways on, in red in the chat; kept now, it is done.
+    failed = SceneStep.objects.filter(kind="clip", scene__number=2).latest("id")
+    assert failed.result.startswith("Background step failed: scene 2's clip")
+    assert "keep it with keep_try for scene 2, try 0, or make a new one with make_clip" in (
+        failed.result
+    )
+    assert failed.status == SceneStep.Status.FINISHED
+    assert any("Scene 2's clip" in text for text in red_in_the_chat(api, session_id))
+    kept = ProducedItem.objects.get(kind="clip", scene__number=2)
+    assert last_result("keep_try").startswith(f"Scene 2's clip (version {kept.version})")
+    assert Scene.objects.get(number=2).status == Scene.Status.FINISHED
+
+    # The ad is made with it.
+    producer.told("Put it together", ("assemble_ad", {}), "Here's your ad.")
+    (ad,) = ProducedItem.objects.filter(kind="finished_ad")
+    assert [cut["clip"] for cut in ad.cuts if cut["scene"] == 2] == [kept.pk]
+
+
+def test_dead_end_a_step_with_no_heartbeat_is_failed_and_the_producer_starts_it_again(
+    api: APIClient,
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    clipped_but_2: None,
+    session_id: str,
+) -> None:
+    producer.told("Make scene 2", ("make_clip", {"scene": 2}), "Making scene 2.")
+    (step_id,) = producer.steps.held
+    # A worker took it and was killed: its heartbeat stopped 6 minutes ago.
+    producer.steps.held.clear()
+    long_ago = timezone.now() - timedelta(minutes=6)
+    SceneStep.objects.filter(pk=step_id).update(taken_at=long_ago, seen_at=long_ago)
+
+    fake_model.respond(
+        "produce",
+        *scripted_turns(("make_clip", {"scene": 2}), "Scene 2's clip stopped; I started it again."),
+    )
+    tasks.fail_dead_steps()
+    assert fake_model.left("produce") == 0
+
+    dead = SceneStep.objects.get(pk=step_id)
+    assert dead.status == SceneStep.Status.FAILED
+    assert "Start it again with make_clip for scene 2, or skip it" in dead.result
+    assert "Scene 2's clip couldn't be made: it was stopped partway." in red_in_the_chat(
+        api, session_id
+    )
+    assert last_result("make_clip").startswith("Started scene 2's clip")
+
+    # Started again, it finishes, and the ad is made.
+    producer.steps_run()
+    assert Scene.objects.get(number=2).status == Scene.Status.FINISHED
+    producer.told("Put it together", ("assemble_ad", {}), "Here's your ad.")
+    assert ProducedItem.objects.filter(kind="finished_ad").exists(), last_result("assemble_ad")
+
+
+def test_dead_end_a_talking_picture_that_kept_failing_its_check_is_an_answer_to_act_on(
+    api: APIClient,
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    work_of = tasks.STEP_WORK[SceneStep.Kind.STARTING_PICTURE]
+    pictures = [
+        ("pictures/1.png", ["The mug floats."]),
+        ("pictures/2.png", ["Two handles."]),
+        ("pictures/3.png", ["The mug is blue."]),
+    ]
+
+    def failing_the_first_time(step: SceneStep) -> ProducedItem | None:
+        if not SceneStep.objects.filter(status=SceneStep.Status.FAILED).exists():
+            raise PictureKeptFailing(1, pictures)
+        return work_of.make(step)
+
+    monkeypatch.setitem(
+        tasks.STEP_WORK,
+        SceneStep.Kind.STARTING_PICTURE,
+        dataclasses.replace(work_of, make=failing_the_first_time),
+    )
+    producer.told(
+        "Make scene 1's picture",
+        ("make_starting_picture", {"scene": 1, "note": None}),
+        "Making scene 1's picture.",
+    )
+    # Woken with the answer, the producer changes the picture with a note: no stopped run.
+    fake_model.respond("choose_starting_picture", CHOICE)
+    producer.woken(
+        ("make_starting_picture", {"scene": 1, "note": "One handle, and the mug on the table."}),
+        "Scene 1's picture kept failing its check, so I'm drawing it differently.",
+    )
+
+    failed, again = SceneStep.objects.filter(kind="starting_picture").order_by("id")
+    assert failed.status == SceneStep.Status.FAILED
+    assert "failed its check all 3 times it was drawn" in failed.result
+    assert "Change the picture with make_starting_picture and a note" in failed.result
+    assert "make the scene show the product instead with edit_scene" in failed.result
+    (red,) = [text for text in red_in_the_chat(api, session_id) if "starting picture" in text]
+    assert "Picture 3: The mug is blue." in red
+    assert last_result("make_starting_picture").startswith("Started scene 1's starting picture")
+    producer.steps_run()
+    again.refresh_from_db()
+    assert again.status == SceneStep.Status.FINISHED
+
+
+ON_SALE = "Yours today for just $19.00, on sale."
+
+
+def test_dead_end_a_note_with_one_impossible_part_has_the_rest_done_and_that_part_named(
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    httpserver: HTTPServer,
+) -> None:
+    other_product = httpserver.url_for("/products/teapot")
+    httpserver.expect_request("/products/teapot").respond_with_data(
+        f'<html><head><link rel="canonical" href="{other_product}"></head>'
+        "<body><h1>Glass Teapot</h1></body></html>",
+        content_type="text/html",
+    )
+    fake_model.respond("fact_check", facts_ok(3))
+    producer.told(
+        f"Add my teapot too ({other_product}), and have scene 3 say it's on sale for $19.",
+        [
+            ("read_page", {"link": other_product, "target_seconds": None}),
+            ("edit_scene", {"scene": 3, "line": ON_SALE}),
+        ],
+        "Scene 3 now says it's on sale. The teapot needs an ad of its own: start a new ad for it.",
+    )
+
+    # The impossible part is a can't, naming why; the rest of the note is done.
+    refused = last_result("read_page")
+    assert refused.startswith("Refused:") and "start a new ad for that" in refused
+    assert ToolCall.objects.filter(tool="read_page").latest("id").answer == "cant"
+    assert Scene.objects.get(number=3).line == ON_SALE
+    assert ToolCall.objects.get(tool="edit_scene").answer == "made"
+    assert "start a new ad for it" in producer.said()[-1]
+
+
+def test_dead_end_a_paid_answer_the_validator_rejects_is_a_tool_answer_and_the_run_goes_on(
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    page_read: str,
+) -> None:
+    names_no_photo = {**PLAN, "plan": {**PLAN["plan"], "colour_photos": [9]}}
+    fake_model.respond("plan_ad", names_no_photo, PLAN)
+
+    producer.told("Plan it", ("plan_ad", {}), ("plan_ad", {}), "Here's the plan.")
+
+    first, second = ToolCall.objects.filter(tool="plan_ad").order_by("id")
+    # The paid answer the validator rejected reached the producer as the tool's can't, with
+    # the rule it broke; the producer planned again, and the plan stands.
+    assert first.answer == "cant"
+    assert first.result.startswith("Failed: a model's answer couldn't be used")
+    assert "9" in first.result
+    assert second.answer == "made"
+    assert Job.objects.get().scenes.count() == 3
+    assert producer.said()[-1] == "Here's the plan."
