@@ -1600,10 +1600,11 @@ def _clip_video_usd(scene: Scene, audio_seconds: float) -> Decimal:
 
 def agent_try_usd(scene: Scene, audio_seconds: float) -> Decimal:
     """What one try of the fixing agent at the scene is estimated to cost, for either door: a
-    new starting picture, its video covering `audio_seconds`, the clip judge's asks (which
-    check the shop owner's change too, for a fix) and the agent's turns."""
+    new starting picture (none for a scene showing the product: its clip is made from the
+    product's own pictures, spec #210), its video covering `audio_seconds`, the clip judge's
+    asks (which check the shop owner's change too, for a fix) and the agent's turns."""
     return (
-        _picture_only_estimate_usd(scene)
+        (Decimal(0) if scene.shows else _picture_only_estimate_usd(scene))
         + _clip_video_usd(scene, audio_seconds)
         + _judge_usd(scene)
         + AGENT_TURNS_PER_TRY * _each_call_usd(scene, [FIXING_AGENT_PURPOSE])
