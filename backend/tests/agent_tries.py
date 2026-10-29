@@ -23,6 +23,8 @@ class FakeAgent:
     reason: str = "Every try kept the same fault."
     # Which try it would pick on a give-up, from 1; None for none.
     picks: int | None = None
+    # What the scene shows from a try on, by the try's number, as film_again changes it.
+    shows: dict[int, str] = field(default_factory=dict)
     # Each time it was handed a scene: the step, the door and what failed.
     handed: list[tuple[SceneStep, str, fixing_agent.Failure, int]] = field(default_factory=list)
 
@@ -49,6 +51,10 @@ class FakeAgent:
                 call_id=f"fake-try-{fixing.pk}-{number}",
                 arguments={"video_prompt": motion},
             )
+            if number in self.shows:
+                scene = fixing.step.scene
+                scene.change_line(scene.line, self.shows[number])
+                scene.save()
             picture, audio = fixing_agent._current(fixing)
             tried = fixing_agent._try_step(
                 fixing,
@@ -94,9 +100,11 @@ def agent_films(
     *tries: str,
     reason: str = "Every try kept the same fault.",
     picks: int | None = None,
+    shows: dict[int, str] | None = None,
 ) -> FakeAgent:
-    """Have the fixing agent film `tries`, each judged, until one passes or it gives up."""
-    agent = FakeAgent(list(tries), reason, picks)
+    """Have the fixing agent film `tries`, each judged, until one passes or it gives up;
+    `shows` changes what the scene shows from the try of that number on."""
+    agent = FakeAgent(list(tries), reason, picks, dict(shows or {}))
     monkeypatch.setattr(fixing_agent, "fix_scene", agent.fix_scene)
     return agent
 

@@ -20,7 +20,7 @@ from pydantic import ValidationError
 from chat.models import Attachment, Message
 
 from . import stale
-from .models import BROLL_FIELDS, PLANNED_FOR_THE_ACTION, Job, Scene, SceneStep
+from .models import BROLL_FIELDS, PLANNED_FOR_THE_ACTION, AgentFix, Job, Scene, SceneStep
 from .planning import PlannedScene, same_action
 
 
@@ -63,10 +63,21 @@ class Edited:
 
 def edit_scene(scene: Scene, changes: dict[str, Any]) -> Edited:
     """Change the fields of `scene` named in `changes` (EDITABLE; None leaves a field as it
-    is). CantEdit, with nothing changed, when the scene that results breaks the plan."""
+    is). CantEdit, with nothing changed, when the scene that results breaks the plan, or
+    while the fixing agent films the scene again: it changes the scene itself, and would
+    overwrite the edit."""
     changes = {key: value for key, value in changes.items() if value is not None}
     with transaction.atomic():
         scene = Scene.objects.select_for_update().get(pk=scene.pk)
+        if AgentFix.objects.filter(
+            step__scene=scene,
+            step__status=SceneStep.Status.RUNNING,
+            finished_at__isnull=True,
+        ).exists():
+            raise CantEdit(
+                f"the fixing agent is filming scene {scene.number} again. You'll be told when "
+                "it's done; edit the scene then."
+            )
         changed = _apply(scene, changes)
         edited = Edited()
         if not changed:
