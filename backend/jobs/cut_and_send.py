@@ -11,6 +11,8 @@ clip is sent, the same way every time, before every send. No AI prunes or combin
   (owner_parts.part_not_held: such a pick is refused). Tier 4: the other side pictures
   (back, side, top) in library order, but owner parts' and pictures the producer made
   (ONLY_WHERE_NAMED): those go only where they are picked.
+  The scene's exclude list (jobs.scene_references) holds in every tier: an excluded item is
+  never sent, takes no place under the cap, and is named in the Sending's `excluded`.
   States and pack sizes are in no tier: they go only when picked. The first
   VIDEO_API_MOST_PICTURES are sent; the rest are left out, their tier the reason, so a tier-4
   photo never pushes out a pick. A sender chooses among the library's originals only, and
@@ -41,7 +43,7 @@ from typing import Literal
 from chat.models import Message
 from gateway.types import ReferenceVideo
 
-from . import library_items, library_sheets, owner_parts, work
+from . import library_items, library_sheets, owner_parts, scene_references, work
 from .first_send import FirstSendScene, drawn_label, write_first_send_prompt
 from .library import (
     VIDEO_API_MOST_PICTURES,
@@ -101,6 +103,16 @@ class PieceLeftOut:
 
 
 @dataclass(frozen=True)
+class Excluded:
+    """A library item a tier would have taken for a clip, not sent: the scene excludes it.
+    `number` is the original's (a pick of a version is a pick of its original)."""
+
+    number: int
+    label: str
+    tier: Tier
+
+
+@dataclass(frozen=True)
 class Sending:
     """What one clip is sent, built by cut-and-send: everything of its SentList but the
     prompt, and the pieces as the video API's handoff takes them."""
@@ -113,6 +125,8 @@ class Sending:
     reference_videos: list[ReferenceVideo]
     # The pieces wanted and left out, for the clip's answer (agents.hard_list.cut_answer).
     pieces_left_out: list[PieceLeftOut] = field(default_factory=list)
+    # The items the scene's exclude list kept out, for the clip's answer.
+    excluded: list[Excluded] = field(default_factory=list)
 
     @property
     def example_pictures(self) -> list[str]:
@@ -188,7 +202,7 @@ def cut_and_send(
     sent_pieces, reference_videos, colours, pieces_left_out = _pieces(scene, pieces)
     ad = ad_colour(job)
     colour = clip_colour(colours, ad)
-    taken = _in_tiers(scene, person_shown, originals, picks)
+    taken, excluded = _in_tiers(scene, person_shown, originals, picks)
     sent, left = taken[:VIDEO_API_MOST_PICTURES], taken[VIDEO_API_MOST_PICTURES:]
     colour_video = next(
         (
@@ -257,6 +271,42 @@ def cut_and_send(
         recolours=recolours,
         reference_videos=reference_videos,
         pieces_left_out=pieces_left_out,
+        excluded=excluded,
+    )
+
+
+@dataclass(frozen=True)
+class NextSend:
+    """What a clip of a scene would be sent as its references stand, before anything is cut
+    or recoloured: the pictures in order (their labels before any recolour), those the cap
+    leaves out, and those the scene excludes. Costs nothing."""
+
+    pictures: list[LeftOut]
+    left_out: list[LeftOut]
+    excluded: list[Excluded]
+
+
+def next_send(scene: Scene, *, person_shown: str) -> NextSend:
+    """What `scene`'s next clip would be sent from its reference list, as cut-and-send
+    orders and cuts it, said to nobody: for the producer's set_references answer."""
+    originals = library_items.originals(scene.job)
+    picks = [ScenePicture.model_validate(picture) for picture in scene.scene_pictures]
+    taken, excluded = _in_tiers(scene, person_shown, originals, picks, say=False)
+    refs = [
+        LeftOut(
+            tier=picture.tier,
+            library_number=None if picture.item is None else picture.item.number,
+            drawn=picture.drawn,
+            for_=picture.for_,
+            label=picture.label,
+            file=picture.file,
+        )
+        for picture in taken
+    ]
+    return NextSend(
+        pictures=refs[:VIDEO_API_MOST_PICTURES],
+        left_out=refs[VIDEO_API_MOST_PICTURES:],
+        excluded=excluded,
     )
 
 
@@ -417,24 +467,37 @@ def _in_tiers(
     person_shown: str,
     originals: Sequence[LibraryEntry],
     picks: Sequence[ScenePicture],
-) -> list[_Taken]:
+    *,
+    say: bool = True,
+) -> tuple[list[_Taken], list[Excluded]]:
     """Every picture a clip takes, tier by tier, before the cut; each library original once,
-    in the first tier that takes it."""
+    in the first tier that takes it; and the items the scene's exclude list kept out, each
+    once, in the first tier that would have taken it. With `say` false nothing missing is
+    said."""
     job = scene.job
     everything = {item.number: item for item in library_of(job)}
+    out = scene_references.excluded(scene)
     taken: list[_Taken] = []
+    excluded: list[Excluded] = []
     seen: set[int] = set()
 
     def take(tier: Tier, original: LibraryEntry, for_: For | None = None) -> None:
         if original.number in seen:
             return
         seen.add(original.number)
+        if original.number in out:
+            excluded.append(Excluded(original.number, original.label, tier))
+            return
         item = library_items.to_send(job, original)
         taken.append(_Taken(tier, original, item, None, for_, item.label, item.file))
 
-    front = front_of(originals)
+    unexcluded = front_of(originals)
+    if unexcluded is not None and unexcluded.number in out:
+        take(1, unexcluded)
+    front = front_of([item for item in originals if item.number not in out])
     if front is None:
-        _say_no_front(job, scene)
+        if say:
+            _say_no_front(job, scene)
     else:
         take(1, front)
     for pick in picks:
@@ -452,7 +515,8 @@ def _in_tiers(
         take(2, _original_of(everything, part))
     drawn, place = work.scene_place(scene, person_shown)
     if place is None:
-        _say_no_place(job, scene, drawn)
+        if say:
+            _say_no_place(job, scene, drawn)
     else:
         taken.append(_Taken(3, None, None, drawn, None, _drawn_label(job, drawn), place.file))
     for item in originals:
@@ -462,7 +526,7 @@ def _in_tiers(
             continue
         if item.kind == "side" and item.side in OTHER_SIDES:
             take(4, item)
-    return taken
+    return taken, excluded
 
 
 def _original_of(everything: dict[int, LibraryEntry], item: LibraryEntry) -> LibraryEntry:

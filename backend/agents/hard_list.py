@@ -9,6 +9,7 @@ wish that live in code. Each is a tool answer, a can't with the reason, never a 
 Nothing else is a code refusal of a wish. A new guard is added only after a graded failure,
 as a tool answer with a reason, and lives here only if it refuses a wish."""
 
+from collections.abc import Sequence
 from typing import NoReturn
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
@@ -17,7 +18,7 @@ from django.conf import settings
 from adforge.retry import OutsideServiceDown
 from gateway.types import MOST_PIECE_SECONDS
 from jobs import owner_parts, page, work
-from jobs.cut_and_send import DRAWN_NAMES, TIER_NAMES, Sending
+from jobs.cut_and_send import DRAWN_NAMES, TIER_NAMES, Excluded, Sending
 from jobs.library import VIDEO_API_MOST_PICTURES, LeftOut, library_of
 from jobs.models import Job, Scene
 
@@ -124,19 +125,16 @@ def refuse_clip_before_the_owners_yes(
 
 def cut_answer(scene: int, sending: Sending) -> str:
     """What the producer is told of the cut of scene `scene`'s clip to the video API's
-    limits: each picture and piece of video left out, and why, and each piece cut short.
+    limits: each picture and piece of video left out, and why, each piece cut short, and
+    each item the scene's exclude list kept out.
     Blank when nothing was cut. Made part of the clip's answer, so the producer can choose
     which pictures matter for the scene, exclude ones that don't, or make one combined
     picture."""
     told = []
     if sending.left_out:
-        many = len(sending.left_out) != 1
-        told.append(
-            f"The video model takes at most {VIDEO_API_MOST_PICTURES} pictures, and the "
-            f"{VIDEO_API_MOST_PICTURES} that come first in the send order filled it, so "
-            f"{len(sending.left_out)} picture{'s were' if many else ' was'} left out of scene "
-            f"{scene}'s clip: {'; '.join(_named(picture) for picture in sending.left_out)}."
-        )
+        told.append(left_out_answer(scene, sending.left_out))
+    if sending.excluded:
+        told.append(excluded_answer(scene, sending.excluded))
     for left in sending.pieces_left_out:
         told.append(
             f"The piece of video {left.video}, moment {left.moment} ({left.start:g} to "
@@ -151,6 +149,26 @@ def cut_answer(scene: int, sending: Sending) -> str:
                 f"most {MOST_PIECE_SECONDS:g} s of video over up to {_pieces()}."
             )
     return " ".join(told)
+
+
+def excluded_answer(scene: int, excluded: Sequence[Excluded]) -> str:
+    """The items scene `scene`'s exclude list kept out of its clip, each by its label,
+    number and the tier that would have taken it."""
+    named = "; ".join(
+        f'"{item.label}" (library item {item.number}, {TIER_NAMES[item.tier]})' for item in excluded
+    )
+    return f"Not sent, as excluded for scene {scene}: {named}."
+
+
+def left_out_answer(scene: int, left_out: Sequence[LeftOut]) -> str:
+    """The pictures the video API's cap leaves out of scene `scene`'s clip, and why."""
+    many = len(left_out) != 1
+    return (
+        f"The video model takes at most {VIDEO_API_MOST_PICTURES} pictures, and the "
+        f"{VIDEO_API_MOST_PICTURES} that come first in the send order filled it, so "
+        f"{len(left_out)} picture{'s were' if many else ' was'} left out of scene "
+        f"{scene}'s clip: {'; '.join(_named(picture) for picture in left_out)}."
+    )
 
 
 def _pieces() -> str:

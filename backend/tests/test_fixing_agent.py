@@ -1282,6 +1282,29 @@ def test_the_ad_snapshot_counts_a_fixed_scenes_money_once(new_line_passes: Outco
     assert scene_2.endswith("It cost $0.867575.")
 
 
+def test_a_picture_the_scene_excludes_is_refused_and_no_try_is_spent(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    # The producer's set_references excluded library item 2, the page's photo 2 (Q20).
+    Scene.objects.filter(number=2).update(excluded=[2])
+    edits = fake_model.edits
+
+    [answer] = refused_then_given_up(
+        fake_model,
+        failed_clip,
+        film_again(new_picture=True, photo=2, picture_prompt="The mug on the counter."),
+    )
+
+    assert answer.startswith(
+        "Refused: library item 2 is excluded for this scene: it is never sent for it."
+    )
+    assert fake_model.edits == edits
+    assert [each.number for each in AgentFix.objects.get().tries.all()] == [1]
+    # The agent was told so from the start.
+    first = ModelCall.objects.filter(purpose="fix_scene").order_by("created_at", "id")[0]
+    assert "never sent for it (excluded): library item 2" in json.dumps(first.handoff)
+
+
 def test_a_move_the_safety_filter_blocks_is_answered_as_a_cant_and_the_fix_carries_on(
     fake_model: FakeModel, failed_clip: SceneStep, monkeypatch: pytest.MonkeyPatch
 ) -> None:

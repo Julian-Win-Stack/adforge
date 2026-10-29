@@ -20,18 +20,21 @@ from gateway.models import ModelCall
 from gateway.types import MusicHandoff, UnusableReply
 from jobs import (
     clip_judge,
+    cut_and_send,
     fix_check,
     owner_parts,
     page,
     picture_check,
     reference_photos,
+    scene_references,
 )
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
-from jobs.library import library_of
+from jobs.library import library_of, watch_of
 from jobs.library_items import add_kept_photos, add_product_only_versions, library_line
 from jobs.made_pictures import PictureNotMade, make_picture
 from jobs.models import (
     BROLL_FIELDS,
+    CLIP_ONLY_INPUTS,
     PLANNED_FOR_THE_ACTION,
     Fix,
     Job,
@@ -42,6 +45,7 @@ from jobs.models import (
     SceneStep,
 )
 from jobs.notices import post_notice
+from jobs.planning import ScenePicture, ScenePiece
 from jobs.product_videos import save_videos
 from jobs.reference_photos import ReferencePhotoUnusable
 from jobs.watcher import watch_videos
@@ -66,6 +70,7 @@ from jobs.work import (
     plan,
     run_checks,
     save_photos,
+    scene_place,
     use_music_again,
     version_label,
     waits_to_be_said_to_camera,
@@ -169,6 +174,9 @@ wrong, its root cause and a direction. It decides nothing: you do. Before \
 the ad is planned, every photo they send is a product photo: if they send one of something \
 else, don't add it, and tell them to send it with a note on a scene once the first version \
 is made. Slower can't be done: every clip plays at real-time speed.
+To choose which library pictures and which video moment a scene that shows the product \
+sends its next clip, or to keep a library item out of that scene's clips, call \
+set_references: its answer says what the next clip is sent and what is left out.
 A part of the product drawn from the shop owner's words or made up is settled once they \
 say yes to its picture: never ask them for a photo of it or how it looks again.
 make_picture makes a new picture for the ad's library from your prompt and library items. \
@@ -793,7 +801,11 @@ class MakeStartingPicture(Tool):
         # A picture made with other photos of the shop owner's is another picture.
         made = _with_the_photos_in_use(
             scene,
-            steps.filter(status=SceneStep.Status.FINISHED, note=note, **SceneStep.made_for(scene))
+            steps.filter(
+                status=SceneStep.Status.FINISHED,
+                note=note,
+                **SceneStep.made_for(scene, picture=True),
+            )
             .filter(produced__isnull=False)
             .distinct(),
         )
@@ -1155,6 +1167,8 @@ class MakeClip(Tool):
                 # Any version of the picture: one brought back is the same picture (#143). A
                 # clip made before clips kept their picture step has only its picture.
                 picture__step=picture_step,
+                # Made from the references as they stand: a new list makes the clip stale.
+                **{f"step__{field}": getattr(scene, field) for field in CLIP_ONLY_INPUTS},
                 # With no note, any clip of the same picture and audio is already made, as
                 # before notes; a different note is a new clip.
                 **({"step__note": note} if note else {}),
@@ -1198,6 +1212,10 @@ class MakeClip(Tool):
                         ],
                     )
                 back = f" It is the scene's clip again, as version {again.version}."
+            else:
+                # Its references set back to those it was made from: it is current again.
+                scene.status = Scene.Status.FINISHED
+                scene.save(update_fields=["status"])
             return (
                 f"Scene {scene.number}'s clip was already made {made_from} and audio"
                 f"{with_note} (version {made.version}), so nothing was made or paid for "
@@ -1220,6 +1238,165 @@ class MakeClip(Tool):
             f"Started scene {scene.number}'s clip. It isn't made yet: you'll be told when it's "
             "ready."
         )
+
+
+class SetReferences(Tool):
+    """Set what a scene that shows the product sends its next clip, from the ad's picture
+    library: its scene pictures by library number, each with what it is for, in your order;
+    its video piece by video and moment number; and the library items never sent for this
+    scene, whichever tier would take them. Code still sends the product's front photo as
+    Image 1, then your pictures, then the drawn picture of the place, then the product's
+    other sides, at most 9 pictures in all: the answer says what the next clip is sent and
+    what is left out. A new list makes the scene's clip out of date; nothing is remade until
+    you make its clip again. Null keeps what the scene has."""
+
+    name = "set_references"
+
+    scene: int = Field(description="The number of the scene.")
+    pictures: list[ScenePicture] | None = Field(
+        default=None,
+        description="The scene pictures, in the order they matter, the whole list: it "
+        "replaces the scene's. Empty for none; null keeps the scene's.",
+    )
+    piece: ScenePiece | None = Field(
+        default=None,
+        description="The page video moment whose movement the clip copies. Null keeps the "
+        "scene's, unless no_piece is true.",
+    )
+    no_piece: bool = Field(default=False, description="True to send the clip no video piece.")
+    exclude: list[int] | None = Field(
+        default=None,
+        description="The library numbers never sent for this scene, the whole list: it "
+        "replaces the scene's. Empty to exclude nothing; null keeps the scene's.",
+    )
+
+    def run(self, call: ToolCall) -> str:
+        scene = _a_checked_scene(call, self.scene)
+        if not scene.shows:
+            raise Refused(
+                f"scene {scene.number} is said to camera: its clip is sent no pictures from "
+                "the library."
+            )
+        job = scene.job
+        pictures = (
+            [ScenePicture.model_validate(picture) for picture in scene.scene_pictures]
+            if self.pictures is None
+            else self.pictures
+        )
+        piece = (
+            None
+            if self.no_piece
+            else self.piece
+            if self.piece is not None
+            else None
+            if scene.piece is None
+            else ScenePiece.model_validate(scene.piece)
+        )
+        exclude = list(scene.excluded) if self.exclude is None else self.exclude
+        _refuse_unknown_references(job, pictures, piece, exclude)
+        hard_list.refuse_part_picture_elsewhere(scene, [picture.number for picture in pictures])
+        wanted = {
+            "scene_pictures": [picture.model_dump(by_alias=True) for picture in pictures],
+            "piece": None if piece is None else piece.model_dump(),
+            "excluded": list(dict.fromkeys(exclude)),
+        }
+        changed = [field for field, value in wanted.items() if getattr(scene, field) != value]
+        if changed:
+            Scene.objects.filter(pk=scene.pk).update(**wanted)
+            for field, value in wanted.items():
+                setattr(scene, field, value)
+        told = [_references_words(scene)]
+        if changed and _latest_clip(scene) is not None:
+            scene.plan_again()
+            told.append(
+                f"Scene {scene.number}'s clip was made from its earlier references, so it is "
+                "out of date: nothing is remade until you make its clip again."
+            )
+        elif not changed:
+            told.append("Nothing changed: the scene had these references already.")
+        told.append(_next_send_words(scene))
+        return " ".join(told)
+
+
+def _refuse_unknown_references(
+    job: Job, pictures: list[ScenePicture], piece: ScenePiece | None, exclude: list[int]
+) -> None:
+    """Refuse references the ad doesn't have, or that contradict each other, before anything
+    is kept."""
+    numbers = [item.number for item in library_of(job)]
+    unknown = [
+        number
+        for number in [*(picture.number for picture in pictures), *exclude]
+        if number not in numbers
+    ]
+    if unknown:
+        raise Refused(
+            f"the ad's picture library has no item {listed_numbers(sorted(set(unknown)))}: its "
+            + (f"items are 1 to {len(numbers)}." if numbers else "library is empty.")
+        )
+    named = [picture.number for picture in pictures]
+    twice = sorted({number for number in named if named.count(number) > 1})
+    if twice:
+        raise Refused(f"library item {listed_numbers(twice)} is named twice: name each once.")
+    originals = {scene_references.original_number(job, number) for number in exclude}
+    both = [n for n in named if scene_references.original_number(job, n) in originals]
+    if both:
+        raise Refused(
+            f"library item {listed_numbers(both)} is both a scene picture and excluded: "
+            "a picture is sent or excluded, not both."
+        )
+    if piece is not None:
+        video = job.videos.filter(position=piece.video).first()
+        watch = None if video is None else watch_of(video)
+        if watch is None or not watch.moments:
+            raise Refused(f"the ad has no watched video {piece.video} with moments.")
+        if not 1 <= piece.moment <= len(watch.moments):
+            raise Refused(
+                f"video {piece.video} has moments 1 to {len(watch.moments)}, not {piece.moment}."
+            )
+
+
+def _references_words(scene: Scene) -> str:
+    """The scene's references as they now stand."""
+    pictures = ", ".join(
+        f"{picture['number']} ({picture['for']})" for picture in scene.scene_pictures
+    )
+    piece = scene.piece
+    return (
+        f"Scene {scene.number}'s references: pictures {pictures or 'none'}; video piece "
+        + ("none" if piece is None else f"video {piece['video']}, moment {piece['moment']}")
+        + "; excluded "
+        + (listed_numbers(list(scene.excluded)) if scene.excluded else "nothing")
+        + "."
+    )
+
+
+def _next_send_words(scene: Scene) -> str:
+    """What the scene's next clip is sent as its references stand, said in cut-and-send's
+    order, and what the cap and the exclude list keep out: the cut, before anything is paid."""
+    going = cut_and_send.next_send(scene, person_shown=scene.person_shown)
+    images = "; ".join(
+        f'Image {image} "{picture.label}" ('
+        + (
+            f"library item {picture.library_number}"
+            if picture.library_number is not None
+            else "drawn"
+        )
+        + f", {cut_and_send.TIER_NAMES[picture.tier]})"
+        for image, picture in enumerate(going.pictures, start=1)
+    )
+    told = [f"Its next clip is sent: {images or 'no pictures'}."]
+    drawn, place = scene_place(scene, scene.person_shown)
+    if place is None:
+        told.append(
+            f"No picture of {cut_and_send.DRAWN_NAMES[drawn]} is drawn yet; once it is, it is "
+            "sent after the scene pictures."
+        )
+    if going.left_out:
+        told.append(hard_list.left_out_answer(scene.number, going.left_out))
+    if going.excluded:
+        told.append(hard_list.excluded_answer(scene.number, going.excluded))
+    return " ".join(told)
 
 
 class ApproveOwnerPart(Tool):
@@ -2178,6 +2355,7 @@ PRODUCER = Agent(
         MakeLineAudio,
         TranscribeLineAudio,
         MakeClip,
+        SetReferences,
         ApproveOwnerPart,
         CorrectOwnerPart,
         AskOwner,

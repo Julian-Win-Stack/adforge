@@ -47,9 +47,11 @@ from jobs import (
     cut_and_send,
     library,
     library_items,
+    library_sheets,
     picture_check,
     product_videos,
     reference_photos,
+    scene_references,
     scenes,
     work,
 )
@@ -901,6 +903,17 @@ def _scene_facts(scene: Scene) -> str:
             *([f"  how the product is used: {scene.usage}"] if scene.usage else []),
             *([f"  ends on: {scene.result}"] if scene.result else []),
         ]
+        pictures = scene_references.tier_2(scene)
+        if pictures:
+            facts.append(
+                "  its pictures: "
+                + ", ".join(f"library item {p.number} ({p.for_})" for p in pictures)
+            )
+        if scene.excluded:
+            facts.append(
+                "  never sent for it (excluded): library item "
+                + ", ".join(str(number) for number in scene.excluded)
+            )
     else:
         facts.append("  the presenter says it to camera")
     return "\n".join(facts)
@@ -1601,6 +1614,7 @@ def _refuse_what_breaks_the_rules(fixing: AgentFix, asked: FilmAgain, scene: Sce
         raise Refused(f"the video prompt has bans ({', '.join(found)}). Say what happens instead.")
     if asked.references is not None:
         _refuse_bad_references(scene.job, asked)
+        _refuse_excluded(asked, scene)
         if asked.broll_kind != "does a job" and asked.result.strip():
             raise Refused('only a "does a job" scene has a result.')
         _refuse_a_missing_own_place(scene, asked.person_shown)
@@ -1610,11 +1624,36 @@ def _refuse_what_breaks_the_rules(fixing: AgentFix, asked: FilmAgain, scene: Sce
     every = list(scene.job.photos.values_list("position", flat=True))
     if asked.new_picture and asked.photo not in every:
         raise Refused(f"Image 1 must be one of the shop photos: {every}.")
+    _refuse_excluded(asked, scene)
     if not asked.new_picture and asked.person_shown != scene.person_shown:
         raise Refused("showing or hiding the face changes the picture: draw a new one.")
     if asked.broll_kind != "does a job" and asked.result.strip():
         raise Refused('only a "does a job" scene has a result.')
     _refuse_what_misses_the_place(fixing, asked, scene)
+
+
+def _refuse_excluded(asked: FilmAgain, scene: Scene) -> None:
+    """Refuse a try that would send a library item the scene excludes (spec #247 point 5,
+    Julian Q20): the exclude list holds against film_again, and only a new note from the shop
+    owner lifts it. Refused before anything is made, so no try is spent."""
+    named = _items_named(asked, scene)
+    out = scene_references.excluded_among(scene, named)
+    if out:
+        raise Refused(
+            f"library item {', '.join(str(number) for number in out)} is excluded for this "
+            "scene: it is never sent for it. Choose another picture."
+        )
+
+
+def _items_named(asked: FilmAgain, scene: Scene) -> list[int]:
+    """The library items the try names: its references' pictures, or the library items of
+    its new start picture's Image 1 photo."""
+    if asked.references is not None:
+        return [picture.number for picture in asked.references.pictures]
+    if not asked.new_picture or asked.photo is None:
+        return []
+    positions = library_sheets.photo_positions(scene.job)
+    return [number for number, position in positions.items() if position == asked.photo]
 
 
 def _refuse_what_misses_the_place(fixing: AgentFix, asked: FilmAgain, scene: Scene) -> None:
@@ -1816,10 +1855,14 @@ def _references_sent(
     sending = cut_and_send.cut_and_send(
         scene,
         person_shown=person_shown,
-        picks=[
-            ScenePicture(number=picture.number, for_=picture.used_for)
-            for picture in references.pictures
-        ],
+        # That try's tier 2, the scene's exclusions applied (refused before, kept out here).
+        picks=scene_references.tier_2(
+            scene,
+            [
+                ScenePicture(number=picture.number, for_=picture.used_for)
+                for picture in references.pictures
+            ],
+        ),
         pieces=[]
         if references.piece is None
         else [ScenePiece(video=references.piece.video, moment=references.piece.moment)],

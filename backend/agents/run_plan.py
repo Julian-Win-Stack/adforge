@@ -935,7 +935,7 @@ def _picture(row: FixPlanScene, scene: Scene, running: set[str]) -> ProducedItem
         if row.action == Action.NEW_CLIP:
             _failed(row, f"Scene {scene.number} has no starting picture to make its clip from.")
             return None
-    made_for = SceneStep.made_for(scene, through="step__")
+    made_for = SceneStep.made_for(scene, through="step__", picture=True)
     del made_for["step__line"]
     picture = (
         scene.produced.filter(
