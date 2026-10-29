@@ -192,6 +192,101 @@ def test_a_pause_pressed_while_the_producer_decides_reaches_it_before_any_of_its
     assert "The shop owner pressed pause" in notes_given(producer_turns())[-1]
 
 
+def test_a_pause_pressed_while_the_producer_decides_holds_even_a_free_call_until_it_reads_it(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond(
+        "produce",
+        meanwhile(
+            lambda: pause(api, session_id),
+            turn(calls=[("cost_so_far", {"why": "The shop owner asked."})]),
+        ),
+        turn(says="Paused. What should change?"),
+    )
+
+    say("What has it cost so far?")
+
+    # Refused unrun, as a can't, and ended: never run again later.
+    [held] = ToolCall.objects.filter(tool="cost_so_far")
+    assert held.result.startswith("Refused: paused")
+    assert (held.answer, held.finished_at is not None) == ("cant", True)
+
+
+def test_a_message_sent_right_after_the_pause_lets_the_turns_calls_run(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    def paused_then_written() -> None:
+        pause(api, session_id)
+        sent = api.post(
+            f"/api/sessions/{session_id}/messages/", {"text": "Go on after all"}, format="json"
+        )
+        assert sent.status_code == 201, sent.json()
+
+    fake_model.respond(
+        "produce",
+        meanwhile(paused_then_written, turn(calls=[picture_call(1, "Scene 1 opens the ad.")])),
+        turn(says="Making scene 1's picture."),
+        turn(says="Going on."),
+    )
+
+    say("Make scene 1's picture")
+
+    # The pause ended before the call ran, so it started its step.
+    assert results_of("make_starting_picture")[0].startswith("Started scene 1's starting picture")
+    assert step_of(1).status == "running"
+
+
+def test_a_pause_pressed_during_the_producers_last_turn_is_read_on_one_more(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond(
+        "produce",
+        meanwhile(lambda: pause(api, session_id), turn(says="Nothing is left to make.")),
+        turn(says="Paused. Nothing is running."),
+    )
+
+    say("Anything left?")
+
+    assert fake_model.left("produce") == 0
+    assert "The shop owner pressed pause" in notes_given(producer_turns())[-1]
+
+
+def test_a_step_the_chat_doesnt_follow_is_cancelled_with_no_notice(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("make_line_audio", {"scene": 1, "why": "Scene 1 needs its audio."})]),
+        turn(says="Making scene 1's audio."),
+    )
+    say("Make scene 1's audio")
+    fake_model.respond("produce", turn(says="Paused."))
+
+    pause(api, session_id)
+
+    assert step_of(1).status == "cancelled"
+    # A line's audio is the producer's to judge: the shop owner isn't told of it.
+    assert not [text for _, text in chat(api, session_id) if "cancelled by the pause" in text]
+
+
 def test_steps_the_pause_cancelled_stay_cancelled_as_the_worker_starts_again(
     api: APIClient,
     fake_model: FakeModel,
@@ -421,6 +516,8 @@ def test_while_paused_the_tools_that_spend_nothing_still_run(
         ("cost_so_far", {}),
         ("read_ad", {"scene": None}),
         ("read_earlier_call", {"call_id": "call_none"}),
+        # Not a tool it has: refused as such, not as paused.
+        ("no_such_tool", {}),
     ]
 
     # Woken by the running step's result while still paused, having read the note already.
