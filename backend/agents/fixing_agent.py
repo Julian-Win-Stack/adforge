@@ -5,8 +5,10 @@ photos, the place, the failed clip's frames and what the judge or the owner said
 what to change (the action, the result, the kind, the face, the framing, the start picture,
 both prompts, the line), films again with the app's own steps, and reads the judge's answer.
 It repeats until a try passes, or it calls give_up, or it has filmed the tries cap, when
-code ends it; it is never told the cap. Every try is a version the shop owner can see and
-pick.
+code ends it; it is never told the cap. As its last resort at door 1 it may ask the shop
+owner once (ask_owner): the fix is then parked on that question, ending as a give-up does
+until `answer_question` gives the answer and opens it again. Every try is a version the shop
+owner can see and pick.
 
 Nothing is kept in memory between turns: each turn is rebuilt from the AgentFix row and the
 checkpoint of every tool the agent called, so a worker that stops halfway is replaced by one
@@ -51,7 +53,16 @@ from jobs import (
     work,
 )
 from jobs.first_send import PIECE_LABEL
-from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, ReferencePhoto, Scene, SceneStep
+from jobs.models import (
+    AgentFix,
+    AgentFixTry,
+    Job,
+    OwnerQuestion,
+    ProducedItem,
+    ReferencePhoto,
+    Scene,
+    SceneStep,
+)
 
 from . import loop
 from .loop import Refused, Tool, ToolResult
@@ -123,8 +134,7 @@ is used comes first; where the page says nothing about it, go by common sense ab
 a product is really used.
 - When the shop owner sent a note, do what it asks; where the note names movements to film, \
 film every one in its order (only there may a clip have more than one action).
-- Never ask the shop owner anything. If you would need them (for example to know how the \
-product is really used), write it in would_ask_owner and carry on as best you can.
+{{asking}}
 
 How you work: you are shown the scene, the plan, the page, what the failed clip was sent \
 (or its start picture), the failed clip's frames (5 a second), what the judge found, the \
@@ -143,6 +153,22 @@ The app's own prompt rules follow, for writing the two prompts. They hold for yo
 two exceptions: you may write the video prompt second by second, with timings, when that \
 helps; and a rule about following a producer's note does not apply.
 """
+
+
+# Whether the agent may ask the shop owner, as it is told, by door (spec #210 point 23; Julian's
+# design, 2026-10-29): door 1's scene keeps its last try while the question waits, so it may
+# ask, as its last resort; door 2's fix answers the owner's own note, so it never asks.
+ASKING = {
+    AgentFix.Door.JUDGE: "- Ask the shop owner only as your last resort, when the ad's library "
+    "holds nothing for what the fix needs: call ask_owner with your own question, for a video, "
+    "a photo or words. You may ask once in this scene's fix. The fix then waits for the answer, "
+    "the last try staying in the ad; the answer comes back as ask_owner's answer, with the new "
+    "library item it made. Anything else you would ask them, write in would_ask_owner and carry "
+    "on as best you can.",
+    AgentFix.Door.OWNER: "- Never ask the shop owner anything. If you would need them (for "
+    "example to know how the product is really used), write it in would_ask_owner and carry on "
+    "as best you can.",
+}
 
 
 # What giving up does, as the agent is told it, by door: door 1's scene keeps its last try
@@ -184,7 +210,9 @@ def instructions(door: str = AgentFix.Door.JUDGE) -> str:
         f'When the B-roll kind is "{kind}":\n{rules}'
         for kind, rules in scenes.BROLL_KIND_RULES.items()
     )
-    told = INSTRUCTIONS.replace("{gave_up}", GAVE_UP[AgentFix.Door(door)])
+    told = INSTRUCTIONS.replace("{gave_up}", GAVE_UP[AgentFix.Door(door)]).replace(
+        "{asking}", ASKING[AgentFix.Door(door)]
+    )
     return f"{told}\n{scenes.BROLL_SHARED_RULES}\n\n{kinds}"
 
 
@@ -196,6 +224,7 @@ def _tools(door: str) -> list[ToolSpec]:
     return [
         replace(spec, description=GIVE_UP_FOR_A_NOTE) if spec.name == GiveUp.name else spec
         for spec in specs
+        if spec.name != AskOwner.name
     ]
 
 
@@ -209,6 +238,17 @@ ENDED_BY_CAP = (
 # What a call is told once the fixing has ended, by a pass, a give-up or the tries cap,
 # never naming a count.
 ENDED = "the scene's fixing has ended."
+
+# What a parked fix says, as its give-up reason, for the shop owner and the producer: the
+# agent asked the shop owner a question (spec #210 point 23), and the fix waits for the
+# answer, the scene keeping its last try meanwhile.
+ASKED_THE_OWNER = (
+    "The fixing agent asked the shop owner a question about this scene, and the fix waits for "
+    "the answer."
+)
+# What a call after the ask, in the turn that asked, is told: nothing is done while the fix
+# waits.
+WAITS = "the fix waits for the shop owner's answer to your question."
 
 
 # What a video prompt may not say: the video model ignores bans (A2).
@@ -262,6 +302,8 @@ class Outcome:
     cost_usd: Decimal
     # Whether code ended the fix at the tries cap, rather than the agent giving up.
     ended_by_cap: bool = False
+    # Whether the fix is parked on a question for the shop owner (`work.open_question`).
+    parked: bool = False
 
 
 def fix_scene(
@@ -297,6 +339,7 @@ def outcome(fixing: AgentFix) -> Outcome:
         gave_up=fixing.gave_up or None,
         cost_usd=sum((call.cost_usd() for call in fixing.tool_calls.all()), Decimal(0)),
         ended_by_cap=fixing.ended_by_cap,
+        parked=work.is_parked(fixing),
     )
 
 
@@ -418,9 +461,10 @@ def _calls(fixing: AgentFix) -> QuerySet[ToolCall]:
 
 
 def _settle_unless_ended(fixing: AgentFix, call: ToolCall) -> None:
-    """Settle the call, or, once the fixing has ended, refuse it with nothing done."""
+    """Settle the call, or, once the fixing has ended or is parked, refuse it with nothing
+    done."""
     if _ended(fixing):
-        call.result = f"Refused: {ENDED} Nothing was done."
+        call.result = f"Refused: {WAITS if work.is_parked(fixing) else ENDED} Nothing was done."
         call.finished_at = timezone.now()
         call.save(update_fields=["result", "finished_at"])
     else:
@@ -429,8 +473,12 @@ def _settle_unless_ended(fixing: AgentFix, call: ToolCall) -> None:
 
 def _settle(fixing: AgentFix, call: ToolCall) -> None:
     """Run the call, as every agent's. The agent is never told how many tries it has or has
-    left, so that it never quits early (spec #210, point 29)."""
-    loop.settle(AGENT_SPEC, call, counted=False)
+    left, so that it never quits early (spec #210, point 29). An ask the agent may make parks
+    the fix, its call left awaiting the owner's answer."""
+    if call.tool == AskOwner.name and _may_ask(fixing, call):
+        _park(fixing, call)
+    else:
+        loop.settle(AGENT_SPEC, call, counted=False)
     fixing.refresh_from_db()
     _end_at_the_cap(fixing)
 
@@ -482,6 +530,72 @@ def give_up(fixing: AgentFix, reason: str) -> None:
     fixing.gave_up = reason
     fixing.save(update_fields=["gave_up"])
     _finish(fixing)
+
+
+def _may_ask(fixing: AgentFix, call: ToolCall) -> bool:
+    """Whether the agent's ask_owner `call` parks the fix: its arguments are right and
+    nothing stops it asking. Else the tool refuses it, saying why."""
+    try:
+        AskOwner.model_validate(call.arguments)
+    except ValueError:
+        return False
+    return _why_it_may_not_ask(fixing) is None
+
+
+def _why_it_may_not_ask(fixing: AgentFix) -> str | None:
+    if _gives_up_as(fixing) != AgentFix.Door.JUDGE:
+        return "the shop owner can't be asked in this fix."
+    if OwnerQuestion.objects.filter(agent_fix=fixing).exists():
+        return (
+            "you asked the shop owner once in this scene's fix already, and that is all: carry "
+            "on with what you have."
+        )
+    return None
+
+
+def _park(fixing: AgentFix, call: ToolCall) -> None:
+    """Park the fix on the agent's question (Julian's design, 2026-10-29): the question is
+    stored on the scene, open; the fix ends as a give-up does, so the scene keeps its last try
+    and the ad finishes; the ask_owner call stays the conversation's last, awaiting its result,
+    which `answer_question` gives. Nothing films on its own."""
+    asked = AskOwner.model_validate(call.arguments)
+    with tracing.tool(call.tool, call.arguments) as traced:
+        call.trace_id, call.observation_id = traced.ids()
+        call.save(update_fields=["trace_id", "observation_id"])
+        with transaction.atomic():
+            OwnerQuestion.objects.create(
+                scene=fixing.step.scene,
+                agent_fix=fixing,
+                tool_call=call,
+                question=asked.question,
+                wants=asked.wants,
+            )
+            give_up(fixing, ASKED_THE_OWNER)
+        tracing.handed_back(traced, ASKED_THE_OWNER)
+
+
+def answer_question(question: OwnerQuestion, answer: ToolResult) -> AgentFix:
+    """The resume entry point for a parked fix (#245): the owner's `answer` (its words and
+    the new library item's picture) becomes the result of the agent's ask_owner call, the
+    question is answered, and the fix is open again, as before it was parked. The next
+    `fix_scene` run for its step then carries on from the checkpoints, the agent reading the
+    answer as ask_owner's. Gives the fix."""
+    with transaction.atomic():
+        call = ToolCall.objects.select_for_update().get(pk=question.tool_call_id)
+        assert call.finished_at is None, "a question is answered once"
+        call.result = answer.text
+        call.pictures = [{"label": each.label, "key": each.key} for each in answer.pictures]
+        call.finished_at = timezone.now()
+        call.save(update_fields=["result", "pictures", "finished_at"])
+        question.answered_at = call.finished_at
+        question.save(update_fields=["answered_at"])
+        fixing = AgentFix.objects.select_for_update().get(pk=question.agent_fix_id)
+        fixing.gave_up = ""
+        fixing.picked = None
+        fixing.kept = None
+        fixing.finished_at = None
+        fixing.save(update_fields=["gave_up", "picked", "kept", "finished_at"])
+    return fixing
 
 
 def _put_back(scene: Scene, row: dict[str, Any]) -> None:
@@ -1098,6 +1212,22 @@ class GiveUp(Tool):
         return GIVEN_UP[_gives_up_as(fixing)]
 
 
+class AskOwner(Tool):
+    """Your last resort: ask the shop owner for what this fix needs, only when the ad's library
+    holds nothing for it: a video, a photo, or words. Write the question yourself, plainly,
+    for the shop owner. The fix waits for the answer, the last try staying in the ad
+    meanwhile; the answer comes back here, with the new library item it made. You may ask
+    once in a scene's fix."""
+
+    name: ClassVar[str] = "ask_owner"
+    question: str = Field(min_length=1, description="Your question for the shop owner.")
+    wants: Literal["video", "photo", "words"] = Field(description="What you ask them for.")
+
+    def run(self, call: ToolCall) -> str:
+        # An ask that may be made never runs here: it parks the fix (`_park`).
+        raise Refused(_why_it_may_not_ask(_fixing_of(call)) or "the ask can't be made.")
+
+
 TOOLS: list[type[Tool]] = [
     LookAtShopPhoto,
     LookAtPlace,
@@ -1106,6 +1236,7 @@ TOOLS: list[type[Tool]] = [
     LookAtLibrary,
     FilmAgain,
     GiveUp,
+    AskOwner,
 ]
 
 AGENT_SPEC = loop.Agent(name=AGENT, purpose=PURPOSE, instructions="", tools=TOOLS)
