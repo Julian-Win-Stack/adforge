@@ -36,6 +36,7 @@ from jobs.product_videos import save_videos
 from .conftest import (
     MUG_FRONT,
     PLAN,
+    REFERENCES_ENOUGH,
     HeldSteps,
     ScriptedProducer,
     WorkerStopped,
@@ -762,3 +763,27 @@ def test_a_paid_answer_the_model_refused_is_not_asked_again_nor_said_in_red(
     assert failed.result == "Failed: a model's answer couldn't be used (the model refused)."
     assert red_in_the_chat(api, session_id)[red_before:] == []
     assert planned.answer == "made", planned.result
+
+
+def test_a_scene_step_a_producer_tool_runs_at_once_never_asks_its_models_again(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    made_ready(fake_model, steps, say, (2,))
+    # The worker runs the clip step at once, inside the producer's make_clip, as a worker run
+    # in the same process (eager) does: the step's judge is as it is in production.
+    monkeypatch.setattr(tasks.run_scene_step, "delay", tasks.run_scene_step)
+    fake_model.respond("check_clip_references", {**REFERENCES_ENOUGH, "verdict": "maybe"})
+    # However often the finished step wakes the producer, it has nothing more to do.
+    fake_model.answer_unscripted("produce", lambda _: turn(says="Scene 2's clip is made."))
+
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+
+    judged = [asked for asked in fake_model.asked if asked.purpose == "check_clip_references"]
+    # Asked twice, by the judge's own ask-again, and never told the rule its answer broke.
+    assert len(judged) == 2
+    first, again = judged
+    assert again.instructions == first.instructions

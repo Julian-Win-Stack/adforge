@@ -26,7 +26,7 @@ from gateway.fake import FakeModel
 from gateway.gateway import (
     UnreadableImage,
     VideoNotWatchable,
-    asking_again_once,
+    asking_again,
     call_model,
     collect_clip,
     speak,
@@ -345,7 +345,7 @@ def test_a_whole_answer_that_breaks_a_rule_is_asked_again_once_told_why(
 ) -> None:
     openai_server(openai_answer({**READABLE, "decision": "maybe"}), openai_answer(READABLE))
 
-    with asking_again_once():
+    with asking_again(True):
         checked = _checked_or_unusable()
 
     assert isinstance(checked, PageCheck)
@@ -382,7 +382,7 @@ def test_an_answer_that_breaks_no_rule_but_cant_be_used_is_not_asked_again(
     # Asked again, the model would answer.
     openai_server(reply, openai_answer(READABLE))
 
-    with asking_again_once():
+    with asking_again(True):
         checked = _checked_or_unusable()
 
     assert isinstance(checked, UnusableReply)

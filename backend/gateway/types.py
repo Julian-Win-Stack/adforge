@@ -118,7 +118,7 @@ class UnusableReply(Exception):
 class AnswerBrokeItsRules(UnusableReply):
     """An answer, billed and whole, that broke a rule of its output's shape, such as a field's
     check: inside a producer's tool call the model is told why and asked once more (spec #247
-    point 8, `gateway.asking_again_once`)."""
+    point 8, `gateway.asking_again`)."""
 
 
 def broke_its_rules(error: ValueError) -> bool:
