@@ -107,6 +107,11 @@ class BlockedBySafetyFilter(Exception):
     took for something it isn't. Asking again sends the same thing, so it isn't retried."""
 
 
+class RefusedForMoney(Exception):
+    """The provider refused the call because the account is out of money: its spend limit or
+    its quota is reached. Asking again soon gets the same answer, so it isn't retried."""
+
+
 class NotSetUp(Exception):
     """The app has no key for a service it needs, such as OpenAI's own API for pictures.
     Asking again sends the same thing, so it isn't retried."""
@@ -229,9 +234,13 @@ class Turn:
 
 @dataclass(frozen=True)
 class TurnReply:
+    """A turn taken, what it was billed, and the summary of the model's reasoning for it:
+    blank when it gave none."""
+
     turn: Turn
     input_tokens: int
     output_tokens: int
+    reasoning: str = ""
 
 
 class AgentProvider(Protocol):
@@ -283,13 +292,17 @@ class Picture:
 
 
 class PictureProvider(Protocol):
-    """Draws pictures. Raises OutsideServiceDown for errors worth retrying."""
+    """Draws pictures, on OpenAI's own servers or, `on_azure`, on our Azure copy of the same
+    picture model. Raises OutsideServiceDown for errors worth retrying, and RefusedForMoney
+    when the account is out of money."""
 
     name: str
 
-    def draw(self, *, model: str, prompt: str) -> Picture: ...
+    def draw(self, *, model: str, prompt: str, on_azure: bool = False) -> Picture: ...
 
-    def edit(self, *, model: str, prompt: str, pictures: Sequence[bytes]) -> Picture:
+    def edit(
+        self, *, model: str, prompt: str, pictures: Sequence[bytes], on_azure: bool = False
+    ) -> Picture:
         """Make a picture from `pictures`, as `prompt` says."""
         ...
 

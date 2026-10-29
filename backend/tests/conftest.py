@@ -6,7 +6,7 @@ import socket
 import subprocess
 import tempfile
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import timedelta
 from itertools import groupby
@@ -38,6 +38,9 @@ from jobs.library import SentList
 from jobs.models import Fix, Job, Scene
 
 from . import ffmpeg_replay
+
+# What is sent to Langfuse, kept in memory, for every test that reads its traces.
+from .traced import _langfuse, traces  # noqa: F401 (fixtures)
 
 celery_app.conf.update(task_always_eager=True, task_eager_propagates=True)
 
@@ -286,6 +289,25 @@ CLIP_SIDES_OK: dict[str, Any] = {
     "problem": None,
     "back_to_normal_at": None,
 }
+# The judge of a clip with a sent list (#228): its first question, when the references and
+# the behaviour note show enough to judge the clip, and the PRODUCT check finding nothing wrong.
+REFERENCES_ENOUGH: dict[str, Any] = {
+    "references_show": "The mug from the front, and tea being poured into it.",
+    "clip_shows": "Tea poured into the mug, seen from the front, 0 s to 5 s.",
+    "verdict": "enough",
+    "references_never_show": None,
+}
+CLIP_PRODUCT_OK: dict[str, Any] = {
+    "product_from_references": "A white mug with a handle on the right. Never shown: its base.",
+    "frames": [{"time": 0.0, "product_shows": "The mug from the front.", "differs": ""}],
+    "verdict": "pass",
+    "compared_against": None,
+    "clip_shows": None,
+    "real_product_shows": None,
+    "fault_frame_times": [],
+    "fault": None,
+    "references_never_show": None,
+}
 CLIP_MOTION_OK: dict[str, Any] = {
     "look": {
         "in_the_clip": "A mug on a workbench, tea pouring into it.",
@@ -340,9 +362,11 @@ def motion_answer(
 def asked_with(fake_model: FakeModel, *purposes: str) -> list[ModelRequest[Any]]:
     """Every request the clip judge is sent for `purposes`, in the order sent, each answered
     as by default."""
-    defaults = {
+    defaults: dict[str, Callable[[ModelRequest[Any]], dict[str, Any]]] = {
         "check_clip_sides": lambda _: CLIP_SIDES_OK,
         "check_clip_motion": motion_answer(CLIP_MOTION_OK),
+        "check_clip_references": lambda _: REFERENCES_ENOUGH,
+        "check_clip_product": lambda _: CLIP_PRODUCT_OK,
     }
     requests: list[ModelRequest[Any]] = []
     for purpose in purposes:
@@ -433,6 +457,8 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("watch_video", lambda _: NOTHING_WATCHED)
     fake.answer_unscripted("check_clip_sides", lambda _: CLIP_SIDES_OK)
     fake.answer_unscripted("check_clip_motion", motion_answer(CLIP_MOTION_OK))
+    fake.answer_unscripted("check_clip_references", lambda _: REFERENCES_ENOUGH)
+    fake.answer_unscripted("check_clip_product", lambda _: CLIP_PRODUCT_OK)
     # Once the ad has a clip, every message goes to the decider first: unless a test scripts
     # it, it passes each one on to the producer.
     fake.answer_unscripted("decide_fixes", lambda _: not_a_fix())
@@ -685,6 +711,9 @@ def results_of(tool: str) -> list[str]:
 
 # What judging one B-roll clip pays for (jobs/clip_judge.py), as paid_for lists it.
 JUDGED_CLIP = ["check_clip_sides", "check_clip_motion"]
+# The order paid_for lists a clip judge's asks in: a clip with a sent list asks its first
+# question before its checks (#228).
+_JUDGE_ORDER = ["check_clip_references", "check_clip_product", *JUDGED_CLIP]
 
 
 def paid_for() -> list[str]:
@@ -699,7 +728,7 @@ def paid_for() -> list[str]:
     listed: list[str] = []
     for judging, together in groupby(paid, key=lambda purpose: purpose.startswith("check_clip_")):
         run = list(together)
-        listed += sorted(run, key=JUDGED_CLIP.index) if judging else run
+        listed += sorted(run, key=_JUDGE_ORDER.index) if judging else run
     return listed
 
 
@@ -972,12 +1001,18 @@ def openai_answer(answer: dict[str, Any]) -> dict[str, Any]:
     return openai_reply({"type": "output_text", "text": json.dumps(answer), "annotations": []})
 
 
-def openai_turn(says: str = "", *calls: tuple[str, str, dict[str, Any]]) -> dict[str, Any]:
-    """An agent's turn as OpenAI sends it: what it says, then each tool it calls, given as
-    (call id, tool, arguments)."""
+def openai_turn(
+    says: str = "", *calls: tuple[str, str, dict[str, Any]], reasoning: Sequence[str] = ()
+) -> dict[str, Any]:
+    """An agent's turn as OpenAI sends it: the summary of its reasoning, in parts, when it
+    gives one, then what it says, then each tool it calls, given as (call id, tool,
+    arguments)."""
     reply = openai_reply({"type": "output_text", "text": says, "annotations": []})
     if not says:
         reply["output"] = []
+    if reasoning:
+        summary = [{"type": "summary_text", "text": part} for part in reasoning]
+        reply["output"].insert(0, {"type": "reasoning", "id": "rs_1", "summary": summary})
     reply["output"] += [
         {
             "type": "function_call",

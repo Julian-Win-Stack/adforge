@@ -351,6 +351,9 @@ class LibraryItem(models.Model):
 # used, the result it ends on, what it needs that the main photo can't show and its owner
 # part. Blank for a talking scene.
 BROLL_FIELDS = ["broll_kind", "person_shown", "usage", "result", "needs", "owner_part"]
+# What the planner named for a B-roll scene's action (#223): dropped with the action it was
+# for, whenever what the scene shows changes. Kept out of BROLL_FIELDS, which a step snapshots.
+PLANNED_FOR_THE_ACTION = ["scene_pictures", "piece"]
 
 # Each B-roll field as a scene step keeps its copy: a step's own `result` is what the
 # producer is told when it finishes.
@@ -535,6 +538,8 @@ class Scene(models.Model):
         if shows is not None and shows != self.shows:
             self.shows = shows
             self.status = self.Status.PLANNED
+            self.scene_pictures = []
+            self.piece = None
         for field, value in (broll or {}).items():
             if value != getattr(self, field):
                 setattr(self, field, value)

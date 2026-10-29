@@ -52,6 +52,7 @@ from .test_producer_broll import (
     run,
 )
 from .test_producer_clip_from_note import REWRITE
+from .traced import Traces
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -710,3 +711,23 @@ def test_a_fixs_clip_whose_old_frames_couldnt_be_cut_stays_judged_alone_when_ask
         assert not any("old clip" in image["label"] for image in asked.images)
     new = ProducedItem.objects.get(kind="clip", scene__number=2, version=2)
     assert "compared_with" not in ruling(new)
+
+
+def test_a_clip_steps_trace_shows_the_video_prompt_its_clip_was_made_from(
+    traces: Traces, judged: ProducedItem
+) -> None:
+    (step,) = [
+        found
+        for trace in traces.all()
+        for found in trace.find(name="scene step")
+        if found.metadata()["step"] == "clip"
+    ]
+    (sent,) = ModelCall.objects.filter(purpose="make_broll_clip")
+    assert sent.handoff["prompt"]
+    assert step.value("input") == {
+        "kind": "clip",
+        "scene": 2,
+        "line": LINE_2,
+        "prompt": sent.handoff["prompt"],
+    }
+    assert step.value("output") == {"result": SceneStep.objects.get(kind="clip").result}

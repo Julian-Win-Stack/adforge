@@ -16,6 +16,7 @@ from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.gateway import charged_to
+from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, UnusableReply
 from jobs import owner_parts
 from jobs.models import FixCheck, Job, ProducedItem, Scene, SceneStep
@@ -483,68 +484,34 @@ def run_scene_step(step_id: int) -> None:
     # Taken: from now on its heartbeat says whether it is alive (see fail_dead_steps).
     now = timezone.now()
     SceneStep.objects.filter(pk=step_id).update(taken_at=now, seen_at=now)
+    step.taken_at = now
     session = step.tool_call.session
     work = STEP_WORK[SceneStep.Kind(step.kind)]
     try:
-        with (
-            _beating(
-                settings.STEP_HEARTBEAT_SECONDS,
-                lambda: SceneStep.objects.filter(pk=step_id).update(seen_at=timezone.now()),
-                f"Scene step {step_id}",
-            ),
-            charged_to(step.tool_call),
-            tracing.scene_step(
-                _step_name(step),
-                session_id=str(session.pk),
-                trace_id=step.tool_call.trace_id,
-                parent_id=step.tool_call.observation_id,
-            ),
-        ):
-            made = work.make(step)
-            checked = check_fix(step, made)
-        tracing.flush()
-        # Shown and finished together, so a step run again never shows anything twice. The
-        # producer is woken in the same transaction, so its session never looks idle
-        # between the two, when another session could start.
-        with transaction.atomic():
-            # The job, then the chat, as every writer of a plan locks them: a notice said
-            # here locks the job after the chat's message, so the job is locked first.
-            Job.objects.select_for_update().get(pk=step.scene.job_id)
-            # Failed as dead while it worked, as when its heartbeat stopped for a while: the
-            # producer was told then, and its scene may be made again, so it is left failed.
-            if not _still_running(step):
-                return
-            shown = work.shown(step, made)
-            if shown:
-                messages.add(
-                    session,
-                    role=Message.Role.AGENT,
-                    carrying=shown,
-                    step=step_signals.signal(step, Message.StepState.MADE),
-                )
-            # A fix plan's step is shown its failed check by code, once it isn't drawn again.
-            if (
-                checked is not None
-                and checked.verdict == FixCheck.Verdict.FAILED
-                and step.plan_scene_id is None
+        # Its trace part is open until the step is finished, so it shows what was handed back.
+        with tracing.scene_step(
+            kind=step.kind,
+            scene=step.scene.number,
+            session_id=str(session.pk),
+            trace_id=step.tool_call.trace_id,
+            parent_id=step.tool_call.observation_id,
+        ) as traced:
+            # Before the work, so a step that fails still shows what it was asked.
+            _asked(traced, step, prompt="")
+            with (
+                _beating(
+                    settings.STEP_HEARTBEAT_SECONDS,
+                    lambda: SceneStep.objects.filter(pk=step_id).update(seen_at=timezone.now()),
+                    f"Scene step {step_id}",
+                ),
+                charged_to(step.tool_call),
             ):
-                say_the_fix_check_failed(checked)
-            step.status = SceneStep.Status.FINISHED
-            # Inside the transaction: a picture's message plans its scene again.
-            step.result = work.finished(step, made)
-            step.finished_at = timezone.now()
-            step.save(update_fields=["status", "result", "finished_at"])
-            # Once its step is finished, so its tries are versions.
-            if step.kind == SceneStep.Kind.CLIP and step.shows and agent_gave_up(step):
-                say_the_agent_gave_up(step)
-            # A fix plan's step is carried on by code, and never wakes the producer: a
-            # fix's picture that passed its checks queues its clip here (decision 2).
-            if step.plan_scene_id is not None:
-                run_plan.step_finished(step, checked)
-                return
-            wake_producer(str(session.pk))
-            # A fix plan's scene that waited for this one's step to finish carries on.
-            run_plan.carry_on_scene(step.scene)
+                made = work.make(step)
+                checked = check_fix(step, made)
+            # Again once the work has written the prompt its model was given.
+            _asked(traced, step, prompt=_prompt_given(step))
+            _finish(step, work, made, checked, session, traced)
+        tracing.flush()
     except AgentGaveUp as gave_up:
         # The fixing agent gave up on a fix plan's fix row: code says so in the chat and keeps
         # the scene as it was, in the same transaction, so nothing is said twice.
@@ -578,6 +545,89 @@ def run_scene_step(step_id: int) -> None:
                 return
             _fail(step, why_it_failed(error, "the step"), why_it_failed_plainly(error))
             _told_it_ended(step)
+
+
+def _asked(traced: tracing.Traced, step: SceneStep, *, prompt: str) -> None:
+    """Record on a scene step's trace what it was asked, with the prompt its model was given."""
+    tracing.step_asked(
+        traced,
+        kind=step.kind,
+        scene=step.scene.number,
+        line=step.line,
+        note=step.note,
+        prompt=prompt,
+    )
+
+
+def _prompt_given(step: SceneStep) -> str:
+    """The prompt the scene step's work last sent a model, word for word, as its record keeps
+    it: such as a starting picture's or a clip's. Blank for a step whose models are sent
+    none, as a line's audio."""
+    sent = (
+        ModelCall.objects.filter(
+            tool_call=step.tool_call,
+            created_at__gte=step.taken_at,
+            outcome=ModelCall.Outcome.SUCCEEDED,
+            handoff__has_key="prompt",
+        )
+        .values_list("handoff", flat=True)
+        .last()
+    )
+    return str(sent["prompt"]) if isinstance(sent, dict) else ""
+
+
+def _finish(
+    step: SceneStep,
+    work: StepWork,
+    made: ProducedItem | None,
+    checked: FixCheck | None,
+    session: Session,
+    traced: tracing.Traced,
+) -> None:
+    """Show what a scene step made and finish it, then tell whoever started it."""
+    # Shown and finished together, so a step run again never shows anything twice. The
+    # producer is woken in the same transaction, so its session never looks idle
+    # between the two, when another session could start.
+    with transaction.atomic():
+        # The job, then the chat, as every writer of a plan locks them: a notice said
+        # here locks the job after the chat's message, so the job is locked first.
+        Job.objects.select_for_update().get(pk=step.scene.job_id)
+        # Failed as dead while it worked, as when its heartbeat stopped for a while: the
+        # producer was told then, and its scene may be made again, so it is left failed.
+        if not _still_running(step):
+            return
+        shown = work.shown(step, made)
+        if shown:
+            messages.add(
+                session,
+                role=Message.Role.AGENT,
+                carrying=shown,
+                step=step_signals.signal(step, Message.StepState.MADE),
+            )
+        # A fix plan's step is shown its failed check by code, once it isn't drawn again.
+        if (
+            checked is not None
+            and checked.verdict == FixCheck.Verdict.FAILED
+            and step.plan_scene_id is None
+        ):
+            say_the_fix_check_failed(checked)
+        step.status = SceneStep.Status.FINISHED
+        # Inside the transaction: a picture's message plans its scene again.
+        step.result = work.finished(step, made)
+        step.finished_at = timezone.now()
+        step.save(update_fields=["status", "result", "finished_at"])
+        tracing.handed_back(traced, step.result)
+        # Once its step is finished, so its tries are versions.
+        if step.kind == SceneStep.Kind.CLIP and step.shows and agent_gave_up(step):
+            say_the_agent_gave_up(step)
+        # A fix plan's step is carried on by code, and never wakes the producer: a
+        # fix's picture that passed its checks queues its clip here (decision 2).
+        if step.plan_scene_id is not None:
+            run_plan.step_finished(step, checked)
+            return
+        wake_producer(str(session.pk))
+        # A fix plan's scene that waited for this one's step to finish carries on.
+        run_plan.carry_on_scene(step.scene)
 
 
 def _still_running(step: SceneStep) -> bool:

@@ -4,7 +4,10 @@ It checks the handoff before anything is spent, retries when the provider is dow
 records every attempt: what was called, what it cost, how long it took, whether it worked,
 and the one-sentence judgement."""
 
+import hashlib
 import io
+import json
+import logging
 import subprocess
 import tempfile
 import time
@@ -21,13 +24,15 @@ from typing import TYPE_CHECKING, Any, cast
 import PIL.Image
 import PIL.ImageOps
 from django.conf import settings
+from django.db import connection
+from django.utils import timezone
 from pydantic import BaseModel
 
 from adforge import file_store, tracing
 from adforge.retry import OutsideServiceDown, with_retries
 
 from . import catalog
-from .models import ModelCall
+from .models import ModelCall, SystemPrompt
 from .types import (
     AgentProvider,
     BlockedBySafetyFilter,
@@ -54,6 +59,7 @@ from .types import (
     PictureProvider,
     PortraitHandoff,
     ReferenceVideo,
+    RefusedForMoney,
     SpeechHandoff,
     ToolRequest,
     ToolSpec,
@@ -85,6 +91,8 @@ if TYPE_CHECKING:
     from .inworld_adapter import InworldProvider
     from .openai_adapter import OpenAIProvider
 
+logger = logging.getLogger(__name__)
+
 _override: object | None = None
 
 # The tool call whose work is running now. Every model call made meanwhile is recorded
@@ -110,6 +118,10 @@ MAX_IMAGE_SIDE = 2048
 
 class UnreadableImage(ValueError):
     """An image models can't read: in another format, or not a picture at all."""
+
+
+def _wait(seconds: float) -> None:
+    time.sleep(seconds)
 
 
 @cache
@@ -270,9 +282,11 @@ def take_turn(
 
     def take() -> _Made[Turn]:
         reply = provider.take_turn(request)
+        # Kept with what the turn did, so its record and its trace show why it chose.
+        reasoning = {"reasoning": reply.reasoning} if reply.reasoning else {}
         return _Made(
             result=reply.turn,
-            output=_turn_output(reply.turn),
+            output={**_turn_output(reply.turn), **reasoning},
             bill=_Bill(
                 cost_usd=catalog.cost_usd(request.model, reply.input_tokens, reply.output_tokens),
                 input_tokens=reply.input_tokens,
@@ -281,7 +295,15 @@ def take_turn(
         )
 
     return _recorded(
-        None, purpose, request.model, provider.name, handoff, take, images, session=session
+        None,
+        purpose,
+        request.model,
+        provider.name,
+        handoff,
+        take,
+        images,
+        session=session,
+        told=_Told(instructions, tuple(tools)),
     )
 
 
@@ -365,7 +387,14 @@ def call_model[Out: BaseModel](
         )
 
     return _recorded(
-        job, purpose, request.model, provider.name, handoff, complete, _shown(request.images)
+        job,
+        purpose,
+        request.model,
+        provider.name,
+        handoff,
+        complete,
+        _shown(request.images),
+        told=_Told(instructions),
     )
 
 
@@ -443,7 +472,16 @@ def watch_video[Out: BaseModel](
             ),
         )
 
-    return _recorded(job, purpose, request.model, provider.name, handoff, watch, video=sent)
+    return _recorded(
+        job,
+        purpose,
+        request.model,
+        provider.name,
+        handoff,
+        watch,
+        video=sent,
+        told=_Told(instructions),
+    )
 
 
 def _watchable(video_key: str) -> str:
@@ -517,12 +555,11 @@ def draw_picture(*, job: Job | None, purpose: str, prompt: str) -> str:
     """Have a model draw a picture. Returns its key in the file store."""
     handoff = PortraitHandoff(prompt=prompt)
     model = catalog.MODEL_FOR_PURPOSE[purpose]
-    provider = _pictures()
 
-    def draw() -> _Made[str]:
-        return _kept(purpose, model, provider.draw(model=model, prompt=handoff.prompt))
+    def draw(provider: PictureProvider, on_azure: bool) -> Picture:
+        return provider.draw(model=model, prompt=handoff.prompt, on_azure=on_azure)
 
-    return _recorded(job, purpose, model, provider.name, handoff, draw)
+    return _picture_made(job, purpose, model, handoff, draw)
 
 
 def edit_picture(*, job: Job | None, purpose: str, prompt: str, pictures: Sequence[str]) -> str:
@@ -531,15 +568,127 @@ def edit_picture(*, job: Job | None, purpose: str, prompt: str, pictures: Sequen
     of. Returns the new picture's key in the file store."""
     handoff = PictureEditHandoff(prompt=prompt, pictures=list(pictures))
     model = catalog.MODEL_FOR_PURPOSE[purpose]
-    provider = _pictures()
 
-    def edit() -> _Made[str]:
+    def edit(provider: PictureProvider, on_azure: bool) -> Picture:
         given = [file_store.read(key) for key in handoff.pictures]
-        return _kept(
-            purpose, model, provider.edit(model=model, prompt=handoff.prompt, pictures=given)
+        return provider.edit(model=model, prompt=handoff.prompt, pictures=given, on_azure=on_azure)
+
+    return _picture_made(job, purpose, model, handoff, edit)
+
+
+# The provider recorded for a picture drawn on our Azure copy of the picture model.
+AZURE_PICTURES = "azure"
+
+
+def _picture_made(
+    job: Job | None,
+    purpose: str,
+    model: str,
+    handoff: Handoff,
+    make: Callable[[PictureProvider, bool], Picture],
+) -> str:
+    """A picture `make` made, kept in the file store, its key handed back. It is drawn on
+    OpenAI's own servers until OpenAI refuses one of the session's pictures for money; that
+    picture, and every later one of the session, is drawn on our Azure copy of the same
+    picture model at Azure's pace, and the shop owner is told once (Julian 2026-10-29). Any
+    other refusal, such as the safety filter's, a timeout or an outage, never moves them."""
+    provider = _pictures()
+    tool_call = _running_tool.get()
+    session = tool_call.session if tool_call is not None else job.session if job else None
+    azure_set_up = bool(settings.AZURE_PICTURES_KEY)
+    if not (azure_set_up and _refused_for_money_before(session)):
+        try:
+            return _recorded(
+                job,
+                purpose,
+                model,
+                provider.name,
+                handoff,
+                lambda: _kept(purpose, model, make(provider, False)),
+                session=session,
+            )
+        except RefusedForMoney as refused:
+            if not azure_set_up:
+                raise
+            _say_pictures_moved_to_azure(job, session, refused)
+
+    # One picture at a time across every worker, each after Azure's pace allows: pictures
+    # made at once would otherwise all see the same last call and go together. The wait is
+    # outside the call's record, so its time isn't counted as the call's.
+    with _one_azure_picture_at_a_time():
+        _wait_for_azures_pace()
+        return _recorded(
+            job,
+            purpose,
+            model,
+            AZURE_PICTURES,
+            handoff,
+            lambda: _kept(purpose, model, make(provider, True)),
+            session=session,
         )
 
-    return _recorded(job, purpose, model, provider.name, handoff, edit)
+
+# The Postgres advisory lock held while a picture is drawn on Azure: a number none of the
+# app's other advisory locks use (agents/tasks.py, jobs/work.py).
+AZURE_PICTURES_LOCK = 5
+
+
+@contextmanager
+def _one_azure_picture_at_a_time() -> Iterator[None]:
+    """Hold the lock that lets one picture at a time be drawn on Azure, in every worker. It
+    is held by the database connection, so a worker that dies lets it go."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_lock(%s)", [AZURE_PICTURES_LOCK])
+    try:
+        yield
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_unlock(%s)", [AZURE_PICTURES_LOCK])
+
+
+def _refused_for_money_before(session: Session | None) -> bool:
+    """Whether OpenAI has refused one of `session`'s calls for money. Read from the calls'
+    records, so every worker sees it."""
+    if session is None:
+        return False
+    return ModelCall.objects.filter(
+        session=session, error__startswith=f"{RefusedForMoney.__name__}:"
+    ).exists()
+
+
+def _wait_for_azures_pace() -> None:
+    """Wait until Azure's picture deployment may be asked again: it draws at most
+    AZURE_PICTURES_PER_MINUTE pictures a minute, for every session alike. Timed from when
+    the last call there was recorded, which is when it ended, so never sooner than allowed."""
+    last = (
+        ModelCall.objects.filter(provider=AZURE_PICTURES)
+        .order_by("-created_at")
+        .values_list("created_at", flat=True)
+        .first()
+    )
+    if last is None:
+        return
+    gap = 60 / settings.AZURE_PICTURES_PER_MINUTE - (timezone.now() - last).total_seconds()
+    if gap > 0:
+        _wait(gap)
+
+
+def _say_pictures_moved_to_azure(
+    job: Job | None, session: Session | None, refused: RefusedForMoney
+) -> None:
+    """Tell the shop owner in red, with the ad's warning line, that the session's pictures
+    are drawn on Azure from now on, and say it in the server log."""
+    from jobs.notices import post_pictures_moved_to_azure
+
+    logger.warning(
+        "OpenAI refused a picture for money (%s); session %s's pictures are drawn on Azure "
+        "from now on",
+        refused,
+        session.pk if session else None,
+    )
+    told = job if job is not None else session.jobs.first() if session else None
+    if told is not None:
+        post_pictures_moved_to_azure(told)
 
 
 def _kept(purpose: str, model: str, picture: Picture) -> _Made[str]:
@@ -808,6 +957,43 @@ class _Made[Result]:
     reason: str = ""
 
 
+@dataclass(frozen=True)
+class _Told:
+    """What a model is told beside its handoff: its instructions, and any tools offered."""
+
+    instructions: str
+    tools: tuple[ToolSpec, ...] = ()
+
+    def listed(self) -> dict[str, Any]:
+        """As it is stored and traced: the instructions, and each tool's name, description
+        and arguments' JSON schema."""
+        return {
+            "instructions": self.instructions,
+            "tools": [
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.arguments.model_json_schema(),
+                }
+                for tool in self.tools
+            ],
+        }
+
+
+def _system_prompt(session_id: Any, purpose: str, told: _Told | None) -> SystemPrompt | None:
+    """The session's stored system prompt for `purpose` with exactly what `told` holds: the
+    one kept already, or else a new one. None for a call told nothing beside its handoff."""
+    if told is None or not (told.instructions or told.tools):
+        return None
+    listed = told.listed()
+    digest = hashlib.sha256(json.dumps(listed, sort_keys=True).encode()).hexdigest()
+    # Calls made at once, as a judge's asks, find the one row the first of them made.
+    kept, _ = SystemPrompt.objects.get_or_create(
+        session_id=session_id, purpose=purpose, digest=digest, defaults=listed
+    )
+    return kept
+
+
 def _recorded[Result](
     job: Job | None,
     purpose: str,
@@ -818,18 +1004,23 @@ def _recorded[Result](
     images: list[dict[str, str]] | None = None,
     session: Session | None = None,
     video: str = "",
+    told: _Told | None = None,
 ) -> Result:
     """Run `make` with retries, recording every attempt: what was called, what it cost, how
-    long it took, whether it worked, and any judgement. Each is recorded against the session
+    long it took, whether it worked, and any judgement, and what the model was `told` beside
+    its handoff, by the session's stored system prompt. Each is recorded against the session
     it was for: the one given, or else the tool call's or the job's."""
     tool_call = _running_tool.get()
     if session is None and tool_call is not None:
         session = tool_call.session
+    session_id = session.pk if session else job.session_id if job else None
+    system_prompt = _system_prompt(session_id, purpose, told)
     recorded: dict[str, Any] = {
-        "session_id": session.pk if session else job.session_id if job else None,
+        "session_id": session_id,
         "job": job,
         "tool_call": tool_call,
         "purpose": purpose,
+        "system_prompt": system_prompt,
         "provider": provider,
         "model": model,
         "handoff": handoff.model_dump(mode="json"),
@@ -844,7 +1035,11 @@ def _recorded[Result](
         nonlocal attempts
         attempts += 1
         with tracing.model_call(
-            purpose, model=model, handoff=recorded["handoff"], shown=shown
+            purpose,
+            model=model,
+            told=_told_in_trace(system_prompt),
+            handoff=recorded["handoff"],
+            shown=shown,
         ) as traced:
             started = time.monotonic()
             try:
@@ -916,8 +1111,52 @@ def _files_given(handoff: Handoff, images: list[dict[str, str]] | None) -> list[
     return given
 
 
+def _told_in_trace(system_prompt: SystemPrompt | None) -> dict[str, Any]:
+    """What a call was told beside its handoff, as its trace shows it: the instructions, and
+    the tools when it was offered any."""
+    if system_prompt is None:
+        return {}
+    tools = {"tools": system_prompt.tools} if system_prompt.tools else {}
+    return {"instructions": system_prompt.instructions, **tools}
+
+
+# Each judge's verdicts, sent to Langfuse as scores on its call (spec #247 point 16), by its
+# purpose: each score's name, after what it measures, and where its verdict is in the judge's
+# answer. A verdict an answer doesn't hold, as a fix's question on any other clip, is no score.
+VERDICT_SCORES: dict[str, dict[str, tuple[str, ...]]] = {
+    "check_starting_picture": {"starting_picture_real": ()},
+    "check_fix": {"fix_made": ()},
+    "check_clip_sides": {"clip_sides_real": ()},
+    "check_clip_product": {"clip_matches_product": ()},
+    "check_clip_references": {"references_enough": ()},
+    "check_clip_motion": {
+        "clip_real_motion": ("real_motion",),
+        "clip_no_sudden_change": ("sudden_change",),
+        "clip_does_what_was_ordered": ("does_what_was_ordered",),
+        "clip_owner_change_made": ("owner_change",),
+    },
+}
+# Where a judge's answer says what is wrong, beside its verdict: the score's comment.
+_WHAT_IS_WRONG = ("problem", "fault", "still_wrong", "references_never_show")
+
+
+def _scores(purpose: str, output: Any) -> list[tuple[str, str, str | None]]:
+    """The scores a judge's answer gives, each its name, its verdict and what is wrong."""
+    scores = []
+    for name, path in VERDICT_SCORES.get(purpose, {}).items():
+        said = output
+        for key in path:
+            said = said.get(key) if isinstance(said, dict) else None
+        if not isinstance(said, dict) or not isinstance(said.get("verdict"), str):
+            continue
+        wrong = next((said[key] for key in _WHAT_IS_WRONG if said.get(key)), None)
+        scores.append((name, said["verdict"], wrong))
+    return scores
+
+
 def _send_to_trace(traced: tracing.Traced, call: ModelCall) -> None:
-    """Send what a model call's record holds to its trace."""
+    """Send what a model call's record holds to its trace, and any verdicts in it as scores
+    on it."""
     made = call.output.get("file") if isinstance(call.output, dict) else None
     measured = {
         "characters": call.characters,
@@ -941,6 +1180,8 @@ def _send_to_trace(traced: tracing.Traced, call: ModelCall) -> None:
             **{name: value for name, value in measured.items() if value is not None},
         },
     )
+    for name, verdict, wrong in _scores(call.purpose, call.output):
+        traced.score(name, verdict, comment=wrong)
 
 
 def _answered_before(
@@ -976,6 +1217,7 @@ def _answered_before(
     tracing.answered_from_record(
         purpose,
         model=answered.model,
+        told=_told_in_trace(answered.system_prompt),
         handoff=answered.handoff,
         shown=_files_given(handoff, images),
         output=answered.output,

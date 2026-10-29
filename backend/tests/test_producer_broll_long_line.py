@@ -306,6 +306,23 @@ def test_a_scene_that_becomes_a_talking_scene_shows_no_second_state(
     ]
 
 
+def test_a_scene_that_becomes_a_talking_scene_loses_its_scene_pictures_and_piece(
+    fake_model: FakeModel, last: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    # A talking scene is sent no scene pictures and no piece: the planner's were for its action.
+    Scene.objects.filter(number=2).update(
+        scene_pictures=[{"number": 4, "for": "in-use"}], piece={"video": 1, "moment": 1}
+    )
+    for line in STILL_LONG:
+        fake_model.respond("shorten_line", {"line": line})
+        fake_model.respond("fact_check", facts_ok(2))
+    for _ in [*STILL_LONG, "talking"]:
+        audio_of_scene_2(fake_model, steps, say)
+
+    scene = Scene.objects.get(number=2)
+    assert (scene.shows, scene.scene_pictures, scene.piece) == ("", [], None)
+
+
 def test_the_chat_says_why_a_scene_became_a_talking_scene(
     shortened_three_times: str, api: APIClient, session_id: str
 ) -> None:

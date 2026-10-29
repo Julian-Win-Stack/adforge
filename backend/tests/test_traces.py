@@ -2,23 +2,20 @@
 tools each asked for, and the model calls each made. A test keeps what would be sent in
 memory instead of sending it, and reads it back as the tree Langfuse would show."""
 
-import json
 import re
 import subprocess
 import uuid
-from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from textwrap import dedent
 from typing import Any, cast
 
-import httpx
 import pytest
+from django.apps import apps
 from django.conf import settings as django_settings
 from django.db.models.signals import post_save, pre_save
 from langfuse import Langfuse
-from opentelemetry.sdk.trace import ReadableSpan
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic import BaseModel
 from pytest_django import Settings
 from pytest_httpserver import HTTPServer
@@ -26,118 +23,50 @@ from rest_framework.test import APIClient
 
 from adforge import file_store, tracing
 from agents.models import ToolCall
+from agents.producer import PRODUCER
 from agents.tasks import restart_dead_producers
 from gateway.fake import FakeModel, turn
-from gateway.gateway import submit_broll_clip, watch_video
-from gateway.models import ModelCall
-from gateway.types import Handoff
+from gateway.gateway import VERDICT_SCORES, call_model, submit_broll_clip, watch_video
+from gateway.models import ModelCall, SystemPrompt
+from gateway.types import Handoff, Judgement
+from jobs.clip_judge import (
+    MotionFixVerdict,
+    MotionPhotoFixVerdict,
+    MotionVerdict,
+    ProductVerdict,
+    ReferencesVerdict,
+    SidesVerdict,
+)
+from jobs.fix_check import FixVerdict, PhotoFixVerdict
 from jobs.models import SceneStep
+from jobs.picture_check import StartingPictureVerdict
 from jobs.product_videos import PieceWanted, cut_pieces
 
-from .conftest import READABLE, HeldSteps, a_video, chat, picture, results_of
+from .conftest import (
+    CLIP_FIXED,
+    CLIP_MOTION_OK,
+    CLIP_PRODUCT_OK,
+    CLIP_SIDES_OK,
+    FIX_MADE,
+    PICTURE_OK,
+    READABLE,
+    REFERENCES_ENOUGH,
+    HeldSteps,
+    a_video,
+    chat,
+    openai_turn,
+    picture,
+    results_of,
+)
 
 # The fixture for a chat with a clip made, and those it is built on, for pytest to find.
 from .test_producer_clip import clipped, pictured, ready, spoken  # noqa: F401
 from .test_producer_music import make_music
 from .test_producer_restarts import WorkerStopped, the_producer_died, the_worker_stops
 from .test_producer_scenes import CHOICE
+from .traced import Score, Traces
 
 pytestmark = pytest.mark.django_db(transaction=True)
-
-
-@dataclass
-class Seen:
-    """One part of a trace as Langfuse would show it, with the parts inside it."""
-
-    name: str
-    kind: str
-    trace_id: str
-    attributes: dict[str, Any]
-    inside: list[Seen] = field(default_factory=list)
-
-    def value(self, name: str) -> Any:
-        """One of the part's own values, such as "input" or "usage_details". Text is sent
-        as it is, anything else as JSON."""
-        sent = self.attributes[f"langfuse.observation.{name}"]
-        try:
-            return json.loads(sent)
-        except json.JSONDecodeError:
-            return sent
-
-    def find(self, *, name: str | None = None, kind: str | None = None) -> list[Seen]:
-        """Every part of this one, itself included, with this name, of this kind, or both,
-        in the order they began."""
-        found = [self] if name in (None, self.name) and kind in (None, self.kind) else []
-        for each in self.inside:
-            found += each.find(name=name, kind=kind)
-        return found
-
-    def outline(self, depth: int = 0) -> str:
-        """The part and everything inside it, one per line, indented by how deep it is."""
-        lines = [f"{'  ' * depth}{self.name} ({self.kind})"]
-        lines += [each.outline(depth + 1) for each in self.inside]
-        return "\n".join(lines)
-
-
-class Traces:
-    """Everything sent to Langfuse, kept in memory."""
-
-    def __init__(self, exporter: InMemorySpanExporter, client: Langfuse) -> None:
-        self._exporter = exporter
-        self._client = client
-
-    def all(self) -> list[Seen]:
-        """Every part sent at the top of a trace, in the order they began. A trace can have
-        more than one: its message's work picked up again later."""
-        self._client.flush()
-        spans = sorted(self._exporter.get_finished_spans(), key=lambda span: span.start_time or 0)
-        seen = {span.context.span_id: _seen(span) for span in spans if span.context}
-        traces = []
-        for span in spans:
-            assert span.context is not None
-            parent = span.parent.span_id if span.parent else None
-            if parent in seen:
-                seen[parent].inside.append(seen[span.context.span_id])
-            else:
-                traces.append(seen[span.context.span_id])
-        return traces
-
-
-def _seen(span: ReadableSpan) -> Seen:
-    attributes = dict(span.attributes or {})
-    assert span.context is not None
-    return Seen(
-        span.name,
-        str(attributes.get("langfuse.observation.type")),
-        format(span.context.trace_id, "032x"),
-        attributes,
-    )
-
-
-@pytest.fixture(scope="session")
-def _langfuse() -> tuple[InMemorySpanExporter, Langfuse]:
-    exporter = InMemorySpanExporter()
-    # Pictures, audio and clips are uploaded apart from the trace. Here, Langfuse answers
-    # that it has each one already, so nothing is uploaded.
-    uploaded = httpx.MockTransport(
-        lambda _: httpx.Response(200, json={"mediaId": "", "uploadUrl": None})
-    )
-    client = Langfuse(
-        public_key="pk-lf-test",
-        secret_key="sk-lf-test",
-        base_url="http://langfuse.test",
-        span_exporter=exporter,
-        httpx_client=httpx.Client(transport=uploaded),
-    )
-    return exporter, client
-
-
-@pytest.fixture
-def traces(_langfuse: tuple[InMemorySpanExporter, Langfuse]) -> Iterator[Traces]:
-    exporter, client = _langfuse
-    exporter.clear()
-    with tracing.use_client(client):
-        yield Traces(exporter, client)
 
 
 def test_a_messages_work_is_one_trace_of_turns_the_tools_they_asked_for_and_model_calls(
@@ -170,8 +99,12 @@ def test_a_messages_work_is_one_trace_of_turns_the_tools_they_asked_for_and_mode
     (check_page,) = trace.find(name="check_page")
     recorded = ModelCall.objects.get(purpose="check_page")
     assert check_page.attributes["langfuse.observation.model.name"] == "gpt-5-mini"
-    # With no files shown or made, neither is listed.
-    assert check_page.value("input") == {"handoff": recorded.handoff}
+    # With no files shown or made, neither is listed. A call given no tools lists none.
+    assert recorded.system_prompt is not None
+    assert check_page.value("input") == {
+        "instructions": recorded.system_prompt.instructions,
+        "handoff": recorded.handoff,
+    }
     assert check_page.value("output") == {
         "output": {
             "decision": "readable",
@@ -184,7 +117,133 @@ def test_a_messages_work_is_one_trace_of_turns_the_tools_they_asked_for_and_mode
     assert check_page.value("cost_details") == {"total": float(recorded.cost_usd)}
 
 
-def test_each_message_starts_a_new_trace_named_after_it_grouped_with_the_rest_of_its_chat_session(
+def test_an_agents_turn_is_shown_with_its_system_prompt_and_the_tools_it_was_offered(
+    traces: Traces, page_read: str
+) -> None:
+    (trace,) = traces.all()
+    first, _second = trace.find(name="produce", kind="generation")
+
+    given = first.value("input")
+    assert given["instructions"] == PRODUCER.instructions
+    offered = {tool["name"]: tool for tool in given["tools"]}
+    assert list(offered) == [tool.name for tool in PRODUCER.tools]
+    read_page = offered["read_page"]
+    assert read_page["description"].startswith("Start a job for an ad")
+    assert set(read_page["parameters"]["properties"]) == {"link", "target_seconds"}
+    assert given["handoff"]["conversation"] == [
+        {"kind": "said", "by": "user", "text": f"Make an ad for {page_read}"}
+    ]
+
+
+def test_an_agents_turn_is_shown_with_the_summary_of_its_reasoning_its_tokens_and_cost(
+    traces: Traces,
+    httpserver: HTTPServer,
+    openai_server: Callable[..., None],
+    say: Callable[..., None],
+) -> None:
+    openai_server(
+        openai_turn(
+            "Send me your product page.",
+            reasoning=["The owner said hello.", "I need their product page first."],
+        )
+    )
+
+    say("Hi")
+
+    (asked,) = [request.get_json() for request, _ in httpserver.log]
+    assert asked["reasoning"] == {"summary": "auto"}
+    (trace,) = traces.all()
+    (produce,) = trace.find(name="produce", kind="generation")
+    assert produce.value("output") == {
+        "output": {
+            "says": "Send me your product page.",
+            "calls": [],
+            "reasoning": "The owner said hello.\n\nI need their product page first.",
+        }
+    }
+    # The stand-in OpenAI bills 1,200 tokens in and 300 out.
+    assert produce.value("usage_details") == {"input": 1_200, "output": 300}
+    (recorded,) = ModelCall.objects.filter(purpose="produce")
+    assert recorded.cost_usd is not None
+    assert produce.value("cost_details") == {"total": float(recorded.cost_usd)}
+
+
+def test_an_ads_system_prompt_is_stored_once_and_again_only_when_its_text_changes(
+    fake_model: FakeModel,
+    session_id: str,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_model.respond("produce", turn(says="Send me your product page."), turn(says="Thanks!"))
+    say("Hi")
+    say("Here it comes")
+    told_again = replace(PRODUCER, instructions=PRODUCER.instructions + "\n\nBe brief.")
+    monkeypatch.setattr("agents.tasks.PRODUCER", told_again)
+    fake_model.respond("produce", turn(says="OK."))
+    say("And now?")
+
+    turns = ModelCall.objects.filter(purpose="produce").select_related("system_prompt")
+    stored = [turn.system_prompt for turn in turns]
+    assert all(prompt is not None for prompt in stored)
+    first, second, third = stored
+    assert first == second != third
+    assert SystemPrompt.objects.filter(session_id=session_id, purpose="produce").count() == 2
+    assert [prompt.instructions for prompt in (first, third) if prompt] == [
+        PRODUCER.instructions,
+        told_again.instructions,
+    ]
+    assert first is not None
+    assert [tool["name"] for tool in first.tools] == [tool.name for tool in PRODUCER.tools]
+
+
+def test_every_part_of_a_trace_is_sent_in_the_environment_settings_name(
+    traces: Traces, page_read: str
+) -> None:
+    (trace,) = traces.all()
+
+    environment = django_settings.LANGFUSE_ENVIRONMENT
+    # Langfuse's own when none is set.
+    assert environment not in ("", "default")
+    assert {part.attributes["langfuse.environment"] for part in trace.find()} == {environment}
+
+
+@pytest.mark.parametrize(
+    ("public_key", "secret_key", "missing"),
+    [
+        ("", "", "LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY are"),
+        ("pk-lf-test", "", "LANGFUSE_SECRET_KEY is"),
+        ("", "sk-lf-test", "LANGFUSE_PUBLIC_KEY is"),
+    ],
+)
+def test_the_app_warns_as_it_starts_when_tracing_is_off_for_a_missing_key(
+    settings: Settings,
+    caplog: pytest.LogCaptureFixture,
+    public_key: str,
+    secret_key: str,
+    missing: str,
+) -> None:
+    settings.LANGFUSE_PUBLIC_KEY = public_key
+    settings.LANGFUSE_SECRET_KEY = secret_key
+
+    apps.get_app_config("gateway").ready()
+
+    assert f"Langfuse tracing is off: {missing} not set, so nothing is traced" in [
+        record.getMessage() for record in caplog.records if record.levelname == "WARNING"
+    ]
+
+
+def test_the_app_says_nothing_of_tracing_as_it_starts_when_both_keys_are_set(
+    settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    settings.LANGFUSE_PUBLIC_KEY = "pk-lf-test"
+    settings.LANGFUSE_SECRET_KEY = "sk-lf-test"
+
+    apps.get_app_config("gateway").ready()
+
+    assert not [record for record in caplog.records if "Langfuse" in record.getMessage()]
+
+
+def test_each_message_starts_a_new_trace_under_one_fixed_name_grouped_with_its_chat_session(
     traces: Traces, fake_model: FakeModel, session_id: str, say: Callable[..., None]
 ) -> None:
     fake_model.respond("produce", turn(says="Send me your product page."), turn(says="Thanks!"))
@@ -194,15 +253,19 @@ def test_each_message_starts_a_new_trace_named_after_it_grouped_with_the_rest_of
 
     first, second = traces.all()
     assert first.trace_id != second.trace_id
+    # One name for every message's trace, so Langfuse groups them: the message is its input.
     assert [each.attributes["langfuse.trace.name"] for each in (first, second)] == [
-        "Hi",
-        "Here it comes",
+        "answer-owner-message"
+    ] * 2
+    assert [each.value("input") for each in (first, second)] == [
+        {"message": "Hi"},
+        {"message": "Here it comes"},
     ]
     # Both are the session's, so Langfuse shows the chat's work together.
     assert [each.attributes["session.id"] for each in (first, second)] == [session_id] * 2
 
 
-def test_a_scene_steps_model_calls_land_under_the_tool_call_that_started_it(
+def test_a_scene_step_lands_under_the_tool_call_that_started_it_with_what_it_was_asked_and_made(
     traces: Traces,
     fake_model: FakeModel,
     checked: None,
@@ -229,10 +292,49 @@ def test_a_scene_steps_model_calls_land_under_the_tool_call_that_started_it(
     assert tool.outline() == dedent(
         """\
         make_starting_picture (tool)
-          scene 1's starting picture (span)
+          scene step (span)
             choose_starting_picture (generation)
             make_starting_picture (generation)"""
     )
+    # One name for every step: which step of which scene it is, is its metadata.
+    (step,) = tool.inside
+    assert step.metadata() == {"scene": 1, "step": "starting_picture"}
+    made = SceneStep.objects.get()
+    assert step.value("input") == {
+        "kind": "starting_picture",
+        "scene": 1,
+        "line": made.line,
+        "prompt": CHOICE["prompt"],
+    }
+    assert step.value("output") == {"result": made.result}
+
+
+def test_a_scene_step_that_fails_still_shows_what_it_was_asked(
+    traces: Traces,
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("make_starting_picture", {"scene": 1, "note": "Hold it by the handle."})]),
+        turn(says="I've started scene 1's picture."),
+    )
+    say("Make scene 1's starting picture")
+    fake_model.respond("choose_starting_picture", ValueError("The writer broke."))
+    fake_model.respond("produce", turn(says="Scene 1's starting picture failed."))
+
+    steps.run_held()
+
+    (step,) = [found for trace in traces.all() for found in trace.find(name="scene step")]
+    assert step.attributes["langfuse.observation.level"] == "ERROR"
+    assert step.value("input") == {
+        "kind": "starting_picture",
+        "scene": 1,
+        "line": SceneStep.objects.get().line,
+        "note": "Hold it by the handle.",
+    }
 
 
 def test_a_messages_work_woken_again_by_a_scene_step_stays_in_the_messages_trace(
@@ -256,8 +358,10 @@ def test_a_messages_work_woken_again_by_a_scene_step_stays_in_the_messages_trace
     # After those of the messages that made the plan and the person.
     *_, first, woken = traces.all()
     assert woken.trace_id == first.trace_id
-    assert (first.name, woken.name) == ("producer", "producer, woken by scene 1's starting picture")
-    assert first.attributes["langfuse.trace.name"] == "Make scene 1's starting picture"
+    # The part keeps the agent's name: what woke it is in its metadata.
+    assert (first.name, woken.name) == ("producer", "producer")
+    assert first.attributes["langfuse.trace.name"] == "answer-owner-message"
+    assert woken.metadata() == {"woken_by": ["scene 1's starting picture"]}
     assert woken.value("input") == {
         "message": "Make scene 1's starting picture",
         "woken_by": ["scene 1's starting picture"],
@@ -265,7 +369,7 @@ def test_a_messages_work_woken_again_by_a_scene_step_stays_in_the_messages_trace
     assert woken.value("output") == {"said": ["Scene 1's starting picture is ready!"]}
     assert woken.outline() == dedent(
         """\
-        producer, woken by scene 1's starting picture (span)
+        producer (span)
           producer turn (agent)
             produce (generation)"""
     )
@@ -304,7 +408,7 @@ def test_a_scene_step_lands_under_its_tool_call_run_again_after_the_worker_stopp
         for found in trace.find(name="make_starting_picture", kind="tool")
     ]
     assert first.inside == []
-    assert [step.name for step in again.inside] == ["scene 1's starting picture"]
+    assert [step.name for step in again.inside] == ["scene step"]
 
 
 def kinds_of_file(sent: list[str]) -> list[str]:
@@ -368,7 +472,8 @@ def test_a_turn_answered_from_its_record_shows_as_such_with_no_cost(
     restart_dead_producers()
 
     stopped, again = traces.all()
-    assert (again.name, again.trace_id) == ("producer, started again", stopped.trace_id)
+    assert (again.name, again.trace_id) == ("producer", stopped.trace_id)
+    assert again.metadata() == {"started_again": True}
     assert [call.name for call in stopped.find(kind="generation")] == ["produce"]
     (answered, checked_after, copied_after, *noted, paid) = again.find(kind="generation")
     assert (answered.name, checked_after.name, copied_after.name, paid.name) == (
@@ -546,3 +651,126 @@ def test_a_video_watched_is_shown_in_the_trace_as_it_was_sent(
     assert call.value("input")["handoff"] == {"product_name": "Stoneware Mug"}
     assert kinds_of_file(call.value("input")["shown"]) == ["video/mp4"]
     assert call.value("output")["output"] == {"moments": ["The lid is twisted off."]}
+
+
+class Asked(Handoff):
+    ask: int
+
+
+SUDDEN_CHANGE = "The mug's handle jumps to the other side at 2 s."
+
+
+@pytest.mark.parametrize(
+    ("purpose", "output", "answer", "scored"),
+    [
+        (
+            "check_starting_picture",
+            StartingPictureVerdict,
+            {**PICTURE_OK, "verdict": "fail", "problem": "The handle is inside the mug."},
+            [Score("starting_picture_real", "fail", "The handle is inside the mug.")],
+        ),
+        ("check_fix", FixVerdict, FIX_MADE, [Score("fix_made", "fixed", None)]),
+        (
+            "check_clip_sides",
+            SidesVerdict,
+            {**CLIP_SIDES_OK, "verdict": "fail", "problem": "The mug grows a second handle."},
+            [Score("clip_sides_real", "fail", "The mug grows a second handle.")],
+        ),
+        (
+            "check_clip_references",
+            ReferencesVerdict,
+            {
+                **REFERENCES_ENOUGH,
+                "verdict": "cannot tell",
+                "references_never_show": "the references never show its base",
+            },
+            [Score("references_enough", "cannot tell", "the references never show its base")],
+        ),
+        (
+            "check_clip_product",
+            ProductVerdict,
+            {**CLIP_PRODUCT_OK, "verdict": "unsure"},
+            [Score("clip_matches_product", "unsure", None)],
+        ),
+        (
+            "check_clip_motion",
+            MotionFixVerdict,
+            {
+                **CLIP_MOTION_OK,
+                "sudden_change": {
+                    "verdict": "fail",
+                    "problem": SUDDEN_CHANGE,
+                    "back_to_normal_at": None,
+                },
+                "owner_change": CLIP_FIXED,
+            },
+            [
+                Score("clip_real_motion", "pass", None),
+                Score("clip_no_sudden_change", "fail", SUDDEN_CHANGE),
+                Score("clip_does_what_was_ordered", "pass", None),
+                Score("clip_owner_change_made", "fixed", None),
+            ],
+        ),
+    ],
+)
+def test_a_judges_verdict_is_a_score_on_its_call_named_after_what_it_measures(
+    traces: Traces,
+    fake_model: FakeModel,
+    purpose: str,
+    output: type[BaseModel],
+    answer: dict[str, Any],
+    scored: list[Score],
+) -> None:
+    fake_model.respond(purpose, answer)
+
+    call_model(
+        job=None, purpose=purpose, instructions="Judge it.", handoff=Asked(ask=1), output=output
+    )
+
+    (call,) = [found for trace in traces.all() for found in trace.find(kind="generation")]
+    assert traces.scores(call) == scored
+
+
+# Every judge's answer forms, by the purpose its calls are made for.
+JUDGES_ANSWERS: dict[str, list[type[BaseModel]]] = {
+    "check_starting_picture": [StartingPictureVerdict],
+    "check_fix": [FixVerdict, PhotoFixVerdict],
+    "check_clip_sides": [SidesVerdict],
+    "check_clip_product": [ProductVerdict],
+    "check_clip_references": [ReferencesVerdict],
+    "check_clip_motion": [MotionVerdict, MotionFixVerdict, MotionPhotoFixVerdict],
+}
+
+
+def test_every_scored_verdict_is_where_each_judges_answer_form_puts_it() -> None:
+    """A verdict renamed or moved in an answer form would lose its score without a word."""
+    assert set(VERDICT_SCORES) == set(JUDGES_ANSWERS)
+    for purpose, scores in VERDICT_SCORES.items():
+        for path in scores.values():
+            # Each path is in at least one of the judge's forms: a fix's question is only in
+            # a fix's.
+            found = []
+            for form in JUDGES_ANSWERS[purpose]:
+                schema = form.model_json_schema()
+                part: dict[str, Any] | None = schema
+                for key in path:
+                    field = (part or {}).get("properties", {}).get(key)
+                    ref = (field or {}).get("$ref", "")
+                    part = schema["$defs"].get(ref.removeprefix("#/$defs/")) if ref else field
+                found.append(part is not None and "verdict" in part.get("properties", {}))
+            assert any(found), f"{purpose}'s {path} names no verdict"
+
+
+def test_a_call_that_judges_nothing_is_not_scored(traces: Traces, fake_model: FakeModel) -> None:
+    fake_model.respond("check_page", READABLE)
+
+    call_model(
+        job=None,
+        purpose="check_page",
+        instructions="Is it readable?",
+        handoff=Asked(ask=1),
+        output=Judgement,
+    )
+
+    (call,) = [found for trace in traces.all() for found in trace.find(kind="generation")]
+    assert traces.scores(call) == []

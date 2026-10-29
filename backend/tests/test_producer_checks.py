@@ -7,9 +7,9 @@ from typing import Any
 
 import pytest
 
-from gateway.fake import FakeModel, turn
+from gateway.fake import FakeModel, meanwhile, turn
 from gateway.models import ModelCall
-from jobs.models import Job
+from jobs.models import Job, Scene
 from jobs.work import keep_photo
 
 from .conftest import (
@@ -29,6 +29,7 @@ from .conftest import (
     plan_with,
     results_of,
 )
+from .test_producer_plan import the_library_and_its_video_are_ready
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -1041,6 +1042,116 @@ def test_a_scene_the_user_has_the_person_say_loses_its_usage_result_and_needs(
     scene = Job.objects.get().scenes.get(number=2)
     assert (scene.line, scene.shows) == (SAID_OVER, "")
     assert broll_labels()[1] == ("", "", "", "", [])
+
+
+def test_a_scene_the_user_has_the_person_say_loses_its_scene_pictures_and_piece(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    checking(
+        fake_model,
+        product_page_url,
+        doing_a_job(),
+        reply="Keep scene 2, give your own line, or say it to camera?",
+    )
+    fake_model.respond(
+        "fact_check",
+        shows_wrong("The page doesn't say tea is poured in.", passing=(1, 3)),
+        shows_wrong("The page still doesn't say tea is poured in."),
+        shows_wrong("The page never says tea is poured in."),
+    )
+    fake_model.respond("rewrite_line", DOES_A_JOB, DOES_A_JOB)
+    say(f"Make an ad for {product_page_url}")
+    # As the planner named them for the scene's action.
+    Scene.objects.filter(number=2).update(
+        scene_pictures=[{"number": 4, "for": "in-use"}], piece={"video": 1, "moment": 1}
+    )
+    fake_model.respond(
+        "produce",
+        turn(
+            calls=[
+                (
+                    "run_planning_checks",
+                    {
+                        **NO_CHOICES,
+                        "line_choices": [{"scene": 2, "choice": "say_it", "own_line": None}],
+                    },
+                )
+            ]
+        ),
+        turn(says="The person will say it."),
+    )
+
+    say("Have her just say it")
+
+    scene = Job.objects.get().scenes.get(number=2)
+    assert (scene.shows, scene.scene_pictures, scene.piece) == ("", [], None)
+
+
+def checking_from_the_library(fake_model: FakeModel, link: str, plan: dict[str, Any]) -> None:
+    """`checking`, the job's library and watched video made while the producer plans."""
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": link, "target_seconds": None})]),
+        meanwhile(the_library_and_its_video_are_ready, turn(calls=[("plan_ad", {})])),
+        turn(calls=[("create_person", {})]),
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(says="Here's where your ad stands."),
+    )
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", plan)
+
+
+# Scene 2's action as the planner sent it: a picture of the mug in use and the video's pour.
+PICKED: dict[str, Any] = {
+    "scene_pictures": [{"number": 4, "for": "in-use"}],
+    "piece": {"video": 1, "moment": 1},
+}
+
+
+@pytest.mark.parametrize(
+    "rewrite",
+    [
+        pytest.param(REWRITTEN, id="another action"),
+        pytest.param({**DOES_A_JOB, "shows": None}, id="said to camera"),
+    ],
+)
+def test_a_scene_rewritten_to_another_action_or_to_camera_loses_its_scene_pictures_and_piece(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None], rewrite: dict[str, Any]
+) -> None:
+    # The planner's picks were for the old action: kept, they would send its moment.
+    checking_from_the_library(fake_model, product_page_url, doing_a_job(**PICKED))
+    fake_model.respond(
+        "fact_check",
+        shows_wrong("The page doesn't say tea is poured in.", passing=(1, 3)),
+        facts_ok(2),
+    )
+    fake_model.respond("rewrite_line", rewrite)
+
+    say(f"Make an ad for {product_page_url}")
+
+    scene = Job.objects.get().scenes.get(number=2)
+    assert (scene.shows, scene.scene_pictures, scene.piece) == (rewrite["shows"] or "", [], None)
+
+
+def test_a_scene_whose_line_alone_is_rewritten_keeps_its_scene_pictures_and_piece(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    checking_from_the_library(fake_model, product_page_url, doing_a_job(**PICKED))
+    fake_model.respond(
+        "fact_check",
+        failing(2, "The line says something the page doesn't.", passing=(1, 3)),
+        facts_ok(2),
+    )
+    fake_model.respond("rewrite_line", {**DOES_A_JOB, "line": "Hand-thrown and dishwasher safe."})
+
+    say(f"Make an ad for {product_page_url}")
+
+    scene = Job.objects.get().scenes.get(number=2)
+    assert (scene.shows, scene.scene_pictures, scene.piece) == (
+        POUR,
+        PICKED["scene_pictures"],
+        PICKED["piece"],
+    )
 
 
 # --- A line too long for one scene -----------------------------------------------------------

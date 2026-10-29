@@ -118,6 +118,7 @@ from .job_locks import one_job_at_a_time as _one_job_at_a_time
 from .library import PictureLabel, watch_of
 from .models import (
     BROLL_FIELDS,
+    PLANNED_FOR_THE_ACTION,
     AgentFix,
     AgentFixTry,
     Fix,
@@ -1388,6 +1389,7 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
                 "shortened_from",
                 "shows",
                 *BROLL_FIELDS,
+                *PLANNED_FOR_THE_ACTION,
                 "status",
                 "fact_problems",
                 "second_state",
@@ -1714,6 +1716,7 @@ def _shorten(job: Job, words_per_second: float) -> None:
                         "part",
                         "second_state",
                         *BROLL_FIELDS,
+                        *PLANNED_FOR_THE_ACTION,
                         "status",
                         "fact_checked",
                         "fact_problems",
@@ -2993,7 +2996,14 @@ def _say_it_to_camera(scene: Scene) -> None:
         scene.shortened_from = []
         scene.second_state = False
         scene.save(
-            update_fields=["shows", *BROLL_FIELDS, "shortened_from", "second_state", "status"]
+            update_fields=[
+                "shows",
+                *BROLL_FIELDS,
+                *PLANNED_FOR_THE_ACTION,
+                "shortened_from",
+                "second_state",
+                "status",
+            ]
         )
         scene.job.scenes.filter(number=scene.number + 1).update(second_state=False)
         post_notice(
@@ -3121,13 +3131,13 @@ def _fixed_by_the_agent(step: SceneStep) -> ProducedItem:
 
 
 def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
-    """The clip a B-roll clip step ends with, its `first` clip judged: one the judge passed, or
-    couldn't check, is kept. One it failed is handed to the fixing agent at once (door 1),
-    which films the scene again, try after try, until the judge passes a try or it gives up;
-    every try is a version of the scene. A try the judge passed is the scene's clip. On a
-    give-up the shop owner is shown every try to pick from (`say_the_agent_gave_up`): a scene
-    the producer made keeps its last try in the ad (Julian, 2026-10-23), and a fix's scene
-    keeps the clip it had before.
+    """The clip a B-roll clip step ends with, its `first` clip judged: one the judge passed,
+    couldn't check, or couldn't tell is right (unsure: the shop owner decides, #228), is kept.
+    One it failed is handed to the fixing agent at once (door 1), which films the scene again,
+    try after try, until the judge passes a try or it gives up; every try is a version of the
+    scene. A try the judge passed is the scene's clip. On a give-up the shop owner is shown
+    every try to pick from (`say_the_agent_gave_up`): a scene the producer made keeps its last
+    try in the ad (Julian, 2026-10-23), and a fix's scene keeps the clip it had before.
 
     Run again, as after a worker stopped, it pays for nothing already paid for: a clip judged
     is kept, the agent carries on from its checkpoints, and how it ended is read back."""
@@ -3602,11 +3612,17 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
     step's clip, as a sentence to follow another, for the producer to tell the shop owner:
     nothing when the judge passed its first clip or didn't judge it. A first clip the judge
     couldn't check is kept as it is, and the shop owner is told (Julian, 2026-10-14: "treat
-    that as pass")."""
+    that as pass"); so is one it couldn't tell is right, for the shop owner to decide (#228)."""
     first = _clip_tries(step)[0]
     verdict = (first.ruling or {}).get("verdict")
     if verdict == "not_checked":
         return " The clip judge couldn't check this clip, so it is kept unchecked."
+    if verdict == "unsure":
+        # The shop owner was told in the chat what the references never show (#228).
+        return (
+            " The clip judge couldn't tell whether this clip is right, so it is kept for the "
+            "shop owner to check."
+        )
     if verdict != "fail":
         return ""
     faults = " ".join(dict.fromkeys(clip_judge.still_failing(_ruling(first))))
