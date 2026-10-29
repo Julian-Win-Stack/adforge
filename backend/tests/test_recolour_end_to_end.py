@@ -36,7 +36,7 @@ def test_a_page_photo_recoloured_to_the_owners_photos_colour_joins_the_library(
     before = notices(api, session_id)
     fake_model.respond("check_recolour", RECOLOUR_BAD, RECOLOUR_OK)
 
-    made = recolour(job, 1, "red", reference=6)
+    made = recolour(job, 1, "red", reference=6, scene=1)
 
     assert made.record == Recolour(of=1, colour="red", outcome="done", made=7)
     assert library_text(job).splitlines()[-1] == (
@@ -57,11 +57,11 @@ def test_a_recolour_that_keeps_failing_sends_the_original_and_says_so_in_red(
     job = Job.objects.get()
     fake_model.respond("check_recolour", RECOLOUR_BAD, RECOLOUR_BAD, RECOLOUR_BAD)
 
-    made = recolour(job, 1, "red", reference=6)
+    made = recolour(job, 1, "red", reference=6, scene=1)
 
     assert made.record.outcome == "fell_back"
     assert made.picture == library_of(job)[0]
     level, text = notices(api, session_id)[-1]
     assert level == "problem"
-    assert "picture 1" in text and "in its own colour, amber" in text
+    assert "Picture 1" in text and "in its own colour, amber" in text
     assert len(library_of(job)) == 6
