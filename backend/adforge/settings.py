@@ -259,6 +259,16 @@ FETCH_PRIVATE_ADDRESSES = False
 # Three tries in total: the first, then one after each delay.
 RETRY_DELAYS_SECONDS = [2.0, 8.0]
 
+# The producer's context (spec #247 point 15): its conversation is given in full until its
+# last turn's input tokens, as the model reported them, pass this share of its model's window
+# (gateway.catalog.max_input_tokens); then the oldest FOLD_SHARE_OF_CALLS of the tool calls
+# still given in full fold to one line each (Julian 2026-10-29: "make it half of the window").
+FOLD_PAST_SHARE_OF_WINDOW = 0.5
+FOLD_SHARE_OF_CALLS = 0.5
+# The most input tokens our Azure deployment of the agents' models takes in one call, when it
+# is lower than the model's own window. 0 means the model's own.
+AZURE_OPENAI_MAX_INPUT_TOKENS = int(os.environ.get("AZURE_OPENAI_MAX_INPUT_TOKENS") or 0)
+
 # How many tools the agents together may call for one message from the user, so an agent
 # that loops can't run up a bill. The one past it is refused, and the user is told.
 MAX_TOOL_CALLS_PER_MESSAGE = 100

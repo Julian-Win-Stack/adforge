@@ -15,7 +15,7 @@ from agents.tasks import restart_dead_producers
 from gateway.fake import FakeModel, turn
 from jobs.models import Job
 
-from .conftest import chat, given_to_the_producer, producer_turns, results_of
+from .conftest import PLAN, chat, given_to_the_producer, producer_turns, results_of
 from .test_producer_restarts import WorkerStopped, the_producer_died, the_worker_stops
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
@@ -61,21 +61,25 @@ def test_the_shop_owners_next_message_answers_the_question(
     assert producer_turns() == 2
 
 
-def test_a_call_after_the_question_in_the_same_turn_is_refused(
-    fake_model: FakeModel, say: Callable[..., None], api: Any, session_id: str
+def test_the_turns_other_calls_still_run_and_then_the_turn_ends(
+    fake_model: FakeModel, page_read: str, say: Callable[..., None], api: Any, session_id: str
 ) -> None:
+    # Asked first, then other work in the same turn: that work goes on meanwhile.
     fake_model.respond(
         "produce",
         turn(calls=[("ask_owner", {"question": QUESTION}), ("plan_ad", {})]),
     )
+    fake_model.respond("plan_ad", PLAN)
+    turns_before = producer_turns()
 
-    say("Make an ad for my mug")
+    say("Plan it")
 
-    (refused,) = results_of("plan_ad")
-    assert refused.startswith("Refused: your ask_owner call earlier in this turn ended it")
-    assert not Job.objects.exists() or not Job.objects.get().scenes.exists()
-    assert chat(api, session_id)[-1] == ("agent", QUESTION)
-    assert producer_turns() == 1
+    (planned,) = results_of("plan_ad")
+    assert not planned.startswith(("Refused", "Failed"))
+    assert Job.objects.get().scenes.exists()
+    assert QUESTION in [text for role, text in chat(api, session_id) if role == "agent"]
+    # No turn after it: the producer waits for the answer.
+    assert producer_turns() == turns_before + 1
 
 
 def test_a_blank_question_is_refused_and_the_turn_goes_on(

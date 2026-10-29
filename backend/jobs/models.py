@@ -74,6 +74,18 @@ class Job(models.Model):
         help_text="Every word a visitor sees on the page, then its declared product data, "
         "other products' text included. Kept for debugging; no model call reads it.",
     )
+    page_final_url = models.URLField(
+        max_length=2000,
+        blank=True,
+        help_text="The address the kept page answered from, after any redirects. Blank until "
+        "the page is kept.",
+    )
+    page_canonical_url = models.URLField(
+        max_length=2000,
+        blank=True,
+        help_text="The address the kept page names as its own (canonical link or og:url), or "
+        "blank when it names none.",
+    )
     page_html_key = models.CharField(
         max_length=500,
         blank=True,
@@ -1001,6 +1013,9 @@ class SceneStep(models.Model):
         FINISHED = "finished"
         STOPPED = "stopped"
         FAILED = "failed"
+        # Waiting for the worker when the shop owner pressed pause, so never worked on: free.
+        # The pause note tells the producer of it, not its own result.
+        CANCELLED = "cancelled"
 
     scene = models.ForeignKey(Scene, on_delete=models.CASCADE, related_name="steps")
     kind = models.CharField(max_length=30, choices=Kind.choices)
@@ -1698,6 +1713,14 @@ class OwnerQuestion(models.Model):
     asked_at = models.DateTimeField(auto_now_add=True)
     answered_at = models.DateTimeField(
         null=True, blank=True, help_text="When the owner answered; blank while it is open."
+    )
+    answer = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The shop owner's answer as it was handed in, waiting for the fix's step to take "
+            'it: {"words": ..., "photos": [keys], "videos": [keys]}. Blank until then.'
+        ),
     )
 
     def __str__(self) -> str:

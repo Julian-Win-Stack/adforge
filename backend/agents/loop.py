@@ -8,7 +8,7 @@ replaced by one that runs the loop again and carries on where the checkpoints sa
 
 import inspect
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from functools import cache
@@ -53,6 +53,7 @@ from jobs.models import Job, SceneStep
 from jobs.notices import left_out_by_the_filter, post_notice
 from jobs.reference_photos import ReferencePhotoUnusable
 
+from . import fold
 from .models import RefusedPicture, SystemNote, ToolCall
 
 logger = logging.getLogger(__name__)
@@ -97,6 +98,11 @@ class Refused(Exception):
     rules, or what it works on doesn't exist yet. Says why, for the agent."""
 
 
+class Failed(Exception):
+    """A tool tried what it was asked, and it failed: says why, for the agent. What the tool
+    did before it failed, as a notice shown to the shop owner, stays."""
+
+
 class Asks(Exception):
     """A tool can't go on without one answer, and has done nothing: says the ONE clarifying
     question, for the agent to answer from what it knows and call the tool again (spec #247
@@ -127,12 +133,12 @@ class ToolAnswer:
 
     @classmethod
     def handed_back(cls, result: str | ToolResult) -> ToolAnswer:
-        """What a tool's run handed back: a result that says it failed or refused is a
-        can't, anything else the thing it made."""
-        text, pictures = (
-            (result.text, result.pictures) if isinstance(result, ToolResult) else (result, ())
-        )
-        return cls(cls.kind_of(text), text, pictures)
+        """What a tool's run handed back when it raised nothing: the thing it made. A tool
+        says it can't by raising Refused or Failed, and asks by raising Asks, so the kind
+        comes from what the tool did, never from how its words begin."""
+        if isinstance(result, ToolResult):
+            return cls("made", result.text, result.pictures)
+        return cls("made", result)
 
     @classmethod
     def cant(cls, text: str) -> ToolAnswer:
@@ -150,7 +156,11 @@ class ToolAnswer:
 
     @classmethod
     def of(cls, call: ToolCall) -> ToolAnswer:
-        """The answer a finished call handed back, from its row."""
+        """The answer a finished call handed back, from its row. Raises ValueError for a call
+        not finished yet, which has answered nothing."""
+        if call.finished_at is None:
+            raise ValueError(f"the {call.tool} call hasn't finished, so it has no answer yet")
+        # A row finished before answers were kept has no kind: its words say it.
         kind: AnswerKind = call.answer or cls.kind_of(call.result)  # type: ignore[assignment]
         return cls(
             kind,
@@ -160,7 +170,8 @@ class ToolAnswer:
 
     @staticmethod
     def kind_of(text: str) -> AnswerKind:
-        """The kind of answer a result's words give, by how they begin."""
+        """The kind of answer a result's words give, by how they begin: only for a row kept
+        before its kind was."""
         if text.startswith((REFUSED, FAILED)):
             return "cant"
         if text.startswith(QUESTION):
@@ -201,8 +212,8 @@ class Tool(BaseModel):
 
     name: ClassVar[str]
     # Whether the agent's turn ends once the tool has done what it was asked, as asking the
-    # shop owner a question does: the agent takes no further turn until something new comes,
-    # and any call it asked for after this one in the same turn is refused (spec #247 point 5).
+    # shop owner a question does: the turn's other calls still run, and then the agent takes
+    # no further turn until something new comes (spec #247 point 5).
     ends_the_turn: ClassVar[bool] = False
 
     def run(self, call: ToolCall) -> str | ToolResult:
@@ -230,7 +241,10 @@ WHY = (
 
 @cache
 def _with_why(tool: type[Tool]) -> type[BaseModel]:
-    """`tool`'s arguments with a required `why`, the shape its model fills in."""
+    """`tool`'s arguments with a required `why`, the shape its model fills in. A tool of an
+    agent that asks why can't have an argument of its own named so."""
+    if "why" in tool.model_fields:
+        raise TypeError(f"the {tool.name} tool has its own `why`, which the agent's would hide")
     return create_model(tool.__name__, __base__=tool, why=(str, Field(description=WHY)))
 
 
@@ -248,6 +262,17 @@ class Agent:
     # Whether each of its tools takes a required `why`, kept on the call's row (spec #247
     # point 7): the producer's do.
     asks_why: bool = False
+    # Whether its oldest tool calls fold to one line each once its last turn passes the fold
+    # point (spec #247 point 15, agents/fold.py): the producer's do.
+    folds: bool = False
+    # What it is given last on every turn, rebuilt from the database each time: the
+    # producer's is the ad as it stands (agents/snapshot.py). None for no snapshot.
+    snapshot: Callable[[Session], str] | None = None
+
+    @property
+    def turn_enders(self) -> set[str]:
+        """The names of its tools that end its turn (`Tool.ends_the_turn`)."""
+        return {tool.name for tool in self.tools if tool.ends_the_turn}
 
     def tool_specs(self) -> list[ToolSpec]:
         return [tool.spec(asks_why=self.asks_why) for tool in self.tools]
@@ -286,7 +311,7 @@ def _work(agent: Agent, session: Session) -> int:
     # A tool that was running when the last worker stopped runs again first: the agent
     # can't take another turn until every tool it asked for has handed back a result.
     for call in session.tool_calls.filter(agent=agent.name, finished_at__isnull=True):
-        _settle_unless_the_turn_ended(agent, call)
+        settle(agent, call, restarted=True)
     while True:
         conversation, read_up_to, steps, notes = _conversation(agent, session)
         conversation = without_refused_pictures(session, agent.purpose, conversation)
@@ -317,6 +342,7 @@ def _work(agent: Agent, session: Session) -> int:
                 conversation=conversation,
                 tools=agent.tool_specs(),
                 done="the work on your ad carried on",
+                snapshot=agent.snapshot(session) if agent.snapshot else "",
             )
             # A tool past the limit is refused, and the agent gets one turn to tell the user.
             # Asking for another tool instead, it is stopped.
@@ -327,6 +353,10 @@ def _work(agent: Agent, session: Session) -> int:
                 # Only the steps and notes the turn was given: one that came while the model
                 # worked is given on the next turn.
                 _read(steps, notes)
+                # Decided from the turn just kept, and kept with it, so a restart rebuilds the
+                # same conversation: folded or not, never folded twice for one turn.
+                if agent.folds:
+                    fold.fold_if_past(session, agent.name, agent.purpose)
                 if turn.says:
                     messages.add(session, role=Message.Role.AGENT, text=turn.says)
                 if stopped:
@@ -350,52 +380,13 @@ def _work(agent: Agent, session: Session) -> int:
             if not calls:
                 return read_up_to
             for call in calls:
-                if _stopped_since_the_user_spoke(session):
-                    _refuse_as_stopped(call)
+                # Read before each call, so a pause pressed meanwhile reaches the agent
+                # between its calls rather than after the whole turn.
+                held = _held_since_the_user_spoke(session)
+                if held is not None:
+                    _refuse_unrun(call, held)
                 else:
-                    _settle_unless_the_turn_ended(agent, call, new=True)
-
-
-def _settle_unless_the_turn_ended(agent: Agent, call: ToolCall, *, new: bool = False) -> None:
-    """Settle `call`, unless a call before it in the same turn ended the turn: then it is
-    refused, having done nothing."""
-    ended = _turn_ended_by(agent, call)
-    if ended is None:
-        settle(agent, call, new=new)
-        return
-    call.result = (
-        f"{REFUSED} your {ended.tool} call earlier in this turn ended it, so this call waits "
-        "for what comes next. Nothing was done."
-    )
-    call.answer = "cant"
-    call.finished_at = timezone.now()
-    call.save(update_fields=["result", "answer", "finished_at"])
-
-
-def _turn_ended_by(agent: Agent, call: ToolCall) -> ToolCall | None:
-    """The call earlier in `call`'s turn whose tool ended the turn, or None. Two calls are in
-    the same turn when the agent's model took no turn between them."""
-    enders = [tool.name for tool in agent.tools if tool.ends_the_turn]
-    if not enders:
-        return None
-    earlier = (
-        call.session.tool_calls.filter(
-            agent=agent.name, tool__in=enders, answer="made", id__lt=call.pk
-        )
-        .order_by("id")
-        .last()
-    )
-    if (
-        earlier is None
-        or ModelCall.objects.filter(
-            session=call.session,
-            purpose=agent.purpose,
-            created_at__gt=earlier.created_at,
-            created_at__lt=call.created_at,
-        ).exists()
-    ):
-        return None
-    return earlier
+                    settle(agent, call, new=True)
 
 
 def _why_apart(agent: Agent, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -420,6 +411,7 @@ def take_a_turn(
     tools: Sequence[ToolSpec],
     done: str,
     since: datetime | None = None,
+    snapshot: str = "",
 ) -> Turn:
     """An agent's turn (`take_turn`), past the safety filter (requirement 22). A model's
     filter refuses a whole turn over one picture in the conversation, so when it refuses, the
@@ -429,7 +421,7 @@ def take_a_turn(
     so in red, with a warning line: `done` says what went on without it, as "the work on
     your ad carried on". When that is refused too, or no picture is new, one more turn is
     taken without every picture. Raises the filter's BlockedBySafetyFilter when every try is
-    refused."""
+    refused. A `snapshot` is given after the conversation, as take_turn says."""
     conversation = without_refused_pictures(session, purpose, conversation)
     # A picture shown twice is one picture.
     shown = list(
@@ -462,6 +454,7 @@ def take_a_turn(
             ),
             tools=tools,
             since=since,
+            snapshot=snapshot,
         )
 
     try:
@@ -542,22 +535,30 @@ def not_shown(labels: Sequence[str]) -> str:
     )
 
 
-def _refuse_as_stopped(call: ToolCall) -> None:
-    """Keep a call the agent asked for before a scene step stopped the run as refused,
-    without running it, so nothing is paid for once the run has stopped."""
-    call.result = f"{REFUSED} a scene step stopped the run. Nothing was done."
+def _refuse_unrun(call: ToolCall, why: str) -> None:
+    """Keep a call the agent asked for before its run was held as refused for `why`, without
+    running it, so nothing is paid for once the run has stopped or the shop owner paused."""
+    call.result = f"{REFUSED} {why} Nothing was done."
     call.answer = "cant"
     call.finished_at = timezone.now()
     call.save(update_fields=["result", "answer", "finished_at"])
 
 
-def settle(agent: Agent, call: ToolCall, *, counted: bool = True, new: bool = False) -> None:
+def settle(
+    agent: Agent,
+    call: ToolCall,
+    *,
+    counted: bool = True,
+    new: bool = False,
+    restarted: bool = False,
+) -> None:
     """Run the tool a checkpoint asked for, unless it is past the limit, and keep what it
     handed back, as a ToolAnswer: whatever the tool does, refuses or raises, the agent is
     answered and the run goes on. A call not `counted` against the limit is code's work, as
     the fixing agent's is, not an answer to the shop owner's message. A `new` call, just
-    asked for, of an agent that asks why is refused once when it has no `why`; one left
-    unfinished by a worker that stopped is run as it was asked."""
+    asked for, of an agent that asks why is refused when it has no `why`, once per tool in
+    the session; one `restarted`, left unfinished by a worker that stopped, is run as it was
+    asked. Either one run with no `why` is said in red."""
     with tracing.tool(call.tool, call.arguments, why=call.why) as traced:
         # Kept before the tool runs, for the scene steps it starts to find. A tool run again
         # after a restart is traced again, and the steps it starts then go inside that run.
@@ -576,7 +577,7 @@ def settle(agent: Agent, call: ToolCall, *, counted: bool = True, new: bool = Fa
         else:
             answer = _run(agent, call)
             # Said once it ran, so a tool that starts the ad's job keeps the line with it.
-            if new and agent.asks_why and not call.why:
+            if (new or restarted) and agent.asks_why and not call.why:
                 _say_it_ran_without_a_why(call)
         call.result = answer.text
         call.answer = answer.kind
@@ -597,14 +598,11 @@ NO_WHY = (
 
 
 def _asked_why_before(agent: Agent, call: ToolCall) -> bool:
-    """Whether the agent's last call of the same tool before `call` was refused for having
-    no `why`: it was told once."""
-    before = (
-        call.session.tool_calls.filter(agent=agent.name, tool=call.tool, id__lt=call.pk)
-        .order_by("id")
-        .last()
-    )
-    return before is not None and before.result.startswith(NO_WHY)
+    """Whether a call of the same tool before `call` in the session was refused for having
+    no `why`: the agent was told once, and isn't refused for it again."""
+    return call.session.tool_calls.filter(
+        agent=agent.name, tool=call.tool, id__lt=call.pk, result__startswith=NO_WHY
+    ).exists()
 
 
 def _say_it_ran_without_a_why(call: ToolCall) -> None:
@@ -654,6 +652,8 @@ def _run(agent: Agent, call: ToolCall) -> ToolAnswer:
         return ToolAnswer.handed_back(result)
     except Refused as refused:
         return ToolAnswer.cant(f"{REFUSED} {refused} Nothing was done.")
+    except Failed as failed:
+        return ToolAnswer.cant(f"{FAILED} {failed}")
     except Asks as asks:
         return ToolAnswer.question(str(asks))
     except Exception as error:
@@ -731,21 +731,31 @@ def _nothing_to_answer_since_its_last_turn(
     if given is None:
         return False
     gained = conversation[len(given) :]
-    if conversation[: len(given)] != given or not gained:
+    the_same = len(conversation) >= len(given) and all(
+        _the_same(now, then) for now, then in zip(conversation, given, strict=False)
+    )
+    if not the_same or not gained:
         return False
     if all(isinstance(each, Said) and each.by == "agent" for each in gained):
         return True
     # A turn that ended with a call, as asking the shop owner, waits as a reply does.
-    enders = {tool.name for tool in agent.tools if tool.ends_the_turn}
     return all(
         (isinstance(each, Said) and each.by == "agent") or isinstance(each, ToolUse)
         for each in gained
     ) and any(
         isinstance(each, ToolUse)
-        and each.tool in enders
+        and each.tool in agent.turn_enders
         and ToolAnswer.kind_of(each.result) == "made"
         for each in gained
     )
+
+
+def _the_same(now: Happened, then: Happened) -> bool:
+    """Whether `now` is what `then` was in an earlier turn's conversation. A tool call is the
+    same call, folded since or not: a fold changes how it is given, not what happened."""
+    if isinstance(now, ToolUse) and isinstance(then, ToolUse):
+        return (now.call_id, now.tool) == (then.call_id, then.tool)
+    return now == then
 
 
 def over_the_limit(session: Session) -> bool:
@@ -823,6 +833,45 @@ def _conversation(
     return conversation, max((message.seq for message in said), default=0), read + unread, notes
 
 
+# Why the calls left of a turn aren't run once a scene step stopped the run.
+STOPPED_THE_RUN = "a scene step stopped the run."
+
+# What a scene tool answers while the shop owner's pause holds (spec #247 point 14), and the
+# calls left of a turn asked for before the agent was told of the pause: "starts nothing"
+# is the tools' rule, not only the agent's instructions.
+PAUSED = (
+    "paused. The shop owner pressed pause, so no scene step is started until they write "
+    "again. Call it again after their message if it is still needed."
+)
+
+
+def paused(session: Session) -> bool:
+    """Whether the shop owner's pause holds in `session`, as the database has it now."""
+    return Session.objects.filter(pk=session.pk, paused_at__isnull=False).exists()
+
+
+def refuse_while_paused(session: Session) -> None:
+    """Refuse a scene tool's work while the shop owner's pause holds, saying so."""
+    if paused(session):
+        raise Refused(PAUSED)
+
+
+def _held_since_the_user_spoke(session: Session) -> str | None:
+    """Why the calls left of the agent's turn are refused unrun, or None to run them: a scene
+    step stopped the run since the user's last message, or the shop owner paused and the
+    agent hasn't been given the pause's note yet, so it reads it before anything more runs."""
+    if _stopped_since_the_user_spoke(session):
+        return STOPPED_THE_RUN
+    if paused(session) and unread_pause_notes(session).exists():
+        return PAUSED
+    return None
+
+
+def unread_pause_notes(session: Session) -> QuerySet[SystemNote]:
+    """The notes of the shop owner's pause the producer hasn't been given yet."""
+    return session.system_notes.filter(kind=SystemNote.Kind.PAUSED, read_at__isnull=True)
+
+
 def _stopped_since_the_user_spoke(session: Session) -> bool:
     """Whether a scene step stopped the run since the user's last message."""
     stopped = SceneStep.objects.filter(tool_call__session=session, status=SceneStep.Status.STOPPED)
@@ -839,9 +888,11 @@ def unread_steps(agent: Agent, session: Session) -> QuerySet[SceneStep]:
 
 
 def _finished_steps(agent: Agent, session: Session) -> QuerySet[SceneStep]:
+    """The scene steps `agent` started in the session that have ended, but those the shop
+    owner's pause cancelled: the pause's note tells it of them."""
     return SceneStep.objects.filter(
         tool_call__session=session, tool_call__agent=agent.name, finished_at__isnull=False
-    )
+    ).exclude(status=SceneStep.Status.CANCELLED)
 
 
 def _read(steps: list[SceneStep], notes: list[SystemNote]) -> None:
@@ -865,6 +916,14 @@ def _as_given(happened: Message | ToolCall | SceneStep | SystemNote) -> Happened
         return StepFinished(text=happened.result)
     if isinstance(happened, SystemNote):
         return StepFinished(text=f"{SYSTEM_NOTE} {happened.text}")
+    if isinstance(happened, ToolCall) and happened.fold_line:
+        # As one line: its tool, scene, outcome and cost, and the call's why, as it was made.
+        return ToolUse(
+            call_id=happened.call_id,
+            tool=happened.tool,
+            arguments={"why": happened.why} if happened.why else {},
+            result=fold.as_folded(happened),
+        )
     if isinstance(happened, ToolCall):
         return ToolUse(
             call_id=happened.call_id,

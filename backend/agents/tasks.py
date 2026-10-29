@@ -18,7 +18,7 @@ from chat.models import Attachment, Message, Session
 from gateway.gateway import charged_to
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, UnusableReply
-from jobs import owner_parts
+from jobs import owner_answers, owner_parts
 from jobs.models import FixCheck, Job, ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
 from jobs.picture_check import PictureKeptFailing
@@ -42,7 +42,15 @@ from jobs.work import (
 )
 
 from . import loop, page_panel, routing, run_plan, step_signals
-from .loop import BLOCKED, EXPECTED_FAILURES, RunStopped, why_it_failed, why_it_failed_plainly
+from .loop import (
+    BLOCKED,
+    EXPECTED_FAILURES,
+    Asks,
+    RunStopped,
+    ToolAnswer,
+    why_it_failed,
+    why_it_failed_plainly,
+)
 from .money import dollars
 from .producer import PRODUCER, STEP_NAMES
 
@@ -99,10 +107,15 @@ def run_producer(session_id: str) -> None:
 
 def _work_on(session: Session) -> int:
     """Keep any page the shop owner pasted in the page panel, and route what they sent, then
-    let the producer work if it has something to answer or a scene step's result to read.
+    let the producer work if it has something to answer, or a scene step's result or the
+    shop owner's pause to read.
     Gives the number of the last message read."""
     page_panel.take_pastes(session)
-    if routing.route(session) or loop.unread_steps(PRODUCER, session).exists():
+    if (
+        routing.route(session)
+        or loop.unread_steps(PRODUCER, session).exists()
+        or loop.unread_pause_notes(session).exists()
+    ):
         return loop.run(PRODUCER, session, woken_by=_woken_by(session))
     return routing.last_seq(session)
 
@@ -116,7 +129,8 @@ def _woken_by(session: Session) -> list[str]:
 def _stop_unless_theres_more_to_read(session_id: str, read_up_to: int) -> bool:
     """Mark the producer stopped, unless the user said something after the messages up to
     `read_up_to` it was last given or that code hasn't routed yet, sent a pasted page code
-    hasn't looked at, or a scene step finished that it hasn't been given. Both
+    hasn't looked at, or a scene step finished or the shop owner paused and it hasn't been
+    given that. Both
     happen under the session's lock, which a message sent and a step finished take before
     they look for a producer, so each is either found here or starts a new producer itself."""
     with transaction.atomic():
@@ -128,6 +142,10 @@ def _stop_unless_theres_more_to_read(session_id: str, read_up_to: int) -> bool:
         if page_panel.unlooked_at(session).exists():
             return False
         if loop.unread_steps(PRODUCER, session).exists():
+            return False
+        # The note of a pause pressed while it worked. A fix plan's notes are read when it
+        # next works: code tells the shop owner of the plan itself.
+        if loop.unread_pause_notes(session).exists():
             return False
         session.producer_running = False
         session.save(update_fields=["producer_running"])
@@ -469,12 +487,18 @@ def run_scene_step(step_id: int) -> None:
     result on its next turn, and is started if it isn't working."""
     step = SceneStep.objects.select_related("scene__job", "tool_call__session").get(pk=step_id)
     # Celery may hand a step out again after a crash. One that has finished or failed since
-    # is left as it is, so nothing is shown or paid for twice.
+    # is left as it is, so nothing is shown or paid for twice; so is one the shop owner's
+    # pause cancelled before it was taken.
     if step.status != SceneStep.Status.RUNNING:
         return
-    # Taken: from now on its heartbeat says whether it is alive (see fail_dead_steps).
+    # Taken: from now on its heartbeat says whether it is alive (see fail_dead_steps). Only
+    # while it is still running, in one statement, so a pause cancelling it at the same
+    # moment either cancels it first, and it is left, or finds it taken, and keeps it.
     now = timezone.now()
-    SceneStep.objects.filter(pk=step_id).update(taken_at=now, seen_at=now)
+    if not SceneStep.objects.filter(pk=step_id, status=SceneStep.Status.RUNNING).update(
+        taken_at=now, seen_at=now
+    ):
+        return
     step.taken_at = now
     session = step.tool_call.session
     work = STEP_WORK[SceneStep.Kind(step.kind)]
@@ -525,6 +549,15 @@ def run_scene_step(step_id: int) -> None:
                 return
             say_the_pictures_kept_failing(step.scene.job, error)
             _stop(step, str(error))
+            _told_it_ended(step)
+    except Asks as asks:
+        # The step's work needs one answer before it can make anything: its question goes
+        # back to whoever started it as the step's answer, not as a failure (spec #247 point 6).
+        tracing.flush()
+        with transaction.atomic():
+            if not _still_running(step):
+                return
+            _ask_back(step, str(asks))
             _told_it_ended(step)
     # Whatever stops the step, it isn't left running: the producer is told why.
     except Exception as error:
@@ -611,6 +644,10 @@ def _finish(
         # Once its step is finished, so its tries are versions.
         if step.kind == SceneStep.Kind.CLIP and step.shows and agent_gave_up(step):
             say_the_agent_gave_up(step)
+        # A fix resumed with the shop owner's answer changed the scene's clip in an ad
+        # already shown: it is assembled again, as for a try swapped in.
+        if step.kind == SceneStep.Kind.CLIP and owner_answers.answered(step):
+            run_plan.swapped_in(step)
         # A fix plan's step is carried on by code, and never wakes the producer: a
         # fix's picture that passed its checks queues its clip here (decision 2).
         if step.plan_scene_id is not None:
@@ -654,6 +691,20 @@ def _fail(step: SceneStep, reason: str, plainly: str) -> None:
     step.finished_at = timezone.now()
     step.save(update_fields=["status", "reason", "result", "finished_at"])
     step_signals.say_not_made(step, plainly)
+
+
+def _ask_back(step: SceneStep, question: str) -> None:
+    """End the step with nothing made, its work having asked `question`: the producer is
+    given the question as the step's answer, and the chat shows the step waits on it."""
+    step.status = SceneStep.Status.FAILED
+    step.reason = f"it asked: {question}"
+    step.result = (
+        f"Background step asked before making anything: {_step_name(step)} wasn't made. "
+        f"{ToolAnswer.question(question).text}"
+    )
+    step.finished_at = timezone.now()
+    step.save(update_fields=["status", "reason", "result", "finished_at"])
+    step_signals.say_waits_on_a_question(step)
 
 
 def _stop(step: SceneStep, reason: str) -> None:
