@@ -386,8 +386,8 @@ def _broll(
 
 @pytest.fixture
 def pictures_kept() -> list[str]:
-    """Six different pictures in the file store, by their keys."""
-    return [file_store.save(f"photo-{n}.png", picture(72, 128, (n, 2, 3))) for n in range(1, 7)]
+    """Ten different pictures in the file store, by their keys."""
+    return [file_store.save(f"photo-{n}.png", picture(72, 128, (n, 2, 3))) for n in range(1, 11)]
 
 
 def test_a_b_roll_clip_from_a_starting_picture_is_sent_its_picture_seconds_and_prompt(
@@ -439,6 +439,18 @@ def test_a_b_roll_clip_is_billed_for_every_second_asked_for(
     )
 
 
+@pytest.mark.parametrize(("pictures", "extra_usd"), [(5, "0"), (6, "0.0396"), (9, "0.1584")])
+def test_a_b_roll_clip_is_billed_for_each_example_picture_past_the_first_5(
+    fake_model: FakeModel, pictures_kept: list[str], pictures: int, extra_usd: str
+) -> None:
+    _broll(start=None, examples=pictures_kept[:pictures], seconds=5)
+
+    (asked,) = fake_model.broll_clips_asked
+    assert len(asked["example_pictures"]) == pictures
+    # 0.4 credits a second made, and 0.2 a picture past the first 5, at $99 for 500 credits.
+    assert ModelCall.objects.get().cost_usd == 5 * Decimal("0.0792") + Decimal(extra_usd)
+
+
 @pytest.mark.parametrize(
     ("asked", "why"),
     [
@@ -448,9 +460,9 @@ def test_a_b_roll_clip_is_billed_for_every_second_asked_for(
             id="a starting picture and example pictures",
         ),
         pytest.param(
-            {"start": None, "examples": ["photo"] * 6},
-            "at most 5 items",
-            id="6 example pictures",
+            {"start": None, "examples": ["photo"] * 10},
+            "at most 9 items",
+            id="10 example pictures",
         ),
         pytest.param({"start": None}, "needs a starting picture or example", id="no picture"),
         pytest.param({"seconds": 4}, "greater than or equal to 5", id="4 seconds"),

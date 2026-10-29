@@ -67,10 +67,12 @@ def scene_2() -> Scene:
 def planned_send() -> cut_and_send.Sending:
     """What scene 2's next clip is sent as it stands, as the clip step will ask (#240)."""
     scene = scene_2()
+    call = ToolCall.objects.last()
+    assert call is not None
     step = SceneStep.objects.create(
         scene=scene,
         kind=SceneStep.Kind.CLIP,
-        tool_call=ToolCall.objects.last(),
+        tool_call=call,
         **SceneStep.snapshot(scene),
     )
     return cut_and_send.planned_sending(step)
