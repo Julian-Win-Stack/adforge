@@ -699,7 +699,7 @@ def test_a_plan_naming_a_picture_or_a_moment_the_job_doesnt_have_is_refused(
     say(f"Make an ad for {product_page_url}")
 
     first, second = results_of("plan_ad")
-    assert "Scene 2 names picture 13: the library holds pictures 1 to 12." in first
+    assert "Scene 2 names picture 13: the library has no such picture." in first
     assert "Scene 2 names moment 3 of video 1: that video has moments 1 to 2." in second
     assert not Job.objects.get().scenes.exists()
 

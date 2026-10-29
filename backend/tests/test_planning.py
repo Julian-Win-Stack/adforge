@@ -5,6 +5,7 @@ chat's own tests in test_producer_plan.py prove the instructions and a refused p
 and leave it the same way."""
 
 import json
+import re
 from typing import Any
 
 import pytest
@@ -62,6 +63,13 @@ def a_plan_with_ways(*kinds: str) -> dict[str, Any]:
 
 
 # --- What the planner is told ----------------------------------------------------------------
+
+
+def test_each_scene_pictures_purpose_is_described_with_exactly_the_values_it_may_take() -> None:
+    # The `for` values are not approved yet (audit item 11): when they change, what the
+    # planner reads of the field changes with them.
+    purpose = SCHEMA["ScenePicture"]["properties"]["for"]
+    assert re.findall(r'"([^"]+)"', purpose["description"]) == purpose["enum"]
 
 
 def test_the_planner_is_told_what_each_broll_scene_is_sent_and_how_the_product_behaves() -> None:
@@ -664,7 +672,7 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
             broll_scene(
                 scene_pictures=[{"number": 4, "for": "in-use"}, {"number": 13, "for": "result"}]
             ),
-            "Scene 2 names picture 13: the library holds pictures 1 to 12.",
+            "Scene 2 names picture 13: the library has no such picture.",
             id="a scene picture after the library's last",
         ),
         pytest.param(
