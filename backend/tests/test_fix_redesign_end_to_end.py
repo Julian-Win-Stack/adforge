@@ -247,9 +247,7 @@ def test_the_fixing_agents_question_is_asked_in_the_chat_and_a_photo_answer_resu
         turn(calls=[("ask_owner", {"question": PHOTO_QUESTION, "wants": "photo"})]),
     )
     # Asking ends the producer's turn, so it says nothing after it.
-    fake_model.respond("produce", turn(calls=[("ask_owner", {"question": PHOTO_QUESTION})]))
-    producer.steps.run_next()
-    assert fake_model.left("produce") == 0
+    producer.woken(turn(calls=[("ask_owner", {"question": PHOTO_QUESTION})]))
 
     fixing = AgentFix.objects.get(step=step)
     assert work.is_parked(fixing)
