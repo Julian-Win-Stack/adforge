@@ -23,6 +23,7 @@ from jobs.work import keep_photo
 
 from .conftest import (
     COPIED,
+    LABELLED,
     MUG_FRONT,
     MUG_SIDE,
     NO_FACE,
@@ -66,6 +67,9 @@ def planning_through_openai(
         openai_answer(COPIED),
         openai_answer(NO_FACE),
         openai_answer(NO_FACE),
+        # Each declared photo is labelled for the library.
+        openai_answer(LABELLED),
+        openai_answer(LABELLED),
         openai_turn("", ("call_2", "plan_ad", {})),
         openai_answer(reply),
         openai_turn("Here's the plan."),
@@ -295,8 +299,8 @@ def test_each_broll_scenes_kind_person_usage_result_and_needs_are_stored(
 
 def the_plan_request(httpserver: HTTPServer) -> dict[str, Any]:
     """The plan's request to the model: after the producer's first turn, the page check, the
-    page's copy, the Face notes of its 2 photos and the producer's second turn."""
-    _, _, _, _, _, _, plan, _ = [
+    page's copy, the Face notes and labels of its 2 photos and the producer's second turn."""
+    _, _, _, _, _, _, _, _, plan, _ = [
         request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
     ]
     return plan  # type: ignore[no-any-return]
@@ -527,7 +531,15 @@ def test_a_plan_that_breaks_the_rules_is_handed_back_keeps_nothing_and_is_still_
     plan_call = ModelCall.objects.get(purpose="plan_ad")
     assert (plan_call.outcome, plan_call.cost_usd) == ("failed", Decimal("0.0108"))
     # Nothing is made from a plan that broke the rules.
-    assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face", "plan_ad"]
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "label_photo",
+        "label_photo",
+        "plan_ad",
+    ]
 
 
 def test_a_photo_models_cant_read_is_handed_back_saying_why_and_the_planner_isnt_paid(
@@ -546,7 +558,14 @@ def test_a_photo_models_cant_read_is_handed_back_saying_why_and_the_planner_isnt
         f"Failed: Photo 3 (jobs/{job.pk}/photos/3.bmp) is image/bmp, which models can't read. "
         "Only PNG, JPEG, WebP or GIF pictures can be shown to a model."
     )
-    assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face"]
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "label_photo",
+        "label_photo",
+    ]
     assert not job.scenes.exists()
 
 
@@ -585,9 +604,10 @@ BEHAVES = (
 
 
 def the_library_and_its_video_are_ready() -> None:
-    """The job's library and its watched page video, made while the producer works."""
+    """The job's library, filled up to LIBRARY_SIZE after the page's photos, and its watched
+    page video, made while the producer works."""
     job = Job.objects.get()
-    for number in range(1, LIBRARY_SIZE + 1):
+    for number in range(job.library.count() + 1, LIBRARY_SIZE + 1):
         add_to_library(
             job,
             f"jobs/{job.pk}/library/{number}.png",

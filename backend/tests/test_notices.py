@@ -13,7 +13,7 @@ from jobs.models import Job
 from jobs.notices import post_notice
 from jobs.work import NO_FIRECRAWL
 
-from .conftest import PLAN, chat, given_to_the_producer, handoffs
+from .conftest import PLAN, chat, given_to_the_producer, handoffs, labelled_by_the_call
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -36,6 +36,8 @@ def test_a_notice_is_shown_in_the_chat_with_its_level_in_order_and_kept_with_the
         ("user", f"Make an ad for {page_read}"),
         # Tests read pages with the plain download, which says so.
         ("notice", NO_FIRECRAWL),
+        # Its two declared photos are labelled for the library by a call of their own.
+        ("notice", labelled_by_the_call(2)),
         ("agent", "I read your mug's page."),
         ("notice", FELL_BACK),
         ("notice", NORMAL),
@@ -44,13 +46,15 @@ def test_a_notice_is_shown_in_the_chat_with_its_level_in_order_and_kept_with_the
     assert [(message["seq"], message["role"], message["level"]) for message in shown] == [
         (1, "user", ""),
         (2, "notice", "problem"),
-        (3, "agent", ""),
-        (4, "notice", "problem"),
-        (5, "notice", "info"),
+        (3, "notice", "info"),
+        (4, "agent", ""),
+        (5, "notice", "problem"),
+        (6, "notice", "info"),
     ]
     job.refresh_from_db()
     assert [(warning["level"], warning["text"]) for warning in job.warnings] == [
         ("problem", NO_FIRECRAWL),
+        ("info", labelled_by_the_call(2)),
         ("problem", FELL_BACK),
         ("info", NORMAL),
     ]

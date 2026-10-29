@@ -12,17 +12,35 @@ import io
 import re
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, Self
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from PIL import Image, ImageStat
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from gateway.types import Handoff
 
 from .library import Alone, Kind, PictureLabel, Side
 
-PICK_INSTRUCTIONS = """\
+# The picker's label rules for one picture's fixed fields (jobs.library.PictureLabel): the
+# picker's own, and the labelling call's for a photo the picker never saw.
+LABEL_FIELDS = """\
+- kind: side (how the product looks from one side), state (the product in another state of \
+its own, such as open, unfolded or another pack size), content (what the product holds, out of \
+it), in-use (the product being used or worn), result (what using it leaves, the end state, a \
+before/after), line-up (this product among other products), chart (a chart, table or diagram).
+- side: the side of the product facing the camera: front, back, side or top; none when no one \
+side of it shows.
+- alone: yes when the product is alone on a plain background, no when anything else is in the \
+picture.
+- colour: the product's colour in the picture, one word; join two with a hyphen.
+- target: for a line-up, where this product stands among the others, so it can be told apart \
+from them; empty for every other kind.
+- label: one sentence saying what the picture shows, as you would tell someone who can't see \
+it: the product, its state, what else is in it. For a before/after, say which part is before \
+and which is after."""
+
+PICK_INSTRUCTIONS = f"""\
 You look at one shop's product page the way a shopper would, to pick out the product's own \
 photos and the text about it for an advert. Nothing about other products may get through.
 
@@ -84,20 +102,7 @@ record_images, each with these fields:
 - copy_group: a number shared by every copy of one photo: the same shot at another size, crop \
 or file, on the page or among the official photos. Every other photo gets a number of its own. \
 Pick every copy as usual; the group says they are one photo, and one copy is kept.
-- kind: side (how the product looks from one side), state (the product in another state of \
-its own, such as open, unfolded or another pack size), content (what the product holds, out of \
-it), in-use (the product being used or worn), result (what using it leaves, the end state, a \
-before/after), line-up (this product among other products), chart (a chart, table or diagram).
-- side: the side of the product facing the camera: front, back, side or top; none when no one \
-side of it shows.
-- alone: yes when the product is alone on a plain background, no when anything else is in the \
-picture.
-- colour: the product's colour in the picture, one word; join two with a hyphen.
-- target: for a line-up, where this product stands among the others, so it can be told apart \
-from them; empty for every other kind.
-- label: one sentence saying what the picture shows, as you would tell someone who can't see \
-it: the product, its state, what else is in it. For a before/after, say which part is before \
-and which is after.
+{LABEL_FIELDS}
 
 Three more kinds of picture come with the screenshots:
 
@@ -130,6 +135,15 @@ NOTE_FACE_INSTRUCTIONS = """\
 You look at one product photo from a shop's page, for an advert. Say whether it shows a \
 person's face you could recognise: has_face. A body, a hand, an arm, lips or a face turned \
 away, cut off or too small to recognise doesn't count."""
+
+# A photo the picker never saw (one the shop owner sent, or one the page declares) is given
+# the picker's fixed fields by a call of its own, worded by the picker's label rules.
+LABEL_INSTRUCTIONS = f"""\
+You look at one photo for an advert of a shop's product, to say what it shows, as the photos \
+picked off the product's page are labelled. You get the photo, what it was sent or kept to \
+show (shows), and the product's own text off its page. "The product" below is what the photo \
+shows. Answer these fields:
+{LABEL_FIELDS}"""
 
 NO_RECORD = "Official record of the product: none was found for this page."
 
@@ -244,6 +258,62 @@ class FaceNoteHandoff(Handoff):
 
 class FaceNote(BaseModel):
     has_face: bool
+
+
+class LabelPhotoHandoff(Handoff):
+    # Where the photo came from: its link on the page, or its key in the file store when the
+    # shop owner sent it. Not a page photo's key, which changes when the page is read again.
+    photo: str
+    # What the photo was sent or kept to show, such as the product the ad sells.
+    shows: str
+    # The product's own text off its page, so the product in the photo can be told apart.
+    product_text: str
+
+
+class PhotoLabel(BaseModel):
+    """The labelling call's answer: a photo's fixed fields, as the picker gives them, held to
+    the library's label rules by the call itself, as one photo's answer is all there is."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Kind
+    side: Side
+    alone: Alone
+    colour: str = Field(
+        description="The product's colour in the picture, one word; two joined by a hyphen."
+    )
+    target: str = Field(
+        description='For a line-up, where this product stands among the others; "" for any '
+        "other kind."
+    )
+    label: str = Field(description="One sentence saying what the picture shows.")
+
+    # The label's rules (jobs.library.PictureLabel) as validators, which OpenAI's strict
+    # schema leaves out: an answer that breaks one is a failed call, asked again, never kept.
+    @field_validator("colour", "label")
+    @classmethod
+    def _said(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("it is empty")
+        return value
+
+    @model_validator(mode="after")
+    def _a_target_for_a_line_up_only(self) -> Self:
+        if (self.kind == "line-up") != bool(self.target.strip()):
+            raise ValueError("a line-up names its target, and nothing else has one")
+        return self
+
+    def label_of(self) -> PictureLabel:
+        """The photo's label as the library keeps it, a colour of several words joined by
+        hyphens."""
+        return PictureLabel(
+            kind=self.kind,
+            side=self.side,
+            alone=self.alone,
+            colour="-".join(self.colour.split()),
+            target=self.target,
+            label=self.label,
+        )
 
 
 def handoff(

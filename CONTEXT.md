@@ -156,11 +156,15 @@ _Avoid_: Override, manual input
 
 ### The library (spec #210)
 
-Shapes only so far (`jobs/library.py`, #211): nothing builds or reads them yet.
+Shapes in `jobs/library.py` (#211). Built by `jobs/library_items.py` (#220): every kept product photo after the page read (and each one added later), and each owner photo once cleaned; nothing reads it yet but the round export (`library.txt`).
 
 **Library**:
 Everything the app knows about one product's pictures and videos, built once per ad: every kept page photo, every owner photo cleaned, every page video watched (its moments, look frames and colour), the product-only version of each look photo that needs one, and recoloured versions of pictures. Each picture carries the picker's fixed fields (kind, side, alone, colour, target for a line-up) and one free label sentence code never parses.
 _Avoid_: Asset pool, gallery, media
+
+**Labelling call**:
+The call that gives a photo the picker never saw (one the shop owner sent, or one the page only declares) the picker's fixed fields and label, by the picker's own label rules (`label_photo`).
+_Avoid_: Tagger, classifier
 
 **Library number**:
 An item's number in the library, which never changes for the ad. Numbers run from 1 in the order items enter the library.

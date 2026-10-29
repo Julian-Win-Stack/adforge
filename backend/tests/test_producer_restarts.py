@@ -33,6 +33,7 @@ from .conftest import (
     facts_ok,
     given_to_the_producer,
     handoffs,
+    labelled_by_the_call,
     lines,
     plan_with,
     producer_turns,
@@ -183,6 +184,7 @@ def test_a_turn_paid_for_when_the_worker_stopped_is_taken_again_without_paying(
         ("user", f"Make an ad for {product_page_url}"),
         ("agent", "I'll read your mug's page."),
         ("notice", NO_FIRECRAWL),
+        ("notice", labelled_by_the_call(2)),
         ("agent", "I read your mug's page."),
     ]
 

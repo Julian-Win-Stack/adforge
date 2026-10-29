@@ -23,7 +23,7 @@ from gateway.fake import FakeModel
 from gateway.models import ModelCall
 from gateway.types import VideoRequest
 from jobs import product_videos
-from jobs.library import LookFrame, library_of, watch_of
+from jobs.library import LookFrame, PagePhoto, library_of, watch_of
 from jobs.models import Job
 from jobs.work import plan_handoff
 
@@ -164,6 +164,10 @@ def test_two_videos_in_different_players_are_watched_at_once_into_moments_and_th
     # Each look frame is in the library with its video and second and the photo's fields,
     # pulled from the video file at its full size.
     frames = [item for item in library_of(job) if isinstance(item.source, LookFrame)]
+    # The page's photos are numbered first, so a page photo is Image 1, then the look frames.
+    library = library_of(job)
+    assert isinstance(library[0].source, PagePhoto)
+    assert [item.number for item in frames] == [len(library) - 1, len(library)]
     assert [
         (item.source.video, item.source.second, item.kind, item.side, item.alone, item.label)
         for item in frames
@@ -278,7 +282,8 @@ def test_a_video_the_watcher_cant_answer_for_twice_is_told_in_red_and_the_page_i
     (video,) = job.videos.all()
     assert video.watched is None
     assert video.transcript == ""
-    assert job.library.count() == 0
+    # No look frame entered the library.
+    assert not [item for item in library_of(job) if isinstance(item.source, LookFrame)]
     (result,) = results_of("read_page")
     assert "Kept 1 product photo." in result
     assert "The product's video 1 couldn't be watched (" in result
@@ -320,7 +325,8 @@ def test_a_video_that_doesnt_show_this_product_is_thrown_out_with_a_grey_notice(
     (video,) = job.videos.all()
     assert watch_of(video) is None
     assert video.thrown_out
-    assert job.library.count() == 0
+    # No look frame entered the library.
+    assert not [item for item in library_of(job) if isinstance(item.source, LookFrame)]
     assert not job.photos.exclude(from_video=None).exists()
     assert plan_handoff(job, "", 1).video_transcripts == []
     assert [notice for notice in notices(api, session_id) if "video" in notice[1]] == [
@@ -436,7 +442,7 @@ def test_a_look_frame_and_a_moment_at_the_videos_last_second_are_kept_at_its_end
     assert watch is not None
     duration = video.duration or 0
     assert [(m.start, m.end) for m in watch.moments] == [(1.0, duration)]
-    (item,) = library_of(job)
+    (item,) = [item for item in library_of(job) if isinstance(item.source, LookFrame)]
     assert isinstance(item.source, LookFrame)
     # Pulled half a second before the end, where the last frames are.
     assert item.source.second == pytest.approx(duration - 0.5)
@@ -467,7 +473,8 @@ def test_a_watched_video_whose_keeping_fails_keeps_nothing_and_is_told_in_red(
     (video,) = job.videos.all()
     # Nothing kept, so the next read of the page watches it again.
     assert video.watched is None and video.transcript == ""
-    assert job.library.count() == 0
+    # No look frame entered the library.
+    assert not [item for item in library_of(job) if isinstance(item.source, LookFrame)]
     assert not job.photos.exclude(from_video=None).exists()
     assert (
         "problem",

@@ -50,6 +50,7 @@ from .conftest import (
     CLIP_MOTION_OK,
     FACTS_OK,
     FIX_MADE,
+    LABELLED,
     NO_CHOICES,
     OWNER_PHOTO_SHOWS,
     PICTURE_OK,
@@ -1220,3 +1221,43 @@ def test_a_clean_picture_drawn_before_a_restart_is_used_not_drawn_again(mug_fixe
     assert clean_picture(row.scene, row) == drawn
     assert clean_pictures() == [drawn]
     assert ReferencePhoto.objects.get().drawn == drawn
+
+
+# --- The job's library (spec #210 point 1) ----------------------------------------------------
+
+
+def test_the_shop_owners_photo_cleaned_after_the_plan_joins_the_library_at_the_next_number(
+    mug_fixed: Fix,
+) -> None:
+    from jobs.library import OwnerPhoto, PagePhoto, library_of
+
+    (clean,) = clean_pictures()
+    job = Job.objects.get()
+    page_photos = list(job.photos.order_by("position"))
+    assert [(item.number, item.source, item.file) for item in library_of(job)] == [
+        (1, PagePhoto(photo=1), page_photos[0].file),
+        (2, PagePhoto(photo=2), page_photos[1].file),
+        (3, OwnerPhoto(original=owner_file(1)), clean),
+    ]
+    # Labelled by the labelling call, shown the clean picture and told what it is of.
+    labelling = ModelCall.objects.filter(purpose="label_photo").order_by("id").last()
+    assert labelling is not None
+    assert labelling.handoff["shows"] == "the shop owner's black mug"
+    # Named by the photo it was drawn from and the picture drawn, so it pays once.
+    assert labelling.handoff["photo"] == f"{owner_file(1)} as {clean}"
+    assert [image["key"] for image in labelling.images] == [clean]
+    assert library_of(job)[2].label == LABELLED["label"]
+
+
+def test_a_clean_picture_drawn_again_after_a_restart_enters_the_library_once(
+    mug_fixed: Fix,
+) -> None:
+    from jobs.library import library_of
+    from jobs.work import clean_picture
+
+    ReferencePhoto.objects.update(drawn="")
+    row = ReferencePhoto.objects.get()
+
+    clean_picture(row.scene, row)
+
+    assert [item.number for item in library_of(Job.objects.get())] == [1, 2, 3]

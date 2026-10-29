@@ -14,7 +14,14 @@ import pytest
 
 from evals import grading_page, results, round_export
 from gateway.models import ModelCall
-from jobs.library import SentList, keep_sent_list
+from jobs.library import (
+    OwnerPhoto,
+    PagePhoto,
+    PictureLabel,
+    SentList,
+    add_to_library,
+    keep_sent_list,
+)
 from jobs.models import AgentFix, Job, ProducedItem, SceneStep
 
 from .test_library_contracts import SENT_LIST_FIXTURE
@@ -355,3 +362,59 @@ TAPS = {
     "8-cleaner__scene-3": {"fixed_1": "yes", "fix_check_agree": "no"},
     "8-cleaner__scene-4": {"fixed_1": "no", "fixed_2": "partly", "fix_check_agree": "yes"},
 }
+
+
+def test_each_ads_library_is_exported_as_a_text_list_to_read_without_the_chat(
+    remade_once: SceneStep,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    job = Job.objects.get()
+    front = job.photos.get(position=1)
+    add_to_library(
+        job,
+        front.file,
+        PictureLabel(
+            kind="side",
+            side="front",
+            alone="yes",
+            colour="sage",
+            label="The mug from the front, handle on the right.",
+        ),
+        PagePhoto(photo=1),
+    )
+    add_to_library(
+        job,
+        "owner/clean-mug.png",
+        PictureLabel(
+            kind="line-up",
+            side="front",
+            alone="no",
+            colour="black",
+            target="the tallest mug",
+            label="Three mugs on a shelf.",
+        ),
+        OwnerPhoto(original="owner/mug.png"),
+    )
+
+    run = exported(tmp_path)
+
+    # The page's two photos, labelled as the page declares them, then the two added here.
+    assert (run / AD / "library.txt").read_text() == (
+        "1. The product from the front, alone on a plain background. Kind side, side front, "
+        "alone yes. Colour green. From the page, product photo 1.\n"
+        "2. The product from the front, alone on a plain background. Kind side, side front, "
+        "alone yes. Colour green. From the page, product photo 2.\n"
+        "3. The mug from the front, handle on the right. Kind side, side front, alone yes. "
+        "Colour sage. From the page, product photo 1.\n"
+        "4. Three mugs on a shelf. Kind line-up (the tallest mug), side front, alone no. "
+        "Colour black. From the shop owner's photo owner/mug.png.\n"
+    )
+
+
+def test_an_ad_with_an_empty_library_exports_an_empty_list(
+    remade_once: SceneStep,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    Job.objects.get().library.all().delete()
+
+    assert (exported(tmp_path) / AD / "library.txt").read_text() == ""

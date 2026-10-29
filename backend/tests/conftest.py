@@ -145,6 +145,34 @@ SHAMPOO_PICKED = shampoo_picked()
 # What the Face-note call answers for a photo with no stranger's face in it.
 NO_FACE: dict[str, Any] = {"has_face": False}
 
+
+def labelled_by_the_call(count: int) -> str:
+    """The notice saying the labelling call labelled `count` of the page's photos, which the
+    photo picker didn't, as the mug page's two declared photos are."""
+    if count == 1:
+        return (
+            "The photo picker didn't say what 1 of the page's photo shows, so a call of its "
+            "own looked at it and labelled it for the ad's picture library, as the picker "
+            "labels the photos it picks."
+        )
+    return (
+        f"The photo picker didn't say what {count} of the page's photos show, so a call of its "
+        "own looked at each and labelled them for the ad's picture library, as the picker "
+        "labels the photos it picks."
+    )
+
+
+# What the labelling call answers for a photo the picker never saw, when a test doesn't say:
+# the product from the front, alone.
+LABELLED: dict[str, Any] = {
+    "kind": "side",
+    "side": "front",
+    "alone": "yes",
+    "colour": "green",
+    "target": "",
+    "label": "The product from the front, alone on a plain background.",
+}
+
 # What the producer plans for the mug's page: three scenes.
 PLAN: dict[str, Any] = {
     "decision": "plan",
@@ -421,6 +449,7 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("copy_page_text", copy_every_line)
     fake.answer_unscripted("pick_photos", lambda _: SHAMPOO_PICKED)
     fake.answer_unscripted("note_face", lambda _: NO_FACE)
+    fake.answer_unscripted("label_photo", lambda _: LABELLED)
     fake.answer_unscripted("check_starting_picture", lambda _: PICTURE_OK)
     fake.answer_unscripted("check_fix", lambda request: with_owner_photo(FIX_MADE, request.output))
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)

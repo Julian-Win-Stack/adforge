@@ -26,6 +26,7 @@ from jobs import (
     reference_photos,
 )
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
+from jobs.library_items import add_kept_photos
 from jobs.models import (
     BROLL_FIELDS,
     PLANNED_FOR_THE_ACTION,
@@ -199,6 +200,9 @@ class ReadPage(Tool):
                     f"read, and {self.link} is a different link. Ads for other products come "
                     "later: tell the shop owner to start a new chat for this one for now."
                 )
+            # A read that stopped once the page was kept may have left photos out of the
+            # job's library: they join it now.
+            add_kept_photos(job)
             return (
                 f"{self.link} was already read for this ad, so nothing was read or paid for "
                 f"again. Reading it cost {dollars(_spent(job, self.name))}. The ad has "
@@ -276,6 +280,9 @@ class ReadPage(Tool):
                 declared = True
             elif skipped:
                 post_notice(job, _not_downloaded(skipped), Message.Level.PROBLEM)
+        # The job's library starts from the page's photos, labelled, before the videos' look
+        # frames join it.
+        add_kept_photos(job, product_text=text)
         # The gallery videos the picker picked, each watched for its moments, look frames,
         # colour and words (jobs.watcher). One that can't be watched is told in red.
         save_videos(job, list(picked.videos))
@@ -381,6 +388,8 @@ class UsePhotos(Tool):
                 file=attached.file,
                 has_face=note_face(job, attached.file, attached.file),
             )
+        # Each joins the job's library at the next number, after the page's photos.
+        add_kept_photos(job)
         count = job.photos.filter(from_video=None).count()
         told = f"Added {added} of the shop owner's photos. The job now has {_photos(count)}."
         kept_before = [number for number in others if attached_photos[number - 1].file in kept]

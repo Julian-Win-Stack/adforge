@@ -16,6 +16,8 @@ What it writes:
 - <ad folder>/ad.json: product link, app commit, when it started and was first finished
   (wall time), abandoned (no finished ad), model calls that failed (refusals, filters).
 - <ad folder>/notes.json: each owner note, its restatement, estimate, yes, and fix check.
+- <ad folder>/library.txt: the job's library as a text list, one line per item (its number,
+  what it shows, its colour and where it came from), so a round can be read without the chat.
 - each clip's record in results.json carries "sent", what cut-and-send sent the video model
   (the shape of jobs.library.SentList: the pictures with labels and library numbers, the
   pictures left out with their tier as the reason, the pieces with their video, moment,
@@ -186,6 +188,9 @@ def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, d
         )
     )
     (base / "notes.json").write_text(json.dumps(_notes(job), indent=1))
+    from jobs.library_items import library_text
+
+    (base / "library.txt").write_text(library_text(job) + "\n" if job.library.exists() else "")
 
     from jobs.models import AgentFix
 
