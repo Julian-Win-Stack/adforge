@@ -134,6 +134,36 @@ def keep_video(job: Job, position: int, player: dict[str, Any]) -> ProductVideo:
     return video
 
 
+def keep_owner_video(job: Job, file: str) -> ProductVideo | None:
+    """Keep a video the shop owner sent, already in the file store at `file`, with the job's
+    videos at the next position, its length, first frame and frames read from it, so the
+    watcher watches it as it watches the page's. The one kept already for the same file, if
+    any. None when ffmpeg can't read it as a video."""
+    kept = job.videos.filter(file=file).first()
+    if kept is not None:
+        return kept
+    with tempfile.TemporaryDirectory() as folder:
+        copy = Path(folder) / f"video{Path(file).suffix}"
+        copy.write_bytes(file_store.read(file))
+        looked = _look_at(copy)
+    if looked is None:
+        return None
+    position = max(job.videos.values_list("position", flat=True), default=0) + 1
+    named = f"jobs/{job.pk}/videos/{position}"
+    return ProductVideo.objects.create(
+        job=job,
+        position=position,
+        kind=ProductVideo.Kind.VIDEO,
+        file=file,
+        duration=looked.duration,
+        first_frame=file_store.save(f"{named}-first.jpg", looked.first),
+        frames=[
+            file_store.save(f"{named}-frame-{number}.jpg", frame)
+            for number, frame in enumerate(looked.frames, 1)
+        ],
+    )
+
+
 def _video_file(job: Job, position: int, src: str, file: Path) -> str | None:
     """Fetch the video file at `src` into `file` and give back its type, or None when there
     is none to keep: a link that isn't a web link (blob:), won't download, or isn't a video
