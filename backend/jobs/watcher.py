@@ -232,7 +232,7 @@ def watch_videos(job: Job, page_text: str) -> list[str]:
                 if watched.refused is not None:
                     told.append(_refused(job, video, watched.refused))
                 if watched.seen is None:
-                    video.thrown_out = "The AI model's safety filter refused all of it."
+                    video.thrown_out = _refused_all(watched.refused)
                     video.save(update_fields=["thrown_out"])
                 else:
                     told += _keep(job, video, watched.seen, watched.refused)
@@ -305,7 +305,7 @@ def _watch(job: Job, video: ProductVideo, page_text: str) -> _Watched:
             dropped.append(part)
     reason = "pictures" if parts else "all"
     refused = FilterRefusal(reason=reason, dropped=_joined(dropped), probes=probes)
-    return _Watched(_merged(parts) if parts else None, refused)
+    return _Watched(_merged(parts, seconds) if parts else None, refused)
 
 
 def _asked(job: Job, key: str, handoff: WatcherHandoff) -> WatcherAnswer:
@@ -365,17 +365,19 @@ def _past_the_filter(
 
 def _halves(part: Span) -> tuple[Span, Span] | None:
     """`part` cut in two at the whole multiple of LEAST_PART_SECONDS nearest its middle (the
-    later one when two are as near), each half at least half that long; None when it can't
-    be."""
+    later one when two are as near), each half at least half that long, or else at its
+    middle; None for a part no longer than LEAST_PART_SECONDS, which isn't halved again."""
     least = LEAST_PART_SECONDS
     cuts = [
         least * step
         for step in range(int(part.start // least) + 1, int(part.end // least) + 1)
         if least * step - part.start >= least / 2 and part.end - least * step >= least / 2
     ]
-    if not cuts:
-        return None
     middle = (part.start + part.end) / 2
+    if not cuts:
+        if part.end - part.start <= least:
+            return None
+        cuts = [middle]
     cut = min(cuts, key=lambda at: (abs(at - middle), -at))
     return Span(start=part.start, end=cut), Span(start=cut, end=part.end)
 
@@ -411,14 +413,16 @@ def _joined(spans: Sequence[Span]) -> list[Span]:
     return joined
 
 
-def _merged(parts: Sequence[tuple[Span, WatcherAnswer]]) -> WatcherAnswer:
-    """What the watcher saw in the parts of a video, in time order, as one answer in the
-    video's own seconds: its moments and look frames, the colour seen for the most seconds
-    and what is said, joined. Only the parts that show this product count, when one does."""
+def _merged(parts: Sequence[tuple[Span, WatcherAnswer]], seconds: float) -> WatcherAnswer:
+    """What the watcher saw in the parts of a video `seconds` long, in time order, as one
+    answer in the video's own seconds: its moments and look frames, the colour seen for the
+    most seconds and what is said, joined. Only the parts that show this product count, when
+    one does. A look frame at or past its part's end is dropped, unless the part ends the
+    video: the seconds after it are another part's, or were refused, and weren't seen in it."""
     showing = [(part, seen) for part, seen in parts if seen.shows_this_product] or list(parts)
-    seconds: dict[str, float] = {}
+    colours: dict[str, float] = {}
     for part, seen in showing:
-        seconds[seen.colour] = seconds.get(seen.colour, 0.0) + part.end - part.start
+        colours[seen.colour] = colours.get(seen.colour, 0.0) + part.end - part.start
     return WatcherAnswer(
         shows_this_product=showing[0][1].shows_this_product,
         moments=[
@@ -443,11 +447,23 @@ def _merged(parts: Sequence[tuple[Span, WatcherAnswer]]) -> WatcherAnswer:
             )
             for part, seen in showing
             for frame in seen.look_frames
+            if frame.second < part.end - part.start or part.end >= seconds
         ],
-        colour=max(seconds, key=lambda colour: seconds[colour]),
+        colour=max(colours, key=lambda colour: colours[colour]),
         transcript=" ".join(
             seen.transcript.strip() for _, seen in showing if seen.transcript.strip()
         ),
+    )
+
+
+def _refused_all(refused: FilterRefusal | None) -> str:
+    """Why a video the safety filter refused all of is thrown out: its record, as the watch it
+    has none of would have kept it."""
+    assert refused is not None, "a video is refused all over only by the safety filter"
+    dropped = " and ".join(f"{span.start:g}-{span.end:g}" for span in refused.dropped)
+    return (
+        f"The AI model's safety filter refused all of it: seconds {dropped} dropped, after "
+        f"{refused.probes} probes."
     )
 
 
@@ -469,16 +485,15 @@ def _refused(job: Job, video: ProductVideo, refused: FilterRefusal) -> str:
                 f"so it was watched without it: its sound, seconds 0-{seconds:g}, is dropped "
                 "and nothing said in it is kept."
             )
+        case "pictures" if not dropped:
+            text = (
+                f"{head} your page's video {video.position} whole (reason: pictures), then let "
+                "each part of it through, so nothing of it is dropped."
+            )
         case "pictures":
             text = (
                 f"{head} some of your page's video {video.position}'s pictures (reason: "
-                f"pictures), so "
-                + (
-                    f"seconds {dropped} of it are dropped"
-                    if dropped
-                    else "nothing of it is dropped"
-                )
-                + " and the rest was watched."
+                f"pictures), so seconds {dropped} of it are dropped and the rest was watched."
             )
         case "all":
             text = (

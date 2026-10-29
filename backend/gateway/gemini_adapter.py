@@ -184,7 +184,11 @@ def _body(request: VideoRequest[Any], video: dict[str, Any]) -> dict[str, Any]:
             "responseMimeType": "application/json",
             "responseJsonSchema": request.output.model_json_schema(),
             "mediaResolution": settings.GEMINI_MEDIA_RESOLUTION,
-            "thinkingConfig": {"thinkingLevel": settings.GEMINI_THINKING_LEVEL},
+            "thinkingConfig": {
+                "thinkingLevel": catalog.THINKING_LEVEL_FOR_PURPOSE.get(
+                    request.purpose, settings.GEMINI_THINKING_LEVEL
+                )
+            },
         },
     }
 

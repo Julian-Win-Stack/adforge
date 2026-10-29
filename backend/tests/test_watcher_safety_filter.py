@@ -129,7 +129,9 @@ def test_seconds_the_filter_refuses_are_dropped_and_the_rest_is_watched_in_its_o
         (15.0, 30.0): watched(
             moments=[moment(6.0, 15.0, "It is rinsed off."), moment(0.0, 6.0, "It is rubbed in.")],
             look_frames=[
-                look_frame(3.0, "The lather in wet hair.", kind="in-use", side="none", alone="no")
+                look_frame(3.0, "The lather in wet hair.", kind="in-use", side="none", alone="no"),
+                # Past this part's end, which is the video's: its last frame.
+                look_frame(15.4, "The rinsed hair."),
             ],
             colour="green",
             transcript="Rinse well.",
@@ -168,13 +170,15 @@ def test_seconds_the_filter_refuses_are_dropped_and_the_rest_is_watched_in_its_o
         (3, 15.0, 21.0, "It is rubbed in."),
         (4, 21.0, 30.0, "It is rinsed off."),
     ]
-    assert seen.look_frames == [2.0, 10.0, 18.0]
+    # The look frame the watcher put at the first part's edge would be pulled from the refused
+    # seconds after it, which it never saw: it is dropped.
+    assert seen.look_frames == [2.0, 18.0, 29.5]
     # The colour of the most seconds; what is said, joined in time order.
     assert seen.colour == "green"
     assert seen.transcript == "Twist it open. Rinse well."
     assert video.transcript == "Twist it open. Rinse well."
     frames = [item.source for item in library_of(job) if isinstance(item.source, LookFrame)]
-    assert [(frame.video, frame.second) for frame in frames] == [(1, 2.0), (1, 10.0), (1, 18.0)]
+    assert [(frame.video, frame.second) for frame in frames] == [(1, 2.0), (1, 18.0), (1, 29.5)]
     # The refusal is kept with the watch: why, what was dropped and how many probes it took.
     assert seen.refused is not None
     assert (seen.refused.reason, seen.refused.probes) == ("pictures", 4)
@@ -283,7 +287,10 @@ def test_a_video_refused_everywhere_down_to_5_s_is_dropped_as_all_of_it(
     job = Job.objects.get()
     (video,) = job.videos.all()
     assert video.watched is None
-    assert video.thrown_out
+    # The record is kept with the video it threw out.
+    assert video.thrown_out == (
+        "The AI model's safety filter refused all of it: seconds 0-30 dropped, after 10 probes."
+    )
     assert video.transcript == ""
     assert job.library.count() == 0
     told = (
@@ -378,8 +385,8 @@ def test_both_halves_passing_are_both_watched_and_nothing_is_dropped(
     assert video_notices(api, session_id) == [
         (
             "problem",
-            "The AI model's safety filter refused some of your page's video 1's pictures "
-            "(reason: pictures), so nothing of it is dropped and the rest was watched.",
+            "The AI model's safety filter refused your page's video 1 whole (reason: pictures), "
+            "then let each part of it through, so nothing of it is dropped.",
         )
     ]
 
@@ -539,3 +546,37 @@ def test_a_part_that_doesnt_show_this_product_is_left_out_of_what_is_kept(
     assert [(m.start, m.end, m.happens) for m in seen.moments] == [(15.0, 30.0, "Step from 15 s.")]
     assert seen.look_frames == [16.0]
     assert (seen.colour, seen.transcript) == ("green", "Said from 15 s.")
+
+
+def test_a_refused_part_over_5_s_with_no_whole_5_s_cut_in_it_is_halved_at_its_middle(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+    picks_videos: list[dict[str, Any]],  # noqa: F811
+) -> None:
+    serve(httpserver, "/cdn/videos/short.mp4", a_video(32, 32, sound=True, seconds=12), "video/mp4")
+    picks_videos.append(player(1, f"{firecrawl.shop}/cdn/videos/short.mp4"))
+    # 0-12 s is cut at 5 s; 5-12 s has no cut at a whole 5 s leaving 2.5 s each side, so it
+    # is halved at 8.5 s, and 5-8.5 s, under 5 s, is dropped.
+    watch, probe = refusing(
+        overlapping((6.0, 7.0)),
+        lambda start, end: watched(moments=[moment(0.0, 3.0, f"Step from {start:g} s.")]),
+    )
+    fake_model.answer_unscripted("watch_video", watch)
+    fake_model.answer_unscripted("probe_video", probe)
+
+    read(fake_model, say, shampoo_page_url)
+
+    probed = [
+        seconds_of(request)
+        for request in fake_model.videos_watched
+        if request.purpose == "probe_video"
+    ]
+    assert probed == [(0.0, 5.0), (5.0, 12.0), (5.0, 8.5), (8.5, 12.0)]
+    seen = watch_of(Job.objects.get().videos.get())
+    assert seen is not None
+    assert [(m.start, m.end) for m in seen.moments] == [(0.0, 3.0), (8.5, 11.5)]
+    assert seen.refused is not None
+    assert [(span.start, span.end) for span in seen.refused.dropped] == [(5.0, 8.5)]

@@ -39,9 +39,10 @@ not watched (the owner is told which), and there is no byte cap: length is the o
   planned without it.
 - A safety-filter refusal (requirement 22, #222) is asked again as it is, then without the
   sound (kept with no transcript); then the video is halved in time at multiples of 5 s, each
-  half probed with a one-word call (`probe_video`, the watcher's model), refused halves halved
-  again, a refused 5 s part dropped, at most 16 probes a video (the parts not probed by then
-  are dropped). Each part kept is watched, told which seconds it is, and merged in the video's
+  half probed with a one-word call (`probe_video`, the watcher's model at its lowest thinking
+  level), refused halves over 5 s halved again (at their middle when no 5 s mark fits), a
+  refused part of 5 s or less dropped, at most 16 probes a video (the parts not probed by then
+  are dropped). A look frame past its part's end is dropped unless the part ends the video. Each part kept is watched, told which seconds it is, and merged in the video's
   own seconds. Every refusal, even one fully saved, is told in red (reason: sound, pictures or
   all) and kept on the watch (`VideoWatch.refused`). A video refused all over is thrown out, so
   a page read again doesn't search it again. Worst case: 3 watches, 16 probes and a watch per
