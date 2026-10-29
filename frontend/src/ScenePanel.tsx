@@ -10,6 +10,7 @@ import {
   nonBlankNotes,
   suggestedNotes,
   suggestionShown,
+  type ClipSent,
   type SceneCard,
   type TypedNote,
 } from "./scenes";
@@ -180,7 +181,7 @@ function SceneCardView({
           <video
             key={clip.file.url}
             src={clip.file.url}
-            poster={clip.picture?.url}
+            poster={clip.picture?.url ?? clip.sent?.pictures[0]?.url}
             controls
             playsInline
             preload="metadata"
@@ -225,6 +226,7 @@ function SceneCardView({
           </button>
         )}
       </div>
+      {clip?.sent && <SentView sent={clip.sent} />}
       {suggested && (
         <span
           className="scene-note-suggested"
@@ -235,6 +237,50 @@ function SceneCardView({
       )}
       <NoteBox name={name} note={note} onNote={onNote} />
     </article>
+  );
+}
+
+/** What the clip on show was made from: the pictures sent, small with their labels in the
+ * order they went, the video pieces, and in red what didn't go as planned. */
+function SentView({ sent }: { sent: ClipSent }) {
+  const problems = [
+    ...(sent.leftOut.length > 0 ? [`Left out: ${sent.leftOut.join(" ")}`] : []),
+    ...sent.notRecoloured.map(
+      ({ label, colour }) => `Not made ${colour}, sent as it was: ${label}`,
+    ),
+  ];
+  return (
+    <div className="scene-sent">
+      <ol className="scene-sent-pictures" aria-label="Pictures sent">
+        {sent.pictures.map(({ image, label, url }) => (
+          <li key={image} title={label}>
+            <img src={url} alt={`Image ${image}: ${label}`} loading="lazy" />
+            <span className="scene-sent-label">{label}</span>
+          </li>
+        ))}
+      </ol>
+      {sent.pieces.length > 0 && (
+        <ul className="scene-sent-pieces" aria-label="Video pieces sent">
+          {sent.pieces.map(({ number, url, start, end }) => (
+            <li key={number}>
+              <video
+                src={url}
+                controls
+                muted
+                playsInline
+                preload="metadata"
+                aria-label={`Video ${number}: ${start}–${end} s`}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+      {problems.length > 0 && (
+        <p className="scene-sent-problem" title={problems.join(" ")}>
+          {problems.join(" ")}
+        </p>
+      )}
+    </div>
   );
 }
 

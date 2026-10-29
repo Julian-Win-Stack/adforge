@@ -1778,6 +1778,82 @@ button:disabled {
 }
 
 /* The owner's note on a scene. Every note is sent together from the bar under the cards. */
+/* What the clip on show was sent: a small picture per image with its label, in the order
+   they went, the video pieces, and in red what didn't go as planned. */
+.scene-sent {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.scene-sent-pictures,
+.scene-sent-pieces {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.scene-sent-pictures {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.scene-sent-pictures li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.scene-sent-pictures img {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  object-fit: cover;
+  background: var(--surface);
+}
+
+.scene-sent-label {
+  min-width: 0;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--text-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.scene-sent-pieces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.scene-sent-pieces video {
+  display: block;
+  width: 56px;
+  aspect-ratio: 9 / 16;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  object-fit: cover;
+  background: var(--surface);
+}
+
+.scene-sent-problem {
+  margin: 0;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
 .scene-form {
   flex: 1;
   min-height: 0;
@@ -1980,6 +2056,41 @@ button:disabled {
      doesn't move away from the tap that leaves the box. */
   .scene-note:focus {
     min-height: 40px;
+  }
+
+  /* The strip's cards are narrow: the sent pictures wrap as small squares, their labels a
+     hover or long-press away, and the red line is cut to three lines, whole on hover. While
+     a card is being written on, they step aside so the strip keeps its height. */
+  .scene-sent-pictures {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 3px;
+  }
+
+  .scene-sent-pictures img {
+    width: 22px;
+    height: 22px;
+  }
+
+  .scene-sent-label {
+    display: none;
+  }
+
+  .scene-sent-pieces video {
+    width: 32px;
+  }
+
+  .scene-sent-problem {
+    font-size: 10px;
+    line-height: 13px;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .scene-cards > li:focus-within .scene-sent {
+    display: none;
   }
 
   .scene-send {

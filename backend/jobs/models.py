@@ -289,6 +289,14 @@ class ProductVideo(models.Model):
             "wouldn't; {\"error\": ...} when reading it failed; none when it wasn't read."
         ),
     )
+    watched = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "What the watcher saw in the file, as jobs.library.VideoWatch: its numbered "
+            "moments, look frames, colour and transcript. None when it wasn't watched."
+        ),
+    )
 
     class Meta:
         ordering = ["job", "position"]
@@ -298,6 +306,44 @@ class ProductVideo(models.Model):
 
     def __str__(self) -> str:
         return self.source_url
+
+
+class LibraryItem(models.Model):
+    """One picture or look frame the app knows about for a job (jobs.library.LibraryEntry),
+    with its library number, which never changes for the job. Its fixed fields are plain
+    text here: jobs.library's schema checks them on the way in and out, so a value set can
+    change there without a migration."""
+
+    job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="library")
+    number = models.PositiveIntegerField(
+        help_text="1, 2, 3... in the order items entered the job's library. Never changes."
+    )
+    file = models.CharField(max_length=500, help_text="Key of the picture in the file store.")
+    kind = models.CharField(max_length=20, help_text="jobs.library.Kind.")
+    side = models.CharField(max_length=20, help_text="jobs.library.Side.")
+    alone = models.CharField(
+        max_length=3, help_text="yes: the product alone on a plain background; else no."
+    )
+    colour = models.CharField(max_length=40, help_text="The product's colour, one word.")
+    target = models.CharField(
+        max_length=200, blank=True, help_text="For a line-up, the product's position in it."
+    )
+    label = models.TextField(
+        help_text="One free sentence for prompts and the planner. Code never parses it."
+    )
+    source = models.JSONField(
+        help_text='Where it came from, as jobs.library.Source: {"came_from": ..., ...}.'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["job", "number"]
+        constraints = [
+            models.UniqueConstraint(fields=["job", "number"], name="one_library_item_per_number")
+        ]
+
+    def __str__(self) -> str:
+        return f"Library item {self.number}: {self.label}"
 
 
 # What the plan says about a B-roll scene: its kind, who is in it, how the product is
@@ -1236,6 +1282,13 @@ class ProducedItem(models.Model):
         "verdict, each check's, how many answers failed, each failed answer's problems and "
         "whole answer, the problems let go, every answer, and the pictures it was shown. "
         "Blank for a clip not judged.",
+    )
+    sent = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="For a B-roll clip, what the video API was sent for it (jobs.library."
+        "SentList): the pictures in order, the pieces, what was left out, the recolours and "
+        "the prompt. Blank for a clip made before cut-and-send, and for anything else.",
     )
     remake = models.PositiveSmallIntegerField(
         null=True,
