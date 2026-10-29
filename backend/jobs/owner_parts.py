@@ -109,8 +109,9 @@ def photo_drawn_without(scene: Scene, picture: ProducedItem) -> str | None:
     return reference_photos.name_of(part.what) if missing else None
 
 
-def approve(scene: Scene) -> None:
-    """The shop owner's yes to the scene's owner part in its picture. The part is one thing
+def approve(scene: Scene, said_by: Message | None = None) -> None:
+    """The shop owner's yes to the scene's owner part in its picture, kept against
+    `said_by`, the shop owner's message that said it (spec #247 point 12). The part is one thing
     for the whole ad: every other scene whose plan shows it and has no clip yet gets it,
     approved, with the scene's photos of it and its picture, so the shop owner isn't asked
     again. A scene with a different owner part, a product photo that shows the part, or a
@@ -124,16 +125,27 @@ def approve(scene: Scene) -> None:
     now = timezone.now()
     with transaction.atomic():
         scene.owner_part_approved_at = now
-        scene.save(update_fields=["owner_part_approved_at"])
+        scene.owner_part_approved_by = said_by
+        scene.save(update_fields=["owner_part_approved_at", "owner_part_approved_by"])
         photos = _part_photos(scene, part.what)
         for other in _sharing(scene, part):
             _give(other, scene.owner_part, photos, part.what)
             other.owner_part_picture = scene.owner_part_picture
             other.owner_part_drawn = scene.owner_part_drawn
             other.owner_part_approved_at = now
-            other.save(
-                update_fields=["owner_part_picture", "owner_part_drawn", "owner_part_approved_at"]
-            )
+            other.owner_part_approved_by = said_by
+            other.save(update_fields=[*_PICTURE_FIELDS, *_YES_FIELDS])
+
+
+# The scene's fields holding its owner part's picture, and the shop owner's yes to it.
+_PICTURE_FIELDS = ("owner_part_picture", "owner_part_drawn")
+_YES_FIELDS = ("owner_part_approved_at", "owner_part_approved_by")
+
+
+def _no_yes(scene: Scene) -> None:
+    """Clear the shop owner's yes to the scene's owner part, and the message that said it."""
+    scene.owner_part_approved_at = None
+    scene.owner_part_approved_by = None
 
 
 def _sharing(scene: Scene, part: OwnerPart) -> list[Scene]:
@@ -153,8 +165,8 @@ def _give(
     """Give the scene the owner part `part` and `photos` of it, unapproved: a changed part
     plans the scene again, so its picture of the part is drawn again before its clip."""
     scene.change_line(scene.line, broll={"owner_part": part})
-    scene.owner_part_approved_at = None
-    scene.save(update_fields=["owner_part", "owner_part_approved_at", "status"])
+    _no_yes(scene)
+    scene.save(update_fields=["owner_part", "status", *_YES_FIELDS])
     _keep_photos(scene, photos, what)
 
 
@@ -542,10 +554,8 @@ def draw_part_picture(scene: Scene) -> LibraryEntry:
         for each in _holding(scene):
             each.owner_part_picture_id = item.pk
             each.owner_part_drawn = drawn
-            each.owner_part_approved_at = None
-            each.save(
-                update_fields=["owner_part_picture", "owner_part_drawn", "owner_part_approved_at"]
-            )
+            _no_yes(each)
+            each.save(update_fields=[*_PICTURE_FIELDS, *_YES_FIELDS])
         scene.refresh_from_db()
         post_notice(
             job,
