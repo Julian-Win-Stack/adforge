@@ -1,8 +1,9 @@
 """The fixing agent films again with references (#235, spec #210 point 23, US 26): film_again
 names the pictures to send by library number and a piece by moment number, and writes its own
-prompt; code recolours each picture to the clip's colour, orders them as named, caps them at the
-video API's 9, cuts the piece, adds the speed line and one label per picture and video, sends
-them on the reference-mode call and keeps the try's sent list on its clip. A references field
+prompt; cut-and-send takes them as its tier 2 (front photo first, then the picks in the agent's
+order, the scene's place, the other sides), recolours, caps at the video API's 9 and cuts the
+piece; code adds the speed line and one label per picture and video, sends them on the
+reference-mode call and keeps the try's sent list on its row and clip. A references field
 naming what the library doesn't hold is refused as the tool's answer: no clip, no try. The
 agent, the judge, the pictures and the clips are faked at the gateway; ffmpeg is real."""
 
@@ -18,7 +19,7 @@ from agents.models import ToolCall
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import work
-from jobs.first_send import DRAWN_LABELS, PIECE_LABEL, SPEED_LINE
+from jobs.first_send import PIECE_LABEL, ROOM_LABEL, SPEED_LINE
 from jobs.library import (
     LookFrame,
     PagePhoto,
@@ -60,7 +61,7 @@ FRAME = PictureLabel(
 PROMPT = "A hand lifts the lid of the mug on the table and sets it down beside it."
 # Items 2 and 7, the second for the movement of a hand, and moment 1 of video 1.
 REFERENCES = {
-    "pictures": [{"number": 2, "used_for": None}, {"number": 7, "used_for": "in-use"}],
+    "pictures": [{"number": 2, "used_for": "state"}, {"number": 7, "used_for": "in-use"}],
     "piece": {"video": 1, "moment": 1},
 }
 
@@ -158,17 +159,20 @@ def test_the_agent_films_again_with_library_items_and_a_moment(
     )
     [asked] = fake_model.broll_clips_asked[asked_before:]
     assert asked["starting_picture"] is None
-    # The picks in the agent's order, then the ad's room (tier 3: the scene shows no face).
-    assert asked["example_pictures"] == [item(job, 8), item(job, 7), the_room(job)]
+    # Cut-and-send's order: the front photo, the picks in the agent's order, then the ad's
+    # room (tier 3: the scene shows no face).
+    assert asked["example_pictures"] == [item(job, 1), item(job, 8), item(job, 7), the_room(job)]
     [sent_piece] = asked["reference_videos"]
     assert 0.5 <= sent_piece["start"] < sent_piece["end"] <= 3.0
     # The speed line, a label for each picture in the order sent and one for the piece, then
     # the agent's own prompt.
     assert asked["prompt"].split("\n") == [
         SPEED_LINE,
-        "Image 1, made white: The black mug from the back.",
-        "Image 2: A hand lifts the mug's lid. Used for how the product is held or used.",
-        f"Image 3 is {DRAWN_LABELS['room']}.",
+        "Image 1: The mug from the front.",
+        "Image 2, made white: The black mug from the back. Used for how the product is in this "
+        "scene.",
+        "Image 3: A hand lifts the mug's lid. Used for how the product is held or used.",
+        f"Image 4 is {ROOM_LABEL}.",
         f"Video 1 is {PIECE_LABEL}.",
         PROMPT,
     ]
@@ -178,9 +182,10 @@ def test_the_agent_films_again_with_library_items_and_a_moment(
     sent = sent_list_of(row.clip)
     assert sent is not None
     assert [(p.image, p.tier, p.library_number, p.drawn, p.for_) for p in sent.pictures] == [
-        (1, 2, 8, None, None),
-        (2, 2, 7, None, "in-use"),
-        (3, 3, None, "room", None),
+        (1, 1, 1, None, None),
+        (2, 2, 8, None, "state"),
+        (3, 2, 7, None, "in-use"),
+        (4, 3, None, "room", None),
     ]
     assert sent.colour == "white" and sent.prompt == asked["prompt"]
     assert sent.recolours == [Recolour(of=2, colour="white", outcome="done", made=8)]
@@ -197,22 +202,22 @@ def test_the_agent_films_again_with_library_items_and_a_moment(
     ("references", "changes", "refused"),
     [
         (
-            {"pictures": [{"number": 99, "used_for": None}], "piece": None},
+            {"pictures": [{"number": 99, "used_for": "state"}], "piece": None},
             {},
             "there is no library item 99",
         ),
         (
-            {"pictures": [{"number": 2, "used_for": None}], "piece": {"video": 1, "moment": 9}},
+            {"pictures": [{"number": 2, "used_for": "state"}], "piece": {"video": 1, "moment": 9}},
             {},
             "page video 1 has no moment 9",
         ),
         (
-            {"pictures": [{"number": 2, "used_for": None}], "piece": {"video": 4, "moment": 1}},
+            {"pictures": [{"number": 2, "used_for": "state"}], "piece": {"video": 4, "moment": 1}},
             {},
             "there is no watched page video 4",
         ),
         (
-            {"pictures": [{"number": 2, "used_for": None}] * 2, "piece": None},
+            {"pictures": [{"number": 2, "used_for": "state"}] * 2, "piece": None},
             {},
             "library item 2 is named twice",
         ),
@@ -259,13 +264,18 @@ def test_more_pictures_than_the_video_api_takes_are_cut_at_9_and_said_in_red(
             WHITE,
             PagePhoto(photo=number),
         )
+    # No photo the plan names shows the ad's colour: nothing to take it from.
+    job.photos.update(shows_product_colour=False)
     named = [1, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     fake_model.respond(
         "fix_scene",
         turn(
             calls=[
                 with_references(
-                    {"pictures": [{"number": n, "used_for": None} for n in named], "piece": None}
+                    {
+                        "pictures": [{"number": n, "used_for": "content"} for n in named],
+                        "piece": None,
+                    }
                 )
             ]
         ),
@@ -281,18 +291,24 @@ def test_more_pictures_than_the_video_api_takes_are_cut_at_9_and_said_in_red(
     assert row.clip is not None
     sent = sent_list_of(row.clip)
     assert sent is not None
-    # The tenth pick and the room (tier 3, after the picks) are past the cap.
-    assert [(left.library_number, left.tier) for left in sent.left_out] == [(11, 2), (None, 3)]
+    # The tenth pick, the room (tier 3, after the picks) and the back photo (tier 4) are past
+    # the cap.
+    assert [(left.library_number, left.tier) for left in sent.left_out] == [
+        (11, 2),
+        (None, 3),
+        (2, 4),
+    ]
     # No piece: the clip is in the ad's colour.
     assert sent.colour == "-".join(job.product_colour.lower().split())
     # With nothing in the library in that colour to take it from, the pictures go as they
     # are, said in red once.
     assert {each.outcome for each in sent.recolours} == {"fell_back"}
     job.refresh_from_db()
-    [no_colour] = [w for w in job.warnings if "no picture to take the colour from" in w["text"]]
+    [no_colour] = [w for w in job.warnings if "went in their own colour" in w["text"]]
     assert no_colour["level"] == "problem"
     [warning] = [w for w in job.warnings if "left out" in w["text"]]
     assert warning["level"] == "problem" and "library item 11" in warning["text"]
+    assert "3 pictures were left out" in warning["text"]
     assert "Left out: library item 11." in ToolCall.objects.get(tool="film_again").result
 
 
@@ -311,14 +327,14 @@ def test_a_worker_restart_mid_try_carries_on_with_the_references_named(
 
     # Asked for once, with the references named, and nothing paid for twice.
     [asked] = fake_model.broll_clips_asked[asked_before:]
-    assert asked["example_pictures"] == [item(job, 8), item(job, 7), the_room(job)]
+    assert asked["example_pictures"] == [item(job, 1), item(job, 8), item(job, 7), the_room(job)]
     assert ModelCall.objects.filter(purpose="recolour_picture").count() == 1
     assert ModelCall.objects.filter(purpose="check_recolour").count() == 1
     [row] = AgentFixTry.objects.all()
     assert row.clip is not None
     sent = sent_list_of(row.clip)
     assert sent is not None
-    assert [p.library_number for p in sent.pictures] == [8, 7, None] and len(sent.pieces) == 1
+    assert [p.library_number for p in sent.pictures] == [1, 8, 7, None] and len(sent.pieces) == 1
     assert ToolCall.objects.filter(tool="film_again").count() == 1
 
 

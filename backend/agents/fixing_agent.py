@@ -30,7 +30,6 @@ from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, Field
 
 from adforge import file_store, tracing
-from chat.models import Message
 from gateway.gateway import charged_to, edit_picture
 from gateway.types import (
     MOST_BROLL_SECONDS,
@@ -45,16 +44,16 @@ from gateway.types import (
 from jobs import (
     auto_fix,
     clip_judge,
+    cut_and_send,
     library,
     library_items,
     picture_check,
     product_videos,
-    recolour,
     reference_photos,
     scenes,
     work,
 )
-from jobs.first_send import DRAWN_LABELS, PIECE_LABEL, SPEED_LINE
+from jobs.first_send import PIECE_LABEL, SPEED_LINE, drawn_label
 from jobs.library import Moment
 from jobs.models import (
     AgentFix,
@@ -67,7 +66,7 @@ from jobs.models import (
     Scene,
     SceneStep,
 )
-from jobs.notices import post_notice
+from jobs.planning import ScenePicture, ScenePiece
 
 from . import loop
 from .loop import Refused, Tool, ToolResult
@@ -148,9 +147,10 @@ ad's picture library as a list and how the product behaves. Look at anything els
 look_at_library opens one library item, or one moment of a page video, by its number. Then \
 make a move, whichever fixes the cause, in no set order: film_again films the whole scene as \
 you write it, and its references send library items by number, in your order, and a page \
-video's moment as the piece, in place of the start picture (code makes them the clip's \
-colour, labels each one, adds the scene's place and puts the speed line before your \
-prompt); change_action films another selling action, with its line, that you write; \
+video's moment as the piece, in place of the start picture (code sends them after the \
+front photo and before the scene's place and the other sides, makes them the clip's \
+colour, labels each one and puts the speed line before your prompt); change_action \
+films another selling action, with its line, that you write; \
 end_result_only films only the end state the action leads to; place_edit shows you the \
 scene's new place before anything is filmed; give_up ends the fix. After each filmed move \
 you are told what was sent, shown the new start picture when you drew one and the new \
@@ -1198,9 +1198,8 @@ class NamedPicture(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     number: int = Field(description="The library item's number.")
-    used_for: library.For | None = Field(
-        description="What the clip takes from it: content, result, in-use, place, person or "
-        "state; null when it is sent for how the product looks."
+    used_for: library.For = Field(
+        description="What the clip takes from it: content, result, in-use, place, person or state."
     )
 
 
@@ -1698,9 +1697,7 @@ def _film_again(
     sent = (
         library.SentList.model_validate(row.sent)
         if row is not None and row.sent is not None
-        else _references_sent(
-            fixing, asked.references, asked.video_prompt, number, asked.person_shown
-        )
+        else _references_sent(fixing, asked.references, asked.video_prompt, asked.person_shown)
         if row is None and asked.references is not None
         else None
     )
@@ -1776,183 +1773,36 @@ USED_FOR: dict[str, str] = {
 
 
 def _references_sent(
-    fixing: AgentFix, references: References, prompt: str, number: int, person_shown: str
+    fixing: AgentFix, references: References, prompt: str, person_shown: str
 ) -> library.SentList:
-    """The sent list of a try with references (spec #210 point 23): the piece cut from the
-    moment named, at the watcher's seconds; each picture named, in the agent's order,
-    recoloured to the clip's colour; the first VIDEO_API_MOST_PICTURES sent and the rest left
-    out, said in red; then the prompt: the speed line, a label line per picture and piece,
-    and the agent's words. Until cut-and-send lands, the agent's picks (tier 2) and the
-    scene's place (tier 3) are sent: #239's step adds the front photo and the other sides."""
+    """The sent list of a try with references (spec #210 point 23): cut-and-send's, the
+    agent's picks as its tier 2 and the moment named as its piece, so code orders, recolours,
+    caps and says in red what was left out as for every clip; then the prompt: the speed
+    line, a label line per picture and piece, and the agent's own words."""
     scene = fixing.step.scene
-    job = scene.job
-    items = {each.number: each for each in library.library_of(job)}
-    pieces: list[library.SentPiece] = []
-    colour = _ad_colour(job, items[references.pictures[0].number])
-    reference: int | None = None
-    if references.piece is not None:
-        video, watch, moment = _moment(job, references.piece.video, references.piece.moment)
-        cut = product_videos.cut_pieces(
-            [product_videos.PieceWanted(video=video.file, start=moment.start, end=moment.end)]
-        )
-        if cut.left_out:
-            raise Refused(
-                f"page video {video.position}, moment {moment.number} can't be sent: "
-                f"{cut.left_out[0].reason}."
-            )
-        [piece] = cut.sent
-        pieces.append(
-            library.SentPiece(
-                number=1,
-                video=video.position,
-                moment=moment.number,
-                moment_start=moment.start,
-                moment_end=moment.end,
-                start=piece.start,
-                end=piece.end,
-                trim=piece.trim,
-                file=piece.file,
-            )
-        )
-        colour = watch.colour
-        reference = _colour_reference(items, colour, video=video.position)
-    else:
-        reference = _colour_reference(items, colour, video=None)
-    pictures: list[library.SentPicture] = []
-    left_out: list[library.LeftOut] = []
-    recolours: list[library.Recolour] = []
-    uncoloured: list[library.LibraryEntry] = []
-    for named in references.pictures:
-        picture = items[named.number]
-        if len(pictures) == library.VIDEO_API_MOST_PICTURES:
-            left_out.append(
-                library.LeftOut(
-                    tier=2,
-                    library_number=picture.number,
-                    drawn=None,
-                    for_=named.used_for,
-                    label=picture.label,
-                    file=picture.file,
-                )
-            )
-            continue
-        if picture.colour != colour:
-            if reference is None:
-                uncoloured.append(picture)
-                recolours.append(
-                    library.Recolour(
-                        of=picture.number, colour=colour, outcome="fell_back", made=None
-                    )
-                )
-            else:
-                made = recolour.recolour(
-                    job, picture.number, colour, reference=reference, scene=scene.number
-                )
-                picture = made.picture
-                recolours.append(made.record)
-        pictures.append(
-            library.SentPicture(
-                image=len(pictures) + 1,
-                tier=2,
-                library_number=picture.number,
-                drawn=None,
-                for_=named.used_for,
-                label=picture.label,
-                file=picture.file,
-            )
-        )
-    # Tier 3, after the picks and inside the cap: the scene's place, its own when place_edit
-    # made one (#237), else the ad's.
-    drawn, place = work.scene_place(scene, person_shown)
-    if place is not None:
-        took = library.PictureRef(
-            tier=3,
-            library_number=None,
-            drawn=drawn,
-            for_=None,
-            label=f"{DRAWN_LABELS[drawn][0].upper()}{DRAWN_LABELS[drawn][1:]}.",
-            file=place.file,
-        ).model_dump()
-        if len(pictures) == library.VIDEO_API_MOST_PICTURES:
-            left_out.append(library.LeftOut.model_validate(took))
-        else:
-            pictures.append(
-                library.SentPicture.model_validate({**took, "image": len(pictures) + 1})
-            )
-    if uncoloured:
-        _say_no_colour_reference(job, scene, uncoloured, colour)
-    if left_out:
-        _say_left_out(job, scene, number, left_out)
-    made_now = {each.made for each in recolours if each.made is not None}
+    sending = cut_and_send.cut_and_send(
+        scene,
+        person_shown=person_shown,
+        picks=[
+            ScenePicture(number=picture.number, for_=picture.used_for)
+            for picture in references.pictures
+        ],
+        pieces=[]
+        if references.piece is None
+        else [ScenePiece(video=references.piece.video, moment=references.piece.moment)],
+    )
+    made_now = {each.made for each in sending.recolours if each.made is not None}
     lines = [
-        f"Image {picture.image} is {DRAWN_LABELS[picture.drawn]}."
+        f"Image {picture.image} is {drawn_label(scene.job, picture.drawn)}."
         if picture.drawn is not None
         else f"Image {picture.image}"
-        + (f", made {colour}" if picture.library_number in made_now else "")
+        + (f", made {sending.colour}" if picture.library_number in made_now else "")
         + f": {picture.label}"
         + (f" Used for {USED_FOR[picture.for_]}." if picture.for_ else "")
-        for picture in pictures
+        for picture in sending.pictures
     ]
-    lines += [f"Video {piece.number} is {PIECE_LABEL}." for piece in pieces]
-    return library.SentList(
-        colour=colour,
-        pictures=pictures,
-        pieces=pieces,
-        left_out=left_out,
-        recolours=recolours,
-        prompt="\n".join([SPEED_LINE, *lines, prompt.strip()]),
-    )
-
-
-def _ad_colour(job: Job, first: library.LibraryEntry) -> str:
-    """The ad's colour, as the planner named it, for a clip sent no piece: one word, two
-    joined by a hyphen; the first picture's own when the planner named none."""
-    return "-".join(job.product_colour.lower().split()) or first.colour
-
-
-def _colour_reference(
-    items: dict[int, library.LibraryEntry], colour: str, *, video: int | None
-) -> int | None:
-    """The library item a picture is recoloured from: a look frame of the piece's video, or,
-    with no piece, the first item already in the clip's colour that is a page photo; None
-    when the library holds none (spec #210 point 8; the reference with no piece is not
-    approved yet, audit item 14)."""
-    for each in items.values():
-        source = each.source
-        if video is not None and isinstance(source, library.LookFrame) and source.video == video:
-            return each.number
-        if video is None and isinstance(source, library.PagePhoto) and each.colour == colour:
-            return each.number
-    return None
-
-
-def _say_no_colour_reference(
-    job: Job, scene: Scene, pictures: list[library.LibraryEntry], colour: str
-) -> None:
-    named = "; ".join(f'picture {each.number} ("{each.label}", {each.colour})' for each in pictures)
-    post_notice(
-        job,
-        f"Making the ad's library pictures {colour} for scene {scene.number} wasn't possible: "
-        f"the library has no picture to take the colour from. These go to the video model in "
-        f"their own colour, so the clip may show the product in two colours: {named}.",
-        Message.Level.PROBLEM,
-    )
-
-
-def _say_left_out(job: Job, scene: Scene, number: int, left_out: list[library.LeftOut]) -> None:
-    named = "; ".join(
-        f'library item {each.library_number} ("{each.label}")'
-        if each.library_number is not None
-        else DRAWN[each.drawn or "room"]
-        for each in left_out
-    )
-    post_notice(
-        job,
-        f"The fixing agent named more pictures for scene {scene.number}'s try {number} than "
-        f"the {library.VIDEO_API_MOST_PICTURES} the video model takes, so these were left out: "
-        f"{named}. The clip is made from the first {library.VIDEO_API_MOST_PICTURES} in order.",
-        Message.Level.PROBLEM,
-    )
+    lines += [f"Video {piece.number} is {PIECE_LABEL}." for piece in sending.pieces]
+    return sending.sent_list("\n".join([SPEED_LINE, *lines, prompt.strip()]))
 
 
 def _as_sent(step: SceneStep, picture: ProducedItem, audio: ProducedItem, motion: str) -> str:
