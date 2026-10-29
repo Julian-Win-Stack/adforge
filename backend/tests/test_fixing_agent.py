@@ -11,11 +11,12 @@ from typing import Any
 
 import pytest
 from django.db.models import Q, Sum
+from django.utils import timezone
 
 from adforge.retry import OutsideServiceDown
-from agents import fixing_agent, producer, tasks
+from agents import fixing_agent, pause, producer, tasks
 from agents.fixing_agent import Failure, Outcome, Try, fix_scene
-from agents.models import ToolCall
+from agents.models import SystemNote, ToolCall
 from agents.money import dollars
 from agents.snapshot import ad_as_it_stands
 from chat.models import Message
@@ -1127,3 +1128,29 @@ def test_a_move_the_safety_filter_blocks_is_answered_as_a_cant_and_the_fix_carri
 
     assert told()[0].startswith("Failed: the AI service's safety filter refused what it was sent")
     assert [each.number for each in outcome.tries] == [1]
+
+
+def test_a_pause_while_the_agent_fixes_a_clip_the_judge_failed_names_it_parking(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    # Door 1: the clip step runs while the agent fixes it.
+    now = timezone.now()
+    SceneStep.objects.filter(pk=failed_clip.pk).update(
+        status=SceneStep.Status.RUNNING, taken_at=now, seen_at=now
+    )
+    session = failed_clip.tool_call.session
+
+    def paused_while_judged() -> dict[str, Any]:
+        pause.pause(session, wake=False)
+        return failing(FLOATS)
+
+    # Its pick may be recoloured to the clip's colour.
+    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
+    fake_model.respond("check_clip_motion", paused_while_judged)
+    fake_model.respond("fix_scene", turn(calls=[film_again(references=ONE_PICK)]))
+    fixed(failed_clip)
+
+    [note] = SystemNote.objects.filter(kind=SystemNote.Kind.PAUSED)
+    _, running = note.text.split("Still running")
+    assert "scene 2's clip, from make_clip" in running
+    assert "carry it on with fix_scene for scene 2." in running

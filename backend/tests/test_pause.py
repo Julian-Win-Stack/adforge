@@ -15,6 +15,7 @@ from agents import pause as pause_module
 from agents import tasks
 from agents.loop import SYSTEM_NOTE
 from agents.models import ToolCall
+from agents.pause import PAUSED_NOTICE
 from chat.models import Session
 from gateway.fake import FakeModel, meanwhile, turn
 from jobs.models import SceneStep
@@ -231,6 +232,8 @@ def test_the_chat_shows_the_pause_until_the_owner_writes_and_a_second_press_does
     pause(api, session_id)
     shown = chat(api, session_id)
     turns = producer_turns()
+    # The chat says so once.
+    assert shown.count(("notice", PAUSED_NOTICE)) == 1
     assert pause(api, session_id) == {"paused": True}
 
     assert api.get(f"/api/sessions/{session_id}/").json()["paused"] is True
@@ -366,6 +369,73 @@ def test_pausing_while_another_session_works_holds_and_cancels_but_starts_no_pro
     assert producer_turns() == turns
     assert [step_of(scene).status for scene in (1, 2, 3)] == ["cancelled"] * 3
     assert api.get(f"/api/sessions/{session_id}/").json()["paused"] is True
+
+
+def test_a_pause_with_nothing_waiting_or_running_tells_the_producer_so(
+    api: APIClient, fake_model: FakeModel, checked: None, session_id: str
+) -> None:
+    fake_model.respond("produce", turn(says="Paused."))
+
+    pause(api, session_id)
+
+    told = notes_given(producer_turns())[-1]
+    assert "No step was waiting, so none was cancelled." in told
+    assert "Still running: none." in told
+    # And how to answer it: one line to the shop owner, then wait for them.
+    assert "tell them in one line that you paused" in told
+
+
+def test_the_pause_note_names_each_step_by_its_call_and_the_running_ones_oldest_first(
+    api: APIClient,
+    fake_model: FakeModel,
+    three_pictures_started: None,
+    session_id: str,
+) -> None:
+    taken_by_the_worker(1)
+    taken_by_the_worker(2)
+    fake_model.respond("produce", turn(says="Paused."))
+
+    pause(api, session_id)
+
+    cancelled, running = notes_given(producer_turns())[-1].split("Still running")
+    # The call that started it, with what it was asked.
+    assert 'make_starting_picture {"note": null, "scene": 3}' in cancelled
+    assert running.index("scene 1's starting picture") < running.index("scene 2's starting picture")
+
+
+def test_while_paused_the_tools_that_spend_nothing_still_run(
+    api: APIClient,
+    fake_model: FakeModel,
+    three_pictures_started: None,
+    steps: HeldSteps,
+    session_id: str,
+) -> None:
+    taken_by_the_worker(1)
+    fake_model.respond("produce", turn(says="Paused. Scene 1's picture is finishing."))
+    pause(api, session_id)
+    free: list[tuple[str, dict[str, Any]]] = [
+        ("approve_owner_part", {"scene": 1}),
+        ("use_version", {"scene": 1, "version": 1}),
+        ("keep_try", {"scene": 1, "try_number": 0}),
+        ("assemble_ad", {}),
+        ("cost_so_far", {}),
+        ("read_ad", {"scene": None}),
+        ("read_earlier_call", {"call_id": "call_none"}),
+    ]
+
+    # Woken by the running step's result while still paused, having read the note already.
+    fake_model.respond("choose_starting_picture", CHOICE)
+    why = "To see where the ad stands."
+    fake_model.respond(
+        "produce",
+        turn(calls=[(tool, {**arguments, "why": why}) for tool, arguments in free]),
+        turn(says="Scene 1's picture is ready."),
+    )
+    steps.run_held()
+
+    for tool, _ in free:
+        [answer] = results_of(tool)
+        assert not answer.startswith("Refused: paused"), (tool, answer)
 
 
 # --- Whole-build check C (spec #247 Testing Decisions, ticket #266) --------------------------

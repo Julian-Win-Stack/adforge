@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from adforge import file_store
@@ -354,6 +355,45 @@ def test_a_pause_lets_the_try_finish_parks_the_fix_and_the_producer_carries_it_o
         each.startswith(fixing_agent.CARRIED_ON) and "Carry on with the brush." in each
         for each in said
     )
+
+
+def the_pause_note() -> str:
+    [note] = SystemNote.objects.filter(kind=SystemNote.Kind.PAUSED)
+    return note.text
+
+
+def test_a_fix_the_worker_took_is_named_in_the_pause_note_as_parking_between_tries(
+    fake_model: FakeModel,
+    ad: ProducedItem,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    looks_then_fixes(fake_model, say)
+    # Taken by the worker, its fixing agent not started yet.
+    now = timezone.now()
+    SceneStep.objects.filter(pk=fix_step().pk).update(taken_at=now, seen_at=now)
+
+    pause.pause(Session.objects.get(pk=session_id), wake=False)
+
+    _, running = the_pause_note().split("Still running")
+    assert "scene 2's clip, from fix_scene" in running
+    assert "carry it on with fix_scene for scene 2." in running
+
+
+def test_a_fix_the_pause_cancelled_is_never_said_to_be_filming(
+    fake_model: FakeModel,
+    ad: ProducedItem,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    looks_then_fixes(fake_model, say)
+
+    pause.pause(Session.objects.get(pk=session_id), wake=False)
+
+    assert fix_step().status == "cancelled"
+    cancelled, _ = the_pause_note().split("Still running")
+    assert "scene 2's clip, from fix_scene" in cancelled
+    assert "fixing agent" not in cancelled
 
 
 def test_the_chat_takes_a_video_as_it_takes_a_photo(
