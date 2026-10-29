@@ -202,7 +202,9 @@ is shown them, with what the clip was sent, and tells you in words what it sees,
 wrong, its root cause and a direction. It decides nothing: you do. Before \
 the ad is planned, every photo they send is a product photo: if they send one of something \
 else, don't add it, and tell them to send it with a note on a scene once the first version \
-is made. Slower can't be done: every clip plays at real-time speed.
+is made. Once the ad is planned, put a photo or a video they send into the library with \
+add_to_library, so a scene's references can name it. Slower can't be done: every clip \
+plays at real-time speed.
 When the shop owner's note is about what a scene's clip shows, look at that clip first, \
 then call fix_scene with your detailed instruction: the fixing agent films the scene again \
 until a try passes, and you are told how the fix ended. When it ends waiting on the fixing \
@@ -1115,6 +1117,101 @@ class MakePicture(Tool):
             f"{library_line(made)} Look at it (look, library_item {made.number}) before a "
             "scene's references name it."
         )
+
+
+class OwnerPhotoShows(BaseModel):
+    """One of the shop owner's photos to add to the library, and what it shows."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    photo: int = Field(
+        description='The photo\'s number, as the chat gives it: "owner photo 3" is 3.'
+    )
+    shows: str = Field(
+        description="What it shows, from what the shop owner said of it, in a few words."
+    )
+
+
+class AddToLibrary(Tool):
+    """Add photos and videos the shop owner attached in the chat, once the ad is planned, to
+    the ad's library, so a scene's references can name them like any other item: each photo
+    labelled, with its product-only version when it needs one; each video watched into
+    moments, its look frames added. Hands back each new item's number and label, and each
+    video's moments. Before the plan, their product photos go in with use_photos."""
+
+    name = "add_to_library"
+
+    photos: list[OwnerPhotoShows] = Field(
+        description="The shop owner's photos to add, each once. Empty for none."
+    )
+    videos: list[int] = Field(
+        description="The shop owner's videos to add, by their number as the chat gives it: "
+        '"owner video 2" is 2. Empty for none.'
+    )
+
+    def run(self, call: ToolCall) -> str:
+        job = _with_its_page(call, "their files go into its library")
+        if not job.scenes.exists():
+            raise Refused(
+                "the ad isn't planned yet: before the plan, the shop owner's product photos go "
+                "in with use_photos."
+            )
+        photos, videos = messages.owner_photos(call.session), messages.owner_videos(call.session)
+        numbers = [each.photo for each in self.photos]
+        if not numbers and not self.videos:
+            raise Refused("name at least one of the shop owner's photos or videos.")
+        if len(set(numbers)) != len(numbers) or len(set(self.videos)) != len(self.videos):
+            raise Refused("name each photo and video once.")
+        wrong = [n for n in numbers if not 1 <= n <= len(photos)]
+        wrong_videos = [n for n in self.videos if not 1 <= n <= len(videos)]
+        if wrong or wrong_videos:
+            raise Refused(
+                f"the chat has {_owner_photos(len(photos))} and {_owner_videos(len(videos))}."
+            )
+        if any(not each.shows.strip() for each in self.photos):
+            raise Refused("say what each photo shows.")
+        taken = [
+            owner_answers.into_the_library(
+                job, photos=[photos[each.photo - 1].file], videos=[], shows=each.shows.strip()
+            )
+            for each in self.photos
+        ]
+        if self.videos:
+            taken.append(
+                owner_answers.into_the_library(
+                    job,
+                    photos=[],
+                    videos=[videos[number - 1].file for number in self.videos],
+                    shows="",
+                )
+            )
+        added = [item for each in taken for item in each.added]
+        with transaction.atomic():
+            owner_answers.say_unreadable(job, sum(each.unreadable for each in taken))
+            if added:
+                post_notice(
+                    job,
+                    "What you sent is in the ad's picture library as "
+                    f"{owner_answers.items_said(added)}.",
+                    Message.Level.INFO,
+                )
+        said = "\n".join(line for each in taken for line in each.said)
+        if not added:
+            raise Failed(f"nothing was added to the library.\n{said}")
+        return (
+            f"{said}\nName them in a scene's references with set_references; look at one "
+            "first (look, library_item N) when you need to know what it shows."
+        )
+
+
+def _owner_videos(count: int) -> str:
+    return (
+        "no owner video"
+        if count == 0
+        else f"owner videos 1 to {count}"
+        if count > 1
+        else "owner video 1"
+    )
 
 
 def _with_the_photos_in_use(scene: Scene, steps: QuerySet[SceneStep]) -> SceneStep | None:
@@ -2974,6 +3071,7 @@ PRODUCER = Agent(
     tools=[
         ReadPage,
         UsePhotos,
+        AddToLibrary,
         PlanAd,
         CreatePerson,
         RemakePerson,
