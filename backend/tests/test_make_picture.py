@@ -14,6 +14,9 @@ import pytest
 from django.db.models.signals import pre_save
 from pytest_django import Settings
 
+from adforge import file_store
+from agents import hard_list
+from agents.loop import Refused
 from agents.models import ToolCall
 from agents.tasks import restart_dead_producers
 from chat.models import Message
@@ -22,11 +25,11 @@ from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, RefusedForMoney
 from jobs import cut_and_send, cut_out
-from jobs.library import Made, library_of
+from jobs.library import Made, OwnerPart, PictureLabel, ProductOnly, add_to_library, library_of
 from jobs.library_items import library_text
 from jobs.models import Job, LibraryItem, Scene, SceneStep
 
-from .conftest import LABELLED
+from .conftest import LABELLED, photo
 from .test_cut_and_send import RECOLOUR_OK
 from .test_picker_labels import LABELS, labelled_page  # noqa: F401 (a fixture)
 from .test_producer_restarts import (
@@ -35,7 +38,7 @@ from .test_producer_restarts import (
     the_worker_stops,
     times_paid_for,
 )
-from .test_product_only import first_message
+from .test_product_only import SIDE_ON_A_SHELF, first_message
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -133,22 +136,12 @@ def test_a_prompt_and_two_library_items_make_a_checked_library_item_with_the_pro
     assert "made by the producer from items 1, 2" in library_text(library)
 
 
-def test_a_made_item_a_scenes_references_name_is_sent_for_that_scene(
-    fake_model: FakeModel, library: Job, say: Say
-) -> None:
-    fake_model.respond("check_made_picture", PASSES)
-    making(fake_model, say, references=[1, 2])
-    made = library_of(library)[2]
-    library.product_colour = "amber"
-    library.save(update_fields=["product_colour"])
-    scene = Scene.objects.create(
-        job=library,
-        number=1,
-        line="It cleans in one wash.",
-        shows="The bottle on a shelf.",
-        fact_checked=True,
-    )
-    # The producer's next set_references names the made item (spec #247 point 5).
+def sent_for(
+    fake_model: FakeModel, say: Say, scene: Scene, *named: int
+) -> list[tuple[int, int | None]]:
+    """What a first clip of `scene` is sent, (tier, library number) per picture, once the
+    producer's set_references names the library items `named` as its pictures (spec #247
+    point 5, References)."""
     fake_model.respond(
         "produce",
         turn(
@@ -156,32 +149,128 @@ def test_a_made_item_a_scenes_references_name_is_sent_for_that_scene(
                 (
                     "set_references",
                     {
-                        "scene": 1,
-                        "pictures": [{"number": made.number, "for": "content"}],
+                        "scene": scene.number,
+                        "pictures": [{"number": number, "for": "content"} for number in named],
                         "piece": None,
                         "exclude": None,
                     },
                 )
             ]
         ),
-        turn(says="Scene 1 is sent it."),
+        turn(says="Done."),
     )
-    say("Use that picture for scene 1.")
+    say(f"Use those pictures for scene {scene.number}.")
+    answer = ToolCall.objects.filter(tool="set_references").latest("id")
+    assert answer.answer == "made", answer.result
     scene.refresh_from_db()
-    assert scene.scene_pictures == [{"number": made.number, "for": "content"}]
+    return planned(scene)
+
+
+def planned(scene: Scene) -> list[tuple[int, int | None]]:
+    """What a first clip of `scene` is sent as its references stand, (tier, library number)
+    per picture."""
     step = scene.steps.create(
         kind=SceneStep.Kind.CLIP,
-        tool_call=ToolCall.objects.filter(tool="make_picture").get(),
+        tool_call=ToolCall.objects.filter(tool="make_picture").latest("id"),
         line=scene.line,
         shows=scene.shows,
         person_shown=Scene.PersonShown.HAS_FACE,
     )
+    sending = cut_and_send.planned_sending(step)
+    return [(picture.tier, picture.library_number) for picture in sending.pictures]
+
+
+def a_scene(job: Job, number: int) -> Scene:
+    return Scene.objects.create(
+        job=job,
+        number=number,
+        line="It cleans in one wash.",
+        shows="The bottle on a shelf.",
+        fact_checked=True,
+    )
+
+
+@pytest.fixture
+def in_the_ads_colour(fake_model: FakeModel, library: Job) -> None:
+    """The ad's colour is its photos', and a recolour, when one is made, passes its check."""
+    library.product_colour = "amber"
+    library.save(update_fields=["product_colour"])
     fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
 
-    sending = cut_and_send.planned_sending(step)
 
-    sent = [(picture.tier, picture.library_number) for picture in sending.pictures]
-    assert (2, made.number) in sent
+def test_a_made_side_is_sent_only_to_a_scene_whose_references_name_it_never_as_another_side(
+    fake_model: FakeModel, library: Job, say: Say, in_the_ads_colour: None
+) -> None:
+    fake_model.respond("check_made_picture", PASSES)
+    # Labelled as the back: cut-and-send's tier 4 takes every other side photo by itself.
+    fake_model.respond("label_photo", {**LABELLED, "side": "back"})
+    making(fake_model, say, references=[1, 2])
+    made = library_of(library)[2]
+    assert (made.kind, made.side) == ("side", "back")
+
+    assert (2, made.number) in sent_for(fake_model, say, a_scene(library, 1), made.number)
+    assert made.number not in [number for _, number in planned(a_scene(library, 2))]
+
+
+def holding_the_part(job: Job, number: int, part: int) -> Scene:
+    """Scene `number`, holding the owner part pictured in library item `part`."""
+    scene = a_scene(job, number)
+    item = job.library.get(number=part)
+    scene.owner_part = {"what": "the pump's spare nozzle", "source": "invented", "looks": "Flat."}
+    scene.owner_part_picture = item
+    scene.owner_part_drawn = {"part": scene.owner_part, "photos": [], "file": item.file}
+    scene.save()
+    return scene
+
+
+def test_a_picture_made_from_an_owner_parts_picture_goes_only_to_the_scenes_holding_the_part(
+    fake_model: FakeModel, library: Job, say: Say, in_the_ads_colour: None
+) -> None:
+    file = file_store.save(f"jobs/{library.pk}/part.png", photo(62))
+    add_to_library(
+        library,
+        file,
+        PictureLabel.model_validate({**LABELLED, "label": "The pump's spare nozzle."}),
+        OwnerPart(part="the pump's spare nozzle"),
+    )
+    fake_model.respond("check_made_picture", PASSES)
+    call = making(fake_model, say, references=[1, 3])
+    assert call.answer == "made", call.result
+    made = library_of(library)[3]
+    holding, other = holding_the_part(library, 1, part=3), a_scene(library, 2)
+
+    # Named for a scene without the part, it is refused: by set_references when it is named,
+    # and by cut-and-send were it sent.
+    with pytest.raises(Refused, match="library item 4 shows an owner part"):
+        hard_list.refuse_part_picture_elsewhere(other, [made.number])
+    with pytest.raises(AssertionError, match="library item 4 shows an owner part"):
+        sent_for(fake_model, say, other, made.number)
+    other.scene_pictures = [{"number": made.number, "for": "content"}]
+    other.save(update_fields=["scene_pictures"])
+    with pytest.raises(ValueError, match="library item 4 shows the owner part"):
+        planned(other)
+    # Named for a scene holding it, it goes, in tier 2.
+    assert (2, made.number) in sent_for(fake_model, say, holding, made.number)
+
+
+def test_a_reference_with_a_product_only_version_is_drawn_from_that_version(
+    fake_model: FakeModel,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    say: Say,
+) -> None:
+    first_message(fake_model, say, labelled_page, FRONT, SIDE_ON_A_SHELF)
+    job = Job.objects.get()
+    front, shelf, alone = library_of(job)
+    assert alone.source == ProductOnly(of=shelf.number)
+    fake_model.respond("check_made_picture", PASSES)
+
+    making(fake_model, say, references=[1, 2])
+
+    (drawing,) = asked("make_picture")
+    assert drawing.handoff["pictures"] == [front.file, alone.file]
+    (check,) = asked("check_made_picture")
+    assert [image["key"] for image in check.images][1:] == [front.file, alone.file]
+    assert library_of(job)[3].source == Made(references=[1, 2])
 
 
 def test_a_made_picture_that_fails_its_check_is_a_cant_with_the_reason_and_never_stored(

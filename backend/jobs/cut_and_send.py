@@ -7,8 +7,10 @@ clip is sent, the same way every time, before every send. No AI prunes or combin
   the fixing agent's named references, no cap. Tier 3: the drawn picture of the place, the
   presenter in the room or the room alone, the scene's own when it has one
   (work.scene_place). The scene's owner part picture, when it holds one, goes last in tier 2
-  (owner_parts.part_picture), and no other scene is sent it. Tier 4: the other side
-  pictures (back, side, top) in library order, but owner parts'.
+  (owner_parts.part_picture), and no other scene is sent it, nor a picture made from it
+  (owner_parts.part_not_held: such a pick is refused). Tier 4: the other side pictures
+  (back, side, top) in library order, but owner parts' and pictures the producer made
+  (ONLY_WHERE_NAMED): those go only where they are picked.
   The scene's exclude list (jobs.scene_references) holds in every tier: an excluded item is
   never sent, takes no place under the cap, and is named in the Sending's `excluded`.
   States and pack sizes are in no tier: they go only when picked. The first
@@ -455,6 +457,11 @@ def _pieces(
     return sent, list(cut.sent), colours, left_out
 
 
+# The library items tier 4 never takes, however they are labelled: an owner part's picture
+# and a picture the producer made (spec #247 point 5) go only where they are named.
+ONLY_WHERE_NAMED = ("owner_part", "made")
+
+
 def _in_tiers(
     scene: Scene,
     person_shown: str,
@@ -496,7 +503,13 @@ def _in_tiers(
     for pick in picks:
         if pick.number not in everything:
             raise ValueError(f"library item {pick.number} isn't in the ad's library")
-        take(2, _original_of(everything, everything[pick.number]), pick.for_)
+        original = _original_of(everything, everything[pick.number])
+        if (part := owner_parts.part_not_held(scene, original, everything)) is not None:
+            raise ValueError(
+                f"library item {pick.number} shows the owner part pictured in library item "
+                f"{part.number}, which scene {scene.number} doesn't hold"
+            )
+        take(2, original, pick.for_)
     # The scene's owner part, as it stands: a picture the scene holds, so a scene picture.
     if (part := owner_parts.part_picture(scene)) is not None:
         take(2, _original_of(everything, part))
@@ -507,8 +520,9 @@ def _in_tiers(
     else:
         taken.append(_Taken(3, None, None, drawn, None, _drawn_label(job, drawn), place.file))
     for item in originals:
-        # An owner part's picture goes only to the scenes holding the part, as tier 2.
-        if item.source.came_from == "owner_part":
+        # An owner part's picture goes only to the scenes holding the part, as tier 2, and a
+        # made picture only where it is named.
+        if item.source.came_from in ONLY_WHERE_NAMED:
             continue
         if item.kind == "side" and item.side in OTHER_SIDES:
             take(4, item)

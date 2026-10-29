@@ -1284,6 +1284,7 @@ class SetReferences(Tool):
         )
         exclude = list(scene.excluded) if self.exclude is None else self.exclude
         _refuse_unknown_references(job, pictures, piece, exclude)
+        hard_list.refuse_part_picture_elsewhere(scene, [picture.number for picture in pictures])
         wanted = {
             "scene_pictures": [picture.model_dump(by_alias=True) for picture in pictures],
             "piece": None if piece is None else piece.model_dump(),
