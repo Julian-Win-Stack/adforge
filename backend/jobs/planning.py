@@ -146,15 +146,17 @@ of the shop's product videos, one a line: the video's number, the moment's numbe
 seconds, what happens and what is on screen, each moment one action. The video moments \
 show how the product is really used: plan from them. Then how many pictures the library \
 holds, the library being every picture the app has of the product, and how many of them \
-you aren't shown; what the product's video says: the words said in each of the shop's \
-product videos, one per video; the product page's visible text, followed by any product \
-data the page declares for search engines; the target length in seconds (or null if the \
-shop owner didn't set one); and the conversation with the shop owner so far, each message \
-labelled "user" for the shop owner or "producer" for you. After that come the library's \
-pictures, several to a sheet, each with its library number and its label written under it. \
-Name a picture by its library number, everywhere you name one. A picture marked as from \
+you aren't shown. Then the library's pictures, several to a sheet, each with its library \
+number and its label written under it. Name a picture by its library number, everywhere \
+you name one. A picture marked as from \
 the product's video is a product photo like every other, showing the \
-product's looks at that moment; the line beside it says what it shows that no photo shows.
+product's looks at that moment; the line beside it says what it shows that no photo shows. \
+On a sheet, that line is the label written under the picture. After the pictures come what \
+the product's video says: the words said in each of the shop's product videos, one per \
+video; the product page's visible text, followed by any product data the page declares for \
+search engines; the product's link; the target length in seconds (or null if the shop owner \
+didn't set one); and the conversation with the shop owner so far, each message labelled \
+"user" for the shop owner or "producer" for you.
 Every claim in the ad must come from the page or the shop owner's own words. What the \
 product's video says is the shop's own words, used like the page text; "music only" means \
 it says nothing. Your own \
@@ -912,7 +914,12 @@ class ChatMessage(Handoff):
 
 
 class PlanHandoff(Handoff):
-    # In the order the planner reads them: the moments first (#210 point 9).
+    # In the order the planner reads them (#210 point 9): the moments first, then the
+    # library's sheets (the call's pictures), then the rest.
+    AFTER_IMAGES = frozenset(
+        {"video_transcripts", "page_text", "product_url", "target_seconds", "conversation"}
+    )
+
     moments: str
     library_pictures: int
     pictures_not_shown: int

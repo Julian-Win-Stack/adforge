@@ -11,7 +11,7 @@ import mimetypes
 import re
 import tempfile
 import wave
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -942,7 +942,9 @@ def plan(job: Job) -> ProducerDecision:
     sheets = library_sheets.sheets_of(job)
     library_sheets.tell_not_shown(job, sheets)
     library, moments = _library_numbers(job), _moments_by_video(job)
-    decision, left_out = past_the_safety_filter(
+    decision, left_out = library_sheets.past_the_filter(
+        job,
+        sheets,
         lambda images: call_model(
             job=job,
             purpose="plan_ad",
@@ -951,7 +953,6 @@ def plan(job: Job) -> ProducerDecision:
             output=producer_decision_for(library=library, moments=moments),
             images=images,
         ),
-        sheets.images,
     )
     if left_out:
         named = [image.label.partition(" (")[0].lower() for image in left_out]
@@ -1005,7 +1006,7 @@ def plan(job: Job) -> ProducerDecision:
         unseen = sheets.numbers_on(left_out)
         job.photos.filter(
             position__in=photos_of.photos(
-                [number for number in planned.colour_photos if number not in unseen]
+                [number for number in planned.colour_photos if number not in unseen], "colour"
             )
         ).update(shows_product_colour=True)
     photos_of.tell(job)
@@ -1044,49 +1045,73 @@ def plan_handoff(job: Job, page_text: str, sheets: library_sheets.Sheets) -> Pla
 @dataclass
 class _PhotosOfPictures:
     """The product photo, by position, of each library picture a plan or a rewrite names
-    for its needs and colour photos, and the pictures named that have none."""
+    for its needs and colour photos, and the pictures named that have none. A recoloured
+    picture is never in the ad's colour as its photo: that photo is another colour."""
 
     positions: dict[int, int]
-    without_a_photo: list[int] = field(default_factory=list)
+    recoloured: set[int]
+    without_a_photo: dict[str, list[int]] = field(
+        default_factory=lambda: {"need": [], "colour": []}
+    )
 
-    def photos(self, numbers: Sequence[int]) -> list[int]:
+    def photos(self, numbers: Sequence[int], use: Literal["need", "colour"]) -> list[int]:
         """The positions of the photos library pictures `numbers` are, in order, each once:
-        a picture with no product photo is left out and noted."""
+        a picture with no product photo for `use` is left out and noted."""
         kept: list[int] = []
         for number in numbers:
             position = self.positions.get(number)
+            if use == "colour" and number in self.recoloured:
+                position = None
             if position is None:
-                if number not in self.without_a_photo:
-                    self.without_a_photo.append(number)
+                if number not in self.without_a_photo[use]:
+                    self.without_a_photo[use].append(number)
             elif position not in kept:
                 kept.append(position)
         return kept
 
+    def colour_numbers(self, marked: Collection[int]) -> list[int]:
+        """The library numbers of the pictures whose photo is marked in the ad's colour."""
+        return [
+            number
+            for number, at in self.positions.items()
+            if at in marked and number not in self.recoloured
+        ]
+
     def needs(self, needs: Sequence[Need]) -> list[dict[str, Any]]:
         """`needs` as a Scene stores them, by photo position: a need whose pictures have no
         product photo is left out."""
-        stored = [{**need.model_dump(), "photos": self.photos(need.photos)} for need in needs]
+        stored = [
+            {**need.model_dump(), "photos": self.photos(need.photos, "need")} for need in needs
+        ]
         return [need for need in stored if need["photos"]]
 
     def tell(self, job: Job) -> None:
         """Tell the chat in red, with its warning line, of the pictures named that have no
-        product photo, so a starting picture can't be made from them."""
-        if not self.without_a_photo:
-            return
-        named = ", ".join(str(number) for number in sorted(self.without_a_photo))
-        post_notice(
-            job,
-            f"Library picture{'s' if len(self.without_a_photo) > 1 else ''} {named} "
-            f"{'have' if len(self.without_a_photo) > 1 else 'has'} no product photo a starting "
-            "picture can be made from, so the scenes that need "
-            f"{'them' if len(self.without_a_photo) > 1 else 'it'} are made without "
-            f"{'them' if len(self.without_a_photo) > 1 else 'it'}.",
-            Message.Level.PROBLEM,
-        )
+        product photo for what they were named for, once for the same pictures."""
+        for use, numbers in self.without_a_photo.items():
+            if not numbers:
+                continue
+            one = len(numbers) == 1
+            named = (
+                f"Library picture{'' if one else 's'} "
+                f"{', '.join(str(number) for number in sorted(numbers))} "
+                f"{'has' if one else 'have'}"
+            )
+            text = (
+                f"{named} no product photo a starting picture can be made from, so "
+                f"{'it is' if one else 'they are'} left out of the photos the scenes need."
+                if use == "need"
+                else f"{named} no product photo of {'its' if one else 'their'} own, so "
+                f"{'it isn' if one else 'they aren'}'t marked as showing the ad's colour."
+            )
+            if all(warning["text"] != text for warning in job.warnings):
+                post_notice(job, text, Message.Level.PROBLEM)
 
 
 def _photos_of_pictures(job: Job) -> _PhotosOfPictures:
-    return _PhotosOfPictures(library_sheets.photo_positions(job))
+    return _PhotosOfPictures(
+        library_sheets.photo_positions(job), library_sheets.recoloured_numbers(job)
+    )
 
 
 def _labelled(photo: ProductPhoto) -> Image:
@@ -1379,10 +1404,11 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
     """Have the scene rewritten whole: its line, what it shows and its B-roll details. A
     scene that shows something is rewritten seeing the library's sheets, as the planner does,
     to say what it needs."""
-    sheets = library_sheets.sheets_of(job)
+    # A scene where the person talks is rewritten on text alone: no sheet is drawn for it.
+    sheets = library_sheets.sheets_of(job, drawn=bool(scene.shows))
     photos_of = _photos_of_pictures(job)
     marked = set(job.photos.filter(shows_product_colour=True).values_list("position", flat=True))
-    colour_photos = [number for number, at in photos_of.positions.items() if at in marked]
+    colour_photos = photos_of.colour_numbers(marked)
     if scene.shows:
         library_sheets.tell_not_shown(job, sheets)
     rewrite = call_model(
@@ -2488,10 +2514,31 @@ def drawn_for(person_shown: str) -> Drawn:
 
 def scene_place(scene: Scene, person_shown: str) -> tuple[Drawn, ProducedItem | None]:
     """The drawn picture (tier 3) a clip of `scene` showing `person_shown` is sent: the
-    scene's own, when the fixing agent's place_edit made one for it (#237), else the ad's;
-    None when the ad has none yet."""
+    scene's own, when the fixing agent's place_edit made one for it (#237) and it is of the
+    scene's newest place, else the ad's; None when the ad has none yet. The fixing agent's
+    try whose scene's newest place has no such picture is refused before anything is sent."""
     drawn = drawn_for(person_shown)
-    return drawn, _place_of(scene, drawn)
+    return drawn, own_place(scene, drawn) or latest(scene.job, _AD_PLACE[drawn])
+
+
+def newest_own_place(scene: Scene) -> ProducedItem | None:
+    """The newest picture place_edit made for `scene`, of either kind."""
+    return scene.produced.filter(kind__in=_SCENE_PLACE.values()).order_by("id").last()
+
+
+def own_place(scene: Scene, drawn: Drawn) -> ProducedItem | None:
+    """The scene's own `drawn` picture of its newest place: the newest place_edit made, or,
+    for the room, the room the newest presenter picture was drawn in. None when the scene
+    has no place of its own, or its newest place has no `drawn` picture."""
+    newest = newest_own_place(scene)
+    if newest is None:
+        return None
+    if newest.kind == _SCENE_PLACE[drawn]:
+        return newest
+    made_from = newest.made_from
+    if drawn == "room" and made_from is not None and made_from.kind == _SCENE_PLACE["room"]:
+        return made_from
+    return None
 
 
 def _place_of(scene: Scene, drawn: Drawn) -> ProducedItem | None:
@@ -2501,6 +2548,10 @@ def _place_of(scene: Scene, drawn: Drawn) -> ProducedItem | None:
 
 class NoPlaceYet(Exception):
     """A scene's place can't be edited: the ad has no such picture yet."""
+
+
+class NoPresenterYet(Exception):
+    """The presenter can't be drawn in a scene's new place: the ad has no portrait yet."""
 
 
 def edit_scene_place(scene: Scene, drawn: Drawn, edit: str) -> ProducedItem:
@@ -2522,6 +2573,9 @@ def new_scene_place(scene: Scene, drawn: Drawn, place: str) -> list[ProducedItem
     drawn (PERSON_IN_ROOM_PROMPT): for that scene only. Gives back what was made, the
     picture asked for last. Run again, it pays for nothing already paid for."""
     job = scene.job
+    portrait = latest(job, ProducedItem.Kind.PORTRAIT)
+    if drawn == "person_in_room" and portrait is None:
+        raise NoPresenterYet()
     prompt = SCENE_NEW_PLACE_PROMPT.format(place=place.strip())
     paid_for = _paid_calls(job, "draw_scene_room").filter(handoff={"prompt": prompt}).last()
     file = (
@@ -2532,9 +2586,7 @@ def new_scene_place(scene: Scene, drawn: Drawn, place: str) -> list[ProducedItem
     room = _kept_place(scene, ProducedItem.Kind.SCENE_ROOM, file, made_from=None, prompt=prompt)
     if drawn == "room":
         return [room]
-    portrait = latest(job, ProducedItem.Kind.PORTRAIT)
-    if portrait is None:
-        raise NoPlaceYet(drawn)
+    assert portrait is not None
     pictures = [portrait.file, room.file]
     person = _edited_once(job, "make_scene_person_in_room", PERSON_IN_ROOM_PROMPT, pictures)
     return [
