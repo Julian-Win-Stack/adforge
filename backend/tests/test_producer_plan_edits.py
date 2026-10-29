@@ -458,6 +458,28 @@ def test_new_music_once_the_ad_is_shown_is_put_in_when_the_ad_is_assembled_again
     assert f"The changes since ad version {shown.version} cost $" in answer_of("assemble_ad")
 
 
+def test_the_cost_line_counts_from_the_ad_just_before_not_the_first(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+) -> None:
+    for mood in ("calm piano", "soft strings"):
+        owner_says(
+            fake_model,
+            say,
+            "Other music, please.",
+            ("create_music", {"mood": mood}),
+            ("assemble_ad", {}),
+        )
+
+    second, third = shown.job.produced.filter(kind="finished_ad").order_by("version")[1:]
+    spent = ModelCall.objects.filter(
+        created_at__gt=second.created_at, created_at__lt=third.created_at
+    ).aggregate(cost=Sum("cost_usd"))["cost"]
+    answer = ToolCall.objects.filter(tool="assemble_ad").latest("id").result
+    assert f"The changes since ad version {second.version} cost {dollars(spent)}:" in answer
+
+
 @pytest.mark.parametrize("edited", [False, True], ids=["clip current", "clip stale"])
 def test_a_dead_step_offers_to_keep_the_scenes_clip_only_while_it_is_current(
     fake_model: FakeModel,
