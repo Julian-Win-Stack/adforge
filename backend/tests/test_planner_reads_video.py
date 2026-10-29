@@ -127,7 +127,9 @@ def test_a_job_without_videos_tells_the_planner_its_videos_say_nothing(
 def test_the_fact_check_takes_what_the_video_says_as_the_shops_words_and_sees_its_picture(
     fake_model: FakeModel, mug_with_videos: Job, say: Callable[..., None]
 ) -> None:
-    # Scene 2's line is what the video says, and it shows the inside only the video showed.
+    # Scene 2's line is what the video says, and it shows the inside only the video showed:
+    # the plan names the picture cut from the video as its scene picture, by library number.
+    *_, frame = library_of(mug_with_videos)
     plan_it(
         fake_model,
         say,
@@ -138,7 +140,8 @@ def test_the_fact_check_takes_what_the_video_says_as_the_shops_words_and_sees_it
                     {
                         "line": "Rinse it under warm water and it comes up shining.",
                         "shows": "The mug's glazed inside under running water.",
-                        "needs": [{"what": "the mug's inside", "photos": [3]}],
+                        "needs": [{"what": "the mug's inside", "photos": [frame.number]}],
+                        "scene_pictures": [{"number": frame.number, "for": "content"}],
                     }
                 ),
                 PLAN["plan"]["scenes"][2],
@@ -156,7 +159,8 @@ def test_the_fact_check_takes_what_the_video_says_as_the_shops_words_and_sees_it
 
     (call,) = ModelCall.objects.filter(purpose="fact_check")
     assert call.handoff["video_transcripts"] == [SAYS, "music only"]
-    # The colour photo and the picture scene 2 needs, the picture by where it was cut.
+    # The colour photo and scene 2's scene picture, the picture by where it was cut (the
+    # fact check sees the pictures the plan names as scene pictures, spec #210 point 11).
     assert [image["label"] for image in call.images] == ["Photo 1", PICTURE_LABEL]
     assert results_of("run_planning_checks")[0].startswith("The checks passed.")
 
@@ -208,6 +212,7 @@ def test_a_moment_only_the_gallery_video_shows_is_planned_as_a_scene_and_passes_
                         "line": "Two pumps lather through even the thickest hair.",
                         "shows": "Two pumps of the shampoo lathered in a palm.",
                         "needs": [{"what": "the lather", "photos": [frame]}],
+                        "scene_pictures": [{"number": frame, "for": "in-use"}],
                     }
                 ),
                 {"line": "Get yours today.", "overlay": None},
