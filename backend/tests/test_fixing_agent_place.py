@@ -17,7 +17,7 @@ from gateway.fake import FakeModel, turn
 from gateway.gateway import edit_picture
 from gateway.types import ToolUse
 from jobs import work
-from jobs.models import ProducedItem, Scene, SceneStep
+from jobs.models import AgentFixTry, ProducedItem, Scene, SceneStep
 
 from .conftest import HeldSteps, WorkerStopped, handoffs
 from .test_fixing_agent import film_again
@@ -172,21 +172,102 @@ def test_a_small_edit_changes_the_scenes_own_picture_only_and_is_shown(
 
 
 @pytest.mark.parametrize(
-    "asked",
+    ("asked", "refused"),
     [
-        {"edit": CLEAR, "new_place": KITCHEN},
-        {"edit": None, "new_place": None},
-        {"edit": "  ", "new_place": None},
+        ({"edit": CLEAR, "new_place": KITCHEN}, "write an edit or a new place, not both."),
+        ({"edit": None, "new_place": None}, "write an edit or a new place. Nothing"),
+        ({"edit": "  ", "new_place": None}, "the words are blank: write the edit or the new"),
     ],
 )
 def test_place_edit_takes_one_edit_or_one_new_place(
-    fake_model: FakeModel, failed_clip: SceneStep, asked: dict[str, Any]
+    fake_model: FakeModel, failed_clip: SceneStep, asked: dict[str, Any], refused: str
 ) -> None:
     fake_model.respond("fix_scene", turn(calls=[place_edit(**asked)]), turn(calls=[film_again()]))
     fixed(failed_clip)
     result = ToolCall.objects.get(tool="place_edit").result
-    assert result.startswith("Refused: write either an edit or a new place")
+    assert result.startswith(f"Refused: {refused}")
     assert handoffs("edit_scene_place") == handoffs("draw_scene_room") == []
+
+
+def test_a_new_place_for_the_presenter_with_no_presenter_is_refused_before_paying(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    # An ad whose presenter was never made.
+    ProducedItem.objects.filter(kind=ProducedItem.Kind.PORTRAIT).update(
+        kind=ProducedItem.Kind.MUSIC
+    )
+    fake_model.respond(
+        "fix_scene", turn(calls=[place_edit(new_place=KITCHEN)]), turn(calls=[film_again()])
+    )
+    fixed(failed_clip)
+    result = ToolCall.objects.get(tool="place_edit").result
+    assert result.startswith("Refused: the ad has no presenter yet")
+    assert handoffs("draw_scene_room") == []
+    assert not Scene.objects.get(number=2).produced.filter(kind=ProducedItem.Kind.SCENE_ROOM)
+
+
+def tries() -> int:
+    return AgentFixTry.objects.count()
+
+
+NO_FACE_NEW_PICTURE = film_again(
+    new_picture=True,
+    photo=1,
+    picture_prompt="A hand holds the mug from Image 1 in the room from the last image.",
+)
+
+
+def test_a_try_keeping_a_start_picture_older_than_the_new_place_is_refused(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[place_edit(new_place=KITCHEN)]),
+        turn(calls=[film_again()]),
+        turn(calls=[NO_FACE_NEW_PICTURE]),
+    )
+    fixed(failed_clip)
+
+    kept_old, drawn_new = ToolCall.objects.filter(tool="film_again").order_by("id")
+    assert kept_old.result.startswith(
+        "Refused: the scene's place changed after its start picture was drawn: draw a new start "
+        "picture"
+    )
+    # The new start picture is drawn in the room the scene's presenter was drawn in, its own.
+    scene = Scene.objects.get(number=2)
+    [room] = scene.produced.filter(kind=ProducedItem.Kind.SCENE_ROOM)
+    assert handoffs("make_starting_picture")[-1]["pictures"][-1] == room.file
+    assert not drawn_new.result.startswith("Refused")
+    assert tries() == 1
+
+
+def test_a_try_needing_the_picture_the_new_place_lacks_is_refused_and_names_it(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[place_edit(picture="room", new_place=KITCHEN)]),
+        turn(calls=[A_FACE]),
+        turn(calls=[("look_at_place", {})]),
+        turn(calls=[NO_FACE_NEW_PICTURE]),
+    )
+    fixed(failed_clip)
+
+    calls = list(ToolCall.objects.filter(tool="film_again").order_by("id"))
+    assert calls[0].result.startswith(
+        "Refused: the scene's newest place is its own picture of its place on its own, and this "
+        "try needs its picture of the presenter in its place: call place_edit with picture "
+        "person_in_room first."
+    )
+    face, no_face = calls
+    # Nothing was drawn for it; the room alone is sent to a try showing nobody.
+    assert handoffs("make_scene_person_in_room") == []
+    [room] = Scene.objects.get(number=2).produced.filter(kind=ProducedItem.Kind.SCENE_ROOM)
+    assert not no_face.result.startswith("Refused")
+    assert handoffs("make_starting_picture")[-1]["pictures"][-1] == room.file
+    # The place the agent looks at is the scene's own.
+    looked = ToolCall.objects.get(tool="look_at_place")
+    assert [picture["key"] for picture in looked.pictures] == [room.file]
 
 
 def test_a_worker_stopped_mid_place_edit_pays_for_nothing_again(
