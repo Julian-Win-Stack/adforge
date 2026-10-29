@@ -2,11 +2,13 @@
 tools each asked for, and the model calls each made. A test keeps what would be sent in
 memory instead of sending it, and reads it back as the tree Langfuse would show."""
 
+import json
 import re
 import subprocess
 import uuid
 from collections.abc import Callable
 from dataclasses import replace
+from decimal import Decimal
 from pathlib import Path
 from textwrap import dedent
 from typing import Any, cast
@@ -25,6 +27,7 @@ from adforge import file_store, tracing
 from agents.models import ToolCall
 from agents.producer import PRODUCER
 from agents.tasks import restart_dead_producers
+from evals import agent_page
 from gateway.fake import DEFAULT_WHY, FakeModel, turn
 from gateway.gateway import VERDICT_SCORES, call_model, submit_broll_clip, watch_video
 from gateway.models import ModelCall, SystemPrompt
@@ -52,6 +55,7 @@ from .conftest import (
     READABLE,
     REFERENCES_ENOUGH,
     HeldSteps,
+    ScriptedProducer,
     a_video,
     chat,
     openai_turn,
@@ -60,10 +64,12 @@ from .conftest import (
 )
 
 # The fixture for a chat with a clip made, and those it is built on, for pytest to find.
+from .test_end_to_end import first_ad_from_one_link
 from .test_producer_clip import clipped, pictured, ready, spoken  # noqa: F401
 from .test_producer_music import make_music
 from .test_producer_restarts import WorkerStopped, the_producer_died, the_worker_stops
 from .test_producer_scenes import CHOICE
+from .test_round_results import AD, exported
 from .traced import Score, Traces
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -778,3 +784,95 @@ def test_a_call_that_judges_nothing_is_not_scored(traces: Traces, fake_model: Fa
 
     (call,) = [found for trace in traces.all() for found in trace.find(kind="generation")]
     assert traces.scores(call) == []
+
+
+# --- Spec #247: a whole ad's traces and record -------------------------------------------------
+
+LOOK_WHY = "The shop owner asks about scene 2, so I look at its clip before I answer."
+REASONING = "The shop owner sent a link and nothing else, so I make the whole ad."
+LOOKED = {
+    "sees": "The mug turns on a workbench while tea pours in.",
+    "wrong": "Nothing",
+    "root_cause": "",
+    "direction": "",
+}
+
+
+def test_a_whole_ad_keeps_every_calls_why_lists_them_after_the_first_clip_and_traces_them(
+    traces: Traces,
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    product_page_url: str,
+    tmp_path: Path,
+) -> None:
+    fake_model.reasoning = REASONING
+    first_ad_from_one_link(producer, fake_model, product_page_url)
+    fake_model.respond("look", LOOKED)
+    producer.told(
+        "Is scene 2 right?",
+        (
+            "look",
+            {
+                "scene": 2,
+                "what": "clip",
+                "number": None,
+                "question": "Does the clip show the mug as planned?",
+                "why": LOOK_WHY,
+            },
+        ),
+        "Scene 2 shows the mug as planned.",
+    )
+
+    # Every tool call keeps its why.
+    calls = ToolCall.objects.filter(agent="producer")
+    assert calls.count() == 18
+    assert set(calls.exclude(tool="look").values_list("why", flat=True)) == {DEFAULT_WHY}
+    assert calls.get(tool="look").why == LOOK_WHY
+
+    # The ad's page lists the calls after the first clip, each with its why, cost and time.
+    run = exported(tmp_path)
+    listed = json.loads((run / AD / "tool_calls.json").read_text())
+    tools = [each["tool"] for each in listed if each["agent"] == "producer"]
+    assert "read_page" not in tools and "plan_ad" not in tools
+    assert tools[-2:] == ["assemble_ad", "look"]
+    (look,) = [each for each in listed if each["tool"] == "look"]
+    assert look["why"] == LOOK_WHY
+    assert Decimal(look["cost_usd"]) > 0
+    assert look["created_at"] and look["finished_at"]
+    shown = agent_page.page(run, AD)
+    assert LOOK_WHY in shown
+    assert f"${look['cost_usd']} · started" in shown
+
+    everything = traces.all()
+    # Each of the two messages starts a trace under one name; every part is in the settings'
+    # environment.
+    named = [each for each in everything if "langfuse.trace.name" in each.attributes]
+    assert [each.attributes["langfuse.trace.name"] for each in named] == [
+        "answer-owner-message"
+    ] * 2
+    environment = django_settings.LANGFUSE_ENVIRONMENT
+    assert {
+        part.attributes["langfuse.environment"] for each in everything for part in each.find()
+    } == {environment}
+    # Each producer turn is shown with its system prompt and the summary of its reasoning.
+    turns = [part for each in everything for part in each.find(name="produce")]
+    assert len(turns) == ModelCall.objects.filter(purpose="produce").count()
+    assert {part.value("input")["instructions"] for part in turns} == {PRODUCER.instructions}
+    assert {part.value("output")["output"]["reasoning"] for part in turns} == {REASONING}
+    # The judge's verdicts on scene 2's clip are scores on its calls.
+    (motion,) = [part for each in everything for part in each.find(name="check_clip_motion")]
+    assert [score.name for score in traces.scores(motion)] == [
+        "clip_real_motion",
+        "clip_no_sudden_change",
+        "clip_does_what_was_ordered",
+    ]
+    # Scene 2's clip step is shown with what it was asked and what it made.
+    (clip,) = [
+        part
+        for each in everything
+        for part in each.find(name="scene step")
+        if part.metadata() == {"scene": 2, "step": "clip"}
+    ]
+    step = SceneStep.objects.get(kind="clip", scene__number=2)
+    assert clip.value("input")["kind"] == "clip" and clip.value("input")["scene"] == 2
+    assert clip.value("output") == {"result": step.result}

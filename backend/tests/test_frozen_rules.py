@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from agents import fixing_agent
+from agents.producer import INSTRUCTIONS as PRODUCER_INSTRUCTIONS
 from gateway.catalog import MODEL_FOR_PURPOSE, SLOW_ANSWER_SECONDS
 from jobs import clip_judge, owner_parts, watcher
 from jobs.checks import FACT_CHECK_INSTRUCTIONS
@@ -791,3 +792,41 @@ def test_the_first_send_writer_is_told_nothing_of_the_retired_opener() -> None:
 def test_the_first_send_writers_rules_name_no_tested_product(name: str) -> None:
     # CODING_STANDARDS.md: the contract fixture's product and the graded rounds' products.
     assert not re.search(rf"\b{name}\b", FIRST_SEND_INSTRUCTIONS, re.IGNORECASE)
+
+
+# The first message's path (spec #247 point 3, Julian Oct 29 03:33, Q8): the producer goes the
+# usual order to the whole ad unless the shop owner's words redirect it, and asks them only
+# when the ad can't go on without them. Its instructions, pinned word for word.
+FIRST_MESSAGE_PATH = [
+    pytest.param(
+        "The usual order is: read the page, plan the ad, create the person, run the planning "
+        "checks, create the music, then, for each scene, make its starting picture, when it has "
+        "one, and its line's audio, which can run at the same time, transcribe the audio once "
+        "it's ready, and once the picture is made and the audio heard, make the scene's clip, "
+        "which finishes the scene. A scene that shows the product has no starting picture: its "
+        "clip is made once its audio is heard. Once every scene is finished, assemble the ad, "
+        "which shows it to the shop owner.",
+        id="the usual order ends with the ad shown",
+    ),
+    pytest.param(
+        "Ask only when the ad can't go on without them: their yes to the picture of a part no "
+        "photo shows, something the ad needs that neither the page nor the library holds, or "
+        "what a tool handed back for them to answer. Everything else you answer from what you "
+        "already have, and go on.",
+        id="ask only when the ad can't go on",
+    ),
+]
+
+
+@pytest.mark.parametrize("sentence", FIRST_MESSAGE_PATH)
+def test_the_producers_first_message_path_is_in_its_instructions_word_for_word(
+    sentence: str,
+) -> None:
+    assert sentence in " ".join(PRODUCER_INSTRUCTIONS.split())
+
+
+def test_nothing_in_the_producers_instructions_waits_for_a_yes_before_making_the_ad() -> None:
+    # The old path showed a plan or the script and waited for the shop owner's yes.
+    said = " ".join(PRODUCER_INSTRUCTIONS.split()).lower()
+    for waiting in ("shall i", "wait for their yes", "wait for a yes", "plan card", "yes button"):
+        assert waiting not in said
