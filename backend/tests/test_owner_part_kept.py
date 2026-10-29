@@ -52,8 +52,8 @@ def approved(
     say: Say,
 ) -> None:
     """Scenes 2 and 3 planned with the same owner part; the shop owner sent a photo of it
-    for scene 2, whose picture was drawn with it, and said yes to it. Scene 3's picture was
-    drawn before the yes, without the photo."""
+    for scene 2, whose picture and the part's own were drawn with it, and said yes to it.
+    Scene 3's picture was drawn before the yes, without the photo."""
     photos_sent(fake_model, say, OWNER_MUG)
     Scene.objects.filter(number__in=(2, 3)).update(owner_part=HANDLE)
     ReferencePhoto.objects.create(
@@ -61,6 +61,7 @@ def approved(
     )
     calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
     made_ready(fake_model, steps, say)
+    owner_parts.draw_part_picture(scene(2))
 
     owner_parts.approve(scene(2))
 
@@ -156,6 +157,7 @@ def test_a_later_fix_of_a_part_drawn_from_words_gives_the_prompt_writer_its_look
     Scene.objects.filter(number=2).update(owner_part=HANDLE)
     calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
     made_ready(fake_model, steps, say)
+    owner_parts.draw_part_picture(scene(2))
     owner_parts.approve(scene(2))
     calling(fake_model, say, *[("make_clip", {"scene": number}) for number in (1, 2, 3)])
     run(fake_model, steps)
