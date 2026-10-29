@@ -1917,6 +1917,35 @@ test("a swap on its way can't be sent twice", async () => {
   expect(backend.used).toHaveLength(1);
 });
 
+test("a clip can't be put in the ad while the scene's clip is being made", async () => {
+  const { backend, user } = await openScene2([
+    version(1),
+    version(2, { in_ad: true, free: false }),
+  ]);
+  await waitFor(() => strip());
+  backend.notice("Remaking scene 2's clip.", "info", { scene: 2, kind: "clip", state: "started" });
+  await nextPoll();
+  await within(sceneCard(2)).findByText("Being remade");
+
+  await user.click(thumb(/^v1/));
+
+  const button = within(sceneCard(2)).getByRole("button", { name: "Use this in the ad" });
+  expect(button.hasAttribute("disabled")).toBe(true);
+  expect(button.getAttribute("title")).toBe("Wait until the new clip is made.");
+});
+
+test("a swap when no clip was in the ad says so, with nothing to undo", async () => {
+  const { backend, user } = await openScene2([version(1), version(2)]);
+  await waitFor(() => strip());
+  await user.click(thumb(/^v1/));
+
+  await user.click(within(sceneCard(2)).getByRole("button", { name: "Use this in the ad" }));
+
+  await within(sceneCard(2)).findByText("v1 is in the ad now");
+  expect(backend.used).toEqual([{ scene: 2, version: 1 }]);
+  expect(within(sceneCard(2)).queryByRole("button", { name: "Undo" })).toBeNull();
+});
+
 test("a scene with one clip has no strip", async () => {
   await openScene2([version(1, { in_ad: true, free: false, verdict: "pass", problem: "" })]);
   await waitFor(() => expect(within(sceneCard(2)).getByText("v1")).toBeDefined());

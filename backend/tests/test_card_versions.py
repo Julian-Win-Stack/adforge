@@ -13,10 +13,11 @@ import pytest
 from rest_framework.test import APIClient
 
 from adforge import file_store
+from agents import card_picks
 from agents.models import SystemNote, ToolCall
-from chat import sent as sent_lists
 from chat.models import Attachment, Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
+from jobs import work
 from jobs.models import AgentFix, OwnerQuestion, ProducedItem, Scene
 
 from .conftest import paid_for
@@ -59,6 +60,11 @@ def test_the_card_shows_every_try_in_one_numbering_with_the_judges_verdict_and_t
 
     scene_2 = cards(api, session_id)[2]
 
+    # Each clip carries what it was sent, as it was kept when the clip was made.
+    sent = [each.pop("sent") for each in scene_2]
+    assert [each["prompt"] for each in sent] == [
+        clip.sent["prompt"] if clip.sent else None for clip in (first, try_1, try_2)
+    ]
     assert scene_2 == [
         {
             "number": number,
@@ -69,7 +75,6 @@ def test_the_card_shows_every_try_in_one_numbering_with_the_judges_verdict_and_t
             "problem": problem,
             "in_ad": clip == try_2,
             "free": clip != try_2,
-            "sent": sent_lists.shown(clip),
         }
         for number, label, clip, problem in (
             (1, "v1 first version (first clip)", first, FLOATS),
@@ -275,7 +280,7 @@ def test_a_swap_withdraws_the_fixing_agents_open_question_about_the_scene(
     ).exists()
 
 
-def test_a_swap_while_the_producer_works_is_read_by_it_once_it_replies(
+def test_a_swap_while_the_producer_calls_a_tool_is_put_in_the_ad_before_it_is_told(
     failed_ad: ProducedItem,  # noqa: F811
     api: APIClient,
     session_id: str,
@@ -288,16 +293,37 @@ def test_a_swap_while_the_producer_works_is_read_by_it_once_it_replies(
 
     fake_model.respond(
         "produce",
-        meanwhile(swap, turn(says="It's looking good.")),
+        meanwhile(swap, turn(calls=[("cost_so_far", {})])),
+        turn(says="It's looking good."),
         turn(says="v2 is in the ad now."),
     )
 
     say("How does it look?")
 
-    # One producer: the swap's note is read by the one working, on a turn of its own.
+    # One producer: the turn after its tool call isn't told of the swap, which waits for the
+    # ad to be assembled with it; its next run assembles it, then tells it.
     (note,) = SystemNote.objects.filter(kind=SystemNote.Kind.VERSION_USED)
+    assert [cut["clip"] for cut in ads()[-1].cuts if cut["scene"] == 2] == [current_clip(2).pk]
     produced = [each for each in fake_model.turns_taken if each.purpose == "produce"]
+    told = [getattr(each, "text", "") for each in produced[-2].handoff.conversation]
+    assert not any("put scene 2's v2 in the ad" in said for said in told)
     given = [getattr(each, "text", "") for each in produced[-1].handoff.conversation]
     assert f"From the app, not the shop owner: {note.text}" in given
     assert "The ad was assembled again with it" in note.text
     assert not Session.objects.get(pk=session_id).producer_running
+
+
+def test_a_swap_is_assembled_into_the_ad_once_however_often_the_producer_starts_before_reading(
+    failed_ad: ProducedItem,  # noqa: F811
+    session_id: str,
+) -> None:
+    session = Session.objects.get(pk=session_id)
+    SystemNote.objects.create(session=session, kind=SystemNote.Kind.VERSION_USED, text="Swapped.")
+    work.go_back(Scene.objects.get(number=2), 2, show=False)
+
+    card_picks.assemble_after_swaps(session)
+    card_picks.assemble_after_swaps(session)
+
+    (note,) = SystemNote.objects.filter(kind=SystemNote.Kind.VERSION_USED)
+    assert note.text.count("The ad was assembled again") == 1
+    assert len(ads()) == 2

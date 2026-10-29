@@ -3388,7 +3388,7 @@ def tries_shown(step: SceneStep) -> TriesShown:
                 name=try_name(clip).capitalize(),
                 version=labels.get(clip.pk, ""),
                 # The first only, SIDES' before MOTION's: one problem per try.
-                problem=next(iter(clip_judge.still_failing(_ruling(clip))), ""),
+                problem=first_problem(_ruling(clip)),
             )
             for clip in tries
         ],
@@ -3397,6 +3397,12 @@ def tries_shown(step: SceneStep) -> TriesShown:
         reason=ended.gave_up if ended is not None else "",
         on_offer=in_ad is not None or _as_the_give_up_left_it(step),
     )
+
+
+def first_problem(ruling: dict[str, Any]) -> str:
+    """The one problem a clip the judge failed is shown with: the first it still fails on,
+    SIDES' before MOTION's."""
+    return next(iter(clip_judge.still_failing(ruling)), "")
 
 
 def _as_the_give_up_left_it(step: SceneStep) -> bool:
@@ -3512,14 +3518,14 @@ def _say_the_agent_asked(step: SceneStep, ended: AgentFix) -> None:
     )
 
 
-# What a tap of "Use this one" is told when the tries it was under aren't on offer any more:
-# the scene has a newer clip, or its line changed since.
+# What swapping in a try is told when its tries aren't on offer any more: the scene has a
+# newer clip, or its line changed since.
 TRIES_NOT_ON_OFFER = "Those tries aren't on offer any more."
 TRY_IN_THE_AD = "That try is already in the ad."
 
 
 class TryNotOnOffer(Exception):
-    """A tap of "Use this one" on a try that can't be swapped in, saying why."""
+    """Swapping in a try that can't be swapped in, saying why."""
 
 
 def _try_to_use(clip: ProducedItem) -> int:
@@ -3561,7 +3567,7 @@ def _try_to_use(clip: ProducedItem) -> int:
 
 def is_a_try_on_offer(clip: ProducedItem) -> bool:
     """Whether `clip` is a try of a clip the judge failed every try of that can be swapped in
-    now, as `check_try_to_use` allows."""
+    now."""
     try:
         _try_to_use(clip)
     except TryNotOnOffer:
@@ -3569,16 +3575,12 @@ def is_a_try_on_offer(clip: ProducedItem) -> bool:
     return True
 
 
-def check_try_to_use(clip: ProducedItem) -> None:
-    """Refuse a tap of "Use this one" on `clip`, saying why, unless it can be swapped in."""
-    _try_to_use(clip)
-
-
 def use_try(clip: ProducedItem, *, show: bool = True) -> GoneBack:
     """Swap a try of a clip the judge failed every try of into the ad, as the shop owner
     tapped: its version is gone back to, for nothing, with nothing made, judged or paid for,
     and the chat is shown it, a scene said to camera when the fixing agent gave up showing
-    what the try was made for again. The tap is their yes. Refuses as `check_try_to_use` does.
+    what the try was made for again. The tap is their yes. Refuses, saying why, unless
+    `is_a_try_on_offer`.
     Not to `show` it leaves the chat as it was, as go_back."""
     assert clip.scene is not None, "a try is a scene's clip"
     return go_back(clip.scene, _try_to_use(clip), show=show)

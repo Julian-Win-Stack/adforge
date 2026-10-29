@@ -251,9 +251,12 @@ export function versionOnShow(
   );
 }
 
-/** Whether the clip judge passed none of a scene's clips and failed every one it looked at:
- * the card asks the owner to pick the best one. A clip it couldn't tell about or never looked
- * at is no fail. */
+/** Whether the clip judge passed none of a scene's clips and failed one: the card asks the
+ * owner to pick the best one. A scene it never failed, as a talking one it never looks at,
+ * isn't asked. */
 export function noVersionPassed(versions: CardVersion[]): boolean {
-  return versions.length > 0 && versions.every((one) => one.verdict === "fail");
+  return (
+    !versions.some((one) => one.verdict === "pass") &&
+    versions.some((one) => one.verdict === "fail")
+  );
 }

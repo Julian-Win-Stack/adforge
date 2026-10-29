@@ -7,7 +7,7 @@ made, judged or paid for: no producer step."""
 from dataclasses import dataclass
 from typing import Literal
 
-from . import clip_judge, owner_answers, work
+from . import owner_answers, work
 from .models import ProducedItem, Scene
 
 # What the clip judge said of a clip, as the card badges it. A clip it never looked at (a
@@ -134,7 +134,7 @@ def _judged(clip: ProducedItem) -> tuple[Verdict, str]:
     ruling = clip.ruling or {}
     verdict = ruling.get("verdict")
     if verdict == "fail":
-        return "fail", next(iter(clip_judge.still_failing(ruling)), "")
+        return "fail", work.first_problem(ruling)
     if verdict in ("pass", "unsure"):
         return verdict, ""
     return "not_checked", ""

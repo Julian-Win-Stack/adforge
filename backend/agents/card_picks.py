@@ -10,6 +10,7 @@ from chat.models import Session
 from jobs import card_versions
 from jobs.card_versions import CantUse
 
+from .loop import unread_swap_notes
 from .models import SystemNote
 from .producer import assembled_again
 
@@ -43,11 +44,7 @@ def assemble_after_swaps(session: Session) -> None:
     in from the cards since the producer last read, and add how it went to the newest note of
     them, for the producer to tell the shop owner. Nothing to do when no swap waits, or the ad
     was already assembled for them."""
-    note = (
-        session.system_notes.filter(kind=SystemNote.Kind.VERSION_USED, read_at__isnull=True)
-        .order_by("created_at", "id")
-        .last()
-    )
+    note = unread_swap_notes(session).order_by("created_at", "id").last()
     if note is None or note.assembled:
         return
     note.text += assembled_again(session, session.jobs.first())

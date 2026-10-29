@@ -35,12 +35,17 @@ export function ScenePanel({
   const [versions, setVersions] = useState<ReadonlyMap<number, CardVersion[]>>(new Map());
   const lastSeq = messages.at(-1)?.seq ?? 0;
   const anyCard = cards.length > 0;
+  // Counts what was asked of the server about the clips, so an answer to an older question,
+  // as a fetch a swap overtook, never undoes a newer one.
+  const asked = useRef(0);
   useEffect(() => {
     if (sessionId === null || !anyCard) return;
     let current = true;
+    const question = ++asked.current;
     getSceneVersions(sessionId).then(
       (found) => {
-        if (current) setVersions(new Map(found.map(({ scene, versions }) => [scene, versions])));
+        if (current && question === asked.current)
+          setVersions(new Map(found.map(({ scene, versions }) => [scene, versions])));
       },
       // The cards keep the clips they had: the next message asks again, and the chat's own
       // poll already says when the server can't be reached.
@@ -116,6 +121,7 @@ export function ScenePanel({
                   card={card}
                   versions={versions.get(card.scene) ?? []}
                   onUse={async (version) => {
+                    ++asked.current;
                     const after = await putVersionInAd(sessionId as string, card.scene, version);
                     setVersions((had) => new Map(had).set(after.scene, after.versions));
                   }}
@@ -182,7 +188,8 @@ function SceneCardView({
 }) {
   const [previewing, setPreviewing] = useState<number | null>(null);
   // The last swap, until the owner does anything else, so it can be undone.
-  const [swapped, setSwapped] = useState<{ to: number; from: number } | null>(null);
+  // `from` is null when no clip was in the ad before it, so there is nothing to undo to.
+  const [swapped, setSwapped] = useState<{ to: number; from: number | null } | null>(null);
   const [using, setUsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const onShow = versionOnShow(versions, previewing);
@@ -205,7 +212,10 @@ function SceneCardView({
     card.picture?.version ??
     null;
   const sent = onShow ? sentShown(onShow.sent) : (latest?.sent ?? null);
-  const undoable = swapped !== null && inAd?.number === swapped.to ? swapped : null;
+  // Said until the owner does anything else, or another clip is in the ad: none is when the
+  // swapped-in clip was of a scene said to camera, which the scene now shows again.
+  const confirmed =
+    swapped !== null && (inAd === null || inAd.number === swapped.to) ? swapped : null;
 
   let status: string | null = null;
   let tone = "";
@@ -229,7 +239,7 @@ function SceneCardView({
     setError(null);
   }
 
-  async function use(number: number, then: { to: number; from: number } | null) {
+  async function use(number: number, then: { to: number; from: number | null } | null) {
     if (using) return;
     setUsing(true);
     setError(null);
@@ -312,7 +322,7 @@ function SceneCardView({
               disabled={using || card.busy}
               title={card.busy ? "Wait until the new clip is made." : undefined}
               onClick={() =>
-                use(preview.number, inAd ? { to: preview.number, from: inAd.number } : null)
+                use(preview.number, { to: preview.number, from: inAd?.number ?? null })
               }
             >
               {using ? "Putting it in…" : "Use this in the ad"}
@@ -324,17 +334,19 @@ function SceneCardView({
             Back
           </button>
         </div>
-      ) : undoable ? (
+      ) : confirmed ? (
         <p className="scene-swapped" role="status">
-          <span>v{undoable.to} is in the ad now</span>
-          <button
-            type="button"
-            className="scene-undo"
-            disabled={using}
-            onClick={() => use(undoable.from, null)}
-          >
-            {using ? "Undoing…" : "Undo"}
-          </button>
+          <span>v{confirmed.to} is in the ad now</span>
+          {confirmed.from !== null && (
+            <button
+              type="button"
+              className="scene-undo"
+              disabled={using}
+              onClick={() => use(confirmed.from as number, null)}
+            >
+              {using ? "Undoing…" : "Undo"}
+            </button>
+          )}
         </p>
       ) : (
         noVersionPassed(versions) &&

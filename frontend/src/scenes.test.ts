@@ -304,10 +304,12 @@ test("a card plays the version previewed, else the one in the ad, else none it k
   expect(versionOnShow([cardVersion(1)], null)).toBeNull();
 });
 
-test("no version passed only when the check failed every clip it looked at", () => {
+test("no version passed when the check passed none of a scene's clips and failed one", () => {
   expect(noVersionPassed([cardVersion(1), cardVersion(2)])).toBe(true);
+  expect(noVersionPassed([cardVersion(1), cardVersion(2, { verdict: "unsure" })])).toBe(true);
+  expect(noVersionPassed([cardVersion(1), cardVersion(2, { verdict: "not_checked" })])).toBe(true);
   expect(noVersionPassed([cardVersion(1), cardVersion(2, { verdict: "pass" })])).toBe(false);
-  expect(noVersionPassed([cardVersion(1), cardVersion(2, { verdict: "unsure" })])).toBe(false);
+  // A scene the check never failed, as a talking one, isn't asked.
   expect(noVersionPassed([cardVersion(1, { verdict: "not_checked" })])).toBe(false);
   expect(noVersionPassed([])).toBe(false);
 });

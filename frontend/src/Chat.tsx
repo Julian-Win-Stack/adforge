@@ -412,7 +412,10 @@ function TriesView({ text, tries }: { text: string; tries: MessageTries }) {
               aria-label={`Scene ${tries.scene}, ${each.name}`}
             />
             <span className="try-head">
-              <strong>{each.name}</strong>
+              {/* Named as the scene's card numbers it, the one place to pick it. */}
+              <strong>
+                {each.version.split(" ")[0]} · {each.name}
+              </strong>
               {each.clip === tries.picked && <span className="try-badge pick">App's pick</span>}
             </span>
             <span className="try-problem">The judge saw: {each.problem}</span>
