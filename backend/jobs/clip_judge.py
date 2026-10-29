@@ -23,17 +23,18 @@ import io
 import json
 import logging
 import math
+import re
 import subprocess
 import tempfile
 from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
 import PIL.Image
 from django.conf import settings
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
@@ -407,8 +408,10 @@ class ProductVerdict(BaseModel):
         "at 5 s'. Null otherwise."
     )
     clip_shows: str | None = Field(
-        description="On a fail: what the clip shows and at which second, e.g. 'bristles on the "
-        "back of the head at 2.3 s'. Null otherwise."
+        # Changed from the brief's words (#228 review M1): its example was a past failed case
+        # (CODING_STANDARDS.md), now a general one.
+        description="On a fail: what the clip shows and at which second, e.g. 'a part on a side "
+        "where the real one has none, at 2.3 s'. Null otherwise."
     )
     real_product_shows: str | None = Field(
         description="On a fail: what the real product shows there, from the reference. Null "
@@ -446,8 +449,8 @@ MOTION_FROM_REFERENCES = MOTION_CHECK.replace(
 )
 
 # Said beside the planner's note on how this product behaves (#210 point 18, spec 2 item 28,
-# Julian Oct 28 22:38). NOT IN THE BRIEF YET: the brief was to carry this line before the judge
-# was built and doesn't (checked Oct 29); Claude's wording, for Julian's yes.
+# Julian Oct 28 22:38). Claude's wording: the brief didn't carry a line for the note when the
+# judge was built, and has carried this one, word for word, since Oct 29 04:19.
 BEHAVIOUR_FRAME = (
     "This is a note on how this product behaves, written from the shop's own page and what its "
     "videos show. Use it, with the references, to know how a real one looks, moves and behaves."
@@ -494,6 +497,12 @@ class ReferencesVerdict(BaseModel):
         description="On cannot tell: what the references and the note never show, in a few "
         'words that finish "the references never show ...". Null otherwise.'
     )
+
+    @model_validator(mode="after")
+    def _cannot_tell_says_what(self) -> Self:
+        if self.verdict == "cannot tell" and not (self.references_never_show or "").strip():
+            raise ValueError("A clip it can't tell about must say what the references never show.")
+        return self
 
 
 class SentClipCheckHandoff(Handoff):
@@ -574,7 +583,10 @@ def judged(
         failing = [(ask, said) for ask, said in usable if said["verdict"] == "fail"]
         for ask, said in failing:
             problems.setdefault((which, ask), []).append(_problem(said))
-        unsure = any(said["verdict"] == "unsure" or (which, ask) in blinded for ask, said in usable)
+        # A refused second keeps the check unsure even when no ask could be answered past it.
+        unsure = any(said["verdict"] == "unsure" for _, said in usable) or any(
+            check == which for check, _ in blinded
+        )
         checks[name] = (
             "fail" if failing else "unsure" if unsure else "pass" if usable else "not_checked"
         )
@@ -603,9 +615,19 @@ def judged(
     }
 
 
+# What a failing answer that names no fault is said to have found, for the fixing agent.
+NO_FAULT_NAMED = "The judge failed the clip without saying why: look at the clip's frames."
+
+
 def _problem(said: dict[str, Any]) -> str:
-    """A failing answer's problem: a PRODUCT answer names it its fault."""
-    return str(said["fault"] if "fault" in said else said["problem"])
+    """A failing answer's problem: a PRODUCT answer names it its fault, or else says what the
+    clip shows. One that says neither is NO_FAULT_NAMED, never "None"."""
+    if "fault" not in said:
+        return str(said["problem"] or NO_FAULT_NAMED)
+    named = str(said["fault"] or "").strip() or str(said["clip_shows"] or "").strip()
+    if not named:
+        logger.warning("A PRODUCT answer failed a clip without naming its fault")
+    return named or NO_FAULT_NAMED
 
 
 def owner_change_answers(ruling: dict[str, Any]) -> list[dict[str, Any] | None]:
@@ -627,7 +649,7 @@ def _without_owner_change(answer: dict[str, Any] | None) -> dict[str, Any] | Non
 
 
 def still_failing(ruling: dict[str, Any]) -> list[str]:
-    """The problems behind a ruling's failed checks , SIDES (or PRODUCT) first, each check's in
+    """The problems behind a ruling's failed checks, SIDES (or PRODUCT) first, each check's in
     the order asked: never one a ruling made before left out (left_out)."""
     left = left_out(ruling)
     answers = ruling.get("answers", {})
@@ -869,17 +891,19 @@ def _asked_against_sent(
     fixing = old_frames is not None
     facts = _sent_ruling_facts(step, clip, old if fixing else None)
 
-    first = _answer(
-        step,
-        _Ask(
-            "check_clip_references",
-            REFERENCES_QUESTION,
-            SentMotionCheckHandoff(ask=1, **told),
-            ReferencesVerdict,
-            [*shown, *_frames_shown(pictures["frames"])],
-            references=0,
-        ),
+    asking_first = _Ask(
+        "check_clip_references",
+        REFERENCES_QUESTION,
+        SentMotionCheckHandoff(ask=1, **told),
+        ReferencesVerdict,
+        [*shown, *_frames_shown(pictures["frames"])],
+        references=0,
     )
+    first = _answer(step, asking_first)
+    if first.unusable:
+        # An answer that broke its form (a "cannot tell" that doesn't say what is never
+        # shown) is asked for once more.
+        first = _answer(step, asking_first)
     if first.answer is None:
         post_notice(
             job,
@@ -894,8 +918,10 @@ def _asked_against_sent(
             "failed_answers": 0,
             "failures": [],
             "answers": {"references": first.answer, "product": [], "motion": []},
-            "cannot_tell": first.answer["references_never_show"] or "",
+            "cannot_tell": first.answer["references_never_show"],
             **facts,
+            # Only the first question was asked, so the version is the plain one.
+            "wording": wording_version(sent=True),
         }, [first]
 
     with_photos = fixing and bool(owners)
@@ -974,7 +1000,8 @@ def _asked_against_sent(
         fix=fixing,
         photos=with_photos and not all(each.without_owner_photos for each in motion),
     )
-    return ruling, [first, *answers]
+    # The first question's own refusal is told by the notice above, not as the clip's.
+    return ruling, answers
 
 
 def _sent_ruling_facts(
@@ -1002,21 +1029,30 @@ def _sent_ruling_facts(
 def _say_the_judge_is_unsure(step: SceneStep, ruling: dict[str, Any]) -> None:
     """Tell the chat, once, when the judge couldn't tell whether a clip is right because the
     references never show what it shows: the clip is kept, and the shop owner decides
-    (#210 point 18). Seconds of the clip the safety filter refused are told in red, as every
-    refusal is."""
+    (#210 point 18). Only for a clip the ruling keeps as unsure: a clip it failed goes to the
+    fixing agent. Seconds of the clip the safety filter refused are told in red, as every
+    refusal is, said to be kept only when the clip is."""
     number = step.scene.number
     job = step.scene.job
-    never = [ruling["cannot_tell"]] if "cannot_tell" in ruling else []
+    kept = ruling["verdict"] == "unsure"
+    never: list[str | None] = [ruling["cannot_tell"]] if "cannot_tell" in ruling else []
     if ruling.get("checks", {}).get("product") == "unsure":
         never += [
             answer["references_never_show"]
             for answer in ruling["answers"]["product"]
-            if answer and answer["verdict"] == "unsure" and answer["references_never_show"]
+            if answer and answer["verdict"] == "unsure"
         ]
-    for what in dict.fromkeys(never):
+    for what in dict.fromkeys(never) if kept else ():
+        said = (what or "").strip().rstrip(".")
+        if not said:
+            # The judge said it can't tell without saying what is never shown.
+            logger.warning("Scene %s's judge was unsure without saying why", number)
         text = (
             f"The clip judge can't tell whether scene {number}'s clip is right: the references "
-            f"never show {what.rstrip('.')}, check this one yourself."
+            f"never show {said}, check this one yourself."
+            if said
+            else f"The clip judge can't tell whether scene {number}'s clip is right, check "
+            "this one yourself."
         )
         if all(warning["text"] != text for warning in job.warnings):
             post_notice(job, text, Message.Level.INFO)
@@ -1026,7 +1062,9 @@ def _say_the_judge_is_unsure(step: SceneStep, ruling: dict[str, Any]) -> None:
             job,
             f"scene {number}'s clip at {', '.join(f'{t:g} s' for t in seconds)}",
             "the clip judge couldn't check those seconds and the clip is kept for you to "
-            "decide: check this one yourself",
+            "decide: check this one yourself"
+            if kept
+            else "the clip judge couldn't check those seconds",
         )
 
 
@@ -1246,6 +1284,8 @@ class _Answered:
     without_owner_photos: bool = False
     # The seconds of the clip it was answered without, the filter refusing them.
     blind: tuple[float, ...] = ()
+    # Whether the answer came but broke its form.
+    unusable: bool = False
 
 
 def _answer(step: SceneStep, ask: _Ask) -> _Answered:
@@ -1290,25 +1330,97 @@ def _answer(step: SceneStep, ask: _Ask) -> _Answered:
                 error, (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter, AnswerTookTooLong)
             ),
         )
-        return _Answered(None, [], refused=isinstance(error, BlockedBySafetyFilter))
+        return _Answered(
+            None,
+            [],
+            refused=isinstance(error, BlockedBySafetyFilter),
+            unusable=isinstance(error, UnusableReply),
+        )
+
+
+# The most asks made to find which of a clip's frames the safety filter refuses, besides the
+# one ask on what is left (#228 review S2): halving finds one refused picture of a clip's
+# 25-50 in about 5, two in about 14; the cap is the watcher's for a refused video (#210 point
+# 3, 16 probes). Frames still unsorted when it is reached are left out with the refused ones.
+MOST_FRAME_PROBES = 16
 
 
 def _past_refused_frames(
     asking: Callable[[list[Image]], tuple[dict[str, Any], bool]], ask: _Ask
 ) -> _Answered:
     """`ask` answered without the pictures of the clip's frames the safety filter refuses,
-    each left out alone, last first, never all of them; with the seconds it didn't see."""
-    clip = ask.images[len(ask.images) - len(ask.frames) :]
-    (answer, without), left = past_the_safety_filter(
-        asking, ask.images, may_leave_out=lambda image: image in clip, fewest_kept=1
-    )
+    found by halving: the first half of a group holding one is shown alone beside the rest,
+    a refused half halved again, down to single pictures, the other half asked about when the
+    first held one, at most MOST_FRAME_PROBES asks; then the ask is made once on
+    every frame not refused. Gives the seconds it didn't see, so the check is unsure for them
+    (Julian, Oct 29 00:10), and no answer when even that last ask is refused: the check is
+    still unsure, never unchecked, for a filter that refused what it was shown of the clip."""
+    rest = ask.images[: len(ask.images) - len(ask.frames)]
+    clip = ask.images[len(rest) :]
     times = dict(zip((image.key for image in clip), ask.frames, strict=True))
+    refused: list[Image] = []
+    # Groups known to hold a refused frame (the whole clip, to start: it was refused), and
+    # groups not known either way.
+    holding: list[list[Image]] = [clip]
+    unknown: list[list[Image]] = []
+    probes = 0
+    while holding or unknown:
+        if holding:
+            group = holding.pop(0)
+            if len(group) == 1:
+                refused += group
+                continue
+            first, second = _halves(group)
+            if probes == MOST_FRAME_PROBES:
+                refused += group
+                continue
+            probes += 1
+            if _refuses(asking, [*rest, *first]):
+                # The second half is not known either way once the first holds one.
+                holding.append(first)
+                unknown.append(second)
+            else:
+                holding.append(second)
+            continue
+        group = unknown.pop(0)
+        if probes == MOST_FRAME_PROBES:
+            refused += group
+            continue
+        probes += 1
+        if _refuses(asking, [*rest, *group]):
+            holding.append(group)
+    # Every half passing alone, though all of them together were refused: none can be named.
+    blind = refused or clip
+    shown = [image for image in clip if image not in blind]
+    answer: dict[str, Any] | None = None
+    without = False
+    if shown:
+        try:
+            answer, without = asking([*rest, *shown])
+        except BlockedBySafetyFilter:
+            blind = clip
+    if answer is None:
+        logger.warning("%s couldn't be asked past the clip frames refused", ask.purpose)
     return _Answered(
         answer,
         [],
         without_owner_photos=without,
-        blind=tuple(t for image in left for t in times[image.key]),
+        blind=tuple(sorted(t for image in blind for t in times[image.key])),
     )
+
+
+def _halves(pictures: list[Image]) -> tuple[list[Image], list[Image]]:
+    middle = (len(pictures) + 1) // 2
+    return pictures[:middle], pictures[middle:]
+
+
+def _refuses(asking: Callable[[list[Image]], object], shown: list[Image]) -> bool:
+    """Whether the safety filter refuses an ask showing `shown`."""
+    try:
+        asking(shown)
+    except BlockedBySafetyFilter:
+        return True
+    return False
 
 
 def _as_shown(ask: _Ask, shown: list[Image]) -> tuple[str, Handoff, type[BaseModel]]:
@@ -1462,10 +1574,35 @@ def sent_pictures(sent: SentList, label: str) -> list[Image]:
     ]
 
 
-# How the judge is shown and told a clip's sent list (#228): each picture by its number in the
-# prompt, with its label; each piece's frames by its number and the frame's time in it.
-SENT_PICTURE_LABEL = "Image {}: {}"
+# How the judge is shown and told a clip's sent list (#228), as the judge build brief labels
+# what the video API got (section 2): each picture by its number with the prompt's sentence
+# naming it, each piece's first frame with how its frames were cut and that sentence.
+SENT_PICTURE_LABEL = "Image {}. The prompt says: {}"
+SENT_PIECE_LABEL = (
+    "Video {}, frames cut from the reference video, time in seconds from its start. The prompt "
+    "says: {}"
+)
 SENT_PIECE_FRAME_LABEL = "Video {}, {}"
+
+
+def prompt_says(prompt: str) -> dict[str, str]:
+    """Each "Image N" and "Video N" the prompt names, with the first sentence of it naming
+    it: the label the video API got (the judge test harness's rule)."""
+    said: dict[str, str] = {}
+    for sentence in re.split(r"(?<=[.!?])\s+", prompt):
+        for name in re.findall(r"\b(Image \d+|Video \d+)\b", sentence):
+            said.setdefault(name, sentence.strip())
+    return said
+
+
+def _labels_sent(sent: SentList) -> tuple[dict[int, str], dict[int, str]]:
+    """What the prompt said of each picture and each piece, by number: its sentence, or,
+    for one the prompt doesn't name, its label in the sent list, or a piece's line."""
+    said = prompt_says(sent.prompt)
+    return (
+        {p.image: said.get(f"Image {p.image}", p.label) for p in sent.pictures},
+        {p.number: said.get(f"Video {p.number}", PIECE_LABEL) for p in sent.pieces},
+    )
 
 
 def sent_references(sent: SentList) -> list[dict[str, Any]]:
@@ -1473,30 +1610,29 @@ def sent_references(sent: SentList) -> list[dict[str, Any]]:
     in its order, then each piece's frames, PIECE_FRAMES_SHOWN of them in all, shared evenly
     by the pieces and thinned evenly in each (the judge build brief: "the piece at most 10
     frames"). Each has its "label" and "key"."""
+    pictures, pieces = _labels_sent(sent)
     most = max(1, PIECE_FRAMES_SHOWN // len(sent.pieces)) if sent.pieces else 0
-    return [
-        *(
-            {"label": SENT_PICTURE_LABEL.format(picture.image, picture.label), "key": picture.file}
-            for picture in sent.pictures
-        ),
-        *(
-            {
-                "label": SENT_PIECE_FRAME_LABEL.format(piece.number, frame_label(frame["times"])),
-                "key": frame["key"],
-            }
-            for piece in sent.pieces
-            for frame in piece_frames(piece.file, most)
-        ),
+    shown = [
+        {"label": SENT_PICTURE_LABEL.format(n, pictures[n]), "key": picture.file}
+        for n, picture in ((picture.image, picture) for picture in sent.pictures)
     ]
+    for piece in sent.pieces:
+        for i, frame in enumerate(piece_frames(piece.file, most)):
+            label = SENT_PIECE_FRAME_LABEL.format(piece.number, frame_label(frame["times"]))
+            if i == 0:
+                label = f"{SENT_PIECE_LABEL.format(piece.number, pieces[piece.number])}\n{label}"
+            shown.append({"label": label, "key": frame["key"]})
+    return shown
 
 
 def sent_said(sent: SentList) -> list[str]:
     """A line for each picture and piece of the clip's sent list, in its order, as the judge
-    is handed them beside what it is shown: a picture's label, and a piece's line in the
-    prompt."""
+    is handed them beside what it is shown: "Image N: <the prompt's sentence>" (the judge
+    build brief's handoff)."""
+    pictures, pieces = _labels_sent(sent)
     return [
-        *(SENT_PICTURE_LABEL.format(picture.image, picture.label) for picture in sent.pictures),
-        *(f"Video {piece.number}: {PIECE_LABEL}" for piece in sent.pieces),
+        *(f"Image {n}: {said}" for n, said in pictures.items()),
+        *(f"Video {n}: {said}" for n, said in pieces.items()),
     ]
 
 
@@ -1697,6 +1833,7 @@ def _sent_wording_version(*, fix: bool, photos: bool) -> str:
         MOTION_FROM_REFERENCES,
         BEHAVIOUR_FRAME,
         SENT_PICTURE_LABEL,
+        SENT_PIECE_LABEL,
         SENT_PIECE_FRAME_LABEL,
         PIECE_LABEL,
         FRAMES_LABEL,
