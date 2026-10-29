@@ -1,7 +1,7 @@
 """Cutting one thing out of a photo (spec #210 point 6): the picture model redraws the photo
 with only that thing, exactly as it looks, on a plain background, and a check shown the
 cut-out beside the photo passes it only when the thing is alone and unchanged. A cut-out that
-fails its check is drawn again, at most MOST_REDRAWS times.
+fails its check is drawn again by the library's redraw-with-check (jobs.checked_pictures).
 
 Two kinds of cut-out are made this way, by the same `redraw_with_check`:
 - the clean picture of one of the shop owner's things, drawn from their photo for a note
@@ -23,15 +23,11 @@ from gateway.gateway import call_model, edit_picture, past_the_safety_filter
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, Handoff, Image, UnusableReply
 
+from .checked_pictures import MOST_REFUSALS, made_and_checked
 from .models import Job
 from .notices import post_left_out_by_the_filter
-from .picture_check import MOST_REDRAWS
 
 logger = logging.getLogger(__name__)
-
-# A picture the picture model refuses to draw is asked for again this many times before the
-# cut-out counts as failed (spec #210 point 6, spec 2 item 18).
-PICTURE_REFUSALS_RETRIED = 1
 
 # Its examples are made up, never from a test product (CODING_STANDARDS.md).
 CUT_OUT_CHECK = """\
@@ -109,6 +105,7 @@ def check_cut_out(
     photo: str,
     *,
     keep: str,
+    named: str,
     photo_named: str,
     needs_photo: bool,
     photo_label: str | None = None,
@@ -117,8 +114,9 @@ def check_cut_out(
     `photo` (labelled `photo_label`, if it is) to keep only `keep`: asked once (spec #210
     point 6, no vote), and answered from its record when asked the same again. When the
     check's safety filter refuses the photo, the cut-out is judged without it, and the chat
-    told in red naming the photo as `photo_named`; unless it `needs_photo`, when it counts as
-    unchecked: without the photo, nothing can say the thing is unchanged."""
+    told in red naming the cut-out as `named` and the photo as `photo_named`; unless it
+    `needs_photo`, when it counts as unchecked: without the photo, nothing can say the thing
+    is unchanged."""
     shown = Image(label="The photo it was cut from:", key=photo)
     try:
         verdict, left = past_the_safety_filter(
@@ -141,7 +139,7 @@ def check_cut_out(
         logger.warning("The cut-out check of %s gave no answer: %s", keep, error)
         return Unchecked("the AI model checking it gave no usable answer")
     if left:
-        post_left_out_by_the_filter(job, [photo_named], f"the cut-out of {keep} was checked")
+        post_left_out_by_the_filter(job, [photo_named], f"{named} was checked")
     if verdict.verdict == "pass":
         return None
     assert verdict.problem is not None, "a failing answer says why"
@@ -168,14 +166,19 @@ class CutOutFailed(Exception):
     def why(self) -> str:
         """Why no cut-out could be used, in plain words."""
         if self.refused is not None:
-            return (
-                "the picture model refused to draw it "
-                f"{PICTURE_REFUSALS_RETRIED + 1} times ({self.refused})"
-            )
+            return f"the picture model refused to draw it {MOST_REFUSALS} times ({self.refused})"
         if self.unchecked is not None:
             return f"its check couldn't be made ({self.unchecked.why})"
         found = " ".join(self.problems)
-        return f"all {len(self.problems)} cut-outs drawn failed their check ({found})"
+        return f"all {len(self.problems)} tries failed ({found})"
+
+
+class _NoAnswer(Exception):
+    """A cut-out's check gave no answer, and an unchecked cut-out isn't kept: the tries end."""
+
+    def __init__(self, said: Unchecked) -> None:
+        super().__init__(said.why)
+        self.said = said
 
 
 def redraw_with_check(
@@ -188,10 +191,11 @@ def redraw_with_check(
     unchecked_passes: bool,
 ) -> str:
     """The first cut-out of the photo at `photo` drawn as `prompt` says (for `purpose`) that
-    `check` passes: drawn again when it fails, at most MOST_REDRAWS times. A picture the
-    picture model refuses is asked for again PICTURE_REFUSALS_RETRIED times. A cut-out whose
-    check gives no answer is kept when `unchecked_passes`, else no cut-out is had. Gives its
-    key in the file store; raises CutOutFailed when none is had.
+    `check` passes, by the library's redraw-with-check (jobs.checked_pictures): drawn again
+    when it fails, at most its MOST_REDRAWS times, and a picture the picture model refuses asked
+    for again once. A cut-out whose check gives no answer is kept when `unchecked_passes`,
+    else no cut-out is had. Gives its key in the file store; raises CutOutFailed when none
+    is had.
 
     Run again, as after a worker stopped, it pays for nothing already paid for: each
     cut-out drawn is reused in turn, and each check answered from its record."""
@@ -204,28 +208,38 @@ def redraw_with_check(
         ).order_by("id")
         if call.output is not None
     ]
-    problems: list[str] = []
-    refusals = 0
-    while len(problems) <= MOST_REDRAWS:
-        drawn = len(problems)
+    drawn: list[str] = []
+    refusals: list[str] = []
+
+    def make(_: int) -> str:
+        # Counted by the cut-outs drawn, not the tries: a refused try draws nothing.
         try:
             file = (
-                paid[drawn]
-                if drawn < len(paid)
+                paid[len(drawn)]
+                if len(drawn) < len(paid)
                 else edit_picture(job=job, purpose=purpose, prompt=prompt, pictures=[photo])
             )
         except BlockedBySafetyFilter as error:
-            refusals += 1
             logger.warning("The picture model refused a cut-out for %s: %s", purpose, error)
-            if refusals > PICTURE_REFUSALS_RETRIED:
-                raise CutOutFailed(problems, refused=str(error)) from error
-            continue
+            refusals.append(str(error))
+            raise
+        drawn.append(file)
+        return file
+
+    def checking(file: str) -> str | None:
         said = check(file)
-        if said is None:
-            return file
         if isinstance(said, Unchecked):
             if unchecked_passes:
-                return file
-            raise CutOutFailed(problems, unchecked=said)
-        problems.append(said)
-    raise CutOutFailed(problems)
+                return None
+            raise _NoAnswer(said)
+        return said
+
+    try:
+        checked = made_and_checked(make, checking)
+    except _NoAnswer as no_answer:
+        raise CutOutFailed([], unchecked=no_answer.said) from no_answer
+    if checked.file is not None:
+        return checked.file
+    if len(refusals) >= MOST_REFUSALS:
+        raise CutOutFailed(checked.problems, refused=refusals[-1])
+    raise CutOutFailed(checked.problems)

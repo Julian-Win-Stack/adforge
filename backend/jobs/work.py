@@ -2276,6 +2276,7 @@ def _owner_photo_check(job: Job, row: ReferencePhoto) -> cut_out.Check:
             file,
             row.file,
             keep=f"the shop owner's {row.thing}",
+            named=named,
             photo_named=f"the shop owner's photo of their {row.thing}",
             needs_photo=False,
         )

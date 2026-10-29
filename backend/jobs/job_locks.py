@@ -11,6 +11,8 @@ from .models import Job
 LIBRARY_LOCK = 5
 # The product-only versions of the library's photos: which are made (jobs.library_items).
 PRODUCT_ONLY_LOCK = 6
+# A library picture recoloured (jobs.recolour): made, checked and added once per colour.
+RECOLOUR_LOCK = 7
 
 
 @contextmanager

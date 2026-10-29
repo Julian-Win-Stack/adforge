@@ -237,6 +237,7 @@ def _product_only(job: Job, item: LibraryEntry, product_text: str | None) -> Lib
                 item.file,
                 keep=keep,
                 photo_label=item.label,
+                named=f"the product cut out of library item {item.number}",
                 photo_named=f"library item {item.number}",
                 needs_photo=True,
             ),

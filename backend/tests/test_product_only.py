@@ -162,8 +162,8 @@ def test_a_cut_out_that_keeps_failing_sends_the_original_in_red_and_never_asks_t
     side = the_side_photo(job)
     assert to_send(job, side) == side
     said = (
-        f"Cutting the product out of library item 2 ({side.label}) failed: all 3 cut-outs "
-        "drawn failed their check (A towel is still beside the bottle. The label's print is "
+        f"Cutting the product out of library item 2 ({side.label}) failed: all 3 tries "
+        "failed (A towel is still beside the bottle. The label's print is "
         "changed. The cap is missing.), so the photo is sent whole wherever it is sent, with "
         "what else it shows. The video may copy those other things."
     )

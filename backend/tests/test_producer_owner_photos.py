@@ -48,12 +48,12 @@ from .agent_tries import agent_films
 from .conftest import (
     CLIP_FIXED,
     CLIP_MOTION_OK,
+    CUT_OUT_OK,
     FACTS_OK,
     FIX_MADE,
     LABELLED,
     NO_CHOICES,
     OWNER_PHOTO_SHOWS,
-    PICTURE_OK,
     PLAN,
     HeldSteps,
     broll,
@@ -72,9 +72,15 @@ from .test_producer_broll import (
     instructed,  # noqa: F401 (a fixture)
     run,
 )
-from .test_producer_broll_picture_check import FUSED_HANDLE, impossible
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+# The cut-out check failing a clean picture.
+CUT_OUT_FAILS: dict[str, Any] = {
+    **CUT_OUT_OK,
+    "verdict": "fail",
+    "problem": "The handle is fused into the side of the mug.",
+}
 
 Say = Callable[..., None]
 
@@ -498,12 +504,10 @@ def test_the_new_starting_picture_is_drawn_with_the_clean_picture_first_labelled
         "pictures": [owner_file(1)],
     }
     assert "Never copy any person's face." in drawing["prompt"]
-    # Its check is the starting picture's, beside the shop owner's photo.
-    checked = ModelCall.objects.filter(purpose="check_starting_picture").order_by("id")
-    assert any(
-        call.images[0]["key"] == clean and call.images[1]["key"] == owner_file(1)
-        for call in checked
-    )
+    # Its check is the cut-out check, asked once, beside the shop owner's photo.
+    (checked,) = ModelCall.objects.filter(purpose="check_cut_out")
+    assert [image["key"] for image in checked.images] == [clean, owner_file(1)]
+    assert checked.handoff["keep"] == "the shop owner's black mug"
     step = last_step("starting_picture")
     planned = handoffs("choose_broll_picture")[-1]
     assert planned["pictures"][0] == {
@@ -645,9 +649,9 @@ def test_a_shop_owners_photo_the_clean_pictures_check_refuses_is_named_as_theirs
     def refusing(request: ModelRequest[Any]) -> dict[str, Any]:
         if owner_file(1) in [image.key for image in request.images]:
             raise BlockedBySafetyFilter("content_policy_violation")
-        return PICTURE_OK
+        return CUT_OUT_OK
 
-    fake_model.answer_unscripted("check_starting_picture", refusing)
+    fake_model.answer_unscripted("check_cut_out", refusing)
     photos_sent(fake_model, say, OWNER_MUG)
     fake_model.respond("choose_broll_picture", BROLL_CHOICE)
     fixing.fixed(2, "new_picture", note=MUG_NOTE, change=MUG_FIX, photos=[photo(1, "black mug")])
@@ -1096,7 +1100,8 @@ def test_a_clean_picture_that_keeps_failing_its_check_asks_for_another_photo(
     fake_model: FakeModel, shown: ProducedItem, steps: HeldSteps, say: Say
 ) -> None:
     photos_sent(fake_model, say, OWNER_MUG)
-    fake_model.respond("check_starting_picture", *[impossible(FUSED_HANDLE)] * 6)
+    # The cut-out check is asked once per clean picture: three fail it.
+    fake_model.respond("check_cut_out", *[CUT_OUT_FAILS] * 3)
     old = latest("clip")
 
     fixing.fixed(2, "new_picture", change=MUG_FIX, photos=[photo(1, "black mug")])
