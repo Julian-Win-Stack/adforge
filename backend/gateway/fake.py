@@ -165,6 +165,9 @@ class FakeModel:
         self.music: list[bytes] = []
         # Every turn an agent was asked to take, as it was sent, pictures and all.
         self.turns_taken: list[TurnRequest] = []
+        # The summary of its reasoning every agent's turn comes with, as a real model gives
+        # one when asked: none unless a test sets it.
+        self.reasoning = ""
         # Every video the fake was asked to watch, as it was sent, video and all.
         self.videos_watched: list[VideoRequest[Any]] = []
 
@@ -225,6 +228,7 @@ class FakeModel:
             turn=_as_the_tools_take(outcome, request.tools),
             input_tokens=self.INPUT_TOKENS,
             output_tokens=self.OUTPUT_TOKENS,
+            reasoning=self.reasoning,
         )
 
     def _next(self, purpose: str) -> dict[str, Any] | Turn:
