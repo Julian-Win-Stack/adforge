@@ -14,7 +14,7 @@ from chat.models import Session
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
 from jobs import owner_parts
-from jobs.library import PagePhoto, PictureLabel, add_to_library
+from jobs.library import PagePhoto, PictureLabel, Recoloured, add_to_library, library_of
 from jobs.models import Job, ProducedItem, ReferencePhoto, Scene, SceneStep
 
 from .conftest import photo
@@ -441,3 +441,62 @@ def test_going_back_to_a_picture_the_shop_owner_corrected_needs_a_new_yes(
     row.save()
 
     assert not owner_parts.is_approved(two)
+
+
+def test_a_correction_drops_the_recolours_of_the_old_drawing(call: ToolCall) -> None:
+    two = a_broll_scene(call, 2, owner_part=APPLICATOR)
+    a_part_picture(two)
+    item = owner_parts.part_picture(two)
+    assert item is not None
+    add_to_library(
+        two.job,
+        "recoloured.png",
+        PictureLabel(kind="side", side="side", alone="yes", colour="blue", label="It, blue."),
+        Recoloured(of=item.number, colour="blue"),
+    )
+
+    owner_parts.words_correction(two, PINK)
+    a_part_picture(two)
+
+    assert not [each for each in library_of(two.job) if isinstance(each.source, Recoloured)]
+
+
+def test_a_scene_with_its_clip_made_is_no_longer_approved_once_the_part_is_drawn_again(
+    call: ToolCall,
+) -> None:
+    # Its clip keeps the part as it was; the library no longer holds the picture said yes to.
+    two = a_broll_scene(call, 2, owner_part=APPLICATOR)
+    three = a_broll_scene(call, 3, owner_part=APPLICATOR)
+    a_part_picture(two)
+    owner_parts.approve(two)
+    ProducedItem.objects.create(
+        job=three.job, scene=three, kind=ProducedItem.Kind.CLIP, version=1, file="s3.mp4"
+    )
+
+    owner_parts.words_correction(two, PINK)
+    a_part_picture(Scene.objects.get(number=2))
+
+    three.refresh_from_db()
+    assert three.owner_part == APPLICATOR
+    assert not owner_parts.is_approved(three)
+    assert owner_parts.part_picture(three) is None
+
+
+def test_the_parts_picture_is_kept_as_a_look_picture(call: ToolCall, fake_model: FakeModel) -> None:
+    fake_model.respond(
+        "label_photo",
+        {
+            "kind": "in-use",
+            "side": "none",
+            "alone": "yes",
+            "colour": "white",
+            "target": "",
+            "label": "A soft white tip on a thin clear stem.",
+        },
+    )
+    scene = a_broll_scene(call, owner_part=APPLICATOR)
+
+    a_part_picture(scene)
+
+    item = owner_parts.part_picture(scene)
+    assert item is not None and item.kind == "side"

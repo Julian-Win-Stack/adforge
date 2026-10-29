@@ -31,12 +31,21 @@ from gateway.types import (
     BlockedBySafetyFilter,
     Handoff,
     Image,
+    RefusedForMoney,
     UnusableReply,
 )
 
 from . import cut_out, library_items, reference_photos
 from .job_locks import LIBRARY_LOCK, PART_PICTURE_LOCK, one_job_at_a_time
-from .library import LibraryEntry, OwnerPhoto, PagePhoto, PictureLabel, add_to_library, entry
+from .library import (
+    LibraryEntry,
+    OwnerPhoto,
+    PagePhoto,
+    PictureLabel,
+    Recoloured,
+    add_to_library,
+    entry,
+)
 from .library import OwnerPart as PartSource
 from .models import Job, LibraryItem, ProducedItem, ReferencePhoto, Scene, SceneStep
 from .notices import post_notice, post_refused_by_the_filter
@@ -61,15 +70,17 @@ def is_approved(scene: Scene) -> bool:
 
 def picture_is_current(scene: Scene) -> bool:
     """Whether the scene's owner part has its picture in the library, drawn from the part
-    and its photos as the scene has them now."""
+    and its photos as the scene has them now: the library item still holds the drawing the
+    scene was given, not one drawn since for another sentence."""
     part = owner_part(scene)
     drawn = scene.owner_part_drawn
     return (
         part is not None
-        and scene.owner_part_picture_id is not None
+        and scene.owner_part_picture is not None
         and drawn is not None
         and drawn.get("part") == scene.owner_part
         and drawn.get("photos") == _photo_list(scene.photos_in_use(), part.what)
+        and drawn.get("file") == scene.owner_part_picture.file
     )
 
 
@@ -425,7 +436,30 @@ class PartPictureVerdict(BaseModel):
 
 
 class PartPictureFailed(Exception):
-    """The owner part's picture couldn't be had: why, in plain words. The chat was told."""
+    """The owner part's picture couldn't be had: why, in plain words. The chat was told.
+    `retried` when nothing final went wrong, as an outage: it is tried again when the clip
+    of a scene holding the part is next asked for."""
+
+    def __init__(self, why: str, *, retried: bool = False) -> None:
+        super().__init__(why)
+        self.retried = retried
+
+
+# What stops a picture being drawn this time only, in plain words: nothing paid is kept, so
+# it is drawn when next asked for.
+_THIS_TIME: dict[type[Exception], str] = {
+    OutsideServiceDown: "the AI service didn't answer",
+    RefusedForMoney: "the picture service refused it for the account's money",
+    UnusableReply: "the AI model's answer couldn't be used",
+    AnswerTookTooLong: "the AI model took too long",
+    UnreadableImage: "a picture couldn't be read",
+}
+
+
+def drawn_by(part: OwnerPart) -> str:
+    """Where the part's look came from, for the shop owner: "from your words", or "by us, as
+    you asked"."""
+    return "from your words" if part.source == "owner's words" else "by us, as you asked"
 
 
 def drawn_from_its_sentence(part: OwnerPart) -> str:
@@ -473,11 +507,17 @@ def draw_part_picture(scene: Scene) -> LibraryEntry:
             assert scene.owner_part_picture is not None
             return entry(scene.owner_part_picture)
         name = reference_photos.name_of(part.what)
+        # One part, one sentence: every scene holding it with no clip yet takes this one's.
+        _one_sentence(scene, part)
         try:
             file, drawn_from = _drawn(scene, part)
         except PartPictureFailed as failed:
             _say_it_failed(scene, name, str(failed))
             raise
+        except tuple(_THIS_TIME) as error:
+            why = next(text for kind, text in _THIS_TIME.items() if isinstance(error, kind))
+            _say_it_failed(scene, name, why, retried=True)
+            raise PartPictureFailed(why, retried=True) from error
         label = library_items.label_photo(
             job,
             file,
@@ -488,12 +528,15 @@ def draw_part_picture(scene: Scene) -> LibraryEntry:
             "next asked for.",
         )
         if label is None:
-            raise PartPictureFailed(f"saying what the picture of the {name} shows failed")
-        item = _kept(job, part, file, label)
+            raise PartPictureFailed(
+                f"saying what the picture of the {name} shows failed", retried=True
+            )
+        item = _kept(job, part, file, _a_look(label))
         shown_at = timezone.now()
         drawn = {
             "part": scene.owner_part,
             "photos": _photo_list(scene.photos_in_use(), part.what),
+            "file": file,
             "shown_at": shown_at.isoformat(),
         }
         for each in _holding(scene):
@@ -537,12 +580,9 @@ def _drawn(scene: Scene, part: OwnerPart) -> tuple[str, str]:
             _redrawn(job, part, changed_as_said(part, row.words), clean, row.words),
             "from your photo of it, changed as you said",
         )
-    drawn_from = (
-        "drawn from your words" if part.source == "owner's words" else "drawn by us, as you asked"
-    )
     return (
         _redrawn(job, part, drawn_from_its_sentence(part), _product_photo(job), part.looks),
-        drawn_from,
+        f"drawn {drawn_by(part)}",
     )
 
 
@@ -628,7 +668,8 @@ def _product_photo(job: Job) -> str:
 
 def _kept(job: Job, part: OwnerPart, file: str, label: PictureLabel) -> LibraryItem:
     """The part's library item, now `file` labelled `label`: the item it already has, drawn
-    again in place, keeping its number; else a new item at the next number."""
+    again in place, keeping its number, its recolours of the old drawing dropped (they show
+    the part as it was); else a new item at the next number."""
     source = PartSource(part=reference_photos.name_of(part.what))
     with one_job_at_a_time(LIBRARY_LOCK, job):
         row = job.library.filter(source=source.model_dump()).order_by("number").first()
@@ -640,8 +681,41 @@ def _kept(job: Job, part: OwnerPart, file: str, label: PictureLabel) -> LibraryI
             setattr(row, field, value)
         # Read back through its schema, so a bad row is never kept.
         entry(row)
-        row.save(update_fields=list(fields))
+        with transaction.atomic():
+            row.save(update_fields=list(fields))
+            job.library.filter(
+                source__came_from=Recoloured.model_fields["came_from"].default,
+                source__of=row.number,
+            ).delete()
         return row
+
+
+def _a_look(label: PictureLabel) -> PictureLabel:
+    """The part's label as a look picture (spec #210 point 20): the labelling call's kind
+    when it is a look kind, else a side picture."""
+    if label.kind in library_items.LOOK_KINDS:
+        return label
+    return PictureLabel.model_validate({**label.model_dump(), "kind": "side", "target": ""})
+
+
+def _one_sentence(scene: Scene, part: OwnerPart) -> None:
+    """Give every other scene whose own owner part is the same thing, with another sentence
+    or other photos of it and no clip yet, the scene's part and photos of it: the part is one
+    thing for the whole ad, drawn once, so a yes to its picture is a yes to one sentence."""
+    photos = _part_photos(scene, part.what)
+    wanted = _photo_list(photos, part.what)
+    for other in scene.job.scenes.exclude(pk=scene.pk).filter(owner_part__isnull=False):
+        own = owner_part(other)
+        if (
+            own is not None
+            and reference_photos.same_thing(own.what, part.what)
+            and (
+                other.owner_part != scene.owner_part
+                or _photo_list(other.photos_in_use(), part.what) != wanted
+            )
+            and not other.produced.filter(kind=ProducedItem.Kind.CLIP).exists()
+        ):
+            _give(other, scene.owner_part, photos, part.what)
 
 
 def _holding(scene: Scene) -> list[Scene]:
@@ -659,12 +733,17 @@ def _holding(scene: Scene) -> list[Scene]:
     ]
 
 
-def _say_it_failed(scene: Scene, name: str, why: str) -> None:
-    """Tell the chat, in red, once, that the part's picture couldn't be had, and why."""
+def _say_it_failed(scene: Scene, name: str, why: str, *, retried: bool = False) -> None:
+    """Tell the chat, in red, once, that the part's picture couldn't be had, and why: when
+    it is `retried`, that it is tried again."""
+    then = (
+        f"It is tried again when scene {scene.number}'s clip is next asked for."
+        if retried
+        else f"Tell us how the {name} looks, or send a photo of it."
+    )
     text = (
         f"Making the picture of the {name} for scene {scene.number} failed: {why}. Scene "
-        f"{scene.number}'s clip waits for a picture of it you said yes to: tell us how the "
-        f"{name} looks, or send a photo of it."
+        f"{scene.number}'s clip waits for a picture of it you said yes to. {then}"
     )
     logger.warning(text)
     # Said once: asked again with the same part, the same tries are read back from their
