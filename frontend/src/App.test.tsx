@@ -1264,6 +1264,16 @@ test("a scene's note takes up to 3 photos: then its photo button is off and more
   expect(button.getAttribute("title")).toBe("Up to 3 photos per scene");
 });
 
+test("two pasted screenshots with the same name are two photos", async () => {
+  await openFinishedAd();
+
+  const image = (content: string) => new File([content], "image.png", { type: "image/png" });
+  pastePhotos(noteBox(2), image("aaaa"));
+  pastePhotos(noteBox(2), image("bbbb"));
+
+  expect(notePhotos(2)).toEqual(["Photo for scene 2: image.png", "Photo for scene 2: image.png"]);
+});
+
 test("a photo with no words in its note can't be sent, and the form says what to write", async () => {
   const { backend, user } = await openFinishedAd();
 

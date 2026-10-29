@@ -2313,7 +2313,7 @@ button:disabled {
     padding-bottom: 2px;
   }
 
-  .photo-thumb,
+  .page-panel-photos .photo-thumb,
   .page-panel-drop.small {
     flex: 0 0 60px;
     width: 60px;

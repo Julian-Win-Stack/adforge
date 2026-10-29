@@ -277,6 +277,9 @@ class SendSerializer(serializers.Serializer[None]):
             if len(text) > MAX_PASTED_PAGE_CHARACTERS:
                 raise serializers.ValidationError({"text": PASTE_TOO_LONG})
             return {**data, "text": text}
+        # A form's line ends come as two characters each, as the scene cards' notes with
+        # photos do; the owner typed one.
+        text = text.replace("\r\n", "\n")
         if len(text) > MAX_TEXT_CHARACTERS:
             raise serializers.ValidationError(
                 {"text": f"Ensure this field has no more than {MAX_TEXT_CHARACTERS} characters."}
@@ -297,7 +300,7 @@ class SendSerializer(serializers.Serializer[None]):
                     )
         if not text and not data["photos"] and not data["videos"] and data["use_clip"] is None:
             raise serializers.ValidationError({"text": "Type something, or attach a photo."})
-        return data
+        return {**data, "text": text}
 
 
 class PollSerializer(serializers.Serializer[None]):

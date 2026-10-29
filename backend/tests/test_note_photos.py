@@ -198,8 +198,10 @@ def test_two_photos_each_with_its_own_scene_are_held_until_both_are_used(
     )
     first = producer_turns() + 1
 
-    sending_notes(api, session_id, "Scene 1: like this\nScene 2: lid on, like this", [1, 2])
+    # Sent as a form, whose line ends come as two characters each.
+    sending_notes(api, session_id, "Scene 1: like this\r\nScene 2: lid on, like this", [1, 2])
 
+    assert owner_said(first)[-1].startswith("Scene 1: like this\nScene 2: lid on, like this\n\n")
     assert owner_said(first)[-1].endswith(
         "[Attached 2 pictures: owner photo 1, sent with the Scene 1 note; owner photo 2, sent "
         "with the Scene 2 note]"

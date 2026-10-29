@@ -61,12 +61,8 @@ export function ScenePanel({
   function addPhotos(scene: number, files: Iterable<File>) {
     setPhotos((had) => {
       const have = had.get(scene) ?? [];
-      const same = (a: File, b: File) => a.name === b.name && a.size === b.size;
-      const fresh = Array.from(files).filter(
-        (file, index, all) =>
-          !have.some((one) => same(one, file)) &&
-          all.findIndex((other) => same(other, file)) === index,
-      );
+      // Every pasted screenshot is named alike, so only the very same file is one already in.
+      const fresh = [...new Set(files)].filter((file) => !have.includes(file));
       return new Map(had).set(scene, [...have, ...fresh].slice(0, MOST_NOTE_PHOTOS));
     });
   }
