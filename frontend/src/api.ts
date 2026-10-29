@@ -162,6 +162,11 @@ export type Message = {
   /** Code's notice showing every try of a clip the judge failed every try of; null for any
    * other message. */
   tries?: MessageTries | null;
+  /** Code's red line that the fixing agent asked the shop owner a question about a scene:
+   * the scene, the agent's words, and whether it still waits for its answer as the message
+   * was read. The answer comes through the producer, never the card. Null on any other
+   * message. */
+  question?: { scene: number; text: string; open: boolean } | null;
   /** The try the owner's tap of "Use this one" chose; null for any other message. */
   use_clip?: number | null;
   /** True on code's notice that the page can't be read: the page panel is wanted, for the

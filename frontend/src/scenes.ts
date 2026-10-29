@@ -56,6 +56,10 @@ export type SceneCard = {
   beingRemade: boolean;
   /** Something is being made for the scene now: first time or again. */
   busy: boolean;
+  /** The fixing agent's question for the shop owner about the scene, in its words, while it
+   * waits for an answer: until it is answered or something starts being made for the scene
+   * again. */
+  question: string | null;
 };
 
 /** One card per scene that has a starting picture or a clip, or one being made, in scene
@@ -76,6 +80,7 @@ export function sceneCards(messages: Message[]): SceneCard[] {
         failed: null,
         beingRemade: false,
         busy: false,
+        question: null,
       };
       cards.set(scene, found);
     }
@@ -95,10 +100,15 @@ export function sceneCards(messages: Message[]): SceneCard[] {
       }
     }
 
+    if (message.question) {
+      card(message.question.scene).question = message.question.open ? message.question.text : null;
+    }
+
     const step = message.step;
     if (step === null) continue;
     const scene = card(step.scene);
     if (step.state === "started") {
+      scene.question = null;
       const made = step.kind === "clip" ? scene.clips.length > 0 : scene.picture !== null;
       scene.making = { kind: step.kind, remaking: made };
       scene.failed = null;

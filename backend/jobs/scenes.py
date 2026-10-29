@@ -321,6 +321,20 @@ PERSON_IN_ROOM_PROMPT = (
 )
 
 
+# The fixed lines code puts around the fixing agent's own words for its place_edit (#237): a
+# small edit of one scene's room or person-in-room picture, or a new room drawn fresh for it.
+# The agent writes the change or the place; code keeps the shape and what goes in no room.
+SCENE_PLACE_EDIT_PROMPT = (
+    "Draw this picture again as an upright 9:16 photo, from the same camera and in the same "
+    "light, with this one change: {edit} Keep everything else exactly as it is, and add no "
+    "text, captions or logos."
+)
+SCENE_NEW_PLACE_PROMPT = (
+    "An upright 9:16 photo of this place: {place} No person, no hand, and no added text, "
+    "captions or logos."
+)
+
+
 # Added by code to every labelled B-roll scene's video prompt: the video model sees only the
 # starting picture, so a side it can't see is made up (round 3, 10 Oct: the #12 phone case
 # flipped mid-clip; docs/broll-picture-logic.md, "Prompt rules").

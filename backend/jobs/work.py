@@ -117,7 +117,7 @@ from .checks import (
     shortened_script_for,
 )
 from .job_locks import one_job_at_a_time as _one_job_at_a_time
-from .library import PictureLabel, SentList, watch_of
+from .library import Drawn, PictureLabel, SentList, watch_of
 from .models import (
     BROLL_FIELDS,
     PLANNED_FOR_THE_ACTION,
@@ -164,6 +164,8 @@ from .scenes import (
     PERSON_IN_ROOM_PROMPT,
     PORTRAIT_JOB,
     ROOM_ALONE_PROMPT,
+    SCENE_NEW_PLACE_PROMPT,
+    SCENE_PLACE_EDIT_PROMPT,
     STARTING_PICTURE_INSTRUCTIONS,
     BeforePictureHandoff,
     BeforePicturePlan,
@@ -2449,6 +2451,122 @@ def person_and_room(step: SceneStep) -> tuple[ProducedItem, ProducedItem]:
     return person, room
 
 
+# The ad's picture of its place, and one scene's own, by which drawn picture it is.
+_AD_PLACE: dict[Drawn, ProducedItem.Kind] = {
+    "person_in_room": ProducedItem.Kind.PERSON_IN_ROOM,
+    "room": ProducedItem.Kind.ROOM_ALONE,
+}
+_SCENE_PLACE: dict[Drawn, ProducedItem.Kind] = {
+    "person_in_room": ProducedItem.Kind.SCENE_PERSON_IN_ROOM,
+    "room": ProducedItem.Kind.SCENE_ROOM,
+}
+
+
+def drawn_for(person_shown: str) -> Drawn:
+    """Which drawn picture a scene is sent (spec #210 point 12): the presenter in the room
+    when they are seen, the room alone when nobody is."""
+    return "person_in_room" if person_shown == Scene.PersonShown.HAS_FACE else "room"
+
+
+def scene_place(scene: Scene, person_shown: str) -> tuple[Drawn, ProducedItem | None]:
+    """The drawn picture (tier 3) a clip of `scene` showing `person_shown` is sent: the
+    scene's own, when the fixing agent's place_edit made one for it (#237), else the ad's;
+    None when the ad has none yet."""
+    drawn = drawn_for(person_shown)
+    return drawn, _place_of(scene, drawn)
+
+
+def _place_of(scene: Scene, drawn: Drawn) -> ProducedItem | None:
+    own = scene.produced.filter(kind=_SCENE_PLACE[drawn]).order_by("version").last()
+    return own or latest(scene.job, _AD_PLACE[drawn])
+
+
+class NoPlaceYet(Exception):
+    """A scene's place can't be edited: the ad has no such picture yet."""
+
+
+def edit_scene_place(scene: Scene, drawn: Drawn, edit: str) -> ProducedItem:
+    """`scene`'s own `drawn` picture, made by the picture model from the one the scene has
+    now (its own, else the ad's) with the small change `edit`, as SCENE_PLACE_EDIT_PROMPT
+    orders: for that scene only. NoPlaceYet when there is nothing to edit. Run again, as
+    after a worker stopped, it pays for nothing already paid for."""
+    base = _place_of(scene, drawn)
+    if base is None:
+        raise NoPlaceYet(drawn)
+    prompt = SCENE_PLACE_EDIT_PROMPT.format(edit=edit.strip())
+    file = _edited_once(scene.job, "edit_scene_place", prompt, [base.file])
+    return _kept_place(scene, _SCENE_PLACE[drawn], file, made_from=base, prompt=prompt)
+
+
+def new_scene_place(scene: Scene, drawn: Drawn, place: str) -> list[ProducedItem]:
+    """`scene`'s own room, drawn fresh from the description `place` as SCENE_NEW_PLACE_PROMPT
+    orders, then, for a person-in-room picture, the presenter standing in it as the ad's is
+    drawn (PERSON_IN_ROOM_PROMPT): for that scene only. Gives back what was made, the
+    picture asked for last. Run again, it pays for nothing already paid for."""
+    job = scene.job
+    prompt = SCENE_NEW_PLACE_PROMPT.format(place=place.strip())
+    paid_for = _paid_calls(job, "draw_scene_room").filter(handoff={"prompt": prompt}).last()
+    file = (
+        paid_for.output["file"]
+        if paid_for is not None and paid_for.output is not None
+        else draw_picture(job=job, purpose="draw_scene_room", prompt=prompt)
+    )
+    room = _kept_place(scene, ProducedItem.Kind.SCENE_ROOM, file, made_from=None, prompt=prompt)
+    if drawn == "room":
+        return [room]
+    portrait = latest(job, ProducedItem.Kind.PORTRAIT)
+    if portrait is None:
+        raise NoPlaceYet(drawn)
+    pictures = [portrait.file, room.file]
+    person = _edited_once(job, "make_scene_person_in_room", PERSON_IN_ROOM_PROMPT, pictures)
+    return [
+        room,
+        _kept_place(
+            scene,
+            ProducedItem.Kind.SCENE_PERSON_IN_ROOM,
+            person,
+            made_from=room,
+            prompt=PERSON_IN_ROOM_PROMPT,
+        ),
+    ]
+
+
+def _edited_once(job: Job, purpose: str, prompt: str, pictures: list[str]) -> str:
+    """The picture model's picture made from `pictures` as `prompt` says, unless it was made
+    before the worker stopped."""
+    paid_for = (
+        _paid_calls(job, purpose).filter(handoff={"prompt": prompt, "pictures": pictures}).last()
+    )
+    if paid_for is not None and paid_for.output is not None:
+        file: str = paid_for.output["file"]
+        return file
+    return edit_picture(job=job, purpose=purpose, prompt=prompt, pictures=pictures)
+
+
+def _kept_place(
+    scene: Scene,
+    kind: ProducedItem.Kind,
+    file: str,
+    *,
+    made_from: ProducedItem | None,
+    prompt: str,
+) -> ProducedItem:
+    """The scene's next version of `kind`, the picture `file`; the same one when it was kept
+    before the worker stopped, so the newest stays the scene's."""
+    newest = scene.produced.filter(kind=kind).order_by("version").last()
+    if newest is not None and newest.file == file:
+        return newest
+    return ProducedItem.objects.create(
+        job=scene.job,
+        scene=scene,
+        kind=kind,
+        version=(newest.version + 1) if newest is not None else 1,
+        file=file,
+        made_from=made_from,
+        text=prompt,
+    )
+
+
 # What the shop owner is told each of the ad's pictures of its place is, when it can't be drawn.
 PLACE_PICTURE_NAMES = {
     ProducedItem.Kind.ROOM_ALONE: "picture of the ad's place on its own",
@@ -3620,12 +3738,14 @@ def _say_the_agent_asked(step: SceneStep, ended: AgentFix) -> None:
         meanwhile = f"scene {number} keeps the clip it had before"
     else:
         meanwhile = "the last try is in the ad"
+    asked = open_question(step.scene)
     post_notice(
         step.scene.job,
         f"The fixing agent has a question for you about scene {number}'s clip, so {meanwhile} "
         f"until you answer it. The question is on scene {number}'s card.",
         Message.Level.PROBLEM,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
+        owner_question=asked.pk if asked is not None else None,
     )
 
 

@@ -54,7 +54,7 @@ from jobs import (
     scenes,
     work,
 )
-from jobs.first_send import PIECE_LABEL, SPEED_LINE
+from jobs.first_send import DRAWN_LABELS, PIECE_LABEL, SPEED_LINE
 from jobs.library import Moment
 from jobs.models import (
     AgentFix,
@@ -107,9 +107,10 @@ B-roll kind, whether the presenter's face is in it, the camera framing, the star
 (you write its prompt from scratch), the video prompt (from scratch), and the line. You may \
 film a different step of what the line says, when that step films better. The clip lasts the \
 line's audio in whole seconds, at least 5 and at most 15, so a shorter or longer line changes \
-the clip's length. You never change another scene, and never the place picture: every B-roll \
-scene of the ad happens in that place (you may frame it closer or from another side, but it \
-is the same place, with the same things in it).
+the clip's length. You never change another scene. Every B-roll scene happens in the ad's \
+place; you may change this scene's place with place_edit, if you choose: a small edit of its \
+picture of the place, which is cheaper and keeps the look already approved, or a new place \
+drawn fresh.
 
 What you know about the video model, from 37 clips this app made:
 - It follows orders that say what happens. It ignores orders that say what must not happen: \
@@ -144,13 +145,14 @@ film every one in its order (only there may a clip have more than one action).
 How you work: you are shown the scene, the plan, the page, what the failed clip was sent \
 (or its start picture), the failed clip's frames (5 a second), what the judge found, the \
 ad's picture library as a list and how the product behaves. Look at anything else you need: \
-look_at_library opens one library item, or one moment of a page video, by its number. Then \
-call film_again with the whole scene as it should be, or give_up. film_again's references \
+look_at_library opens one library item, or one moment of a page video, by its number; \
+place_edit shows you the scene's new place before anything is filmed. Then call \
+film_again with the whole scene as it should be, or give_up. film_again's references \
 send library items by number, in your order, and a page video's moment as the piece, in \
-place of the start picture: code makes them the clip's colour, labels each one and puts the \
-speed line before your prompt. After each film_again you are told what was sent, shown \
-the new start picture when you drew one and the new clip's frames, and given the judge's \
-verdict. On \
+place of the start picture: code makes them the clip's colour, labels each one, adds the \
+scene's place and puts the speed line before your prompt. After each film_again you are \
+told what was sent, shown the new start picture when you drew one and the new clip's \
+frames, and given the judge's verdict. On \
 a fail, find what caused it (the plan, the pictures, or what the video model can't do) and \
 change that cause, not only the words. {WORDS_THEN_REFERENCES} On every try, write the \
 cause you found and your move. Try to film it first: code refuses give_up until at \
@@ -1196,6 +1198,60 @@ class References(BaseModel):
     )
 
 
+class PlaceEdit(Tool):
+    """Change where this scene happens, for this scene only: the other scenes keep the ad's
+    place. Either make a small edit of the scene's picture of its place (edit), or have a new
+    place drawn fresh (new_place). The small edit is cheaper and keeps the look already
+    approved. A scene showing the presenter's face is sent the presenter in the room; one
+    showing nobody, the room alone. You are shown the new picture and nothing is filmed:
+    look at it, change it again, or call film_again, which sends it."""
+
+    name: ClassVar[str] = "place_edit"
+    picture: Literal["person_in_room", "room"] = Field(
+        description="Which picture of the place: the presenter in the room, or the room alone."
+    )
+    edit: str | None = Field(
+        description="A small change to the scene's picture of its place, in your words, such "
+        "as what to clear away or move; null for a new place."
+    )
+    new_place: str | None = Field(
+        description="The new place, described in your words, to be drawn fresh; null for an edit."
+    )
+
+    def run(self, call: ToolCall) -> ToolResult:
+        return place_edit(_fixing_of(call), self)
+
+
+# What place_edit calls each picture of a scene's place it makes.
+PLACE_NAMES = {
+    "person_in_room": "picture of the presenter in its place",
+    "room": "picture of its place on its own",
+}
+
+
+def place_edit(fixing: AgentFix, asked: PlaceEdit) -> ToolResult:
+    """The scene's own picture of its place, made as the agent wrote it: an edit of the one it
+    has now, or a new place drawn fresh (#237). Shown to the agent; nothing films."""
+    words = [each for each in (asked.edit, asked.new_place) if each is not None]
+    if len(words) != 1 or not words[0].strip():
+        raise Refused("write either an edit or a new place, not both.")
+    scene = fixing.step.scene
+    try:
+        made = (
+            [work.edit_scene_place(scene, asked.picture, asked.edit)]
+            if asked.edit is not None
+            else work.new_scene_place(scene, asked.picture, words[0])
+        )
+    except work.NoPlaceYet as missing:
+        raise Refused(f"the ad has no {PLACE_NAMES[asked.picture]} yet.") from missing
+    named = f"Scene {scene.number}'s own {PLACE_NAMES[asked.picture]}"
+    return ToolResult(
+        f"{named}, for this scene only: the other scenes keep the ad's. Nothing was filmed: "
+        "look at it, change it again, or call film_again, which sends it.",
+        [Image(label=named, key=made[-1].file)],
+    )
+
+
 class FilmAgain(Tool):
     """Film this scene again as you write it here: code saves your scene row, draws a new
     start picture when you ask for one and checks it, or sends the references you name in its
@@ -1292,6 +1348,7 @@ TOOLS: list[type[Tool]] = [
     LookAtPresenter,
     LookAtTry,
     LookAtLibrary,
+    PlaceEdit,
     FilmAgain,
     GiveUp,
     AskOwner,
@@ -1316,7 +1373,8 @@ def _pictures_sent(
 ) -> tuple[list[str], list[dict[str, Any]]]:
     """The pictures the picture model gets, as the app sends them: the shop owner's things
     first, then the main photo, the scene's needs photos, the portrait for a face, the place
-    last. Gives the files and the pictures_sent rows."""
+    last: the scene's own, when place_edit made it one, else the ad's before-picture.
+    Gives the files and the pictures_sent rows."""
     step = fixing.step
     job = step.scene.job
     owners = _owner_photos(step, ReferencePhoto.Use.PICTURE)
@@ -1336,6 +1394,14 @@ def _pictures_sent(
         assert portrait is not None, "a scene with a face has its presenter"
         files.append(portrait.file)
         rows.append({"image": len(rows) + 1, "job": scenes.PORTRAIT_JOB, "portrait": True})
+    # The scene's own place, when place_edit made it one (#237), else the ad's.
+    _, own = work.scene_place(step.scene, person_shown)
+    if own is not None and own.scene_id == step.scene_id:
+        files.append(own.file)
+        rows.append(
+            {"image": len(rows) + 1, "job": scenes.BEFORE_PICTURE_JOB, "scene_place": own.pk}
+        )
+        return files, rows
     place = work.latest(job, ProducedItem.Kind.BEFORE_PICTURE)
     assert place is not None, "every B-roll picture is drawn in the ad's place"
     files.append(place.file)
@@ -1496,7 +1562,9 @@ def _film_again(
     sent = (
         library.SentList.model_validate(row.sent)
         if row is not None and row.sent is not None
-        else _references_sent(fixing, asked.references, asked.video_prompt, number)
+        else _references_sent(
+            fixing, asked.references, asked.video_prompt, number, asked.person_shown
+        )
         if row is None and asked.references is not None
         else None
     )
@@ -1572,14 +1640,14 @@ USED_FOR: dict[str, str] = {
 
 
 def _references_sent(
-    fixing: AgentFix, references: References, prompt: str, number: int
+    fixing: AgentFix, references: References, prompt: str, number: int, person_shown: str
 ) -> library.SentList:
     """The sent list of a try with references (spec #210 point 23): the piece cut from the
     moment named, at the watcher's seconds; each picture named, in the agent's order,
     recoloured to the clip's colour; the first VIDEO_API_MOST_PICTURES sent and the rest left
     out, said in red; then the prompt: the speed line, a label line per picture and piece,
-    and the agent's words. Until cut-and-send lands, only the agent's picks are sent (tier 2):
-    #239's step adds the front photo, the drawn picture and the other sides."""
+    and the agent's words. Until cut-and-send lands, the agent's picks (tier 2) and the
+    scene's place (tier 3) are sent: #239's step adds the front photo and the other sides."""
     scene = fixing.step.scene
     job = scene.job
     items = {each.number: each for each in library.library_of(job)}
@@ -1655,13 +1723,33 @@ def _references_sent(
                 file=picture.file,
             )
         )
+    # Tier 3, after the picks and inside the cap: the scene's place, its own when place_edit
+    # made one (#237), else the ad's.
+    drawn, place = work.scene_place(scene, person_shown)
+    if place is not None:
+        took = library.PictureRef(
+            tier=3,
+            library_number=None,
+            drawn=drawn,
+            for_=None,
+            label=f"{DRAWN_LABELS[drawn][0].upper()}{DRAWN_LABELS[drawn][1:]}.",
+            file=place.file,
+        ).model_dump()
+        if len(pictures) == library.VIDEO_API_MOST_PICTURES:
+            left_out.append(library.LeftOut.model_validate(took))
+        else:
+            pictures.append(
+                library.SentPicture.model_validate({**took, "image": len(pictures) + 1})
+            )
     if uncoloured:
         _say_no_colour_reference(job, scene, uncoloured, colour)
     if left_out:
         _say_left_out(job, scene, number, left_out)
     made_now = {each.made for each in recolours if each.made is not None}
     lines = [
-        f"Image {picture.image}"
+        f"Image {picture.image} is {DRAWN_LABELS[picture.drawn]}."
+        if picture.drawn is not None
+        else f"Image {picture.image}"
         + (f", made {colour}" if picture.library_number in made_now else "")
         + f": {picture.label}"
         + (f" Used for {USED_FOR[picture.for_]}." if picture.for_ else "")
@@ -1714,12 +1802,17 @@ def _say_no_colour_reference(
 
 
 def _say_left_out(job: Job, scene: Scene, number: int, left_out: list[library.LeftOut]) -> None:
-    named = "; ".join(f'library item {each.library_number} ("{each.label}")' for each in left_out)
+    named = "; ".join(
+        f'library item {each.library_number} ("{each.label}")'
+        if each.library_number is not None
+        else DRAWN[each.drawn or "room"]
+        for each in left_out
+    )
     post_notice(
         job,
         f"The fixing agent named more pictures for scene {scene.number}'s try {number} than "
         f"the {library.VIDEO_API_MOST_PICTURES} the video model takes, so these were left out: "
-        f"{named}. The clip is made from the first {library.VIDEO_API_MOST_PICTURES} it named.",
+        f"{named}. The clip is made from the first {library.VIDEO_API_MOST_PICTURES} in order.",
         Message.Level.PROBLEM,
     )
 

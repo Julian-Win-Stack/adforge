@@ -1223,6 +1223,10 @@ class ProducedItem(models.Model):
         # The presenter standing straight and still in the room alone, nothing else
         # happening: for the scenes the presenter is seen in (spec #210 point 12).
         PERSON_IN_ROOM = "person_in_room"
+        # One scene's own room and its own person-in-room picture, made by the fixing
+        # agent's place_edit for that scene only, sent in place of the ad's (#237).
+        SCENE_ROOM = "scene_room"
+        SCENE_PERSON_IN_ROOM = "scene_person_in_room"
 
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="produced")
     scene = models.ForeignKey(

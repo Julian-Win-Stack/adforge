@@ -17,7 +17,8 @@ from agents.fixing_agent import Failure, fix_scene
 from agents.models import ToolCall
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from jobs.first_send import PIECE_LABEL, SPEED_LINE
+from jobs import work
+from jobs.first_send import DRAWN_LABELS, PIECE_LABEL, SPEED_LINE
 from jobs.library import (
     LookFrame,
     PagePhoto,
@@ -31,7 +32,7 @@ from jobs.library import (
     number_moments,
     sent_list_of,
 )
-from jobs.models import AgentFix, AgentFixTry, Job, ProductVideo, SceneStep
+from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, ProductVideo, SceneStep
 
 from .conftest import HeldSteps, WorkerStopped, picture
 from .sent_lists import piece
@@ -132,6 +133,12 @@ def item(job: Job, number: int) -> bytes:
     return file_store.read(found.file)
 
 
+def the_room(job: Job) -> bytes:
+    room = work.latest(job, ProducedItem.Kind.ROOM_ALONE)
+    assert room is not None
+    return file_store.read(room.file)
+
+
 def test_the_agent_films_again_with_library_items_and_a_moment(
     fake_model: FakeModel, failed_clip: SceneStep
 ) -> None:
@@ -151,7 +158,8 @@ def test_the_agent_films_again_with_library_items_and_a_moment(
     )
     [asked] = fake_model.broll_clips_asked[asked_before:]
     assert asked["starting_picture"] is None
-    assert asked["example_pictures"] == [item(job, 8), item(job, 7)]
+    # The picks in the agent's order, then the ad's room (tier 3: the scene shows no face).
+    assert asked["example_pictures"] == [item(job, 8), item(job, 7), the_room(job)]
     [sent_piece] = asked["reference_videos"]
     assert 0.5 <= sent_piece["start"] < sent_piece["end"] <= 3.0
     # The speed line, a label for each picture in the order sent and one for the piece, then
@@ -160,6 +168,7 @@ def test_the_agent_films_again_with_library_items_and_a_moment(
         SPEED_LINE,
         "Image 1, made white: The black mug from the back.",
         "Image 2: A hand lifts the mug's lid. Used for how the product is held or used.",
+        f"Image 3 is {DRAWN_LABELS['room']}.",
         f"Video 1 is {PIECE_LABEL}.",
         PROMPT,
     ]
@@ -168,9 +177,10 @@ def test_the_agent_films_again_with_library_items_and_a_moment(
     assert row.clip is not None
     sent = sent_list_of(row.clip)
     assert sent is not None
-    assert [(p.image, p.tier, p.library_number, p.for_) for p in sent.pictures] == [
-        (1, 2, 8, None),
-        (2, 2, 7, "in-use"),
+    assert [(p.image, p.tier, p.library_number, p.drawn, p.for_) for p in sent.pictures] == [
+        (1, 2, 8, None, None),
+        (2, 2, 7, None, "in-use"),
+        (3, 3, None, "room", None),
     ]
     assert sent.colour == "white" and sent.prompt == asked["prompt"]
     assert sent.recolours == [Recolour(of=2, colour="white", outcome="done", made=8)]
@@ -271,8 +281,8 @@ def test_more_pictures_than_the_video_api_takes_are_cut_at_9_and_said_in_red(
     assert row.clip is not None
     sent = sent_list_of(row.clip)
     assert sent is not None
-    assert [left.library_number for left in sent.left_out] == [11]
-    assert [left.tier for left in sent.left_out] == [2]
+    # The tenth pick and the room (tier 3, after the picks) are past the cap.
+    assert [(left.library_number, left.tier) for left in sent.left_out] == [(11, 2), (None, 3)]
     # No piece: the clip is in the ad's colour.
     assert sent.colour == "-".join(job.product_colour.lower().split())
     # With nothing in the library in that colour to take it from, the pictures go as they
@@ -301,12 +311,44 @@ def test_a_worker_restart_mid_try_carries_on_with_the_references_named(
 
     # Asked for once, with the references named, and nothing paid for twice.
     [asked] = fake_model.broll_clips_asked[asked_before:]
-    assert asked["example_pictures"] == [item(job, 8), item(job, 7)]
+    assert asked["example_pictures"] == [item(job, 8), item(job, 7), the_room(job)]
     assert ModelCall.objects.filter(purpose="recolour_picture").count() == 1
     assert ModelCall.objects.filter(purpose="check_recolour").count() == 1
     [row] = AgentFixTry.objects.all()
     assert row.clip is not None
     sent = sent_list_of(row.clip)
     assert sent is not None
-    assert [p.library_number for p in sent.pictures] == [8, 7] and len(sent.pieces) == 1
+    assert [p.library_number for p in sent.pictures] == [8, 7, None] and len(sent.pieces) == 1
     assert ToolCall.objects.filter(tool="film_again").count() == 1
+
+
+def test_a_try_after_place_edit_is_sent_the_scenes_own_place(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    job = failed_clip.scene.job
+    fake_model.respond("check_recolour", RECOLOUR_OK)
+    fake_model.respond(
+        "fix_scene",
+        turn(
+            calls=[
+                (
+                    "place_edit",
+                    {"picture": "room", "edit": "Clear the table.", "new_place": None},
+                )
+            ]
+        ),
+        turn(calls=[with_references()]),
+    )
+    asked_before = len(fake_model.broll_clips_asked)
+
+    fixed(failed_clip)
+
+    own = failed_clip.scene.produced.get(kind=ProducedItem.Kind.SCENE_ROOM)
+    [asked] = fake_model.broll_clips_asked[asked_before:]
+    assert asked["example_pictures"][-1] == file_store.read(own.file) != the_room(job)
+    row = AgentFixTry.objects.get()
+    assert row.clip is not None
+    sent = sent_list_of(row.clip)
+    assert sent is not None
+    [place] = [p for p in sent.pictures if p.tier == 3]
+    assert (place.drawn, place.file) == ("room", own.file)
