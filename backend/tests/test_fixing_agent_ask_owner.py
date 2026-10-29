@@ -288,7 +288,7 @@ def test_the_chat_carries_the_open_question_for_its_scenes_card(
 
     # Only the red line about the question carries it, open, in the agent's words.
     [(text, shown)] = carried()
-    assert "The question is on scene 2's card." in text
+    assert "Its question is on scene 2's card." in text
     assert shown == {"scene": 2, "text": QUESTION, "open": True}
 
     question = work.open_question(AgentFix.objects.get().step.scene)

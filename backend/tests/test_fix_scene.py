@@ -122,6 +122,8 @@ def test_fix_scene_hands_the_note_the_instruction_and_the_look_to_the_fixing_age
 ) -> None:
     looks_then_fixes(fake_model, say)
 
+    [started] = ToolCall.objects.filter(tool="fix_scene", agent="producer")
+    assert started.result.startswith("Started scene 2's fix"), started.result
     # A step of its own, started from no fix plan, holding what the agent is handed.
     step = fix_step()
     assert step.pk in steps.held
@@ -133,8 +135,6 @@ def test_fix_scene_hands_the_note_the_instruction_and_the_look_to_the_fixing_age
     )
     assert LOOKED["root_cause"] in step.look_words
     assert not FixPlan.objects.exists()
-    [started] = ToolCall.objects.filter(tool="fix_scene", agent="producer")
-    assert started.result.startswith("Started scene 2's fix")
 
     fake_model.respond("fix_scene", turn(calls=[film_again(video_prompt=STIRS)]))
     run(fake_model, steps)
@@ -363,7 +363,8 @@ def test_a_pause_pressed_while_the_fixing_agent_decides_starts_no_try(
 
     fixing = AgentFix.objects.get(step=fix_step())
     assert fixing.paused_at is not None and not fixing.tries.exists()
-    [refused] = ToolCall.objects.filter(agent="fixing_agent", tool="film_again")
-    assert refused.result == f"Refused: {fixing_agent.PAUSED} Nothing was done."
+    assert [
+        each.result for each in ToolCall.objects.filter(agent="fixing_agent", tool="film_again")
+    ] == [f"Refused: {fixing_agent.PAUSED} Nothing was done."]
     # Nothing was filmed: the clip the shop owner noted is still the scene's.
     assert work.versions(Scene.objects.get(number=2))[-1].clip == fixing.first_clip
