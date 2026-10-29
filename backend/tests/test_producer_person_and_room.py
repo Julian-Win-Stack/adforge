@@ -24,7 +24,6 @@ from jobs.work import scene_place
 
 from .conftest import NO_CHOICES, PLAN, HeldSteps, broll, facts_ok, handoffs, paid_for
 from .test_producer_broll import (
-    BROLL_CHOICE,
     TALKING_CHOICE,
     checked,  # noqa: F401 (a fixture)
     run,
@@ -277,7 +276,6 @@ def five_shown(fake_model: FakeModel, page_read: str, steps: HeldSteps, say: Say
     )
     say("Go on")
     fake_model.respond("choose_starting_picture", TALKING_CHOICE)
-    fake_model.respond("choose_broll_picture", *[BROLL_CHOICE] * len(ROOMS))
     owner_says(
         fake_model,
         say,

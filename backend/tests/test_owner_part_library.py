@@ -29,7 +29,7 @@ from .conftest import (
     results_of,
 )
 from .test_cut_and_send import RECOLOUR_OK
-from .test_producer_broll import BROLL_CHOICE, DOES_A_JOB, calling, made_ready, run
+from .test_producer_broll import DOES_A_JOB, calling, made_ready, run
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -242,7 +242,6 @@ def test_a_correction_in_words_draws_the_one_item_again_and_every_scene_still_wa
         assert not owner_parts.is_approved(scene(number))
     # Its starting picture drawn again with the new part, the clip still waits for the yes.
     calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": None}))
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE)
     run(fake_model, steps)
     calling(fake_model, say, ("make_clip", {"scene": 2}))
     assert results_of("make_clip")[-1].startswith("Refused: scene 2 shows the lid")

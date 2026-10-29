@@ -67,7 +67,7 @@ A scene in which the person says the line to camera. Every scene is one unless t
 _Avoid_: A-roll, presenter scene
 
 **B-roll scene**:
-A scene that shows the product rather than the person talking, such as a pan sizzling, while the person's voice says the line over it. What it shows is written in plain words in the plan, with its kind, who is in it, its usage, its result and the photos it needs (its B-roll details). What it shows, its usage and its result are fact checked like the line, and a scene that fails is rewritten whole, B-roll details included. Its clip is made by Boreal-H3 (on Creatify) from a starting picture, never from shop photos: sent to the video model, a photo's own scene leaked into the clip. A photo of each thing the plan says it needs goes to the picture model instead, with its one job ("only how the gel's colour looks"). Made with the same tools as a talking scene. The user is never told which scenes are which, except when a B-roll scene has to become a talking scene: a notice says so, with the reason.
+A scene that shows the product rather than the person talking, such as a pan sizzling, while the person's voice says the line over it. What it shows is written in plain words in the plan, with its kind, who is in it, its usage, its result and the photos it needs (its B-roll details). What it shows, its usage and its result are fact checked like the line, and a scene that fails is rewritten whole, B-roll details included. Its clip is made by Boreal-H3 (on Creatify) from its sent list, never from a starting picture. Made with the same tools as a talking scene. The user is never told which scenes are which, except when a B-roll scene has to become a talking scene: a notice says so, with the reason.
 _Avoid_: Cutaway, product shot, insert
 
 **Scene step**:
@@ -75,11 +75,11 @@ One piece of a scene's work, run in the background: its starting picture, its li
 _Avoid_: Task, job, render
 
 **Starting picture**:
-A scene's first frame, made from the portrait and one product photo: the person holding the product, or, for a B-roll scene, the "before" of what the scene shows, made from its main photo, then a photo for each thing it needs that the main photo can't show (at most 3), then the portrait only when the presenter's face is shown, then the ad's before-picture. A B-roll scene's picture has a quality check before its clip is paid for, and is drawn again, at most twice, when it fails; when the third fails too, the run stops and the chat shows the three pictures and why each failed. The clip is made from it: a talking clip as its first frame, a B-roll clip in reference mode, told to start like it.
+A talking scene's first frame, made from the portrait and one product photo: the person holding the product. The talking clip is made from it as its first frame. Talking scenes only: a B-roll scene has none, and its clip is made from its sent list (spec #210 point 19).
 _Avoid_: Start frame, keyframe, thumbnail
 
 **Before-picture**:
-One picture per ad of the place its B-roll scenes happen in, before any of them starts: each thing the scenes act on, with every problem any of them shows, and no product or person. Drawn once, when the first B-roll starting picture needs it, and every B-roll starting picture is drawn from it, so the scenes match.
+One picture per ad of the place its B-roll scenes happen in, before any of them starts: each thing the scenes act on, with every problem any of them shows, and no product or person. Drawn once, when the ad's room alone is first needed, and the room alone is drawn from it, so the scenes match.
 _Avoid_: Base picture, background, set
 
 **Line's audio**:
@@ -111,7 +111,7 @@ A B-roll scene showing the second of two end states one claim needs: the second 
 _Avoid_: Pair, variant, alternate use
 
 **Clip**:
-A scene's moving picture, with its line's audio: the same audio its transcript was heard in. A talking scene's is its starting picture animated to speak that audio, so it lasts exactly as long. A B-roll scene's is made by Boreal-H3 with no sound, from its starting picture, in the fewest whole seconds that cover the audio (at least 5, at most 15). It isn't cut to its line: the audio is laid over its start, and it is kept whole, silent after the line, so its motion plays out. A B-roll line whose audio is too long for any clip is shortened before a clip is paid for, or, after 3 shortenings, said to camera instead. Made only once the picture is made and the audio heard, for the line as it stands. A scene is finished once its clip's step is, after the clip judge and any fixing agent, never as its first clip is kept; a new starting picture plans it again until a clip is made from that picture. Shown to the user in the chat as soon as it is made, with its scene's number.
+A scene's moving picture, with its line's audio: the same audio its transcript was heard in. A talking scene's is its starting picture animated to speak that audio, so it lasts exactly as long. A B-roll scene's is made by Boreal-H3 with no sound, from its sent list, in the fewest whole seconds that cover the audio (at least 5, at most 15). It isn't cut to its line: the audio is laid over its start, and it is kept whole, silent after the line, so its motion plays out. A B-roll line whose audio is too long for any clip is shortened before a clip is paid for, or, after 3 shortenings, said to camera instead. Made only once the audio is heard (and, for a talking scene, its starting picture made), for the line as it stands. A scene is finished once its clip's step is, after the clip judge and any fixing agent, never as its first clip is kept; a talking scene's new starting picture plans it again until a clip is made from that picture. Shown to the user in the chat as soon as it is made, with its scene's number.
 _Avoid_: Video, render, shot
 
 **Finished ad**:
@@ -301,19 +301,19 @@ Comparing every price, number, product name and claim in a line against the page
 _Avoid_: Verification, accuracy check
 
 **Quality check**:
-A check on something already produced, such as a picture or a clip. On unless switched off as a whole, except the B-roll starting picture check, which always runs. Built so far: the B-roll starting picture check, which looks at the picture, beside the shop photo it was drawn from, for objects that can't exist (a part on the wrong side, two sides of one object seen at once) before a clip is paid for; and the B-roll clip check, which looks at the clip right after it is made for objects that can't exist and a turn that shows a side that isn't real (10 frames a second) and for movement or change no real camera could film (5 frames a second), and keeps its ruling on the clip.
+A check on something already produced, such as a picture or a clip. On unless switched off as a whole. Built so far: the B-roll clip check, which judges the clip right after it is made against its sent list: first whether the references show enough to judge it, then whether the product is the real one and behaves like it (10 frames a second) and for movement or change no real camera could film (5 frames a second), and keeps its ruling on the clip. The starting-picture judge, which looks at a picture beside the shop photo it was drawn from for objects that can't exist, checks a fix's new talking picture.
 _Avoid_: QA, review, gate
 
 **Auto-fix**:
-What happens when the B-roll clip check fails a scene's clip: the fixing agent takes the scene over at once. It sees the plan, the page, the shop photos, the place, the presenter and every try's frames with what the check said, decides what to change (the action, the result, the start picture, both prompts, the line), and films a new try; each try is checked too. It stops when the check passes a try, which is then the scene's clip, or when it judges the scene can't be filmed well, at most 6 tries in all. Every try is a version. When it gives up, the scene keeps its last try, whether the judge or the producer's fix_scene started it; the shop owner is shown every try, each with what the check saw, the agent's pick marked and why it stopped, and can pick one with one tap, for nothing. The ad doesn't wait. The shop owner isn't asked anything first: no yes is needed for it. A first clip the check can't settle (no usable answer) is kept as it is, and the shop owner is told it went unchecked.
+What happens when the B-roll clip check fails a scene's clip: the fixing agent takes the scene over at once. It sees the plan, the page, the shop photos, the place, the presenter and every try's frames with what the check said, decides what to change (the action, the result, the sent list, the motion prompt, the line), and films a new try; each try is checked too. It stops when the check passes a try, which is then the scene's clip, or when it judges the scene can't be filmed well, at most 6 tries in all. Every try is a version. When it gives up, the scene keeps its last try, whether the judge or the producer's fix_scene started it; the shop owner is shown every try, each with what the check saw, the agent's pick marked and why it stopped, and can pick one with one tap, for nothing. The ad doesn't wait. The shop owner isn't asked anything first: no yes is needed for it. A first clip the check can't settle (no usable answer) is kept as it is, and the shop owner is told it went unchecked.
 _Avoid_: Retry, redo (a redo is made for a fix), round (a round is one batch of owner notes)
 
 **Try**:
-One new clip of a scene the fixing agent films after the clip check failed it, with or without a new start picture. Numbered from 1; the clip the check failed first is the first clip. Every try is a version.
+One new clip of a scene the fixing agent films after the clip check failed it, from its own sent list. Numbered from 1; the clip the check failed first is the first clip. Every try is a version.
 _Avoid_: Round, remake, attempt
 
 **Version**:
-One starting picture and the clip made from it, as the shop owner was shown them, numbered from 1 in the order shown ("v2 black toilet"). A new picture starts one; a new clip of the same picture, each try, and anything brought back by going back is one of its own. The shop owner and the producer can swap to any kept version, for free.
+One starting picture and the clip made from it (for a B-roll scene, which has no starting picture, one clip), as the shop owner was shown them, numbered from 1 in the order shown ("v2 black toilet"). A new picture starts one; a new clip of the same picture, each try, and anything brought back by going back is one of its own. The shop owner and the producer can swap to any kept version, for free.
 _Avoid_: Variant (a variant is another job), copy
 
 **Reference photo**:
@@ -321,7 +321,7 @@ A photo the shop owner attaches to a note, showing how something in a scene shou
 _Avoid_: Reference picture, owner picture
 
 **Reference mode**:
-How every B-roll clip is made (Julian 2026-10-16): the video model gets the drawn starting picture as Image 1, told the clip starts like it, then the clean pictures of the reference photos that only show during the clip, each named with what it shows. A reference photo goes in as a picture of the thing alone, drawn from it; no raw photo is ever sent. One switch in code goes back to before, when a clip without such pictures was made from its starting picture as its exact first frame.
+How B-roll clips were made from 2026-10-16 until the sent list replaced it (#241): the video model got the drawn starting picture as Image 1, told the clip starts like it, then the clean pictures of the reference photos that only show during the clip. A B-roll clip now has no starting picture: it is made from its sent list. A reference photo still goes in as a picture of the thing alone, drawn from it; no raw photo is ever sent.
 _Avoid_: Reference picture mode, way 3
 
 **Owner part**:

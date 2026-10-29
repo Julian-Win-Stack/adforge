@@ -87,7 +87,7 @@ def main() -> None:
     print("picture:", picture)
     check = call_model(
         job=None,
-        purpose="choose_broll_picture",
+        purpose="check_starting_picture",
         instructions=CHECK,
         handoff=CheckHandoff(how_the_product_is_used=USAGE, questions=QUESTIONS),
         output=Check,

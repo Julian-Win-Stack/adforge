@@ -38,7 +38,6 @@ from jobs.clip_judge import (
     MotionVerdict,
     ProductVerdict,
     ReferencesVerdict,
-    SidesVerdict,
 )
 from jobs.cut_out import CutOutVerdict, MadePictureVerdict
 from jobs.models import SceneStep
@@ -50,7 +49,6 @@ from .conftest import (
     CLIP_FIXED,
     CLIP_MOTION_OK,
     CLIP_PRODUCT_OK,
-    CLIP_SIDES_OK,
     PICTURE_OK,
     READABLE,
     REFERENCES_ENOUGH,
@@ -679,12 +677,6 @@ SUDDEN_CHANGE = "The mug's handle jumps to the other side at 2 s."
             [Score("starting_picture_real", "fail", "The handle is inside the mug.")],
         ),
         (
-            "check_clip_sides",
-            SidesVerdict,
-            {**CLIP_SIDES_OK, "verdict": "fail", "problem": "The mug grows a second handle."},
-            [Score("clip_sides_real", "fail", "The mug grows a second handle.")],
-        ),
-        (
             "check_clip_references",
             ReferencesVerdict,
             {
@@ -745,7 +737,6 @@ JUDGES_ANSWERS: dict[str, list[type[BaseModel]]] = {
     "check_cut_out": [CutOutVerdict],
     "check_made_picture": [MadePictureVerdict],
     "check_part_picture": [PartPictureVerdict],
-    "check_clip_sides": [SidesVerdict],
     "check_clip_product": [ProductVerdict],
     "check_clip_references": [ReferencesVerdict],
     "check_clip_motion": [MotionVerdict, MotionFixVerdict, MotionPhotoFixVerdict],

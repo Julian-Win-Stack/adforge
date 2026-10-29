@@ -317,7 +317,6 @@ def test_no_starting_picture_is_drawn_or_checked_for_the_b_roll_scene(
         job.produced.filter(kind="starting_picture").values_list("scene__number", flat=True)
     ) == [1, 3]
     paid = paid_for()
-    assert "choose_broll_picture" not in paid
     assert "check_starting_picture" not in paid
     # The only pictures checked are the library's cut-out and its recolours.
     assert sorted(

@@ -38,14 +38,6 @@ def test_two_names_are_the_same_thing_whatever_their_case_spacing_or_article(
     assert reference_photos.same_thing(one, other) is same
 
 
-def test_the_clean_pictures_are_numbered_first_and_each_said_to_win() -> None:
-    assert reference_photos.picture_label(["black toilet", "blue brush"]) == (
-        "Image 1 is the shop owner's own black toilet: wherever it disagrees with another "
-        "picture, follow Image 1. Image 2 is the shop owner's own blue brush: wherever it "
-        "disagrees with another picture, follow Image 2. Image 3 is the product photo."
-    )
-
-
 def test_the_clean_picture_prompt_never_copies_a_face_or_invents_a_side() -> None:
     prompt = reference_photos.clean_picture_prompt("apron")
     assert prompt.startswith("A clean photo of only the apron in this photo")
@@ -55,27 +47,7 @@ def test_the_clean_picture_prompt_never_copies_a_face_or_invents_a_side() -> Non
     assert "front" not in prompt
 
 
-def test_the_writer_names_the_product_photo_by_its_photo_number_alone() -> None:
-    rules = reference_photos.writer_rules(["black toilet", "blue brush"], [], picks_photo=True)
-    assert "(Image 1: their black toilet; Image 2: their blue brush)" in rules
-    # One number only (case C12b): told the product photo was Image 3, the writer answered
-    # "photo" with 3, not a photo of the product.
-    assert "Image 3" not in rules
-    assert 'Wherever the rules above say Image 1, write "the product photo"' in rules
-    assert 'Answer "photo" with its Photo number' in rules
-
-
-def test_the_writer_isnt_told_to_answer_a_photo_it_isnt_asked_for() -> None:
-    rules = reference_photos.writer_rules(["black toilet"], [], picks_photo=False)
-    assert 'write "the product photo"' in rules
-    assert '"photo"' not in rules.replace('"the product photo"', "")
-
-
 def test_the_writer_is_told_of_things_only_seen_during_the_clip() -> None:
-    assert reference_photos.writer_rules([], ["green gel", "foam", "brush"], picks_photo=True) == (
-        reference_photos.during_clip_rules(["green gel", "foam", "brush"])
-    )
     assert "their green gel, their foam and their brush" in (
         reference_photos.during_clip_rules(["green gel", "foam", "brush"])
     )
-    assert reference_photos.writer_rules([], [], picks_photo=True) == ""

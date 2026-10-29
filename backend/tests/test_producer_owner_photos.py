@@ -29,7 +29,6 @@ from .conftest import (
     picture,
 )
 from .test_producer_broll import (
-    BROLL_CHOICE,
     LINE_2,
     SHOWS,
     TALKING_CHOICE,
@@ -138,7 +137,6 @@ def made_ready(fake_model: FakeModel, steps: HeldSteps, say: Say) -> None:
         *[("make_line_audio", {"scene": scene}) for scene in (1, 2, 3)],
     )
     fake_model.respond("choose_starting_picture", TALKING_CHOICE)
-    fake_model.respond("choose_broll_picture", BROLL_CHOICE, BROLL_CHOICE)
     run(fake_model, steps)
     calling(fake_model, say, *[("transcribe_line_audio", {"scene": scene}) for scene in (1, 2, 3)])
     run(fake_model, steps)

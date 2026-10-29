@@ -65,15 +65,6 @@ TALKING_CHOICE: dict[str, Any] = {
 
 MOTION = "Steam rises as the tea fills the mug; the camera holds still."
 
-BROLL_CHOICE: dict[str, Any] = {
-    "photo": 1,
-    "photo_reason": "The front of the mug shows its glaze as the tea is poured.",
-    "prompt": "The mug on a workbench in a sunny workshop, tea being poured into it.",
-    "prompt_reason": "It shows the pour the line describes, in the person's workshop.",
-    "motion_prompt": MOTION,
-    "motion_prompt_reason": "The pour and the steam are what moves in the scene.",
-}
-
 # Scene 2's labels when it shows the mug doing a job rather than at its best, as planned.
 DOES_A_JOB: dict[str, Any] = {
     "broll_kind": "does a job",
@@ -135,9 +126,7 @@ def picture_of(
 ) -> None:
     """Make `scene`'s starting picture: scene 2 shows the mug, the others the person."""
     calling(fake_model, say, ("make_starting_picture", {"scene": scene, "note": None}))
-    if scene == 2:
-        fake_model.respond("choose_broll_picture", BROLL_CHOICE)
-    else:
+    if scene != 2:
         fake_model.respond("choose_starting_picture", TALKING_CHOICE)
     run(fake_model, steps)
 
@@ -271,7 +260,7 @@ def test_a_scene_that_shows_the_product_gets_no_starting_picture(
         "from the product's own pictures and videos. Make its clip once its audio is heard. "
         "Nothing was done."
     ]
-    assert not {"choose_broll_picture", "make_starting_picture"} & set(paid_for())
+    assert "make_starting_picture" not in paid_for()
 
 
 @pytest.mark.parametrize(
