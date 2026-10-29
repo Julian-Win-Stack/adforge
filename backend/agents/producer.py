@@ -1399,16 +1399,6 @@ class MakeClip(Tool):
             )
         picture_step = picture.step if picture is not None else None
         assert picture is None or picture_step is not None, "a picture is made by a step"
-        in_the_ad = _current_clip_in_use(scene)
-        if not note and in_the_ad is not None:
-            # Nothing it is made from changed (spec #247 point 9): what exists is handed back,
-            # whoever made it, as a try the fixing agent kept.
-            Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
-            return (
-                f"Scene {scene.number}'s clip (version {in_the_ad.version}) is already made for "
-                "the scene as it stands, so nothing was made or paid for again. Scene "
-                f"{scene.number} is finished."
-            )
         made = _clip_with_the_photos_in_use(
             scene,
             scene.produced.filter(
@@ -1433,6 +1423,16 @@ class MakeClip(Tool):
             .exclude(step__tool_call__agent=FIXING_AGENT)
             .order_by("version"),
         )
+        in_the_ad = _current_clip_in_use(scene) if made is None and not note else None
+        if in_the_ad is not None:
+            # Nothing it is made from changed (spec #247 point 9): what exists is handed back,
+            # whoever made it, as a try the fixing agent kept, which the lookup above leaves out.
+            Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
+            return (
+                f"Scene {scene.number}'s clip (version {in_the_ad.version}) is already made for "
+                "the scene as it stands, so nothing was made or paid for again. Scene "
+                f"{scene.number} is finished."
+            )
         if made is not None:
             assert made.step is not None, "a clip is made by a scene step"
             made_from = "from this starting picture" if picture is not None else "from this plan"
