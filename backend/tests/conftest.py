@@ -404,6 +404,23 @@ def _isolated_outside_world(settings: Settings, tmp_path: Path) -> None:
     # stand-in.
     settings.OPENAI_PICTURES_KEY = ""
     settings.OPENAI_PICTURES_BASE_URL = ""
+    # Nor on our Azure copy of the picture model. A test that draws there sets these.
+    settings.AZURE_PICTURES_KEY = ""
+    settings.AZURE_PICTURES_BASE_URL = ""
+    settings.AZURE_PICTURES_DEPLOYMENT = ""
+    # Text and vision calls never reach the real OpenAI or Azure: the account is a made-up
+    # key at an address that resolves nowhere, so building the client needs no real key and
+    # a call a test forgot to fake fails here. A test that calls it uses `openai_server`.
+    settings.OPENAI_API_KEY = "sk-test"
+    settings.OPENAI_BASE_URL = "http://openai.invalid/v1"
+    # The other providers hold no real key either, as on CI. A test that calls one sets its
+    # key and points its address at a stand-in.
+    settings.INWORLD_API_KEY = ""
+    settings.ELEVENLABS_API_KEY = ""
+    settings.FAL_KEY = ""
+    settings.HEYGEN_API_KEY = ""
+    settings.CREATIFY_API_ID = ""
+    settings.CREATIFY_API_KEY = ""
     # Videos are never watched by the real Gemini. A test that watches one points these at a
     # stand-in.
     settings.GEMINI_API_KEY = ""
