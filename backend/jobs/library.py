@@ -32,7 +32,7 @@ from pydantic import (
     model_validator,
 )
 
-from gateway.types import MOST_PIECE_SECONDS, PieceTrim
+from gateway.types import MOST_EXAMPLE_PICTURES, MOST_PIECE_SECONDS, PieceTrim
 from jobs import cards
 from jobs.models import Job, LibraryItem, ProducedItem, ProductVideo
 
@@ -67,7 +67,7 @@ KINDS, SIDES, ALONE = (get_args(get_args(fixed)[0]) for fixed in (Kind, Side, Al
 
 # The video API's limits on one clip's call (#210 point 13). Its limit on pieces is the
 # gateway's, where the call is checked.
-VIDEO_API_MOST_PICTURES = 9
+VIDEO_API_MOST_PICTURES = MOST_EXAMPLE_PICTURES
 VIDEO_API_MOST_PIECE_SECONDS = MOST_PIECE_SECONDS
 
 # The sent list's fixed values (#210 points 11, 13, 14, 8). Not approved yet: the planner's
@@ -167,8 +167,17 @@ class Recoloured(_Shape):
     colour: Colour
 
 
+class Made(_Shape):
+    """A picture the producer made with the picture model (spec #247 point 5): from its own
+    prompt, with these library items, by number, as references (none when drawn from the
+    prompt alone)."""
+
+    came_from: Literal["made"] = "made"
+    references: list[Annotated[int, Field(ge=1)]]
+
+
 Source = Annotated[
-    PagePhoto | OwnerPhoto | LookFrame | OwnerPart | ProductOnly | Recoloured,
+    PagePhoto | OwnerPhoto | LookFrame | OwnerPart | ProductOnly | Recoloured | Made,
     Field(discriminator="came_from"),
 ]
 
@@ -184,6 +193,10 @@ class LibraryEntry(PictureLabel):
     def _a_version_of_an_earlier_item(self) -> Self:
         if isinstance(self.source, ProductOnly | Recoloured) and self.source.of >= self.number:
             raise ValueError("an item is a version of an earlier item")
+        if isinstance(self.source, Made) and any(
+            reference >= self.number for reference in self.source.references
+        ):
+            raise ValueError("a made picture's references are earlier items")
         if isinstance(self.source, Recoloured) and self.source.colour != self.colour:
             raise ValueError("a recoloured item is in the colour it was recoloured to")
         return self

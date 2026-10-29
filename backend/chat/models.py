@@ -25,6 +25,13 @@ class Session(models.Model):
         help_text="The producer's heartbeat. A producer that is running but hasn't been seen "
         "for PRODUCER_DEAD_AFTER_SECONDS has died.",
     )
+    paused_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the shop owner pressed pause (spec #247 point 14). While it is set, "
+        "every scene tool answers paused and starts nothing; the shop owner's next message "
+        "clears it. Blank when not paused.",
+    )
 
     class Meta:
         ordering = ["-created_at"]

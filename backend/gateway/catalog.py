@@ -5,8 +5,16 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from django.conf import settings
 
+# The producer's model: the producer's turns, and its look (spec #247 point 2, Julian 03:15:
+# the look is the producer's own model).
+PRODUCER_MODEL = "gpt-5.6-sol"
+
 MODEL_FOR_PURPOSE: dict[str, str] = {
-    "produce": "gpt-5.6-sol",
+    "produce": PRODUCER_MODEL,
+    # The producer's look (agents/look.py): a sub-call shown pictures, frames and the sent
+    # list that answers in words. A purpose of its own, so the producer's last turn is never
+    # a look.
+    "look": PRODUCER_MODEL,
     "check_page": "gpt-5-mini",
     # The copy test (docs/scraping-test/copy-test/results.md) kept 87% of the product's facts
     # and let no other product's sentence through at 0.2 cents a page.
@@ -50,6 +58,10 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # The cut-out check (spec #210 point 6): the product-only version, or the clean picture of
     # a shop owner's thing, beside the photo it was cut from. The picture judges' model.
     "check_cut_out": "gpt-6.1-sol",
+    # A picture the producer makes from its own prompt and library items (spec #247 point 5),
+    # drawn as cut-outs are, and its check, asked once as the cut-out check is.
+    "make_picture": "gpt-image-2.5-sunburst",
+    "check_made_picture": "gpt-6.1-sol",
     # An owner part's own picture (spec #210 point 20): drawn from its sentence beside a
     # product photo, or changed from the shop owner's photo of it, as cut-outs are drawn; and
     # its check against the sentence, on the picture judges' model.
@@ -126,6 +138,8 @@ SLOW_ANSWER_SECONDS: dict[str, float] = {
     # A whole video, watched with thinking: the watcher test's calls took 31 to 55 s.
     "watch_video": 600,
     "probe_video": 600,
+    # The producer's look is shown as many pictures as the clip judge (agents/look.py).
+    "look": 600,
 }
 
 # How hard a Gemini model thinks before it answers, for a purpose that isn't to think as
@@ -204,6 +218,14 @@ PRICE_PER_SECOND_OF_VIDEO: dict[str, Decimal] = {
 }
 
 
+# US dollars per example picture a B-roll clip is sent past the free ones
+# (gateway.types.FREE_EXAMPLE_PICTURES): Boreal-H3's 0.2 credits at $99 for 500 credits (spec
+# #210, Further Notes).
+PRICE_PER_EXAMPLE_PICTURE: dict[str, Decimal] = {
+    "creatify/boreal-h3": Decimal("0.0396"),
+}
+
+
 # US dollars per second of music made. From fal's model page on 2026-09-17
 # (docs/video-model-tests.md).
 PRICE_PER_SECOND_OF_MUSIC: dict[str, Decimal] = {
@@ -243,6 +265,11 @@ def transcription_cost_usd(model: str, seconds: float) -> Decimal:
 
 def video_cost_usd(model: str, seconds: float) -> Decimal:
     return Decimal(str(seconds)) * PRICE_PER_SECOND_OF_VIDEO[model]
+
+
+def example_pictures_cost_usd(model: str, pictures: int, free: int) -> Decimal:
+    """What sending `pictures` example pictures costs past the first `free`."""
+    return max(pictures - free, 0) * PRICE_PER_EXAMPLE_PICTURE.get(model, Decimal(0))
 
 
 def music_cost_usd(model: str, seconds: int) -> Decimal:

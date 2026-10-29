@@ -105,6 +105,7 @@ def test_a_new_session_is_named_from_the_users_first_message(
         "pasted_page_result": "",
         "wants_pasted_page": None,
         "wants_more_photos": False,
+        "question": None,
     }
 
 

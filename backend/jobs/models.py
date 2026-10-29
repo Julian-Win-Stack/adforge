@@ -488,6 +488,15 @@ class Scene(models.Model):
         "then. The yes holds while the part and its photos are the same as the picture was "
         "drawn from; a correction clears it.",
     )
+    owner_part_approved_by = models.ForeignKey(
+        "chat.Message",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The shop owner's message whose yes the producer kept for the owner part's "
+        "picture (spec #247 point 12). Blank until then, and whenever the yes is.",
+    )
     fact_checked = models.BooleanField(
         default=False,
         help_text="The line, and what the scene shows, passed the fact check, or the user "
@@ -982,6 +991,9 @@ class SceneStep(models.Model):
         FINISHED = "finished"
         STOPPED = "stopped"
         FAILED = "failed"
+        # Waiting for the worker when the shop owner pressed pause, so never worked on: free.
+        # The pause note tells the producer of it, not its own result.
+        CANCELLED = "cancelled"
 
     scene = models.ForeignKey(Scene, on_delete=models.CASCADE, related_name="steps")
     kind = models.CharField(max_length=30, choices=Kind.choices)
@@ -1616,6 +1628,13 @@ class AgentFixTry(models.Model):
         null=True,
         blank=True,
         help_text='For door 2, whether the owner\'s change is made: {"verdict", "reason"}.',
+    )
+    sent = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="For a try filmed with references (#235): the sent list built for it before "
+        "its clip was asked for, so a worker that stops sends the same; its clip keeps it too. "
+        "Null for a try filmed from a start picture.",
     )
     passed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)

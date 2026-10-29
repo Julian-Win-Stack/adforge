@@ -10,6 +10,8 @@ import {
   ApiError,
   getMessagesSince,
   sendMessage,
+  pauseSession,
+  PAUSED_NOTICE,
   startSession,
   type Attachment,
   type Message,
@@ -178,6 +180,16 @@ export function Chat({
   const waitingOnOwner =
     (planWaits || suggestedNotes(messages).size > 0) && !cards.some((card) => card.making !== null);
   const pageAsk = pagePanel(messages);
+  // Paused from the pause's notice until the owner writes again, as the server keeps it.
+  const pausedAt = [...messages]
+    .reverse()
+    .find((message) => message.role === "notice" && message.text === PAUSED_NOTICE);
+  const paused = pausedAt !== undefined && pausedAt.seq > (ownerSaidLast?.seq ?? 0);
+  // Something to pause: the producer working, or a scene's picture or clip being made.
+  const pausable =
+    sessionId !== null &&
+    !paused &&
+    ((producerHasTheFloor && !waitingOnOwner) || cards.some((card) => card.making !== null));
   const pasted = lastPastedPage(messages);
   const unacceptedPaste = pasted && !acceptedPastes(messages).has(pasted.seq) ? pasted : null;
   const covers = new Map(
@@ -353,6 +365,7 @@ export function Chat({
               text={draft}
               onChange={setDraft}
               onSend={send}
+              onPause={pausable ? () => pauseSession(sessionId as string) : undefined}
               placeholder={
                 sessionId === null
                   ? "Paste a product link and describe the ad you want..."
@@ -809,15 +822,19 @@ function Composer({
   text,
   onChange,
   onSend,
+  onPause,
   placeholder,
 }: {
   text: string;
   onChange: (text: string) => void;
   onSend: (text: string, photos: File[]) => Promise<void>;
+  /** Offered while there is work to pause; the button stays until the pause notice lands. */
+  onPause?: () => Promise<void>;
   placeholder: string;
 }) {
   const [photos, setPhotos] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
+  const [pausing, setPausing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const photoInput = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -846,6 +863,19 @@ function Composer({
       setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
     } finally {
       setSending(false);
+    }
+  }
+
+  async function pause() {
+    if (!onPause || pausing) return;
+    setPausing(true);
+    setError(null);
+    try {
+      await onPause();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
+    } finally {
+      setPausing(false);
     }
   }
 
@@ -919,6 +949,17 @@ function Composer({
           ))}
         </div>
         <span className="composer-hint">Enter to send</span>
+        {onPause && (
+          <button
+            type="button"
+            className="pause"
+            title="Stop starting new work until you write"
+            onClick={pause}
+            disabled={pausing}
+          >
+            Pause
+          </button>
+        )}
         <button type="submit" className="send" aria-label="Send" disabled={!canSend}>
           {sending ? <span className="spinner" /> : <ArrowUpIcon />}
         </button>

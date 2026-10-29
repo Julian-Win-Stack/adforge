@@ -189,6 +189,9 @@ export type Session = {
   id: string;
   name: string;
   created_at: string;
+  /** Whether the owner's pause holds: until their next message. Only the session itself
+   * says it; the list may leave it out. */
+  paused?: boolean;
 };
 
 /** What the server answers when a message is sent: the message, and the session it landed
@@ -278,4 +281,16 @@ export async function sendMessage(
     );
   }
   return readJson<Sent>(await fetch(`/api/sessions/${sessionId}/messages/`, request));
+}
+
+/** What the pause notice says, as agents/pause.py posts it (PAUSED_NOTICE): the chat is
+ * paused from that notice until the owner's next message. */
+export const PAUSED_NOTICE = "Paused. Nothing new is started until you write.";
+
+/** The pause button: the producer starts nothing new until the owner writes. Steps waiting
+ * to start are cancelled and the running ones finish; the chat is told by a notice. */
+export async function pauseSession(sessionId: string): Promise<void> {
+  await readJson<{ paused: boolean }>(
+    await fetch(`/api/sessions/${sessionId}/pause/`, jsonRequest("POST", {})),
+  );
 }

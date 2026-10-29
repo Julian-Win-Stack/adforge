@@ -35,6 +35,7 @@ from . import catalog
 from .models import ModelCall, SystemPrompt
 from .types import (
     EDITING_FOR,
+    FREE_EXAMPLE_PICTURES,
     AgentProvider,
     BlockedBySafetyFilter,
     BrollClipHandoff,
@@ -865,14 +866,18 @@ def submit_broll_clip(
             ],
         )
         # Each second of reference video sent costs what a second made does (spec #210,
-        # Further Notes: 0.4 credits a second).
+        # Further Notes: 0.4 credits a second), and each example picture past the free ones
+        # 0.2 credits.
         sent = sum(piece.seconds for piece in handoff.reference_videos)
         return _Made(
             result=video_id,
             output={"video_id": video_id},
             bill=_Bill(
                 video_seconds=handoff.seconds,
-                cost_usd=catalog.video_cost_usd(model, handoff.seconds + sent),
+                cost_usd=catalog.video_cost_usd(model, handoff.seconds + sent)
+                + catalog.example_pictures_cost_usd(
+                    model, len(handoff.example_pictures), FREE_EXAMPLE_PICTURES
+                ),
             ),
         )
 
@@ -1137,6 +1142,7 @@ def _told_in_trace(system_prompt: SystemPrompt | None) -> dict[str, Any]:
 VERDICT_SCORES: dict[str, dict[str, tuple[str, ...]]] = {
     "check_starting_picture": {"starting_picture_real": ()},
     "check_cut_out": {"cut_out_alone_and_unchanged": ()},
+    "check_made_picture": {"made_picture_as_meant_and_unchanged": ()},
     "check_part_picture": {"part_picture_as_said": ()},
     "check_fix": {"fix_made": ()},
     "check_clip_sides": {"clip_sides_real": ()},

@@ -16,6 +16,13 @@ What it writes:
 - <ad folder>/ad.json: product link, app commit, when it started and was first finished
   (wall time), abandoned (no finished ad), model calls that failed (refusals, filters).
 - <ad folder>/notes.json: each owner note, its restatement, estimate, yes, and fix check.
+- <ad folder>/tool_calls.json: what the agents did after the ad's first clip (spec #247 point
+  17), in call order, in the shape of evals.tool_calls: each tool call of the session made
+  after it (the rows agents' own turns are charged to left out) with the agent, tool, `why`,
+  the instruction given, the words said before it, the answer, its fold line, cost, started
+  and finished, and the look's answers in words; the pictures it handed back are copied to
+  <ad folder>/tool-call-pictures/. ad.json's first_clip_at names the cut; with no clip made,
+  it is null and every call is kept. evals.agent_page makes the ad's page from it.
 - <ad folder>/library.txt: the job's library as a text list, one line per item (its number,
   what it shows, its colour and where it came from), so a round can be read without the chat.
 - each clip's record in results.json carries "sent", what cut-and-send sent the video model
@@ -36,6 +43,7 @@ import os
 import re
 import subprocess
 import sys
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -122,6 +130,27 @@ def _first_clip_step(scene: Any) -> tuple[Any, list[Any]] | None:
     return None
 
 
+def _first_clip(job: Any) -> datetime | None:
+    """When the ad's first clip was made: the earliest first clip of its scenes."""
+    made = [found[1][0].created_at for s in job.scenes.all() if (found := _first_clip_step(s))]
+    return min(made, default=None)
+
+
+def _agent_calls(job: Any, after: datetime | None, base: Path) -> list[dict[str, Any]]:
+    """The records of the session's tool calls made after `after` (all of them for None)."""
+    from evals.tool_calls import Pictures, said_before, session_calls, tool_call
+
+    if job.session is None:
+        return []
+    said = said_before(job.session)
+    pictures = Pictures(base / "tool-call-pictures")
+    return [
+        tool_call(call, pictures, said.get(call.call_id, ""))
+        for call in session_calls(job.session)
+        if after is None or call.created_at > after
+    ]
+
+
 def _inputs(scene: Any, step: Any) -> str:
     picture_prompt = step.picture_step.prompt if step.picture_step else ""
     return (
@@ -168,6 +197,10 @@ def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, d
         if len(ads) > 1:
             (base / "ad-latest.mp4").write_bytes(file_store.read(ads[-1].file))
     failed = job.model_calls.exclude(outcome="succeeded").order_by("id")
+    first_clip = _first_clip(job)
+    (base / "tool_calls.json").write_text(
+        json.dumps(_agent_calls(job, first_clip, base), indent=1, ensure_ascii=False)
+    )
     (base / "ad.json").write_text(
         json.dumps(
             {
@@ -179,6 +212,7 @@ def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, d
                 if ads
                 else None,
                 "abandoned": not ads,
+                "first_clip_at": first_clip.isoformat() if first_clip else None,
                 "finished_versions": len(ads),
                 "failed_model_calls": [
                     {"purpose": c.purpose, "model": c.model, "error": c.error} for c in failed

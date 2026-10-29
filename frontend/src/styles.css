@@ -1455,6 +1455,28 @@ button:disabled {
   color: var(--text-3);
 }
 
+/* The pause button: quiet beside send, offered only while there is work to pause. */
+.pause {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pause:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.pause:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .send {
   display: grid;
   place-items: center;
