@@ -32,7 +32,7 @@ from gateway.fake import FakeModel, turn
 from gateway.gateway import use_model
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
-from gateway.types import ModelReply, ModelRequest, TurnReply, TurnRequest
+from gateway.types import ModelReply, ModelRequest, Turn, TurnReply, TurnRequest
 from jobs.library import SentList
 from jobs.models import Job
 
@@ -1167,6 +1167,106 @@ def checked(fake_model: FakeModel, planned: None, say: Callable[..., None]) -> N
     )
     fake_model.respond("fact_check", FACTS_OK)
     say("Make the person and check the script")
+
+
+# --- The scripted producer (spec #247 Testing Decisions) --------------------------------------
+
+# One step of a producer's script: a tool call (tool, arguments) is a turn making that one
+# call; a list of them is one turn making them all; a string is what it says to the shop
+# owner, a turn that calls nothing and so ends its work; a Turn, or a callable making one when
+# the turn is taken (to read what an earlier call handed back), is taken as it is.
+type ScriptStep = (
+    str | tuple[str, dict[str, Any]] | list[tuple[str, dict[str, Any]]] | Turn | Callable[[], Turn]
+)
+
+# What the scripted producer says when its script doesn't end with words of its own.
+SCRIPTED_REPLY = "On it."
+
+
+def scripted_turns(
+    *script: ScriptStep, reply: str = SCRIPTED_REPLY
+) -> list[Turn | Callable[[], Turn]]:
+    """The producer's turns for `script`, ending with `reply` when the script ends on a call."""
+    turns: list[Turn | Callable[[], Turn]] = []
+    for step in script:
+        if isinstance(step, str):
+            turns.append(turn(says=step))
+        elif isinstance(step, tuple):
+            turns.append(turn(calls=[step]))
+        elif isinstance(step, list):
+            turns.append(turn(calls=step))
+        else:
+            turns.append(step)
+    if not script or not isinstance(script[-1], str):
+        turns.append(turn(says=reply))
+    return turns
+
+
+class ScriptedProducer:
+    """The producer, faked and scripted per test: it makes exactly the tool calls a test
+    gives it, so the test proves the tools, the notes and what the shop owner sees, not the
+    agent's judgment. Each script must be used up, and the producer must never have had to
+    stop, or the test fails there."""
+
+    def __init__(
+        self,
+        fake_model: FakeModel,
+        say: Callable[..., None],
+        steps: HeldSteps,
+        api: APIClient,
+        session_id: str,
+    ) -> None:
+        self.fake_model = fake_model
+        self._say = say
+        self.steps = steps
+        self._api = api
+        self.session_id = session_id
+
+    def told(
+        self, message: str, *script: ScriptStep, photos: Sequence[tuple[str, bytes]] = ()
+    ) -> None:
+        """The shop owner sends `message` (with `photos`, each (name, content)), and the
+        producer takes `script` before it stops, its scene steps held for the worker."""
+        self.fake_model.respond("produce", *scripted_turns(*script))
+        self._say(message, *photos)
+        self._all_used()
+
+    def woken(self, *script: ScriptStep) -> None:
+        """The worker runs the oldest step held, and the producer, woken by it finishing,
+        takes `script`."""
+        assert self.steps.held, "No scene step is waiting for the worker"
+        self.fake_model.respond("produce", *scripted_turns(*script))
+        self.steps.run_next()
+        self._all_used()
+
+    def steps_run(self, reply: str = "Done.") -> None:
+        """The worker runs every step held, and every one they start, oldest first; each
+        time one finishes, the producer, woken, says `reply` and starts nothing."""
+        while self.steps.held:
+            self.woken(reply)
+
+    def said(self) -> list[str]:
+        """What the producer said in the chat, oldest first."""
+        return [text for role, text in chat(self._api, self.session_id) if role == "agent"]
+
+    def _all_used(self) -> None:
+        left = self.fake_model.left("produce")
+        assert left == 0, f"{left} of the producer's scripted turns were never taken"
+        stopped = [text for text in self.said() if text.startswith("I had to stop")]
+        assert stopped == [], stopped
+
+
+@pytest.fixture
+def producer(
+    fake_model: FakeModel,
+    say: Callable[..., None],
+    steps: HeldSteps,
+    api: APIClient,
+    session_id: str,
+) -> ScriptedProducer:
+    """The producer, scripted by the test (see ScriptedProducer). Its scene steps are held
+    until the test runs them."""
+    return ScriptedProducer(fake_model, say, steps, api, session_id)
 
 
 # The finishing-step rule (Julian 10 Oct 02:59), pinned word for word for the planner and

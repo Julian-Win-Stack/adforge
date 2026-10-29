@@ -179,6 +179,10 @@ class FakeModel:
         an agent."""
         self._unscripted[purpose] = answer
 
+    def left(self, purpose: str) -> int:
+        """How many scripted outcomes for `purpose` haven't been used yet."""
+        return len(self._scripts[purpose])
+
     def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]:
         return self._output(request)
 
