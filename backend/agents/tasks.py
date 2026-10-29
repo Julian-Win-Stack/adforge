@@ -18,7 +18,7 @@ from chat.models import Attachment, Message, Session
 from gateway.gateway import charged_to
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, UnusableReply
-from jobs import owner_parts
+from jobs import owner_answers, owner_parts
 from jobs.models import FixCheck, Job, ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
 from jobs.picture_check import PictureKeptFailing
@@ -611,6 +611,10 @@ def _finish(
         # Once its step is finished, so its tries are versions.
         if step.kind == SceneStep.Kind.CLIP and step.shows and agent_gave_up(step):
             say_the_agent_gave_up(step)
+        # A fix resumed with the shop owner's answer changed the scene's clip in an ad
+        # already shown: it is assembled again, as for a try swapped in.
+        if step.kind == SceneStep.Kind.CLIP and owner_answers.answered(step):
+            run_plan.swapped_in(step)
         # A fix plan's step is carried on by code, and never wakes the producer: a
         # fix's picture that passed its checks queues its clip here (decision 2).
         if step.plan_scene_id is not None:
