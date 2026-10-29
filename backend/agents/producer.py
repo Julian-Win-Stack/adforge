@@ -38,7 +38,6 @@ from jobs.library_items import add_kept_photos, add_product_only_versions, libra
 from jobs.made_pictures import PictureNotMade, make_picture
 from jobs.models import (
     BROLL_FIELDS,
-    CLIP_ONLY_INPUTS,
     PLANNED_FOR_THE_ACTION,
     AgentFix,
     Fix,
@@ -1140,16 +1139,6 @@ class MakePicture(Tool):
         )
 
 
-def _made_for_its_references(scene: Scene) -> dict[str, Any]:
-    """The filter for clips made through "step__" for the scene's references as they stand:
-    what only a clip is made from (CLIP_ONLY_INPUTS)."""
-    return {
-        key: value
-        for key, value in SceneStep.made_for(scene, through="step__").items()
-        if key.removeprefix("step__").removesuffix("__isnull") in CLIP_ONLY_INPUTS
-    }
-
-
 def _with_the_photos_in_use(scene: Scene, steps: QuerySet[SceneStep]) -> SceneStep | None:
     """The newest of `steps` made with the shop owner's photos the scene uses now, if any."""
     using = {(row.file, row.thing.casefold()) for row in _photos_in_use(scene)}
@@ -1419,7 +1408,10 @@ class MakeClip(Tool):
                 # clip, made from its sent list, has no picture: any made for the scene's plan
                 # as it stands (its references with it) is the same clip.
                 **(
-                    {"picture__step": picture_step, **_made_for_its_references(scene)}
+                    {
+                        "picture__step": picture_step,
+                        **SceneStep.references_made_for(scene, "step__"),
+                    }
                     if picture_step is not None
                     else _made_for_the_plan(scene)
                 ),

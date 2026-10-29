@@ -127,6 +127,7 @@ from .models import (
     AgentFixTry,
     Fix,
     FixCheck,
+    FixPlanScene,
     Job,
     OwnerQuestion,
     ProducedItem,
@@ -4395,6 +4396,9 @@ def _make_clip(
     assert audio.seconds is not None, "a line's audio is measured when it's made"
     if step.note and not step.motion_prompt and not remake and sent is None:
         _rewrite_motion_prompt(step)
+    # A fix plan's going back sends what the version was sent, and is labelled as it: a try
+    # of the fixing agent's, sent its own list, is labelled as a try.
+    back_to = None if remake or motion or sent is not None else going_back_to(step)
     handoff: ClipHandoff | BrollClipHandoff
     if step.shows:
         _too_long_for_a_broll_clip(audio.seconds)
@@ -4443,7 +4447,8 @@ def _make_clip(
             picture=picture,
             remake=remake or None,
             motion_prompt=motion,
-            change=change_made_for(step),
+            change=_gone_back(back_to) or change_made_for(step),
+            back_to=back_to,
         )
         if sent is not None:
             # Kept with the clip, before it is shown anywhere, so its card shows what it was
@@ -4457,8 +4462,9 @@ def broll_sent_list(step: SceneStep, *, motion: str = "") -> library.SentList:
     never with a starting picture: the scene's planned pictures and piece, with the first-send
     writer's prompt; with `motion`, the words of the fixing agent's try, labelled by code; for
     a clip made from a note, the references of the clip it improves on, with the prompt
-    written again from the note. The ad's presenter in the room and its room alone are drawn
-    first, once per ad, as the clip is sent one of them.
+    written again from the note; for a fix plan's new line or going back, what the version
+    it keeps was sent (`_sent_again`). The ad's presenter in the room and its room alone are
+    drawn first, once per ad, as the clip is sent one of them.
 
     Run again, as after a worker stopped, it pays for nothing already paid for."""
     job = step.scene.job
@@ -4468,8 +4474,10 @@ def broll_sent_list(step: SceneStep, *, motion: str = "") -> library.SentList:
         # Sent no picture of its place, as cut-and-send says for the scene.
         say_the_place_wasnt_drawn(job, not_drawn)
     if step.note:
-        improved = _sent_to_improve(step)
-        return improved.model_copy(update={"prompt": step.motion_prompt or improved.prompt})
+        return _sent_to_improve(step)
+    kept = None if motion else _sent_again(step)
+    if kept is not None:
+        return kept
     sending = _planned_sending(step)
     _keep_the_cut(step, sending)
     if motion:
@@ -4489,9 +4497,15 @@ def _keep_the_cut(step: SceneStep, sending: cut_and_send.Sending) -> None:
 
 def _planned_sending(step: SceneStep) -> cut_and_send.Sending:
     """What cut-and-send sends a clip of `step` from its plan: the scene's planned pictures and
-    piece, then the clean pictures of the shop owner's things it shows (_owners_things_sent),
-    from the library, picked for what the clip acts on. Not approved yet: the owner's things go as
-    "content" picks (their `for`), after the planner's."""
+    piece, then the shop owner's things it shows (`owners_things_picks`)."""
+    return cut_and_send.planned_sending(step, also=owners_things_picks(step))
+
+
+def owners_things_picks(step: SceneStep) -> list[ScenePicture]:
+    """The tier 2 picks of the clean pictures of the shop owner's things a clip of `step`
+    shows (_owners_things_sent), from the library, picked for what the clip acts on, sent
+    after the planner's or the fixing agent's picks. Not approved yet: the owner's things go
+    as "content" picks (their `for`)."""
     job = step.scene.job
     part = owner_parts.owner_part(step.scene)
     things = []
@@ -4503,7 +4517,7 @@ def _planned_sending(step: SceneStep) -> cut_and_send.Sending:
         item = library_items.add_owner_photo(job, row.file, drawn, f"the shop owner's {row.thing}")
         if item is not None:
             things.append(ScenePicture(number=item.number, for_=OWNER_THINGS_FOR))
-    return cut_and_send.planned_sending(step, also=things)
+    return things
 
 
 def _owners_things_sent(step: SceneStep) -> list[ReferencePhoto]:
@@ -4519,20 +4533,78 @@ OWNER_THINGS_FOR: library.For = "content"
 
 
 def _sent_to_improve(step: SceneStep) -> library.SentList:
-    """What a note's B-roll clip starts from: the sent list of the clip it improves on, as it
-    was; or, when the shop owner's things show during the clip, or for a clip made before
-    clips kept their sent lists, the scene's planned references (the things among them)
-    labelled by code with how that clip moved."""
+    """What a note's B-roll clip is sent: what the clip it improves on was sent (`_sent_as`),
+    with the prompt's words written again from the note, labelled by code; for a scene with
+    no clip yet, the scene's planned references labelled with them."""
     made = versions(step.scene)
     improves = made[-1].clip if made else None
-    sent = library.sent_list_of(improves) if improves is not None else None
-    if sent is not None and not _owners_things_sent(step):
-        return sent
-    return cut_and_send.labelled_sent_list(
-        step.scene.job,
-        _planned_sending(step),
-        motion_of(improves) if improves is not None else step.motion_prompt,
+    return _sent_as(step, improves, step.motion_prompt) or cut_and_send.labelled_sent_list(
+        step.scene.job, _planned_sending(step), step.motion_prompt
     )
+
+
+def _sent_again(step: SceneStep) -> library.SentList | None:
+    """What a B-roll clip of a fix plan's new line or going back is sent: what the version it
+    keeps was sent, for the line's new seconds (spec #247 point 9: a new line keeps the
+    pictures). A new line keeps the scene's newest version (`_sent_as`); going back sends
+    the version gone back to as it was. None for any other clip, or with nothing kept to
+    send again: its clip is sent a first send."""
+    row = step.plan_scene
+    if row is None or step.note:
+        return None
+    made = versions(step.scene)
+    if row.action == FixPlanScene.Action.NEW_LINE and made:
+        return _sent_as(step, made[-1].clip)
+    back_to = going_back_to(step)
+    if back_to is not None and back_to <= len(made):
+        return _sent_as(step, made[back_to - 1].clip, as_it_was=True)
+    return None
+
+
+def going_back_to(step: SceneStep) -> int | None:
+    """The version a B-roll clip step of a fix plan's going back brings back, which its clip
+    is labelled as ("back to v2"): None for any other step."""
+    row = step.plan_scene
+    if row is None or not step.shows or row.action != FixPlanScene.Action.GO_BACK:
+        return None
+    return row.go_back_to
+
+
+def _sent_as(
+    step: SceneStep, clip: ProducedItem | None, words: str = "", *, as_it_was: bool = False
+) -> library.SentList | None:
+    """A B-roll clip of `step` sent as `clip` was, with `words` in place of its prompt's when
+    given: `clip`'s sent list, while the scene would still send it (`_still_sent`) or
+    `as_it_was`; else the scene's planned references, cut again, labelled by code with the
+    words, or with those `clip` was sent. None with neither a list nor words to go on."""
+    job = step.scene.job
+    sent = library.sent_list_of(clip) if clip is not None else None
+    if sent is not None and clip is not None and (as_it_was or _still_sent(step, clip)):
+        return cut_and_send.relabelled(job, sent, words) if words else sent
+    words = (
+        words
+        or (cut_and_send.words_of(sent.prompt) if sent is not None else "")
+        or (motion_of(clip) if clip is not None else "")
+    )
+    if not words:
+        return None
+    return cut_and_send.labelled_sent_list(job, _planned_sending(step), words)
+
+
+def _still_sent(step: SceneStep, clip: ProducedItem) -> bool:
+    """Whether the scene would still send what `clip` was sent: its step was made for the
+    scene's references as they stand (what it excludes and its place among them) and with the
+    shop owner's photos `step` shows."""
+    made = clip.step
+    if made is None:
+        return False
+    if {row.pk for row in made.reference_photos.all()} != {
+        row.pk for row in _owners_things_sent(step)
+    }:
+        return False
+    return ProducedItem.objects.filter(
+        pk=clip.pk, **SceneStep.references_made_for(step.scene, "step__")
+    ).exists()
 
 
 def sent_handoff(step: SceneStep, audio: ProducedItem, sent: library.SentList) -> BrollClipHandoff:
@@ -4945,17 +5017,17 @@ def _rewrite_motion_prompt(step: SceneStep) -> None:
     made = versions(step.scene)
     improves = made[-1].clip if made else None
     sent = library.sent_list_of(improves) if improves is not None else None
-    # A B-roll clip has no starting picture (spec #210 point 19): its references are rebuilt
-    # with the shop owner's things among them, which it is then shown as its own pictures.
-    rebuilt = step.picture is None and (sent is None or bool(_owners_things_sent(step)))
-    if rebuilt:
+    # A B-roll clip has no starting picture (spec #210 point 19): it is sent what the clip it
+    # improves on was, cut again when the scene would no longer send that, which it is then
+    # shown as its own pictures.
+    if step.picture is None:
         sent = _sent_to_improve(step)
     handoff: ClipFromNoteHandoff | ClipFromReferencesHandoff
     if sent is not None:
         instructions = clip_from_references_instructions(step.broll_kind)
         handoff = ClipFromReferencesHandoff(
             **_note_scene(step),
-            motion_prompt=sent.prompt,
+            motion_prompt=cut_and_send.words_of(sent.prompt),
             conversation=_conversation(job, until=step.started_at),
         )
         shown = [
@@ -4984,7 +5056,7 @@ def _rewrite_motion_prompt(step: SceneStep) -> None:
         instructions=instructions,
         handoff=handoff,
         output=ClipFromNoteChoice,
-        images=[*shown, *([] if rebuilt else _the_owners_things(step, during))],
+        images=[*shown, *([] if step.picture is None else _the_owners_things(step, during))],
         pay_once=True,
     )
     step.motion_prompt = rewrite.motion_prompt

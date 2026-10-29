@@ -159,12 +159,12 @@ def test_a_broll_scenes_new_line_pays_for_its_steps_the_judge_and_no_before_pict
     new_line(2, LINE_2_NEW, NOTE_2)
     made_again(steps)
 
-    # No picture is drawn; the new clip is made from the scene's sent list and judged as any
-    # B-roll clip is, and a new line isn't checked against the fix (#131, spec #210 point 19).
+    # No picture is drawn; the new clip is sent what the scene's clip was, with no prompt
+    # written again (spec #247 point 9), and judged as any B-roll clip is; a new line isn't
+    # checked against the fix (#131, spec #210 point 19).
     assert paid_for()[paid:] == [
         "speak_line",
         "transcribe_line",
-        "write_first_send_prompt",
         "make_broll_clip",
         "collect_broll_clip",
         *SENT_LIST_JUDGED,

@@ -19,7 +19,7 @@ from chat import messages
 from chat.models import Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
 from gateway.types import StepFinished, Turn
-from jobs import fix_check
+from jobs import fix_check, library
 from jobs.models import (
     FixCheck,
     FixPlan,
@@ -341,11 +341,19 @@ def test_an_owner_photo_in_the_note_goes_with_the_clip_in_reference_mode(
     assert list(step.reference_photos.all()) == [used]
     fake_model.respond("rewrite_clip_prompt", TURN_REWRITE)
     held.run_held()
-    # The clip was made in reference mode: its drawn starting picture first, then the clean
-    # copy of the shop owner's thing.
+    # The clip is sent its references (spec #210 point 19): the front, the clean copy of the
+    # shop owner's thing after it, then the room.
     asked = fake_model.broll_clips_asked[-1]
     assert asked["starting_picture"] is None
-    assert len(asked["example_pictures"]) == 2
+    made = ProducedItem.objects.filter(kind="clip", scene__number=2).order_by("id").first()
+    sent_first = library.sent_list_of(made) if made is not None else None
+    assert sent_first is not None
+    front, room = (picture.file for picture in sent_first.pictures)
+    remade = ProducedItem.objects.filter(kind="clip", scene__number=2).order_by("id").last()
+    sent = library.sent_list_of(remade) if remade is not None else None
+    assert sent is not None and len(asked["example_pictures"]) == len(sent.pictures)
+    used.refresh_from_db()
+    assert [picture.file for picture in sent.pictures] == [front, used.drawn, room]
     assert status(2) == "finished"
 
 

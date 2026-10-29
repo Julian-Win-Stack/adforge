@@ -55,7 +55,7 @@ from jobs import (
     scenes,
     work,
 )
-from jobs.first_send import PIECE_LABEL, SPEED_LINE, drawn_label
+from jobs.first_send import PIECE_LABEL
 from jobs.library import Moment
 from jobs.models import (
     AgentFix,
@@ -100,74 +100,68 @@ WORDS_THEN_REFERENCES = (
 )
 
 INSTRUCTIONS = f"""\
-You fix one B-roll scene of a short vertical video ad. In a B-roll scene the presenter's \
-voice says the scene's line while the clip shows the product. The scene's clip failed: a \
-judge watched it and found faults, or the shop owner failed it. You own this scene. You may \
-change, for this scene only: what it shows (the action), what it ends on (the result), its \
-B-roll kind, whether the presenter's face is in it, the camera framing, the start picture \
-(you write its prompt from scratch), the video prompt (from scratch), and the line. You may \
-film a different step of what the line says, when that step films better. The clip lasts the \
-line's audio in whole seconds, at least 5 and at most 15, so a shorter or longer line changes \
-the clip's length. You never change another scene. Every B-roll scene happens in the ad's \
-place; you may change this scene's place with place_edit, if you choose: a small edit of its \
-picture of the place, which is cheaper and keeps the look already approved, or a new place \
-drawn fresh.
+You fix one B-roll scene of a short vertical video ad. In a B-roll scene the presenter's voice \
+says the scene's line while the clip shows the product. The scene's clip failed: a judge watched \
+it and found faults, or the shop owner failed it. You own this scene. You may change, for this \
+scene only: what it shows (the action), what it ends on (the result), its B-roll kind, whether \
+the presenter's face is in it, the camera framing, the pictures and video moment the clip is sent \
+(its references), the video prompt (from scratch), and the line. You may film a different step of \
+what the line says, when that step films better. The clip lasts the line's audio in whole \
+seconds, at least 5 and at most 15, so a shorter or longer line changes the clip's length. You \
+never change another scene. Every B-roll scene happens in the ad's place; you may change this \
+scene's place with place_edit, if you choose: a small edit of its picture of the place, which is \
+cheaper and keeps the look already approved, or a new place drawn fresh.
 
 What you know about the video model, from 37 clips this app made:
-- It follows orders that say what happens. It ignores orders that say what must not happen: \
-a video prompt listing bans made every remake fail. Write every order as what happens, what \
-stays where it is, and how it ends.
+- It follows orders that say what happens. It ignores orders that say what must not happen: a \
+video prompt listing bans made every remake fail. Write every order as what happens, what stays \
+where it is, and how it ends.
 - An action that is over in a moment, stretched over a clip of 5 seconds or more, fails: the \
-model fills the spare seconds with things that never happen in life. Every clip that passed \
-had an action that keeps going by its own course for the whole clip. So pick an action that \
-fills the clip, or write the clip second by second so each second has its real part: the \
-reach, the action, and what it naturally causes as it settles, ending on the result.
-- The clip is made from your start picture as a looks guide: its first frame is a redraw of \
-it. So the start picture must show the moment just before the action, with everything the \
-action needs already in place and held the way a real person holds it, and nothing in it \
-that the action contradicts.
+model fills the spare seconds with things that never happen in life. Every clip that passed had \
+an action that keeps going by its own course for the whole clip. So pick an action that fills the \
+clip, or write the clip second by second so each second has its real part: the reach, the action, \
+and what it naturally causes as it settles, ending on the result.
+- The clip has no start picture: the video model is sent the clip's references as looks guides, \
+the product's photos and the picture of its place, and films the whole action from your words. So \
+say where everything the action needs starts and how a real person holds it.
 
 Rules you keep, always:
 - Positive orders only, in the video prompt: no "not", "no", "never", "without", "nothing", \
-"nobody", "none", "neither", "nor", "avoid", or any word ending in "n't". Code refuses a \
-video prompt with them.
-- ONE action per clip. The camera never moves. Only "real-time speed": never slower. The \
-start picture is an order. Never turn the product to a side the photos don't show. The \
-result shows only where the product touches. In a scene that shows the problem, nobody \
-touches the product.
-- The line stays a true claim from the page; a new line, or a new action, is fact checked \
-against the page, and code refuses one that fails. What the page says about how the product \
-is used comes first; where the page says nothing about it, go by common sense about how such \
-a product is really used.
-- When the shop owner sent a note, do what it asks; where the note names movements to film, \
-film every one in its order (only there may a clip have more than one action).
+"nobody", "none", "neither", "nor", "avoid", or any word ending in "n't". Code refuses a video \
+prompt with them.
+- ONE action per clip. The camera never moves. Only "real-time speed": never slower. Never turn \
+the product to a side the photos don't show. The result shows only where the product touches. In \
+a scene that shows the problem, nobody touches the product.
+- The line stays a true claim from the page; a new line, or a new action, is fact checked against \
+the page, and code refuses one that fails. What the page says about how the product is used comes \
+first; where the page says nothing about it, go by common sense about how such a product is \
+really used.
+- When the shop owner sent a note, do what it asks; where the note names movements to film, film \
+every one in its order (only there may a clip have more than one action).
 {{asking}}
 
-How you work: you are shown the scene, the plan, the page, what the failed clip was sent \
-(or its start picture), the failed clip's frames (5 a second), what the judge found, the \
-ad's picture library as a list and how the product behaves. Look at anything else you need: \
-look_at_library opens one library item, or one moment of a page video, by its number. Then \
-make a move, whichever fixes the cause, in no set order: film_again films the whole scene as \
-you write it, and its references send library items by number, in your order, and a page \
-video's moment as the piece, in place of the start picture (code sends them after the \
-front photo and before the scene's place and the other sides, makes them the clip's \
-colour, labels each one and puts the speed line before your prompt); change_action \
-films another selling action, with its line, that you write; \
-end_result_only films only the end state the action leads to; place_edit shows you the \
-scene's new place before anything is filmed; give_up ends the fix. After each filmed move \
-you are told what was sent, shown the new start picture when you drew one and the new \
-clip's frames, and given the judge's verdict. When code \
-refuses a move, its answer says why: that costs no try, so change what it names and call \
-again. On a fail, find what caused it (the plan, the pictures, or what the video model can't \
-do) and change that cause, not only the words. {WORDS_THEN_REFERENCES} On every try, write \
-the cause you found and your move. Try to film it first: code refuses give_up until at least \
-one new clip was made. When, after trying, you judge the scene can't be filmed well, call \
-give_up with your reason: {{gave_up}} The judge can be wrong, but only a clip the judge \
-passes passes.
+How you work: you are shown the scene, the plan, the page, what the failed clip was sent, the \
+failed clip's frames (5 a second), what the judge found, the ad's picture library as a list and \
+how the product behaves. Look at anything else you need: look_at_library opens one library item, \
+or one moment of a page video, by its number. Then make a move, whichever fixes the cause, in no \
+set order: film_again films the whole scene as you write it, and its references send library \
+items by number, in your order, and a page video's moment as the piece, in place of the scene's \
+planned ones (code sends them after the front photo and before the scene's place and the other \
+sides, makes them the clip's colour, labels each one and puts the speed line before your prompt); \
+change_action films another selling action, with its line, that you write; end_result_only films \
+only the end state the action leads to; place_edit shows you the scene's new place before \
+anything is filmed; give_up ends the fix. After each filmed move you are told what was sent, \
+shown the new clip's frames, and given the judge's verdict. When code refuses a move, its answer \
+says why: that costs no try, so change what it names and call again. On a fail, find what caused \
+it (the plan, the pictures, or what the video model can't do) and change that cause, not only the \
+words. {WORDS_THEN_REFERENCES} On every try, write the cause you found and your move. Try to film \
+it first: code refuses give_up until at least one new clip was made. When, after trying, you \
+judge the scene can't be filmed well, call give_up with your reason: {{gave_up}} The judge can be \
+wrong, but only a clip the judge passes passes.
 
-The app's own prompt rules follow, for writing the two prompts. They hold for you too, with \
-two exceptions: you may write the video prompt second by second, with timings, when that \
-helps; and a rule about following a producer's note does not apply.
+The app's own prompt rules follow, for writing the two prompts. They hold for you too, with two \
+exceptions: you may write the video prompt second by second, with timings, when that helps; and a \
+rule about following a producer's note does not apply.
 """
 
 
@@ -895,10 +889,9 @@ def _intro(fixing: AgentFix) -> str:
             f"Scene {scene.number}'s line takes {seconds:.2f} s to say, so its clip is "
             f"{clip_seconds} s.",
             f"Shop photos, any of which may be Image 1: {every}; those showing the product in "
-            f"the ad's colour, {job.product_colour}: {colour}. For a new start picture, pick "
-            "Image 1 from those in the ad's colour; only when none suits, or there are none, "
-            "take another where the product is clearly seen. The product's look and colour come "
-            f"only from that photo: never change them or make one up. {scenes.SEVERAL_ITEMS}",
+            f"the ad's colour, {job.product_colour}: {colour}. Code sends the clip's front "
+            "photo as Image 1, in the clip's colour. The product's look and colour come only "
+            f"from the photos: never change them or make one up. {scenes.SEVERAL_ITEMS}",
             f'Code starts the video prompt with "{first_send.SPEED_LINE}", then a line for '
             "each picture and video the clip is sent, saying what it is, then your words.",
             f"The page's words:\n{job.page_text}",
@@ -1422,8 +1415,8 @@ class FilmAgain(Tool):
     broll_kind: Literal["does a job", "showcase", "shows the problem"]
     person_shown: Literal["no face", "has face"]
     new_picture: bool = Field(
-        description="True to draw a new start picture from picture_prompt; false keeps the "
-        "current one."
+        description="Always false for a scene that shows the product: its clip has no start "
+        "picture, and code refuses true."
     )
     photo: int | None = Field(
         description="With a new picture: the shop photo that is Image 1, one in the ad's colour "
@@ -1499,22 +1492,18 @@ END_RESULT_ONLY = (
 
 class EndResultOnly(FilmAgain):
     """Film only the end state the action leads to, with the action already done: you write
-    the scene yourself, every field, with what it shows as that end state. Its start picture
-    shows that end state too, so draw a new one unless the current one already shows it. Code
-    adds a fixed line saying so before your video prompt, then films it as film_again does and
-    has the judge watch it."""
+    the scene yourself, every field, with what it shows as that end state. Its clip is sent its
+    references, as film_again's is. Code adds a fixed line saying so before your video prompt,
+    then films it as film_again does and has the judge watch it."""
 
-    # The clip's first frame is a redraw of its start picture, until the start picture is
-    # retired (spec #210 point 19): so here the picture shows the end state, not the moment
-    # before the action.
     name: ClassVar[str] = "end_result_only"
     shows: str = Field(
         description="The end state the clip holds on, in one sentence: the product and what "
         "the action left."
     )
     new_picture: bool = Field(
-        description="True to draw a new start picture of the end state from picture_prompt; "
-        "false only when the current one already shows that end state."
+        description="Always false for a scene that shows the product: its clip has no start "
+        "picture, and code refuses true."
     )
     picture_prompt: str | None = Field(
         description="With a new picture: the picture model's prompt, written from scratch, "
@@ -1695,6 +1684,15 @@ def film_again(fixing: AgentFix, asked: FilmAgain, call: ToolCall) -> ToolResult
     return told
 
 
+# Why a try of a scene that shows the product draws no start picture (spec #210 point 19): its
+# clip is made from what it is sent, so a picture would be paid for and never sent.
+NO_START_PICTURE = (
+    "this scene has no start picture: its clip is made from the references it is sent. Set "
+    "new_picture to false; to change how it looks, send references (the library pictures and "
+    "the video moment), or change the scene's place with place_edit."
+)
+
+
 def _refuse_what_breaks_the_rules(fixing: AgentFix, asked: FilmAgain, scene: Scene) -> None:
     # A new try past the cap, as a worker restarted mid-turn could start: the fixing ends at
     # the cap, so it is refused as any call after the end is.
@@ -1712,13 +1710,17 @@ def _refuse_what_breaks_the_rules(fixing: AgentFix, asked: FilmAgain, scene: Sce
             raise Refused('only a "does a job" scene has a result.')
         _refuse_a_missing_own_place(scene, asked.person_shown)
         return
+    if asked.new_picture and scene.shows:
+        raise Refused(NO_START_PICTURE)
     if asked.new_picture and not (asked.photo and asked.picture_prompt):
         raise Refused("a new picture needs photo and picture_prompt.")
     every = list(scene.job.photos.values_list("position", flat=True))
     if asked.new_picture and asked.photo not in every:
         raise Refused(f"Image 1 must be one of the shop photos: {every}.")
     _refuse_excluded(asked, scene)
-    if not asked.new_picture and asked.person_shown != scene.person_shown:
+    # A clip made from its sent list shows or hides the face by the picture of its place it
+    # is sent (person in the room, or the room alone): nothing to draw.
+    if not asked.new_picture and asked.person_shown != scene.person_shown and not scene.shows:
         raise Refused("showing or hiding the face changes the picture: draw a new one.")
     if asked.broll_kind != "does a job" and asked.result.strip():
         raise Refused('only a "does a job" scene has a result.')
@@ -1934,60 +1936,33 @@ def _references_sent(
 ) -> library.SentList:
     """The sent list of a try with references (spec #210 point 23): cut-and-send's, the
     agent's picks as its tier 2 and the moment named as its piece, so code orders, recolours,
-    caps and says in red what was left out as for every clip; then the prompt: the speed
-    line, a label line per picture and piece, and the agent's own words."""
+    caps and says in red what was left out as for every clip; the shop owner's things the
+    clip shows after them, as a first send has them; then the prompt: the speed line, a label
+    line per picture and piece, and the agent's own words."""
     scene = fixing.step.scene
+    picks = [
+        ScenePicture(number=picture.number, for_=picture.used_for)
+        for picture in references.pictures
+    ]
+    picked = {pick.number for pick in picks}
+    picks += [
+        thing for thing in work.owners_things_picks(fixing.step) if thing.number not in picked
+    ]
     sending = cut_and_send.cut_and_send(
         scene,
         person_shown=person_shown,
         # That try's tier 2, the scene's exclusions applied (refused before, kept out here).
-        picks=scene_references.tier_2(
-            scene,
-            [
-                ScenePicture(number=picture.number, for_=picture.used_for)
-                for picture in references.pictures
-            ],
-        ),
+        picks=scene_references.tier_2(scene, picks),
         pieces=[]
         if references.piece is None
         else [ScenePiece(video=references.piece.video, moment=references.piece.moment)],
     )
-    job = scene.job
-    made_now = {each.made for each in sending.recolours if each.made is not None}
-    colours = dict(job.library.filter(number__in=made_now).values_list("number", "colour"))
-    lines = [
-        _image_line(job, picture, colours.get(picture.library_number or 0))
-        for picture in sending.pictures
-    ]
-    lines += [f"Video {piece.number} is {PIECE_LABEL}." for piece in sending.pieces]
-    said = [RECOLOURED_LINE] if made_now else []
-    return sending.sent_list("\n".join([SPEED_LINE, *lines, *said, prompt.strip()]))
+    return cut_and_send.labelled_sent_list(scene.job, sending, prompt)
 
 
-# Said once in a try's prompt when a picture was recoloured (Julian, tickets thread, Oct 29,
-# ruling a): a recoloured item keeps its label, so its line names the item's own colour.
-RECOLOURED_LINE = (
-    "A picture may have been recoloured after its words were written: when its line ends "
-    '"in" a colour, the product is that colour in it, never another colour word on the line.'
-)
-
-
-def _image_line(job: Job, picture: library.SentPicture, recoloured: str | None) -> str:
-    """One picture's line in a try's prompt, "Image N is ...": the drawn picture's fixed
-    words; else its library label, then what the clip takes from it, then, when it was
-    recoloured, the item's own colour."""
-    if picture.drawn is not None:
-        return f"Image {picture.image} is {drawn_label(job, picture.drawn)}."
-    words = picture.label.strip().rstrip(".")
-    first = words.split(" ", 1)[0]
-    if first[1:].islower() or len(first) == 1:
-        words = words[:1].lower() + words[1:]
-    parts = [words]
-    if picture.for_ is not None:
-        parts.append(f"used for {USED_FOR[picture.for_]}")
-    if recoloured is not None:
-        parts.append(f"in {recoloured}")
-    return f"Image {picture.image} is {', '.join(parts)}."
+# Said in a try's prompt when a picture was recoloured: cut_and_send's, one for every prompt
+# code labels.
+RECOLOURED_LINE = cut_and_send.RECOLOURED_LINE
 
 
 def _as_sent(step: SceneStep, motion: str) -> str:
