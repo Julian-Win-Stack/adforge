@@ -30,6 +30,7 @@ from . import catalog
 from .models import ModelCall
 from .types import (
     AgentProvider,
+    BlockedBySafetyFilter,
     BrollClipHandoff,
     BrollClipProvider,
     ClipCollectHandoff,
@@ -366,6 +367,39 @@ def call_model[Out: BaseModel](
     return _recorded(
         job, purpose, request.model, provider.name, handoff, complete, _shown(request.images)
     )
+
+
+def past_the_safety_filter[Answer](
+    ask: Callable[[list[Image]], Answer],
+    images: Sequence[Image],
+    *,
+    may_leave_out: Callable[[Image], bool] = lambda _: True,
+    fewest_kept: int = 0,
+) -> tuple[Answer, list[Image]]:
+    """`ask`'s answer shown `images`, and the pictures left out to get it (requirement 22). A
+    model's safety filter refuses a whole call over one picture it objects to, often wrongly,
+    so when it refuses, the pictures `may_leave_out` allows are left out one at a time, last
+    first, then all together, and the first answer had is given back. A try that would keep
+    fewer than `fewest_kept` of those pictures isn't made. `ask` is handed the pictures to
+    show, in their order, and builds the rest of the call from them. Raises the filter's
+    BlockedBySafetyFilter when every try is refused."""
+    images = list(images)
+    try:
+        return ask(images), []
+    except BlockedBySafetyFilter as error:
+        refused = error
+    droppable = [image for image in images if may_leave_out(image)]
+    tries = [[image] for image in reversed(droppable)]
+    if len(droppable) > 1:
+        tries.append(droppable)
+    for left in tries:
+        if len(droppable) - len(left) < fewest_kept:
+            continue
+        try:
+            return ask([image for image in images if image not in left]), left
+        except BlockedBySafetyFilter as error:
+            refused = error
+    raise refused
 
 
 def watch_video[Out: BaseModel](

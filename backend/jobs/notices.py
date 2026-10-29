@@ -63,3 +63,14 @@ def post_notice(
             )
     job.warnings = locked.warnings
     return posted
+
+
+def left_out_by_the_filter(pictures: Sequence[str], done: str) -> str:
+    """The notice for work a model's safety filter refused until `pictures` were left out
+    of it (requirement 22): which it went without, and why. `done` says what was done
+    without them, such as "the ad was planned"."""
+    named = pictures[0] if len(pictures) == 1 else f"{', '.join(pictures[:-1])} and {pictures[-1]}"
+    return (
+        f"The AI model's safety filter refused to look at {named}, so {done} without "
+        f"{'it' if len(pictures) == 1 else 'them'}."
+    )
