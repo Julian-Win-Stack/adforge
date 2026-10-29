@@ -228,11 +228,6 @@ def test_the_agent_films_again_with_library_items_and_a_moment(
         ),
         ({"pictures": [], "piece": {"video": 1, "moment": 1}}, {}, "name at least one picture"),
         (
-            REFERENCES,
-            {"new_picture": True, "photo": 1, "picture_prompt": "A mug."},
-            "a try sent references is filmed from them",
-        ),
-        (
             {"pictures": [{"number": 1, "used_for": "state"}], "piece": None},
             {},
             "library item 1 is the front photo, which every clip is sent as Image 1",

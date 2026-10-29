@@ -134,6 +134,9 @@ Use the conversation with the shop owner for their wishes about how the ad looks
 about the product come only from what you are shown.
 """
 
+# The video prompt rules alone, as the fixing agent is told them: it writes no picture prompt.
+BROLL_VIDEO_PROMPT_RULES = _BROLL_PROMPT_RULES
+
 # Every B-roll scene: a starting picture is made from the main photo, then animated.
 BROLL_SHARED_RULES = f"""\
 {_BROLL_SCENE}\

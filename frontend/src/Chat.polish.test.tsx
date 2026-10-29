@@ -94,9 +94,9 @@ test("a one-line notice has nothing to show or hide", async () => {
 test("the producer's answer to the owner's notes brings no plan card and no yes button", async () => {
   await session([
     said("user", "Scene 2: he should scrub harder"),
-    said("agent", "He'll scrub harder in scene 2. About $0.40. Shall I?"),
+    said("agent", "Scene 2 now scrubs harder. That cost $0.40."),
   ]);
-  await screen.findByText("He'll scrub harder in scene 2. About $0.40. Shall I?");
+  await screen.findByText("Scene 2 now scrubs harder. That cost $0.40.");
 
   expect(screen.queryByRole("button", { name: /^Yes/ })).toBeNull();
   expect(screen.queryByRole("group", { name: "Plan for your notes" })).toBeNull();

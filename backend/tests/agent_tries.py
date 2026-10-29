@@ -55,15 +55,9 @@ class FakeAgent:
                 scene = fixing.step.scene
                 scene.change_line(scene.line, self.shows[number])
                 scene.save()
-            picture, audio = fixing_agent._current(fixing)
+            audio = fixing_agent._newest_clip(fixing).made_from
             tried = fixing_agent._try_step(
-                fixing,
-                call,
-                SceneStep.Kind.CLIP,
-                made_from=audio,
-                picture=picture,
-                picture_step=picture.step if picture is not None else None,
-                motion_prompt=motion,
+                fixing, call, SceneStep.Kind.CLIP, made_from=audio, motion_prompt=motion
             )
             clip = work._make_clip(tried, motion=motion)
             ProducedItem.objects.filter(pk=clip.pk).update(remake=number, change=f"try {number}")
@@ -76,7 +70,6 @@ class FakeAgent:
                 number=number,
                 tool_call=call,
                 step=tried,
-                picture=picture,
                 clip=clip,
                 scene_row=fixing_agent._row(step.scene),
                 video_prompt=motion,

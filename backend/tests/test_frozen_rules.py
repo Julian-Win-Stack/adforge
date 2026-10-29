@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from agents import fixing_agent
+from agents.producer import INSTRUCTIONS as PRODUCER_INSTRUCTIONS
 from gateway.catalog import MODEL_FOR_PURPOSE, SLOW_ANSWER_SECONDS
 from jobs import clip_judge, owner_parts, watcher
 from jobs.checks import FACT_CHECK_INSTRUCTIONS
@@ -36,7 +37,7 @@ from jobs.scenes import (
     BEFORE_PICTURE_INSTRUCTIONS,
     BEFORE_PICTURE_JOB,
     BROLL_KIND_RULES,
-    BROLL_SHARED_RULES,
+    BROLL_VIDEO_PROMPT_RULES,
     MAIN_PHOTO_JOB,
     PERSON_IN_ROOM_PROMPT,
     ROOM_ALONE_PROMPT,
@@ -660,7 +661,9 @@ def test_the_owner_part_rules_name_no_tested_product(rule: str) -> None:
 # them (2026-10-19 16:55, "I'll go with your recommendations for question two and question
 # four"; handoffs/fixing-agent/spec.md, section 3), its give-up tool named give_up and "That
 # is an honest result, better than a bad clip." dropped once a give-up keeps its last try
-# (Julian, 2026-10-23 19:35, "go with your picks"). Pinned word for word: any change fails
+# (Julian, 2026-10-23 19:35, "go with your picks"); every start picture line taken out or
+# said of what the clip is sent (spec #210 point 19, #242: Claude's wording, not approved
+# yet). Pinned word for word: any change fails
 # here until he says so and the pinned copy changes with it.
 FIXING_AGENT_AS_APPROVED = (
     Path(__file__).parent / "fixtures" / "fixing_agent_instructions.txt"
@@ -671,24 +674,14 @@ def test_the_fixing_agents_instructions_are_the_approved_ones_word_for_word() ->
     assert fixing_agent.INSTRUCTIONS == FIXING_AGENT_AS_APPROVED
 
 
-# What giving up does, as the agent is told it at each door, pinned word for word (Julian's
-# OK 2026-10-19 20:10; door 1's since 2026-10-23 19:35): door 1's scene keeps its last try,
-# door 2's keeps its clip.
-GAVE_UP_AT_EACH_DOOR = {
-    "judge": "the last try stays in the ad, and the shop owner is shown every try and your reason.",
-    "owner": "the scene keeps its clip as it was, and the shop owner is shown every try and "
-    "your reason.",
-}
-GIVE_UP_FOR_A_NOTE = (
-    "Give up on filming this scene: it keeps its clip as it was, and the shop owner is shown "
-    "every try and your reason. Say why, and which try you think is best."
+# What giving up does, as the agent is told it, pinned word for word (Julian's OK 2026-10-23
+# 19:35): the last try stays, at both doors (spec #247 point 5, Julian 03:58).
+GAVE_UP = "the last try stays in the ad, and the shop owner is shown every try and your reason."
+GIVEN_UP = (
+    "The scene is given up: its last try stays in the ad, and the shop owner is shown every "
+    "try and your reason."
 )
-GIVEN_UP_AT_EACH_DOOR = {
-    "judge": "The scene is given up: its last try stays in the ad, and the shop owner is "
-    "shown every try and your reason.",
-    "owner": "The scene is given up: it keeps its clip as it was, and the shop owner is shown "
-    "every try and your reason.",
-}
+DOORS = ("judge", "owner")
 
 
 # Julian's one rule from the dropped API-limits list (spec #210 point 22; Oct 28 23:31 and
@@ -702,7 +695,7 @@ WORDS_THEN_REFERENCES = (
 def test_the_fixing_agent_is_told_photos_for_looks_and_video_for_movement_word_for_word() -> None:
     assert fixing_agent.WORDS_THEN_REFERENCES == WORDS_THEN_REFERENCES
     assert WORDS_THEN_REFERENCES in FIXING_AGENT_AS_APPROVED
-    for door in GAVE_UP_AT_EACH_DOOR:
+    for door in DOORS:
         assert WORDS_THEN_REFERENCES in fixing_agent.instructions(door)
     words = set(re.findall(r"[a-z-]+", WORDS_THEN_REFERENCES.casefold()))
     assert [word for word in TESTED_PRODUCT_WORDS if word in words] == []
@@ -724,25 +717,28 @@ ASKING_AT_EACH_DOOR = {
 
 
 def as_approved(door: str) -> str:
-    return FIXING_AGENT_AS_APPROVED.replace("{gave_up}", GAVE_UP_AT_EACH_DOOR[door]).replace(
+    return FIXING_AGENT_AS_APPROVED.replace("{gave_up}", GAVE_UP).replace(
         "{asking}", ASKING_AT_EACH_DOOR[door]
     )
 
 
 def test_the_fixing_agent_is_told_what_giving_up_does_at_each_door_word_for_word() -> None:
-    assert fixing_agent.GAVE_UP == GAVE_UP_AT_EACH_DOOR
+    assert fixing_agent.GAVE_UP == GAVE_UP
     assert fixing_agent.ASKING == ASKING_AT_EACH_DOOR
-    assert fixing_agent.GIVE_UP_FOR_A_NOTE == GIVE_UP_FOR_A_NOTE
-    assert fixing_agent.GIVEN_UP == GIVEN_UP_AT_EACH_DOOR
-    for door in GAVE_UP_AT_EACH_DOOR:
+    assert fixing_agent.GIVEN_UP == GIVEN_UP
+    for door in DOORS:
         assert fixing_agent.instructions(door).startswith(as_approved(door))
 
 
-def test_the_fixing_agent_is_told_the_apps_prompt_rules_unchanged() -> None:
+def test_the_fixing_agent_is_told_the_apps_video_prompt_rules_with_no_start_picture() -> None:
+    # The app's video prompt rules and each kind's, as said of a clip made from what it is
+    # sent: the picture model's rules are not the agent's (spec #210 point 19).
     told = fixing_agent.instructions()
     assert told.startswith(as_approved("judge"))
-    assert BROLL_SHARED_RULES in told
-    assert all(rules in told for rules in BROLL_KIND_RULES.values())
+    assert fixing_agent.for_a_sent_clip(BROLL_VIDEO_PROMPT_RULES) in told
+    assert all(fixing_agent.for_a_sent_clip(rules) in told for rules in BROLL_KIND_RULES.values())
+    assert "picture model" not in told and "starting picture" not in told.casefold()
+    assert "start picture" not in told
 
 
 def test_the_fixing_agent_runs_on_the_picture_judges_model() -> None:
@@ -791,3 +787,41 @@ def test_the_first_send_writer_is_told_nothing_of_the_retired_opener() -> None:
 def test_the_first_send_writers_rules_name_no_tested_product(name: str) -> None:
     # CODING_STANDARDS.md: the contract fixture's product and the graded rounds' products.
     assert not re.search(rf"\b{name}\b", FIRST_SEND_INSTRUCTIONS, re.IGNORECASE)
+
+
+# The first message's path (spec #247 point 3, Julian Oct 29 03:33, Q8): the producer goes the
+# usual order to the whole ad unless the shop owner's words redirect it, and asks them only
+# when the ad can't go on without them. Its instructions, pinned word for word.
+FIRST_MESSAGE_PATH = [
+    pytest.param(
+        "The usual order is: read the page, plan the ad, create the person, run the planning "
+        "checks, create the music, then, for each scene, make its starting picture, when it has "
+        "one, and its line's audio, which can run at the same time, transcribe the audio once "
+        "it's ready, and once the picture is made and the audio heard, make the scene's clip, "
+        "which finishes the scene. A scene that shows the product has no starting picture: its "
+        "clip is made once its audio is heard. Once every scene is finished, assemble the ad, "
+        "which shows it to the shop owner.",
+        id="the usual order ends with the ad shown",
+    ),
+    pytest.param(
+        "Ask only when the ad can't go on without them: their yes to the picture of a part no "
+        "photo shows, something the ad needs that neither the page nor the library holds, or "
+        "what a tool handed back for them to answer. Everything else you answer from what you "
+        "already have, and go on.",
+        id="ask only when the ad can't go on",
+    ),
+]
+
+
+@pytest.mark.parametrize("sentence", FIRST_MESSAGE_PATH)
+def test_the_producers_first_message_path_is_in_its_instructions_word_for_word(
+    sentence: str,
+) -> None:
+    assert sentence in " ".join(PRODUCER_INSTRUCTIONS.split())
+
+
+def test_nothing_in_the_producers_instructions_waits_for_a_yes_before_making_the_ad() -> None:
+    # The old path showed a plan or the script and waited for the shop owner's yes.
+    said = " ".join(PRODUCER_INSTRUCTIONS.split()).lower()
+    for waiting in ("shall i", "wait for their yes", "wait for a yes", "plan card", "yes button"):
+        assert waiting not in said

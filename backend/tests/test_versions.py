@@ -167,6 +167,28 @@ def clip_step_from(picture: ProducedItem) -> SceneStep:
     )
 
 
+@pytest.mark.parametrize(
+    ("change", "named"),
+    [
+        ("Pour the tea slower.", "v2 Pour the tea slower."),
+        (
+            "The hand should pour the tea into the mug. And the steam should rise from it too.",
+            "v2 The hand should pour the tea into the mug",
+        ),
+        (
+            "The hand should pour the tea into the mug, slowly, with steam rising from it and a "
+            "spoon beside it",
+            "v2 The hand should pour the tea into the mug, slowly, with…",
+        ),
+    ],
+    ids=["short", "first sentence", "cut at a word"],
+)
+def test_a_long_change_is_named_short_in_its_versions_label(change: str, named: str) -> None:
+    # A producer's note of several sentences is the clip's change (#262 review N5): its label
+    # on the card and in read_ad stays short, the change itself kept whole.
+    assert work.Version(2, change, None, None, None).label == named
+
+
 def test_there_is_no_going_back_to_a_version_that_isnt_there() -> None:
     with pytest.raises(work.NoSuchVersion, match="scene 3 has versions 1 to 3, not 7"):
         work.go_back(the_scene(), 7)

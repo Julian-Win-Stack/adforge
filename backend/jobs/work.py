@@ -2243,7 +2243,6 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
     # again pays for none of them twice.
     drawn = _pictures_drawn(step)
     redo: tuple[Redo, str] | None = None
-    fixing: list[str] = []
     failed: list[tuple[str, list[str]]] = []
     for tries in range(MOST_REDRAWS + 1):
         instructions = broll_prompt_instructions(step.broll_kind)
@@ -2316,7 +2315,7 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
             Redo(
                 picture_prompt=choice.prompt,
                 video_prompt=choice.motion_prompt,
-                problems=[*fixing, *problems],
+                problems=problems,
             ),
             file,
         )
@@ -4126,7 +4125,8 @@ def broll_sent_list(step: SceneStep, *, motion: str = "") -> library.SentList:
     never with a starting picture: the scene's planned pictures and piece, with the first-send
     writer's prompt; with `motion`, the words of the fixing agent's try, labelled by code; for
     a clip made from a note, the references of the clip it improves on, with the prompt
-    written again from the note. The ad's presenter in the room and its room alone are
+    written again from the note; for a new line, what the scene's clip was sent
+    (`_sent_for_a_new_line`). The ad's presenter in the room and its room alone are
     drawn first, once per ad, as the clip is sent one of them.
 
     Run again, as after a worker stopped, it pays for nothing already paid for."""
@@ -4138,6 +4138,9 @@ def broll_sent_list(step: SceneStep, *, motion: str = "") -> library.SentList:
         say_the_place_wasnt_drawn(job, not_drawn)
     if step.note:
         return _sent_to_improve(step)
+    kept = None if motion else _sent_for_a_new_line(step)
+    if kept is not None:
+        return kept
     sending = _planned_sending(step)
     _keep_the_cut(step, sending)
     if motion:
@@ -4201,6 +4204,26 @@ def _sent_to_improve(step: SceneStep) -> library.SentList:
     return _sent_as(step, improves, step.motion_prompt) or cut_and_send.labelled_sent_list(
         step.scene.job, _planned_sending(step), step.motion_prompt
     )
+
+
+def _sent_for_a_new_line(step: SceneStep) -> library.SentList | None:
+    """What a B-roll clip of a new line is sent: what the scene's newest clip was (`_sent_as`),
+    for the line's new seconds (spec #247 point 9: a new line keeps the pictures), when that
+    clip was made for the scene as it stands but for its line. None for any other clip, such
+    as the scene's first or one for a scene that shows something else now: it is sent a first
+    send."""
+    made = versions(step.scene)
+    newest = made[-1].clip if made else None
+    if newest is None or newest.step is None or newest.step.line == step.line:
+        return None
+    but_the_line = {
+        key: value
+        for key, value in SceneStep.made_for(step.scene, "step__").items()
+        if key != "step__line"
+    }
+    if not ProducedItem.objects.filter(pk=newest.pk, **but_the_line).exists():
+        return None
+    return _sent_as(step, newest)
 
 
 def _sent_as(
@@ -4365,13 +4388,29 @@ class Version:
         then the change it was made for, as "v2 black toilet" (decision 17), and which try it
         is of a clip filmed again, as "v3 black toilet (try 1)"."""
         tried = f" ({self.tried})" if self.tried and self.tried != self.change else ""
-        return f"v{self.number} {self.change or 'first version'}{tried}"
+        return f"v{self.number} {_short(self.change) or 'first version'}{tried}"
 
     @property
     def line(self) -> str:
         """The line its clip says, or its picture was made for while it has no clip."""
         made = self.clip or self.picture
         return made.step.line if made is not None and made.step is not None else ""
+
+
+# The longest change a version's label names in full: a longer one, such as a producer's
+# note of several sentences, is named by its first sentence, or cut at a word.
+LONGEST_LABEL = 60
+
+
+def _short(change: str) -> str:
+    """`change` as a version's label names it: whole up to LONGEST_LABEL characters, else its
+    first sentence when that fits, else cut at the last word that fits, with an ellipsis."""
+    if len(change) <= LONGEST_LABEL:
+        return change
+    first = change.split(". ", 1)[0].rstrip(".")
+    if len(first) <= LONGEST_LABEL:
+        return first
+    return change[: LONGEST_LABEL - 1].rsplit(" ", 1)[0].rstrip(",;:") + "…"
 
 
 def versions(scene: Scene, *, landing: Sequence[ProducedItem] = ()) -> list[Version]:

@@ -33,7 +33,8 @@ owner's brake.
 ## Consequences
 
 - Routing, the plan runner, fix plans, the plan card and both yes buttons are deleted. The
-  owner's only controls are the chat box, the pause button and the version taps on scene cards.
+  owner's only controls are the chat box, the pause button, the version taps on scene cards and
+  the owner-part card's yes.
 - Only three refusals live in code (`agents/hard_list.py`: a new product mid-ad, a clip of an
   invented part without the owner's yes, the video API's limits). Every other refusal is a tool
   answer with a reason. A new guard is added only after a graded failure.
