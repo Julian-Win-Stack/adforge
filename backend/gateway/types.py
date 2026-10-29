@@ -390,11 +390,13 @@ class ClipHandoff(Handoff):
     motion_prompt: str = Field(min_length=1)
 
 
-# Boreal-H3 makes B-roll clips of 5 to 15 whole seconds, and takes up to 5 example pictures
-# for free (docs/broll-picture-logic.md, "What Boreal-H3 takes").
+# Boreal-H3 makes B-roll clips of 5 to 15 whole seconds, and takes up to 9 example pictures,
+# the first 5 for free (docs/broll-picture-logic.md, "What Boreal-H3 takes"; spec #210 point
+# 13 and Further Notes).
 LEAST_BROLL_SECONDS = 5
 MOST_BROLL_SECONDS = 15
-MOST_EXAMPLE_PICTURES = 5
+MOST_EXAMPLE_PICTURES = 9
+FREE_EXAMPLE_PICTURES = 5
 
 
 # Boreal-H3 takes reference videos of 2 to 15 seconds, and no more than 15 seconds of them

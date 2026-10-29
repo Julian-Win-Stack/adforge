@@ -175,6 +175,14 @@ PRICE_PER_SECOND_OF_VIDEO: dict[str, Decimal] = {
 }
 
 
+# US dollars per example picture a B-roll clip is sent past the free ones
+# (gateway.types.FREE_EXAMPLE_PICTURES): Boreal-H3's 0.2 credits at $99 for 500 credits (spec
+# #210, Further Notes).
+PRICE_PER_EXAMPLE_PICTURE: dict[str, Decimal] = {
+    "creatify/boreal-h3": Decimal("0.0396"),
+}
+
+
 # US dollars per second of music made. From fal's model page on 2026-09-17
 # (docs/video-model-tests.md).
 PRICE_PER_SECOND_OF_MUSIC: dict[str, Decimal] = {
@@ -214,6 +222,11 @@ def transcription_cost_usd(model: str, seconds: float) -> Decimal:
 
 def video_cost_usd(model: str, seconds: float) -> Decimal:
     return Decimal(str(seconds)) * PRICE_PER_SECOND_OF_VIDEO[model]
+
+
+def example_pictures_cost_usd(model: str, pictures: int, free: int) -> Decimal:
+    """What sending `pictures` example pictures costs past the first `free`."""
+    return max(pictures - free, 0) * PRICE_PER_EXAMPLE_PICTURE.get(model, Decimal(0))
 
 
 def music_cost_usd(model: str, seconds: int) -> Decimal:
