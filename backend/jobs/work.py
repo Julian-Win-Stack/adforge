@@ -282,6 +282,16 @@ def _failed(error: Exception) -> firecrawl.FirecrawlFailed:
     )
 
 
+def page_addresses(link: str) -> list[str]:
+    """Where the page at `link` is: the address it answers from, after any redirects, and
+    the one it names as its own, if any. Read with a plain download, the page read's own,
+    which nothing is paid for and nothing is kept from. Raises PageUnreadable for a page that
+    won't open, and OutsideServiceDown if the shop stays down."""
+    with_retries(lambda: page.check_where_it_points(link))
+    download = _plain_download(link)
+    return [address for address in (download.final_url, page.parse(download).canonical) if address]
+
+
 def _plain_download(link: str) -> page.Download:
     return page.download(link, max_bytes=page.MAX_PAGE_BYTES, what="product page")
 
@@ -670,8 +680,20 @@ def keep_page(job: Job, download: page.Download, product_page: page.ProductPage,
     job.page_text = text
     job.page_text_full = product_page.text
     job.page_html_key = file_store.save(f"jobs/{job.pk}/page.html", download.content)
+    # Where the page is, so another link to the same product is known as this ad's.
+    job.page_final_url = download.final_url[:2000]
+    job.page_canonical_url = product_page.canonical[:2000]
     job.status = Job.Status.PAGE_READ
-    job.save(update_fields=["page_text", "page_text_full", "page_html_key", "status"])
+    job.save(
+        update_fields=[
+            "page_text",
+            "page_text_full",
+            "page_html_key",
+            "page_final_url",
+            "page_canonical_url",
+            "status",
+        ]
+    )
 
 
 def check_page(job: Job, download: page.Download, product_page: page.ProductPage) -> PageCheck:

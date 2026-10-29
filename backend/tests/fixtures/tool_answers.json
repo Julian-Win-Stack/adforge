@@ -4,7 +4,10 @@
     "tool": "make_clip",
     "call_id": "call_7",
     "why": "The shop owner said the brush is the wrong colour, and scene 3's clip shows it.",
-    "arguments": {"scene": 3, "note": "Show the brush in its page colour."},
+    "arguments": {
+      "scene": 3,
+      "note": "Show the brush in its page colour."
+    },
     "answer": "made",
     "result": "Started scene 3's clip. It isn't made yet: you'll be told when it's ready.",
     "given": {
@@ -21,7 +24,7 @@
   },
   "cant": {
     "kind": "cant",
-    "text": "Refused: this ad is for the product at https://shop.example/products/mug, whose page has already been read, and https://shop.example/products/teapot is another product's page. One ad is for one product: tell the shop owner \"start a new ad for that\" in plain words, and go on with this ad. Nothing was done.",
+    "text": "Refused: this ad is for the product at https://shop.example/products/mug, whose page has already been read, and https://shop.example/products/teapot is another product's page. One ad is for one product: tell the shop owner \"start a new ad for that\" in plain words, with the chat's \"New session\" button, and go on with this ad. Nothing was done.",
     "pictures": []
   },
   "fold_line": "make_clip, scene 3: started the clip; $0.00"

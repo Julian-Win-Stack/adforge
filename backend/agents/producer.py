@@ -75,7 +75,7 @@ from . import hard_list, step_signals
 from .fixing_agent import AGENT as FIXING_AGENT
 from .fixing_agent import MOST_TRIES
 from .fixing_agent import PURPOSE as FIXING_AGENT_PURPOSE
-from .loop import Agent, Refused, Tool
+from .loop import Agent, Failed, Refused, Tool
 from .models import ToolCall
 from .money import dollars
 
@@ -236,7 +236,7 @@ class ReadPage(Tool):
                 Message.Level.PROBLEM,
                 wants_pasted_page=True,
             )
-            return f"The page couldn't be read: {error} {PASTE_IN_THE_PANEL}"
+            raise Failed(f"the page couldn't be read: {error} {PASTE_IN_THE_PANEL}") from error
         download = read.download
         product_page = page.parse(download)
         check = check_page(job, download, product_page)
@@ -247,16 +247,18 @@ class ReadPage(Tool):
                 Message.Level.PROBLEM,
                 wants_pasted_page=True,
             )
-            return f"The page was read but can't be used: {check.reason} {PASTE_IN_THE_PANEL}"
+            raise Failed(
+                f"the page was read but can't be used: {check.reason} {PASTE_IN_THE_PANEL}"
+            )
         # Before the photos: a page whose text can't be copied isn't read, and keeps nothing.
         # The photos are picked while the text is copied.
         try:
             text, picked = copy_and_pick(job, read, product_page)
         except (UnusableReply, OutsideServiceDown) as error:
-            return (
-                f"Failed: picking this product's own text out of the page failed ({error}), so "
-                "the page wasn't read. Tell the shop owner they can ask to read it again."
-            )
+            raise Failed(
+                f"picking this product's own text out of the page failed ({error}), so the "
+                "page wasn't read. Tell the shop owner they can ask to read it again."
+            ) from error
         for notice, level in picked.notices:
             post_notice(job, notice, level)
         # Without Firecrawl set up nothing is picked off the page, which is a setup mistake
