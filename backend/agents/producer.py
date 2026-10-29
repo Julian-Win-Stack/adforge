@@ -73,7 +73,7 @@ from jobs.work import (
     why_the_checks_passed,
 )
 
-from . import hard_list, loop, step_signals
+from . import hard_list, loop, snapshot, step_signals
 from .fixing_agent import AGENT as FIXING_AGENT
 from .fixing_agent import MOST_TRIES
 from .fixing_agent import PURPOSE as FIXING_AGENT_PURPOSE
@@ -1439,6 +1439,51 @@ class AssembleAd(Tool):
         )
 
 
+class ReadAd(Tool):
+    """Read a part of the ad in full, as it stands now: one scene, with its plan, each of its
+    versions, what each clip was sent (every picture with its tier, every piece of a page
+    video, what was left out, the recolours and the prompt) and what its work cost; or, with
+    no scene, the whole plan and every scene so. The ad as it stands, given to you last on
+    every turn, is the short form of it. Costs nothing."""
+
+    name = "read_ad"
+
+    scene: int | None = Field(description="The number of the scene to read, or null for all.")
+
+    def run(self, call: ToolCall) -> str:
+        job = _the_job(call)
+        if job is None or not job.scenes.exists():
+            raise Refused("the ad hasn't been planned yet, so there is nothing of it to read.")
+        if self.scene is not None:
+            scene = job.scenes.filter(number=self.scene).first()
+            if scene is None:
+                raise Refused(
+                    f"the ad has no scene {self.scene}: its scenes are 1 to {job.scenes.count()}."
+                )
+            return snapshot.scene_in_full(scene)
+        planned = job.model_calls.filter(
+            purpose="plan_ad", outcome=ModelCall.Outcome.SUCCEEDED, decision="plan"
+        ).last()
+        return snapshot.ad_in_full(job, _the_plan(job, planned.reason if planned else ""))
+
+
+class ReadEarlierCall(Tool):
+    """Read the whole answer of one of your earlier tool calls, such as one folded to one
+    line to save room in your conversation, by its call id. Costs nothing."""
+
+    name = "read_earlier_call"
+
+    call_id: str = Field(description="The call id, as the folded line gives it.")
+
+    def run(self, call: ToolCall) -> str:
+        earlier = call.session.tool_calls.filter(
+            agent=call.agent, call_id=self.call_id, finished_at__isnull=False
+        ).first()
+        if earlier is None:
+            raise Refused(f"none of your finished tool calls has the call id {self.call_id}.")
+        return f"Your {earlier.tool} call answered:\n{earlier.result}"
+
+
 def assemble_the_ad(session: Session, job: Job, made_for: str = "") -> tuple[ProducedItem, bool]:
     """Assemble the finished ad from every scene's clip and the music, and show it in the
     chat, unless it was already assembled from them: then it is shown if it isn't yet, and
@@ -2126,8 +2171,12 @@ PRODUCER = Agent(
         AskOwner,
         AssembleAd,
         Look,
+        ReadAd,
+        ReadEarlierCall,
     ],
     # What code does with the fix plans it runs reaches the producer only so (decision 20).
     reads_system_notes=True,
     asks_why=True,
+    folds=True,
+    snapshot=snapshot.ad_as_it_stands,
 )
