@@ -22,6 +22,7 @@ from gateway.fake import FakeModel
 from gateway.models import ModelCall
 from gateway.types import AnswerTookTooLong, BlockedBySafetyFilter, VideoRequest
 from jobs.library import LookFrame, library_of, watch_of
+from jobs.library_sheets import sheets_of
 from jobs.models import Job
 from jobs.work import plan_handoff
 
@@ -233,7 +234,7 @@ def test_a_video_refused_only_for_its_sound_is_kept_without_its_words(
     assert [(m.start, m.end) for m in seen.moments] == [(0.0, 12.0)]
     # No transcript: neither the watch's nor "music only", and none for the planner.
     assert seen.transcript == video.transcript == ""
-    assert plan_handoff(job, "", job.photos.count()).video_transcripts == []
+    assert plan_handoff(job, "", sheets_of(job)).video_transcripts == []
     assert seen.refused is not None
     assert (seen.refused.reason, seen.refused.dropped, seen.refused.probes) == ("sound", [], 0)
     told = (
