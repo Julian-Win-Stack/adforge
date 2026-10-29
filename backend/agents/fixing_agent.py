@@ -140,15 +140,18 @@ film every one in its order (only there may a clip have more than one action).
 How you work: you are shown the scene, the plan, the page, what the failed clip was sent \
 (or its start picture), the failed clip's frames (5 a second), what the judge found, the \
 ad's picture library as a list and how the product behaves. Look at anything else you need: \
-look_at_library opens one library item, or one moment of a page video, by its number; \
-place_edit shows you the scene's new place before anything is filmed. Then call \
-film_again with the whole scene as it should be, or give_up. After each \
-film_again you see the new start picture, the new clip's frames and the judge's verdict. On \
-a fail, find what caused it (the plan, the pictures, or what the video model can't do) and \
-change that cause, not only the words. {WORDS_THEN_REFERENCES} On every try, write the \
-cause you found and your move. Try to film it first: code refuses give_up until at \
-least one new clip was made. When, after trying, you judge the scene can't be filmed well, \
-call give_up with your reason: {{gave_up}} The judge can be wrong, but only a clip the judge \
+look_at_library opens one library item, or one moment of a page video, by its number. Then \
+make a move, whichever fixes the cause, in no set order: film_again films the whole scene as \
+you write it; change_action films another selling action, with its line, that you write; \
+end_result_only films only the end state the action leads to; place_edit shows you the \
+scene's new place before anything is filmed; give_up ends the fix. After each filmed move \
+you see the new start picture, the new clip's frames and the judge's verdict. When code \
+refuses a move, its answer says why: that costs no try, so change what it names and call \
+again. On a fail, find what caused it (the plan, the pictures, or what the video model can't \
+do) and change that cause, not only the words. {WORDS_THEN_REFERENCES} On every try, write \
+the cause you found and your move. Try to film it first: code refuses give_up until at least \
+one new clip was made. When, after trying, you judge the scene can't be filmed well, call \
+give_up with your reason: {{gave_up}} The judge can be wrong, but only a clip the judge \
 passes passes.
 
 The app's own prompt rules follow, for writing the two prompts. They hold for you too, with \
@@ -253,6 +256,14 @@ ASKED_THE_OWNER = (
 WAITS = "the fix waits for the shop owner's answer to your question."
 
 
+# What a move that would leave the scene showing nothing is told: a talking scene is never
+# the agent's (spec 2 item 38).
+NO_TALKING = (
+    "the scene must show an action or its result: a talking scene is never filmed by you, "
+    "so write what the clip shows."
+)
+
+
 # What a video prompt may not say: the video model ignores bans (A2).
 BANNED = re.compile(
     r"\b(not|no|never|without|nothing|nobody|none|neither|nor|avoid|avoids|avoiding)\b|n't\b",
@@ -292,6 +303,9 @@ class Try:
     cost_usd: Decimal
     # The agent's pick of its tries, on a give-up.
     picked: bool
+    # The move the try was filmed by: the tool the agent called (film_again, change_action,
+    # end_result_only).
+    tool: str = "film_again"
 
 
 @dataclass(frozen=True)
@@ -360,6 +374,7 @@ def _as_try(row: AgentFixTry, fixing: AgentFix) -> Try:
         would_ask_owner=row.would_ask_owner,
         cost_usd=row.tool_call.cost_usd(),
         picked=fixing.picked == row.number,
+        tool=row.tool_call.tool,
     )
 
 
@@ -371,6 +386,9 @@ def _started(step: SceneStep, door: str, failure: Failure, goal: str | None, cap
             return found
         # As it stands now: the step's own copy may be from before its clip was made.
         scene = Scene.objects.get(pk=step.scene_id)
+        if not scene.shows:
+            # The agent films B-roll; a talking scene is never its (spec 2 item 38).
+            raise ValueError(f"scene {scene.number} is a talking scene: the agent never fixes one")
         first = failure.clip or (
             step.produced.filter(kind=ProducedItem.Kind.CLIP).order_by("id").first()
             if door == AgentFix.Door.JUDGE
@@ -663,7 +681,7 @@ LIBRARY_FULL = (
 )
 
 
-REMINDER = "Answer with a tool call: a look, film_again or give_up."
+REMINDER = "Answer with a tool call: a look, a move or give_up."
 
 # What the first message says of a failed clip made before clips were sent references.
 NO_SENT_LIST = (
@@ -1244,6 +1262,68 @@ class FilmAgain(Tool):
         return film_again(_fixing_of(call), self, call)
 
 
+class ChangeAction(FilmAgain):
+    """Film another selling action in place of the one that failed: you write the changed
+    scene yourself, every field, its line and what it shows included. Code fact checks it
+    against the page, voices a new line first, then films it as film_again does and has the
+    judge watch it."""
+
+    name: ClassVar[str] = "change_action"
+    shows: str = Field(description="The new action, in one sentence: another selling action.")
+
+    def run(self, call: ToolCall) -> ToolResult:
+        fixing = _fixing_of(call)
+        # Checked before the try only: once filmed, the scene's action is this call's own.
+        if not fixing.tries.filter(tool_call=call).exists() and _same_words(
+            self.shows, _last_filmed(fixing)["shows"]
+        ):
+            raise Refused(SAME_ACTION)
+        return film_again(fixing, self, call)
+
+
+# What change_action is told when it keeps the action the last clip filmed.
+SAME_ACTION = (
+    "change_action films another action, and this is the one the last clip filmed: write "
+    "another selling action in shows, or call film_again to film this one again."
+)
+
+
+def _last_filmed(fixing: AgentFix) -> dict[str, Any]:
+    """The scene row the newest clip of the fixing was filmed from: its newest try's, or the
+    scene's as it was before try 1."""
+    last = fixing.tries.filter(clip__isnull=False).order_by("-number").first()
+    row: dict[str, Any] = last.scene_row if last is not None else fixing.scene_before
+    return row
+
+
+def _same_words(one: str, other: str) -> bool:
+    return " ".join(one.split()).lower() == " ".join(other.split()).lower()
+
+
+# The fixed line code puts before the agent's video prompt in end_result_only.
+END_RESULT_ONLY = (
+    "The clip shows only the end result: from its first frame the action is already done, "
+    "and the clip holds on that result as it stands."
+)
+
+
+class EndResultOnly(FilmAgain):
+    """Film only the end state the action leads to, with the action already done: you write
+    the scene yourself, every field, with what it shows as that end state. Code adds a fixed
+    line saying so before your video prompt, then films it as film_again does and has the
+    judge watch it."""
+
+    name: ClassVar[str] = "end_result_only"
+    shows: str = Field(
+        description="The end state the clip holds on, in one sentence: the product and what "
+        "the action left."
+    )
+
+    def run(self, call: ToolCall) -> ToolResult:
+        told = self.model_copy(update={"video_prompt": f"{END_RESULT_ONLY} {self.video_prompt}"})
+        return film_again(_fixing_of(call), told, call)
+
+
 class GiveUp(Tool):
     """Give up on filming this scene: its last try stays in the ad, and the shop owner is
     shown every try. Say why, and which try you think is best."""
@@ -1292,6 +1372,8 @@ TOOLS: list[type[Tool]] = [
     LookAtLibrary,
     PlaceEdit,
     FilmAgain,
+    ChangeAction,
+    EndResultOnly,
     GiveUp,
     AskOwner,
 ]
@@ -1414,6 +1496,8 @@ def _refuse_what_breaks_the_rules(fixing: AgentFix, asked: FilmAgain, scene: Sce
     # the cap, so it is refused as any call after the end is.
     if fixing.tries.count() >= fixing.cap:
         raise Refused(ENDED)
+    if not asked.shows.strip():
+        raise Refused(NO_TALKING)
     found = sorted({match.group(0).lower() for match in BANNED.finditer(asked.video_prompt)})
     if found:
         raise Refused(f"the video prompt has bans ({', '.join(found)}). Say what happens instead.")
