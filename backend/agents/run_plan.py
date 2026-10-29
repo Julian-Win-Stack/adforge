@@ -1060,6 +1060,7 @@ def _code_call(row: FixPlanScene, tool: str) -> ToolCall:
         tool=tool,
         call_id=f"{FIX_PLAN}-{uuid4().hex}",
         arguments={"plan": plan.pk, "scene": row.scene.number, "action": row.action},
+        answer="made",
         finished_at=timezone.now(),
     )
 

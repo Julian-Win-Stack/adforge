@@ -1213,15 +1213,22 @@ def _answered_before(
     images_may_move: bool = False,
     since: datetime | None = None,
 ) -> dict[str, Any] | None:
-    """What a call for `purpose` answered when handed exactly `handoff` and shown exactly
+    """What a call for `purpose` answered when handed exactly `handoff` (an agent's turn: its
+    conversation and tools, whatever its snapshot) and shown exactly
     `images`, or any images with `images_may_move`, if one was paid for. Every call is recorded
     as soon as it succeeds, so an answer a worker stopped before it could keep is handed back
     rather than paid for again."""
-    calls = ModelCall.objects.filter(
-        purpose=purpose,
-        outcome=ModelCall.Outcome.SUCCEEDED,
-        handoff=handoff.model_dump(mode="json"),
-    )
+    dumped = handoff.model_dump(mode="json")
+    calls = ModelCall.objects.filter(purpose=purpose, outcome=ModelCall.Outcome.SUCCEEDED)
+    if isinstance(handoff, TurnHandoff):
+        # A turn's snapshot is the state as it was built, which work running in the
+        # background changes meanwhile: the turn is the one taken with the same conversation
+        # and tools.
+        calls = calls.filter(
+            handoff__conversation=dumped["conversation"], handoff__tools=dumped["tools"]
+        )
+    else:
+        calls = calls.filter(handoff=dumped)
     if not images_may_move:
         calls = calls.filter(images=images or [])
     if session is not None:

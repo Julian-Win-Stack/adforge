@@ -27,6 +27,9 @@ MAX_TEXT_CHARACTERS = 10_000
 # As much as the page panel's message may say: a whole product page pasted in one go.
 MAX_PASTED_PAGE_CHARACTERS = 200_000
 
+# The poll's header saying whether the shop owner's pause holds: "true" or "false".
+PAUSED_HEADER = "X-Session-Paused"
+
 # What the user is told when another session is working: only one works at a time.
 ANOTHER_SESSION_IS_BUSY = "Another ad is being made right now. Please try again once it's finished."
 
@@ -297,7 +300,12 @@ def session_messages(request: Request, session_id: str) -> Response:
         .select_related("fix_plan", "owner_question__scene")
         .prefetch_related("attachments__clip")
     )
-    return Response(MessageSerializer(newer, many=True).data)
+    # Whether the shop owner's pause holds, with every poll, so the chat shows it as it stands
+    # (a header, so the poll's list stays as it is).
+    return Response(
+        MessageSerializer(newer, many=True).data,
+        headers={PAUSED_HEADER: "true" if found.paused_at is not None else "false"},
+    )
 
 
 def _send(session: Session, request: Request) -> Response:
@@ -360,7 +368,7 @@ def _send(session: Session, request: Request) -> Response:
         # already stopped, and one is started here.
         wake_producer(str(session.pk))
     # The first message may just have named the session.
-    session.refresh_from_db(fields=["name"])
+    session.refresh_from_db(fields=["name", "paused_at"])
     return Response(
         {
             "session": SessionSerializer(session).data,
@@ -377,7 +385,12 @@ def pause_session(request: Request, session_id: str) -> Response:
     are kept, and the producer is told which (agents/pause.py). Pressing it again while paused
     does nothing more."""
     found = get_object_or_404(Session, pk=session_id)
-    pause.pause(found)
+    # Under the lock every message sent takes before it looks for another busy session: the
+    # pause still holds and cancels, but the producer only reads it once no other session
+    # works, so pausing never starts a second one.
+    with transaction.atomic():
+        hold_one_at_a_time_lock()
+        pause.pause(found, wake=not another_session_is_busy(found))
     return Response({"paused": True})
 
 

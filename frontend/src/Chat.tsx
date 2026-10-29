@@ -11,7 +11,6 @@ import {
   getMessagesSince,
   sendMessage,
   pauseSession,
-  PAUSED_NOTICE,
   startSession,
   type Attachment,
   type Message,
@@ -63,6 +62,9 @@ export function Chat({
   const [messages, setMessages] = useState<Message[]>([]);
   const [pollError, setPollError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  // Whether the owner's pause holds, as the server last said: each poll, the pause button's
+  // answer and each message sent say it.
+  const [paused, setPaused] = useState(false);
   const lastSeq = useRef(0);
   const thread = useRef<HTMLDivElement>(null);
   // A new session is made once, so a refused first message doesn't leave another empty
@@ -86,9 +88,10 @@ export function Chat({
 
     async function ask() {
       try {
-        const newer = await getMessagesSince(sessionId as string, lastSeq.current);
+        const polled = await getMessagesSince(sessionId as string, lastSeq.current);
         if (stopped) return;
-        show(newer);
+        show(polled.messages);
+        setPaused(polled.paused);
         setPollError(null);
       } catch {
         if (stopped) return;
@@ -153,6 +156,7 @@ export function Chat({
   async function send(text: string, photos: File[], as: SendAs = {}) {
     const id = sessionId ?? (started.current ??= (await startSession()).id);
     const sent = await sendMessage(id, text, photos, as);
+    setPaused(sent.session.paused ?? false);
     if (sessionId !== null) show([sent.message]);
     // A brand new session has no polling yet: opening it loads what was just said.
     onSent(sent);
@@ -180,11 +184,6 @@ export function Chat({
   const waitingOnOwner =
     (planWaits || suggestedNotes(messages).size > 0) && !cards.some((card) => card.making !== null);
   const pageAsk = pagePanel(messages);
-  // Paused from the pause's notice until the owner writes again, as the server keeps it.
-  const pausedAt = [...messages]
-    .reverse()
-    .find((message) => message.role === "notice" && message.text === PAUSED_NOTICE);
-  const paused = pausedAt !== undefined && pausedAt.seq > (ownerSaidLast?.seq ?? 0);
   // Something to pause: the producer working, or a scene's picture or clip being made.
   const pausable =
     sessionId !== null &&
@@ -365,7 +364,14 @@ export function Chat({
               text={draft}
               onChange={setDraft}
               onSend={send}
-              onPause={pausable ? () => pauseSession(sessionId as string) : undefined}
+              onPause={
+                pausable
+                  ? async () => {
+                      await pauseSession(sessionId as string);
+                      setPaused(true);
+                    }
+                  : undefined
+              }
               placeholder={
                 sessionId === null
                   ? "Paste a product link and describe the ad you want..."

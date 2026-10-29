@@ -98,6 +98,11 @@ class Refused(Exception):
     rules, or what it works on doesn't exist yet. Says why, for the agent."""
 
 
+class Failed(Exception):
+    """A tool tried what it was asked, and it failed: says why, for the agent. What the tool
+    did before it failed, as a notice shown to the shop owner, stays."""
+
+
 class Asks(Exception):
     """A tool can't go on without one answer, and has done nothing: says the ONE clarifying
     question, for the agent to answer from what it knows and call the tool again (spec #247
@@ -128,12 +133,12 @@ class ToolAnswer:
 
     @classmethod
     def handed_back(cls, result: str | ToolResult) -> ToolAnswer:
-        """What a tool's run handed back: a result that says it failed or refused is a
-        can't, anything else the thing it made."""
-        text, pictures = (
-            (result.text, result.pictures) if isinstance(result, ToolResult) else (result, ())
-        )
-        return cls(cls.kind_of(text), text, pictures)
+        """What a tool's run handed back when it raised nothing: the thing it made. A tool
+        says it can't by raising Refused or Failed, and asks by raising Asks, so the kind
+        comes from what the tool did, never from how its words begin."""
+        if isinstance(result, ToolResult):
+            return cls("made", result.text, result.pictures)
+        return cls("made", result)
 
     @classmethod
     def cant(cls, text: str) -> ToolAnswer:
@@ -151,7 +156,11 @@ class ToolAnswer:
 
     @classmethod
     def of(cls, call: ToolCall) -> ToolAnswer:
-        """The answer a finished call handed back, from its row."""
+        """The answer a finished call handed back, from its row. Raises ValueError for a call
+        not finished yet, which has answered nothing."""
+        if call.finished_at is None:
+            raise ValueError(f"the {call.tool} call hasn't finished, so it has no answer yet")
+        # A row finished before answers were kept has no kind: its words say it.
         kind: AnswerKind = call.answer or cls.kind_of(call.result)  # type: ignore[assignment]
         return cls(
             kind,
@@ -161,7 +170,8 @@ class ToolAnswer:
 
     @staticmethod
     def kind_of(text: str) -> AnswerKind:
-        """The kind of answer a result's words give, by how they begin."""
+        """The kind of answer a result's words give, by how they begin: only for a row kept
+        before its kind was."""
         if text.startswith((REFUSED, FAILED)):
             return "cant"
         if text.startswith(QUESTION):
@@ -205,6 +215,11 @@ class Tool(BaseModel):
     # shop owner a question does: the turn's other calls still run, and then the agent takes
     # no further turn until something new comes (spec #247 point 5).
     ends_the_turn: ClassVar[bool] = False
+    # Whether it may run while the shop owner's pause holds (spec #247 point 14): only a tool
+    # that spends nothing, such as one that reads what is there or asks the shop owner. Every
+    # other tool of an agent that can be paused answers paused, so a new tool spends nothing
+    # while paused unless it says it is free.
+    runs_while_paused: ClassVar[bool] = False
 
     def run(self, call: ToolCall) -> str | ToolResult:
         """Do the work and say what happened. What it says is the result the agent is given,
@@ -231,7 +246,10 @@ WHY = (
 
 @cache
 def _with_why(tool: type[Tool]) -> type[BaseModel]:
-    """`tool`'s arguments with a required `why`, the shape its model fills in."""
+    """`tool`'s arguments with a required `why`, the shape its model fills in. A tool of an
+    agent that asks why can't have an argument of its own named so."""
+    if "why" in tool.model_fields:
+        raise TypeError(f"the {tool.name} tool has its own `why`, which the agent's would hide")
     return create_model(tool.__name__, __base__=tool, why=(str, Field(description=WHY)))
 
 
@@ -249,6 +267,9 @@ class Agent:
     # Whether each of its tools takes a required `why`, kept on the call's row (spec #247
     # point 7): the producer's do.
     asks_why: bool = False
+    # Whether the shop owner's pause holds it: its tools that aren't free answer paused while
+    # it does (`Tool.runs_while_paused`). The producer's are.
+    pausable: bool = False
     # Whether its oldest tool calls fold to one line each once its last turn passes the fold
     # point (spec #247 point 15, agents/fold.py): the producer's do.
     folds: bool = False
@@ -298,9 +319,11 @@ def _work(agent: Agent, session: Session) -> int:
     # A tool that was running when the last worker stopped runs again first: the agent
     # can't take another turn until every tool it asked for has handed back a result.
     for call in session.tool_calls.filter(agent=agent.name, finished_at__isnull=True):
-        settle(agent, call)
+        settle(agent, call, restarted=True)
     while True:
         conversation, read_up_to, steps, notes = _conversation(agent, session)
+        # Built with it, so what it says has the conversation's steps.
+        snapshot = agent.snapshot(session) if agent.snapshot else ""
         conversation = without_refused_pictures(session, agent.purpose, conversation)
         if _stopped_since_the_user_spoke(session):
             stopping = [
@@ -329,7 +352,7 @@ def _work(agent: Agent, session: Session) -> int:
                 conversation=conversation,
                 tools=agent.tool_specs(),
                 done="the work on your ad carried on",
-                snapshot=agent.snapshot(session) if agent.snapshot else "",
+                snapshot=snapshot,
             )
             # A tool past the limit is refused, and the agent gets one turn to tell the user.
             # Asking for another tool instead, it is stopped.
@@ -531,13 +554,21 @@ def _refuse_unrun(call: ToolCall, why: str) -> None:
     call.save(update_fields=["result", "answer", "finished_at"])
 
 
-def settle(agent: Agent, call: ToolCall, *, counted: bool = True, new: bool = False) -> None:
+def settle(
+    agent: Agent,
+    call: ToolCall,
+    *,
+    counted: bool = True,
+    new: bool = False,
+    restarted: bool = False,
+) -> None:
     """Run the tool a checkpoint asked for, unless it is past the limit, and keep what it
     handed back, as a ToolAnswer: whatever the tool does, refuses or raises, the agent is
     answered and the run goes on. A call not `counted` against the limit is code's work, as
     the fixing agent's is, not an answer to the shop owner's message. A `new` call, just
-    asked for, of an agent that asks why is refused once when it has no `why`; one left
-    unfinished by a worker that stopped is run as it was asked."""
+    asked for, of an agent that asks why is refused when it has no `why`, once per tool in
+    the session; one `restarted`, left unfinished by a worker that stopped, is run as it was
+    asked. Either one run with no `why` is said in red."""
     with tracing.tool(call.tool, call.arguments, why=call.why) as traced:
         # Kept before the tool runs, for the scene steps it starts to find. A tool run again
         # after a restart is traced again, and the steps it starts then go inside that run.
@@ -553,10 +584,12 @@ def settle(agent: Agent, call: ToolCall, *, counted: bool = True, new: bool = Fa
             )
         elif new and agent.asks_why and not call.why and not _asked_why_before(agent, call):
             answer = ToolAnswer.cant(f"{NO_WHY} Nothing was done.")
+        elif _held_by_the_pause(agent, call):
+            answer = ToolAnswer.cant(f"{REFUSED} {PAUSED} Nothing was done.")
         else:
             answer = _run(agent, call)
             # Said once it ran, so a tool that starts the ad's job keeps the line with it.
-            if new and agent.asks_why and not call.why:
+            if (new or restarted) and agent.asks_why and not call.why:
                 _say_it_ran_without_a_why(call)
         call.result = answer.text
         call.answer = answer.kind
@@ -577,14 +610,11 @@ NO_WHY = (
 
 
 def _asked_why_before(agent: Agent, call: ToolCall) -> bool:
-    """Whether the agent's last call of the same tool before `call` was refused for having
-    no `why`: it was told once."""
-    before = (
-        call.session.tool_calls.filter(agent=agent.name, tool=call.tool, id__lt=call.pk)
-        .order_by("id")
-        .last()
-    )
-    return before is not None and before.result.startswith(NO_WHY)
+    """Whether a call of the same tool before `call` in the session was refused for having
+    no `why`: the agent was told once, and isn't refused for it again."""
+    return call.session.tool_calls.filter(
+        agent=agent.name, tool=call.tool, id__lt=call.pk, result__startswith=NO_WHY
+    ).exists()
 
 
 def _say_it_ran_without_a_why(call: ToolCall) -> None:
@@ -634,6 +664,8 @@ def _run(agent: Agent, call: ToolCall) -> ToolAnswer:
         return ToolAnswer.handed_back(result)
     except Refused as refused:
         return ToolAnswer.cant(f"{REFUSED} {refused} Nothing was done.")
+    except Failed as failed:
+        return ToolAnswer.cant(f"{FAILED} {failed}")
     except Asks as asks:
         return ToolAnswer.question(str(asks))
     except Exception as error:
@@ -816,12 +848,12 @@ def _conversation(
 # Why the calls left of a turn aren't run once a scene step stopped the run.
 STOPPED_THE_RUN = "a scene step stopped the run."
 
-# What a scene tool answers while the shop owner's pause holds (spec #247 point 14), and the
-# calls left of a turn asked for before the agent was told of the pause: "starts nothing"
-# is the tools' rule, not only the agent's instructions.
+# What a tool that spends answers while the shop owner's pause holds (spec #247 point 14),
+# and every call left of a turn asked for before the agent was told of the pause: "starts
+# nothing" is the tools' rule, not only the agent's instructions.
 PAUSED = (
-    "paused. The shop owner pressed pause, so no scene step is started until they write "
-    "again. Call it again after their message if it is still needed."
+    "paused. The shop owner pressed pause, so nothing that costs money is started until they "
+    "write again. Call it again after their message if it is still needed."
 )
 
 
@@ -830,10 +862,14 @@ def paused(session: Session) -> bool:
     return Session.objects.filter(pk=session.pk, paused_at__isnull=False).exists()
 
 
-def refuse_while_paused(session: Session) -> None:
-    """Refuse a scene tool's work while the shop owner's pause holds, saying so."""
-    if paused(session):
-        raise Refused(PAUSED)
+def _held_by_the_pause(agent: Agent, call: ToolCall) -> bool:
+    """Whether the shop owner's pause holds `call`: the agent can be paused, the tool isn't
+    one that runs while paused, and the session is paused."""
+    if not agent.pausable:
+        return False
+    tool = {tool.name: tool for tool in agent.tools}.get(call.tool)
+    # A tool it hasn't got is refused by the run, saying so.
+    return tool is not None and not tool.runs_while_paused and paused(call.session)
 
 
 def _held_since_the_user_spoke(session: Session) -> str | None:

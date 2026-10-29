@@ -120,7 +120,7 @@ def test_a_page_firecrawl_hears_404_for_asks_for_the_page_panel(
     ]
     # The producer is still given why, in the tool's result.
     assert results_of("read_page")[0] == (
-        f"The page couldn't be read: {shampoo_page_url} answered 404 Not Found, so trying "
+        f"Failed: the page couldn't be read: {shampoo_page_url} answered 404 Not Found, so trying "
         f"again won't help. {PASTE_IN_THE_PANEL}"
     )
     assert paid_for() == []

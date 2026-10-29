@@ -1,8 +1,9 @@
 """The shop owner's pause button (spec #247 point 14). Pausing is a flag on the session: code
 cancels every scene step still waiting for the worker (it cost nothing), lets the ones the
 worker took finish and keeps them, and leaves the producer one system note naming each. While
-the flag holds, every scene tool answers paused (loop.refuse_while_paused), so starting
-nothing is the tools' rule; the shop owner's next message clears it (`clear`)."""
+the flag holds, every producer tool that spends answers paused (loop.settle, by
+`Tool.runs_while_paused`), so starting nothing is the tools' rule; the shop owner's next
+message clears it (`clear`)."""
 
 import json
 from dataclasses import dataclass
@@ -31,51 +32,64 @@ class Paused:
     running: list[SceneStep]
 
 
-def pause(session: Session) -> Paused:
+def pause(session: Session, *, wake: bool = True) -> Paused:
     """Pause `session`: cancel its producer's scene steps the worker hasn't taken, keep those
-    it has, and tell the producer of both in one system note, then wake it to read it. A
-    session paused already is left as it is. Done under the session's lock, as a message sent
-    is, and with each step's row locked first, so the worker taking a step at the same moment
-    either takes it first, and it is kept, or finds it cancelled, and leaves it."""
+    it has, and tell the producer of both in one system note, then wake it to read it unless
+    not to `wake` it (another session is working: it reads the note when it next works). A
+    session paused already is left as it is.
+
+    Under the session's lock, which a scene tool takes to start a step too, so a step is
+    either started before the pause and cancelled by it, or refused. Each step is cancelled
+    by one statement that only matches it while no worker has taken it, as the worker takes
+    a step by one that only matches it while it runs: whichever comes first wins, and a step
+    taken is kept."""
     from .tasks import wake_producer
 
     with transaction.atomic():
-        # The steps' rows before the session's, as a step finishing or failed locks them.
-        steps = list(
-            SceneStep.objects.select_for_update(of=("self",))
-            .filter(
-                tool_call__session=session,
-                tool_call__agent=PRODUCER.name,
-                status=SceneStep.Status.RUNNING,
-                # A fix plan's steps are code's, carried on by the plan runner, not the
-                # producer's to call again.
-                plan_scene__isnull=True,
-            )
-            .select_related("scene", "tool_call")
-            .order_by("started_at", "id")
-        )
         locked = Session.objects.select_for_update().get(pk=session.pk)
         if locked.paused_at is not None:
             return Paused([], [])
         locked.paused_at = timezone.now()
         locked.save(update_fields=["paused_at"])
-        cancelled = [step for step in steps if step.taken_at is None]
-        running = [step for step in steps if step.taken_at is not None]
+        running = SceneStep.objects.filter(
+            tool_call__session=session,
+            tool_call__agent=PRODUCER.name,
+            status=SceneStep.Status.RUNNING,
+            # A fix plan's steps are code's, carried on by the plan runner, not the
+            # producer's to call again.
+            plan_scene__isnull=True,
+        )
+        queued = list(running.filter(taken_at__isnull=True).values_list("pk", flat=True))
         now = timezone.now()
+        cancelled_ids = [
+            pk
+            for pk in queued
+            if SceneStep.objects.filter(
+                pk=pk, status=SceneStep.Status.RUNNING, taken_at__isnull=True
+            ).update(
+                status=SceneStep.Status.CANCELLED,
+                reason="The shop owner paused before a worker took it.",
+                finished_at=now,
+            )
+        ]
+        in_order = ("started_at", "id")
+        cancelled = list(
+            SceneStep.objects.filter(pk__in=cancelled_ids)
+            .select_related("scene", "tool_call")
+            .order_by(*in_order)
+        )
+        kept = list(running.select_related("scene", "tool_call").order_by(*in_order))
         for step in cancelled:
-            step.status = SceneStep.Status.CANCELLED
-            step.reason = "The shop owner paused before a worker took it."
-            step.finished_at = now
-            step.save(update_fields=["status", "reason", "finished_at"])
             step_signals.say_cancelled(step)
         messages.add(
             session, role=Message.Role.NOTICE, level=Message.Level.INFO, text=PAUSED_NOTICE
         )
         SystemNote.objects.create(
-            session=session, kind=SystemNote.Kind.PAUSED, text=note(cancelled, running)
+            session=session, kind=SystemNote.Kind.PAUSED, text=note(cancelled, kept)
         )
-        wake_producer(str(session.pk))
-    return Paused(cancelled, running)
+        if wake:
+            wake_producer(str(session.pk))
+    return Paused(cancelled, kept)
 
 
 def clear(session: Session) -> None:
@@ -87,7 +101,9 @@ def clear(session: Session) -> None:
 def note(cancelled: list[SceneStep], running: list[SceneStep]) -> str:
     """The producer's note of a pause: each step cancelled, its scene and what it was for (the
     call that started it, with its instruction and its why), and each step kept running."""
-    parts = ["The shop owner pressed pause. Every scene tool answers paused until they write."]
+    parts = [
+        "The shop owner pressed pause. Every tool that costs money answers paused until they write."
+    ]
     if cancelled:
         parts.append(
             "Cancelled before a worker took them, so nothing was made or paid for: "

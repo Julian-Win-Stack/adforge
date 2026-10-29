@@ -81,7 +81,7 @@ from .fixing_agent import AGENT as FIXING_AGENT
 from .fixing_agent import MOST_TRIES
 from .fixing_agent import PURPOSE as FIXING_AGENT_PURPOSE
 from .look import Look
-from .loop import Agent, Refused, Tool
+from .loop import Agent, Failed, Refused, Tool
 from .models import ToolCall
 from .money import dollars
 
@@ -130,7 +130,7 @@ message from the system, not from the shop owner. Then tell the shop owner what 
 or what went wrong.
 The shop owner can press pause. A message from the app then says which steps it cancelled \
 before they started, with what each was for, and which are still running and will finish. \
-Start nothing while paused: every scene tool answers paused. If the shop owner hasn't \
+Start nothing while paused: every tool that costs money answers paused. If the shop owner hasn't \
 written since, tell them in one line that you paused and what is still finishing, then \
 wait. Their next message ends the pause: act on it, and call again the tools still needed.
 Every fact about the product comes from its page or from the shop owner. You have no tool \
@@ -268,7 +268,7 @@ class ReadPage(Tool):
                 Message.Level.PROBLEM,
                 wants_pasted_page=True,
             )
-            return f"The page couldn't be read: {error} {PASTE_IN_THE_PANEL}"
+            raise Failed(f"the page couldn't be read: {error} {PASTE_IN_THE_PANEL}") from error
         download = read.download
         product_page = page.parse(download)
         check = check_page(job, download, product_page)
@@ -279,16 +279,18 @@ class ReadPage(Tool):
                 Message.Level.PROBLEM,
                 wants_pasted_page=True,
             )
-            return f"The page was read but can't be used: {check.reason} {PASTE_IN_THE_PANEL}"
+            raise Failed(
+                f"the page was read but can't be used: {check.reason} {PASTE_IN_THE_PANEL}"
+            )
         # Before the photos: a page whose text can't be copied isn't read, and keeps nothing.
         # The photos are picked while the text is copied.
         try:
             text, picked = copy_and_pick(job, read, product_page)
         except (UnusableReply, OutsideServiceDown) as error:
-            return (
-                f"Failed: picking this product's own text out of the page failed ({error}), so "
-                "the page wasn't read. Tell the shop owner they can ask to read it again."
-            )
+            raise Failed(
+                f"picking this product's own text out of the page failed ({error}), so the "
+                "page wasn't read. Tell the shop owner they can ask to read it again."
+            ) from error
         for notice, level in picked.notices:
             post_notice(job, notice, level)
         # Without Firecrawl set up nothing is picked off the page, which is a setup mistake
@@ -867,10 +869,10 @@ class MakePicture(Tool):
                 paid_under=call.pk,
             )
         except PictureNotMade as not_made:
-            return (
-                f"Failed: the picture wasn't stored, as {not_made}. Change the prompt or the "
+            raise Failed(
+                f"the picture wasn't stored, as {not_made}. Change the prompt or the "
                 "references and make it again, or go on without it."
-            )
+            ) from not_made
         return (
             f"Made library item {made.number}, checked once and passed: "
             f"{library_line(made)} Look at it (look, library_item {made.number}) before a "
@@ -1402,6 +1404,8 @@ class ApproveOwnerPart(Tool):
     they asked for, and never decide for them."""
 
     name = "approve_owner_part"
+    # Keeps a yes; draws nothing.
+    runs_while_paused = True
 
     scene: int = Field(description="The number of the scene.")
 
@@ -1515,6 +1519,7 @@ class AskOwner(Tool):
 
     name = "ask_owner"
     ends_the_turn = True
+    runs_while_paused = True
 
     question: str = Field(
         min_length=1,
@@ -1580,6 +1585,7 @@ class AssembleAd(Tool):
     nothing."""
 
     name = "assemble_ad"
+    runs_while_paused = True
 
     def run(self, call: ToolCall) -> str:
         job = _the_job(call)
@@ -1645,6 +1651,8 @@ class ReadAd(Tool):
     every turn, is the short form of it. Costs nothing."""
 
     name = "read_ad"
+    # Reads what is kept; spends nothing.
+    runs_while_paused = True
 
     scene: int | None = Field(description="The number of the scene to read, or null for all.")
 
@@ -1670,6 +1678,8 @@ class ReadEarlierCall(Tool):
     line to save room in your conversation, by its call id. Costs nothing."""
 
     name = "read_earlier_call"
+    # Reads what is kept; spends nothing.
+    runs_while_paused = True
 
     call_id: str = Field(description="The call id, as the folded line gives it.")
 
@@ -2093,12 +2103,16 @@ def _start_step(
 ) -> None:
     """Start a scene step in the background, from the scene's line, what it shows and its
     B-roll labels as they stand, unless one of its kind is already running for the scene:
-    then refuse, saying `busy`. Never while the shop owner's pause holds."""
-    loop.refuse_while_paused(call.session)
+    then refuse, saying `busy`. Never while the shop owner's pause holds: the tool was let
+    run before it, but a pause pressed since is looked for again here, under the session's
+    lock, which the pause takes too, so the step is either refused or there for the pause to
+    cancel (spec #247 point 14)."""
     if scene.steps.filter(kind=kind, status=SceneStep.Status.RUNNING).exists():
         raise Refused(busy)
     try:
         with transaction.atomic():
+            if Session.objects.select_for_update().get(pk=call.session_id).paused_at:
+                raise Refused(loop.PAUSED)
             step = SceneStep.objects.create(
                 scene=scene,
                 kind=kind,
@@ -2125,9 +2139,7 @@ def _start_step(
 
 def _a_checked_scene(call: ToolCall, number: int) -> Scene:
     """The scene a scene tool was asked to work on, once its line has passed the fact check.
-    Every scene tool starts here, so none makes anything for a line that hasn't, nor
-    anything at all while the shop owner's pause holds (spec #247 point 14)."""
-    loop.refuse_while_paused(call.session)
+    Every scene tool starts here, so none makes anything for a line that hasn't."""
     job = _the_job(call)
     if job is None or not job.scenes.exists():
         raise Refused("the ad hasn't been planned yet, and its scenes come from the plan.")
@@ -2380,6 +2392,7 @@ PRODUCER = Agent(
     # What code does with the fix plans it runs reaches the producer only so (decision 20).
     reads_system_notes=True,
     asks_why=True,
+    pausable=True,
     folds=True,
     snapshot=snapshot.ad_as_it_stands,
 )

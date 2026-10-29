@@ -14,16 +14,19 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from django.conf import settings
 
+from adforge.retry import OutsideServiceDown
 from gateway.types import MOST_PIECE_SECONDS
-from jobs import owner_parts
+from jobs import owner_parts, page, work
 from jobs.cut_and_send import DRAWN_NAMES, TIER_NAMES, Sending
 from jobs.library import VIDEO_API_MOST_PICTURES, LeftOut, library_of
 from jobs.models import Job, Scene
 
 from .loop import Refused
 
-# What the producer is told to tell the shop owner of another product's page.
+# What the producer is told to tell the shop owner of another product's page, and the
+# chat's button that starts a new ad (frontend App, "New session").
 ANOTHER_PRODUCT = "start a new ad for that"
+NEW_AD_BUTTON = "New session"
 
 # Query parameters that say where a visitor came from, not which product a page is for.
 _TRACKING_PREFIXES = ("utm_",)
@@ -49,14 +52,32 @@ def refuse_part_picture_elsewhere(scene: Scene, numbers: list[int]) -> None:
 def refuse_another_product(job: Job, link: str) -> None:
     """Refuse `link` when the job has a product page already and `link` is another
     product's: one ad never mixes two products. Asked before anything is read, so the job's
-    page is never replaced by another product's."""
-    if same_product(link, job.product_url):
+    page is never replaced by another product's. A link is this ad's product when it is,
+    or its page says it is (where it answers from, or the address it names as its own), the
+    link first given, where that page answered from, or the address it named as its own."""
+    known = [job.product_url, job.page_final_url, job.page_canonical_url]
+    if _among(link, known):
+        return
+    try:
+        theirs = work.page_addresses(link)
+    except (page.PageUnreadable, OutsideServiceDown) as error:
+        raise Refused(
+            f"this ad's page, {job.product_url}, has already been read, and {link} couldn't be "
+            f"opened to tell whether it is the same product ({error}). Ask the shop owner "
+            "whether it is: an ad is for one product."
+        ) from error
+    if any(_among(address, known) for address in theirs):
         return
     raise Refused(
         f"this ad is for the product at {job.product_url}, whose page has already been read, "
         f"and {link} is another product's page. One ad is for one product: tell the shop "
-        f'owner "{ANOTHER_PRODUCT}" in plain words, and go on with this ad.'
+        f'owner "{ANOTHER_PRODUCT}" in plain words, with the chat\'s "{NEW_AD_BUTTON}" '
+        "button, and go on with this ad."
     )
+
+
+def _among(link: str, known: list[str]) -> bool:
+    return any(same_product(link, each) for each in known if each)
 
 
 def same_product(link: str, other: str) -> bool:

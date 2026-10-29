@@ -18,7 +18,7 @@ from chat.models import Attachment, Message, Session
 from gateway.gateway import charged_to
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, UnusableReply
-from jobs import owner_parts, stale
+from jobs import owner_answers, owner_parts, stale
 from jobs.models import FixCheck, Job, ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
 from jobs.picture_check import PictureKeptFailing
@@ -42,7 +42,15 @@ from jobs.work import (
 )
 
 from . import loop, page_panel, routing, run_plan, step_signals
-from .loop import BLOCKED, EXPECTED_FAILURES, RunStopped, why_it_failed, why_it_failed_plainly
+from .loop import (
+    BLOCKED,
+    EXPECTED_FAILURES,
+    Asks,
+    RunStopped,
+    ToolAnswer,
+    why_it_failed,
+    why_it_failed_plainly,
+)
 from .money import dollars
 from .producer import PRODUCER, STEP_NAMES
 
@@ -552,6 +560,15 @@ def run_scene_step(step_id: int) -> None:
             say_the_pictures_kept_failing(step.scene.job, error)
             _stop(step, str(error))
             _told_it_ended(step)
+    except Asks as asks:
+        # The step's work needs one answer before it can make anything: its question goes
+        # back to whoever started it as the step's answer, not as a failure (spec #247 point 6).
+        tracing.flush()
+        with transaction.atomic():
+            if not _still_running(step):
+                return
+            _ask_back(step, str(asks))
+            _told_it_ended(step)
     # Whatever stops the step, it isn't left running: the producer is told why.
     except Exception as error:
         if not isinstance(error, EXPECTED_FAILURES):
@@ -637,6 +654,10 @@ def _finish(
         # Once its step is finished, so its tries are versions.
         if step.kind == SceneStep.Kind.CLIP and step.shows and agent_gave_up(step):
             say_the_agent_gave_up(step)
+        # A fix resumed with the shop owner's answer changed the scene's clip in an ad
+        # already shown: it is assembled again, as for a try swapped in.
+        if step.kind == SceneStep.Kind.CLIP and owner_answers.answered(step):
+            run_plan.swapped_in(step)
         # A fix plan's step is carried on by code, and never wakes the producer: a
         # fix's picture that passed its checks queues its clip here (decision 2).
         if step.plan_scene_id is not None:
@@ -680,6 +701,20 @@ def _fail(step: SceneStep, reason: str, plainly: str) -> None:
     step.finished_at = timezone.now()
     step.save(update_fields=["status", "reason", "result", "finished_at"])
     step_signals.say_not_made(step, plainly)
+
+
+def _ask_back(step: SceneStep, question: str) -> None:
+    """End the step with nothing made, its work having asked `question`: the producer is
+    given the question as the step's answer, and the chat shows the step waits on it."""
+    step.status = SceneStep.Status.FAILED
+    step.reason = f"it asked: {question}"
+    step.result = (
+        f"Background step asked before making anything: {_step_name(step)} wasn't made. "
+        f"{ToolAnswer.question(question).text}"
+    )
+    step.finished_at = timezone.now()
+    step.save(update_fields=["status", "reason", "result", "finished_at"])
+    step_signals.say_waits_on_a_question(step)
 
 
 def _stop(step: SceneStep, reason: str) -> None:

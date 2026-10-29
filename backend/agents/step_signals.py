@@ -44,6 +44,22 @@ def say_started(step: SceneStep) -> None:
     )
 
 
+def say_waits_on_a_question(step: SceneStep) -> None:
+    """Tell the chat the step ended with nothing made yet, because its work asked a question
+    the producer answers first, if the chat follows the step."""
+    ended = signal(step, Message.StepState.NOT_MADE)
+    if ended is None:
+        return
+    _, name = FOLLOWED[SceneStep.Kind(step.kind)]
+    messages.add(
+        step.tool_call.session,
+        role=Message.Role.NOTICE,
+        level=Message.Level.INFO,
+        text=f"Scene {ended.scene}'s {name} isn't made yet: a question about it is answered first.",
+        step=ended,
+    )
+
+
 def say_not_made(step: SceneStep, why: str) -> None:
     """Tell the chat the step ended with nothing made, if it follows it, and `why` in plain
     words: a fix plan's step tells the shop owner nothing else (case C12b)."""
