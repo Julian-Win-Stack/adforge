@@ -132,9 +132,28 @@ def openai_pictures_account(environ: Mapping[str, str]) -> tuple[str, str]:
     return environ.get("OPENAI_API_KEY", ""), environ.get("OPENAI_BASE_URL", "")
 
 
+def azure_pictures_account(environ: Mapping[str, str]) -> tuple[str, str]:
+    """The key and address of our Azure copy of the picture model, where a session's pictures
+    are drawn once OpenAI refuses one for money (Julian 2026-10-29: "fall back to azure with
+    azure limits if openai hit the limit"). Empty unless both are set: then nothing draws
+    instead, and the refused picture fails, saying so."""
+    azure_key = environ.get("AZURE_OPENAI_KEY", "")
+    azure_address = environ.get("AZURE_OPENAI_BASE_URL", "")
+    if azure_key and azure_address:
+        return azure_key, azure_address
+    return "", ""
+
+
 # Tests point the addresses at a local stand-in.
 OPENAI_API_KEY, OPENAI_BASE_URL = openai_account(os.environ)
 OPENAI_PICTURES_KEY, OPENAI_PICTURES_BASE_URL = openai_pictures_account(os.environ)
+AZURE_PICTURES_KEY, AZURE_PICTURES_BASE_URL = azure_pictures_account(os.environ)
+# The name of the picture model's deployment on Azure: the same model OpenAI draws with.
+AZURE_PICTURES_DEPLOYMENT = (
+    os.environ.get("AZURE_OPENAI_PICTURES_DEPLOYMENT") or "gpt-image-2.5-sunburst"
+)
+# How many pictures Azure's deployment draws a minute; pictures drawn there are paced to it.
+AZURE_PICTURES_PER_MINUTE = 2
 
 # Firecrawl reads product pages in a real browser. Empty means the page is read with a plain
 # download instead, and the user is told so.

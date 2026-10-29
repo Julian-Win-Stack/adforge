@@ -1,7 +1,7 @@
 import base64
 import io
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import openai
@@ -30,6 +30,7 @@ from .types import (
     ModelRequest,
     NotSetUp,
     Picture,
+    RefusedForMoney,
     Said,
     StepFinished,
     ToolRequest,
@@ -42,6 +43,9 @@ from .types import (
 
 # Errors that may pass if we try again. Anything else (bad request, bad key) will not.
 _WORTH_RETRYING = (openai.APIConnectionError, openai.RateLimitError, openai.InternalServerError)
+# What OpenAI answers with once the account's spend limit or quota is reached. It comes as a
+# rate limit (429), but trying again in a few seconds gets the same answer.
+_OUT_OF_MONEY_CODES = {"insufficient_quota", "billing_hard_limit_reached"}
 # What Azure's safety filter answers with, for a picture and for text.
 _BLOCKED_CODES = {"content_policy_violation", "content_filter"}
 # Upright, the shape of the clips the portrait becomes.
@@ -71,6 +75,17 @@ class OpenAIProvider:
                 timeout=catalog.ANSWER_SECONDS,
             )
             if settings.OPENAI_PICTURES_KEY
+            else None
+        )
+        # Our Azure copy of the picture model, which draws once OpenAI refuses for money.
+        self._azure_pictures_client = (
+            openai.OpenAI(
+                api_key=settings.AZURE_PICTURES_KEY,
+                base_url=settings.AZURE_PICTURES_BASE_URL,
+                max_retries=0,
+                timeout=catalog.ANSWER_SECONDS,
+            )
+            if settings.AZURE_PICTURES_KEY
             else None
         )
 
@@ -163,39 +178,73 @@ class OpenAIProvider:
             output_tokens=output_tokens,
         )
 
-    def draw(self, *, model: str, prompt: str) -> Picture:
-        try:
-            reply = self._picture_client().images.generate(
-                model=model, prompt=prompt, size=_PORTRAIT_SIZE, quality="high"
-            )
-        except _WORTH_RETRYING as error:
-            raise OutsideServiceDown(str(error)) from error
-        except openai.BadRequestError as error:
-            raise _blocked_or(error) from error
-        return _picture(model, reply)
+    def draw(self, *, model: str, prompt: str, on_azure: bool = False) -> Picture:
+        client, asked_for = self._picture_client(model, on_azure)
+        return _picture(
+            model,
+            _asked(
+                lambda: client.images.generate(
+                    model=asked_for, prompt=prompt, size=_PORTRAIT_SIZE, quality="high"
+                )
+            ),
+        )
 
-    def edit(self, *, model: str, prompt: str, pictures: Sequence[bytes]) -> Picture:
-        try:
-            reply = self._picture_client().images.edit(
-                model=model,
-                image=[
-                    (f"picture-{number}", data, _picture_type(data))
-                    for number, data in enumerate(map(_editable, pictures), 1)
-                ],
-                prompt=prompt,
-                size=_STARTING_PICTURE_SIZE,
-                quality="high",
-            )
-        except _WORTH_RETRYING as error:
-            raise OutsideServiceDown(str(error)) from error
-        except openai.BadRequestError as error:
-            raise _blocked_or(error) from error
-        return _picture(model, reply)
+    def edit(
+        self, *, model: str, prompt: str, pictures: Sequence[bytes], on_azure: bool = False
+    ) -> Picture:
+        client, asked_for = self._picture_client(model, on_azure)
+        image = [
+            (f"picture-{number}", data, _picture_type(data))
+            for number, data in enumerate(map(_editable, pictures), 1)
+        ]
+        return _picture(
+            model,
+            _asked(
+                lambda: client.images.edit(
+                    model=asked_for,
+                    image=image,
+                    prompt=prompt,
+                    size=_STARTING_PICTURE_SIZE,
+                    quality="high",
+                )
+            ),
+        )
 
-    def _picture_client(self) -> openai.OpenAI:
+    def _picture_client(self, model: str, on_azure: bool) -> tuple[openai.OpenAI, str]:
+        """The client to draw with, and the name `model` goes by there: on Azure, its
+        deployment's."""
+        if on_azure:
+            if self._azure_pictures_client is None:
+                raise NotSetUp(
+                    "Pictures are drawn on Azure once OpenAI refuses for money, and "
+                    "AZURE_OPENAI_KEY or AZURE_OPENAI_BASE_URL is not set"
+                )
+            return self._azure_pictures_client, settings.AZURE_PICTURES_DEPLOYMENT
         if self._pictures_client is None:
             raise NotSetUp("Pictures are drawn on OpenAI's own API, and OPENAI_API_KEY is not set")
-        return self._pictures_client
+        return self._pictures_client, model
+
+
+def _asked(ask: Callable[[], ImagesResponse]) -> ImagesResponse:
+    """A picture model's reply to `ask`, its errors raised as the gateway tells them apart:
+    out of money, worth trying again, blocked by the safety filter, or the request's own."""
+    try:
+        return ask()
+    except openai.APIStatusError as error:
+        if _out_of_money(error):
+            raise RefusedForMoney(str(error)) from error
+        if isinstance(error, _WORTH_RETRYING):
+            raise OutsideServiceDown(str(error)) from error
+        if isinstance(error, openai.BadRequestError):
+            raise _blocked_or(error) from error
+        raise
+    except _WORTH_RETRYING as error:
+        raise OutsideServiceDown(str(error)) from error
+
+
+def _out_of_money(error: openai.APIStatusError) -> bool:
+    """Whether OpenAI refused because the account's spend limit or quota is reached."""
+    return error.code in _OUT_OF_MONEY_CODES or error.type in _OUT_OF_MONEY_CODES
 
 
 def _editable(data: bytes) -> bytes:
