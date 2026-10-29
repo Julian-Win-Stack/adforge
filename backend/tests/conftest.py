@@ -123,6 +123,8 @@ PLAN: dict[str, Any] = {
         "person_gender": "woman",
         "person_looks": "A potter in her thirties in a linen apron, in a sunny workshop.",
         "person_voice": "A warm, relaxed woman in her thirties with a soft British accent.",
+        "product_behaviour": "The mug holds a hot or cold drink poured into it, and is lifted "
+        "by its handle.",
     },
 }
 # The plan's 18 words take the fake voice 9 seconds: it speaks 2 words a second.

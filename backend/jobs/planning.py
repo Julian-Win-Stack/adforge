@@ -1,15 +1,18 @@
 """The producer's plan: what it is handed, what it must hand back, and the rules it follows."""
 
-from typing import Any, Literal, Self
+import re
+from collections.abc import Collection, Mapping
+from typing import Any, Literal, Self, get_args
 
-from pydantic import BaseModel, Field, StrictInt, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 
 from gateway.types import LEAST_BROLL_SECONDS, Handoff, Judgement
 
+from .library import For
 from .reference_photos import same_thing
 
 # How a B-roll scene's details are given, by the planner and by a rewrite alike.
-BROLL_DETAILS_INSTRUCTIONS = """\
+BROLL_PLAN_DETAILS_INSTRUCTIONS = """\
 For each B-roll scene, also give:
 - Its kind: "does a job" when the product does something you can see, such as a pan \
 searing a steak or a cloth wiping a spill away; "shows the problem" when the line names \
@@ -42,9 +45,58 @@ photos that show it. The main \
 photo is picked from the product photos, one showing the product in its colour when one \
 does; leave needs empty when it's enough. A needed photo may be any of the photos, even \
 one where the product isn't clearly seen. Never name a photo that shows the product only \
-in another colour than the ad's. A scene's clip is sent at most 5 pictures: the main \
+in another colour than the ad's.
+"""
+
+# The rewrite's own cap on what its needs send (jobs.checks): the plan has none (#210
+# point 19). Only the rewrite's instructions carry it.
+BROLL_DETAILS_INSTRUCTIONS = (
+    BROLL_PLAN_DETAILS_INSTRUCTIONS.removesuffix("\n")
+    + """ A scene's clip is sent at most 5 pictures: the main \
 photo, one for each need, and the presenter's portrait when it "has face".
 """
+)
+
+# What each scene picture's `for` value means, told to the planner. The values are
+# jobs.library.For, the one list (not approved yet: audit item 11).
+SCENE_PICTURE_FOR: dict[For, str] = {
+    "content": "what goes into or comes out of the product",
+    "result": "the end state the scene ends on",
+    "in-use": "the product used the way this scene uses it",
+    "place": "where the scene happens",
+    "person": "how the person, or their hand, is with the product",
+    "state": "the product in a state the scene's action changes it to or shows",
+}
+assert tuple(SCENE_PICTURE_FOR) == get_args(For), "every For value is told, in its order"
+
+# What a B-roll scene is sent, named by the planner, and the rules for what it films (#210
+# points 10 and 11; Julian Oct 27-28). Not approved yet: "named on the first try" (audit
+# item 12) and the send order told to the planner (audit item 13).
+PLAN_SCENE_PICTURES_INSTRUCTIONS = (
+    """\
+The library is every picture the app has of the product, each by its library number, and \
+every video moment, each by its video and its moment number. The video moments show how \
+the product is really used: plan from them. Plan only actions the product really does: \
+ones the page, the shop owner's words or a video moment shows it doing. Give each B-roll \
+scene a different action: never film the same action in two scenes.
+For each B-roll scene, also give:
+- Its scene pictures: the library pictures the scene needs, in the order they matter, \
+each by its library number with what it is for: """
+    + "; ".join(f'"{value}" for {meaning}' for value, meaning in SCENE_PICTURE_FOR.items())
+    + """. Name as many as the scene needs. Never name a picture only for a side of the \
+product: every photo of its sides is sent with every clip. When the scene's end state \
+depends on the product, such as what it makes, leaves behind or changes, name a picture \
+of that end state, a page photo or a frame from a video, for "result". Empty for a scene \
+where the person talks to camera.
+- Its video piece: when a video moment shows the scene's action, that moment by its video \
+and moment number, named the first time you plan the scene. Never give seconds. Null when \
+no moment shows it.
+Each B-roll clip is sent its pictures in this order: the product's front photo, then the \
+scene pictures you name, in your order, then the picture of the person in the place, then \
+the product's other sides. So the scene pictures you name always come right after the \
+front photo, before anything else the clip is sent.
+"""
+)
 
 # What a B-roll scene films, for the planner and a rewrite alike. Graded #8 toilet (4
 # steps in one clip) and #5 bag (strap on and off in one clip) failed; one step was perfect.
@@ -235,7 +287,8 @@ alone; only claims the page makes; never children.
 page gives; never detail the photos don't show.
 You may go against the guide for an unusual product if your reason says why.
 """
-    + BROLL_DETAILS_INSTRUCTIONS
+    + BROLL_PLAN_DETAILS_INSTRUCTIONS
+    + PLAN_SCENE_PICTURES_INSTRUCTIONS
     + """\
 Decide "ask" when you don't know the one price to say, because neither the page nor the \
 shop owner gives a price, or they give different prices to choose between (such as a \
@@ -295,6 +348,10 @@ if they go ahead without one, the person says that line to camera, or the voice 
 over another B-roll scene that proves its own line. Never offer another way to \
 show it. \
 Ask the shop owner one short, specific question, and set plan to null.
+For a plan, also write how the product behaves: one short paragraph, at most three \
+sentences, from the page's text and the video moments, saying in plain words what this \
+product does when it is used: what moves, what comes out of it and what it leaves. Only \
+what the page or the moments show. It is read by whoever checks the clips.
 Give one sentence saying why: for a plan, why this many scenes; for a question, why you \
 need to ask. Write it for the shop owner. You may say what the ad would show, but never \
 tell them which scenes show the product rather than the person talking, or that there are \
@@ -314,8 +371,10 @@ BrollKind = Literal["does a job", "shows the problem", "showcase"]
 # never does, and the only face ever shown is the presenter's, from their portrait.
 PersonShown = Literal["no face", "has face"]
 
-# The most pictures a B-roll clip is sent, the presenter's portrait counted: the most
-# Boreal-H3 takes for free.
+# The most pictures a scene rewrite may send a B-roll clip through its needs, the presenter's
+# portrait counted: the most Boreal-H3 takes for free. The plan has no cap (#210 point 19,
+# Julian Oct 28 17:36): cut-and-send applies the video API's 9. The rewrite in jobs.checks
+# keeps it until the clip step switches to the sent list.
 MOST_PICTURES = 5
 
 
@@ -476,6 +535,13 @@ class ScriptScene(BaseModel):
         )
 
 
+def same_action(shows: str) -> str:
+    """What a B-roll scene films, as code compares two scenes: its words, whatever their
+    case, punctuation or articles."""
+    words = re.findall(r"[\w']+", shows.casefold())
+    return " ".join(word for word in words if word not in {"a", "an", "the"})
+
+
 def photos_missing(scene: ScriptScene, photo_count: int) -> str | None:
     """Why a scene's needs name a photo the job doesn't have, or None."""
     return photo_missing([number for need in scene.needs for number in need.photos], photo_count)
@@ -547,6 +613,25 @@ class OwnerPart(BaseModel):
         return text
 
 
+class ScenePicture(BaseModel):
+    """A picture a B-roll scene needs, by its library number, with what it is for."""
+
+    model_config = ConfigDict(validate_by_name=True, serialize_by_alias=True)
+
+    number: StrictInt = Field(description="The picture's library number.")
+    for_: For = Field(
+        alias="for",
+        description='What it is for: "content", "result", "in-use", "place", "person" or "state".',
+    )
+
+
+class ScenePiece(BaseModel):
+    """The video moment a B-roll scene's action is cut from, by number: never by seconds."""
+
+    video: StrictInt = Field(description="The video's number.")
+    moment: StrictInt = Field(description="The moment's number in that video.")
+
+
 class PlannedScene(ScriptScene):
     part: Part | None = Field(
         default=None,
@@ -570,6 +655,18 @@ class PlannedScene(ScriptScene):
         "looks come from and how it looks. Null otherwise, and when a photo shows it.",
     )
 
+    scene_pictures: list[ScenePicture] = Field(
+        default_factory=list,
+        description="For a B-roll scene, its scene pictures in the order they matter, each by "
+        "library number with what it is for. Empty for a scene where the person talks to "
+        "camera.",
+    )
+    piece: ScenePiece | None = Field(
+        default=None,
+        description="For a B-roll scene whose action a video moment shows, that moment by its "
+        "video and moment number. Null otherwise.",
+    )
+
     @field_validator("overlay")
     @classmethod
     def _a_few_words(cls, overlay: str | None) -> str | None:
@@ -584,6 +681,14 @@ class PlannedScene(ScriptScene):
     def _owner_part_is_filmed(self) -> Self:
         if self.owner_part is not None and self.shows is None:
             raise ValueError("A scene where the person talks to camera has no owner part.")
+        return self
+
+    @model_validator(mode="after")
+    def _only_broll_is_sent_pictures(self) -> Self:
+        if self.shows is None and (self.scene_pictures or self.piece is not None):
+            raise ValueError(
+                "A scene where the person talks to camera has no scene pictures or video piece."
+            )
         return self
 
 
@@ -626,6 +731,10 @@ class Plan(BaseModel):
         )
     )
     person_voice: str = Field(description="How the person's voice sounds: age, accent, tone, pace.")
+    product_behaviour: str = Field(
+        description="How the product behaves when it is used, one short paragraph from the "
+        "page text and the video moments.",
+    )
     script_format: ScriptFormat | None = Field(
         default=None,
         description="The one format the ad's body plays in, between its hook and its call to "
@@ -639,17 +748,33 @@ class Plan(BaseModel):
             raise ValueError("This can't be empty.")
         return text
 
+    @field_validator("product_behaviour")
+    @classmethod
+    def _one_paragraph(cls, behaviour: str) -> str:
+        if not behaviour.strip():
+            raise ValueError("This can't be empty.")
+        if "\n" in behaviour.strip():
+            raise ValueError("How the product behaves is one short paragraph.")
+        return behaviour.strip()
+
+    @model_validator(mode="after")
+    def _a_different_action_in_each_broll_scene(self) -> Self:
+        filmed: dict[str, int] = {}
+        for number, scene in enumerate(self.scenes, start=1):
+            if scene.shows is None:
+                continue
+            first = filmed.setdefault(same_action(scene.shows), number)
+            if first != number:
+                raise ValueError(
+                    f"Scenes {first} and {number} film the same action: give each B-roll scene "
+                    "a different one."
+                )
+        return self
+
     @model_validator(mode="after")
     def _opens_on_the_person(self) -> Self:
         if self.scenes[0].shows is not None:
             raise ValueError("The first scene is the person talking to camera: its shows is null.")
-        return self
-
-    @model_validator(mode="after")
-    def _five_pictures_at_most(self) -> Self:
-        for number, scene in enumerate(self.scenes, start=1):
-            if (too_many := scene.too_many_pictures(number)) is not None:
-                raise ValueError(too_many)
         return self
 
     @model_validator(mode="after")
@@ -711,9 +836,12 @@ class ProducerDecision(Judgement):
         return self
 
 
-def producer_decision_for(photo_count: int) -> type[ProducerDecision]:
-    """The producer's decision for a job with `photo_count` photos. A plan naming a photo
-    the job doesn't have, for its colour or for what a scene needs, fails while the answer
+def producer_decision_for(
+    photo_count: int, *, library: Collection[int], moments: Mapping[int, int]
+) -> type[ProducerDecision]:
+    """The producer's decision for a job with `photo_count` photos, the library numbers in
+    `library` and, for each watched page video by its number, how many moments it has. A plan
+    naming a photo, a library picture or a moment the job doesn't have fails while the answer
     is read, like any other broken plan."""
 
     class ProducerDecisionForJob(ProducerDecision):
@@ -724,12 +852,45 @@ def producer_decision_for(photo_count: int) -> type[ProducerDecision]:
             for missing in (
                 photo_missing(self.plan.colour_photos, photo_count),
                 *(photos_missing(scene, photo_count) for scene in self.plan.scenes),
+                *(
+                    picture_missing(number, scene, library)
+                    for number, scene in enumerate(self.plan.scenes, start=1)
+                ),
+                *(
+                    moment_missing(number, scene, moments)
+                    for number, scene in enumerate(self.plan.scenes, start=1)
+                ),
             ):
                 if missing is not None:
                     raise ValueError(missing)
             return self
 
     return ProducerDecisionForJob
+
+
+def picture_missing(number: int, scene: PlannedScene, library: Collection[int]) -> str | None:
+    """Why scene `number` names a scene picture the library doesn't hold, or None."""
+    for picture in scene.scene_pictures:
+        if picture.number not in library:
+            held = f"pictures 1 to {max(library)}" if library else "no pictures yet"
+            return f"Scene {number} names picture {picture.number}: the library holds {held}."
+    return None
+
+
+def moment_missing(number: int, scene: PlannedScene, moments: Mapping[int, int]) -> str | None:
+    """Why scene `number` names a moment no watched video has, or None. `moments` holds how
+    many moments each watched video has, by the video's number."""
+    if scene.piece is None:
+        return None
+    video, moment = scene.piece.video, scene.piece.moment
+    if not moments.get(video):
+        return f"Scene {number} names a moment of video {video}: that video has no moments."
+    if not 1 <= moment <= moments[video]:
+        return (
+            f"Scene {number} names moment {moment} of video {video}: that video has moments "
+            f"1 to {moments[video]}."
+        )
+    return None
 
 
 class ChatMessage(Handoff):
