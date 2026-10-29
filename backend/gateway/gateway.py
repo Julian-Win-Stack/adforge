@@ -4,7 +4,6 @@ It checks the handoff before anything is spent, retries when the provider is dow
 records every attempt: what was called, what it cost, how long it took, whether it worked,
 and the one-sentence judgement."""
 
-import dataclasses
 import hashlib
 import io
 import json
@@ -38,7 +37,6 @@ from .types import (
     EDITING_FOR,
     FREE_EXAMPLE_PICTURES,
     AgentProvider,
-    AnswerBrokeItsRules,
     BlockedBySafetyFilter,
     BrollClipHandoff,
     BrollClipProvider,
@@ -379,55 +377,31 @@ def call_model[Out: BaseModel](
             return output.model_validate(answered)
     provider = _provider()
 
-    def ask(request: ModelRequest[Out]) -> Out:
-        def complete() -> _Made[Out]:
-            reply = provider.complete(request)
-            judgement = reply.output if isinstance(reply.output, Judgement) else None
-            return _Made(
-                result=reply.output,
-                output=reply.output.model_dump(mode="json"),
-                bill=_Bill(
-                    cost_usd=catalog.cost_usd(
-                        request.model, reply.input_tokens, reply.output_tokens
-                    ),
-                    input_tokens=reply.input_tokens,
-                    output_tokens=reply.output_tokens,
-                ),
-                decision=judgement.decision if judgement else "",
-                reason=judgement.reason if judgement else "",
-            )
-
-        return _recorded(
-            job,
-            purpose,
-            request.model,
-            provider.name,
-            handoff,
-            complete,
-            _shown(request.images),
-            told=_Told(request.instructions),
+    def complete() -> _Made[Out]:
+        reply = provider.complete(request)
+        judgement = reply.output if isinstance(reply.output, Judgement) else None
+        return _Made(
+            result=reply.output,
+            output=reply.output.model_dump(mode="json"),
+            bill=_Bill(
+                cost_usd=catalog.cost_usd(request.model, reply.input_tokens, reply.output_tokens),
+                input_tokens=reply.input_tokens,
+                output_tokens=reply.output_tokens,
+            ),
+            decision=judgement.decision if judgement else "",
+            reason=judgement.reason if judgement else "",
         )
 
-    try:
-        return ask(request)
-    except AnswerBrokeItsRules as broke:
-        # A paid answer a rule rejected goes back to the model once, with why (spec #247
-        # point 8); rejected again, it fails, and whoever asked says so in red.
-        logger.warning(
-            "%s's answer broke a rule of its output, so it is asked again: %s", purpose, broke
-        )
-        again = dataclasses.replace(
-            request, instructions=f"{instructions}\n\n{ANSWER_AGAIN.format(error=broke)}"
-        )
-        return ask(again)
-
-
-# What a model is told, after its instructions, when its last answer broke a rule of the
-# answer's shape, so it was asked again.
-ANSWER_AGAIN = (
-    "Your last answer to this couldn't be used, because it broke a rule of the answer's "
-    "shape: {error}. Answer again, keeping to every rule."
-)
+    return _recorded(
+        job,
+        purpose,
+        request.model,
+        provider.name,
+        handoff,
+        complete,
+        _shown(request.images),
+        told=_Told(instructions),
+    )
 
 
 def past_the_safety_filter[Answer](
