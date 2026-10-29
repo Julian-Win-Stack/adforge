@@ -11,7 +11,7 @@ import mimetypes
 import re
 import tempfile
 import wave
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -70,6 +70,7 @@ from . import (
     assembly,
     auto_fix,
     clip_judge,
+    cut_out,
     firecrawl,
     fix_check,
     library,
@@ -942,7 +943,9 @@ def plan(job: Job) -> ProducerDecision:
     sheets = library_sheets.sheets_of(job)
     library_sheets.tell_not_shown(job, sheets)
     library, moments = _library_numbers(job), _moments_by_video(job)
-    decision, left_out = past_the_safety_filter(
+    decision, left_out = library_sheets.past_the_filter(
+        job,
+        sheets,
         lambda images: call_model(
             job=job,
             purpose="plan_ad",
@@ -951,7 +954,6 @@ def plan(job: Job) -> ProducerDecision:
             output=producer_decision_for(library=library, moments=moments),
             images=images,
         ),
-        sheets.images,
     )
     if left_out:
         named = [image.label.partition(" (")[0].lower() for image in left_out]
@@ -1005,7 +1007,7 @@ def plan(job: Job) -> ProducerDecision:
         unseen = sheets.numbers_on(left_out)
         job.photos.filter(
             position__in=photos_of.photos(
-                [number for number in planned.colour_photos if number not in unseen]
+                [number for number in planned.colour_photos if number not in unseen], "colour"
             )
         ).update(shows_product_colour=True)
     photos_of.tell(job)
@@ -1044,49 +1046,73 @@ def plan_handoff(job: Job, page_text: str, sheets: library_sheets.Sheets) -> Pla
 @dataclass
 class _PhotosOfPictures:
     """The product photo, by position, of each library picture a plan or a rewrite names
-    for its needs and colour photos, and the pictures named that have none."""
+    for its needs and colour photos, and the pictures named that have none. A recoloured
+    picture is never in the ad's colour as its photo: that photo is another colour."""
 
     positions: dict[int, int]
-    without_a_photo: list[int] = field(default_factory=list)
+    recoloured: set[int]
+    without_a_photo: dict[str, list[int]] = field(
+        default_factory=lambda: {"need": [], "colour": []}
+    )
 
-    def photos(self, numbers: Sequence[int]) -> list[int]:
+    def photos(self, numbers: Sequence[int], use: Literal["need", "colour"]) -> list[int]:
         """The positions of the photos library pictures `numbers` are, in order, each once:
-        a picture with no product photo is left out and noted."""
+        a picture with no product photo for `use` is left out and noted."""
         kept: list[int] = []
         for number in numbers:
             position = self.positions.get(number)
+            if use == "colour" and number in self.recoloured:
+                position = None
             if position is None:
-                if number not in self.without_a_photo:
-                    self.without_a_photo.append(number)
+                if number not in self.without_a_photo[use]:
+                    self.without_a_photo[use].append(number)
             elif position not in kept:
                 kept.append(position)
         return kept
 
+    def colour_numbers(self, marked: Collection[int]) -> list[int]:
+        """The library numbers of the pictures whose photo is marked in the ad's colour."""
+        return [
+            number
+            for number, at in self.positions.items()
+            if at in marked and number not in self.recoloured
+        ]
+
     def needs(self, needs: Sequence[Need]) -> list[dict[str, Any]]:
         """`needs` as a Scene stores them, by photo position: a need whose pictures have no
         product photo is left out."""
-        stored = [{**need.model_dump(), "photos": self.photos(need.photos)} for need in needs]
+        stored = [
+            {**need.model_dump(), "photos": self.photos(need.photos, "need")} for need in needs
+        ]
         return [need for need in stored if need["photos"]]
 
     def tell(self, job: Job) -> None:
         """Tell the chat in red, with its warning line, of the pictures named that have no
-        product photo, so a starting picture can't be made from them."""
-        if not self.without_a_photo:
-            return
-        named = ", ".join(str(number) for number in sorted(self.without_a_photo))
-        post_notice(
-            job,
-            f"Library picture{'s' if len(self.without_a_photo) > 1 else ''} {named} "
-            f"{'have' if len(self.without_a_photo) > 1 else 'has'} no product photo a starting "
-            "picture can be made from, so the scenes that need "
-            f"{'them' if len(self.without_a_photo) > 1 else 'it'} are made without "
-            f"{'them' if len(self.without_a_photo) > 1 else 'it'}.",
-            Message.Level.PROBLEM,
-        )
+        product photo for what they were named for, once for the same pictures."""
+        for use, numbers in self.without_a_photo.items():
+            if not numbers:
+                continue
+            one = len(numbers) == 1
+            named = (
+                f"Library picture{'' if one else 's'} "
+                f"{', '.join(str(number) for number in sorted(numbers))} "
+                f"{'has' if one else 'have'}"
+            )
+            text = (
+                f"{named} no product photo a starting picture can be made from, so "
+                f"{'it is' if one else 'they are'} left out of the photos the scenes need."
+                if use == "need"
+                else f"{named} no product photo of {'its' if one else 'their'} own, so "
+                f"{'it isn' if one else 'they aren'}'t marked as showing the ad's colour."
+            )
+            if all(warning["text"] != text for warning in job.warnings):
+                post_notice(job, text, Message.Level.PROBLEM)
 
 
 def _photos_of_pictures(job: Job) -> _PhotosOfPictures:
-    return _PhotosOfPictures(library_sheets.photo_positions(job))
+    return _PhotosOfPictures(
+        library_sheets.photo_positions(job), library_sheets.recoloured_numbers(job)
+    )
 
 
 def _labelled(photo: ProductPhoto) -> Image:
@@ -1379,10 +1405,11 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
     """Have the scene rewritten whole: its line, what it shows and its B-roll details. A
     scene that shows something is rewritten seeing the library's sheets, as the planner does,
     to say what it needs."""
-    sheets = library_sheets.sheets_of(job)
+    # A scene where the person talks is rewritten on text alone: no sheet is drawn for it.
+    sheets = library_sheets.sheets_of(job, drawn=bool(scene.shows))
     photos_of = _photos_of_pictures(job)
     marked = set(job.photos.filter(shows_product_colour=True).values_list("position", flat=True))
-    colour_photos = [number for number, at in photos_of.positions.items() if at in marked]
+    colour_photos = photos_of.colour_numbers(marked)
     if scene.shows:
         library_sheets.tell_not_shown(job, sheets)
     rewrite = call_model(
@@ -2257,11 +2284,12 @@ def clean_picture(scene: Scene, row: ReferencePhoto) -> str:
 def _clean_picture(scene: Scene, row: ReferencePhoto) -> str:
     """The clean picture of only `row`'s thing, drawn from the shop owner's photo (Julian
     2026-10-15 17:43) once per ad, by whichever step needs it first, and kept on every scene's
-    row of the same photo and thing. It is checked as a starting picture is, beside the photo,
-    and drawn again when the check fails, at most MOST_REDRAWS times (D8). Gives its key in the
-    file store. Raises ReferencePhotoUnusable when it still fails, or the picture model
-    refuses the photo: nothing more is made for the scene, and the shop owner is asked for
-    another photo.
+    row of the same photo and thing. It is a cut-out (jobs.cut_out), checked beside the photo
+    by `_owner_photo_check`, and drawn again when the check fails, at most
+    checked_pictures.MOST_REDRAWS times
+    (D8). Gives its key in the file store. Raises ReferencePhotoUnusable when it still fails,
+    or the picture model refuses the photo past its retry: nothing more is made for the
+    scene, and the shop owner is asked for another photo.
 
     Run again, as after a worker stopped, it pays for nothing already paid for: each picture
     drawn is reused in turn, and each check answered from its record."""
@@ -2274,59 +2302,60 @@ def _clean_picture(scene: Scene, row: ReferencePhoto) -> str:
         if drawn:
             row.drawn = drawn
             return drawn
-        prompt = reference_photos.clean_picture_prompt(row.thing)
-        paid = [
-            str(call.output["file"])
-            for call in _paid_calls(job, "make_reference_photo_picture").filter(
-                handoff={"prompt": prompt, "pictures": [row.file]}
+        try:
+            file = cut_out.redraw_with_check(
+                job,
+                purpose="make_reference_photo_picture",
+                prompt=reference_photos.clean_picture_prompt(row.thing),
+                photo=row.file,
+                check=_owner_photo_check(job, row),
+                unchecked_passes=True,
             )
-            if call.output is not None
-        ]
-        failed: list[list[str]] = []
-        for tries in range(MOST_REDRAWS + 1):
-            try:
-                file = (
-                    paid[tries]
-                    if tries < len(paid)
-                    else edit_picture(
-                        job=job,
-                        purpose="make_reference_photo_picture",
-                        prompt=prompt,
-                        pictures=[row.file],
-                    )
-                )
-            except BlockedBySafetyFilter as error:
+        except cut_out.CutOutFailed as failed:
+            if failed.refused is not None:
                 raise ReferencePhotoUnusable(
                     f"the picture model refused to draw the {row.thing} from the shop owner's "
-                    f"photo ({error}), so nothing more was made for scene {scene.number}. "
-                    f"Ask them for another photo of the {row.thing}.",
+                    f"photo ({failed.refused}), so nothing more was made for scene "
+                    f"{scene.number}. Ask them for another photo of the {row.thing}.",
                     thing=row.thing,
-                ) from error
-            problems = (
-                judge_starting_picture(
-                    job,
-                    file,
-                    row.file,
-                    about=f"the shop owner's {row.thing}",
-                    named=f"the clean picture of the shop owner's {row.thing}",
-                    photo_named=f"the shop owner's photo of their {row.thing}",
-                )
-                if settings.QUALITY_CHECKS
-                else []
-            )
-            if not problems:
-                same.update(drawn=file)
-                row.drawn = file
-                return file
-            failed.append(problems)
-        found = " ".join(problems[0] for problems in failed)
-        raise ReferencePhotoUnusable(
-            f"the clean copy of the {row.thing} drawn from the shop owner's photo failed its "
-            f"check all {len(failed)} times it was drawn ({found}), so nothing more was made "
-            f"for scene {scene.number}. Ask them for another photo of the {row.thing}, "
-            "showing it clearly.",
-            thing=row.thing,
+                ) from failed
+            raise ReferencePhotoUnusable(
+                f"the clean copy of the {row.thing} drawn from the shop owner's photo failed "
+                f"all {len(failed.problems)} tries ({' '.join(failed.problems)}), so nothing "
+                f"more was made for scene {scene.number}. Ask them for another photo of the "
+                f"{row.thing}, showing it clearly.",
+                thing=row.thing,
+            ) from failed
+        same.update(drawn=file)
+        row.drawn = file
+        return file
+
+
+def _owner_photo_check(job: Job, row: ReferencePhoto) -> cut_out.Check:
+    """How the clean picture of `row`'s thing is checked: by the cut-out check, asked once,
+    as the product-only versions of library photos are (spec #210 point 6). NOT APPROVED YET
+    (audit item 24: never asked; before, it was the starting picture's 3-ask vote, which
+    `judge_starting_picture` still holds). Unchecked when QUALITY_CHECKS is off. A cut-out the
+    check's filter refuses to look at is kept unchecked, said in red."""
+    named = f"the clean picture of the shop owner's {row.thing}"
+
+    def check(file: str) -> cut_out.Said:
+        if not settings.QUALITY_CHECKS:
+            return None
+        said = cut_out.check_cut_out(
+            job,
+            file,
+            row.file,
+            keep=f"the shop owner's {row.thing}",
+            named=named,
+            photo_named=f"the shop owner's photo of their {row.thing}",
+            needs_photo=False,
         )
+        if isinstance(said, cut_out.Unchecked) and said.refused:
+            post_refused_by_the_filter(job, named, "it is kept unchecked: check it yourself")
+        return said
+
+    return check
 
 
 def _during_the_clip(step: SceneStep) -> list[ReferencePhoto]:
@@ -3447,7 +3476,8 @@ def end_the_agents_fixing(step: SceneStep) -> None:
     still going is given up, its scene put back as it was before try 1, as no worker carries
     it on. A give-up is then kept as its door keeps one, if it wasn't yet: door 1's scene
     keeping its last try, or a fix's scene keeping its clip from before. A door 1 scene with
-    no try filmed is planned again, as the step's own clip fails with it."""
+    no try filmed is planned again, as the step's own clip fails with it, and a question its
+    fix was parked on is withdrawn."""
     from agents import fixing_agent
 
     fixing = AgentFix.objects.filter(step=step).first()
@@ -3462,9 +3492,11 @@ def end_the_agents_fixing(step: SceneStep) -> None:
         return
     ended = _ended(step)
     # The step fails, so a clip of its own is no clip of the ad's: only a try, filmed in a step
-    # of its own, is. With no try filmed, the scene waits for its clip to be made again.
+    # of its own, is. With no try filmed, the scene waits for its clip to be made again, and a
+    # question the fix was parked on is withdrawn: no answer can resume a fix whose step failed.
     if ended.kept is not None and ended.kept.step_id == step.pk:
         Scene.objects.get(pk=step.scene_id).plan_again()
+        OwnerQuestion.objects.filter(agent_fix=ended, answered_at__isnull=True).delete()
 
 
 def back_to_the_clip_before(step: SceneStep) -> ProducedItem | None:
@@ -3708,23 +3740,29 @@ def say_the_agent_gave_up(step: SceneStep) -> None:
     if is_parked(ended):
         _say_the_agent_asked(step, ended)
         return
-    if ended.said_to_camera:
-        meanwhile = f"so scene {number}'s line will be said to camera instead"
-    elif _kept_a_try(step, ended):
-        meanwhile = f"so {_what_is_kept(step)} is in the ad"
-    elif ended.kept is not None:
-        meanwhile = f"so scene {number} keeps the clip it had before"
-    else:
-        meanwhile = "so the last try is in the ad"
     capped = ", and the fixing agent filmed as many tries as it may" if ended.ended_by_cap else ""
     post_notice(
         step.scene.job,
         f"The clip judge found a problem in all {len(_clip_tries(step))} tries at scene "
-        f"{number}'s clip{capped}, {meanwhile}. Watch them, and tap one to use it instead.",
+        f"{number}'s clip{capped}, so {_in_the_ad_meanwhile(step, ended)}. Watch them, and tap "
+        "one to use it instead.",
         Message.Level.INFO,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
         tries_of=step.pk,
     )
+
+
+def _in_the_ad_meanwhile(step: SceneStep, ended: AgentFix) -> str:
+    """What a give-up, or a fix parked on a question, left in the ad for the scene, as a
+    clause for the chat: "the last try is in the ad", or the like."""
+    number = step.scene.number
+    if ended.said_to_camera:
+        return f"scene {number}'s line will be said to camera instead"
+    if _kept_a_try(step, ended):
+        return f"{_what_is_kept(step)} is in the ad"
+    if ended.kept is not None:
+        return f"scene {number} keeps the clip it had before"
+    return "the last try is in the ad"
 
 
 def _say_the_agent_asked(step: SceneStep, ended: AgentFix) -> None:
@@ -3732,20 +3770,14 @@ def _say_the_agent_asked(step: SceneStep, ended: AgentFix) -> None:
     not approved yet): the scene has a question for the shop owner, what is in the ad until
     they answer, and where the question is."""
     number = step.scene.number
-    if _kept_a_try(step, ended):
-        meanwhile = f"{_what_is_kept(step)} is in the ad"
-    elif ended.kept is not None:
-        meanwhile = f"scene {number} keeps the clip it had before"
-    else:
-        meanwhile = "the last try is in the ad"
-    asked = open_question(step.scene)
     post_notice(
         step.scene.job,
-        f"The fixing agent has a question for you about scene {number}'s clip, so {meanwhile} "
-        f"until you answer it. The question is on scene {number}'s card.",
+        f"The fixing agent has a question for you about scene {number}'s clip, so "
+        f"{_in_the_ad_meanwhile(step, ended)} until you answer it. The question is on scene "
+        f"{number}'s card.",
         Message.Level.PROBLEM,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
-        owner_question=asked.pk if asked is not None else None,
+        owner_question=ended.owner_question.pk,
     )
 
 
@@ -3841,9 +3873,10 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
         return f"{failed}, so the fixing agent filmed it again, and the judge passed try {passed}."
     filmed = len(_clip_tries(step)) - 1
     if is_parked(ended):
+        tried = {0: "before filming a try", 1: "after 1 try"}.get(filmed, f"after {filmed} tries")
         asked = (
-            f"{failed}, and after {filmed} tries the fixing agent asked the shop owner a "
-            "question about it, shown on the scene's card"
+            f"{failed}, and {tried} the fixing agent asked the shop owner a question about it, "
+            "shown on the scene's card"
         )
         if _kept_a_try(step, ended):
             return f"{asked}, so {_what_is_kept(step)} is in the ad until they answer it."

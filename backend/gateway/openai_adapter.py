@@ -292,12 +292,14 @@ def _picture(model: str, reply: ImagesResponse) -> Picture:
 
 
 def _input[Out: BaseModel](request: ModelRequest[Out]) -> str | ResponseInputParam:
-    handoff = request.handoff.model_dump_json()
     if not request.images:
-        return handoff
-    content: ResponseInputMessageContentListParam = [{"type": "input_text", "text": handoff}]
+        return request.handoff.model_dump_json()
+    before, after = request.handoff.around_images()
+    content: ResponseInputMessageContentListParam = [{"type": "input_text", "text": before}]
     for image in request.images:
         content += [{"type": "input_text", "text": image.label}, _image_part(image)]
+    if after is not None:
+        content.append({"type": "input_text", "text": after})
     return [{"role": "user", "content": content}]
 
 

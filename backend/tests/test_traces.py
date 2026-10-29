@@ -37,6 +37,7 @@ from jobs.clip_judge import (
     ReferencesVerdict,
     SidesVerdict,
 )
+from jobs.cut_out import CutOutVerdict
 from jobs.fix_check import FixVerdict, PhotoFixVerdict
 from jobs.models import SceneStep
 from jobs.picture_check import StartingPictureVerdict
@@ -734,6 +735,7 @@ def test_a_judges_verdict_is_a_score_on_its_call_named_after_what_it_measures(
 # Every judge's answer forms, by the purpose its calls are made for.
 JUDGES_ANSWERS: dict[str, list[type[BaseModel]]] = {
     "check_starting_picture": [StartingPictureVerdict],
+    "check_cut_out": [CutOutVerdict],
     "check_fix": [FixVerdict, PhotoFixVerdict],
     "check_clip_sides": [SidesVerdict],
     "check_clip_product": [ProductVerdict],

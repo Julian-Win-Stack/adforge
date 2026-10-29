@@ -21,6 +21,7 @@ from jobs.library import (
     OwnerPhoto,
     PagePhoto,
     PictureLabel,
+    Recoloured,
     add_to_library,
     library_of,
 )
@@ -153,22 +154,21 @@ def test_the_planner_gets_the_moments_first_then_the_library_on_numbered_sheets(
     )
     assert handoff["video_transcripts"] == ["Twist, pump, lather."]
     assert list(handoff).index("video_transcripts") > list(handoff).index("library_pictures")
-    assert (handoff["library_pictures"], handoff["pictures_not_shown"]) == (6, 0)
-    # Two sheets, four pictures and then two, each named by the numbers on it.
+    # The six page photos and the line-up's product-only version (spec #210 point 6).
+    assert (handoff["library_pictures"], handoff["pictures_not_shown"]) == (7, 0)
+    # Two sheets, four pictures and then three, each named by the numbers on it.
     assert [image.label for image in request.images] == [
         "Library pictures 1 to 4 (each numbered and labelled under it)",
-        "Library pictures 5 to 6 (each numbered and labelled under it)",
+        "Library pictures 5 to 7 (each numbered and labelled under it)",
     ]
     first, second = (opened(image.data) for image in request.images)
-    # Two across: the second sheet is one row of two, the first two rows.
     assert first.width == second.width
-    assert first.height > second.height
     # Each picture's label is in a black bar under it: the sheet's top edge is the picture's
     # fitted backdrop, not a bar.
     assert first.getpixel((first.width // 4, 12)) != (0, 0, 0)
     # The plan names pictures by those numbers, and they are the library's.
     job_library = {item.number: item for item in library_of(Job.objects.get())}
-    assert sorted(job_library) == [1, 2, 3, 4, 5, 6]
+    assert sorted(job_library) == [1, 2, 3, 4, 5, 6, 7]
     (scene,) = Job.objects.get().scenes.filter(number=2)
     assert [job_library[pick["number"]].label for pick in scene.scene_pictures] == [
         "A hand pressing the pump, the shampoo coming out.",
@@ -258,6 +258,31 @@ def test_needs_and_colour_photos_named_by_library_number_are_kept_as_the_photos_
     ) == [3]
     assert (
         "problem",
-        "Library picture 3 has no product photo a starting picture can be made from, so the "
-        "scenes that need it are made without it.",
+        "Library picture 3 has no product photo a starting picture can be made from, so it is "
+        "left out of the photos the scenes need.",
     ) in notices(api, session_id)
+
+
+def test_a_recoloured_picture_named_in_the_ads_colour_never_marks_the_photo_it_was_made_from(
+    api: APIClient,
+    fake_model: FakeModel,
+    page_read: str,
+    session_id: str,
+    say: Say,
+) -> None:
+    # Picture 3 is photo 1 recoloured red: photo 1 itself isn't in that colour.
+    job = Job.objects.get()
+    red = PictureLabel(kind="side", side="front", alone="yes", colour="red", label="The mug.")
+    add_to_library(job, job.photos.get(position=1).file, red, Recoloured(of=1, colour="red"))
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
+    fake_model.respond("plan_ad", a_plan_with(colour_photos=[3, 2]))
+
+    say("Plan it")
+
+    marked = Job.objects.get().photos.filter(shows_product_colour=True)
+    assert list(marked.values_list("position", flat=True)) == [2]
+    told = (
+        "Library picture 3 has no product photo of its own, so it isn't marked as showing the "
+        "ad's colour."
+    )
+    assert ("problem", told) in notices(api, session_id)

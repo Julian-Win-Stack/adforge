@@ -94,6 +94,7 @@ WATCHED = (
     "route_reference_photo",
     "make_reference_photo_picture",
     "check_starting_picture",
+    "check_cut_out",
     "check_fix",
     "make_broll_clip",
     "check_clip_motion",

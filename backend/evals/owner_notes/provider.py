@@ -98,6 +98,13 @@ PICTURE_OK: dict[str, Any] = {
     "verdict": "pass",
     "problem": None,
 }
+# What the cut-out check answers in the replay: round 4 had no cut-outs to judge.
+CUT_OUT_OK: dict[str, Any] = {
+    "photo_shows": "(round 4's photo, replayed)",
+    "cut_out_shows": "(round 4's photo, replayed)",
+    "verdict": "pass",
+    "problem": None,
+}
 
 
 class OwnerNotesProvider:
@@ -164,6 +171,8 @@ class OwnerNotesProvider:
             return CLIP_MOTION_OK
         if self.phase == "first" and request.purpose == "check_starting_picture":
             return PICTURE_OK
+        if self.phase == "first" and request.purpose == "check_cut_out":
+            return CUT_OUT_OK
         if self.phase == "first" and request.purpose == "fact_check":
             # Round 4's lines passed the fact check then; today's would change the ad the
             # notes are about, as when it made a B-roll scene a talking one.
@@ -241,6 +250,11 @@ class OwnerNotesProvider:
         self, *, model: str, prompt: str, pictures: Sequence[bytes], on_azure: bool = False
     ) -> Picture:
         if self.phase == "first":
+            call = gateway.running_tool()
+            if call is None or "scene" not in call.arguments:
+                # A cut-out made while the page is read (a library photo's product-only
+                # version): the photo itself, as round 4 had none.
+                return Picture(data=pictures[0], input_tokens=0, output_tokens=0)
             number = _running_scene()
             return Picture(data=self.ad.scene(number).picture, input_tokens=0, output_tokens=0)
         with _one_picture_at_a_time():

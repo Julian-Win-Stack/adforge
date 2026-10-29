@@ -16,10 +16,10 @@ from chat.models import Message
 from gateway.fake import FakeModel, turn
 from gateway.types import Said
 from jobs import work
-from jobs.models import FixCheck, Scene, SceneStep
+from jobs.models import AgentFix, FixCheck, ProducedItem, Scene, SceneStep
 
-from .conftest import JUDGED_CLIP, HeldSteps, paid_for, producer_turns
-from .fixing import plan_row
+from .conftest import JUDGED_CLIP, HeldSteps, facts_ok, paid_for, producer_turns
+from .fixing import fixed, plan_row
 from .test_fix_wiring import (
     decided,
     given_to_the_producer,
@@ -29,6 +29,11 @@ from .test_fix_wiring import (
     stored,
     tap_yes,
 )
+from .test_fixing_agent import SLOWER, STIRS, failing_first
+from .test_fixing_agent_moves import NEW_LINE as MOVES_LINE
+from .test_fixing_agent_moves import change_action
+from .test_pick_from_tries import made_ad  # noqa: F401 (a fixture)
+from .test_producer_auto_fix import REMADE, rewrite
 from .test_producer_broll import BROLL_CHOICE, TALKING_CHOICE, checked  # noqa: F401 (a fixture)
 from .test_producer_picture_then_clip import (
     ads,
@@ -245,3 +250,30 @@ def test_a_new_price_line_changes_the_price_on_screen_too(
     held.run_held()
 
     assert ads()[-1].cuts[-1]["overlay"] == "$19.99"
+
+
+def test_a_new_clip_the_judge_fails_is_fixed_by_the_agent_changing_the_action(
+    made_ad: ProducedItem,  # noqa: F811
+    fake_model: FakeModel,
+    steps: HeldSteps,
+) -> None:
+    # The shop owner's note plans a new clip of scene 2; the judge fails it, and the fixing
+    # agent films another action with a new line, which the judge passes and the ad gets.
+    fixed(2, "new_clip", change=SLOWER, note=SLOWER)
+    fake_model.respond("rewrite_clip_prompt", rewrite(REMADE))
+    fake_model.answer_unscripted("check_clip_motion", failing_first(1))
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond("fix_scene", turn(calls=[change_action()]))
+
+    steps.run_held()
+
+    fixing = AgentFix.objects.get()
+    passed = fixing.passed
+    assert passed is not None
+    [made] = fixing.tries.all()
+    assert (made.tool_call.tool, made.clip) == ("change_action", passed)
+    scene = Scene.objects.get(number=2)
+    assert (scene.line, scene.shows) == (MOVES_LINE, STIRS)
+    audio = passed.made_from
+    assert audio is not None and audio.step is not None and audio.step.line == MOVES_LINE
+    assert [cut["clip"] for cut in ads()[-1].cuts if cut["scene"] == 2] == [passed.pk]

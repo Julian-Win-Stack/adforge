@@ -9,8 +9,16 @@ import pytest
 
 from gateway.fake import FakeModel, meanwhile, turn
 from gateway.models import ModelCall
-from jobs.library import PagePhoto, PictureLabel, add_to_library
+from jobs.library import (
+    LookFrame,
+    OwnerPhoto,
+    PagePhoto,
+    PictureLabel,
+    Recoloured,
+    add_to_library,
+)
 from jobs.models import Job, Scene
+from jobs.work import keep_photo
 
 from .conftest import (
     FACTS_OK,
@@ -25,6 +33,7 @@ from .conftest import (
     handoffs,
     lines,
     paid_for,
+    picture,
     plan_with,
     results_of,
 )
@@ -895,6 +904,52 @@ def test_a_rewrite_on_a_library_bigger_than_the_sheets_hold_is_shown_the_same_20
         "so 10 of them are not shown: pictures 201 to 210 are left out when the ad is planned "
         "or a scene is rewritten."
     ) == 1
+
+
+def test_a_rewrite_names_pictures_by_library_number_and_its_needs_are_kept_as_photos(
+    fake_model: FakeModel, page_read: str, say: Callable[..., None]
+) -> None:
+    # The page's 2 photos are pictures 1 and 2; picture 3 is a look frame; picture 4 is the
+    # shop owner's photo, the job's photo 3: its library number isn't its photo's number.
+    job = Job.objects.get()
+    mug = PictureLabel(kind="side", side="front", alone="yes", colour="green", label="The mug.")
+    add_to_library(job, job.photos.get(position=1).file, mug, LookFrame(video=1, second=1.0))
+    owners = keep_photo(job, 3, picture(90, 90, (143, 170, 140)), "image/png", has_face=False)
+    add_to_library(job, owners.file, mug, OwnerPhoto(original=owners.file))
+    # Picture 5 is the owner's photo recoloured: never in the ad's colour as its photo is.
+    red = PictureLabel(kind="side", side="front", alone="yes", colour="red", label="The mug.")
+    add_to_library(job, owners.file, red, Recoloured(of=4, colour="red"))
+    fake_model.respond(
+        "produce",
+        turn(calls=[("plan_ad", {})]),
+        turn(calls=[("create_person", {})]),
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(says="Here's where your ad stands."),
+    )
+    planned = doing_a_job()
+    fake_model.respond("plan_ad", {**planned, "plan": {**planned["plan"], "colour_photos": [4]}})
+    problem = "The page doesn't say tea is poured in."
+    fake_model.respond(
+        "fact_check", shows_wrong(problem, passing=(1, 3)), shows_wrong(problem), facts_ok(2)
+    )
+    # Each rewrite needs the look frame, which has no product photo, and the owner's photo.
+    rewritten = {**REWRITTEN, "needs": [{"what": "the mug's base", "photos": [3, 4]}]}
+    fake_model.respond("rewrite_line", rewritten, rewritten)
+
+    say("Plan it and check it")
+
+    # The rewrite is told the colour photos by library number, and its needs are kept as the
+    # product photos those numbers are.
+    assert handoffs("rewrite_line")[0]["colour_photos"] == [4]
+    assert Job.objects.get().scenes.get(number=2).needs == [
+        {"what": "the mug's base", "photos": [3]}
+    ]
+    # Rewritten twice the same way, the chat is told once of the picture left out.
+    told = (
+        "Library picture 3 has no product photo a starting picture can be made from, so it is "
+        "left out of the photos the scenes need."
+    )
+    assert [warning["text"] for warning in Job.objects.get().warnings].count(told) == 1
 
 
 def test_a_usage_or_result_the_page_doesnt_state_fails_the_scenes_fact_check(

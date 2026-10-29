@@ -34,6 +34,7 @@ from adforge.retry import OutsideServiceDown, with_retries
 from . import catalog
 from .models import ModelCall, SystemPrompt
 from .types import (
+    EDITING_FOR,
     FREE_EXAMPLE_PICTURES,
     AgentProvider,
     BlockedBySafetyFilter,
@@ -572,7 +573,13 @@ def edit_picture(*, job: Job | None, purpose: str, prompt: str, pictures: Sequen
 
     def edit(provider: PictureProvider, on_azure: bool) -> Picture:
         given = [file_store.read(key) for key in handoff.pictures]
-        return provider.edit(model=model, prompt=handoff.prompt, pictures=given, on_azure=on_azure)
+        editing = EDITING_FOR.set(purpose)
+        try:
+            return provider.edit(
+                model=model, prompt=handoff.prompt, pictures=given, on_azure=on_azure
+            )
+        finally:
+            EDITING_FOR.reset(editing)
 
     return _picture_made(job, purpose, model, handoff, edit)
 
@@ -1130,6 +1137,7 @@ def _told_in_trace(system_prompt: SystemPrompt | None) -> dict[str, Any]:
 # answer. A verdict an answer doesn't hold, as a fix's question on any other clip, is no score.
 VERDICT_SCORES: dict[str, dict[str, tuple[str, ...]]] = {
     "check_starting_picture": {"starting_picture_real": ()},
+    "check_cut_out": {"cut_out_alone_and_unchanged": ()},
     "check_fix": {"fix_made": ()},
     "check_clip_sides": {"clip_sides_real": ()},
     "check_clip_product": {"clip_matches_product": ()},

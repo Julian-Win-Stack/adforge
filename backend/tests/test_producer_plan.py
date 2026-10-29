@@ -400,7 +400,8 @@ def test_the_planner_is_shown_the_library_on_a_sheet_and_the_kept_photos_are_unc
 
     message = the_plan_message(httpserver)
     assert message["role"] == "user"
-    handoff, label, image = message["content"]
+    # The moments first, then the library's sheet, then what the videos say and the page.
+    before, label, image, after = message["content"]
     assert label == {
         "type": "input_text",
         "text": "Library pictures 1 to 2 (each numbered and labelled under it)",
@@ -421,8 +422,11 @@ def test_the_planner_is_shown_the_library_on_a_sheet_and_the_kept_photos_are_unc
     ((shown_label, key),) = [(image["label"], image["key"]) for image in call.images]
     assert shown_label == label["text"]
     assert key.startswith(f"jobs/{job.pk}/sheets/")
-    assert handoff["type"] == "input_text"
-    assert json.loads(handoff["text"]) == call.handoff
+    assert before["type"] == after["type"] == "input_text"
+    first, then = json.loads(before["text"]), json.loads(after["text"])
+    assert list(first) == ["moments", "library_pictures", "pictures_not_shown"]
+    assert list(then)[:2] == ["video_transcripts", "page_text"]
+    assert {**first, **then} == call.handoff
     # The photos themselves are kept as they came.
     assert [file_store.read(photo.file) for photo in job.photos.all()] == [MUG_FRONT, MUG_SIDE]
 
