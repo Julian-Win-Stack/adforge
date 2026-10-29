@@ -28,7 +28,7 @@ from django.utils import timezone
 from pydantic import Field
 
 from adforge import file_store, tracing
-from gateway.gateway import charged_to, edit_picture, take_turn
+from gateway.gateway import charged_to, edit_picture
 from gateway.types import (
     MOST_BROLL_SECONDS,
     BrollClipHandoff,
@@ -329,13 +329,15 @@ def _work(fixing: AgentFix) -> None:
     # No limit on the agent's turns (spec #210, point 24): only the tries cap ends it.
     while not _ended(fixing):
         with tracing.agent_turn(AGENT), charged_to(_turns(fixing)):
-            turn = take_turn(
+            turn = loop.take_a_turn(
                 session=fixing.step.tool_call.session,
+                job=fixing.step.scene.job,
                 purpose=PURPOSE,
                 instructions=instructions(_gives_up_as(fixing)),
                 conversation=_fit(_conversation(fixing)),
                 tools=_tools(_gives_up_as(fixing)),
                 since=fixing.created_at,
+                done=f"the fixing of scene {fixing.step.scene.number} carried on",
             )
         with transaction.atomic():
             at = _calls(fixing).count()

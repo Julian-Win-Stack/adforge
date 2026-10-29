@@ -122,3 +122,25 @@ class SystemNote(models.Model):
 
     def __str__(self) -> str:
         return f"{self.kind}: {self.text}"
+
+
+class RefusedPicture(models.Model):
+    """A picture an agent's model refused to look at: its safety filter refused the agent's
+    turn until the picture was left out (requirement 22). Every later turn of that agent in
+    the session leaves it out too, so the filter isn't asked again, and says so."""
+
+    session = models.ForeignKey(
+        "chat.Session", on_delete=models.CASCADE, related_name="refused_pictures"
+    )
+    purpose = models.CharField(
+        max_length=50, help_text='The agent\'s purpose, which picks its model, as "fix_scene".'
+    )
+    label = models.CharField(max_length=500, help_text="The label code gave the picture.")
+    key = models.CharField(max_length=500, help_text="The picture's key in the file store.")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self) -> str:
+        return f"{self.purpose}: {self.label}"
