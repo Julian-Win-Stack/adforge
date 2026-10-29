@@ -34,6 +34,7 @@ from adforge.retry import OutsideServiceDown, with_retries
 from . import catalog
 from .models import ModelCall, SystemPrompt
 from .types import (
+    FREE_EXAMPLE_PICTURES,
     AgentProvider,
     BlockedBySafetyFilter,
     BrollClipHandoff,
@@ -854,14 +855,18 @@ def submit_broll_clip(
             ],
         )
         # Each second of reference video sent costs what a second made does (spec #210,
-        # Further Notes: 0.4 credits a second).
+        # Further Notes: 0.4 credits a second), and each example picture past the free ones
+        # 0.2 credits.
         sent = sum(piece.seconds for piece in handoff.reference_videos)
         return _Made(
             result=video_id,
             output={"video_id": video_id},
             bill=_Bill(
                 video_seconds=handoff.seconds,
-                cost_usd=catalog.video_cost_usd(model, handoff.seconds + sent),
+                cost_usd=catalog.video_cost_usd(model, handoff.seconds + sent)
+                + catalog.example_pictures_cost_usd(
+                    model, len(handoff.example_pictures), FREE_EXAMPLE_PICTURES
+                ),
             ),
         )
 

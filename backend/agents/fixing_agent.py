@@ -25,9 +25,10 @@ import PIL.Image
 from django.db import transaction
 from django.db.models import QuerySet
 from django.utils import timezone
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from adforge import file_store, tracing
+from chat.models import Message
 from gateway.gateway import charged_to, edit_picture
 from gateway.types import (
     MOST_BROLL_SECONDS,
@@ -46,12 +47,24 @@ from jobs import (
     library_items,
     picture_check,
     product_videos,
+    recolour,
     reference_photos,
     scenes,
     work,
 )
-from jobs.first_send import PIECE_LABEL
-from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, ReferencePhoto, Scene, SceneStep
+from jobs.first_send import PIECE_LABEL, SPEED_LINE
+from jobs.library import Moment
+from jobs.models import (
+    AgentFix,
+    AgentFixTry,
+    Job,
+    ProducedItem,
+    ProductVideo,
+    ReferencePhoto,
+    Scene,
+    SceneStep,
+)
+from jobs.notices import post_notice
 
 from . import loop
 from .loop import Refused, Tool, ToolResult
@@ -130,8 +143,12 @@ How you work: you are shown the scene, the plan, the page, what the failed clip 
 (or its start picture), the failed clip's frames (5 a second), what the judge found, the \
 ad's picture library as a list and how the product behaves. Look at anything else you need: \
 look_at_library opens one library item, or one moment of a page video, by its number. Then \
-call film_again with the whole scene as it should be, or give_up. After each \
-film_again you see the new start picture, the new clip's frames and the judge's verdict. On \
+call film_again with the whole scene as it should be, or give_up. film_again's references \
+send library items by number, in your order, and a page video's moment as the piece, in \
+place of the start picture: code makes them the clip's colour, labels each one and puts the \
+speed line before your prompt. After each film_again you are told what was sent, shown \
+the new start picture when you drew one and the new clip's frames, and given the judge's \
+verdict. On \
 a fail, find what caused it (the plan, the pictures, or what the video model can't do) and \
 change that cause, not only the words. {WORDS_THEN_REFERENCES} On every try, write the \
 cause you found and your move. Try to film it first: code refuses give_up until at \
@@ -636,10 +653,10 @@ def _intro(fixing: AgentFix) -> str:
     )
 
 
-def sent_list_words(sent: library.SentList) -> str:
+def sent_list_words(sent: library.SentList, *, what: str = "the failed clip") -> str:
     """What a clip was sent, as a list in words: each picture with its library number and
     label, each piece with its video and moment, what was left out and why, and the prompt."""
-    lines = [f"What the failed clip was sent, every picture in {sent.colour}:"]
+    lines = [f"What {what} was sent, every picture in {sent.colour}:"]
     for picture in sent.pictures:
         named = (
             f"library item {picture.library_number}"
@@ -943,14 +960,7 @@ class LookAtLibrary(Tool):
                 [Image(label=f"Library item {item.number}: {item.label}", key=item.file)],
             )
         assert self.video is not None and self.moment is not None
-        video = job.videos.filter(position=self.video).first()
-        watch = library.watch_of(video) if video is not None and video.file else None
-        if video is None or watch is None:
-            raise Refused(f"there is no watched page video {self.video}.")
-        moments = [each for each in watch.moments if each.number == self.moment]
-        if not moments:
-            raise Refused(f"page video {self.video} has no moment {self.moment}.")
-        [moment] = moments
+        video, _, moment = _moment(job, self.video, self.moment)
         named = f"Page video {self.video}, moment {self.moment}"
         part = product_videos.cut_part(video.file, moment.start, moment.end, sound=False)
         # Each frame at its second in the video, so it reads as the moment's seconds do.
@@ -966,10 +976,59 @@ class LookAtLibrary(Tool):
         )
 
 
+def _moment(job: Job, video: int, moment: int) -> tuple[ProductVideo, library.VideoWatch, Moment]:
+    """Moment `moment` of page video `video`, with the video and what the watcher saw in it;
+    refused when the library holds no such moment."""
+    found = job.videos.filter(position=video).first()
+    watch = library.watch_of(found) if found is not None and found.file else None
+    if found is None or watch is None:
+        raise Refused(f"there is no watched page video {video}.")
+    moments = [each for each in watch.moments if each.number == moment]
+    if not moments:
+        raise Refused(f"page video {video} has no moment {moment}.")
+    return found, watch, moments[0]
+
+
+class NamedPicture(BaseModel):
+    """A library item a try is sent, by its number."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    number: int = Field(description="The library item's number.")
+    used_for: library.For | None = Field(
+        description="What the clip takes from it: content, result, in-use, place, person or "
+        "state; null when it is sent for how the product looks."
+    )
+
+
+class NamedPiece(BaseModel):
+    """A page video's moment a try is sent as its video piece, by number."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    video: int = Field(description="The page video's number.")
+    moment: int = Field(description="The moment's number in that video.")
+
+
+class References(BaseModel):
+    """What a try is sent in place of a start picture."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    pictures: list[NamedPicture] = Field(
+        description="The library items to send, in the order they go: add, remove or swap "
+        "items by number. At least one."
+    )
+    piece: NamedPiece | None = Field(
+        description="The page video moment to send as the piece, for the movement; or null."
+    )
+
+
 class FilmAgain(Tool):
     """Film this scene again as you write it here: code saves your scene row, draws a new
-    start picture when you ask for one and checks it, makes the clip and has the judge watch
-    it. Write the whole scene as it should be, every field."""
+    start picture when you ask for one and checks it, or sends the references you name in its
+    place, makes the clip and has the judge watch it. Write the whole scene as it should be,
+    every field."""
 
     name: ClassVar[str] = "film_again"
     root_cause: str = Field(
@@ -998,10 +1057,17 @@ class FilmAgain(Tool):
     )
     video_prompt: str = Field(
         description="The video model's prompt, from scratch, positive orders only. Code adds "
-        "the clip's length and the still camera before it."
+        "the clip's length and the still camera before it; with references, the speed line "
+        "and a label for each picture and the piece instead."
     )
     would_ask_owner: str | None = Field(
         description="What you would ask the shop owner, if anything. Nobody is asked."
+    )
+    references: References | None = Field(
+        default=None,
+        description="The library pictures and the moment to send in place of the start "
+        "picture, with new_picture false. Code recolours them to the clip's colour and labels "
+        "them. Null films from the start picture.",
     )
 
     def run(self, call: ToolCall) -> ToolResult:
@@ -1154,6 +1220,11 @@ def _refuse_what_breaks_the_rules(fixing: AgentFix, asked: FilmAgain, scene: Sce
     found = sorted({match.group(0).lower() for match in BANNED.finditer(asked.video_prompt)})
     if found:
         raise Refused(f"the video prompt has bans ({', '.join(found)}). Say what happens instead.")
+    if asked.references is not None:
+        _refuse_bad_references(scene.job, asked)
+        if asked.broll_kind != "does a job" and asked.result.strip():
+            raise Refused('only a "does a job" scene has a result.')
+        return
     if asked.new_picture and not (asked.photo and asked.picture_prompt):
         raise Refused("a new picture needs photo and picture_prompt.")
     every = list(scene.job.photos.values_list("position", flat=True))
@@ -1163,6 +1234,32 @@ def _refuse_what_breaks_the_rules(fixing: AgentFix, asked: FilmAgain, scene: Sce
         raise Refused("showing or hiding the face changes the picture: draw a new one.")
     if asked.broll_kind != "does a job" and asked.result.strip():
         raise Refused('only a "does a job" scene has a result.')
+
+
+# A move code refuses (references the library doesn't hold, a rule broken) comes back as the
+# tool's answer and costs no clip and no try: today's behaviour for rule refusals, kept and
+# named here (audit item 20, not approved yet).
+def _refuse_bad_references(job: Job, asked: FilmAgain) -> None:
+    """Refuse references that name what the library doesn't hold, before anything is made."""
+    references = asked.references
+    assert references is not None
+    if asked.new_picture:
+        raise Refused(
+            "a try sent references is filmed from them, not from a start picture: set "
+            "new_picture to false."
+        )
+    if not references.pictures:
+        raise Refused("name at least one picture: a video piece goes beside pictures.")
+    held = {each.number for each in library.library_of(job)}
+    named: set[int] = set()
+    for picture in references.pictures:
+        if picture.number not in held:
+            raise Refused(f"there is no library item {picture.number}.")
+        if picture.number in named:
+            raise Refused(f"library item {picture.number} is named twice.")
+        named.add(picture.number)
+    if references.piece is not None:
+        _moment(job, references.piece.video, references.piece.moment)
 
 
 def _film_again(
@@ -1206,6 +1303,15 @@ def _film_again(
             return ToolResult(drawn, shown)
         picture = drawn
 
+    # What a try with references is sent: built once, before its try is, and kept on it.
+    sent = (
+        library.SentList.model_validate(row.sent)
+        if row is not None and row.sent is not None
+        else _references_sent(fixing, asked.references, asked.video_prompt, number)
+        if row is None and asked.references is not None
+        else None
+    )
+
     if row is None:
         step = _try_step(
             fixing,
@@ -1225,7 +1331,10 @@ def _film_again(
             scene_row=_row(scene),
             new_picture=asked.new_picture,
             picture_prompt=asked.picture_prompt or "",
-            video_prompt=_as_sent(step, picture, audio, asked.video_prompt),
+            video_prompt=sent.prompt
+            if sent is not None
+            else _as_sent(step, picture, audio, asked.video_prompt),
+            sent=sent.model_dump(mode="json") if sent is not None else None,
             root_cause=asked.root_cause,
             move=asked.move,
             would_ask_owner=asked.would_ask_owner or "",
@@ -1234,8 +1343,11 @@ def _film_again(
     step = row.step
     try:
         clip = step.produced.filter(kind=ProducedItem.Kind.CLIP).first() or work._make_clip(
-            step, motion=asked.video_prompt
+            step, motion=asked.video_prompt, sent=sent
         )
+        if sent is not None and clip.sent is None:
+            # Made before the worker stopped, but not yet holding what it was sent.
+            library.keep_sent_list(clip, sent)
         ProducedItem.objects.filter(pk=clip.pk).update(remake=number, change=f"try {number}")
         clip.refresh_from_db()
         work._judge_clip(step, clip)
@@ -1256,6 +1368,171 @@ def _film_again(
         fixing.passed = clip
     fixing.save(update_fields=["redraws", "passed"])
     return _told(fixing, row, changed=changed, shown=shown)
+
+
+# What the clip takes from a picture a try sends, by its `for` (jobs.library.For), as code's
+# label line says it.
+USED_FOR: dict[str, str] = {
+    "content": "what the product takes in or acts on",
+    "result": "how the scene ends",
+    "in-use": "how the product is held or used",
+    "place": "where it happens",
+    "person": "who does it",
+    "state": "how the product is in this scene",
+}
+
+
+def _references_sent(
+    fixing: AgentFix, references: References, prompt: str, number: int
+) -> library.SentList:
+    """The sent list of a try with references (spec #210 point 23): the piece cut from the
+    moment named, at the watcher's seconds; each picture named, in the agent's order,
+    recoloured to the clip's colour; the first VIDEO_API_MOST_PICTURES sent and the rest left
+    out, said in red; then the prompt: the speed line, a label line per picture and piece,
+    and the agent's words. Until cut-and-send lands, only the agent's picks are sent (tier 2):
+    #239's step adds the front photo, the drawn picture and the other sides."""
+    scene = fixing.step.scene
+    job = scene.job
+    items = {each.number: each for each in library.library_of(job)}
+    pieces: list[library.SentPiece] = []
+    colour = _ad_colour(job, items[references.pictures[0].number])
+    reference: int | None = None
+    if references.piece is not None:
+        video, watch, moment = _moment(job, references.piece.video, references.piece.moment)
+        cut = product_videos.cut_pieces(
+            [product_videos.PieceWanted(video=video.file, start=moment.start, end=moment.end)]
+        )
+        if cut.left_out:
+            raise Refused(
+                f"page video {video.position}, moment {moment.number} can't be sent: "
+                f"{cut.left_out[0].reason}."
+            )
+        [piece] = cut.sent
+        pieces.append(
+            library.SentPiece(
+                number=1,
+                video=video.position,
+                moment=moment.number,
+                moment_start=moment.start,
+                moment_end=moment.end,
+                start=piece.start,
+                end=piece.end,
+                trim=piece.trim,
+                file=piece.file,
+            )
+        )
+        colour = watch.colour
+        reference = _colour_reference(items, colour, video=video.position)
+    else:
+        reference = _colour_reference(items, colour, video=None)
+    pictures: list[library.SentPicture] = []
+    left_out: list[library.LeftOut] = []
+    recolours: list[library.Recolour] = []
+    uncoloured: list[library.LibraryEntry] = []
+    for named in references.pictures:
+        picture = items[named.number]
+        if len(pictures) == library.VIDEO_API_MOST_PICTURES:
+            left_out.append(
+                library.LeftOut(
+                    tier=2,
+                    library_number=picture.number,
+                    drawn=None,
+                    for_=named.used_for,
+                    label=picture.label,
+                    file=picture.file,
+                )
+            )
+            continue
+        if picture.colour != colour:
+            if reference is None:
+                uncoloured.append(picture)
+                recolours.append(
+                    library.Recolour(
+                        of=picture.number, colour=colour, outcome="fell_back", made=None
+                    )
+                )
+            else:
+                made = recolour.recolour(job, picture.number, colour, reference=reference)
+                picture = made.picture
+                recolours.append(made.record)
+        pictures.append(
+            library.SentPicture(
+                image=len(pictures) + 1,
+                tier=2,
+                library_number=picture.number,
+                drawn=None,
+                for_=named.used_for,
+                label=picture.label,
+                file=picture.file,
+            )
+        )
+    if uncoloured:
+        _say_no_colour_reference(job, scene, uncoloured, colour)
+    if left_out:
+        _say_left_out(job, scene, number, left_out)
+    made_now = {each.made for each in recolours if each.made is not None}
+    lines = [
+        f"Image {picture.image}"
+        + (f", made {colour}" if picture.library_number in made_now else "")
+        + f": {picture.label}"
+        + (f" Used for {USED_FOR[picture.for_]}." if picture.for_ else "")
+        for picture in pictures
+    ]
+    lines += [f"Video {piece.number} is {PIECE_LABEL}." for piece in pieces]
+    return library.SentList(
+        colour=colour,
+        pictures=pictures,
+        pieces=pieces,
+        left_out=left_out,
+        recolours=recolours,
+        prompt="\n".join([SPEED_LINE, *lines, prompt.strip()]),
+    )
+
+
+def _ad_colour(job: Job, first: library.LibraryEntry) -> str:
+    """The ad's colour, as the planner named it, for a clip sent no piece: one word, two
+    joined by a hyphen; the first picture's own when the planner named none."""
+    return "-".join(job.product_colour.lower().split()) or first.colour
+
+
+def _colour_reference(
+    items: dict[int, library.LibraryEntry], colour: str, *, video: int | None
+) -> int | None:
+    """The library item a picture is recoloured from: a look frame of the piece's video, or,
+    with no piece, the first item already in the clip's colour that is a page photo; None
+    when the library holds none (spec #210 point 8; the reference with no piece is not
+    approved yet, audit item 14)."""
+    for each in items.values():
+        source = each.source
+        if video is not None and isinstance(source, library.LookFrame) and source.video == video:
+            return each.number
+        if video is None and isinstance(source, library.PagePhoto) and each.colour == colour:
+            return each.number
+    return None
+
+
+def _say_no_colour_reference(
+    job: Job, scene: Scene, pictures: list[library.LibraryEntry], colour: str
+) -> None:
+    named = "; ".join(f'picture {each.number} ("{each.label}", {each.colour})' for each in pictures)
+    post_notice(
+        job,
+        f"Making the ad's library pictures {colour} for scene {scene.number} wasn't possible: "
+        f"the library has no picture to take the colour from. These go to the video model in "
+        f"their own colour, so the clip may show the product in two colours: {named}.",
+        Message.Level.PROBLEM,
+    )
+
+
+def _say_left_out(job: Job, scene: Scene, number: int, left_out: list[library.LeftOut]) -> None:
+    named = "; ".join(f'library item {each.library_number} ("{each.label}")' for each in left_out)
+    post_notice(
+        job,
+        f"The fixing agent named more pictures for scene {scene.number}'s try {number} than "
+        f"the {library.VIDEO_API_MOST_PICTURES} the video model takes, so these were left out: "
+        f"{named}. The clip is made from the first {library.VIDEO_API_MOST_PICTURES} it named.",
+        Message.Level.PROBLEM,
+    )
 
 
 def _as_sent(step: SceneStep, picture: ProducedItem, audio: ProducedItem, motion: str) -> str:
@@ -1293,6 +1570,11 @@ def _told(
     words = [
         f"{label}.",
         *([f"Changed: {', '.join(changed) or 'only the prompts'}."] if changed is not None else []),
+        *(
+            [sent_list_words(library.SentList.model_validate(row.sent), what=f"{label}'s clip")]
+            if row.sent is not None
+            else []
+        ),
         judge_words(row.clip.ruling),
     ]
     if row.fix_check is not None:

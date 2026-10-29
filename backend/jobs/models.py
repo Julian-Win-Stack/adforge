@@ -1604,6 +1604,13 @@ class AgentFixTry(models.Model):
         blank=True,
         help_text='For door 2, whether the owner\'s change is made: {"verdict", "reason"}.',
     )
+    sent = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="For a try filmed with references (#235): the sent list built for it before "
+        "its clip was asked for, so a worker that stops sends the same; its clip keeps it too. "
+        "Null for a try filmed from a start picture.",
+    )
     passed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
