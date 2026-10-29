@@ -13,7 +13,7 @@ from django.utils import timezone
 
 from chat import messages
 from chat.models import Message, Session
-from jobs.models import SceneStep
+from jobs.models import AgentFix, SceneStep
 
 from . import step_signals
 from .models import SystemNote
@@ -135,4 +135,12 @@ def _what_it_was_for(step: SceneStep) -> str:
     call = step.tool_call
     called = f"{call.tool} {json.dumps(call.arguments, ensure_ascii=False)}"
     because = f', because "{call.why}"' if call.why else ""
-    return f"{name}, from {called}{because}"
+    # The fixing agent at work on a clip parks between tries (spec #247 point 14a).
+    fixing = (
+        ", whose fixing agent finishes the try it is filming, then waits for you to carry it "
+        f"on with fix_scene for scene {step.scene.number}"
+        if step.fixes_a_note
+        or AgentFix.objects.filter(step=step, finished_at__isnull=True).exists()
+        else ""
+    )
+    return f"{name}, from {called}{because}{fixing}"

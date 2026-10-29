@@ -29,6 +29,8 @@ from jobs.work import (
     check_fix,
     clip_tries,
     end_the_agents_fixing,
+    is_parked,
+    keeps_the_last_try_on_give_up,
     make_clip,
     make_line_audio,
     make_starting_picture,
@@ -38,6 +40,7 @@ from jobs.work import (
     too_long_for_a_clip,
     transcribe_line_audio,
     version_label,
+    what_the_fix_did,
     what_the_judge_did,
 )
 
@@ -349,6 +352,13 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
             "starting picture again, then its audio and its clip. The chat showed the shop "
             "owner every try, so they can tap one to use it instead, for nothing. Tell the "
             "shop owner."
+        )
+    # The producer's fix (fix_scene): how it ended, what it left in the ad.
+    if step.fixes_a_note and keeps_the_last_try_on_give_up(step):
+        Scene.objects.filter(pk=step.scene_id).update(status=Scene.Status.FINISHED)
+        waits = ended is not None and (ended.paused_at is not None or is_parked(ended))
+        return f"Background step finished: {what_the_fix_did(step, clip)}{_cost(step)}" + (
+            "" if waits else " Tell the shop owner in one line what changed and what it cost."
         )
     # A clip made for the scene as it was before a plan edit is stale (spec #247 point 9):
     # kept, with every version, but it doesn't finish the scene.

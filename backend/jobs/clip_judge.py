@@ -759,6 +759,17 @@ def complained_about(step: SceneStep) -> ProducedItem | None:
     return step.shown_before(ProducedItem.Kind.CLIP)
 
 
+def owner_change_of(step: SceneStep) -> str:
+    """The shop owner's change a fix's clip is judged for, in one line: for a try the fixing
+    agent films for their note (door 2), the goal it was handed (the producer's instruction,
+    or an old fix plan's goal); else the step's Fix's change."""
+    agent_try = AgentFixTry.objects.filter(step=step).select_related("agent_fix").first()
+    if agent_try is not None and agent_try.agent_fix.door == AgentFix.Door.OWNER:
+        return agent_try.agent_fix.goal
+    assert step.fix is not None, "a clip judged for a change is a fix's"
+    return step.fix.fix
+
+
 def during_the_clip(fix: Fix) -> list[dict[str, Any]]:
     """The shop owner's photos `fix` takes things from that only show during the clip: the
     clip judge asks about them, even for a picture fix, whose picture check can't see them
@@ -952,11 +963,11 @@ def _asked_against_sent(
             SentMotionPhotoFixCheckHandoff(
                 ask=ask,
                 **told,
-                owner_change=step.fix.fix,  # type: ignore[union-attr]
+                owner_change=owner_change_of(step),
                 owner_photos=[str(each["thing"]) for each in photos],
             )
             if with_photos
-            else SentMotionFixCheckHandoff(ask=ask, **told, owner_change=step.fix.fix)  # type: ignore[union-attr]
+            else SentMotionFixCheckHandoff(ask=ask, **told, owner_change=owner_change_of(step))
             if fixing
             else SentMotionCheckHandoff(ask=ask, **told),
             MotionPhotoFixVerdict if with_photos else MotionFixVerdict if fixing else MotionVerdict,
@@ -1178,7 +1189,9 @@ def _asked(
     clip.save(update_fields=["ruling"])
     owner: dict[str, Any] = {
         "conversation": conversation,
-        "what_the_agent_understood_from_the_owner": step.fix.fix if step.fix else None,
+        "what_the_agent_understood_from_the_owner": (
+            owner_change_of(step) if old is not None or step.fix is not None else None
+        ),
     }
     fixing = old_frames is not None
     with_photos = fixing and bool(owners)
@@ -1192,11 +1205,11 @@ def _asked(
             else MOTION_CHECK,
             MotionPhotoFixCheckHandoff(
                 **told,
-                owner_change=step.fix.fix,  # type: ignore[union-attr]
+                owner_change=owner_change_of(step),
                 owner_photos=[str(each["thing"]) for each in photos],
             )
             if with_photos
-            else MotionFixCheckHandoff(**told, owner_change=step.fix.fix)  # type: ignore[union-attr]
+            else MotionFixCheckHandoff(**told, owner_change=owner_change_of(step))
             if fixing
             else MotionCheckHandoff(**told),
             MotionPhotoFixVerdict if with_photos else MotionFixVerdict if fixing else MotionVerdict,

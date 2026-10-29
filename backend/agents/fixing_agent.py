@@ -212,9 +212,10 @@ GIVEN_UP = {
 
 def _gives_up_as(fixing: AgentFix) -> AgentFix.Door:
     """Which door's giving up `fixing` is told of: door 1's on a step of its own, keeping its
-    last try; else door 2's, as a fix's step keeps its clip from before whichever door took
-    it."""
-    if fixing.door == AgentFix.Door.JUDGE and work.keeps_the_last_try_on_give_up(fixing.step):
+    last try, whichever door took it (the producer's fix_scene too: one rule for both doors,
+    Julian's Q19), with ask_owner as its last resort; else door 2's, as an old fix plan's
+    step keeps its clip from before whichever door took it."""
+    if work.keeps_the_last_try_on_give_up(fixing.step):
         return AgentFix.Door.JUDGE
     return AgentFix.Door.OWNER
 
@@ -267,6 +268,19 @@ ASKED_THE_OWNER = (
 WAITS = "the fix waits for the shop owner's answer to your question."
 
 
+# What a fix the shop owner's pause parked between tries says, as its give-up reason, and
+# what a call after it is told (spec #247 point 14a, Julian's Q21).
+PAUSED_BETWEEN_TRIES = (
+    "The shop owner paused the ad, so the fix waits between tries for the producer to carry it on."
+)
+PAUSED = "the shop owner paused the ad, so the fix waits between tries."
+# What the agent is told as the producer carries a paused fix on: the producer's words follow.
+CARRIED_ON = (
+    "The shop owner paused the ad after your last move, and your fix waited. It carries on "
+    "now. The producer says:"
+)
+
+
 # What a move that would leave the scene showing nothing is told: a talking scene is never
 # the agent's (spec 2 item 38).
 NO_TALKING = (
@@ -295,6 +309,8 @@ class Failure:
     ruling: dict[str, Any] | None = None
     note: str = ""
     clip: ProducedItem | None = None
+    # Door 2 from the producer's fix_scene: what its look at the noted clip found.
+    look: str = ""
 
 
 @dataclass(frozen=True)
@@ -411,6 +427,7 @@ def _started(step: SceneStep, door: str, failure: Failure, goal: str | None, cap
             door=door,
             note=failure.note,
             goal=goal or "",
+            look=failure.look,
             first_clip=first,
             ruling=failure.ruling if failure.ruling is not None else first.ruling,
             scene_before={field: getattr(scene, field) for field in KEPT},
@@ -427,8 +444,9 @@ def _work(fixing: AgentFix) -> None:
         _settle_unless_ended(fixing, call)
     # A worker that stopped after the last try was filmed ends the fixing as it would have.
     _end_at_the_cap(fixing)
-    # No limit on the agent's turns (spec #210, point 24): only the tries cap ends it.
-    while not _ended(fixing):
+    # No limit on the agent's turns (spec #210, point 24): only the tries cap ends it, or
+    # the shop owner's pause parks it between tries.
+    while not _ended(fixing) and not _parked_by_the_pause(fixing):
         with tracing.agent_turn(AGENT), charged_to(_turns(fixing)):
             turn = loop.take_a_turn(
                 session=fixing.step.tool_call.session,
@@ -461,6 +479,8 @@ def _work(fixing: AgentFix) -> None:
                 for asked in turn.calls
             ]
         for call in calls:
+            # The try being filmed finishes; nothing after it runs while the pause holds.
+            _parked_by_the_pause(fixing)
             _settle_unless_ended(fixing, call)
     _finish(fixing)
 
@@ -495,7 +515,10 @@ def _settle_unless_ended(fixing: AgentFix, call: ToolCall) -> None:
     """Settle the call, or, once the fixing has ended or is parked, refuse it with nothing
     done."""
     if _ended(fixing):
-        call.result = f"Refused: {WAITS if work.is_parked(fixing) else ENDED} Nothing was done."
+        waits = (
+            PAUSED if fixing.paused_at is not None else WAITS if work.is_parked(fixing) else ENDED
+        )
+        call.result = f"Refused: {waits} Nothing was done."
         call.answer = "cant"
         call.finished_at = timezone.now()
         call.save(update_fields=["result", "answer", "finished_at"])
@@ -562,6 +585,61 @@ def give_up(fixing: AgentFix, reason: str) -> None:
     fixing.gave_up = reason
     fixing.save(update_fields=["gave_up"])
     _finish(fixing)
+
+
+def _parked_by_the_pause(fixing: AgentFix) -> bool:
+    """Park the fix between tries while the shop owner's pause holds (spec #247 point 14a,
+    Julian's Q21): it ends as ask_owner's park does, its conversation kept and its last try
+    in the ad, until the producer carries it on (`carry_on_after_the_pause`). Only a fix
+    that keeps its last try parks so; an old fix plan's isn't the producer's to carry on.
+    Gives whether it is parked so."""
+    if _ended(fixing):
+        return fixing.paused_at is not None
+    if not work.keeps_the_last_try_on_give_up(fixing.step) or not loop.paused(
+        fixing.step.tool_call.session
+    ):
+        return False
+    with transaction.atomic():
+        fixing.paused_at = timezone.now()
+        fixing.save(update_fields=["paused_at"])
+        give_up(fixing, PAUSED_BETWEEN_TRIES)
+    return True
+
+
+def carry_on_after_the_pause(fixing: AgentFix, instruction: str) -> AgentFix:
+    """Open again a fix the shop owner's pause parked, as `answer_question` opens one parked
+    on a question: the next `fix_scene` run for its step carries on from the checkpoints, the
+    agent told first that it carries on, with the producer's `instruction`."""
+    with transaction.atomic():
+        fixing = AgentFix.objects.select_for_update().get(pk=fixing.pk)
+        assert fixing.paused_at is not None, "only a fix the pause parked is carried on"
+        fixing.said = [
+            *fixing.said,
+            {
+                "at": _calls(fixing).filter(finished_at__isnull=False).count(),
+                "text": f"{CARRIED_ON} {instruction.strip()}",
+                "no_call": False,
+                "by": "user",
+            },
+        ]
+        fixing.gave_up = ""
+        fixing.picked = None
+        fixing.kept = None
+        fixing.finished_at = None
+        fixing.paused_at = None
+        fixing.resumed_at = timezone.now()
+        fixing.save(
+            update_fields=[
+                "said",
+                "gave_up",
+                "picked",
+                "kept",
+                "finished_at",
+                "paused_at",
+                "resumed_at",
+            ]
+        )
+    return fixing
 
 
 def _may_ask(fixing: AgentFix, call: ToolCall) -> bool:
@@ -752,7 +830,9 @@ def _said(said: list[dict[str, Any]], at: int | None) -> list[Happened]:
     happened: list[Happened] = []
     for each in [each for each in said if at is None or each["at"] == at]:
         said.remove(each)
-        happened.append(Said(by="agent", text=each["text"] or "(nothing)"))
+        # Code's word to the agent, as when the producer carries a paused fix on, is the
+        # user's; the rest is what the agent said.
+        happened.append(Said(by=each.get("by", "agent"), text=each["text"] or "(nothing)"))
         if each["no_call"]:
             happened.append(Said(by="user", text=REMINDER))
     return happened
@@ -774,7 +854,20 @@ def _intro(fixing: AgentFix) -> str:
     seconds = first.made_from.seconds or 0
     clip_seconds = work._broll_clip_seconds(seconds)
     sent = library.sent_list_of(first)
-    if fixing.door == AgentFix.Door.OWNER:
+    if fixing.door == AgentFix.Door.OWNER and step.fix_id is None:
+        failed = (
+            f"The shop owner watched this clip in their ad and sent this note about scene "
+            f'{scene.number}, word for word: "{fixing.note}"\nThe note is what must change. '
+            f"The producer, who talks with the shop owner, asks of you: {fixing.goal}\n"
+            + (
+                f"What the producer's look at this clip found:\n{fixing.look}\n"
+                if fixing.look
+                else ""
+            )
+            + f"What the judge said about this same clip, for reference:\n"
+            f"{judge_words(fixing.ruling)}"
+        )
+    elif fixing.door == AgentFix.Door.OWNER:
         failed = (
             f"The shop owner watched this clip in their ad and sent this note about scene "
             f'{scene.number}: "{fixing.note}"\nThe note is what must change. What must be '

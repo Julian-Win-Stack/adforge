@@ -67,8 +67,8 @@ def test_an_ask_parks_the_fix_and_the_ad_finishes_with_the_last_try(
     # The chat shows one red line, pointing at the scene's card.
     problems = Message.objects.filter(role=Message.Role.NOTICE, level=Message.Level.PROBLEM)
     assert [each.text for each in problems if "question" in each.text] == [
-        "The fixing agent has a question for you about scene 2's clip, so the last try is in "
-        "the ad until you answer it. The question is on scene 2's card."
+        "The fixing agent needs something from you for scene 2's clip, so the last try is in "
+        "the ad until it has it. Its question is on scene 2's card."
     ]
     # The give-up notice with every try isn't shown for a parked fix.
     assert not Message.objects.filter(tries_of=fixing.step).exists()
@@ -77,7 +77,10 @@ def test_an_ask_parks_the_fix_and_the_ad_finishes_with_the_last_try(
     step.refresh_from_db()
     assert (
         "and after 1 try the fixing agent asked the shop owner a question about it, shown on "
-        "the scene's card, so the last try is in the ad until they answer it."
+        "the scene's card, so the last try is in the ad until they answer it. Parked: the fix "
+        f'needs a video from the shop owner. The fixing agent asks: "{QUESTION}" Ask the shop '
+        "owner with ask_owner, then, once they answer, call fix_scene for scene 2 to hand their "
+        "answer back to the fix."
     ) in step.result
 
 
@@ -285,7 +288,7 @@ def test_the_chat_carries_the_open_question_for_its_scenes_card(
 
     # Only the red line about the question carries it, open, in the agent's words.
     [(text, shown)] = carried()
-    assert "The question is on scene 2's card." in text
+    assert "Its question is on scene 2's card." in text
     assert shown == {"scene": 2, "text": QUESTION, "open": True}
 
     question = work.open_question(AgentFix.objects.get().step.scene)

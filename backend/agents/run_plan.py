@@ -862,6 +862,8 @@ def _carry_on_fix(row: FixPlanScene, scene: Scene, running: set[str]) -> None:
     if audio is None or not _heard(audio):
         _failed(row, f"Scene {scene.number}'s clip couldn't be made: its line has no audio.")
         return
+    fix = row.fix
+    assert fix is not None, "a fix row has its Fix"
     _start(
         row,
         scene,
@@ -870,6 +872,9 @@ def _carry_on_fix(row: FixPlanScene, scene: Scene, running: set[str]) -> None:
         made_from=audio,
         picture=picture,
         picture_step=picture.step if picture is not None else None,
+        # Door 2's input goes on the step, so the fixing agent never reads the Fix row.
+        owner_note="\n".join(note["text"] for note in fix.notes) or fix.fix,
+        fix_goal=fix.fix,
     )
 
 
@@ -1019,6 +1024,8 @@ def _start(
     picture_step: SceneStep | None = None,
     motion_prompt: str = "",
     redraw_of: SceneStep | None = None,
+    owner_note: str = "",
+    fix_goal: str = "",
 ) -> SceneStep | None:
     """Start a scene step for the row in the background, from the scene as it stands, on its
     own tool call made by code, unless one of its kind started for the scene since. Gives
@@ -1038,6 +1045,8 @@ def _start(
                 picture_step=picture_step,
                 motion_prompt=motion_prompt,
                 redraw_of=redraw_of,
+                owner_note=owner_note,
+                fix_goal=fix_goal,
             )
             # The shop owner's photos go with every later step of their scene (D1).
             if scene.shows:

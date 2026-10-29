@@ -926,7 +926,7 @@ function Composer({
           aria-label="Photos"
           type="file"
           multiple
-          accept="image/jpeg,image/png,image/webp,image/gif"
+          accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm"
           onChange={(event) => addPhotos(event.target.files)}
           tabIndex={-1}
         />
@@ -934,7 +934,7 @@ function Composer({
           type="button"
           className="attach"
           aria-label="Attach photos"
-          title="Attach photos"
+          title="Attach photos or videos"
           onClick={() => photoInput.current?.click()}
         >
           <ImageIcon />
