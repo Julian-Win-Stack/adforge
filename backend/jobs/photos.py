@@ -12,13 +12,15 @@ import io
 import re
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any, Literal, NamedTuple, Self
+from typing import Any, NamedTuple, Self
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from PIL import Image, ImageStat
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from gateway.types import Handoff
+
+from .library import Alone, Kind, Side
 
 PICK_INSTRUCTIONS = """\
 You look at one shop's product page the way a shopper would, to pick out the product's own \
@@ -172,17 +174,15 @@ class PickHandoff(Handoff):
     video_players: str
 
 
-# The picker's fixed values for a picture it keeps (spec #210 point 2). Open to change: the
-# shared library contract owns them once it lands.
-Kind = Literal["side", "state", "content", "in-use", "result", "line-up", "chart"]
-Side = Literal["front", "back", "side", "top", "none"]
-Alone = Literal["yes", "no"]
 # How a kept picture is named in the picker's answer: by its mark on the page or the record.
 PICTURE_MARK = re.compile(r"[IR][1-9]\d*")
 
 
 class PickedPicture(BaseModel):
-    """The picker's fixed fields for one picture it kept."""
+    """The picker's fixed fields for one picture it kept: the library's picture label
+    (jobs.library.PictureLabel, whose value sets these are), with the picture's mark and
+    copy group. Checked by validators of its own, as OpenAI's strict schema takes no length
+    limit or default."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

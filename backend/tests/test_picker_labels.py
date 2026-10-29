@@ -13,6 +13,7 @@ from rest_framework.test import APIClient
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import work
+from jobs.library import PictureLabel
 from jobs.models import Job, ProductPhoto
 
 from .conftest import (
@@ -236,6 +237,9 @@ def test_every_kept_page_photo_carries_the_pickers_fixed_fields_and_one_label(
             "label": "The black bottle from the front, cap on.",
         },
     ]
+    # Each copies into the library as it stands.
+    for fields in kept(Job.objects.get()):
+        PictureLabel.model_validate({key: fields[key] for key in fields if key != "from"})
     assert notices(api, session_id) == []
     assert Job.objects.get().warnings == []
 

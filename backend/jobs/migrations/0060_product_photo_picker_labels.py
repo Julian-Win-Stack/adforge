@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("jobs", "0058_agent_fix_keeps_last_try"),
+        ("jobs", "0059_library_and_sent_list"),
     ]
 
     operations = [
