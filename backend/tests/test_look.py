@@ -275,7 +275,7 @@ def test_a_look_at_a_try_of_the_scenes_fix_is_shown_what_it_was_sent_and_its_fra
     fixing = AgentFix.objects.create(
         step=failed.step, door=AgentFix.Door.JUDGE, first_clip=failed, ruling={"verdict": "fail"}
     )
-    tried = _version(scene, failed.step.tool_call, 3, note="press opens")  # type: ignore[arg-type]
+    tried = _version(scene, failed.step.tool_call, 3, note="press opens")
     AgentFixTry.objects.create(
         agent_fix=fixing,
         number=1,
