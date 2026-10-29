@@ -136,7 +136,16 @@ def test_a_pasted_page_with_photos_is_kept_as_the_page_and_the_ad_is_planned_fro
     attached = Attachment.objects.order_by("position").values_list("file", flat=True)
     assert [(photo.position, photo.file) for photo in photos] == list(enumerate(attached, 1))
     assert [photo.has_face for photo in photos] == [False, False]
-    assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face", "plan_ad"]
+    # Each owner photo is labelled for the job's library, as the picker never saw it.
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "label_photo",
+        "label_photo",
+        "plan_ad",
+    ]
     # The chat says what was kept, and both the paste and that line carry the result.
     chat = messages(api, session_id)
     confirmed = [each for each in chat if each["pasted_page_result"] and not each["pasted_page"]]
@@ -438,3 +447,25 @@ def test_a_pasted_page_whose_check_is_refused_is_answered_and_can_be_sent_again(
     assert results[0].startswith("Checking it failed (")
     assert results[1] == "accepted"
     assert not any(each["text"].startswith("I had to stop") for each in messages(api, session_id))
+
+
+def test_the_photos_of_a_pasted_page_join_the_library_as_the_shop_owners_labelled(
+    fake_model: FakeModel,
+    unreadable: str,
+    paste: Callable[..., Any],
+) -> None:
+    from jobs.library import OwnerPhoto, library_of
+
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
+    fake_model.respond("plan_ad", PLAN)
+
+    paste(PASTE, ("front.png", FRONT), ("side.png", SIDE))
+
+    attached = list(Attachment.objects.order_by("position").values_list("file", flat=True))
+    assert [(item.number, item.source, item.file) for item in library_of(Job.objects.get())] == [
+        (number, OwnerPhoto(original=file), file) for number, file in enumerate(attached, 1)
+    ]
+    labelled = handoffs("label_photo")
+    assert [each["photo"] for each in labelled] == attached
+    assert {each["product_text"] for each in labelled} == {PASTE}

@@ -22,7 +22,25 @@ from gateway.types import Handoff
 
 from .library import Alone, Kind, Side
 
-PICK_INSTRUCTIONS = """\
+# The picker's label rules for one picture's fixed fields (jobs.library.PictureLabel): the
+# picker's own, and the labelling call's for a photo the picker never saw.
+LABEL_FIELDS = """\
+- kind: side (how the product looks from one side), state (the product in another state of \
+its own, such as open, unfolded or another pack size), content (what the product holds, out of \
+it), in-use (the product being used or worn), result (what using it leaves, the end state, a \
+before/after), line-up (this product among other products), chart (a chart, table or diagram).
+- side: the side of the product facing the camera: front, back, side or top; none when no one \
+side of it shows.
+- alone: yes when the product is alone on a plain background, no when anything else is in the \
+picture.
+- colour: the product's colour in the picture, one word.
+- target: for a line-up, where this product stands among the others, so it can be told apart \
+from them; empty for every other kind.
+- label: one sentence saying what the picture shows, as you would tell someone who can't see \
+it: the product, its state, what else is in it. For a before/after, say which part is before \
+and which is after."""
+
+PICK_INSTRUCTIONS = f"""\
 You look at one shop's product page the way a shopper would, to pick out the product's own \
 photos and the text about it for an advert. Nothing about other products may get through.
 
@@ -84,20 +102,7 @@ record_images, each with these fields:
 - copy_group: a number shared by every copy of one photo: the same shot at another size, crop \
 or file, on the page or among the official photos. Every other photo gets a number of its own. \
 Pick every copy as usual; the group says they are one photo, and one copy is kept.
-- kind: side (how the product looks from one side), state (the product in another state of \
-its own, such as open, unfolded or another pack size), content (what the product holds, out of \
-it), in-use (the product being used or worn), result (what using it leaves, the end state, a \
-before/after), line-up (this product among other products), chart (a chart, table or diagram).
-- side: the side of the product facing the camera: front, back, side or top; none when no one \
-side of it shows.
-- alone: yes when the product is alone on a plain background, no when anything else is in the \
-picture.
-- colour: the product's colour in the picture, one word.
-- target: for a line-up, where this product stands among the others, so it can be told apart \
-from them; empty for every other kind.
-- label: one sentence saying what the picture shows, as you would tell someone who can't see \
-it: the product, its state, what else is in it. For a before/after, say which part is before \
-and which is after.
+{LABEL_FIELDS}
 
 Three more kinds of picture come with the screenshots:
 
@@ -129,6 +134,15 @@ NOTE_FACE_INSTRUCTIONS = """\
 You look at one product photo from a shop's page, for an advert. Say whether it shows a \
 person's face you could recognise: has_face. A body, a hand, an arm, lips or a face turned \
 away, cut off or too small to recognise doesn't count."""
+
+# A photo the picker never saw (one the shop owner sent, or one the page declares) is given
+# the picker's fixed fields by a call of its own, worded by the picker's label rules.
+LABEL_INSTRUCTIONS = f"""\
+You look at one photo for an advert of a shop's product, to say what it shows, as the photos \
+picked off the product's page are labelled. You get the photo, what it was sent or kept to \
+show (shows), and the product's own text off its page. "The product" below is what the photo \
+shows. Answer these fields:
+{LABEL_FIELDS}"""
 
 NO_RECORD = "Official record of the product: none was found for this page."
 
@@ -178,13 +192,44 @@ class PickHandoff(Handoff):
 PICTURE_MARK = re.compile(r"[IR][1-9]\d*")
 
 
-class PickedPicture(BaseModel):
-    """The picker's fixed fields for one picture it kept: the library's picture label
-    (jobs.library.PictureLabel, whose value sets these are), with the picture's mark and
-    copy group. Checked by validators of its own, as OpenAI's strict schema takes no length
-    limit or default."""
+class _FixedFields(BaseModel):
+    """The checks on one picture's fixed fields (jobs.library.PictureLabel, whose value sets
+    they are), shared by the picker's answer and the labelling call's. Validators rather than
+    a pattern, length limit or default, which OpenAI's strict schema doesn't accept."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    def _named(self) -> str:
+        return "the picture"
+
+    @field_validator("colour", check_fields=False)
+    @classmethod
+    def _one_word(cls, colour: str) -> str:
+        if not colour.strip() or len(colour.split()) > 1:
+            raise ValueError(f'the colour "{colour}" isn\'t one word')
+        return colour.strip().casefold()
+
+    @field_validator("label", check_fields=False)
+    @classmethod
+    def _a_sentence(cls, label: str) -> str:
+        if not label.strip():
+            raise ValueError("the label is empty")
+        return label.strip()
+
+    @model_validator(mode="after")
+    def _a_target_for_a_line_up_only(self) -> Self:
+        # Every model with these checks has these fields.
+        kind, target = self.kind, self.target  # type: ignore[attr-defined]
+        if kind == "line-up" and not target.strip():
+            raise ValueError(f"{self._named()} is a line-up with no target")
+        if kind != "line-up" and target.strip():
+            raise ValueError(f"{self._named()} isn't a line-up, so it has no target")
+        return self
+
+
+class PickedPicture(_FixedFields):
+    """The picker's fixed fields for one picture it kept: the library's picture label, with
+    the picture's mark and copy group."""
 
     picture: str = Field(
         description='The picture\'s mark: "I<n>", or "R<n>" for an official photo.'
@@ -203,35 +248,15 @@ class PickedPicture(BaseModel):
     )
     label: str = Field(description="One sentence saying what the picture shows.")
 
-    # Validators rather than a pattern or ge, which OpenAI's strict schema doesn't accept.
+    def _named(self) -> str:
+        return self.picture
+
     @field_validator("picture")
     @classmethod
     def _a_mark(cls, picture: str) -> str:
         if not PICTURE_MARK.fullmatch(picture):
             raise ValueError(f"\"{picture}\" isn't a picture's mark, such as I8 or R1")
         return picture
-
-    @field_validator("colour")
-    @classmethod
-    def _one_word(cls, colour: str) -> str:
-        if not colour.strip() or len(colour.split()) > 1:
-            raise ValueError(f'the colour "{colour}" isn\'t one word')
-        return colour.strip().casefold()
-
-    @field_validator("label")
-    @classmethod
-    def _a_sentence(cls, label: str) -> str:
-        if not label.strip():
-            raise ValueError("the label is empty")
-        return label.strip()
-
-    @model_validator(mode="after")
-    def _a_target_for_a_line_up_only(self) -> Self:
-        if self.kind == "line-up" and not self.target.strip():
-            raise ValueError(f"{self.picture} is a line-up with no target")
-        if self.kind != "line-up" and self.target.strip():
-            raise ValueError(f"{self.picture} isn't a line-up, so it has no target")
-        return self
 
 
 class PickedPhotos(BaseModel):
@@ -262,6 +287,30 @@ class FaceNoteHandoff(Handoff):
 
 class FaceNote(BaseModel):
     has_face: bool
+
+
+class LabelPhotoHandoff(Handoff):
+    # Where the photo came from: its link on the page, or its key in the file store when the
+    # shop owner sent it. Not a page photo's key, which changes when the page is read again.
+    photo: str
+    # What the photo was sent or kept to show, such as the product the ad sells.
+    shows: str
+    # The product's own text off its page, so the product in the photo can be told apart.
+    product_text: str
+
+
+class PhotoLabel(_FixedFields):
+    """The labelling call's answer: a photo's fixed fields, as the picker gives them."""
+
+    kind: Kind
+    side: Side
+    alone: Alone
+    colour: str = Field(description="The product's colour in the picture, one word.")
+    target: str = Field(
+        description='For a line-up, where this product stands among the others; "" for any '
+        "other kind."
+    )
+    label: str = Field(description="One sentence saying what the picture shows.")
 
 
 def handoff(

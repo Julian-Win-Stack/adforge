@@ -71,6 +71,7 @@ from . import (
     clip_judge,
     firecrawl,
     fix_check,
+    library_items,
     owner_parts,
     page,
     page_text,
@@ -2150,6 +2151,15 @@ CLEAN_PICTURE_LOCK = 3
 
 
 def clean_picture(scene: Scene, row: ReferencePhoto) -> str:
+    """The clean picture of only `row`'s thing, drawn from the shop owner's photo once per ad
+    (see _clean_picture), which joins the job's library as that photo, labelled, the first
+    time it is drawn. Gives its key in the file store."""
+    drawn = _clean_picture(scene, row)
+    library_items.add_owner_photo(scene.job, row.file, drawn, f"the shop owner's {row.thing}")
+    return drawn
+
+
+def _clean_picture(scene: Scene, row: ReferencePhoto) -> str:
     """The clean picture of only `row`'s thing, drawn from the shop owner's photo (Julian
     2026-10-15 17:43) once per ad, by whichever step needs it first, and kept on every scene's
     row of the same photo and thing. It is checked as a starting picture is, beside the photo,

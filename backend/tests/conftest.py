@@ -141,6 +141,17 @@ SHAMPOO_PICKED = shampoo_picked()
 # What the Face-note call answers for a photo with no stranger's face in it.
 NO_FACE: dict[str, Any] = {"has_face": False}
 
+# What the labelling call answers for a photo the picker never saw, when a test doesn't say:
+# the product from the front, alone.
+LABELLED: dict[str, Any] = {
+    "kind": "side",
+    "side": "front",
+    "alone": "yes",
+    "colour": "green",
+    "target": "",
+    "label": "The product from the front, alone on a plain background.",
+}
+
 # What the producer plans for the mug's page: three scenes.
 PLAN: dict[str, Any] = {
     "decision": "plan",
@@ -383,6 +394,7 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("copy_page_text", copy_every_line)
     fake.answer_unscripted("pick_photos", lambda _: SHAMPOO_PICKED)
     fake.answer_unscripted("note_face", lambda _: NO_FACE)
+    fake.answer_unscripted("label_photo", lambda _: LABELLED)
     fake.answer_unscripted("check_starting_picture", lambda _: PICTURE_OK)
     fake.answer_unscripted("check_fix", lambda request: with_owner_photo(FIX_MADE, request.output))
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)

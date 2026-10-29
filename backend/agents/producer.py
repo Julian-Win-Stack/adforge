@@ -26,6 +26,7 @@ from jobs import (
     reference_photos,
 )
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
+from jobs.library_items import add_kept_photos
 from jobs.models import (
     BROLL_FIELDS,
     Fix,
@@ -288,6 +289,8 @@ class ReadPage(Tool):
         # Only once every photo is kept: a worker that stops part-way through them leaves the
         # page unread, so the read run again keeps them all rather than the few already kept.
         keep_page(job, download, product_page, text)
+        # Once the page's photos are kept and labelled: the job's library starts from them.
+        add_kept_photos(job)
         if messages.page_panel_wanted(call.session):
             post_notice(job, PANEL_NOT_NEEDED, Message.Level.INFO, wants_pasted_page=False)
         # The pictures cut from its videos are the planner's, not news to the owner.
@@ -386,6 +389,8 @@ class UsePhotos(Tool):
                 file=attached.file,
                 has_face=note_face(job, attached.file, attached.file),
             )
+        # Each joins the job's library at the next number, after the page's photos.
+        add_kept_photos(job)
         count = job.photos.filter(from_video=None).count()
         told = f"Added {added} of the shop owner's photos. The job now has {_photos(count)}."
         kept_before = [number for number in others if attached_photos[number - 1].file in kept]

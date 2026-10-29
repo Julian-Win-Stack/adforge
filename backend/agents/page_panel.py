@@ -21,6 +21,7 @@ from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.types import AnswerTookTooLong, BlockedBySafetyFilter, UnusableReply
 from jobs import page, photos
+from jobs.library_items import add_kept_photos
 from jobs.models import Job, ProductPhoto
 from jobs.notices import post_notice
 from jobs.work import check_page, copy_page_text, keep_page, note_face
@@ -94,6 +95,9 @@ def _take(message: Message) -> None:
         _refuse(job, message, CHECK_FAILED.format(error=error))
         return
     _keep(job, message, _Kept(download, product_page, text, noted))
+    # The shop owner's photos join the job's library, each labelled as a photo the picker
+    # never saw.
+    add_kept_photos(job)
 
 
 def _refuse(job: Job, message: Message, why: str, *, read: bool = False) -> None:

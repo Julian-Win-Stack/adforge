@@ -14,6 +14,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # A photo the picker never saw gets its Face note from the same model, as the picker
     # gives it for the photos it picks.
     "note_face": "gpt-5.6-sol",
+    # A photo the picker never saw gets the picker's fixed fields from the same model, as the
+    # picker gives them for the photos it picks (spec #210 point 1).
+    "label_photo": "gpt-5.6-sol",
     "plan_ad": "gpt-5.6-sol",
     # Reads a product video for the moments the plan would need as pictures, thinking
     # through the plan with the planner's own instructions, so on the planner's own model.
