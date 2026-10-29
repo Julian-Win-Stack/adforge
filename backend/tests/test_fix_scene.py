@@ -206,6 +206,36 @@ ANSWER = "Here it is, the green one."
 WITH_IT = "Film the brush as the shop owner's photo shows it."
 
 
+def test_a_fix_the_fixing_agent_gives_up_keeps_its_last_try_as_the_agent_is_told(
+    fake_model: FakeModel,
+    ad: ProducedItem,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    # One rule for both doors (spec #247 point 5, Julian 03:58): the last try stays.
+    looks_then_fixes(fake_model, say)
+    fake_model.respond("check_clip_motion", fails_the_judge(FLOATS))
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[film_again(video_prompt=STIRS)]),
+        turn(calls=[("give_up", {"reason": "The brush never reads green."})]),
+    )
+    run(fake_model, steps)
+
+    fixing = AgentFix.objects.get(step=fix_step())
+    assert fixing.gave_up == "The brush never reads green." and fixing.passed is None
+    [last] = (each.clip for each in fixing.tries.all())
+    assert work.versions(Scene.objects.get(number=2))[-1].clip == last
+    # The agent was told so, in its instructions, its give_up tool and give_up's answer.
+    [first, *_] = [each for each in fake_model.turns_taken if each.purpose == "fix_scene"]
+    assert fixing_agent.GAVE_UP in first.instructions
+    [give_up] = [spec for spec in first.tools if spec.name == "give_up"]
+    assert "its last try stays in the ad" in give_up.description
+    answered = ToolCall.objects.filter(agent="fixing_agent", tool="give_up").get().result
+    assert answered == fixing_agent.GIVEN_UP
+    assert "the last try is in the ad" in told_of_the_step(fake_model)
+
+
 def test_the_fixing_agents_question_is_asked_by_the_producer_and_the_answer_resumes_the_fix(
     fake_model: FakeModel, ad: ProducedItem, steps: HeldSteps, say: Callable[..., None]
 ) -> None:

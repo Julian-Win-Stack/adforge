@@ -672,24 +672,14 @@ def test_the_fixing_agents_instructions_are_the_approved_ones_word_for_word() ->
     assert fixing_agent.INSTRUCTIONS == FIXING_AGENT_AS_APPROVED
 
 
-# What giving up does, as the agent is told it at each door, pinned word for word (Julian's
-# OK 2026-10-19 20:10; door 1's since 2026-10-23 19:35): door 1's scene keeps its last try,
-# door 2's keeps its clip.
-GAVE_UP_AT_EACH_DOOR = {
-    "judge": "the last try stays in the ad, and the shop owner is shown every try and your reason.",
-    "owner": "the scene keeps its clip as it was, and the shop owner is shown every try and "
-    "your reason.",
-}
-GIVE_UP_FOR_A_NOTE = (
-    "Give up on filming this scene: it keeps its clip as it was, and the shop owner is shown "
-    "every try and your reason. Say why, and which try you think is best."
+# What giving up does, as the agent is told it, pinned word for word (Julian's OK 2026-10-23
+# 19:35): the last try stays, at both doors (spec #247 point 5, Julian 03:58).
+GAVE_UP = "the last try stays in the ad, and the shop owner is shown every try and your reason."
+GIVEN_UP = (
+    "The scene is given up: its last try stays in the ad, and the shop owner is shown every "
+    "try and your reason."
 )
-GIVEN_UP_AT_EACH_DOOR = {
-    "judge": "The scene is given up: its last try stays in the ad, and the shop owner is "
-    "shown every try and your reason.",
-    "owner": "The scene is given up: it keeps its clip as it was, and the shop owner is shown "
-    "every try and your reason.",
-}
+DOORS = ("judge", "owner")
 
 
 # Julian's one rule from the dropped API-limits list (spec #210 point 22; Oct 28 23:31 and
@@ -703,7 +693,7 @@ WORDS_THEN_REFERENCES = (
 def test_the_fixing_agent_is_told_photos_for_looks_and_video_for_movement_word_for_word() -> None:
     assert fixing_agent.WORDS_THEN_REFERENCES == WORDS_THEN_REFERENCES
     assert WORDS_THEN_REFERENCES in FIXING_AGENT_AS_APPROVED
-    for door in GAVE_UP_AT_EACH_DOOR:
+    for door in DOORS:
         assert WORDS_THEN_REFERENCES in fixing_agent.instructions(door)
     words = set(re.findall(r"[a-z-]+", WORDS_THEN_REFERENCES.casefold()))
     assert [word for word in TESTED_PRODUCT_WORDS if word in words] == []
@@ -725,17 +715,16 @@ ASKING_AT_EACH_DOOR = {
 
 
 def as_approved(door: str) -> str:
-    return FIXING_AGENT_AS_APPROVED.replace("{gave_up}", GAVE_UP_AT_EACH_DOOR[door]).replace(
+    return FIXING_AGENT_AS_APPROVED.replace("{gave_up}", GAVE_UP).replace(
         "{asking}", ASKING_AT_EACH_DOOR[door]
     )
 
 
 def test_the_fixing_agent_is_told_what_giving_up_does_at_each_door_word_for_word() -> None:
-    assert fixing_agent.GAVE_UP == GAVE_UP_AT_EACH_DOOR
+    assert fixing_agent.GAVE_UP == GAVE_UP
     assert fixing_agent.ASKING == ASKING_AT_EACH_DOOR
-    assert fixing_agent.GIVE_UP_FOR_A_NOTE == GIVE_UP_FOR_A_NOTE
-    assert fixing_agent.GIVEN_UP == GIVEN_UP_AT_EACH_DOOR
-    for door in GAVE_UP_AT_EACH_DOOR:
+    assert fixing_agent.GIVEN_UP == GIVEN_UP
+    for door in DOORS:
         assert fixing_agent.instructions(door).startswith(as_approved(door))
 
 

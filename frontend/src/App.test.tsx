@@ -1233,23 +1233,26 @@ test("a note of several lines goes whole, its line breaks kept inside its scene'
   );
 });
 
-test("the producer's answer to the notes offers no yes: the owner's controls are the chat box and the cards", async () => {
+test("the producer's report on the notes offers no yes: the owner answers in the chat box", async () => {
   const { backend, user } = await openFinishedAd();
   await user.type(noteBox(2), "Scrub the tile");
   await user.click(sendNotesButton());
   await findSaid("Scene 2: Scrub the tile");
 
-  backend.agentSays("I'll make scene 2's hand scrub the tile. About $0.40. Shall I?");
+  backend.agentSays("Scene 2's hand now scrubs the tile. That cost $0.40.");
   await nextPoll();
-  await findSaid("I'll make scene 2's hand scrub the tile. About $0.40. Shall I?");
+  await findSaid("Scene 2's hand now scrubs the tile. That cost $0.40.");
 
   expect(screen.queryByRole("button", { name: /^Yes/ })).toBeNull();
   expect(screen.queryByRole("group", { name: "Confirm the fix" })).toBeNull();
   expect(screen.queryByRole("group", { name: "Plan for your notes" })).toBeNull();
-  // A yes is typed like anything else.
-  await user.type(screen.getByRole("textbox", { name: "Message" }), "Yes{Enter}");
-  await findSaid("Yes");
-  expect(backend.sent.map((one) => one.text)).toEqual(["Scene 2: Scrub the tile", "Yes"]);
+  // What comes next is typed like anything else.
+  await user.type(screen.getByRole("textbox", { name: "Message" }), "Now a bit brighter{Enter}");
+  await findSaid("Now a bit brighter");
+  expect(backend.sent.map((one) => one.text)).toEqual([
+    "Scene 2: Scrub the tile",
+    "Now a bit brighter",
+  ]);
 });
 
 /** The owner sends notes on scenes 2 and 4 and the producer says it is on them. */
