@@ -4,7 +4,9 @@ It checks the handoff before anything is spent, retries when the provider is dow
 records every attempt: what was called, what it cost, how long it took, whether it worked,
 and the one-sentence judgement."""
 
+import hashlib
 import io
+import json
 import logging
 import subprocess
 import tempfile
@@ -30,7 +32,7 @@ from adforge import file_store, tracing
 from adforge.retry import OutsideServiceDown, with_retries
 
 from . import catalog
-from .models import ModelCall
+from .models import ModelCall, SystemPrompt
 from .types import (
     AgentProvider,
     BlockedBySafetyFilter,
@@ -280,9 +282,11 @@ def take_turn(
 
     def take() -> _Made[Turn]:
         reply = provider.take_turn(request)
+        # Kept with what the turn did, so its record and its trace show why it chose.
+        reasoning = {"reasoning": reply.reasoning} if reply.reasoning else {}
         return _Made(
             result=reply.turn,
-            output=_turn_output(reply.turn),
+            output={**_turn_output(reply.turn), **reasoning},
             bill=_Bill(
                 cost_usd=catalog.cost_usd(request.model, reply.input_tokens, reply.output_tokens),
                 input_tokens=reply.input_tokens,
@@ -291,7 +295,15 @@ def take_turn(
         )
 
     return _recorded(
-        None, purpose, request.model, provider.name, handoff, take, images, session=session
+        None,
+        purpose,
+        request.model,
+        provider.name,
+        handoff,
+        take,
+        images,
+        session=session,
+        told=_Told(instructions, tuple(tools)),
     )
 
 
@@ -375,7 +387,14 @@ def call_model[Out: BaseModel](
         )
 
     return _recorded(
-        job, purpose, request.model, provider.name, handoff, complete, _shown(request.images)
+        job,
+        purpose,
+        request.model,
+        provider.name,
+        handoff,
+        complete,
+        _shown(request.images),
+        told=_Told(instructions),
     )
 
 
@@ -453,7 +472,16 @@ def watch_video[Out: BaseModel](
             ),
         )
 
-    return _recorded(job, purpose, request.model, provider.name, handoff, watch, video=sent)
+    return _recorded(
+        job,
+        purpose,
+        request.model,
+        provider.name,
+        handoff,
+        watch,
+        video=sent,
+        told=_Told(instructions),
+    )
 
 
 def _watchable(video_key: str) -> str:
@@ -929,6 +957,42 @@ class _Made[Result]:
     reason: str = ""
 
 
+@dataclass(frozen=True)
+class _Told:
+    """What a model is told beside its handoff: its instructions, and any tools offered."""
+
+    instructions: str
+    tools: tuple[ToolSpec, ...] = ()
+
+    def listed(self) -> dict[str, Any]:
+        """As it is stored and traced: the instructions, and each tool's name, description
+        and arguments' JSON schema."""
+        return {
+            "instructions": self.instructions,
+            "tools": [
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.arguments.model_json_schema(),
+                }
+                for tool in self.tools
+            ],
+        }
+
+
+def _system_prompt(session_id: Any, purpose: str, told: _Told | None) -> SystemPrompt | None:
+    """The session's stored system prompt for `purpose` with exactly what `told` holds: the
+    one kept already, or else a new one. None for a call told nothing beside its handoff."""
+    if told is None or not (told.instructions or told.tools):
+        return None
+    listed = told.listed()
+    digest = hashlib.sha256(json.dumps(listed, sort_keys=True).encode()).hexdigest()
+    kept = SystemPrompt.objects.filter(session_id=session_id, purpose=purpose, digest=digest)
+    return kept.first() or SystemPrompt.objects.create(
+        session_id=session_id, purpose=purpose, digest=digest, **listed
+    )
+
+
 def _recorded[Result](
     job: Job | None,
     purpose: str,
@@ -939,18 +1003,23 @@ def _recorded[Result](
     images: list[dict[str, str]] | None = None,
     session: Session | None = None,
     video: str = "",
+    told: _Told | None = None,
 ) -> Result:
     """Run `make` with retries, recording every attempt: what was called, what it cost, how
-    long it took, whether it worked, and any judgement. Each is recorded against the session
+    long it took, whether it worked, and any judgement, and what the model was `told` beside
+    its handoff, by the session's stored system prompt. Each is recorded against the session
     it was for: the one given, or else the tool call's or the job's."""
     tool_call = _running_tool.get()
     if session is None and tool_call is not None:
         session = tool_call.session
+    session_id = session.pk if session else job.session_id if job else None
+    system_prompt = _system_prompt(session_id, purpose, told)
     recorded: dict[str, Any] = {
-        "session_id": session.pk if session else job.session_id if job else None,
+        "session_id": session_id,
         "job": job,
         "tool_call": tool_call,
         "purpose": purpose,
+        "system_prompt": system_prompt,
         "provider": provider,
         "model": model,
         "handoff": handoff.model_dump(mode="json"),
@@ -965,7 +1034,11 @@ def _recorded[Result](
         nonlocal attempts
         attempts += 1
         with tracing.model_call(
-            purpose, model=model, handoff=recorded["handoff"], shown=shown
+            purpose,
+            model=model,
+            told=_told_in_trace(system_prompt),
+            handoff=recorded["handoff"],
+            shown=shown,
         ) as traced:
             started = time.monotonic()
             try:
@@ -1037,8 +1110,52 @@ def _files_given(handoff: Handoff, images: list[dict[str, str]] | None) -> list[
     return given
 
 
+def _told_in_trace(system_prompt: SystemPrompt | None) -> dict[str, Any]:
+    """What a call was told beside its handoff, as its trace shows it: the instructions, and
+    the tools when it was offered any."""
+    if system_prompt is None:
+        return {}
+    tools = {"tools": system_prompt.tools} if system_prompt.tools else {}
+    return {"instructions": system_prompt.instructions, **tools}
+
+
+# Each judge's verdicts, sent to Langfuse as scores on its call (spec #247 point 16), by its
+# purpose: each score's name, after what it measures, and where its verdict is in the judge's
+# answer. A verdict an answer doesn't hold, as a fix's question on any other clip, is no score.
+_VERDICT_SCORES: dict[str, dict[str, tuple[str, ...]]] = {
+    "check_starting_picture": {"starting_picture_real": ()},
+    "check_fix": {"fix_made": ()},
+    "check_clip_sides": {"clip_sides_real": ()},
+    "check_clip_product": {"clip_matches_product": ()},
+    "check_clip_references": {"references_enough": ()},
+    "check_clip_motion": {
+        "clip_real_motion": ("real_motion",),
+        "clip_no_sudden_change": ("sudden_change",),
+        "clip_does_what_was_ordered": ("does_what_was_ordered",),
+        "clip_owner_change_made": ("owner_change",),
+    },
+}
+# Where a judge's answer says what is wrong, beside its verdict: the score's comment.
+_WHAT_IS_WRONG = ("problem", "fault", "still_wrong", "references_never_show")
+
+
+def _scores(purpose: str, output: Any) -> list[tuple[str, str, str | None]]:
+    """The scores a judge's answer gives, each its name, its verdict and what is wrong."""
+    scores = []
+    for name, path in _VERDICT_SCORES.get(purpose, {}).items():
+        said = output
+        for key in path:
+            said = said.get(key) if isinstance(said, dict) else None
+        if not isinstance(said, dict) or not isinstance(said.get("verdict"), str):
+            continue
+        wrong = next((said[key] for key in _WHAT_IS_WRONG if said.get(key)), None)
+        scores.append((name, said["verdict"], wrong))
+    return scores
+
+
 def _send_to_trace(traced: tracing.Traced, call: ModelCall) -> None:
-    """Send what a model call's record holds to its trace."""
+    """Send what a model call's record holds to its trace, and any verdicts in it as scores
+    on it."""
     made = call.output.get("file") if isinstance(call.output, dict) else None
     measured = {
         "characters": call.characters,
@@ -1062,6 +1179,8 @@ def _send_to_trace(traced: tracing.Traced, call: ModelCall) -> None:
             **{name: value for name, value in measured.items() if value is not None},
         },
     )
+    for name, verdict, wrong in _scores(call.purpose, call.output):
+        traced.score(name, verdict, comment=wrong)
 
 
 def _answered_before(
@@ -1097,6 +1216,7 @@ def _answered_before(
     tracing.answered_from_record(
         purpose,
         model=answered.model,
+        told=_told_in_trace(answered.system_prompt),
         handoff=answered.handoff,
         shown=_files_given(handoff, images),
         output=answered.output,

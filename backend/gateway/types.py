@@ -234,9 +234,13 @@ class Turn:
 
 @dataclass(frozen=True)
 class TurnReply:
+    """A turn taken, what it was billed, and the summary of the model's reasoning for it:
+    blank when it gave none."""
+
     turn: Turn
     input_tokens: int
     output_tokens: int
+    reasoning: str = ""
 
 
 class AgentProvider(Protocol):

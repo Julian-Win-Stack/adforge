@@ -135,6 +135,7 @@ class OpenAIProvider:
                 instructions=request.instructions,
                 input=_conversation(request),
                 tools=[_tool(spec) for spec in request.tools],
+                **_reasoning(),
             )
         except _WORTH_RETRYING as error:
             raise OutsideServiceDown(str(error)) from error
@@ -158,8 +159,11 @@ class OpenAIProvider:
             raise unusable(f"it stopped before the end ({details.reason if details else '?'})")
         says = []
         calls = []
+        reasoning = []
         for item in response.output:
-            if item.type == "message":
+            if item.type == "reasoning":
+                reasoning += [part.text for part in item.summary]
+            elif item.type == "message":
                 for part in item.content:
                     if part.type == "refusal":
                         raise unusable(f"it refused: {part.refusal}")
@@ -176,6 +180,7 @@ class OpenAIProvider:
             turn=Turn(says="\n\n".join(says), calls=tuple(calls)),
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            reasoning="\n\n".join(reasoning),
         )
 
     def draw(self, *, model: str, prompt: str, on_azure: bool = False) -> Picture:
@@ -345,6 +350,12 @@ def _conversation(request: TurnRequest) -> ResponseInputParam:
                 output += [{"type": "input_text", "text": image.label}, _output_image(image)]
         items.append({"type": "function_call_output", "call_id": each.call_id, "output": output})
     return items
+
+
+def _reasoning() -> dict[str, Any]:
+    """The summary of its reasoning an agent's model is asked for, as settings say."""
+    summary = settings.OPENAI_REASONING_SUMMARY
+    return {"reasoning": {"summary": summary}} if summary else {}
 
 
 def _tool(spec: ToolSpec) -> FunctionToolParam:

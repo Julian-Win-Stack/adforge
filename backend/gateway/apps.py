@@ -4,6 +4,8 @@ from urllib.parse import urlparse
 from django.apps import AppConfig
 from django.conf import settings
 
+from adforge import tracing
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,6 +40,7 @@ class GatewayConfig(AppConfig):
                 "on OpenAI's own API); text and vision calls go to %s",
                 others,
             )
+        tracing.say_if_off()
 
 
 def _host(address: str) -> str:
