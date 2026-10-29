@@ -98,7 +98,6 @@ from jobs.work import (
     use_music_again,
     version_label,
     versions,
-    waits_to_be_said_to_camera,
     why_the_checks_havent_passed,
     why_the_checks_passed,
 )
@@ -1050,7 +1049,6 @@ class MakeStartingPicture(Tool):
         if made is not None:
             return _already_made_picture(call, scene, made)
         _no_clip_being_made(scene)
-        _before_its_clip(scene)
         _start_step(
             call,
             scene,
@@ -1154,7 +1152,7 @@ def _already_made_picture(call: ToolCall, scene: Scene, made: SceneStep) -> str:
     """For a starting picture already made for the scene's line with the same note: say so
     if it is the scene's picture, or bring it back as the scene's picture if a newer one was
     made since, with nothing paid again (#143, Julian 2026-10-11, "same inputs, never pay
-    twice"). Bringing it back changes the ad, so it is refused once the scene has a clip."""
+    twice"). Bringing it back plans a finished scene again: its clip is made from the picture."""
     # A newer picture being made would land on top of it.
     if scene.steps.filter(
         kind=SceneStep.Kind.STARTING_PICTURE, status=SceneStep.Status.RUNNING
@@ -1186,7 +1184,6 @@ def _already_made_picture(call: ToolCall, scene: Scene, made: SceneStep) -> str:
             f"nothing was made or paid for again. Making it cost {cost}. {photo}{unclipped}"
         )
     _no_clip_being_made(scene)
-    _before_its_clip(scene)
     # Shown again together, so the scene's card shows the picture its clip is made from.
     with transaction.atomic():
         again, was_finished = bring_back_picture(earlier)
@@ -1258,7 +1255,6 @@ class MakeLineAudio(Tool):
                 f"(version {made.version}), so nothing was made or paid for again. Making it "
                 f"cost {dollars(made.step.tool_call.cost_usd())}."
             )
-        _before_its_clip(scene)
         _start_step(
             call,
             scene,
@@ -1309,7 +1305,6 @@ class TranscribeLineAudio(Tool):
                 f"again. Transcribing it cost {dollars(heard.step.tool_call.cost_usd())}. It "
                 f'was heard as: "{heard.text}"'
             )
-        _before_its_clip(scene)
         _start_step(
             call,
             scene,
@@ -1389,6 +1384,16 @@ class MakeClip(Tool):
             )
         picture_step = picture.step if picture is not None else None
         assert picture is None or picture_step is not None, "a picture is made by a step"
+        in_the_ad = _current_clip_in_use(scene)
+        if not note and in_the_ad is not None:
+            # Nothing it is made from changed (spec #247 point 9): what exists is handed back,
+            # whoever made it, as a try the fixing agent kept.
+            Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
+            return (
+                f"Scene {scene.number}'s clip (version {in_the_ad.version}) is already made for "
+                "the scene as it stands, so nothing was made or paid for again. Scene "
+                f"{scene.number} is finished."
+            )
         made = _clip_with_the_photos_in_use(
             scene,
             scene.produced.filter(
@@ -1430,7 +1435,6 @@ class MakeClip(Tool):
             # video paid again (Julian 2026-10-11, "Reuse A's clip").
             back = ""
             if made != _latest_clip(scene):
-                _before_its_clip(scene)
                 # Shown again together, so the scene's card shows the clip the ad now uses.
                 with transaction.atomic():
                     again = bring_back_clip(made)
@@ -1458,7 +1462,6 @@ class MakeClip(Tool):
                 f"again.{back} Making it cost {dollars(made.step.tool_call.cost_usd())}. "
                 f"Scene {scene.number} is finished."
             )
-        _before_its_clip(scene)
         _start_step(
             call,
             scene,
@@ -2137,7 +2140,6 @@ class CorrectOwnerPart(Tool):
                 raise Refused(f"the chat has {_owner_photos(len(attached))}.")
             file = attached[self.photo - 1].file
         _no_clip_being_made(scene)
-        _before_its_clip(scene)
         try:
             if file is not None:
                 owner_parts.photo_correction(scene, file, words)
@@ -2611,20 +2613,6 @@ def _each_call_usd(scene: Scene, purposes: list[str]) -> Decimal:
     return CALL_FALLBACK_USD
 
 
-def _before_its_clip(scene: Scene) -> None:
-    """Refuse to change a scene that already has a clip: from then on it changes only through
-    the shop owner's notes, which the app plans, shows them and makes once they say yes (fix
-    redesign, decisions 1 and 2). A scene the fixing agent gave up on, said to camera, is
-    made again as a talking scene until it has its clip. Checked once nothing already made
-    can be handed back, so what is free and changes nothing stays free."""
-    # A plan edit made its clip stale (spec #247 point 9): the scene is made again.
-    if stale.current_clip(scene) is not None and not (waits_to_be_said_to_camera(scene)):
-        raise Refused(
-            f"scene {scene.number} already has a clip, so it changes only through the shop "
-            "owner's notes: the app shows them a plan and makes it once they say yes."
-        )
-
-
 def _use_the_photos(fix: Fix) -> None:
     """Once the shop owner has said yes to the fix, its scene uses its photos from now on
     (D1), each in place of any it used of the same thing (D3), and stops using those it
@@ -2708,6 +2696,20 @@ def _scenes(numbers: list[int]) -> str:
 def _listed(items: list[str]) -> str:
     """ "a", "a and b", or "a, b and c"."""
     return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
+
+
+def _current_clip_in_use(scene: Scene) -> ProducedItem | None:
+    """The scene's newest clip, when it is made for the scene as it stands, with the shop
+    owner's photos it uses now, and no clip is being made: the clip a scene tool asked for an
+    unchanged clip hands back."""
+    newest = _latest_clip(scene)
+    if (
+        newest is None
+        or newest != stale.current_clip(scene)
+        or scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING).exists()
+    ):
+        return None
+    return _clip_with_the_photos_in_use(scene, scene.produced.filter(pk=newest.pk))
 
 
 def _latest_clip(scene: Scene) -> ProducedItem | None:
