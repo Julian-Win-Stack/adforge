@@ -19,7 +19,7 @@ import json
 import re
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, ClassVar, Literal
 
@@ -181,27 +181,15 @@ ASKING = {
 }
 
 
-# What giving up does, as the agent is told it, by door: door 1's scene keeps its last try
-# (Julian, 2026-10-23: "remove that rule - switching to talking scene"); door 2's keeps its
-# clip as it was (spec section 2; Julian's OK 2026-10-19 20:10).
-GAVE_UP = {
-    AgentFix.Door.JUDGE: "the last try stays in the ad, and the shop owner is shown every try "
-    "and your reason.",
-    AgentFix.Door.OWNER: "the scene keeps its clip as it was, and the shop owner is shown every "
-    "try and your reason.",
-}
-# The give_up tool's description for door 2; door 1's is the tool's own.
-GIVE_UP_FOR_A_NOTE = (
-    "Give up on filming this scene: it keeps its clip as it was, and the shop owner is shown "
-    "every try and your reason. Say why, and which try you think is best."
+# What giving up does, as the agent is told it, at both doors: the scene keeps its last try
+# (Julian, 2026-10-23: "remove that rule - switching to talking scene"; spec #247 point 5,
+# Julian 03:58: "one rule for both doors: the last try stays"), as jobs/work.py keeps it.
+GAVE_UP = "the last try stays in the ad, and the shop owner is shown every try and your reason."
+# What give_up answers.
+GIVEN_UP = (
+    "The scene is given up: its last try stays in the ad, and the shop owner is shown every "
+    "try and your reason."
 )
-# What give_up answers, by door.
-GIVEN_UP = {
-    AgentFix.Door.JUDGE: "The scene is given up: its last try stays in the ad, and the shop "
-    "owner is shown every try and your reason.",
-    AgentFix.Door.OWNER: "The scene is given up: it keeps its clip as it was, and the shop "
-    "owner is shown every try and your reason.",
-}
 
 
 def instructions(door: str = AgentFix.Door.JUDGE) -> str:
@@ -211,22 +199,18 @@ def instructions(door: str = AgentFix.Door.JUDGE) -> str:
         f'When the B-roll kind is "{kind}":\n{rules}'
         for kind, rules in scenes.BROLL_KIND_RULES.items()
     )
-    told = INSTRUCTIONS.replace("{gave_up}", GAVE_UP[AgentFix.Door(door)]).replace(
+    told = INSTRUCTIONS.replace("{gave_up}", GAVE_UP).replace(
         "{asking}", ASKING[AgentFix.Door(door)]
     )
     return f"{told}\n{scenes.BROLL_SHARED_RULES}\n\n{kinds}"
 
 
 def _tools(door: str) -> list[ToolSpec]:
-    """The agent's tools, give_up described as giving up does at `door`."""
+    """The agent's tools at `door`: door 2 has no ask_owner."""
     specs = [tool.spec() for tool in TOOLS]
     if door != AgentFix.Door.OWNER:
         return specs
-    return [
-        replace(spec, description=GIVE_UP_FOR_A_NOTE) if spec.name == GiveUp.name else spec
-        for spec in specs
-        if spec.name != AskOwner.name
-    ]
+    return [spec for spec in specs if spec.name != AskOwner.name]
 
 
 # What a fixing the tries cap ended says, as its give-up reason, for the shop owner and the
@@ -1515,7 +1499,7 @@ class GiveUp(Tool):
         fixing.gave_up = self.reason
         fixing.picked = self.best_try
         fixing.save(update_fields=["gave_up", "picked"])
-        return GIVEN_UP[AgentFix.Door.JUDGE]
+        return GIVEN_UP
 
 
 class AskOwner(Tool):

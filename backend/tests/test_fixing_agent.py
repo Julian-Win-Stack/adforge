@@ -829,7 +829,7 @@ def test_a_give_up_keeps_the_last_try_as_it_was_filmed_new_line_and_all(
         [],
     )
     assert work._says_the_line_as_it_stands(scene, try_1)
-    assert told()[-1].startswith(fixing_agent.GIVEN_UP[AgentFix.Door.JUDGE])
+    assert told()[-1].startswith(fixing_agent.GIVEN_UP)
     assert step.status == SceneStep.Status.FINISHED
     assert "so the last try is in the ad" in step.result
 
