@@ -14,7 +14,7 @@ import pytest
 from agents.hard_list import cut_answer
 from agents.models import ToolCall
 from gateway.fake import FakeModel
-from jobs import cut_and_send
+from jobs import cut_and_send, stale
 from jobs.cut_and_send import Excluded
 from jobs.models import Job, Scene, SceneStep
 
@@ -247,10 +247,8 @@ def test_an_exclusion_makes_the_clip_stale_and_undoing_it_makes_the_clip_current
 
     assert "Scene 2's clip is stale now: made for the scene as it was" in answer
     assert scene_2().status == Scene.Status.PLANNED
-    # The old clip isn't handed back as already made (making a new one once a scene has a
-    # clip waits for #259, which lifts the producer's lock-out).
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
-    assert "already made" not in results_of("make_clip")[-1]
+    # Only the clip is stale: it isn't handed back as already made.
+    assert stale.stale_steps(scene_2()) == ["clip"]
 
     # Back to the references the clip was made from: it is handed back, current again.
     set_references(fake_model, say, exclude=[])

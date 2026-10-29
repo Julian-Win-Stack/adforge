@@ -1291,7 +1291,7 @@ class SceneStep(models.Model):
         # No owner part or piece is SQL NULL, which an exact None doesn't match in a JSON
         # field.
         for field in ("owner_part", "piece"):
-            if getattr(scene, field) is None:
+            if getattr(scene, field) is None and f"{through}{field}" in made_for:
                 del made_for[f"{through}{field}"]
                 made_for[f"{through}{field}__isnull"] = True
         return made_for
