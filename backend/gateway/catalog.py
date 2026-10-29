@@ -1,9 +1,20 @@
 """Which model does each job, and what each model costs. Change a model here, nowhere else."""
 
+from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
+from django.conf import settings
+
+# The producer's model: the producer's turns, and its look (spec #247 point 2, Julian 03:15:
+# the look is the producer's own model).
+PRODUCER_MODEL = "gpt-5.6-sol"
+
 MODEL_FOR_PURPOSE: dict[str, str] = {
-    "produce": "gpt-5.6-sol",
+    "produce": PRODUCER_MODEL,
+    # The producer's look (agents/look.py): a sub-call shown pictures, frames and the sent
+    # list that answers in words. A purpose of its own, so the producer's last turn is never
+    # a look.
+    "look": PRODUCER_MODEL,
     "check_page": "gpt-5-mini",
     # The copy test (docs/scraping-test/copy-test/results.md) kept 87% of the product's facts
     # and let no other product's sentence through at 0.2 cents a page.
@@ -47,6 +58,10 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # The cut-out check (spec #210 point 6): the product-only version, or the clean picture of
     # a shop owner's thing, beside the photo it was cut from. The picture judges' model.
     "check_cut_out": "gpt-6.1-sol",
+    # A picture the producer makes from its own prompt and library items (spec #247 point 5),
+    # drawn as cut-outs are, and its check, asked once as the cut-out check is.
+    "make_picture": "gpt-image-2.5-sunburst",
+    "check_made_picture": "gpt-6.1-sol",
     # An owner part's own picture (spec #210 point 20): drawn from its sentence beside a
     # product photo, or changed from the shop owner's photo of it, as cut-outs are drawn; and
     # its check against the sentence, on the picture judges' model.
@@ -123,6 +138,8 @@ SLOW_ANSWER_SECONDS: dict[str, float] = {
     # A whole video, watched with thinking: the watcher test's calls took 31 to 55 s.
     "watch_video": 600,
     "probe_video": 600,
+    # The producer's look is shown as many pictures as the clip judge (agents/look.py).
+    "look": 600,
 }
 
 # How hard a Gemini model thinks before it answers, for a purpose that isn't to think as
@@ -131,6 +148,32 @@ SLOW_ANSWER_SECONDS: dict[str, float] = {
 THINKING_LEVEL_FOR_PURPOSE: dict[str, str] = {
     "probe_video": "MINIMAL",
 }
+
+
+@dataclass(frozen=True)
+class ContextWindow:
+    """How many tokens a model takes in one call: input and output together (`context`), and
+    of them at most `max_input` in."""
+
+    context: int
+    max_input: int
+
+
+# The context window of each model an agent takes turns on, beside its prices: from the
+# model's page (gpt-5.6-sol: developers.openai.com/api/docs/models/gpt-5.6-sol, 2026-10-29).
+# The producer's conversation folds past a share of it (settings.FOLD_PAST_SHARE_OF_WINDOW).
+CONTEXT_WINDOW: dict[str, ContextWindow] = {
+    "gpt-5.6-sol": ContextWindow(context=1_050_000, max_input=922_000),
+}
+
+
+def max_input_tokens(model: str) -> int:
+    """The most input tokens one call of `model` takes: its own window's, or our Azure
+    deployment's limit when that is set and lower (settings.AZURE_OPENAI_MAX_INPUT_TOKENS)."""
+    window = CONTEXT_WINDOW[model].max_input
+    azure: int = settings.AZURE_OPENAI_MAX_INPUT_TOKENS
+    return min(window, azure) if azure else window
+
 
 # US dollars per million tokens: (input, output). From OpenAI's pricing page, and Gemini's
 # from Google's (ai.google.dev/gemini-api/docs/pricing, 2026-10-29), whose output price
@@ -175,6 +218,14 @@ PRICE_PER_SECOND_OF_VIDEO: dict[str, Decimal] = {
 }
 
 
+# US dollars per example picture a B-roll clip is sent past the free ones
+# (gateway.types.FREE_EXAMPLE_PICTURES): Boreal-H3's 0.2 credits at $99 for 500 credits (spec
+# #210, Further Notes).
+PRICE_PER_EXAMPLE_PICTURE: dict[str, Decimal] = {
+    "creatify/boreal-h3": Decimal("0.0396"),
+}
+
+
 # US dollars per second of music made. From fal's model page on 2026-09-17
 # (docs/video-model-tests.md).
 PRICE_PER_SECOND_OF_MUSIC: dict[str, Decimal] = {
@@ -214,6 +265,11 @@ def transcription_cost_usd(model: str, seconds: float) -> Decimal:
 
 def video_cost_usd(model: str, seconds: float) -> Decimal:
     return Decimal(str(seconds)) * PRICE_PER_SECOND_OF_VIDEO[model]
+
+
+def example_pictures_cost_usd(model: str, pictures: int, free: int) -> Decimal:
+    """What sending `pictures` example pictures costs past the first `free`."""
+    return max(pictures - free, 0) * PRICE_PER_EXAMPLE_PICTURE.get(model, Decimal(0))
 
 
 def music_cost_usd(model: str, seconds: int) -> Decimal:

@@ -27,7 +27,9 @@ from jobs import (
     reference_photos,
 )
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
-from jobs.library_items import add_kept_photos, add_product_only_versions
+from jobs.library import library_of
+from jobs.library_items import add_kept_photos, add_product_only_versions, library_line
+from jobs.made_pictures import PictureNotMade, make_picture
 from jobs.models import (
     BROLL_FIELDS,
     PLANNED_FOR_THE_ACTION,
@@ -71,10 +73,11 @@ from jobs.work import (
     why_the_checks_passed,
 )
 
-from . import hard_list, step_signals
+from . import hard_list, loop, snapshot, step_signals
 from .fixing_agent import AGENT as FIXING_AGENT
 from .fixing_agent import MOST_TRIES
 from .fixing_agent import PURPOSE as FIXING_AGENT_PURPOSE
+from .look import Look
 from .loop import Agent, Failed, Refused, Tool
 from .models import ToolCall
 from .money import dollars
@@ -102,23 +105,36 @@ the line over it: the plan says which. They are made with the same tools, in the
 order. Never tell the shop owner which scenes are which, or that there are two kinds.
 You work by calling tools. Call one when you need it, read what it hands back, and decide \
 what to do next. Before a tool that takes a while, say in one short sentence what you're \
-about to do. When there is nothing left to do, or you need the shop owner, reply to them.
+about to do. When there is nothing left to do, reply to them; when you need the shop \
+owner, ask them with ask_owner.
 The usual order is: read the page, plan the ad, create the person, run the planning \
 checks, create the music, then, for each scene, make its starting picture and its line's \
 audio, which can run at the same time, transcribe the audio once it's ready, and once the \
 picture is made and the audio heard, make the scene's clip, which finishes the scene. \
 Once every scene is finished, assemble the ad, which shows it to the shop owner. When a \
-tool hands back something to ask the shop owner, ask it in your reply and wait for their \
+tool hands back something to ask the shop owner, ask it with ask_owner and wait for their \
 answer before passing their choice to a tool.
 Scene tools start their work in the background and hand back at once, before anything is \
 made. Tell the shop owner the work has started, then carry on or reply: don't call the tool \
 again to see whether it has finished. When a step finishes or fails, you are told in a \
 message from the system, not from the shop owner. Then tell the shop owner what was made, \
 or what went wrong.
+The shop owner can press pause. A message from the app then says which steps it cancelled \
+before they started, with what each was for, and which are still running and will finish. \
+Start nothing while paused: every scene tool answers paused. If the shop owner hasn't \
+written since, tell them in one line that you paused and what is still finishing, then \
+wait. Their next message ends the pause: act on it, and call again the tools still needed.
 Every fact about the product comes from its page or from the shop owner. You have no tool \
 that searches the web, so never look anything up, infer or guess. When something you need \
-is missing or unclear, ask one short, specific question. When you can't do something, say \
-so plainly and say why.
+is missing or unclear, ask the shop owner one short, specific question with ask_owner. \
+When you can't do something, say so plainly and say why.
+You ask the shop owner a question with ask_owner, which shows it in the chat and ends your \
+turn once the turn's other calls are done: their next message is the answer. In the same \
+turn, start everything else that can go on meanwhile, and don't repeat the question in \
+your own words: the chat shows it once. Ask only when the ad can't go on without them: \
+their yes to the picture of a part no photo shows, something the ad needs that neither the \
+page nor the library holds, or what a tool handed back for them to answer. Everything else \
+you answer from what you already have, and go on.
 When a product page can't be read, the chat opens a panel where the shop owner can paste \
 the page's text and attach its photos. If they paste a page's text into the chat instead, \
 don't take facts from it: point them to the panel, which keeps it as the page.
@@ -135,23 +151,30 @@ scene's change and cost; the changes started; each scene done and what it cost; 
 that found a change missing; an error; the new ad shown. Answer their questions from \
 those, such as what is happening with a scene or what it costs, and don't repeat what the \
 chat already showed them. Never say a change is done before the app says so, and never say \
-it is right: you can't see pictures or videos.
+it is right before your look has said so.
 A scene may show a part of the product that no photo shows, drawn from the shop owner's \
 words, or from a description made up for it when they let us draw it. The part gets a \
 picture of its own, shown to them in the chat, and the clip of a scene showing it isn't \
-made until they say yes to that picture: ask them, and wait. Only when they say yes to that \
-picture in their own words, call approve_owner_part. When they say what to change or send a \
-photo of the part, call correct_owner_part, which draws the part's picture again and shows \
-it, and ask them again. Never take silence, a question or a yes to something else as their \
-yes, and never decide for them. Every other scene goes on meanwhile. The waiting scene has \
-no clip yet, so what they say about the part's picture is yours to act on, even once other \
-scenes have clips.
-What you can't do, said plainly the same way each time: see pictures or videos. Before \
+made until they say yes to that picture: ask them with ask_owner, and wait. Only when \
+they say yes to that picture in their own words, call approve_owner_part. When they say \
+what to change or send a photo of the part, call correct_owner_part, which draws the \
+part's picture again and shows it, and ask them again. Never take silence, a question or \
+a yes to something else as their yes, and never decide for them. Every other scene goes \
+on meanwhile. The waiting scene has no clip yet, so what they say about the part's picture \
+is yours to act on, even once other scenes have clips.
+You can't see pictures or videos yourself. When you need to know what a scene's clip, an \
+earlier version, a library picture or a try of a fix shows, call look with one question: it \
+is shown them, with what the clip was sent, and tells you in words what it sees, what is \
+wrong, its root cause and a direction. It decides nothing: you do. Before \
 the ad is planned, every photo they send is a product photo: if they send one of something \
 else, don't add it, and tell them to send it with a note on a scene once the first version \
 is made. Slower can't be done: every clip plays at real-time speed.
 A part of the product drawn from the shop owner's words or made up is settled once they \
 say yes to its picture: never ask them for a photo of it or how it looks again.
+make_picture makes a new picture for the ad's library from your prompt and library items. \
+Send single pictures first. Make a combined picture, such as several sides of the product \
+in one, only when a scene's references left out a picture the scene needs. Look at what \
+you made, with look on its library item, before you send it.
 Keep your messages short and friendly, written for someone who isn't technical."""
 
 
@@ -792,6 +815,60 @@ class MakeStartingPicture(Tool):
         )
 
 
+class MakePicture(Tool):
+    """Make a picture with the picture model, from your own prompt and pictures from the
+    ad's library as references, and store it in the library as a new item with your label,
+    to send like any other. Combining several sides of the product into one picture is one
+    use of it. The picture is checked once: the product must be unchanged from its
+    references and the picture show what your label says. Hands back the new item's number,
+    or why it couldn't be made."""
+
+    name = "make_picture"
+
+    prompt: str = Field(
+        description="What to draw, in full: the picture model reads only this and the "
+        "references, as pictures 1, 2, 3... in the order given."
+    )
+    references: list[int] = Field(
+        description="The library numbers of the pictures to make it from, in order. Empty "
+        "to draw from the prompt alone."
+    )
+    label: str = Field(
+        description="One sentence saying what the picture shows, as the library's labels "
+        "do. It becomes the new item's label."
+    )
+
+    def run(self, call: ToolCall) -> str:
+        job = _with_its_page(call, "a picture is made from its library")
+        if not self.prompt.strip() or not self.label.strip():
+            raise Refused("a picture needs a prompt and a label.")
+        library = {item.number: item for item in library_of(job)}
+        missing = [number for number in self.references if number not in library]
+        if missing:
+            held = (
+                f"Its items are {listed_numbers(sorted(library))}." if library else "It is empty."
+            )
+            raise Refused(f"the ad's library has no item {listed_numbers(missing)}. {held}")
+        try:
+            made = make_picture(
+                job,
+                prompt=self.prompt,
+                references=[library[number] for number in self.references],
+                label=self.label.strip(),
+                paid_under=call.pk,
+            )
+        except PictureNotMade as not_made:
+            return (
+                f"Failed: the picture wasn't stored, as {not_made}. Change the prompt or the "
+                "references and make it again, or go on without it."
+            )
+        return (
+            f"Made library item {made.number}, checked once and passed: "
+            f"{library_line(made)} Look at it (look, library_item {made.number}) before a "
+            "scene's references name it."
+        )
+
+
 def _with_the_photos_in_use(scene: Scene, steps: QuerySet[SceneStep]) -> SceneStep | None:
     """The newest of `steps` made with the shop owner's photos the scene uses now, if any."""
     using = {(row.file, row.thing.casefold()) for row in _photos_in_use(scene)}
@@ -1176,16 +1253,24 @@ class ApproveOwnerPart(Tool):
             )
         drawn = scene.owner_part_drawn
         assert drawn is not None, "a current picture was drawn"
-        if not call.session.messages.filter(
-            role=Message.Role.USER,
-            created_at__gt=datetime.fromisoformat(str(drawn["shown_at"])),
-        ).exists():
+        # The yes is the shop owner's latest message since the picture was shown and before
+        # the call was made: the one this call answers, never one its turn didn't read.
+        said = (
+            call.session.messages.filter(
+                role=Message.Role.USER,
+                created_at__gt=datetime.fromisoformat(str(drawn["shown_at"])),
+                created_at__lt=call.created_at,
+            )
+            .order_by("seq")
+            .last()
+        )
+        if said is None:
             raise Refused(
                 f"the shop owner hasn't answered since the picture of {part.what} "
                 f"({_library_picture(scene)}) was shown to them. Ask them, and wait for their "
                 "answer."
             )
-        owner_parts.approve(scene)
+        owner_parts.approve(scene, said)
         return (
             f"Kept the shop owner's yes to the picture of {part.what} "
             f"({_library_picture(scene)}). Make scene {scene.number}'s clip."
@@ -1243,6 +1328,40 @@ class CorrectOwnerPart(Tool):
         scene.refresh_from_db()
         call.asked_about = "the owner part"
         return _part_drawn(scene, part, "The clip of every scene showing it isn't made")
+
+
+class AskOwner(Tool):
+    """Ask the shop owner one short, specific question in the chat, and wait for their
+    answer: your turn ends once its other calls are done, and their next message answers
+    it. Start everything else that can go on in the same turn, and don't repeat the question
+    in your own words. Ask only when the ad
+    can't go on without them: their yes to the picture of a part of the product no photo
+    shows, something the ad needs that neither the page nor the library holds, or what a
+    tool handed back for them to answer. Never ask what you can answer from what you
+    already have."""
+
+    name = "ask_owner"
+    ends_the_turn = True
+
+    question: str = Field(
+        min_length=1,
+        description="The one question, as the shop owner reads it in the chat: plain words, "
+        "for someone who isn't technical.",
+    )
+
+    def run(self, call: ToolCall) -> str:
+        question = self.question.strip()
+        if not question:
+            raise Refused("the question is blank: say the one thing to ask the shop owner.")
+        # A call run again after a restart has asked already.
+        if not call.session.messages.filter(
+            role=Message.Role.AGENT, text=question, created_at__gte=call.created_at
+        ).exists():
+            messages.add(call.session, role=Message.Role.AGENT, text=question)
+        return (
+            "Asked the shop owner in the chat. Your turn ends here: their next message answers "
+            "the question."
+        )
 
 
 def _part_drawn(scene: Scene, part: owner_parts.OwnerPart, waits: str) -> str:
@@ -1320,6 +1439,51 @@ class AssembleAd(Tool):
             "music under the voice and each scene's overlay, and showed it to the shop owner "
             f"in the chat. {_listed(plays)}. Tell the shop owner."
         )
+
+
+class ReadAd(Tool):
+    """Read a part of the ad in full, as it stands now: one scene, with its plan, each of its
+    versions, what each clip was sent (every picture with its tier, every piece of a page
+    video, what was left out, the recolours and the prompt) and what its work cost; or, with
+    no scene, the whole plan and every scene so. The ad as it stands, given to you last on
+    every turn, is the short form of it. Costs nothing."""
+
+    name = "read_ad"
+
+    scene: int | None = Field(description="The number of the scene to read, or null for all.")
+
+    def run(self, call: ToolCall) -> str:
+        job = _the_job(call)
+        if job is None or not job.scenes.exists():
+            raise Refused("the ad hasn't been planned yet, so there is nothing of it to read.")
+        if self.scene is not None:
+            scene = job.scenes.filter(number=self.scene).first()
+            if scene is None:
+                raise Refused(
+                    f"the ad has no scene {self.scene}: its scenes are 1 to {job.scenes.count()}."
+                )
+            return snapshot.scene_in_full(scene)
+        planned = job.model_calls.filter(
+            purpose="plan_ad", outcome=ModelCall.Outcome.SUCCEEDED, decision="plan"
+        ).last()
+        return snapshot.ad_in_full(job, _the_plan(job, planned.reason if planned else ""))
+
+
+class ReadEarlierCall(Tool):
+    """Read the whole answer of one of your earlier tool calls, such as one folded to one
+    line to save room in your conversation, by its call id. Costs nothing."""
+
+    name = "read_earlier_call"
+
+    call_id: str = Field(description="The call id, as the folded line gives it.")
+
+    def run(self, call: ToolCall) -> str:
+        earlier = call.session.tool_calls.filter(
+            agent=call.agent, call_id=self.call_id, finished_at__isnull=False
+        ).first()
+        if earlier is None:
+            raise Refused(f"none of your finished tool calls has the call id {self.call_id}.")
+        return f"Your {earlier.tool} call answered:\n{earlier.result}"
 
 
 def assemble_the_ad(session: Session, job: Job, made_for: str = "") -> tuple[ProducedItem, bool]:
@@ -1732,7 +1896,8 @@ def _start_step(
 ) -> None:
     """Start a scene step in the background, from the scene's line, what it shows and its
     B-roll labels as they stand, unless one of its kind is already running for the scene:
-    then refuse, saying `busy`."""
+    then refuse, saying `busy`. Never while the shop owner's pause holds."""
+    loop.refuse_while_paused(call.session)
     if scene.steps.filter(kind=kind, status=SceneStep.Status.RUNNING).exists():
         raise Refused(busy)
     try:
@@ -1763,7 +1928,9 @@ def _start_step(
 
 def _a_checked_scene(call: ToolCall, number: int) -> Scene:
     """The scene a scene tool was asked to work on, once its line has passed the fact check.
-    Every scene tool starts here, so none makes anything for a line that hasn't."""
+    Every scene tool starts here, so none makes anything for a line that hasn't, nor
+    anything at all while the shop owner's pause holds (spec #247 point 14)."""
+    loop.refuse_while_paused(call.session)
     job = _the_job(call)
     if job is None or not job.scenes.exists():
         raise Refused("the ad hasn't been planned yet, and its scenes come from the plan.")
@@ -1997,14 +2164,21 @@ PRODUCER = Agent(
         RunPlanningChecks,
         CreateMusic,
         MakeStartingPicture,
+        MakePicture,
         MakeLineAudio,
         TranscribeLineAudio,
         MakeClip,
         ApproveOwnerPart,
         CorrectOwnerPart,
+        AskOwner,
         AssembleAd,
+        Look,
+        ReadAd,
+        ReadEarlierCall,
     ],
     # What code does with the fix plans it runs reaches the producer only so (decision 20).
     reads_system_notes=True,
     asks_why=True,
+    folds=True,
+    snapshot=snapshot.ad_as_it_stands,
 )
