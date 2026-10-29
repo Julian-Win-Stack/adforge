@@ -3572,7 +3572,15 @@ def end_the_agents_fixing(step: SceneStep) -> None:
     # The step fails, so a clip of its own is no clip of the ad's: only a try, filmed in a step
     # of its own, is. With no try filmed, the scene waits for its clip to be made again, and a
     # question the fix was parked on is withdrawn: no answer can resume a fix whose step failed.
-    if ended.kept is not None and ended.kept.step_id == step.pk:
+    # A step run again with the shop owner's answer had its own clip in the ad already: it
+    # stays there.
+    from jobs import owner_answers  # It imports the watcher, which imports this module.
+
+    if (
+        ended.kept is not None
+        and ended.kept.step_id == step.pk
+        and not owner_answers.resuming(step)
+    ):
         Scene.objects.get(pk=step.scene_id).plan_again()
         OwnerQuestion.objects.filter(agent_fix=ended, answered_at__isnull=True).delete()
 
