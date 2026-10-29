@@ -63,6 +63,30 @@ class ModelReply[Out: BaseModel]:
     output_tokens: int
 
 
+@dataclass(frozen=True)
+class LoadedVideo:
+    """A video read from the file store, ready to send: by its key there, its media type and
+    its bytes."""
+
+    key: str
+    media_type: str
+    data: bytes
+
+
+@dataclass(frozen=True)
+class VideoRequest[Out: BaseModel]:
+    """One video to watch: what to answer, in `output`'s shape, from the handoff and from
+    what is seen and heard in `video`, looked at `frames_per_second` times a second."""
+
+    purpose: str
+    model: str
+    instructions: str
+    handoff: Handoff
+    output: type[Out]
+    video: LoadedVideo
+    frames_per_second: float
+
+
 class UnusableReply(Exception):
     """The provider answered, and billed for it, but the answer can't be used: a refusal,
     or output cut off before it was complete."""
@@ -95,6 +119,16 @@ class ModelProvider(Protocol):
     name: str
 
     def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]: ...
+
+
+class VideoProvider(Protocol):
+    """Watches videos, sound and all. Raises OutsideServiceDown for errors worth retrying,
+    BlockedBySafetyFilter for a video or handoff its safety filter refuses, and UnusableReply
+    for an answer that was billed but can't be used."""
+
+    name: str
+
+    def watch[Out: BaseModel](self, request: VideoRequest[Out]) -> ModelReply[Out]: ...
 
 
 class Said(Handoff):

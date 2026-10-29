@@ -1,6 +1,8 @@
 """A scripted stand-in for a model provider, for tests. Each call pops the next scripted
 outcome for its purpose: output data to return, a turn an agent takes, an error to raise,
-or a turn during which something else happens (see `meanwhile`).
+or a turn during which something else happens (see `meanwhile`). A video to watch is
+scripted as any other call, by its purpose, and what each was sent is kept in
+`videos_watched`.
 
 Pictures, voices and transcripts need no script: the fake draws a plain portrait, makes a
 plain picture of its own from other pictures, designs a numbered voice, speaks at
@@ -49,6 +51,7 @@ from .types import (
     TurnReply,
     TurnRequest,
     UnusableReply,
+    VideoRequest,
     Word,
 )
 
@@ -125,6 +128,8 @@ class FakeModel:
         self.music: list[bytes] = []
         # Every turn an agent was asked to take, as it was sent, pictures and all.
         self.turns_taken: list[TurnRequest] = []
+        # Every video the fake was asked to watch, as it was sent, video and all.
+        self.videos_watched: list[VideoRequest[Any]] = []
 
     def respond(self, purpose: str, *outcomes: Outcome) -> None:
         self._scripts[purpose].extend(outcomes)
@@ -138,6 +143,15 @@ class FakeModel:
         self._unscripted[purpose] = answer
 
     def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]:
+        return self._output(request)
+
+    def watch[Out: BaseModel](self, request: VideoRequest[Out]) -> ModelReply[Out]:
+        self.videos_watched.append(request)
+        return self._output(request)
+
+    def _output[Out: BaseModel](
+        self, request: ModelRequest[Out] | VideoRequest[Out]
+    ) -> ModelReply[Out]:
         unscripted = self._unscripted.get(request.purpose)
         if unscripted is not None and not self._scripts[request.purpose]:
             outcome: dict[str, Any] | Turn = unscripted(request)
