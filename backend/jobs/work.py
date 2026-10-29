@@ -2111,7 +2111,7 @@ def _clean_picture(scene: Scene, row: ReferencePhoto) -> str:
     """The clean picture of only `row`'s thing, drawn from the shop owner's photo (Julian
     2026-10-15 17:43) once per ad, by whichever step needs it first, and kept on every scene's
     row of the same photo and thing. It is a cut-out (jobs.cut_out), checked beside the photo
-    by `_owner_photo_check`, and drawn again when the check fails, at most
+    by `owner_photo_check`, and drawn again when the check fails, at most
     checked_pictures.MOST_REDRAWS times
     (D8). Gives its key in the file store. Raises ReferencePhotoUnusable when it still fails,
     or the picture model refuses the photo past its retry: nothing more is made for the
@@ -2134,7 +2134,13 @@ def _clean_picture(scene: Scene, row: ReferencePhoto) -> str:
                 purpose="make_reference_photo_picture",
                 prompt=reference_photos.clean_picture_prompt(row.thing),
                 photo=row.file,
-                check=_owner_photo_check(job, row),
+                check=owner_photo_check(
+                    job,
+                    row.file,
+                    keep=f"the shop owner's {row.thing}",
+                    named=f"the clean picture of the shop owner's {row.thing}",
+                    photo_named=f"the shop owner's photo of their {row.thing}",
+                ),
                 unchecked_passes=True,
             )
         except cut_out.CutOutFailed as failed:
@@ -2157,13 +2163,15 @@ def _clean_picture(scene: Scene, row: ReferencePhoto) -> str:
         return file
 
 
-def _owner_photo_check(job: Job, row: ReferencePhoto) -> cut_out.Check:
-    """How the clean picture of `row`'s thing is checked: by the cut-out check, asked once,
-    as the product-only versions of library photos are (spec #210 point 6). NOT APPROVED YET
+def owner_photo_check(
+    job: Job, photo: str, *, keep: str, named: str, photo_named: str
+) -> cut_out.Check:
+    """How a clean picture of only `keep`, named `named`, drawn from the shop owner's photo
+    at `photo` (named `photo_named`) is checked: by the cut-out check, asked once, as the
+    product-only versions of library photos are (spec #210 point 6). NOT APPROVED YET
     (audit item 24: never asked; before, it was the starting picture's 3-ask vote, which
     `judge_starting_picture` still holds). Unchecked when QUALITY_CHECKS is off. A cut-out the
     check's filter refuses to look at is kept unchecked, said in red."""
-    named = f"the clean picture of the shop owner's {row.thing}"
 
     def check(file: str) -> cut_out.Said:
         if not settings.QUALITY_CHECKS:
@@ -2171,10 +2179,10 @@ def _owner_photo_check(job: Job, row: ReferencePhoto) -> cut_out.Check:
         said = cut_out.check_cut_out(
             job,
             file,
-            row.file,
-            keep=f"the shop owner's {row.thing}",
+            photo,
+            keep=keep,
             named=named,
-            photo_named=f"the shop owner's photo of their {row.thing}",
+            photo_named=photo_named,
             needs_photo=False,
         )
         if isinstance(said, cut_out.Unchecked) and said.refused:

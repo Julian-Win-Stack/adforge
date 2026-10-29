@@ -97,13 +97,20 @@ def test_a_photo_and_words_enter_the_library_and_the_fix_films_with_them_into_th
     fake_model.respond("produce", turn(calls=[("assemble_ad", {})]), turn(says="Done."))
     steps.run_held()
 
-    # The photo is the library's next item, as the shop owner's photo.
+    # The photo is the library's next item, as the shop owner's photo: the clean picture
+    # drawn from it once, never the photo as sent (CONTEXT "Reference photo").
     [item] = [each for each in library_of(job) if each.number == number]
-    assert (item.file, item.source) == (photo, OwnerPhoto(original=photo))
+    assert item.source == OwnerPhoto(original=photo)
+    [drawn] = ModelCall.objects.filter(purpose="make_reference_photo_picture")
+    assert drawn.handoff["pictures"] == [photo]
+    # Of only the thing that answers the question asked.
+    assert QUESTION in drawn.handoff["prompt"]
+    assert drawn.output == {"file": item.file}
+    assert item.file != photo
     # The agent read the words and the new item as its ask's result, with the item's picture.
     ask_read = resumed_turn(fake_model)
     assert WORDS in ask_read.result and f"library item {number}" in ask_read.result
-    assert [picture.key for picture in ask_read.pictures] == [photo]
+    assert [picture.key for picture in ask_read.pictures] == [item.file]
     # It filmed again naming the item; that try passed, and is scene 2's clip in a new ad.
     fixing = AgentFix.objects.get()
     passed = fixing.tries.get(number=2).clip
