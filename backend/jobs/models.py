@@ -74,6 +74,18 @@ class Job(models.Model):
         help_text="Every word a visitor sees on the page, then its declared product data, "
         "other products' text included. Kept for debugging; no model call reads it.",
     )
+    page_final_url = models.URLField(
+        max_length=2000,
+        blank=True,
+        help_text="The address the kept page answered from, after any redirects. Blank until "
+        "the page is kept.",
+    )
+    page_canonical_url = models.URLField(
+        max_length=2000,
+        blank=True,
+        help_text="The address the kept page names as its own (canonical link or og:url), or "
+        "blank when it names none.",
+    )
     page_html_key = models.CharField(
         max_length=500,
         blank=True,

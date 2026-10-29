@@ -165,7 +165,7 @@ def _serve_page_without_photos(httpserver: HTTPServer, fake_model: FakeModel) ->
     [
         pytest.param(
             _serve_cookie_wall,
-            "The page was read but can't be used: The page is only a cookie banner. "
+            "Failed: the page was read but can't be used: The page is only a cookie banner. "
             + PASTE_IN_THE_PANEL,
             id="the page isn't one product's",
         ),
