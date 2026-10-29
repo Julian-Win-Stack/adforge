@@ -16,7 +16,7 @@ from pytest_httpserver import HTTPServer
 
 from adforge import file_store
 from gateway.fake import FakeModel, turn
-from jobs import product_videos, video_frames, work
+from jobs import product_videos, work
 from jobs.models import Job, ProductVideo
 from jobs.work import PageRead, Picked
 
@@ -34,24 +34,6 @@ def tiny_mp4(tmp_path_factory: pytest.TempPathFactory) -> bytes:
     subprocess.run(
         [settings.FFMPEG, "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=64x96:rate=25"]
         + ["-t", "2", "-pix_fmt", "yuv420p", str(made)],
-        check=True,
-    )
-    return made.read_bytes()
-
-
-@pytest.fixture(scope="module")
-def three_shot_mp4(tmp_path_factory: pytest.TempPathFactory) -> bytes:
-    """A real 24-second video of three 8-second shots: a slow zoom, a still picture and a
-    busy moving pattern, cut straight from one to the next."""
-    made = tmp_path_factory.mktemp("video") / "three-shots.mp4"
-    size = "size=160x120:rate=25"
-    still = f"color=c=0x3366aa:{size},drawbox=x=40:y=30:w=60:h=50:color=yellow:t=fill"
-    trims = ";".join(f"[{n}]trim=0:8,setpts=PTS-STARTPTS[s{n}]" for n in range(3))
-    subprocess.run(
-        [settings.FFMPEG, "-loglevel", "error", "-f", "lavfi", "-i", f"mandelbrot={size}"]
-        + ["-f", "lavfi", "-i", still, "-f", "lavfi", "-i", f"testsrc2={size}"]
-        + ["-filter_complex", f"{trims};[s0][s1][s2]concat=n=3:v=1[v]", "-map", "[v]"]
-        + ["-pix_fmt", "yuv420p", str(made)],
         check=True,
     )
     return made.read_bytes()
@@ -139,41 +121,6 @@ def test_a_picked_gallery_video_is_kept_with_its_first_frame_four_frames_and_len
     assert len({file_store.read(frame) for frame in video.frames}) == 4
 
 
-@pytest.mark.parametrize("breaks", ["thinning", "every frame"])
-def test_a_video_that_cant_be_thinned_is_kept_with_its_file_and_frames_but_not_read(
-    fake_model: FakeModel,
-    httpserver: HTTPServer,
-    firecrawl: FakeFirecrawl,
-    shampoo_page_url: str,
-    say: Callable[..., None],
-    picks_videos: list[dict[str, Any]],
-    tiny_mp4: bytes,
-    monkeypatch: pytest.MonkeyPatch,
-    breaks: str,
-) -> None:
-    def broken(*_: Any) -> Any:
-        raise subprocess.TimeoutExpired("ffmpeg", 120)
-
-    if breaks == "thinning":
-        monkeypatch.setattr(video_frames, "thin", broken)
-    else:
-        monkeypatch.setattr(product_videos, "_every_frame", broken)
-    httpserver.expect_request("/cdn/videos/gallery.mp4").respond_with_data(
-        tiny_mp4, content_type="video/mp4"
-    )
-    picks_videos.append(player(1, f"{firecrawl.shop}/cdn/videos/gallery.mp4"))
-
-    read(fake_model, say, shampoo_page_url)
-
-    assert "Kept 1 product photo." in results_of("read_page")[0]
-    (video,) = Job.objects.get().videos.all()
-    assert file_store.read(video.file) == tiny_mp4
-    assert video.duration == pytest.approx(2.0, abs=0.1)
-    assert len(video.frames) == product_videos.FRAMES
-    assert video.frames_picked == []
-    assert video.read is None
-
-
 def test_videos_with_no_file_to_keep_are_kept_as_links_with_a_first_frame_when_one_is_had(
     fake_model: FakeModel,
     httpserver: HTTPServer,
@@ -185,7 +132,7 @@ def test_videos_with_no_file_to_keep_are_kept_as_links_with_a_first_frame_when_o
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     shop = firecrawl.shop
-    monkeypatch.setattr(product_videos, "MAX_VIDEO_BYTES", len(tiny_mp4) - 1)
+    monkeypatch.setattr(product_videos, "NEVER_ENDING_BYTES", len(tiny_mp4) - 1)
     monkeypatch.setattr(product_videos, "YOUTUBE_THUMBNAIL", f"{shop}/youtube/{{id}}/hqdefault.jpg")
     httpserver.expect_request("/youtube/abcDEF12345/hqdefault.jpg").respond_with_data(
         POSTER, content_type="image/jpeg"
@@ -203,7 +150,7 @@ def test_videos_with_no_file_to_keep_are_kept_as_links_with_a_first_frame_when_o
     youtube = "https://www.youtube.com/embed/abcDEF12345?autoplay=1"
     picks_videos += [
         player(1, youtube, kind="iframe"),
-        # Over the size cap: the poster stands in for its first frame.
+        # Never ending: the poster stands in for its first frame.
         player(2, f"{shop}/cdn/videos/big.mp4", poster=f"{shop}/cdn/videos/big-poster.jpg"),
         player(3, f"{shop}/cdn/videos/gone.mp4"),
         player(4, f"{shop}/cdn/videos/stream.m3u8"),
@@ -222,7 +169,7 @@ def test_videos_with_no_file_to_keep_are_kept_as_links_with_a_first_frame_when_o
         (4, f"{shop}/cdn/videos/stream.m3u8"),
         (5, "blob:https://shop.example/1f2e3d"),
     ]
-    assert all(video.file == "" and video.frames == video.frames_picked == [] for video in videos)
+    assert all(video.file == "" and video.frames == [] for video in videos)
     assert all(video.duration is None for video in videos)
     assert file_store.read(videos[0].first_frame) == POSTER
     assert file_store.read(videos[1].first_frame) == POSTER
@@ -278,7 +225,6 @@ def test_a_file_that_isnt_a_video_is_kept_as_a_link(
 
     (video,) = Job.objects.get().videos.all()
     assert (video.file, video.first_frame, video.frames, video.duration) == ("", "", [], None)
-    assert video.frames_picked == []
 
 
 def test_a_job_with_no_picked_videos_keeps_none(
@@ -318,40 +264,3 @@ def test_frames_never_reach_past_the_file(tmp_path: Path) -> None:
     assert product_videos.frame_times(2.0) == [0.25, 0.75, 1.25, 1.75]
     assert product_videos.first_frame_time(2.0) == 0.5
     assert product_videos.first_frame_time(0.4) == 0.2
-
-
-def test_a_kept_video_is_thinned_to_its_picked_frames_with_every_shot_in_them(
-    fake_model: FakeModel,
-    httpserver: HTTPServer,
-    firecrawl: FakeFirecrawl,
-    shampoo_page_url: str,
-    say: Callable[..., None],
-    picks_videos: list[dict[str, Any]],
-    three_shot_mp4: bytes,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # 24 s at 5 frames a second is 120 frames: more than the most kept, so they are shared.
-    monkeypatch.setattr(video_frames, "MOST_FRAMES", 30)
-    httpserver.expect_request("/cdn/videos/shots.mp4").respond_with_data(
-        three_shot_mp4, content_type="video/mp4"
-    )
-    picks_videos.append(player(1, f"{firecrawl.shop}/cdn/videos/shots.mp4"))
-
-    read(fake_model, say, shampoo_page_url)
-
-    (video,) = Job.objects.get().videos.all()
-    seconds = [frame["second"] for frame in video.frames_picked]
-    assert 0 < len(seconds) <= 30
-    assert seconds == sorted(seconds)
-    assert all(second * 5 == pytest.approx(round(second * 5)) for second in seconds)
-    zoom, still, pattern = ([s for s in seconds if start <= s < start + 8] for start in (0, 8, 16))
-    # Each shot has one frame; the other 27 are shared by the moving shots' lengths, 8 s
-    # each, so the busy pattern, whose frames are never copies, keeps 1 + 14.
-    assert len(still) == 1
-    assert len(pattern) == 15
-    assert 1 < len(zoom) <= 14
-    assert all(is_jpeg_picture(frame["key"]) for frame in video.frames_picked)
-    # Full size, beside the video's other frames.
-    with PIL.Image.open(io.BytesIO(file_store.read(video.frames_picked[0]["key"]))) as shown:
-        assert shown.size == (160, 120)
-    assert video.frames_picked[0]["key"] == f"{video.file.rsplit('.', 1)[0]}-pick-1.jpg"

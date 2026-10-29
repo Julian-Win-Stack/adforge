@@ -27,7 +27,6 @@ from .conftest import (  # noqa: F401 (FakeFirecrawl for the fixtures)
 from .test_producer_page import notices
 from .test_producer_scenes import CHOICE, making
 from .test_product_videos import picks_videos, player, tiny_mp4  # noqa: F401 (fixtures)
-from .test_video_reader import KEPT, gallery_video, read_and_plan, thinned  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -122,32 +121,6 @@ def test_a_photo_the_planners_safety_filter_refuses_is_left_out_and_the_ad_is_pl
     assert chat(api, session_id)[-1] == ("agent", "Here's the plan.")
 
 
-def test_a_photo_the_video_readers_safety_filter_refuses_is_left_out_and_the_video_is_read(
-    api: APIClient,
-    fake_model: FakeModel,
-    shampoo_page_url: str,
-    session_id: str,
-    say: Callable[..., None],
-    gallery_video: None,  # noqa: F811
-) -> None:
-    fake_model.answer_unscripted("read_video", refused_over("Photo 1", KEPT))
-
-    read_and_plan(fake_model, say, shampoo_page_url, PLAN)
-
-    grid = (
-        "The product's video, grid 1 of 1: 0.25 s, 0.75 s, 1.25 s, 1.75 s "
-        "(each labelled in its black bar)"
-    )
-    # Shown everything, then without the grid, last first, then without the photo.
-    assert labels_shown("read_video") == [["Photo 1", grid], ["Photo 1"], [grid]]
-    (video,) = Job.objects.get().videos.all()
-    assert video.read == {**KEPT, "dropped": []}
-    ((level, said),) = refusals(api, session_id)
-    assert level == "problem" and "photo 1" in said and "video 1" in said
-    assert said in [warning["text"] for warning in Job.objects.get().warnings]
-    assert Job.objects.get().scenes.exists()
-
-
 def test_a_photo_the_picture_choosers_safety_filter_refuses_is_left_out_and_the_picture_made(
     api: APIClient,
     fake_model: FakeModel,
@@ -177,31 +150,6 @@ def test_a_photo_the_picture_choosers_safety_filter_refuses_is_left_out_and_the_
     ((level, said),) = refusals(api, session_id)
     assert level == "problem" and "photo 2" in said and "scene 2" in said
     assert said in [warning["text"] for warning in job.warnings]
-
-
-def test_moments_in_a_grid_the_video_readers_safety_filter_refuses_are_never_kept(
-    api: APIClient,
-    fake_model: FakeModel,
-    shampoo_page_url: str,
-    session_id: str,
-    say: Callable[..., None],
-    gallery_video: None,  # noqa: F811
-) -> None:
-    grid = (
-        "The product's video, grid 1 of 1: 0.25 s, 0.75 s, 1.25 s, 1.75 s "
-        "(each labelled in its black bar)"
-    )
-    # Read without the grid, it still names moments at the grid's seconds.
-    fake_model.answer_unscripted("read_video", refused_over(grid, KEPT))
-
-    read_and_plan(fake_model, say, shampoo_page_url, PLAN)
-
-    assert labels_shown("read_video") == [["Photo 1", grid], ["Photo 1"]]
-    (video,) = Job.objects.get().videos.all()
-    assert video.read is not None and set(video.read) == {"error"}
-    ((level, said),) = refusals(api, session_id)
-    assert level == "problem" and "0.25 s" in said and "video 1" in said
-    assert Job.objects.get().scenes.exists()
 
 
 def test_when_the_planners_filter_refuses_two_photos_the_ad_is_planned_without_any(
