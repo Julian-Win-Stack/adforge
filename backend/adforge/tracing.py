@@ -275,12 +275,13 @@ def agent_turn(agent: str) -> AbstractContextManager[Traced]:
     return _observed(f"{agent} turn", "agent")
 
 
-def tool(name: str, arguments: dict[str, Any]) -> AbstractContextManager[Traced]:
-    """Trace the block as one tool running. Its result is set with `handed_back`.
+def tool(name: str, arguments: dict[str, Any], *, why: str = "") -> AbstractContextManager[Traced]:
+    """Trace the block as one tool running, with the agent's `why` for the call when it gave
+    one. Its result is set with `handed_back`.
 
     Both sides are named: a tool given a dict and handing back text is otherwise shown by
     Langfuse as a chat, its arguments as "User" and its result as "Assistant"."""
-    return _observed(name, "tool", input={"arguments": arguments})
+    return _observed(name, "tool", input={"arguments": arguments, **({"why": why} if why else {})})
 
 
 def handed_back(traced: Traced, result: str, **fields: Any) -> None:

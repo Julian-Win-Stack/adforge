@@ -23,7 +23,7 @@ from adforge.retry import OutsideServiceDown
 from agents.models import ToolCall
 from agents.producer import PAGE_NOT_OPENED, PASTE_IN_THE_PANEL
 from chat.models import Attachment
-from gateway.fake import FakeModel, Outcome, turn
+from gateway.fake import DEFAULT_WHY, FakeModel, Outcome, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter
 from jobs.models import Job
@@ -1500,7 +1500,7 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
     product_page_url: str,
     say: Callable[..., None],
 ) -> None:
-    read_page = {"link": product_page_url, "target_seconds": None}
+    read_page = {"link": product_page_url, "target_seconds": None, "why": DEFAULT_WHY}
     openai_server(
         openai_turn("", ("call_1", "read_page", read_page)),
         openai_answer(READABLE),
@@ -1510,7 +1510,7 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
         # Each declared photo is labelled for the library.
         openai_answer(LABELLED),
         openai_answer(LABELLED),
-        openai_turn("", ("call_2", "plan_ad", {})),
+        openai_turn("", ("call_2", "plan_ad", {"why": DEFAULT_WHY})),
         openai_answer(PLAN),
         openai_turn("Here's the plan."),
     )
@@ -1549,7 +1549,7 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
 def test_an_openai_reply_that_cant_be_used_is_handed_back_and_keeps_no_photo(
     openai_server: Callable[..., None], product_page_url: str, say: Callable[..., None]
 ) -> None:
-    read_page = {"link": product_page_url, "target_seconds": None}
+    read_page = {"link": product_page_url, "target_seconds": None, "why": DEFAULT_WHY}
     openai_server(
         openai_turn("", ("call_1", "read_page", read_page)),
         openai_reply({"type": "refusal", "refusal": "I can't help with that."}),

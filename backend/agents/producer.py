@@ -71,7 +71,7 @@ from jobs.work import (
     why_the_checks_passed,
 )
 
-from . import step_signals
+from . import hard_list, step_signals
 from .fixing_agent import AGENT as FIXING_AGENT
 from .fixing_agent import MOST_TRIES
 from .fixing_agent import PURPOSE as FIXING_AGENT_PURPOSE
@@ -189,6 +189,10 @@ class ReadPage(Tool):
 
     def run(self, call: ToolCall) -> str:
         job = _the_job(call)
+        # Before anything is read again. A page that wasn't read, with no product photo kept,
+        # had nothing made from it: a new link is read for the same ad.
+        if job is not None and _page_read(job):
+            hard_list.refuse_another_product(job, self.link)
         if job is None:
             job = Job.objects.create(
                 session=call.session, product_url=self.link, target_seconds=self.target_seconds
@@ -196,12 +200,6 @@ class ReadPage(Tool):
             call.job = job
             call.save(update_fields=["job"])
         elif _page_read(job):
-            if self.link != job.product_url:
-                raise Refused(
-                    f"this chat's ad is for {job.product_url}, whose page has already been "
-                    f"read, and {self.link} is a different link. Ads for other products come "
-                    "later: tell the shop owner to start a new chat for this one for now."
-                )
             # A read that stopped once the page was kept may have left photos out of the
             # job's library: they join it now.
             add_kept_photos(job)
@@ -1048,20 +1046,14 @@ class MakeClip(Tool):
                 f"scene {scene.number}'s starting picture was drawn before the shop owner's "
                 f"photo of the {missing} was kept for it. Make its starting picture again first."
             )
-        part = owner_parts.owner_part(scene)
-        if part is not None and not owner_parts.is_approved(scene):
+        part = hard_list.waiting_owner_part(scene)
+        if part is not None:
             # Marks what the producer waits on, as "the photos" does for planning.
             call.asked_about = "the owner part"
             if not owner_parts.picture_is_current(scene):
                 # Drawn now, as when the part changed since the plan: the clip still waits.
                 return _part_drawn(scene, part, "Its clip isn't made")
-            raise Refused(
-                f"scene {scene.number} shows {part.what}, which no photo shows, and its clip "
-                "isn't made until the shop owner says yes to the part's picture "
-                f"({_library_picture(scene)}). They were shown it in the chat: ask them, in "
-                "plain words, to say yes if it looks right, or say what to change, or send a "
-                "photo of it, and wait for their answer."
-            )
+            hard_list.refuse_clip_before_the_owners_yes(scene, part, _library_picture(scene))
         audio = _current_audio(scene)
         if not scene.produced.filter(
             kind=ProducedItem.Kind.TRANSCRIPT,
@@ -2012,4 +2004,5 @@ PRODUCER = Agent(
     ],
     # What code does with the fix plans it runs reaches the producer only so (decision 20).
     reads_system_notes=True,
+    asks_why=True,
 )

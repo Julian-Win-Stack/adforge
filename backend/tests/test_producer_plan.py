@@ -14,7 +14,7 @@ import pytest
 from pytest_httpserver import HTTPServer
 
 from adforge import file_store
-from gateway.fake import FakeModel, meanwhile, turn
+from gateway.fake import DEFAULT_WHY, FakeModel, meanwhile, turn
 from gateway.models import ModelCall
 from jobs.library import PagePhoto, PictureLabel, VideoWatch, add_to_library, keep_watch
 from jobs.models import Job, ProductVideo
@@ -60,7 +60,9 @@ def planning_through_openai(
 ) -> None:
     """The same, through the real OpenAI code talking to a stand-in OpenAI server."""
     openai_server(
-        openai_turn("", ("call_1", "read_page", {"link": link, "target_seconds": None})),
+        openai_turn(
+            "", ("call_1", "read_page", {"link": link, "target_seconds": None, "why": DEFAULT_WHY})
+        ),
         openai_answer(READABLE),
         openai_answer(COPIED),
         openai_answer(NO_FACE),
@@ -68,7 +70,7 @@ def planning_through_openai(
         # Each declared photo is labelled for the library.
         openai_answer(LABELLED),
         openai_answer(LABELLED),
-        openai_turn("", ("call_2", "plan_ad", {})),
+        openai_turn("", ("call_2", "plan_ad", {"why": DEFAULT_WHY})),
         openai_answer(reply),
         openai_turn("Here's the plan."),
     )
