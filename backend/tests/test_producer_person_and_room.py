@@ -156,6 +156,36 @@ def test_a_new_look_alone_keeps_the_voice_and_every_scenes_audio(
     assert stale_by_scene() == [every, [], every]
 
 
+def test_a_new_gender_with_only_the_look_remade_is_refused_and_nothing_changes(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+) -> None:
+    paid_before = len(paid_for())
+    owner_says(
+        fake_model, say, "Make it a man.", ("remake_person", {"remake": "look", "gender": "man"})
+    )
+
+    answer = answer_of("remake_person")
+    assert answer.startswith("Refused:") and '"both"' in answer
+    assert paid_for()[paid_before:] == []
+    assert Job.objects.get().person_gender == "woman"
+
+
+def test_a_remake_that_fails_leaves_the_plans_person_as_the_ad_shows_them(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+) -> None:
+    fake_model.respond("draw_person", ConnectionError("picture service down"))
+    owner_says(
+        fake_model, say, "Make her older.", ("remake_person", {"remake": "look", "looks": LOOKS})
+    )
+
+    assert answer_of("remake_person").startswith("Failed:")
+    assert Job.objects.get().person_looks != LOOKS
+
+
 def test_new_looks_with_only_the_voice_remade_are_refused_and_nothing_changes(
     fake_model: FakeModel,
     shown: ProducedItem,  # noqa: F811
@@ -316,6 +346,15 @@ def test_five_different_rooms_gives_each_scene_its_own_place_and_new_clips_make_
 
     assert paid_for()[paid_before:].count("make_broll_clip") == 5
     assert "make_talking_clip" not in paid_for()[paid_before:]
+    # Each new clip was sent the presenter in its scene's own room, as its drawn picture.
+    for number in ROOMS:
+        scene = Scene.objects.get(number=number)
+        clip = scene.produced.filter(kind="clip").order_by("version").last()
+        assert clip is not None and clip.sent is not None
+        drawn = [picture for picture in clip.sent["pictures"] if picture["tier"] == 3]
+        assert [(p["drawn"], p["file"]) for p in drawn] == [
+            ("person_in_room", scene.produced.get(kind="scene_person_in_room").file)
+        ]
     ad = job.produced.filter(kind="finished_ad").order_by("version").last()
     assert ad is not None and ad.version == 2
     assert stale_by_scene() == [[]] * 6
@@ -350,6 +389,27 @@ def test_a_small_edit_of_a_scenes_place_edits_the_picture_it_has_now(
     )
     assert stale_by_scene() == [[], [], ["clip"], [], [], []]
     assert "Scene 3's clip is stale now" in answer_of("set_place")
+
+
+def test_a_scene_edited_in_the_ads_place_that_shows_nobody_is_sent_the_ads_room(
+    fake_model: FakeModel, five_shown: ProducedItem, say: Say
+) -> None:
+    owner_says(
+        fake_model,
+        say,
+        "Brighter.",
+        ("set_place", {"scene": 3, "edit": "Make the light brighter."}),
+    )
+    owner_says(
+        fake_model, say, "Hide her face.", ("edit_scene", {"scene": 3, "person_shown": "no face"})
+    )
+
+    scene = Scene.objects.get(number=3)
+    # Its own place is the ad's presenter picture edited, so its room is the ad's room alone.
+    assert scene_place(scene, scene.person_shown) == (
+        "room",
+        Job.objects.get().produced.get(kind="room_alone"),
+    )
 
 
 def test_a_place_for_a_talking_scene_is_refused_with_what_to_do_instead(
