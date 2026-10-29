@@ -183,7 +183,7 @@ One action in a page video, with its start and end seconds. Numbered per video f
 _Avoid_: Scene, shot, video picture
 
 **Watcher**:
-The model that watches a page video whole, with its sound (Gemini Flash), once per video as the page is read. It says whether the video shows this product and writes its moments (each one action of at most 15 s), its look frames, the product's colour and its transcript. It replaced the video reader and its thinned frames (ADR 0009).
+The model that watches a page video whole, with its sound (Gemini Flash), once per video as the page is read. It says whether the video shows this product and writes its moments (each one action of at most 15 s), its look frames, the product's colour and its transcript. It replaced the video reader and its thinned frames (ADR 0009). A video its safety filter refuses is asked again, then watched without its sound, then halved down to the refused seconds, which are dropped; the owner is told of every refusal in red.
 _Avoid_: Video reader (the old one)
 
 **Look frame**:

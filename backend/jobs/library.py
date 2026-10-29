@@ -215,15 +215,38 @@ class Moment(WatchedMoment):
     number: int
 
 
+class Span(_Shape):
+    """Some seconds of a page video, from `start` to `end`."""
+
+    start: float = Field(ge=0)
+    end: float
+
+
+# Why the watcher's safety filter refused a video (requirement 22): its sound, some of its
+# pictures, all of it, or nothing found when it was asked again and let it through.
+RefusedFor = Literal["asked again", "sound", "pictures", "all"]
+
+
+class FilterRefusal(_Shape):
+    """The record of the watcher's safety filter refusing a video: why, the seconds dropped
+    (none when only its sound was) and how many one-word probes the search for them took."""
+
+    reason: RefusedFor
+    dropped: list[Span]
+    probes: int = Field(ge=0)
+
+
 class VideoWatch(_Shape):
     """What the watcher saw in one page video, kept on it (ProductVideo.watched): its
     moments, numbered from 1 in time order, its look frames (one second per product state it
-    shows), the product's colour in it and what is said in it."""
+    shows), the product's colour in it and what is said in it, and the record of its safety
+    filter refusing any of it."""
 
     moments: list[Moment]
     look_frames: list[Annotated[float, Field(ge=0)]]
     colour: Colour
     transcript: str
+    refused: FilterRefusal | None = None
 
     @model_validator(mode="after")
     def _numbered_in_time_order(self) -> Self:

@@ -285,7 +285,7 @@ def test_a_video_the_watcher_cant_answer_for_twice_is_told_in_red_and_the_page_i
     assert [notice for notice in notices(api, session_id) if "video" in notice[1]] == [
         (
             "problem",
-            "Your product's video 1 couldn't be watched, so the ad is planned without it.",
+            "Your page's video 1 couldn't be watched, so the ad is planned without it.",
         )
     ]
     assert any("video 1 couldn't be watched" in warning["text"] for warning in job.warnings)
@@ -471,5 +471,5 @@ def test_a_watched_video_whose_keeping_fails_keeps_nothing_and_is_told_in_red(
     assert not job.photos.exclude(from_video=None).exists()
     assert (
         "problem",
-        "Your product's video 1 couldn't be watched, so the ad is planned without it.",
+        "Your page's video 1 couldn't be watched, so the ad is planned without it.",
     ) in notices(api, session_id)

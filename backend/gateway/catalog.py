@@ -18,6 +18,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # The watcher: watches a page video whole, sound and all (spec #210 point 3), as Gemini
     # Flash did in the watcher test (runs/watcher-test/results.md, Oct 27 2026).
     "watch_video": "gemini-3.8-flash",
+    # The watcher's one-word probe of a part of a video its safety filter refused (spec #210
+    # point 3): the watcher's own model, so its filter is the one probed.
+    "probe_video": "gemini-3.8-flash",
     "fact_check": "gpt-5.6-terra",
     "rewrite_line": "gpt-5.6-sol",
     "shorten_script": "gpt-5.6-sol",
@@ -85,6 +88,7 @@ SLOW_ANSWER_SECONDS: dict[str, float] = {
     "check_clip_motion": 600,
     # A whole video, watched with thinking: the watcher test's calls took 31 to 55 s.
     "watch_video": 600,
+    "probe_video": 600,
 }
 
 # US dollars per million tokens: (input, output). From OpenAI's pricing page, and Gemini's

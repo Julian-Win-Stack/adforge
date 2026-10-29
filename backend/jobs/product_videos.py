@@ -360,10 +360,19 @@ def _piece_name(video: str, start: float, end: float) -> str:
     return f"{Path(video).with_suffix('')}-piece-{start:g}-{end:g}.mp4"
 
 
-def _cut(video: str, start: float, end: float) -> bytes:
-    """The seconds from `start` to `end` of the video kept as `video`, as an MP4 of the
-    picture only: a piece shows how the product moves, and the clip made from it has no
-    sound of its own."""
+def cut_part(video: str, start: float, end: float, *, sound: bool) -> str:
+    """The seconds from `start` to `end` of the video kept as `video`, with its sound or
+    without it, as an MP4 kept beside it: made once. Gives its key."""
+    name = f"{Path(video).with_suffix('')}-part-{start:g}-{end:g}{'' if sound else '-silent'}.mp4"
+    return file_store.save_once(
+        name, functools.partial(_cut, video, start, end, sound=sound), whole=_is_video
+    )
+
+
+def _cut(video: str, start: float, end: float, *, sound: bool = False) -> bytes:
+    """The seconds from `start` to `end` of the video kept as `video`, as an MP4, of the
+    picture only unless `sound`: a piece shows how the product moves, and the clip made from
+    it has no sound of its own."""
     with tempfile.TemporaryDirectory() as folder:
         file = Path(folder) / "video"
         file.write_bytes(file_store.read(video))
@@ -372,7 +381,8 @@ def _cut(video: str, start: float, end: float) -> bytes:
             [settings.FFMPEG, "-nostdin", "-hide_banner", "-loglevel", "error"]
             + ["-ss", f"{start:g}", *_READ_ONLY_THE_FILE, "-i", str(file)]
             + ["-t", f"{end - start:g}"]
-            + ["-an", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p"]
+            + (["-map", "0:v:0", "-map", "0:a:0?", "-c:a", "aac"] if sound else ["-an"])
+            + ["-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p"]
             + ["-movflags", "+faststart", str(piece)],
             stdin=subprocess.DEVNULL,
             capture_output=True,

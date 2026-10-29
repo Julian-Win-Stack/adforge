@@ -35,6 +35,14 @@ not watched (the owner is told which), and there is no byte cap: length is the o
   cent.
 - Until the planner reads the library and the moments (spec #210 point 9), it gets what it
   got before: each video's transcript and its look frames as video pictures.
-- A video that can't be watched (an error, a refusal, two refused answers) is told in red and
-  the ad is planned without it. Halving a safety-filter refusal down to the culprit is its own
-  ticket.
+- A video that can't be watched (an error, two refused answers) is told in red and the ad is
+  planned without it.
+- A safety-filter refusal (requirement 22, #222) is asked again as it is, then without the
+  sound (kept with no transcript); then the video is halved in time at multiples of 5 s, each
+  half probed with a one-word call (`probe_video`, the watcher's model), refused halves halved
+  again, a refused 5 s part dropped, at most 16 probes a video (the parts not probed by then
+  are dropped). Each part kept is watched, told which seconds it is, and merged in the video's
+  own seconds. Every refusal, even one fully saved, is told in red (reason: sound, pictures or
+  all) and kept on the watch (`VideoWatch.refused`). A video refused all over is thrown out, so
+  a page read again doesn't search it again. Worst case: 3 watches, 16 probes and a watch per
+  part kept. A timeout or a rate limit is never a refusal.

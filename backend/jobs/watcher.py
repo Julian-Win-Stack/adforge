@@ -10,11 +10,21 @@ second. Until the planner reads the library, it gets what it got from the old vi
 each video's transcript and its look frames as video pictures. A video that doesn't show this
 product is thrown out, and one over WATCH_VIDEO_MOST_SECONDS isn't watched; the owner is told
 of each in grey. A video that can't be watched is told in red, and the ad is planned without
-it."""
+it.
+
+A video the model's safety filter refuses (requirement 22) is asked again as it is, then
+without its sound; then it is halved in time, each half probed with a cheap one-word call,
+the halves that pass kept and the ones that fail halved again, down to LEAST_PART_SECONDS and
+at most MOST_PROBES probes. Each part kept is watched, told which seconds of the video it
+is, and what was seen in each is merged in the video's own seconds. Every refusal is told in
+red, with what was dropped and why, and kept with the watch."""
 
 import contextvars
 import logging
+from collections import deque
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from typing import Annotated, Self
 
 from django.conf import settings
@@ -24,13 +34,15 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from adforge import file_store
 from chat.models import Message
 from gateway.gateway import watch_video
-from gateway.types import Handoff, UnusableReply
+from gateway.types import BlockedBySafetyFilter, Handoff, UnusableReply
 from jobs import page
 from jobs.library import (
     VIDEO_API_MOST_PIECE_SECONDS,
     Colour,
+    FilterRefusal,
     LookFrame,
     PictureLabel,
+    Span,
     VideoWatch,
     WatchedMoment,
     add_to_library,
@@ -39,7 +51,7 @@ from jobs.library import (
 )
 from jobs.models import Job, ProductVideo
 from jobs.notices import post_notice
-from jobs.product_videos import frame_second, frames_of
+from jobs.product_videos import cut_part, frame_second, frames_of
 from jobs.threads import closing_its_connection
 from jobs.work import save_video_pictures
 
@@ -50,6 +62,13 @@ PURPOSE = "watch_video"
 MUSIC_ONLY = "music only"
 # An answer the schema refuses is asked for again this many times.
 ASKED_AGAIN = 1
+# A video the safety filter refuses is halved at whole multiples of this many seconds from its
+# start, so a refused part of this length isn't halved again but dropped.
+LEAST_PART_SECONDS = 5.0
+# The most one-word probes the search for a refused video's bad seconds makes; the parts not
+# probed by then are dropped.
+MOST_PROBES = 16
+PROBE_PURPOSE = "probe_video"
 # The watcher looks at one frame a second and answers in whole seconds, so an end or a look
 # frame up to this far past the video's end is its last second, and is taken as the end.
 PAST_THE_END_SECONDS = 1.0
@@ -79,7 +98,23 @@ saying what the frame shows, as a caption would.
 
 Colour: the product's colour in the video, in one word.
 
-Transcript: what is said in the video, word for word; empty when nothing is said."""
+Transcript: what is said in the video, word for word; empty when nothing is said.
+
+When you are told the video is a part of a longer one, you see and hear only that part, from \
+its start second to its end second in the longer one: give every time from the start of the \
+part you are given. When you are told its sound was taken out, leave the transcript empty."""
+
+PROBE_INSTRUCTIONS = """You are shown a part of a video. Say in one word what is on screen \
+most of the time."""
+
+
+class VideoPart(Handoff):
+    """Which seconds of a longer video the video sent is: from `start` to `end` of a video
+    `of_seconds` long."""
+
+    start: float
+    end: float
+    of_seconds: float
 
 
 class WatcherHandoff(Handoff):
@@ -88,6 +123,26 @@ class WatcherHandoff(Handoff):
     product_url: str
     page_text: str
     seconds: float
+    part: VideoPart | None = Field(
+        description="Which seconds of the page's video this is, when it is only a part of it."
+    )
+    sound: bool = Field(description="Whether the video is sent with its sound.")
+
+
+class ProbeHandoff(Handoff):
+    """What the one-word probe is handed beside the part of a video: its length and which
+    seconds of the page's video it is."""
+
+    seconds: float
+    part: VideoPart
+
+
+class ProbeAnswer(BaseModel):
+    """The probe's one word: whether the model answers at all is all it is asked for."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    word: str = Field(description="One word.")
 
 
 class SeenMoment(WatchedMoment):
@@ -173,14 +228,21 @@ def watch_videos(job: Job, page_text: str) -> list[str]:
         # however the answers came.
         for video, each in zip(to_watch, asked, strict=True):
             try:
-                told += _keep(job, video, each.result())
+                watched = each.result()
+                if watched.refused is not None:
+                    told.append(_refused(job, video, watched.refused))
+                if watched.seen is None:
+                    video.thrown_out = "The AI model's safety filter refused all of it."
+                    video.save(update_fields=["thrown_out"])
+                else:
+                    told += _keep(job, video, watched.seen, watched.refused)
             except Exception as error:
                 # Whatever stops one video's watch, the page is read and the ad planned
                 # without it: never quietly.
                 logger.exception("Product video %s couldn't be watched", video.pk)
                 post_notice(
                     job,
-                    f"Your product's video {video.position} couldn't be watched, so the ad is "
+                    f"Your page's video {video.position} couldn't be watched, so the ad is "
                     "planned without it.",
                     Message.Level.PROBLEM,
                 )
@@ -191,13 +253,64 @@ def watch_videos(job: Job, page_text: str) -> list[str]:
     return told
 
 
-def _watch(job: Job, video: ProductVideo, page_text: str) -> WatcherAnswer:
-    """The watcher's answer for `video`, asked again ASKED_AGAIN times when its answer is
-    refused by the schema."""
+@dataclass(frozen=True)
+class _Watched:
+    """What the watcher saw in a video, or None when its safety filter refused all of it,
+    and the record of any refusal."""
+
+    seen: WatcherAnswer | None
+    refused: FilterRefusal | None
+
+
+def _watch(job: Job, video: ProductVideo, page_text: str) -> _Watched:
+    """What the watcher saw in `video`, past its safety filter as requirement 22 says: asked
+    again as it is, then without its sound, then in the parts of it the filter lets through."""
     seconds = float(video.duration or 0)
-    handoff = WatcherHandoff(
-        product_url=job.product_url, page_text=page.for_model(page_text), seconds=seconds
-    )
+    for_model = page.for_model(page_text)
+
+    def ask(key: str, part: Span | None = None, *, sound: bool = True) -> WatcherAnswer:
+        sent = seconds if part is None else part.end - part.start
+        return _asked(
+            job,
+            key,
+            WatcherHandoff(
+                product_url=job.product_url,
+                page_text=for_model,
+                seconds=sent,
+                part=None if part is None else _part(part, seconds),
+                sound=sound,
+            ),
+        )
+
+    for refusal in [None, FilterRefusal(reason="asked again", dropped=[], probes=0)]:
+        try:
+            return _Watched(ask(video.file), refusal)
+        except BlockedBySafetyFilter:
+            logger.warning("The safety filter refused product video %s", video.pk)
+    try:
+        silent = ask(cut_part(video.file, 0, seconds, sound=False), sound=False)
+        return _Watched(
+            silent.model_copy(update={"transcript": ""}),
+            FilterRefusal(reason="sound", dropped=[], probes=0),
+        )
+    except BlockedBySafetyFilter:
+        logger.warning("The safety filter refused product video %s without sound", video.pk)
+    passed, dropped, probes = _past_the_filter(job, video, seconds)
+    parts: list[tuple[Span, WatcherAnswer]] = []
+    for part in passed:
+        try:
+            parts.append((part, ask(cut_part(video.file, part.start, part.end, sound=True), part)))
+        except BlockedBySafetyFilter:
+            # Probed, but refused when watched: dropped as a refused probe's part is.
+            dropped.append(part)
+    reason = "pictures" if parts else "all"
+    refused = FilterRefusal(reason=reason, dropped=_joined(dropped), probes=probes)
+    return _Watched(_merged(parts) if parts else None, refused)
+
+
+def _asked(job: Job, key: str, handoff: WatcherHandoff) -> WatcherAnswer:
+    """The watcher's answer for the video kept as `key`, asked again ASKED_AGAIN times when
+    its answer is refused by the schema."""
     for asked in range(ASKED_AGAIN + 1):
         try:
             return watch_video(
@@ -205,8 +318,8 @@ def _watch(job: Job, video: ProductVideo, page_text: str) -> WatcherAnswer:
                 purpose=PURPOSE,
                 instructions=INSTRUCTIONS,
                 handoff=handoff,
-                video_key=video.file,
-                output=_answer_for(seconds),
+                video_key=key,
+                output=_answer_for(handoff.seconds),
             )
         except UnusableReply:
             if asked == ASKED_AGAIN:
@@ -214,7 +327,174 @@ def _watch(job: Job, video: ProductVideo, page_text: str) -> WatcherAnswer:
     raise AssertionError("unreachable")
 
 
-def _keep(job: Job, video: ProductVideo, answer: WatcherAnswer) -> list[str]:
+def _part(part: Span, seconds: float) -> VideoPart:
+    return VideoPart(start=part.start, end=part.end, of_seconds=seconds)
+
+
+def _past_the_filter(
+    job: Job, video: ProductVideo, seconds: float
+) -> tuple[list[Span], list[Span], int]:
+    """The parts of `video`, refused whole, that the safety filter lets through, in time
+    order, the parts dropped and how many probes it took: each refused part is halved and its
+    halves probed, until a refused part can't be halved or MOST_PROBES are made."""
+    passed: list[Span] = []
+    dropped: list[Span] = []
+    to_probe: deque[Span] = deque()
+
+    def refused(part: Span) -> None:
+        halves = _halves(part)
+        if halves is None:
+            dropped.append(part)
+        else:
+            to_probe.extend(halves)
+
+    refused(Span(start=0, end=seconds))
+    probes = 0
+    while to_probe:
+        part = to_probe.popleft()
+        if probes == MOST_PROBES:
+            dropped.append(part)
+            continue
+        probes += 1
+        if _passes(job, video, part, seconds):
+            passed.append(part)
+        else:
+            refused(part)
+    return sorted(passed, key=lambda part: part.start), dropped, probes
+
+
+def _halves(part: Span) -> tuple[Span, Span] | None:
+    """`part` cut in two at the whole multiple of LEAST_PART_SECONDS nearest its middle (the
+    later one when two are as near), each half at least half that long; None when it can't
+    be."""
+    least = LEAST_PART_SECONDS
+    cuts = [
+        least * step
+        for step in range(int(part.start // least) + 1, int(part.end // least) + 1)
+        if least * step - part.start >= least / 2 and part.end - least * step >= least / 2
+    ]
+    if not cuts:
+        return None
+    middle = (part.start + part.end) / 2
+    cut = min(cuts, key=lambda at: (abs(at - middle), -at))
+    return Span(start=part.start, end=cut), Span(start=cut, end=part.end)
+
+
+def _passes(job: Job, video: ProductVideo, part: Span, seconds: float) -> bool:
+    """Whether the safety filter lets `part` of `video` through, asked with a one-word probe.
+    A timeout or an outside service down is never a refusal: it goes up as it is."""
+    try:
+        watch_video(
+            job=job,
+            purpose=PROBE_PURPOSE,
+            instructions=PROBE_INSTRUCTIONS,
+            handoff=ProbeHandoff(seconds=part.end - part.start, part=_part(part, seconds)),
+            video_key=cut_part(video.file, part.start, part.end, sound=True),
+            output=ProbeAnswer,
+        )
+    except BlockedBySafetyFilter:
+        return False
+    except UnusableReply:
+        # An answer that couldn't be read was still an answer: the filter let it through.
+        return True
+    return True
+
+
+def _joined(spans: Sequence[Span]) -> list[Span]:
+    """`spans` in time order, those that touch joined into one."""
+    joined: list[Span] = []
+    for span in sorted(spans, key=lambda span: span.start):
+        if joined and span.start <= joined[-1].end:
+            joined[-1] = Span(start=joined[-1].start, end=max(joined[-1].end, span.end))
+        else:
+            joined.append(span)
+    return joined
+
+
+def _merged(parts: Sequence[tuple[Span, WatcherAnswer]]) -> WatcherAnswer:
+    """What the watcher saw in the parts of a video, in time order, as one answer in the
+    video's own seconds: its moments and look frames, the colour seen for the most seconds
+    and what is said, joined. Only the parts that show this product count, when one does."""
+    showing = [(part, seen) for part, seen in parts if seen.shows_this_product] or list(parts)
+    seconds: dict[str, float] = {}
+    for part, seen in showing:
+        seconds[seen.colour] = seconds.get(seen.colour, 0.0) + part.end - part.start
+    return WatcherAnswer(
+        shows_this_product=showing[0][1].shows_this_product,
+        moments=[
+            SeenMoment.model_validate(
+                {
+                    **moment.model_dump(),
+                    "start": moment.start + part.start,
+                    # The watcher may answer up to PAST_THE_END_SECONDS past a part's end: a
+                    # moment cut by the part's edge ends at it.
+                    "end": min(moment.end, part.end - part.start) + part.start,
+                }
+            )
+            for part, seen in showing
+            for moment in seen.moments
+        ],
+        look_frames=[
+            SeenLookFrame.model_validate(
+                {
+                    **frame.model_dump(),
+                    "second": min(frame.second, part.end - part.start) + part.start,
+                }
+            )
+            for part, seen in showing
+            for frame in seen.look_frames
+        ],
+        colour=max(seconds, key=lambda colour: seconds[colour]),
+        transcript=" ".join(
+            seen.transcript.strip() for _, seen in showing if seen.transcript.strip()
+        ),
+    )
+
+
+def _refused(job: Job, video: ProductVideo, refused: FilterRefusal) -> str:
+    """Tell the owner in red, and the producer, that the safety filter refused `video`: why
+    and what was dropped. Gives the producer's line."""
+    seconds = float(video.duration or 0)
+    dropped = " and ".join(f"{span.start:g}-{span.end:g}" for span in refused.dropped)
+    head = "The AI model's safety filter refused"
+    match refused.reason:
+        case "asked again":
+            text = (
+                f"{head} your page's video {video.position} once, then let it through when "
+                "it was asked again, so nothing of it is dropped."
+            )
+        case "sound":
+            text = (
+                f"{head} your page's video {video.position} for its sound (reason: sound), "
+                f"so it was watched without it: its sound, seconds 0-{seconds:g}, is dropped "
+                "and nothing said in it is kept."
+            )
+        case "pictures":
+            text = (
+                f"{head} some of your page's video {video.position}'s pictures (reason: "
+                f"pictures), so "
+                + (
+                    f"seconds {dropped} of it are dropped"
+                    if dropped
+                    else "nothing of it is dropped"
+                )
+                + " and the rest was watched."
+            )
+        case "all":
+            text = (
+                f"{head} all of your page's video {video.position} (reason: all), so seconds "
+                f"{dropped} of it are dropped and the ad is planned without it."
+            )
+    post_notice(job, text, Message.Level.PROBLEM)
+    return (
+        f"The product's video {video.position} was refused by the safety filter (reason: "
+        f"{refused.reason}; seconds dropped: {dropped or 'none'}; {refused.probes} probes)."
+    )
+
+
+def _keep(
+    job: Job, video: ProductVideo, answer: WatcherAnswer, refused: FilterRefusal | None
+) -> list[str]:
     """Keep what the watcher saw in `video`: its moments and transcript on it, its look frames
     in the library and as video pictures. A video that doesn't show this product is thrown
     out instead. Gives back what the producer is told."""
@@ -246,7 +526,9 @@ def _keep(job: Job, video: ProductVideo, answer: WatcherAnswer) -> list[str]:
             pulled.append({"key": key, "second": second, "shows": frame.label})
         # The planner's video pictures, until it reads the library: the same look frames.
         save_video_pictures(job, video, pulled, pulled)
-        video.transcript = answer.transcript.strip() or MUSIC_ONLY
+        # Unheard is not nothing said: a video watched without its sound has no transcript.
+        unheard = refused is not None and refused.reason == "sound"
+        video.transcript = answer.transcript.strip() or ("" if unheard else MUSIC_ONLY)
         video.save(update_fields=["transcript"])
         # Last: a video is watched once all it gave is kept.
         keep_watch(
@@ -261,6 +543,7 @@ def _keep(job: Job, video: ProductVideo, answer: WatcherAnswer) -> list[str]:
                 look_frames=pulled_at,
                 colour=answer.colour,
                 transcript=answer.transcript,
+                refused=refused,
             ),
         )
     return []
